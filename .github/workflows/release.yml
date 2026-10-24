@@ -430,7 +430,7 @@ jobs:
   candidate:
     name: Stage the exact candidate without publication
     permissions:
-      contents: read
+      contents: write
       # Windows Authenticode: the candidate's signing jobs log in to Azure with the OIDC token.
       id-token: write
     needs: prepare-release

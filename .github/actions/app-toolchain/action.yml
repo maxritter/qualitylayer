@@ -38,7 +38,14 @@ runs:
           echo "::error::no rustup on this Windows runner"
           exit 1
         fi
-        "$HOME/.cargo/bin/cargo" --version
+        export PATH="$HOME/.cargo/bin:$PATH"
+        if ! command -v cargo >/dev/null 2>&1; then
+          cargo_bin="$(dirname "$(rustup which cargo)")"
+          export PATH="$cargo_bin:$PATH"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+        fi
+        cargo --version
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
     - name: Cached Tauri command line
       id: tauri-cli

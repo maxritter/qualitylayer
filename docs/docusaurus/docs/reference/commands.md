@@ -97,9 +97,10 @@ The App and your agents share one local lesson store; see [Project memory](../me
 
 | Command | What it does |
 | --- | --- |
-| `memory overview\|list\|search <text>\|read <id>` | Browse and read lessons |
-| `memory store --title <text> --content <text>` | Save a lesson; `--replaces <id>` retires the one it updates |
-| `memory pin\|unpin\|retire\|restore <id>` | Keep a lesson in every session, or retire it |
+| `memory overview\|list\|search <text>\|read <id>` | Browse and read lessons; `list --sources changed` lists those whose files changed since they were checked |
+| `memory store --title <text> --content <text>` | Save a lesson; `--file <path>` (repeatable) names its files, `--rests-on <text>` the decision it rests on, `--replaces <id>` retires the one it updates |
+| `memory confirm\|retire <id> [--reason <text>]` | Record that a lesson still holds at the current commit, or retire it with the reason |
+| `memory pin\|unpin\|restore <id>` | Keep a lesson in every session, or restore a retired one |
 | `memory pause\|resume` · `memory sessions on\|off` | Pause capture, or the lessons sessions receive at start |
 | `memory share on\|off` · `memory sync\|export\|import` | Share lessons through tracked repository files, without commits or pushes |
 | `memory mcp` · `memory import-pilot <file>…` | Serve the lesson tools over MCP, or import Pilot records |

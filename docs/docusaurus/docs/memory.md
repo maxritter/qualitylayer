@@ -22,8 +22,8 @@ Keep decisions, fixes and constraints for later work. Your agents can search the
 | --- | --- |
 | **Session lessons** | With the installed hooks or plugins on, Claude Code, Codex, Pi and OpenCode can receive pinned lessons and matches for the first message in a repository |
 | **After compaction** | A supported client’s compaction hook can restore that lesson block. If hooks are off, unavailable or too slow, delivery can be skipped |
-| **Search and save tools** | `memory_search`, `memory_read` and `memory_save` let an agent retrieve or save what it chooses. Claude Code and Codex get them at install; Pi and OpenCode through their plugins. Other agents use the [CLI](#command-line) |
-| **Task lessons** | In Review, QualityLayer records decisions, fixed findings and plan amendments, with evidence when available. Missing or failed checks never count as passing. A task’s **Memory** record in Files shows what each step used and saved |
+| **Search, save and keep tools** | `memory_search`, `memory_read`, `memory_save` and `memory_keep` let an agent retrieve, save, confirm or retire what it chooses, with a reason. Claude Code and Codex get them at install; Pi and OpenCode through their plugins. Other agents use the [CLI](#command-line) |
+| **Task lessons** | In Review, QualityLayer records decisions, fixed findings and plan amendments, with evidence when available. Missing or failed checks never count as passing. The agent also rewrites, retires or confirms the lessons on files the task changed. A task’s **Memory** record in Files shows what each step used and saved, and what Review kept |
 
 Lesson text is labelled as saved reference data. It does not replace your request or the agent’s instructions. Search with concrete project terms, and check an older lesson against the current code before using it.
 
@@ -35,7 +35,8 @@ Open **Settings → Memory**.
 | --- | --- |
 | Find a saved lesson | Search by a phrase or by what you need to do |
 | Keep a lesson in session context | Open it and enable **Pin to every session**; up to five pins per project |
-| Stop using an outdated lesson | **Retire**; its history stays available |
+| See lessons whose files changed since they were checked | **Lesson state: Sources changed**. The next task that changes those files keeps them; **Still true** in a lesson confirms it now |
+| Stop using an outdated lesson | **Retire**; its history stays available. A lesson whose files were all deleted retires itself, and **Use in future tasks** restores it |
 | Stop automatic session lessons | Turn off **Lessons in every session** |
 | Pause capture and retrieval | Pause local memory; saved lessons stay |
 | Choose repositories for Git exchange | **Manage projects** |
@@ -62,6 +63,8 @@ Open **Settings → Memory**.
 2. QualityLayer writes **eligible project lessons** to `.qualitylayer/memories/`, with any evidence attached. These can include lessons without recorded passing checks.
 3. Review the files, then commit and push them yourself. Memory exchange never commits or pushes.
 
+Beside your lesson files, `LESSONS.md` lists your current lessons in plain text, so reviewers read a changed lesson in the pull request. QualityLayer rewrites it and never reads it back; retired lessons are left out.
+
 Pilot imports and preference lessons stay private. A publication filter checks for credential patterns, email addresses, home paths, prompts and transcripts. It is not a guarantee, so review the files before sharing.
 
 Anyone who can read the repository can read these lessons. Turning sharing off stops exchange; it does not erase files already committed.
@@ -79,8 +82,9 @@ Run project commands inside the repository. Any agent that can run shell command
 
 ```sh
 qualitylayer memory context "database migration locks" --json
-qualitylayer memory store --title "Bound migration locks" --content "Keep migration locks short and retry busy migrations." --kind pattern --json
+qualitylayer memory store --title "Bound migration locks" --content "Keep migration locks short, because a waiting migration blocks every write." --kind pattern --file db/migrations --json
 qualitylayer memory read <id> --json
+qualitylayer memory confirm <id> --reason "Still holds after the lock change" --json
 qualitylayer memory pin <id> --json
 qualitylayer memory import-pilot lessons.jsonl --json
 qualitylayer memory share on --json

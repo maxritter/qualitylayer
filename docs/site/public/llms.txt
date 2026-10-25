@@ -1,0 +1,35 @@
+# QualityLayer
+
+> QualityLayer puts the engineer back in the loop of your coding agent. You approve the Plan before code exists. An agent that did not write the code checks the result. Then you approve the change, and it opens the pull request.
+
+QualityLayer works with Claude Code, Codex, OpenCode, Pi, Cursor, Grok and Antigravity. Every change goes through Discuss, Research, Plan, Outline, Implement, Verify and Review. The agent builds test first, and the result is checked against every agreed outcome. Plans and evidence are Markdown files in your repository.
+
+Even the best coding models don't build software like an experienced engineer. The plan modes of coding agents are neither collaborative nor visual. With coding agents, everyone becomes an agent manager. QualityLayer lets people be engineers again. People and agents work on the Plan together, and teammates can comment on it. You review the evidence before anything is merged.
+
+## Docs
+
+- [Introduction](https://qualitylayer.dev/docs): what QualityLayer is and the seven steps
+- [Install](https://qualitylayer.dev/docs/install): one command on macOS, Windows and Linux
+- [First task](https://qualitylayer.dev/docs/first-task): run a change from request to pull request
+- [Plan step](https://qualitylayer.dev/docs/steps/plan): the Plan you approve before code
+- [Verify step](https://qualitylayer.dev/docs/steps/verify): how each agreed outcome is checked with evidence
+- [Review step](https://qualitylayer.dev/docs/steps/review): approving the finished change
+- [Supported agents](https://qualitylayer.dev/docs/agents/native): Claude Code, Codex, OpenCode, Pi and more
+- [Team plans](https://qualitylayer.dev/docs/team/plans): reviewing a Plan together
+
+## Comparisons
+
+- [All comparisons](https://qualitylayer.dev/compare)
+- [Best spec-driven development tools](https://qualitylayer.dev/best-spec-driven-development-tools)
+- [QualityLayer vs Claude Code plan mode](https://qualitylayer.dev/compare/claude-code-plan-mode)
+- [QualityLayer vs Codex plan mode](https://qualitylayer.dev/compare/codex-plan-mode)
+- [QualityLayer vs Cursor plan mode](https://qualitylayer.dev/compare/cursor-plan-mode)
+
+## Guides
+
+- [Spec-driven development with Claude Code, Codex and Cursor](https://qualitylayer.dev/blog/spec-driven-development-guide)
+- [Human in the loop AI coding](https://qualitylayer.dev/blog/human-in-the-loop-ai-coding)
+
+## Source
+
+- [GitHub repository](https://github.com/maxritter/qualitylayer)

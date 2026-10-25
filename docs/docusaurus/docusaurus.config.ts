@@ -161,7 +161,12 @@ const config: Config = {
         },
         {
           title: "More",
-          items: [{ label: "Home", href: "https://qualitylayer.dev" }],
+          items: [
+            { label: "Home", href: "https://qualitylayer.dev" },
+            { label: "Download", href: "https://qualitylayer.dev/download" },
+            { label: "Compare", href: "https://qualitylayer.dev/compare" },
+            { label: "Spec-driven development tools", href: "https://qualitylayer.dev/best-spec-driven-development-tools" },
+          ],
         },
         {
           title: "Legal",

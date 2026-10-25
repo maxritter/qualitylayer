@@ -4,7 +4,7 @@ export const PUBLIC_PAGES = {
   "/": { title: `QualityLayer: ${SLOGAN}`, description: SHARE_DESCRIPTION },
   "/pricing": {
     title: "Pricing | QualityLayer",
-    description: "QualityLayer pricing for developers, teams and companies. Every plan starts with a 7-day trial.",
+    description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",
   },
   "/download": {
     title: "Download QualityLayer for macOS, Windows and Linux",

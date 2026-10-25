@@ -1,6 +1,6 @@
 ---
 title: "Spec-driven development with Claude Code, Codex and Cursor"
-description: "How to run spec-driven development with the coding agent you already use: agree on done, write a plan you can review, build test first and check the result against the spec."
+description: "How to run spec-driven development with the coding agent you already use. Agree on done, review a written plan, build test first and check the result against the spec."
 slug: spec-driven-development-guide
 date: 2026-10-25
 authors: [max-ritter]
@@ -8,7 +8,7 @@ tags: ["guide","workflow"]
 image: https://qualitylayer.dev/og.png
 ---
 
-Spec-driven development means you and the agent write down what a change should do before any code exists, and then you check the finished code against that written spec. Even the best coding models don't build software the way an experienced engineer would. The spec is where your engineering judgment comes back into the loop. I built QualityLayer around this method because it was the only way I found to keep medium and large agent changes reviewable. This guide shows the method itself. You can follow it by hand in any agent, and at the end I explain which parts QualityLayer automates.
+Spec-driven development means you and the agent write down what a change should do before any code exists. Then you check the finished code against that written spec. Even the best coding models don't build software like an experienced engineer. The spec is where the engineer comes back into the loop. I built QualityLayer around this method because it was the only way I found to keep medium and large agent changes reviewable. This guide shows the method itself. You can follow it by hand in any agent, and at the end I explain which parts QualityLayer automates.
 
 <!-- truncate -->
 
@@ -45,13 +45,13 @@ Slices keep each step small enough that the agent's context stays focused. When 
 
 ## Step 5: Check the result against the spec
 
-When the build is finished, open a new session without the build history and ask it to go through the Done means list one point at a time. For each point it should run the program or the tests and show you the evidence: output, a screenshot or a file. Points it cannot check should be listed for you to confirm yourself.
+When the build is finished, ask an agent that did not write the code to check it. Start it in a new session without the build history. Let it go through the Done means list one point at a time. For each point it should run the program or the tests and show you the evidence: output, a screenshot or a file. Points it cannot check should be listed for you to confirm yourself.
 
 This step finds the gaps that "all tests pass" hides, for example a test that checks the wrong thing.
 
 ## Step 6: Review and open the pull request
 
-Now you review. You read the evidence, try the change yourself where it matters, and decide. Keep the plan and the evidence in the repository next to the code, so a reviewer can read why the change looks the way it does.
+Now you review. You read the evidence, try the change yourself where it matters, and decide whether to approve the pull request. Keep the plan and the evidence in the repository next to the code, so a reviewer can read why the change looks the way it does.
 
 ## Doing this with Claude Code, Codex and Cursor
 
@@ -59,7 +59,7 @@ All three agents can run every step by hand. Claude Code and Codex are strong at
 
 ## Where QualityLayer helps
 
-Doing these six steps by hand takes discipline on every change. QualityLayer wraps the agent you already use and runs them as Discuss, Research, Plan, Outline, Implement, Verify and Review. The Plan has diagrams and clickable mockups that you and your team can comment on. An agent that did not write the code checks every Done means point with evidence, and you approve twice: the Plan and the finished change. Every step writes Markdown into your repo. See the [comparison of spec-driven development tools](https://qualitylayer.dev/best-spec-driven-development-tools) for other options.
+Doing these six steps by hand takes discipline on every change. QualityLayer puts the engineer back in the loop of your coding agent, the one you already use. It runs the steps as Discuss, Research, Plan, Outline, Implement, Verify and Review. The Plan has diagrams and clickable mockups that you and your team can comment on. You approve the Plan before code exists. An agent that did not write the code checks every Done means point with evidence. Then you approve the finished change before the pull request. Every step writes Markdown into your repo, and the source is on [GitHub](https://github.com/maxritter/qualitylayer). See the [comparison of spec-driven development tools](https://qualitylayer.dev/best-spec-driven-development-tools) for other options.
 
 ## FAQ
 
@@ -80,7 +80,7 @@ In the repository, next to the code, as Markdown. Then the pull request reviewer
 
 ## Read next
 
-- [Human in the loop AI coding](/blog/human-in-the-loop-ai-coding): where your judgement belongs when an agent builds
+- [Human in the loop AI coding](/blog/human-in-the-loop-ai-coding): where the engineer decides when an agent builds
 - [Your first task with QualityLayer](/docs/first-task)
 - [QualityLayer vs Claude Code plan mode](https://qualitylayer.dev/compare/claude-code-plan-mode), [Codex plan mode](https://qualitylayer.dev/compare/codex-plan-mode) and [Cursor plan mode](https://qualitylayer.dev/compare/cursor-plan-mode)
 - [QualityLayer on GitHub](https://github.com/maxritter/qualitylayer)

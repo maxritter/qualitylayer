@@ -12,7 +12,7 @@ export const PUBLIC_PAGES = {
   },
   "/compare": {
     title: "Compare QualityLayer with spec-driven development tools",
-    description: "Compare QualityLayer with Superpowers, GitHub Spec Kit, OpenSpec, BMAD Method, GSD, Kiro, Traycer, Compound Engineering, the plan modes of Claude Code, Cursor and Codex, and HumanLayer.",
+    description: "Compare QualityLayer with Superpowers, GitHub Spec Kit, OpenSpec, BMAD Method, GSD, Kiro, Traycer, Compound Engineering and the plan modes of Claude Code, Cursor and Codex.",
   },
   "/compare/superpowers": {
     title: "QualityLayer vs Superpowers: skills, approvals and evidence",
@@ -43,8 +43,8 @@ export const PUBLIC_PAGES = {
     description: "Compare Cursor's plan mode and Projects with QualityLayer's visual Plan, recorded verification and review across coding agents.",
   },
   "/compare/codex-plan-mode": {
-    title: "QualityLayer vs Codex plan mode: plan, build, verify",
-    description: "Compare Codex's built-in plan mode with QualityLayer's visual Plan, test-first build, recorded verification and review inside Codex.",
+    title: "QualityLayer vs Codex plan mode: approve the plan and result",
+    description: "Compare Codex's built-in plan mode with QualityLayer inside Codex. You approve a visual Plan, and an agent that did not write the code checks the result.",
   },
   "/compare/humanlayer": {
     title: "QualityLayer vs HumanLayer: planning, proof and review",

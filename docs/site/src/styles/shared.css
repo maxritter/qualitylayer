@@ -6,7 +6,7 @@
 .sh-page main{min-height:70vh}
 .sh-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px;max-width:1180px;margin:0 auto;padding:28px 28px 72px;align-items:start}
 .sh-main{min-width:0}
-.sh-main>header h1{margin:0;font-size:26px;font-weight:600;letter-spacing:-.025em;line-height:1.15;text-wrap:balance}
+.sh-heading h1{margin:0;font-size:26px;font-weight:600;letter-spacing:-.025em;line-height:1.15;text-wrap:balance}
 .sh-meta{margin:6px 0 16px;font-size:13px;line-height:1.5;color:var(--ql-text-dim)}
 .sh-note{margin:0 0 12px;color:var(--ql-text-dim);font-size:13.5px;line-height:1.5}
 .sh-tabs{display:flex;gap:4px;border-bottom:1px solid var(--ql-line);margin-bottom:18px;overflow-x:auto}
@@ -187,7 +187,7 @@
 @container page (max-width: 900px){
   .sh-layout{grid-template-columns:minmax(0,1fr);gap:24px;padding:20px 16px 28px}
   .sh-side{position:static}
-  .sh-main>header h1{font-size:24px}
+  .sh-heading h1{font-size:24px}
   .sh-tabs button{padding:12px 14px}
   .sh-ask{grid-template-columns:14px minmax(0,1fr);padding:13px 14px}
   .sh-ask .sh-acts{grid-column:2;margin-top:6px}
@@ -199,4 +199,72 @@
   .sh-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;bottom:0;z-index:5;grid-column:1 / -1;margin:0 -16px -28px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--ql-bg);border-top:1px solid var(--ql-border);font-size:13px;color:var(--ql-text-muted)}
   .sh-bar .sh-btn{flex:none}
   .sh-pr a{margin-left:0}
+}
+
+/* A public review keeps the task and its feedback together. */
+.sh-layout{max-width:1440px;grid-template-columns:minmax(0,1fr) 320px;gap:28px 32px;padding:36px 40px 72px}
+.sh-heading{grid-column:1/-1;min-width:0}
+.sh-heading h1{font-size:30px;line-height:1.25;letter-spacing:-.025em;max-width:32ch;overflow-wrap:anywhere}
+.sh-meta{max-width:88ch;margin:10px 0 24px;line-height:1.65}
+.sh-heading-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--ql-line);padding-bottom:16px}
+.sh-surfaces{height:42px;background:var(--ql-surface-2);padding:4px;border:1px solid var(--ql-border);border-radius:10px}
+.sh-surfaces [role=tab]{height:32px;min-width:108px;padding:0 14px;gap:8px;font-size:13px}
+.sh-tab-count{font-size:11px;min-width:19px;height:19px;display:grid;place-items:center;border-radius:4px;background:var(--ql-bg-sunken);color:var(--ql-text-muted)}
+.sh-feedback-jump{display:none}
+.sh-main [role=tabpanel]{margin:0;min-width:0}
+.sh-side{gap:0;border:1px solid var(--ql-border);border-radius:12px;background:var(--ql-bg);overflow:hidden}
+.sh-feedback-heading{padding:18px 20px 0}
+.sh-feedback-heading h2{margin:0;font-size:16px;font-weight:600;color:var(--ql-text)}
+.sh-side .sh-card{border:0;border-radius:0;padding:16px 20px;gap:10px}
+.sh-side .sh-card+.sh-card{border-top:1px solid var(--ql-line)}
+.sh-side input{height:40px}
+.sh-side textarea{min-height:120px}
+.sh-side .sh-done{background:var(--ql-bg-sunken)}
+.sh-side .sh-done>.sh-row .sh-btn{width:100%;height:40px}
+.sh-side .sh-row[aria-label=Recipient]{gap:6px}
+.sh-side .sh-row[aria-label=Recipient] .sh-btn{padding:0 10px;font-size:12px;min-height:36px;flex:1;white-space:normal}
+.sh-footer{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;max-width:1360px;margin:0 auto;padding:24px 40px 32px;border-top:1px solid var(--ql-line);font-size:12px;color:var(--ql-text-dim)}
+.sh-footer>div{display:flex;flex-wrap:wrap;gap:12px 24px}
+.sh-footer a{text-underline-offset:4px}
+.sh-footer a:hover{text-decoration:underline;color:var(--ql-text)}
+.shared-artifacts-fit{border-color:var(--ql-border);border-radius:12px;margin-bottom:0;background:var(--ql-bg)}
+.shared-artifacts-fit header{padding:20px 20px 12px;gap:8px 16px;justify-content:space-between}
+.shared-artifacts-fit h2{font-size:16px;overflow-wrap:anywhere;max-width:100%}
+.shared-artifacts-fit .shared-artifact-tools{padding:0 20px 18px;gap:10px}
+.shared-artifacts-fit .shared-artifact-tools label:first-child{flex:1 1 100%}
+.shared-artifacts-fit .shared-artifact-tools label:first-child select{flex:1;min-width:0;width:0}
+.shared-artifacts-fit .shared-artifact-tools button{margin-left:auto;color:var(--ql-accent);border-color:var(--ql-border-strong);font-weight:500}
+.shared-artifacts-fit .shared-artifact-scroll{max-height:660px;background:var(--ql-bg-sunken);border-color:var(--ql-border)}
+.shared-artifacts-fit>p{padding:0 20px 18px;color:var(--ql-text-muted);line-height:1.5}
+.shared-artifact-scroll img{display:block;height:auto}
+.shared-artifact-unavailable{margin:0;padding:48px 24px;text-align:center;font-size:14px;line-height:1.65;color:var(--ql-text-muted)}
+@container page (max-width:900px){
+ .sh-layout{grid-template-columns:minmax(0,1fr);gap:24px;padding:24px 16px 32px}
+ .sh-heading h1{font-size:26px}
+ .sh-meta{font-size:12.5px;margin-bottom:20px}
+ .sh-feedback-jump{display:inline-flex;font-size:12px;padding:0 12px}
+ .sh-surfaces [role=tab]{min-width:0;padding:0 10px}
+ .sh-side{position:static}
+ .sh-footer{padding:24px 16px}
+ .sh-footer>div{gap:12px 18px}
+ .shared-artifacts-fit header{padding:16px 16px 12px}
+ .shared-artifacts-fit .shared-artifact-tools{padding:0 16px 16px}
+ .shared-artifacts-fit .shared-artifact-tools label:first-child{align-items:flex-start;flex-direction:column;gap:6px}
+ .shared-artifacts-fit .shared-artifact-tools label:first-child select{width:100%;flex:auto;max-width:100%}
+ .shared-artifacts-fit .shared-artifact-tools button{width:auto;flex:1}
+ .shared-artifacts-fit .shared-artifact-tools select,.shared-artifacts-fit .shared-artifact-tools button{min-height:44px}
+ .shared-artifacts-fit .shared-artifact-scroll{max-height:520px}
+}
+
+.sh-page .w7-hdr-row{max-width:1440px;padding-inline:40px}
+.sh-side:focus-visible{outline:2px solid var(--ql-accent);outline-offset:3px}
+.sh-bar>.sh-problem{min-width:0;white-space:normal;line-height:1.5}
+.sh-docs .page>div:first-child{margin-bottom:20px}
+@container page (max-width:600px){
+ .sh-page .w7-hdr-row{padding-inline:16px}
+ .sh-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;overflow:visible;border-bottom:0}
+ .sh-tabs button{min-width:0;min-height:44px;padding:8px 4px;font-size:12px;border-bottom:1px solid var(--ql-line);margin:0}
+ .sh-tabs button[aria-current=page]{border-bottom:2px solid var(--ql-text)}
+ .sh-docs .page{padding:20px 0 24px}
+ .sh-docs .page>div:first-child{justify-content:flex-start;flex-wrap:wrap;margin:0 0 24px;gap:8px}
 }

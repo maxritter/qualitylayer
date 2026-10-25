@@ -3,6 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "../../../qualitylayer/src/ui/brand/palette.css";
+@import "../../../qualitylayer/src/ui/kit/kit.css";
 /* The share page draws the App's Reader: the utility classes its components use are made here too. */
 @source "../../../qualitylayer/src/ui/reader";
 @source "../../../qualitylayer/src/ui/steps/StepDocument.tsx";

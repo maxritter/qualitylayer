@@ -7,6 +7,8 @@ import type { StepComment } from "@ql/ui/steps/StepDocument";
 import { Button } from "@ql/ui/components/ui/button";
 import { Toaster } from "@ql/ui/components/ui/sonner";
 import Page from "@/components/Page";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { sharedArtifactSources, SHARED_ARTIFACT_NAME } from "@ql/core/artifact/sharing";
 import SEO from "@/components/SEO";
 import { useTheme } from "@/hooks/useTheme";
 import { addRemark, answerItem, type Drafts, EMPTY, pending, removeRemark, summary } from "@/lib/sharing/drafts";
@@ -85,7 +87,7 @@ const Inline = ({ text }: { text: string }) => (
 );
 
 /** Where the next comment goes: a quoted passage (or none), a point of the change, or a reply. */
-type Target = { kind: "passage"; quote: string; doc?: string } | { kind: "anchor"; anchor: ChangeAnchor } | { kind: "reply"; thread: string; label: string };
+type Target = { kind: "passage"; quote: string; doc?: string; artifact?: string } | { kind: "anchor"; anchor: ChangeAnchor } | { kind: "reply"; thread: string; label: string };
 
 /** A comment that was sent, kept on the page so the reviewer sees what the owner got. */
 type SentComment = {
@@ -118,8 +120,20 @@ function savedReceipts(id: string | undefined): SentComment[] {
   } catch { return []; }
 }
 
-const labelOf = (r: Exclude<Remark, { kind: "item" }>, owner: string): string =>
-  r.kind === "passage" ? `${r.for === "person" ? `Note for ${owner} · ` : ""}${r.quote !== "" ? `“${r.quote.length > 80 ? `${r.quote.slice(0, 80)}…` : r.quote}”` : "General feedback"}` : r.kind === "thread" ? where(r.anchor) : "Reply";
+function passageLabel(remark: Extract<Remark, {kind: "passage"}>): string {
+  const artifact = SHARED_ARTIFACT_NAME.test(remark.doc) || remark.doc === PLAN_STILL;
+  if (artifact && !remark.quote) return `On ${remark.section || remark.doc.split("/").at(-1)}`;
+  if (!remark.quote) return "General feedback";
+  const quote = remark.quote.length > 80 ? `${remark.quote.slice(0, 80)}…` : remark.quote;
+  return `“${quote}”`;
+}
+
+function labelOf(remark: Exclude<Remark, {kind: "item"}>, owner: string): string {
+  if (remark.kind === "thread") return where(remark.anchor);
+  if (remark.kind === "reply") return "Reply";
+  const recipient = remark.for === "person" ? `Note for ${owner} · ` : "";
+  return recipient + passageLabel(remark);
+}
 
 type ReadyShare = Extract<LoadedShare, { status: "ready" }>;
 
@@ -145,7 +159,8 @@ function DownloadMarkdown({ docs, name }: { docs: Record<string, string>; name: 
   );
 }
 
-function Sections({ share, names, items, drafts, settled, onAnswer, commentsOn, onQuote, onSelected }: {
+function Sections({ share, names, items, drafts, settled, onAnswer, commentsOn, onQuote, onSelected, shownArtifacts = [] }: {
+  shownArtifacts?: readonly string[];
   share: ReadyShare;
   names: string[];
   items: ShareItem[];
@@ -167,7 +182,7 @@ function Sections({ share, names, items, drafts, settled, onAnswer, commentsOn, 
   const contracts = contractsOf(detailText);
   const screens = main.some((name) => /review\.md$/.test(name)) ? screenPairsOf(share.docs, share.stills) : [];
   // A mockup that is a question is drawn there; the plan's own fence for it would draw it twice.
-  const shown = new Set(items.flatMap((i) => (i.media?.kind === "artifact" ? [mockupName(i.media.name)] : [])));
+  const shown = new Set([...shownArtifacts.map(mockupName), ...items.flatMap((i) => (i.media?.kind === "artifact" ? [mockupName(i.media.name)] : []))]);
   return (
     <>
       <Asks items={items} owner={share.owner} docs={share.docs} stills={share.stills} drafts={drafts} settled={settled} onAnswer={onAnswer} />
@@ -280,7 +295,7 @@ function Ready({
   const expires = share.expires === undefined ? null : new Date(share.expires);
   const hasChange = share.review !== undefined;
   // On the change a comment belongs to a point of it; on a document it may be a general remark.
-  const needsPoint = tab === "review" && hasChange && target.kind === "passage";
+  const needsPoint = tab === "review" && hasChange && target.kind === "passage" && !target.artifact;
 
   const answer = (id: string, a: GuestAnswer | null, note?: string) => {
     setDelivered(false);
@@ -316,7 +331,7 @@ function Ready({
   const add = () => {
     const remark: Drafts["remarks"][number] =
       target.kind === "passage"
-        ? { kind: "passage", id: crypto.randomUUID(), doc: target.doc ?? steps[tab][0] ?? docOfStep(tab), quote: target.quote, text, ...(recipient === "person" ? { for: "person" as const } : {}) }
+        ? { kind: "passage", id: crypto.randomUUID(), doc: target.doc ?? steps[tab][0] ?? docOfStep(tab), quote: target.quote, text, ...(target.artifact ? { section: target.artifact } : {}), ...(recipient === "person" ? { for: "person" as const } : {}) }
         : target.kind === "anchor"
           ? { kind: "thread", thread: newThreadId(), anchor: target.anchor, text }
           : { kind: "reply", thread: target.thread, text };
@@ -364,7 +379,7 @@ function Ready({
         if (r.kind === "reply") next = next.map((c) => (c.thread === r.thread ? { ...c, replies: [...c.replies, r.text] } : c));
         else next = [...next, {
           key: r.kind === "passage" ? r.id ?? newThreadId() : r.thread,
-          ...(r.kind === "passage" ? { annotation: r.id, ...(r.quote !== "" ? { doc: r.doc, quote: r.quote, at: written[r.id ?? ""] ?? Date.now() } : {}) } : {}),
+          ...(r.kind === "passage" ? { annotation: r.id, ...(r.quote !== "" || SHARED_ARTIFACT_NAME.test(r.doc) || r.doc === PLAN_STILL ? { doc: r.doc, quote: r.quote, at: written[r.id ?? ""] ?? Date.now() } : {}) } : {}),
           thread: r.kind === "thread" ? r.thread : undefined, label: labelOf(r, who), text: r.text, replies: [],
         }];
       }
@@ -374,53 +389,72 @@ function Ready({
     setDelivered(true);
   };
 
+  const gallery = useMemo(() => {
+    const stills: Record<string, {title?: string; image: string}> = {...share.stills};
+    const picture = share.docs[PLAN_STILL];
+    const files = [...new Set([...Object.keys(sharedArtifactSources(share.docs)), ...Object.keys(stills).filter(name => SHARED_ARTIFACT_NAME.test(name))])];
+    const mapped = files.length > 0 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(picture ?? "");
+    if (mapped) stills[PLAN_STILL] = {title:"Plan artifact",image:picture};
+    if (mapped) files.push(PLAN_STILL);
+    return {stills, files, mapped};
+  }, [share.docs, share.stills]);
+  const artifactCount = gallery.files.length;
+  const [surface, setSurface] = useState(() => artifactCount ? "artifacts" : "workflow");
+  const stepsNav = useRef<HTMLElement>(null);
+  const feedbackPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (surface === "workflow") stepsNav.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [tab, surface]);
   const names = steps[tab];
   const tabItems = items.filter((item) => tabOfStep(item.step) === tab);
   const count = `${counts.total > 0 ? `${counts.answered} of ${counts.total} answered · ` : ""}${plural(counts.comments, "feedback message", "feedback messages")}`;
 
   return (
-    <div className="sh-layout">
-      <article className="sh-main">
-        <header>
+    <Tabs value={artifactCount ? surface : "workflow"} onValueChange={setSurface} className="sh-layout">
+        <header className="sh-heading">
           <h1>{share.title}</h1>
           <p className="sh-meta">
             {`${share.owner !== undefined ? `${share.owner} shared this with you` : "Shared with you"} to read and give feedback on${
               expires !== null ? ` · the link runs out on ${expires.toLocaleDateString("en-US", { day: "numeric", month: "short" })}` : ""
             } · project source code is kept private`}
           </p>
-          <nav className="sh-tabs" aria-label="Steps">
+          <div className="sh-heading-tools"><TabsList className="sh-surfaces"><TabsTrigger value="workflow">Workflow</TabsTrigger>{artifactCount ? <TabsTrigger value="artifacts">Artifacts <span className="sh-tab-count">{artifactCount}</span></TabsTrigger> : null}</TabsList><button type="button" className="sh-btn sh-feedback-jump" onClick={() => { feedbackPanel.current?.scrollIntoView({ block: "start" }); feedbackPanel.current?.focus({ preventScroll: true }); }}>Jump to feedback</button></div>
+        </header>
+      <article className="sh-main" data-testid="shared-doc"><TabsContent value="workflow">
+
+          <nav ref={stepsNav} className="sh-tabs" aria-label="Steps">
             {ALL_TABS.map((id) => (
               <button key={id} type="button" aria-current={id === tab ? "page" : undefined} onClick={() => setTab(id)}>
                 {LABELS[id]}
               </button>
             ))}
           </nav>
-        </header>
+        <div className="sh-body">
 
-        <div className="sh-body" data-testid="shared-doc">
-          <SharedArtifacts docs={share.docs} theme={theme} comments={sent.flatMap((c) => c.doc ? [{ id: c.key, doc: c.doc, remark: c.text, author: author || "Guest" }] : [])} onComment={(file, title) => quote(file, `Artifact: ${title}`)} />
           {tab === "review" && hasChange ? (
             <>
-              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} />
+              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} shownArtifacts={gallery.files} />
               <ChangeView review={share.review as NonNullable<typeof share.review>} onPick={pick} />
             </>
           ) : names.length > 0 || tabItems.length > 0 ? (
             <>
-              {tab === "plan" && share.docs[PLAN_STILL] !== undefined ? (
+              {tab === "plan" && !gallery.mapped && share.docs[PLAN_STILL] !== undefined ? (
                 <figure className="sh-frame" data-testid="shared-plan-still">
                   <figcaption className="sh-frame-bar">Plan artifact · still image</figcaption>
                   <img src={share.docs[PLAN_STILL]} alt="Plan artifact" className="block h-auto w-full" />
                 </figure>
               ) : null}
-              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} />
+              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} shownArtifacts={gallery.files} />
             </>
           ) : (
             <p className="sh-empty">{notThere(tab)}</p>
           )}
         </div>
+        </TabsContent>
+        <TabsContent value="artifacts" className="sh-artboards"><SharedArtifacts docs={share.docs} theme={theme} fit stills={gallery.stills} owner={who} comments={sent.flatMap(c => c.doc ? [{id:c.key,doc:c.doc,remark:c.text,author:author || "Guest"}] : [])} onComment={(file,title) => { setTarget({kind:"passage",quote:"",doc:file,artifact:title}); box.current?.focus(); }} /></TabsContent>
       </article>
 
-      <aside className="sh-side" aria-label="Your answers and feedback">
+      <aside ref={feedbackPanel} tabIndex={-1} className="sh-side" aria-label="Your answers and feedback"><header className="sh-feedback-heading"><h2>Your feedback</h2></header>
         <section className="sh-card">
           <label htmlFor="sh-author">
             <b>Your name</b>
@@ -444,11 +478,11 @@ function Ready({
             </div>
             {recipient === "person" ? <p className="sh-hint">A note for {who} stays between people. The agent never reads it; {who} can quote it to the agent.</p> : null}
           </> : null}
-          {target.kind === "passage" && target.quote !== "" ? (
+          {target.kind === "passage" && (target.artifact || target.quote !== "") ? (
             <blockquote className="sh-quote">
-              {target.quote}
+              {target.artifact ? `On ${target.artifact}` : target.quote}
               <button type="button" onClick={() => setTarget({ kind: "passage", quote: "" })}>
-                Drop quote
+                {target.artifact ? "Change target" : "Drop quote"}
               </button>
             </blockquote>
           ) : target.kind === "anchor" || target.kind === "reply" ? (
@@ -487,27 +521,26 @@ function Ready({
         </section>
 
         <section className="sh-card sh-done" aria-label="Send">
-          <b>When you are done</b>
-          <span>{count}</span>
+          {!delivered ? <><b>When you are done</b><span>{count}</span></> : null}
           {problem !== "" ? (
             <p className="sh-problem" role="alert">
               {problem}
             </p>
           ) : null}
-          <div className="sh-row">
+          {!delivered ? <div className="sh-row">
             <button type="button" className="sh-btn p" disabled={busy || waiting.length === 0} onClick={() => void send()}>
-              {`Send to ${who}`}
+              {busy ? "Sending…" : problem ? "Try again" : `Send to ${who}`}
             </button>
-          </div>
+          </div> : null}
           {delivered ? (
             <p className="sh-delivered" role="status">
               {`Sent to ${who}.`}
             </p>
           ) : null}
-          <span className="sh-hint">{`Approving is for ${who}'s team, in the App.`}</span>
+          {!delivered ? <span className="sh-hint">{`Approving is for ${who}'s team, in the App.`}</span> : null}
           {sent.length > 0 ? (
             <div className="sh-sent" aria-label="Sent">
-              <h3>{`Sent to ${who}`}</h3>
+              <h3>Already sent</h3>
               {sent.map((c) => {
                 const update = c.annotation ? share.threads?.find((t) => t.remoteId.endsWith(`:${c.annotation}`)) : undefined;
                 return (
@@ -545,14 +578,14 @@ function Ready({
 
       {waiting.length > 0 ? (
         <div className="sh-bar">
-          <span>{count}</span>
+          <span className={problem ? "sh-problem" : undefined}>{problem || count}</span>
           <button type="button" className="sh-btn p" disabled={busy} onClick={() => void send()}>
-            {`Send to ${who}`}
+            {busy ? "Sending…" : problem ? "Try again" : `Send to ${who}`}
           </button>
         </div>
       ) : null}
       <Toaster theme={theme} position="bottom-center" />
-    </div>
+    </Tabs>
   );
 }
 
@@ -613,7 +646,7 @@ const Shared = () => {
   // The key is the link's fragment: the browser never sends it to the server.
   const key = linkKeyOf(useLocation().hash);
   return (
-    <Page className="sh-page">
+    <Page className="sh-page" compact>
       <SEO title="A shared task — QualityLayer" description="A task shared with you from QualityLayer. Read its steps and give feedback on them." />
       <Helmet>
         <meta name="robots" content="noindex" />

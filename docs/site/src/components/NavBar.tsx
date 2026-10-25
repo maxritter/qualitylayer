@@ -36,12 +36,12 @@ const GitHubMark = () => (
   </svg>
 );
 
-function Icons() {
+function Icons({ themeOnly = false }: { themeOnly?: boolean }) {
   const { theme, toggle } = useTheme();
   const next = theme === "dark" ? "light" : "dark";
   return (
     <>
-      <Button asChild variant="ghost" size="icon-lg" className="w7-icon"><a href={GITHUB_URL} aria-label="GitHub repository"><GitHubMark /></a></Button>
+      {themeOnly ? null : <Button asChild variant="ghost" size="icon-lg" className="w7-icon"><a href={GITHUB_URL} aria-label="GitHub repository"><GitHubMark /></a></Button>}
       <Button type="button" variant="ghost" size="icon-lg" className="w7-icon" onClick={toggle} aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}>
         {theme === "dark" ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
       </Button>
@@ -49,7 +49,7 @@ function Icons() {
   );
 }
 
-const NavBar = () => {
+const NavBar = ({ compact = false }: { compact?: boolean }) => {
   const [open, setOpen] = useState(false);
   // The menu only exists on narrow screens: a shadcn/ui Sheet that traps focus, closes on Escape, and every link in it closes it.
   const narrow = useNarrow();
@@ -58,7 +58,7 @@ const NavBar = () => {
     <header className="w7-hdr">
       <div className="w7-hdr-row">
         <Logo />
-        {narrow ? (
+        {compact ? <div className="w7-hdr-tools"><Icons themeOnly /></div> : narrow ? (
           <div className="w7-hdr-tools">
             <Icons />
             <Sheet open={open} onOpenChange={setOpen}>

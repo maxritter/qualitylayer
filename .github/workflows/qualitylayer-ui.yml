@@ -94,9 +94,12 @@ jobs:
       - name: Install locked website dependencies
         working-directory: docs/site
         run: npm ci --ignore-scripts
+      - name: Install Chromium system dependencies
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install-deps chromium
       - name: Install managed Chromium
         working-directory: qualitylayer
-        run: bun x playwright install --with-deps chromium
+        run: ./node_modules/.bin/playwright install chromium
       # test:ui builds one private candidate and passes it to every project, including click-speed.
       - name: Source UI interactions, geometry and accessibility
         working-directory: qualitylayer

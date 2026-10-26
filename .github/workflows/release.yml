@@ -398,10 +398,13 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with: { fetch-depth: 0, persist-credentials: false }
-      - run: bash .github/workflows/scripts/install-git-crypt.sh
-      - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
+      - if: inputs.operation != 'promote'
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - if: inputs.operation != 'promote'
+        env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - if: inputs.operation != 'promote'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.2" }
       - name: Select an unpublished stage or exact promotion version
         id: check
@@ -558,7 +561,7 @@ jobs:
       VERSION: ${{ needs.prepare-release.outputs.version }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: team_jAsHrk71vRyWK6bCTYGJyp0q
-      # qualitylayer-site; the project that serves pilot-shell.com is never deployed to from here.
+      # Live qualitylayer; Pilot stays in the separate pilot-shell-legacy-api project.
       VERCEL_PROJECT_ID: prj_SbOGJL2YBjvq9P5MSjxcrj87IGbi
       # Stable promotion is main/Production even while the beta site's variable still names dev.
       PRODUCTION_BRANCH: ${{ !contains(needs.prepare-release.outputs.version, '-') && 'main' || vars.SITE_PRODUCTION_BRANCH || 'main' }}

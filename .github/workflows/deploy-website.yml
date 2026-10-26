@@ -193,9 +193,9 @@ jobs:
           node scripts/db-migrate.ts
           node scripts/db-beta9.ts
 
-      # qualitylayer.dev is the Production of the Vercel project qualitylayer-site, built from
-      # SITE_PRODUCTION_BRANCH (dev until the final release moves it to main). Another branch
-      # becomes a protected Preview. The project that serves pilot-shell.com is never deployed
+      # qualitylayer.dev is the Production of the Vercel project qualitylayer, built from
+      # Main on the stable path; this disabled lane retains SITE_PRODUCTION_BRANCH handling. Another branch
+      # becomes a protected Preview. The separate pilot-shell-legacy-api project is never deployed
       # to from here. A Production build takes the domains only once its checks pass, and only
       # while it is the branch's tip, so a slower run never puts an older page over a newer one.
       - name: Deploy to Vercel

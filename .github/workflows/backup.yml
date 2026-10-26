@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # qualitylayer-site's Production (qualitylayer.dev). The old Preview database stopped
+        # qualitylayer's Production (qualitylayer.dev). The old Preview database stopped
         # taking writes at the cut-over and is kept, unchanged, as its rollback copy.
         database: [production]
     env:

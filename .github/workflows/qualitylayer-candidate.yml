@@ -664,7 +664,8 @@ jobs:
   assemble-release:
     name: Assemble Release
     permissions:
-      contents: read
+      # The updater manifest reads the unpublished GitHub release draft.
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:

@@ -386,7 +386,8 @@ jobs:
 
   prepare-release:
     name: Select the version without changing source or tags
-    permissions: { contents: read }
+    # GitHub hides unpublished release drafts from tokens without push access.
+    permissions: { contents: write }
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [check-trigger, supply-chain-gate]
@@ -429,7 +430,7 @@ jobs:
   candidate:
     name: Stage the exact candidate without publication
     permissions:
-      contents: read
+      contents: write
       # Windows Authenticode: the candidate's signing jobs log in to Azure with the OIDC token.
       id-token: write
     needs: prepare-release

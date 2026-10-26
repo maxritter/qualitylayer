@@ -236,6 +236,12 @@ jobs:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
+      - name: Fetch the trusted backend fixture baseline
+        working-directory: docs/site
+        run: |
+          base=$(node --input-type=module -e 'import { LEGACY9_BASE } from "./scripts/prepare-beta-backend.mjs"; console.log(LEGACY9_BASE)')
+          git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$base"
+
       - name: Setup Node.js
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
         with:

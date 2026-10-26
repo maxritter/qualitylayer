@@ -17,8 +17,8 @@ export function releasedOn(published: string | null | undefined): string | null 
   return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 }
 
-/** The GitHub release for the version these packages install. */
-export const changelogOf = (version: string) => `${CHANGELOG_URL}/tag/v${encodeURIComponent(version)}`;
+/** The native changelog retains its pre-12.2 version heading anchors. */
+export const changelogOf = (version: string) => `${CHANGELOG_URL}#${version.toLowerCase().replace(/[^a-z0-9_ -]/g, "").replace(/ /g, "-")}`;
 
 export type Card = "macos-arm64" | "macos-x64" | "windows" | "linux";
 

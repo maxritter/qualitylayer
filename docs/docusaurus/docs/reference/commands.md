@@ -19,6 +19,16 @@ Ask your agent in plain language and name **QualityLayer** or **QL**. The same w
 
 **+ New** and **Start the build** offer **In the App** and **In my terminal**; see [App runs](../app.md#agent-runs). Your agent picks the right skill itself: `ql-workflow` for tasks, `ql-chat` for Chat, `ql-artifact` for artifacts, `ql-peer` for other sessions and `ql-manage` for lookup, memory, sharing and setup.
 
+## Existing plans {#existing-plans}
+
+Start from a Markdown or plain-text plan you already have:
+
+```sh
+qualitylayer next --from-plan ./plan.md
+```
+
+Use `--from-plan -` to read the plan from standard input. QualityLayer keeps the original unchanged and starts at Plan; Discuss and Research are marked Not run. Approve the execution agreement before the Outline and build.
+
 ## Chat {#chat}
 
 Ask Claude Code or Codex: “Using QualityLayer, chat about retrying failed webhooks.” Chat has no approvals to pass. Its tools run when you ask for them; see the [Chat guide](../chat.md).
@@ -28,7 +38,8 @@ Ask Claude Code or Codex: “Using QualityLayer, chat about retrying failed webh
 | `chat plan save --file <markdown>` | Save a plan as `chat-plan.md` (`--text` instead of a file) |
 | `chat build [--file <outline>]` · `--stop <slice>` | Start or resume slice helpers, or record one stopped |
 | `chat check [--slice <n>]` · `chat review` | Print the validation commands, or brief a fresh reviewer |
-| `chat promote --type feature\|bugfix` | Turn the Chat into a task at Discuss, keeping its context |
+| `chat promote --type feature\|bugfix` | Start the same task at Discuss, keeping its context |
+| `chat promote --type feature\|bugfix --from-saved-plan` | Start at Plan from the saved Chat plan, keeping the original and conversation |
 
 ## Terminal mode
 

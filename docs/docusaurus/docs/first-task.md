@@ -6,9 +6,13 @@ description: Choose Chat for a direct conversation, or Feature and Bugfix for a 
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-light.svg)
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-dark.svg)
 
-Open QualityLayer in the App or browser and choose **+ New**. Pick **Chat** for a direct conversation with Claude Code or Codex. Its conversation fills the task page, with the agent's questions above the composer and its task list when it has one. Save a plan, build in slices, make artifacts or ask for checks and an independent review when needed. **Start the workflow** carries the same task into Discuss as a Feature or Bugfix. [Chat guide](chat.md).
+Open QualityLayer in the App or browser and choose **+ New**. Pick **Chat** for a direct conversation with Claude Code or Codex. Its conversation fills the task page, with the agent's questions above the composer and its task list when it has one. Save a plan, build in slices, make artifacts or ask for checks and an independent review when needed. **Start the workflow** keeps the same task: **Plan with QualityLayer** continues in Discuss, while **Saved plan** starts at Plan from a plan saved in the Chat. [Chat guide](chat.md).
 
-For the structured workflow, pick a medium-sized **Feature** or **Bugfix** in a repository you know. The task is on the left; your agent works in the **Agent** sidebar on the right.
+For the structured workflow, pick a **Feature** or **Bugfix** in a repository you know. **Plan with QualityLayer** is the default: describe the change and follow the steps below.
+
+With **Existing plan**, paste a plan or attach a Markdown or plain-text file, then choose **Start from this plan**. QualityLayer keeps the original unchanged and starts at Plan. Review the execution agreement and approve it before the agent writes the Outline and builds. Discuss and Research are marked **Not run**.
+
+The task is on the left; your agent works in the **Agent** sidebar on the right.
 
 | | You do |
 | --- | --- |
@@ -36,7 +40,7 @@ Seven agents have [native setup and session controls](agents/native.md). Other c
 <details>
 <summary>Good to know</summary>
 
-- When the agent runs in your terminal, it asks each decision in its own chat. The App shows those questions without answering them.
+- When the agent runs in your terminal, it asks each decision in its own chat. You can still approve the workflow Plan and final Review in the App.
 - Say QualityLayer or QL when you ask the agent to start work. Follow-up answers continue the authorized task, and no slash command is needed.
 - Each step page opens with what needs you, then the gist, then **Look here** for anything only you can still do ([the step page](app.md#step-pages)).
 - **Skip for now** moves to the next question; **Tell me more** asks for detail.

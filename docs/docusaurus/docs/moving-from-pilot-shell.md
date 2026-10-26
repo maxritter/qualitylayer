@@ -18,9 +18,13 @@ You can also [install QualityLayer](install.md) directly; the result is the same
 
 ## Start using QualityLayer
 
-Ask your agent to plan or implement using QualityLayer or QL. Your existing paid Pilot Shell licence carries over at its existing price. Without an active licence, you can start a fresh seven-day QualityLayer trial, even if you already used a Pilot Shell trial.
+Ask your agent to plan or implement using QualityLayer or QL. QualityLayer checks paid licences with Polar. An active Polar-issued Pilot Shell licence works with both products under its existing subscription terms.
 
-Your repositories, code and Pilot plans stay where they are. QualityLayer starts its own tasks; it does not convert in-progress Pilot plans.
+For an older Gumroad purchase, or a key QualityLayer does not recognise, email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address for help moving your licence. Keep the licence key private.
+
+Without an active licence, you can start a fresh seven-day QualityLayer trial, even if you already used a Pilot Shell trial.
+
+Your repositories, code and Pilot plans stay where they are. To reuse a plan’s text, choose **Existing plan** in a new Feature or Bugfix. This starts a QualityLayer task from that plan; it does not import the old task’s workflow state.
 
 ## Import memories per project
 

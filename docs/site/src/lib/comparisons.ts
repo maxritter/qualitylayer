@@ -63,7 +63,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Define the work", qualitylayer: "Plan visually with diagrams and clickable artifacts; approve the Plan before implementation.", other: "Create a constitution, specification, technical plan and dependency-ordered tasks.", source: 1 },
       { topic: "Check the artifacts", qualitylayer: "Keep the agreed outcomes with the task through implementation and Review.", other: "Use clarification, requirements checklists and cross-artifact analysis as quality checks.", source: 2 },
-      { topic: "Check the implementation", qualitylayer: "Record running-program evidence for each outcome, then bring gaps to human Review.", other: "Converge assesses code against spec, plan and tasks, appending remaining work. The bug-fixing extension records verification too.", source: 1 },
+      { topic: "Check the implementation", qualitylayer: "Record evidence from the running program for each outcome, then bring gaps to human Review.", other: "Converge assesses code against spec, plan and tasks, appending remaining work. The bug-fixing extension records verification too.", source: 1 },
       { topic: "Adapt the process", qualitylayer: "Use the documented planning, build, Verify and Review flow in the App and your agent.", other: "Customize with extensions, presets, workflows and project-local overrides.", source: 1 },
     ],
     chooseOther: "Choose Spec Kit if you want a toolkit you can customize around your repository's own specification and review conventions. Its convergence checks deserve credit; it goes beyond generating a plan.",
@@ -87,7 +87,7 @@ export const COMPARISONS: Comparison[] = [
     agents: "OpenSpec supports Claude Code and Codex through tool-specific commands or skills. QualityLayer works with both too. Keeping your agent is a shared capability; compare how each process checks and closes the change.",
     rows: [
       { topic: "Plan a change", qualitylayer: "Review diagrams and clickable artifacts in the App, then approve the Plan.", other: "Create a proposal with spec deltas, design and tasks; revise artifacts as needed.", source: 1 },
-      { topic: "Verify the code", qualitylayer: "Record output, screenshots or files against each agreed outcome, with risk-based independent review.", other: "The optional verify skill reports completeness, correctness and coherence against the artifacts.", source: 2 },
+      { topic: "Verify the code", qualitylayer: "Record evidence from the running program for each agreed outcome, with independent review enabled by default.", other: "The optional verify skill reports completeness, correctness and coherence against the artifacts.", source: 2 },
       { topic: "Finish the change", qualitylayer: "Review the evidence and open checks; approve locally, or ask QualityLayer to open and follow a pull request.", other: "Archive the change and sync its spec updates. Archive warns about incomplete artifacts or tasks.", source: 2 },
     ],
     chooseOther: "Choose OpenSpec if maintaining evolving specifications and small change proposals in your repository is the main goal. Its flexible artifact editing fits work where requirements change during implementation.",
@@ -292,7 +292,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Agree on the change", qualitylayer: "Review architecture diagrams and clickable artifacts, then approve the Plan before code.", other: "Use structured planning phases and collaborative design documents.", source: 1 },
       { topic: "Work in your agent", qualitylayer: "Use your coding agent, with the App for planning and review.", other: "Use portable RPI skills in Claude Code or Codex, or work in the HumanLayer app.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; review independence depends on risk and settings.", other: "RPI works from local documents, with fresh sessions for its phases by default.", source: 2 },
+      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; independent review is enabled by default and can be turned off in Settings.", other: "RPI works from local documents, with fresh sessions for its phases by default.", source: 2 },
     ],
     chooseOther: "Choose HumanLayer if shared workspaces, inline design discussions and managing multiple agent sessions are central to your day.",
     chooseQualityLayer: "Choose QualityLayer if you want an explicit Verify and Review flow, with evidence for the approved outcomes and unresolved checks visible before you approve.",

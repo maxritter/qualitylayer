@@ -26,6 +26,10 @@ Ask your agent to save a plan, make artifacts, build in slices, run checks or re
 
 ## Start the workflow {#start-the-workflow}
 
-Choose **Start the workflow → Feature or Bugfix** for the structured process. The same task enters Discuss with its conversation and saved work as context. You approve the workflow Plan before later implementation. Let active slice helpers finish or stop them first.
+Choose **Start the workflow**, then Feature or Bugfix. **Plan with QualityLayer** is the default and continues in Discuss, with the conversation and saved work as context.
+
+Choose **Saved plan** to start at Plan from a plan this Chat saved, then **Start at the Plan**. The original is kept unchanged; review its execution agreement before the Outline and build. Discuss and Research are marked **Not run**. Both choices keep the same task and agent conversation.
+
+You approve the workflow Plan before later implementation. Let active slice helpers finish or stop them first.
 
 Chat does not support team sharing.

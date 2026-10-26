@@ -11,6 +11,7 @@ const Footer = () => (
           <a href={DOCS_URL}>Docs</a>
           <Link to="/pricing">Pricing</Link>
           <Link to="/compare">Compare</Link>
+          <a href="/blog">Blog</a>
           <a href={GITHUB_URL}>GitHub</a>
           <a href={CHANGELOG_URL}>Changelog</a>
           <a href={`mailto:${CONTACT_EMAIL}`}>Contact</a>

@@ -25,7 +25,7 @@ Read the task on the left and work with your agent in the right sidebar. Use the
 
 In App-managed sessions, supported questions appear as clickable choices, with number keys and a typed answer. A task list appears when the agent reports one; expand it to see its statuses. Workflow conversations use the same task list. Outside Codex sessions stay read-only; answer in Codex's terminal. You can resume or archive a Chat like other tasks.
 
-Ask for a saved plan, slice building, artifacts, checks or an independent review as needed. **Start the workflow** asks Feature or Bugfix and moves this task into Discuss, keeping the conversation and saved work as context. Chat has no team sharing in this release. See [Chat](chat.md) for starting in a terminal and the optional tools.
+Ask for a saved plan, slice building, artifacts, checks or an independent review as needed. **Start the workflow** asks Feature or Bugfix. **Plan with QualityLayer** continues in Discuss; **Saved plan** starts at Plan from this Chat’s saved plan. Both keep the task and conversation. Chat has no team sharing in this release. See [Chat](chat.md) for the choices and optional tools.
 
 ## The sidebar {#sidebar}
 
@@ -125,10 +125,10 @@ The **Cost** control in a task's header opens the cost per step and agent, estim
 
 ## Agent runs {#agent-runs}
 
-**New task** offers **Chat**, **Feature** and **Bugfix**. Chat supports Claude Code and Codex ([above](#chat)). For Feature and Bugfix, enter your request and files, then choose where the agent runs. **Start the build** asks the same last question. A fresh launch starts **In the App**. An unfinished draft keeps your choice. If the agent cannot run there, the terminal option stays available.
+**New task** offers **Chat**, **Feature** and **Bugfix**. Chat supports Claude Code and Codex ([above](#chat)). Feature and Bugfix default to **Plan with QualityLayer**. Choose **Existing plan** to paste a plan or attach a Markdown or plain-text file, then **Start from this plan**. The original stays unchanged; you review an execution agreement at Plan before the build. Discuss and Research are marked **Not run**. Choose where the agent runs. **Start the build** asks the same last question. A fresh launch starts **In the App**. An unfinished draft keeps your choice. If the agent cannot run there, the terminal option stays available.
 
 - **In the App** (recommended): pick the agent (Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode), model, effort, project and branch. Its conversation opens in the task’s **Agent** tab, and you answer there.
-- **In my terminal**: copy one prompt into any coding agent, app or IDE. Attached files are saved on this computer and listed by path. The agent asks in its own chat; the App shows the questions without answering them.
+- **In my terminal**: copy one prompt into any coding agent, app or IDE. Attached files are saved on this computer and listed by path. The agent asks in its own chat; the App shows the questions. Plan and final Review approvals stay available to the owner in the App.
 
 The branch is **Current branch**, **New branch** or **New worktree**. A worktree takes a name that sets its folder and branch, placed next to your project so other work stays untouched.
 

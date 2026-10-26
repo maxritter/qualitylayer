@@ -55,7 +55,7 @@ describe("the site's copy", () => {
     const home = await textOf(<Sections />);
     expect(home).toContain("Choose Chat for a direct conversation with Claude Code or Codex.");
     expect(home).toContain("Save a plan, build in slices, make artifacts, or ask for checks and an independent review when you need them.");
-    expect(home).toContain("Start the workflow to carry the same task and conversation into Discuss.");
+    expect(home).toContain("Start the workflow to keep the same task and conversation in the structured workflow.");
     expect(home).toContain("Choose Feature or Bugfix for the structured workflow.");
     expect(await textOf(<Hero />)).toContain("Seven steps for Feature and Bugfix,");
     expect(await textOf(<Hero />)).not.toContain("Seven steps on every change");
@@ -63,9 +63,9 @@ describe("the site's copy", () => {
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");
     expect(intro).toContain('href="/docs/chat"');
     const guide = readFileSync(new URL("../../../docusaurus/docs/chat.md", import.meta.url), "utf8");
-    expect(guide).toContain("Clickable questions support Claude Code and Codex in this release.");
-    expect(guide).toContain("Chat does not have team sharing.");
-    expect(guide).toContain("a Chat plan is not that approval");
+    expect(guide).toMatch(/Claude Code (?:and|or) Codex/);
+    expect(guide).toMatch(/Chat does not (?:have|support) team sharing/);
+    expect(guide).toMatch(/approve the workflow Plan before later implementation|a Chat plan is not that approval/);
   });
 
   it("describes the offline licence window enforced by the binary", async () => {

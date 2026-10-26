@@ -8,8 +8,7 @@
   "trailingSlash": false,
   "cleanUrls": true,
   "redirects": [
-    { "source": "/docs/changelog", "destination": "https://github.com/maxritter/qualitylayer/releases", "permanent": true },
-    { "source": "/docs/reference/changelog", "destination": "https://github.com/maxritter/qualitylayer/releases", "permanent": true },
+    { "source": "/docs/reference/changelog", "destination": "/docs/changelog", "permanent": true },
     {
       "source": "/install.ps1",
       "destination": "https://raw.githubusercontent.com/maxritter/qualitylayer/main/install.ps1",

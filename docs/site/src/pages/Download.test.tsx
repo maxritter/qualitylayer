@@ -127,7 +127,7 @@ describe("the release line", () => {
     expect(line).toContain("Latest version");
     expect(line).toContain('<b class="ap-ver">12.0.0-beta.53</b>');
     expect(line).toContain('<time dateTime="2026-10-12T02:10:53Z">October 12, 2026</time>');
-    expect(line).toContain('href="https://github.com/maxritter/qualitylayer/releases/tag/v12.0.0-beta.53"');
+    expect(line).toContain('href="/docs/changelog#1200-beta53"');
     expect(line).toContain("What&#x27;s new");
     expect(line).toContain('href="https://github.com/maxritter/qualitylayer/releases"');
     expect(line).toContain("All releases on GitHub");
@@ -170,9 +170,9 @@ describe("the release line", () => {
     expect(releasedOn("not a date")).toBeNull();
   });
 
-  it("links to the exact version on GitHub Releases", () => {
-    expect(changelogOf("12.0.0-beta.53")).toBe("https://github.com/maxritter/qualitylayer/releases/tag/v12.0.0-beta.53");
-    expect(changelogOf("12.0.0")).toBe("https://github.com/maxritter/qualitylayer/releases/tag/v12.0.0");
+  it("links to the native changelog's preserved version anchors", () => {
+    expect(changelogOf("12.0.0-beta.53")).toBe("/docs/changelog#1200-beta53");
+    expect(changelogOf("12.0.0")).toBe("/docs/changelog#1200");
   });
 });
 

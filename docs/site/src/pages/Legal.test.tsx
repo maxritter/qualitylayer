@@ -55,7 +55,7 @@ describe("the legal pages", () => {
     for (const processor of ["Vercel", "Neon", "Upstash", "Cloudflare R2", "Polar", "Resend", "GitHub", "Slack"]) expect(page).toContain(processor);
     expect(page).toContain("deleted after 30 days");
     expect(page).toContain("Encrypted backups are kept in the EU for 30 days");
-    expect(page).toContain("deleted after 90 days");
+    expect(page).toContain("Private-support screenshot links expire after 90 days");
     expect(page).toContain("Bayerisches Landesamt für Datenschutzaufsicht");
     expect(page).toContain("§ 25 (2) TDDDG");
   });

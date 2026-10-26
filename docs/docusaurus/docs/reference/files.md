@@ -8,7 +8,7 @@ description: What a task writes into your repository, what stays on your compute
 ![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-light.svg)
 ![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-dark.svg)
 
-Each task gets a folder in `docs/plans/`: plain Markdown, committed with the change. Uninstalling never touches it. Feature and Bugfix tasks use the seven documents below. A [Chat](../chat.md) starts without those workflow documents and saves optional work in its own task folder.
+Each task gets a folder in `docs/plans/`: plain Markdown, committed with the change. Uninstalling never touches it. Feature and Bugfix tasks use the workflow documents below. An existing plan starts at Plan; Discuss and Research are marked Not run. A [Chat](../chat.md) starts without those workflow documents and saves optional work in its own task folder.
 
 | Chat file | What it holds |
 | --- | --- |
@@ -16,11 +16,12 @@ Each task gets a folder in `docs/plans/`: plain Markdown, committed with the cha
 | `chat-slices.md` | The build outline derived from that saved plan, with task cards and validation commands |
 | `artifacts/`, `reviews/`, `records/` | Optional artifacts, independent review reports and helper records |
 
-The conversation belongs to the agent's local session history. **Start the workflow** keeps the task and conversation, and uses the saved Chat work as Discuss context; it does not treat the Chat plan as an approved workflow Plan.
+The conversation belongs to the agent's local session history. **Start the workflow** keeps the task and conversation. The default uses saved Chat work as Discuss context; **Saved plan** keeps that plan as the original and starts at Plan. Both need your workflow Plan approval before the build.
 
 | In the folder | What it holds |
 | --- | --- |
-| **Seven documents** | One per step, readable on GitHub too. The App draws its live parts over sections QualityLayer marks |
+| **Workflow documents** | One per step that runs, readable on GitHub too. The App draws its live parts over sections QualityLayer marks |
+| `original-plan.md` | The unchanged plan supplied through Existing plan or saved in Chat, beside its execution agreement |
 | `artifacts/` | Local artifacts and their revisions. Shared only with **Include artifacts** ([Artifacts](../artifacts.md)) |
 | `reviews/` | What the other agents wrote: the Plan review and the second opinion, when they ran |
 | `records/` | The raw output of every command, and `pull-request-body.md` once Review starts |

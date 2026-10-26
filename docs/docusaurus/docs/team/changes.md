@@ -3,7 +3,7 @@ title: Change reviews
 description: After the build, your team sees why and how a change was made, with its proof, and can read the code from your own Git remote.
 ---
 
-Once Verify passes, your team reads the walkthrough of the change with its proof. With **Ask for review** they can also read the code and comment on its lines ([Review with your team](../steps/review.md#team-review)).
+When the task reaches Review, your team reads the walkthrough, its proof and any unresolved checks. With **Ask for review** they can also read the code and comment on its lines ([Review with your team](../steps/review.md#team-review)).
 
 ![Change review: the team reviews the finished change; open threads go back to your agent, which settles each one and checks again what the fix touched before the re-review](pathname:///img/diagrams/team-change-light.svg)
 ![Change review: the team reviews the finished change; open threads go back to your agent, which settles each one and checks again what the fix touched before the re-review](pathname:///img/diagrams/team-change-dark.svg)

@@ -20,13 +20,13 @@ description: Choose a direct Chat or plan and build a change through QualityLaye
 
 ## Choose how to work {#choose-how-to-work}
 
-Choose **Chat** for a direct conversation with Claude Code or Codex. It has no workflow steps or approval gates. Ask for a saved plan, slice building, artifacts, checks or an independent review when you need them. **Start the workflow** moves the same task into Discuss as a Feature or Bugfix, keeping its conversation and using its saved work as context. [Chat guide](chat.md).
+Choose **Chat** for a direct conversation with Claude Code or Codex. It has no workflow steps or approval gates. Ask for a saved plan, slice building, artifacts, checks or an independent review when you need them. **Start the workflow** keeps the same task and conversation. **Plan with QualityLayer** continues in Discuss; **Saved plan** starts at Plan from the saved Chat plan. [Chat guide](chat.md).
 
-Choose **Feature** or **Bugfix** for the structured workflow below: agree on the Plan before code, then review the checked result before shipping.
+Choose **Feature** or **Bugfix** for the structured workflow below. **Plan with QualityLayer** is the default; **Existing plan** starts from a plan you paste or attach. Approve the Plan before the build, then review the checked result before shipping.
 
 ## The workflow {#the-seven-steps}
 
-The first seven steps each write one document. You approve twice: the Plan, then the finished change. After you start the build, your agent works through Outline, Implement and Verify. It brings you only decisions that need you; available independent work can continue.
+A task planned with QualityLayer runs all seven steps, with one document per step. Existing plans start at Plan; Discuss and Research are marked Not run. You approve twice: the Plan, then the finished change. After you start the build, your agent works through Outline, Implement and Verify. It brings you only decisions that need you; available independent work can continue.
 
 Each step gives your agent a short instruction, and the agent decides how to carry it out. QualityLayer holds only what a text cannot guarantee:
 

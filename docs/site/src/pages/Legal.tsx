@@ -6,9 +6,9 @@ import { CONTACT_EMAIL, GITHUB_URL } from "@/lib/product";
 import "@/styles/legal.css";
 
 const Mail = () => <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>;
-const Updated = () => (
+const Updated = ({ date = LEGAL_UPDATED }: { date?: { iso: string; label: string } }) => (
   <p className="lg-stamp">
-    Last updated <time dateTime={LEGAL_UPDATED.iso}>{LEGAL_UPDATED.label}</time>
+    Last updated <time dateTime={date.iso}>{date.label}</time>
   </p>
 );
 
@@ -44,7 +44,7 @@ function Privacy() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <Updated />
+      <Updated date={{ iso: "2026-10-25", label: "25 October 2026" }} />
       <p className="lg-lead">
         Your code, plans and task documents stay on your computer. Code your team reviews travels only to your own Git remote. QualityLayer receives only what you share with your team (a review comment can quote a few lines of code), a daily licence check, and reports you choose to send. What you share is encrypted on your computer first; we cannot read it.
       </p>
@@ -99,7 +99,13 @@ function Privacy() {
 
       <h2>Feedback reports</h2>
       <p>
-        When you send a report from the App, it contains your text, your name and e-mail, the diagnostics you can read before sending, and any screenshots you attach. It becomes an issue in our private GitHub repository (GitHub, Inc., USA) without your name and e-mail, and an e-mail to us through Resend that includes them. Screenshots are stored in Cloudflare R2 and deleted after 90 days (Art. 6 (1) (f): handling your report).
+        Report bug / idea publishes the title, description, system details and screenshots you approve as a public GitHub issue. Your account name and e-mail are not added automatically. We receive a private e-mail copy through Resend, with licence contact details when available.
+      </p>
+      <p>
+        Private support sends your message, the diagnostics shown before sending and any attached screenshots to our private GitHub repository and to us through Resend. Contact details are included in the e-mail copy and left out of automatic issue fields.
+      </p>
+      <p>
+        Feedback screenshots are stored in Cloudflare R2. Private-support screenshot links expire after 90 days. Published screenshot links do not expire automatically. Contact us if a report or image needs removal; copies others already downloaded can remain (Art. 6 (1) (f): handling your report).
       </p>
 
       <h2>E-mail</h2>
@@ -107,7 +113,7 @@ function Privacy() {
 
       <h2>Recipients outside the EU</h2>
       <p>
-        Vercel, Cloudflare, GitHub, Resend, Slack and Polar may process data in the USA. Transfers rely on the EU–US Data Privacy Framework where the provider is certified, and otherwise on the EU Standard Contractual Clauses. Vercel, Neon, Upstash, Cloudflare and Resend process data for us under their data processing agreements. GitHub keeps the feedback issues, which hold no name or e-mail, under its own terms. Polar, as merchant of record, and Slack, in your team's own workspace, are responsible for the data they receive.
+        Vercel, Cloudflare, GitHub, Resend, Slack and Polar may process data in the USA. Transfers rely on the EU–US Data Privacy Framework where the provider is certified, and otherwise on the EU Standard Contractual Clauses. Vercel, Neon, Upstash, Cloudflare and Resend process data for us under their data processing agreements. GitHub hosts public reports and private support issues under its own terms. Licence contact details reach us through the private e-mail copy. Polar, as merchant of record, and Slack, in your team's own workspace, are responsible for the data they receive.
       </p>
 
       <h2>Your rights</h2>

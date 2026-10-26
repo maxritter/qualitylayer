@@ -10,7 +10,7 @@ export const GITHUB_URL = "https://github.com/maxritter/qualitylayer";
 /** The documentation, served by Docusaurus under the site's own domain. */
 export const DOCS_URL = "/docs/";
 export const RELEASES_URL = `${GITHUB_URL}/releases`;
-export const CHANGELOG_URL = RELEASES_URL;
+export const CHANGELOG_URL = "/docs/changelog";
 export const CONTACT_EMAIL = "hello@qualitylayer.dev";
 export const AUTHOR_URL = "https://maxritter.net";
 export const AUTHOR_NAME = "Max Ritter";

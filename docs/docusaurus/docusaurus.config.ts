@@ -2,6 +2,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
 import { docsSourceUrl } from "./source-links";
+import path from "node:path";
 
 const config: Config = {
   title: "QualityLayer",
@@ -33,6 +34,10 @@ const config: Config = {
   },
 
   themes: ["@easyops-cn/docusaurus-search-local"],
+  plugins: [() => ({
+    name: "qualitylayer-release-markdown",
+    configureWebpack: () => ({ resolve: { alias: { marked: path.resolve(__dirname, "../site/node_modules/marked/lib/marked.esm.js") } } }),
+  })],
 
   scripts: [
     {
@@ -121,7 +126,7 @@ const config: Config = {
           position: "left",
         },
         {
-          href: "https://github.com/maxritter/qualitylayer/releases",
+          to: "/docs/changelog",
           label: "Changelog",
           position: "left",
         },
@@ -146,7 +151,7 @@ const config: Config = {
             { label: "Install", to: "/docs/install" },
             { label: "Workflow", to: "/docs#the-seven-steps" },
             { label: "Command reference", to: "/docs/reference/commands" },
-            { label: "Changelog", href: "https://github.com/maxritter/qualitylayer/releases" },
+            { label: "Changelog", to: "/docs/changelog" },
             { label: "Blog", to: "/blog" },
           ],
         },
@@ -161,7 +166,12 @@ const config: Config = {
         },
         {
           title: "More",
-          items: [{ label: "Home", href: "https://qualitylayer.dev" }],
+          items: [
+            { label: "Home", href: "https://qualitylayer.dev" },
+            { label: "Download", href: "https://qualitylayer.dev/download" },
+            { label: "Compare", href: "https://qualitylayer.dev/compare" },
+            { label: "Spec-driven development tools", href: "https://qualitylayer.dev/best-spec-driven-development-tools" },
+          ],
         },
         {
           title: "Legal",

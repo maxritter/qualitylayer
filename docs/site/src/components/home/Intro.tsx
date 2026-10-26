@@ -107,7 +107,7 @@ export default function Intro() {
           <div className="mx-head">
             <h2 id="pr-h" className="mx-h2">Decided before it is built, proven after</h2>
             <p className="mx-lead">Choose Feature or Bugfix for the structured workflow. QualityLayer keeps your agent on every step, in order. You see only what needs you.</p>
-            <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">How Chat works.</a> Choose <b>Start the workflow</b> to carry the same task and conversation into Discuss.</p>
+            <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">How Chat works.</a> Choose <b>Start the workflow</b> to keep the same task and conversation in the structured workflow.</p>
           </div>
           <div className="mx-pr3">
             {PRINCIPLES.map(({ who, icon: Glyph, title, lead, text }) => (

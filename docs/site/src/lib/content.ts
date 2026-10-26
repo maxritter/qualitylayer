@@ -30,7 +30,7 @@ const CODE_LEAVES = faq(
 export const FAQS: Faq[] = [
   faq(
     "Can I use the models and subscriptions I already have?",
-    "Yes. Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode run on the login or API key you already have, with the models your plan offers. QualityLayer charges only for itself, never for AI usage. The App shows each step's estimated cost, and Settings › Usage adds up the last 7, 30 or 90 days.",
+    "Yes. Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode run on the login or API key you already have, with the models your plan offers. QualityLayer charges only for itself, never for AI usage. The App shows each step's estimated cost, and Settings › Usage adds up the last 7 or 30 days, or this month.",
   ),
   faq(
     "How is this different from plan mode?",

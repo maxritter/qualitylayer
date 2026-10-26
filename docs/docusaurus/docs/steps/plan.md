@@ -6,16 +6,24 @@ description: "The one document you approve before any code: what it rests on, th
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-light.svg)
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-dark.svg)
 
-The Plan is the one document you approve before any code is written. It puts the proposed change, key decisions and open issues first. A small change keeps this brief; larger changes include the design detail you need to review.
+The Plan is the document you approve before the workflow builds. It puts the proposed change, key decisions and open issues first. A small change keeps this brief; larger changes include the design detail you need to review.
 
 ![The Plan in the App, with Approve Plan and Give feedback at the top right](pathname:///img/app/plan-light.webp)
 ![The Plan in the App, with Approve Plan and Give feedback at the top right](pathname:///img/app/plan-dark.webp)
 
 *Example task in a fictional project.*
 
+## Start from an existing plan {#existing-plan}
+
+**Plan with QualityLayer** is the default. It uses Discuss and Research to prepare the Plan below.
+
+Choose **Existing plan** in New task, or **Saved plan** when starting the workflow from a Chat. The original is kept unchanged as `original-plan.md`. Discuss and Research are marked **Not run**.
+
+Your agent maps the original’s outcomes and checks into a short execution agreement. Review it with the original; settle any **Your call**, then choose **Approve Plan**. The build session writes the Outline from both documents, following the agreed order.
+
 ## What you read {#items}
 
-The page shows the sections in the order of `03-plan.md`, so the file, the Reader and the page tell the same story.
+For a plan prepared with QualityLayer, the page follows the sections of `03-plan.md` below. An existing plan uses the execution agreement described above; its file and Reader show that complete agreement.
 
 | Part | What it tells you |
 | --- | --- |
@@ -49,7 +57,7 @@ A choice that only appears once an artifact is drawn is a **Your call**. **Your 
 2. Pin comments, or press **Give feedback**. Your agent revises; the diff shows what changed.
 3. Press **Approve Plan** at the top right. It approves the Plan, **Done means** and the artifact together.
 
-Answering a question does not approve the Plan. Approve in the App or give an explicit approval through your agent.
+Answering a question does not approve the Plan. Approve in the App, including when the agent works in your terminal, or give an explicit approval through your agent.
 
 ## Comment on a diagram {#diagrams}
 

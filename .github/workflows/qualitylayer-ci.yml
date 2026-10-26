@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install git-crypt
         run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -67,11 +67,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-14]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: bash .github/workflows/scripts/install-git-crypt.sh
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.2" }
       - run: bun install --frozen-lockfile
         working-directory: qualitylayer
@@ -120,7 +120,7 @@ jobs:
           - { os: macos-14, shard: 6, shards: 6 }
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install git-crypt
         run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -138,7 +138,7 @@ jobs:
           echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -191,7 +191,7 @@ jobs:
         os: [ubuntu-latest, macos-14]
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install git-crypt
         run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -202,7 +202,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -225,7 +225,7 @@ jobs:
     needs: plaintext-guard
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
 
@@ -239,7 +239,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Node.js
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24.20.0"
 
@@ -252,7 +252,7 @@ jobs:
         run: npm run typecheck
 
       - name: Setup Bun for the isolated billing service
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -316,10 +316,10 @@ jobs:
         run: git config --global core.autocrlf false
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -360,7 +360,7 @@ jobs:
 
       - name: Keep native Windows hook timing receipts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-windows-timings-${{ matrix.shard }}
           path: qualitylayer/dist/test-runs/command-speed-*.json
@@ -385,8 +385,8 @@ jobs:
       - name: Check out with LF line endings
         working-directory: .
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
           bun-download-url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip
@@ -437,7 +437,7 @@ jobs:
         run: |
           bun run test tests/windows/run-pty.test.ts tests/windows/run-job.test.ts tests/windows/run-in-app.probe.test.ts tests/core/no-replace-rename.test.ts tests/core/windows-lead-binding.test.ts tests/core/regular-file.test.ts 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/conpty.log"
           exit $LASTEXITCODE
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: native-conpty-${{ matrix.arch }}

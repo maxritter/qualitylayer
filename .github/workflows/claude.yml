@@ -44,13 +44,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@v1.0.262
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
@@ -68,7 +68,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
       # Full review on PR open/reopen/ready_for_review or manual trigger
       - name: Full code review
         if: github.event.action != 'synchronize'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@v1.0.262
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: true
@@ -101,7 +101,7 @@ jobs:
       # Incremental review on push (synchronize) - only review the delta
       - name: Incremental code review
         if: github.event.action == 'synchronize'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@v1.0.262
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           use_sticky_comment: false

@@ -49,7 +49,7 @@ runs:
 
     - name: Cached Tauri command line
       id: tauri-cli
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
           ~/.cargo/bin/cargo-tauri
@@ -64,7 +64,7 @@ runs:
         cargo install tauri-cli --version 2.12.1 --locked
 
     - name: Cached crates
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
           ~/.cargo/registry

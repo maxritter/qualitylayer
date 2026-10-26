@@ -56,6 +56,13 @@ const App = () => (
           <Route path="/compare/spec-kit" element={<Compare />} />
           <Route path="/compare/openspec" element={<Compare />} />
           <Route path="/compare/kiro" element={<Compare />} />
+          <Route path="/compare/task-master" element={<Compare />} />
+          <Route path="/compare/cline" element={<Compare />} />
+          <Route path="/compare/aider" element={<Compare />} />
+          <Route path="/compare/github-copilot-coding-agent" element={<Compare />} />
+          <Route path="/compare/devin" element={<Compare />} />
+          <Route path="/compare/claude-squad" element={<Compare />} />
+          <Route path="/compare/conductor" element={<Compare />} />
           <Route path="/best-spec-driven-development-tools" element={<Compare />} />
           <Route path="/imprint" element={<Legal />} />
           <Route path="/privacy" element={<Legal />} />

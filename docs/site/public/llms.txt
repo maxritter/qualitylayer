@@ -24,6 +24,13 @@ Even the best coding models don't build software like an experienced engineer. T
 - [QualityLayer vs Claude Code plan mode](https://qualitylayer.dev/compare/claude-code-plan-mode)
 - [QualityLayer vs Codex plan mode](https://qualitylayer.dev/compare/codex-plan-mode)
 - [QualityLayer vs Cursor plan mode](https://qualitylayer.dev/compare/cursor-plan-mode)
+- [QualityLayer vs Task Master](https://qualitylayer.dev/compare/task-master)
+- [QualityLayer vs Cline](https://qualitylayer.dev/compare/cline)
+- [QualityLayer vs Aider](https://qualitylayer.dev/compare/aider)
+- [QualityLayer vs GitHub Copilot coding agent](https://qualitylayer.dev/compare/github-copilot-coding-agent)
+- [QualityLayer vs Devin](https://qualitylayer.dev/compare/devin)
+- [QualityLayer vs Claude Squad](https://qualitylayer.dev/compare/claude-squad)
+- [QualityLayer vs Conductor](https://qualitylayer.dev/compare/conductor)
 
 ## Guides
 

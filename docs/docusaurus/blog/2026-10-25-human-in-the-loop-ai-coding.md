@@ -63,11 +63,12 @@ Yes. You can share a Plan with your team. Teammates can comment or answer questi
 No. QualityLayer only pushes with your approval and never merges.
 
 **Which agents work with this approach?**
-Claude Code, Codex, OpenCode and Pi have native support. Cursor, Grok, Antigravity and other agents that can run shell commands work through a copied prompt.
+Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode have native support. Other agents that can run shell commands work through a copied prompt.
 
 ## Read next
 
 - [Spec-driven development with Claude Code, Codex and Cursor](/blog/spec-driven-development-guide): the method step by step
+- [The list I write before my coding agent touches anything](/blog/done-means): the Done means list, with or without a tool
 - [The Plan step](/docs/steps/plan), [the Review step](/docs/steps/review) and [reviewing a Plan with your team](/docs/team/plans)
 - [How QualityLayer compares to plan modes and other tools](https://qualitylayer.dev/compare)
 - [QualityLayer on GitHub](https://github.com/maxritter/qualitylayer)

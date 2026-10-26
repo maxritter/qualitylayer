@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Page from "@/components/Page";
 import SEO from "@/components/SEO";
-import { COMPARISONS, ROUNDUP_FAQS, ROUNDUP_PATH, type Comparison, type ComparisonSource } from "@/lib/comparisons";
+import { AGENT_TOOLS, COMPARISONS, ROUNDUP_FAQS, ROUNDUP_PATH, SPEC_TOOLS, type Comparison, type ComparisonSource } from "@/lib/comparisons";
 import { SITE_URL } from "@/lib/product";
 import { pageMetadata } from "@/lib/seo";
 import { faqStructuredData } from "@/lib/structured-data";
@@ -54,14 +54,14 @@ const QUALITYLAYER_ROW = {
 };
 
 /** One row per tool, QualityLayer first, the same three questions for each. */
-function Glance() {
+function Glance({ tools, label }: { tools: Comparison[]; label: string }) {
   return (
-    <div className="cp-table-scroll" role="region" aria-label="Spec-driven development tools at a glance" tabIndex={0}>
+    <div className="cp-table-scroll" role="region" aria-label={label} tabIndex={0}>
       <table className="cp-glance">
         <thead><tr><th scope="col">Tool</th><th scope="col">Consider it for</th><th scope="col">Plans with</th><th scope="col">Runs in</th></tr></thead>
         <tbody>
           <tr className="cp-ours"><th scope="row">QualityLayer</th><td>{QUALITYLAYER_ROW.bestFor}</td><td>{QUALITYLAYER_ROW.plansWith}</td><td>{QUALITYLAYER_ROW.runsIn}</td></tr>
-          {COMPARISONS.map(({ slug, name, bestFor, plansWith, runsIn }) => (
+          {tools.map(({ slug, name, bestFor, plansWith, runsIn }) => (
             <tr key={slug}><th scope="row"><Link to={`/compare/${slug}`} aria-label={`QualityLayer vs ${name}`}>{name}</Link></th><td>{bestFor}</td><td>{plansWith}</td><td>{runsIn}</td></tr>
           ))}
         </tbody>
@@ -212,11 +212,14 @@ function HeadToHead({ comparison: c }: { comparison: Comparison }) {
 
 function CompareIndex() {
   return (
-    <Frame title="Compare QualityLayer" lead="QualityLayer plans a change with you, builds it with your coding agent and checks the result before you approve it. Here is how it compares with other spec-driven development tools." sources={COMPARISONS.map((c) => c.sources.at(-1)!)} {...span(COMPARISONS)} data={[comparisonList]}>
+    <Frame title="Compare QualityLayer" lead="QualityLayer plans a change with you, builds it with your coding agent and checks the result before you approve it. Here is how it compares with spec-driven development tools, the agents' own plan modes and other coding agents." sources={COMPARISONS.map((c) => c.sources.at(-1)!)} {...span(COMPARISONS)} data={[comparisonList]}>
       <section aria-labelledby="glance">
         <h2 id="glance">At a glance</h2>
         <p>Each tool's name opens its side-by-side comparison.</p>
-        <Glance />
+        <h3>Spec-driven tools and plan modes</h3>
+        <Glance tools={SPEC_TOOLS} label="Spec-driven development tools at a glance" />
+        <h3>Coding agents and agent managers</h3>
+        <Glance tools={AGENT_TOOLS} label="Coding agents and agent managers at a glance" />
         <p className="cp-more"><Link to={ROUNDUP_PATH}>Spec-driven development tools by use case</Link><a href="/docs/steps/verify">How Verify works</a></p>
       </section>
       <ProofAndReview />
@@ -225,9 +228,9 @@ function CompareIndex() {
 }
 
 function Roundup() {
-  const sources = COMPARISONS.flatMap((c) => c.sources);
+  const sources = SPEC_TOOLS.flatMap((c) => c.sources);
   return (
-    <Frame title="Best spec-driven development tools for your workflow" lead="The best fit depends on where you want structure: writing specs, coordinating agents or reviewing evidence. Here is how QualityLayer and ten other tools, from GitHub Spec Kit and Superpowers to Kiro and the agents' own plan modes, approach that work." sources={sources} {...span(COMPARISONS)} faq>
+    <Frame title="Best spec-driven development tools for your workflow" lead={`The best fit depends on where you want structure: writing specs, coordinating agents or reviewing evidence. Here is how QualityLayer and ${SPEC_TOOLS.length} other tools, from GitHub Spec Kit and Superpowers to Kiro and the agents' own plan modes, approach that work.`} sources={sources} {...span(SPEC_TOOLS)} faq>
       <section aria-labelledby="criteria">
         <h2 id="criteria">How to choose</h2>
         <p>Compare the tools on the same change: define an outcome, inspect the plan, build it and ask what proves it works. This guide uses the public docs linked below. It assigns no scores or performance ranking.</p>
@@ -240,7 +243,7 @@ function Roundup() {
             <caption>A starting point for evaluating your own workflow</caption>
             <thead><tr><th scope="col">Tool</th><th scope="col">Consider it for</th><th scope="col">What the docs describe</th></tr></thead>
             <tbody>
-              {COMPARISONS.map(({ slug, name, bestFor, plansWith, sources: [docs] }) => <tr key={slug}><th scope="row"><Link to={`/compare/${slug}`}>{name}</Link></th><td>{bestFor}</td><td>Plans with: {plansWith}. <a href={docs.url}>Docs</a></td></tr>)}
+              {SPEC_TOOLS.map(({ slug, name, bestFor, plansWith, sources: [docs] }) => <tr key={slug}><th scope="row"><Link to={`/compare/${slug}`}>{name}</Link></th><td>{bestFor}</td><td>Plans with: {plansWith}. <a href={docs.url}>Docs</a></td></tr>)}
               <tr><th scope="row"><Link to="/">QualityLayer</Link></th><td>Visual planning and human review with recorded proof</td><td>Approve the Plan, check agreed outcomes in Verify and review the evidence before opening a pull request. <a href="/docs/steps/review">Docs</a></td></tr>
             </tbody>
           </table>
@@ -265,7 +268,7 @@ function Roundup() {
       <section aria-labelledby="next">
         <h2 id="next">Evaluate it on a real change</h2>
         <p>Use a task with a testable outcome and an edge case. Compare how much you understand before implementation and what you can verify afterward.</p>
-        <p><Link to="/compare">Read the detailed comparisons</Link>, explore <a href="/docs/steps/verify">Verify</a> and <a href="/docs/steps/review">Review</a>, or check <Link to="/pricing">QualityLayer pricing</Link>.</p>
+        <p><Link to="/compare">Read the detailed comparisons</Link>, including coding agents such as Cline, Aider and Devin, explore <a href="/docs/steps/verify">Verify</a> and <a href="/docs/steps/review">Review</a>, or check <Link to="/pricing">QualityLayer pricing</Link>.</p>
       </section>
     </Frame>
   );

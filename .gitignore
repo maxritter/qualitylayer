@@ -258,6 +258,12 @@ demo
 !/qualitylayer/src/ui/demo/
 !/qualitylayer/src/ui/demo/*.ts
 !/qualitylayer/src/ui/demo/*.tsx
+# Guided browser demo and presenter share these source files.
+!/docs/site/scripts/demo/
+/docs/site/scripts/demo/*
+!/docs/site/scripts/demo/overlay.js
+!/docs/site/scripts/demo/story.mjs
+!/docs/site/scripts/demo/present.mjs
 skills-lock.json
 sx.json
 context-hud

@@ -44,9 +44,10 @@ jobs:
           gh release download v12.0.0 --repo maxritter/qualitylayer --pattern qualitylayer-windows-x64.exe --pattern QualityLayer-12.0.0-x64-setup.exe --pattern install.ps1 --pattern SHA256SUMS --pattern SHA256SUMS.sig --dir $previous
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify signature and hashes, then capture the original baseline installer outcome
+        shell: bash
         run: |
-          bun qualitylayer/scripts/diagnose-windows-baseline.ts --previous-dir (Join-Path $env:RUNNER_TEMP 'previous-12.0.0') --out (Join-Path $env:RUNNER_TEMP 'windows-baseline-diagnostic')
-          exit $LASTEXITCODE
+          set -euo pipefail
+          bun qualitylayer/scripts/diagnose-windows-baseline.ts --previous-dir "$RUNNER_TEMP/previous-12.0.0" --out "$RUNNER_TEMP/windows-baseline-diagnostic"
       - name: Preserve the diagnostic, including a failed installer outcome
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 56" width="64" height="56" aria-hidden="true">
+  <defs>
+    <clipPath id="hex">
+      <polygon points="16,0 48,0 64,28 48,56 16,56 0,28"/>
+    </clipPath>
+    <mask id="stripes" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="56">
+      <g transform="rotate(30 32 28)" fill="#ffffff">
+        <rect x="4.3" y="-24" width="7.7" height="104"/>
+        <rect x="16.23" y="-24" width="7.7" height="104"/>
+        <rect x="28.16" y="-24" width="7.7" height="104"/>
+        <rect x="40.09" y="-24" width="7.7" height="104"/>
+        <rect x="52.02" y="-24" width="7.7" height="104"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="64" height="56" fill="#ededed" clip-path="url(#hex)" mask="url(#stripes)"/>
+</svg>

@@ -24,6 +24,15 @@
       "groupName": null
     },
     {
+      "description": "Keep the React renderer and React runtime on matching versions.",
+      "matchFileNames": ["qualitylayer/package.json"],
+      "matchDepTypes": ["dependencies"],
+      "matchPackageNames": ["react", "react-dom"],
+      "matchUpdateTypes": ["minor", "patch", "pin"],
+      "groupName": "React runtime",
+      "groupSlug": "react-runtime"
+    },
+    {
       "description": "Group all minor/patch devDependency bumps into a single weekly PR per package.json.",
       "matchDepTypes": ["devDependencies"],
       "matchUpdateTypes": ["minor", "patch", "pin"],

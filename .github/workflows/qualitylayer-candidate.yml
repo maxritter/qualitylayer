@@ -79,12 +79,12 @@ jobs:
       - name: Preserve encrypted bytes on Windows
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
           bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip' || '' }}
@@ -210,7 +210,7 @@ jobs:
           bun -e 'import {createHash} from "node:crypto";const t=process.env.TARGET,p=process.env.RUNNER_TEMP,s=`${p}/piece`,d=`signing/${t}`;const hash=b=>createHash("sha256").update(b).digest("hex");const raw=hash(await Bun.file(`${p}/engine/engram`).bytes());const trusted=await Bun.file("qualitylayer/src/memory-engine/payloads/manifest.json").json();const pre=trusted.artifacts[t].sha256;let proof={policy:t.startsWith("darwin-")?"darwin-developer-id":t.startsWith("win32-")?(await Bun.file(`${s}/${d}/authenticode.json`).exists()?"windows-authenticode":"windows-unsigned-beta"):"linux-signed-catalog",rawSha256:raw,preSignSha256:pre,evidence:[]};if(t.startsWith("darwin-")){const sig=await Bun.file(`${s}/${d}/signature.txt`).text();const notary=await Bun.file(`${s}/${d}/notary.json`).json();proof={...proof,identity:/^Authority=(Developer ID Application:.*)$/m.exec(sig)?.[1],teamId:/^TeamIdentifier=(.*)$/m.exec(sig)?.[1],timestamp:/^Timestamp=(.*)$/m.exec(sig)?.[1],notary:{status:notary.status,id:notary.id,containerSha256:hash(await Bun.file(`${s}/${d}/engine.zip`).bytes()),containerPath:`${d}/engine.zip`,entryPath:"engram"}};for(const name of ["signature.txt","verify.txt","notary.json"]){const path=`${d}/${name}`,b=await Bun.file(`${s}/${path}`).bytes();proof.evidence.push({path,sha256:hash(b),bytes:b.length});}}else if(proof.policy==="windows-authenticode"){const auth=await Bun.file(`${s}/${d}/authenticode.json`).json();const verify=await Bun.file(`${s}/${d}/verify.txt`).text();proof={...proof,identity:auth.subject,thumbprint:auth.thumbprint,timestamp:/^The signature is timestamped: (.+)$/m.exec(verify)?.[1]?.trim()??auth.timeStamper};for(const name of ["authenticode.json","verify.txt"]){const path=`${d}/${name}`,b=await Bun.file(`${s}/${path}`).bytes();proof.evidence.push({path,sha256:hash(b),bytes:b.length});}}else{const path=`${d}/policy.json`,b=Buffer.from(JSON.stringify({target:t,policy:proof.policy,rawSha256:raw,unsigned:true}));await Bun.write(`${s}/${path}`,b);proof.evidence.push({path,sha256:hash(b),bytes:b.length});}await Bun.write(`${p}/signing.json`,JSON.stringify(proof,null,2)+"\n");'
           bun qualitylayer/scripts/memory-qualification-stage.ts target --source-root "$PWD/qualitylayer" --payload-dir "$RUNNER_TEMP/piece" --target "$TARGET" --raw "$RUNNER_TEMP/engine/engram"
           bun qualitylayer/scripts/memory-qualification-run.ts --source-root "$PWD/qualitylayer" --payload-dir "$RUNNER_TEMP/piece" --target "$TARGET" --signing-receipt "$RUNNER_TEMP/signing.json" --previous-payload "$RUNNER_TEMP/previous-engine" --previous-manifest "$RUNNER_TEMP/previous-manifest.json" --out "$RUNNER_TEMP/piece/receipts/$TARGET.json"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: memory-payload-${{ matrix.target }}-${{ github.run_attempt }}
@@ -224,16 +224,16 @@ jobs:
     outputs:
       provenance_sha256: ${{ steps.provenance.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with: { ref: "${{ github.sha }}", persist-credentials: false }
       - run: bash .github/workflows/scripts/install-git-crypt.sh
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.2" }
       - run: bun install --frozen-lockfile
         working-directory: qualitylayer
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: memory-payload-*-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pieces
@@ -250,7 +250,7 @@ jobs:
           # shellcheck disable=SC2016
           bun -e 'const p=process.env.RUNNER_TEMP+"/stage",b=await Bun.file(p+"/payload-set.json").bytes(),s=JSON.parse(new TextDecoder().decode(b));const v={schema:1,kind:"memory-payload-authorization",repository:process.env.GITHUB_REPOSITORY,workflow:".github/workflows/qualitylayer-candidate.yml",sourceCommit:s.sourceCommit,sourceTree:s.sourceTree,runId:process.env.GITHUB_RUN_ID,runAttempt:Number(process.env.GITHUB_RUN_ATTEMPT),payloadSetSha256:new Bun.CryptoHasher("sha256").update(b).digest("hex"),receipts:s.receipts};await Bun.write(p+"/provenance.json",JSON.stringify(v,null,2)+"\n");'
           echo "sha256=$(sha256sum "$RUNNER_TEMP/stage/provenance.json" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: memory-payload-stage-${{ github.run_attempt }}
           path: ${{ runner.temp }}/stage/
@@ -263,7 +263,7 @@ jobs:
     timeout-minutes: 10
     environment: ${{ inputs.authorization_environment }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: memory-payload-stage-${{ github.run_attempt }}
           path: stage
@@ -289,7 +289,7 @@ jobs:
           ssh-keygen -Y sign -f "$key" -n qualitylayer-release stage/provenance.json
           printf 'release@qualitylayer.dev namespaces="qualitylayer-release" %s\n' "$RELEASE_SIGNER" > "$RUNNER_TEMP/allowed-signers"
           ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed-signers" -I release@qualitylayer.dev -n qualitylayer-release -s stage/provenance.json.sig < stage/provenance.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: memory-payload-signature-${{ github.run_attempt }}
           path: stage/provenance.json.sig
@@ -307,7 +307,7 @@ jobs:
       bundle_digest: ${{ steps.bundle.outputs.digest }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
 
@@ -320,7 +320,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -329,12 +329,12 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Download qualified payload bytes
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: memory-payload-stage-${{ github.run_attempt }}
           path: ${{ runner.temp }}/payload-stage
       - name: Download payload authorization
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: memory-payload-signature-${{ github.run_attempt }}
           path: ${{ runner.temp }}/payload-stage
@@ -389,7 +389,7 @@ jobs:
       # The command line's files only; the asset guard looks at the whole list once the App's
       # packages have joined it, in assemble-release.
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qualitylayer-release-cli-${{ github.run_attempt }}
           path: release/
@@ -432,7 +432,7 @@ jobs:
       # comes from this run's build): a sparse checkout leaves the rest encrypted and unread, so
       # unlocking decrypts some 50 files instead of every one (minutes on Windows).
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
           sparse-checkout: |
@@ -446,7 +446,7 @@ jobs:
 
       - name: Setup git-crypt
         if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: MSYS
           install: git git-crypt
@@ -467,7 +467,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
@@ -478,7 +478,7 @@ jobs:
       # instead of every crate (ten minutes on the Intel Mac). Only release runs on main and dev
       # write it; the packages themselves (bundle/) are never cached.
       - name: Cached App build
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             qualitylayer/app/src-tauri/target
@@ -509,7 +509,7 @@ jobs:
           security find-identity -v -p codesigning "$keychain" | grep -q "Developer ID Application"
 
       - name: Download the command line this run built
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: qualitylayer-release-cli-${{ github.run_attempt }}
           path: release
@@ -652,7 +652,7 @@ jobs:
           (cd qualitylayer/dist/app/release && shasum -a 256 "$cli" > "$cli.sha256")
 
       - name: Upload the package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: app-${{ matrix.name }}-${{ github.run_attempt }}
           path: qualitylayer/dist/app/release/
@@ -675,7 +675,7 @@ jobs:
     if: needs.build.result == 'success' && needs.app.result == 'success'
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
 
@@ -688,19 +688,19 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
       - name: Download the compiled command lines
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: qualitylayer-release-cli-${{ github.run_attempt }}
           path: release
       # Mac and Windows packages carry their natively signed CLI and checksum; replace only those
       # known files.
       - name: Download the native packages and finalized Mac and Windows CLIs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: app-*-${{ github.run_attempt }}
           path: release
@@ -742,7 +742,7 @@ jobs:
 
       - name: Upload artifact
         id: assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qualitylayer-candidate-assets-${{ github.run_attempt }}
           path: release/
@@ -772,7 +772,7 @@ jobs:
       # The job checks the published binary; from the tree it needs only the Cockpit check and the
       # one core module it imports. A sparse checkout decrypts those instead of every file.
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           sparse-checkout: |
             .github
@@ -781,7 +781,7 @@ jobs:
             qualitylayer/src/server
 
       - name: Setup git-crypt
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: MSYS
           install: git git-crypt
@@ -795,13 +795,13 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
 
       # The signed CLI and setup the Windows App job finalized: the bytes the release publishes.
       - name: Download exact release artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: app-windows-${{ matrix.arch }}-${{ github.run_attempt }}
           path: release
@@ -858,7 +858,7 @@ jobs:
 
       - name: Keep the disposable Windows account ACL evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: native-release-account-acls-${{ matrix.arch }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ql-release-account-acls.json
@@ -881,7 +881,7 @@ jobs:
       artifact_id: ${{ steps.catalog.outputs.artifact-id }}
       artifact_digest: ${{ steps.catalog.outputs.artifact-digest }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: qualitylayer-candidate-assets-${{ github.run_attempt }}
           path: release
@@ -924,7 +924,7 @@ jobs:
           ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed-signers" -I release@qualitylayer.dev -n qualitylayer-release -s release/SHA256SUMS.sig < release/SHA256SUMS
           mkdir "$RUNNER_TEMP/catalog"
           cp release/SHA256SUMS release/SHA256SUMS.sig "$RUNNER_TEMP/catalog/"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         id: catalog
         with:
           name: qualitylayer-candidate-catalog-${{ github.run_attempt }}
@@ -950,9 +950,9 @@ jobs:
     steps:
       - if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with: { ref: "${{ github.sha }}", persist-credentials: false }
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
           bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip' || '' }}
@@ -971,25 +971,25 @@ jobs:
           [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
           try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "qualitylayer-candidate-assets-${{ github.run_attempt }}",
             path: "${{ runner.temp }}/release",
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "qualitylayer-candidate-catalog-${{ github.run_attempt }}",
             path: "${{ runner.temp }}/release",
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "memory-payload-stage-${{ github.run_attempt }}",
             path: "${{ runner.temp }}/payload-stage",
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "memory-payload-signature-${{ github.run_attempt }}",
@@ -1018,7 +1018,7 @@ jobs:
         run: |
           set -euo pipefail
           bun qualitylayer/scripts/qualify-memory-distribution.ts --source-root "$PWD/qualitylayer" --target "$TARGET" --version "$VERSION" --release-dir "$RUNNER_TEMP/release" --payload-dir "$RUNNER_TEMP/payload-stage" --previous-dir "$RUNNER_TEMP/previous" --previous-cli "$PREVIOUS_CLI" --previous-package "$PREVIOUS_PACKAGE" --out-root "$RUNNER_TEMP/distribution"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: memory-distribution-${{ matrix.target }}-${{ github.run_attempt }}
@@ -1040,40 +1040,40 @@ jobs:
     outputs:
       manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with: { ref: "${{ github.sha }}", persist-credentials: false }
       - run: bash .github/workflows/scripts/install-git-crypt.sh
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@3d267786b128fe76c2f16a390aa2448b815359f3 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.2" }
       - run: bun install --frozen-lockfile
         working-directory: qualitylayer
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "qualitylayer-candidate-assets-${{ github.run_attempt }}",
             path: release,
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "qualitylayer-candidate-catalog-${{ github.run_attempt }}",
             path: release,
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "memory-payload-stage-${{ github.run_attempt }}",
             path: payload-stage,
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           {
             name: "memory-payload-signature-${{ github.run_attempt }}",
             path: payload-stage,
           }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: memory-distribution-*-${{ github.run_attempt }}
           path: distribution
@@ -1094,12 +1094,12 @@ jobs:
           mkdir "$RUNNER_TEMP/candidate"
           bun qualitylayer/scripts/release-candidate.ts manifest --version "$VERSION" --release-dir "$PWD/release" --receipts "$PWD/distribution" --distribution-set "$RUNNER_TEMP/distribution-set.json" --payload-set "$PWD/payload-stage/payload-set.json" --bundle-digest "$BUNDLE_DIGEST" --assets-id "$ASSETS_ID" --assets-digest "$ASSETS_DIGEST" --catalog-id "$CATALOG_ID" --catalog-digest "$CATALOG_DIGEST" --out "$RUNNER_TEMP/candidate/candidate.json"
           echo "sha256=$(sha256sum "$RUNNER_TEMP/candidate/candidate.json" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qualitylayer-candidate-manifest-${{ github.run_attempt }}
           path: ${{ runner.temp }}/candidate/candidate.json
           retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: qualitylayer-candidate-receipts-${{ github.run_attempt }}
           path: |

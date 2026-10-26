@@ -3,6 +3,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "parse5";
+import { createMetricsFilter } from "../src/lib/metrics-privacy.js";
+import { startDocusaurusAnalytics } from "./docusaurus-analytics.js";
 
 function insertionPoint(html) {
   let docusaurus = false;
@@ -30,10 +32,6 @@ function insertionPoint(html) {
 
 /** Insert outside the hydrated root; preserve all existing HTML bytes, including inline CSP hashes. */
 export async function injectDocusaurusAnalytics(dist) {
-  const source = await readFile(new URL("./docusaurus-analytics.js", import.meta.url), "utf8");
-  const hash = createHash("sha256").update(source).digest("hex").slice(0, 16);
-  const asset = `/assets/docusaurus-analytics-${hash}.js`;
-  const tag = `<script defer src="${asset}"></script>`;
   const pages = [];
 
   for (const name of (await readdir(dist, { recursive: true })).sort()) {
@@ -41,14 +39,20 @@ export async function injectDocusaurusAnalytics(dist) {
     const file = path.join(dist, name);
     const html = await readFile(file, "utf8");
     const offset = insertionPoint(html);
-    if (offset !== null) pages.push({ file, html: html.slice(0, offset) + tag + html.slice(offset) });
+    if (offset !== null) pages.push({ file, html, offset, pathname: `/${name.replace(/\\/g, "/").replace(/\.html$/, "").replace(/(?:^|\/)index$/, "")}` });
   }
+
+  const publicPaths = pages.map(({ pathname }) => pathname);
+  const source = `(${startDocusaurusAnalytics.toString()})((${createMetricsFilter.toString()})(${JSON.stringify(publicPaths)}));\n`;
+  const hash = createHash("sha256").update(source).digest("hex").slice(0, 16);
+  const asset = `/assets/docusaurus-analytics-${hash}.js`;
+  const tag = `<script defer src="${asset}"></script>`;
 
   // Validate every page before writing, so a changed Docusaurus template fails the build cleanly.
   if (pages.length) {
     await mkdir(path.join(dist, "assets"), { recursive: true });
     await writeFile(path.join(dist, asset.slice(1)), source);
-    for (const { file, html } of pages) await writeFile(file, html);
+    for (const { file, html, offset } of pages) await writeFile(file, html.slice(0, offset) + tag + html.slice(offset));
   }
   return { injected: pages.length, asset };
 }

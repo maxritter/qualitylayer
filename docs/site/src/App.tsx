@@ -6,6 +6,8 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 import ScrollToTop from "@/components/ScrollToTop";
 import ScrollToHash from "@/components/ScrollToHash";
 import Index from "./pages/Index";
+import { PUBLIC_PAGES } from "./lib/seo";
+import { createMetricsFilter } from "./lib/metrics-privacy.js";
 
 const Pricing = lazy(() => import("./pages/Pricing"));
 const Shared = lazy(() => import("./pages/Shared"));
@@ -17,14 +19,17 @@ const CheckoutSuccess = lazy(() => import("./pages/CheckoutSuccess"));
 const Compare = lazy(() => import("./pages/Compare"));
 const Legal = lazy(() => import("./pages/Legal"));
 
-/** Page statistics everywhere but on the page a Slack DM opens, which reads its link and sends nothing. */
+const publicMetricPaths = Object.keys(PUBLIC_PAGES);
+const beforeSend = createMetricsFilter(publicMetricPaths);
+
+/** Only public pages load metrics; the filter also protects later SDK history and pagehide events. */
 export const Metrics = () => {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/open/") || pathname === "/billing" || pathname.startsWith("/checkout/")) return null;
+  if (!publicMetricPaths.includes(pathname)) return null;
   return (
     <>
-      <Analytics />
-      <SpeedInsights />
+      <Analytics beforeSend={beforeSend} />
+      <SpeedInsights beforeSend={beforeSend} />
     </>
   );
 };

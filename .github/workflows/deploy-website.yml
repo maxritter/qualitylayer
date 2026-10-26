@@ -30,7 +30,7 @@ jobs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.1.0
         with:
           fetch-depth: 2
 
@@ -59,7 +59,7 @@ jobs:
     if: needs.check-trigger.outputs.should_deploy == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.1.0
 
       # docs/docusaurus is not git-crypt encrypted, so no unlock is needed here.
       # External-URL flakiness is mitigated via retries + the exclusions in .github/lychee.toml.
@@ -79,7 +79,7 @@ jobs:
       # `--` is required: `--scheme` and `--accept` take multiple values and would
       # otherwise swallow the inputs that follow them.
       - name: Link check (lychee)
-        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: "--config .github/lychee.toml --no-progress --max-retries 3 --retry-wait-time 2 --root-dir ${{ github.workspace }} --scheme http --scheme https --accept 100..=103,200..=299,403,429 -- docs/docusaurus/docs docs/docusaurus/blog README.md"
           fail: true
@@ -92,7 +92,7 @@ jobs:
     if: needs.check-trigger.outputs.should_deploy == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.1.0
 
       - name: Install git-crypt
         run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -103,7 +103,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.5.0
         with:
           node-version: "24.20.0"
 
@@ -193,9 +193,9 @@ jobs:
           node scripts/db-migrate.ts
           node scripts/db-beta9.ts
 
-      # qualitylayer.dev is the Production of the Vercel project qualitylayer-site, built from
-      # SITE_PRODUCTION_BRANCH (dev until the final release moves it to main). Another branch
-      # becomes a protected Preview. The project that serves pilot-shell.com is never deployed
+      # qualitylayer.dev is the Production of the Vercel project qualitylayer, built from
+      # Main on the stable path; this disabled lane retains SITE_PRODUCTION_BRANCH handling. Another branch
+      # becomes a protected Preview. The separate pilot-shell-legacy-api project is never deployed
       # to from here. A Production build takes the domains only once its checks pass, and only
       # while it is the branch's tip, so a slower run never puts an older page over a newer one.
       - name: Deploy to Vercel

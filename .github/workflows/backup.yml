@@ -26,14 +26,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # qualitylayer-site's Production (qualitylayer.dev). The old Preview database stopped
+        # qualitylayer's Production (qualitylayer.dev). The old Preview database stopped
         # taking writes at the cut-over and is kept, unchanged, as its rollback copy.
         database: [production]
     env:
       BACKUP_DATABASE: ${{ matrix.database }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
           fetch-depth: 0
@@ -48,7 +48,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
 
       - name: Setup Node.js
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24.20.0"
 

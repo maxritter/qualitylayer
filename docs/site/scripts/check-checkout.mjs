@@ -23,6 +23,13 @@ try {
       await page.getByRole("button", { name: billing === "monthly" ? "Monthly" : /Yearly/, exact: billing === "monthly" }).click();
       const link = page.getByRole("link", { name: `Start ${plan}`, exact: true });
       assert.equal(new URL(await link.getAttribute("href")).origin, "https://buy.polar.sh");
+      // Stripe's initial payment-method update can clear an early coupon edit.
+      const paymentMethodReady = page.waitForResponse(response => {
+        const checkout = new URL(page.url());
+        const target = new URL(response.url());
+        if (checkout.origin !== "https://polar.sh" || !checkout.pathname.startsWith("/checkout/") || target.origin !== "https://api.polar.sh" || target.pathname !== `/v1/checkouts/client/${checkout.pathname.slice("/checkout/".length)}` || response.request().method() !== "PATCH") return false;
+        try { return typeof response.request().postDataJSON()?.payment_method_type === "string"; } catch { return false; }
+      }).then(response => ({ response, error: null }), error => ({ response: null, error }));
       // A native link still works if the website's checkout API or iframe is blocked.
       await link.click();
       await page.waitForURL(url => url.origin === "https://polar.sh" && url.pathname.startsWith("/checkout/"));
@@ -30,6 +37,11 @@ try {
       await page.getByText(name, { exact: true }).waitFor();
       await page.getByRole("textbox", { name: "Email", exact: true }).waitFor();
       const payment = page.frameLocator('iframe[title="Secure payment input frame"]');
+      for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();
+      const initialized = await paymentMethodReady;
+      assert(initialized.response, `Initial checkout payment-method update was not observed: ${initialized.error}`);
+      assert(initialized.response.ok(), `Initial checkout payment-method update failed: HTTP ${initialized.response.status()}`);
+      assert.equal(await initialized.response.finished(), null, "Initial checkout payment-method response did not complete");
       for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();
       const amount = plan === "Solo" ? (billing === "yearly" ? 288 : 29) : (billing === "yearly" ? 468 : 49);
       assert((await page.locator("body").innerText()).includes(`€${amount}`), `${name}: expected price missing`);

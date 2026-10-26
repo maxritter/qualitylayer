@@ -10,6 +10,7 @@
  */
 
 import type { FeedbackPayload, SealedPayload } from "./types";
+import { publicArtifactPayload, type PublicArtifactPayload } from "../../../../../qualitylayer/src/core/artifact/public-link-format.ts";
 import { isBuiltStill, sharedDocuments, sharedScreenStills, stripSharedCode, STEP_DOCS } from "../../../../../qualitylayer/src/core/team/publication.ts";
 import { threadUpdates, type ThreadUpdate } from "../../../../../qualitylayer/src/core/team/thread-publication.ts";
 
@@ -110,6 +111,7 @@ export type ShareItem = {
 };
 
 export type LoadedShare =
+  | { status: "ready"; kind: "artifact"; id: string; payload: PublicArtifactPayload; expires?: string }
   | {
       status: "ready";
       kind: "v2";
@@ -363,13 +365,24 @@ export async function readShareUpdate(id: string, key: string, since?: number, f
     const raw = res.headers.get("Retry-After");
     const seconds = raw === null ? Number.NaN : Number(raw);
     const wait = Number.isFinite(seconds) ? seconds * 1000 : raw === null ? Number.NaN : Date.parse(raw) - Date.now();
-    return { kind: "retry", message: "The plan could not be loaded. Try again in a moment.", ...(res.status === 429 && wait > 0 ? { retryAfter: Math.min(wait, 86_400_000) } : {}) };
+    return { kind: "retry", message: "The shared content could not be loaded. Try again in a moment.", ...(res.status === 429 && wait > 0 ? { retryAfter: Math.min(wait, 86_400_000) } : {}) };
   }
 
   const body = (await res.json().catch(() => null)) as { expires?: string; rev?: number } | null;
-  const plan = parsePlan(await openFromLink(key, "plan", body));
+  const plain = await openFromLink(key, "plan", body);
+  let decoded: unknown;
+  try { decoded = plain === null ? null : JSON.parse(plain); } catch { decoded = null; }
+  const kind = decoded && typeof decoded === "object" && "kind" in decoded ? decoded.kind : undefined;
+  if (kind === "artifact") {
+    const payload = publicArtifactPayload(decoded);
+    return { kind: "loaded", ...(Number.isSafeInteger(body?.rev) ? { rev: body!.rev } : {}), state: payload
+      ? { status: "ready", kind: "artifact", id, payload, expires: body?.expires }
+      : { status: "error", message: "This shared artifact could not be opened. Ask the owner for a new link." } };
+  }
+  if (kind !== undefined && kind !== "v2") return { kind: "loaded", state: { status: "error", message: "This link contains an unsupported kind of shared content." } };
+  const plan = parsePlan(plain);
   if (plan === null)
-    return { kind: "retry", message: "The plan could not be opened. Check that the whole link was copied." };
+    return { kind: "retry", message: "The shared content could not be opened. Check that the whole link was copied." };
   const review = parseReview(plan.docs[REVIEW_DOC]);
   const { [REVIEW_DOC]: _review, "items.json": _items, ...docs } = plan.docs;
   return { kind: "loaded", ...(Number.isSafeInteger(body?.rev) && (body?.rev ?? -1) >= 0 ? { rev: body!.rev } : {}), state: {
@@ -390,7 +403,7 @@ export async function readShareUpdate(id: string, key: string, since?: number, f
 
 export async function loadShare(id: string, key: string, fetchFn: typeof fetch = fetch): Promise<LoadedShare> {
   const update = await readShareUpdate(id, key, undefined, fetchFn);
-  return update.kind === "loaded" ? update.state : { status: "error", message: update.kind === "retry" ? update.message : "The plan could not be loaded. Try again in a moment." };
+  return update.kind === "loaded" ? update.state : { status: "error", message: update.kind === "retry" ? update.message : "The shared content could not be loaded. Try again in a moment." };
 }
 
 export type SubmitResult = { ok: true } | { ok: false; reason: "gone" | "rate_limited" | "too_large" | "network" };
@@ -474,6 +487,27 @@ export async function submitRemarks(
 ): Promise<SubmitResult> {
   if (remarks.length === 0) return { ok: true };
   const payload = remarksPayload(author, remarks);
+  return submitFeedback(id, key, payload, fetchFn);
+}
+
+export type ArtifactRemark = { id: string; page: string | null; revision: string; text: string; for: "agent" | "person" };
+
+export function artifactRemarkPayload(author: string, remark: ArtifactRemark, payload: PublicArtifactPayload, now = Date.now()): FeedbackPayload | null {
+  const page = remark.page === null ? null : payload.pages.find((page) => page.id === remark.page);
+  if (remark.revision !== payload.revision || (remark.page !== null && !page)) return null;
+  return { author: author.trim() || "Guest", createdAt: now, annotations: [{
+    id: remark.id, blockId: remark.for === "person" ? "review" : page?.doc ?? "artifact",
+    originalText: JSON.stringify({ artifact: 1, page: page?.id ?? null, revision: remark.revision, quote: "" }),
+    text: remark.text, createdAt: now, for: remark.for,
+  }] };
+}
+
+export async function submitArtifactRemark(id: string, key: string, author: string, remark: ArtifactRemark, artifact: PublicArtifactPayload, fetchFn: typeof fetch = fetch): Promise<SubmitResult> {
+  const payload = artifactRemarkPayload(author, remark, artifact);
+  return payload ? submitFeedback(id, key, payload, fetchFn) : { ok: false, reason: "network" };
+}
+
+async function submitFeedback(id: string, key: string, payload: FeedbackPayload, fetchFn: typeof fetch): Promise<SubmitResult> {
   if (!fits(payload)) return { ok: false, reason: "too_large" };
   let res: Response;
   try {

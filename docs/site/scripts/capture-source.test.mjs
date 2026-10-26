@@ -45,4 +45,15 @@ describe("public App capture provenance", () => {
     put("qualitylayer/src/ui/App.tsx", "UI changed mid-capture");
     expect(() => assertSameSource(before, captureSource(root, { review: true }))).toThrow("changed during the run");
   });
+  it("records a deleted input and refuses a later restoration during capture", () => {
+    const { root, put } = fixture();
+    const path = "qualitylayer/src/ui/App.tsx";
+    rmSync(join(root, path));
+    expect(() => captureSource(root)).toThrow("require committed App UI");
+    const deleted = captureSource(root, { review: true });
+    expect(deleted.sourceInputs[path]).toBeNull();
+    expect(deleted.sourceDirtyFiles).toHaveLength(1);
+    put(path, "restored UI");
+    expect(() => assertSameSource(deleted, captureSource(root, { review: true }))).toThrow("changed during the run");
+  });
 });

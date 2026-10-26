@@ -50,7 +50,7 @@ describe("a link's documents, by step", () => {
   it("hands the page the step files and nothing else of what a link carries", async () => {
     const docs = { "03-plan.md": "p", "notes.md": "SECRET", "other/diagnostics.html": "<html></html>" };
     const loaded = await loadShare(ID, KEY, answer(200, await sealForLink(KEY, "plan", JSON.stringify({ task: "T", docs }))));
-    expect(loaded.status === "ready" && Object.keys(loaded.docs).sort()).toEqual(["03-plan.md"]);
+    expect(loaded.status === "ready" && loaded.kind === "v2" && Object.keys(loaded.docs).sort()).toEqual(["03-plan.md"]);
   });
 });
 
@@ -73,13 +73,14 @@ describe("the owner's questions", () => {
     const plan = { task: "Settings cleanup", owner: "Max", docs: { "03-plan.md": "p" }, items: [wire] };
     const loaded = await loadShare(ID, KEY, answer(200, await sealForLink(KEY, "plan", JSON.stringify(plan))));
     expect(loaded).toMatchObject({ status: "ready", owner: "Max" });
-    expect(loaded.status === "ready" && loaded.items).toEqual([]);
+    expect(loaded.status === "ready" && loaded.kind === "v2" && loaded.items).toEqual([]);
   });
 
   it("is empty for a link made before the App sent any", async () => {
     const loaded = await loadShare(ID, KEY, answer(200, await sealForLink(KEY, "plan", JSON.stringify({ task: "T", docs: { "03-plan.md": "p" } }))));
     expect(loaded).toMatchObject({ status: "ready", items: [] });
-    expect(loaded.status === "ready" && loaded.owner).toBeUndefined();
+    if (loaded.status !== "ready" || loaded.kind !== "v2") throw new Error("Expected a workflow publication");
+    expect(loaded.owner).toBeUndefined();
   });
 
   it("keeps only what a guest can answer: no confirmations, stops, questions or findings, no settled items, no junk", () => {

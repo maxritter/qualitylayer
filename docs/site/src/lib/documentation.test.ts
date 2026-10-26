@@ -27,13 +27,12 @@ describe("installation and build instructions", () => {
 
   it("keeps human-only prerequisites unverified for Review while available work continues", () => {
     const implement = doc("steps/implement.md");
-    expect(implement).toContain("A login, secret, account or other human-only prerequisite");
-    expect(implement).toContain("stays unverified for Review");
-    expect(implement).toContain("Available work continues");
-    expect(implement).toContain("blocked checks retain their evidence instead of being marked passed");
-    expect(implement).toContain("The App never takes the secret");
-    expect(implement).toContain("Native permission or sign-in prompts still require their normal response");
-    expect(implement).toContain("An explicit stop or pause remains in force");
+    expect(implement).toMatch(/human-only prerequisite stays unverified for Review/);
+    expect(implement).toMatch(/Other work continues/);
+    expect(implement).toMatch(/blocked checks are never marked passed/);
+    expect(implement).toMatch(/the App never takes the secret/i);
+    expect(implement).toMatch(/Native permission and sign-in prompts still need your response/);
+    expect(implement).toMatch(/explicit stop or pause stays in force/);
     expect(implement).not.toMatch(/never stops to wait|Nothing waits for you/);
   });
 

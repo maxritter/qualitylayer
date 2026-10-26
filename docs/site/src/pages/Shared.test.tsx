@@ -11,7 +11,7 @@ const DOCS = { "01-discuss.md": "# Task\n\nThe problem.", "03-plan.md": "# Plan\
 const answer = (status: number, body?: unknown) => vi.fn(async () => new Response(body === undefined ? null : JSON.stringify(body), { status })) as unknown as typeof fetch;
 const sealed = async (plan: Record<string, unknown>, expires?: string, key = KEY) => answer(200, { ...(await sealForLink(key, "plan", JSON.stringify(plan))), ...(expires ? { expires } : {}) });
 async function html(node: React.ReactNode) { const view = render(node); const drawn = view.container.innerHTML; view.unmount(); return drawn; }
-const ready = (docs: Record<string, string> = DOCS): Extract<LoadedShare, { status: "ready" }> => ({ status: "ready", kind: "v2", title: "A shared task", docs, items: [], owner: "Max" });
+const ready = (docs: Record<string, string> = DOCS): Extract<LoadedShare, { kind: "v2" }> => ({ status: "ready", kind: "v2", title: "A shared task", docs, items: [], owner: "Max" });
 const noSend = async () => ({ ok: true as const });
 
 describe("opening encrypted links", () => {
@@ -49,7 +49,8 @@ describe("opening encrypted links", () => {
     }, items: [{ what: "SECRET_ITEM" }] }));
     expect(loaded.status).toBe("ready");
     expect(JSON.stringify(loaded)).not.toContain("SECRET_");
-    if (loaded.status === "ready") expect(loaded.docs["06-verify.md"]).toContain("Checks passed.");
+    if (loaded.status !== "ready" || loaded.kind !== "v2") throw new Error("Expected a workflow publication");
+    expect(loaded.docs["06-verify.md"]).toContain("Checks passed.");
   });
 });
 

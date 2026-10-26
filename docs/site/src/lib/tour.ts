@@ -28,13 +28,13 @@ export interface Chapter {
 
 export const STAGES = ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"];
 
-export const TASK = "Retry failed webhooks";
+export const TASK = "Usage-based billing";
 
 /** The artifact the Artifacts chapters draw, ask about and open full size. */
-export const ARTIFACT = { name: "Failed deliveries", purpose: "Every delivery that failed, and when it tries again" };
+export const ARTIFACT = { name: "Billing mode", purpose: "Finance switches an account between seats and usage, with both invoices side by side" };
 
 /** The words a new task starts from, in the New task card. */
-export const REQUEST = "Retry failed webhooks, then mail the customer once";
+export const REQUEST = "Bill API customers for usage while keeping seat customers on the invoices they know, and keep the gateway fast.";
 
 export const CHAPTERS: Chapter[] = [
   {
@@ -117,7 +117,7 @@ export const CHAPTERS: Chapter[] = [
     steps: 2,
     act: { id: "artifacts", title: "See the page before it is built", text: "Ask your agent to draw a page, and it shows inside the question it belongs to. Open it full size and point at what should change. The interactive page stays on your computer." },
     title: "Ask, and your agent draws the page",
-    text: "Say “mock up the failed deliveries page”. Your agent draws it as one page, and the Plan asks you about it with the page in view: looks right, or say what to change.",
+    text: "Say “mock up the billing mode page”. Your agent draws it as one page, and the Plan asks you about it with the page in view: looks right, or say what to change.",
     bullets: ["Inside a task, or for the whole project", "Every artifact is listed in Files", "Share links include a still; the interactive page stays on your computer"],
   },
   {

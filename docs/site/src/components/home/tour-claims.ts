@@ -25,7 +25,7 @@ export const CLAIMS: Record<string, Claim> = {
   },
   // "You approve one plan before any code": the complete Plan, with its diagram, contracts and outcomes, approved from its header
   plan: {
-    always: ["Retry failed webhook deliveries", "Done means", "What happens to a failed delivery", "Contracts", "Reviewed by", "Ready to approve", "Give feedback", "Approve Plan"],
+    always: ["Count each request once and bill it", "Done means", "How a request is counted", "Contracts", "Reviewed by", "Ready to approve", "Give feedback", "Approve Plan"],
     last: ["1 comment"],
   },
   // "The build session cuts the Plan into slices": the slices in build order, the scenario for each point, nothing to approve
@@ -35,7 +35,7 @@ export const CLAIMS: Record<string, Claim> = {
   },
   // "One command starts the build": the build session and subagent models in one line and the command
   start: {
-    always: ["Build session", "Subagents", "Effort", "Using QualityLayer, implement the approved plan for task retry-webhooks"],
+    always: ["Build session", "Subagents", "Effort", "Using QualityLayer, implement the approved plan for task usage-billing"],
     first: ["Copy"],
     last: ["Copied"],
   },
@@ -48,34 +48,34 @@ export const CLAIMS: Record<string, Claim> = {
   // "An agent that did not write the code checks every point": the checks in order, each point with its evidence, the chip names what runs
   verify: {
     always: [...VERIFY_CHECKS, "each point against the running program"],
-    first: ["running Independent review", "delivery.test.ts"],
+    first: ["running Independent review", "window.test.ts"],
     last: ["9 of 9 passed", "Your turn · 2 in Review"],
   },
   // "You read the finished change top to bottom, then approve it": what only you can confirm, what the agent decided, the change in the pull request's order, then Approve; after it the pull request stays open until merged
   review: {
     always: ["The change, top to bottom"],
-    first: ["Only you can confirm", "I confirm", "Fine", "Ask why", "2 things, then approve", /live call to the partner API/, /retry delay/, "3 of 3 points passed", "Why", "What you asked for", "Built, slice by slice", "Deliberately not changed", "How it was checked", "Ship", "built in slice 2", "comment on any line"],
+    first: ["Only you can confirm", "I confirm", "Fine", "Ask why", "2 things, then approve", /switch on the live admin/, /outage buffer/, "3 of 3 points passed", "Why", "What you asked for", "Built, slice by slice", "Deliberately not changed", "How it was checked", "Ship", "built in slice 2", "comment on any line"],
     last: ["Approved · pull request #412 opened", "The task stays open until the pull request is merged", "Pull request #412", "no review yet"],
   },
   // "Ask, and your agent draws the page": the request, and the page inside the Plan's question
   draw: {
-    always: ["Mock up the failed deliveries page", "the artifact for this question", "Full size", "Looks right", "Change it"],
+    always: ["Mock up the billing mode page", "the artifact for this question", "Full size", "Looks right", "Change it"],
   },
   // "Open it full size and point at what to change"
   comment: {
-    always: ["failed-deliveries · full size", "Comment", "Retry"],
+    always: ["billing-mode · full size", "Comment", "Switch to usage"],
     first: ["Click a spot on the artifact"],
-    last: ["Each failed row now says when it tries next"],
+    last: ["Changed the page: the last switch shows beside the button"],
   },
   // "Ask a teammate about any part of the plan": the passage, who to ask, the Slack message
   ask: {
-    always: ["03-plan.md", "one minute apart"],
-    first: ["Ask the team about this passage", "Dana", "Ask Dana"],
+    always: ["03-plan.md", "the overage is billed"],
+    first: ["Ask the team about this passage", "Anna", "Ask Anna"],
     last: ["Slack message sent", "via Claude Code"],
   },
   // "Teammates see the questions for them first": the passage in view, a draft that is not sent
   answer: {
-    always: ["Question from Priya Shah", "one minute apart", "Looks right", "Suggest a change", "Reply", "Or hand it to someone else"],
+    always: ["Question from Ben Ortiz", "once per minute", "Looks right", "Suggest a change", "Reply", "Or hand it to someone else"],
     last: ["Draft by your Claude Code · not sent yet"],
   },
   // "See your team's work in one place": remind or hand on
@@ -85,9 +85,9 @@ export const CLAIMS: Record<string, Claim> = {
   },
   // "Review the finished change together": the proof, a teammate's comment, then approval
   together: {
-    always: ["Done means 3", "Can support see this without the log?", "screenshot 2"],
-    first: ["Comment from Ben"],
-    last: ["Ready to approve", "Dana approved"],
+    always: ["Done means 3", "Can Finance see the entry without opening the logs?", "screenshot 2"],
+    first: ["Comment from Anna"],
+    last: ["Ready to approve", "Ben approved"],
   },
   // "See how much of your plan is left, and what each step costs"
   settings: {

@@ -466,11 +466,13 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          {
-            ref: "${{ github.sha }}",
-            fetch-depth: 0,
-            persist-credentials: false,
-          }
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            qualitylayer/scripts
+            qualitylayer/src/core/install
       - run: bash .github/workflows/scripts/install-git-crypt.sh
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh

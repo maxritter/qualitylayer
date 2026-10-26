@@ -241,15 +241,14 @@
 .cu-dpt{display:inline-flex;gap:2px;padding:2px;border-radius:6px;background:var(--ql-surface-2);font-size:12px;color:var(--ql-text-dim)}
 .cu-dpt span{padding:1px 8px;border-radius:4px}
 .cu-dpt .on{background:var(--ql-bg);color:var(--ql-text)}
-.cu-dpr{display:grid;grid-template-columns:104px minmax(0,1fr) minmax(0,1.3fr) 64px;align-items:center;gap:8px;min-height:40px;padding:4px 12px;border-top:1px solid var(--ql-line)}
+.cu-dpr{display:grid;grid-template-columns:60px minmax(0,1fr) minmax(0,1.3fr) 116px;align-items:center;gap:8px;min-height:40px;padding:4px 12px;border-top:1px solid var(--ql-line)}
 .cu-dph + .cu-dpr{border-top:0}
-.cu-dpr code{font-size:12px}
-.cu-dpr code.dim{color:var(--ql-text-dim)}
+.cu-dpr > b{font-weight:600}
+.cu-dpr .dim{color:var(--ql-text-dim)}
 .cu-dpr > span:nth-child(3){position:relative}
 .cu-dpr small{color:var(--ql-text-dim)}
 .cu-dpr .amb{color:var(--ql-amber-ink)}
-.cu-dpr .red{color:var(--ql-danger)}
-.cu-dpb{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border:1px solid var(--ql-border-strong);border-radius:6px;background:var(--ql-bg);color:var(--ql-text);font:500 12px Geist,system-ui,sans-serif;cursor:pointer}
+.cu-dpb{display:inline-flex;align-items:center;justify-content:center;height:26px;padding:0 10px;border:1px solid var(--ql-border-strong);border-radius:6px;background:var(--ql-bg);color:var(--ql-text);font:500 12px Geist,system-ui,sans-serif;white-space:nowrap;cursor:pointer}
 .cu-dp.brief .cu-dpr{min-height:34px}
 .cu-dzf:has(.cu-dp.brief){padding:10px}
 .cu-dpb:disabled{border-color:var(--ql-border);color:var(--ql-text-dim);cursor:default}
@@ -370,8 +369,9 @@
   .cu-yt .cu-ytag,.cu-yt .cu-yh,.cu-yt .cu-yp,.cu-yt .cu-yb,.cu-yt .cu-yf{padding-left:14px;padding-right:14px}
   .cu-yf .cu-keys{display:none}
   .cu-two{grid-template-columns:minmax(0,1fr)}
-  .cu-dpr{grid-template-columns:96px minmax(0,1fr) 58px}
-  .cu-dpr code.dim{display:none}
+  .cu-dpr{grid-template-columns:52px minmax(0,1fr);row-gap:4px;padding-top:8px;padding-bottom:8px}
+  .cu-dpr .dim,.cu-dpr > span:empty{display:none}
+  .cu-dpr > span:last-child{grid-column:2}
   .cu-dl{flex-basis:36px}
   .cu-dl em{display:none}
   .cu-tr{grid-template-columns:22px minmax(0,1fr) auto}

@@ -29,6 +29,8 @@ import {
   type SubmitResult,
   stepDocs,
   submitRemarks,
+  submitArtifactRemark,
+  type ArtifactRemark,
   type Tab,
   tabOfStep,
   where,
@@ -37,6 +39,7 @@ import { Asks } from "./shared/Asks";
 import { Blocks } from "./shared/Blocks";
 import { SharedDocument } from "./shared/SharedDocument";
 import { SharedArtifacts } from "@ql/ui/artifact/SharedArtifacts";
+import { SharedArtifact } from "./shared/SharedArtifact";
 import { ChangeView } from "./SharedChange";
 import "@/styles/shared.css";
 import { flowStepOf } from "@ql/core/flow";
@@ -135,7 +138,7 @@ function labelOf(remark: Exclude<Remark, {kind: "item"}>, owner: string): string
   return recipient + passageLabel(remark);
 }
 
-type ReadyShare = Extract<LoadedShare, { status: "ready" }>;
+type ReadyShare = Extract<LoadedShare, { kind: "v2" }>;
 
 /** The step a link opens on: where the task is, else the furthest step with something in it. */
 function firstTab(share: ReadyShare, steps: Record<Tab, string[]>): Tab {
@@ -594,17 +597,19 @@ export function SharedView({
   state,
   onSend,
   tab,
+  onArtifactSend,
 }: {
   state: LoadedShare | { status: "loading" };
   onSend: (author: string, remarks: Remark[]) => Promise<SubmitResult>;
+  onArtifactSend?: (author: string, remark: ArtifactRemark) => Promise<SubmitResult>;
   /** The step to open on; the first one with something in it when absent. */
   tab?: Tab;
 }) {
-  if (state.status === "loading") return <p className="sh-status">Loading the task…</p>;
+  if (state.status === "loading") return <p className="sh-status">Loading shared content…</p>;
   if (state.status === "gone") {
     return (
       <div className="sh-status">
-        <h1>This task is no longer shared</h1>
+        <h1>This content is no longer shared</h1>
         <p>The owner stopped sharing it, or the link ran out. Ask them for a new link.</p>
       </div>
     );
@@ -614,7 +619,7 @@ export function SharedView({
       <div className="sh-status">
         <h1>This link is missing its key</h1>
         <p>
-          The plan is encrypted, and the key is the part of the link after the “#”. Ask the owner for the whole link,
+          The content is encrypted, and the key is the part of the link after the “#”. Ask the owner for the whole link,
           or copy it again with everything up to the end.
         </p>
       </div>
@@ -623,11 +628,12 @@ export function SharedView({
   if (state.status === "error") {
     return (
       <div className="sh-status">
-        <h1>The task could not be opened</h1>
+        <h1>The shared content could not be opened</h1>
         <p>{state.message}</p>
       </div>
     );
   }
+  if (state.kind === "artifact") return <SharedArtifact key={state.id} share={state} onSend={onArtifactSend ?? (async () => ({ ok: false, reason: "network" }))} />;
   return <Ready key={state.id} share={{ ...state, title: stripSharedCode(state.title), docs: sharedDocuments(state.docs, state.stage), items: [], review: undefined }} initialTab={tab} onSend={onSend} />;
 }
 
@@ -638,7 +644,7 @@ export const SharedLink = ({ id, linkKey }: { id: string; linkKey: string }) => 
 
   useEffect(() => watchShare(id, linkKey, setState, setProblem), [id, linkKey]);
 
-  return <>{problem !== null ? <p className="sh-hint" role="status">{problem}</p> : null}<SharedView state={state} onSend={(author, remarks) => submitRemarks(id, linkKey, author, remarks)} /></>;
+  return <>{problem !== null ? <p className="sh-hint" role="status">{problem}</p> : null}<SharedView state={state} onSend={(author, remarks) => submitRemarks(id, linkKey, author, remarks)} onArtifactSend={(author, remark) => state.status === "ready" && state.kind === "artifact" ? submitArtifactRemark(id, linkKey, author, remark, state.payload) : Promise.resolve({ ok: false, reason: "network" })} /></>;
 };
 
 const Shared = () => {
@@ -647,7 +653,7 @@ const Shared = () => {
   const key = linkKeyOf(useLocation().hash);
   return (
     <Page className="sh-page" compact>
-      <SEO title="A shared task | QualityLayer" description="A task shared with you from QualityLayer. Read its steps and give feedback on them." />
+      <SEO title="Shared with you | QualityLayer" description="Shared content from QualityLayer. Read it and give feedback." />
       <Helmet>
         <meta name="robots" content="noindex" />
       </Helmet>

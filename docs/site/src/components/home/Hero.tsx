@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Code, FileCheck, ListChecks, MessageSquare, Network, Search, ShieldCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, Code, FileCheck, ListChecks, MessageSquare, Network, Play, Search, ShieldCheck, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useDownload } from "@/hooks/useDownload";
@@ -12,23 +12,40 @@ import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
 const STEP_ICONS: Record<string, LucideIcon> = { discuss: MessageSquare, research: Search, plan: Network, outline: ListChecks, implement: Code, verify: ShieldCheck, review: FileCheck };
 
 /** What the hero picture shows, for screen readers; the phone picture is its question card alone. */
-const SHOT_ALT = "The QualityLayer App asks: meter writes through a queue, or straight to the billing database? Two choices sit side by side, each with its system diagram and trade-offs; the queue is recommended because a database failover then never fails an API request. Beside it, Claude Code has read the meter and the database pool, a helper found every write to the billing database, another helper is still timing writes during a failover, and Claude Code waits for your answer.";
+const SHOT_ALT = "QualityLayer’s Plan asks what happens when a customer reaches their limit. A diagram compares billing overages with blocking requests; Claude Code waits beside it.";
+
+/** The App demo on this site: the billing task from request to merged pull request, with a guide. */
+export const LIVE_DEMO = "/app-demo/?story&guide";
 
 /**
- * One App window from the Website model (hero-a-images.html): the person chooses between two architectures
- * while the agent keeps working beside it. Captured at 2x; light and dark switch by the site's theme, and a
- * phone gets the question card alone. Width and height hold the space while the picture loads.
+ * The Plan decision and agent from the Website model (hero-b.html, direction C), cropped to the approved frame.
+ * Captured at 2x from the App demo's story; light and dark switch by the site's theme, and a phone
+ * gets the decision card alone. The window is the door into that demo: its chip says so on every device, and hover or
+ * focus lifts the window. Width and height hold the space while the picture loads.
  */
 function HeroShot() {
   return (
-    <figure className="sx-shot">
-      {(["light", "dark"] as const).map((theme) => (
-        <picture key={theme} className={`sx-shot-${theme}`}>
-          <source media="(max-width: 640px)" srcSet={`/hero/decision-${theme}.webp`} width={650} height={504} />
-          <img src={`/hero/decision-agent-${theme}.webp`} alt={SHOT_ALT} width={1006} height={504} decoding="async" />
-        </picture>
-      ))}
-    </figure>
+    <div className="sx-pic">
+      <a className="sx-live" href={LIVE_DEMO} aria-label="Try the App in your browser: the usage-based billing example, nothing to install">
+        <figure className="sx-shot">
+          {(["light", "dark"] as const).map((theme) => (
+            <picture key={theme} className={`sx-shot-${theme}`}>
+              <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${theme}.webp`} width={724} height={609} />
+              <img src={`/hero/your-turn-agent-${theme}.webp`} alt={SHOT_ALT} width={1280} height={695} decoding="async" />
+            </picture>
+          ))}
+          <span className="sx-chip" aria-hidden="true">
+            <Play size={18} fill="currentColor" strokeWidth={0} />
+            Try it in your browser
+            <ArrowRight className="sx-chip-arrow" size={16} />
+          </span>
+        </figure>
+      </a>
+      <div className="sx-try">
+        <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO}>Try the App in your browser<ArrowRight size={16} aria-hidden="true" /></a></Button>
+        <p>Nothing to install.</p>
+      </div>
+    </div>
   );
 }
 

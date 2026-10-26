@@ -102,7 +102,7 @@ describe("an open share follows its owner", () => {
     expect((screen.getByRole("textbox", { name: "Feedback" }) as HTMLTextAreaElement).value).toBe("ql-verify-kept");
     vi.mocked(readShareUpdate).mockResolvedValueOnce({ kind: "loaded", state: { status: "gone" } } as never);
     await flush(1);
-    expect(screen.getByText("This task is no longer shared")).toBeTruthy();
+    expect(screen.getByText("This content is no longer shared")).toBeTruthy();
     await flush(300_000);
     expect(readShareUpdate).toHaveBeenCalledTimes(4);
   });

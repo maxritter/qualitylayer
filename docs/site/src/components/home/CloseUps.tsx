@@ -84,12 +84,12 @@ function AgentActivity({ title, note, sub, children }: { title: string; note?: s
   );
 }
 
-function DeliveryFlow({ pin = false }: { pin?: boolean }) {
+function MeterFlow({ pin = false }: { pin?: boolean }) {
   return <div className="cu-dgm">
     {pin && <span className="cu-pin">1</span>}
-    <p className="cu-dgmh"><span>What happens to a failed delivery</span><span>{pin ? "1 comment" : "flow"}</span></p>
-    <div className="cu-dgr"><span className="cu-dn on">Retry queue<small>keeps each failed delivery once</small></span><span className="cu-dl"><em>try &lt; 3</em></span><span className="cu-dn">Send again<small>a minute apart</small></span></div>
-    <div className="cu-dgr"><span className="cu-dn you">Third try failed</span><span className="cu-dl" /><span className="cu-dn">Mail the customer<small>once, then stop</small></span></div>
+    <p className="cu-dgmh"><span>How a request is counted</span><span>{pin ? "1 comment" : "flow"}</span></p>
+    <div className="cu-dgr"><span className="cu-dn on">Gateway<small>one meter event per request id</small></span><span className="cu-dl"><em>once per id</em></span><span className="cu-dn">Five-minute window<small>written once to the ledger</small></span></div>
+    <div className="cu-dgr"><span className="cu-dn you">At the limit<small>your call in the Plan</small></span><span className="cu-dl" /><span className="cu-dn">Keep serving<small>bill the overage, alert at 80 %</small></span></div>
   </div>;
 }
 
@@ -126,35 +126,35 @@ const Checked = ({ facts, head = "Checked by agents" }: { facts: string[]; head?
 );
 
 /**
- * The page the agent drew for this task: the person's own product, drawn in its theme. Full size,
- * its Retry button works: three tries and the delivery stops and mails the customer.
+ * The page the agent drew for this task: Finance's billing mode page in the person's own product,
+ * drawn in its theme. Full size, its Switch to usage button works: the account moves to usage from
+ * the next cycle, and the switch is audited.
  */
-export function ArtifactPage({ tries = 2, onRetry, next = false, pin = false, brief = false }: { tries?: number; onRetry?: () => void; next?: boolean; pin?: boolean; brief?: boolean }) {
-  const stopped = tries >= 3;
+export function ArtifactPage({ switched = false, onSwitch, next = false, pin = false, brief = false }: { switched?: boolean; onSwitch?: () => void; next?: boolean; pin?: boolean; brief?: boolean }) {
   const rows: [string, string, string][] = [
-    ["order.paid", "/hooks/orders", "Delivered"],
-    ["invoice.sent", "/hooks/billing", stopped ? "Stopped, mailed" : `Try ${tries} of 3`],
-    ["refund.issued", "/hooks/billing", "Stopped, mailed"],
+    ["Seats", "November invoice", "$4,800 · 40 seats"],
+    ["Usage", "November invoice", "$3,912 · 1.9 M requests"],
+    ["Reason", "Moves to the API plan", switched ? "Usage from 1 Nov" : ""],
   ];
   return (
     <div className={`cu-dp${brief ? " brief" : ""}`}>
-      <div className="cu-dph"><b>Deliveries</b><span className="cu-dpt"><span>All</span><span className="on">Failed · 2</span></span></div>
-      {rows.map(([event, url, state]) => (
-        <div key={event} className="cu-dpr">
-          <code>{event}</code>
-          <code className="dim">{url}</code>
-          <span className={state.startsWith("Try") ? "amb" : state.startsWith("Stopped") ? "red" : ""}>
+      <div className="cu-dph"><b>Billing mode</b><span className="cu-dpt"><span className={switched ? undefined : "on"}>Seats</span><span className={switched ? "on" : undefined}>Usage</span></span></div>
+      {rows.map(([label, field, state]) => (
+        <div key={label} className="cu-dpr">
+          <b>{label}</b>
+          <span className="dim">{field}</span>
+          <span className={switched && label === "Reason" ? "amb" : undefined}>
             {state}
-            {event === "invoice.sent" && next && !stopped && <small> · next try 14:05</small>}
-            {event === "invoice.sent" && pin && <span className="cu-pin">1</span>}
+            {label === "Reason" && (switched ? <small> · audited just now</small> : next && <small>Last switch · 14 May, by Finance</small>)}
+            {label === "Reason" && pin && <span className="cu-pin">1</span>}
           </span>
           <span>
-            {event === "invoice.sent" &&
-              (onRetry ? <button type="button" onClick={onRetry} disabled={stopped} tabIndex={-1} className="cu-dpb">Retry</button> : <span className="cu-dpb">Retry</span>)}
+            {label === "Reason" &&
+              (onSwitch || switched ? <button type="button" onClick={onSwitch} disabled={switched} tabIndex={-1} className="cu-dpb">Switch to usage</button> : <span className="cu-dpb">Switch to usage</span>)}
           </span>
         </div>
       ))}
-      {!brief && <p className="cu-dpf">Three tries, a minute apart. Then the customer gets one mail and the delivery stops.</p>}
+      {!brief && <p className="cu-dpf">Every switch is audited. It takes effect at the next billing cycle.</p>}
     </div>
   );
 }
@@ -162,41 +162,41 @@ export function ArtifactPage({ tries = 2, onRetry, next = false, pin = false, br
 /** An artifact inside the card it belongs to. */
 const ArtifactIn = ({ children }: { children: ReactNode }) => (
   <div className="cu-dz">
-    <p className="cu-dzh"><Image size={13} aria-hidden="true" /><b>failed-deliveries</b><span className="cu-k">· the artifact for this question</span><span className="cu-grow" /><span className="cu-btn sm"><Maximize2 size={12} aria-hidden="true" />Full size</span></p>
+    <p className="cu-dzh"><Image size={13} aria-hidden="true" /><b>billing-mode</b><span className="cu-k">· the artifact for this question</span><span className="cu-grow" /><span className="cu-btn sm"><Maximize2 size={12} aria-hidden="true" />Full size</span></p>
     <div className="cu-dzf">{children}</div>
   </div>
 );
 
 const QUESTIONS: { title: string; text: string; settles: string; choices: [string, string?][] }[] = [
-  { title: "How many tries before it stops?", text: "Today a failed delivery is lost. After how many tries should it stop and tell someone?", settles: "Done means 2", choices: [["3 tries, then one mail"], ["5 tries, then one mail", "five failure mails is a lot"], ["Until it succeeds"]] },
-  { title: "Who hears about it when it stops?", text: "The customer owns the endpoint, so they can fix it. Support sees every failed delivery anyway.", settles: "Done means 2", choices: [["The customer, in one mail"], ["Support, in a Slack channel"], ["Both"]] },
-  { title: "When does it try again?", text: "The partner API answers within seconds when it is up.", settles: "Done means 1", choices: [["A minute apart"], ["Back off: 1, 5, then 15 minutes"], ["Five minutes apart"]] },
-  { title: "Which endpoints does this cover?", text: "Customers registered their endpoints over several years. Some deliver to a service that no longer exists.", settles: "Done means 1", choices: [["Every endpoint"], ["Only endpoints added from now on"], ["Only the billing endpoints"]] },
+  { title: "What happens to the customers on seats?", text: "About 400 accounts pay for seats today. Moving them changes invoices they know.", settles: "Done means 3", choices: [["Keep them on seats until Finance moves them"], ["Move everyone at renewal", "changes invoices they know"], ["Offer both plans side by side"]] },
+  { title: "Bill from the first request, or after a free allowance?", text: "The pricing page promises a free tier but names no number.", settles: "Done means 2", choices: [["A free allowance per plan"], ["From the first request", "simpler, but drops the free tier"], ["Let Finance set it per account"]] },
+  { title: "What happens to an event that arrives late?", text: "A broker outage can deliver events after an invoice has gone out.", settles: "Done means 2", choices: [["Correct the next invoice"], ["Reissue the closed invoice", "confuses customers"], ["Drop it"]] },
+  { title: "Bill in the customer’s own currency?", text: "Invoices are in US dollars today. Local currency needs exchange rates and tax rules.", settles: "the scope", choices: [["A later task"], ["In this task"], ["Not at all"]] },
 ];
 
 /** The build's slices as the Outline cut them, built in this order. `run` and `done` are moments of the Implement close-up. */
 const SLICES = [
-  { title: "Failed deliveries go to a retry queue", doing: "", par: "", tasks: ["T1", "T2"], run: 0, done: 0 },
-  { title: "Three tries, then mail the customer", doing: "T3: the test fails first, then it stops after the third try", par: "", tasks: ["T3", "T4"], run: 0, done: 2 },
-  { title: "Retry count in the delivery row", doing: "T5: the test fails first, then each row shows the count", par: "", tasks: ["T5"], run: 2, done: 3 },
+  { title: "Meter one request end to end", doing: "", par: "", tasks: ["T1", "T2"], run: 0, done: 0 },
+  { title: "Survive retries and broker outages", doing: "T3: the test fails first, then a retry counts once", par: "", tasks: ["T3", "T4"], run: 0, done: 2 },
+  { title: "Let Finance switch the billing mode", doing: "T5: the test fails first, then every switch is audited", par: "", tasks: ["T5"], run: 2, done: 3 },
 ];
 
 /** Each point of Done means, the proof beside it, and the moment of the Verify close-up it passes. */
 const POINTS: [string, string, number][] = [
-  ["Failed deliveries are retried", "delivery.test.ts · a failed delivery is queued once and sent again", 0],
-  ["It stops after 3 tries and mails the customer once", "mailer.test.ts · 3 tries, then one mail", 3],
-  ["Support sees the retry count", "row.test.tsx · screenshot 2 shows the count in each row", 5],
+  ["Usage appears within five minutes", "window.test.ts · an event reaches the ledger within five minutes", 0],
+  ["Every billable request counts exactly once", "retries.test.ts · a request retried ten times is one ledger entry", 3],
+  ["Every billing-mode switch leaves an audit entry", "billing-mode.spec.ts · screenshot 2 shows the switch and its audit entry", 5],
 ];
 
 /** Where each Done means point was built: the slice whose scenario proves it. */
 const BUILT_IN = [1, 2, 3];
 
-/** A few lines of the diff of one file, as the walkthrough opens it; the comment is on line 14. */
+/** A few lines of the diff of one file, as the walkthrough opens it; the comment is on line 5. */
 const DIFF: [string, number, string][] = [
-  ["ctx", 12, "export function nextTry(delivery: Delivery) {"],
-  ["add", 13, "  if (delivery.tries >= settings.maxTries) return stop(delivery)"],
-  ["add", 14, "  return retryAt(delivery, settings.retryDelay)"],
-  ["ctx", 15, "}"],
+  ["ctx", 3, "  if (!plan.billable(request.route)) return null"],
+  ["add", 4, "  // A retry keeps its request id: count it once"],
+  ["add", 5, "  const key = request.headers.get(\"x-request-id\")"],
+  ["add", 6, "  const event = { key, account: plan.account }"],
 ];
 
 /**
@@ -210,7 +210,7 @@ function Walkthrough() {
       <p className="cu-cardh"><b>The change, top to bottom</b><span className="cu-k">3 slices · 5 tasks · 8 files</span><span className="cu-grow" /><span className="cu-k cu-wt-same">same order as the pull request</span></p>
       <div className="cu-wr">
         <span className="cu-wk">Why</span>
-        <p>A failed webhook delivery is lost today. After this change it is tried three times, and the customer gets one mail if it still fails.</p>
+        <p>API customers pay by seat today, however much they use. After this change each request is counted once at the gateway and billed by use, and seat customers keep the invoices they know.</p>
       </div>
       <div className="cu-wr">
         <span className="cu-wk">What you asked for<small>3 points</small></span>
@@ -228,18 +228,18 @@ function Walkthrough() {
               <p className="cu-wsh">{k === 1 ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}<span className="cu-num">{k + 1}</span><span className="cu-wst">{slice.title}</span><span className="cu-k">{slice.tasks.length} {slice.tasks.length === 1 ? "task" : "tasks"} · {k === 2 ? 2 : 3} files{k === 1 ? " · 1 decision" : ""}</span></p>
               {k === 1 && (
                 <div className="cu-wsb">
-                  <p className="cu-wd"><Mk k="done" /><span>Decided while building · Moved the retry delay into settings.ts</span><span className="cu-lnk">Ask why</span></p>
-                  <p className="cu-wf"><span className="cu-k">T3</span><code>src/delivery/retry.ts</code><span className="cu-k">+38 −4</span></p>
-                  <div className="cu-wdf" role="group" aria-label="Diff of src/delivery/retry.ts">
+                  <p className="cu-wd"><Mk k="done" /><span>Decided while building · The outage buffer keeps an hour on disk</span><span className="cu-lnk">Ask why</span></p>
+                  <p className="cu-wf"><span className="cu-k">T3</span><code>services/gateway/src/meter.ts</code><span className="cu-k">+10 −2</span></p>
+                  <div className="cu-wdf" role="group" aria-label="Diff of services/gateway/src/meter.ts">
                     {DIFF.map(([kind, n, line]) => (
                       <div key={n}>
                         <p className={`cu-wl ${kind}`}><span>{n}</span><code>{line}</code></p>
-                        {n === 14 && <p className="cu-wth"><i className="cu-av">D</i><span><b>Dana</b> <span className="cu-k">from the team</span><br />Does the count start again after a delivery succeeds?</span></p>}
+                        {n === 5 && <p className="cu-wth"><i className="cu-av">A</i><span><b>Anna</b> <span className="cu-k">from the team</span><br />Does a retry with a new request id count twice?</span></p>}
                       </div>
                     ))}
                   </div>
-                  <p className="cu-wf"><span className="cu-k">T3</span><code>tests/delivery/retry.test.ts</code><span className="cu-k">new · +54</span></p>
-                  <p className="cu-wf"><span className="cu-k">T4</span><code>src/mail/stop-notice.ts</code><span className="cu-k">new · +22</span></p>
+                  <p className="cu-wf"><span className="cu-k">T3</span><code>tests/integration/retries.test.ts</code><span className="cu-k">new · +41</span></p>
+                  <p className="cu-wf"><span className="cu-k">T4</span><code>services/gateway/src/outage-buffer.ts</code><span className="cu-k">new · +28</span></p>
                 </div>
               )}
             </div>
@@ -248,7 +248,7 @@ function Walkthrough() {
       </div>
       <div className="cu-wr">
         <span className="cu-wk">Deliberately not changed</span>
-        <p>Deliveries to endpoints that no longer exist stay as they are. The mail for other events keeps its wording.</p>
+        <p>Seat invoices stay as they are. Invoices stay in US dollars; the customer’s own currency is a later task.</p>
       </div>
       <div className="cu-wr">
         <span className="cu-wk">How it was checked</span>
@@ -256,7 +256,7 @@ function Walkthrough() {
       </div>
       <div className="cu-wr">
         <span className="cu-wk">Ship</span>
-        <p>Lands on <code>ql/retry-webhooks</code> · pull request to <code>main</code> · no security findings</p>
+        <p>Lands on <code>feat/usage-billing</code> · pull request to <code>main</code> · no security findings</p>
       </div>
     </section>
   );
@@ -272,7 +272,7 @@ function PullRequest() {
   ];
   return (
     <section className="cu-card" aria-label="Pull request">
-      <p className="cu-cardh"><b>Pull request #412</b><span className="cu-k">ql/retry-webhooks → main · checks and reviews</span></p>
+      <p className="cu-cardh"><b>Pull request #412</b><span className="cu-k">feat/usage-billing → main · checks and reviews</span></p>
       {rows.map(([mark, what, state]) => (
         <p key={what} className="cu-pr"><Mk k={mark} /><span>{what}</span><span className="cu-k">{state}</span></p>
       ))}
@@ -298,7 +298,10 @@ const LIMITS: [string, [string, number, string][]][] = [
 const waits = (words: string): Chip => ({ mark: "wait", name: "Claude Code", words });
 const works = (words: string): Chip => ({ mark: "work", name: "Claude Code", words });
 
-/** The close-up of chapter `id` at moment `step`. `tries` drives the artifact's working Retry button. */
+/**
+ * The close-up of chapter `id` at moment `step`. `tries` and `onRetry` drive the artifact's working
+ * Switch to usage button: the tour counts its presses from 2, so 3 means the account was switched.
+ */
 export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: string; step: number; tries?: number; onRetry?: () => void }) {
   // A close-up has no moment past its last.
   const step = Math.min(asked, CHAPTERS.find((c) => c.id === id)?.steps ?? asked);
@@ -313,7 +316,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
       const left = DISCUSS_BATCH - answered.length;
       return (
         <Frame label="Discuss"
-          top={<TopBar stage={0} chip={works("reading notify.ts")} activity={<AgentActivity title="Reading the code while you answer" note="2 min" sub="Each answer reaches Claude Code at once. It writes Done means from them." />} />}
+          top={<TopBar stage={0} chip={works("reading request-id.ts")} activity={<AgentActivity title="Reading the code while you answer" note="2 min" sub="Each answer reaches Claude Code at once. It writes Done means from them." />} />}
           gate={<GateTrack items={[]} turn={`Your turn · ${left} ${left === 1 ? "question" : "questions"}`} />}>
           {sent !== null && <Sent>Sent to Claude Code · {QUESTIONS[sent].choices[0][0]}</Sent>}
           <YourTurn kind={`a batch of ${DISCUSS_BATCH} from Claude Code`} title={q.title} text={<>{q.text} <span className="cu-k">Settles {q.settles}.</span></>}
@@ -342,12 +345,12 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
         <Frame label="Plan"
           top={<TopBar stage={2} chip={waits("waits for your review")} approval={<div className="cu-approval"><span className="cu-k">Ready to approve</span><span className="cu-btn sm">Give feedback</span><span className={`cu-btn pri sm${at(2) ? " glow" : ""}`}>Approve Plan</span></div>} />}>
           <article className="cu-document compact" aria-label="Plan document">
-            <h4>Retry failed webhook deliveries</h4>
-            <p>Queue failed deliveries, retry three times, then mail the customer once.</p>
+            <h4>Count each request once and bill it</h4>
+            <p>Count each request once at the gateway, keyed by its request id. Seat accounts never take the new path.</p>
             <h5>Done means</h5>
             <ol>{POINTS.map(([title]) => <li key={title}>{title}</li>)}</ol>
-            <p className="row"><b>Decisions</b> Support retries failed deliveries only, after checking the endpoint.</p>
-            <DeliveryFlow pin={commented} />
+            <p className="row"><b>Decisions</b> At the limit, keep serving and bill the overage, with alerts at 80 % and 100 %.</p>
+            <MeterFlow pin={commented} />
             <p className="row"><b>Contracts</b> Three interfaces the build is held to, each folded to one headline</p>
             <p className="row"><b>Reviewed by</b> A reviewer read this Plan first; the findings are folded in</p>
           </article>
@@ -358,9 +361,9 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
     case "research": {
       const asked = at(3);
       const QUESTIONS_READ: [string, number][] = [
-        ["How does a failed delivery leave the sender today?", 1],
-        ["Where could a retry count live?", 2],
-        ["What sends mail to the customer today?", 3],
+        ["Does a request id survive a retry?", 1],
+        ["What does the ledger do with a second write?", 2],
+        ["How does an invoice reach Stripe today?", 3],
       ];
       return (
         <Frame label="Research"
@@ -369,10 +372,10 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
           {asked ? (
             <>
               <Checked head="The questions" facts={["3 answered", "by agents that never see your request"]} />
-              <YourTurn kind="A choice the code leaves open" count="1 of 1" title="Who sends the one mail when a delivery stops?"
-                text={<>The mailer already sends one mail for each event. <span className="cu-k">From Research · what sends mail today.</span></>}
+              <YourTurn kind="A choice the code leaves open" count="1 of 1" title="Count a request at the gateway, or from the access logs?"
+                text={<>A retry keeps its request id, so the gateway can count each request once. <span className="cu-k">From Research · request ids survive retries.</span></>}
                 foot={<Keys keys={[["1 2", "pick"], ["↵", "send"], ["R", "recommended"]]} />}>
-                <Choices items={[["Reuse the order mail", "one mail path to keep current"], ["A separate stop mail", "its own wording, a second path to keep current"]]} picked={at(4) ? 0 : -1} />
+                <Choices items={[["At the gateway, keyed by request id", "usage within five minutes"], ["From the access logs every hour", "nothing added to the gateway, usage an hour late"]]} picked={at(4) ? 0 : -1} />
               </YourTurn>
             </>
           ) : (
@@ -418,7 +421,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
           <YourTurn kind="Implement" title="Start the build" text="Paste this request into your agent. From then on the build runs on its own until the final review.">
             <span className="cu-seg cu-agent-seg"><span className="on">Claude Code</span><span>Codex</span><span>Cursor</span><span>Grok</span><span>Antigravity</span><span>Pi</span><span>OpenCode</span><span>Another agent</span></span>
             <p className="cu-defs"><span><span className="cu-k">Build session</span> Opus 5.5</span><span><span className="cu-k">Subagents</span> Sonnet 5.5</span><span><span className="cu-k">Effort</span> High</span><span className="cu-lnk">Change</span></p>
-            <div className="cu-cmd"><code>Using QualityLayer, implement the approved plan for task retry-webhooks</code><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}>{at(2) ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}{at(2) ? "Copied" : "Copy request"}</span></div>
+            <div className="cu-cmd"><code>Using QualityLayer, implement the approved plan for task usage-billing</code><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}>{at(2) ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}{at(2) ? "Copied" : "Copy request"}</span></div>
           </YourTurn>
         </Frame>
       );
@@ -446,7 +449,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
               );
             })}
           </section>
-          <p className={`cu-row ${show(4)}`}><Mk k="done" /><span className="cu-k">Decided while building</span><span>Moved the retry delay into settings.ts</span><span className="cu-grow" /><span className="cu-btn sm">Ask why</span></p>
+          <p className={`cu-row ${show(4)}`}><Mk k="done" /><span className="cu-k">Decided while building</span><span>The outage buffer keeps an hour on disk</span><span className="cu-grow" /><span className="cu-btn sm">Ask why</span></p>
           <div className={show(5)}><Checked facts={["5 tasks green, test first", "11 test runs recorded"]} /></div>
         </Frame>
       );
@@ -490,7 +493,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
           <Frame label="Review"
             top={<TopBar stage={6} chip={{ mark: "done", name: "Claude Code", words: "pull request #412 is open" }} />}>
             <section className="cu-card cu-calm">
-              <p className="cu-cardh"><b>Approved · pull request #412 opened</b><span className="cu-k">on ql/retry-webhooks</span></p>
+              <p className="cu-cardh"><b>Approved · pull request #412 opened</b><span className="cu-k">on feat/usage-billing</span></p>
               <p className="cu-calmp">Checks run on GitHub now. The task stays open until the pull request is merged, and you are told when a review or a failing check needs you.</p>
             </section>
             <PullRequest />
@@ -503,18 +506,18 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
           gate={<GateTrack items={[{ label: "What you get · 3 points", state: "done" }, { label: "Only you can confirm · 1", state: at(1) ? "done" : "cur" }, { label: "Decided while building · 1", state: at(2) ? "done" : at(1) ? "cur" : undefined }, { label: "Approve", state: at(2) ? "cur" : undefined }]} turn={left ? `Your turn · ${left} ${left === 1 ? "thing" : "things"}` : "Your turn · approve"} />}>
           <YourTurn kind="then approve" count={`${2 - left} of 2`} title={left ? `${left} ${left === 1 ? "thing" : "things"}, then approve` : "Approve the change?"} text="Agents checked everything they can; 3 of 3 points passed. Approve opens the pull request unless you pick otherwise."
             foot={<><Keys keys={[["Y", "confirm"], ["↵", "approve"]]} /><span className="cu-grow" /><span className={`cu-split${at(3) ? " glow" : ""}`}><span className="cu-btn pri">Approve</span><span className="cu-btn pri"><ChevronDown size={13} aria-hidden="true" /></span></span></>}>
-            {at(1) ? <Sent>Confirmed · one live call to the partner API gave 3 tries</Sent> : (
+            {at(1) ? <Sent>Confirmed · one switch on the live admin left an audit entry</Sent> : (
               <div className="cu-item">
-                <p className="cu-k">Only you can confirm · Done means 2</p>
-                <b>One live call to the partner API gave 3 tries</b>
+                <p className="cu-k">Only you can confirm · Done means 3</p>
+                <b>One switch on the live admin left an audit entry</b>
                 <p className="cu-itp">Agents may not call live services while checking.</p>
                 <p className="cu-acts"><span className="cu-btn pri sm">I confirm</span><span className="cu-btn sm">Ask the agent to record it</span></p>
               </div>
             )}
-            {at(2) ? <Sent>Fine · the retry delay lives in settings.ts</Sent> : (
+            {at(2) ? <Sent>Fine · the outage buffer keeps an hour on disk</Sent> : (
               <div className="cu-item">
                 <p className="cu-k">Decided by Claude Code while building · 1 flagged for you</p>
-                <b>Moved the retry delay into settings.ts, which the sender already imports</b>
+                <b>The outage buffer keeps an hour of events on disk while Kafka is down</b>
                 <p className="cu-acts"><span className="cu-btn pri sm">Fine</span><span className="cu-btn sm">Ask why</span></p>
               </div>
             )}
@@ -535,7 +538,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
         <Frame label="Artifacts"
           top={<TopBar stage={2} chip={waits("waits for you")} activity={<AgentActivity title="Drew the page you asked for" note="1 min" sub="It drew one clickable page in your product’s look, and the Plan asks you about it." />} />}
           gate={<GateTrack items={[]} turn={at(2) ? undefined : "Your turn · 1 artifact"} />}>
-          <YourTurn kind="Artifact · shown in the Plan" title="Is this how failed deliveries should look?" text={`You asked: “Mock up the ${ARTIFACT.name.toLowerCase()} page.”`}
+          <YourTurn kind="Artifact · shown in the Plan" title="Is this how Finance should switch an account?" text={`You asked: “Mock up the ${ARTIFACT.name.toLowerCase()} page.”`}
             foot={<Keys keys={[["1", "looks right"], ["2", "change it"], ["F", "full size"]]} />}>
             <ArtifactIn><ArtifactPage brief /></ArtifactIn>
             <Choices items={[["Looks right"], ["Change it…", "say what to change, or point at a spot full size"]]} picked={at(1) ? 0 : -1} own={null} />
@@ -548,14 +551,14 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
       return (
         <Frame label="Comment"
           top={<TopBar stage={2} chip={at(2) && !at(3) ? works("changing the artifact") : waits("waits for you")} />}
-          gate={<div className="cu-gt"><span className="cu-g done"><Image size={13} aria-hidden="true" />failed-deliveries · full size</span><span className="cu-grow" /><span className={`cu-btn sm${!at(2) ? " on" : ""}`}><MessageSquare size={12} aria-hidden="true" />Comment <kbd>C</kbd></span></div>}>
+          gate={<div className="cu-gt"><span className="cu-g done"><Image size={13} aria-hidden="true" />billing-mode · full size</span><span className="cu-grow" /><span className={`cu-btn sm${!at(2) ? " on" : ""}`}><MessageSquare size={12} aria-hidden="true" />Comment <kbd>C</kbd></span></div>}>
           {!at(2) && <p className="cu-mode"><b>Comment</b><span>Click a spot on the artifact</span><kbd>Esc</kbd></p>}
-          <div className="cu-dzf big"><ArtifactPage tries={tries} onRetry={onRetry} pin={at(1)} next={at(3)} /></div>
-          {at(1) && !at(2) && <div className="cu-compose"><p className="cu-k">You · on invoice.sent</p><span className="cu-field">Say when it tries next.</span><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}>Comment</span></div>}
+          <div className="cu-dzf big"><ArtifactPage switched={tries >= 3} onSwitch={onRetry} pin={at(1)} next={at(3)} /></div>
+          {at(1) && !at(2) && <div className="cu-compose"><p className="cu-k">You · on Switch to usage</p><span className="cu-field">Show who switched this account last.</span><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}>Comment</span></div>}
           {at(2) && (
             <section className="cu-th">
-              <div className="cu-msg"><span className="cu-pin">1</span><p><b>You</b> Say when it tries next.</p></div>
-              <div className={`cu-msg ${show(3)}`}><Mk k="done" /><p><b>Claude Code</b> Each failed row now says when it tries next.</p></div>
+              <div className="cu-msg"><span className="cu-pin">1</span><p><b>You</b> Show who switched this account last.</p></div>
+              <div className={`cu-msg ${show(3)}`}><Mk k="done" /><p><b>Claude Code</b> Changed the page: the last switch shows beside the button.</p></div>
             </section>
           )}
         </Frame>
@@ -565,24 +568,24 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
       return (
         <Frame label="Ask"
           top={<TopBar stage={2} chip={waits("waits for you")} />}
-          gate={<GateTrack items={[{ label: "Done means · 3", state: "done" }, { label: "Decisions · 2 of 2", state: "done" }, { label: "Team · Dana", state: "cur", pips: [at(4) ? 1 : 0, 1] }, { label: "Approve" }]} turn={at(2) && !at(4) ? undefined : "Your turn · approve"} />}>
+          gate={<GateTrack items={[{ label: "Done means · 3", state: "done" }, { label: "Decisions · 2 of 2", state: "done" }, { label: "Team · Anna", state: "cur", pips: [at(4) ? 1 : 0, 1] }, { label: "Approve" }]} turn={at(2) && !at(4) ? undefined : "Your turn · approve"} />}>
           <section className="cu-doc">
-            <p className="cu-k">03-plan.md · Decided by the agent</p>
-            <p>A failed delivery is sent again <mark>one minute apart</mark>, three times, then the customer gets one mail.</p>
+            <p className="cu-k">03-plan.md · Your call</p>
+            <p>At the limit, the gateway keeps serving and <mark>the overage is billed</mark> at the tier price, with alerts at 80 % and 100 %.</p>
           </section>
           {!at(2) && (
             <section className="cu-pop">
               <b>Ask the team about this passage</b>
-              <span className="cu-people"><span className="on"><i>D</i>Dana</span><span><i>B</i>Ben</span><span><i>C</i>Chen</span></span>
-              <span className="cu-field">Is one minute right for the partner API?</span>
-              <p className="cu-acts"><span className="cu-k">Needed before approval</span><span className="cu-sw on" /><span className="cu-grow" /><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}><Send size={12} aria-hidden="true" />Ask Dana</span></p>
+              <span className="cu-people"><span className="on"><i>A</i>Anna</span><span><i>B</i>Ben</span><span><i>C</i>Chen</span></span>
+              <span className="cu-field">Is an overage with no cap safe for Finance?</span>
+              <p className="cu-acts"><span className="cu-k">Needed before approval</span><span className="cu-sw on" /><span className="cu-grow" /><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}><Send size={12} aria-hidden="true" />Ask Anna</span></p>
             </section>
           )}
           {at(2) && (
             <section className="cu-th">
-              <p className="cu-thq">You asked <b>Dana</b> · needed before approval · Slack message sent</p>
-              <div className="cu-msg"><i className="cu-av">M</i><p><b>You</b> Is one minute right for the partner API?</p></div>
-              {at(3) && <div className="cu-msg"><i className="cu-av">D</i><p><b>Dana</b> <span className="cu-via">via Claude Code</span> <span className="cu-k">suggests a change</span><br />Back off instead: 1, 5, then 15 minutes. The partner API limits retries.</p></div>}
+              <p className="cu-thq">You asked <b>Anna</b> · needed before approval · Slack message sent</p>
+              <div className="cu-msg"><i className="cu-av">M</i><p><b>You</b> Is an overage with no cap safe for Finance?</p></div>
+              {at(3) && <div className="cu-msg"><i className="cu-av">A</i><p><b>Anna</b> <span className="cu-via">via Claude Code</span> <span className="cu-k">suggests a change</span><br />Cap it at 50 % above the plan, so a runaway client can’t run up the bill.</p></div>}
               {at(4) && <p className="cu-thf"><Mk k="done" />Claude Code updated the passage · approve when you are ready</p>}
             </section>
           )}
@@ -593,15 +596,15 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
       // The question with its passage in view from the first moment; your agent's draft waits, not sent, for your yes.
       return (
         <Frame label="Questions for you"
-          top={<TopBar stage={-1} title="Team" kind="Northwind Labs · Dana’s App" chip={null} />}
+          top={<TopBar stage={-1} title="Team" kind="Acme · your App" chip={null} />}
           gate={<GateTrack items={[]} turn="Your turn · 2 questions" />}>
-          <YourTurn kind="Question from Priya Shah · 25 min ago" count="1 of 2" title="“Is one minute right for the partner API?”" text={<>Retry failed webhooks · Plan · <b>needed before approval</b></>}
+          <YourTurn kind="Question from Ben Ortiz · 20 min ago" count="1 of 2" title="“Is once a minute fresh enough for the export budget?”" text={<>API rate-limit tiers · Plan · <b>opinion only</b></>}
             foot={<Keys keys={[["1", "looks right"], ["2", "suggest a change"], ["R", "reply"]]} />}>
-            <p className="cu-quote">A failed delivery is sent again <mark>one minute apart</mark>, three times, then the customer gets one mail.</p>
-            <Choices items={[["Looks right"], ["Suggest a change"], ["Reply"]]} rec={-1} picked={at(1) ? 1 : -1} own="Or hand it to someone else…" />
+            <p className="cu-quote">The limiter reads the plan’s limit <mark>once per minute</mark> and caches it per account.</p>
+            <Choices items={[["Looks right"], ["Suggest a change"], ["Reply"]]} rec={-1} picked={at(1) ? 2 : -1} own="Or hand it to someone else…" />
             <div className={`cu-draft ${show(2)}`}>
               <p className="cu-k"><Mk k="work" />Draft by your Claude Code · not sent yet</p>
-              <p>Back off instead: 1, 5, then 15 minutes. The partner API limits retries.</p>
+              <p>Once a minute is fine: the plan’s limit changes rarely, and a value 60 s old allows at most one extra window.</p>
               <p className="cu-acts"><span className="cu-btn pri sm">Send the draft</span><span className="cu-btn sm">Edit</span></p>
             </div>
           </YourTurn>
@@ -612,16 +615,16 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
     case "space":
       return (
         <Frame label="Team space"
-          top={<TopBar stage={-1} title="Team" kind="Northwind Labs · 4 members" chip={null} />}
+          top={<TopBar stage={-1} title="Team" kind="Acme · 4 members" chip={null} />}
           gate={<GateTrack items={[{ label: "Questions for you · 0", state: "done" }, { label: "Your questions to others · 2", state: "cur" }, { label: "Working now · 3" }]} />}>
           <section className="cu-card">
             <p className="cu-cardh"><b>Your questions to others</b><span className="cu-k">2</span></p>
-            <p className="cu-tr"><i className="cu-av">D</i><span><b>Dana</b> · a passage in Retry failed webhooks</span><span className="cu-k">answered · suggests a change</span></p>
-            <p className="cu-tr"><i className="cu-av amb">B</i><span><b>Ben</b> · the diagram in Billing export</span><span className="cu-k you">waiting a day · {at(2) ? "reminded just now" : "reminded 2 h ago"}</span><span className="cu-acts"><span className={`cu-btn sm${step === 1 ? " press" : ""}`}>Remind</span><span className="cu-btn sm">Hand to…</span></span></p>
+            <p className="cu-tr"><i className="cu-av">A</i><span><b>Anna</b> · a passage in Usage-based billing</span><span className="cu-k">answered · suggests a change</span></p>
+            <p className="cu-tr"><i className="cu-av amb">B</i><span><b>Ben</b> · Rate-limit the export API</span><span className="cu-k you">waiting a day · {at(2) ? "reminded just now" : "reminded 2 h ago"}</span><span className="cu-acts"><span className={`cu-btn sm${step === 1 ? " press" : ""}`}>Remind</span><span className="cu-btn sm">Hand to…</span></span></p>
           </section>
           <section className="cu-card">
             <p className="cu-cardh"><b>Working now</b><span className="cu-k">3</span></p>
-            {([["A", "Billing export", "Implement · slice 2 of 3", "Codex", "work"], ["B", "Invoice PDFs", "Verify · checking 18 of 24", "Claude Code", "work"], ["C", "SSO group sync", "Plan · waits for Chen", "Claude Code", "you"]] as const).map(([av, task, where, agent, mark]) => (
+            {([["A", "Billing retry schedule", "Implement · slice 2 of 3", "Codex", "work"], ["B", "API rate-limit tiers", "Implement · slice 3 of 3", "Claude Code", "work"], ["C", "Webhook signing v2", "Plan · waits for review", "Claude Code", "you"]] as const).map(([av, task, where, agent, mark]) => (
               <p key={task} className="cu-tr"><i className="cu-av">{av}</i><span><b>{task}</b></span><span className="cu-tw"><Mk k={mark} />{where}</span><span className="cu-k">{agent}</span></p>
             ))}
           </section>
@@ -635,15 +638,15 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
         <Frame label="Review together"
           top={<TopBar stage={6} chip={waits("waits for your review")} />}
           gate={<GateTrack items={[{ label: "What you get · 3 points", state: "done" }, { label: "Teammates · 2", state: ready ? "done" : "cur", pips: [ready ? 2 : 1, 2] }, { label: "Approve", state: ready ? "cur" : undefined }]} turn={ready ? "Your turn · approve" : "Your turn · 1 comment"} />}>
-          <YourTurn kind={ready ? "then the pull request" : "Comment from Ben · Done means 3"} title={ready ? "Ready to approve" : "Can support see the count without opening the log?"}
-            foot={ready ? <><span className="cu-votes"><span><b>Dana</b> approved</span><span><b>Ben</b> commented</span></span><span className="cu-grow" /><span className="cu-split glow"><span className="cu-btn pri">Approve</span><span className="cu-btn pri"><ChevronDown size={13} aria-hidden="true" /></span></span></> : <Keys keys={[["R", "reply"], ["E", "resolve"]]} />}>
+          <YourTurn kind={ready ? "then the pull request" : "Comment from Anna · Done means 3"} title={ready ? "Ready to approve" : "Does every switch leave an audit entry?"}
+            foot={ready ? <><span className="cu-votes"><span><b>Ben</b> approved</span><span><b>Anna</b> commented</span></span><span className="cu-grow" /><span className="cu-split glow"><span className="cu-btn pri">Approve</span><span className="cu-btn pri"><ChevronDown size={13} aria-hidden="true" /></span></span></> : <Keys keys={[["R", "reply"], ["E", "resolve"]]} />}>
             <div className="cu-proof">
-              <p className="cu-k"><Mk k="check" />Done means 3 · Support sees the retry count · screenshot 2</p>
-              <ArtifactPage tries={3} />
+              <p className="cu-k"><Mk k="check" />Done means 3 · Every billing-mode switch leaves an audit entry · screenshot 2</p>
+              <ArtifactPage switched />
             </div>
             <section className="cu-th">
-              <div className="cu-msg"><i className="cu-av">B</i><p><b>Ben</b> <span className="cu-k">teammate</span><br />Can support see this without the log?</p></div>
-              <div className={`cu-msg ${show(1)}`}><Mk k="done" /><p><b>Claude Code</b><br />Yes, each row shows the try count. Screenshot 2 proves it.</p></div>
+              <div className="cu-msg"><i className="cu-av">A</i><p><b>Anna</b> <span className="cu-k">teammate</span><br />Can Finance see the entry without opening the logs?</p></div>
+              <div className={`cu-msg ${show(1)}`}><Mk k="done" /><p><b>Claude Code</b><br />Yes, each switch writes one entry, and the page shows the latest. Screenshot 2 proves it.</p></div>
             </section>
           </YourTurn>
         </Frame>
@@ -678,7 +681,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
               </section>
             </div>
             <section className="cu-card cu-cost">
-              <p className="cu-cardh"><b>Retry failed webhooks</b><span className="cu-k">estimated at list price</span></p>
+              <p className="cu-cardh"><b>{TASK}</b><span className="cu-k">estimated at list price</span></p>
               <p className="cu-amt"><b>$20.95</b><span className="cu-k">1 h 17 min</span></p>
               <span className="cu-cbar">{COST.map(([label, , cost, color]) => <i key={label} style={{ background: color, flexGrow: Number(cost.slice(1)) }} />)}</span>
               {COST.map(([label, time, cost, color]) => (
@@ -704,7 +707,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
             </div>
           </section>
           <p className="cu-runs"><span className="cu-k">The App runs on</span><span>macOS</span><span>Windows</span><span>Linux</span><span className="cu-k">and opens in your browser on a server or in WSL</span></p>
-          <p className={`cu-notif ${show(3)}`}><span aria-hidden="true" className="sx-mark" /><span><small>QualityLayer · from the menu bar</small>Retry failed webhooks needs your review</span><ArrowRight size={14} aria-hidden="true" /></p>
+          <p className={`cu-notif ${show(3)}`}><span aria-hidden="true" className="sx-mark" /><span><small>QualityLayer · from the menu bar</small>{TASK} needs your review</span><ArrowRight size={14} aria-hidden="true" /></p>
         </Frame>
       );
 

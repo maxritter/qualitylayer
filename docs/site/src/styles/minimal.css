@@ -75,7 +75,24 @@ html{scroll-padding-top:76px}
 .sx-ctas{justify-content:flex-start;gap:12px;margin-top:28px}
 .sx-meta{max-width:28.5rem;margin:14px 0 0;font-size:14px;color:var(--mx-ink3)}
 /* The App window: captured at 2x, drawn at most at its own size. It ends on the page's right margin, like every section. */
-.sx-shot{max-width:1006px;margin:0;border:1px solid var(--mx-line2);border-radius:8px;background:var(--mx-panel);box-shadow:var(--mx-shadow);overflow:hidden}
+.sx-shot{position:relative;margin:0;border:1px solid var(--mx-line2);border-radius:8px;background:var(--mx-panel);box-shadow:var(--mx-shadow);overflow:hidden;transition:transform .42s cubic-bezier(.16,1,.3,1),box-shadow .42s cubic-bezier(.16,1,.3,1)}
+/* The window is the door into the App demo. Its chip is always on screen (a phone has no hover); pointer or focus lifts the window and turns the chip blue. */
+.sx-live{display:block;color:inherit;text-decoration:none;border-radius:8px;outline:none}
+.sx-chip{position:absolute;right:clamp(14px,2cqi,24px);bottom:clamp(14px,2.2cqi,28px);display:inline-flex;align-items:center;gap:10px;padding:11px 18px 11px 14px;border-radius:999px;background:rgb(16 18 22 / 88%);color:#f4f6f8;font-size:14px;font-weight:500;white-space:nowrap;box-shadow:0 8px 24px -8px rgb(0 0 0 / 45%);transition:background-color .3s cubic-bezier(.16,1,.3,1),color .3s cubic-bezier(.16,1,.3,1),padding .42s cubic-bezier(.16,1,.3,1)}
+.sx-chip svg{flex:none}
+.sx-chip-arrow{margin-left:-2px;transition:transform .42s cubic-bezier(.16,1,.3,1)}
+.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot{transform:translateY(-4px);box-shadow:0 2px 4px rgb(0 0 0 / 8%),0 30px 70px -24px rgb(0 0 0 / 38%)}
+.sx-live:hover .sx-chip,.sx-live:focus-visible .sx-chip{background:var(--primary);color:var(--primary-foreground);padding-right:22px}
+.sx-live:hover .sx-chip-arrow,.sx-live:focus-visible .sx-chip-arrow{transform:translateX(4px)}
+.sx-live:focus-visible .sx-shot{outline:2px solid var(--ql-accent);outline-offset:4px}
+.sx-try{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:22px}
+.sx-try p{margin:0;font-size:14px;color:var(--mx-ink2)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sx-chip{background:rgb(244 246 248 / 94%);color:#0b0d10}:root:not([data-theme="light"]) .sx-live:hover .sx-chip,:root:not([data-theme="light"]) .sx-live:focus-visible .sx-chip{color:#0b0d10}}
+:root[data-theme="dark"] .sx-chip{background:rgb(244 246 248 / 94%);color:#0b0d10}
+/* Dark blue is light: dark words on it, as on the dark theme's Download button. */
+:root[data-theme="dark"] .sx-live:hover .sx-chip,:root[data-theme="dark"] .sx-live:focus-visible .sx-chip{color:#0b0d10}
+@media (max-width:640px){.sx-chip{gap:8px;padding:8px 13px 8px 10px;font-size:13px}.sx-chip svg{width:15px;height:15px}}
+@media (prefers-reduced-motion:reduce){.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot,.sx-live:hover .sx-chip-arrow,.sx-live:focus-visible .sx-chip-arrow{transform:none}}
 .sx-shot picture,.sx-shot img{display:block;width:100%;height:auto}
 .sx-shot .sx-shot-dark{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sx-shot .sx-shot-light{display:none}:root:not([data-theme="light"]) .sx-shot .sx-shot-dark{display:block}}

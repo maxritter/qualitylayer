@@ -31,6 +31,9 @@ describe("FAQ", () => {
     expect(docs).toMatch(/screenshots/i);
     expect(docs).toMatch(/operating-system and architecture details/i);
     expect(docs).toMatch(/agent version/i);
+    expect(docs).toContain("Preview public issue");
+    expect(docs).toContain("Private support");
+    expect(docs).toContain("does not add your account name, email, repository paths or terminal logs");
   });
 
   it("distinguishes the coding agent's provider from QualityLayer sharing and feedback", () => {

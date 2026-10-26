@@ -647,7 +647,7 @@ const Shared = () => {
   const key = linkKeyOf(useLocation().hash);
   return (
     <Page className="sh-page" compact>
-      <SEO title="A shared task — QualityLayer" description="A task shared with you from QualityLayer. Read its steps and give feedback on them." />
+      <SEO title="A shared task | QualityLayer" description="A task shared with you from QualityLayer. Read its steps and give feedback on them." />
       <Helmet>
         <meta name="robots" content="noindex" />
       </Helmet>

@@ -63,9 +63,11 @@ describe("the site's copy", () => {
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");
     expect(intro).toContain('href="/docs/chat"');
     const guide = readFileSync(new URL("../../../docusaurus/docs/chat.md", import.meta.url), "utf8");
-    expect(guide).toMatch(/Claude Code (?:and|or) Codex/);
+    expect(guide).toContain("direct conversation with **Claude Code or Codex**");
+    expect(guide).toContain("Supported questions appear above the composer");
+    expect(guide).toContain("Outside Codex sessions are read-only here; answer in Codex's terminal");
     expect(guide).toMatch(/Chat does not (?:have|support) team sharing/);
-    expect(guide).toMatch(/approve the workflow Plan before later implementation|a Chat plan is not that approval/);
+    expect(guide).toContain("You approve the workflow Plan before later implementation");
   });
 
   it("describes the offline licence window enforced by the binary", async () => {

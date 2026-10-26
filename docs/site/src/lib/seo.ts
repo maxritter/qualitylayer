@@ -3,16 +3,16 @@ import { SHARE_DESCRIPTION, SITE_URL, SLOGAN } from "./product.ts";
 export const PUBLIC_PAGES = {
   "/": { title: `QualityLayer: ${SLOGAN}`, description: SHARE_DESCRIPTION },
   "/pricing": {
-    title: "Pricing — QualityLayer",
-    description: "QualityLayer pricing for developers, teams and companies. Every plan starts with a 7-day trial.",
+    title: "Pricing | QualityLayer",
+    description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",
   },
   "/download": {
-    title: "Download the QualityLayer App — QualityLayer",
+    title: "Download QualityLayer for macOS, Windows and Linux",
     description: "Download QualityLayer for macOS, Windows and Linux. Plan and review changes with Claude Code, Codex and your team.",
   },
   "/compare": {
     title: "Compare QualityLayer with spec-driven development tools",
-    description: "Compare QualityLayer with Superpowers, GitHub Spec Kit, OpenSpec, BMAD Method, GSD, Kiro, Traycer, Compound Engineering, plan modes and HumanLayer.",
+    description: "Compare QualityLayer with Superpowers, GitHub Spec Kit, OpenSpec, BMAD Method, GSD, Kiro, Traycer, Compound Engineering and the plan modes of Claude Code, Cursor and Codex.",
   },
   "/compare/superpowers": {
     title: "QualityLayer vs Superpowers: skills, approvals and evidence",
@@ -42,6 +42,10 @@ export const PUBLIC_PAGES = {
     title: "QualityLayer vs Cursor plan mode: planning and verification",
     description: "Compare Cursor's plan mode and Projects with QualityLayer's visual Plan, recorded verification and review across coding agents.",
   },
+  "/compare/codex-plan-mode": {
+    title: "QualityLayer vs Codex plan mode: approve the plan and result",
+    description: "Compare Codex's built-in plan mode with QualityLayer inside Codex. You approve a visual Plan, and an agent that did not write the code checks the result.",
+  },
   "/compare/humanlayer": {
     title: "QualityLayer vs HumanLayer: planning, proof and review",
     description: "Considering a HumanLayer alternative? Compare agent support, collaborative planning, recorded verification and human review in QualityLayer and HumanLayer.",
@@ -63,15 +67,15 @@ export const PUBLIC_PAGES = {
     description: "Compare spec-driven development tools, from GitHub Spec Kit, OpenSpec and Superpowers to Kiro and QualityLayer, by workflow, review and verification.",
   },
   "/imprint": {
-    title: "Imprint — QualityLayer",
+    title: "Imprint | QualityLayer",
     description: "Who sells QualityLayer and how to reach us: address, e-mail and VAT ID.",
   },
   "/privacy": {
-    title: "Privacy policy — QualityLayer",
+    title: "Privacy policy | QualityLayer",
     description: "What QualityLayer sends, to whom, why and for how long, and your rights under the GDPR.",
   },
   "/terms": {
-    title: "Terms of service — QualityLayer",
+    title: "Terms of service | QualityLayer",
     description: "The terms for qualitylayer.dev, the QualityLayer App and the team service.",
   },
 } as const;

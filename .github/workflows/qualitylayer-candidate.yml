@@ -664,7 +664,7 @@ jobs:
   assemble-release:
     name: Assemble Release
     permissions:
-      # The updater manifest reads the unpublished GitHub release draft.
+      # Draft release notes require push access even though this job only reads them.
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30

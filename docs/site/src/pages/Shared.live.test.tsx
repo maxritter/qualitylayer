@@ -60,7 +60,7 @@ describe("an open share follows its owner", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: /^Artifacts/ }), { button: 0, ctrlKey: false });
     fireEvent.change(screen.getByRole("combobox", { name: /^Artboard/ }), { target: { value: "plan-artifact.png" } });
     expect((screen.getByRole("img", { name: "Plan artifact" }) as HTMLImageElement).src).toBe("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ1sAAAAASUVORK5CYII=");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Workflow", exact: true }), { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /^Workflow$/ }), { button: 0, ctrlKey: false });
     for (const step of ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]) expect(screen.getByRole("button", { name: step })).toBeTruthy();
     unmount();
     await flush(300_000);

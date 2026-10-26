@@ -51,6 +51,7 @@ const App = () => (
           <Route path="/compare/compound-engineering" element={<Compare />} />
           <Route path="/compare/claude-code-plan-mode" element={<Compare />} />
           <Route path="/compare/cursor-plan-mode" element={<Compare />} />
+          <Route path="/compare/codex-plan-mode" element={<Compare />} />
           <Route path="/compare/humanlayer" element={<Compare />} />
           <Route path="/compare/spec-kit" element={<Compare />} />
           <Route path="/compare/openspec" element={<Compare />} />

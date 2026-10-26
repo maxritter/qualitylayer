@@ -6,7 +6,7 @@ import { SITE_URL } from "@/lib/product";
 
 const NotFoundComponent = () => (
   <>
-    <SEO title="Page not found — QualityLayer" description="The page you are looking for does not exist." canonicalUrl={`${SITE_URL}/404`} />
+    <SEO title="Page not found | QualityLayer" description="The page you are looking for does not exist." canonicalUrl={`${SITE_URL}/404`} />
     <Page>
       <section className="w7-sec w7-nf" aria-labelledby="nf-h">
         <div className="w7-wrap">

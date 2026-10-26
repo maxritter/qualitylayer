@@ -37,8 +37,7 @@ try {
       const discount = page.locator('input[name="discount_code"]');
       await discount.fill("PILOTTHANKS15");
       await expect(discount).toHaveValue("PILOTTHANKS15");
-      // Polar handles Enter here as Apply and prevents payment-form submission.
-      await discount.press("Enter");
+      await page.getByRole("button", { name: "Apply", exact: true }).filter({ visible: true }).first().click();
       const discountedAmount = (amount * 0.85).toFixed(2);
       // Polar renders both responsive summaries; require the visible total.
       await page.getByText(`€${discountedAmount}`, { exact: true }).filter({ visible: true }).first().waitFor();

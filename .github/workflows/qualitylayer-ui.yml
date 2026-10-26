@@ -54,7 +54,15 @@ jobs:
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
           node --input-type=module -e 'for(let i=0;i<30;i++){try{if((await fetch("http://127.0.0.1:8082/pricing")).ok)process.exit(0)}catch{}await new Promise(r=>setTimeout(r,200))}process.exit(1)'
-          npm run test:checkout -- http://127.0.0.1:8082
+          npm run test:checkout -- http://127.0.0.1:8082 "$RUNNER_TEMP/checkout-proof"
+      - name: Keep checkout readiness and failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: checkout-readiness-${{ github.run_id }}
+          path: ${{ runner.temp }}/checkout-proof/
+          retention-days: 7
+          if-no-files-found: warn
 
   frontend:
     name: Source UI browser checks (shard ${{ matrix.shard }}/2)

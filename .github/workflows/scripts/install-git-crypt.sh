@@ -47,6 +47,14 @@ fi
 
 CODENAME="$(lsb_release -cs 2>/dev/null || echo "")"
 
+# Later browser dependencies use these same sources. Normalize them before the
+# targeted install succeeds, so those steps do not return to the slow mirror.
+for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+  if [ -f "$src" ]; then
+    sudo sed -i "s|http://azure.archive.ubuntu.com/ubuntu|$PUBLIC_MIRROR|g" "$src" || true
+  fi
+done
+
 # Defense 2: universe-only index from the public mirror.
 if [ -n "$CODENAME" ] && [ -f "$KEYRING" ]; then
   echo "Fetching universe index for $CODENAME from $PUBLIC_MIRROR"
@@ -67,13 +75,7 @@ if [ -n "$CODENAME" ] && [ -f "$KEYRING" ]; then
   sudo rm -f "$TARGETED_LIST"
 fi
 
-# Defense 3: full update, with the Azure mirror pointed at the public one.
-for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
-  if [ -f "$src" ]; then
-    sudo sed -i "s|http://azure.archive.ubuntu.com/ubuntu|$PUBLIC_MIRROR|g" "$src" || true
-  fi
-done
-
+# Defense 3: full update through the already-normalized public mirror.
 sudo apt-get "${APT_OPTS[@]}" update
 sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends git-crypt
 

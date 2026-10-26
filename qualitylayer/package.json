@@ -117,7 +117,7 @@
     "marked": "18.0.14",
     "mermaid": "12.0.0",
     "parse5": "8.0.1",
-    "react": "19",
+    "react": "19.3.1",
     "react-dom": "19",
     "restty": "0.3.0",
     "sonner": "2.0.8"

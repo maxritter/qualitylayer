@@ -84,7 +84,7 @@ To keep your licence, Claude Code login and QualityLayer setup when the containe
 
 ## Updates {#updates}
 
-Click **Update ready** in the App's sidebar, then **Restart and update**. Without the App, run `qualitylayer update`. See the [release notes on GitHub](https://github.com/maxritter/qualitylayer/releases).
+The App checks for updates every hour while running and downloads new versions in the background. Click **Update ready** in the sidebar, then **Restart and update**. Without the App, run `qualitylayer update`. Read the [changelog](https://qualitylayer.dev/docs/changelog).
 
 **Settings › About › Update channel** chooses what you are offered. **Stable** (the default) takes stable releases only. **Beta** also takes betas, and moves to each stable release once it is newer than your beta, so switching never takes you back to an older version. `qualitylayer update` follows the same channel. An installed beta counts as Beta until you choose.
 

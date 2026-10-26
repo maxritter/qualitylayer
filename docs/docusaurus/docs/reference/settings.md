@@ -166,7 +166,7 @@ The team owner writes instructions for the whole team in the same editor as [you
 
 ## About
 
-The version and **Check now**. Updates come once a day; they download in the background and ask before the App restarts ([Updates](../install.md#updates)).
+The version and **Check now**. The App checks for updates every hour while running, downloads new versions in the background and asks before restarting ([Updates](../install.md#updates)).
 
 **Update channel** is **Stable** (the default) or **Beta**. Stable offers stable releases only. Beta offers betas first, and moves to each stable release once it is newer; switching never takes you back to an older version. Agents and the command line cannot change the channel. **What's new** shows the notes of the releases on your channel. **Something wrong?** sends a report, and **Documentation** opens these pages.
 

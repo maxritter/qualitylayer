@@ -58,4 +58,4 @@ QualityLayer's [Handoff](/docs/steps/implement#start-implement) can recommend a 
 
 Keep the task's useful records before cleaning up its checkout. Follow the environment's worktree lifecycle rather than assuming every worktree has the same storage or cleanup rules.
 
-Related: [Claude Code to Codex handoff](/blog/claude-code-codex-handoff).
+Related: [Claude Code to Codex handoff](/blog/claude-code-codex-handoff), [QualityLayer vs Codex plan mode](https://qualitylayer.dev/compare/codex-plan-mode) and [QualityLayer vs Conductor](https://qualitylayer.dev/compare/conductor).

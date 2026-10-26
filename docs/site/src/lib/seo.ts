@@ -11,8 +11,8 @@ export const PUBLIC_PAGES = {
     description: "Download QualityLayer for macOS, Windows and Linux. Plan and review changes with Claude Code, Codex and your team.",
   },
   "/compare": {
-    title: "Compare QualityLayer with spec-driven development tools",
-    description: "Compare QualityLayer with Superpowers, GitHub Spec Kit, OpenSpec, BMAD Method, GSD, Kiro, Traycer, Compound Engineering and the plan modes of Claude Code, Cursor and Codex.",
+    title: "Compare QualityLayer with spec tools and coding agents",
+    description: "Compare QualityLayer with Spec Kit, OpenSpec, Task Master, the plan modes of Claude Code, Cursor and Codex, and agents like Cline, Devin and Conductor.",
   },
   "/compare/superpowers": {
     title: "QualityLayer vs Superpowers: skills, approvals and evidence",
@@ -61,6 +61,34 @@ export const PUBLIC_PAGES = {
   "/compare/kiro": {
     title: "QualityLayer vs Kiro: spec workflows and code verification",
     description: "Compare Kiro's integrated specs and property-based testing with QualityLayer's Claude Code and Codex workflow, recorded verification and human review.",
+  },
+  "/compare/task-master": {
+    title: "QualityLayer vs Task Master: PRD tasks and verification",
+    description: "Compare Task Master's PRD-to-task workflow for Cursor and Claude Code with QualityLayer's visual Plan, recorded verification and human review.",
+  },
+  "/compare/cline": {
+    title: "QualityLayer vs Cline: Plan and Act mode or an approved Plan",
+    description: "Compare Cline's Plan and Act modes and step-by-step approvals with QualityLayer's approved Plan, recorded verification and review before the pull request.",
+  },
+  "/compare/aider": {
+    title: "QualityLayer vs Aider: terminal pair programming and review",
+    description: "Compare Aider's ask and architect modes, auto commits and test runs with QualityLayer's approved Plan, test-first build and recorded verification.",
+  },
+  "/compare/github-copilot-coding-agent": {
+    title: "QualityLayer vs GitHub Copilot coding agent: plan and proof",
+    description: "Compare GitHub Copilot's cloud coding agent with QualityLayer: who approves the plan, how the result is checked and how the pull request is opened.",
+  },
+  "/compare/devin": {
+    title: "QualityLayer vs Devin: autonomous agent or approved Plan",
+    description: "Compare Devin's autonomous cloud sessions, test recordings and Devin Review with QualityLayer's approved Plan and evidence for each agreed outcome.",
+  },
+  "/compare/claude-squad": {
+    title: "QualityLayer vs Claude Squad: parallel sessions and review",
+    description: "Compare Claude Squad's parallel terminal sessions for Claude Code, Codex and Aider with QualityLayer's plan, verify and review flow for each change.",
+  },
+  "/compare/conductor": {
+    title: "QualityLayer vs Conductor: parallel workspaces and proof",
+    description: "Compare Conductor's parallel workspaces for Claude Code, Codex, Cursor and OpenCode with QualityLayer's approved Plan and recorded verification.",
   },
   "/best-spec-driven-development-tools": {
     title: "Best spec-driven development tools compared | QualityLayer",

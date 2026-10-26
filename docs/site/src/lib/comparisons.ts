@@ -23,6 +23,8 @@ export interface Comparison {
   /** The sources behind the strengths and behind "Runs in"; by default the first and the last. */
   strengthsSources?: number[];
   runsInSource?: number;
+  /** A coding agent or agent manager rather than a spec-driven tool; kept out of the spec-driven roundup. */
+  kind?: "agent";
 }
 
 export const COMPARISONS: Comparison[] = [
@@ -326,7 +328,187 @@ export const COMPARISONS: Comparison[] = [
     ],
     checked: "2026-10-19",
   },
+  {
+    slug: "task-master",
+    name: "Task Master",
+    summary: "Task Master's PRD-to-task workflow for coding agents, compared with QualityLayer's visual Plan and recorded verification.",
+    bestFor: "Turning a product requirements document into dependency-ordered tasks",
+    plansWith: "A PRD parsed into tasks with dependencies, priorities and a test strategy",
+    runsIn: "Cursor, Windsurf, VS Code, Claude Code and other MCP clients, or its own CLI",
+    lead: "Task Master turns a product requirements document into a task list that your coding agent works through one task at a time. QualityLayer starts from a conversation with you and ends with recorded evidence. You approve a visual Plan, the agent builds it test first, and an agent that did not write the code checks the result.",
+    strengths: "Task Master is open source and runs as an MCP server or a CLI. It parses a PRD into tasks, each with dependencies, a priority and a test strategy. It scores their complexity, expands the hard ones into subtasks and tells the agent which task comes next. An optional research model can pull in current information while it plans.",
+    agents: "Task Master works through MCP in editors such as Cursor, Windsurf and VS Code, and in Claude Code. It can also use Claude Code or the Codex CLI as its model. QualityLayer runs inside Claude Code, Codex and Cursor as well.",
+    rows: [
+      { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Parse a PRD into tasks, analyze their complexity and expand the complex ones into subtasks.", source: 2 },
+      { topic: "Build it", qualitylayer: "An Outline cuts the approved Plan into slices built test first, each kept beside its agreed outcomes.", other: "The next command picks a pending task whose dependencies are done, and your agent implements it.", source: 2 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Each task carries a test strategy that describes how to verify it.", source: 2 },
+    ],
+    chooseOther: "Choose Task Master if you start from a written PRD and want your agent to work through a task list in dependency order.",
+    chooseQualityLayer: "Choose QualityLayer if you want to shape the plan together with the agent, approve it visually and see evidence that each outcome works before the pull request.",
+    sources: [
+      { label: "Task Master repository, setup and supported editors", url: "https://github.com/eyaltoledano/claude-task-master" },
+      { label: "Task Master task structure and commands", url: "https://tryhamster.com/docs/taskmaster/capabilities/task-structure" },
+    ],
+    checked: "2026-10-26",
+    runsInSource: 1,
+    strengthsSources: [1, 2],
+  },
+  {
+    slug: "cline",
+    kind: "agent",
+    name: "Cline",
+    summary: "Cline's Plan and Act modes with approval for each edit, compared with QualityLayer's approved Plan, recorded verification and review.",
+    bestFor: "An open source agent in your editor that asks before each edit and command",
+    plansWith: "Plan mode, which reads the code and discusses an approach without changing files",
+    runsIn: "VS Code, JetBrains IDEs, a CLI and a desktop app",
+    lead: "Cline is an open source coding agent with two modes. In Plan mode it reads your code and works out an approach with you. In Act mode it makes the changes. QualityLayer works around the agent you already use. You approve a visual Plan before code exists, and an agent that did not write the code checks the result before you approve the change.",
+    strengths: "Cline asks before every file edit and terminal command unless you turn on auto-approve, and it shows each change as a diff. Plan mode cannot modify files or run commands, Act mode keeps the context from planning, and each mode can use its own model. It works with many model providers, MCP servers and project rules.",
+    agents: "Cline is its own agent with its own model settings. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode natively, and other agents that can run shell commands through a copied prompt.",
+    rows: [
+      { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Plan mode reads the code and discusses the approach. A deep planning command investigates further and writes a plan first.", source: 1 },
+      { topic: "Approve", qualitylayer: "Approve the Plan before code and the finished change at Review.", other: "Approve each file edit and terminal command as it happens, or turn on auto-approve.", source: 2 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence.", other: "Cline watches linter and compiler errors while it edits, and tracks its changes so you can undo them.", source: 2 },
+    ],
+    chooseOther: "Choose Cline if you want an open source agent in your editor and like to approve each step as it happens.",
+    chooseQualityLayer: "Choose QualityLayer if you would rather agree on the outcome once, up front, and then review evidence that each agreed outcome works before the pull request.",
+    sources: [
+      { label: "Cline Plan and Act modes", url: "https://docs.cline.bot/features/plan-and-act" },
+      { label: "Cline repository, approvals and where it runs", url: "https://github.com/cline/cline" },
+    ],
+    checked: "2026-10-26",
+    strengthsSources: [1, 2],
+  },
+  {
+    slug: "aider",
+    kind: "agent",
+    name: "Aider",
+    summary: "Aider's terminal pair programming with ask and architect modes, compared with QualityLayer's approved Plan and recorded verification.",
+    bestFor: "Pair programming in the terminal, with a git commit for each change",
+    plansWith: "Ask mode to discuss a change, or architect mode, where one model proposes and another edits",
+    runsIn: "Your terminal, with a watch mode for comments you write in your IDE",
+    lead: "Aider is an open source pair programmer that runs in your terminal and edits the files you add to the chat. QualityLayer works around the coding agent you already use. It adds a visual Plan you approve, a test-first build and a check by an agent that did not write the code.",
+    strengths: "Aider builds a map of your whole codebase and connects to almost any model, local ones included. It commits each change with a descriptive message, so ordinary git tools can show or undo it. It lints edited files automatically and can run your tests after each change and try to fix what fails. Its docs suggest discussing a change in ask mode before switching to code mode.",
+    agents: "Aider is its own agent and works with many cloud and local models. QualityLayer runs inside Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode.",
+    rows: [
+      { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Ask mode discusses without editing. Architect mode has one model propose the change and an editor model apply it.", source: 1 },
+      { topic: "Build it", qualitylayer: "An Outline cuts the approved Plan into slices built test first.", other: "Aider edits the files in the chat and commits each change to git.", source: 3 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Lint and test commands run after edits, and Aider tries to fix the failures they report.", source: 2 },
+    ],
+    chooseOther: "Choose Aider if you want a light terminal tool that edits and commits small changes while you talk them through.",
+    chooseQualityLayer: "Choose QualityLayer for larger changes where you want to approve the plan first and see evidence that each agreed outcome works before the pull request.",
+    sources: [
+      { label: "Aider chat modes", url: "https://aider.chat/docs/usage/modes.html" },
+      { label: "Aider linting and testing", url: "https://aider.chat/docs/usage/lint-test.html" },
+      { label: "Aider repository and features", url: "https://github.com/Aider-AI/aider" },
+    ],
+    checked: "2026-10-26",
+    strengthsSources: [3, 2, 1],
+  },
+  {
+    slug: "github-copilot-coding-agent",
+    kind: "agent",
+    name: "GitHub Copilot cloud agent",
+    summary: "GitHub Copilot's cloud agent, which works on a branch in the background, compared with QualityLayer's approved Plan and recorded verification.",
+    bestFor: "Handing a task to an agent that works in the background on GitHub",
+    plansWith: "Research and a plan it makes in the cloud before it changes code on a branch",
+    runsIn: "An ephemeral environment on GitHub, for repositories hosted on GitHub",
+    lead: "GitHub Copilot cloud agent, also known as the Copilot coding agent, works on its own in an ephemeral environment on GitHub. It researches the repository, makes a plan, changes code on a branch and runs your tests and linters. QualityLayer runs your agent where you work and keeps you in the loop at two points: the Plan before code, and Review before the pull request.",
+    strengths: "You hand Copilot a task and keep working while it runs in the background. It creates the branch, commits its work, runs tests and linters and keeps session logs you can follow. It supports custom agents, skills, hooks and MCP servers, so a team can shape how it works in their repositories.",
+    agents: "Copilot cloud agent is GitHub's own agent. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode on your computer, in a dev container or on a server.",
+    rows: [
+      { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Researches the repository and makes a plan in the cloud before it changes code.", source: 1 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Runs your tests and linters and keeps session logs. GitHub notes that the logs do not replace your own review and testing.", source: 1 },
+      { topic: "Pull request", qualitylayer: "After you approve at Review, QualityLayer opens the pull request with gh and follows it through checks.", other: "One repository, one branch and one pull request per task. You review the diff before a pull request is created, or ask for one in the prompt.", source: 1 },
+    ],
+    chooseOther: "Choose Copilot cloud agent if your code lives on GitHub and you want to hand off well-scoped tasks that run without your own machine.",
+    chooseQualityLayer: "Choose QualityLayer if you want to agree on the plan before any code exists and see evidence for each agreed outcome, with the agent you already use.",
+    sources: [
+      { label: "About GitHub Copilot cloud agent", url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent" },
+    ],
+    checked: "2026-10-26",
+  },
+  {
+    slug: "devin",
+    kind: "agent",
+    name: "Devin",
+    summary: "Cognition's Devin, an autonomous agent with its own cloud workspace, compared with QualityLayer's approved Plan and recorded verification.",
+    bestFor: "Delegating many scoped tasks to an autonomous agent in the cloud",
+    plansWith: "Ask mode, which scopes a task and writes a prompt for an Agent session",
+    runsIn: "Its web app with its own shell, IDE and browser, plus Slack, Teams, an API and a CLI",
+    lead: "Devin is an autonomous coding agent that works in its own cloud workspace and opens pull requests. QualityLayer takes a different route. It runs the agent you already use and stops for you at two points: the Plan before code, and Review before the pull request.",
+    strengths: "Devin works from Slack, Teams, its web app or the terminal. A team can hand it bugs and tickets where they already talk. You can follow its shell, IDE and browser and take over at any point. After it opens a pull request it can test the app end to end and send you a screen recording. Devin Review groups the diff and flags likely bugs.",
+    agents: "Devin runs Cognition's own agents. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode where your code already is.",
+    rows: [
+      { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Ask mode explores the code and scopes the task, then builds a prompt you send to an Agent session.", source: 2 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence.", other: "After the pull request, Devin writes a short test plan for one main flow, runs it in a browser and sends a recording.", source: 3 },
+      { topic: "Review", qualitylayer: "Review shows the evidence and what is still open, and you approve before the pull request.", other: "Devin Review organizes the diff, flags likely bugs by confidence and syncs comments to GitHub.", source: 4 },
+    ],
+    chooseOther: "Choose Devin if you want to hand off a backlog of scoped tasks and review the pull requests later.",
+    chooseQualityLayer: "Choose QualityLayer if you want to decide the plan before code exists and approve the change with evidence for every agreed outcome.",
+    sources: [
+      { label: "Introducing Devin", url: "https://docs.devin.ai/get-started/devin-intro" },
+      { label: "Devin: your first session, Ask and Agent modes", url: "https://docs.devin.ai/get-started/first-run" },
+      { label: "Devin testing and video recordings", url: "https://docs.devin.ai/work-with-devin/testing-and-recordings" },
+      { label: "Devin Review", url: "https://docs.devin.ai/work-with-devin/devin-review" },
+    ],
+    checked: "2026-10-26",
+    runsInSource: 1,
+    strengthsSources: [1, 3, 4],
+  },
+  {
+    slug: "claude-squad",
+    kind: "agent",
+    name: "Claude Squad",
+    summary: "Claude Squad's terminal manager for parallel agent sessions, compared with QualityLayer's plan, verify and review flow.",
+    bestFor: "Running several terminal agents side by side in one window",
+    plansWith: "No planning step of its own; each session runs the agent you choose",
+    runsIn: "A terminal app on tmux that runs Claude Code, Codex, Gemini, Aider and other agents",
+    lead: "Claude Squad is an open source terminal app that runs several coding agents at once, each in its own git workspace. QualityLayer works on a different problem: one change at a time, from an approved Plan to recorded evidence and your review.",
+    strengths: "Each task gets its own isolated git workspace, so parallel agents do not get in each other's way. You switch between sessions, read the diff, and commit and push a branch from one terminal window. Sessions can keep working in the background, also in auto-accept mode.",
+    agents: "Claude Squad starts Claude Code by default and can run Codex, Gemini, Aider and other local agents. Claude Code and Codex are agents QualityLayer supports as well.",
+    rows: [
+      { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One session and isolated git workspace per task, managed from a single terminal window.", source: 1 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. You approve at Review.", other: "A diff tab shows each session's changes before you commit and push.", source: 1 },
+      { topic: "Ship it", qualitylayer: "After your approval, QualityLayer opens the pull request with gh and follows it.", other: "Commit and push the branch to GitHub from the menu.", source: 1 },
+    ],
+    chooseOther: "Choose Claude Squad if your main need is running and switching between many agent sessions in the terminal.",
+    chooseQualityLayer: "Choose QualityLayer if your main need is knowing that one change does what you agreed, with a Plan you approved and evidence you can review.",
+    sources: [
+      { label: "Claude Squad repository", url: "https://github.com/smtg-ai/claude-squad" },
+    ],
+    checked: "2026-10-26",
+  },
+  {
+    slug: "conductor",
+    kind: "agent",
+    name: "Conductor",
+    summary: "Conductor's parallel agent workspaces, compared with QualityLayer's approved Plan, recorded verification and review.",
+    bestFor: "Running Claude Code, Codex, Cursor and OpenCode in parallel workspaces",
+    plansWith: "One workspace per shippable piece of work; each agent plans in its own way",
+    runsIn: "A Mac app that runs Claude Code, Codex, Cursor and OpenCode",
+    lead: "Conductor runs several coding agents in parallel, each in its own workspace with a branch, files, terminal and diff. QualityLayer focuses on one change at a time. You approve a visual Plan, the agent builds it test first, and an agent that did not write the code checks the result before you approve it.",
+    strengths: "Conductor treats each workspace as one stream of work, so you can start a new feature while another agent is still busy. It has a diff viewer whose inline comments go back to the agent, an agent review action and a Checks tab for git status, CI, deployments and todos. It can open the pull request, follow its checks and merge it.",
+    agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports those four agents as well, plus Grok, Antigravity and Pi.",
+    rows: [
+      { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One workspace per shippable unit, each with its own branch, working tree and app processes.", source: 2 },
+      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Test in the terminal or the running app, ask an agent to review, and read the Checks tab before merging.", source: 2 },
+      { topic: "Ship it", qualitylayer: "After your approval, QualityLayer opens the pull request with gh and follows it.", other: "Conductor drafts the pull request, follows its GitHub checks, can merge it and then archives the workspace.", source: 2 },
+    ],
+    chooseOther: "Choose Conductor if you run many agents at once on a Mac and want one place to review and merge their branches.",
+    chooseQualityLayer: "Choose QualityLayer if you want each change agreed before code and checked against those agreed outcomes before you approve it.",
+    sources: [
+      { label: "Conductor documentation", url: "https://docs.conductor.build" },
+      { label: "Conductor workflow", url: "https://docs.conductor.build/workflow" },
+    ],
+    checked: "2026-10-26",
+    runsInSource: 1,
+    strengthsSources: [2],
+  },
 ];
+
+/** The spec-driven tools and plan modes, without coding agents and agent managers. */
+export const SPEC_TOOLS = COMPARISONS.filter((c) => c.kind !== "agent");
+export const AGENT_TOOLS = COMPARISONS.filter((c) => c.kind === "agent");
 
 export const ROUNDUP_PATH = "/best-spec-driven-development-tools";
 export const COMPARISON_PATHS = ["/compare", ...COMPARISONS.map(({ slug }) => `/compare/${slug}`), ROUNDUP_PATH];

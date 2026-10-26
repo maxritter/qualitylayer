@@ -114,4 +114,6 @@ For the broader cost picture, including which arrangement to reach for and how c
 
 **QualityLayer** is a planning-first workflow for any coding agent, including Claude Code, Codex, Pi and OpenCode. You approve the plan in the Cockpit before any code is written, helper agents build it in small tested slices, and an AI that did not write the code checks the result against what you asked for.
 
+Running several agents in parallel? See [QualityLayer vs Claude Squad](https://qualitylayer.dev/compare/claude-squad) and [QualityLayer vs Conductor](https://qualitylayer.dev/compare/conductor).
+
 [Try QualityLayer →](https://qualitylayer.dev)

@@ -6,7 +6,7 @@ import { BANNED_WORDS } from "../lib/banned-words";
 import { PUBLIC_PAGES } from "../lib/seo";
 import { render } from "../prerender";
 
-const SLUGS = ["superpowers", "spec-kit", "openspec", "bmad-method", "gsd", "kiro", "traycer", "compound-engineering", "claude-code-plan-mode", "cursor-plan-mode", "codex-plan-mode", "humanlayer"];
+const SLUGS = ["superpowers", "spec-kit", "openspec", "bmad-method", "gsd", "kiro", "traycer", "compound-engineering", "claude-code-plan-mode", "cursor-plan-mode", "codex-plan-mode", "humanlayer", "task-master", "cline", "aider", "github-copilot-coding-agent", "devin", "claude-squad", "conductor"];
 const ROUTES = ["/compare", ...SLUGS.map((slug) => `/compare/${slug}`), "/best-spec-driven-development-tools"];
 
 function plainText(html: string) {

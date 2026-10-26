@@ -141,4 +141,6 @@ Install both (commands at the top). Spend 30 minutes with each on a real project
 
 **QualityLayer** is the workflow layer for your coding agent: plans you approve before any code, small tested slices, and a check by an agent that did not write the code, all reviewed in one Cockpit.
 
+Compare it with the built-in planning: [QualityLayer vs Claude Code plan mode](https://qualitylayer.dev/compare/claude-code-plan-mode) and [QualityLayer vs Cursor plan mode](https://qualitylayer.dev/compare/cursor-plan-mode).
+
 [Try QualityLayer →](https://qualitylayer.dev)

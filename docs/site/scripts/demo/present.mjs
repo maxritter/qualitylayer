@@ -73,6 +73,13 @@ async function startServer() {
   await new Promise((done) => listener.close(done))
   const server = spawn("bun", ["run", "scripts/ui-dev.ts", "--port", String(port)], {
     cwd: resolve(repo, "qualitylayer"),
+    // Other sessions edit this checkout: the presentation gets its own dependency cache, and the source as
+    // the server first read it, so a file saved mid-edit elsewhere cannot leave a chapter's page empty.
+    env: {
+      ...process.env,
+      QUALITYLAYER_UI_CACHE: resolve(repo, "qualitylayer/dist/.ui-dev-cache-demo"),
+      QUALITYLAYER_UI_FROZEN: "1",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   })
   const url = await new Promise((done, fail) => {
@@ -190,7 +197,13 @@ function director(page, fast, { carry = !fast, hold = false } = {}) {
       // old page, its open dialogs and its ring on screen.
       const fresh = query.replace(/^\?/, `?demo=${++loads}&`)
       await page.goto(`${base}/app-demo/${fresh}`, { waitUntil: "networkidle" })
-      await page.locator("#root > *").first().waitFor({ state: "visible", timeout: 15000 })
+      // A dev server that is recompiling (another session saved a file) can leave the first load empty:
+      // the page is opened once more before the beat gives up.
+      const shown = () => page.locator("#root > *").first().waitFor({ state: "visible", timeout: 15000 })
+      await shown().catch(async () => {
+        await page.goto(`${base}/app-demo/${query.replace(/^\?/, `?demo=${++loads}&`)}`, { waitUntil: "networkidle" })
+        await shown()
+      })
       await page.evaluate(() => document.fonts.ready)
       await pause(250)
       if (!keep) await d.reveal()
@@ -427,8 +440,14 @@ async function runLive() {
   )
   listChapters()
 
+  // A page that does not open is reported, never the end of the presentation: r opens the chapter again.
+  const shown = (step) =>
+    step().catch((error) =>
+      console.log(`  ! the page did not open: ${String(error?.message ?? error).split("\n")[0].replace(/\.+$/, "")}. Press r to open the chapter again, or next.`),
+    )
+  page.on("pageerror", (error) => console.log(`  ! page error: ${error.message.split("\n")[0]}`))
   let at = { chapter: chapterIndex(value("--from", CHAPTERS[0].id)), beat: 0 }
-  await showBeat(page, at)
+  await shown(() => showBeat(page, at))
   for (let command = await next(); command !== "quit"; command = await next()) {
     if (command === "list") {
       listChapters()
@@ -436,15 +455,52 @@ async function runLive() {
     }
     const to = moved(at, command)
     if (!to) continue
-    // "next" plays on from the page as it is; any other move into a chapter rebuilds the page first.
-    if (command !== "next" && to.beat > 0) await arrive(page, to)
     at = to
-    await showBeat(page, at)
+    // "next" plays on from the page as it is; any other move into a chapter rebuilds the page first.
+    await shown(async () => {
+      if (command !== "next" && to.beat > 0) await arrive(page, to)
+      await showBeat(page, to)
+    })
   }
   terminal.close()
   if (refused.length) console.log("Requests outside the demo were refused: " + [...new Set(refused)].join(", "))
   await context.close().catch(() => {})
   await rm(profile, { recursive: true, force: true })
+}
+
+/** Whether one chapter's page opens: the App shows, and nothing on the page throws (a half-edited file). */
+async function opens(page, chapter, timeout) {
+  let error = ""
+  const thrown = new Promise((done) =>
+    page.on("pageerror", (cause) => {
+      error ||= cause.message.split("\n")[0]
+      done(false)
+    }),
+  )
+  const opened = await page
+    .goto(`${base}/app-demo/${chapter.url}`, { waitUntil: "networkidle" })
+    .then(() => Promise.race([page.locator("#root > *").first().waitFor({ state: "visible", timeout }).then(() => !error), thrown]))
+    .catch(() => false)
+  return opened ? null : `  ! ${chapter.title} does not open${error ? `: ${error}` : ""}`
+}
+
+/**
+ * Loads every chapter once before the window opens: the dev server compiles what the live window asks
+ * for, and a chapter whose page does not open is named now, not on stage. The first page waits for the
+ * compile. Each page closes before the next opens, keeping one App instance in memory.
+ */
+async function preflight(browser) {
+  const problems = []
+  for (const [index, chapter] of CHAPTERS.entries()) {
+    const page = await browser.newPage()
+    try {
+      const problem = await opens(page, chapter, index === 0 ? 20000 : 8000)
+      if (problem) problems.push(problem)
+    } finally {
+      await page.close()
+    }
+  }
+  return problems
 }
 
 let server
@@ -457,10 +513,8 @@ try {
   browser = await chromium.launch({ headless: true, ...(existsSync(chrome) ? { executablePath: chrome } : {}) })
   if (check) process.exitCode = (await runCheck(browser)) ? 1 : 0
   else {
-    // Load every chapter once, so the dev server has compiled what the live window asks for.
-    const warm = await browser.newPage()
-    for (const url of new Set(CHAPTERS.map((chapter) => chapter.url)))
-      await warm.goto(`${base}/app-demo/${url}`, { waitUntil: "networkidle" }).catch(() => {})
+    const broken = await preflight(browser)
+    console.log(broken.length ? broken.join("\n") + "\nFix the checkout, or present anyway and skip those chapters." : `All ${CHAPTERS.length} chapter pages open.`)
     await browser.close()
     browser = undefined
     await runLive()

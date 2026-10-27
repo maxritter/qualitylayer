@@ -35,7 +35,7 @@ const card = (d, heading) =>
   d.page.getByRole("heading", { name: heading, exact: true }).first().locator("xpath=../..")
 /** A folded part of a step page, opened: the <details> whose summary starts with `heading`. */
 const fold = async (d, heading) => {
-  const part = d.page.locator("details").filter({ has: d.page.locator("summary", { hasText: heading }) }).first()
+  const part = d.page.locator("details").filter({ has: d.page.locator("summary").filter({ hasText: heading }) }).first()
   await part.evaluate((element) => {
     element.open = true
   })
@@ -349,7 +349,7 @@ export const CHAPTERS = [
         short: true,
         note: "Beside it, the agent's own session: the conversation, or the same session as a terminal.",
         act: async (d) => {
-          await d.click(tab(d, "Agent"))
+          await d.click(tab(d, "Conversation"))
           await d.focus(d.page.getByTestId("right-sidebar"))
         },
       },
@@ -357,7 +357,7 @@ export const CHAPTERS = [
         note: "Same session, the agent's own screen: the real Claude Code terminal, running inside the App.",
         act: async (d) => {
           const sidebar = d.page.getByTestId("right-sidebar")
-          await d.click(sidebar.getByText("Terminal", { exact: true }).first())
+          await d.click(sidebar.getByRole("tab", { name: "Terminal", exact: true }))
           await d.focus(sidebar)
         },
       },
@@ -373,7 +373,7 @@ export const CHAPTERS = [
         },
       },
       {
-        note: "What only I can give, like a Stripe test key, waits for me in Review. The build goes on without me.",
+        note: "The build keeps going without the Stripe test key. The check that needs it stays unverified.",
         act: async (d) => {
           await d.go(at("impl-need"))
           await d.focus(d.page.locator("main").first())
@@ -397,7 +397,7 @@ export const CHAPTERS = [
       },
       {
         short: true,
-        note: "When a check fails, fix rounds take it. Two rounds at most, then it stops and asks me instead of guessing.",
+        note: "The agent fixes failed checks and rechecks what changed. Any remaining failure stays in the Review record.",
         act: async (d) => {
           await d.go(at("verify-red"))
           await d.focus(testid(d, "verify-lanes"))
@@ -409,7 +409,7 @@ export const CHAPTERS = [
       },
       {
         short: true,
-        note: "One fix round later: the build session fixed the failures and the recheck passed. Eleven of twelve points pass; the last one is mine to confirm.",
+        note: "One fix round later: eleven of twelve points have passing evidence. The live Finance check remains unverified.",
         act: async (d) => {
           // Verify as it stands once the task reached Review: every lane done, the recheck passed.
           await d.go(at("review"))
@@ -424,33 +424,58 @@ export const CHAPTERS = [
     id: "review",
     title: "Review",
     line: "You approve the change",
-    url: at("review"),
+    url: at("review-decisions", `${task}/changes`),
     beats: [
       {
-        note: "Step 7. One point only a person can confirm: Finance switching billing mode on the live admin.",
-        act: (d) => d.focus(d.page.getByText("Your turn", { exact: true }).locator("xpath=ancestor::section[1]")),
+        short: true,
+        note: "Step 7. The finished change is ready for code review and one final approval.",
+        act: (d) => d.focus(testid(d, "step-gist")),
+      },
+      {
+        note: "The code comes first. The files I have viewed stay marked when I return.",
+        act: (d) => d.focus(d.page.locator('[aria-label="Code review"]')),
       },
       {
         short: true,
-        note: "Seven decisions in one pass, each with a screenshot of the built screen: looks right, or change it.",
+        note: "Open the code by slice, file by file. Comments stay on the lines they refer to.",
         act: async (d) => {
-          await d.go(at("review-decisions"))
-          await d.focus(testid(d, "review-decisions"))
+          await d.click(button(d, "Review the code"))
+          await d.focus(testid(d, "review-workspace"))
         },
       },
       {
-        note: "Look here: the few lines a reviewer must not miss, each a jump into the page.",
-        act: (d) => d.focus(testid(d, "look-here")),
-      },
-      {
-        note: "The screens it built, compared with the design I approved.",
-        act: (d) => d.focus(testid(d, "wt-screens")),
-      },
-      {
-        note: "The code, slice by slice, each file next to the task it belongs to. Anna's question sits on the line it is about.",
+        note: "The summary keeps the change readable. The live Finance check remains unverified; approval does not make it pass.",
         act: async (d) => {
-          await d.click(button(d, "Open services/gateway/src/meter.ts in the Review workspace"))
-          await d.focus(testid(d, "review-workspace"))
+          await d.go(at("review-decisions", `${task}/changes`))
+          await d.focus(d.page.locator(".review-final-summary"))
+        },
+      },
+      {
+        note: "Every agreed outcome has its proof here, with the checks that ran and the independent reviewers' findings.",
+        act: async (d) => d.focus(await fold(d, /^Checks and outcomes/)),
+      },
+      {
+        short: true,
+        note: "The screens it built, with their recorded sizes, themes and source revisions.",
+        act: async (d) => d.focus(await fold(d, /^Screenshots/)),
+      },
+      {
+        note: "Scope, files, build decisions and the risk at merge are in Change details. The full record stays available.",
+        act: async (d) => d.focus(await fold(d, /^Change details/)),
+      },
+      {
+        note: "Something to change? Tell the agent in Feedback, or comment on a line of code.",
+        act: async (d) => {
+          await d.click(button(d, "Give feedback"))
+          await d.focus(testid(d, "right-sidebar"))
+        },
+      },
+      {
+        short: true,
+        note: "Approve saves the decision. Approve and create PR also pushes the branch and opens its pull request. Nothing merges.",
+        act: async (d) => {
+          await d.page.keyboard.press("Escape")
+          await peek(d, button(d, "Approval options"), 2400)
         },
       },
       {

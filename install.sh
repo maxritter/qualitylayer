@@ -20,9 +20,9 @@
 # (--auto-update --non-interactive --quiet). --auto-update and --non-interactive
 # mean nothing may be asked; --quiet is accepted and ignored.
 # QualityLayer installs alongside Pilot Shell. Pilot Shell before 11.0.10 cannot tell that
-# QualityLayer is installed and offers this update on every start, so its update also brings
-# Pilot Shell to 11.0.10 with Pilot Shell's own installer, pinned by hash. Nothing else of Pilot
-# Shell changes.
+# QualityLayer is installed and offers this update on every start. Its opt-in update also brings
+# older Pilot Shell versions to 11.0.11 with its own installer, pinned by hash.
+# Nothing else of Pilot Shell changes.
 #
 # Environment: VERSION (e.g. 12.0.0; default: the latest stable v12 release),
 # QUALITYLAYER_CHANNEL=beta explicitly selects prereleases,
@@ -70,9 +70,9 @@ if on_this_machine "$RELEASE_BASE" && [ -n "${QUALITYLAYER_RELEASE_SIGNER:-}" ];
 	SIGNER_KEY="$(printf '%s\n' "$QUALITYLAYER_RELEASE_SIGNER" | awk '{print $1 " " $2}')"
 fi
 
-# The last Pilot Shell release: the first that stops offering this update once QualityLayer is
-# installed. Its installer is fetched from its tag and must match this hash before it runs.
-PILOT_VERSION="11.0.10"
+# The pinned Pilot Shell maintenance release knows QualityLayer is installed. Its installer is
+# fetched from its tag and must match this hash before it runs.
+PILOT_VERSION="11.0.11"
 PILOT_INSTALLER="https://raw.githubusercontent.com/${REPO}/v${PILOT_VERSION}/install.sh"
 PILOT_INSTALLER_SHA256="6612ecec41643122012022872d72c23d2d6f01930959571151ced98b07365794"
 if on_this_machine "${QUALITYLAYER_PILOT_INSTALLER:-}" && [ -n "${QUALITYLAYER_PILOT_INSTALLER_SHA256:-}" ]; then
@@ -265,8 +265,8 @@ run_install() {
 }
 
 # update_pilot: run by Pilot Shell's update only, once QualityLayer is installed. A Pilot Shell
-# older than PILOT_VERSION offers this update on every start; its own installer brings it to
-# PILOT_VERSION. A failure here leaves QualityLayer installed and says how to finish by hand.
+# older than PILOT_VERSION is brought to that pinned maintenance version by its own installer.
+# A failure here leaves QualityLayer installed and says how to finish by hand.
 update_pilot() {
 	[ -n "$from_pilot" ] || return 0
 	local pilot="$HOME/.pilot/bin/pilot" current

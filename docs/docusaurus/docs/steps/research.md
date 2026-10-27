@@ -19,6 +19,7 @@ Research maps how the code works today. It can start while you answer Discuss an
 | --- | --- |
 | **Reads blind** | Research helpers do not see your request; without helpers, your agent reads the code as it is before proposing changes |
 | **Checks claims** | Each cited file is reopened before a finding is written |
+| **Draws today** | One picture of the code your request touches, and what that code makes easy, hard or risky for your request |
 | **Names risks** | Code to reuse, files that change often, how it is tested |
 
 For a bug, Research is the diagnosis: how to reproduce it, the cause, what was ruled out.
@@ -29,6 +30,6 @@ Usually nothing. Comment on a finding you disagree with. If the code leaves a re
 
 ## The document {#the-page}
 
-`02-research.md` opens with a plain summary. Read the risks and open questions first. Your agent investigates what it can and asks you only about choices it cannot settle. Then expand a finding for its evidence. Earlier answers and code references stay in the document.
+The page, **How it works today**, opens with a plain summary and one picture of the code your request touches. **What it means for your request** follows: what that code makes easy, hard or risky, each item naming the findings it rests on. Click one to open that finding with its evidence. The findings and the Plan's risk checklist fold below; earlier answers and code references stay in `02-research.md`. Your agent asks you only about choices it cannot settle.
 
 Next: [Plan](plan.md).

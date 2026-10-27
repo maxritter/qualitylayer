@@ -49,7 +49,7 @@ A new branch or worktree starts from this checkout’s HEAD. The pull request ta
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)
 
-One agent session builds the cards of the Outline in their order, the way it would work on its own. Each task starts with a failing test, then the smallest change that makes it pass. The session fixes what fails itself and commits with Git. For slices that do not depend on each other it can use its own agent's subagents; nothing requires it.
+One agent session builds the cards of the Outline in their order, the way it would work on its own. Each task starts with a failing test, then the smallest change that makes it pass. The session fixes what fails itself and commits with Git. For slices that do not depend on each other it can use its own agent's subagents; nothing requires it. The page, **How the build is going**, is the one place the slices are listed, each with its progress.
 
 Test runs the session makes through QualityLayer are recorded with their commit and exit code. The reviewer in [Verify](verify.md) can cite them as evidence.
 

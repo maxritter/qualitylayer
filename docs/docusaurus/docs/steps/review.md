@@ -29,7 +29,7 @@ When checks remain unverified, review their disclosure and choose **Accept these
 
 ## The page {#the-page}
 
-Review opens with what needs your decision, then a walkthrough of the change, its screenshots and its checks. Open supporting records for full paths, commits or evidence.
+The page, **What changed**, opens with what needs your decision, then a walkthrough of the change, its screenshots and its checks. Open supporting records for full paths, commits or evidence.
 
 `07-review.md` keeps the complete record in the order the pull request description needs, so the page draws the walkthrough instead of following the file. The top of the file becomes the pull request's description. If the task changed a [lasting artifact](../artifacts.md#lasting), you pick which pages to [fold in](../artifacts.md#fold-in).
 

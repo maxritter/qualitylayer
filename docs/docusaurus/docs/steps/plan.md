@@ -6,7 +6,7 @@ description: "The one document you approve before any code: what it rests on, th
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-light.svg)
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-dark.svg)
 
-The Plan is the document you approve before the workflow builds. It puts the proposed change, key decisions and open issues first. A small change keeps this brief; larger changes include the design detail you need to review.
+The Plan is the document you approve before the workflow builds. Its page, **How it will work**, puts the proposed change, key decisions and open issues first. A small change keeps this brief; larger changes include the design detail you need to review.
 
 ![The Plan in the App, with Approve Plan and Give feedback at the top right](pathname:///img/app/plan-light.webp)
 ![The Plan in the App, with Approve Plan and Give feedback at the top right](pathname:///img/app/plan-dark.webp)

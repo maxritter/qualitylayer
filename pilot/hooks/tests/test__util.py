@@ -196,6 +196,47 @@ class TestJsonHelpers:
             },
         }
 
+    def test_codex_pre_tool_use_context_omits_unsupported_fields(self, monkeypatch) -> None:
+        from _lib.util import pre_tool_use_context
+
+        monkeypatch.setenv("CLAUDE_PROJECT_PLATFORM", "codex")
+        result = json.loads(pre_tool_use_context('Use native tools for "fixture.py"'))
+        assert result == {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "additionalContext": 'Use native tools for "fixture.py"',
+            }
+        }
+
+    def test_codex_post_tool_use_context_omits_unsupported_suppression(self, monkeypatch) -> None:
+        from _lib.util import post_tool_use_context
+
+        monkeypatch.setenv("CLAUDE_PROJECT_PLATFORM", "codex")
+        result = json.loads(post_tool_use_context("Fixture context"))
+        assert result == {
+            "continue": True,
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": "Fixture context",
+            },
+        }
+
+    def test_codex_tool_redirect_emits_supported_context(self, monkeypatch, tmp_path: Path) -> None:
+        from io import StringIO
+
+        from tool_redirect import run_tool_redirect
+
+        monkeypatch.setenv("CLAUDE_PROJECT_PLATFORM", "codex")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        stdin = StringIO(json.dumps({"tool_name": "Bash", "tool_input": {"command": "cat fixture.py"}}))
+        stdout = StringIO()
+        with patch("sys.stdin", stdin), patch("sys.stdout", stdout):
+            assert run_tool_redirect() == 0
+        result = json.loads(stdout.getvalue())
+        assert set(result) == {"hookSpecificOutput"}
+        assert result["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+        assert result["hookSpecificOutput"]["additionalContext"]
+
     def test_stop_block(self) -> None:
         from _lib.util import stop_block
 

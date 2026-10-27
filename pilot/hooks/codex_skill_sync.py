@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -734,17 +735,17 @@ def _sync_codex_review_agents() -> tuple[int, int]:
 _ENV_MARKER_START = "# --- pilot-shell managed env vars ---"
 _ENV_MARKER_END = "# --- end pilot-shell managed env vars ---"
 _ENV_SECTION_HEADER = "[shell_environment_policy.set]"
+_ENV_TABLE_HEADER_RE = re.compile(r"^\s*\[.*\]\s*(?:#.*)?$")
 
 
 def _merge_env_block(existing: str, env_lines: list[str]) -> str:
     """Merge the pilot-managed env block into config.toml content.
 
-    A TOML table may only be declared once, so when the config already has a
-    [shell_environment_policy.set] header the managed lines are inserted inside
-    that table; only otherwise is a self-contained block (header inside the
-    markers) appended.
+    A TOML table may only be declared once. Keep one env table header outside
+    the markers, which identify Pilot's keys rather than foreign content that
+    Codex may append before the end comment.
 
-    The merge is idempotent and self-healing: every prior managed region is
+    The merge is idempotent and self-healing: every prior managed marker is
     removed (not just the first), every [shell_environment_policy.set]
     declaration is collapsed into one, and any managed key left in that table
     outside the markers is dropped before the fresh block is written. Without
@@ -756,23 +757,9 @@ def _merge_env_block(existing: str, env_lines: list[str]) -> str:
     managed_keys = {line.split("=", 1)[0].strip() for line in env_lines}
     lines = existing.splitlines()
 
-    # Drop every managed region, not just the first. Older formats kept the
-    # section header inside the markers, so it is removed together with the
-    # region. Marker pairs are matched explicitly so an orphaned marker can
-    # never swallow unrelated config; a leftover marker comment is dropped alone.
-    cleaned: list[str] = []
-    i = 0
-    while i < len(lines):
-        if lines[i] == _ENV_MARKER_START:
-            end = next((j for j in range(i + 1, len(lines)) if lines[j] == _ENV_MARKER_END), None)
-            if end is not None:
-                i = end + 1
-                continue
-        if lines[i] in (_ENV_MARKER_START, _ENV_MARKER_END):
-            i += 1
-            continue
-        cleaned.append(lines[i])
-        i += 1
+    # Codex can append foreign tables before the end comment. Only the marker
+    # comments and the managed keys in the env table belong to Pilot.
+    cleaned = [line for line in lines if line not in (_ENV_MARKER_START, _ENV_MARKER_END)]
 
     # Collapse every [shell_environment_policy.set] declaration into a single
     # managed table. Declaring that table twice is itself a fatal TOML error,
@@ -790,8 +777,7 @@ def _merge_env_block(existing: str, env_lines: list[str]) -> str:
                 insert_at = len(rest)
             i += 1
             while i < len(cleaned):
-                inner = cleaned[i].split("#", 1)[0].strip()
-                if inner.startswith("[") and inner.endswith("]"):
+                if _ENV_TABLE_HEADER_RE.match(cleaned[i]):
                     break
                 if cleaned[i].strip() and cleaned[i].split("=", 1)[0].strip() not in managed_keys:
                     body_keys.append(cleaned[i])
@@ -805,7 +791,7 @@ def _merge_env_block(existing: str, env_lines: list[str]) -> str:
     else:
         while rest and not rest[-1].strip():
             rest.pop()
-        rest += ["", _ENV_MARKER_START, _ENV_SECTION_HEADER, *env_lines, _ENV_MARKER_END]
+        rest += ["", _ENV_SECTION_HEADER, _ENV_MARKER_START, *env_lines, _ENV_MARKER_END]
     return "\n".join(rest) + "\n"
 
 
@@ -814,7 +800,7 @@ def _shell_environment_value(existing: str, key: str) -> str | None:
     in_env_table = False
     for line in existing.splitlines():
         stripped = line.split("#", 1)[0].strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
+        if _ENV_TABLE_HEADER_RE.match(line):
             in_env_table = stripped == _ENV_SECTION_HEADER
             continue
         if not in_env_table or "=" not in line:
@@ -878,10 +864,19 @@ def _sync_codex_env_vars() -> int:
     new_content = _merge_env_block(existing, env_lines)
 
     if new_content != existing:
-        tmp = codex_config.with_suffix(".toml.tmp")
-        tmp.write_text(new_content, encoding="utf-8")
-        os.replace(str(tmp), str(codex_config))
-        return len(env_vars)
+        tmp = codex_config.with_name(f".{codex_config.name}.{uuid4().hex}.tmp")
+        try:
+            tmp.write_text(new_content, encoding="utf-8")
+            try:
+                current = codex_config.read_text(encoding="utf-8")
+            except OSError:
+                return 0
+            if current != existing:
+                return 0
+            os.replace(str(tmp), str(codex_config))
+            return len(env_vars)
+        finally:
+            tmp.unlink(missing_ok=True)
     return 0
 
 

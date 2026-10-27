@@ -818,10 +818,7 @@ class TestSyncCodexEnvVars:
     def test_preserves_user_configured_impeccable_cache_root(self, tmp_path: Path) -> None:
         codex_config = tmp_path / ".codex" / "config.toml"
         codex_config.parent.mkdir(parents=True)
-        codex_config.write_text(
-            "[shell_environment_policy.set]\n"
-            'IMPECCABLE_CACHE_ROOT = "/Volumes/cache/impeccable"\n'
-        )
+        codex_config.write_text('[shell_environment_policy.set]\nIMPECCABLE_CACHE_ROOT = "/Volumes/cache/impeccable"\n')
 
         with patch("codex_skill_sync.Path.home", return_value=tmp_path):
             _sync_codex_env_vars()
@@ -832,10 +829,7 @@ class TestSyncCodexEnvVars:
     def test_ignores_same_named_key_outside_shell_environment_table(self, tmp_path: Path) -> None:
         codex_config = tmp_path / ".codex" / "config.toml"
         codex_config.parent.mkdir(parents=True)
-        codex_config.write_text(
-            "[other.table]\n"
-            'IMPECCABLE_CACHE_ROOT = "/not-an-environment-value"\n'
-        )
+        codex_config.write_text('[other.table]\nIMPECCABLE_CACHE_ROOT = "/not-an-environment-value"\n')
 
         with patch("codex_skill_sync.Path.home", return_value=tmp_path):
             _sync_codex_env_vars()
@@ -1046,6 +1040,75 @@ class TestSyncCodexEnvVars:
 
         content = codex_config.read_text()
         assert 'PILOT_BRANCH_ISOLATION_ENABLED = "true"' in content
+
+    @pytest.mark.parametrize("header_inside", [True, False])
+    def test_preserves_foreign_content_inside_old_markers(self, tmp_path: Path, header_inside: bool) -> None:
+        codex_config = tmp_path / ".codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True)
+        header = "[shell_environment_policy.set]\n"
+        foreign = (
+            "# Keep this marketplace comment.\n"
+            '[marketplaces."local#tools"] # a quoted table name is not a comment\n'
+            'source_type = "local"\n'
+            'source = "/fixture/marketplace"\n'
+            'PILOT_PLAN_APPROVAL_ENABLED = "foreign value"\n'
+            'IMPECCABLE_CACHE_ROOT = "/foreign/cache"\n'
+            "\n[[plugins.inventory]]\n"
+            'name = "fixture-plugin"\n'
+        )
+        codex_config.write_text(
+            'model = "fixture-model"\n'
+            + ("" if header_inside else header)
+            + "# --- pilot-shell managed env vars ---\n"
+            + (header if header_inside else "")
+            + 'PILOT_PLAN_APPROVAL_ENABLED = "false"\n'
+            + 'CUSTOM_ENV = "user#value"\n'
+            + foreign
+            + "# --- end pilot-shell managed env vars ---\n"
+        )
+
+        with patch("codex_skill_sync.Path.home", return_value=tmp_path):
+            assert _sync_codex_env_vars() == 8
+            content = codex_config.read_text()
+            with patch("codex_skill_sync.os.replace") as replace:
+                assert _sync_codex_env_vars() == 0
+                replace.assert_not_called()
+
+        parsed = tomllib.loads(content)
+        assert parsed["model"] == "fixture-model"
+        assert parsed["shell_environment_policy"]["set"]["CUSTOM_ENV"] == "user#value"
+        assert parsed["shell_environment_policy"]["set"]["PILOT_PLAN_APPROVAL_ENABLED"] == "true"
+        assert parsed["shell_environment_policy"]["set"]["IMPECCABLE_CACHE_ROOT"] == "~/.pilot/cache/impeccable"
+        assert parsed["marketplaces"]["local#tools"]["PILOT_PLAN_APPROVAL_ENABLED"] == "foreign value"
+        assert parsed["marketplaces"]["local#tools"]["IMPECCABLE_CACHE_ROOT"] == "/foreign/cache"
+        assert parsed["plugins"]["inventory"] == [{"name": "fixture-plugin"}]
+        assert foreign in content
+        assert codex_config.read_text() == content
+
+    def test_does_not_replace_config_changed_while_preparing_write(self, tmp_path: Path) -> None:
+        codex_config = tmp_path / ".codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True)
+        existing = 'model = "fixture-model"\n'
+        codex_config.write_text(existing)
+        concurrent = existing + '\n[marketplaces.concurrent]\nsource = "/fixture/concurrent"\n'
+        write_text = Path.write_text
+
+        def write_with_concurrent_edit(path: Path, text: str, *args, **kwargs):
+            result = write_text(path, text, *args, **kwargs)
+            if path.parent == codex_config.parent and path.name.endswith(".tmp"):
+                write_text(codex_config, concurrent)
+            return result
+
+        with (
+            patch("codex_skill_sync.Path.home", return_value=tmp_path),
+            patch.object(Path, "write_text", write_with_concurrent_edit),
+            patch("codex_skill_sync.os.replace") as replace,
+        ):
+            assert _sync_codex_env_vars() == 0
+            replace.assert_not_called()
+
+        assert codex_config.read_text() == concurrent
+        assert list(codex_config.parent.glob("*.tmp")) == []
 
     def test_noop_when_no_codex_config(self, tmp_path: Path) -> None:
         with patch("codex_skill_sync.Path.home", return_value=tmp_path):

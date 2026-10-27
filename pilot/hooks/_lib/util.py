@@ -743,31 +743,30 @@ def check_file_length(file_path: Path) -> str:
 
 
 def post_tool_use_context(context: str) -> str:
-    """Build suppressed PostToolUse context for the agent only."""
-    return json.dumps(
-        {
-            "continue": True,
-            "suppressOutput": True,
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": context,
-            },
-        }
-    )
+    """Build agent context using the receiving client's PostToolUse contract."""
+    result = {
+        "continue": True,
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": context,
+        },
+    }
+    if os.environ.get("CLAUDE_PROJECT_PLATFORM") != "codex":
+        result["suppressOutput"] = True
+    return json.dumps(result)
 
 
 def pre_tool_use_context(context: str) -> str:
-    """Build suppressed PreToolUse context for the agent only."""
-    return json.dumps(
-        {
-            "continue": True,
-            "suppressOutput": True,
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": context,
-            },
-        }
-    )
+    """Build agent context using the receiving client's PreToolUse contract."""
+    result = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": context,
+        },
+    }
+    if os.environ.get("CLAUDE_PROJECT_PLATFORM") != "codex":
+        result.update({"continue": True, "suppressOutput": True})
+    return json.dumps(result)
 
 
 def stop_block(reason: str) -> str:

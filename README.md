@@ -22,7 +22,7 @@ Professional context and harness engineering around the coding agents you alread
 </p>
 
 ```bash
-export VERSION=11.0.10
+export VERSION=11.0.11
 curl -fsSL "https://raw.githubusercontent.com/maxritter/qualitylayer/v${VERSION}/install.sh" | bash
 ```
 
@@ -76,7 +76,7 @@ Rules, skills, and persistent memory are coordinated parts of this harness. They
 **Works with any existing project.** Pilot Shell integrates with **Claude Code** and **Codex CLI or ChatGPT desktop**, using their built-in concepts (rules, hooks, skills, subagents, MCP) to improve your experience:
 
 ```bash
-export VERSION=11.0.10
+export VERSION=11.0.11
 curl -fsSL "https://raw.githubusercontent.com/maxritter/qualitylayer/v${VERSION}/install.sh" | bash
 ```
 
@@ -88,7 +88,7 @@ Installs globally on macOS, Linux, and Windows (WSL2). After installation, run `
 If you encounter an issue or unfixed bug in the latest version, you can always go back to a previous version (see [releases](https://github.com/maxritter/pilot-shell/releases)):
 
 ```bash
-export VERSION=11.0.10
+export VERSION=11.0.11
 curl -fsSL "https://raw.githubusercontent.com/maxritter/qualitylayer/v${VERSION}/install.sh" | bash
 ```
 </details>
@@ -99,7 +99,7 @@ curl -fsSL "https://raw.githubusercontent.com/maxritter/qualitylayer/v${VERSION}
 Removes Pilot's runtime, Console, statusline, hooks, managed skills/rules/agents, MCP entries, settings injections, and shell aliases. Claude Code, Codex, project files, shared external tools, and user data are preserved:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.10/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.11/uninstall.sh | bash
 ```
 
 The interactive uninstaller asks separately whether to remove proven Pilot-owned external tools and whether to purge Pilot data, then shows the final removal preview. The prompts use the controlling terminal, so they also work with the piped command above.
@@ -108,10 +108,10 @@ Optional cleanup stays explicit:
 
 ```bash
 # Also remove external tools that Pilot recorded as originally Pilot-installed
-curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.10/uninstall.sh | bash -s -- --remove-tools
+curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.11/uninstall.sh | bash -s -- --remove-tools
 
 # Also delete Pilot memories, sessions, logs, configuration, and unknown files
-curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.10/uninstall.sh | bash -s -- --purge-data
+curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/v11.0.11/uninstall.sh | bash -s -- --purge-data
 ```
 </details>
 
@@ -133,7 +133,7 @@ mv ~/.codex        ~/.codex.bak
 mv ~/.pilot        ~/.pilot.bak
 
 # 3. Reinstall Pilot Shell from the official installer
-export VERSION=11.0.10
+export VERSION=11.0.11
 curl -fsSL "https://raw.githubusercontent.com/maxritter/qualitylayer/v${VERSION}/install.sh" | bash
 
 # 4. Re-activate your license, then start your agent

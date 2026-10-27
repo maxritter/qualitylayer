@@ -49,7 +49,7 @@ CODENAME="$(lsb_release -cs 2>/dev/null || echo "")"
 
 # Later browser dependencies use these same sources. Normalize them before the
 # targeted install succeeds, so those steps do not return to the slow mirror.
-for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
   if [ -f "$src" ]; then
     sudo sed -i "s|http://azure.archive.ubuntu.com/ubuntu|$PUBLIC_MIRROR|g" "$src" || true
   fi

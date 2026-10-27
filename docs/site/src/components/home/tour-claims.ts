@@ -51,10 +51,10 @@ export const CLAIMS: Record<string, Claim> = {
     first: ["running Independent review", "window.test.ts"],
     last: ["9 of 9 passed", "Your turn · 2 in Review"],
   },
-  // "You read the finished change top to bottom, then approve it": what only you can confirm, what the agent decided, the change in the pull request's order, then Approve; after it the pull request stays open until merged
+  // Review opens the code, with complete supporting records in three folds and one final approval.
   review: {
     always: ["The change, top to bottom"],
-    first: ["Only you can confirm", "I confirm", "Fine", "Ask why", "2 things, then approve", /switch on the live admin/, /outage buffer/, "3 of 3 points passed", "Why", "What you asked for", "Built, slice by slice", "Deliberately not changed", "How it was checked", "Ship", "built in slice 2", "comment on any line"],
+    first: ["Review the code", "Approve and create PR", "Checks", "Screens", "Change details", "not verified", "services/gateway/src/meter.ts", "Does a retry with a new request id count twice?", "Built, slice by slice", "Decided while building", "Ask why"],
     last: ["Approved · pull request #412 opened", "The task stays open until the pull request is merged", "Pull request #412", "no review yet"],
   },
   // "Ask, and your agent draws the page": the request, and the page inside the Plan's question

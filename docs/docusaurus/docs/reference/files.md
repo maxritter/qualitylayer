@@ -27,12 +27,12 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 | File | What it holds |
 | --- | --- |
 | `01-discuss.md` | Your request, the problem, **Done means**, scope and decisions |
-| `02-research.md` | How the code works today, risks and tests. A bug's is **Why it breaks** |
+| `02-research.md` | **How it works today:** a picture of the code, findings, risks and tests. A bug's is **Why it breaks** |
 | `03-plan.md` | The decided design, artifacts, **Not doing**, **Before the build** and who reviewed it |
-| `04-outline.md` | The slices, how each point is proved, and every command the build runs |
-| `05-implement.md` | Slices and their state, recorded checks, decisions made while building |
+| `04-outline.md` | Where the change lands, the slices, checks and build commands |
+| `05-implement.md` | Slice progress, checks and decisions |
 | `06-verify.md` | Each point with its evidence, and what is still open |
-| `07-review.md` | The pull request's description word for word, then what you settled |
+| `07-review.md` | The pull request's description, change details and approval |
 
 ## Lasting artifacts {#lasting}
 

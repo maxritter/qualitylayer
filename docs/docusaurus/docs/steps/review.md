@@ -1,33 +1,33 @@
 ---
 title: Review
-description: Settle what agents could not settle for you, look at the result, and approve. Open a pull request when you choose.
+description: Review the code, screens and checks, then approve the change. Open a pull request when you choose.
 ---
 
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-light.svg)
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-dark.svg)
 
-The final approval is always yours. Review brings back the decisions and unverified checks that need you, then shows the whole change with proof for each **Done means** point.
+The final approval is yours. Review opens the code alongside the complete change, screens and checks. Unverified results stay unverified when you approve.
 
-![Review in the App: the first of seven decisions, a screenshot of the built billing-mode screen with Looks right and Change](pathname:///img/app/review-light.webp)
-![Review in the App: the first of seven decisions, a screenshot of the built billing-mode screen with Looks right and Change](pathname:///img/app/review-dark.webp)
+![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-light.webp)
+![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-dark.webp)
 
 *Example task in a fictional project.*
 
-## Your turn {#items}
+## Review the result {#items}
 
-| Item | Your answers |
+| Part | What you read |
 | --- | --- |
-| **Only you can confirm** | **I confirm**, or ask the agent to record it |
-| **Look at the result** | **Looks right**, or pin a change on the screenshot |
-| **Found while checking** | **Accept**, or **Fix it** |
-| What Verify left open ([two runs](verify.md#rounds)), unticked cards, recorded needs | **Fix open items** runs one more round on just those; or approve with the item open, or request changes |
-| Unverified checks | **Accept these limits** records your decision; it does not pass the checks or approve the change |
+| **Code** | The complete change, with line comments |
+| **Checks** | Every check and its recorded result, including failures and unverified work |
+| **Screens** | The changed screens and their comparison evidence |
+| **Change details** | The complete change record, decisions and amendments |
+| **Open items** | What remains unresolved; approval never marks it passed |
 
-Routine build decisions stay under **Decided while building**. Read them or **Ask why**; none needs a confirmation.
+Routine choices stay under **Decided while building**. Read them or **Ask why**; none needs a confirmation.
 
 ## The page {#the-page}
 
-What needs your decision comes first, then a walkthrough of the change with its screenshots and checks. Supporting records hold full paths, commits and evidence.
+The **Review** page opens code review. **Checks**, **Screens** and **Change details** fold below it; each keeps its full content. Supporting records hold full paths, commits and evidence.
 
 `07-review.md` keeps the complete record in pull request order; its top becomes the pull request's description. If the task changed a [lasting artifact](../artifacts.md#lasting), you pick which pages to [fold in](../artifacts.md#fold-in).
 
@@ -66,14 +66,16 @@ Open comments do not block approval and are not sent to your agent. When the pul
 
 ## Approve {#approve}
 
+Use the final approval in the page header. There is one approval for the whole change, even if the build agent has stopped.
+
 | Choice | What happens |
 | --- | --- |
 | **Approve** | Approves the change locally. You push and open a pull request yourself |
-| **Approve and open a pull request** | Pushes the task's branch and opens the pull request. Needs `gh` |
+| **Approve and create PR** | Pushes the task's branch and opens the pull request. Needs `gh` |
 | **Copy the git commands** | Run them in your terminal |
 
-![When an answer asks for a change, the button reads Send 1 change](pathname:///img/diagrams/comments-light.svg)
-![When an answer asks for a change, the button reads Send 1 change](pathname:///img/diagrams/comments-dark.svg)
+![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-light.svg)
+![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-dark.svg)
 
 Nothing is pushed or merged without your yes. A task built on your main branch has no branch to open a pull request from ([where the build lands](implement.md#where-it-lands)). Once a pull request is open, your agent [watches the checks](pull-request.md#watch) and works through reviewers' threads ([Pull request](pull-request.md#waits)). Teammates comment in their own App ([Change reviews](../team/changes.md)).
 

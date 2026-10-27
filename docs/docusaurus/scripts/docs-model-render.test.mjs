@@ -32,9 +32,9 @@ function world() {
   symlinkSync(join(realQualityLayer, "node_modules"), join(root, "qualitylayer/node_modules"), "junction");
   // The shared assets sit where the check looks for them, equal to the model's own.
   for (const name of readdirSync(join(model, "assets"))) {
-    const target = name === "palette.css" ? "qualitylayer/src/ui/brand" : /^(?:geist|OFL)/.test(name) ? "docs/docusaurus/static/fonts" : "docs/docusaurus/static/img/app";
+    const target = name === "palette.css" ? "qualitylayer/src/ui/brand" : /^(?:geist|OFL)/.test(name) ? "docs/docusaurus/static/fonts" : name.startsWith("product-") ? "docs/site/public/product" : "docs/docusaurus/static/img/app";
     mkdirSync(join(root, target), { recursive: true });
-    cpSync(join(model, "assets", name), join(root, target, name));
+    cpSync(join(model, "assets", name), join(root, target, name.replace(/^product-/, "")), { recursive: true });
   }
   const world = {
     root,

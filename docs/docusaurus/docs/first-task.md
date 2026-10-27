@@ -6,7 +6,7 @@ description: Choose Chat for a direct conversation, or Feature and Bugfix for a 
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-light.svg)
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-dark.svg)
 
-Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** or **Bugfix** in a repository you know. The task is on the left; your agent works in the **Agent** sidebar on the right.
+Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** or **Bugfix** in a repository you know. The task is on the left; your agent works in **Conversation** on the right.
 
 | | You do |
 | --- | --- |
@@ -15,7 +15,7 @@ Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** o
 | 3 | **Read the Plan**, then **Approve Plan** or **Give feedback** |
 | 4 | **Start the build** |
 | 5 | Follow Outline, Implement and Verify. Anything only you can do is recorded for Review |
-| 6 | **Confirm what only you can**, look at the result, approve |
+| 6 | **Review the code and checks**, then approve |
 | 7 | **Merge the pull request** on GitHub |
 
 Steps 1 to 6 happen in the App or browser.

@@ -78,7 +78,7 @@ describe("the tour", () => {
   });
 
   it("keeps everything that waits for the person in the one amber Your turn card", async () => {
-    for (const [id, step] of [["discuss", 0], ["research", 3], ["start", 0], ["review", 0], ["draw", 2], ["answer", 0], ["together", 0]] as const) {
+    for (const [id, step] of [["discuss", 0], ["research", 3], ["start", 0], ["draw", 2], ["answer", 0], ["together", 0]] as const) {
       expect((await shot(id, step)).match(/class="cu-yt"/g), id).toHaveLength(1);
     }
     for (const [id, step] of [["research", 0], ["plan", 0], ["outline", 2], ["implement", 2], ["verify", 2]] as const) expect(await shot(id, step), id).not.toContain('class="cu-yt"');
@@ -193,15 +193,22 @@ describe("the tour", () => {
     expect(done).toContain("Your turn · 2 in Review");
   });
 
-  it("draws Review with what only you can confirm, then Approve and the ways to ship", async () => {
-    expect(text(await shot("review", 0))).toContain("Only you can confirm");
-    expect(text(await shot("review", 0))).toContain("I confirm");
-    const menu = text(await shot("review", 4));
-    expect(menu).toContain("Approve the change?");
-    expect(menu).toContain("Approve and open a pull request");
+  it("opens Review on the code with one header approval and complete records in three folds", async () => {
+    for (const moment of [0, 1, 2, 4]) {
+      const page = await shot("review", moment);
+      expect(page).not.toContain('class="cu-yt"');
+      expect(text(page)).not.toMatch(/Your turn|Only you can confirm|I confirm|then approve/);
+      expect(text(page).match(/Approve and create PR/g)).toHaveLength(1);
+      expect(page.indexOf("Approve and create PR")).toBeLessThan(page.indexOf('aria-label="Review the code"'));
+      expect([...page.matchAll(/<summary[^>]*><b>([^<]+)<\/b>/g)].map((match) => match[1])).toEqual(["Checks", "Screens", "Change details"]);
+      expect(page).toContain('aria-label="Diff of services/gateway/src/meter.ts"');
+      expect(text(page)).toContain("Does a retry with a new request id count twice?");
+      expect(text(page)).toContain("Approval leaves this result unverified");
+      for (const content of ["window.test.ts", "Billing mode", "Built, slice by slice", "Decided while building"]) expect(text(page)).toContain(content);
+    }
   });
 
-  it("reads the change top to bottom under the approval card, in the order of the pull request", async () => {
+  it("keeps the complete change description inside Change details, in the order of the pull request", async () => {
     const page = text(await shot("review", 0));
     const order = ["The change, top to bottom", "Why", "What you asked for", "Built, slice by slice", "Deliberately not changed", "How it was checked", "Ship"].map((part) => page.indexOf(part, page.indexOf("The change, top to bottom")));
     expect(order.every((at) => at >= 0)).toBe(true);

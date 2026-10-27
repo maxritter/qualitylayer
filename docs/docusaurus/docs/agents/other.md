@@ -32,7 +32,7 @@ A copied prompt works in any coding agent, but does not add the App's conversati
 | Setup | Done when you install | One pasted prompt |
 | Model and effort | Set in QualityLayer | Set in your agent |
 | Building | One session builds the slices; it can use its agent's own subagents | One session builds the slices with its own tools |
-| Sessions | The App's **Agent** sidebar and supported session controls | Your agent's terminal and its own controls |
+| Sessions | The App's **Conversation** and supported session controls | Your agent's terminal and its own controls |
 | Cost panel | Per step, when the agent's records hold token counts | Not shown |
 | [Second opinion](../reference/settings.md#second-opinion) | Choose an installed native reviewer | Can use an installed native reviewer |
 

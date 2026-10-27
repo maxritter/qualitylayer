@@ -1,26 +1,24 @@
 ---
 title: Outline
-description: The Outline orders the tested slices. The build session writes it from the approved Plan; a small task can have it ready earlier. You do not approve it again.
+description: The Outline shows where the change lands in the code before any of it is written. The build session writes it from the approved Plan; a small task can have it ready earlier. You do not approve it again.
 ---
 
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-light.svg)
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-dark.svg)
 
-The Plan says what changes; the Outline says how it is built, slice by slice. The build session writes it from the approved Plan, then continues through Implement and Verify until human Review. **You do not approve the Outline again.**
-
-![Outline: build order, slices, and how each Done means point is proved](pathname:///img/diagrams/outline-light.svg)
-![Outline: build order, slices, and how each Done means point is proved](pathname:///img/diagrams/outline-dark.svg)
+The Plan says what changes; the Outline says where in the code it lands and how it is built. The build session writes it from the approved Plan, then continues through Implement and Verify until human Review. **You do not approve the Outline again.**
 
 ## What is in it {#what-the-agent-does}
 
 | Part | What it holds |
 | --- | --- |
-| **Slices** | Pieces that each work end to end, thinnest first, with the test to write first |
-| **Build order** | The order the slices are built in, and which slices are risky |
+| **Where the change lands** | Each area of the code the build adds to or changes, with its new and changed files, the slices that change it and whether it is risky |
+| **Decided inside the code** | The decisions the build session made that the Plan left open |
 | **Proof** | The scenario that proves each **Done means** point |
+| **Slices** | Pieces that each work end to end, thinnest first, with the test to write first |
 | **Commands** | Every command the build will run. A push or deploy needs the Plan's permission |
 
-The build map lists the slices in the order they are built. Open a slice for its tasks and tests. Each **Done means** point links to the scenario and slice that prove it.
+The **Outline** page opens on the areas of the code. Open an area for what changes in each file and the decisions made for it. Each **Done means** point links to the scenario that proves it. The slices and their task cards are listed once, on [Implement](implement.md).
 
 For a bug, the Outline keeps reproduction before the root-cause repair and includes the named regression checks. It uses the slices the repair needs; the final project checks run in Verify.
 

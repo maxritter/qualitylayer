@@ -6,7 +6,7 @@ make more that match.
 
 | Folder | What it holds |
 |---|---|
-| [`illustrations/`](#illustrations) | Seven 3D scenes in one style, without any words in them |
+| [`illustrations/`](#illustrations) | Nine 3D scenes in one style, without any words in them |
 | [`screenshots/`](#app-screenshots) | Seventeen App views, each a whole card, panel or window |
 | [`diagrams/`](diagrams/README.md) | The software-factory diagrams and research charts, dark and light |
 | [`marks/`](#marks) | The QualityLayer mark and Max's mark |
@@ -16,7 +16,7 @@ make more that match.
 ## Illustrations
 
 Generated with Imagegen (ChatGPT images through the Codex login) for the "Inside QualityLayer" webinar
-deck, 29 October 2026. All seven share one style: glossy 3D objects on a near-black background, blue for
+deck, 29 October 2026. All nine share one style: glossy 3D objects on a near-black background, blue for
 agents, amber for what a person decides, violet for automated checks. They contain no text, so they work
 in any language. `prompts/` holds the full prompt for each and `style.txt` the shared style block; reuse
 both to make a new scene that matches.
@@ -24,7 +24,9 @@ both to make a new scene that matches.
 | Picture | File | Size | Shows |
 |---|---|---|---|
 | <img src="illustrations/factory-conveyor.webp" width="220" alt=""> | `factory-conveyor.webp` | 1672 × 941 | A conveyor with seven stations, from a chat bubble to an approved document, and a person at a console who receives the result. The webinar's title picture. |
+| <img src="illustrations/data-evidence.webp" width="220" alt=""> | `data-evidence.webp` | 1254 × 1254 | Glass bar columns rising beside a stack of unread pull requests with a red warning light, a benchmark board with a few cracked tiles, and a magnifying glass |
 | <img src="illustrations/factory-lights-off.webp" width="220" alt=""> | `factory-lights-off.webp` | 1254 × 1254 | The factory with the lights off: robot arms fill a conveyor, the review desk is empty and unread documents pile up |
+| <img src="illustrations/shift-left-blueprint.webp" width="220" alt=""> | `shift-left-blueprint.webp` | 1254 × 1254 | A person places amber comment markers on a glass blueprint at the start of a factory line, while blue robot arms wait to build; an amber arrow points back to the blueprint |
 | <img src="illustrations/factory-lights-on.webp" width="220" alt=""> | `factory-lights-on.webp` | 1254 × 1254 | The factory with the lights on: a person approves the blueprint, robot arms build, violet arches check, a second person approves the result |
 | <img src="illustrations/plan-diagram-and-mockup.webp" width="220" alt=""> | `plan-diagram-and-mockup.webp` | 1254 × 1254 | A diagram and a screen mockup side by side, with amber comment pins and an approval check |
 | <img src="illustrations/people-around-the-plan.webp" width="220" alt=""> | `people-around-the-plan.webp` | 1254 × 1254 | Three people around one plan, each linked to a passage, with question and check bubbles and an agent receiving an answer |

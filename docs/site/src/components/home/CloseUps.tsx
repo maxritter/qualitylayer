@@ -252,7 +252,7 @@ function Walkthrough() {
       </div>
       <div className="cu-wr">
         <span className="cu-wk">How it was checked</span>
-        <p className="cu-wchk"><Mk k="check" />{CHECKS_TOTAL} of {CHECKS_TOTAL} checks passed<span className="cu-k">· 3 steps to try it yourself · 1 thing only you can confirm</span></p>
+        <p className="cu-wchk"><Mk k="check" />{CHECKS_TOTAL} of {CHECKS_TOTAL} checks passed<span className="cu-k">· 3 steps to try it yourself · live admin not verified</span></p>
       </div>
       <div className="cu-wr">
         <span className="cu-wk">Ship</span>
@@ -485,8 +485,6 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
     }
 
     case "review": {
-      // The approval card, then the change top to bottom; once approved, the pull request stays on the page until it is merged.
-      const left = Math.max(0, 2 - step);
       const approved = at(5);
       if (approved)
         return (
@@ -502,32 +500,33 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
         );
       return (
         <Frame label="Review"
-          top={<TopBar stage={6} chip={waits("waits for your review")} />}
-          gate={<GateTrack items={[{ label: "What you get · 3 points", state: "done" }, { label: "Only you can confirm · 1", state: at(1) ? "done" : "cur" }, { label: "Decided while building · 1", state: at(2) ? "done" : at(1) ? "cur" : undefined }, { label: "Approve", state: at(2) ? "cur" : undefined }]} turn={left ? `Your turn · ${left} ${left === 1 ? "thing" : "things"}` : "Your turn · approve"} />}>
-          <YourTurn kind="then approve" count={`${2 - left} of 2`} title={left ? `${left} ${left === 1 ? "thing" : "things"}, then approve` : "Approve the change?"} text="Agents checked everything they can; 3 of 3 points passed. Approve opens the pull request unless you pick otherwise."
-            foot={<><Keys keys={[["Y", "confirm"], ["↵", "approve"]]} /><span className="cu-grow" /><span className={`cu-split${at(3) ? " glow" : ""}`}><span className="cu-btn pri">Approve</span><span className="cu-btn pri"><ChevronDown size={13} aria-hidden="true" /></span></span></>}>
-            {at(1) ? <Sent>Confirmed · one switch on the live admin left an audit entry</Sent> : (
-              <div className="cu-item">
-                <p className="cu-k">Only you can confirm · Done means 3</p>
-                <b>One switch on the live admin left an audit entry</b>
-                <p className="cu-itp">Agents may not call live services while checking.</p>
-                <p className="cu-acts"><span className="cu-btn pri sm">I confirm</span><span className="cu-btn sm">Ask the agent to record it</span></p>
-              </div>
-            )}
-            {at(2) ? <Sent>Fine · the outage buffer keeps an hour on disk</Sent> : (
-              <div className="cu-item">
-                <p className="cu-k">Decided by Claude Code while building · 1 flagged for you</p>
-                <b>The outage buffer keeps an hour of events on disk while Kafka is down</b>
-                <p className="cu-acts"><span className="cu-btn pri sm">Fine</span><span className="cu-btn sm">Ask why</span></p>
-              </div>
-            )}
-          </YourTurn>
-          <div className={`cu-menu ${show(4)}`}>
-            <p className="first"><b>Approve and open a pull request</b><small>Its description follows this page, with the proof</small></p>
-            <p><b>Approve only</b><small>You push and open it yourself</small></p>
-            <p><b>Copy the git commands</b><small>Push the branch and open the pull request by hand</small></p>
-          </div>
-          <Walkthrough />
+          top={<TopBar stage={6} chip={waits("waits for your review")} approval={<span className="cu-btn pri">Approve and create PR</span>} />}>
+          <section className="cu-card" aria-label="Review the code">
+            <p className="cu-cardh"><b>Review the code</b><span className="cu-k">8 files · Unified / Split</span></p>
+            <p className="cu-wf"><span className="cu-k">T3</span><code>services/gateway/src/meter.ts</code><span className="cu-k">+10 −2</span></p>
+            <div className="cu-wdf" role="group" aria-label="Diff of services/gateway/src/meter.ts">
+              {DIFF.map(([kind, n, line]) => (
+                <div key={n}>
+                  <p className={`cu-wl ${kind}`}><span>{n}</span><code>{line}</code></p>
+                  {n === 5 && <p className="cu-wth"><i className="cu-av">A</i><span><b>Anna</b> <span className="cu-k">from the team</span><br />Does a retry with a new request id count twice?</span></p>}
+                </div>
+              ))}
+            </div>
+          </section>
+          <details className="cu-card" open={step === 0}>
+            <summary className="cu-cardh"><b>Checks</b><span className="cu-k">{CHECKS_TOTAL} passed · live admin not verified</span></summary>
+            <Checked facts={VERIFY_CHECKS} />
+            {POINTS.map(([title, evidence]) => <p key={title} className="cu-row"><Mk k="check" /><span>{title}<small className="cu-k"> · {evidence}</small></span></p>)}
+            <p className="cu-calmp">One switch on the live admin left an audit entry: not verified. Approval leaves this result unverified.</p>
+          </details>
+          <details className="cu-card" open={step === 1}>
+            <summary className="cu-cardh"><b>Screens</b><span className="cu-k">Billing mode · screenshot 2</span></summary>
+            <ArtifactPage />
+          </details>
+          <details className="cu-card" open={step >= 2}>
+            <summary className="cu-cardh"><b>Change details</b><span className="cu-k">3 slices · 5 tasks · 8 files</span></summary>
+            <Walkthrough />
+          </details>
         </Frame>
       );
     }

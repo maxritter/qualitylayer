@@ -15,8 +15,8 @@ Read the task on the left and work with your agent on the right. Use the desktop
 | **Sidebar** | **Search**, Home, Team, Artifacts and your tasks by project. **+ New** starts a Feature, Bugfix or [Chat](chat.md) |
 | **Agent status** | The top-bar chip: working, needs you, quiet or stopped |
 | **Step track** | Where the task stands. A person icon marks the two steps you approve |
-| **Step page** | Questions and approvals, then **Look here** for anything only you can do, then the step's result |
-| **Right sidebar** | The task’s **Agent** conversation, **Files** and **Feedback** |
+| **Step page** | The step's result, with questions or approval when needed |
+| **Right sidebar** | One row: **Conversation**, **Terminal**, **Files** (or **Details**) and **Feedback** |
 
 ## The sidebar {#sidebar}
 
@@ -62,12 +62,12 @@ When you start a task or the build, choose where the agent runs:
 
 | Where | How |
 | --- | --- |
-| **In the App** (recommended) | Pick agent, model, effort and branch. You answer in the **Agent** tab |
+| **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
 | **In my terminal** | Copy one prompt into any coding agent. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
 
 Closing the sidebar keeps the run. Use **Interrupt** or **Stop** in the agent menu, **Resume** to return, or **Move to my terminal**.
 
-**Conversation** shows the agent's messages, finished turns folded to one line; **Terminal** shows the program. Under the message box: model, effort, [permission mode](agents/native.md#permission-modes) and context.
+**Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: model, effort, [permission mode](agents/native.md#permission-modes) and context.
 
 ## In Claude Code
 

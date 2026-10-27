@@ -35,7 +35,7 @@ A new branch or worktree starts from this checkout's HEAD; a worktree's name set
 
 *Example task in a fictional project.*
 
-One session builds the Outline's slices in order: a failing test first, then the smallest change that passes. It fixes what fails and commits with Git, and may use its own subagents.
+The **Implement** page shows each slice's progress. One session builds them in order: a failing test first, then the smallest change that passes. It fixes what fails and commits with Git, and may use its own subagents.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)

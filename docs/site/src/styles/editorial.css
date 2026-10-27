@@ -43,7 +43,7 @@
 .ed-stage-cap{margin:10px 2px 0;font-size:13px;color:var(--mx-ink3)}
 
 /* The screenshot frame: every image stacked, the open step's fades and rises into place */
-.ed-frame{position:relative;display:block;width:100%;aspect-ratio:56/45;padding:0;border:1px solid var(--mx-line2);border-radius:16px;background:var(--mx-panel);box-shadow:var(--mx-shadow);cursor:zoom-in;overflow:hidden}
+.ed-frame{position:relative;display:block;width:100%;aspect-ratio:1280/696;padding:0;border:1px solid var(--mx-line2);border-radius:16px;background:var(--mx-panel);box-shadow:var(--mx-shadow);cursor:zoom-in;overflow:hidden}
 .ed-frame img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;opacity:0;transform:translateY(14px) scale(.985);transition:opacity .4s var(--ql-ease),transform .6s cubic-bezier(.16,1,.3,1)}
 .ed-frame img.on{opacity:1;transform:none}
 .ed-image-error{position:absolute;inset:auto 12px 48px;padding:16px;background:var(--mx-panel);color:var(--mx-ink);font:14px/1.5 Geist,system-ui,sans-serif;text-align:left}

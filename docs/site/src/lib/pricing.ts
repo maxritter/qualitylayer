@@ -140,7 +140,7 @@ export const COMPARE: CompareGroup[] = [
     name: "Review",
     hue: "review",
     rows: [
-      row("Approve the finished change, with its evidence", true, true, "Only you can confirm shows what no agent may check"),
+      row("Approve the finished change, with its evidence", true, true, "Unverified checks stay unverified when you approve"),
       row("Read the whole change like a pull request", true, true, "Split or unified, comments on any line, viewed marks per file"),
       row("Ask, Change or Replace with, on any line", true, true, "Ask gets an answer without changing code. Change goes to your agent with your decision. Replace with sends exact lines"),
       row("Agent findings appear on their lines", true, true, "Make one your change request, or say why it is not a problem and it becomes a project lesson"),

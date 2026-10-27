@@ -6,7 +6,7 @@ description: The project checks, then a fresh agent that did not write the code 
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-light.svg)
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-dark.svg)
 
-Verify starts when the build session says the build is ready. It proves the change with recorded evidence and asks you nothing; whatever stays open goes to Review. Nothing is marked passed without evidence.
+Verify starts when the build session says the build is ready. It proves the change with recorded evidence and asks you nothing; whatever stays open goes to Review. Nothing is marked passed without evidence. The page is titled **Verify**.
 
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-light.webp)
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-dark.webp)

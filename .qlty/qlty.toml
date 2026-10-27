@@ -1,0 +1,11 @@
+config_version = "0"
+exclude_patterns = [
+  "docs/plans/**", ".sonar-local/**", ".qlty/**", ".qualitylayer/**", ".scratch/**", "tmp/**",
+  "**/node_modules/**", "**/dist/**", "**/target/**", "**/.git/**",
+  "**/.next/**", "**/.docusaurus*/**", "**/*.min.*", "**/*.d.ts",
+  "qualitylayer/artifacts/**", "qualitylayer/design/**", "docs/video/**",
+  "qualitylayer/src/memory-embed/assets/**", "qualitylayer/src/memory-engine/payloads/**", "qualitylayer/src/server/ui/**"
+]
+test_patterns = ["**/tests/**", "**/test/**", "**/*.test.*", "**/*.spec.*"]
+[smells]
+mode = "comment"

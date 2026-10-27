@@ -43,7 +43,7 @@ export const FAQS: Faq[] = [
   ),
   faq(
     "Can I run my agent in the App or browser?",
-    "Yes. Start Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode when you create a task, or from the Agent tab at any step. Your task stays on the left and the agent works on the right, in the desktop App or in your browser. Your own terminal, VS Code and other IDEs still work.",
+    "Yes. Start Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode when you create a task, or from Conversation at any step. Your task stays on the left and the agent works on the right, in the desktop App or in your browser. Your own terminal, VS Code and other IDEs still work.",
   ),
   faq(
     "Can I use it on my own, or only with a team?",

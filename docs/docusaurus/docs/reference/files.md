@@ -36,10 +36,10 @@ Each document opens with what you read first, then working sections (code shapes
 | File | What it holds |
 | --- | --- |
 | `01-discuss.md` | Your request, the problem, **Done means**, the scope and what you decided. A bug adds when it happens; the Product level adds the success measure, first release and what the user sees |
-| `02-research.md` | **How the code works today:** findings, risks, how it is tested, what you decided. A bug's is **Why it breaks** |
+| `02-research.md` | **How it works today:** a picture of the code, what it means for your request, findings, risks, how it is tested, what you decided. A bug's is **Why it breaks** |
 | `03-plan.md` | **The decided design:** what it rests on, the artifacts and decisions, **Not doing**, **Before the build**, how we will know it works, who reviewed it |
 | `04-outline.md` | **Where the change lands and the build, slice by slice:** order, slices, how each point is proved, and every command the build runs |
-| `05-implement.md` | **The build as it runs:** slices and their state, the recorded checks, what was decided while building |
+| `05-implement.md` | **How the build is going:** slices and their state, the recorded checks, what was decided while building |
 | `06-verify.md` | **What was checked:** the checks and their results, each point with its evidence, what is still open |
 | `07-review.md` | **The change:** first the pull request's description, word for word, then what you settled and how it ships |
 

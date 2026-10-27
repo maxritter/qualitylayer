@@ -38,7 +38,7 @@ it("opens actual agent status from its chip while keeping the build document qui
 it("shows the complete Plan with header approval at once, then a comment on its diagram", () => {
   const view = render(<CloseUp id="plan" step={0} />);
   const document = screen.getByRole("article", { name: "Plan document" });
-  expect(document.textContent).toContain("Support retries failed deliveries only");
+  expect(document.textContent).toContain("keep serving and bill the overage");
   expect(document.textContent).toContain("Done means");
   expect(document.textContent).toContain("Contracts");
   expect(document.textContent).not.toContain("Slices");
@@ -51,20 +51,22 @@ it("shows the complete Plan with header approval at once, then a comment on its 
   expect(view.container.querySelector(".cu-dgm .cu-pin")?.textContent).toBe("1");
 });
 
-it("keeps the full-size artifact's Retry working after the agent replies to its comment", () => {
+it("keeps the full-size artifact's Switch to usage working after the agent replies to its comment", () => {
   function Preview() {
     const [tries, setTries] = useState(2);
     return <CloseUp id="comment" step={6} tries={tries} onRetry={() => setTries((n) => Math.min(3, n + 1))} />;
   }
-  render(<Preview />);
-  expect(screen.getByText(/Each failed row now says when it tries next/)).toBeTruthy();
-  const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
-  const row = retry.closest(".cu-dpr") as HTMLElement;
-  expect(row.textContent).toContain("Try 2 of 3");
-  expect(retry.disabled).toBe(false);
-  fireEvent.click(retry);
-  expect(row.textContent).toContain("Stopped, mailed");
-  expect(retry.disabled).toBe(true);
+  const { container } = render(<Preview />);
+  expect(screen.getByText(/Changed the page: the last switch shows beside the button/)).toBeTruthy();
+  const button = screen.getByRole("button", { name: "Switch to usage" }) as HTMLButtonElement;
+  const row = button.closest(".cu-dpr") as HTMLElement;
+  expect(row.textContent).toContain("Last switch · 14 May, by Finance");
+  expect(container.querySelector(".cu-dpt .on")?.textContent).toBe("Seats");
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  expect(row.textContent).toContain("Usage from 1 Nov · audited just now");
+  expect(container.querySelector(".cu-dpt .on")?.textContent).toBe("Usage");
+  expect(button.disabled).toBe(true);
 });
 
 /**

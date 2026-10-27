@@ -25,7 +25,7 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
   <a href="https://qualitylayer.dev/docs/changelog">Changelog</a>
 </p>
 
-**[Download the App](https://qualitylayer.dev/download)** for macOS, Windows or Linux. 7-day trial.
+**[Download the App](https://qualitylayer.dev/download)** for macOS, Windows or Linux.
 
 <br>
 
@@ -49,8 +49,8 @@ QualityLayer keeps design decisions and verification visible while your agents w
 | --- | --- |
 | **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. QualityLayer never charges for AI usage. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
-| **Small, tested changes** | Your agent builds in slices, each starting with a failing test, and fixes what fails itself. |
-| **An independent check** | A fresh agent that did not write the code adds missing tests and rules on each point of your request on the running program. Anything it cannot verify stays open for your decision in Review. |
+| **Small, tested changes** | Your agent works in small slices, writes behavior tests before implementation and fixes failures. |
+| **An independent check** | With independent review on, a fresh agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
 | **Code health checks** | Local checks flag complex functions and deeply nested code for your agent to review. Ask for a wider check to find duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |
 
@@ -68,7 +68,7 @@ Choose **Feature** or **Bugfix** for a change that needs an approved Plan and re
 
 ### Installation
 
-**[Download the App](https://qualitylayer.dev/download)** and open it. Setup activates your licence or starts the trial, installs the `qualitylayer` command and connects your agents. On a server, in WSL or in a container:
+**[Download the App](https://qualitylayer.dev/download)** and open it. Setup automatically installs the `qualitylayer` command and connects your agents. On a server, in WSL or in a container:
 
 ```bash
 curl -fsSL https://qualitylayer.dev/install.sh | bash      # macOS, Linux, WSL
@@ -171,7 +171,7 @@ Each step you run writes a Markdown file in your repository. Existing plans star
 <a href="docs/site/public/product/plan-dark.webp">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">
-    <img src="docs/site/public/product/plan-light.webp" alt="A billing architecture diagram beside Claude Code’s conversation in QualityLayer. Fictional project." width="1000">
+    <img src="docs/site/public/product/plan-light.webp" alt="A usage-billing Plan’s open decision, drawn as both paths, beside Claude Code’s conversation in QualityLayer. Fictional project." width="1000">
   </picture>
 </a>
 
@@ -195,7 +195,7 @@ An artifact is a mockup, diagram or clickable page your agent draws, so you can 
 <a href="docs/site/public/product/artifact-dark.webp">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/artifact-dark.webp">
-    <img src="docs/site/public/product/artifact-light.webp" alt="A queue migration console drawn as an artifact, with pinned comments and the agent's reply beside it. Fictional project." width="1000">
+    <img src="docs/site/public/product/artifact-light.webp" alt="Finance's billing-mode page drawn as an artifact, with feedback on one spot and the agent's answer that it changed the page beside it. Fictional project." width="1000">
   </picture>
 </a>
 

@@ -15,6 +15,8 @@
     "test:checkout": "node scripts/check-checkout.mjs",
     "verify:commerce": "node scripts/verify-commerce.mjs",
     "screenshots": "node scripts/website-screenshots.mjs",
+    "demo": "node scripts/demo/present.mjs",
+    "demo:check": "node scripts/demo/present.mjs --check",
     "test:edge": "vitest run --environment edge-runtime api/_lib/db.test.ts",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.api.json",
     "deadcode": "knip"

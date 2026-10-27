@@ -42,10 +42,10 @@ describe("current public illustrations and guides", () => {
     const readme = read("README.md");
     expect(readme).not.toMatch(/No waiting while it builds|Nothing waits for you/);
     const implement = read("docs/docusaurus/docs/steps/implement.md");
-    expect(implement).toContain("Outline, Implement and Verify continue without workflow questions until Review");
+    expect(implement).toContain("Outline, Implement and Verify ask no workflow questions until Review");
     expect(implement).toContain("stays unverified for Review");
-    expect(implement).toContain("Native permission or sign-in prompts still require their normal response");
-    expect(implement).toContain("An explicit stop or pause remains in force");
+    expect(implement).toContain("Native permission and sign-in prompts still need your response");
+    expect(implement).toContain("explicit stop or pause stays in force");
   });
 
   it("includes immediate batches and complete Plan review in the pricing comparison", () => {

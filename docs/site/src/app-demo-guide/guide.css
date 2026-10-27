@@ -1,0 +1,241 @@
+/* The guided web demo's panel, above the App on /app-demo/?guide. It takes the App's theme
+   (data-theme on .gd), keeps out of the way of what the ring frames (data-edge) and never covers
+   the cursor layer's clicks: it is the only part of the guide that takes the pointer. */
+
+.gd,
+.gd-pill {
+  --gd-bg: #ffffff;
+  --gd-line: rgba(15, 18, 24, 0.12);
+  --gd-text: #14171c;
+  --gd-muted: #5b6370;
+  --gd-soft: #f2f4f7;
+  --gd-accent: #2563eb;
+  --gd-accent-text: #ffffff;
+  --gd-shadow: 0 12px 40px rgba(15, 18, 24, 0.18), 0 2px 6px rgba(15, 18, 24, 0.08);
+  font: 400 14px/1.45 Geist, ui-sans-serif, system-ui, sans-serif;
+  color: var(--gd-text);
+}
+.gd[data-theme="dark"],
+.gd-pill[data-theme="dark"] {
+  --gd-bg: #14171c;
+  --gd-line: rgba(255, 255, 255, 0.12);
+  --gd-text: #f2f4f7;
+  --gd-muted: #a3abb8;
+  --gd-soft: #1f2329;
+  --gd-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.gd {
+  position: fixed;
+  z-index: 2147483647;
+  left: 50%;
+  bottom: 20px;
+  width: min(620px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 14px 16px 12px;
+  border: 1px solid var(--gd-line);
+  border-radius: 14px;
+  background: var(--gd-bg);
+  box-shadow: var(--gd-shadow);
+  transition:
+    top 0.35s cubic-bezier(0.2, 0.7, 0.2, 1),
+    bottom 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.gd[data-edge="top"] {
+  bottom: auto;
+  top: 16px;
+}
+.gd[hidden],
+.gd-pill[hidden] {
+  display: none;
+}
+
+.gd-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gd-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.gd-title b {
+  font-weight: 600;
+}
+.gd-title span {
+  color: var(--gd-muted);
+}
+
+.gd-modes {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--gd-soft);
+}
+.gd-mode {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gd-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.gd-mode[aria-checked="true"] {
+  background: var(--gd-bg);
+  color: var(--gd-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.gd-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--gd-muted);
+  cursor: pointer;
+}
+.gd-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.gd-note {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+  text-wrap: pretty;
+  transition: opacity 0.25s ease;
+}
+.gd[data-waiting] .gd-note {
+  opacity: 0.55;
+}
+.gd-problem {
+  margin: 6px 0 0;
+  color: var(--gd-muted);
+  font-size: 12.5px;
+}
+.gd-problem[hidden] {
+  display: none;
+}
+
+.gd-bar {
+  height: 3px;
+  margin: 12px 0 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--gd-soft);
+}
+.gd-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--gd-accent);
+  transition: width 0.4s ease;
+}
+
+.gd-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gd-count {
+  flex: 1;
+  color: var(--gd-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.gd-jump {
+  max-width: 190px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--gd-line);
+  border-radius: 8px;
+  background: var(--gd-bg);
+  color: var(--gd-text);
+  font: inherit;
+  font-size: 13px;
+}
+.gd-button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--gd-line);
+  border-radius: 8px;
+  background: var(--gd-bg);
+  color: var(--gd-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.gd-primary {
+  min-width: 84px;
+  border-color: var(--gd-accent);
+  background: var(--gd-accent);
+  color: var(--gd-accent-text);
+}
+.gd-button:disabled,
+.gd-jump:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.gd[data-busy] .gd-primary:disabled {
+  opacity: 0.75;
+}
+.gd button:focus-visible,
+.gd select:focus-visible,
+.gd-pill:focus-visible {
+  outline: 2px solid var(--gd-accent);
+  outline-offset: 2px;
+}
+
+.gd-pill {
+  position: fixed;
+  z-index: 2147483647;
+  left: 16px;
+  bottom: 16px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--gd-line);
+  border-radius: 17px;
+  background: var(--gd-bg);
+  box-shadow: var(--gd-shadow);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .gd {
+    bottom: 12px;
+    padding: 12px;
+  }
+  .gd-jump {
+    display: none;
+  }
+  .gd-note {
+    font-size: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gd,
+  .gd-note,
+  .gd-fill {
+    transition: none;
+  }
+}

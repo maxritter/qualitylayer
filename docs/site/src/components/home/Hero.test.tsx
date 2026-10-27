@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BRAND_LINE, SLOGAN } from "@/lib/product";
-import Hero from "./Hero";
+import Hero, { LIVE_DEMO } from "./Hero";
 import { useTheme } from "@/hooks/useTheme";
 import { OVERVIEW_POSTERS } from "@/lib/film-posters";
 
@@ -17,20 +17,29 @@ it("opens on the brand line and the slogan the rest of the site and the README u
   expect(h1.previousElementSibling?.textContent).toBe(BRAND_LINE);
 });
 
-it("shows the App at a decision beside the copy, light and dark, with a phone crop and fixed sizes", () => {
+it("shows the App at your turn beside the copy, light and dark, with a phone crop and fixed sizes", () => {
   const { container } = render(<MemoryRouter><Hero /></MemoryRouter>);
   const pictures = [...container.querySelectorAll(".sx-shot picture")];
   expect(pictures.map((p) => p.className)).toEqual(["sx-shot-light", "sx-shot-dark"]);
   for (const [picture, theme] of pictures.map((p, i) => [p, i ? "dark" : "light"] as const)) {
     const img = picture.querySelector("img")!;
-    expect(img.getAttribute("src")).toBe(`/hero/decision-agent-${theme}.webp`);
-    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["1006", "504"]);
-    expect(img.getAttribute("alt")).toMatch(/through a queue, or straight to the billing database/);
+    expect(img.getAttribute("src")).toBe(`/hero/your-turn-agent-${theme}.webp`);
+    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["1280", "695"]);
+    expect(img.getAttribute("alt")).toMatch(/what happens when a customer reaches their limit/);
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");
-    expect(phone.getAttribute("srcset")).toBe(`/hero/decision-${theme}.webp`);
-    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["650", "504"]);
+    expect(phone.getAttribute("srcset")).toBe(`/hero/your-turn-${theme}.webp`);
+    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["724", "609"]);
   }
+});
+
+it("opens the App demo from the picture and from the button under it", () => {
+  render(<MemoryRouter><Hero /></MemoryRouter>);
+  const picture = screen.getByRole("link", { name: /^Try the App in your browser: the usage-based billing example/ });
+  expect(picture.getAttribute("href")).toBe(LIVE_DEMO);
+  expect(picture.querySelector(".sx-shot")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Try the App in your browser" }).getAttribute("href")).toBe(LIVE_DEMO);
+  expect(LIVE_DEMO).toBe("/app-demo/?story&guide");
 });
 
 it("lists the seven steps as stations that each open their step in the tour", () => {

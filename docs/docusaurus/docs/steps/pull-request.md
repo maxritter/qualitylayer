@@ -8,8 +8,8 @@ description: Choose to open a pull request from Review, then follow its checks a
 
 After **Approve and open a pull request** in [Review](review.md#approve), QualityLayer follows the pull request on GitHub until you merge it. It never merges.
 
-![The pull request with its checks and reviewers](pathname:///img/app/pull-request-light.webp)
-![The pull request with its checks and reviewers](pathname:///img/app/pull-request-dark.webp)
+![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-light.webp)
+![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-dark.webp)
 
 *Example task in a fictional project.*
 
@@ -34,9 +34,7 @@ It never force-pushes commits that are not its own.
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-light.svg)
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-dark.svg)
 
-A failing check, a review asking for changes or a conflict appears in **Needs you** and wakes the task's agent, resuming its session if it stopped. This works while the App is open and the pull request is open. The **Watch pull requests** switch in **Settings › Git and editor** is on by default.
-
-The agent wakes once per event, at most 3 times a day per pull request, and not with less than 10 % of the plan left. Past a limit, the event only shows in Needs you, with the reason.
+While the App and the pull request are open, a failing check, a change request or a conflict appears in **Needs you** and wakes the task's agent, resuming its session if it stopped ([Watch pull requests](../reference/settings.md#git-and-editor), on by default, with its limits).
 
 A new review thread or failing check moves the task to **Needs attention**:
 

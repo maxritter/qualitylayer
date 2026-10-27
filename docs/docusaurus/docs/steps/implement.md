@@ -8,7 +8,7 @@ description: Start the build in the App or your terminal. Your agent builds the 
 
 ## Start the build {#start-implement}
 
-After you approve the Plan, **Start the build** appears on that Plan page. Choose where the agent runs and, with **In the App**, the agent, model, effort and branch for this build. A fresh launch starts **In the App**. An unfinished draft keeps your choice. If the agent cannot run there, the terminal option stays available.
+After you approve the Plan, **Start the build** appears on the Plan page.
 
 ![The Implement start card](pathname:///img/app/implement-start-light.webp)
 ![The Implement start card](pathname:///img/app/implement-start-dark.webp)
@@ -17,27 +17,16 @@ After you approve the Plan, **Start the build** appears on that Plan page. Choos
 
 | On the card | What it picks |
 | --- | --- |
-| **Where the agent runs** | **In the App** (recommended) or **In my terminal**, according to the local runtime’s capabilities |
+| **Where the agent runs** | **In the App** (recommended) or **In my terminal** |
 | **Agent** | An installed native agent, or Another agent for your terminal |
 | **Model and effort** | The choices for this run |
-| **Branch** | **Current branch**, **New branch** or **New worktree** |
+| **Branch** | **Current branch**, **New branch** or **New worktree** ([below](#where-it-lands)) |
 
-Press **Approve & start**, or **Approve & copy prompt** with **In my terminal**.
-
-- **In the App**, the task's **Agent** conversation opens beside **Files** and **Feedback**. Every question and piece of feedback happens in the App.
-- **In my terminal**, the copied prompt says `implement the approved task` and names it. The agent asks its questions and takes your feedback in its own chat.
-
-Closing the sidebar or switching tasks keeps the run. Use its session controls to stop or return to it ([agent runs](../app.md#agent-runs)).
+Press **Approve & start**, or **Approve & copy prompt** for your terminal; that prompt says `implement the approved task`. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
 
 ### Where the build lands {#where-it-lands}
 
-Under **Branch**, choose:
-
-- **Current branch**
-- **New branch**
-- **New worktree**, which takes a name that sets its folder and branch. QualityLayer puts the folder next to your project.
-
-A new branch or worktree starts from this checkout’s HEAD. The pull request target is shown separately, and a pull request needs a branch different from its target. `qualitylayer branch new [name]` creates a task branch from the terminal. A push or deployment requires the Plan’s authorization; merging remains yours.
+A new branch or worktree starts from this checkout's HEAD; a worktree's name sets its folder and branch, next to your project. `qualitylayer branch new [name]` does the same from the terminal. A pull request needs a branch other than its target. Pushes and deployments need the Plan's authorization; merging stays yours.
 
 ## While the agent builds
 
@@ -46,21 +35,17 @@ A new branch or worktree starts from this checkout’s HEAD. The pull request ta
 
 *Example task in a fictional project.*
 
+One session builds the Outline's slices in order: a failing test first, then the smallest change that passes. It fixes what fails and commits with Git, and may use its own subagents. The page, **How the build is going**, is the one place the slices are listed, each with its progress.
+
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)
 
-One agent session builds the cards of the Outline in their order, the way it would work on its own. Each task starts with a failing test, then the smallest change that makes it pass. The session fixes what fails itself and commits with Git. For slices that do not depend on each other it can use its own agent's subagents; nothing requires it. The page, **How the build is going**, is the one place the slices are listed, each with its progress.
-
-Test runs the session makes through QualityLayer are recorded with their commit and exit code. The reviewer in [Verify](verify.md) can cite them as evidence.
-
-Follow the slice board to see what is running and what is finished. **Look here** highlights anything only you can supply. Open the recorded checks for their output.
-
-Routine choices appear under **Decided while building**. When reality differs from what you approved (a new task, a changed contract or decision), the session records a visible amendment instead of changing it quietly; Review lists each one. Outline, Implement and Verify continue without workflow questions until Review.
-
-A login, secret, account or other human-only prerequisite is recorded with the affected task and stays unverified for Review. Available work continues; blocked checks retain their evidence instead of being marked passed. The App never takes the secret.
-
-Runs start with the agent's own permission settings. You can switch to another of its [permission modes](../agents/native.md#permission-modes) in the row under the message box; a mode that skips every check asks you to confirm. Native permission or sign-in prompts still require their normal response. An explicit stop or pause remains in force.
+- Test runs are recorded with their commit and exit code, so [Verify](verify.md) can cite them.
+- Routine choices appear under **Decided while building**. A change to what you approved becomes a visible amendment, listed in Review.
+- A login, secret or other human-only prerequisite stays unverified for Review. Other work continues, blocked checks are never marked passed, and the App never takes the secret.
+- Outline, Implement and Verify ask no workflow questions until Review.
+- Runs start in the agent's own [permission mode](../agents/native.md#permission-modes). Native permission and sign-in prompts still need your response, and an explicit stop or pause stays in force.
 
 ## When the build is done {#when-done}
 
-The session decides when the build is ready, and Verify starts on what it committed. Cards still unticked and needs still open reach Review as open items. They never count as passed.
+The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs reach Review as open items, never as passed.

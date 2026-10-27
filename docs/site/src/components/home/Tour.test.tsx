@@ -59,7 +59,7 @@ describe("the tour", () => {
     expect(discussAt(0)).toEqual({ answered: [], focus: 0, picked: false, sent: null });
     expect(discussAt(99)).toMatchObject({ answered: [0, 2], focus: 1 });
     const first = text(await shot("discuss", 0));
-    expect(first).toContain("How many tries before it stops?");
+    expect(first).toContain("What happens to the customers on seats?");
     expect(first).toContain("a batch of 4 from Claude Code");
     expect(first).toContain("1 2 3 4");
     expect(first).toContain("question 1 of 4");
@@ -68,8 +68,8 @@ describe("the tour", () => {
     expect(first).toContain("Your turn · 4 questions");
     // the third question is answered before the second: any order
     const later = await shot("discuss", 4);
-    expect(text(later)).toContain("Sent to Claude Code · A minute apart");
-    expect(text(later)).toContain("Who hears about it when it stops?");
+    expect(text(later)).toContain("Sent to Claude Code · Correct the next invoice");
+    expect(text(later)).toContain("Bill from the first request, or after a free allowance?");
     expect(later).toContain('aria-current="true"');
     expect(later.match(/class="done/g)).toHaveLength(2);
     // the batch never gives way to the document: it is still the question in view at the end
@@ -171,7 +171,7 @@ describe("the tour", () => {
     const start = text(await shot("start"));
     expect(start).toContain("Opus 5.5");
     expect(start).toContain("Sonnet 5.5");
-    expect(start).toContain("Using QualityLayer, implement the approved plan for task retry-webhooks");
+    expect(start).toContain("Using QualityLayer, implement the approved plan for task usage-billing");
     expect(start).not.toContain("/goal /ql implement");
   });
 
@@ -208,7 +208,7 @@ describe("the tour", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     // a slice opens to its decision, its files and a diff that takes a comment and carries a teammate's thread
     expect(page).toContain("Decided while building");
-    expect(page).toContain("src/delivery/retry.ts");
+    expect(page).toContain("services/gateway/src/meter.ts");
     expect(page).toContain("from the team");
     expect(page).toContain("built in slice 2 · proved by scenario 2");
   });
@@ -228,7 +228,7 @@ describe("the tour", () => {
   it("shows the artifact inside the question it belongs to, and keeps the full-size artifact clickable", async () => {
     expect(await shot("draw", 2)).toContain("cu-dz");
     expect(await shot("comment", 6)).toContain("cu-dpb");
-    expect(text(await shot("comment", 6))).toContain("Each failed row now says when it tries next");
+    expect(text(await shot("comment", 6))).toContain("Changed the page: the last switch shows beside the button");
   });
 
   it("draws the team's chapters in the App's words", async () => {
@@ -247,11 +247,15 @@ describe("the tour", () => {
     expect(text(await shot("agents"))).not.toContain("claude --model");
   });
 
-  it("paints red only for a delivery that stopped, never for a planned step", async () => {
-    for (const chapter of CHAPTERS) {
-      const page = await shot(chapter.id);
-      for (const match of page.matchAll(/class="red"[^<]*>([^<]*)/g)) expect(match[1]).toMatch(/Stopped/);
-    }
+  it("tells one task throughout: the usage-based billing change in its own words, with nothing left of another story", async () => {
+    const all = (await Promise.all(CHAPTERS.map((c) => shot(c.id)))).map(text).join(" ") + CHAPTERS.map((c) => JSON.stringify(c)).join(" ");
+    expect(all).toContain("Usage-based billing");
+    expect(all).toContain("feat/usage-billing");
+    expect(all).not.toMatch(/webhook deliver|failed deliver|retry-webhooks|Priya|Northwind|Dana/i);
+  });
+
+  it("never paints a planned step red", async () => {
+    for (const chapter of CHAPTERS) expect(await shot(chapter.id), chapter.id).not.toContain('class="red"');
   });
 
   it("never uses the App's internal words, and never sends the person to the terminal to answer", async () => {

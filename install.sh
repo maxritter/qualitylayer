@@ -19,13 +19,18 @@
 # Pilot Shell 11's updater downloads and runs this script with its own flags
 # (--auto-update --non-interactive --quiet). --auto-update and --non-interactive
 # mean nothing may be asked; --quiet is accepted and ignored.
-# QualityLayer installs alongside Pilot Shell without changing its files or tools.
+# QualityLayer installs alongside Pilot Shell. Pilot Shell before 11.0.10 cannot tell that
+# QualityLayer is installed and offers this update on every start, so its update also brings
+# Pilot Shell to 11.0.10 with Pilot Shell's own installer, pinned by hash. Nothing else of Pilot
+# Shell changes.
 #
 # Environment: VERSION (e.g. 12.0.0; default: the latest stable v12 release),
 # QUALITYLAYER_CHANNEL=beta explicitly selects prereleases,
 # QUALITYLAYER_RELEASE_BASE and QUALITYLAYER_RELEASE_API (mirrors and tests).
 # QUALITYLAYER_RELEASE_SIGNER names another signing key for tests, and counts only when the
-# release base is on this machine (a file: or loopback address).
+# release base is on this machine (a file: or loopback address). QUALITYLAYER_PILOT_INSTALLER and
+# QUALITYLAYER_PILOT_INSTALLER_SHA256 name another Pilot Shell installer for tests, and count only
+# when that installer is on this machine.
 
 set -euo pipefail
 
@@ -65,6 +70,16 @@ if on_this_machine "$RELEASE_BASE" && [ -n "${QUALITYLAYER_RELEASE_SIGNER:-}" ];
 	SIGNER_KEY="$(printf '%s\n' "$QUALITYLAYER_RELEASE_SIGNER" | awk '{print $1 " " $2}')"
 fi
 
+# The last Pilot Shell release: the first that stops offering this update once QualityLayer is
+# installed. Its installer is fetched from its tag and must match this hash before it runs.
+PILOT_VERSION="11.0.10"
+PILOT_INSTALLER="https://raw.githubusercontent.com/${REPO}/v${PILOT_VERSION}/install.sh"
+PILOT_INSTALLER_SHA256="6612ecec41643122012022872d72c23d2d6f01930959571151ced98b07365794"
+if on_this_machine "${QUALITYLAYER_PILOT_INSTALLER:-}" && [ -n "${QUALITYLAYER_PILOT_INSTALLER_SHA256:-}" ]; then
+	PILOT_INSTALLER="$QUALITYLAYER_PILOT_INSTALLER"
+	PILOT_INSTALLER_SHA256="$QUALITYLAYER_PILOT_INSTALLER_SHA256"
+fi
+
 # The installer's own lines match the install screen the binary draws next:
 # a blue ◇ per step and an amber ▲ for a failure, coloured only on a terminal.
 blue="" amber="" reset=""
@@ -72,8 +87,9 @@ if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
 	blue=$'\033[38;5;74m' amber=$'\033[38;5;214m' reset=$'\033[0m'
 fi
 say() { printf '%s◇%s  %s\n' "$blue" "$reset" "$*"; }
+warn() { printf '%s▲%s  %s\n' "$amber" "$reset" "$*" >&2; }
 fail() {
-	printf '%s▲%s  %s\n' "$amber" "$reset" "$*" >&2
+	warn "$@"
 	exit 1
 }
 
@@ -248,12 +264,45 @@ run_install() {
 	"$program" install "$@" --non-interactive </dev/null
 }
 
+# update_pilot: run by Pilot Shell's update only, once QualityLayer is installed. A Pilot Shell
+# older than PILOT_VERSION offers this update on every start; its own installer brings it to
+# PILOT_VERSION. A failure here leaves QualityLayer installed and says how to finish by hand.
+update_pilot() {
+	[ -n "$from_pilot" ] || return 0
+	local pilot="$HOME/.pilot/bin/pilot" current
+	[ -x "$pilot" ] || return 0
+	current="$("$pilot" --version </dev/null 2>/dev/null | awk '{print $NF}' || true)"
+	current="${current#v}"
+	[[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+	[ "$current" != "$PILOT_VERSION" ] || return 0
+	[ "$(printf '%s\n%s\n' "$current" "$PILOT_VERSION" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$current" ] || return 0
+
+	local by_hand="Pilot Shell ${current} will keep offering this update. To stop it, update Pilot Shell yourself: export VERSION=${PILOT_VERSION}; curl -fsSL \"https://raw.githubusercontent.com/${REPO}/v\${VERSION}/install.sh\" | bash"
+	say "Updating Pilot Shell ${current} to ${PILOT_VERSION}, which knows QualityLayer is installed"
+	if ! fetch "$PILOT_INSTALLER" "$work/pilot-install.sh"; then
+		warn "Could not download Pilot Shell's installer. $by_hand"
+		return 0
+	fi
+	local actual
+	actual="$(sha256_of "$work/pilot-install.sh")"
+	if [ "$actual" != "$PILOT_INSTALLER_SHA256" ]; then
+		warn "Pilot Shell's installer does not match its pinned checksum, so it was not run. $by_hand"
+		return 0
+	fi
+	if ! VERSION="$PILOT_VERSION" bash "$work/pilot-install.sh" --auto-update --non-interactive --quiet </dev/null; then
+		warn "Pilot Shell's update did not finish. $by_hand"
+		return 0
+	fi
+	say "Pilot Shell ${PILOT_VERSION} is installed and keeps working next to QualityLayer"
+}
+
 if [ -z "$use_app" ]; then
 	say "Downloading QualityLayer ${VERSION} (${asset})"
 	download_verified "$asset" "$work/qualitylayer"
 	say "Checksum verified (SHA-256)"
 	chmod 755 "$work/qualitylayer"
 	run_install "$work/qualitylayer" ${cli_only:+--cli-only}
+	update_pilot
 	case "$screen" in
 	wsl) say "No App inside WSL: links open in your Windows browser." ;;
 	container) say "No App here: open the link your agent prints. VS Code forwards the port for you, whatever number it picks." ;;
@@ -325,6 +374,8 @@ if [ "$os" = "darwin" ] && [ "$apps" != "$HOME/Applications" ] && [ -d "$HOME/Ap
 	rm -rf "${HOME:?}/Applications/QualityLayer.app"
 	say "Removed the older copy in ~/Applications"
 fi
+
+update_pilot
 
 # On a terminal the App opens at once, to finish setting up; an unattended update never opens a
 # window. Pilot Shell's update was confirmed by its user, so it opens the App too, or says where it is.

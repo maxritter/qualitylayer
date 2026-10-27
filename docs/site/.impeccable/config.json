@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist mono",
+        "createdAt": "2026-10-26T18:46:30.475Z",
+        "reason": "qualitylayer/DESIGN.md:40,66 names Geist Mono as the production mono font to preserve; site styles already use it"
+      }
+    ]
+  }
+}

@@ -18,19 +18,21 @@ You can also [install QualityLayer](install.md) directly; the result is the same
 
 ## Start using QualityLayer
 
-Ask your agent to plan or implement using QualityLayer or QL. QualityLayer checks paid licences with Polar. An active Polar-issued Pilot Shell licence works with both products under its existing subscription terms.
+Ask your agent to plan or implement using QualityLayer or QL.
 
-For an older Gumroad purchase, or a key QualityLayer does not recognise, email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address for help moving your licence. Keep the licence key private.
+| Your licence | What to do |
+| --- | --- |
+| Active Polar-issued Pilot Shell licence | Nothing. It works with both products under its existing subscription terms |
+| Older Gumroad purchase, or a key QualityLayer does not recognise | Email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address. Keep the key private |
+| None active | Start a fresh seven-day trial, even if you used a Pilot Shell trial |
 
-Without an active licence, you can start a fresh seven-day QualityLayer trial, even if you already used a Pilot Shell trial.
-
-Your repositories, code and Pilot plans stay where they are. To reuse a plan’s text, choose **Existing plan** in a new Feature or Bugfix. This starts a QualityLayer task from that plan; it does not import the old task’s workflow state.
+Your repositories, code and Pilot plans stay where they are. To reuse a plan’s text, choose **Existing plan** in a new Feature or Bugfix; the old task’s workflow state is not imported.
 
 ## Import memories per project
 
-In QualityLayer, open **Settings → Memory → Import from Pilot Shell**. Select the matching project, then choose its Pilot memory files from `.pilot/memories/` in that repository. The importer accepts JSONL and Markdown files, and each memory's project name must match the selected project.
+Memories are the only data you need to import. Open **Settings → Memory → Import from Pilot Shell**, select the matching project, then choose its JSONL or Markdown files from `.pilot/memories/` in that repository. Each memory's project name must match.
 
-The import copies lessons into QualityLayer's private project memory. Your source files stay in place, and unchanged lessons are skipped on a second import. Memories are the only data you need to import. See [Pilot memory import](memory.md#import-pilot-lessons) for file formats and the CLI command.
+Lessons are copied into QualityLayer's private project memory; your files stay in place, and a second import skips unchanged lessons ([Pilot memory import](memory.md#import-pilot-lessons)).
 
 ## Remove Pilot Shell when you are ready
 

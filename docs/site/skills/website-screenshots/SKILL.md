@@ -5,13 +5,17 @@ description: Regenerate QualityLayer website and README screenshots from the sou
 
 # Website screenshots
 
-Use the website's source App demo and its curated developer projects. The
-fixtures in `qualitylayer/src/ui/demo/website-gallery.ts` supply questions,
-documents, artifacts and checks; production components supply the interface.
-The screenshot command uses a temporary browser profile and in-memory data.
+Use the website's source App demo in its story world (`?story`): one billing
+task in acme/platform from request to merged pull request, the same content the
+live demo, the guided web demo and the presenter show. The demo's data in
+`qualitylayer/src/ui/demo/` (`story-world.ts`, `seven/`, `artifacts.ts`,
+`backend-artifact.ts`, `memory.ts`) supplies questions, documents, artifacts and
+checks; production components supply the interface. Each scene names its story
+moment and address in `docs/site/scripts/website-screenshots.mjs`. The screenshot
+command uses a temporary browser profile and in-memory data.
 
 From `docs/site/`, run `npm run screenshots`. It starts and closes its own
-loopback source server, renders the twelve scenes in both themes at twice the
+loopback source server, renders every scene (`npm run screenshots -- --list`) in both themes, desktop and phone, at twice the
 pixel density, and writes lossless WebP assets to `public/product/`. The website
 and README use these same files. `npm run screenshots -- --only plan,team`
 refreshes selected scenes. Dependencies are the locked website and QualityLayer
@@ -19,11 +23,11 @@ development dependencies.
 
 Inspect the captured pictures together: the shown project and content must
 explain the section, text must be sharp when enlarged, diagrams must have
-rendered, and controls must fit. The fixtures show complex example work across
-billing, notifications, identity and job processing; keep their scope and
-captions consistent when changing them. Capture actual UI rather than drawing
-an imitation. The export treatment is monochrome; the App's semantic colors
-remain unchanged.
+rendered, and controls must fit. Every scene shows the one billing story; keep
+the pictures, their alt texts (`docs/site/src/lib/steps.ts`, `Editorial.tsx`,
+the README and the docs) and the live demo telling the same story. Capture
+actual UI rather than drawing an imitation. The pictures keep the App's own
+colors.
 
 The command rejects internal beta-build content, remote requests and real API
 calls. A failing scene leaves its last good published image in place; fix the

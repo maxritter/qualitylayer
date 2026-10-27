@@ -14,6 +14,12 @@ description: Use QualityLayer in the desktop App or your browser, with your task
 
 On Windows, you can also run `irm https://qualitylayer.dev/install.ps1 | iex` in PowerShell. This installs the App and the command line.
 
+## Agent setup {#agent-setup}
+
+Setup enables Claude Code's native task tools and Codex's interactive questions. Explicit disabled settings stay.
+
+If you have not chosen native permissions, Claude Code starts in **Bypass** and Codex in **Full access**, including outside QualityLayer. Existing permission settings and saved QualityLayer launch choices stay. Choose another mode in **Settings › Agents › Edit launch…** or in the agent itself.
+
 ## In your browser {#browser}
 
 `qualitylayer app` opens the same workspace in your browser. Agents run where QualityLayer is installed.

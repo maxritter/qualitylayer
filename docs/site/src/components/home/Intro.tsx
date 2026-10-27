@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, SquareTerminal, Workflow } from "lucide-react";
 import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
-import { CHAT_GUIDANCE, ENGINEER_QUOTE } from "@/lib/product";
+import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
 
 type Chip = [label: string, icon: string];
 
@@ -123,10 +123,14 @@ export default function Intro() {
       </section>
 
       {/* Right after the plan card it describes: the user's words as they said them, attributed without a name at their wish. */}
-      <section className="mx-wrap mx-sec" aria-label="What an engineer says about QualityLayer">
+      <section id="customer-quotes" data-screen-label="Customer quotes" className="mx-wrap mx-sec mx-quotes" aria-label="What people say about QualityLayer">
         <figure className="mx-quote">
           <blockquote><p>{`“${ENGINEER_QUOTE}”`}</p></blockquote>
           <figcaption>An engineer who uses QualityLayer</figcaption>
+        </figure>
+        <figure className="mx-quote">
+          <blockquote><p>{`“${USER_QUOTE.text}”`}</p></blockquote>
+          <figcaption>{USER_QUOTE.context}</figcaption>
         </figure>
       </section>
 

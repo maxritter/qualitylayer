@@ -56,7 +56,7 @@ Missing permission questions appear in the Terminal view. Cursor, Grok and Antig
 
 ### Permission modes {#permission-modes}
 
-A run starts in your agent's own setting; the row under the message box shows its source and switches modes.
+A run starts in your agent's own setting. Setup adds [native defaults](../install.md#agent-setup) only where none were chosen. The row under the message box distinguishes **Agent settings** from an explicit mode such as **Auto** or **On request**.
 
 | Agent | Modes |
 | --- | --- |
@@ -68,7 +68,7 @@ A run starts in your agent's own setting; the row under the message box shows it
 | OpenCode | Agent settings, Auto-approve |
 | Pi | None; its own tool permissions apply |
 
-Bypass, Full access and Run everything skip every check: they ask you to confirm each time and cannot be a default.
+Explicitly choosing Bypass, Full access or Run everything for a run asks you to confirm. **Agent settings** inherits the native policy, including a native Bypass or Full access default. Your QualityLayer Plan and final approvals remain separate.
 
 ### Plan limits {#plan-limits}
 

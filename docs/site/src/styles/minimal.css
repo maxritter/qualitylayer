@@ -185,6 +185,9 @@ html:has(.mx-filmov[open]){overflow:hidden}
 .mx-quote blockquote{margin:0}
 .mx-quote blockquote p{margin:0;font-size:clamp(28px,3.7cqi,50px);line-height:1.1;font-weight:800;letter-spacing:-.04em;text-wrap:balance}
 .mx-quote figcaption{margin-top:20px;font-size:15px;color:var(--mx-ink3)}
+.mx-quotes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(32px,6cqi,80px)}
+.mx-quotes .mx-quote blockquote p{font-size:clamp(26px,2.4cqi,34px);line-height:1.16}
+@container (max-width:740px){.mx-quotes{grid-template-columns:minmax(0,1fr);gap:40px}}
 
 /* Models: the heading beside two rows of chips drifting in opposite directions, faded at the edges */
 .mx-mq{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:32px 64px;align-items:center}

@@ -564,6 +564,21 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $cli -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText("$cli.sha256", "$hash  $name`n")
 
+      # actions/runner-images#14924: Intel runner HTTP/3 drops Apple's ticket requests.
+      - name: Use TCP for Apple ticket delivery on Intel runners
+        if: matrix.os == 'macos-15-intel'
+        run: |
+          set -euo pipefail
+          anchor='com.apple/000.qualitylayer-ticket-delivery'
+          # Require the loaded unconditional hook; preserve all of the runner's rules.
+          main_rules=$(sudo pfctl -sr)
+          grep -Fxq 'anchor "com.apple/*" all' <<< "$main_rules"
+          printf '%s\n' 'block return out quick proto udp from any to any port 443' |
+            sudo pfctl -a "$anchor" -f -
+          sudo pfctl -a "$anchor" -sr
+          sudo pfctl -E
+          sudo pfctl -si | grep -q '^Status: Enabled'
+
       - name: Finalize the standalone Mac CLI signature
         if: runner.os == 'macOS'
         env:

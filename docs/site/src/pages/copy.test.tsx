@@ -52,7 +52,7 @@ describe("the site's copy", () => {
   it("explains Chat's supported agents, optional tools and move into the workflow", async () => {
     const home = await textOf(<Sections />);
     expect(home).toContain(CHAT_GUIDANCE);
-    expect(await textOf(<Hero />)).toContain("Seven steps for Feature and Bugfix.");
+    expect(await textOf(<Hero />)).not.toContain("Seven steps for Feature and Bugfix.");
     expect(await textOf(<Hero />)).not.toContain("Seven steps on every change");
     expect(home).not.toContain("Available on every task.");
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");

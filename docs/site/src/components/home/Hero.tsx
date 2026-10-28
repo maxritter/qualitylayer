@@ -71,11 +71,11 @@ function Stations() {
   return (
     <nav className="mx-line" aria-label="The seven steps">
       <ol className="mx-stations">
-        {WORKFLOW_STEPS.map(({ id, name, line }, i) => {
+        {WORKFLOW_STEPS.map(({ id, name, line, who }, i) => {
           const Glyph = STEP_ICONS[id];
           return (
             <li key={id}>
-              <Link className="mx-station" to={`#${id}`}>
+              <Link className="mx-station" data-who={who} to={`#${id}`}>
                 <span className="mx-station-tile" aria-hidden="true"><Glyph size={28} strokeWidth={1.6} /></span>
                 <span className="mx-station-text">
                   <span className="mx-station-name"><span className="mx-station-n" aria-hidden="true">{i + 1}</span>{name}</span>

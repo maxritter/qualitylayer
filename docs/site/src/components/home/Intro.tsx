@@ -97,7 +97,7 @@ export default function Intro() {
         </div>
         <ul className="mx-withg">
           {SHOWN.map(([label, agent]) => (
-            <li key={label} className="mx-wi"><Logo agent={agent} /><b>{label}</b></li>
+            <li key={label} className="mx-wi" data-agent={agent}><Logo agent={agent} /><b>{label}</b></li>
           ))}
         </ul>
       </section>

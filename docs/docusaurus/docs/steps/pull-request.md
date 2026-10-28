@@ -6,7 +6,7 @@ description: Choose to open a pull request from Review, then follow its checks a
 ![The workflow, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-light.svg)
 ![The workflow, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-dark.svg)
 
-After **Approve and open a pull request** in [Review](review.md#approve), QualityLayer follows the pull request on GitHub until you merge it. It never merges.
+Open a pull request from [Review](review.md#approve). QualityLayer follows its checks and comments; you control the merge.
 
 ![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-light.webp)
 ![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-dark.webp)
@@ -34,7 +34,7 @@ It never force-pushes commits that are not its own.
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-light.svg)
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-dark.svg)
 
-While the App and the pull request are open, a failing check, a change request or a conflict appears in **Needs you** and wakes the task's agent, resuming its session if it stopped ([Watch pull requests](../reference/settings.md#git-and-editor), on by default, with its limits).
+With the App open, failing checks, change requests and conflicts appear in **Needs you**. They wake or resume your agent when [Watch pull requests](../reference/settings.md#git-and-editor) is enabled.
 
 A new review thread or failing check moves the task to **Needs attention**:
 

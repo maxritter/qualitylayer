@@ -1,7 +1,5 @@
-/* The home page's steps and App features (ed- classes). The tour opens one step at a time, Plan
-   first: on wide screens its screenshot fills the pinned stage beside the list; on tablets and phones
-   it sits inside the open step. The App features are tabs, each with its screen. Step colours follow
-   the App: amber when you decide, blue when agents work, violet when agents check. */
+/* Horizontal workflow and feature pickers, with the selected screenshot below.
+   Amber marks human actions, blue agent work, and violet checks. */
 .ed-section{padding-top:clamp(80px,11cqi,150px)}
 .ed-head{max-width:46rem;margin-bottom:clamp(32px,4cqi,56px)}
 .ed-head h2{margin:0;max-width:15em;font-size:clamp(34px,4.6cqi,62px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
@@ -18,29 +16,26 @@
 .ed-legend li{display:inline-flex;align-items:center;gap:8px}
 .ed-num{flex:none;display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ink);color:var(--ink);font:700 13px/1 Geist,system-ui,sans-serif;letter-spacing:0;font-variant-numeric:tabular-nums;transition:background-color .2s var(--ql-ease),color .2s var(--ql-ease)}
 
-/* The tour: the seven steps and the pull request on the left, the open step's screen pinned on the right */
-.ed-tour{display:grid;grid-template-columns:minmax(0,23rem) minmax(0,1fr);gap:clamp(32px,4cqi,56px);align-items:start}
-.ed-steps{margin:0;padding:0;list-style:none;border-bottom:1px solid var(--mx-line)}
-.ed-steps>li{border-top:1px solid var(--mx-line);scroll-margin-top:84px}
-.ed-step-row{position:relative;padding:14px 0}
-.ed-step-h{margin:0;font-size:19px;line-height:1.25;font-weight:800;letter-spacing:-.03em}
-.ed-step-h button{display:flex;align-items:center;gap:14px;width:100%;padding:0;border:0;background:none;color:var(--mx-ink2);font:inherit;letter-spacing:inherit;text-align:left;cursor:pointer}
-/* The whole row picks the step, the line under the name included */
-.ed-step-h button:after{content:"";position:absolute;inset:0;border-radius:6px}
-.w7-root .ed-step-h button:focus-visible{outline:0}
-.ed-step-h button:focus-visible:after{outline:2px solid var(--ql-accent);outline-offset:2px}
-.ed-steps li:hover .ed-step-h button,.ed-steps li.on .ed-step-h button{color:var(--mx-ink)}
-.ed-steps li.on .ed-num{background:var(--hue);color:var(--on);box-shadow:none}
-.ed-line{margin:2px 0 0 44px;font-size:14px;line-height:1.4;color:var(--mx-ink3)}
-.ed-more{padding:0 0 18px 44px}
+/* The workflow picker keeps the selected explanation and screenshot together. */
+#tour.ed-section{padding-top:clamp(88px,10cqi,144px)}
+#tour .ed-head{max-width:48rem;margin-bottom:32px}
+.ed-tour{display:flex;flex-direction:column;gap:24px}
+.ed-workflow-tabs{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;width:100%}
+.ed-step-tab{display:flex;align-items:center;justify-content:center;gap:8px;min-height:64px;min-width:0;padding:10px 6px;border:1px solid var(--mx-line2);border-radius:6px;background:var(--mx-panel);color:var(--mx-ink2);font:800 14px/1.3 Geist,system-ui,sans-serif;letter-spacing:-.02em;text-align:center;cursor:pointer;scroll-margin-top:84px}
+.ed-step-tab .ed-num{width:22px;height:22px;font-size:12px}
+.ed-step-tab[aria-selected="true"]{border-color:var(--ink);background:color-mix(in srgb,var(--hue) 8%,var(--mx-panel));color:var(--mx-ink)}
+.ed-step-tab[aria-selected="true"] .ed-num{background:var(--hue);color:var(--on);box-shadow:none}
+@media(hover:hover){.ed-step-tab:hover{border-color:var(--mx-ink3);color:var(--mx-ink)}}
+.ed-step-panel[hidden]{display:none}
+.ed-step-summary{display:flex;align-items:center;flex-wrap:wrap;gap:0 24px}
+.ed-step-summary .ed-text{flex:1 1 360px;max-width:70ch;margin:0}
 .ed-text{margin:0 0 10px;max-width:34rem;font-size:16px;line-height:1.6;color:var(--mx-ink2);text-wrap:pretty}
 .ed-who{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:600;color:var(--mx-ink2)}
 .w7-root .ed-link{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-size:15px;font-weight:600;color:var(--ql-accent-hover);text-decoration:none}
 .w7-root .ed-link:hover{text-decoration:underline}
-
-.ed-stage{position:relative;min-width:0}
-.ed-pin{position:sticky;top:84px}
-.ed-stage-cap{margin:10px 2px 0;font-size:13px;color:var(--mx-ink3)}
+.ed-step-panel .ed-frame.ed-inline{width:100%;margin:24px 0 0}
+@container(max-width:900px){.ed-workflow-tabs{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}}
+@container(max-width:640px){.ed-step-tab{flex-direction:column;min-height:74px;gap:6px;font-size:13px}}
 
 /* The screenshot frame: every image stacked, the open step's fades and rises into place */
 .ed-frame{position:relative;display:block;width:100%;aspect-ratio:1280/696;padding:0;border:1px solid var(--mx-line2);border-radius:16px;background:var(--mx-panel);box-shadow:var(--mx-shadow);cursor:zoom-in;overflow:hidden}
@@ -51,7 +46,6 @@
 .ed-frame:focus-visible{outline:2px solid var(--ql-accent);outline-offset:3px}
 .ed-frame.ed-inline img{position:static;opacity:1;transform:none}
 .ed-frame.ed-inline picture{display:block}
-.ed-more .ed-inline{margin:14px 0 4px;box-shadow:none}
 .ed-enlarge{position:absolute;right:12px;bottom:12px;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:5px 10px;background:color-mix(in srgb,var(--mx-panel) 92%,transparent);color:var(--mx-ink);border:1px solid var(--mx-line2);border-radius:999px;font:600 13px Geist,system-ui;opacity:0;transform:translateY(2px);transition:opacity .16s ease-out,transform .16s ease-out}
 .ed-frame:hover .ed-enlarge,.ed-frame:focus-visible .ed-enlarge{opacity:1;transform:none}
 @media(hover:none){.ed-enlarge{opacity:1;transform:none}}
@@ -63,11 +57,10 @@
 
 /* Also in the App: five tabs, the open one's text beside its screen */
 .ed-tabs{display:flex;flex-wrap:wrap;gap:8px}
-.ed-tab{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border:1px solid var(--mx-line2);border-radius:999px;background:var(--mx-panel);color:var(--mx-ink);font:600 15px/1 Geist,system-ui,sans-serif;cursor:pointer}
-.ed-tab svg{color:var(--mx-ink3)}
-.ed-tab:hover{border-color:var(--mx-ink3)}
-.ed-tab[aria-selected="true"]{background:var(--mx-ink);border-color:var(--mx-ink);color:var(--mx-page)}
-.ed-tab[aria-selected="true"] svg{color:inherit}
+.ed-tab{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 16px;border:1px solid var(--mx-line2);border-radius:6px;background:var(--mx-panel);color:var(--mx-ink);font:600 15px/1 Geist,system-ui,sans-serif;cursor:pointer}
+.ed-tab svg{color:var(--ink)}
+@media(hover:hover){.ed-tab:hover{border-color:var(--ink)}}
+.ed-tab[aria-selected="true"]{background:color-mix(in srgb,var(--hue) 9%,var(--mx-panel));border-color:var(--ink);color:var(--mx-ink)}
 .ed-panel{display:grid;grid-template-columns:minmax(0,22rem) minmax(0,1fr);gap:48px;align-items:start;margin-top:32px;border-radius:8px}
 .ed-panel[hidden]{display:none}
 .ed-panel h3{margin:0 0 12px;font-size:clamp(26px,2.6cqi,34px);line-height:1.1;font-weight:800;letter-spacing:-.04em;text-wrap:balance}
@@ -84,14 +77,12 @@
 
 /* Tablets and phones: one column, the open step and each feature carry their own screen */
 @container (max-width:1079px){
-  .ed-tour,.ed-panel{grid-template-columns:minmax(0,1fr)}
+  .ed-panel{grid-template-columns:minmax(0,1fr)}
   .ed-panel{gap:20px}
-  .ed-steps>li{scroll-margin-top:76px}
 }
 @container (max-width:640px){
   /* Phones show the App's phone layout: a portrait picture, narrower so a step still fits on screen. */
   .ed-frame.ed-inline{width:min(100%,330px);aspect-ratio:auto;border-radius:12px}
-  .ed-more{padding-left:0}
   .ed-tabs{gap:6px}
   .ed-tab{padding:0 14px}
 }

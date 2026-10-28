@@ -60,9 +60,9 @@ const SETUPS: Chip[] = [
 
 /** Each card in the App's colours: blue for the agent's work, amber for your decision, violet for what agents checked. */
 const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: string; lead: string; text: string }[] = [
-  { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Your coding agent writes the code with the login you already have." },
-  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Decisions as diagrams, screens as clickable mockups. Comment on any part." },
-  { who: "check", icon: BadgeCheck, title: "Proof", lead: "Checked by an agent that did not write it", text: "Project checks are recorded and every agreed point is checked on the running program." },
+  { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Keep your existing login or API key." },
+  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on diagrams and clickable mockups." },
+  { who: "check", icon: BadgeCheck, title: "Proof", lead: "Independent review", text: "A separate agent checks the result against your plan." },
 ];
 
 /** From where you work to the files you keep: what QualityLayer connects, all inside one dashed frame, your computer. */
@@ -105,9 +105,9 @@ export default function Intro() {
       <section className="mx-sec" aria-labelledby="pr-h">
         <div className="mx-wrap">
           <div className="mx-head">
-            <h2 id="pr-h" className="mx-h2">Decided before it is built, proven after</h2>
-            <p className="mx-lead">Choose Feature or Bugfix for the structured workflow. QualityLayer keeps your agent on every step, in order. You see only what needs you.</p>
-            <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">How Chat works.</a> Choose <b>Start the workflow</b> to keep the same task and conversation in the structured workflow.</p>
+            <h2 id="pr-h" className="mx-h2">Plan before you build</h2>
+            <p className="mx-lead">Agree on the plan, then review the tested change.</p>
+            <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">Explore Chat</a></p>
           </div>
           <div className="mx-pr3">
             {PRINCIPLES.map(({ who, icon: Glyph, title, lead, text }) => (
@@ -159,7 +159,7 @@ export default function Intro() {
         <div className="mx-mq">
           <div className="mx-mqt">
             <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
-            <p className="mx-lead">Pick your models for coding and AI code review. Any installed agent can give a separate review of your plan and risky changes.</p>
+            <p className="mx-lead">Choose models for building and independent review.</p>
           </div>
           <div className="mx-mqr">
             <p className="w7-sr">Models: {MODELS.filter(([, icon]) => icon === "cpu").map(([label]) => label).join(", ")}, through {AGENTS.slice(0, -1).map(([label]) => label).join(", ")} and {AGENTS[AGENTS.length - 1][0]}. {SETUPS.map(([label]) => label).join(". ")}.</p>

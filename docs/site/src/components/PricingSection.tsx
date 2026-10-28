@@ -52,7 +52,7 @@ const PricingSection = () => {
       <section id="plans" className="pr-top-sec" aria-labelledby="pr-h">
         <div className="pr-wrap">
           <h1 id="pr-h" className="pr-h1">Pricing</h1>
-          <p className="pr-lead">Every plan starts with a 7-day trial on first run. One price per developer, with unlimited tasks, repositories and agents. Keep your agent subscriptions and API accounts.</p>
+          <p className="pr-lead">Start with a 7-day trial. Every plan includes unlimited tasks, repositories and agents, priced per developer.</p>
           <div className="pr-seg" role="group" aria-label="Billing">
             <Button type="button" variant={billing === "monthly" ? "default" : "ghost"} aria-pressed={billing === "monthly"} onClick={() => setBilling("monthly")}>Monthly</Button>
             <Button type="button" variant={billing === "yearly" ? "default" : "ghost"} aria-pressed={billing === "yearly"} onClick={() => setBilling("yearly")}>Yearly <span className="pr-save">Save up to 20%</span></Button>

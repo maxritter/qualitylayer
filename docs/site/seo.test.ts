@@ -5,6 +5,7 @@ import { render } from "./src/prerender";
 import { renderedHtml } from "./vite-plugin-prerender";
 import { FAQS, PRICING_FAQS } from "./src/lib/content";
 import { PLANS } from "./src/lib/pricing";
+import { DESCRIPTION } from "./src/lib/product";
 
 const template = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 
@@ -34,7 +35,7 @@ describe("HTML available before JavaScript runs", () => {
     expect(html).not.toContain("<noscript>");
     expect(html).not.toContain("noindex");
     if (route !== "/") expect(body).not.toContain("hero-h");
-    else for (const term of ["Spec-driven development", "AI code review", "human in the loop", "Claude Code", "Codex"]) expect(body).toContain(term);
+    else for (const term of [DESCRIPTION, "Claude Code", "Codex"]) expect(body).toContain(term);
   });
 
   it("renders a complete, non-indexable 404 instead of the home page", async () => {

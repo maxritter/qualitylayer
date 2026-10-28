@@ -10,7 +10,7 @@ description: Use QualityLayer in the desktop App or your browser, with your task
 
 ## On your computer
 
-**[Download the App](https://qualitylayer.dev/download)** and open it. Setup asks for your licence (or a 7-day trial), installs the `qualitylayer` command, connects the agents it finds, adds the repositories they worked in lately, and lets you pick Engineering or Product ([two levels](intro.md#two-levels)).
+**[Download the App](https://qualitylayer.dev/download)** and open it. Setup activates your licence or 7-day trial, installs the `qualitylayer` command and connects your agents and recent repositories. Choose Engineering or Product for new tasks ([two levels](intro.md#two-levels)).
 
 On Windows, you can also run `irm https://qualitylayer.dev/install.ps1 | iex` in PowerShell. This installs the App and the command line.
 
@@ -84,7 +84,7 @@ This works even when the App or CLI is blocked or gone. Your logins, licence and
 
 ## Windows with Intune or Defender Exploit Guard {#managed-windows}
 
-If Defender Exploit Guard blocks setup or files vanish after install, a managed-device policy is blocking QualityLayer's signed 12.1.0 files.
+If Defender Exploit Guard blocks setup or removes installed files, check your managed-device policy with IT.
 
 | Fix | How |
 | --- | --- |

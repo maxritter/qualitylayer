@@ -1,5 +1,5 @@
 // The 1200 × 630 social image, drawn as the home page's hero is: the blue "Quality by design"
-// lockup, the slogan in heavy Geist with its second half in blue, and the seven steps as one line
+// lockup, the slogan in heavy Geist with "you" in amber, and the seven steps as one line
 // of equal stations. Chromium renders it with the site's own fonts, so the type matches the page.
 // Usage: node scripts/export-social.mjs [--out <png>]
 import { createRequire } from "node:module";
@@ -36,8 +36,8 @@ body{margin:0;width:1200px;height:630px;padding:84px 72px 0;background:#f4f4f4;c
 .qbd{display:flex;align-items:center;gap:13px;margin:0;color:#2076c5;font-size:36px;font-weight:800;letter-spacing:-.035em;line-height:1}
 .qbd svg{width:40px;height:37px;fill:currentColor}
 .url{color:#525252;font:400 21px "Geist Mono",monospace}
-h1{margin:46px 0 0 -4px;font-size:96px;font-weight:800;letter-spacing:-.05em;line-height:.98}
-h1 span{display:block;color:#2076c5}
+h1{margin:46px 0 0 -4px;font-size:96px;font-weight:800;letter-spacing:-.04em;line-height:.98}
+:root{--mx-human-ink:#986207}h1 span{display:block;color:inherit}h1 .you{display:inline;color:var(--mx-human-ink)}
 ol{position:relative;display:grid;grid-template-columns:repeat(7,1fr);margin:68px 0 0;padding:0;list-style:none}
 ol:before{content:"";position:absolute;top:29px;left:calc(100%/14);right:calc(100%/14);height:2px;background:#cfcfcf}
 li{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -47,7 +47,7 @@ b{font-size:20px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
 b i{margin-right:.3em;font-style:normal;font-weight:600;color:#666}
 </style></head><body>
 <div class="top"><p class="qbd">${mark}Quality by design</p><span class="url">qualitylayer.dev</span></div>
-<h1>The software factory <span>with you in the loop</span></h1>
+<h1>The software factory <span>with <span class="you">you</span> in the loop</span></h1>
 <ol>${STEPS.map(([name, icon], i) => `<li><span class="tile"><svg viewBox="0 0 24 24">${icon}</svg></span><b><i>${i + 1}</i>${name}</b></li>`).join("")}</ol>
 </body></html>`;
 

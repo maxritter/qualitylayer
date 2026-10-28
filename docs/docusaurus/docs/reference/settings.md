@@ -1,6 +1,6 @@
 ---
 title: Settings
-description: Workflow, agents, plan limits, sessions, notifications, editor, appearance, memory, licence, team and updates, plus the changes you can ask for on one task.
+description: Configure your workflow, agents, usage, sharing and updates.
 ---
 
 Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for every project on this computer.
@@ -16,7 +16,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | [Your instructions](#instructions) | Standing instructions for every task |
 | [Independent review](#independent-review) | **On** (recommended) or **Off** |
 | [Second opinion by](#second-opinion) | **Off**, **Other model family** or a named agent |
-| **Design review** | **Finished designs** (default): a fresh agent checks each finished design before you see it. Wireframes are never reviewed |
+| **Design review** | **Finished designs** (default): a separate agent checks each finished design before you see it. Wireframes are never reviewed |
 
 ### Your instructions {#instructions}
 
@@ -55,7 +55,7 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Usage {#usage}
 
-**Plan limits** show what is left of each Claude Code and Codex window. **Resume when a limit resets** (on) continues a stopped build unless someone typed since. **What your agents used** totals 7 or 30 days or this month from local session files: tokens for plans, estimated cost for API keys or gateways, never added together.
+**Plan limits** show remaining Claude Code and Codex usage. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** totals 7 days, 30 days or this month: tokens for subscriptions, estimated cost for API accounts. The two are kept separate.
 
 ## Sessions {#sessions}
 
@@ -69,7 +69,7 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Notifications {#notifications}
 
-**Tell me when a task needs me** sends a system notification, **Play a sound with it** adds a sound, and **Open Feedback automatically** switches to Feedback when someone answers or asks you something.
+**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies.
 
 ## Git and editor {#git-and-editor}
 

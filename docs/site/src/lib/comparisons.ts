@@ -59,7 +59,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "A spec process your team customizes",
     plansWith: "Constitution, specification, technical plan and tasks",
     runsIn: "Claude Code, Codex and other coding agents",
-    lead: "GitHub Spec Kit gives your coding agent structured processes and reusable artifacts. A Spec Kit alternative is worth considering when you also want visual planning and a dedicated place to review the proof.",
+    lead: "GitHub Spec Kit gives your coding agent structured processes and reusable artifacts. QualityLayer adds visual planning and a place to review the result.",
     strengths: "Spec Kit is an open source toolkit with project principles, specifications, technical plans and implementation tasks. Extensions, presets and workflows let teams adapt the process to their own standards.",
     agents: "Spec Kit supports both Claude Code and Codex, alongside other coding agents. QualityLayer also works in those sessions. The decision is about the process you want around the agent.",
     rows: [
@@ -161,7 +161,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Specs inside one integrated coding environment",
     plansWith: "Requirements, design and trackable tasks",
     runsIn: "Kiro's own IDE, CLI and web surfaces",
-    lead: "Kiro integrates specifications into its coding environment. QualityLayer works with Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode. Compare the environment you want to use and the evidence you want before approval.",
+    lead: "Kiro integrates specifications into its coding environment. QualityLayer works with your existing coding agent. Compare how each plans and checks a change.",
     strengths: "Kiro turns requirements into technical designs and trackable tasks. Feature Specs support requirements-first and design-first approaches. Its IDE also supports property-based testing that connects specified behavior to executable checks.",
     agents: "Kiro documents its own spec workflow in its IDE, CLI and web surfaces. QualityLayer's workflow runs with your coding agent. Kiro has a CLI too, so describing this as a choice between an IDE and a terminal would miss the point.",
     rows: [

@@ -1,18 +1,18 @@
 ---
 title: Outline
-description: The Outline shows where the change lands in the code before any of it is written. The build session writes it from the approved Plan; a small task can have it ready earlier. You do not approve it again.
+description: See where the approved Plan changes the code and how your agent will build it.
 ---
 
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-light.svg)
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-dark.svg)
 
-The Plan says what changes; the Outline says where in the code it lands and how it is built. The build session writes it from the approved Plan, then continues through Implement and Verify until human Review. **You do not approve the Outline again.**
+The Outline maps the approved Plan to code areas, tasks and tests. Your agent writes it and continues through Implement and Verify; **no further approval is needed until Review**.
 
 ## What is in it {#what-the-agent-does}
 
 | Part | What it holds |
 | --- | --- |
-| **Where the change lands** | Each area of the code the build adds to or changes, with its new and changed files, the slices that change it and whether it is risky |
+| **Where the change lands** | Code areas, their files, planned slices and risks |
 | **Decided inside the code** | The decisions the build session made that the Plan left open |
 | **Proof** | The scenario that proves each **Done means** point |
 | **Slices** | Pieces that each work end to end, thinnest first, with the test to write first |

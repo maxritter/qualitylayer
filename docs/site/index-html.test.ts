@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ENGINEER_QUOTE, SHARE_DESCRIPTION, SLOGAN } from "./src/lib/product";
+import { PUBLIC_PAGES } from "./src/lib/seo";
 
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const schemas = Array.from(
@@ -39,11 +40,11 @@ describe("static marketing shell", () => {
     expect(website.url).toBe("https://qualitylayer.dev/");
     const software = schema("SoftwareApplication");
     expect(software.name).toBe("QualityLayer");
-    expect(software.description).toBe(`${SLOGAN}. ${SHARE_DESCRIPTION}`);
+    expect(software.description).toBe(SHARE_DESCRIPTION);
   });
 
   it("shares the same title and sentence the app's SEO sets after hydration", () => {
-    const title = `QualityLayer: ${SLOGAN}`;
+    const title = PUBLIC_PAGES["/"].title;
     expect(html).toContain(`<title>${title}</title>`);
     for (const key of ["og:title"]) expect(meta("property", key)).toBe(title);
     expect(meta("name", "twitter:title")).toBe(title);

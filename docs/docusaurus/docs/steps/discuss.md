@@ -6,7 +6,7 @@ description: Your agent reads the code and asks until it knows what you want and
 ![The seven steps, with Discuss highlighted](pathname:///img/diagrams/track-discuss-light.svg)
 ![The seven steps, with Discuss highlighted](pathname:///img/diagrams/track-discuss-dark.svg)
 
-Describe the change with **+ New**, or ask your agent: “Using QL, plan a CSV export.” Your agent reads the code and asks only about unresolved choices, each with a recommendation. Independent choices can arrive together; a dependent choice follows the answer it needs. The page is titled **Discuss**; the task's name stays in the header.
+Describe the change with **+ New**, or ask your agent: “Using QL, plan a CSV export.” Your agent reads the code and asks only about unresolved choices, each with a recommendation. Independent choices can arrive together; a dependent choice follows the answer it needs.
 
 ![Discuss in the App: one question with its choices](pathname:///img/app/discuss-light.webp)
 ![Discuss in the App: one question with its choices](pathname:///img/app/discuss-dark.webp)

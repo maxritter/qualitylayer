@@ -6,27 +6,42 @@ import Editorial from "./Editorial";
 
 afterEach(cleanup);
 
-const step = (name: string) => screen.getByRole("button", { name: new RegExp(`^Step \\d: ${name}$`) });
+const step = (name: string) => screen.getByRole("tab", { name: new RegExp(`^Step \\d: ${name}$`) });
 
 it("opens on Plan and opens any other step with its own screen on a click", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  const steps = screen.getByRole("list", { name: "The seven steps and the pull request" });
-  expect(within(steps).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(
-    ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"].map((name, i) => `${i + 1}Step ${i + 1}: ${name}`),
+  const steps = screen.getByRole("tablist", { name: "Workflow steps" });
+  expect(within(steps).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(
+    ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"].map((name, i) => `Step ${i + 1}: ${name}`),
   );
-  expect(step("Plan").getAttribute("aria-expanded")).toBe("true");
+  expect(step("Plan").getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("button", { name: "Enlarge Plan" })).toBeTruthy();
   fireEvent.click(step("Review"));
-  expect(step("Review").getAttribute("aria-expanded")).toBe("true");
-  expect(step("Plan").getAttribute("aria-expanded")).toBe("false");
-  expect(document.getElementById("plan-more")?.hidden).toBe(true);
+  expect(step("Review").getAttribute("aria-selected")).toBe("true");
+  expect(step("Plan").getAttribute("aria-selected")).toBe("false");
+  expect(document.getElementById("workflow-panel-plan")?.hidden).toBe(true);
   expect(screen.getByRole("button", { name: "Enlarge Review" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Read about review" }).getAttribute("href")).toBe("/docs/steps/review");
+  expect(screen.getByRole("link", { name: "Review guide" }).getAttribute("href")).toBe("/docs/steps/review");
+});
+
+
+it("moves the workflow selection and focus with arrows, Home and End", () => {
+  render(<MemoryRouter><Editorial /></MemoryRouter>);
+  step("Plan").focus();
+  fireEvent.keyDown(step("Plan"), { key: "ArrowRight" });
+  expect(step("Outline").getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(step("Outline"));
+  fireEvent.keyDown(step("Outline"), { key: "End" });
+  expect(step("Pull request").getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(step("Pull request"), { key: "Home" });
+  expect(step("Discuss").getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(step("Discuss"), { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(step("Pull request"));
 });
 
 it("opens the step a link names, so the hero's stations and /#verify land on it", () => {
   render(<MemoryRouter initialEntries={["/#verify"]}><Editorial /></MemoryRouter>);
-  expect(step("Verify").getAttribute("aria-expanded")).toBe("true");
+  expect(step("Verify").getAttribute("aria-selected")).toBe("true");
   expect(screen.getByText("Agents check", { selector: ".ed-who" })).toBeTruthy();
 });
 

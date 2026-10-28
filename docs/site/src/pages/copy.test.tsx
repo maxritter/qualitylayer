@@ -7,7 +7,7 @@ import PricingSection from "@/components/PricingSection";
 import { BANNED_WORDS } from "@/lib/banned-words";
 import { FAQS, PRICING_FAQS } from "@/lib/content";
 import { COMPARE, PLANS } from "@/lib/pricing";
-import { DESCRIPTION, ENGINEER_QUOTE } from "@/lib/product";
+import { CHAT_GUIDANCE, DESCRIPTION, ENGINEER_QUOTE } from "@/lib/product";
 import { DownloadView } from "./Download";
 import { readFileSync } from "node:fs";
 
@@ -23,9 +23,7 @@ async function textOf(node: React.ReactNode): Promise<string> {
 describe("the site's copy", () => {
   it("summarizes visual planning and checked implementation with the current artifact name", async () => {
     const hero = await textOf(<Hero />);
-    expect(hero).toContain("Approve a visual plan with clickable artifacts.");
-    expect(hero).toContain("Your coding agent builds the change and checks every requirement.");
-    expect(hero).not.toContain("clickable designs");
+    expect(hero).toContain(DESCRIPTION);
   });
 
   it("uses the glossary, not the App's internal words, on the home page, download page and pricing page", async () => {
@@ -53,11 +51,8 @@ describe("the site's copy", () => {
 
   it("explains Chat's supported agents, optional tools and move into the workflow", async () => {
     const home = await textOf(<Sections />);
-    expect(home).toContain("Choose Chat for a direct conversation with Claude Code or Codex.");
-    expect(home).toContain("Save a plan, build in slices, make artifacts, or ask for checks and an independent review when you need them.");
-    expect(home).toContain("Start the workflow to keep the same task and conversation in the structured workflow.");
-    expect(home).toContain("Choose Feature or Bugfix for the structured workflow.");
-    expect(await textOf(<Hero />)).toContain("Seven steps for Feature and Bugfix,");
+    expect(home).toContain(CHAT_GUIDANCE);
+    expect(await textOf(<Hero />)).toContain("Seven steps for Feature and Bugfix.");
     expect(await textOf(<Hero />)).not.toContain("Seven steps on every change");
     expect(home).not.toContain("Available on every task.");
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");
@@ -103,8 +98,9 @@ describe("the site's copy", () => {
     expect(home).toContain("An engineer who uses QualityLayer");
   });
 
-  it("tells one developer and a team the same story: the closing says both", async () => {
-    const home = await textOf(<Sections />);
-    expect(home).toMatch(/on your own or with your team/i);
+  it("explains solo and team use in the FAQ", () => {
+    const answer = FAQS.find(({ question }) => question === "Can I use it on my own, or only with a team?")?.answer;
+    expect(answer).toMatch(/Both/);
+    expect(answer).toContain("Team plan");
   });
 });

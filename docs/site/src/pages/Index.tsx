@@ -3,10 +3,10 @@ import Hero from "@/components/home/Hero";
 import Page from "@/components/Page";
 import SEO from "@/components/SEO";
 import { FAQS } from "@/lib/content";
-import { GITHUB_URL, SHARE_DESCRIPTION, SITE_URL, SLOGAN } from "@/lib/product";
+import { GITHUB_URL, SHARE_DESCRIPTION, SITE_URL } from "@/lib/product";
 import { faqStructuredData, SOFTWARE_APPLICATION } from "@/lib/structured-data";
 
-const ABOUT = `${SLOGAN}. ${SHARE_DESCRIPTION}`;
+const ABOUT = SHARE_DESCRIPTION;
 
 // Below the fold: one chunk, loaded after first paint.
 const Sections = lazy(() => import("@/components/home/Sections"));

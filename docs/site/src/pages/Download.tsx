@@ -87,7 +87,7 @@ export function DownloadView({
     <section className="w7-sec w7-nf" aria-labelledby="dl-h">
       <div className="w7-wrap">
         <h1 id="dl-h" className="w7-h2">Get the QualityLayer App</h1>
-        <p className="w7-lead">Your task on the left, your agent on the right. Use the desktop App or open the same workspace in your browser. Updates install when you restart the App.</p>
+        <p className="w7-lead">Use the App on your computer or open it in your browser. Restart the App to install updates.</p>
         <ReleaseLine data={data} loading={loading} />
         <div className="ap-dl">
           {cards.map((card) => {

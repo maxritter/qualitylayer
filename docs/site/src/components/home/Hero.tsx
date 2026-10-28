@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Code, FileCheck, ListChecks, MessageSquare, Network, Play, Search, ShieldCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, CalendarDays, Code, Download, FileCheck, ListChecks, MessageSquare, Network, Search, ShieldCheck, SquarePlay, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useDownload } from "@/hooks/useDownload";
 import { FILMS } from "@/lib/films";
 import { OVERVIEW_POSTERS } from "@/lib/film-posters";
 import { useTheme } from "@/hooks/useTheme";
-import { BRAND_LINE, DESCRIPTION, SLOGAN } from "@/lib/product";
+import { BRAND_LINE, DESCRIPTION, SLOGAN, WEBINAR } from "@/lib/product";
 import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
 
 const STEP_ICONS: Record<string, LucideIcon> = { discuss: MessageSquare, research: Search, plan: Network, outline: ListChecks, implement: Code, verify: ShieldCheck, review: FileCheck };
@@ -18,10 +18,8 @@ const SHOT_ALT = "QualityLayer’s Plan asks what happens when a customer reache
 export const LIVE_DEMO = "/app-demo/?story&guide";
 
 /**
- * The Plan decision and agent from the Website model (hero-b.html, direction C), cropped to the approved frame.
- * Captured at 2x from the App demo's story; light and dark switch by the site's theme, and a phone
- * gets the decision card alone. The window is the door into that demo: its chip says so on every device, and hover or
- * focus lifts the window. Width and height hold the space while the picture loads.
+ * The current Plan and agent at 2x from the App demo. Phones keep the focused decision;
+ * the full window opens the same demo as the hero action.
  */
 function HeroShot() {
   return (
@@ -31,20 +29,11 @@ function HeroShot() {
           {(["light", "dark"] as const).map((theme) => (
             <picture key={theme} className={`sx-shot-${theme}`}>
               <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${theme}.webp`} width={724} height={609} />
-              <img src={`/hero/your-turn-agent-${theme}.webp`} alt={SHOT_ALT} width={1280} height={695} decoding="async" />
+              <img src={`/product/plan-${theme}.webp`} alt={SHOT_ALT} width={2560} height={1392} decoding="async" />
             </picture>
           ))}
-          <span className="sx-chip" aria-hidden="true">
-            <Play size={18} fill="currentColor" strokeWidth={0} />
-            Try it in your browser
-            <ArrowRight className="sx-chip-arrow" size={16} />
-          </span>
         </figure>
       </a>
-      <div className="sx-try">
-        <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO}>Try the App in your browser<ArrowRight size={16} aria-hidden="true" /></a></Button>
-        <p>Nothing to install.</p>
-      </div>
     </div>
   );
 }
@@ -98,7 +87,7 @@ function Stations() {
         })}
       </ol>
       <div className="mx-line-cap">
-        <p><strong>Seven steps for Feature and Bugfix,</strong> each one a Markdown file in your repository. You answer the questions, approve the plan and review the result; agents do the rest.</p>
+        <p><strong>Seven steps for Feature and Bugfix.</strong> You approve the plan and the result. Agents build and check the change.</p>
         <Link className="mx-line-link" to={`#${FIRST_STEP}`}>See each step in the App<ArrowRight size={16} aria-hidden="true" /></Link>
       </div>
     </nav>
@@ -115,14 +104,16 @@ const Hero = () => {
       <div className="sx-hero-row">
         <div className="sx-hero-copy">
           <p className="mx-qbd"><span aria-hidden="true" className="w7-mark" />{BRAND_LINE}</p>
-          <h1 id="hero-h" className="sx-h1">{SLOGAN}</h1>
+          <h1 id="hero-h" className="sx-h1">{SLOGAN.split(/\b(you)\b/).map((part, i) => part === "you" ? <span className="sx-human" key={i}>{part}</span> : part)}</h1>
           <p className="sx-lede">{DESCRIPTION}</p>
           <div className="sx-ctas">
-            <Button asChild size="xl">{download.direct ? <a href={download.href}>{download.label}</a> : <Link to={download.href}>{download.label}</Link>}</Button>
+            <Button asChild size="xl">{download.direct ? <a href={download.href}><Download size={18} aria-hidden="true" />{download.label}</a> : <Link to={download.href}><Download size={18} aria-hidden="true" />{download.label}</Link>}</Button>
             <Button ref={opener} type="button" variant="outline" size="xl" onClick={() => setFilm(true)}>
               <svg className="mx-play" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z" /></svg>
               Watch the film <span className="mx-dur">{clock(FILMS.overview.duration)}</span>
             </Button>
+            <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO} aria-label="Try the demo in your browser"><SquarePlay size={18} aria-hidden="true" />Try the demo<ArrowRight size={16} aria-hidden="true" /></a></Button>
+            <Button asChild variant="outline" size="xl"><a href={WEBINAR.href} target="_blank" rel="noopener noreferrer" aria-label={`Join the ${WEBINAR.title} webinar`}><CalendarDays size={18} aria-hidden="true" />{WEBINAR.label}</a></Button>
           </div>
           <p className="sx-meta">Runs on your computer, on the agent plan you already pay for · <Link to="/download">macOS, Windows and Linux</Link> · 7-day trial</p>
         </div>

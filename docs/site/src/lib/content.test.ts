@@ -19,9 +19,9 @@ describe("FAQ", () => {
   });
 
   it("answers for one developer and for a team", () => {
-    const answers = FAQS.map((faq) => `${faq.question} ${faq.answer}`).join(" ");
-    expect(answers).toMatch(/on your own|alone/i);
-    expect(answers).toMatch(/team/i);
+    const faq = FAQS.find(({ question }) => /on my own/.test(question));
+    expect(faq?.answer).toMatch(/Both/);
+    expect(faq?.answer).toContain("Team plan");
   });
 
   it("keeps feedback diagnostics in the privacy docs rather than the marketing FAQ", () => {

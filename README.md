@@ -27,6 +27,8 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 
 **[Download the App](https://qualitylayer.dev/download)** for macOS, Windows or Linux.
 
+<a href="https://luma.com/8b8ywm6d"><img src="docs/img/inside-qualitylayer-webinar.svg" alt="Join the Inside QualityLayer webinar" width="304" height="44"></a>
+
 <br>
 
 <a href="https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.mp4" aria-label="Watch the QualityLayer walkthrough, 5 minutes 20 seconds"><img src="docs/img/film-poster-dark.webp" alt="Play video: QualityLayer’s seven-step workflow, 5 minutes 20 seconds" width="700"></a>
@@ -50,11 +52,9 @@ QualityLayer keeps design decisions and verification visible while your agents w
 | **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. QualityLayer never charges for AI usage. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent works in small slices, writes behavior tests before implementation and fixes failures. |
-| **An independent check** | With independent review on, a fresh agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
+| **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |
-
-Choose **Feature** or **Bugfix** for a planned change, or **Chat** for a direct conversation with Claude Code or Codex.
 
 ---
 
@@ -101,9 +101,7 @@ In the App or browser, choose **+ New**, then **Chat**, **Feature** or **Bugfix*
 
 **Chat** is a conversation without workflow steps. You can use artifacts, checks and reviews as needed, then **Start the workflow** from the same conversation. [Chat guide](https://qualitylayer.dev/docs/chat).
 
-For a **Feature** or **Bugfix**, choose **Plan with QualityLayer**, or **Existing plan** to paste or attach a plan you already have.
-
-For a **Feature** or **Bugfix**, describe the change:
+For a **Feature** or **Bugfix**, choose **Plan with QualityLayer**, or **Existing plan** to paste or attach a plan. Describe what you want:
 
 ```text
 Plan retries for failed webhooks and stop after a few tries.

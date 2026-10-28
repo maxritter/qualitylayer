@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BRAND_LINE, SLOGAN } from "@/lib/product";
+import { BRAND_LINE, SLOGAN, WEBINAR } from "@/lib/product";
 import Hero, { LIVE_DEMO } from "./Hero";
 import { useTheme } from "@/hooks/useTheme";
 import { OVERVIEW_POSTERS } from "@/lib/film-posters";
@@ -23,8 +23,8 @@ it("shows the App at your turn beside the copy, light and dark, with a phone cro
   expect(pictures.map((p) => p.className)).toEqual(["sx-shot-light", "sx-shot-dark"]);
   for (const [picture, theme] of pictures.map((p, i) => [p, i ? "dark" : "light"] as const)) {
     const img = picture.querySelector("img")!;
-    expect(img.getAttribute("src")).toBe(`/hero/your-turn-agent-${theme}.webp`);
-    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["1280", "695"]);
+    expect(img.getAttribute("src")).toBe(`/product/plan-${theme}.webp`);
+    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2560", "1392"]);
     expect(img.getAttribute("alt")).toMatch(/what happens when a customer reaches their limit/);
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");
@@ -33,12 +33,12 @@ it("shows the App at your turn beside the copy, light and dark, with a phone cro
   }
 });
 
-it("opens the App demo from the picture and from the button under it", () => {
+it("opens the App demo from the picture and from the hero action", () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
   const picture = screen.getByRole("link", { name: /^Try the App in your browser: the usage-based billing example/ });
   expect(picture.getAttribute("href")).toBe(LIVE_DEMO);
   expect(picture.querySelector(".sx-shot")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Try the App in your browser" }).getAttribute("href")).toBe(LIVE_DEMO);
+  expect(screen.getByRole("link", { name: "Try the demo in your browser" }).getAttribute("href")).toBe(LIVE_DEMO);
   expect(LIVE_DEMO).toBe("/app-demo/?story&guide");
 });
 
@@ -50,11 +50,12 @@ it("lists the seven steps as stations that each open their step in the tour", ()
   expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#plan");
 });
 
-it("offers the download and film directly from the hero", () => {
+it("offers download, film and webinar actions together in the hero", () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
   const download = screen.getAllByRole("link").find(link => link.textContent?.startsWith("Download"));
   expect(download?.getAttribute("href")).toBe("/download");
   expect(screen.getByRole("button", { name: /Watch the film/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Join the Inside QualityLayer webinar" }).getAttribute("href")).toBe(WEBINAR.href);
   expect(screen.queryByText("/ql add usage-based billing")).toBeNull();
   expect(screen.queryByRole("button", { name: /Replay/ })).toBeNull();
 });

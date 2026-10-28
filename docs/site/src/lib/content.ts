@@ -30,36 +30,36 @@ const CODE_LEAVES = faq(
 export const FAQS: Faq[] = [
   faq(
     "Can I use the models and subscriptions I already have?",
-    "Yes. Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode run on the login or API key you already have, with the models your plan offers. QualityLayer charges only for itself, never for AI usage. The App shows each step's estimated cost, and Settings › Usage adds up the last 7 or 30 days, or this month.",
+    "Yes. Use your existing agent login or API key. QualityLayer charges for the tool, never for AI usage.",
   ),
   faq(
     "How is this different from plan mode?",
-    "Plan mode gives you a plan in the chat, then one long build that you check yourself. With QualityLayer, your agent asks only about unresolved choices; independent questions arrive together, and each answer reaches it immediately. Then it shows one plan with diagrams and clickable mockups, which you comment on and approve before any code is written. It builds the plan in tested slices and fixes what fails itself. An agent that did not write the code checks it against what you agreed, and you approve the finished change with its evidence.",
+    "QualityLayer adds visual planning, tested implementation and optional independent review. You approve the plan before building and the finished change after checking.",
   ),
   CODE_LEAVES,
   faq(
     "What about small changes and bugs?",
-    "Use Chat with Claude Code or Codex to explore a question or work freely. Choose Feature or Bugfix for a Plan and review. Small changes keep a short Plan and one build step. Larger work gets more design detail; bugs start with reproduction. You approve before code and before shipping.",
+    "Use Chat with Claude Code or Codex for free-form work. Choose Feature or Bugfix for a plan, checks and final review.",
   ),
   faq(
     "Can I run my agent in the App or browser?",
-    "Yes. Start Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode when you create a task, or from Conversation at any step. Your task stays on the left and the agent works on the right, in the desktop App or in your browser. Your own terminal, VS Code and other IDEs still work.",
+    "Yes. Your task and agent run side by side in the App or browser. You can also use your own terminal or IDE.",
   ),
   faq(
     "Can I use it on my own, or only with a team?",
-    "On your own: one developer runs all seven steps. The Team plan adds sharing plans for feedback, asking teammates through Slack and reviewing a change together.",
+    "Both. The Team plan adds shared plans, questions over Slack and code review with teammates.",
   ),
   faq(
     "Is it for product managers as well as engineers?",
-    "Yes. Choose Product or Engineering at Setup or in Settings › Workflow. Product starts with a brief: the problem, how success is measured, the first release and what the user sees, which you can copy as a PRD; the engineering detail stays folded away. Engineering starts with the full technical plan. The task header switches the level for one task.",
+    "Yes. Choose Engineering for technical plans or Product for a product brief in Settings › Workflow.",
   ),
   faq(
     "Can I see how much of my plan is left?",
-    "For Claude Code and Codex, yes. The sidebar shows the window with the least left, the conversation footer marks one that runs low, and Settings › Usage lists every window with its reset time. The other agents report no limits, and the App says so. A build that stops on a limit continues by itself when the window resets, unless you turn that off.",
+    "Claude Code and Codex show remaining limits and reset times. Other agents do not report them. Stopped builds can resume when their limit resets.",
   ),
   faq(
     "I use Pilot Shell today. What happens?",
-    "Keep using Pilot Shell 11 for as long as you want, including alongside QualityLayer. Setup leaves Pilot Shell and its tools in place. Your paid licence carries over; import memories per project in Settings → Memory.",
+    "Active Polar licences work with both products. Import lessons in Settings → Memory. Older purchases may need help moving over.",
   ),
 ];
 

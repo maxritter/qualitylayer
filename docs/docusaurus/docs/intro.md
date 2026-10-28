@@ -1,7 +1,7 @@
 ---
 slug: /
 title: Overview
-description: Choose a direct Chat or plan and build a change through QualityLayer's structured workflow.
+description: Plan, build and review software with your coding agents.
 ---
 
 <figure class="ql-film">
@@ -9,7 +9,7 @@ description: Choose a direct Chat or plan and build a change through QualityLaye
   <figcaption>How QualityLayer works, in about five minutes.</figcaption>
 </figure>
 
-QualityLayer is the software factory with you in the loop. Your agent plans each change with you in diagrams and clickable screens. You approve the Plan, your agent builds it test first, and an agent that did not write the code checks the result.
+Plan, build and review software with your coding agents. Agree on diagrams and clickable designs before building, then review the tested change.
 
 **Start here:** [Install](install.md) · [Your first task](first-task.md) · [Chat](chat.md) · [The App](app.md) · [Workflow](steps/discuss.md) · [Artifacts](artifacts.md)
 
@@ -31,7 +31,7 @@ You approve twice: the Plan and the finished change. In between, your agent work
 | --- | --- |
 | **[Discuss](steps/discuss.md)** | Your agent asks until it knows what done means |
 | **[Research](steps/research.md)** | Agents read the code and find a bug's cause |
-| **[Plan](steps/plan.md)** | The artifact, with diagrams. You approve it |
+| **[Plan](steps/plan.md)** | Diagrams and clickable designs; you approve the Plan |
 | **[Outline](steps/outline.md)** | Your agent cuts the Plan into slices |
 | **[Implement](steps/implement.md)** | Your agent builds test first and fixes what fails |
 | **[Verify](steps/verify.md)** | Project checks, then an agent that did not write the code rules on every point |

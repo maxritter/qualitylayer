@@ -20,7 +20,7 @@ Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** o
 
 Steps 1 to 6 happen in the App or browser.
 
-**Plan with QualityLayer** is the default. With **Existing plan**, paste a plan or attach a Markdown or plain-text file and choose **Start from this plan**: the task starts at Plan, with the original kept unchanged ([existing plans](steps/plan.md#existing-plan)). For a conversation without steps, pick **Chat** instead ([Chat](chat.md)).
+**Plan with QualityLayer** is the default. To reuse a plan, choose **Existing plan**, paste or attach it, then **Start from this plan** ([existing plans](steps/plan.md#existing-plan)). Choose **Chat** for a conversation without steps ([Chat](chat.md)).
 
 ## Where your agent runs
 
@@ -38,7 +38,7 @@ More in [agent runs](app.md#agent-runs). Seven agents have [native setup](agents
 - **Skip for now** moves to the next question; **Tell me more** asks for detail.
 - Select a passage to give feedback. It reaches the agent when it next reads the task; a stopped or disconnected agent cannot answer yet.
 - You can stop or pause the run. Your agent's own permission and sign-in prompts still need your response.
-- To continue elsewhere, stop the old run if it is still active, then name the task: “Using QL, continue implementation of task retry-webhooks.” Its stage, approved Plan and evidence are kept.
+- To continue elsewhere, stop the active run and ask: “Using QL, continue task retry-webhooks.” The Plan and evidence stay with the task.
 - With several approved Plans waiting, "Implement this using QualityLayer" lists their commands.
 
 </details>

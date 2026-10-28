@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { ArrowRight, BookOpen, Expand, ExternalLink, House, Shapes, SlidersHorizontal, Users, X, type LucideIcon } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useNarrow } from "@/hooks/useNarrow";
 import { useTheme } from "@/hooks/useTheme";
 import { FILMS } from "@/lib/films";
 import { FIRST_STEP, STEPS, WHO, type Who } from "@/lib/steps";
@@ -11,14 +10,14 @@ import { scrollAndFocusSection } from "@/utils/navigateToSection";
 import "@/styles/editorial.css";
 
 type Shot = { id: string; title: string; alt: string };
-type Extra = { id: string; name: string; icon: LucideIcon; line: string; text: string; shot: Shot; link: { to: string; label: string } };
+type Extra = { id: string; name: string; icon: LucideIcon; who: Who; line: string; text: string; shot: Shot; link: { to: string; label: string } };
 
 const EXTRAS: Extra[] = [
-  { id: "memory", name: "Memory", icon: BookOpen, line: "Keep useful project lessons", text: "Your agents reuse lessons between tasks, whichever coding agent you use. Share them per repository through Git; search or retire them in Settings.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
-  { id: "artifacts", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "An artifact is a mockup, diagram or clickable page your agent draws for the task, so you can try a flow before any code exists. Click a spot to say what should change; your agent edits the page and answers you. Keep the ones you reuse for later tasks.", shot: { id: "artifact", title: "Artifact", alt: "An artifact in the QualityLayer App: a backend's request diagram on wide screens, and on phones feedback on a billing page with the agent's answer that it changed the page. Illustrative data." }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
-  { id: "team", name: "Team", icon: Users, line: "Ask the people who know", text: "Teammates answer plan questions and review the finished change from their own App.", shot: { id: "team", title: "Team", alt: "The Team space: Anna asks about a diagram in her Plan, and an agent's draft answer to Ben's question waits to be sent" }, link: { to: "/docs/team/plans", label: "Read about team collaboration" } },
-  { id: "cost", name: "Home", icon: House, line: "See what needs you", text: "Your tasks that need attention and your running work, with the current step and what happens next.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, link: { to: "/docs/app#home", label: "Read about Home" } },
-  { id: "setup", name: "Settings", icon: SlidersHorizontal, line: "Agents, plan limits and reviewers", text: "Check your agents, see how much of each plan is left and choose who reviews your plans and changes. Pick the agent, model and effort when you start a task or build.", shot: { id: "setup", title: "Settings", alt: "Settings with its sections in the sidebar's place, showing Workflow: the task level, your instructions, the reviews and the reviewer models" }, link: { to: "/docs/reference/settings", label: "Read about settings" } },
+  { id: "memory", who: "agent", name: "Memory", icon: BookOpen, line: "Keep useful project lessons", text: "Reuse project lessons across tasks and agents. Share them through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
+  { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Pin feedback where you want a change.", shot: { id: "artifact", title: "Artifact", alt: "An artifact in the QualityLayer App: a backend's request diagram on wide screens, and on phones feedback on a billing page with the agent's answer that it changed the page. Illustrative data." }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
+  { id: "team", who: "you", name: "Team", icon: Users, line: "Ask the people who know", text: "Teammates answer plan questions and review the finished change from their own App.", shot: { id: "team", title: "Team", alt: "The Team space: Anna asks about a diagram in her Plan, and an agent's draft answer to Ben's question waits to be sent" }, link: { to: "/docs/team/plans", label: "Read about team collaboration" } },
+  { id: "cost", who: "you", name: "Home", icon: House, line: "See what needs you", text: "Your tasks that need attention and your running work, with the current step and what happens next.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, link: { to: "/docs/app#home", label: "Read about Home" } },
+  { id: "setup", who: "you", name: "Settings", icon: SlidersHorizontal, line: "Agents, plan limits and reviewers", text: "Choose agents and reviewers, and check your plan limits.", shot: { id: "setup", title: "Settings", alt: "Settings with its sections in the sidebar's place, showing Workflow: the task level, your instructions, the reviews and the reviewer models" }, link: { to: "/docs/reference/settings", label: "Read about settings" } },
 ];
 
 const shotOf = (step: (typeof STEPS)[number]): Shot => ({ id: step.id, title: step.name, alt: step.alt });
@@ -34,7 +33,7 @@ function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" 
   return (
     <>
     <picture>
-      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={780} height={1400} />
+      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 716 : 780} height={shot.id === "plan" ? 1834 : 1400} />
       <img src={src(shot, theme)} alt={shot.alt} width="2560" height="1392" loading={eager || inDialog ? undefined : "lazy"} decoding="async" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
     </picture>
     {failed ? <span className="ed-image-error">{shot.title} image unavailable. {inDialog ? "Use Full size to retry." : "Open the preview to retry."}</span> : null}
@@ -69,55 +68,36 @@ function Inline({ shot, theme, eager, onOpen }: { shot: Shot; theme: "light" | "
   );
 }
 
-/**
- * The seven steps and the pull request, one open at a time, Plan first. On wide screens the open step's screenshot fills
- * the pinned stage beside the list; on tablets and phones it sits inside the open step.
- */
+/** One selected step, with its screenshot below the horizontal picker. */
 function Tour({ active, onPick, theme, onOpen }: { active: string; onPick: (id: string) => void; theme: "light" | "dark"; onOpen: (shot: Shot, el: HTMLElement) => void }) {
-  const narrow = useNarrow(1079);
-  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const current = STEPS.find((step) => step.id === active) ?? STEPS[0];
+  const move = (event: KeyboardEvent, index: number) => {
+    const next = { ArrowRight: (index + 1) % STEPS.length, ArrowLeft: (index + STEPS.length - 1) % STEPS.length, Home: 0, End: STEPS.length - 1 }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    onPick(STEPS[next].id);
+    tabs.current[next]?.focus();
+  };
   return (
     <div className="ed-tour">
-      <ol className="ed-steps" aria-label="The seven steps and the pull request">
-        {STEPS.map((step, i) => {
-          const on = step.id === current.id;
-          return (
-            <li key={step.id} id={step.id} className={on ? "on" : undefined} data-who={step.who}>
-              <div className="ed-step-row">
-                <h3 className="ed-step-h">
-                  <button type="button" aria-expanded={on} aria-controls={`${step.id}-more`} onClick={() => onPick(step.id)}>
-                    <span className="ed-num" aria-hidden="true">{i + 1}</span>
-                    <span><span className="w7-sr">Step {i + 1}: </span>{step.name}</span>
-                  </button>
-                </h3>
-                <p className="ed-line">{step.line}</p>
-              </div>
-              <div id={`${step.id}-more`} className="ed-more" hidden={!on}>
-                <p className="ed-text">{step.text}</p>
-                <p className="ed-who"><span className="ed-dot" aria-hidden="true" />{WHO[step.who]}</p>
-                {narrow && on ? <Inline shot={shotOf(step)} theme={theme} eager onOpen={onOpen} /> : null}
-                <a className="ed-link" href={`/docs/steps/${step.id}`}>Read about {step.name.toLowerCase()}<ArrowRight size={16} aria-hidden="true" /></a>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-      {narrow ? null : (
-        <div className="ed-stage">
-          <div className="ed-pin">
-            <button type="button" className="ed-frame" aria-label={`Enlarge ${current.name}`} onClick={(event) => onOpen(shotOf(current), event.currentTarget)}>
-              {STEPS.map((step) => {
-                const on = step.id === current.id;
-                return <img key={step.id} className={on ? "on" : undefined} src={src(shotOf(step), theme)} alt={on ? step.alt : ""} aria-hidden={on ? undefined : true} width="2560" height="1392" loading={on ? "eager" : "lazy"} decoding="async" onError={() => setFailed(previous => new Set(previous).add(step.id))} onLoad={() => setFailed(previous => { if (!previous.has(step.id)) return previous; const next = new Set(previous); next.delete(step.id); return next; })} />;
-              })}
-              {failed.has(current.id) ? <span className="ed-image-error">{current.name} image unavailable. Open the preview to retry.</span> : null}
-              <span className="ed-enlarge"><Expand size={14} aria-hidden="true" />Enlarge</span>
-            </button>
-            <p className="ed-stage-cap">Example task in the QualityLayer App.</p>
+      <div className="ed-workflow-tabs" role="tablist" aria-label="Workflow steps">
+        {STEPS.map((step, i) => (
+          <button key={step.id} ref={(el) => { tabs.current[i] = el; }} id={step.id} type="button" role="tab" className="ed-step-tab" data-who={step.who} aria-label={"Step " + (i + 1) + ": " + step.name} aria-selected={step.id === current.id} aria-controls={"workflow-panel-" + step.id} tabIndex={step.id === current.id ? 0 : -1} onClick={() => onPick(step.id)} onKeyDown={(event) => move(event, i)}>
+            <span className="ed-num" aria-hidden="true">{i + 1}</span><span>{step.name}</span>
+          </button>
+        ))}
+      </div>
+      {STEPS.map((step) => (
+        <div key={step.id} id={"workflow-panel-" + step.id} role="tabpanel" aria-labelledby={step.id} className="ed-step-panel" data-who={step.who} tabIndex={0} hidden={step.id !== current.id}>
+          <div className="ed-step-summary">
+            <p className="ed-text">{step.text}</p>
+            <p className="ed-who"><span className="ed-dot" aria-hidden="true" />{WHO[step.who]}</p>
+            <a className="ed-link" href={"/docs/steps/" + step.id}>{step.name} guide<ArrowRight size={16} aria-hidden="true" /></a>
           </div>
+          {step.id === current.id ? <Inline shot={shotOf(step)} theme={theme} eager onOpen={onOpen} /> : null}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -139,7 +119,7 @@ function Extras({ active, onPick, theme, onOpen }: { active: string; onPick: (id
         {EXTRAS.map((extra, i) => {
           const on = extra.id === active;
           return (
-            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" id={extra.id} className="ed-tab" aria-selected={on} aria-controls={`${extra.id}-panel`} tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
+            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" data-who={extra.who} id={extra.id} className="ed-tab" aria-selected={on} aria-controls={`${extra.id}-panel`} tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
               <extra.icon size={18} strokeWidth={1.75} aria-hidden="true" />{extra.name}
             </button>
           );
@@ -189,7 +169,7 @@ export default function Editorial() {
       <section id="tour" className="ed-section mx-wrap" aria-labelledby="ed-workflow-h">
         <div className="ed-head">
           <h2 id="ed-workflow-h">From prompt to pull request</h2>
-          <p>Spec-driven development with a human in the loop: you approve the plan, agents build and check it, and QualityLayer follows the pull request until it merges. Engineers start from a technical plan, product people from a product brief.</p>
+          <p>Follow one change through planning, implementation and review.</p>
           <ul className="ed-legend" aria-label="Colours">
             {(Object.keys(WHO) as Who[]).map((who) => <li key={who} data-who={who}><span className="ed-dot" aria-hidden="true" />{WHO[who]}</li>)}
           </ul>
@@ -198,7 +178,7 @@ export default function Editorial() {
         <div className="ed-outcome" id="films"><p>Every decision, document and test run stays with the change.</p><div><a href="/docs/">Read the workflow docs</a><a href={FILMS.overview.src} target="_blank" rel="noopener noreferrer">Watch the walkthrough</a></div></div>
       </section>
       <section id="extras" className="ed-section mx-wrap" aria-labelledby="ed-context-h">
-        <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>Chat with Claude Code or Codex. Save a plan, build in slices, make artifacts, or ask for checks and an independent review when you need them.</p></div>
+        <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>Keep project lessons, try designs and work with your team.</p></div>
         <Extras active={extra} onPick={setExtra} theme={theme} onOpen={open} />
       </section>
       {shown ? <ImageDialog shot={shown.shot} theme={theme} opener={shown.opener} onClose={() => setShown(null)} /> : null}

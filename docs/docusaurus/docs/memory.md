@@ -28,7 +28,7 @@ Lessons are reference data, never instructions. Check an older lesson against th
 
 ## Manage your lessons
 
-In **Settings → Memory**: search, **Pin to every session** (up to five per project), **Retire**, **Still true** for lessons whose files changed, turn off **Lessons in every session**, or pause local memory.
+In **Settings → Memory**, search lessons, pin up to five per project or retire them. Use **Still true** after checking changed files. You can turn off **Lessons in every session** or pause memory.
 
 <details>
 <summary>See Memory settings</summary>

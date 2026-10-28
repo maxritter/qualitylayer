@@ -1,13 +1,13 @@
 import type { Faq } from "./content";
 import { PLANS, PRICE_CURRENCY } from "./pricing";
-import { AUTHOR_NAME, AUTHOR_URL, SHARE_DESCRIPTION, SITE_URL, SLOGAN } from "./product";
+import { AUTHOR_NAME, AUTHOR_URL, SHARE_DESCRIPTION, SITE_URL } from "./product";
 
 export const SOFTWARE_APPLICATION = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "@id": `${SITE_URL}/#software`,
   name: "QualityLayer",
-  description: `${SLOGAN}. ${SHARE_DESCRIPTION}`,
+  description: SHARE_DESCRIPTION,
   applicationCategory: "DeveloperApplication",
   operatingSystem: "macOS, Linux, Windows",
   author: { "@type": "Person", name: AUTHOR_NAME, url: AUTHOR_URL },

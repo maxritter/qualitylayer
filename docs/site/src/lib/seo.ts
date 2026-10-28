@@ -1,7 +1,7 @@
-import { SHARE_DESCRIPTION, SITE_URL, SLOGAN } from "./product.ts";
+import { SHARE_DESCRIPTION, SITE_URL } from "./product.ts";
 
 export const PUBLIC_PAGES = {
-  "/": { title: `QualityLayer: ${SLOGAN}`, description: SHARE_DESCRIPTION },
+  "/": { title: "QualityLayer | Plan, build and review with coding agents", description: SHARE_DESCRIPTION },
   "/pricing": {
     title: "Pricing | QualityLayer",
     description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",

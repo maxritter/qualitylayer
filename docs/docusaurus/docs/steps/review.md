@@ -36,7 +36,7 @@ The **Review** page opens code review. **Checks**, **Screens** and **Change deta
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-light.webp)
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-dark.webp)
 
-**Review the code** opens the whole change in the full window, like a pull request: a file tree, a **Unified** or **Split** diff, and **Viewed** marks that count only your own progress.
+**Review the code** opens a file tree and **Unified** or **Split** diff. **Viewed** marks save your reading progress.
 
 ### Comment on any line {#line-comments}
 

@@ -316,7 +316,7 @@ export const CHAPTERS = [
         note: "Once the Outline holds, every Done means point has its end-to-end scenario, run after the slice that completes it.",
         act: async (d) => {
           // The Outline as the build begins: written in full, its proof map below the slices.
-          await d.go(at("impl-start", `${task}/04-outline.md`, { quiet: true }))
+          await d.go(at("impl-start", `${task}/04-outline.md`))
           await d.focus(testid(d, "proof-rows"))
         },
       },

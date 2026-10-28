@@ -87,6 +87,8 @@ html{scroll-padding-top:76px}
 .sx-live:focus-visible .sx-shot{outline:2px solid var(--ql-accent);outline-offset:4px}
 /* Dark blue is light: dark words on it, as on the dark theme's Download button. */
 .sx-shot picture,.sx-shot img{display:block;width:100%;height:auto}
+@media(min-width:641px){.sx-shot{border:0;border-radius:0;background:transparent;box-shadow:none}.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot{box-shadow:none}}
+@media(max-width:640px){.sx-shot{padding:12px;border-radius:16px;background:var(--ql-surface-2);box-shadow:none}.sx-shot img{box-sizing:border-box;border:1px solid var(--ql-border);border-radius:8px;box-shadow:0 20px 38px -20px rgb(0 0 0 / 35%)}}
 .sx-shot .sx-shot-dark{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sx-shot .sx-shot-light{display:none}:root:not([data-theme="light"]) .sx-shot .sx-shot-dark{display:block}}
 :root[data-theme="dark"] .sx-shot .sx-shot-light{display:none}

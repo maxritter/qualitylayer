@@ -24,7 +24,7 @@ it("shows the App at your turn beside the copy, light and dark, with a phone cro
   for (const [picture, theme] of pictures.map((p, i) => [p, i ? "dark" : "light"] as const)) {
     const img = picture.querySelector("img")!;
     expect(img.getAttribute("src")).toBe(`/product/plan-${theme}.webp`);
-    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2560", "1392"]);
+    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2664", "1904"]);
     expect(img.getAttribute("alt")).toMatch(/what happens when a customer reaches their limit/);
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");

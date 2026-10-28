@@ -26,6 +26,7 @@ const src = (shot: Shot, theme: "light" | "dark") => `/product/${shot.id}-${them
 /** The App's own phone layout, captured at 390 px, so phones get a picture they can read. */
 const phoneSrc = (shot: Shot, theme: "light" | "dark") => `/product/${shot.id}-phone-${theme}.webp`;
 const PHONE = "(max-width: 640px)";
+const DESKTOP_HEIGHTS: Record<string, number> = { team: 2024, artifact: 1944, "artifacts-open": 1944, plan: 1904, research: 2504, "implement-start": 1664, review: 1904 };
 
 /** The desktop capture, or on a phone the phone capture. In the preview dialog a failure points at its full-size link. */
 function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" | "dark"; eager?: boolean; inDialog?: boolean }) {
@@ -33,8 +34,8 @@ function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" 
   return (
     <>
     <picture>
-      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 716 : 780} height={shot.id === "plan" ? 1834 : 1400} />
-      <img src={src(shot, theme)} alt={shot.alt} width="2560" height="1392" loading={eager || inDialog ? undefined : "lazy"} decoding="async" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
+      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 688 : 836} height={shot.id === "plan" ? 482 : 1456} />
+      <img src={src(shot, theme)} alt={shot.alt} width={2664} height={DESKTOP_HEIGHTS[shot.id] ?? 1496} loading={eager || inDialog ? undefined : "lazy"} decoding="async" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
     </picture>
     {failed ? <span className="ed-image-error">{shot.title} image unavailable. {inDialog ? "Use Full size to retry." : "Open the preview to retry."}</span> : null}
     </>

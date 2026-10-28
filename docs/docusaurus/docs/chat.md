@@ -5,8 +5,8 @@ description: Work directly with Claude Code or Codex, with plans and checks when
 
 Use **Chat** for a direct conversation with **Claude Code or Codex**, without workflow steps or approval gates.
 
-![Chat workspace with the conversation, saved plan, Tasks and composer; illustrative data](pathname:///img/app/chat-light.png)
-![Chat workspace with the conversation, saved plan, Tasks and composer; illustrative data](pathname:///img/app/chat-dark.png)
+![Chat with its conversation, task controls and composer; illustrative data](pathname:///img/app/chat-light.webp)
+![Chat with its conversation, task controls and composer; illustrative data](pathname:///img/app/chat-dark.webp)
 
 *Illustrative task, shown in the full workspace.*
 

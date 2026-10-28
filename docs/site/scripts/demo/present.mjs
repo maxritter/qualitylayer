@@ -6,19 +6,22 @@
 //   npm run demo -- --theme light     the App in light theme
 //   npm run demo -- --script          print the run sheet: every chapter and beat with what to say
 //   npm run demo:check                every beat headless; a picture of each in --out (default: temp folder)
+//   npm run demo -- --dev             the source dev server instead of a build, to follow edits as they land
 //
 // The demo follows the App as the checkout has it: after a UI change, run demo:check and look at the
 // pictures. A beat whose control moved fails there with its chapter, not live on stage.
 import { createRequire } from "node:module"
 import { existsSync, readFileSync } from "node:fs"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { createServer as createHttpServer } from "node:http"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, extname, join, normalize, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawn } from "node:child_process"
 import { createServer } from "node:net"
 import { createInterface } from "node:readline"
 import { CHAPTERS } from "./story.mjs"
+import { TERMINAL_FONTS, terminalFontSource } from "../../../../qualitylayer/src/ui/agent-window/fonts.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const site = resolve(here, "../..")
@@ -32,8 +35,8 @@ const value = (name, fallback) => {
   return given
 }
 if (args.includes("--help")) {
-  console.log("npm run demo -- [--from <chapter>] [--theme dark|light] [--size 1440x900] [--base-url http://127.0.0.1:<port>]")
-  console.log("npm run demo:check -- [--only plan,review] [--out <folder>]")
+  console.log("npm run demo -- [--from <chapter>] [--theme dark|light] [--size 1440x900] [--dev | --base-url http://127.0.0.1:<port>]")
+  console.log("npm run demo:check -- [--only plan,review] [--out <folder>] [--dev]")
   console.log("chapters: " + CHAPTERS.map((chapter) => chapter.id).join(", "))
   process.exit(0)
 }
@@ -65,12 +68,77 @@ const overlay = readFileSync(join(here, "overlay.js"), "utf8")
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 
-/** The source demo server of the checkout, on a free loopback port. */
-async function startServer() {
+const freePort = async () => {
   const listener = createServer()
   await new Promise((done) => listener.listen(0, "127.0.0.1", done))
   const port = listener.address().port
   await new Promise((done) => listener.close(done))
+  return port
+}
+
+const TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".mjs": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml",
+  ".wasm": "application/wasm",
+  ".mp4": "video/mp4",
+}
+
+/**
+ * The demo as the website ships it: built once from the checkout into a private folder and served from
+ * there. A page change then loads a few files instead of the dev server's hundreds, and a file another
+ * session saves mid-edit cannot reach the stage. The App's terminal fonts come from the checkout, as
+ * the dev server serves them.
+ */
+async function startBuilt() {
+  const out = resolve(repo, "qualitylayer/dist/.demo-build")
+  const build = spawn("npx", ["vite", "build", "--outDir", out, "--emptyOutDir", "--logLevel", "error"], {
+    cwd: site,
+    stdio: ["ignore", "pipe", "pipe"],
+  })
+  // The build's notices stay out of the presenter's terminal unless the build fails.
+  let log = ""
+  build.stdout.on("data", (chunk) => (log += chunk))
+  build.stderr.on("data", (chunk) => (log += chunk))
+  const code = await new Promise((done) => build.once("exit", done))
+  if (code !== 0) throw new Error(`The demo did not build (vite exited ${code}):\n${log.slice(-4000)}`)
+  const fonts = new Map(TERMINAL_FONTS.map((font) => [`/terminal-fonts/${font.file}`, resolve(repo, "qualitylayer", terminalFontSource(font))]))
+  const server = createHttpServer(async (request, response) => {
+    const path = decodeURIComponent(new URL(request.url ?? "/", "http://demo").pathname)
+    let file = fonts.get(path) ?? normalize(join(out, path))
+    if (!fonts.has(path) && file !== out && !file.startsWith(out + sep)) {
+      response.writeHead(403).end()
+      return
+    }
+    try {
+      if ((await stat(file)).isDirectory()) file = join(file, "index.html")
+      const body = await readFile(file)
+      // Built assets carry their hash in the name; pages are read fresh on every visit.
+      const cache = path.startsWith("/assets/") || fonts.has(path) ? "public, max-age=3600" : "no-store"
+      response.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Cache-Control": cache })
+      response.end(body)
+    } catch {
+      response.writeHead(404).end()
+    }
+  })
+  const port = await freePort()
+  await new Promise((done) => server.listen(port, "127.0.0.1", done))
+  return { url: `http://127.0.0.1:${port}`, stop: () => new Promise((done) => server.close(done)) }
+}
+
+/** The source dev server of the checkout, on a free loopback port. */
+async function startServer() {
+  const port = await freePort()
   const server = spawn("bun", ["run", "scripts/ui-dev.ts", "--port", String(port)], {
     cwd: resolve(repo, "qualitylayer"),
     // Other sessions edit this checkout: the presentation gets its own dependency cache, and the source as
@@ -102,8 +170,34 @@ async function startServer() {
       fail(new Error("The source demo exited: " + code))
     })
   })
-  return { url, server }
+  const stop = () => {
+    server.kill("SIGTERM")
+    return new Promise((done) => (server.exitCode !== null ? done() : server.once("exit", done)))
+  }
+  return { url, stop }
 }
+
+/**
+ * After a page loads: waits until it has fetched nothing new for `quiet` ms (the images and frames React
+ * adds after the load event), at most `limit` ms. Network idle would wait half a second on every page.
+ */
+const settled = (page, quiet = 150, limit = 2500) =>
+  page.evaluate(
+    async ({ quiet, limit }) => {
+      const count = () => performance.getEntriesByType("resource").length
+      const end = Date.now() + limit
+      let last = count()
+      let since = Date.now()
+      while (Date.now() < end) {
+        await new Promise((done) => setTimeout(done, 40))
+        if (count() !== last) {
+          last = count()
+          since = Date.now()
+        } else if (Date.now() - since >= quiet) return
+      }
+    },
+    { quiet, limit },
+  )
 
 /** Everything a page does stays on the source demo: a request elsewhere, or to a real API, is refused. */
 async function fence(page, refused) {
@@ -196,15 +290,16 @@ function director(page, fast, { carry = !fast, hold = false } = {}) {
       // Each page is a new document: an address that differs only after `#` would otherwise keep the
       // old page, its open dialogs and its ring on screen.
       const fresh = query.replace(/^\?/, `?demo=${++loads}&`)
-      await page.goto(`${base}/app-demo/${fresh}`, { waitUntil: "networkidle" })
+      await page.goto(`${base}/app-demo/${fresh}`, { waitUntil: "load" })
       // A dev server that is recompiling (another session saved a file) can leave the first load empty:
       // the page is opened once more before the beat gives up.
       const shown = () => page.locator("#root > *").first().waitFor({ state: "visible", timeout: 15000 })
       await shown().catch(async () => {
-        await page.goto(`${base}/app-demo/${query.replace(/^\?/, `?demo=${++loads}&`)}`, { waitUntil: "networkidle" })
+        await page.goto(`${base}/app-demo/${query.replace(/^\?/, `?demo=${++loads}&`)}`, { waitUntil: "load" })
         await shown()
       })
       await page.evaluate(() => document.fonts.ready)
+      await settled(page)
       await pause(250)
       if (!keep) await d.reveal()
     },
@@ -478,16 +573,16 @@ async function opens(page, chapter, timeout) {
     }),
   )
   const opened = await page
-    .goto(`${base}/app-demo/${chapter.url}`, { waitUntil: "networkidle" })
+    .goto(`${base}/app-demo/${chapter.url}`, { waitUntil: "load" })
     .then(() => Promise.race([page.locator("#root > *").first().waitFor({ state: "visible", timeout }).then(() => !error), thrown]))
     .catch(() => false)
   return opened ? null : `  ! ${chapter.title} does not open${error ? `: ${error}` : ""}`
 }
 
 /**
- * Loads every chapter once before the window opens: the dev server compiles what the live window asks
- * for, and a chapter whose page does not open is named now, not on stage. The first page waits for the
- * compile. Each page closes before the next opens, keeping one App instance in memory.
+ * Loads every chapter once before the window opens: a chapter whose page does not open is named now,
+ * not on stage, and with --dev the server compiles what the live window asks for. The first page waits
+ * for that compile. Each page closes before the next opens, keeping one App instance in memory.
  */
 async function preflight(browser) {
   const problems = []
@@ -507,8 +602,10 @@ let server
 let browser
 try {
   if (!base) {
-    console.log("Starting the source App demo…")
-    ;({ url: base, server } = await startServer())
+    const dev = args.includes("--dev")
+    console.log(dev ? "Starting the source App demo…" : "Building the App demo…")
+    server = dev ? await startServer() : await startBuilt()
+    base = server.url
   }
   browser = await chromium.launch({ headless: true, ...(existsSync(chrome) ? { executablePath: chrome } : {}) })
   if (check) process.exitCode = (await runCheck(browser)) ? 1 : 0
@@ -521,8 +618,5 @@ try {
   }
 } finally {
   await browser?.close()
-  if (server) {
-    server.kill("SIGTERM")
-    await new Promise((done) => (server.exitCode !== null ? done() : server.once("exit", done)))
-  }
+  await server?.stop()
 }

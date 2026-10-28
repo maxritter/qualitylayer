@@ -32,12 +32,32 @@
   #demo-chip b{font-weight:600;margin-right:8px}
   #demo-chip span{color:#a9b1bd}
   #demo-miss{position:fixed;right:10px;top:10px;width:8px;height:8px;border-radius:50%;background:#e5484d;opacity:0;transition:opacity .3s}
-  #demo-miss.on{opacity:.9}`
+  #demo-miss.on{opacity:.9}
+  #demo-run{position:fixed;left:0;top:0;width:100%;height:3px;overflow:hidden;opacity:0;transition:opacity .45s ease}
+  #demo-run.on{opacity:1}
+  #demo-run::before{content:"";position:absolute;top:0;bottom:0;left:0;width:30%;
+    background:linear-gradient(90deg,rgba(120,170,255,0),rgba(120,170,255,.95),rgba(120,170,255,0));animation:demo-run 1.1s linear infinite}
+  #demo-run.done::before{width:100%;background:rgba(120,170,255,.95);animation:none}
+  @keyframes demo-run{from{transform:translateX(-100%)}to{transform:translateX(340%)}}`
+  // A beat that opens another page is still playing there: the new page's cue runs on from the start.
+  const busyBefore = () => {
+    try {
+      return sessionStorage.getItem("demo-busy") === "1"
+    } catch {
+      return false
+    }
+  }
+  const markBusy = (busy) => {
+    try {
+      if (busy) sessionStorage.setItem("demo-busy", "1")
+      else sessionStorage.removeItem("demo-busy")
+    } catch {}
+  }
   const layer = document.createElement("div")
   layer.id = "demo-layer"
   layer.innerHTML = `<style>${css}</style><div id="demo-spot"></div><div id="demo-ring"></div>
     <svg id="demo-cursor" viewBox="0 0 24 24"><path d="M4 2.5 19.5 13l-7 1.2L9 21z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
-    <div id="demo-chip"></div><div id="demo-miss"></div>`
+    <div id="demo-chip"></div><div id="demo-miss"></div><div id="demo-run"${busyBefore() ? ' class="on"' : ""}></div>`
   const veil = document.createElement("div")
   veil.id = "demo-veil"
   // The page before this one, kept by present.mjs: it covers this page from its first paint until the
@@ -133,15 +153,26 @@
   // A click or scroll by the presenter means they took over: the spotlight steps aside.
   for (const type of ["wheel", "pointerdown"])
     window.addEventListener(type, () => window.__demo.busy || window.__demo.unspot(), true)
+  // The presenter's cue: a light runs along the window's top edge while a page loads or a beat plays;
+  // when the beat is done the line fills and fades out. No line: press next.
+  let runTimer = 0
   window.__demo = {
     busy: false,
     begin() {
       this.busy = true
       clearTimeout(cursorTimer)
+      clearTimeout(runTimer)
+      markBusy(true)
+      $("demo-run").classList.remove("done")
+      $("demo-run").classList.add("on")
     },
     end() {
       this.busy = false
+      markBusy(false)
       cursorTimer = setTimeout(() => $("demo-cursor").classList.remove("on"), 1400)
+      const run = $("demo-run")
+      run.classList.add("done")
+      runTimer = setTimeout(() => run.classList.remove("on"), 450)
     },
     // The director moves the cursor itself: a mouse over an artifact's frame sends this page no events.
     // It shows only while a scripted beat runs; the presenter's own mouse has the system pointer.

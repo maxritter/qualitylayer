@@ -33,9 +33,9 @@ export const CLAIMS: Record<string, Claim> = {
     always: ["in build order", "Slices", "How each point is proved", "scenario 3"],
     last: ["Every Done means point has a scenario"],
   },
-  // "One command starts the build": the build session and subagent models in one line and the command
+  // "One command starts the build": lead and subagent defaults beside the command.
   start: {
-    always: ["Build session", "Subagents", "Effort", "Using QualityLayer, implement the approved plan for task usage-billing"],
+    always: ["Lead", "Subagent default", "Effort", "Using QualityLayer, implement the approved plan for task usage-billing"],
     first: ["Copy"],
     last: ["Copied"],
   },

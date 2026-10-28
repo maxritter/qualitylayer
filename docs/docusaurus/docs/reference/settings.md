@@ -3,7 +3,7 @@ title: Settings
 description: Configure your workflow, agents, usage, sharing and updates.
 ---
 
-Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for every project on this computer.
+Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Use **Save defaults** for model roles; other changes save at once for this computer.
 
 ![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-light.webp)
 ![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-dark.webp)
@@ -24,7 +24,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ### Independent review {#independent-review}
 
-**On**: an agent that never wrote the code checks each **Done means** point in [Verify](../steps/verify.md). **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Auto (Cursor), Grok 4.7 (Grok), Gemini 3.8 Flash (High) (Antigravity).
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Auto (Cursor), Grok 4.7 (Grok), Gemini 3.8 Flash (High) (Antigravity).
 
 ### Second opinion {#second-opinion}
 
@@ -41,7 +41,7 @@ A second reviewer reads **On the Plan** and **On the built change**, each **When
 
 ## Agents {#defaults}
 
-**On this computer** lists the seven agents with version, sign-in, integration state and a **Use** switch. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
+**On this computer** lists the seven agents with version, sign-in, integration state and a **Use** switch. Open **⋯ › Models and roles…** for separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
 
 | **⋯ › Edit launch…** | What it changes |
 | --- | --- |

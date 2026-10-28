@@ -51,7 +51,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 | --- | --- |
 | **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
-| **Small, tested changes** | Your agent works in small slices, writes behavior tests before implementation and fixes failures. |
+| **Small, tested changes** | Your lead writes tests before code and delegates independent slices when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |

@@ -420,7 +420,7 @@ export default function CloseUp({ id, step: asked, tries = 2, onRetry }: { id: s
           gate={<GateTrack items={[{ label: "Start", state: "cur" }, { label: "Slices · 3" }, { label: "Checked as it builds" }, { label: "Agents check every point" }]} turn="Your turn · start the build" />}>
           <YourTurn kind="Implement" title="Start the build" text="Paste this request into your agent. From then on the build runs on its own until the final review.">
             <span className="cu-seg cu-agent-seg"><span className="on">Claude Code</span><span>Codex</span><span>Cursor</span><span>Grok</span><span>Antigravity</span><span>Pi</span><span>OpenCode</span><span>Another agent</span></span>
-            <p className="cu-defs"><span><span className="cu-k">Build session</span> Opus 5.5</span><span><span className="cu-k">Subagents</span> Sonnet 5.5</span><span><span className="cu-k">Effort</span> High</span><span className="cu-lnk">Change</span></p>
+            <p className="cu-defs"><span><span className="cu-k">Lead</span> Opus 5.5</span><span><span className="cu-k">Subagent default</span> Sonnet 5.5</span><span><span className="cu-k">Effort</span> High</span><span className="cu-lnk">Change</span></p>
             <div className="cu-cmd"><code>Using QualityLayer, implement the approved plan for task usage-billing</code><span className={`cu-btn pri sm${step === 1 ? " press" : ""}`}>{at(2) ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}{at(2) ? "Copied" : "Copy request"}</span></div>
           </YourTurn>
         </Frame>

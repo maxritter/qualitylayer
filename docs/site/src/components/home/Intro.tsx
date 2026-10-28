@@ -52,7 +52,7 @@ const MODELS: Chip[] = [
 
 const SETUPS: Chip[] = [
   ["Opus 5.5 builds it", "term"],
-  ["Sonnet 5.5 for subagents", "file"],
+  ["Subagents when useful", "file"],
   ["Codex reads the plan", "braces"],
   ["Claude Code reads the plan", "ast"],
   ["Or one agent does every step", "term"],

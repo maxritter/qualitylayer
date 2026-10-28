@@ -587,7 +587,7 @@ export const CHAPTERS = [
         act: (d) => peek(d, testid(d, "artifact-share").getByRole("button").or(testid(d, "artifact-share")).first(), 2200),
       },
       {
-        note: "Finance's billing-mode page: a working page, not a picture, and the billing task is changing it.",
+        note: "Finance's account page: October's use, November priced both ways, the switch and its audit log. A working page, not a picture, and the billing task is changing it.",
         act: async (d) => {
           await d.go(at("plan-approve", "#/artifacts"))
           await d.click(d.page.getByTestId("library-row").filter({ hasText: "Billing admin" }).first())

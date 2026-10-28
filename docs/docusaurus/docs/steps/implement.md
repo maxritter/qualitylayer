@@ -17,10 +17,10 @@ After you approve the Plan, **Start the build** appears on the Plan page.
 
 | On the card | What it picks |
 | --- | --- |
-| **Where the agent runs** | **In the App** (recommended) or **In my terminal** |
-| **Agent** | An installed native agent, or Another agent for your terminal |
-| **Model and effort** | The choices for this run |
-| **Branch** | **Current branch**, **New branch** or **New worktree** ([below](#where-it-lands)) |
+| **Agent** | The coding agent for this build |
+| **Lead and effort** | The model and effort for the session that writes and tests the code |
+| **Subagents** | Claude Code's default for delegated work; other agents choose their own |
+| **Files and workspace** | Attachments, run location and [branch/worktree choices](#where-it-lands) |
 
 Press **Approve & start**, or **Approve & copy prompt** for your terminal; that prompt says `implement the approved task`. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
 
@@ -35,7 +35,7 @@ A new branch or worktree starts from this checkout's HEAD; a worktree's name set
 
 *Example task in a fictional project.*
 
-The **Implement** page shows each slice's progress. One session builds them in order: a failing test first, then the smallest change that passes. It fixes what fails and commits with Git, and may use its own subagents.
+The **Implement** page shows each slice's progress. Your lead writes a failing test first, then builds the change, fixes failures and commits. It may delegate independent slices to subagents.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)

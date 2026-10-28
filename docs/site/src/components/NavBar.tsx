@@ -13,7 +13,6 @@ const LINKS: NavLink[] = [
   { label: "Your agents", to: "/#agents" },
   { label: "How it works", to: "/#tour" },
   { label: "Teams", to: "/#team" },
-  { label: "Pricing", to: "/pricing" },
   { label: "Docs", to: DOCS_URL, external: true },
 ];
 

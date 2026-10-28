@@ -16,12 +16,11 @@ function Install() {
           <div>
             <p className="mx-qbd"><span aria-hidden="true" className="w7-mark" />{BRAND_LINE}</p>
             <h2 id="install-h">Start with your next change</h2>
-            <p>Download the App and connect your coding agent. Start with a 7-day trial.</p>
+            <p>Download the App and connect your coding agent.</p>
             <p className="mx-endn">On a server, in WSL or in a container? <Link to="/download">Install the command line</Link></p>
           </div>
           <div className="sx-ctas">
             <Button asChild size="xl">{download.direct ? <a href={download.href}>{download.label}</a> : <Link to={download.href}>{download.label}</Link>}</Button>
-            <Button asChild variant="outline" size="xl"><Link to="/pricing">See pricing</Link></Button>
           </div>
         </div>
       </div>

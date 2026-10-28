@@ -30,7 +30,7 @@ const CODE_LEAVES = faq(
 export const FAQS: Faq[] = [
   faq(
     "Can I use the models and subscriptions I already have?",
-    "Yes. Use your existing agent login or API key. QualityLayer charges for the tool, never for AI usage.",
+    "Yes. Use your existing agent login or API key.",
   ),
   faq(
     "How is this different from plan mode?",

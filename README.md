@@ -49,7 +49,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 
 | You get | How it works |
 | --- | --- |
-| **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. QualityLayer never charges for AI usage. |
+| **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent works in small slices, writes behavior tests before implementation and fixes failures. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
@@ -63,7 +63,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 ### Prerequisites
 
 - **A coding agent**, installed and signed in: Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode. [Other agents](https://qualitylayer.dev/docs/agents/other) connect through the CLI.
-- **Your own subscription** (Claude or ChatGPT plan, or API key). QualityLayer never charges for model usage.
+- **Your own subscription** (Claude or ChatGPT plan, or API key).
 - **Git** and a repository.
 
 ### Installation

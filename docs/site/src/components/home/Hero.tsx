@@ -115,7 +115,7 @@ const Hero = () => {
             <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO} aria-label="Try the demo in your browser"><SquarePlay size={18} aria-hidden="true" />Try the demo<ArrowRight size={16} aria-hidden="true" /></a></Button>
             <Button asChild variant="outline" size="xl"><a href={WEBINAR.href} target="_blank" rel="noopener noreferrer" aria-label={`Join the ${WEBINAR.title} webinar`}><CalendarDays size={18} aria-hidden="true" />{WEBINAR.label}</a></Button>
           </div>
-          <p className="sx-meta">Runs on your computer, on the agent plan you already pay for · <Link to="/download">macOS, Windows and Linux</Link> · 7-day trial</p>
+          <p className="sx-meta">Runs on your computer · <Link to="/download">macOS, Windows and Linux</Link></p>
         </div>
         <HeroShot />
       </div>

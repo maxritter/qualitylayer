@@ -165,8 +165,8 @@ Seven steps take a change from questions to review, with decisions and checks sa
 ## QualityLayer App
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/readme/app-dark.webp">
-  <img src="docs/img/readme/app-light.webp" alt="Reviewing a billing decision and its diagram beside Claude Code in the App. Fictional project." width="1000">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">
+  <img src="docs/site/public/product/plan-light.webp" alt="Reviewing a billing decision and its diagram beside Claude Code in the App. Fictional project." width="1000">
 </picture>
 
 | In the App | What you can do |
@@ -187,8 +187,8 @@ QualityLayer keeps task files on your computer and encrypts shared tasks first. 
 Try mockups, diagrams and clickable pages before building. Pin feedback to any spot; your agent updates the artifact. Keep reusable artifacts in your repository. [Artifacts guide](https://qualitylayer.dev/docs/artifacts).
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/readme/artifact-dark.webp">
-  <img src="docs/img/readme/artifact-light.webp" alt="An interactive queue-migration console opened as a QualityLayer artifact. Fictional project." width="1000">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/artifact-dark.webp">
+  <img src="docs/site/public/product/artifact-light.webp" alt="A backend request diagram in QualityLayer’s artifact viewer. Fictional project." width="1000">
 </picture>
 
 ---

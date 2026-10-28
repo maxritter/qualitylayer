@@ -78,6 +78,7 @@
 .markdown th { background: var(--ql-bg-sunken); text-align: left; }
 .markdown td, .markdown th { padding: 12px 14px; }
 .markdown img { max-width: 100%; height: auto; border: 1px solid var(--ql-border); border-radius: 8px; }
+.markdown img[src*="/img/app/"][src$=".webp"] { border: 0; border-radius: 0; box-shadow: none; }
 .markdown blockquote { background: var(--ql-accent-soft); border: 1px solid var(--ql-accent-line); border-radius: 6px; padding: 12px 18px; }
 .markdown blockquote p:last-child { margin-bottom: 0; }
 .markdown blockquote a, .theme-admonition a { color: var(--ql-accent-hover); }

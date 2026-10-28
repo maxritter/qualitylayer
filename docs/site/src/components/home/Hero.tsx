@@ -87,7 +87,7 @@ function Stations() {
         })}
       </ol>
       <div className="mx-line-cap">
-        <p><strong>Seven steps for Feature and Bugfix.</strong> You approve the plan and the result. Agents build and check the change.</p>
+        <p>You approve the plan and the result. Agents build and check the change.</p>
         <Link className="mx-line-link" to={`#${FIRST_STEP}`}>See each step in the App<ArrowRight size={16} aria-hidden="true" /></Link>
       </div>
     </nav>

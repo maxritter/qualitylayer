@@ -24,4 +24,4 @@ export const STEPS: Step[] = [
 export const WORKFLOW_STEPS = STEPS.slice(0, 7);
 
 /** The step the tour opens on. */
-export const FIRST_STEP = "plan";
+export const FIRST_STEP = "discuss";

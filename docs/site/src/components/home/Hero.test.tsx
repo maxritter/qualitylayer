@@ -47,7 +47,7 @@ it("lists the seven steps as stations that each open their step in the tour", ()
   const stations = within(screen.getByRole("navigation", { name: "The seven steps" })).getAllByRole("listitem");
   expect(stations.map((s) => s.querySelector(".mx-station-name")?.lastChild?.textContent)).toEqual(["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]);
   expect(stations.map((s) => within(s).getByRole("link").getAttribute("href"))).toEqual(["/#discuss", "/#research", "/#plan", "/#outline", "/#implement", "/#verify", "/#review"]);
-  expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#plan");
+  expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#discuss");
 });
 
 it("offers download, film and webinar actions together in the hero", () => {

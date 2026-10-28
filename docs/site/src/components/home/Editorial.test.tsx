@@ -8,14 +8,14 @@ afterEach(cleanup);
 
 const step = (name: string) => screen.getByRole("tab", { name: new RegExp(`^Step \\d: ${name}$`) });
 
-it("opens on Plan and opens any other step with its own screen on a click", () => {
+it("opens on Discuss and opens any other step with its own screen on a click", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
   const steps = screen.getByRole("tablist", { name: "Workflow steps" });
   expect(within(steps).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(
     ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"].map((name, i) => `Step ${i + 1}: ${name}`),
   );
-  expect(step("Plan").getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("button", { name: "Enlarge Plan" })).toBeTruthy();
+  expect(step("Discuss").getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("button", { name: "Enlarge Discuss" })).toBeTruthy();
   fireEvent.click(step("Review"));
   expect(step("Review").getAttribute("aria-selected")).toBe("true");
   expect(step("Plan").getAttribute("aria-selected")).toBe("false");
@@ -69,12 +69,14 @@ it("opens the Artifacts tab from /#artifacts and links to its docs page", () => 
 
 it("keeps an honest caption when an image fails", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
+  fireEvent.click(step("Plan"));
   fireEvent.error(screen.getByRole("img", { name: /visual billing architecture/ }));
   expect(screen.getByText("Plan image unavailable. Open the preview to retry.")).toBeTruthy();
 });
 
 it("marks the image preview as modal and returns focus after Escape", async () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
+  fireEvent.click(step("Plan"));
   const open = screen.getByRole("button", { name: "Enlarge Plan" });
   fireEvent.click(open);
   const preview = await screen.findByRole("dialog", { name: "Plan" });

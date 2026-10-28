@@ -210,6 +210,11 @@ jobs:
         working-directory: qualitylayer
         run: bun install --frozen-lockfile
 
+      - name: Install the isolated macOS test browser
+        if: runner.os == 'macOS'
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install chromium-headless-shell
+
       # Every Cockpit view of the demo, at three widths, in Chrome: no text spills out of a
       # button, tab, badge or menu item. The self-test first proves the check still catches one.
       - name: No text overflows a control

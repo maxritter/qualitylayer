@@ -305,7 +305,7 @@ jobs:
           - shard: 2
             files: tests/windows/native.test.ts tests/e2e/sessions.test.ts tests/e2e/statusline.test.ts tests/core/check-process-options.test.ts tests/core/live-signals.test.ts tests/core/interaction-shell-process.test.ts
           - shard: 3
-            files: tests/windows/install-ps1.test.ts tests/windows/setup-recovery.test.ts tests/windows/uninstall-ps1.test.ts tests/core/install/mod.test.ts tests/windows/fixture-cleanup.test.ts
+            files: tests/windows/install-ps1.test.ts tests/windows/setup-recovery.test.ts tests/windows/uninstall-ps1.test.ts tests/core/install/mod.test.ts tests/windows/fixture-cleanup.test.ts tests/core/scanner-setup.test.ts
           - shard: 4
             files: tests/core/team-keys.test.ts tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts
           - shard: 5

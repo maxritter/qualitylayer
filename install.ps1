@@ -593,6 +593,24 @@ function Invoke-QlUninstall {
     if ($null -ne $manifest -and (Test-Path -LiteralPath $modFolder -PathType Container)) {
         if (Remove-QlPath $modFolder -Folder) { Write-QlLine "  Removed $modFolder" }
     }
+    # Scanner runtimes write private cache/configuration here, outside their pinned file manifest.
+    foreach ($scanner in @('betterleaks', 'osv-scanner', 'zizmor', 'opengrep')) {
+        $state = Join-Path (Join-Path (Join-Path $stateHome 'tools') $scanner) 'state'
+        if (-not (Test-Path -LiteralPath $state -PathType Container)) { continue }
+        $safe = $true
+        for ($path = $state; (Test-QlInside $qlHome $path); $path = Split-Path -Parent $path) {
+            $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            if ($null -ne $item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                $safe = $false
+                break
+            }
+        }
+        if ($safe) {
+            if (Remove-QlPath $state -Folder) { Write-QlLine "  Removed $state" }
+        } else {
+            Write-QlLine "  Kept, not a managed scanner folder: $state"
+        }
+    }
     if ($null -ne $manifest) { [void](Remove-QlPath $manifestFile) }
     foreach ($dir in @($dirs | Sort-Object -Descending)) {
         if (Test-QlEmptyFolder $dir) { try { Remove-Item -LiteralPath $dir -Force -ErrorAction Stop } catch { } }

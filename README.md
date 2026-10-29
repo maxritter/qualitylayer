@@ -138,6 +138,15 @@ Only `ql-workflow` starts the planning and build workflow; the others work on th
 
 ---
 
+## Checks and independent review
+
+QualityLayer runs your project's checks and security scans. A separate agent reviews the change against your request. [How Verify works](https://qualitylayer.dev/docs/steps/verify).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/verification-dark.webp">
+  <img src="docs/img/verification-light.webp" alt="Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion from another coding agent." width="1000">
+</picture>
+
 <h2 id="features">The Workflow</h2>
 
 Seven steps take a change from questions to review, with decisions and checks saved as Markdown in your repository. Existing plans start at Plan. You approve the Plan and finished change, authorize pushes and control the merge.
@@ -154,7 +163,7 @@ Seven steps take a change from questions to review, with decisions and checks sa
 | [Plan](https://qualitylayer.dev/docs/steps/plan) | Diagrams, clickable artifacts and checks, **approved by you** |
 | [Outline](https://qualitylayer.dev/docs/steps/outline) | The build session splits the approved Plan into small slices |
 | [Implement](https://qualitylayer.dev/docs/steps/implement) | Your agent builds test first, fixes what fails and decides when it is ready |
-| [Verify](https://qualitylayer.dev/docs/steps/verify) | Project checks and, when enabled, an independent agent's review |
+| [Verify](https://qualitylayer.dev/docs/steps/verify) | Your project's checks and an independent agent's review |
 | [Review](https://qualitylayer.dev/docs/steps/review) | A walkthrough of the change, **approved by you** |
 | [Pull request](https://qualitylayer.dev/docs/steps/pull-request) | Failing checks and routine review threads fixed; the task stays open until you merge |
 

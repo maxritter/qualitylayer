@@ -494,7 +494,7 @@ async function openWindow() {
   return { profile, context, page: context.pages()[0] ?? (await context.newPage()) }
 }
 
-/** Plays a beat in the window; a chapter's first beat opens its page and shows its title. */
+/** Plays a beat in the window; a chapter's first beat opens its page and shows its title. The beat's problem, if any. */
 async function showBeat(page, { chapter, beat }) {
   const current = CHAPTERS[chapter]
   const d = director(page, false)
@@ -505,11 +505,32 @@ async function showBeat(page, { chapter, beat }) {
       line: current.line,
     })
   }
-  const problem = await play(d, current, beat)
+  return play(d, current, beat)
+}
+
+/** The run sheet's lines for a beat just shown: what to say, and what comes next. */
+function reportBeat({ chapter, beat }, problem) {
+  const current = CHAPTERS[chapter]
   const following = current.beats[beat + 1] ?? CHAPTERS[chapter + 1]?.beats[0]
   console.log(`\n[${chapter + 1}/${CHAPTERS.length} ${current.title} · ${beat + 1}/${current.beats.length}] ${current.beats[beat].note}`)
-  if (problem) console.log(`  ! this beat did not run: ${problem}. Click it yourself, or press next.`)
+  if (problem) console.log(`  ! this beat did not run: ${problem}. Press next: it opens the page fresh.`)
   console.log(following ? `  next: ${following.note}` : "  That was the last beat.")
+}
+
+/**
+ * Shows a beat so the demo always moves on. A page the presenter changed (`rebuild`), or a beat that
+ * fails, is opened fresh with the chapter's earlier beats replayed, then the beat plays once more.
+ * True when the page is the story's page again; false sends the next step through a fresh page too.
+ */
+async function step(page, at, rebuild) {
+  if (rebuild && at.beat > 0) await arrive(page, at)
+  let problem = await showBeat(page, at)
+  if (problem) {
+    if (at.beat > 0) await arrive(page, at)
+    problem = await showBeat(page, at)
+  }
+  reportBeat(at, problem)
+  return !problem
 }
 
 /** Arrives at a beat in the middle of a chapter: opens it and replays the earlier beats without motion. */
@@ -527,6 +548,15 @@ async function runLive() {
   await fence(page, refused)
   const { send, next } = commandQueue()
   await page.exposeBinding("__demoCommand", (_source, command) => send(command))
+  // The presenter's own clicks, keys and page changes between beats: the next beat starts on a fresh page.
+  let playing = false
+  let changed = false
+  await page.exposeBinding("__demoTouched", () => {
+    if (!playing) changed = true
+  })
+  page.on("framenavigated", (frame) => {
+    if (!playing && frame === page.mainFrame()) changed = true
+  })
   page.on("close", () => send("quit"))
   const terminal = readTerminal(send)
   console.log(
@@ -535,14 +565,25 @@ async function runLive() {
   )
   listChapters()
 
-  // A page that does not open is reported, never the end of the presentation: r opens the chapter again.
-  const shown = (step) =>
-    step().catch((error) =>
-      console.log(`  ! the page did not open: ${String(error?.message ?? error).split("\n")[0].replace(/\.+$/, "")}. Press r to open the chapter again, or next.`),
-    )
+  // A page that does not open is reported, never the end of the presentation: the next step opens it fresh.
+  const shown = async (rebuild) => {
+    playing = true
+    try {
+      // No step holds the keys for long: one that hangs is given up, and the next opens fresh.
+      const stuck = new Promise((_, fail) =>
+        setTimeout(() => fail(new Error("the step took longer than a minute")), 60_000).unref(),
+      )
+      changed = !(await Promise.race([step(page, at, rebuild), stuck]))
+    } catch (error) {
+      changed = true
+      console.log(`  ! the page did not open: ${String(error?.message ?? error).split("\n")[0].replace(/\.+$/, "")}. Press next or r: it opens fresh.`)
+    } finally {
+      playing = false
+    }
+  }
   page.on("pageerror", (error) => console.log(`  ! page error: ${error.message.split("\n")[0]}`))
   let at = { chapter: chapterIndex(value("--from", CHAPTERS[0].id)), beat: 0 }
-  await shown(() => showBeat(page, at))
+  await shown(false)
   for (let command = await next(); command !== "quit"; command = await next()) {
     if (command === "list") {
       listChapters()
@@ -551,11 +592,8 @@ async function runLive() {
     const to = moved(at, command)
     if (!to) continue
     at = to
-    // "next" plays on from the page as it is; any other move into a chapter rebuilds the page first.
-    await shown(async () => {
-      if (command !== "next" && to.beat > 0) await arrive(page, to)
-      await showBeat(page, to)
-    })
+    // "next" plays on from the page as it is, unless the presenter changed it; any other move rebuilds.
+    await shown(command !== "next" || changed)
   }
   terminal.close()
   if (refused.length) console.log("Requests outside the demo were refused: " + [...new Set(refused)].join(", "))

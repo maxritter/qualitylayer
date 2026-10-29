@@ -15,8 +15,10 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | **New tasks** | **Engineering** (default) or **Product** ([two levels](../intro.md#two-levels)); change per task until the Plan is approved |
 | [Your instructions](#instructions) | Standing instructions for every task |
 | [Independent review](#independent-review) | **On** (recommended) or **Off** |
-| [Second opinion by](#second-opinion) | **Off**, **Other model family** or a named agent |
+| [Second opinion](#second-opinion) | **Off** (default) or **Automatic**, once a second coding agent is installed |
 | **Design review** | **Finished designs** (default): a separate agent checks each finished design before you see it. Wireframes are never reviewed |
+| [Scan each change](#security-scans) | **On** (default) or **Off** |
+| [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
 
 ### Your instructions {#instructions}
 
@@ -28,16 +30,22 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ### Second opinion {#second-opinion}
 
-A second reviewer reads **On the Plan** and **On the built change**, each **When risky** (recommended) or **Always**. Risky means the Plan says so, the change touches sign-in, secrets or outside input, or a slice is marked risky. **Other model family** picks an installed, signed-in agent that did not build the change, from another model maker: GPT reviews Claude, Claude reviews GPT.
+**Automatic**: a model from another family reads a risky Plan and a risky built change, read-only, beside your agent. Risky means the Plan says so, the change touches sign-in, secrets or outside input, or a slice is marked risky. QualityLayer picks the reviewer from the agents on this computer: GPT reviews Claude, Claude reviews GPT, and Pi on GPT can review Claude Code's work. Settings shows who checks whose work.
 
 <details>
 <summary>How the reviewer is picked</summary>
 
-- Pi and OpenCode count by the model in **Reviewer models**; Cursor's Auto never counts as another maker.
+- Pi and OpenCode count by the model they run; Cursor's Auto never counts as another family.
 - Agents that enforce read-only come first, then Claude Code, Codex, Grok, Pi, OpenCode, Cursor, Antigravity. Cursor and Antigravity review a disposable copy.
-- With one agent installed, a separate reviewer of it reads (Sonnet 5.5 in Claude Code). **Reviewed by** in the Plan names who read it.
+- When every agent here runs the same family, a fresh session of it reviews. **Reviewed by** in the Plan names who read it.
 
 </details>
+
+### Security scans {#security-scans}
+
+**Scan each change** runs the [security scans](code-health.md#security-scans) in Verify and the secrets scan after each agent turn. **Off**: Verify's Security scans lane says Off; the reviews still run.
+
+**Dependency advisories**: **osv.dev** sends the package names and versions of a changed lockfile to Google's open vulnerability database; your code stays here. **Local copy** downloads that database (about 250 MB for npm and PyPI) the first time a project needs it, and nothing leaves this computer.
 
 ## Agents {#defaults}
 

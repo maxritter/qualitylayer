@@ -81,16 +81,17 @@ A link file (or `--link-stdin`) keeps the link out of your shell history. No lic
 
 Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact library inspect`. `artifact shot` and `check --render` need Chrome.
 
-## Code health {#code-health}
+## Code health and security scans {#code-health}
 
-Advisory local Qlty checks ([Code health](code-health.md)).
+Advisory local checks ([Code health and security scans](code-health.md)).
 
 | Command | What it does |
 | --- | --- |
 | `quality check [paths...] [--all] [--duplication] [--fail-on-new]` | Check changed and untracked, or named, source |
+| `quality scan [paths... \| --since <rev>] [--secrets\|--dependencies\|--workflows\|--code] [--local]` | Scan changed or named files for secrets, vulnerable packages, unsafe workflows and risky code |
 | `quality metrics\|lint [paths...]` | Function metrics, or the project's linters |
 | `quality acknowledge <id> --reason "<evidence>"` | Keep a reviewed finding with its reason |
-| `quality status\|setup\|on\|off` | Check, repair, pause or resume |
+| `quality status\|setup\|on\|off` | Check, repair (also reinstalls the scanners), pause or resume |
 
 ## Project memory {#memory}
 

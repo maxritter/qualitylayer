@@ -137,12 +137,43 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  # The one check the release waits for (release.yml, Source UI Gate): green only when every shard
-  # above passed on this commit; a failed, cancelled or skipped shard makes it fail.
+  history:
+    name: Conversation history browser checks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - run: bash .github/workflows/scripts/install-git-crypt.sh
+      - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.2" }
+      - run: bun install --frozen-lockfile
+        working-directory: qualitylayer
+      - run: npm ci --ignore-scripts
+        working-directory: docs/site
+      - run: ./node_modules/.bin/playwright install --with-deps chromium
+        working-directory: qualitylayer
+      - name: Every history pair and explicit navigation in all desktop layouts
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright test tests/frontend/conversation-history.spec.ts tests/frontend/conversation-turns.spec.ts --config playwright.ui.config.ts --project desktop-light --project desktop-dark --project desktop-small --workers=1 --retries=0 --global-timeout=600000 --grep 'all 2,000|explicit turn navigation|keeps its place when older ones open' --reporter=github,./scripts/ui-duration-reporter.ts
+      - name: Keep numeric history evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qualitylayer-conversation-history-${{ github.run_id }}
+          path: qualitylayer/dist/ui-test-results/**/conversation-full-history.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  # The release waits for this aggregate: every required UI job must pass on this commit.
   result:
     name: Source UI browser checks
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    needs: [frontend, checkout]
+    needs: [frontend, checkout, history]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -150,9 +181,10 @@ jobs:
         env:
           RESULT: ${{ needs.frontend.result }}
           CHECKOUT: ${{ needs.checkout.result }}
+          HISTORY: ${{ needs.history.result }}
         run: |
-          if [ "$RESULT" != success ] || [ "$CHECKOUT" != success ]; then
-            echo "::error::source UI: $RESULT; subscription checkout: $CHECKOUT"
+          if [ "$RESULT" != success ] || [ "$CHECKOUT" != success ] || [ "$HISTORY" != success ]; then
+            echo "::error::source UI: $RESULT; subscription checkout: $CHECKOUT; conversation history: $HISTORY"
             exit 1
           fi
           echo "Every source UI shard passed"

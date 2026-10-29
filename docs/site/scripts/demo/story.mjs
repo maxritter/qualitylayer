@@ -98,19 +98,65 @@ export const CHAPTERS = [
     ],
   },
   {
+    id: "home",
+    title: "Home",
+    line: "Step away while agents work",
+    // Sam's day before the billing task exists; New task starts from this same page.
+    url: at("discuss-q", "#/", { quiet: true, before: true }),
+    beats: [
+      {
+        short: true,
+        note: "This is Sam's QualityLayer a few weeks in: Home lists only what waits for them, across projects and teammates. You can step away while the agents work.",
+        act: (d) => d.focus(testid(d, "needs-you")),
+      },
+      {
+        note: "And what runs without you: two agents building, each with its last report.",
+        act: (d) => d.focus(testid(d, "in-progress")),
+      },
+      {
+        short: true,
+        note: "One search for everything: tasks, projects, files and actions, also with ⌘K.",
+        act: async (d) => {
+          await d.click(await nav(d, testid(d, "search-row")))
+          await d.type(d.page.getByRole("combobox", { name: "Search or jump" }).first(), "billing")
+          await d.wait(1600)
+          await d.page.keyboard.press("Escape")
+        },
+      },
+      {
+        note: "The task list finds a task by name, shows each row the way I like it, and takes a new project folder.",
+        act: async (d) => {
+          await peek(d, await nav(d, d.page.getByRole("button", { name: "Find a task", exact: true }).first()), 1000)
+          await peek(d, d.page.getByRole("button", { name: "View options", exact: true }).first())
+          await peek(d, d.page.getByRole("button", { name: "Add a project", exact: true }).first())
+        },
+      },
+      {
+        note: "The bell holds what happened while I was away, each a jump to where it happened.",
+        act: (d) => peek(d, d.page.getByRole("button", { name: /^Notifications/ }).first(), 2000),
+      },
+      {
+        note: "And when something is off, or an idea comes up, it goes straight to the team behind QualityLayer.",
+        act: async (d) => {
+          // A bug or an idea, each a public issue the person previews before it is sent; no ring over the dialog.
+          await d.click(await nav(d, d.page.getByRole("button", { name: "Report a bug or suggest an improvement", exact: true }).first()))
+          await d.wait(1400)
+          await d.click(d.page.getByRole("dialog").getByText("Suggest an improvement", { exact: true }).first())
+        },
+      },
+    ],
+  },
+  {
     id: "new-task",
     title: "New task",
     line: "Feature, bugfix or chat",
     url: at("discuss-q", "#/", { quiet: true, before: true }),
     beats: [
       {
-        short: true,
-        note: "This is Sam's QualityLayer a few weeks in: Home lists only what waits for them, across projects and teammates.",
-        act: (d) => d.focus(testid(d, "needs-you")),
-      },
-      {
         note: "A new task: Feature or Bugfix gets planned first. Chat is for direct work without the workflow.",
         act: async (d) => {
+          // Home's last beat leaves the Bug / idea dialog open.
+          if ((await d.page.getByRole("dialog").count()) > 0) await d.page.keyboard.press("Escape")
           await d.click(testid(d, "new-task-button"))
           await d.focus(d.page.getByRole("radiogroup").first())
         },
@@ -138,8 +184,10 @@ export const CHAPTERS = [
         note: "Start planning: the agent reads the code first, then asks what only I can answer.",
         act: async (d) => {
           await d.click(d.page.getByRole("dialog").getByRole("button", { name: /^Start/ }).first())
-          await d.wait(1500)
-          await d.focus(d.page.locator("main").first())
+          // The ring waits for the agent's first question rather than framing the page while it starts.
+          const question = testid(d, "focus-card")
+          const asked = await question.waitFor({ timeout: 8000 }).then(() => true, () => false)
+          await d.focus(asked ? question : d.page.locator("main").first())
         },
       },
     ],
@@ -248,7 +296,7 @@ export const CHAPTERS = [
         act: (d) => d.focus(testid(d, "plan-decision")),
       },
       {
-        note: "Feedback goes on an exact passage, saved for the agent.",
+        note: "Feedback goes on an exact passage and is saved. Update Plan hands everything I left to the agent, which revises the Plan before I approve.",
         act: async (d) => {
           const text = "Say what happens to an open window when the aggregator restarts."
           if (phone(d)) {
@@ -262,6 +310,9 @@ export const CHAPTERS = [
           await d.click(passage.locator(".sp-gutter-comment"))
           await d.type(d.page.getByPlaceholder("What should change here?"), text)
           await d.click((await side(d)).getByRole("button", { name: /^Send/ }).first())
+          // The demo has no planner to wake: the ring shows where Update Plan hands the feedback over.
+          await d.wait(900)
+          await d.focus((await side(d)).getByRole("button", { name: "Update Plan", exact: true }).first())
         },
       },
       {
@@ -314,7 +365,7 @@ export const CHAPTERS = [
       },
       {
         short: true,
-        note: "When I approve, I choose which agent builds, where it runs and on which branch.",
+        note: "When I approve, I choose who builds: the agent, the lead's model and effort, a cheaper default for its helpers, the files it starts from, and the branch.",
         act: async (d) => {
           // Without a session already open, approving asks where the build runs.
           await d.go(at("plan-approve", task, { quiet: true }))
@@ -426,12 +477,25 @@ export const CHAPTERS = [
     url: at("verify-work"),
     beats: [
       {
-        note: "Step 6. Every Done means point gets its proof from a recorded check. A fresh reviewer checks the change without the builder's context.",
-        act: (d) => d.focus(d.page.locator("main").first()),
+        note: "Step 6. Every Done means point gets its proof from a recorded check: QualityLayer's own checks first, then fresh agents that never saw the build.",
+        act: (d) => d.focus(testid(d, "verify-lanes")),
       },
       {
-        note: "The project's own checks: tests, types, lint and build, with the commands that ran.",
-        act: (d) => d.click(d.page.getByRole("button", { name: /^Project checks/ }).first()),
+        note: "The project's own checks, with no agent: tests, types, lint and build, and the commands that ran.",
+        // A lane's name may follow its round number.
+        act: (d) => d.click(d.page.getByRole("button", { name: /Project checks/ }).first()),
+      },
+      {
+        short: true,
+        note: "Security scans run on this computer, also with no agent: secrets, vulnerable packages, unsafe workflows and risky code. Each finding goes to the reviews.",
+        act: async (d) => {
+          const scans = d.page.getByRole("button", { name: /Security scans/ })
+          if ((await scans.count()) === 0) return d.focus(testid(d, "verify-lanes"))
+          // Project checks folds away first, so the scans lane opens in view.
+          await d.click(d.page.getByRole("button", { name: /Project checks/ }).first())
+          await d.click(scans.first())
+          await d.focus(scans.first().locator("xpath=ancestor::*[@data-testid='lane'][1]"))
+        },
       },
       {
         short: true,
@@ -555,6 +619,43 @@ export const CHAPTERS = [
           await d.hover(ben.getByText(/Draft by your Claude Code/).first())
           await d.wait(1200)
           await d.click(ben.getByRole("button", { name: "Send the draft", exact: true }))
+        },
+      },
+    ],
+  },
+  {
+    id: "chat",
+    title: "Chat",
+    line: "Direct work, no workflow",
+    // The demo's Chat fixture on the story's day: Codex answers, changes code and keeps a task list.
+    url: "?story&chat=running#/task/seven-demo",
+    beats: [
+      {
+        short: true,
+        note: "Not every change needs seven steps. A Chat is direct work with any agent: here Codex finds why the usage export skips archived accounts, and fixes it.",
+        act: async (d) => {
+          // The App remembers the session view: after Implement's terminal, the Chat opens as its conversation again.
+          await d.click(d.page.getByRole("radio", { name: "Conversation", exact: true }).first())
+          await d.focus(d.page.getByText(/^The export selects only currently active accounts/).first().locator("xpath=.."))
+        },
+      },
+      {
+        note: "What it changed belongs to this Chat: five files with their lines, kept apart from other work on the branch.",
+        act: (d) => d.focus(d.page.getByText(/^Changed 5 files/).first().locator("xpath=..")),
+      },
+      {
+        short: true,
+        note: "Files the agent writes come back in its answer. One click opens the plan it saved.",
+        act: async (d) => {
+          await d.click(d.page.getByText("chat-plan.md", { exact: true }).first())
+          await d.focus(d.page.getByRole("dialog").first())
+        },
+      },
+      {
+        note: "The session stays in reach: as a conversation or its terminal, to interrupt or stop, or to turn the Chat into a planned task with Start the workflow.",
+        act: async (d) => {
+          await d.page.keyboard.press("Escape")
+          await d.focus(button(d, "Start the workflow").locator("xpath=.."))
         },
       },
     ],
@@ -685,13 +786,23 @@ export const CHAPTERS = [
       },
       {
         short: true,
-        note: "Reviews: a fresh agent checks every round, and a second opinion comes from another maker's model. Here that is Codex.",
+        note: "Reviews: a fresh agent checks every round, and the second opinion comes from another model family on its own: Claude's work goes to Codex, GPT's to Claude Code.",
         act: async (d) => {
           await d.focus(card(d, "Reviews"))
-          await d.click(testid(d, "second-opinion").getByRole("combobox").first())
+          // Where the second opinion still has its own agent menu, it opens and Codex stays chosen.
+          const menu = testid(d, "second-opinion").getByRole("combobox")
+          if ((await menu.count()) === 0) return
+          await d.click(menu.first())
           await d.wait(1600)
-          // The menu closes on a choice: Codex stays.
           await d.click(d.page.getByRole("option", { name: "Codex", exact: true }).first())
+        },
+      },
+      {
+        note: "Security scans: every change is scanned on this computer for secrets and risky code. A changed lockfile's package names go to osv.dev; the code stays here.",
+        act: async (d) => {
+          const scans = card(d, "Security scans")
+          if ((await scans.count()) === 0) return d.focus(card(d, "Reviews"))
+          await d.focus(scans)
         },
       },
       {
@@ -768,58 +879,11 @@ export const CHAPTERS = [
         },
       },
       {
-        note: "And About: the version, the update channel, and help.",
+        short: true,
+        note: "And last, About: the version, the update channel, and help. That is QualityLayer.",
         act: async (d) => {
           await d.click(await nav(d, button(d, "About")))
           await d.focus(testid(d, "about-version"))
-        },
-      },
-    ],
-  },
-  {
-    id: "home",
-    title: "Home",
-    line: "Step away while agents work",
-    url: at("pr-merged", "#/"),
-    beats: [
-      {
-        short: true,
-        note: "Back on Home: only what needs you. You can step away while the agents work.",
-        act: (d) => d.focus(testid(d, "needs-you")),
-      },
-      {
-        note: "And what runs without you: two agents building, each with its last report.",
-        act: (d) => d.focus(testid(d, "in-progress")),
-      },
-      {
-        note: "One search for everything: tasks, projects, files and actions, also with ⌘K.",
-        act: async (d) => {
-          await d.click(await nav(d, testid(d, "search-row")))
-          await d.type(d.page.getByRole("combobox", { name: "Search or jump" }).first(), "billing")
-          await d.wait(1600)
-          await d.page.keyboard.press("Escape")
-        },
-      },
-      {
-        note: "The task list finds a task by name, shows each row the way I like it, and takes a new project folder.",
-        act: async (d) => {
-          await peek(d, await nav(d, d.page.getByRole("button", { name: "Find a task", exact: true }).first()), 1000)
-          await peek(d, d.page.getByRole("button", { name: "View options", exact: true }).first())
-          await peek(d, d.page.getByRole("button", { name: "Add a project", exact: true }).first())
-        },
-      },
-      {
-        note: "The bell holds what happened while I was away, each a jump to where it happened.",
-        act: (d) => peek(d, d.page.getByRole("button", { name: /^Notifications/ }).first(), 2000),
-      },
-      {
-        short: true,
-        note: "And when something is off, or an idea comes up, it goes straight to the team behind QualityLayer.",
-        act: async (d) => {
-          // A bug or an idea, each a public issue the person previews before it is sent; no ring over the dialog.
-          await d.click(await nav(d, d.page.getByRole("button", { name: "Report a bug or suggest an improvement", exact: true }).first()))
-          await d.wait(1400)
-          await d.click(d.page.getByRole("dialog").getByText("Suggest an improvement", { exact: true }).first())
         },
       },
     ],

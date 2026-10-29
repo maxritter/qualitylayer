@@ -2,6 +2,38 @@
 // a spotlight that follows one element, the chapter title, a fade between chapters and the presenter's
 // keys. It draws above the App and never takes clicks, so the presenter can always click through it.
 ;(() => {
+  // Every frame takes the presenter's keys, an artifact page's too: once the presenter clicks into one,
+  // the keys go to that frame. A key or click of their own between beats tells the presenter the page
+  // changed, so the next beat rebuilds it first.
+  if (!window.__demoKeys) {
+    window.__demoKeys = true
+    const OPTION_KEYS = {
+      ArrowRight: "next",
+      ArrowLeft: "back",
+      ArrowDown: "chapter-next",
+      ArrowUp: "chapter-back",
+      KeyR: "restart",
+    }
+    const presenterCommand = (event) => {
+      if (event.key === "PageDown" || event.key === "PageUp") return event.key === "PageDown" ? "next" : "back"
+      const onlyOption = event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey
+      return onlyOption ? OPTION_KEYS[event.code] : undefined
+    }
+    const touched = () => typeof window.__demoTouched === "function" && void window.__demoTouched()
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        const command = presenterCommand(event)
+        if (!command) return ["Alt", "Shift", "Meta", "Control"].includes(event.key) || touched()
+        if (typeof window.__demoCommand !== "function") return
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        void window.__demoCommand(command)
+      },
+      true,
+    )
+    window.addEventListener("pointerdown", touched, true)
+  }
   if (window !== window.top || window.__demo) return
   // The dev server's error overlay never covers the App on stage; failures show in the terminal.
   const css = `
@@ -127,29 +159,6 @@
   // The presenter's keys hold Option, so they work even while a field has the focus; they take
   // precedence over the App's only Option keys (⌥↑ ⌥↓ move a sidebar project, which the demo never
   // shows). `code` names the key itself: with Option, `key` is a special character (⌥R gives ®).
-  const OPTION_KEYS = {
-    ArrowRight: "next",
-    ArrowLeft: "back",
-    ArrowDown: "chapter-next",
-    ArrowUp: "chapter-back",
-    KeyR: "restart",
-  }
-  const presenterCommand = (event) => {
-    if (event.key === "PageDown" || event.key === "PageUp") return event.key === "PageDown" ? "next" : "back"
-    const onlyOption = event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey
-    return onlyOption ? OPTION_KEYS[event.code] : undefined
-  }
-  window.addEventListener(
-    "keydown",
-    (event) => {
-      const command = presenterCommand(event)
-      if (!command || typeof window.__demoCommand !== "function") return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      void window.__demoCommand(command)
-    },
-    true,
-  )
   // A click or scroll by the presenter means they took over: the spotlight steps aside.
   for (const type of ["wheel", "pointerdown"])
     window.addEventListener(type, () => window.__demo.busy || window.__demo.unspot(), true)

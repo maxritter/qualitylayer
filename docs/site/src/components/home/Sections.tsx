@@ -6,6 +6,7 @@ import { FAQS } from "@/lib/content";
 import { BRAND_LINE } from "@/lib/product";
 import Intro from "./Intro";
 import Editorial from "./Editorial";
+import Verification from "./Verification";
 
 function Install() {
   const download = useDownload();
@@ -32,6 +33,7 @@ export default function Sections() {
   return (
     <>
       <Intro />
+      <Verification />
       <Editorial />
       <Questions faqs={FAQS} />
       <Install />

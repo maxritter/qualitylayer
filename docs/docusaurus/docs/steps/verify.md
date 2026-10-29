@@ -15,13 +15,26 @@ Your agent runs checks and independent review, then fixes the findings. Unresolv
 
 ## The checks {#lanes}
 
-Every change gets the same checks, small ones included.
+Every change gets the same checks, small ones included. Deterministic checks give the same result every time. Independent agents read intent and run the program.
+
+![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
+![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
+
+**Deterministic checks**
+
+| Check | What it does |
+| --- | --- |
+| **Project checks** | Your tests, types, lint and build, run on the committed build and recorded. A red check is a record, not a stop: the reviewer rules on it |
+| **Code health** | Complexity and duplication in the files your agent changed, reported to it after each turn as feedback. [Code health](../reference/code-health.md) |
+| **Recorded proof** | A **Done means** point passes only with evidence: a check's output, a captured response, a screenshot or a file |
+
+**Independent agents**
 
 | Check | What it does |
 | --- | --- |
 | **Security review** | First, when the Plan names a trust boundary such as sign-in, secrets or outside input. A separate agent reviews the change; your agent fixes what it finds. Medium and low findings go into the pull request |
-| **Project checks** | Your tests, types, lint and build, run on the committed build and recorded. A red check is a record, not a stop: the reviewer rules on it |
 | **Independent review** | An agent that did not write the code. It adds the tests the build missed, runs the scenarios on the running program and compares changed screens with their artifacts. It reads the whole diff and records a verdict for every **Done means** point. Red checks are its evidence |
+| **Design review** | A separate agent checks each finished design before you see it, unless you change **Design review** in [Settings](../reference/settings.md) |
 | **Second opinion** | Beside the independent review on a risky change, or always when [Settings](../reference/settings.md#second-opinion) say so. A separate reviewer checks for breakage. Your agent answers each finding **Taken** or **Kept** |
 
 If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify records **Checked without an independent judge**.

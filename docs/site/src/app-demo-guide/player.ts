@@ -284,7 +284,14 @@ const panel = (() => {
   modes.setAttribute("role", "radiogroup")
   modes.setAttribute("aria-label", "Tour length")
   const modeButtons = (["short", "full"] as const).map((mode) => {
-    const button = el("button", "gd-mode", mode === "short" ? "Short" : "Full")
+    const button = el("button", "gd-mode")
+    // Each length leads with its icon: a bolt for the main moments, a list for every step.
+    const icon =
+      mode === "short"
+        ? `<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>`
+        : `<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>`
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>`
+    button.append(mode === "short" ? "Short" : "Full")
     button.type = "button"
     button.setAttribute("role", "radio")
     button.title = mode === "short" ? "The main moments, about 5 minutes" : "Every step and menu, about 15 minutes"

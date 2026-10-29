@@ -1,4 +1,4 @@
-/** After the hero: the agents QualityLayer works with, what it adds, one engineer's words, and the models you already pay for. */
+/** After the hero: the agents QualityLayer works with and the models you already pay for, what it adds, people's words, and where it runs. */
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, SquareTerminal, Workflow } from "lucide-react";
 import type { NativeAgent } from "@ql/core/agents/ids";
@@ -102,6 +102,24 @@ export default function Intro() {
         </ul>
       </section>
 
+      {/* Right after the agents: the models those agents run, on the plan you already pay for. */}
+      <section className="mx-wrap mx-sec" aria-labelledby="mod-h">
+        <div className="mx-mq">
+          <div className="mx-mqt">
+            <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
+            <p className="mx-lead">Choose models for building and independent review.</p>
+          </div>
+          <div className="mx-mqr">
+            <p className="w7-sr">Models: {MODELS.filter(([, icon]) => icon === "cpu").map(([label]) => label).join(", ")}, through {AGENTS.slice(0, -1).map(([label]) => label).join(", ")} and {AGENTS[AGENTS.length - 1][0]}. {SETUPS.map(([label]) => label).join(". ")}.</p>
+            <div className="mx-mqm" aria-hidden="true">
+              <Track chips={MODELS} />
+              <Track chips={SETUPS} reverse />
+            </div>
+            <p className="mx-mqn">+ any model your coding agent offers</p>
+          </div>
+        </div>
+      </section>
+
       <section className="mx-sec" aria-labelledby="pr-h">
         <div className="mx-wrap">
           <div className="mx-head">
@@ -152,23 +170,6 @@ export default function Intro() {
               </li>
             ))}
           </ol>
-        </div>
-      </section>
-
-      <section className="mx-wrap mx-sec" aria-labelledby="mod-h">
-        <div className="mx-mq">
-          <div className="mx-mqt">
-            <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
-            <p className="mx-lead">Choose models for building and independent review.</p>
-          </div>
-          <div className="mx-mqr">
-            <p className="w7-sr">Models: {MODELS.filter(([, icon]) => icon === "cpu").map(([label]) => label).join(", ")}, through {AGENTS.slice(0, -1).map(([label]) => label).join(", ")} and {AGENTS[AGENTS.length - 1][0]}. {SETUPS.map(([label]) => label).join(". ")}.</p>
-            <div className="mx-mqm" aria-hidden="true">
-              <Track chips={MODELS} />
-              <Track chips={SETUPS} reverse />
-            </div>
-            <p className="mx-mqn">+ any model your coding agent offers</p>
-          </div>
         </div>
       </section>
     </>

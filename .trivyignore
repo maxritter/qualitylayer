@@ -39,3 +39,11 @@ CVE-2026-93748
 # Recheck on updater/ZIP consumer changes, or at this short review deadline.
 # https://github.com/zip-rs/zip2/security/advisories/GHSA-m665-v7pm-7grj
 CVE-2026-115905 exp:2026-11-05
+
+# zip4.6.1 via tauri-plugin-updater2.13.1: oversized symlink targets can abort
+# extraction. The sole ZIP consumer is the Windows updater; Update::download
+# verifies the payload with the fixed publisher key before update_flow retains
+# any bytes for install. No user-supplied ZIPs reach this Rust extraction path.
+# Recheck on ZIP consumers/updater/signing changes or this short review deadline.
+# https://github.com/zip-rs/zip2/security/advisories/GHSA-q7v9-x93c-xqv3
+CVE-2026-115909 exp:2026-11-05

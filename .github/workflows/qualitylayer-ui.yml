@@ -103,7 +103,7 @@ jobs:
       # test:ui builds one private candidate for the explicitly selected feature suites.
       - name: Source UI interactions, geometry and accessibility
         working-directory: qualitylayer
-        run: bun run test:ui --all launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts --shard ${{ matrix.shard }}/2 --reporter=github,./scripts/ui-duration-reporter.ts
+        run: bun run test:ui --all launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts --shard ${{ matrix.shard }}/2 --reporter=github,./scripts/ui-duration-reporter.ts
       - name: Setup heap analysis runtime
         if: matrix.shard == 1
         timeout-minutes: 2

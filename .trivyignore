@@ -32,3 +32,10 @@ CVE-2026-93687
 # @docusaurus/core -> update-notifier -> got -> cacheable-request, the build's
 # check for a newer Docusaurus on the npm registry. Not shipped to users.
 CVE-2026-93748
+
+# zip4.6.1 via tauri-plugin-updater2.13.1: the dual-header advisory requires
+# ZipArchive inspection followed by ZipStreamReader extraction. Our sole ZIP
+# consumer calls ZipArchive::extract throughout; no streaming reader is used.
+# Recheck on updater/ZIP consumer changes, or at this short review deadline.
+# https://github.com/zip-rs/zip2/security/advisories/GHSA-m665-v7pm-7grj
+CVE-2026-115905 exp:2026-11-05

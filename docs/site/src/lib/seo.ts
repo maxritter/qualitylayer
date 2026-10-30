@@ -6,6 +6,10 @@ export const PUBLIC_PAGES = {
     title: "Pricing | QualityLayer",
     description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",
   },
+  "/inside": {
+    title: "Inside QualityLayer: a deep dive into the software factory",
+    description: "A video deep dive: why better models still break working software, QualityLayer's seven-step workflow, and one task from request to pull request.",
+  },
   "/download": {
     title: "Download QualityLayer for macOS, Windows and Linux",
     description: "Download QualityLayer for macOS, Windows and Linux. Plan and review changes with Claude Code, Codex and your team.",

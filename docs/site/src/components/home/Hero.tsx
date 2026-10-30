@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, CalendarDays, Code, Download, FileCheck, ListChecks, MessageSquare, Network, Search, ShieldCheck, SquarePlay, type LucideIcon } from "lucide-react";
+import { ArrowRight, Code, Download, FileCheck, ListChecks, MessageSquare, MonitorPlay, Network, Search, ShieldCheck, SquarePlay, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useDownload } from "@/hooks/useDownload";
 import { FILMS } from "@/lib/films";
 import { OVERVIEW_POSTERS } from "@/lib/film-posters";
 import { useTheme } from "@/hooks/useTheme";
-import { BRAND_LINE, DESCRIPTION, SLOGAN, WEBINAR } from "@/lib/product";
+import { BRAND_LINE, DEEP_DIVE, DESCRIPTION, SLOGAN } from "@/lib/product";
+import { DEEP_DIVE_MINUTES, DEEP_DIVE_VIDEO_URL } from "@/lib/deep-dive";
 import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
 
 const STEP_ICONS: Record<string, LucideIcon> = { discuss: MessageSquare, research: Search, plan: Network, outline: ListChecks, implement: Code, verify: ShieldCheck, review: FileCheck };
@@ -112,7 +113,7 @@ const Hero = () => {
               <svg className="mx-play" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z" /></svg>
               Watch the film <span className="mx-dur">{clock(FILMS.overview.duration)}</span>
             </Button>
-            <Button asChild variant="outline" size="xl"><a href={WEBINAR.href} target="_blank" rel="noopener noreferrer" aria-label={`Join the ${WEBINAR.title} webinar`}><CalendarDays size={18} aria-hidden="true" />{WEBINAR.label}</a></Button>
+            {DEEP_DIVE_VIDEO_URL ? <Button asChild variant="outline" size="xl"><Link to={DEEP_DIVE.href} aria-label={`${DEEP_DIVE.title}, a ${DEEP_DIVE_MINUTES}-minute deep dive`}><MonitorPlay size={18} aria-hidden="true" />{DEEP_DIVE.label} <span className="mx-dur">{DEEP_DIVE_MINUTES} min</span></Link></Button> : null}
             <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO} aria-label="Try the demo in your browser"><SquarePlay size={18} aria-hidden="true" />Try the demo<ArrowRight size={16} aria-hidden="true" /></a></Button>
           </div>
           <p className="sx-meta">Runs on your computer · <Link to="/download">macOS, Windows and Linux</Link></p>

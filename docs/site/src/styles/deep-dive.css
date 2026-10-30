@@ -1,0 +1,43 @@
+/* /inside: the video's page. The heading and chapters on the left, the sign-up card on the right; a phone stacks heading, card, chapters. */
+.dd-sec{padding:clamp(48px,7cqi,96px) 0 clamp(64px,9cqi,120px)}
+.dd-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,460px);grid-template-areas:"head card" "more card";column-gap:clamp(32px,6cqi,96px);row-gap:40px;align-items:start}
+.dd-head{grid-area:head}
+.dd-more{grid-area:more}
+.dd-card{grid-area:card;position:sticky;top:88px;overflow:hidden;border:1px solid var(--mx-line2);border-radius:6px;background:var(--mx-panel);box-shadow:var(--mx-shadow)}
+.dd-eyebrow{margin:0 0 14px;font:500 13px/1.4 "Geist Mono",ui-monospace,monospace;color:var(--mx-ink2)}
+.dd-head .w7-h2{margin:0;font-size:clamp(40px,5.4cqi,68px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
+.dd-head .w7-lead{max-width:56ch;margin:20px 0 0;font-size:17px;line-height:1.6}
+.dd-by{margin:20px 0 0;font-size:15px;color:var(--mx-ink2)}
+.dd-more h2{margin:0 0 4px;font-size:20px;font-weight:500;letter-spacing:-.02em}
+.dd-chapters{margin:0;padding:0;list-style:none}
+.dd-chapters li{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:12px;padding:16px 0;border-bottom:1px solid var(--mx-line)}
+.dd-chapters .dd-at{grid-row:span 2;padding-top:2px;font:500 13px/1.5 "Geist Mono",ui-monospace,monospace;color:var(--mx-ink3);font-variant-numeric:tabular-nums}
+.dd-chapters b{font-size:15px;font-weight:500}
+.dd-chapters span{margin-top:2px;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
+.dd-offer{margin:20px 0 0;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
+.dd-poster{display:block;width:100%;height:auto;aspect-ratio:16/9;border-bottom:1px solid var(--mx-line2);background:#0a0a0a}
+.dd-body{padding:24px}
+.dd-body h2{margin:0;font-size:20px;font-weight:500;letter-spacing:-.02em}
+.dd-body h2:focus{outline:none}
+.dd-intro{margin:6px 0 20px;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
+.dd-field{display:flex;flex-direction:column;gap:8px;font-size:14px;font-weight:500}
+/* The field's edge is the only sign of where to type, so it keeps 3:1 against the card in both themes. */
+.dd-field [data-slot="input"]{min-height:48px;padding:12px;border-color:var(--mx-ink3);border-radius:4px;background:var(--mx-panel);font-size:15px}
+.dd-consent{display:flex;align-items:flex-start;gap:10px;margin:16px 0 20px;font-size:13.5px;line-height:1.5;color:var(--mx-ink2);cursor:pointer}
+.dd-consent input{flex:none;width:18px;height:18px;margin:1px 0 0;accent-color:var(--ql-accent)}
+.dd-consent input:focus-visible{outline:2px solid var(--ql-accent);outline-offset:2px}
+.w7-root .dd-submit{width:100%;min-height:48px}
+.dd-small{margin:14px 0 0;font-size:13px;line-height:1.5;color:var(--mx-ink2)}
+.dd-notice{margin:0 0 16px;padding:10px 12px;border:1px solid var(--mx-line2);border-radius:4px;background:var(--mx-page);font-size:14px;line-height:1.5;color:var(--mx-ink)}
+.dd-error{margin:0 0 16px;padding:10px 12px;border:1px solid var(--ql-danger);border-radius:4px;font-size:14px;line-height:1.5;color:var(--ql-danger)}
+.dd-done > svg{color:var(--ql-accent);margin-bottom:10px}
+.dd-done p{margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--mx-ink2)}
+.w7-root .dd-done .dd-submit{margin-top:20px}
+.dd-done .dd-error{margin:16px 0 0;color:var(--ql-danger)}
+.dd-done b{font-weight:500;color:var(--mx-ink);overflow-wrap:anywhere}
+.dd-done .dd-small{margin-top:16px;font-size:13px}
+.w7-root .dd-link{display:inline;padding:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+@container (max-width: 860px){
+  .dd-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "card" "more";row-gap:32px}
+  .dd-card{position:static;max-width:560px}
+}

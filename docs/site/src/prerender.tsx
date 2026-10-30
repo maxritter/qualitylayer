@@ -11,9 +11,11 @@ import Compare from "./pages/Compare";
 import { COMPARISON_PATHS } from "./lib/comparisons";
 import Legal from "./pages/Legal";
 import { LEGAL_PATHS } from "./lib/legal";
+import DeepDive from "./pages/DeepDive";
+import { DEEP_DIVE_PATH } from "./lib/deep-dive";
 
 const pages = {
-  "/": Index, "/pricing": Pricing, "/download": Download, "/404": NotFound,
+  "/": Index, "/pricing": Pricing, "/download": Download, "/404": NotFound, [DEEP_DIVE_PATH]: DeepDive,
   ...Object.fromEntries(COMPARISON_PATHS.map((route) => [route, Compare])),
   ...Object.fromEntries(LEGAL_PATHS.map((route) => [route, Legal])),
 };

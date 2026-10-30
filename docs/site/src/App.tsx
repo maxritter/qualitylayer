@@ -18,6 +18,7 @@ const Billing = lazy(() => import("./pages/Billing"));
 const CheckoutSuccess = lazy(() => import("./pages/CheckoutSuccess"));
 const Compare = lazy(() => import("./pages/Compare"));
 const Legal = lazy(() => import("./pages/Legal"));
+const DeepDive = lazy(() => import("./pages/DeepDive"));
 
 const publicMetricPaths = Object.keys(PUBLIC_PAGES);
 const beforeSend = createMetricsFilter(publicMetricPaths);
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/s/:id" element={<Shared />} />
           <Route path="/open/*" element={<Open />} />
           <Route path="/download" element={<Download />} />
+          <Route path="/inside" element={<DeepDive />} />
           <Route path="/compare" element={<Compare />} />
           <Route path="/compare/superpowers" element={<Compare />} />
           <Route path="/compare/bmad-method" element={<Compare />} />

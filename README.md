@@ -27,7 +27,7 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 
 **[Download the App](https://qualitylayer.dev/download)** for macOS, Windows or Linux.
 
-<a href="https://luma.com/8b8ywm6d"><img src="docs/img/inside-qualitylayer-webinar.svg" alt="Join the Inside QualityLayer webinar" width="304" height="44"></a>
+<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Watch the Inside QualityLayer deep dive" width="332" height="44"></a>
 
 <br>
 

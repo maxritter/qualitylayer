@@ -6,6 +6,7 @@ import { renderedHtml } from "./vite-plugin-prerender";
 import { FAQS, PRICING_FAQS } from "./src/lib/content";
 import { PLANS } from "./src/lib/pricing";
 import { DESCRIPTION } from "./src/lib/product";
+import { DEEP_DIVE_PATH } from "./src/lib/deep-dive";
 
 const template = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 
@@ -59,7 +60,9 @@ describe("HTML available before JavaScript runs", () => {
       expect(head).toMatch(new RegExp(`property="${key}" content="[^"]+"`));
     }
     expect(head).toContain('property="og:type" content="website"');
-    expect(head).toContain('property="og:image" content="https://qualitylayer.dev/og.png"');
+    // The deep dive is shared on its own: its preview shows the video's title card.
+    const image = route === DEEP_DIVE_PATH ? `https://qualitylayer.dev${DEEP_DIVE_PATH}/inside-qualitylayer-share.jpg` : "https://qualitylayer.dev/og.png";
+    expect(head).toContain(`property="og:image" content="${image}"`);
     expect(head).toContain(`property="og:url" content="https://qualitylayer.dev${route}"`);
     expect(html).toContain('rel="sitemap"');
     for (const script of html.matchAll(/<script\b([^>]*)>/g)) {

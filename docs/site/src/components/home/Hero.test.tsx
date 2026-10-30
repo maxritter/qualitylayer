@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BRAND_LINE, SLOGAN, WEBINAR } from "@/lib/product";
+import { BRAND_LINE, DEEP_DIVE, SLOGAN } from "@/lib/product";
+import { DEEP_DIVE_MINUTES, DEEP_DIVE_VIDEO_URL } from "@/lib/deep-dive";
 import Hero, { LIVE_DEMO } from "./Hero";
 import { useTheme } from "@/hooks/useTheme";
 import { OVERVIEW_POSTERS } from "@/lib/film-posters";
@@ -50,12 +51,15 @@ it("lists the seven steps as stations that each open their step in the tour", ()
   expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#discuss");
 });
 
-it("offers download, film and webinar actions together in the hero", () => {
+it("offers download, film and deep dive actions together in the hero", () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
   const download = screen.getAllByRole("link").find(link => link.textContent?.startsWith("Download"));
   expect(download?.getAttribute("href")).toBe("/download");
   expect(screen.getByRole("button", { name: /Watch the film/ })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Join the Inside QualityLayer webinar" }).getAttribute("href")).toBe(WEBINAR.href);
+  // The deep dive appears once its video is published.
+  const deepDive = screen.queryByRole("link", { name: `Inside QualityLayer, a ${DEEP_DIVE_MINUTES}-minute deep dive` });
+  if (DEEP_DIVE_VIDEO_URL) expect(deepDive?.getAttribute("href")).toBe(DEEP_DIVE.href);
+  else expect(deepDive).toBeNull();
   expect(screen.queryByText("/ql add usage-based billing")).toBeNull();
   expect(screen.queryByRole("button", { name: /Replay/ })).toBeNull();
 });

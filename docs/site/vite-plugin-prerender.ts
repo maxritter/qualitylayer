@@ -4,6 +4,7 @@ import path from "node:path";
 import { PUBLIC_PAGES } from "./src/lib/seo.ts";
 import { COMPARISON_PATHS } from "./src/lib/comparisons.ts";
 import { LEGAL_PATHS } from "./src/lib/legal.ts";
+import { DEEP_DIVE_PATH } from "./src/lib/deep-dive.ts";
 
 /** Replace the fallback head and body with the same components the browser uses. */
 export function renderedHtml(template: string, head: string, body: string) {
@@ -35,6 +36,7 @@ export default function prerenderPlugin(): Plugin {
         "/pricing": "src/pages/Pricing.tsx",
         "/download": "src/pages/Download.tsx",
         "/404": "src/pages/NotFound.tsx",
+        [DEEP_DIVE_PATH]: "src/pages/DeepDive.tsx",
         ...Object.fromEntries(COMPARISON_PATHS.map((route) => [route, "src/pages/Compare.tsx"])),
         ...Object.fromEntries(LEGAL_PATHS.map((route) => [route, "src/pages/Legal.tsx"])),
       };

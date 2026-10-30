@@ -44,7 +44,7 @@ function Privacy() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <Updated date={{ iso: "2026-10-25", label: "25 October 2026" }} />
+      <Updated date={{ iso: "2026-10-30", label: "30 October 2026" }} />
       <p className="lg-lead">
         Your code, plans and task documents stay on your computer. Code your team reviews travels only to your own Git remote. QualityLayer receives only what you share with your team (a review comment can quote a few lines of code), a daily licence check, and reports you choose to send. What you share is encrypted on your computer first; we cannot read it.
       </p>
@@ -106,6 +106,11 @@ function Privacy() {
       </p>
       <p>
         Feedback screenshots are stored in Cloudflare R2. Private-support screenshot links expire after 90 days. Published screenshot links do not expire automatically. Contact us if a report or image needs removal; copies others already downloaded can remain (Art. 6 (1) (f): handling your report).
+      </p>
+
+      <h2 id="newsletter">Newsletter and videos</h2>
+      <p>
+        When you ask for a video such as the Inside QualityLayer deep dive, we e-mail a confirmation link to your address through Resend. Nothing is stored until you open it; an unconfirmed link expires after 48 hours. Once you confirm, we keep your address, the consent text you agreed to and when you asked and confirmed, send you the video and add you to the QualityLayer newsletter: occasional e-mails about releases, guides and new videos (Art. 6 (1) (a) GDPR). Every e-mail has an unsubscribe link, and you can withdraw consent at any time by writing to <Mail />. We then remove your address from the list and keep only the record of your consent for as long as we may need to prove it.
       </p>
 
       <h2>E-mail</h2>

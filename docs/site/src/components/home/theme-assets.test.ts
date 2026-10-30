@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { WEBINAR } from "@/lib/product";
+import { DEEP_DIVE, SITE_URL } from "@/lib/product";
 
 const root = resolve(import.meta.dirname, "../../../../..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
@@ -32,12 +32,12 @@ describe("illustrations in both themes", () => {
     const poster = /<a href="https:\/\/qualitylayer-media\.max-ritter\.workers\.dev\/[^"]+\.mp4"[^>]*><img src="docs\/img\/film-poster-dark\.webp"[^>]*><\/a>/;
     expect(markdown, "README film poster plays the video").toMatch(poster);
     expect(existsSync(resolve(root, "docs/img/film-poster-dark.webp"))).toBe(true);
-    const webinar = new RegExp(`<a href="${WEBINAR.href}"><img src="docs/img/inside-qualitylayer-webinar.svg"[^>]*></a>`);
-    expect(markdown).toMatch(webinar);
-    expect(existsSync(resolve(root, "docs/img/inside-qualitylayer-webinar.svg"))).toBe(true);
+    const deepDive = new RegExp(`<a href="${SITE_URL}${DEEP_DIVE.href}"><img src="docs/img/inside-qualitylayer-deep-dive.svg"[^>]*></a>`);
+    expect(markdown).toMatch(deepDive);
+    expect(existsSync(resolve(root, "docs/img/inside-qualitylayer-deep-dive.svg"))).toBe(true);
     const standalone = markdown.replace(/<picture>[\s\S]*?<\/picture>/g, "")
       .replace(poster, "")
-      .replace(webinar, "")
+      .replace(deepDive, "")
       .replace(/<img\b[^>]*src="https:\/\/img\.shields\.io\/[^>]*>/g, "");
     expect(standalone).not.toMatch(/<img\b/);
     for (const [, picture] of pictures) {

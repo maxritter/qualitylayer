@@ -24,7 +24,8 @@ export const SLOGAN = "The software factory with you in the loop";
 export const BRAND_LINE = "Quality by design";
 /** The sentence shown when the site is shared or listed in search; also rendered at build time. */
 export const SHARE_DESCRIPTION = DESCRIPTION;
-export const WEBINAR = { label: "Join the webinar", title: "Inside QualityLayer", href: "https://luma.com/8b8ywm6d" };
+/** The long video beside the short film: the hero's second watch action. Facts about it live in deep-dive.ts. */
+export const DEEP_DIVE = { label: "Deep dive", title: "Inside QualityLayer", href: "/inside" };
 /** One engineer's words about QualityLayer, relayed by Max on 2026-10-15. Quote it as it is; the attribution stays anonymous. */
 export const ENGINEER_QUOTE = "With QualityLayer, developing software with agents finally feels like doing real engineering again.";
 export const USER_QUOTE = {

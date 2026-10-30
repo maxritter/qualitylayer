@@ -15,7 +15,14 @@
 .dd-chapters b{font-size:15px;font-weight:500}
 .dd-chapters span{margin-top:2px;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
 .dd-offer{margin:20px 0 0;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
-.dd-poster{display:block;width:100%;height:auto;aspect-ratio:16/9;border-bottom:1px solid var(--mx-line2);background:#0a0a0a}
+.dd-poster{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-bottom:1px solid var(--mx-line2);background:#0a0a0a}
+.w7-root .dd-trailer{position:relative;display:block;width:100%;padding:0;border:0;background:none;cursor:pointer}
+.dd-play{position:absolute;left:76%;top:44%;display:grid;place-items:center;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:rgb(10 10 10 / 72%);color:#fff;box-shadow:0 0 0 2px rgb(255 255 255 / 90%);transition:transform .15s}
+.dd-play svg{margin-left:3px}
+.dd-trailer:hover .dd-play{transform:scale(1.06)}
+.dd-trailer:focus-visible{outline:2px solid var(--ql-accent);outline-offset:-4px}
+.dd-play-label{position:absolute;right:12px;top:12px;padding:3px 8px;border-radius:4px;background:rgb(10 10 10 / 72%);font:500 12px/1.4 "Geist Mono",ui-monospace,monospace;color:#fff}
+@media (prefers-reduced-motion:reduce){.dd-play{transition:none}}
 .dd-body{padding:24px}
 .dd-body h2{margin:0;font-size:20px;font-weight:500;letter-spacing:-.02em}
 .dd-body h2:focus{outline:none}

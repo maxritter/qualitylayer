@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { CircleCheck, Mail, MailCheck, MailX, type LucideIcon } from "lucide-react";
+import { CircleCheck, Mail, MailCheck, MailX, Play, type LucideIcon } from "lucide-react";
 import Page from "@/components/Page";
 import SEO from "@/components/SEO";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/product";
+import { FILMS } from "@/lib/films";
 import {
   DEEP_DIVE_CHAPTERS, DEEP_DIVE_MINUTES, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT,
 } from "@/lib/deep-dive";
@@ -112,6 +113,20 @@ function Unsubscribe({ token }: { token: string }) {
   );
 }
 
+/** The trailer: the title card with a play button, and the video only once someone asks for it, so the page loads nothing heavy. */
+function Trailer() {
+  const [playing, setPlaying] = useState(false);
+  const label = `Play the trailer for ${DEEP_DIVE_TITLE}, ${FILMS.insideTrailer.duration} seconds`;
+  if (playing) return <video className="dd-poster" src={FILMS.insideTrailer.src} poster={DEEP_DIVE_POSTER} width={1280} height={720} controls autoPlay playsInline aria-label={label} />;
+  return (
+    <button type="button" className="dd-trailer" onClick={() => setPlaying(true)} aria-label={label}>
+      <img className="dd-poster" src={DEEP_DIVE_POSTER} width={1280} height={720} alt="" />
+      <span className="dd-play" aria-hidden="true"><Play size={22} fill="currentColor" /></span>
+      <span className="dd-play-label" aria-hidden="true">Trailer · {FILMS.insideTrailer.duration} s</span>
+    </button>
+  );
+}
+
 /** The sign-up card: the poster, then whatever the visitor came for. A link from an email decides where it starts. */
 function SignUp() {
   const query = new URLSearchParams(useLocation().search);
@@ -144,7 +159,7 @@ function SignUp() {
 
   return (
     <div className="dd-card">
-      <img className="dd-poster" src={DEEP_DIVE_POSTER} width={1280} height={720} alt={`Title card: ${DEEP_DIVE_TITLE}, an AI software factory with humans in the loop, with ${DEEP_DIVE_SPEAKER}.`} />
+      <Trailer />
       <div className="dd-body">{body}</div>
     </div>
   );

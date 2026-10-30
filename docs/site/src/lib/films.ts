@@ -9,4 +9,9 @@ export const FILMS = {
     poster: "https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.webp",
     duration: 320,
   },
+  insideTrailer: {
+    src: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer-v2026103001.mp4",
+    poster: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer-v2026103001.webp",
+    duration: 56,
+  },
 } satisfies Record<string, Film>;

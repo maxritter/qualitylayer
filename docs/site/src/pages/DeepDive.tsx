@@ -181,7 +181,7 @@ const DeepDive = () => (
           <div className="dd-more">
             <h2>What it covers</h2>
             <ol className="dd-chapters">
-              {DEEP_DIVE_CHAPTERS.map((chapter) => <li key={chapter.title}><time className="dd-at">{chapter.at}</time><b>{chapter.title}</b><span>{chapter.about}</span></li>)}
+              {DEEP_DIVE_CHAPTERS.map((chapter) => <li key={chapter.title}><b>{chapter.title}</b><span>{chapter.about}</span></li>)}
             </ol>
             <p className="dd-offer">The email also brings a code for {DEEP_DIVE_PROMO.percent}% off your first year.</p>
           </div>

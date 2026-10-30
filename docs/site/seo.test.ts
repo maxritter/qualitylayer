@@ -6,7 +6,8 @@ import { renderedHtml } from "./vite-plugin-prerender";
 import { FAQS, PRICING_FAQS } from "./src/lib/content";
 import { PLANS } from "./src/lib/pricing";
 import { DESCRIPTION } from "./src/lib/product";
-import { DEEP_DIVE_PATH } from "./src/lib/deep-dive";
+import { DEEP_DIVE_PATH, DEEP_DIVE_POSTER, DEEP_DIVE_VIDEO_URL } from "./src/lib/deep-dive";
+import { FILMS } from "./src/lib/films";
 
 const template = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 
@@ -46,6 +47,31 @@ describe("HTML available before JavaScript runs", () => {
     expect(body).not.toContain("hero-h");
   });
 
+  it("describes the inside page and only its public trailer in JSON-LD", async () => {
+    const { head, body } = await render(DEEP_DIVE_PATH);
+    expect(head).toContain(">Inside QualityLayer: an AI software factory with humans in the loop</title>");
+    const data = schemas(head);
+    expect(data.map((item) => item["@type"])).toEqual(["WebPage", "BreadcrumbList", "VideoObject"]);
+    expect(data[0]).toMatchObject({
+      "@context": "https://schema.org", url: "https://qualitylayer.dev/inside",
+      name: PUBLIC_PAGES[DEEP_DIVE_PATH].title, description: PUBLIC_PAGES[DEEP_DIVE_PATH].description,
+      mainEntity: { "@id": "https://qualitylayer.dev/inside#trailer" },
+    });
+    expect(data[1].itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://qualitylayer.dev/" },
+      { "@type": "ListItem", position: 2, name: "Inside QualityLayer", item: "https://qualitylayer.dev/inside" },
+    ]);
+    expect(data[2]).toMatchObject({
+      "@context": "https://schema.org", name: "Inside QualityLayer trailer",
+      description: expect.stringContaining("56 second trailer"),
+      thumbnailUrl: `https://qualitylayer.dev${DEEP_DIVE_POSTER}`,
+      uploadDate: "2026-10-29", duration: "PT56S", contentUrl: FILMS.insideTrailer.src,
+    });
+    expect(JSON.stringify(data)).not.toContain(DEEP_DIVE_VIDEO_URL);
+    expect(body).not.toContain("application/ld+json");
+    expect(schemas(renderedHtml(template, head, body))).toEqual(data);
+  });
+
   it.each(["/billing", "/checkout/success", "/shared", "/open"])("keeps the %s shell out of search results", async (route) => {
     const { head, body } = await render(route);
     expect(head).toContain("noindex");
@@ -63,6 +89,8 @@ describe("HTML available before JavaScript runs", () => {
     // The deep dive is shared on its own: its preview shows the video's title card.
     const image = route === DEEP_DIVE_PATH ? `https://qualitylayer.dev${DEEP_DIVE_PATH}/inside-qualitylayer-share.jpg` : "https://qualitylayer.dev/og.png";
     expect(head).toContain(`property="og:image" content="${image}"`);
+    expect(head).toContain('property="og:image:width" content="1200"');
+    expect(head).toContain(`property="og:image:height" content="${route === DEEP_DIVE_PATH ? 675 : 630}"`);
     expect(head).toContain(`property="og:url" content="https://qualitylayer.dev${route}"`);
     expect(html).toContain('rel="sitemap"');
     for (const script of html.matchAll(/<script\b([^>]*)>/g)) {

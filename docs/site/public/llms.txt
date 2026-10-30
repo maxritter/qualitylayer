@@ -34,6 +34,7 @@ Even the best coding models don't build software like an experienced engineer. T
 
 ## Guides
 
+- [Inside QualityLayer](https://qualitylayer.dev/inside): a 27 minute deep dive into building software with coding agents
 - [Spec-driven development with Claude Code, Codex and Cursor](https://qualitylayer.dev/blog/spec-driven-development-guide)
 - [Human in the loop AI coding](https://qualitylayer.dev/blog/human-in-the-loop-ai-coding)
 

@@ -14,6 +14,8 @@ describe("the footer", () => {
     for (const path of ["/", "/pricing", `/s/${"A".repeat(22)}`]) {
       const rendered = await html(path);
       expect(rendered).toContain("© 2026 QualityLayer");
+      expect(rendered).toMatch(/href="\/docs\/">Docs<\/a>\s*<a href="\/blog">Blog<\/a>/);
+      expect(rendered.match(/>Blog<\/a>/g)).toHaveLength(1);
       expect(rendered).toContain('href="/compare"');
       expect(rendered).toContain(">Compare</a>");
       // Who makes it: the author's own site, as the README's footer has it.

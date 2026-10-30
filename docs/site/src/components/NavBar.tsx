@@ -5,7 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Moon, Sun } from "lucide-react";
 import { useNarrow } from "@/hooks/useNarrow";
 import { useTheme } from "@/hooks/useTheme";
-import { DOCS_URL, GITHUB_URL } from "@/lib/product";
+import { BLOG_URL, DOCS_URL, GITHUB_URL } from "@/lib/product";
 
 type NavLink = { label: string; to: string; external?: boolean };
 
@@ -13,7 +13,9 @@ const LINKS: NavLink[] = [
   { label: "Your agents", to: "/#agents" },
   { label: "How it works", to: "/#tour" },
   { label: "Teams", to: "/#team" },
+  { label: "Pricing", to: "/pricing" },
   { label: "Docs", to: DOCS_URL, external: true },
+  { label: "Blog", to: BLOG_URL, external: true },
 ];
 
 const Item = ({ link, onClick }: { link: NavLink; onClick?: () => void }) => {

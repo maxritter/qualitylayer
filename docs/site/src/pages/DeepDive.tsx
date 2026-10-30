@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/product";
 import { FILMS } from "@/lib/films";
+import { DEEP_DIVE_STRUCTURED_DATA } from "@/lib/seo";
 import {
   DEEP_DIVE_MINUTES, DEEP_DIVE_OUTLINE, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT,
 } from "@/lib/deep-dive";
@@ -167,7 +168,7 @@ function SignUp() {
 
 const DeepDive = () => (
   <>
-    <SEO ogImage={`${SITE_URL}/inside/inside-qualitylayer-share.jpg`} ogImageAlt={`${DEEP_DIVE_TITLE}: an AI software factory with humans in the loop, with ${DEEP_DIVE_SPEAKER}.`} />
+    <SEO structuredData={DEEP_DIVE_STRUCTURED_DATA} ogImage={`${SITE_URL}/inside/inside-qualitylayer-share.jpg`} ogImageHeight={675} ogImageAlt={`${DEEP_DIVE_TITLE}: an AI software factory with humans in the loop, with ${DEEP_DIVE_SPEAKER}.`} />
     <Page>
       <section className="w7-sec w7-nf dd-sec" aria-labelledby="dd-h">
         <div className="w7-wrap dd-grid">

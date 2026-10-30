@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/NavBar";
-import { CHANGELOG_URL, CONTACT_EMAIL, DOCS_URL, GITHUB_URL } from "@/lib/product";
+import { BLOG_URL, CHANGELOG_URL, CONTACT_EMAIL, DOCS_URL, GITHUB_URL } from "@/lib/product";
 
 const Footer = () => (
   <footer className="w7-ftr">
@@ -9,9 +9,9 @@ const Footer = () => (
         <Logo small />
         <nav className="w7-ftr-nav" aria-label="Footer">
           <a href={DOCS_URL}>Docs</a>
+          <a href={BLOG_URL}>Blog</a>
           <Link to="/pricing">Pricing</Link>
           <Link to="/compare">Compare</Link>
-          <a href="/blog">Blog</a>
           <a href={GITHUB_URL}>GitHub</a>
           <a href={CHANGELOG_URL}>Changelog</a>
           <a href={`mailto:${CONTACT_EMAIL}`}>Contact</a>

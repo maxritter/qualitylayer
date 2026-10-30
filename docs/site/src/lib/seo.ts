@@ -1,4 +1,6 @@
 import { SHARE_DESCRIPTION, SITE_URL } from "./product.ts";
+import { DEEP_DIVE_PATH, DEEP_DIVE_POSTER, DEEP_DIVE_TITLE } from "./deep-dive.ts";
+import { FILMS } from "./films.ts";
 
 export const PUBLIC_PAGES = {
   "/": { title: "QualityLayer | Plan, build and review with coding agents", description: SHARE_DESCRIPTION },
@@ -7,8 +9,8 @@ export const PUBLIC_PAGES = {
     description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",
   },
   "/inside": {
-    title: "Inside QualityLayer: a deep dive into the software factory",
-    description: "A video deep dive: why better models still break working software, QualityLayer's seven-step workflow, and one task from request to pull request.",
+    title: "Inside QualityLayer: an AI software factory with humans in the loop",
+    description: "See how QualityLayer keeps humans in the loop, from the first question to the plan, code checks and pull request.",
   },
   "/download": {
     title: "Download QualityLayer for macOS, Windows and Linux",
@@ -111,6 +113,39 @@ export const PUBLIC_PAGES = {
     description: "The terms for qualitylayer.dev, the QualityLayer App and the team service.",
   },
 } as const;
+
+export const DEEP_DIVE_STRUCTURED_DATA = [
+  {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "@id": `${SITE_URL}${DEEP_DIVE_PATH}#webpage`,
+    url: `${SITE_URL}${DEEP_DIVE_PATH}`,
+    name: PUBLIC_PAGES[DEEP_DIVE_PATH].title,
+    description: PUBLIC_PAGES[DEEP_DIVE_PATH].description,
+    breadcrumb: { "@id": `${SITE_URL}${DEEP_DIVE_PATH}#breadcrumbs` },
+    mainEntity: { "@id": `${SITE_URL}${DEEP_DIVE_PATH}#trailer` },
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "@id": `${SITE_URL}${DEEP_DIVE_PATH}#breadcrumbs`,
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_URL}/` },
+      { "@type": "ListItem", position: 2, name: DEEP_DIVE_TITLE, item: `${SITE_URL}${DEEP_DIVE_PATH}` },
+    ],
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    "@id": `${SITE_URL}${DEEP_DIVE_PATH}#trailer`,
+    name: `${DEEP_DIVE_TITLE} trailer`,
+    description: "Watch the 56 second trailer for Inside QualityLayer, a deep dive into building software with coding agents.",
+    thumbnailUrl: `${SITE_URL}${DEEP_DIVE_POSTER}`,
+    uploadDate: "2026-10-29",
+    duration: `PT${FILMS.insideTrailer.duration}S`,
+    contentUrl: FILMS.insideTrailer.src,
+  },
+];
 
 export const INDEXABLE_ROBOTS = "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1";
 

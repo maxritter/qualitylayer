@@ -10,6 +10,7 @@ interface SEOProps {
   keywords?: string;
   canonicalUrl?: string;
   ogImage?: string;
+  ogImageHeight?: number;
   ogImageAlt?: string;
   type?: string;
   structuredData?: object | object[];
@@ -26,6 +27,7 @@ const SEO = ({
   keywords = "software factory, agentic software factory, human in the loop, agentic coding, visual planning, claude code, codex cli, ai coding agent, spec driven development, plan review, QualityLayer",
   canonicalUrl,
   ogImage = `${SITE_URL}/og.png`,
+  ogImageHeight = 630,
   ogImageAlt = ogImage === `${SITE_URL}/og.png` ? OG_IMAGE_ALT : undefined,
   type = "website",
   structuredData,
@@ -52,7 +54,7 @@ const SEO = ({
       <meta property="og:description" content={description} />
       <meta property="og:image" content={ogImage} />
       <meta property="og:image:width" content="1200" />
-      <meta property="og:image:height" content="630" />
+      <meta property="og:image:height" content={String(ogImageHeight)} />
       {ogImageAlt ? <meta property="og:image:alt" content={ogImageAlt} /> : null}
       <meta property="og:site_name" content="QualityLayer" />
 

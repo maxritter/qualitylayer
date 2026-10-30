@@ -2,7 +2,7 @@ max-ritter:
   name: "Max Ritter"
   title: "Creator of QualityLayer"
   url: "https://www.maxritter.net/"
-  image_url: /img/authors/max-ritter.webp
+  image_url: /img/authors/max-ritter-profile.webp
   page: false
   socials:
     github: maxritter

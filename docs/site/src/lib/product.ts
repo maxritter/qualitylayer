@@ -9,6 +9,7 @@ export const INSTALL_COMMAND = `curl -fsSL ${SITE_URL}/install.sh | bash`;
 export const GITHUB_URL = "https://github.com/maxritter/qualitylayer";
 /** The documentation, served by Docusaurus under the site's own domain. */
 export const DOCS_URL = "/docs/";
+export const BLOG_URL = "/blog";
 export const RELEASES_URL = `${GITHUB_URL}/releases`;
 export const CHANGELOG_URL = "/docs/changelog";
 export const CONTACT_EMAIL = "hello@qualitylayer.dev";

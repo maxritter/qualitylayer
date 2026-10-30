@@ -18,9 +18,8 @@ export const DEEP_DIVE_CHAPTERS = [
   { at: "23:35", title: "Team, chat, artifacts, memory and settings", about: "The rest of the App, from sharing a task with teammates to choosing your agents." },
 ];
 
-/** A code that comes with the email. The page and the email offer it only until it expires. */
-export const DEEP_DIVE_PROMO = { code: "INSIDEQL15", percent: 15, validUntil: "2026-11-12T23:59:00+01:00", validUntilLabel: "12 November 2026" };
-export const promoActive = (now = Date.now()) => now <= Date.parse(DEEP_DIVE_PROMO.validUntil);
+/** The code that comes with the email, for anyone who watched; it does not expire (Max, 30 October 2026). */
+export const DEEP_DIVE_PROMO = { code: "INSIDEQL15", percent: 15 };
 
 /** The consent a visitor gives with the form, stored with their confirmation. */
 export const NEWSLETTER_CONSENT_VERSION = "2026-10-30-v1";

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/product";
 import {
-  DEEP_DIVE_CHAPTERS, DEEP_DIVE_MINUTES, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT, promoActive,
+  DEEP_DIVE_CHAPTERS, DEEP_DIVE_MINUTES, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT,
 } from "@/lib/deep-dive";
 import "@/styles/deep-dive.css";
 
@@ -168,7 +168,7 @@ const DeepDive = () => (
             <ol className="dd-chapters">
               {DEEP_DIVE_CHAPTERS.map((chapter) => <li key={chapter.title}><time className="dd-at">{chapter.at}</time><b>{chapter.title}</b><span>{chapter.about}</span></li>)}
             </ol>
-            {promoActive() ? <p className="dd-offer">The email also brings a code for {DEEP_DIVE_PROMO.percent}% off your first year, valid until {DEEP_DIVE_PROMO.validUntilLabel}.</p> : null}
+            <p className="dd-offer">The email also brings a code for {DEEP_DIVE_PROMO.percent}% off your first year.</p>
           </div>
         </div>
       </section>

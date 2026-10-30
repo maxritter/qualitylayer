@@ -5,20 +5,10 @@ export const DEEP_DIVE_SPEAKER = "Max Ritter";
 /** The final render runs 27:16. */
 export const DEEP_DIVE_MINUTES = 27;
 export const DEEP_DIVE_POSTER = `/inside/inside-qualitylayer.webp`;
-/** Set once the video is on YouTube; until then the email links to the page. */
-export const DEEP_DIVE_VIDEO_URL: string | null = null;
+/** The full video on YouTube; the email links here, and the hero shows the Deep dive button while it is set. */
+export const DEEP_DIVE_VIDEO_URL: string | null = "https://youtu.be/STtsW6pa6x4";
 
-/** The video's chapters with their start times; the intro and the closing call to action are left out. */
-export const DEEP_DIVE_CHAPTERS = [
-  { at: "1:49", title: "Better models, same problems", about: "What three studies found after teams adopted coding agents: more code, slower reviews, more incidents." },
-  { at: "5:45", title: "From plan mode to the software factory", about: "Eighteen months of agentic coding, and why a factory without people ships the average." },
-  { at: "10:30", title: "The seven-step workflow", about: "How a task moves from the first question to the pull request, and the two points where you approve." },
-  { at: "14:29", title: "Bring your team in", about: "Teammates answer questions and comment at the Plan, then review a change that follows it." },
-  { at: "15:25", title: "Demo: one task, request to pull request", about: "A change built in the App from the first question to the pull request." },
-  { at: "23:37", title: "Team, chat, artifacts, memory and settings", about: "The rest of the App, from sharing a task with teammates to choosing your agents." },
-];
-
-/** What the page shows of the video: five short steps, no times (Max, 30 October 2026). */
+/** What the page and the email show of the video: five numbered steps, no times (Max, 30 October 2026). The timed chapters live in the YouTube description. */
 export const DEEP_DIVE_OUTLINE = [
   { title: "Better models, same problems", line: "Why stronger models still break working code." },
   { title: "From plan mode to the factory", line: "Where people still decide what ships." },

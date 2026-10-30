@@ -7,12 +7,19 @@
 .dd-eyebrow{margin:0 0 14px;font:500 13px/1.4 "Geist Mono",ui-monospace,monospace;color:var(--mx-ink2)}
 .dd-head .w7-h2{margin:0;font-size:clamp(40px,5.4cqi,68px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
 .dd-head .w7-lead{max-width:56ch;margin:20px 0 0;font-size:17px;line-height:1.6}
-.dd-by{margin:20px 0 0;font-size:15px;color:var(--mx-ink2)}
-.dd-more h2{margin:0 0 4px;font-size:20px;font-weight:500;letter-spacing:-.02em}
-.dd-chapters{margin:0;padding:0;list-style:none}
-.dd-chapters li{display:grid;padding:16px 0;border-bottom:1px solid var(--mx-line)}
-.dd-chapters b{font-size:15px;font-weight:500}
-.dd-chapters span{margin-top:2px;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
+.dd-more h2{margin:0 0 16px;font-size:20px;font-weight:500;letter-spacing:-.02em}
+/* The five steps of the video as numbered tiles: two columns beside the card, one on a phone. */
+.dd-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.dd-steps li{display:flex;flex-direction:column;gap:4px;min-height:132px;padding:18px 20px;border:1px solid var(--mx-line2);border-radius:6px;background:var(--mx-panel)}
+.dd-steps li:last-child{grid-column:1 / -1;min-height:0;border-color:var(--ql-accent)}
+.dd-num{margin-bottom:8px;font-size:34px;font-weight:800;line-height:1;letter-spacing:-.04em;color:var(--ql-accent);font-variant-numeric:tabular-nums}
+.dd-steps b{font-size:16px;font-weight:600;letter-spacing:-.01em}
+.dd-steps span:last-child{font-size:14px;line-height:1.5;color:var(--mx-ink2)}
+@container (max-width: 560px){
+  .dd-steps{grid-template-columns:minmax(0,1fr);gap:8px}
+  .dd-steps li{display:grid;grid-template-columns:40px minmax(0,1fr);column-gap:8px;min-height:0;padding:14px 16px}
+  .dd-num{grid-row:span 2;margin:0;font-size:28px}
+}
 .dd-offer{margin:20px 0 0;font-size:14px;line-height:1.55;color:var(--mx-ink2)}
 .dd-poster{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-bottom:1px solid var(--mx-line2);background:#0a0a0a}
 .w7-root .dd-trailer{position:relative;display:block;width:100%;padding:0;border:0;background:none;cursor:pointer}

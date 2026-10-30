@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/product";
 import { FILMS } from "@/lib/films";
 import {
-  DEEP_DIVE_CHAPTERS, DEEP_DIVE_MINUTES, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT,
+  DEEP_DIVE_MINUTES, DEEP_DIVE_OUTLINE, DEEP_DIVE_POSTER, DEEP_DIVE_PROMO, DEEP_DIVE_SPEAKER, DEEP_DIVE_TITLE, NEWSLETTER_CONSENT_TEXT,
 } from "@/lib/deep-dive";
 import "@/styles/deep-dive.css";
 
@@ -172,16 +172,15 @@ const DeepDive = () => (
       <section className="w7-sec w7-nf dd-sec" aria-labelledby="dd-h">
         <div className="w7-wrap dd-grid">
           <header className="dd-head">
-            <p className="dd-eyebrow">Deep dive · {DEEP_DIVE_MINUTES} min</p>
+            <p className="dd-eyebrow">Deep dive · {DEEP_DIVE_MINUTES} min · {DEEP_DIVE_SPEAKER}</p>
             <h1 id="dd-h" className="w7-h2">{DEEP_DIVE_TITLE}</h1>
-            <p className="w7-lead">Why better models still break working software, how QualityLayer's seven steps keep you deciding what ships, and one task taken from request to pull request in the App.</p>
-            <p className="dd-by">With {DEEP_DIVE_SPEAKER}, who builds QualityLayer.</p>
+            <p className="w7-lead">Build software with coding agents, and still decide what ships.</p>
           </header>
           <SignUp />
           <div className="dd-more">
-            <h2>What it covers</h2>
-            <ol className="dd-chapters">
-              {DEEP_DIVE_CHAPTERS.map((chapter) => <li key={chapter.title}><b>{chapter.title}</b><span>{chapter.about}</span></li>)}
+            <h2>What's inside</h2>
+            <ol className="dd-steps">
+              {DEEP_DIVE_OUTLINE.map((step, index) => <li key={step.title}><span className="dd-num" aria-hidden="true">{index + 1}</span><b>{step.title}</b><span>{step.line}</span></li>)}
             </ol>
             <p className="dd-offer">The email also brings a code for {DEEP_DIVE_PROMO.percent}% off your first year.</p>
           </div>

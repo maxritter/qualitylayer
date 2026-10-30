@@ -18,6 +18,15 @@ export const DEEP_DIVE_CHAPTERS = [
   { at: "23:37", title: "Team, chat, artifacts, memory and settings", about: "The rest of the App, from sharing a task with teammates to choosing your agents." },
 ];
 
+/** What the page shows of the video: five short steps, no times (Max, 30 October 2026). */
+export const DEEP_DIVE_OUTLINE = [
+  { title: "Better models, same problems", line: "Why stronger models still break working code." },
+  { title: "From plan mode to the factory", line: "Where people still decide what ships." },
+  { title: "The seven-step workflow", line: "From the first question to the pull request." },
+  { title: "Your team in the loop", line: "Questions and review at the two points that count." },
+  { title: "Demo in the App", line: "One task, start to finish." },
+];
+
 /** The code that comes with the email, for anyone who watched; it does not expire (Max, 30 October 2026). */
 export const DEEP_DIVE_PROMO = { code: "INSIDEQL15", percent: 15 };
 

@@ -55,7 +55,10 @@ fi
 [ -f "$BUILD/search-index.json" ] && cp "$BUILD/search-index.json" "$DIST/search-index.json"
 
 # Copy Docusaurus img (favicon etc.) — merge into existing img or create
-[ -d "$BUILD/img" ] && cp -r "$BUILD/img" "$DIST/img"
+if [ -d "$BUILD/img" ]; then
+  mkdir -p "$DIST/img"
+  cp -r "$BUILD/img/." "$DIST/img/"
+fi
 
 echo "=== Adding Web Analytics to Docusaurus pages ==="
 node "$SITE_DIR/scripts/inject-docusaurus-analytics.mjs" "$DIST"

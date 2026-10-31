@@ -63,7 +63,8 @@
     "proxy-addr": "^2.0.8",
     "source-map-js": "^1.2.2",
     "tinypool": "^2.1.2",
-    "follow-redirects": "1.16.1",
+    "follow-redirects": "1.16.2",
+    "joi": "17.13.9",
     "launch-editor": "^2.14.2"
   }
 }

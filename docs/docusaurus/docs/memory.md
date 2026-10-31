@@ -1,16 +1,16 @@
 ---
 title: Project memory
-description: Save project lessons, reuse them in later sessions and choose what travels through Git.
+description: Save lessons about each project and how you work, and choose what travels through Git.
 ---
 
 # Project memory
 
-Keep decisions, fixes and constraints so your agents find them instead of rediscovering them.
+Keep decisions, fixes, constraints and how you like to work so your agents can reuse them.
 
 <figure class="memory-flow" aria-label="How a saved lesson reaches an agent">
   <ol>
     <li><strong>Save a lesson</strong><span>A task or agent records something worth reusing.</span></li>
-    <li><strong>Find it locally</strong><span>Search matches words and meaning in your project.</span></li>
+    <li><strong>Find it locally</strong><span>Search matches words and meaning in your saved lessons.</span></li>
     <li><strong>Use it in context</strong><span>Your agent receives the relevant lesson text.</span></li>
   </ol>
   <figcaption>Example lesson: “Keep database migrations short and retry busy locks.”</figcaption>
@@ -20,15 +20,19 @@ Keep decisions, fixes and constraints so your agents find them instead of redisc
 
 | How | What happens |
 | --- | --- |
-| **Session lessons** | Claude Code, Codex, Pi and OpenCode receive pinned lessons and matches for the first message. If hooks are off, unavailable or too slow, delivery can be skipped |
-| **Tools** | `memory_search`, `memory_read`, `memory_save` and `memory_keep`; other agents use the [CLI](#command-line) |
+| **Session lessons** | Claude Code, Codex, Pi and OpenCode receive pinned and matching lessons from this project and about you. Lessons whose files changed are marked for rechecking; task answers wait for a search. If hooks are off, unavailable or too slow, delivery can be skipped |
+| **Tools** | `memory_search`, `memory_read`, `memory_save` and `memory_keep`; other agents use the [CLI](#command-line). Results show the source and when a lesson was last checked |
 | **Task lessons** | Review records decisions, fixed findings and amendments; missing or failed checks never count as passing. The task's **Memory** record in Files shows what was used and saved |
 
 Lessons are reference data, never instructions. Check an older lesson against the code before relying on it.
 
+## Lessons about you
+
+An agent can save how you like to work as a lesson about you. It applies across repositories on this computer and never goes to Git. Find these lessons under **Yours · every project** in **Settings → Memory**.
+
 ## Manage your lessons
 
-In **Settings → Memory**, search lessons, pin up to five per project or retire them. Use **Still true** after checking changed files. You can turn off **Lessons in every session** or pause memory.
+In **Settings → Memory**, search or edit lessons, pin up to five per project and five of your own, or retire them. Use **Still true** after checking changed files. Lessons left stale for 90 days retire automatically; you can restore them. You can turn off **Lessons in every session** or pause memory.
 
 <details>
 <summary>See Memory settings</summary>
@@ -48,7 +52,7 @@ Lessons and the search model stay on your computer; no lesson goes to an embeddi
 2. Eligible lessons are written to `.qualitylayer/memories/` with a readable `LESSONS.md`. They can include lessons without recorded passing checks.
 3. Review, commit and push them yourself. Memory exchange never commits or pushes.
 
-Pilot imports and preference lessons stay private. A filter catches credentials, emails, home paths and transcripts, but review the files anyway: anyone who can read the repository can read them. Turning sharing off stops exchange; committed files stay.
+Lessons about you, new task answers and Pilot imports stay private. Task answers already shared through Git stay there. A filter catches credentials, emails, home paths and transcripts, but review the files anyway: anyone who can read the repository can read them. Turning sharing off stops exchange; committed files stay.
 
 ## Import Pilot lessons
 
@@ -62,6 +66,7 @@ The Memory tab imports Pilot JSONL and Markdown files into a project you choose.
 ```sh
 qualitylayer memory context "database migration locks" --json
 qualitylayer memory store --title "Bound migration locks" --content "Keep migration locks short, because a waiting migration blocks every write." --kind pattern --file db/migrations --json
+qualitylayer memory store --about you --title "Prefer concise replies" --content "Keep replies short unless I ask for detail." --json
 qualitylayer memory pin <id> --json
 qualitylayer memory share on --json
 qualitylayer memory sync --json

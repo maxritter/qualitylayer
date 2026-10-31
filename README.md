@@ -54,6 +54,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 | **Small, tested changes** | Your lead writes tests before code and delegates independent slices when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
+| **Your own requirements** | Add checks, tools or skills to any step. Review shows what was done or skipped. [Required lines](https://qualitylayer.dev/docs/required-lines). |
 | **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |
 
 ---
@@ -185,7 +186,7 @@ Seven steps take a change from questions to review, with decisions and checks sa
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. |
 | **Checks and code review** | Read the evidence and file diffs, and comment on any line. |
 | **Agent controls and usage** | Choose your model, effort and permissions; track usage. [Settings](https://qualitylayer.dev/docs/reference/settings). |
-| **Memory and team** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), ask teammates over Slack and [share work](https://qualitylayer.dev/docs/team/plans). |
+| **Memory and team** | Reuse [lessons](https://qualitylayer.dev/docs/memory) about each project and how you work, ask teammates over Slack and [share work](https://qualitylayer.dev/docs/team/plans). |
 
 QualityLayer keeps task files on your computer and encrypts shared tasks first. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).
 

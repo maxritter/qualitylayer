@@ -22,7 +22,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 
 ### Your instructions {#instructions}
 
-Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent, helpers and reviewers each step and never copied into documents. Lines under `## Plan`, `## Implement`, … apply to that step only. [Team instructions](#team-instructions) win on conflict. No line can approve a gate.
+Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent, helpers and reviewers each step and never copied into documents. Lines under `## Plan`, `## Implement`, … apply to that step only, and a `- [ ]` line there is [required](../required-lines.md). [Team instructions](#team-instructions) win on conflict. No line can approve a gate.
 
 ### Independent review {#independent-review}
 
@@ -85,11 +85,17 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Appearance {#appearance}
 
-**Theme**, **Task rows** (Detailed, Two lines, One line) and **Agent terminal** (fonts, colours, scrollback, **Reset to recommended**).
+| Setting | Choices |
+| --- | --- |
+| **Theme** | System, Light or Dark |
+| **Text size** | 90%, 100% (default), 115% or 130% for the installed App window. ⌘+/⌘− resize; ⌘0 resets (Ctrl on Windows/Linux). A browser tab uses its own zoom |
+| **Font** | Geist (default), System or Atkinson Hyperlegible. Code, paths and the agent terminal keep their own fonts |
+| **Task rows** | Detailed, Two lines or One line |
+| **Agent terminal** | Its own font, size, colours and scrollback; **Reset to recommended** restores defaults |
 
 ## Memory {#memory}
 
-Pause, search or retire lessons; **Manage projects** turns Git sharing on per repository ([Project memory](../memory.md)).
+Pause, search or retire lessons, including **Yours**, the lessons about you. **Manage projects** turns Git sharing on per repository ([Project memory](../memory.md)).
 
 ## Licence
 
@@ -106,7 +112,7 @@ Your plan or trial, and **Open billing account**. **On another computer** shows 
 
 ### Team instructions {#team-instructions}
 
-The owner writes them; they reach every teammate's agent before the teammate's own and win on conflict. Teammates read them with **View**. They are encrypted with the team's key and kept locally, so they apply offline.
+The owner writes them; they reach every teammate's agent before the teammate's own and win on conflict. Teammates read them with **View**. They are encrypted with the team's key and kept locally, so they apply offline. Teammates can't remove their [required lines](../required-lines.md).
 
 ## About
 

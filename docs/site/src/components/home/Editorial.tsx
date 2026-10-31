@@ -13,7 +13,7 @@ type Shot = { id: string; title: string; alt: string };
 type Extra = { id: string; name: string; icon: LucideIcon; who: Who; line: string; text: string; shot: Shot; link: { to: string; label: string } };
 
 const EXTRAS: Extra[] = [
-  { id: "memory", who: "agent", name: "Memory", icon: BookOpen, line: "Keep useful project lessons", text: "Reuse project lessons across tasks and agents. Share them through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
+  { id: "memory", who: "agent", name: "Memory", icon: BookOpen, line: "Keep useful project lessons", text: "Reuse lessons about each project and how you work. Share project lessons through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
   { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Pin feedback where you want a change.", shot: { id: "artifact", title: "Artifact", alt: "An artifact in the QualityLayer App: a backend's request diagram on wide screens, and on phones feedback on a billing page with the agent's answer that it changed the page. Illustrative data." }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
   { id: "team", who: "you", name: "Team", icon: Users, line: "Ask the people who know", text: "Teammates answer plan questions and review the finished change from their own App.", shot: { id: "team", title: "Team", alt: "The Team space: Anna asks about a diagram in her Plan, and an agent's draft answer to Ben's question waits to be sent" }, link: { to: "/docs/team/plans", label: "Read about team collaboration" } },
   { id: "cost", who: "you", name: "Home", icon: House, line: "See what needs you", text: "Your tasks that need attention and your running work, with the current step and what happens next.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, link: { to: "/docs/app#home", label: "Read about Home" } },
@@ -170,7 +170,7 @@ export default function Editorial() {
       <section id="tour" className="ed-section mx-wrap" aria-labelledby="ed-workflow-h">
         <div className="ed-head">
           <h2 id="ed-workflow-h">From prompt to pull request</h2>
-          <p>Follow one change through planning, implementation and review.</p>
+          <p>Follow one change through planning, implementation and review. Add your own checks, tools and skills to any step. <a href="/docs/required-lines">Set your requirements</a>.</p>
           <ul className="ed-legend" aria-label="Colours">
             {(Object.keys(WHO) as Who[]).map((who) => <li key={who} data-who={who}><span className="ed-dot" aria-hidden="true" />{WHO[who]}</li>)}
           </ul>

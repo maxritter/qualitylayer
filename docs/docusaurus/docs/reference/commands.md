@@ -51,6 +51,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 | Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
+| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
 | Review | `comments list\|take\|resolve` · `review fix-open-items` · `pr watch` |
 | Tasks | `find` · `tasks` · `task set` · `task override` · `task archive\|restore` · `branch new` |
@@ -99,9 +100,9 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 
 | Command | What it does |
 | --- | --- |
-| `memory overview\|list\|search <text>\|read <id>` | Browse lessons; `list --sources changed` shows those whose files changed |
-| `memory store --title <text> --content <text>` | Save a lesson; `--file`, `--rests-on` and `--replaces <id>` add context |
-| `memory confirm\|retire <id> [--reason <text>]` | Confirm a lesson at the current commit, or retire it |
+| `memory overview\|list\|search <text>\|read <id>` | Browse lessons; `--scope repo\|you` picks this project or yours. `list --sources changed` shows lessons whose files changed |
+| `memory store --title <text> --content <text>` | Save a lesson; `--file`, `--rests-on` and `--replaces <id>` add context. `--about you` saves a personal lesson for every repository |
+| `memory confirm\|retire <id> [--reason <text>]` | Confirm a lesson at the current commit, or retire it. Personal lessons have no commit to confirm against |
 | `memory pin\|unpin\|restore <id>` | Keep a lesson in every session, or restore a retired one |
 | `memory pause\|resume` · `memory sessions on\|off` | Pause capture, or session lessons |
 | `memory share on\|off` · `memory sync\|export\|import` | Share lessons through repository files, never committing or pushing |

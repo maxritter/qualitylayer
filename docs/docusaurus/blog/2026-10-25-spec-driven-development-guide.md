@@ -61,7 +61,7 @@ All three agents can run every step by hand. Claude Code and Codex are strong at
 
 Doing these six steps by hand takes discipline on every change. QualityLayer puts the engineer back in the loop of your coding agent, the one you already use. It runs the steps as Discuss, Research, Plan, Outline, Implement, Verify and Review. The Plan has diagrams and clickable mockups that you and your team can comment on. You approve the Plan before code exists. An agent that did not write the code checks every Done means point with evidence. Then you approve the finished change before the pull request. Every step writes Markdown into your repo, and the source is on [GitHub](https://github.com/maxritter/qualitylayer). See the [comparison of spec-driven development tools](https://qualitylayer.dev/best-spec-driven-development-tools) for other options.
 
-[Watch the 27 minute deep dive](/inside)
+[Watch the 27 minute deep dive](https://qualitylayer.dev/inside)
 
 ## FAQ
 

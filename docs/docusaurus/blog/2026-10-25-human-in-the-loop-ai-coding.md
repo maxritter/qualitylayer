@@ -48,7 +48,7 @@ With coding agents, many developers have turned into agent managers. When you ap
 
 You can follow this pattern with any agent. Write the plan in a Markdown file and review it. Let the agent build. Then ask an agent that did not write the code to check the result against the plan. QualityLayer runs these steps in Claude Code, Codex, OpenCode, Pi, Cursor, Grok and Antigravity, on the agent setup you already have. Every step writes Markdown into your repo, and your code stays on your machine. The source is on [GitHub](https://github.com/maxritter/qualitylayer).
 
-[Watch the 27 minute deep dive](/inside)
+[Watch the 27 minute deep dive](https://qualitylayer.dev/inside)
 
 ## FAQ
 

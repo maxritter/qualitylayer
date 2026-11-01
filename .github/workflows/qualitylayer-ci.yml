@@ -65,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-26]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -112,12 +112,12 @@ jobs:
           - { os: ubuntu-latest, shard: 4, shards: 6 }
           - { os: ubuntu-latest, shard: 5, shards: 6 }
           - { os: ubuntu-latest, shard: 6, shards: 6 }
-          - { os: macos-14, shard: 1, shards: 6 }
-          - { os: macos-14, shard: 2, shards: 6 }
-          - { os: macos-14, shard: 3, shards: 6 }
-          - { os: macos-14, shard: 4, shards: 6 }
-          - { os: macos-14, shard: 5, shards: 6 }
-          - { os: macos-14, shard: 6, shards: 6 }
+          - { os: macos-26, shard: 1, shards: 6 }
+          - { os: macos-26, shard: 2, shards: 6 }
+          - { os: macos-26, shard: 3, shards: 6 }
+          - { os: macos-26, shard: 4, shards: 6 }
+          - { os: macos-26, shard: 5, shards: 6 }
+          - { os: macos-26, shard: 6, shards: 6 }
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -188,7 +188,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-26]
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0

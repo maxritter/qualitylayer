@@ -241,8 +241,8 @@ jobs:
           required="${RUNNER_TEMP:?}/required-ci-checks.txt"
           wait=1200
           printf '%s\n' 'Plaintext guard' 'Site API and pages' > "$required"
-          printf '%s\n' 'Release smoke (ubuntu-latest)' 'Release smoke (macos-14)' >> "$required"
-          for os in ubuntu-latest macos-14; do
+          printf '%s\n' 'Release smoke (ubuntu-latest)' 'Release smoke (macos-26)' >> "$required"
+          for os in ubuntu-latest macos-26; do
             printf 'No text overflows a control (%s)\n' "$os" >> "$required"
           done
           for shard in 1 2 3 4 5 6; do

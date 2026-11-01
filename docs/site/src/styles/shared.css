@@ -203,10 +203,11 @@
 
 /* A public review keeps the task and its feedback together. */
 .sh-layout{max-width:1440px;grid-template-columns:minmax(0,1fr) 320px;gap:28px 32px;padding:36px 40px 72px}
-.sh-heading{grid-column:1/-1;min-width:0}
-.sh-heading h1{font-size:30px;line-height:1.25;letter-spacing:-.025em;max-width:32ch;overflow-wrap:anywhere}
-.sh-meta{max-width:88ch;margin:10px 0 24px;line-height:1.65}
-.sh-heading-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--ql-line);padding-bottom:16px}
+.sh-heading{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title tools" "meta meta";column-gap:24px;align-items:center;min-width:0;padding-bottom:16px;border-bottom:1px solid var(--ql-line)}
+.sh-heading h1{grid-area:title;font-size:30px;line-height:1.25;letter-spacing:-.025em;max-width:none;overflow-wrap:anywhere}
+.sh-meta{grid-area:meta;max-width:88ch;margin:6px 0 0;line-height:1.65}
+.sh-heading-tools{grid-area:tools;display:flex;align-items:center;justify-content:flex-end;gap:12px}
+@media(max-width:600px){.sh-heading{grid-template-columns:minmax(0,1fr);grid-template-areas:"title" "meta" "tools";row-gap:10px;padding-bottom:12px}.sh-heading-tools{justify-content:space-between}.sh-meta{margin:0}}
 .sh-surfaces{height:42px;background:var(--ql-surface-2);padding:4px;border:1px solid var(--ql-border);border-radius:10px}
 .sh-surfaces [role=tab]{height:32px;min-width:108px;padding:0 14px;gap:8px;font-size:13px}
 .sh-tab-count{font-size:11px;min-width:19px;height:19px;display:grid;place-items:center;border-radius:4px;background:var(--ql-bg-sunken);color:var(--ql-text-muted)}
@@ -246,7 +247,7 @@
 @container page (max-width:900px){
  .sh-layout{grid-template-columns:minmax(0,1fr);gap:24px;padding:24px 16px 32px}
  .sh-heading h1{font-size:26px}
- .sh-meta{font-size:12.5px;margin-bottom:20px}
+ .sh-meta{font-size:12.5px;margin-bottom:0}
  .sh-feedback-jump{display:inline-flex;font-size:12px;padding:0 12px}
  .sh-surfaces [role=tab]{min-width:0;padding:0 10px}
  .sh-side{position:static}

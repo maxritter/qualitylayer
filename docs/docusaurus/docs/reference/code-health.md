@@ -29,7 +29,7 @@ In [Verify](../steps/verify.md#lanes), the scans read what the task changed, bes
 
 The Security review starts from the findings; the Independent review rules on them. A scan with no file to read is **not needed**. A scan that could not read a file says **not checked**, never clean.
 
-Verify scans what the task committed and its uncommitted edits to tracked files. A new file that was never added to git is not scanned there, but the secrets scan after each agent turn still reads it. A secret found in the task's own records, such as captured command output, is removed before it is committed.
+Verify scans the task's registered commits and recorded edits to tracked files. Another task's changes stay outside that scope. Untracked files are not scanned there, but the secrets scan after each agent turn still reads them. Secrets found in the task's records are removed before commit.
 
 **What leaves your computer:** only dependency advisories. When a lockfile changes, its package names and versions are checked against osv.dev. Choose **Local copy** in [Settings](settings.md#security-scans) to keep them here; the database is about 250 MB.
 

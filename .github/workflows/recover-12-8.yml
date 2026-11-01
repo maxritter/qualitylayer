@@ -267,6 +267,7 @@ jobs:
         # Caller coverage of the current API runs in CI.
         run: |
           set -euo pipefail
+          npx vitest run --maxWorkers=2 --dir api -t '^(?!.*team/tasks/\[task\]/(claim|handed) has a caller).*$'
           test_file=scripts/db-beta9.test.ts
           backup="${RUNNER_TEMP:?}/candidate-db-beta9.test.ts"
           cp "$test_file" "$backup"
@@ -274,7 +275,6 @@ jobs:
           trap 'cp "$backup" "$test_file"' EXIT
           cp "$GITHUB_WORKSPACE/docs/site/$test_file" "$test_file"
           printf '%s  %s\n' "$TEST_SHA256" "$test_file" | sha256sum -c -
-          npx vitest run --maxWorkers=2 --dir api -t '^(?!.*team/tasks/\[task\]/(claim|handed) has a caller).*$'
           npx vitest run --maxWorkers=2 scripts/db-beta9.test.ts
           cp "$backup" "$test_file"
           printf '%s  %s\n' "$original" "$test_file" | sha256sum -c -

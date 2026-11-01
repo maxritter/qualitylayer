@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // A shared step document is drawn by the App's own Reader (StepDocument), so it looks the same here,
-// in the App's step page and in its Files tab: Sections, Copy, diagrams, comments on passages.
+// in the App's step page and in its Files tab: On this page, Copy, diagrams, comments on passages.
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadMermaidFrom } from "@ql/ui/reader/MermaidBlock";
@@ -19,26 +19,26 @@ const noSend = async () => ({ ok: true as const });
 const popover = () => within(document.body);
 
 describe("the share page draws a document with the App's Reader", () => {
-  it("has the Sections button and the Copy menu at the top of each document", () => {
+  it("has the On this page button and the Copy menu at the top of each document", () => {
     render(<SharedView state={ready({ "03-plan.md": DOC })} onSend={noSend} />);
     expect(screen.getByTestId("step-document")).toBeTruthy();
     expect(screen.getByTestId("doc-reader")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Sections/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "On this page" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy document" })).toBeTruthy();
   });
 
-  it("Sections names the document's path and its headings, and a heading jumps there", async () => {
+  it("On this page names the document's path and its headings, and a heading jumps there", async () => {
     render(<SharedView state={ready({ "03-plan.md": DOC })} onSend={noSend} />);
-    fireEvent.click(screen.getByRole("button", { name: /Sections/ }));
+    fireEvent.click(screen.getByRole("button", { name: "On this page" }));
     expect((await popover().findByTestId("doc-path")).textContent).toBe("03-plan.md");
     const scroll = await popover().findByTestId("outline-scroll");
     for (const heading of ["Why", "What", "How"]) expect(within(scroll).getByText(heading)).toBeTruthy();
   });
 
-  it("a document with fewer than three sections has Copy but no Sections", () => {
+  it("a document with fewer than three sections has Copy but no On this page", () => {
     render(<SharedView state={ready({ "03-plan.md": "# Plan\n\nOne deployment." })} onSend={noSend} />);
     expect(screen.getByRole("button", { name: "Copy document" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Sections/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "On this page" })).toBeNull();
   });
 
   it("Copy offers the document as Markdown, says so, and says when the browser refuses", async () => {

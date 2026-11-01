@@ -31,8 +31,8 @@ describe("commenting on the step documents", () => {
     const plan = "# The Plan\n\n## Why\n\nOne deployment.\n\n## What\n\nThe page.\n\n## How\n\nIn steps.";
     render(<SharedView state={{ ...state, docs: { "03-plan.md": plan } }} onSend={onSend} />);
     fireEvent.change(screen.getByRole("textbox", { name: "Feedback" }), { target: { value: "Unsent text" } });
-    // The document is named by the Sections menu, as it is in the App.
-    fireEvent.click(screen.getByRole("button", { name: /Sections/ }));
+    // The document is named by the On this page menu, as it is in the App.
+    fireEvent.click(screen.getByRole("button", { name: "On this page" }));
     expect((await screen.findByTestId("doc-path")).textContent).toBe("03-plan.md");
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     const copyMarkdown = async () => {

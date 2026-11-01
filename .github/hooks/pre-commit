@@ -207,12 +207,12 @@ done < <(printf '%s\n' "$staged")
 # rustup installs cargo here; a GUI git client's PATH often lacks it.
 if [ -d "$HOME/.cargo/bin" ]; then PATH="$HOME/.cargo/bin:$PATH"; fi
 
-# Design models and script tests do not change the release Cockpit. Any other staged
+# Design models and tests do not change the release Cockpit. Any other staged
 # qualitylayer/ path, including the sources in a full HEAD preflight, keeps the check.
 cockpit_needed=0
 for f in ${qualitylayer_files[@]+"${qualitylayer_files[@]}"}; do
   case "$f" in
-    artifacts/*|tests/scripts/*) : ;;
+    artifacts/*|tests/*) : ;;
     *) cockpit_needed=1 ;;
   esac
 done
@@ -391,7 +391,7 @@ if [ "$qualitylayer_changed" = "1" ]; then
     if [ "$cockpit_needed" = "1" ]; then
       launch "qualitylayer (release Cockpit and controls)" job_browser_checks
     else
-      echo "Pre-commit: only design artifacts or script tests staged — release Cockpit check skipped."
+      echo "Pre-commit: only design artifacts or tests staged — release Cockpit check skipped."
     fi
   else
     echo "⚠ bun or qualitylayer deps unavailable — skipping (cd qualitylayer && bun install)."

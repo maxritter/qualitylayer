@@ -374,24 +374,32 @@ jobs:
           fi
           echo "RELEASE_NOTES_FILE=${RUNNER_TEMP:?}/release-notes.md" >> "$GITHUB_ENV"
 
+      - name: Generate the supported GitHub workflow provenance
+        id: recovery-predicate
+        uses: actions/attest-build-provenance/predicate@864457a58d4733d7f1574bd8821fa24e02cf7538 # predicate@2.0.0, already pinned by attest-build-provenance
       - name: Record same-byte promotion provenance with both source identities
+        env:
+          WORKFLOW_PREDICATE: ${{ steps.recovery-predicate.outputs.predicate }}
         run: |
           set -euo pipefail
-          jq -n --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --arg producer "$GITHUB_SHA" \
+          jq -n --argjson baseline "$WORKFLOW_PREDICATE" \
+            --arg repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --arg producer "$GITHUB_SHA" \
             --arg candidate "$CANDIDATE_SOURCE" --arg tree "$CANDIDATE_TREE" --arg test "$TEST_SHA256" \
-            --arg invocation "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
             --arg manifest "$MANIFEST_SHA256" --slurpfile c candidate/candidate.json \
             --slurpfile tests "$RUNNER_TEMP/recovery-test-receipt.json" \
-            '{buildDefinition:{buildType:($repository+"/.github/workflows/recover-12-8.yml@"+$producer),
-              externalParameters:{operation:"promote-existing-signed-candidate",candidateRun:"41342331355",candidateAttempt:1,testProducer:$tests[0]},
-              internalParameters:{},resolvedDependencies:[
+            '$baseline
+              | if .buildDefinition.buildType != "https://actions.github.io/buildtypes/workflow/v1"
+                then error("Unsupported generated workflow build type") else . end
+              | .buildDefinition.internalParameters.recovery = {
+                  operation:"promote-existing-signed-candidate",candidateRun:"41342331355",
+                  candidateAttempt:1,testProducer:$tests[0]}
+              | .buildDefinition.resolvedDependencies += [
                 {uri:($repository+"/tree/"+$candidate),digest:{gitCommit:$candidate,gitTree:$tree}},
                 {uri:($repository+"/tree/"+$producer),digest:{gitCommit:$producer}},
                 {uri:($repository+"/actions/runs/41342331355/artifacts/"+$c[0].assetsArtifact.id),digest:{sha256:($c[0].assetsArtifact.digest|sub("^sha256:";""))}},
                 {uri:($repository+"/actions/runs/41342331355/artifacts/"+$c[0].catalogArtifact.id),digest:{sha256:($c[0].catalogArtifact.digest|sub("^sha256:";""))}},
                 {uri:"candidate/candidate.json",digest:{sha256:$manifest}},
-                {uri:($repository+"/blob/"+$producer+"/docs/site/scripts/db-beta9.test.ts"),digest:{sha256:$test}}]},
-              runDetails:{builder:{id:($repository+"/.github/workflows/recover-12-8.yml@"+$producer)},metadata:{invocationId:$invocation}}}' \
+                {uri:($repository+"/blob/"+$producer+"/docs/site/scripts/db-beta9.test.ts"),digest:{sha256:$test}}]' \
             > "$RUNNER_TEMP/recovery-provenance.json"
       - name: Attest the existing signed bytes, not a new compilation
         uses: actions/attest@e59cbc1ad1ac2d59339667419eb8cdde6eb61e3d # v3.2.0, already pinned by attest-build-provenance

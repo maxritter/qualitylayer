@@ -23,7 +23,7 @@ const team = priced("team");
 /** Asked on the home page and on pricing, answered the same way on both. */
 const CODE_LEAVES = faq(
   "Does my code leave my computer?",
-  "Your coding agent sends code to its provider under your existing data settings, as it does today. QualityLayer keeps your code, plans, artifacts and agent output on your computer. Sharing encrypts tasks, documents and comments on your computer first: we can't read them, and see only who shared which task, when and at which step. Artifacts go along only if you include them; terminal output and the repository's code never do. Code your team reviews travels through your own Git remote; we store only the team's encrypted comments, the short lines of code they quote and the commits they point to. With Slack connected, task titles and questions pass through our server to Slack. A screenshot you attach to a feedback report can show code, so check it first.",
+  "Your coding agent sends code to its provider under your existing data settings, as it does today. QualityLayer keeps your code, plans, artifacts and agent output on your computer. Sharing encrypts tasks, documents and comments on your computer first: we can't read them, and see only who shared which task, when and at which step. Artifacts go along only if you include them; terminal output and the repository's code never do. Code your team reviews travels through your own Git remote; we store only the team's encrypted comments, the short lines of code they quote and the commits they point to. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. A screenshot you attach to a feedback report can show code, so check it first.",
 );
 
 /** Ordered by what a visitor asks first: cost, the difference, privacy, then how they would use it. */
@@ -47,7 +47,7 @@ export const FAQS: Faq[] = [
   ),
   faq(
     "Can I use it on my own, or only with a team?",
-    "Both. The Team plan adds shared plans, questions over Slack and code review with teammates.",
+    "Both. The Team plan adds shared plans, questions over Slack or email and code review with teammates.",
   ),
   faq(
     "Is it for product managers as well as engineers?",

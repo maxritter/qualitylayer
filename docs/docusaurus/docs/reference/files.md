@@ -52,7 +52,7 @@ Your code, diff, documents, evidence and costs stay on your computer until you s
 | **When you share** | Tasks, documents and comments, encrypted on your computer with your team's key. **Include artifacts** adds previews (off for existing shares). The server sees names, e-mails, the step and when, never the content. A share link's key never reaches the server |
 | **When your team reviews code** | **Ask for review** pushes the branch to your own Git remote. QualityLayer stores the team's line comments, the quoted lines (up to 300 characters each) and the commits, encrypted with your team's key, never the code |
 | **Not included automatically** | Source, diffs, host logs, launch settings, terminal output and command output. Text or attachments you share can contain anything. Shared artifact previews run no scripts |
-| **With Slack** | The task title and the question, through the QualityLayer server |
+| **With Slack or email** | The task title and the question, through the QualityLayer server to Slack or to Resend for email |
 | **Instructions** | Yours stay local and go to your agent, so a cloud agent may send them to its provider. Team instructions are encrypted with the team's key |
 | **Lessons and lasting artifacts** | Travel through your Git pushes only where you keep them in the repository or turn on [memory sharing](../memory.md) |
 
@@ -60,4 +60,4 @@ The QualityLayer API runs in Frankfurt; backups are encrypted and kept in the EU
 
 ## Report a problem {#feedback}
 
-**Report bug / idea** in the sidebar files a public issue on `maxritter/qualitylayer`: add a title, description and screenshots, choose **Preview public issue**, then **Create public GitHub issue**. Use **Private support** for confidential details. The report adds QualityLayer, operating-system and architecture details and the agent version; it does not add your account name, email, repository paths or terminal logs.
+**Report bug / idea** in the sidebar foot (**Bug / idea** in a narrower sidebar) files a public issue on `maxritter/qualitylayer`: add a title, description and screenshots, choose **Preview public issue**, then **Create public GitHub issue**. Use **Private support** for confidential details. The report adds QualityLayer, operating-system and architecture details and the agent version; it does not add your account name, email, repository paths or terminal logs.

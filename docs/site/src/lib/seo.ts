@@ -160,6 +160,11 @@ const PRIVATE_PAGES = {
     description: "Check your subscription and activate QualityLayer with your licence key.",
     robots: "noindex,nofollow",
   },
+  "/notifications": {
+    title: "Turn off QualityLayer emails",
+    description: "Turn off the QualityLayer team emails sent to your address.",
+    robots: "noindex,nofollow",
+  },
   "/open": {
     title: "Open in the QualityLayer App",
     description: "Open the question or the task from the message in the QualityLayer App.",

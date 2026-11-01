@@ -2,6 +2,10 @@
   // Dead-code analysis for the website and its API (`npm run deadcode`).
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
+    // The second Vite HTML input loads the guided demo, including its CSS and lazy player.
+    "src/app-demo-guide/guide.ts",
+    // TypeScript resolves this companion declaration for metrics-privacy.js.
+    "src/lib/metrics-privacy.d.ts",
     // Vercel invokes every route; nothing imports it.
     "api/**/*.ts",
     // Run by build-all.sh, by CI and by hand, never imported.
@@ -9,6 +13,8 @@
   ],
   "project": ["api/**/*.ts", "src/**/*.{ts,tsx,css}", "scripts/*.{ts,mjs}", "*.{ts,mjs}"],
   "compilers": { "css": true },
+  // Capture scripts use createRequire(qualitylayer/package.json), where Playwright is declared.
+  "ignoreDependencies": ["@playwright/test"],
   // An export that its own file still uses is code in use, not dead code.
   "ignoreExportsUsedInFile": true
 }

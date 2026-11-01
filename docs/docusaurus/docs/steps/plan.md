@@ -21,13 +21,13 @@ The **Plan** page is the document you approve before the build. The proposed cha
 | **Done means** | The results from [Discuss](discuss.md), and how each will be checked |
 | **The artifact** | A wireframe or finished artifact for anything people see ([Artifacts](../artifacts.md)) |
 | **Today and after the change** | A view of the change when it makes the proposal clearer |
-| **Engineering decisions** | The consequential choices and their reasons, with a diagram where it helps |
+| **Engineering decisions** | The consequential choices and their reasons, with a diagram where it helps; more than six fold to one row each |
 | **Not doing** | What stays untouched |
 | **Decisions made for you** | Your agent's smaller choices, with reasons |
 | **Assumptions** | What the Plan takes for granted |
 | **Before the build** | What must be ready first, such as a login |
 
-Artifacts and diagrams are never collapsed, so you approve what you can see; risks, findings and contracts fold below them with a one-line summary. The Product level uses plainer words ([two levels](../intro.md#two-levels)).
+The main artifact stays visible; risks, findings and contracts fold below it with a one-line summary. The Product level uses plainer words ([two levels](../intro.md#two-levels)).
 
 ### What to read first {#read-first}
 
@@ -35,11 +35,11 @@ Artifacts and diagrams are never collapsed, so you approve what you can see; ris
 
 ## Approve or give feedback {#answering}
 
-A choice that only appears once an artifact is drawn is a **Your call**. **Your turn** shows them one at a time, beside the part of the Plan each concerns; each answer reaches your agent immediately. Findings from the technical review return to the planning agent; only a new hard choice reaches you.
+A choice that only appears once an artifact is drawn is a **Your call**. The header counts them (**1 call left**); each appears beside the part of the Plan it concerns. Each answer reaches your agent immediately. Findings from the technical review return to the planning agent; only a new hard choice reaches you.
 
 1. Read the complete Plan.
 2. Pin comments, or press **Give feedback**. Your agent revises; the diff shows what changed.
-3. Press **Approve Plan** at the top right. It approves the Plan, **Done means** and the artifact together.
+3. Press **Approve Plan** at the top right, once every call is answered. It approves the Plan, **Done means** and the artifact together.
 
 Answering a question does not approve the Plan. Approve in the App, also when the agent works in your terminal, or give an explicit approval through your agent.
 

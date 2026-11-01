@@ -25,15 +25,15 @@ On a shared Plan or Review, **Looks right** sends your review to the owner. **Su
 
 The task header shows who it waits on and offers **Remind**. **Seen by** names confirmed readers of the current shared version and opens the same Share sheet. **Not opened yet** appears only when reading data is known; otherwise the App shows no reading status.
 
-## Slack {#slack}
+## Slack and email {#slack}
 
-The team owner connects Slack once in **Settings › Team**. Each person then controls:
+The team owner connects Slack, turns on email, or both, in **Settings › Team**. Each person then controls:
 
-- **Slack messages to you**
+- **Slack messages** and **Email messages** under **Away from this computer** in Settings › Notifications
 - an optional **Morning digest**, sent by your computer's local time
 - **Follow**, which subscribes you to a shared task's updates
 
-Slack controls do-not-disturb hours. Questions and answers always appear in Team. Slack delivery depends on your own notification setting and account match. If your emails differ, link your own Slack account in Settings.
+Each message reaches you one way: in Slack when Slack finds your account and your Slack messages are on, otherwise by email if you turned it on. Questions and answers always appear in Team. If your emails differ, link your own Slack account in Settings. Slack controls do-not-disturb hours. Every email has a link that turns email off, and an address that bounces turns it off too.
 
 ## People outside your team {#outside-links}
 
@@ -56,7 +56,7 @@ The file holds the whole link, including the part after `#`; keep it private ([d
 ## What is shared {#privacy}
 
 - Shared documents, artifacts and comment bodies are encrypted with your team's key before publication. The server stores only ciphertext.
-- Slack notifications can include task titles and short question or answer excerpts, which pass through the notification service.
+- Slack messages and emails can include task titles and short question or answer excerpts, which pass through our server to Slack or to our email provider, Resend.
 - Review code travels between your computer and your own Git remote. QualityLayer stores your team's encrypted comments, the short lines of code they quote (up to 300 characters each) and the commits and branch they point to.
 - The shared task includes no source files, diffs or logs.
 

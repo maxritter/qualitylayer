@@ -44,7 +44,7 @@ function Privacy() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <Updated date={{ iso: "2026-10-30", label: "30 October 2026" }} />
+      <Updated date={{ iso: "2026-10-31", label: "31 October 2026" }} />
       <p className="lg-lead">
         Your code, plans and task documents stay on your computer. Code your team reviews travels only to your own Git remote. QualityLayer receives only what you share with your team (a review comment can quote a few lines of code), a daily licence check, and reports you choose to send. What you share is encrypted on your computer first; we cannot read it.
       </p>
@@ -94,8 +94,8 @@ function Privacy() {
       </p>
       <h3>Share links</h3>
       <p>A link's content is sealed with a key that sits after the # in the link and never reaches our server. Links and the comments on them end after 14 days.</p>
-      <h3>Slack</h3>
-      <p>If a team owner connects Slack, the task title and the question are sent to Slack Technologies (USA) to deliver the message. The waiting message is sealed and deleted after 72 hours.</p>
+      <h3>Slack and email</h3>
+      <p>If a team owner connects Slack, task titles, questions and participant names are sent to Slack Technologies (USA) to deliver messages. Email uses Resend (USA) to send these details to your seat address only when both you and the team owner enable it. A permanent bounce or spam complaint turns your email off. You can also turn it off in Settings or from any message. Queued text is encrypted and removed after 72 hours.</p>
 
       <h2>Feedback reports</h2>
       <p>

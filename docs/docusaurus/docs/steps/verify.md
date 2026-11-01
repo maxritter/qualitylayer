@@ -15,7 +15,7 @@ Your agent runs checks and independent review, then fixes the findings. Unresolv
 
 ## The checks {#lanes}
 
-Every change gets the same checks, small ones included. Deterministic checks give the same result every time. Independent agents read intent and run the program.
+Project commands and security scans produce recorded results. Separate agents review the code and its behavior.
 
 ![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
 ![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
@@ -26,16 +26,17 @@ Every change gets the same checks, small ones included. Deterministic checks giv
 | --- | --- |
 | **Project checks** | Your tests, types, lint and build, run on the committed build and recorded. A red check is a record, not a stop: the reviewer rules on it |
 | **Code health** | Complexity and duplication in the files your agent changed, reported to it after each turn as feedback. [Code health](../reference/code-health.md) |
+| **Security scans** | Local scans for secrets, dependency advisories, GitHub workflows and risky code. Unavailable scans stay **not checked**. [Security scans](../reference/code-health.md#security-scans) |
 | **Recorded proof** | A **Done means** point passes only with evidence: a check's output, a captured response, a screenshot or a file |
 
 **Independent agents**
 
 | Check | What it does |
 | --- | --- |
-| **Security review** | First, when the Plan names a trust boundary such as sign-in, secrets or outside input. A separate agent reviews the change; your agent fixes what it finds. Medium and low findings go into the pull request |
+| **Security review** | Runs beside the project checks when the change crosses a trust boundary or edits agent controls. Your agent fixes critical and high findings before independent review; remaining findings stay visible |
 | **Independent review** | An agent that did not write the code. It adds the tests the build missed, runs the scenarios on the running program and compares changed screens with their artifacts. It reads the whole diff and records a verdict for every **Done means** point. Red checks are its evidence |
 | **Design review** | A separate agent checks each finished design before you see it, unless you change **Design review** in [Settings](../reference/settings.md) |
-| **Second opinion** | Beside the independent review on a risky change, or always when [Settings](../reference/settings.md#second-opinion) say so. A separate reviewer checks for breakage. Your agent answers each finding **Taken** or **Kept** |
+| **Second opinion** | On risky changes when enabled in [Settings](../reference/settings.md#second-opinion), or when requested, a reviewer from another agent family checks for breakage. Your agent records each finding as **Taken** or **Kept** |
 
 If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify records **Checked without an independent judge**.
 
@@ -43,11 +44,11 @@ If you turn **Independent review** off in [Settings](../reference/settings.md#in
 
 If the independent review finds gaps, your agent fixes them and commits. A second reviewer rechecks the failures and affected code. That is the limit: two runs.
 
-What is still open afterwards goes to Review with the open items first, from either reviewer and from the second opinion. **Fix open items** there runs one more round on just those items.
+What remains open stays visible in Review. Use **Give feedback** to ask for a fix; your agent rechecks the affected work.
 
 ## Proof for each point {#live}
 
-Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and blocked points come first; open a check for its commands and output.
+Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and checking points come first, then those that are **yours to confirm**, then points still to check and passed points. Groups of more than two **to check** or **passed** points fold into one row. Open a check for its commands and output.
 
 ## What reaches Review {#when-it-stops}
 

@@ -5,7 +5,6 @@ import "./index.css";
 import "./styles/factory.css";
 import "./styles/tour.css";
 import "./styles/minimal.css";
-import "./styles/closeup.css";
 
 applySavedTheme();
 

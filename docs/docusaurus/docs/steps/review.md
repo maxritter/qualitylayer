@@ -18,8 +18,8 @@ The final approval is yours. Review opens the code alongside the complete change
 | Part | What you read |
 | --- | --- |
 | **Code** | The complete change, with line comments |
-| **Checks** | Every check and its recorded result, including failures and unverified work |
-| **Screens** | The changed screens and their comparison evidence |
+| **Checks and outcomes** | Every check and its recorded result, including failures and unverified work |
+| **Screenshots** | The changed screens and their comparison evidence |
 | **Change details** | The complete change record, decisions and amendments |
 | **Open items** | What remains unresolved; approval never marks it passed |
 
@@ -27,7 +27,7 @@ Routine choices stay under **Decided while building**. Read them or **Ask why**;
 
 ## The page {#the-page}
 
-The **Review** page opens code review. **Checks**, **Screens** and **Change details** fold below it; each keeps its full content. Supporting records hold full paths, commits and evidence.
+The **Review** page opens code review. **Checks and outcomes**, **Screenshots** and **Change details** fold below it; each keeps its full content. Supporting records hold full paths, commits and evidence.
 
 `07-review.md` keeps the complete record in pull request order; its top becomes the pull request's description. If the task changed a [lasting artifact](../artifacts.md#lasting), you pick which pages to [fold in](../artifacts.md#fold-in).
 
@@ -36,7 +36,7 @@ The **Review** page opens code review. **Checks**, **Screens** and **Change deta
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-light.webp)
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-dark.webp)
 
-**Review the code** opens a file tree and **Unified** or **Split** diff. **Viewed** marks save your reading progress.
+**Review the code** opens a file tree and **Unified** or **Split** diff. **Viewed** marks save your reading progress; **All viewed** and **Clear** set every file at once.
 
 ### Comment on any line {#line-comments}
 

@@ -167,7 +167,7 @@ export const COMPARE: CompareGroup[] = [
     rows: [
       row("Share plans with your team", false, true),
       row("Team feedback goes straight to your agent", false, true),
-      row("Ask a teammate about any part of a plan", false, true, "A Slack message opens it under Questions for you"),
+      row("Ask a teammate about any part of a plan", false, true, "A Slack message or email opens it under Questions for you"),
       row("Teammates answer with their own agent", false, true, "Their agent drafts it; nothing is sent until they approve"),
       row("Follow the progress of every shared task", false, true),
       row("Invite people outside your team to comment", false, true),
@@ -175,7 +175,7 @@ export const COMPARE: CompareGroup[] = [
         "Plans, comments and links are encrypted on your machine",
         false,
         true,
-        "We can’t read them. We see who shared, who was asked, which task, when and its step. The guest page’s code comes from us. With Slack connected, task titles and questions pass through our server to Slack. Pending notifications expire after 72 hours. Review code travels between your computer and your own Git remote. We store your team’s encrypted comments, the short lines of code they quote and the commits they point to.",
+        "We can’t read them. We see who shared, who was asked, which task, when and its step. The guest page’s code comes from us. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. Pending notifications expire after 72 hours. Review code travels between your computer and your own Git remote. We store your team’s encrypted comments, the short lines of code they quote and the commits they point to.",
       ),
       row("Manage seats and billing in one place", false, true),
     ],

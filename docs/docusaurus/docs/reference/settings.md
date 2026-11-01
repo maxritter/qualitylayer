@@ -14,10 +14,10 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | --- | --- |
 | **New tasks** | **Engineering** (default) or **Product** ([two levels](../intro.md#two-levels)); change per task until the Plan is approved |
 | [Your instructions](#instructions) | Standing instructions for every task |
-| [Independent review](#independent-review) | **On** (recommended) or **Off** |
+| [Independent review](#independent-review) | A switch: on (recommended) or off |
 | [Second opinion](#second-opinion) | **Off** (default) or **Automatic**, once a second coding agent is installed |
 | **Design review** | **Finished designs** (default): a separate agent checks each finished design before you see it. Wireframes are never reviewed |
-| [Scan each change](#security-scans) | **On** (default) or **Off** |
+| [Scan each change](#security-scans) | A switch: on (default) or off |
 | [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
 
 ### Your instructions {#instructions}
@@ -49,7 +49,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ## Agents {#defaults}
 
-**On this computer** lists the seven agents with version, sign-in, integration state and a **Use** switch. Open **⋯ › Models and roles…** for separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
+**On this computer** lists the seven agents with version, sign-in, a check for a ready integration and a **Use** switch. Problems show **Repair**, **Out of date** or **Not installed**. **Models and roles** on the row or in **⋯** opens separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
 
 | **⋯ › Edit launch…** | What it changes |
 | --- | --- |
@@ -63,11 +63,11 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Usage {#usage}
 
-**Plan limits** show remaining Claude Code and Codex usage. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** totals 7 days, 30 days or this month: tokens for subscriptions, estimated cost for API accounts. The two are kept separate.
+**Plan limits** show remaining Claude Code and Codex usage; agents that report none say so. Under **When a limit is used up**, **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** totals 7 days, 30 days or this month: tokens for subscriptions, estimated cost for API accounts. The two are kept separate.
 
 ## Sessions {#sessions}
 
-**Running now** lists running agents; **Stop idle** stops the idle ones, which keep their conversation.
+**Running now** lists running agents; **Stop N idle** stops the idle ones, which keep their conversation. Stopping several asks for confirmation.
 
 | Setting | Choices |
 | --- | --- |
@@ -77,7 +77,7 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Notifications {#notifications}
 
-**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies.
+**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies. Under **Away from this computer**, choose **Slack messages**, **Email messages** and an optional **Morning digest**. Email reaches your seat address once the team owner enables it and Slack doesn't reach you ([Slack and email](../team/plans.md#slack)).
 
 ## Git and editor {#git-and-editor}
 
@@ -91,7 +91,7 @@ Only the App, or a browser paired with its key, can change these.
 | **Text size** | 90%, 100% (default), 115% or 130% for the installed App window. ⌘+/⌘− resize; ⌘0 resets (Ctrl on Windows/Linux). A browser tab uses its own zoom |
 | **Font** | Geist (default), System or Atkinson Hyperlegible. Code, paths and the agent terminal keep their own fonts |
 | **Task rows** | Detailed, Two lines or One line |
-| **Agent terminal** | Its own font, size, colours and scrollback; **Reset to recommended** restores defaults |
+| **Agent terminal** | **Font size** and **Colours** stay in view; **More terminal settings** holds font, weight, spacing, cursor and scrollback. **Reset to recommended** restores defaults |
 
 ## Memory {#memory}
 
@@ -99,15 +99,16 @@ Pause, search or retire lessons, including **Yours**, the lessons about you. **M
 
 ## Licence
 
-Your plan or trial, and **Open billing account**. **On another computer** shows how to move the licence; if no activation is free, run `qualitylayer licence deactivate` on the old machine or write to hello@qualitylayer.dev.
+Your plan or trial, and **Open billing account**. Each licence key works on 3 computers; on Team, every seat has its own key. **On another computer** shows how to move the licence. When all 3 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
 
 ## Team
 
 | Part | What it holds |
 | --- | --- |
-| **People and groups** | Seats and members, with a local name or email search, an **Owner** / **Member** filter and pages of 12. Invited members and **key waiting** badges stay listed. Groups limit who sees a shared task |
+| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **key waiting** badges stay listed. Groups limit who sees a shared task |
 | [Team instructions](#team-instructions) | Instructions for every teammate's agent |
-| **Slack** | Workspace connection and each person's messages ([Slack](../team/plans.md#slack)) |
+| **Slack** | Workspace connection and your own Slack account; **Slack messages** is in Notifications ([Slack and email](../team/plans.md#slack)) |
+| **Email** | Turns email on for the team and shows how each teammate is reached |
 | **Shared links** | **Copy** and **Revoke** |
 
 ### Team instructions {#team-instructions}

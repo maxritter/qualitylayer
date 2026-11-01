@@ -72,7 +72,7 @@ The App updates itself: click **Update ready**, then **Restart and update**. Wit
 
 ## Remove it {#uninstall}
 
-`qualitylayer uninstall` undoes what the installer changed; your plans stay. To move your licence, run `qualitylayer licence activate <key>` on the other computer.
+`qualitylayer uninstall` undoes what the installer changed; your plans stay. To move your licence, run `qualitylayer licence activate <key>` on the other computer; a key works on 3 computers ([Licence](reference/settings.md#licence)).
 
 ### On Windows {#uninstall-windows}
 

@@ -35,7 +35,7 @@ More in [agent runs](app.md#agent-runs). Seven agents have [native setup](agents
 <summary>Good to know</summary>
 
 - Say QualityLayer or QL when you ask the agent to start work. Follow-up answers continue the task; no slash command is needed.
-- **Skip for now** moves to the next question; **Tell me more** asks for detail.
+- Answer in any order from the numbered strip; **Tell me more** asks for detail.
 - Select a passage to give feedback. It reaches the agent when it next reads the task; a stopped or disconnected agent cannot answer yet.
 - You can stop or pause the run. Your agent's own permission and sign-in prompts still need your response.
 - To continue elsewhere, stop the active run and ask: “Using QL, continue task retry-webhooks.” The Plan and evidence stay with the task.

@@ -20,7 +20,7 @@ import "@/styles/billing.css";
 type Action = { kind: string; title: string; copy: string; label: string; subscription: Subscription; quote?: BillingQuote; seatId?: string; email?: string; step?: 1 | 2 | 3; reasons?: string[]; note?: string };
 /** Why people cancel: any number may be ticked, and none is required (§312k BGB keeps cancelling free of hurdles). */
 const CANCEL_REASONS = ["Too expensive", "I don’t use it enough", "Missing a feature I need", "Moving to another tool", "Hard to set up or use", "Bugs or reliability", "The project ended", "Something else"];
-const cancelStart = (subscription: Subscription): Action => ({ kind: "cancel", step: 1, reasons: [], note: "", title: "Before you cancel", copy: "What made you decide to cancel? Pick any that apply. Max reads every answer and may reply by email.", label: "Continue", subscription });
+const cancelStart = (subscription: Subscription): Action => ({ kind: "cancel", step: 1, reasons: [], note: "", title: "Before you cancel", copy: "What made you decide to cancel? Pick any that apply.", label: "Continue", subscription });
 const PAGE_SIZE = 10;
 
 function RecordPages({ page, count, label, onChange }: { page: number; count: number; label: string; onChange: (page: number) => void }) {
@@ -216,7 +216,7 @@ export default function Billing() {
       {dialog.subscription.status === "active" && !dialog.subscription.pauseScheduled && <div className="bl-offer"><div><strong>Pause instead?</strong><span>No charges while paused. Your plans and settings stay; resume any time.</span></div><Button variant="outline" disabled={busy} onClick={() => setDialog({ kind: "pause", title: "Pause subscription?", copy: `Your subscription pauses on ${billingDate(dialog.subscription.periodEnd)}. Access stops while paused. Resuming starts a new paid billing period.`, label: "Pause at period end", subscription: dialog.subscription })}>Pause instead</Button></div>}
     </>}
     {dialog?.kind === "cancel" && dialog.step === 2 && <dl className="bl-details"><div><dt>Access until</dt><dd>{billingDate(dialog.subscription.periodEnd)}</dd></div><div><dt>Plan</dt><dd>{dialog.subscription.name}{dialog.subscription.seats ? ` · ${dialog.subscription.seats} seats` : ""} · {dialog.subscription.interval === "year" ? "Yearly" : "Monthly"}</dd></div><div><dt>Your reasons</dt><dd>{[...(dialog.reasons ?? []), dialog.note?.trim() ? `“${dialog.note.trim()}”` : ""].filter(Boolean).join(" · ") || "None given"}</dd></div></dl>}
-    {dialog?.kind === "cancel" && dialog.step === 3 && (dialog.reasons?.length || dialog.note?.trim()) ? <p className="bl-sent">Thanks for telling us why. Your answer went to Max, who may reply by email.</p> : null}
+    {dialog?.kind === "cancel" && dialog.step === 3 && (dialog.reasons?.length || dialog.note?.trim()) ? <p className="bl-sent">Thanks for telling us why.</p> : null}
     {error && <p role="alert" className="bl-dialog-error">{error}</p>}
     {dialog?.kind === "cancel" ? <div className="bl-actions">
       {dialog.step === 3 ? <><Button disabled={busy} onClick={() => setDialog(null)}>Close</Button><Button variant="outline" disabled={busy} onClick={() => setDialog({ kind: "uncancel", title: "Keep subscription?", copy: "Your subscription continues at its existing price.", label: "Keep subscription", subscription: dialog.subscription })}>Keep subscription after all</Button></>

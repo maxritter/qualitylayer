@@ -51,7 +51,7 @@ describe("actual React SDK registrations", () => {
     }
   });
 
-  it.each(["/s/FAKE-SHARE#FAKE-KEY", "/billing?code=FAKE", "/checkout/success?checkout_id=FAKE", "/open/ask/FAKE/FAKE", "/invite/FAKE"])("does not initialize either SDK at %s", async (path) => {
+  it.each(["/s/FAKE-SHARE#FAKE-KEY", "/billing?code=FAKE", "/checkout/success?checkout_id=FAKE", "/open/ask/FAKE/FAKE", "/invite/FAKE", "/notifications?off=FAKE"])("does not initialize either SDK at %s", async (path) => {
     await show(path);
     expect(calls.va).toEqual([]);
     expect(calls.si).toEqual([]);

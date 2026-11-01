@@ -72,13 +72,13 @@ describe("HTML available before JavaScript runs", () => {
     expect(schemas(renderedHtml(template, head, body))).toEqual(data);
   });
 
-  it.each(["/billing", "/checkout/success", "/shared", "/open"])("keeps the %s shell out of search results", async (route) => {
+  it.each(["/billing", "/checkout/success", "/shared", "/open", "/notifications"])("keeps the %s shell out of search results", async (route) => {
     const { head, body } = await render(route);
     expect(head).toContain("noindex");
     expect(body).not.toContain("hero-h");
   });
 
-  it.each([...Object.keys(PUBLIC_PAGES), "/404", "/billing", "/checkout/success", "/shared", "/open"])("gives %s a complete Open Graph head without executable inline scripts", async (route) => {
+  it.each([...Object.keys(PUBLIC_PAGES), "/404", "/billing", "/checkout/success", "/shared", "/open", "/notifications"])("gives %s a complete Open Graph head without executable inline scripts", async (route) => {
     const { head, body } = await render(route);
     const html = renderedHtml(template, head, body);
     for (const key of ["og:title", "og:description", "og:image", "og:url", "og:type"]) {
@@ -131,7 +131,7 @@ describe("HTML available before JavaScript runs", () => {
     })));
   });
 
-  it.each(["/download", "/404", "/billing", "/checkout/success", "/shared", "/open"])("does not invent a FAQ or product schema for %s", async (route) => {
+  it.each(["/download", "/404", "/billing", "/checkout/success", "/shared", "/open", "/notifications"])("does not invent a FAQ or product schema for %s", async (route) => {
     expect(schemas((await render(route)).head)).toEqual([]);
   });
 

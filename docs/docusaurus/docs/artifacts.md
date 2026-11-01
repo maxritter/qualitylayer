@@ -26,16 +26,16 @@ Press **C**, click a spot and say what should change; your agent edits the page 
 ![The artifact Library, grouped by project, with search, Favorites, List and Gallery views](pathname:///img/app/artifacts-light.webp)
 ![The artifact Library, grouped by project, with search, Favorites, List and Gallery views](pathname:///img/app/artifacts-dark.webp)
 
-**Artifacts** in the sidebar holds the **Library**: filter **Yours** or **Shared with you**, switch **List** or **Gallery**, star **Favorites**. The row menu renames, copies, archives or deletes; **Archived › Recently deleted** restores.
+**Artifacts** in the sidebar holds the **Library**: choose **All**, **Yours**, **Shared with you** or **Archived**, narrow with **Filters**, and switch **List** or **Gallery**. Starred **Favorites** appear above the list. The row menu renames, copies, archives or deletes; **Archived › Recently deleted** restores.
 
 ## Lasting artifacts {#lasting}
 
-![A lasting artifact, acme/platform's Backend: how a request travels through the gateway to its stores, with Feedback, The agent and Share in its header](pathname:///img/app/artifacts-open-light.webp)
-![A lasting artifact, acme/platform's Backend: how a request travels through the gateway to its stores, with Feedback, The agent and Share in its header](pathname:///img/app/artifacts-open-dark.webp)
+![A lasting artifact, acme/platform's Backend: how a request travels through the gateway to its stores, with Feedback, the agent and Share in its header](pathname:///img/app/artifacts-open-light.webp)
+![A lasting artifact, acme/platform's Backend: how a request travels through the gateway to its stores, with Feedback, the agent and Share in its header](pathname:///img/app/artifacts-open-dark.webp)
 
 ### Keep a draft {#keep}
 
-**Keep as a lasting artifact…** stores it **In the repository** (travels with commits) or **Only on this computer** (out of Git). To change a lasting artifact, ask your agent to draft on it; to restore a revision, ask too.
+**Save to library…** in a draft's menu stores it **In the repository** (travels with commits) or **Only on this computer** (out of Git). To change a lasting artifact, ask your agent to draft on it; to restore a revision, ask too.
 
 ### Fold in at Review {#fold-in}
 
@@ -43,7 +43,7 @@ The original stays until Review shows **This task changes …**: pick the pages 
 
 ## Share {#team-shared}
 
-With a Team plan, **Share › Team** opens the real pages in teammates' Apps. Every save keeps a version.
+With a Team plan, **Share › Team** opens the real pages in teammates' Apps. Every save keeps a version. While local edits wait to be shared, **Share** becomes **Save for the team**.
 
 | Access | Can |
 | --- | --- |

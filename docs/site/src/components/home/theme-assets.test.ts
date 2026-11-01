@@ -16,15 +16,6 @@ const contrast = (foreground: string, background: string) => {
 };
 
 describe("illustrations in both themes", () => {
-  it("keeps the drawn artifact and its thumbnails on the site's theme palette", () => {
-    const css = read("docs/site/src/styles/closeup.css");
-    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selector]) => /\.cu-(?:dp|dz)/.test(selector));
-    expect(rules.length).toBeGreaterThan(12);
-    for (const [rule, selector] of rules) {
-      expect(rule, selector).not.toMatch(/#[\da-f]{3,8}\b|\b(?:rgb|hsl)a?\(/i);
-    }
-  });
-
   it("keeps README theme pairs and a directly linked video poster", () => {
     const markdown = read("README.md");
     const pictures = [...markdown.matchAll(/<picture>([\s\S]*?)<\/picture>/g)];
@@ -63,7 +54,7 @@ describe("illustrations in both themes", () => {
   });
 
   it("uses the stronger accent for text on tinted surfaces and themes the docs footer itself", () => {
-    for (const file of ["tour.css", "closeup.css", "shared.css", "factory.css"]) {
+    for (const file of ["tour.css", "shared.css", "factory.css"]) {
       const css = read(`docs/site/src/styles/${file}`);
       for (const [rule] of css.matchAll(/[^{}]+\{[^{}]*\}/g)) {
         if (/background:var\(--ql-accent-soft\)|background:color-mix\(in srgb,var\(--ql-accent\)/.test(rule)) {

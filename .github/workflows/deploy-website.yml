@@ -191,7 +191,7 @@ jobs:
           export DATABASE_URL
           export MIGRATION_DATABASE_URL="$DATABASE_URL"
           node scripts/db-migrate.ts
-          node scripts/db-beta9.ts
+          node scripts/db-beta9.ts --email-schema api/_lib/beta9-email-schema.sql
 
       # qualitylayer.dev is the Production of the Vercel project qualitylayer, built from
       # Main on the stable path; this disabled lane retains SITE_PRODUCTION_BRANCH handling. Another branch

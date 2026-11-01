@@ -56,7 +56,7 @@ export default function prerenderPlugin(): Plugin {
       });
       try {
         const { render } = await server.ssrLoadModule("/src/prerender.tsx");
-        for (const route of [...Object.keys(PUBLIC_PAGES), "/404", "/billing", "/checkout/success", "/shared", "/open"]) {
+        for (const route of [...Object.keys(PUBLIC_PAGES), "/404", "/billing", "/checkout/success", "/shared", "/open", "/notifications"]) {
           const { head, body } = await render(route);
           const css = [...new Set(styles(entries[route]))].filter((file) => !template.includes(`href="/${file}"`))
             .map((file) => `<link rel="stylesheet" href="/${file}">`).join("\n");

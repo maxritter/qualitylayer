@@ -45,10 +45,10 @@ test("Chat is under App and team and leads with its themed workspace image", () 
   assert.match(appAndTeam, /<a\b[^>]*href="\/docs\/chat"/);
   const article = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/)?.[1];
   assert.ok(article, "Chat must render a guide article");
-  const firstImage = article.indexOf("/img/app/chat-light.png");
+  const firstImage = article.indexOf("/img/app/chat-light.webp");
   const firstSection = article.indexOf('id="start"');
   assert.ok(firstImage >= 0 && firstSection > firstImage, "The full workspace image must precede the how-to sections");
-  assert.match(article, /\/img\/app\/chat-dark\.png/);
+  assert.match(article, /\/img\/app\/chat-dark\.webp/);
 });
 
 test("the built guides explain current answers, complete Plan approval and live sharing", () => {
@@ -56,7 +56,7 @@ test("the built guides explain current answers, complete Plan approval and live 
   assert.match(discuss, /Your turn/);
   assert.match(discuss, /Answer in any order/);
   assert.match(discuss, /one question at a time/);
-  assert.match(discuss, /Skip for now/);
+  assert.match(discuss, /Use recommended/);
   assert.match(discuss, /your own answer/i);
   assert.match(discuss, /Send/);
   assert.match(discuss, /immediately/);
@@ -80,16 +80,18 @@ test("the built App guides use Files, Feedback and Agent and explain the current
   assert.match(app, /Feedback/);
   assert.match(app, /Agent/);
   assert.match(app, /Working artifacts are compact entries in/);
-  assert.match(app, /Open artifact canvas/);
-  assert.match(app, /document header/);
+  assert.match(app, /Open full size/);
+  assert.match(app, /Copy document/);
   assert.match(app, /Agent status/);
   assert.match(app, /(?:Dollar amounts|Amounts) stay hidden until you open it/);
-  assert.match(app, /tokens unpriced/);
+  assert.match(app, /Usage history/);
   assert.doesNotMatch(app, /Artifacts.{0,20}tab|Comments.{0,30}Files.{0,30}and.{0,30}Artifacts/);
-  assert.match(page("steps/implement/"), /In the App/);
-  assert.match(page("steps/implement/"), /In my terminal/);
+  assert.match(text("steps/implement/"), /Approve (?:&amp;|&) start/);
+  assert.match(text("steps/implement/"), /Approve (?:&amp;|&) copy prompt.{0,30}your terminal/);
   assert.match(page("steps/implement/"), /Start the build/);
-  assert.match(text("steps/implement/"), /An installed native agent, or Another agent for your terminal/);
+  for (const field of ["Agent", "Lead", "Effort", "Subagent default", "Files for the build", "Workspace"]) {
+    assert.ok(text("steps/implement/").includes(field), `The build guide must explain ${field}`);
+  }
   assert.doesNotMatch(page("steps/implement/"), /Start with (?:Codex|Claude Code)/);
   // The "Build it yourself or hand it to a teammate" row went with the team hand-over (2d1a756d2).
   assert.doesNotMatch(page("steps/implement/"), /Hand over|hand it to a teammate/);

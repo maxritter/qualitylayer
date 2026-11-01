@@ -16,7 +16,7 @@ Describe the change with **+ New**, or ask your agent: “Using QL, plan a CSV e
 ## Answer the batch {#the-question}
 
 1. **Your turn** shows one question at a time. Pick a choice, or write your own answer and press **Send**.
-2. Answer in any order. **Skip for now** moves on; **Tell me more** explains.
+2. Answer in any order from the numbered strip. **Use recommended** takes the agent's recommendation; **Tell me more** explains.
 3. Each answer reaches your agent immediately. Another question comes only if an answer or finding raises a new decision.
 
 [Research](research.md) can start while you answer ([all controls](../app.md#questions)).

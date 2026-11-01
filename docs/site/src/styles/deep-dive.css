@@ -54,3 +54,6 @@
   .dd-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "card" "more";row-gap:32px}
   .dd-card{position:static;max-width:560px}
 }
+.dd-solo{max-width:460px;margin:0 auto}
+.dd-solo .dd-card{position:static}
+.dd-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

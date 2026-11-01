@@ -20,26 +20,26 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 ## The sidebar {#sidebar}
 
-Projects are repositories on this computer; tasks waiting on you come first, and each row shows its stage. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
+Projects are repositories on this computer; tasks waiting on you come first, and a detailed row shows its step on a seven-part strip. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
 
-**View** regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Clear filters** resets.
+**View options** (the sliders icon) filters by name, regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Reset filters** clears them.
 
 **⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file, **⇧⌘N** starts a task.
 
 ## Home {#home}
 
-**Needs you** lists your questions, approvals and teammates' requests; each opens the exact spot. **Running** shows your agents' work. The App notifies you only when you can act:
+**Needs you** lists your questions, approvals and teammates' requests; each opens the exact spot. **Running** shows your agents' work. Each list shows ten rows, then **Show N more**. The App notifies you only when you can act:
 
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-light.svg)
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-dark.svg)
 
 ## Answering questions {#questions}
 
-**Your turn** shows one question at a time. Press **1–9** for a choice (**Enter** takes the recommended one), **Tab** to write your own and **Send**, or **M** for **Tell me more**. **Skip for now** lets you answer in any order. Each answer reaches your agent at once and never approves anything.
+**Your turn** shows one question at a time; its numbered strip lets you answer in any order. Press **1–9** for a choice, **R** for the recommended one, **A** for all recommended answers in a batch, **T** to write your own and **Send**, or **M** for **Tell me more**. **Enter** takes the recommendation when the card is focused. Each answer reaches your agent at once and never approves anything.
 
 ## Documents and feedback {#comments-and-artifacts}
 
-**Files** holds every document, artifact, review and record, plus **Review the code**; **Reader** shows a whole document, and **Copy document** in the document header copies it. Working artifacts are compact entries in **Files**; **Open artifact canvas** opens the full page.
+**Files** holds every document, artifact, review and record, plus **Review the code**. **Reader** shows a whole document; its bar holds **On this page**, risky sections and **Copy document**. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
 
 Select a passage or part of a diagram and choose **Give feedback**. **To** picks the agent, a teammate or **Everyone on the task**.
 
@@ -47,14 +47,14 @@ Select a passage or part of a diagram and choose **Give feedback**. **To** picks
 
 Open **Changes** in the task header or **Review the code** in Files. The view keeps this workflow’s changes together. Choose one file or all files, switch **Unified / Split**, and use **Full file › Version** to read an exact revision.
 
-**Viewed** records your reading progress. Mark a file, a group or all files viewed or unviewed. Finishing code review and approving the change are separate actions.
+**Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. Finishing code review and approving the change are separate actions.
 
 ## What it costs {#cost}
 
 ![The cost panel: the total, each step with its time, tokens and cost, and each agent named after its work](pathname:///img/diagrams/cost-light.svg)
 ![The cost panel: the total, each step with its time, tokens and cost, and each agent named after its work](pathname:///img/diagrams/cost-dark.svg)
 
-**Cost** in the task header estimates each step from list prices and local logs. Amounts stay hidden until you open it; unknown prices show **tokens unpriced**.
+**Cost** in the task header estimates each step from list prices and local logs. Amounts stay hidden until you open it; an unknown price shows a dash. **Usage history** opens Settings › Usage.
 
 ## Agent runs {#agent-runs}
 
@@ -65,7 +65,7 @@ When you start a task or the build, choose where the agent runs:
 | **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
 | **In my terminal** | Copy one prompt into any coding agent. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
 
-Closing the sidebar keeps the run. Use **Interrupt** or **Stop** in the agent menu, **Resume** to return, or **Move to my terminal**.
+Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's controls, and **Resume** to return.
 
 **Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: model, effort, [permission mode](agents/native.md#permission-modes) and context.
 

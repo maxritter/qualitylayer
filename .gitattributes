@@ -8,6 +8,7 @@ docs/site/scripts/team-data.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/restore.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/db-migrate.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/db-beta9.ts filter=git-crypt diff=git-crypt
+docs/site/scripts/beta9-catalog.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/prepare-beta-backend.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/prepare-beta-backend.test.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/upload-workflow.ts filter=git-crypt diff=git-crypt
@@ -23,6 +24,7 @@ docs/site/scripts/website-screenshots.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/*.test.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/backup-recipient.txt filter=git-crypt diff=git-crypt
 docs/site/scripts/blog-contextual-links-proposal.md filter=git-crypt diff=git-crypt
+docs/site/scripts/demo/** filter=git-crypt diff=git-crypt
 docs/site/workers/feedback-store/** filter=git-crypt diff=git-crypt
 scripts/cutover.sh filter=git-crypt diff=git-crypt
 qualitylayer/** filter=git-crypt diff=git-crypt

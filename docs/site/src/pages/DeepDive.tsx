@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { CircleCheck, Mail, MailCheck, MailX, Play, type LucideIcon } from "lucide-react";
+import { CircleCheck, Mail, MailCheck, MailX, Play } from "lucide-react";
+import Done from "@/components/DoneCard";
 import Page from "@/components/Page";
 import SEO from "@/components/SEO";
 import { Button } from "@/components/ui/button";
@@ -25,17 +26,6 @@ async function post(path: string, body: unknown, invalid: string, failed: string
   if (!response.ok) throw new Error(failed);
 }
 const messageOf = (err: unknown) => (err instanceof Error && err.message ? err.message : "Please try again.");
-
-/** A finished state in the card: an icon, a heading and what happens next. */
-function Done({ icon: Icon, title, heading, children, live = true }: { icon: LucideIcon; title: string; heading?: Ref<HTMLHeadingElement>; children: ReactNode; live?: boolean }) {
-  return (
-    <div className="dd-done" role={live ? "status" : undefined}>
-      <Icon size={20} aria-hidden="true" />
-      <h2 ref={heading} tabIndex={heading ? -1 : undefined}>{title}</h2>
-      {children}
-    </div>
-  );
-}
 
 /** The form: email and consent. Asking sends the confirmation mail; nothing is stored before it is opened. */
 function Ask({ notice, onSent }: { notice: string; onSent: (email: string) => void }) {

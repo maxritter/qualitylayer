@@ -27,14 +27,16 @@ function world() {
   const model = join(root, "qualitylayer/artifacts/site/website-model/docs");
   mkdirSync(model, { recursive: true });
   cpSync(join(realModel, "render.mjs"), join(model, "render.mjs"));
+  cpSync(join(realModel, "assets.json"), join(model, "assets.json"));
   cpSync(join(realModel, "assets"), join(model, "assets"), { recursive: true });
   // marked comes from the real QualityLayer install; the copy is only read through the link.
   symlinkSync(join(realQualityLayer, "node_modules"), join(root, "qualitylayer/node_modules"), "junction");
   // The shared assets sit where the check looks for them, equal to the model's own.
-  for (const name of readdirSync(join(model, "assets"))) {
-    const target = name === "palette.css" ? "qualitylayer/src/ui/brand" : /^(?:geist|OFL)/.test(name) ? "docs/docusaurus/static/fonts" : name.startsWith("product-") ? "docs/site/public/product" : "docs/docusaurus/static/img/app";
-    mkdirSync(join(root, target), { recursive: true });
-    cpSync(join(model, "assets", name), join(root, target, name.replace(/^product-/, "")), { recursive: true });
+  const assets = JSON.parse(readFileSync(join(model, "assets.json"), "utf8"));
+  for (const [name, source] of Object.entries(assets)) {
+    const target = join(root, source);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(model, "assets", name), target);
   }
   const world = {
     root,

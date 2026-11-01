@@ -1,5 +1,5 @@
 /* The frame every page shares and the pricing page, ported from the Claude Design project "QualityLayer Website".
-   w7- frame and sections, pr- pricing; the home page's tour lives in tour.css. Keep them in step with the artifact. */
+   w7- frame and sections, pr- pricing; Hero and install-action base rules live in tour.css. Keep them in step with the artifact. */
 
 /* ---- Frame: the shell, header, sections and footer ---- */
 .w7-root{container:page / inline-size;min-height:100vh;background:var(--ql-bg);color:var(--ql-text);font-family:Geist,system-ui,sans-serif}

@@ -186,7 +186,7 @@ Seven steps take a change from questions to review, with decisions and checks sa
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. |
 | **Checks and code review** | Read the evidence and file diffs, and comment on any line. |
 | **Agent controls and usage** | Choose your model, effort and permissions; track usage. [Settings](https://qualitylayer.dev/docs/reference/settings). |
-| **Memory and team** | Reuse [lessons](https://qualitylayer.dev/docs/memory) about each project and how you work, ask teammates over Slack and [share work](https://qualitylayer.dev/docs/team/plans). |
+| **Memory and team** | Reuse [lessons](https://qualitylayer.dev/docs/memory) about each project and how you work, ask teammates over Slack or email and [share work](https://qualitylayer.dev/docs/team/plans). |
 
 QualityLayer keeps task files on your computer and encrypts shared tasks first. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).
 

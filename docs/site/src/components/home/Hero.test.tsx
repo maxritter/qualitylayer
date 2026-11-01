@@ -30,7 +30,7 @@ it("shows the App at your turn beside the copy, light and dark, with a phone cro
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");
     expect(phone.getAttribute("srcset")).toBe(`/hero/your-turn-${theme}.webp`);
-    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["724", "609"]);
+    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["728", "776"]);
   }
 });
 

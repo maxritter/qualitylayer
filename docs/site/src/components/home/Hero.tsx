@@ -29,7 +29,7 @@ function HeroShot() {
         <figure className="sx-shot">
           {(["light", "dark"] as const).map((theme) => (
             <picture key={theme} className={`sx-shot-${theme}`}>
-              <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${theme}.webp`} width={724} height={609} />
+              <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${theme}.webp`} width={728} height={776} />
               <img src={`/product/plan-${theme}.webp`} alt={SHOT_ALT} width={2664} height={1904} decoding="async" />
             </picture>
           ))}

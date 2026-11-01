@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sharedArtifactSources, SHARED_ARTIFACT_NAME } from "@ql/core/artifact/sharing";
 import SEO from "@/components/SEO";
 import { useTheme } from "@/hooks/useTheme";
+import "@/lib/sharing/fragments";
 import { addRemark, answerItem, type Drafts, EMPTY, pending, removeRemark, summary } from "@/lib/sharing/drafts";
 import { contractsOf, mockupName, planBlocks, slicesOf, screenPairsOf } from "@/lib/sharing/plan";
 import { ArtifactStill } from "./shared/Frame";

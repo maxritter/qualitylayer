@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { artifactMeta } from "@ql/core/artifact/format";
 import { SharedArtifacts } from "@ql/ui/artifact/SharedArtifacts";
 import { useTheme } from "@/hooks/useTheme";
+import "@/lib/sharing/fragments";
 import { newThreadId, type ArtifactRemark, type LoadedShare, type SubmitResult } from "@/lib/sharing/sharing";
 
 type ArtifactShare = Extract<LoadedShare, { kind: "artifact" }>;

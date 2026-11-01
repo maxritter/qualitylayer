@@ -33,6 +33,9 @@
       "css-tree": ["./node_modules/@types/css-tree"],
       "parse5": ["./node_modules/parse5"],
       "dompurify": ["./node_modules/dompurify"],
+      "cn": ["./node_modules/cn"],
+      "lucide-react": ["./node_modules/lucide-react"],
+      "@base-ui/react/*": ["./node_modules/@base-ui/react/*"],
       "@/*": ["./src/*"],
       // The App's Reader is a React component the site draws, not code it type-checks: following its files
       // would pull the App's server and core into this project. The site types the few modules it uses

@@ -261,7 +261,7 @@ function Test-QlOurCommand([string]$Command) {
         return $false
     }
     foreach ($launcher in $script:qlLaunchers) {
-        $plain = '^"?' + [regex]::Escape($launcher) + '"? hook (prompt|activity|ask|live|stop)$'
+        $plain = '^"?' + [regex]::Escape($launcher) + '"? hook (prompt|activity|picker|ask|approve|live|memory-compact|stop)$'
         if ($Command -match $plain) { return $true }
     }
     return $false

@@ -94,11 +94,8 @@ jobs:
           bun run lint
           bun run test:smoke
 
-  # Broad regression runs once on the pushed SHA; ordinary betas use beta-smoke for release.
-  # The whole suite, every file, on Linux and macOS on every push. Each shard holds about the same
-  # recorded seconds (scripts/test-timings.json): three on Linux, six on the slower 3-core macOS
-  # runner. Six Mac shards leave room for setup within the fifteen-minute job limit; the account's
-  # five concurrent Mac slots mean one can queue. Windows runs its own suites below.
+  # Explicit full regression: six balanced shards per OS keep setup and tests within the
+  # fifteen-minute job limit. Mac's five concurrent slots can leave one queued.
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.full_regression
     name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
@@ -109,9 +106,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, shard: 1, shards: 3 }
-          - { os: ubuntu-latest, shard: 2, shards: 3 }
-          - { os: ubuntu-latest, shard: 3, shards: 3 }
+          - { os: ubuntu-latest, shard: 1, shards: 6 }
+          - { os: ubuntu-latest, shard: 2, shards: 6 }
+          - { os: ubuntu-latest, shard: 3, shards: 6 }
+          - { os: ubuntu-latest, shard: 4, shards: 6 }
+          - { os: ubuntu-latest, shard: 5, shards: 6 }
+          - { os: ubuntu-latest, shard: 6, shards: 6 }
           - { os: macos-14, shard: 1, shards: 6 }
           - { os: macos-14, shard: 2, shards: 6 }
           - { os: macos-14, shard: 3, shards: 6 }

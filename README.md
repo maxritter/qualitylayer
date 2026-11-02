@@ -124,18 +124,18 @@ QualityLayer runs only when you ask for it. [Your first task](https://qualitylay
 
 ### Skills your agent gets
 
-Setup installs six skills. Ask in plain language, naming QualityLayer or QL; your agent picks the right one.
+Setup adds skills to your agents. Ask in plain words, in any language. Your agents can also message each other, for example Claude Code asking Codex for a review.
 
-| Skill | What it does |
-| --- | --- |
-| `ql-workflow` | Plan, build, verify and review a change |
-| `ql-artifact` | Create and revise mockups, diagrams and clickable pages |
-| `ql-manage` | Find tasks and manage memory, sharing, settings and setup |
-| `ql-peer` | Coordinate other agent sessions on your computer |
-| `ql-quality` | Review code complexity, structure and duplication |
-| `ql-chat` | Start or continue a Chat, a conversation without workflow steps |
+| Skill | For | You say |
+| --- | --- | --- |
+| `ql-peer` | Agents talking to each other | “Ask Codex to review what you just built.” |
+| `ql-workflow` | Plan, build and review a change | “Using QualityLayer, add rate limits to the export API.” |
+| `ql-chat` | Chat without workflow steps | “Using QualityLayer, chat about the billing refactor.” |
+| `ql-artifact` | Designs, diagrams and pages | “Open the settings design in my browser.” |
+| `ql-quality` | Code health and security scans | “Scan this repository for leaked secrets.” |
+| `ql-manage` | Tasks, sharing, settings, setup | “Share this task with my team.” |
 
-Only `ql-workflow` starts the planning and build workflow; the others work on their own. [More about the skills](https://qualitylayer.dev/docs/agents/native#the-six-skills).
+[More about the skills](https://qualitylayer.dev/docs/agents/native#the-six-skills)
 
 ---
 

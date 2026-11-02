@@ -49,7 +49,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 
 | You get | How it works |
 | --- | --- |
-| **Your own agent and plan** | Claude Code, Codex, Cursor and four more run on the subscription or API key you already have. |
+| **Your own agent and plan** | Claude Code, Codex, Cursor and more run on the subscription or API key you already have. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your lead writes tests before code and delegates independent slices when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |

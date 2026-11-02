@@ -12,7 +12,7 @@ Use **Chat** for a direct conversation with **Claude Code or Codex**, without wo
 
 ## Start a Chat {#start}
 
-Choose **+ New → Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session. Return to the same task to keep its history.
+Choose **+ New › Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session. Return to the same task to keep its history.
 
 ## Questions and tasks {#questions}
 

@@ -59,7 +59,7 @@ export const FAQS: Faq[] = [
   ),
   faq(
     "I use Pilot Shell today. What happens?",
-    "Active Polar licences work with both products. Import lessons in Settings → Memory. Older purchases may need help moving over.",
+    "An active Pilot Shell licence works with both products. Import your Pilot memories in Settings › Memory. Older purchases may need help moving over.",
   ),
 ];
 
@@ -95,6 +95,6 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "I use Pilot Shell 11. What happens?",
-    "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. If it ends, a new subscription uses current prices. Without an active licence, you get a fresh seven-day trial. Import memories per project in Settings → Memory.",
+    "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. If it ends, a new subscription uses current prices. Without an active licence, you get a fresh seven-day trial. Import your Pilot memories per project in Settings › Memory.",
   ),
 ];

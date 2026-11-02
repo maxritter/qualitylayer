@@ -28,11 +28,11 @@ Lessons are reference data, never instructions. Check an older lesson against th
 
 ## Lessons about you
 
-An agent can save how you like to work as a lesson about you. It applies across repositories on this computer and never goes to Git. Find these lessons under **Yours · every project** in **Settings → Memory**.
+An agent can save how you like to work as a lesson about you. It applies across repositories on this computer and never goes to Git. Find these lessons under **Yours · every project** in **Settings › Memory**.
 
 ## Manage your lessons
 
-In **Settings → Memory**, search or edit lessons, pin up to five per project and five of your own, or retire them. Use **Still true** after checking changed files. Lessons left stale for 90 days retire automatically; you can restore them. You can turn off **Lessons in every session** or pause memory.
+In **Settings › Memory**, search or edit lessons, pin up to five per project and five of your own, or retire them. Use **Still true** after checking changed files. Lessons left stale for 90 days retire automatically; you can restore them. You can turn off **Lessons in every session** or pause memory.
 
 <details>
 <summary>See Memory settings</summary>

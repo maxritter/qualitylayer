@@ -24,7 +24,7 @@ Projects are repositories on this computer; tasks waiting on you come first, and
 
 **View options** (the sliders icon) filters by name, regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Reset filters** clears them.
 
-**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file, **⇧⌘N** starts a task.
+**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file in an open task; **⇧⌘N** starts a task in the installed App.
 
 ## Home {#home}
 

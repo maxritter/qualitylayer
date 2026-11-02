@@ -27,7 +27,7 @@ Routine choices stay under **Decided while building**. Read them or **Ask why**;
 
 ## The page {#the-page}
 
-The **Review** page opens code review. **Checks and outcomes**, **Screenshots** and **Change details** fold below it; each keeps its full content. Supporting records hold full paths, commits and evidence.
+The **Review** page opens code review. **Checks and outcomes**, **Screenshots** and **Change details** fold below it; each keeps its full content.
 
 `07-review.md` keeps the complete record in pull request order; its top becomes the pull request's description. If the task changed a [lasting artifact](../artifacts.md#lasting), you pick which pages to [fold in](../artifacts.md#fold-in).
 
@@ -62,7 +62,7 @@ Open comments do not block approval and are not sent to your agent. When the pul
 
 ### Review with your team {#team-review}
 
-**Ask for review** shows the Git remote and commits, then pushes the task's branch to your team's own remote only when you confirm. Teammates with a checkout comment on lines there; others see the walkthrough with file names. QualityLayer stores the team's encrypted comments, the short lines they quote and the commits they point to, never the code ([What is shared](../team/plans.md#privacy)).
+**Ask for review** shows the Git remote and commits, then pushes the task's branch to your team's own remote only when you confirm. Teammates with a checkout comment on lines there; others see the walkthrough with file names ([What is shared](../team/plans.md#privacy)).
 
 ## Approve {#approve}
 

@@ -11,7 +11,7 @@ const LAYERS: { who: "check" | "agent"; id: string; title: string; lead: string;
   {
     who: "check",
     id: "deterministic",
-    title: "Deterministic checks",
+    title: "Project checks",
     lead: "Same input, same result, every time.",
     items: [
       { icon: FlaskConical, title: "Tests and types", text: "Your own commands, recorded." },
@@ -24,10 +24,10 @@ const LAYERS: { who: "check" | "agent"; id: string; title: string; lead: string;
     who: "agent",
     id: "agents",
     title: "Independent agents",
-    lead: "Reviewers that read intent and run the program.",
+    lead: "Reviewers that read your request and run it.",
     items: [
-      { icon: ShieldCheck, title: "Security review", text: "At every trust boundary." },
-      { icon: ScanEye, title: "Fresh reviewer", text: "Never wrote the code." },
+      { icon: ShieldCheck, title: "Security review", text: "Inputs, access and secrets." },
+      { icon: ScanEye, title: "Independent review", text: "An agent that did not write the code." },
       { icon: Palette, title: "Design review", text: "Checks each finished design." },
       { icon: Users, title: "Second opinion", text: "Another coding agent, optional." },
     ],

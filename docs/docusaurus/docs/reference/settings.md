@@ -26,7 +26,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ### Independent review {#independent-review}
 
-**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Auto (Cursor), Grok 4.7 (Grok), Gemini 3.8 Flash (High) (Antigravity).
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Opus 5.5 (High) (Cursor), Grok 4.7 (Grok), Claude Opus 4.6 (Antigravity).
 
 ### Second opinion {#second-opinion}
 
@@ -105,7 +105,7 @@ Your plan or trial, and **Open billing account**. Each licence key works on 3 co
 
 | Part | What it holds |
 | --- | --- |
-| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **key waiting** badges stay listed. Groups limit who sees a shared task |
+| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **Waiting for the team key** badges stay listed. Groups limit who sees a shared task |
 | [Team instructions](#team-instructions) | Instructions for every teammate's agent |
 | **Slack** | Workspace connection and your own Slack account; **Slack messages** is in Notifications ([Slack and email](../team/plans.md#slack)) |
 | **Email** | Turns email on for the team and shows how each teammate is reached |

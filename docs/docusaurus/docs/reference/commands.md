@@ -50,6 +50,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 | --- | --- |
 | Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
+| Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
 | [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |

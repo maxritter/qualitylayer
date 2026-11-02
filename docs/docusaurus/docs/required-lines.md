@@ -31,7 +31,7 @@ Make a check, tool or skill part of a step. The agent does it or says why it ski
 
 ## Add one
 
-- **App**: Settings → Workflow → **Your instructions** → **Steps**. The team's owner uses Settings → Team.
+- **App**: Settings › Workflow › **Your instructions** › **Steps**. The team's owner uses Settings › Team.
 - **Your agent**: “Make a Wiz scan required in Verify.”
 - **CLI**: `qualitylayer instructions add verify "<line>"`. See [Commands](reference/commands.md).
 

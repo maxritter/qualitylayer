@@ -5,6 +5,7 @@ import { PUBLIC_PAGES } from "./src/lib/seo.ts";
 import { COMPARISON_PATHS } from "./src/lib/comparisons.ts";
 import { LEGAL_PATHS } from "./src/lib/legal.ts";
 import { DEEP_DIVE_PATH } from "./src/lib/deep-dive.ts";
+import cockpitDemo, { COCKPIT_DEDUPE } from "./vite-plugin-cockpit.ts";
 
 /** Replace the fallback head and body with the same components the browser uses. */
 export function renderedHtml(template: string, head: string, body: string) {
@@ -49,7 +50,8 @@ export default function prerenderPlugin(): Plugin {
       const server = await createServer({
         configFile: false,
         root,
-        resolve: { alias: { "@": path.join(root, "src"), "@ql": path.resolve(root, "../../qualitylayer/src") }, dedupe: ["react", "react-dom"] },
+        plugins: [cockpitDemo()],
+        resolve: { alias: { "@ql": path.resolve(root, "../../qualitylayer/src") }, dedupe: [...COCKPIT_DEDUPE] },
         server: { middlewareMode: true, watch: null },
         optimizeDeps: { noDiscovery: true },
         appType: "custom",

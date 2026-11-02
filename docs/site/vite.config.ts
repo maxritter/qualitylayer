@@ -5,24 +5,9 @@ import path from "path";
 import sitemapPlugin from "./vite-plugin-sitemap.ts";
 import indexNowPlugin from "./vite-plugin-indexnow.ts";
 import prerenderPlugin from "./vite-plugin-prerender.ts";
+import cockpitDemo, { COCKPIT_DEDUPE } from "./vite-plugin-cockpit.ts";
 
 const DOCUSAURUS_DEV_URL = "http://localhost:3000";
-const COCKPIT_SOURCE = path.resolve(import.meta.dirname, "../../qualitylayer/src/ui");
-
-/** The demo uses the production Cockpit. Each app keeps its own shadcn imports. */
-function cockpitDemo(): Plugin {
-  return {
-    name: "qualitylayer-cockpit-demo",
-    enforce: "pre",
-    async resolveId(source, importer) {
-      if (source === "/qualitylayer-cockpit-demo.tsx") return path.join(COCKPIT_SOURCE, "demo/main.tsx");
-      if (!source.startsWith("@/")) return null;
-      const base = importer?.startsWith(COCKPIT_SOURCE) ? COCKPIT_SOURCE : path.resolve(import.meta.dirname, "src");
-      return this.resolve(path.join(base, source.slice(2)), importer, { skipSelf: true });
-    },
-  };
-}
-
 function docusaurusRedirect(): Plugin {
   return {
     name: "docusaurus-redirect",
@@ -66,7 +51,7 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     // The lifecycle names its routes and optional steps from the product's own tables.
     alias: { "@ql": path.resolve(import.meta.dirname, "../../qualitylayer/src") },
-    dedupe: ["react", "react-dom", "cn", "lucide-react", "radix-ui", "@base-ui/react", "class-variance-authority", "clsx", "tailwind-merge", "dompurify", "css-tree", "parse5", "marked", "mermaid", "sonner", "tailwindcss", "tw-animate-css", "shadcn", "@pierre/diffs", "@tanstack/react-virtual"],
+    dedupe: [...COCKPIT_DEDUPE],
   },
   build: {
     manifest: true,

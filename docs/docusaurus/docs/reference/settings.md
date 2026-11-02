@@ -49,7 +49,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ## Agents {#defaults}
 
-**On this computer** lists the seven agents with version, sign-in, a check for a ready integration and a **Use** switch. Problems show **Repair**, **Out of date** or **Not installed**. **Models and roles** on the row or in **⋯** opens separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
+**On this computer** lists the supported agents with version, sign-in, a check for a ready integration and a **Use** switch. Problems show **Repair**, **Out of date** or **Not installed**. **Models and roles** on the row or in **⋯** opens separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
 
 | **⋯ › Edit launch…** | What it changes |
 | --- | --- |

@@ -15,7 +15,7 @@ const faq = (question: string, answer: string): Faq => ({ question, answer });
 const priced = (id: "solo" | "team") => {
   const price = PLANS.find((p) => p.id === id)?.price;
   if (price === undefined || price === "Custom") throw new Error(`${id} has no price`);
-  return { monthly: formatPrice(price.monthly), yearly: formatPrice(price.yearly / 12), year: formatPrice(price.yearly) };
+  return { monthly: formatPrice(price.monthly), yearly: formatPrice(price.yearly / 12) };
 };
 const solo = priced("solo");
 const team = priced("team");
@@ -70,7 +70,7 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "Monthly or yearly?",
-    `Solo costs ${solo.year} a year, equivalent to ${solo.yearly} a month, instead of ${solo.monthly} billed monthly. Team costs ${team.year} per seat a year, equivalent to ${team.yearly} per seat a month, instead of ${team.monthly} billed monthly.`,
+    `Billed yearly, Solo costs ${solo.yearly} a month instead of ${solo.monthly}, and Team ${team.yearly} per seat a month instead of ${team.monthly}. Checkout shows the yearly total before you pay.`,
   ),
   faq(
     "Do I pay for AI usage here?",
@@ -82,7 +82,7 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "Which agents does it work with?",
-    "Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode have native setup, model choices and interactive sessions in the App or browser. Choose any installed agent for a separate review. The CLI connects other agents that run shell commands, including in your own terminal, VS Code or another IDE.",
+    "The coding agents you already use, with your own subscriptions or API keys. Claude Code, Codex and other popular agents have native setup, model choices and interactive sessions in the App or browser. Choose any installed agent for a separate review. The CLI connects other agents that run shell commands, including in your own terminal, VS Code or another IDE.",
   ),
   faq(
     "Who needs a seat?",
@@ -91,7 +91,7 @@ export const PRICING_FAQS: Faq[] = [
   CODE_LEAVES,
   faq(
     "What does Enterprise include?",
-    "For companies with 20 developers or more. It can include hosting in your own cloud or on-premise, volume pricing, single sign-on, invoicing and custom terms. Write to us and we scope it together.",
+    "For any company, of any size, that needs more than Team: hosting the backend in your own cloud or on-premise, single sign-on, volume pricing, invoicing, custom terms and onboarding for your team. Write to us and we set it up together.",
   ),
   faq(
     "I use Pilot Shell 11. What happens?",

@@ -1,7 +1,7 @@
 ---
 title: Supported agents
 sidebar_label: Supported agents
-description: Set up the seven coding agents QualityLayer runs, choose their models, permission modes and reviewers, and control their sessions in the App.
+description: Set up the coding agents QualityLayer runs, choose their models, permission modes and reviewers, and control their sessions in the App.
 ---
 
 # Supported agents {#supported-agents}

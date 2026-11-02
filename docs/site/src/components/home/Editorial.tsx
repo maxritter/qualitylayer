@@ -4,7 +4,7 @@ import { ArrowRight, BookOpen, Expand, ExternalLink, House, Shapes, SlidersHoriz
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
-import { FILMS } from "@/lib/films";
+import { OVERVIEW_VIDEO_URL } from "@/lib/videos";
 import { FIRST_STEP, STEPS, WHO, type Who } from "@/lib/steps";
 import { scrollAndFocusSection } from "@/utils/navigateToSection";
 import "@/styles/editorial.css";
@@ -176,7 +176,7 @@ export default function Editorial() {
           </ul>
         </div>
         <Tour active={step} onPick={setStep} theme={theme} onOpen={open} />
-        <div className="ed-outcome" id="films"><p>Every decision, document and test run stays with the change.</p><div><a href="/docs/">Read the workflow docs</a><a href={FILMS.overview.src} target="_blank" rel="noopener noreferrer">Watch the walkthrough</a></div></div>
+        <div className="ed-outcome" id="films"><p>Every decision, document and test run stays with the change.</p><div><a href="/docs/">Read the workflow docs</a><a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer">Watch the walkthrough</a></div></div>
       </section>
       <section id="extras" className="ed-section mx-wrap" aria-labelledby="ed-context-h">
         <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>Keep project lessons, try designs and work with your team.</p></div>

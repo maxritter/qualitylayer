@@ -50,7 +50,7 @@ function ComparisonCards({ current }: { current?: string }) {
 const QUALITYLAYER_ROW = {
   bestFor: "Approving a visual Plan, then reviewing evidence that the change works",
   plansWith: "Discuss, Research and a Plan with diagrams and clickable artifacts",
-  runsIn: "Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode, with the App",
+  runsIn: "Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot, with the App",
 };
 
 /** One row per tool, QualityLayer first, the same three questions for each. */

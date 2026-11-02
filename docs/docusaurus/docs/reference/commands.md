@@ -50,6 +50,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 | --- | --- |
 | Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
+| Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
 | [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
@@ -57,6 +58,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 | Tasks | `find` · `tasks` · `task set` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
 | Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
+| Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` imports Cursor's token-usage CSV locally; later usage stays unreported until reimported |
 
 ## Read a public share
 
@@ -110,11 +112,13 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 
 ## Session messaging
 
-Claude Code, Codex, Pi and OpenCode sessions on your computer can message each other (`ql-peer`).
+Ask Claude Code, Codex or another supported agent to oversee a named task with `qualitylayer status --json --task <task>` from its checkout. `waiting_on` identifies the pending action or unknown activity; `last_decision` retains approvals or requested changes; `answer_mode` reports the answer destination and its recorded origin. Read the task documents for verification evidence. Sessions on the same computer coordinate through `ql-peer` within the work you authorize; you still choose the build session and approve the Plan and final Review.
 
 ```bash
 qualitylayer peers list
 qualitylayer peers send --to 'cc:<name-or-uuid>' --message-file ./review-request.txt --json
 ```
 
-Address `cc:`, `codex:`, `pi:` or `opencode:` plus a name or UUID. `peers help` lists the reply commands; `peers doctor` finds a missing session.
+Address `cc:`, `codex:`, `pi:`, `opencode:`, `copilot:`, `grok:`, `cursor:` or `antigravity:` plus a name or UUID. `peers help` lists the reply commands; `peers doctor` finds a missing session.
+
+GitHub Copilot, Grok, Cursor and Antigravity sessions join the list from their first hook. A message reaches them at the end of their turn or with their next prompt, and at once in an App session that is waiting. A session idle in a terminal gets it at its next turn.

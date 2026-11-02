@@ -122,9 +122,10 @@ article.margin-bottom--xl header h2 a:hover { color: var(--ql-accent); }
 .ql-film {
   margin: 0 0 2rem;
 }
-.ql-film video {
+.ql-film img {
   display: block;
   width: 100%;
+  height: auto;
   aspect-ratio: 16 / 9;
   border: 1px solid var(--ql-border);
   border-radius: 12px;

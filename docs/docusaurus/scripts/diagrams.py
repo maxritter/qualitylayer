@@ -141,12 +141,12 @@ def num(c: Theme, x: float, y: float, n: int) -> str:
 
 # ---------------------------------------------------------------- the seven steps
 def track(here: str):
-    """The eight steps on one line, with the page's own step highlighted."""
+    """The steps and the pull request on one line, with the page's own step highlighted."""
     def draw(c: Theme) -> str:
         W, H = 1000, 112
         xs = [62 + i * 125 for i in range(8)]
         cur = [n for n, _ in STEPS_PR].index(here)
-        b = [T(0, 16, 'The eight steps', 12, 'muted', 600, c=c)]
+        b = [T(0, 16, 'The workflow', 12, 'muted', 600, c=c)]
         b.append(f'<line x1="{xs[0]}" y1="52" x2="{xs[-1]}" y2="52" stroke="{c["line"]}" stroke-width="2"/>')
         if cur:
             b.append(f'<line x1="{xs[0]}" y1="52" x2="{xs[cur]}" y2="52" stroke="{c["blue"]}" stroke-width="2.5"/>')
@@ -163,7 +163,7 @@ def track(here: str):
             else:
                 b.append(diamond(c, x, 52, 5.5, 'bg', 'line') if gate else f'<circle cx="{x}" cy="52" r="6" fill="{c["bg"]}" stroke="{c["line"]}" stroke-width="2"/>')
                 b.append(T(x, 88, n, 12, 'muted', 500, 'middle', c=c))
-        return svg(W, H, ''.join(b), f'The eight steps, with {here} highlighted')
+        return svg(W, H, ''.join(b), f'The workflow, with {here} highlighted')
     return draw
 
 
@@ -265,7 +265,7 @@ def remote_ill(c: Theme) -> str:
     b.append(card(c, 534, 20, 466, 210, 'blue', 'card', dash=True, sw=1.5))
     b.append(T(554, 52, 'Where your agent runs', 15, 'text', 650, c=c))
     b.append(T(554, 72, 'Dev container, WSL2 or a server', 13, 'muted', c=c))
-    b.append(node(c, 554, 100, 200, 100, 'Your agent', ['Claude Code, Codex, Cursor,', 'Grok, Antigravity,', 'Pi or OpenCode'], 'cardline', 'bg'))
+    b.append(node(c, 554, 100, 200, 100, 'Your agent', ['Claude Code, Codex, Cursor,', 'Grok, Antigravity, Pi,', 'OpenCode or GitHub Copilot'], 'cardline', 'bg'))
     b.append(node(c, 772, 100, 208, 100, 'QualityLayer', ['Command line and', 'the App’s server'], 'cardline', 'bg'))
     return svg(W, H, ''.join(b), 'Install QualityLayer where your agent runs, in a dev container, WSL2 or on a server. Its pages open in the browser on your computer through one forwarded port')
 
@@ -523,7 +523,7 @@ def flow(c, pr=False):
         b.append(T(cx[i], 30, n, 15, 'text', 700, 'middle', c=c))
         b.append(diamond(c, cx[i], 62, 10) if n in GATES else f'<circle cx="{cx[i]}" cy="62" r="10" fill="{c[col]}"/>')
     you = ['Answer a batch', 'Settle the choices', 'Approve the Plan', None, 'Copy one command', None, 'Approve the change'] + (['Merge it'] if pr else [])
-    agent = ['Asks questions', 'Reads the code', 'Writes the Plan', 'Cuts it into slices', 'Builds test first', 'Fresh agent checks', 'Writes the PR text'] + (['Answers reviews'] if pr else [])
+    agent = ['Asks questions', 'Reads the code', 'Writes the Plan', 'Cuts it into slices', 'Builds test first', 'Agents check it', 'Writes the PR text'] + (['Answers reviews'] if pr else [])
     for row, (label, col, y, cells) in enumerate([('You', 'amber', 100, you), ('Your agent', 'blue', 166, agent)]):
         b.append(T(0, y + 28, label, 15, col, 700, c=c))
         for i, s in enumerate(cells):
@@ -541,7 +541,7 @@ def flow(c, pr=False):
     b.append(f'<circle cx="{x0 + 178}" cy="{ly - 5}" r="7" fill="{c["blue"]}"/>')
     b.append(T(x0 + 192, ly, 'Your agent works on its own', 13, 'muted', c=c))
     if pr:
-        return svg(W, H, ''.join(b), 'The eight steps of a QualityLayer task: Discuss, Research, Plan, Outline, Implement, Verify, Review and the pull request. You approve the Plan before any code and the finished change, and you merge the pull request; your agent does the rest')
+        return svg(W, H, ''.join(b), 'The steps of a QualityLayer task: Discuss, Research, Plan, Outline, Implement, Verify, Review and the pull request. You approve the Plan before any code and the finished change, and you merge the pull request; your agent does the rest')
     return svg(W, H, ''.join(b), 'The seven steps of a QualityLayer task: Discuss, Research, Plan, Outline, Implement, Verify and Review. You approve the Plan before any code and the finished change at the end; your agent does the rest')
 
 
@@ -571,9 +571,9 @@ def slices(c):
     b.append(curve(c, 792, 84, 812, 134, 'muted'))
     b.append(curve(c, 792, 184, 812, 134, 'muted'))
     b.append(node(c, 814, 94, 186, 80, 'Independent review', ['Adds missing tests,', 'checks every point'], 'violet', 'violetf'))
-    b.append(T(W / 2, 258, 'A fresh agent that did not write the code checks every point on the running program.', 13, 'muted', 400, 'middle', c=c))
-    b.append(T(W / 2, 278, 'Up to three rounds; what is still open goes to Review first.', 13, 'muted', 400, 'middle', c=c))
-    return svg(W, H, ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and a fresh agent that did not write the code adds missing tests and checks every point on the running program; what is still open after three rounds goes to Review first')
+    b.append(T(W / 2, 258, 'An agent that did not write the code checks every point on the running program.', 13, 'muted', 400, 'middle', c=c))
+    b.append(T(W / 2, 278, 'Up to two reviewer runs; what is still open goes to Review first.', 13, 'muted', 400, 'middle', c=c))
+    return svg(W, H, ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and an agent that did not write the code adds missing tests and checks every point on the running program; what is still open after two reviewer runs goes to Review first')
 
 
 # ---------------------------------------------------------------- the App window
@@ -960,7 +960,7 @@ def pull_request_ill(c: Theme) -> str:
     b = []
     top = [(0, 'You approve', ['Approve and open', 'a pull request'], 'amber', 'amberf'),
            (207, 'It opens on GitHub', ['From your branch, with', 'the change as its text'], 'blue', 'bluef'),
-           (414, 'QualityLayer follows it', ['Checks and reviewers,', 'about once a minute'], 'cardline', 'card'),
+           (414, 'QualityLayer follows it', ['Checks and reviewers,', 'every two minutes'], 'cardline', 'card'),
            (621, 'You merge it', ['On GitHub, your own way.', 'QualityLayer never merges'], 'amber', 'amberf'),
            (828, 'The task closes', ['Its documents and its', 'cost stay in your repo'], 'violet', 'card')]
     for x, title, sub, col, fill in top:
@@ -1116,7 +1116,7 @@ def agents_other_ill(c: Theme) -> str:
     b.append(curve(c, 252, 100, 330, 60, 'line'))
     b.append(curve(c, 252, 150, 330, 190, 'line'))
     b.append(node(c, 332, 20, 300, 80, 'The command line', ['qualitylayer on the agent’s PATH', 'The App sets this up for you'], 'blue', 'bluef'))
-    b.append(node(c, 332, 150, 300, 80, 'One prompt from the App', ['+ New › Another agent to plan,', 'Build with › Another agent to build'], 'blue', 'bluef'))
+    b.append(node(c, 332, 150, 300, 80, 'One prompt from the App', ['+ New, then In my terminal', 'copies the prompt for your agent'], 'blue', 'bluef'))
     b.append(curve(c, 634, 60, 700, 120, 'blue'))
     b.append(curve(c, 634, 190, 700, 130, 'blue'))
     b.append(node(c, 702, 70, 298, 110, 'The same steps', ['It asks for the next step and records', 'the checks. You decide in the App.'], 'amber', 'amberf'))
@@ -1293,7 +1293,7 @@ def architecture(c):
     b.append(card(c, 20, 52, 680, 192, 'blue', 'bg'))
     b.append(T(38, 80, 'QualityLayer App or browser', 15, 'text', 650, c=c))
     b.append(node(c, 38, 100, 306, 124, 'Your task', ['Questions, diagrams and artifacts', 'Read the Plan, give feedback', 'and approve the change'], 'cardline'))
-    b.append(node(c, 364, 100, 318, 124, 'Agent sidebar', ['Claude Code, Codex, Cursor, Grok,', 'Antigravity, Pi or OpenCode', 'Your agent’s own conversation', 'and subscription'], 'cardline'))
+    b.append(node(c, 364, 100, 318, 124, 'Agent sidebar', ['Claude Code, Codex, Cursor, Grok,', 'Antigravity, Pi, OpenCode, GitHub Copilot', 'Your agent’s own conversation', 'and subscription'], 'cardline'))
     b.append(node(c, 20, 278, 328, 76, 'CLI integration', ['Also connects external agents', 'in a terminal, VS Code or another IDE'], 'cardline'))
     b.append(node(c, 372, 278, 328, 76, 'Task files in your repository', ['Plans, decisions and recorded checks'], 'cardline'))
     b.append(f'<path d="M184 278 V258 H536 V278" fill="none" stroke="{c["muted"]}" stroke-width="1.8"/>')

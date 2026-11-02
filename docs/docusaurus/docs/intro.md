@@ -5,8 +5,8 @@ description: Plan, build and review software with your coding agents.
 ---
 
 <figure class="ql-film">
-  <video controls preload="none" playsinline poster="https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.webp" src="https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.mp4"></video>
-  <figcaption>How QualityLayer works, in about five minutes.</figcaption>
+  <a href="https://youtu.be/p1m4O4xRsrQ" target="_blank" rel="noopener noreferrer"><img src="https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.webp" alt="Play video on YouTube: how QualityLayer works" width="1280" height="720" /></a>
+  <figcaption>How QualityLayer works, in about five minutes. <a href="https://youtu.be/p1m4O4xRsrQ" target="_blank" rel="noopener noreferrer">Watch on YouTube</a></figcaption>
 </figure>
 
 Plan, build and review software with your coding agents. Agree on diagrams and clickable designs before building, then review the tested change.
@@ -36,13 +36,13 @@ You approve twice: the Plan and the finished change. In between, your agent work
 | **[Implement](steps/implement.md)** | Your agent builds test first and fixes what fails |
 | **[Verify](steps/verify.md)** | Project checks, then an agent that did not write the code rules on every point |
 | **[Review](steps/review.md)** | You review the code and approve |
-| **[Pull request](steps/pull-request.md)** | Your agent fixes failing checks and routine threads. You merge |
+| **[Pull request](steps/pull-request.md)** | After Review: your agent fixes failing checks and routine threads. You merge |
 
 The agent decides how to carry out each step. QualityLayer enforces only your two approvals, a visible amendment for any change to what you approved, and recorded evidence for every check.
 
 ## Who it is for
 
-Medium and large changes, alone or with a team. Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode [run natively](agents/native.md); [other agents](agents/other.md) use the CLI. Each keeps its own login.
+Medium and large changes, alone or with a team. Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot [run natively](agents/native.md); [other agents](agents/other.md) use the CLI. Each keeps its own login.
 
 ## Two levels
 

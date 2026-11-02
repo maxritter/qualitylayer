@@ -26,7 +26,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ### Independent review {#independent-review}
 
-**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Auto (Cursor), Grok 4.7 (Grok), Gemini 3.8 Flash (High) (Antigravity).
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Opus 5.5 (High) (Cursor), Grok 4.7 (Grok), Claude Opus 4.6 (Antigravity).
 
 ### Second opinion {#second-opinion}
 
@@ -36,7 +36,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 <summary>How the reviewer is picked</summary>
 
 - Pi and OpenCode count by the model they run; Cursor's Auto never counts as another family.
-- Agents that enforce read-only come first, then Claude Code, Codex, Grok, Pi, OpenCode, Cursor, Antigravity. Cursor and Antigravity review a disposable copy.
+- Agents that enforce read-only come first, then Claude Code, Codex, Grok, Pi, OpenCode, Cursor, Antigravity, GitHub Copilot. Cursor and Antigravity review a disposable copy.
 - When every agent here runs the same family, a fresh session of it reviews. **Reviewed by** in the Plan names who read it.
 
 </details>
@@ -63,7 +63,9 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Usage {#usage}
 
-**Plan limits** show remaining Claude Code and Codex usage; agents that report none say so. Under **When a limit is used up**, **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** totals 7 days, 30 days or this month: tokens for subscriptions, estimated cost for API accounts. The two are kept separate.
+**Usage display** shows **Used** percentages by default; choose **Remaining** to change the App and macOS menu bar together. Menu bar usage starts on. Expand **Menu bar readings** to choose individual reported windows and daily dollar readings. **Daily total** is optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison. Credits stay separate, and missing data makes totals partial.
+
+**Plan limits** show the windows Claude Code, Codex and GitHub Copilot report. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** keeps the daily charts, comparisons and model breakdown for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a local [provider CSV import](commands.md#commands-by-group). The shared money choice also applies to statistics; API-price value is not your bill.
 
 ## Sessions {#sessions}
 
@@ -105,7 +107,7 @@ Your plan or trial, and **Open billing account**. Each licence key works on 3 co
 
 | Part | What it holds |
 | --- | --- |
-| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **key waiting** badges stay listed. Groups limit who sees a shared task |
+| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **Waiting for the team key** badges stay listed. Groups limit who sees a shared task |
 | [Team instructions](#team-instructions) | Instructions for every teammate's agent |
 | **Slack** | Workspace connection and your own Slack account; **Slack messages** is in Notifications ([Slack and email](../team/plans.md#slack)) |
 | **Email** | Turns email on for the team and shows how each teammate is reached |

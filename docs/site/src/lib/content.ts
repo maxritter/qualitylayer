@@ -39,11 +39,11 @@ export const FAQS: Faq[] = [
   CODE_LEAVES,
   faq(
     "What about small changes and bugs?",
-    "Use Chat with Claude Code or Codex for free-form work. Choose Feature or Bugfix for a plan, checks and final review.",
+    "Use Chat with Claude Code or Codex for free-form work, and convert it to a task when it needs a plan. Choose Feature or Bugfix to start with a plan, checks and final review.",
   ),
   faq(
     "Can I run my agent in the App or browser?",
-    "Yes. Your task and agent run side by side in the App or browser. You can also use your own terminal or IDE.",
+    "Yes. Your task and agent run side by side in the App or browser, and the sidebar shows when an agent needs you. You can also use your own terminal or IDE.",
   ),
   faq(
     "Can I use it on my own, or only with a team?",
@@ -59,7 +59,7 @@ export const FAQS: Faq[] = [
   ),
   faq(
     "I use Pilot Shell today. What happens?",
-    "Active Polar licences work with both products. Import lessons in Settings → Memory. Older purchases may need help moving over.",
+    "An active Pilot Shell licence works with both products. Import your Pilot memories in Settings › Memory. Older purchases may need help moving over.",
   ),
 ];
 
@@ -95,6 +95,6 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "I use Pilot Shell 11. What happens?",
-    "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. If it ends, a new subscription uses current prices. Without an active licence, you get a fresh seven-day trial. Import memories per project in Settings → Memory.",
+    "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. If it ends, a new subscription uses current prices. Without an active licence, you get a fresh seven-day trial. Import your Pilot memories per project in Settings › Memory.",
   ),
 ];

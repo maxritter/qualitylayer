@@ -490,7 +490,8 @@ jobs:
 
       # The App's compiled dependencies, per platform: a release then compiles only what changed
       # instead of every crate (ten minutes on the Intel Mac). Only release runs on main and dev
-      # write it; the packages themselves (bundle/) are never cached.
+      # write it; native input changes refresh the compiled workspace even when Cargo.lock stays
+      # fixed. CLI/docs-only revisions reuse it; packages (bundle/) stay out of the cache.
       - name: Cached App build
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -498,8 +499,10 @@ jobs:
             qualitylayer/app/src-tauri/target
             qualitylayer/app/launcher/target
             !qualitylayer/app/src-tauri/target/**/bundle
-          key: app-target-${{ matrix.target }}-${{ hashFiles('qualitylayer/app/**/Cargo.lock') }}
-          restore-keys: app-target-${{ matrix.target }}-
+          key: app-target-${{ matrix.target }}-${{ hashFiles('qualitylayer/app/**/Cargo.lock') }}-${{ hashFiles('qualitylayer/app/**', '!qualitylayer/app/**/target/**', 'qualitylayer/scripts/app.ts', 'qualitylayer/scripts/app-bundle.ts', 'qualitylayer/scripts/cargo-output.ts', '.github/actions/app-toolchain/action.yml') }}
+          restore-keys: |
+            app-target-${{ matrix.target }}-${{ hashFiles('qualitylayer/app/**/Cargo.lock') }}-
+            app-target-${{ matrix.target }}-
 
       # The certificate goes into a keychain of its own that lives as long as this job.
       - name: Import the Developer ID certificate

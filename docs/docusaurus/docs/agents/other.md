@@ -3,7 +3,7 @@ title: Other agents
 description: Use QualityLayer with any coding agent that can run shell commands, including one that runs a model on your own machine.
 ---
 
-[Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode](native.md) run directly in the App or browser beside your task. The CLI connects other agents that can run shell commands in your repository, including one on a local model.
+[Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot](native.md) run directly in the App or browser beside your task. The CLI connects other agents that can run shell commands in your repository, including one on a local model.
 
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-light.svg)
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-dark.svg)
@@ -11,7 +11,7 @@ description: Use QualityLayer with any coding agent that can run shell commands,
 ## Start a task {#start}
 
 1. In the agent's terminal, run `qualitylayer help`. Nothing listed? Run `qualitylayer doctor`.
-2. In the App, choose **+ New**, describe the change, then choose **In my terminal** and copy the prompt.
+2. In the App, choose **+ › Task**, describe the change, then choose **In my terminal** and copy the prompt.
 3. Paste it into your agent. It asks its questions and takes your feedback in its own chat.
 
 ## Plan with one agent, build with another {#mix}

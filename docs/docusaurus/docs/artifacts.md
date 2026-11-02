@@ -39,7 +39,7 @@ Press **C**, click a spot and say what should change; your agent edits the page 
 
 ### Fold in at Review {#fold-in}
 
-The original stays until Review shows **This task changes …**: pick the pages (**Compare** shows both), then **Fold pages in**. They join the pull request.
+The original stays until Review shows **This task changes …**: pick the pages (**Compare** shows both), then **Fold N pages in**. They join the pull request.
 
 ## Share {#team-shared}
 

@@ -1,13 +1,27 @@
-/** After the hero: the agents QualityLayer works with and the models you already pay for, what it adds, people's words, and where it runs. */
+/** After the hero: the agents QualityLayer works with, the models you already pay for, the skills it adds to them, what it adds, people's words, and where it runs. */
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, SquareTerminal, Workflow } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, MessageCircle, Palette, ShieldCheck, SquareTerminal, Users, Workflow } from "lucide-react";
 import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
 import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
+import { Component, lazy, Suspense, type ReactNode } from "react";
+
+const ChangeMapDemo = lazy(() => import("./ChangeMapDemo"));
+
+/** The example map loads on its own; if it cannot load (offline, a stale chunk), the frame says so and the page stays. */
+class MapGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? <p className="cm-wait cm-failed">The example map could not load. Reload the page to try again.</p> : this.props.children;
+  }
+}
 
 type Chip = [label: string, icon: string];
 
-/** The six agents the grid shows, most used first. Grok runs the same way and is named with the others in Install and the questions. */
+/** The eight agents the grid shows, most used first: two columns, so an even count. */
 const SHOWN: [label: string, agent: NativeAgent][] = [
   ["Claude Code", "claude-code"],
   ["Codex", "codex"],
@@ -15,6 +29,8 @@ const SHOWN: [label: string, agent: NativeAgent][] = [
   ["Antigravity", "antigravity"],
   ["Pi", "pi"],
   ["OpenCode", "opencode"],
+  ["Grok", "grok"],
+  ["GitHub Copilot", "copilot"],
 ];
 
 /** An agent's own logo, drawn as the App's AgentMark draws it; only the drawings are imported, not the agent registry. */
@@ -37,6 +53,7 @@ const AGENTS: Chip[] = [
   ["Antigravity", "term"],
   ["Pi", "term"],
   ["OpenCode", "term"],
+  ["GitHub Copilot", "term"],
 ];
 
 const MODELS: Chip[] = [
@@ -72,6 +89,53 @@ const CHAIN: { icon: LucideIcon | "mark"; title: string; text: string; chips: st
   { icon: "mark", title: "QualityLayer", text: "Plan, answer and review beside your agent. The CLI connects any other agent.", chips: ["Visual plans", "Conversation"], ql: true },
   { icon: FileText, title: "Your repository", text: "Every step is a Markdown file you can read, diff and commit.", chips: ["Plan", "Decisions", "Test runs"] },
 ];
+
+/** The other skills, each with something a person would say to their agent (Max approved the section, 2 November 2026). */
+const SKILLS: { icon: LucideIcon; title: string; ask: string }[] = [
+  { icon: Workflow, title: "Plan and build", ask: "Using QualityLayer, add rate limits to the export API." },
+  { icon: MessageCircle, title: "Chat", ask: "Using QualityLayer, chat about the billing refactor." },
+  { icon: Palette, title: "Designs", ask: "Open the settings design in my browser." },
+  { icon: ShieldCheck, title: "Security", ask: "Scan this repository for leaked secrets." },
+  { icon: Users, title: "Sharing", ask: "Share this task with my team." },
+];
+
+type Line = { kind: "you" | "did"; text: string } | { kind: "msg"; from: NativeAgent; label: string; verdict?: string; text: string };
+
+/** An example exchange between two agent sessions, labelled as an example on the page. */
+const EXCHANGE: { agent: NativeAgent; name: string; lines: Line[] }[] = [
+  {
+    agent: "claude-code",
+    name: "Claude Code",
+    lines: [
+      { kind: "you", text: "Ask Codex to review what you just built." },
+      { kind: "did", text: "Sent the rate-limit change to Codex." },
+      { kind: "msg", from: "codex", label: "from Codex", verdict: "REVISE: 2 items", text: "The limit resets per process, not per account." },
+      { kind: "did", text: "Fixing both items." },
+    ],
+  },
+  {
+    agent: "codex",
+    name: "Codex",
+    lines: [
+      { kind: "msg", from: "claude-code", label: "from Claude Code", text: "Please review the rate-limit change on feat/export-limits." },
+      { kind: "did", text: "Read the change and ran its tests." },
+      { kind: "msg", from: "codex", label: "to Claude Code", verdict: "REVISE: 2 items", text: "The limit resets per process, not per account." },
+    ],
+  },
+];
+
+const Session = ({ agent, name, lines }: (typeof EXCHANGE)[number]) => (
+  <div className="sk-win" data-agent={agent}>
+    <div className="sk-bar"><span className="sk-logo"><Logo agent={agent} /></span><b>{name}</b><span className="sk-path">export-api</span></div>
+    <ol className="sk-log">
+      {lines.map((line) => line.kind === "msg" ? (
+        <li key={line.label + line.text} className="sk-msg" data-from={line.from}><small>{line.label}</small>{line.verdict ? <span className="sk-verdict">{line.verdict}</span> : null}{line.text}</li>
+      ) : (
+        <li key={line.text} className={`sk-${line.kind}`}>{line.text}</li>
+      ))}
+    </ol>
+  </div>
+);
 
 const Icon = ({ name }: { name: string }) => <i className={`mx-ic mx-i-${name}`} aria-hidden="true" />;
 
@@ -118,6 +182,46 @@ export default function Intro() {
             <p className="mx-mqn">+ any model your coding agent offers</p>
           </div>
         </div>
+      </section>
+
+      {/* Right after the agents and their models: the skills QualityLayer adds to them, led by two agents talking to each other. */}
+      <section id="skills" data-screen-label="Skills" className="mx-wrap mx-sec" aria-labelledby="skills-h">
+        <div className="mx-head">
+          <h2 id="skills-h" className="mx-h2">Your agents can talk to each other</h2>
+          <p className="mx-lead">QualityLayer adds skills to every agent you connect. Claude Code can ask Codex for a review, and the answer comes back to the same session.</p>
+        </div>
+        <figure className="sk-stage" aria-label="Example: Claude Code asks Codex for a review">
+          <span className="sk-tag">Example</span>
+          <Session {...EXCHANGE[0]} />
+          <div className="sk-wire" aria-hidden="true">
+            <span className="sk-hop">Review <ArrowRight size={14} strokeWidth={1.75} /></span>
+            <span className="sk-hop"><ArrowLeft size={14} strokeWidth={1.75} /> Reply</span>
+          </div>
+          <Session {...EXCHANGE[1]} />
+        </figure>
+        <ul className="sk-more" aria-label="More skills, with what you say">
+          {SKILLS.map(({ icon: Glyph, title, ask }) => (
+            <li key={title}><span className="mx-tile" aria-hidden="true"><Glyph size={20} strokeWidth={1.75} /></span><b>{title}</b><q>{ask}</q></li>
+          ))}
+        </ul>
+        <p className="sk-foot">Ask in plain words, in any language. <a href="/docs/agents/native">More about the skills</a></p>
+      </section>
+
+      {/* Right after the agents: what one of them draws before it builds. The App's own map component, loaded on its own. */}
+      <section id="change-map" data-screen-label="Change map" className="mx-wrap mx-sec cm-split" aria-labelledby="map-h">
+        <div className="mx-head">
+          <h2 id="map-h" className="mx-h2">See how a change fits together</h2>
+          <p className="mx-lead">Your agent maps the files a change will touch and how they connect, before any code is written.</p>
+          <p className="sk-foot"><a href="/docs/steps/plan">More about the Plan</a></p>
+        </div>
+        <figure className="cm-frame" aria-label="Example change map from a Plan">
+          <span className="sk-tag">Example</span>
+          <MapGuard>
+            <Suspense fallback={<div className="cm-wait" aria-hidden="true" />}>
+              <ChangeMapDemo />
+            </Suspense>
+          </MapGuard>
+        </figure>
       </section>
 
       <section className="mx-sec" aria-labelledby="pr-h">

@@ -17,10 +17,10 @@ Your agent runs checks and independent review, then fixes the findings. Unresolv
 
 Project commands and security scans produce recorded results. Separate agents review the code and its behavior.
 
-![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
-![Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
+![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
+![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
 
-**Deterministic checks**
+**Project checks**
 
 | Check | What it does |
 | --- | --- |
@@ -48,7 +48,7 @@ What remains open stays visible in Review. Use **Give feedback** to ask for a fi
 
 ## Proof for each point {#live}
 
-Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and checking points come first, then those that are **yours to confirm**, then points still to check and passed points. Groups of more than two **to check** or **passed** points fold into one row. Open a check for its commands and output.
+Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and checking points come first, then those **yours to confirm**, then the rest. Open a check for its commands and output.
 
 ## What reaches Review {#when-it-stops}
 

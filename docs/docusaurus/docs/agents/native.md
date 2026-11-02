@@ -14,13 +14,13 @@ Install your agent, sign in with its own login and start it once, then run Quali
 | [Codex](https://developers.openai.com/codex/cli) | 0.163.0 | Skills, implicit invocation policies and lifecycle hooks |
 | [Cursor](https://cursor.com/docs/cli/installation) | 2026.10.19 | Skills and turn-end hooks in its own hooks file |
 | [Grok](https://docs.x.ai/build/overview) | 1.0.62 | Skills and hooks, in its own hooks folder |
-| [Antigravity](https://antigravity.google/docs/getting-started/) | 1.4.4 | Skills, a workflow command and turn-end hooks |
+| [Antigravity](https://antigravity.google/docs/getting-started/) | 1.4.12 | Skills, a workflow command and turn-end hooks |
 | [Pi](https://pi.dev/docs/latest/quickstart) | 1.2.0 | Skills, a lifecycle extension and fresh helper sessions |
 | [OpenCode](https://opencode.ai/docs/) | 2.0.29 | Skills, a command and a lifecycle plugin |
+| [GitHub Copilot](https://docs.github.com/copilot/how-tos/copilot-cli) | 1.0.105 | Skills, a hook file and the memory server |
 
-Cursor, Grok and Antigravity are set up only after you have started them once from a terminal.
-
-Start a task with **+ New** in the App, or tell your agent “Using QualityLayer, plan a CSV export” (**QL** works too, in any language). An ordinary coding request does not start a workflow.
+Cursor, Grok and Antigravity are set up only after you have started them once from a terminal. GitHub Copilot Business and Enterprise need an organization admin to enable Copilot CLI in the Copilot policies.
+Start a task with **+ › Task** in the App, or tell your agent “Using QualityLayer, plan a CSV export” (**QL** works too, in any language). An ordinary coding request does not start a workflow.
 
 ## The six skills
 
@@ -31,13 +31,13 @@ Ask in plain language; your agent picks the skill.
 | `ql-workflow` | Plan, build, verify and review a change. The only skill that starts a task |
 | `ql-artifact` | Mockups, diagrams and clickable pages ([Artifacts](../artifacts.md)) |
 | `ql-manage` | Tasks, [memory](../memory.md), sharing, settings and setup |
-| `ql-peer` | Let Claude Code, Codex, Pi and OpenCode sessions review each other or hand over a task ([session messaging](../reference/commands.md#session-messaging)) |
+| `ql-peer` | Let sessions of any of these agents review each other or hand over a task ([session messaging](../reference/commands.md#session-messaging)) |
 | `ql-quality` | Code complexity, structure and duplication ([Code health](../reference/code-health.md)) |
 | `ql-chat` | A [Chat](../chat.md) without workflow steps |
 
 ## Models and reviews
 
-Pick agent, model and effort per task; defaults use High effort. Pi and OpenCode use provider-qualified IDs, such as `openai-codex/gpt-6.1-sol` (Pi) and `openai/gpt-6.1-sol` (OpenCode). Cursor puts effort in the model name, such as Opus 5.5 (High).
+Pick agent, model and effort per task; defaults use High effort. Pi and OpenCode use provider-qualified IDs, such as `openai-codex/gpt-6.1-sol` (Pi) and `openai/gpt-6.1-sol` (OpenCode). Cursor and Antigravity put effort in the model name, such as Opus 5.5 (High). GitHub Copilot starts on Auto, which runs on every Copilot plan; on a paid plan you can pick Claude Opus 5.5. Pi and OpenCode can also sign in with a Copilot subscription.
 
 Reviewers read in a separate context and edit nothing. Cursor and Antigravity cannot be made read-only, so they review a disposable copy and are stopped at the first tool that is not read-only. Who reviews: [Second opinion](../reference/settings.md#second-opinion).
 
@@ -51,6 +51,7 @@ The **Conversation** view reads each agent's session record ([controls](../app.m
 | Grok | Context fill, permission questions |
 | Antigravity | Permission questions |
 | Cursor | Thinking, tool output, token counts, context fill, permission questions |
+| GitHub Copilot | Permission questions |
 
 Missing permission questions appear in the Terminal view. Cursor, Grok and Antigravity get workflow questions as a numbered list. To continue after a crash, stop the old run and say “Using QL, continue verification of task retry-webhooks.”
 
@@ -64,15 +65,16 @@ A run starts in your agent's own setting. Setup adds [native defaults](../instal
 | Codex | On request, Ask first, Auto review, Full access |
 | Cursor | Ask first, Auto-review, Run everything |
 | Grok | Auto, Ask first, Accept edits, Bypass |
-| Antigravity | Ask first, Accept edits, Auto, Bypass |
+| Antigravity | Ask first, Auto, Accept edits, Bypass |
 | OpenCode | Agent settings, Auto-approve |
 | Pi | None; its own tool permissions apply |
+| GitHub Copilot | Ask first, Allow tools, Bypass |
 
 Explicitly choosing Bypass, Full access or Run everything for a run asks you to confirm. **Agent settings** inherits the native policy, including a native Bypass or Full access default. Your QualityLayer Plan and final approvals remain separate.
 
 ### Plan limits {#plan-limits}
 
-For **Claude Code** and **Codex**, QualityLayer shows what is left of each plan window, in the sidebar and as a chip such as **Week · 42 % left** (amber when you use it faster than an even pace). Claude Code's numbers come from its own `/usage` report, Codex's from its session records; your settings are never changed to read them. Agents billed by use show the session's cost at list prices instead.
+**Claude Code**, **Codex** and **GitHub Copilot** show the windows their records report. Percentages default to **Used**, such as **Week · 58 % used**; [Usage display](../reference/settings.md#usage) switches the App and macOS menu bar to **Remaining**. Claude Code uses its `/usage` report, Codex its session/account records, and Copilot its monthly allowance snapshots. Missing or reset readings stay unknown. Agents billed by use show the session's estimated cost instead.
 
 ## How QualityLayer finds your agents {#finding-agents}
 
@@ -93,4 +95,4 @@ For **Claude Code** and **Codex**, QualityLayer shows what is left of each plan 
 
 ## Setup and removal
 
-`qualitylayer agents list` and `qualitylayer agents check` match Settings › Agents. Pi's files go to `~/.pi/agent`, OpenCode's to `~/.config/opencode`. Updates replace only unchanged files QualityLayer owns; uninstall keeps your logins, settings, session history and edited files. [Other agents](other.md) use the CLI.
+`qualitylayer agents list` and `qualitylayer agents check` match Settings › Agents. Pi's files go to `~/.pi/agent`, OpenCode's to `~/.config/opencode`, GitHub Copilot's to `~/.copilot`. Updates replace only unchanged files QualityLayer owns; uninstall keeps your logins, settings, session history and edited files. [Other agents](other.md) use the CLI.

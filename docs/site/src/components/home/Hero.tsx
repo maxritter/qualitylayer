@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Code, Download, FileCheck, ListChecks, MessageSquare, MonitorPlay, Network, Search, ShieldCheck, SquarePlay, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useDownload } from "@/hooks/useDownload";
 import { FILMS } from "@/lib/films";
-import { OVERVIEW_POSTERS } from "@/lib/film-posters";
-import { useTheme } from "@/hooks/useTheme";
+import { OVERVIEW_VIDEO_URL } from "@/lib/videos";
 import { BRAND_LINE, DEEP_DIVE, DESCRIPTION, SLOGAN } from "@/lib/product";
 import { DEEP_DIVE_MINUTES, DEEP_DIVE_VIDEO_URL } from "@/lib/deep-dive";
 import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
@@ -41,29 +39,6 @@ function HeroShot() {
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-/** The film, opened over the page from the hero. Escape or Close puts focus back on the button that opened it. */
-function FilmDialog({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const close = useRef<HTMLButtonElement>(null);
-  const film = FILMS.overview;
-  const { theme } = useTheme();
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog && !dialog.open) dialog.showModal();
-    // showModal focuses the first control, the video, whose focus ring framed the film; Close takes focus instead.
-    close.current?.focus();
-  }, []);
-  return (
-    <dialog ref={ref} className="mx-filmov" aria-label={`How QualityLayer works, ${clock(film.duration)}`} onClose={onClose} onClick={(e) => { if (e.target === e.currentTarget) ref.current?.close(); }}>
-      <div className="mx-filmbox">
-        {/* The film shows its narration as captions, and chapter titles beside the App. */}
-        <video src={film.src} poster={OVERVIEW_POSTERS[theme]} controls autoPlay playsInline preload="auto" />
-      </div>
-      <Button type="button" variant="outline" size="xl" ref={close} className="mx-filmx" onClick={() => ref.current?.close()}>Close</Button>
-    </dialog>
-  );
-}
-
 /**
  * The seven steps as one line of equal stations, a pulse running along it. Each station opens its
  * step in the tour below; a router link, so picking the same step again still selects it.
@@ -95,11 +70,9 @@ function Stations() {
   );
 }
 
-/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film), beside the App at a decision. */
+/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film on YouTube), beside the App at a decision. */
 const Hero = () => {
   const download = useDownload();
-  const [film, setFilm] = useState(false);
-  const opener = useRef<HTMLButtonElement>(null);
   return (
     <section className="sx-hero" id="top" aria-labelledby="hero-h">
       <div className="sx-hero-row">
@@ -109,9 +82,11 @@ const Hero = () => {
           <p className="sx-lede">{DESCRIPTION}</p>
           <div className="sx-ctas">
             <Button asChild size="xl">{download.direct ? <a href={download.href}><Download size={18} aria-hidden="true" />{download.label}</a> : <Link to={download.href}><Download size={18} aria-hidden="true" />{download.label}</Link>}</Button>
-            <Button ref={opener} type="button" variant="outline" size="xl" onClick={() => setFilm(true)}>
-              <svg className="mx-play" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z" /></svg>
-              Watch the film <span className="mx-dur">{clock(FILMS.overview.duration)}</span>
+            <Button asChild variant="outline" size="xl">
+              <a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer" aria-label={`Watch the film on YouTube, ${clock(FILMS.overview.duration)}`}>
+                <svg className="mx-play" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z" /></svg>
+                Watch the film <span className="mx-dur">{clock(FILMS.overview.duration)}</span>
+              </a>
             </Button>
             {DEEP_DIVE_VIDEO_URL ? <Button asChild variant="outline" size="xl"><Link to={DEEP_DIVE.href} aria-label={`${DEEP_DIVE.title}, a ${DEEP_DIVE_MINUTES}-minute deep dive`}><MonitorPlay size={18} aria-hidden="true" />{DEEP_DIVE.label} <span className="mx-dur">{DEEP_DIVE_MINUTES} min</span></Link></Button> : null}
             <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO} aria-label="Try the demo in your browser"><SquarePlay size={18} aria-hidden="true" />Try the demo<ArrowRight size={16} aria-hidden="true" /></a></Button>
@@ -121,7 +96,6 @@ const Hero = () => {
         <HeroShot />
       </div>
       <Stations />
-      {film ? <FilmDialog onClose={() => { setFilm(false); opener.current?.focus(); }} /> : null}
     </section>
   );
 };

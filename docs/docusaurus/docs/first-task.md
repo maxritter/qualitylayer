@@ -6,7 +6,7 @@ description: Choose Chat for a direct conversation, or Feature and Bugfix for a 
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-light.svg)
 ![Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change](pathname:///img/diagrams/firsttask-dark.svg)
 
-Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** or **Bugfix** in a repository you know. The task is on the left; your agent works in **Conversation** on the right.
+Open QualityLayer in the App or browser, choose **+ › Task** and pick **Feature** or **Bugfix** in a repository you know. The task is on the left; your agent works in **Conversation** on the right.
 
 | | You do |
 | --- | --- |
@@ -20,7 +20,7 @@ Open QualityLayer in the App or browser, choose **+ New** and pick **Feature** o
 
 Steps 1 to 6 happen in the App or browser.
 
-**Plan with QualityLayer** is the default. To reuse a plan, choose **Existing plan**, paste or attach it, then **Start from this plan** ([existing plans](steps/plan.md#existing-plan)). Choose **Chat** for a conversation without steps ([Chat](chat.md)).
+**Plan with QualityLayer** is the default. To reuse a plan, choose **Existing plan**, paste or attach it, then **Start from this plan** ([existing plans](steps/plan.md#existing-plan)). Choose **+ › Chat** for a conversation without steps ([Chat](chat.md)).
 
 ## Where your agent runs
 

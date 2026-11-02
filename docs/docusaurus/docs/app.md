@@ -12,7 +12,7 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 | Part | What it does |
 | --- | --- |
-| **Sidebar** | **Search**, Home, Team, Artifacts and your tasks by project. **+ New** starts a Feature, Bugfix or [Chat](chat.md) |
+| **Sidebar** | **Search**, Home, Team, Artifacts and your tasks and Chats by project. **+** opens a menu: **Task** (Feature or Bugfix) or [Chat](chat.md) |
 | **Agent status** | The top-bar chip: working, needs you, quiet or stopped |
 | **Step track** | Where the task stands. A person icon marks the two steps you approve |
 | **Step page** | The step's result, with questions or approval when needed |
@@ -20,15 +20,15 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 ## The sidebar {#sidebar}
 
-Projects are repositories on this computer; tasks waiting on you come first, and a detailed row shows its step on a seven-part strip. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
+Projects are repositories on this computer; tasks waiting on you come first, and a detailed row shows its step on a seven-part strip. A live agent's row says what it is doing and turns amber when it needs you. A toggle on the row opens the agent's task list, where it reports one (Claude Code, Codex, OpenCode), and its helpers. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
 
 **View options** (the sliders icon) filters by name, regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Reset filters** clears them.
 
-**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file, **⇧⌘N** starts a task.
+**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file in an open task; **⇧⌘N** starts a task in the installed App.
 
 ## Home {#home}
 
-**Needs you** lists your questions, approvals and teammates' requests; each opens the exact spot. **Running** shows your agents' work. Each list shows ten rows, then **Show N more**. The App notifies you only when you can act:
+**Needs you** lists your questions, approvals, teammates' requests, Chats waiting on you and agents that stopped early; each opens the exact spot. **Running** shows your agents' work. Each list shows ten rows, then **Show N more**. The App notifies you only when you can act: when an agent needs you, when it is your turn, or when it stopped early.
 
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-light.svg)
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-dark.svg)
@@ -65,7 +65,7 @@ When you start a task or the build, choose where the agent runs:
 | **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
 | **In my terminal** | Copy one prompt into any coding agent. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
 
-Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's controls, and **Resume** to return.
+Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 
 **Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: model, effort, [permission mode](agents/native.md#permission-modes) and context.
 

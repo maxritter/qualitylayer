@@ -60,7 +60,7 @@ describe("static marketing shell", () => {
     expect(staticText).toContain("qualitylayer.dev/download");
     expect(staticText).toContain("curl -fsSL https://qualitylayer.dev/install.sh | bash");
     // The first task starts in the App (2026-10-19, a3023a9d7): + New, an agent, the change in words.
-    expect(staticText).toContain("Choose + New, pick Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode, and describe the change");
+    expect(staticText).toContain("Choose + New, pick Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode or GitHub Copilot, and describe the change");
   });
 
   it("carries no leftover from the previous products", () => {

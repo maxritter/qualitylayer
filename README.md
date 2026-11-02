@@ -31,9 +31,9 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 
 <br>
 
-<a href="https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.mp4" aria-label="Watch the QualityLayer walkthrough, 5 minutes 20 seconds"><img src="docs/img/film-poster-dark.webp" alt="Play video: QualityLayer’s seven-step workflow, 5 minutes 20 seconds" width="700"></a>
+<a href="https://youtu.be/p1m4O4xRsrQ" aria-label="Watch the QualityLayer walkthrough on YouTube, 5 minutes 20 seconds"><img src="docs/img/film-poster-dark.webp" alt="Play video on YouTube: QualityLayer’s seven-step workflow, 5 minutes 20 seconds" width="700"></a>
 
-**[▶ Watch the 5:20 walkthrough](https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.mp4)**
+**[▶ Watch the 5:20 walkthrough on YouTube](https://youtu.be/p1m4O4xRsrQ)**
 
 </div>
 
@@ -51,20 +51,20 @@ QualityLayer keeps design decisions and verification visible while your agents w
 | --- | --- |
 | **Your own agent and plan** | Claude Code, Codex, Cursor and more run on the subscription or API key you already have. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
-| **Small, tested changes** | Your lead writes tests before code and delegates independent slices when useful. |
-| **An independent check** | With independent review on, a separate agent checks the running change against your request. Anything it cannot verify stays visible in Review. |
+| **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
+| **An independent check** | With independent review on, a separate agent checks the running change against your request. What it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Your own requirements** | Add checks, tools or skills to any step. Review shows what was done or skipped. [Required lines](https://qualitylayer.dev/docs/required-lines). |
 | **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |
 
 ---
 
-<h2 id="install">Getting Started</h2>
+<h2 id="install">Getting started</h2>
 
 ### Prerequisites
 
-- **A coding agent**, installed and signed in: Claude Code, Codex, Cursor, Grok, Antigravity, Pi or OpenCode. [Other agents](https://qualitylayer.dev/docs/agents/other) connect through the CLI.
-- **Your own subscription** (Claude or ChatGPT plan, or API key).
+- **A coding agent**, installed and signed in: Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode or GitHub Copilot. [Other agents](https://qualitylayer.dev/docs/agents/other) connect through the CLI.
+- **Your own subscription** (Claude, ChatGPT or GitHub Copilot plan, or API key).
 - **Git** and a repository.
 
 ### Installation
@@ -92,15 +92,15 @@ The App updates itself; without it, run `qualitylayer update`. [Installation gui
 <details>
 <summary><b>Coming from Pilot Shell 11</b></summary>
 
-Run `pilot update` or download the App. Active Polar licences work with both products; older purchases may need help moving over. [Migration and memory import](https://qualitylayer.dev/docs/moving-from-pilot-shell).
+Run `pilot update` or download the App. An active Pilot Shell licence works with both products; older purchases may need help moving over. [Migration and memory import](https://qualitylayer.dev/docs/moving-from-pilot-shell).
 
 </details>
 
-### First Steps
+### First steps
 
-In the App or browser, choose **+ New**, then **Chat**, **Feature** or **Bugfix**. Pick your repository and agent, and describe what you need.
+In the App or browser, choose **+**, then **Task** (Feature or Bugfix) or **Chat**. Pick your repository and agent, and describe what you need.
 
-**Chat** is a conversation without workflow steps. You can use artifacts, checks and reviews as needed, then **Start the workflow** from the same conversation. [Chat guide](https://qualitylayer.dev/docs/chat).
+**Chat** is a conversation without workflow steps. You can use artifacts, checks and reviews as needed, then choose **Convert to task** in the same conversation. [Chat guide](https://qualitylayer.dev/docs/chat).
 
 For a **Feature** or **Bugfix**, choose **Plan with QualityLayer**, or **Existing plan** to paste or attach a plan. Describe what you want:
 
@@ -124,18 +124,18 @@ QualityLayer runs only when you ask for it. [Your first task](https://qualitylay
 
 ### Skills your agent gets
 
-Setup installs six skills. Ask in plain language, naming QualityLayer or QL; your agent picks the right one.
+Setup adds skills to your agents. Ask in plain words, in any language. Your agents can also message each other, for example Claude Code asking Codex for a review.
 
-| Skill | What it does |
-| --- | --- |
-| `ql-workflow` | Plan, build, verify and review a change |
-| `ql-artifact` | Create and revise mockups, diagrams and clickable pages |
-| `ql-manage` | Find tasks and manage memory, sharing, settings and setup |
-| `ql-peer` | Coordinate other agent sessions on your computer |
-| `ql-quality` | Review code complexity, structure and duplication |
-| `ql-chat` | Start or continue a Chat, a conversation without workflow steps |
+| Skill | For | You say |
+| --- | --- | --- |
+| `ql-peer` | Agents talking to each other | “Ask Codex to review what you just built.” |
+| `ql-workflow` | Plan, build and review a change | “Using QualityLayer, add rate limits to the export API.” |
+| `ql-chat` | Chat without workflow steps | “Using QualityLayer, chat about the billing refactor.” |
+| `ql-artifact` | Designs, diagrams and pages | “Open the settings design in my browser.” |
+| `ql-quality` | Code health and security scans | “Scan this repository for leaked secrets.” |
+| `ql-manage` | Tasks, sharing, settings, setup | “Share this task with my team.” |
 
-Only `ql-workflow` starts the planning and build workflow; the others work on their own. [More about the skills](https://qualitylayer.dev/docs/agents/native#the-six-skills).
+[More about the skills](https://qualitylayer.dev/docs/agents/native#the-six-skills)
 
 ---
 
@@ -145,10 +145,10 @@ QualityLayer runs your project's checks and security scans. A separate agent rev
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/verification-dark.webp">
-  <img src="docs/img/verification-light.webp" alt="Deterministic checks: tests and types, linters, code health and recorded proof. Independent agents: security review, a fresh reviewer, design review and an optional second opinion from another coding agent." width="1000">
+  <img src="docs/img/verification-light.webp" alt="Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion from another coding agent." width="640">
 </picture>
 
-<h2 id="features">The Workflow</h2>
+<h2 id="features">The workflow</h2>
 
 Seven steps take a change from questions to review, with decisions and checks saved as Markdown in your repository. Existing plans start at Plan. You approve the Plan and finished change, authorize pushes and control the merge.
 
@@ -162,11 +162,20 @@ Seven steps take a change from questions to review, with decisions and checks sa
 | [Discuss](https://qualitylayer.dev/docs/steps/discuss) | Settles what done means and clarifies a bug report |
 | [Research](https://qualitylayer.dev/docs/steps/research) | Agents read how your code works today; a bug is reproduced and diagnosed here |
 | [Plan](https://qualitylayer.dev/docs/steps/plan) | Diagrams and change maps, clickable artifacts and checks, **approved by you** |
-| [Outline](https://qualitylayer.dev/docs/steps/outline) | The build session splits the approved Plan into small slices |
+| [Outline](https://qualitylayer.dev/docs/steps/outline) | Your agent splits the approved Plan into small slices |
 | [Implement](https://qualitylayer.dev/docs/steps/implement) | Your agent builds test first, fixes what fails and decides when it is ready |
 | [Verify](https://qualitylayer.dev/docs/steps/verify) | Your project's checks and an independent agent's review |
 | [Review](https://qualitylayer.dev/docs/steps/review) | A walkthrough of the change and a map of where it landed, **approved by you** |
 | [Pull request](https://qualitylayer.dev/docs/steps/pull-request) | Failing checks and routine review threads fixed; the task stays open until you merge |
+
+### See how a change fits together
+
+Your agent maps the files a change will touch and how they connect, before any code is written. Review shows the same map with where the build landed.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/change-map-dark.webp">
+  <img src="docs/img/change-map-light.webp" alt="Example change map: a Gateway part with Handler (changed) and a new Meter marked as a risk, linked by Usage to a Billing part with Ledger and price(), both changed. Fictional project." width="640">
+</picture>
 
 ### Two levels
 
@@ -181,11 +190,11 @@ Seven steps take a change from questions to review, with decisions and checks sa
 
 | In the App | What you can do |
 | --- | --- |
-| **Chat or a planned task** | Talk directly with your agent or follow the seven-step workflow. |
+| **Chat or a planned task** | Talk directly with your agent or follow the seven-step workflow. The sidebar shows what each agent is doing, and the App notifies you when one needs you. |
 | **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and pin feedback. |
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. |
 | **Checks and code review** | Read the evidence and file diffs, and comment on any line. |
-| **Agent controls and usage** | Choose your model, effort and permissions; track usage. [Settings](https://qualitylayer.dev/docs/reference/settings). |
+| **Agent controls and usage** | Choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
 | **Memory and team** | Reuse [lessons](https://qualitylayer.dev/docs/memory) about each project and how you work, ask teammates over Slack or email and [share work](https://qualitylayer.dev/docs/team/plans). |
 
 QualityLayer keeps task files on your computer and encrypts shared tasks first. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).

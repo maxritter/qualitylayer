@@ -12,7 +12,9 @@ Use **Chat** for a direct conversation with **Claude Code or Codex**, without wo
 
 ## Start a Chat {#start}
 
-Choose **+ New → Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session. Return to the same task to keep its history.
+Choose **+ › Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session, and the terminal fills the window. Return to the same task to keep its history. The agent's menu in the header has **Interrupt**, **Stop session** and **Resume session**.
+
+To continue a session you started outside QualityLayer, choose it under **Or resume a session in Claude Code** (or Codex) below the card. It opens as a Chat.
 
 ## Questions and tasks {#questions}
 
@@ -24,9 +26,9 @@ Outside Codex sessions are read-only here; answer in Codex's terminal.
 
 Ask your agent to save a plan, make artifacts, build in slices, run checks or request an independent review. Saved plans open in the Reader; artifacts open in their viewer. Your agent runs the checks and shows their results.
 
-## Start the workflow {#start-the-workflow}
+## Convert to task {#convert-to-task}
 
-Choose **Start the workflow**, then Feature or Bugfix. **Plan with QualityLayer** is the default and continues in Discuss, with the conversation and saved work as context.
+Choose **Convert to task** in the header, then Feature or Bugfix. **Plan with QualityLayer** is the default and continues in Discuss, with the conversation and saved work as context.
 
 Choose **Saved plan** to start at Plan from a plan this Chat saved, then **Start at the Plan**. The original is kept unchanged; review its execution agreement before the Outline and build. Discuss and Research are marked **Not run**. Both choices keep the same task and agent conversation.
 

@@ -10,7 +10,7 @@ Keep decisions, fixes, constraints and how you like to work so your agents can r
 <figure class="memory-flow" aria-label="How a saved lesson reaches an agent">
   <ol>
     <li><strong>Save a lesson</strong><span>A task or agent records something worth reusing.</span></li>
-    <li><strong>Find it locally</strong><span>Search matches words and meaning in your saved lessons.</span></li>
+    <li><strong>Find it locally</strong><span>Search matches words, meaning and recorded file paths.</span></li>
     <li><strong>Use it in context</strong><span>Your agent receives the relevant lesson text.</span></li>
   </ol>
   <figcaption>Example lesson: “Keep database migrations short and retry busy locks.”</figcaption>

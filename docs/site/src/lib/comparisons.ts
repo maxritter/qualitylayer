@@ -488,7 +488,7 @@ export const COMPARISONS: Comparison[] = [
     runsIn: "A Mac app that runs Claude Code, Codex, Cursor and OpenCode",
     lead: "Conductor runs several coding agents in parallel, each in its own workspace with a branch, files, terminal and diff. QualityLayer focuses on one change at a time. You approve a visual Plan, the agent builds it test first, and an agent that did not write the code checks the result before you approve it.",
     strengths: "Conductor treats each workspace as one stream of work, so you can start a new feature while another agent is still busy. It has a diff viewer whose inline comments go back to the agent, an agent review action and a Checks tab for git status, CI, deployments and todos. It can open the pull request, follow its checks and merge it.",
-    agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports those four agents as well, plus Grok, Antigravity and Pi.",
+    agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports all of them and more, including Grok, Antigravity and Pi.",
     rows: [
       { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One workspace per shippable unit, each with its own branch, working tree and app processes.", source: 2 },
       { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Test in the terminal or the running app, ask an agent to review, and read the Checks tab before merging.", source: 2 },

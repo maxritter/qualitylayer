@@ -29,7 +29,7 @@ Steps 1 to 6 happen in the App or browser.
 - **In the App** (recommended): pick the agent, model, effort, project and branch. Questions and feedback happen in the App.
 - **In my terminal**: copy one prompt into any coding agent, app or IDE; attached files are listed by path. The agent asks in its own chat. You can still approve the Plan and final Review in the App.
 
-More in [agent runs](app.md#agent-runs). Seven agents have [native setup](agents/native.md); others [use the CLI](agents/other.md).
+More in [agent runs](app.md#agent-runs). Claude Code, Codex and other popular agents have [native setup](agents/native.md); others [use the CLI](agents/other.md).
 
 <details>
 <summary>Good to know</summary>

@@ -36,7 +36,7 @@ It never force-pushes commits that are not its own.
 
 With the App open, failing checks, change requests and conflicts appear in **Needs you**. They wake or resume your agent when [Watch pull requests](../reference/settings.md#git-and-editor) is enabled.
 
-A new review thread or failing check moves the task to **Needs attention**:
+A new review thread or failing check puts the task in **Needs you**:
 
 1. Ask your agent: “Using QL, review task retry-webhooks”, naming your actual task.
 2. Your agent checks each thread against the code and the approved Plan. It fixes a routine, in-scope request itself, test first. It asks you only when a thread would change the scope or design, or when a reply is ready to post.

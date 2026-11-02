@@ -52,10 +52,14 @@ describe("FAQ", () => {
     for (const faq of [...FAQS, ...PRICING_FAQS]) expect(faq.answer).not.toMatch(/grok bot|muse code/i);
   });
 
-  it("names all seven agents the App sets up where it lists them", () => {
-    const listing = [...FAQS, ...PRICING_FAQS].filter((faq) => faq.answer.includes("Antigravity"));
-    expect(listing.length).toBeGreaterThan(0);
-    for (const faq of listing) for (const name of ["Claude Code", "Codex", "Cursor", "Grok", "Antigravity", "Pi", "OpenCode"]) expect(faq.answer, faq.question).toContain(name);
+  it("never counts the supported agents, which change as agents are added", () => {
+    const counted = /\b(two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(coding\s+)?agents\b/i;
+    for (const faq of [...FAQS, ...PRICING_FAQS]) expect(faq.answer, faq.question).not.toMatch(counted);
+    for (const row of COMPARE.flatMap((group) => group.rows)) expect(`${row.feature} ${row.note ?? ""}`).not.toMatch(counted);
+    for (const plan of PLANS) for (const [, text] of plan.highlights) expect(text).not.toMatch(counted);
+    const agents = PRICING_FAQS.find((faq) => faq.question === "Which agents does it work with?")!.answer;
+    expect(agents).toContain("Claude Code");
+    expect(agents).toContain("Codex");
   });
 });
 
@@ -84,12 +88,14 @@ describe("product facts", () => {
       { monthly: 49, yearly: 468 },
     ]);
     const annual = PRICING_FAQS.find((faq) => faq.question === "Monthly or yearly?")!.answer;
-    expect(annual).toContain("€288 a year, equivalent to €24 a month");
-    expect(annual).toContain("€468 per seat a year, equivalent to €39 per seat a month");
+    expect(annual).toContain("Solo costs €24 a month instead of €29");
+    expect(annual).toContain("Team €39 per seat a month instead of €49");
+    // The page shows monthly amounts only; checkout shows the yearly total (Max, 2 November 2026).
+    expect(annual).not.toMatch(/€288|€468/);
   });
 
-  it("gives every plan four highlights, as the cards are drawn", () => {
-    for (const plan of PLANS) expect(plan.highlights).toHaveLength(4);
+  it("gives every plan five highlights, as the cards are drawn", () => {
+    for (const plan of PLANS) expect(plan.highlights).toHaveLength(5);
   });
 
   it("publishes the euro charges for search engines", () => {
@@ -98,10 +104,11 @@ describe("product facts", () => {
     ]);
   });
 
-  it("offers the Enterprise-only rows on request, and nothing else", () => {
-    const enterprise = COMPARE.find((g) => g.name === "Enterprise");
-    expect(enterprise?.rows.every((r) => r.enterprise === "request" && !r.solo && !r.team)).toBe(true);
-    const others = COMPARE.filter((g) => g.name !== "Enterprise").flatMap((g) => g.rows);
-    expect(others.every((r) => r.enterprise !== "request")).toBe(true);
+  it("compares the plans in three groups of five that step up from Solo to Enterprise", () => {
+    expect(COMPARE.map((group) => group.rows.length)).toEqual([5, 5, 5]);
+    const [alone, team, large] = COMPARE;
+    expect(alone.rows.every((r) => r.solo && r.team && r.enterprise)).toBe(true);
+    expect(team.rows.every((r) => !r.solo && r.team && r.enterprise)).toBe(true);
+    expect(large.rows.every((r) => !r.solo && !r.team && r.enterprise)).toBe(true);
   });
 });

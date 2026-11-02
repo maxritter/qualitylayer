@@ -48,13 +48,13 @@ describe("current public illustrations and guides", () => {
     expect(implement).toContain("explicit stop or pause stays in force");
   });
 
-  it("includes immediate batches and complete Plan review in the pricing comparison", () => {
+  it("leads the pricing comparison with the whole workflow and both approvals", () => {
     const rows = COMPARE.flatMap((group) => group.rows);
-    const batch = rows.find((row) => /questions in batches/.test(row.feature));
-    expect(batch?.note).toMatch(/immediately.*Your turn/);
-    expect(batch?.solo).toBe(true);
-    expect(batch?.team).toBe(true);
-    expect(rows.find((row) => /Review the outcomes with the complete Plan/.test(row.feature))?.note).toMatch(/approve the Plan or give feedback/);
+    const workflow = rows[0];
+    expect(workflow.feature).toBe("The whole workflow");
+    expect(workflow.note).toMatch(/approval of the Plan and of the final Review/);
+    expect(workflow.solo).toBe(true);
+    expect(workflow.team).toBe(true);
     expect(rows.some((row) => /Done means point separately/.test(row.feature))).toBe(false);
   });
 });

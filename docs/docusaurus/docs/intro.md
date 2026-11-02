@@ -36,7 +36,7 @@ You approve twice: the Plan and the finished change. In between, your agent work
 | **[Implement](steps/implement.md)** | Your agent builds test first and fixes what fails |
 | **[Verify](steps/verify.md)** | Project checks, then an agent that did not write the code rules on every point |
 | **[Review](steps/review.md)** | You review the code and approve |
-| **[Pull request](steps/pull-request.md)** | Your agent fixes failing checks and routine threads. You merge |
+| **[Pull request](steps/pull-request.md)** | After Review: your agent fixes failing checks and routine threads. You merge |
 
 The agent decides how to carry out each step. QualityLayer enforces only your two approvals, a visible amendment for any change to what you approved, and recorded evidence for every check.
 

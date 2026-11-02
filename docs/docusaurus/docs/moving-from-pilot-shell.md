@@ -22,15 +22,15 @@ Ask your agent to plan or implement using QualityLayer or QL.
 
 | Your licence | What to do |
 | --- | --- |
-| Active Polar-issued Pilot Shell licence | Nothing. It works with both products under its existing subscription terms |
-| Older Gumroad purchase, or a key QualityLayer does not recognise | Email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address. Keep the key private |
-| None active | Start a fresh seven-day trial, even if you used a Pilot Shell trial |
+| An active Pilot Shell licence | Nothing to do |
+| An older or unrecognised key | Email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address. Keep the key private |
+| None | Start a 7-day trial, even if you used a Pilot Shell trial |
 
 Your repositories, code and Pilot plans stay where they are. To reuse a plan’s text, choose **Existing plan** in a new Feature or Bugfix; the old task’s workflow state is not imported.
 
 ## Import memories per project
 
-Memories are the only data you need to import. Open **Settings → Memory → Import from Pilot Shell**, select the matching project, then choose its JSONL or Markdown files from `.pilot/memories/` in that repository. Each memory's project name must match.
+Memories are the only data you need to import. Open **Settings › Memory › Import from Pilot Shell**, select the matching project, then choose its JSONL or Markdown files from `.pilot/memories/` in that repository. Each memory's project name must match.
 
 Lessons are copied into QualityLayer's private project memory; your files stay in place, and a second import skips unchanged lessons ([Pilot memory import](memory.md#import-pilot-lessons)).
 

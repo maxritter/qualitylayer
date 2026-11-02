@@ -22,7 +22,7 @@ export interface Plan {
   href: { monthly: string; yearly: string } | string;
   badge?: string;
   plus: string;
-  /** Four short highlights per plan, of about the same length; the table holds the detail. */
+  /** Five short highlights per plan, most important first, each one line on the card; the table holds the detail. */
   highlights: [Hue, string][];
 }
 
@@ -30,7 +30,7 @@ export const PLANS: Plan[] = [
   {
     id: "solo",
     name: "Solo",
-    audience: "For one developer.",
+    audience: "For working on your own.",
     price: { monthly: 29, yearly: 288 },
     per: "per month",
     cta: "Start Solo",
@@ -38,12 +38,13 @@ export const PLANS: Plan[] = [
       monthly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_MONTHLY || "https://buy.polar.sh/polar_cl_7qzxxKiqZXIFe3Uabodh7IauA937iVROT5qVW4VyuUf",
       yearly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_YEARLY || "https://buy.polar.sh/polar_cl_9krLYPvWYMBAXX4nL4LolXKgB5cAEA7J57H8Y3j0oQY",
     },
-    plus: "Everything one developer needs:",
+    plus: "Everything for working alone:",
     highlights: [
-      ["plan", "Approve the plan before any code is written"],
-      ["build", "Built test first, with its checks recorded"],
-      ["verify", "Checked against your request before you see it"],
-      ["review", "Works with any coding agent"],
+      ["plan", "Plan, build, verify and review"],
+      ["verify", "Security scans and reviews"],
+      ["build", "Bring your own coding agent"],
+      ["review", "Stays on your computer"],
+      ["plain", "Unlimited tasks and repos"],
     ],
   },
   {
@@ -59,27 +60,28 @@ export const PLANS: Plan[] = [
     },
     plus: "Everything in Solo, plus:",
     highlights: [
-      ["plan", "Share plans and collect your team’s feedback"],
-      ["build", "Follow the progress of every shared task"],
-      ["verify", "Invite people outside your team to comment"],
-      ["review", "Review finished changes together"],
+      ["plan", "Share plans with your team"],
+      ["build", "Team instructions and checks"],
+      ["review", "Review the code as a team"],
+      ["verify", "Slack and email questions"],
+      ["plain", "Seats and billing in one place"],
     ],
   },
   {
     id: "enterprise",
     name: "Enterprise",
-    audience: "For 20 developers or more.",
+    audience: "For custom hosting and terms.",
     price: "Custom",
     per: "volume pricing",
     cta: "Contact us",
     href: `mailto:${CONTACT_EMAIL}?subject=QualityLayer%20Enterprise`,
-    badge: "On request",
     plus: "Everything in Team, plus:",
     highlights: [
-      ["plan", "Host in your own cloud or on-premise"],
-      ["build", "Volume pricing for many seats"],
-      ["verify", "Single sign-on"],
+      ["plan", "Self-host in your own cloud"],
+      ["build", "Single sign-on for your team"],
+      ["verify", "Volume pricing for many seats"],
       ["review", "Invoicing and custom terms"],
+      ["plain", "Onboarding for your team"],
     ],
   },
 ];
@@ -87,107 +89,60 @@ export const PLANS: Plan[] = [
 export const formatPrice = (amount: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: PRICE_CURRENCY, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(amount);
 
-/** A cell: included, not included, or available when a company asks for it. */
-export type Cell = boolean | "request";
+/** A cell: included or not included. */
+export type Cell = boolean;
 export type CompareRow = { feature: string; solo: Cell; team: Cell; enterprise: Cell; note?: string };
 export type CompareGroup = { name: string; hue: Hue; rows: CompareRow[] };
 
-/** Enterprise has everything Team has unless a row says otherwise. */
-const row = (feature: string, solo: Cell, team: Cell, note?: string, enterprise: Cell = team): CompareRow => ({
+const row = (feature: string, solo: Cell, team: Cell, enterprise: Cell, note?: string): CompareRow => ({
   feature,
   solo,
   team,
   enterprise,
   note,
 });
-const onRequest = (feature: string) => row(feature, false, false, undefined, "request");
+
+/**
+ * Three groups of five rows, most important first: what one developer gets, what Team adds,
+ * what Enterprise adds. Every feature in detail lives in the docs (Max, 2 November 2026).
+ * Public copy never counts the supported agents; the number changes as agents are added.
+ */
+/** What Team sharing reveals to us, shown under the comparison so the privacy terms stay on the page. */
+export const TEAM_PRIVACY =
+  "Team plans, comments and links are encrypted on your machine. We can’t read them. We see who shared, who was asked, which task, when and its step. The guest page’s code comes from us. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. Pending notifications expire after 72 hours. Review code travels between your computer and your own Git remote. We store your team’s encrypted comments, the short lines of code they quote and the commits they point to.";
 
 export const COMPARE: CompareGroup[] = [
   {
-    name: "Plan",
-    hue: "plan",
-    rows: [
-      row("Approve one plan before any code is written", true, true),
-      row("Answer questions in batches, in any order", true, true, "Each answer reaches your agent immediately in Your turn"),
-      row("Review the outcomes with the complete Plan", true, true, "Answer unresolved choices, then approve the Plan or give feedback"),
-      row("Decisions shown as diagrams and a clickable mockup", true, true),
-      row("Read the full-size Plan with line comments", true, true),
-      row("Bugs start with finding their cause", true, true),
-      row("Ask for a plain prompt instead", true, true, "Your agent supplies it when you ask"),
-      row("Copy the plan as a PRD", true, true, "For Confluence, Google Docs or Jira"),
-    ],
-  },
-  {
-    name: "Build",
+    name: "Working alone, on your computer",
     hue: "build",
     rows: [
-      row("Choose the models that build and check", true, true),
-      row("Every task test first, project checks recorded", true, true),
-      row("One session builds every slice, with subagents when useful", true, true),
-      row("The cost of every step", true, true, "Estimated at list price"),
+      row("The whole workflow", true, true, true, "Seven steps, with your approval of the Plan and of the final Review"),
+      row("Checked before you see it", true, true, true, "Tests first, security scans and a review by an agent that did not write the code"),
+      row("Your agents, your subscriptions", true, true, true, "Claude Code, Codex and more, with no extra AI bill from us"),
+      row("Your work stays on your computer", true, true, true, "Plans, artifacts and agent output stay local unless you share them"),
+      row("Unlimited tasks and repositories", true, true, true),
     ],
   },
   {
-    name: "Verify",
+    name: "Working as a team",
     hue: "verify",
     rows: [
-      row("Security review when a change crosses a trust boundary", true, true, "Runs when the Plan names one, such as outside input, sign-in or secrets"),
-      row("An agent that did not write the code adds tests and checks every point", true, true, "On by default; Settings can turn it off"),
-      row("A separate coding agent reviews your plan and risky changes", true, true, "Choose any installed supported agent"),
+      row("Share plans and collect feedback", false, true, true, "Your team's feedback goes straight to your agent"),
+      row("Shared team instructions and checks", false, true, true, "Your standards, tools and checks for every teammate's tasks"),
+      row("Review the code as a team", false, true, true, "Comments on any line, through your own Git remote"),
+      row("Questions over Slack and email", false, true, true, "Ask a teammate about any part of a plan; morning digests"),
+      row("Guests comment through a link", false, true, true, "Share a plan or an artifact with people outside your team"),
     ],
   },
   {
-    name: "Review",
-    hue: "review",
-    rows: [
-      row("Approve the finished change, with its evidence", true, true, "Unverified checks stay unverified when you approve"),
-      row("Read the whole change like a pull request", true, true, "Split or unified, comments on any line, viewed marks per file"),
-      row("Ask, Change or Replace with, on any line", true, true, "Ask gets an answer without changing code. Change goes to your agent with your decision. Replace with sends exact lines"),
-      row("Agent findings appear on their lines", true, true, "Make one your change request, or say why it is not a problem and it becomes a project lesson"),
-      row("Ask another agent to review a file or the change", true, true, "An installed agent that did not build it reads the change, read-only, for up to 8 minutes. Its cost is listed"),
-      row("Approve with comments still open", true, true, "They are posted to the pull request as one GitHub review"),
-      row("Review the code as a team", false, true, "Ask for review pushes the branch to your own Git remote. Teammates with a checkout of the repository read the code there and comment on lines; others see the walkthrough"),
-    ],
-  },
-  {
-    name: "Everyday",
+    name: "For large companies",
     hue: "plain",
     rows: [
-      row("The App for macOS, Windows and Linux", true, true, "On a server or in WSL, it opens in your browser"),
-      row("A notification when it is Your turn", true, true, "App bell, menu bar, and above the Claude Code prompt"),
-      row("Your tasks and agent status on Home", true, true, "Tasks that need you and work in progress"),
-      row("Seven coding agents in the App or browser", true, true, "Each keeps its own terminal and permission modes"),
-      row("See how much of your plan is left", true, true, "Claude Code and Codex limits in the sidebar, the conversation footer and Settings › Usage"),
-      row("Your AI agents can message each other", true, true, "Claude Code, Codex, Pi and OpenCode sessions on your computer"),
-    ],
-  },
-  {
-    name: "Team",
-    hue: "plain",
-    rows: [
-      row("Share plans with your team", false, true),
-      row("Team feedback goes straight to your agent", false, true),
-      row("Ask a teammate about any part of a plan", false, true, "A Slack message or email opens it under Questions for you"),
-      row("Teammates answer with their own agent", false, true, "Their agent drafts it; nothing is sent until they approve"),
-      row("Follow the progress of every shared task", false, true),
-      row("Invite people outside your team to comment", false, true),
-      row(
-        "Plans, comments and links are encrypted on your machine",
-        false,
-        true,
-        "We can’t read them. We see who shared, who was asked, which task, when and its step. The guest page’s code comes from us. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. Pending notifications expire after 72 hours. Review code travels between your computer and your own Git remote. We store your team’s encrypted comments, the short lines of code they quote and the commits they point to.",
-      ),
-      row("Manage seats and billing in one place", false, true),
-    ],
-  },
-  {
-    name: "Enterprise",
-    hue: "plain",
-    rows: [
-      onRequest("Host in your own cloud, on-premise or a private VPC"),
-      onRequest("Volume pricing"),
-      onRequest("Single sign-on (SSO)"),
-      onRequest("Custom terms and invoicing"),
+      row("Host the backend yourself", false, false, true, "In your own cloud, on-premise or a private VPC"),
+      row("Single sign-on", false, false, true, "SAML or OIDC through your identity provider"),
+      row("Volume pricing for many seats", false, false, true),
+      row("Invoicing and custom terms", false, false, true),
+      row("Onboarding for your team", false, false, true, "A working session to set up the workflow with your developers"),
     ],
   },
 ];

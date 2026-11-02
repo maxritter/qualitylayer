@@ -17,7 +17,7 @@ Research maps how the code works today. It can start while you answer Discuss an
 
 | | |
 | --- | --- |
-| **Reads blind** | Research helpers do not see your request; without helpers, your agent reads the code as it is before proposing changes |
+| **Reads without your request** | Research helpers do not see your request; without helpers, your agent reads the code as it is before proposing changes |
 | **Checks claims** | Each cited file is reopened before a finding is written |
 | **Draws today** | One picture of the code your request touches, and what that code makes easy, hard or risky for your request |
 | **Names risks** | Code to reuse, files that change often, how it is tested |

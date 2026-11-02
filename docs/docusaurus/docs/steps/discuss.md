@@ -25,7 +25,7 @@ Describe the change with **+ New**, or ask your agent: “Using QL, plan a CSV e
 
 `01-discuss.md` records your request, the scope and **Done means**: the numbered results you accept the change by. Verify checks each one. You approve it with the Plan. Later changes are recorded as amendments and remain visible in the final review.
 
-The agent's **Problem**, facts and **Done means** lead the page once written. **Original request** stays collapsed at the bottom; open it to read the complete text. While the agent prepares Discuss, the task keeps its real title and your request remains available there.
+The agent's **Problem**, facts and **Done means** lead the page once written. **Original request** stays collapsed at the bottom; open it to read the complete text.
 
 ## Too small for a plan {#too-small}
 

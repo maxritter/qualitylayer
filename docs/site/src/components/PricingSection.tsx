@@ -5,7 +5,7 @@ import CheckoutLink from "@/components/CheckoutLink";
 import Questions from "@/components/Questions";
 import { PRICING_FAQS } from "@/lib/content";
 import { OFFLINE_DAYS } from "@/lib/product";
-import { COMPARE, PLANS, formatPrice, type Cell, type Hue, type Plan } from "@/lib/pricing";
+import { COMPARE, PLANS, TEAM_PRIVACY, formatPrice, type Cell, type Hue, type Plan } from "@/lib/pricing";
 import { Link } from "react-router-dom";
 
 /** The home page's step colours: amber where you decide, blue where agents build, violet where they check. */
@@ -15,12 +15,11 @@ const hue = (h: Hue) => ({ "--g": HUE[h] }) as CSSProperties;
 type Billing = "monthly" | "yearly";
 
 function CellMark({ value }: { value: Cell }) {
-  if (value === "request") return <span className="pr-req">On request</span>;
   if (value) return <span role="img" aria-label="Included" className="pr-ck" style={hue("build")} />;
   return <span role="img" aria-label="Not included" className="pr-dash" />;
 }
 
-/** The price as the switch shows it: per month, and for yearly the full year struck through beside what it costs. */
+/** The price as the switch shows it: always per month. Yearly totals are left to checkout (Max, 2 November 2026). */
 function Price({ plan, billing }: { plan: Plan; billing: Billing }) {
   if (plan.price === "Custom") {
     return (
@@ -31,12 +30,11 @@ function Price({ plan, billing }: { plan: Plan; billing: Billing }) {
     );
   }
   const { monthly, yearly } = plan.price;
-  const seat = plan.id === "team" ? " per seat" : "";
   return (
     <>
       <div className="pr-price"><b className="pr-amt">{formatPrice(billing === "yearly" ? yearly / 12 : monthly)}</b><span className="pr-per">{plan.per}</span></div>
       {billing === "yearly" ? (
-        <p className="pr-bill"><s aria-label={`instead of ${formatPrice(monthly * 12)}`}>{formatPrice(monthly * 12)}</s> {formatPrice(yearly)}{seat} billed yearly</p>
+        <p className="pr-bill">Billed yearly · instead of {formatPrice(monthly)} a month</p>
       ) : (
         <p className="pr-bill">Billed monthly · cancel any time</p>
       )}
@@ -52,7 +50,7 @@ const PricingSection = () => {
       <section id="plans" className="pr-top-sec" aria-labelledby="pr-h">
         <div className="pr-wrap">
           <h1 id="pr-h" className="pr-h1">Pricing</h1>
-          <p className="pr-lead">Start with a 7-day trial. Every plan includes unlimited tasks, repositories and agents, priced per developer.</p>
+          <p className="pr-lead">Start with a 7-day trial. Solo is for working on your own, Team for working together.</p>
           <div className="pr-seg" role="group" aria-label="Billing">
             <Button type="button" variant={billing === "monthly" ? "default" : "ghost"} aria-pressed={billing === "monthly"} onClick={() => setBilling("monthly")}>Monthly</Button>
             <Button type="button" variant={billing === "yearly" ? "default" : "ghost"} aria-pressed={billing === "yearly"} onClick={() => setBilling("yearly")}>Yearly <span className="pr-save">Save up to 20%</span></Button>
@@ -105,6 +103,8 @@ const PricingSection = () => {
               </div>
             ))}
           </div>
+          <p className="pr-account-link">{TEAM_PRIVACY}</p>
+          <p className="pr-account-link">Every feature, step by step, is in the <a href="/docs">docs</a>.</p>
         </div>
       </section>
 

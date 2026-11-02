@@ -1,7 +1,7 @@
 ---
 title: Supported agents
 sidebar_label: Supported agents
-description: Set up the seven coding agents QualityLayer runs, choose their models, permission modes and reviewers, and control their sessions in the App.
+description: Set up the coding agents QualityLayer runs, choose their models, permission modes and reviewers, and control their sessions in the App.
 ---
 
 # Supported agents {#supported-agents}
@@ -37,7 +37,7 @@ Ask in plain language; your agent picks the skill.
 
 ## Models and reviews
 
-Pick agent, model and effort per task; defaults use High effort. Pi and OpenCode use provider-qualified IDs, such as `openai-codex/gpt-6.1-sol` (Pi) and `openai/gpt-6.1-sol` (OpenCode). Cursor puts effort in the model name, such as Opus 5.5 (High).
+Pick agent, model and effort per task; defaults use High effort. Pi and OpenCode use provider-qualified IDs, such as `openai-codex/gpt-6.1-sol` (Pi) and `openai/gpt-6.1-sol` (OpenCode). Cursor and Antigravity put effort in the model name, such as Opus 5.5 (High).
 
 Reviewers read in a separate context and edit nothing. Cursor and Antigravity cannot be made read-only, so they review a disposable copy and are stopped at the first tool that is not read-only. Who reviews: [Second opinion](../reference/settings.md#second-opinion).
 
@@ -64,7 +64,7 @@ A run starts in your agent's own setting. Setup adds [native defaults](../instal
 | Codex | On request, Ask first, Auto review, Full access |
 | Cursor | Ask first, Auto-review, Run everything |
 | Grok | Auto, Ask first, Accept edits, Bypass |
-| Antigravity | Ask first, Accept edits, Auto, Bypass |
+| Antigravity | Ask first, Auto, Accept edits, Bypass |
 | OpenCode | Agent settings, Auto-approve |
 | Pi | None; its own tool permissions apply |
 

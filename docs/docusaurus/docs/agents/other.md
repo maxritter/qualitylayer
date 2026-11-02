@@ -23,11 +23,11 @@ Pick **In my terminal** when you start the build and copy its prompt. The agent 
 
 ## Run in your terminal {#app-start}
 
-A copied prompt works in any coding agent, but does not add the App's conversation view or session controls; those belong to the seven supported agents.
+A copied prompt works in any coding agent, but does not add the App's conversation view or session controls; those belong to the supported agents.
 
 ## What changes {#differences}
 
-| | The seven native agents | Any other agent |
+| | Natively supported agents | Any other agent |
 | --- | --- | --- |
 | Setup | Done when you install | One pasted prompt |
 | Model and effort | Set in QualityLayer | Set in your agent |

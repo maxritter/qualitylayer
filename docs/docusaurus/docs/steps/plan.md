@@ -20,7 +20,7 @@ The **Plan** page is the document you approve before the build. The proposed cha
 | **Summary** | The change in a few lines, with the size of the build, whether it is risky and what reviewed it |
 | **Done means** | The results from [Discuss](discuss.md), and how each will be checked |
 | **The artifact** | A wireframe or finished artifact for anything people see ([Artifacts](../artifacts.md)) |
-| **Today and after the change** | A view of the change when it makes the proposal clearer |
+| **Today and after the change** | A view of the change when it makes the proposal clearer; a picture of how code connects is drawn as a change map |
 | **Engineering decisions** | The consequential choices and their reasons, with a diagram where it helps; more than six fold to one row each |
 | **Not doing** | What stays untouched |
 | **Decisions made for you** | Your agent's smaller choices, with reasons |
@@ -48,7 +48,7 @@ Answering a question does not approve the Plan. Approve in the App, also when th
 
 ### Comment on a diagram {#diagrams}
 
-Click any part of a diagram or passage to pin a comment; your agent reads it when it next checks the task. Teammates can comment too ([Plan reviews](../team/plans.md)).
+Click any part of a diagram, a change map's card or a passage to pin a comment; your agent reads it when it next checks the task. Teammates can comment too ([Plan reviews](../team/plans.md)).
 
 ## Before it reaches you {#before-it-reaches-you}
 

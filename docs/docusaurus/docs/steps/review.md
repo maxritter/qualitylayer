@@ -18,6 +18,7 @@ The final approval is yours. Review opens the code alongside the complete change
 | Part | What you read |
 | --- | --- |
 | **Code** | The complete change, with line comments |
+| **Change map** | Where the change landed on the Plan's or Research's map; with a Plan map, what was built as planned and what was not; other changed files listed below |
 | **Checks and outcomes** | Every check and its recorded result, including failures and unverified work |
 | **Screenshots** | The changed screens and their comparison evidence |
 | **Change details** | The complete change record, decisions and amendments |

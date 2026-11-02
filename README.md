@@ -161,11 +161,11 @@ Seven steps take a change from questions to review, with decisions and checks sa
 |---|---|
 | [Discuss](https://qualitylayer.dev/docs/steps/discuss) | Settles what done means and clarifies a bug report |
 | [Research](https://qualitylayer.dev/docs/steps/research) | Agents read how your code works today; a bug is reproduced and diagnosed here |
-| [Plan](https://qualitylayer.dev/docs/steps/plan) | Diagrams, clickable artifacts and checks, **approved by you** |
+| [Plan](https://qualitylayer.dev/docs/steps/plan) | Diagrams and change maps, clickable artifacts and checks, **approved by you** |
 | [Outline](https://qualitylayer.dev/docs/steps/outline) | The build session splits the approved Plan into small slices |
 | [Implement](https://qualitylayer.dev/docs/steps/implement) | Your agent builds test first, fixes what fails and decides when it is ready |
 | [Verify](https://qualitylayer.dev/docs/steps/verify) | Your project's checks and an independent agent's review |
-| [Review](https://qualitylayer.dev/docs/steps/review) | A walkthrough of the change, **approved by you** |
+| [Review](https://qualitylayer.dev/docs/steps/review) | A walkthrough of the change and a map of where it landed, **approved by you** |
 | [Pull request](https://qualitylayer.dev/docs/steps/pull-request) | Failing checks and routine review threads fixed; the task stays open until you merge |
 
 ### Two levels

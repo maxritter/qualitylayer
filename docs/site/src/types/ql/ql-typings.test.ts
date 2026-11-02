@@ -27,6 +27,7 @@ describe("the site's typings of the App's modules", () => {
 
   it("the App still exports what the site imports from it", () => {
     expect(source("reader/MermaidBlock.tsx")).toMatch(/export function loadMermaidFrom\(load: \(\) => Promise<MermaidModule>\)/);
+    expect(source("reader/ChangeMapBlock.tsx")).toMatch(/export function ChangeMapBlock\(/);
     expect(source("steps/StepDocument.tsx")).toMatch(/export function StepDocument\(/);
     expect(source("components/ui/button.tsx")).toMatch(/export \{[^}]*\bButton\b/);
     expect(source("components/ui/sonner.tsx")).toMatch(/export \{ Toaster \}/);

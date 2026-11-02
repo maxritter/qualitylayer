@@ -61,7 +61,7 @@ const SETUPS: Chip[] = [
 /** Each card in the App's colours: blue for the agent's work, amber for your decision, violet for what agents checked. */
 const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: string; lead: string; text: string }[] = [
   { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Keep your existing login or API key." },
-  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on diagrams and clickable mockups." },
+  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on change maps, diagrams and clickable mockups." },
   { who: "check", icon: BadgeCheck, title: "Proof", lead: "Independent review", text: "A separate agent checks the result against your plan." },
 ];
 

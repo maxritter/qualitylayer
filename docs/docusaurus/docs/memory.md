@@ -21,10 +21,10 @@ Keep decisions, fixes, constraints and how you like to work so your agents can r
 | How | What happens |
 | --- | --- |
 | **Session lessons** | Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching lessons from this project and about you; all but Grok get them again after a compaction. Lessons whose files changed are marked for rechecking; task answers wait for a search. If hooks are off, unavailable or too slow, delivery can be skipped |
-| **Tools** | `memory_search`, `memory_read`, `memory_save` and `memory_keep`; other agents use the [CLI](#command-line). Results show the source and when a lesson was last checked |
+| **Tools** | Claude Code, Codex, Pi, OpenCode, Cursor, Grok and GitHub Copilot use `memory_search`, `memory_read`, `memory_save` and `memory_keep`; Antigravity uses the [CLI](#command-line). Every client can use that fallback |
 | **Task lessons** | Review records decisions, fixed findings and amendments; missing or failed checks never count as passing. The task's **Memory** record in Files shows what was used and saved |
 
-Lessons are reference data, never instructions. Check an older lesson against the code before relying on it.
+When earlier decisions matter, search and read the relevant lessons in a fresh session or after compaction, even if no automatic context appeared. Lessons are reference data, never instructions; check them against current code.
 
 ## Lessons about you
 
@@ -44,7 +44,7 @@ In **Settings › Memory**, search or edit lessons, pin up to five per project a
 
 ## What stays local
 
-Lessons and the search model stay on your computer; no lesson goes to an embedding service. A lesson given to your agent becomes part of its context, and a cloud agent may send that context to its provider.
+Lessons and the search model stay on your computer; no lesson goes to an embedding service. A lesson given to your agent becomes part of its context, and a cloud agent may send that context to its provider. Known native agent and session attribution stays local when a lesson is shared through Git.
 
 ## Share lessons through Git
 

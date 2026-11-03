@@ -110,7 +110,7 @@ Plan retries for failed webhooks and stop after a few tries.
 
 1. Answer questions and comment on the Plan.
 2. Approve the Plan. Your agent builds and verifies the change.
-3. Review the result, including any checks that still need you, and approve it.
+3. Review the result, including any checks that still need you, and approve it. Keep talking to your agent to merge, deploy or tweak it.
 
 | Where you work | How to start |
 | --- | --- |

@@ -71,14 +71,27 @@ Use the final approval in the page header. There is one approval for the whole c
 
 | Choice | What happens |
 | --- | --- |
-| **Approve** | Approves the change locally. You push and open a pull request yourself |
+| **Approve** | Nothing is pushed. The conversation stays open for merge, deploy and tweaks |
 | **Approve and create PR** | Pushes the task's branch and opens the pull request. Needs `gh` |
 | **Copy the git commands** | Run them in your terminal |
 
 ![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-light.svg)
 ![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-dark.svg)
 
-Nothing is pushed or merged without your yes. A task built on your main branch has no branch to open a pull request from ([where the build lands](implement.md#where-it-lands)). Once a pull request is open, your agent [watches the checks](pull-request.md#watch) and works through reviewers' threads ([Pull request](pull-request.md#waits)). Teammates comment in their own App ([Change reviews](../team/changes.md)).
+### After you approve {#after-approve}
+
+![Review after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-light.webp)
+![Review after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-dark.webp)
+
+Keep talking to your agent until the change is merged. Ask it to merge, push, deploy or run end-to-end tests; it does none of these on its own.
+
+| Review shows | What you do |
+| --- | --- |
+| **Not merged yet** | Merge as usual. Merged on the web? Pull the base branch, or press **Mark as merged** |
+| **1 change since your approval** | Your agent committed a tweak. Press **View the change**, then **Approve change** in the header. With an open pull request, your merge accepts it |
+| **Merged into main** | The task is in **Shipped**. New work starts with **Start a follow-up** |
+
+QualityLayer sees a merge in this computer's Git, including a squash or rebase, and reads a pull request it opened on GitHub. A task built on your main branch has no branch of its own: only the fixes your agent made for it count ([where the build lands](implement.md#where-it-lands)). With a pull request open, your agent [watches the checks](pull-request.md#watch) and works through reviewers' threads ([Pull request](pull-request.md#waits)).
 
 ## Stop, archive or delete a task {#stop-archive-or-delete-a-task}
 

@@ -15,7 +15,7 @@ Open a pull request from [Review](review.md#approve). QualityLayer follows its c
 
 ## Following it {#following}
 
-The Review page shows the checks and reviewers, read through `gh` while the App is open. Without `gh`, the task closes at the approval.
+The Review page shows the checks and reviewers, read through `gh` while the App is open. Without `gh`, the task stays open until the merge reaches this computer's Git (after a pull or fetch) or you mark it merged.
 
 ## Your agent watches the checks {#watch}
 
@@ -46,4 +46,4 @@ For review threads, pushing the fix and replying to reviewers stay yours, and so
 
 ## Merged or closed {#merged}
 
-When you merge, the task moves to **Shipped** with what it cost. Its documents stay in `docs/plans/`.
+When you merge, the task moves to **Shipped** with what it cost. A squash or rebase merge is recognized too, and **Mark as merged** covers any other case. Its documents stay in `docs/plans/`. Further work starts with **Start a follow-up**.

@@ -65,7 +65,7 @@ Only the App, or a browser paired with its key, can change these.
 
 **Usage display** shows **Used** percentages by default; choose **Remaining** to change the App and macOS menu bar together. Menu bar usage starts on. Expand **Menu bar readings** to choose individual reported windows and daily dollar readings; quota choices also select the Usage popup's rows. **Daily total** is optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison. Credits stay separate, and missing data makes totals partial.
 
-**Plan limits** show the windows Claude Code, Codex and GitHub Copilot report. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** keeps the daily charts, comparisons and model breakdown for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a local [provider CSV import](commands.md#commands-by-group). The shared money choice also applies to statistics; API-price value is not your bill.
+**Plan limits** show the windows Claude Code, Codex and GitHub Copilot report. Visible plan readings refresh every five minutes; Codex and Copilot show the latest limits their sources provide. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** keeps the daily charts, comparisons and model breakdown for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a local [provider CSV import](commands.md#commands-by-group). The shared money choice also applies to statistics; API-price value is not your bill.
 
 ## Sessions {#sessions}
 

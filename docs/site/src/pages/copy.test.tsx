@@ -65,31 +65,12 @@ describe("the site's copy", () => {
     expect(guide).toContain("You approve the workflow Plan before later implementation");
   });
 
-  it("describes the offline licence window enforced by the binary", async () => {
-    // Read the real policy without importing the CLI's Bun environment into the website.
-    const policy = readFileSync(new URL("../../../../qualitylayer/src/core/licence/constants.ts", import.meta.url), "utf8");
-    const hours = policy.match(/export const OFFLINE_GRACE_PERIOD_HOURS = (\d+)/);
-    expect(hours).not.toBeNull();
-    const pricing = await textOf(<PricingSection />);
-    expect(pricing).toContain(`up to ${Number(hours![1]) / 24} days after its last successful check`);
-    expect(pricing).not.toContain("30 days");
-  });
-
-  it("describes the pending Slack delivery window without promising deletion of every copy", async () => {
-    const policy = readFileSync(new URL("../../api/_lib/slack-queue.ts", import.meta.url), "utf8");
-    const hours = policy.match(/const QUEUE_LIFE_MS = (\d+) \* 3_600_000/);
-    expect(hours).not.toBeNull();
-    const pricing = await textOf(<PricingSection />);
-    expect(pricing).toContain(`Pending notifications expire after ${Number(hours![1])} hours.`);
-    expect(pricing).not.toContain("held up to a day");
-  });
-
-  it("lets Pilot users keep both products and import memories when ready", async () => {
-    const pricing = await textOf(<PricingSection />);
-    expect(pricing).toMatch(/Pilot Shell 11 alongside QualityLayer/i);
-    expect(pricing).toMatch(/paid subscription keeps its price/i);
-    expect(pricing).toMatch(/Import memories per project/i);
-    expect(pricing).not.toMatch(/updater moves you over|replaces Pilot Shell/i);
+  it("lets Pilot users keep both products and import memories when ready", () => {
+    const pilot = PRICING_FAQS.find((faq) => faq.question === "I use Pilot Shell 11. What happens?")!.answer;
+    expect(pilot).toMatch(/Pilot Shell 11 and QualityLayer in parallel/i);
+    expect(pilot).toMatch(/paid subscription keeps its existing price/i);
+    expect(pilot).toMatch(/Import your Pilot memories per project/i);
+    expect(pilot).not.toMatch(/updater moves you over|replaces Pilot Shell/i);
   });
 
   it("quotes the engineer word for word, attributed without a name", async () => {

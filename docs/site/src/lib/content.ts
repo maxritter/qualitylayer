@@ -15,7 +15,7 @@ const faq = (question: string, answer: string): Faq => ({ question, answer });
 const priced = (id: "solo" | "team") => {
   const price = PLANS.find((p) => p.id === id)?.price;
   if (price === undefined || price === "Custom") throw new Error(`${id} has no price`);
-  return { monthly: formatPrice(price.monthly), yearly: formatPrice(price.yearly / 12) };
+  return { monthly: formatPrice(price.monthly), yearly: formatPrice(price.yearly / 12), saving: formatPrice(price.monthly - price.yearly / 12) };
 };
 const solo = priced("solo");
 const team = priced("team");
@@ -70,7 +70,7 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "Monthly or yearly?",
-    `Billed yearly, Solo costs ${solo.yearly} a month instead of ${solo.monthly}, and Team ${team.yearly} per seat a month instead of ${team.monthly}. Checkout shows the yearly total before you pay.`,
+    `Monthly is the default and you can cancel any time. Billed yearly, you save ${solo.saving} a month on Solo and ${team.saving} per seat a month on Team. Checkout shows the yearly total before you pay.`,
   ),
   faq(
     "Do I pay for AI usage here?",

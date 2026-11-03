@@ -57,7 +57,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 | **Extra arguments** | Added to every start; ones that switch off permission checks are refused |
 | **Config folder** | Where the agent keeps its settings |
 | **Default effort** | High is recommended; a per-task choice wins |
-| **Default permission mode** | Never one that skips every check ([modes](../agents/native.md#permission-modes)) |
+| **Default permission mode** | Bypass on first use; your saved mode or **Agent settings** wins ([modes](../agents/native.md#permission-modes)) |
 
 Only the App, or a browser paired with its key, can change these.
 

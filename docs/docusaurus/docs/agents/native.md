@@ -53,11 +53,11 @@ The **Conversation** view reads each agent's session record ([controls](../app.m
 | Cursor | Thinking, tool output, token counts, context fill, permission questions |
 | GitHub Copilot | Permission questions |
 
-Missing permission questions appear in the Terminal view. Cursor, Grok and Antigravity get workflow questions as a numbered list. To continue after a crash, stop the old run and say “Using QL, continue verification of task retry-webhooks.”
+Native permission waits show in Conversation; when a reply is available only in Terminal, the App opens it and offers **Open Terminal**. Cursor, Grok and Antigravity get workflow questions as a numbered list. To continue after a crash, stop the old run and say “Using QL, continue verification of task retry-webhooks.”
 
 ### Permission modes {#permission-modes}
 
-A run starts in your agent's own setting. Setup adds [native defaults](../install.md#agent-setup) only where none were chosen. The row under the message box distinguishes **Agent settings** from an explicit mode such as **Auto** or **On request**.
+New managed sessions default to Bypass. Your saved global or per-agent mode takes precedence; **Agent settings** explicitly inherits the native policy. Planning remembers your last successful choices, and Build inherits this task’s planning choices, including accepted native permission changes.
 
 | Agent | Modes |
 | --- | --- |
@@ -68,9 +68,9 @@ A run starts in your agent's own setting. Setup adds [native defaults](../instal
 | Antigravity | Ask first, Auto, Accept edits, Bypass |
 | OpenCode | Agent settings, Auto-approve |
 | Pi | None; its own tool permissions apply |
-| GitHub Copilot | Ask first, Allow tools, Bypass |
+| GitHub Copilot | Manual Approval, Assisted Permissions, Allow All |
 
-Explicitly choosing Bypass, Full access or Run everything for a run asks you to confirm. **Agent settings** inherits the native policy, including a native Bypass or Full access default. Your QualityLayer Plan and final approvals remain separate.
+Switching an existing session to Bypass, Full access or Run everything asks you to confirm. Copilot may require its Terminal’s `/permissions` menu to change a resumed session; the App explains this before stopping it. Pi has no native bypass switch, and OpenCode preserves explicit denials. Your QualityLayer Plan and final approvals remain separate.
 
 ### Plan limits {#plan-limits}
 

@@ -45,9 +45,9 @@ Select a passage or part of a diagram and choose **Give feedback**. **To** picks
 
 ## Code review {#code-review}
 
-Open **Changes** in the task header or **Review the code** in Files. The view keeps this workflow’s changes together. Choose one file or all files, switch **Unified / Split**, and use **Full file › Version** to read an exact revision.
+Open **Changes** in the task header, **Review the code** above Review’s change map, or **Review the code** in Files. The view keeps this workflow’s changes together. Choose one file or all files, switch **Unified / Split**, and use **Full file › Version** to read an exact revision.
 
-**Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. Finishing code review and approving the change are separate actions.
+**Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. **Finish code review** returns to the view you opened it from. Approving the change remains a separate action.
 
 ## What it costs {#cost}
 
@@ -67,7 +67,7 @@ When you start a task or the build, choose where the agent runs:
 
 Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 
-**Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: model, effort, [permission mode](agents/native.md#permission-modes) and context.
+**Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: current activity, model, effort, [permission mode](agents/native.md#permission-modes), pacing and context. Each control opens its own details. The agent’s **Appearance** menu shows thinking hidden, collapsed or expanded; collapsed is the default.
 
 ## In Claude Code
 

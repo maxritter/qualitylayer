@@ -3,7 +3,7 @@ title: From Pilot Shell 11
 description: Use QualityLayer alongside Pilot Shell 11 and move at your own pace.
 ---
 
-QualityLayer is a separate product. Version 11 is the last version called Pilot Shell. Keep using it as long as you like, or run both side by side. Installing QualityLayer leaves Pilot Shell, its configuration and its tools in place.
+QualityLayer and Pilot Shell 11 can run side by side. Installing QualityLayer preserves Pilot Shell, its configuration and tools. Version 11 remains the last Pilot Shell version.
 
 ## Update from Pilot Shell
 
@@ -26,7 +26,7 @@ Ask your agent to plan or implement using QualityLayer or QL.
 | An older or unrecognised key | Email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address. Keep the key private |
 | None | Start a 7-day trial, even if you used a Pilot Shell trial |
 
-Your repositories, code and Pilot plans stay where they are. To reuse a plan’s text, choose **Existing plan** in a new Feature or Bugfix; the old task’s workflow state is not imported.
+Repositories, code and Pilot plans stay in place. Choose **Existing plan** in a new Feature or Bugfix to reuse a plan's text; its workflow state is not imported.
 
 ## Import memories per project
 

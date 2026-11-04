@@ -3,7 +3,7 @@ title: Commands
 description: Ask in plain language, or look up the CLI commands for tasks, artifacts, code health and memory.
 ---
 
-`qualitylayer help` lists every command in your version (`ql` for short). Add `--json` for machine-readable output, or `--task <slug>` when several tasks are open.
+Use `qualitylayer help` (`ql` for short) to list commands. Add `--json` for machine-readable output and `--task <slug>` to select an open task.
 
 ## In your agent
 
@@ -19,7 +19,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Existing plans {#existing-plans}
 
-`qualitylayer next --from-plan ./plan.md` (or `-` for standard input) starts at Plan from a Markdown or plain-text plan, kept unchanged ([Plan](../steps/plan.md#existing-plan)).
+`qualitylayer next --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.md#existing-plan)).
 
 ## Chat {#chat}
 
@@ -41,11 +41,22 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `task set answers=terminal\|app` | Where you answer for the current task |
 | `settings set answers terminal` | The default for new tasks |
 | `read 03-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
-| `plan export --out <folder>` | Write the Plan, `01-discuss.md` and its pictures to a new folder for readers without QualityLayer; names any picture it could not make |
+| `plan export --out <folder>` | Export the Plan, `01-discuss.md` and pictures; report any picture that could not be made |
 
 ## Commands by group
 
-Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.md`. Your agent runs the workflow commands.
+Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-plan.md`.
+
+| Group | Commands |
+| --- | --- |
+| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
+| Tasks | `find` · `tasks` · `status` · `task set` · `task override` · `task archive\|restore` · `branch new` |
+| App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
+| Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
+| Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |
+
+<details>
+<summary>Workflow commands your agent runs</summary>
 
 | Group | Commands |
 | --- | --- |
@@ -53,13 +64,10 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
 | Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
-| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
 | Review | `comments list\|take\|resolve` · `review fix-open-items` · `pr watch` |
-| Tasks | `find` · `tasks` · `task set` · `task override` · `task archive\|restore` · `branch new` |
-| App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
-| Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
-| Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` imports Cursor's token-usage CSV locally; later usage stays unreported until reimported |
+
+</details>
 
 ## Read a public share
 
@@ -67,7 +75,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 qualitylayer share fetch --link-file /path/to/private-link.txt --out ./shared-copies --json
 ```
 
-A link file (or `--link-stdin`) keeps the link out of your shell history. No licence is needed, and fetching changes nothing. The key after `#` decrypts on your computer and is never sent. Revoking a link cannot remove copies already downloaded.
+A link file or `--link-stdin` keeps the link out of shell history. Fetching needs no licence and changes nothing. The key after `#` stays on your computer. Revoking a link cannot remove downloaded copies.
 
 ## Artifacts {#artifacts}
 
@@ -113,7 +121,15 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 
 ## Session messaging
 
-Ask Claude Code, Codex or another supported agent to oversee a named task with `qualitylayer status --json --task <task>` from its checkout. `waiting_on` identifies pending human actions, including native permission requests (`reason: agent_permission`), current agent or helper work, or unknown activity; `last_decision` retains approvals or requested changes; `answer_mode` reports the answer destination and its recorded origin. Read the task documents for verification evidence. Sessions on the same computer coordinate through `ql-peer` within the work you authorize; you still choose the build session and approve the Plan and final Review.
+To oversee a task, ask your agent to run `qualitylayer status --json --task <task>` from its checkout. Read the task documents for verification evidence.
+
+| Status field | What it reports |
+| --- | --- |
+| `waiting_on` | A human action, agent or helper work, or unknown activity. Native permission requests use `reason: agent_permission` |
+| `last_decision` | Approvals and requested changes |
+| `answer_mode` | Where you answer, with its recorded origin |
+
+Sessions on this computer coordinate through `ql-peer` within the work you authorize. You choose the build session and approve the Plan and final Review.
 
 ```bash
 qualitylayer peers list
@@ -122,4 +138,8 @@ qualitylayer peers send --to 'cc:<name-or-uuid>' --message-file ./review-request
 
 Address `cc:`, `codex:`, `pi:`, `opencode:`, `copilot:`, `grok:`, `cursor:` or `antigravity:` plus a name or UUID. `peers help` lists the reply commands; `peers doctor` finds a missing session.
 
-GitHub Copilot, Grok, Cursor and Antigravity sessions join the list from their first hook. A message reaches them at the end of their turn or with their next prompt, and at once in an App session that is waiting. A session idle in a terminal gets it at its next turn.
+GitHub Copilot, Grok, Cursor and Antigravity sessions join the list at their first hook. Messages arrive:
+
+- At once in a waiting App session.
+- At turn end or the next prompt while the agent works.
+- At the next turn in an idle terminal.

@@ -23,7 +23,7 @@ describe("the turn-off page behind the email footer link", () => {
   it("asks first and changes nothing until the button is pressed", () => {
     page();
     expect(screen.getByRole("heading", { name: "Turn off QualityLayer emails?" })).toBeTruthy();
-    expect(screen.getByText(/at this address\. They still appear in the App, and Slack messages don't change\./)).toBeTruthy();
+    expect(screen.getByText(/App and Slack notifications are unchanged\./)).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
     expect(send).not.toHaveBeenCalled();
   });
@@ -43,7 +43,7 @@ describe("the turn-off page behind the email footer link", () => {
     complete(Response.json({ off: true, email: "sam@acme.test" }));
     const heading = await screen.findByRole("heading", { name: "Emails are off" });
     await waitFor(() => expect(document.activeElement).toBe(heading));
-    expect(screen.getByRole("status").textContent).toContain("QualityLayer won't email sam@acme.test anymore. Turn them on again in the App: Settings › Notifications.");
+    expect(screen.getByRole("status").textContent).toContain("Team notification emails are off for sam@acme.test. Turn them on again in the App: Settings › Notifications.");
     expect(screen.queryByRole("button", { name: /Turn off emails|Turning off/ })).toBeNull();
   });
 
@@ -52,7 +52,7 @@ describe("the turn-off page behind the email footer link", () => {
     page();
     fireEvent.click(button());
     await screen.findByRole("heading", { name: "Emails are off" });
-    expect(screen.getByRole("status").textContent).toContain("QualityLayer won't email this address anymore.");
+    expect(screen.getByRole("status").textContent).toContain("Team notification emails are off for this address.");
   });
 
   it.each([500, "throw"] as const)("keeps the button active above a clear error and lets the visitor retry (%s)", async (status) => {

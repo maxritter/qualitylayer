@@ -52,7 +52,7 @@ function TurnOff({ token }: { token: string }) {
 
   if (state === "done") return (
     <Done icon={CircleCheck} title="Emails are off" heading={heading}>
-      <p>QualityLayer won't email <b>{email || "this address"}</b> anymore. Turn them on again in the App: {APP_PATH}.</p>
+      <p>Team notification emails are off for <b>{email || "this address"}</b>. Turn them on again in the App: {APP_PATH}.</p>
     </Done>
   );
   if (state === "bad") return (
@@ -62,7 +62,7 @@ function TurnOff({ token }: { token: string }) {
   );
   return (
     <Done icon={MailX} title="Turn off QualityLayer emails?" live={false}>
-      <p>You'll stop getting emails about questions and updates on your team's tasks at this address. They still appear in the App, and Slack messages don't change.</p>
+      <p>You'll stop getting emails about your team's questions and task updates. App and Slack notifications are unchanged.</p>
       {error ? <p className="dd-error" role="alert">{error}</p> : null}
       <Button ref={retry} type="button" size="xl" className="dd-submit" disabled={state === "busy"} onClick={() => void off()}>
         {state === "busy" ? "Turning off…" : "Turn off emails"}

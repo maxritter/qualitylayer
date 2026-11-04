@@ -148,15 +148,15 @@ html{scroll-padding-top:76px}
 .mx-wrap.mx-sec{padding-top:clamp(80px,11cqi,150px)}
 .mx-head{max-width:46rem}
 /* Heavy headings, as the hero's: the "Quality by design" voice of the home page */
-.mx-h2{margin:0;max-width:15em;font-size:clamp(34px,4.6cqi,62px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
-.mx-lead{margin:18px 0 0;max-width:40rem;font-size:clamp(17px,1.4cqi,19px);line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
+.mx-h2{margin:0;max-width:15em;font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
+.mx-lead{margin:18px 0 0;max-width:40rem;font-size:clamp(16px,1.25cqi,17px);line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 
 /* Works with: the heading beside four agent tiles */
 .mx-with{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px 64px;align-items:center}
-.mx-with .mx-h2{font-size:clamp(32px,3.8cqi,52px)}
+.mx-with .mx-h2{font-size:clamp(30px,3cqi,42px)}
 .mx-withg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0;padding:0;list-style:none}
 .mx-wi{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;gap:22px;min-height:124px;padding:20px 22px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink)}
-.mx-wi b{font-size:clamp(22px,2.2cqi,30px);line-height:1;font-weight:800;letter-spacing:-.04em}
+.mx-wi b{font-size:clamp(18px,1.6cqi,22px);line-height:1;font-weight:800;letter-spacing:-.04em}
 .mx-wi .mx-ic{box-sizing:content-box;width:24px;height:24px;padding:11px;border-radius:13px;background-color:var(--mx-sunk);color:var(--mx-ink);-webkit-mask:none;mask:none;position:relative}
 .mx-wi .mx-ic:after{content:"";position:absolute;inset:11px;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
 /* Each agent's own logo, as the App draws it: in the text colour, Claude Code in its orange. */
@@ -173,7 +173,7 @@ html{scroll-padding-top:76px}
 /* Decided before it is built, proven after */
 .mx-pr3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:clamp(40px,5cqi,64px)}
 .mx-pr{display:flex;flex-direction:column;padding:28px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel)}
-.mx-pr h3{margin:0;font-size:26px;line-height:1.1;font-weight:800;letter-spacing:-.035em}
+.mx-pr h3{margin:0;font-size:22px;line-height:1.1;font-weight:800;letter-spacing:-.035em}
 .mx-pr b{margin-top:8px;font-size:16px;font-weight:600}
 .mx-pr p{margin:8px 0 0;font-size:15.5px;line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 
@@ -183,12 +183,12 @@ html{scroll-padding-top:76px}
 .mx-quote blockquote p{margin:0;font-size:clamp(28px,3.7cqi,50px);line-height:1.1;font-weight:800;letter-spacing:-.04em;text-wrap:balance}
 .mx-quote figcaption{margin-top:20px;font-size:15px;color:var(--mx-ink3)}
 .mx-quotes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(32px,6cqi,80px)}
-.mx-quotes .mx-quote blockquote p{font-size:clamp(26px,2.4cqi,34px);line-height:1.16}
+.mx-quotes .mx-quote blockquote p{font-size:clamp(22px,2cqi,28px);line-height:1.16}
 @container (max-width:740px){.mx-quotes{grid-template-columns:minmax(0,1fr);gap:40px}}
 
 /* Models: the heading beside two rows of chips drifting in opposite directions, faded at the edges */
 .mx-mq{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:32px 64px;align-items:center}
-.mx-mqt .mx-h2{font-size:clamp(30px,3.6cqi,48px)}
+.mx-mqt .mx-h2{font-size:clamp(30px,3cqi,42px)}
 .mx-mqr{min-width:0}
 .mx-mqm{display:flex;flex-direction:column;gap:12px;overflow:hidden;-webkit-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
 .mx-track{display:flex;gap:12px;width:max-content;animation:mx-drift 60s linear infinite}
@@ -221,7 +221,7 @@ html{scroll-padding-top:76px}
 .mx-chain li.ql{border-color:var(--ql-accent);box-shadow:0 0 0 1px var(--ql-accent),0 18px 40px -24px var(--ql-accent)}
 .mx-chain li.ql .mx-tile{background:var(--ql-accent);color:var(--ql-text-on-accent);box-shadow:none}
 .mx-chain li.ql b{color:var(--ql-accent-hover)}
-.mx-chain b{font-size:18px;font-weight:800;letter-spacing:-.025em;text-wrap:balance}
+.mx-chain b{font-size:17px;font-weight:800;letter-spacing:-.025em;text-wrap:balance}
 .mx-chain-text{font-size:14.5px;line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 .mx-chain-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:12px}
 .mx-chain-chips span{padding:3px 8px;border-radius:4px;background:var(--mx-sunk);border:1px solid var(--mx-line);font-size:12.5px;font-weight:500;color:var(--mx-ink)}
@@ -245,13 +245,13 @@ html{scroll-padding-top:76px}
 
 /* ---- Questions: on the home page the heading takes the heavy voice ---- */
 #faq.w7-sec{border-top:0;padding-top:clamp(80px,11cqi,150px);padding-bottom:0}
-.mx-home .w7-faq > .w7-h2{font-size:clamp(34px,4.6cqi,62px);line-height:1.02;font-weight:800;letter-spacing:-.045em}
-.mx-home .w7-faql [data-slot="accordion-trigger"]{font-size:19px;font-weight:700;letter-spacing:-.02em}
+.mx-home .w7-faq > .w7-h2{font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em}
+.mx-home .w7-faql [data-slot="accordion-trigger"]{font-size:17px;font-weight:700;letter-spacing:-.02em}
 
 /* ---- Closing: the brand line again, on a tinted panel with the download and the command line ---- */
 .mx-end{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:28px 48px;padding:clamp(32px,5cqi,64px);border:1px solid var(--ql-panel-border);border-radius:28px;background:var(--ql-panel-tint);color:var(--mx-ink)}
 .mx-end .mx-qbd{margin-bottom:18px;font-size:20px}
-.mx-end h2{margin:0;max-width:15em;font-size:clamp(34px,4.6cqi,62px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
+.mx-end h2{margin:0;max-width:15em;font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
 .mx-end p:not(.mx-qbd){margin:16px 0 0;max-width:40rem;font-size:17px;line-height:1.6;color:var(--mx-ink2)}
 .mx-end .sx-ctas{flex:none;justify-content:flex-start;margin:0}
 .w7-root .mx-end .mx-endn{margin-top:16px;font-size:15px}
@@ -374,7 +374,7 @@ html{scroll-padding-top:76px}
 #skills .sk-more li{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;align-content:start;column-gap:12px;row-gap:12px;padding:20px 22px;border:1px solid var(--mx-line2);border-radius:16px;background:var(--mx-panel)}
 #skills .sk-more .mx-tile{margin:0}
 #skills .sk-more q{grid-column:1 / -1}
-#skills .sk-more b{font-size:18px;font-weight:800;letter-spacing:-.025em}
+#skills .sk-more b{font-size:17px;font-weight:800;letter-spacing:-.025em}
 #skills .sk-more q{font-size:14.5px;line-height:1.5;color:var(--mx-ink2);text-wrap:pretty}
 #skills .sk-foot{margin:22px 0 0;font-size:15px;color:var(--mx-ink3)}
 #skills .sk-foot a{color:var(--ql-accent-hover);text-decoration:underline;text-underline-offset:3px}

@@ -24,7 +24,7 @@ Project commands and security scans produce recorded results. Separate agents re
 
 | Check | What it does |
 | --- | --- |
-| **Project checks** | Your tests, types, lint and build, run on the committed build and recorded. A red check is a record, not a stop: the reviewer rules on it |
+| **Project checks** | Tests, types, lint and build run on the commit. Failures are recorded without stopping the workflow; the reviewer rules on them |
 | **Code health** | Complexity and duplication in the files your agent changed, reported to it after each turn as feedback. [Code health](../reference/code-health.md) |
 | **Security scans** | Local scans for secrets, dependency advisories, GitHub workflows and risky code. Unavailable scans stay **not checked**. [Security scans](../reference/code-health.md#security-scans) |
 | **Recorded proof** | A **Done means** point passes only with evidence: a check's output, a captured response, a screenshot or a file |
@@ -34,9 +34,9 @@ Project commands and security scans produce recorded results. Separate agents re
 | Check | What it does |
 | --- | --- |
 | **Security review** | Runs beside the project checks when the change crosses a trust boundary or edits agent controls. Your agent fixes critical and high findings before independent review; remaining findings stay visible |
-| **Independent review** | An agent that did not write the code. It adds the tests the build missed, runs the scenarios on the running program and compares changed screens with their artifacts. It reads the whole diff and records a verdict for every **Done means** point. Red checks are its evidence |
+| **Independent review** | An agent that did not write the code reads the whole diff, adds missing tests, runs the program's scenarios and compares screens with their artifacts. It records a verdict for each **Done means** point, using red checks as evidence |
 | **Design review** | A separate agent checks each finished design before you see it, unless you change **Design review** in [Settings](../reference/settings.md) |
-| **Second opinion** | On risky changes when enabled in [Settings](../reference/settings.md#second-opinion), or when requested, a reviewer from another agent family checks for breakage. Your agent records each finding as **Taken** or **Kept** |
+| **Second opinion** | A reviewer from another agent family checks risky changes when [enabled](../reference/settings.md#second-opinion), or on request. Findings are recorded as **Taken** or **Kept** |
 
 If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify records **Checked without an independent judge**.
 
@@ -52,7 +52,7 @@ Each **Done means** point shows its evidence as it comes in: output, a screensho
 
 ## What reaches Review {#when-it-stops}
 
-Failed checks keep their results and evidence. Prerequisites only you can provide, unavailable environments and points still open after the second run reach Review as unresolved work. They never count as passed.
+Failures keep their evidence. Human-only prerequisites, unavailable environments and points open after the second run reach Review as unresolved work, never as passed.
 
 Your agent's native permissions and your explicit stop or pause still apply.
 

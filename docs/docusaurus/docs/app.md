@@ -20,24 +20,58 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 ## The sidebar {#sidebar}
 
-Projects are repositories on this computer; tasks waiting on you come first, and a detailed row shows its step on a seven-part strip. A live agent's row says what it is doing and turns amber when it needs you. A toggle on the row opens the agent's task list, where it reports one (Claude Code, Codex, OpenCode), and its helpers. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
+Projects group tasks by repository, with tasks waiting on you first.
+
+- A row shows the step strip and live agent activity; amber means it needs you.
+- The row toggle opens reported task lists (Claude Code, Codex and OpenCode) and helpers.
+- Right-click a project to rename, recolor or hide it; right-click a task to rename, archive or delete it.
+- The foot shows [plan limits](agents/native.md#plan-limits) or today's cost.
 
 Collapse the sidebar to a narrow rail with Home, Team, Artifacts, one tile for each task that needs you or is running, your plan limits and Settings. Hover a tile to see where its task stands. The sidebar stays expanded or collapsed as you move between tasks.
 
-**View options** (the sliders icon) filters by name, regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Reset filters** clears them.
+**View options** filters names, groups and row sizes. **Last activity** filters recorded changes: Any, 24 h, 3 d or 7 d. Working and open tasks stay visible. **Reset filters** clears the filters.
 
-**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file in an open task; **⇧⌘N** starts a task in the installed App. In the installed App, **⌘B** toggles the task list, **⌘J** the right sidebar, **⌘1**, **⌘2** and **⌘3** open Home, Team and Artifacts, and **⌘,** opens Settings (Ctrl instead of ⌘ on Windows/Linux). Hover over these controls to see their shortcuts. Search keeps its project-selection keys; the focused Terminal keeps the agent’s keys.
+**⌘K** searches actions, projects, tasks and files; **⌘P** opens a file in the current task. Use Ctrl instead of ⌘ on Windows/Linux.
+
+<details>
+<summary>More shortcuts in the installed App</summary>
+
+| Shortcut | Action |
+| --- | --- |
+| **⇧⌘N** | New task |
+| **⌘B** / **⌘J** | Toggle the left / right sidebar |
+| **⌘1** / **⌘2** / **⌘3** | Home / Team / Artifacts |
+| **⌘,** | Settings |
+
+Hover over controls for their shortcuts. Search keeps its project-selection keys; a focused Terminal keeps the agent's keys.
+
+</details>
 
 ## Home {#home}
 
-**Needs you** lists your questions, approvals, teammates' requests, Chats waiting on you and agents that stopped early; each opens the exact spot. **Running** shows your agents' work. Each list shows ten rows, then **Show N more**. The App notifies you only when you can act: when an agent needs you, when it is your turn, or when it stopped early.
+**Needs you** opens questions, approvals, teammate requests, waiting Chats and agents that stopped early. **Running** shows active work. Each list shows ten rows, then **Show N more**. Notifications arrive when you can act: an agent needs you, it is your turn, or a run stopped early.
 
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-light.svg)
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-dark.svg)
 
 ## Answering questions {#questions}
 
-**Your turn** shows one question at a time; its numbered strip lets you answer in any order. Press **1–9** for a choice, **R** for the recommended one, **A** for all recommended answers in a batch, **T** to write your own and **Send**, or **M** for **Tell me more**. **Enter** takes the recommendation when the card is focused. Each answer reaches your agent at once and never approves anything.
+**Your turn** shows one question; use its numbered strip to answer in any order.
+
+<details>
+<summary>Answer with the keyboard</summary>
+
+| Key | Action |
+| --- | --- |
+| **1–9** | Pick a choice |
+| **R** / **A** | Take this recommendation / all recommendations in the batch |
+| **T** | Write your own answer, then **Send** |
+| **M** | **Tell me more** |
+| **Enter** | Take the recommendation when the card is focused |
+
+</details>
+
+Answers reach your agent immediately and never approve the Plan or change.
 
 ## Documents and feedback {#comments-and-artifacts}
 
@@ -47,7 +81,7 @@ Select a passage or part of a diagram and choose **Give feedback**. **To** picks
 
 ## Code review {#code-review}
 
-Open **Changes** in the task header, **Review the code** above Review’s change map, or **Review the code** in Files. The view keeps this workflow’s changes together. Choose one file or all files, switch **Unified / Split**, and use **Full file › Version** to read an exact revision.
+Open **Changes** in the header or **Review the code** in Review or Files. Choose one file or all files, **Unified / Split** diffs, or **Full file › Version** for an exact revision.
 
 **Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. **Finish code review** returns to the view you opened it from. Approving the change remains a separate action.
 
@@ -69,7 +103,7 @@ When you start a task or the build, choose where the agent runs:
 
 Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 
-**Conversation** shows messages, finished turns folded to one line; **Terminal** shows the local program. Shared tasks omit Terminal. Under the message box: current activity, model, effort, [permission mode](agents/native.md#permission-modes), pacing and context. Each control opens its own details. The agent’s **Appearance** menu shows thinking hidden, collapsed or expanded; collapsed is the default.
+**Conversation** folds finished turns to one line; **Terminal** shows the local program and is omitted from shared tasks. Below the message box are activity, model, effort, [permissions](agents/native.md#permission-modes), pacing and context; each control opens its own details. **Appearance** sets thinking to hidden, collapsed (default) or expanded.
 
 ## In Claude Code
 

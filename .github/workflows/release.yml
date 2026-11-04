@@ -439,6 +439,9 @@ jobs:
         if: steps.check.outputs.should_release == 'true'
         env: { VERSION: "${{ steps.check.outputs.version }}", GH_TOKEN: "${{ github.token }}" }
         run: bash .github/scripts/release-notes.sh "$VERSION" > /dev/null
+      - name: Published App images and demo match the candidate
+        if: inputs.operation != 'promote' && steps.check.outputs.should_release == 'true'
+        run: node docs/site/scripts/check-captures.mjs
 
   candidate:
     name: Stage the exact candidate without publication

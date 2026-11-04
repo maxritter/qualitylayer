@@ -23,7 +23,7 @@ const team = priced("team");
 /** Asked on the home page and on pricing, answered the same way on both. */
 const CODE_LEAVES = faq(
   "Does my code leave my computer?",
-  "Your coding agent sends code to its provider under your existing data settings, as it does today. QualityLayer keeps your code, plans, artifacts and agent output on your computer. Sharing encrypts tasks, documents and comments on your computer first: we can't read them, and see only who shared which task, when and at which step. Artifacts go along only if you include them; terminal output and the repository's code never do. Code your team reviews travels through your own Git remote; we store only the team's encrypted comments, the short lines of code they quote and the commits they point to. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. A screenshot you attach to a feedback report can show code, so check it first.",
+  "Your agent sends code to its provider under your existing data settings. QualityLayer keeps code, plans, artifacts and agent output on your computer. Shared tasks, documents and comments are encrypted there: we can't read them, but see who shared which task, when and at which step. Artifacts are included only if you choose; terminal output and repository code stay out. Your team reviews code through its own Git remote. We store encrypted review comments, short quoted code lines and their commit references. Slack and email notifications send task titles and questions through our server to Slack or our email provider. Check feedback screenshots before attaching them: they can contain code.",
 );
 
 /** Ordered by what a visitor asks first: cost, the difference, privacy, then how they would use it. */
@@ -55,7 +55,7 @@ export const FAQS: Faq[] = [
   ),
   faq(
     "Can I see how much of my plan is left?",
-    "Claude Code and Codex show remaining limits and reset times. Other agents do not report them. Stopped builds can resume when their limit resets.",
+    "Claude Code, Codex and GitHub Copilot show the limits they report, with reset times when available. Stopped builds can resume when their limit resets.",
   ),
   faq(
     "I use Pilot Shell today. What happens?",
@@ -82,7 +82,7 @@ export const PRICING_FAQS: Faq[] = [
   ),
   faq(
     "Which agents does it work with?",
-    "The coding agents you already use, with your own subscriptions or API keys. Claude Code, Codex and other popular agents have native setup, model choices and interactive sessions in the App or browser. Choose any installed agent for a separate review. The CLI connects other agents that run shell commands, including in your own terminal, VS Code or another IDE.",
+    "Use your own subscriptions or API keys. Claude Code, Codex and other supported agents have setup, model choices and interactive sessions in the App or browser. Choose an installed agent for independent review. The CLI connects other agents that run shell commands in your terminal or IDE.",
   ),
   faq(
     "Who needs a seat?",
@@ -91,7 +91,7 @@ export const PRICING_FAQS: Faq[] = [
   CODE_LEAVES,
   faq(
     "What does Enterprise include?",
-    "For any company, of any size, that needs more than Team: hosting the backend in your own cloud or on-premise, single sign-on, volume pricing, invoicing, custom terms and onboarding for your team. Write to us and we set it up together.",
+    "Custom hosting in your cloud or on-premise, single sign-on, volume pricing, invoicing, custom terms and team onboarding. It's available to companies of any size; contact us to arrange it.",
   ),
   faq(
     "I use Pilot Shell 11. What happens?",

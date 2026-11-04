@@ -22,7 +22,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 
 ### Your instructions {#instructions}
 
-Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent, helpers and reviewers each step and never copied into documents. Lines under `## Plan`, `## Implement`, … apply to that step only, and a `- [ ]` line there is [required](../required-lines.md). [Team instructions](#team-instructions) win on conflict. No line can approve a gate.
+Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, helpers and reviewers read it each step; documents never copy it. Headings such as `## Plan` and `## Implement` limit lines to that step; checkboxes (`- [ ]`) are [required lines](../required-lines.md). [Team instructions](#team-instructions) win conflicts. Instructions cannot approve a gate.
 
 ### Independent review {#independent-review}
 
@@ -30,7 +30,7 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ### Second opinion {#second-opinion}
 
-**Automatic**: a model from another family reads a risky Plan and a risky built change, read-only, beside your agent. Risky means the Plan says so, the change touches sign-in, secrets or outside input, or a slice is marked risky. QualityLayer picks the reviewer from the agents on this computer: GPT reviews Claude, Claude reviews GPT, and Pi on GPT can review Claude Code's work. Settings shows who checks whose work.
+**Automatic** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing.
 
 <details>
 <summary>How the reviewer is picked</summary>
@@ -49,7 +49,11 @@ Up to 12,000 characters in `~/.qualitylayer/instructions.md`, read by your agent
 
 ## Agents {#defaults}
 
-**On this computer** lists the supported agents with version, sign-in, a check for a ready integration and a **Use** switch. Problems show **Repair**, **Out of date** or **Not installed**. **Models and roles** on the row or in **⋯** opens separate planning, build-lead and helper defaults, plus Claude Code's subagent default. **Install…** opens the vendor's page; QualityLayer never runs an installer. **Show agent sessions as** picks **Conversation** or **Terminal**.
+**On this computer** shows each agent's version, sign-in, integration check and **Use** switch. Problems offer **Repair**, **Out of date** or **Not installed**.
+
+- **Models and roles** (on the row or in **⋯**) sets planning, build and helper defaults, plus Claude Code's build subagents.
+- **Install…** opens the vendor's page; QualityLayer never runs an installer.
+- **Show agent sessions as** chooses **Conversation** or **Terminal**.
 
 | **⋯ › Edit launch…** | What it changes |
 | --- | --- |
@@ -63,9 +67,18 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Usage {#usage}
 
-**Usage display** shows **Used** percentages by default; choose **Remaining** to change the App and macOS menu bar together. Menu bar usage starts on. Expand **Menu bar readings** to choose individual reported windows and daily dollar readings; quota choices also select the Usage popup's rows. **Daily total** is optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison. Credits stay separate, and missing data makes totals partial.
+**Usage display** defaults to **Used**; **Remaining** changes both the App and macOS menu bar. Menu bar usage starts on.
 
-**Plan limits** show the windows Claude Code, Codex and GitHub Copilot report. Visible plan readings refresh every five minutes; Codex and Copilot show the latest limits their sources provide. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since. **What your agents used** keeps the daily charts, comparisons and model breakdown for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a local [provider CSV import](commands.md#commands-by-group). The shared money choice also applies to statistics; API-price value is not your bill.
+| Control | What it changes |
+| --- | --- |
+| **Menu bar readings** | Reported quota windows and daily dollars. Quota choices also select the Usage popup's rows |
+| **Daily total** | Optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison |
+
+Credits stay separate; missing data makes totals partial.
+
+**Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since.
+
+**What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
 
 ## Sessions {#sessions}
 
@@ -79,11 +92,13 @@ Only the App, or a browser paired with its key, can change these.
 
 ## Notifications {#notifications}
 
-**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies. Under **Away from this computer**, choose **Slack messages**, **Email messages** and an optional **Morning digest**. Email reaches your seat address once the team owner enables it and Slack doesn't reach you ([Slack and email](../team/plans.md#slack)).
+**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies.
+
+**Away from this computer** controls Slack, email and the morning digest. Email uses your seat address when the team owner enables it and Slack cannot reach you ([routing](../team/plans.md#slack)).
 
 ## Git and editor {#git-and-editor}
 
-**Tools** shows whether Git and `gh` are signed in; without `gh`, no pull requests. **Open files and folders in** picks VS Code, Cursor, Zed, Finder or Terminal. **Watch pull requests** (on) wakes the task's agent on a failing check, change request or conflict, at most 3 times a day per pull request and not below 10 % of the plan left.
+**Tools** shows whether Git and `gh` are signed in; without `gh`, no pull requests. **Open files and folders in** picks VS Code, Cursor, Zed, Finder or Terminal. **Watch pull requests** (on) wakes the task's agent on a failing check, change request or conflict, at most 3 times a day per pull request, and on people's new review comments up to 2 more times, never below 10 % of the plan left.
 
 ## Appearance {#appearance}
 

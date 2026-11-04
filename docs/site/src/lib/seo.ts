@@ -26,7 +26,7 @@ export const PUBLIC_PAGES = {
   },
   "/compare/bmad-method": {
     title: "QualityLayer vs BMAD Method: planning artifacts and review",
-    description: "Looking for a BMAD Method alternative? Compare BMAD's agile planning paths and parallel review with QualityLayer's approved Plan and recorded evidence.",
+    description: "Compare BMAD's agile planning paths and parallel review with QualityLayer's approved visual Plan and recorded checks.",
   },
   "/compare/gsd": {
     title: "QualityLayer vs GSD (Get Shit Done): spec loop and proof",
@@ -54,11 +54,11 @@ export const PUBLIC_PAGES = {
   },
   "/compare/humanlayer": {
     title: "QualityLayer vs HumanLayer: planning, proof and review",
-    description: "Considering a HumanLayer alternative? Compare agent support, collaborative planning, recorded verification and human review in QualityLayer and HumanLayer.",
+    description: "Compare QualityLayer and HumanLayer on agent support, collaborative planning, verification and human review.",
   },
   "/compare/spec-kit": {
     title: "QualityLayer vs GitHub Spec Kit: specs, proof and review",
-    description: "Looking for a Spec Kit alternative? Compare GitHub Spec Kit's customizable spec workflows with QualityLayer's visual planning, verification and human approval.",
+    description: "Compare GitHub Spec Kit's customizable spec workflows with QualityLayer's visual planning, recorded checks and human approval.",
   },
   "/compare/openspec": {
     title: "QualityLayer vs OpenSpec: change proposals and verification",

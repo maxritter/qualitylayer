@@ -12,7 +12,7 @@ const LAYERS: { who: "check" | "agent"; id: string; title: string; lead: string;
     who: "check",
     id: "deterministic",
     title: "Project checks",
-    lead: "Same input, same result, every time.",
+    lead: "Repeatable checks from your project.",
     items: [
       { icon: FlaskConical, title: "Tests and types", text: "Your own commands, recorded." },
       { icon: FileCode, title: "Linters", text: "Your project's rules." },

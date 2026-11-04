@@ -116,7 +116,7 @@ export function DownloadView({
           <Icon path={TERMINAL} stroke />
           <span>
             <b>Browser setup and CLI</b>
-            <small>Install where your agent runs, then open the workspace with qualitylayer app. Works in WSL, dev containers and servers.</small>
+            <small>Install beside your agent, then run qualitylayer app. Works in WSL, dev containers and servers.</small>
             <span className="w7-cmd">
               <code>{INSTALL_COMMAND}</code>
               <Button type="button" onClick={() => void copy()} aria-label="Copy install command">

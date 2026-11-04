@@ -100,8 +100,8 @@ function ProofAndReview() {
       <h2 id="proof">How QualityLayer carries proof into review</h2>
       <ul>
         <li><b>Before code</b><span>You approve the Plan: what changes, what stays, and how you will know it works.</span></li>
-        <li><b>After the build</b><span>The <a href="/docs/steps/verify">Verify step</a> records output, screenshots or files for each agreed outcome. Checks that fail or cannot run stay visible in <a href="/docs/steps/review">Review</a>. An agent that did not write the code checks every change, unless you turn that off in Settings.</span></li>
-        <li><b>Until it merges</b><span>With GitHub's <code>gh</code> CLI, QualityLayer <a href="/docs/steps/pull-request">follows the pull request</a> through checks and review. QualityLayer never merges it.</span></li>
+        <li><b>After the build</b><span><a href="/docs/steps/verify">Verify</a> records output, screenshots or files for each outcome. Failed and blocked checks stay visible in <a href="/docs/steps/review">Review</a>. An agent that did not write the code checks the change unless disabled in Settings.</span></li>
+        <li><b>Until it merges</b><span>With GitHub's <code>gh</code> CLI, QualityLayer <a href="/docs/steps/pull-request">follows PR checks and reviews</a>. You control the merge.</span></li>
       </ul>
     </section>
   );
@@ -212,7 +212,7 @@ function HeadToHead({ comparison: c }: { comparison: Comparison }) {
 
 function CompareIndex() {
   return (
-    <Frame title="Compare QualityLayer" lead="QualityLayer plans a change with you, builds it with your coding agent and checks the result before you approve it. Here is how it compares with spec-driven development tools, the agents' own plan modes and other coding agents." sources={COMPARISONS.map((c) => c.sources.at(-1)!)} {...span(COMPARISONS)} data={[comparisonList]}>
+    <Frame title="Compare QualityLayer" lead="Compare visual planning, implementation checks and human review across spec-driven tools, agent plan modes and coding agents." sources={COMPARISONS.map((c) => c.sources.at(-1)!)} {...span(COMPARISONS)} data={[comparisonList]}>
       <section aria-labelledby="glance">
         <h2 id="glance">At a glance</h2>
         <p>Each tool's name opens its side-by-side comparison.</p>
@@ -230,11 +230,11 @@ function CompareIndex() {
 function Roundup() {
   const sources = SPEC_TOOLS.flatMap((c) => c.sources);
   return (
-    <Frame title="Best spec-driven development tools for your workflow" lead={`The best fit depends on where you want structure: writing specs, coordinating agents or reviewing evidence. Here is how QualityLayer and ${SPEC_TOOLS.length} other tools, from GitHub Spec Kit and Superpowers to Kiro and the agents' own plan modes, approach that work.`} sources={sources} {...span(SPEC_TOOLS)} faq>
+    <Frame title="Best spec-driven development tools for your workflow" lead={`Find the structure you need for specs, agent coordination or review. Compare QualityLayer with ${SPEC_TOOLS.length} alternatives through their public documentation.`} sources={sources} {...span(SPEC_TOOLS)} faq>
       <section aria-labelledby="criteria">
         <h2 id="criteria">How to choose</h2>
-        <p>Compare the tools on the same change: define an outcome, inspect the plan, build it and ask what proves it works. This guide uses the public docs linked below. It assigns no scores or performance ranking.</p>
-        <p>Ask where the specs live, which agent executes the work, who checks the implementation and what happens when a check cannot run. Human approval and a useful AI code review process depend on those details.</p>
+        <p>Try each tool on the same change. Compare where it keeps the spec, which agent builds it, who checks the result and how it records blocked checks.</p>
+        <p>This guide uses the public docs linked below, without scores or a performance ranking.</p>
       </section>
       <section aria-labelledby="tools">
         <h2 id="tools">Tools by use case</h2>
@@ -251,13 +251,13 @@ function Roundup() {
       </section>
       <section aria-labelledby="agent-fit">
         <h2 id="agent-fit">Keeping Claude Code or Codex</h2>
-        <p>QualityLayer, <a href="https://github.com/humanlayer/skills#rpi">HumanLayer's RPI skills</a>, <a href="https://github.github.io/spec-kit/reference/integrations.html">Spec Kit</a> and <a href="https://openspec.dev/docs/supported-tools">OpenSpec</a> all support Claude Code and Codex. This is an overlap to evaluate honestly.</p>
+        <p>QualityLayer, <a href="https://github.com/humanlayer/skills#rpi">HumanLayer's RPI skills</a>, <a href="https://github.github.io/spec-kit/reference/integrations.html">Spec Kit</a> and <a href="https://openspec.dev/docs/supported-tools">OpenSpec</a> all support Claude Code and Codex.</p>
         <p><a href="https://kiro.dev/docs/specs/">Kiro's docs</a> describe specs across its own IDE, CLI and web surfaces. Consider Kiro if you want that integrated environment; compare the other options if you want a process in your existing agent session.</p>
       </section>
       <section aria-labelledby="verify-code">
         <h2 id="verify-code">How to verify AI generated code</h2>
-        <p>A specification makes intent reviewable. To check the result, turn acceptance criteria into observable behavior, run your project's tests, types, lint and build, then exercise the relevant behavior in the running program.</p>
-        <p>Keep the evidence with the change. A review should distinguish checks that passed, checks that failed and checks that the environment blocked. Ask whether the reviewer wrote the code and whether a second reviewer is required for the risk involved.</p>
+        <p>Turn acceptance criteria into observable behavior. Run the relevant tests, types, lint and build, then exercise those behaviors in the program.</p>
+        <p>Save the evidence, including failed and blocked checks. Consider whether the reviewer wrote the code and whether the risk needs a second reviewer.</p>
         <p>The tools overlap here too. <a href="https://github.github.io/spec-kit/reference/agentic-sdd.html">Spec Kit has convergence checks</a>; <a href="https://openspec.dev/docs/skills#openspec-verify-change">OpenSpec has optional verification</a>; <a href="https://kiro.dev/docs/specs/correctness/">Kiro documents property-based testing in its IDE</a>. Compare the evidence and approval process around those checks.</p>
       </section>
       <ProofAndReview />

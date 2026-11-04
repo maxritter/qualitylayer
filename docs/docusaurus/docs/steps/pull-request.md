@@ -15,7 +15,7 @@ Open a pull request from [Review](review.md#approve). QualityLayer follows its c
 
 ## Following it {#following}
 
-The Review page shows the checks and reviewers, read through `gh` while the App is open. Without `gh`, the task stays open until the merge reaches this computer's Git (after a pull or fetch) or you mark it merged.
+While the App is open, Review reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge to local Git, or you mark it merged.
 
 ## Your agent watches the checks {#watch}
 
@@ -23,8 +23,9 @@ The agent runs `qualitylayer pr watch` until the checks pass:
 
 | Result | What your agent does |
 | --- | --- |
+| The checks pass | Checks open review threads and reads new comments. Asks you before changing anything they request |
 | A check fails | Reads the log, fixes the cause, pushes, watches again. Never weakens or skips a check |
-| The branch conflicts | Merges or rebases the way your repository does, then pushes |
+| The branch conflicts | Merges or rebases the way your repository does, checks that no commit was lost, then pushes |
 | Three attempts used | Reports what still fails and stops |
 
 It never force-pushes commits that are not its own.
@@ -34,12 +35,10 @@ It never force-pushes commits that are not its own.
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-light.svg)
 ![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-dark.svg)
 
-With the App open, failing checks, change requests and conflicts appear in **Needs you**. They wake or resume your agent when [Watch pull requests](../reference/settings.md#git-and-editor) is enabled.
-
-A new review thread or failing check puts the task in **Needs you**:
+Failing checks, review threads and conflicts appear in **Needs you** while the App is open. [Watch pull requests](../reference/settings.md#git-and-editor) can wake or resume your agent, also for reviewers' new comments. To handle them:
 
 1. Ask your agent: “Using QL, review task retry-webhooks”, naming your actual task.
-2. Your agent checks each thread against the code and the approved Plan. It fixes a routine, in-scope request itself, test first. It asks you only when a thread would change the scope or design, or when a reply is ready to post.
+2. Your agent checks the code and approved Plan, then fixes routine requests test first. Scope or design changes and replies ready to post come to you.
 3. Press **Push the fix**. Your answers post on GitHub in your name.
 
 For review threads, pushing the fix and replying to reviewers stay yours, and so does merging.

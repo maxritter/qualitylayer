@@ -8,7 +8,7 @@ description: Start the build in the App or your terminal. Your agent builds the 
 
 ## Start the build {#start-implement}
 
-**Approve and build here** continues in the App's planning session once its turn ends. Otherwise **Start the build** opens on the Plan page.
+**Approve and build here** continues the App's planning session after its turn. A waiting terminal planner gets **Build in &lt;agent&gt; · terminal** and writes the Outline next. Otherwise **Start the build** opens on Plan.
 
 ![The Implement start card](pathname:///img/app/implement-start-light.webp)
 ![The Implement start card](pathname:///img/app/implement-start-dark.webp)
@@ -18,15 +18,18 @@ description: Start the build in the App or your terminal. Your agent builds the 
 | On the card | What it picks |
 | --- | --- |
 | **Agent** | The coding agent for this build |
-| **Lead** and **Effort** | The model and effort for the session that writes and tests the code |
-| **Subagent default** | Claude Code's default for delegated work; other agents choose their own |
+| **Build model** and **Effort** | The model and effort for the session that writes and tests the code, with the recommended model and why |
+| **Subagent model** | Claude Code only, folded: the model for slices it hands to subagents; other agents choose their own |
+| **What's different** | What changes for the chosen agent, for example questions as numbered choices |
 | **Files for the build** and **Workspace** | Attachments, run location and [branch/worktree choices](#where-it-lands) |
 
-Press **Approve & start**. For your terminal, press **Approve**, open the project in your agent and ask it in your own words, for example “Continue the approved QualityLayer task Usage export”; a prepared request is there to copy if you want it. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
+Press **Approve & start** for an App run. **In my terminal** shows one request box with **Copy** and a folder chip; hover for the full path or click to copy it. Paste into any agent, or ask in your own words.
+
+For a pending Plan, **Approve and copy** approves it and copies the request. After approval, **Ready to build** offers **Copy prompt**. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
 
 ### Where the build lands {#where-it-lands}
 
-A new branch or worktree starts from this checkout's HEAD; a worktree's name sets its folder and branch, next to your project. `qualitylayer branch new [name]` does the same from the terminal. A pull request needs a branch other than its target. Pushes and deployments need the Plan's authorization; merging stays yours.
+A new branch or worktree starts at this checkout's HEAD. A worktree's name sets its branch and folder beside the project. The terminal equivalent is `qualitylayer branch new [name]`. Pull requests need a branch other than their target. Pushes and deployments need the Plan's authorization; you control merging.
 
 ## While the agent builds
 
@@ -35,7 +38,7 @@ A new branch or worktree starts from this checkout's HEAD; a worktree's name set
 
 *Example task in a fictional project.*
 
-The **Implement** page shows each slice's progress; in a long build, finished slices fold into one row. Your lead writes a failing test first, then builds the change, fixes failures and commits. It may delegate independent slices to subagents.
+**Implement** shows slice progress, folding finished slices in long builds. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)

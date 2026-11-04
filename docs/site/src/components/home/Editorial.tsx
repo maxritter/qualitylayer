@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { ArrowRight, BookOpen, Expand, ExternalLink, House, Shapes, SlidersHorizontal, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowRight, Brain, Expand, ExternalLink, House, Settings, Shapes, Users, X, type LucideIcon } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
@@ -13,11 +13,11 @@ type Shot = { id: string; title: string; alt: string };
 type Extra = { id: string; name: string; icon: LucideIcon; who: Who; line: string; text: string; shot: Shot; link: { to: string; label: string } };
 
 const EXTRAS: Extra[] = [
-  { id: "memory", who: "agent", name: "Memory", icon: BookOpen, line: "Keep useful project lessons", text: "Reuse lessons about each project and how you work. Share project lessons through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
-  { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Pin feedback where you want a change.", shot: { id: "artifact", title: "Artifact", alt: "An artifact in the QualityLayer App: a backend's request diagram on wide screens, and on phones feedback on a billing page with the agent's answer that it changed the page. Illustrative data." }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
+  { id: "memory", who: "agent", name: "Memory", icon: Brain, line: "Keep useful project lessons", text: "Reuse lessons about each project and how you work. Share project lessons through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, link: { to: "/docs/memory", label: "Read about project memory" } },
+  { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Pin feedback where you want a change.", shot: { id: "artifact", title: "Artifact", alt: "QualityLayer artifact viewer: a backend request diagram on desktop. On phones, a billing-page feedback thread shows the agent's reply. Illustrative data." }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
   { id: "team", who: "you", name: "Team", icon: Users, line: "Ask the people who know", text: "Teammates answer plan questions and review the finished change from their own App.", shot: { id: "team", title: "Team", alt: "The Team space: Anna asks about a diagram in her Plan, and an agent's draft answer to Ben's question waits to be sent" }, link: { to: "/docs/team/plans", label: "Read about team collaboration" } },
-  { id: "cost", who: "you", name: "Home", icon: House, line: "See what needs you", text: "Your tasks that need attention and your running work, with the current step and what happens next.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, link: { to: "/docs/app#home", label: "Read about Home" } },
-  { id: "setup", who: "you", name: "Settings", icon: SlidersHorizontal, line: "Agents, plan limits and reviewers", text: "Choose agents and reviewers, and check your plan limits.", shot: { id: "setup", title: "Settings", alt: "Settings with its sections in the sidebar's place, showing Workflow: the task level, your instructions, the reviews and the reviewer models" }, link: { to: "/docs/reference/settings", label: "Read about settings" } },
+  { id: "cost", who: "you", name: "Home", icon: House, line: "See what needs you", text: "See waiting and running tasks, their steps and next actions.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, link: { to: "/docs/app#home", label: "Read about Home" } },
+  { id: "setup", who: "you", name: "Settings", icon: Settings, line: "Agents, plan limits and reviewers", text: "Set your workflow, permissions and instructions.", shot: { id: "setup", title: "Settings", alt: "Settings with its sections in the sidebar's place, showing Workflow: the task level, your instructions, the reviews and the reviewer models" }, link: { to: "/docs/reference/settings", label: "Read about settings" } },
 ];
 
 const shotOf = (step: (typeof STEPS)[number]): Shot => ({ id: step.id, title: step.name, alt: step.alt });
@@ -103,43 +103,49 @@ function Tour({ active, onPick, theme, onOpen }: { active: string; onPick: (id: 
   );
 }
 
-/** Also in the App: five tabs, each with its text and its screen. Arrow keys, Home and End move between tabs. */
+/** Arrow keys step through the list (down and right forward, up and left back, wrapping); Home and End jump to its ends. */
+const LIST_STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+function listTarget(key: string, i: number, count: number): number | undefined {
+  if (key in LIST_STEP) return (i + LIST_STEP[key] + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return undefined;
+}
+
+/** Also in the App: a vertical list of the five features beside one large screen (a swipeable row on phones).
+    Each row names the feature and its one line; the open one adds its text and link. Arrow keys, Home and End move between rows. */
 function Extras({ active, onPick, theme, onOpen }: { active: string; onPick: (id: string) => void; theme: "light" | "dark"; onOpen: (shot: Shot, el: HTMLElement) => void }) {
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const move = (event: KeyboardEvent<HTMLButtonElement>, i: number) => {
-    const last = EXTRAS.length - 1;
-    const next = { ArrowRight: i === last ? 0 : i + 1, ArrowLeft: i === 0 ? last : i - 1, Home: 0, End: last }[event.key];
+    const next = listTarget(event.key, i, EXTRAS.length);
     if (next === undefined) return;
     event.preventDefault();
     onPick(EXTRAS[next].id);
     tabs.current[next]?.focus();
   };
+  const current = EXTRAS.find((extra) => extra.id === active) ?? EXTRAS[0];
   return (
-    <>
-      <div className="ed-tabs" role="tablist" aria-label="Also in the App">
+    <div className="ax">
+      <div className="ax-list" role="tablist" aria-label="Also in the App" aria-orientation="vertical">
         {EXTRAS.map((extra, i) => {
-          const on = extra.id === active;
+          const on = extra.id === current.id;
           return (
-            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" data-who={extra.who} id={extra.id} className="ed-tab" aria-selected={on} aria-controls={`${extra.id}-panel`} tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
-              <extra.icon size={18} strokeWidth={1.75} aria-hidden="true" />{extra.name}
+            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" id={extra.id} className="ax-tab" aria-selected={on} aria-controls="extras-panel" tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
+              <i className="ax-mark" aria-hidden="true"><extra.icon size={18} strokeWidth={1.75} /></i>
+              <b>{extra.name}</b>
+              <span>{extra.line}</span>
             </button>
           );
         })}
       </div>
-      {EXTRAS.map((extra) => {
-        const on = extra.id === active;
-        return (
-          <div key={extra.id} role="tabpanel" id={`${extra.id}-panel`} aria-labelledby={extra.id} className="ed-panel" tabIndex={0} hidden={!on}>
-            <div>
-              <h3>{extra.line}</h3>
-              <p className="ed-text">{extra.text}</p>
-              <a className="ed-link" href={extra.link.to}>{extra.link.label}<ArrowRight size={16} aria-hidden="true" /></a>
-            </div>
-            {on ? <Inline shot={extra.shot} theme={theme} onOpen={onOpen} /> : null}
-          </div>
-        );
-      })}
-    </>
+      <div role="tabpanel" id="extras-panel" aria-labelledby={current.id} className="ax-panel">
+        <div className="ax-detail">
+          <p className="ed-text">{current.text}</p>
+          <a className="ed-link" href={current.link.to}>{current.link.label}<ArrowRight size={16} aria-hidden="true" /></a>
+        </div>
+        <Inline key={current.id} shot={current.shot} theme={theme} onOpen={onOpen} />
+      </div>
+    </div>
   );
 }
 
@@ -178,7 +184,7 @@ export default function Editorial() {
         <Tour active={step} onPick={setStep} theme={theme} onOpen={open} />
         <div className="ed-outcome" id="films"><p>Every decision, document and test run stays with the change.</p><div><a href="/docs/">Read the workflow docs</a><a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer">Watch the walkthrough</a></div></div>
       </section>
-      <section id="extras" className="ed-section mx-wrap" aria-labelledby="ed-context-h">
+      <section id="extras" className="ed-section mx-wrap" aria-labelledby="ed-context-h" data-screen-label="Also in the App">
         <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>Keep project lessons, try designs and work with your team.</p></div>
         <Extras active={extra} onPick={setExtra} theme={theme} onOpen={open} />
       </section>

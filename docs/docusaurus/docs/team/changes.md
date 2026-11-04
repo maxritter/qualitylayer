@@ -1,9 +1,9 @@
 ---
 title: Change reviews
-description: After the build, your team sees why and how a change was made, with its proof, and can read the code from your own Git remote.
+description: Review a finished change, its proof and code from your own Git remote.
 ---
 
-When the task reaches Review, your team reads the walkthrough, its proof and any unresolved checks. With **Ask for review** they can also read the code and comment on its lines ([Review with your team](../steps/review.md#team-review)).
+At Review, teammates read the walkthrough, proof and unresolved checks. **Ask for review** adds code review and line comments ([details](../steps/review.md#team-review)).
 
 ![Change review: the team reviews the finished change; open threads go back to your agent, which settles each one and checks again what the fix touched before the re-review](pathname:///img/diagrams/team-change-light.svg)
 ![Change review: the team reviews the finished change; open threads go back to your agent, which settles each one and checks again what the fix touched before the re-review](pathname:///img/diagrams/team-change-dark.svg)
@@ -15,7 +15,7 @@ When the task reaches Review, your team reads the walkthrough, its proof and any
 
 ## Reading the code together {#code}
 
-**Ask for review** pushes the task's branch to your team's own Git remote and asks the teammates you pick. It shows the remote and the commits first, and pushes only when you click. The shared task then records where the code is (the repository, the branch and its commits), encrypted with your team's key.
+**Ask for review** shows the remote, commits and selected teammates before you confirm the push. The shared task records the repository, branch and commits, encrypted with your team's key.
 
 - A teammate with a checkout of the same repository reads the code there and comments on lines. Your Git remote decides who can read the code, as today.
 - A teammate without a checkout, or without access to the remote, sees the walkthrough with file names.

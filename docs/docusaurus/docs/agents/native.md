@@ -1,12 +1,12 @@
 ---
 title: Supported agents
 sidebar_label: Supported agents
-description: Set up the coding agents QualityLayer runs, choose their models, permission modes and reviewers, and control their sessions in the App.
+description: Set up supported coding agents and choose their models, permissions and reviewers.
 ---
 
 # Supported agents {#supported-agents}
 
-Install your agent, sign in with its own login and start it once, then run QualityLayer setup. The installers add the integration for every agent they find.
+Install your agent, sign in and start it once, then run QualityLayer setup. It connects every supported agent it finds.
 
 | Agent | Checked with | What QualityLayer adds |
 | --- | --- | --- |
@@ -37,9 +37,15 @@ Ask in plain language; your agent picks the skill.
 
 ## Models and reviews
 
-Pick agent, model and effort per task; defaults use High effort. Pi and OpenCode use provider-qualified IDs, such as `openai-codex/gpt-6.1-sol` (Pi) and `openai/gpt-6.1-sol` (OpenCode). Cursor and Antigravity put effort in the model name, such as Opus 5.5 (High). GitHub Copilot starts on Auto, which runs on every Copilot plan; on a paid plan you can pick Claude Opus 5.5. Pi and OpenCode can also sign in with a Copilot subscription.
+Pick agent, model and effort per task; the default effort is High.
 
-Reviewers read in a separate context and edit nothing. Cursor and Antigravity cannot be made read-only, so they review a disposable copy and are stopped at the first tool that is not read-only. Who reviews: [Second opinion](../reference/settings.md#second-opinion).
+| Agent | Model choices |
+| --- | --- |
+| Pi / OpenCode | Provider-qualified IDs: `openai-codex/gpt-6.1-sol` / `openai/gpt-6.1-sol`; both can use a Copilot subscription |
+| Cursor / Antigravity | Effort is part of the model name, such as Opus 5.5 (High) |
+| GitHub Copilot | Auto works on every plan; paid plans can choose Claude Opus 5.5 |
+
+Reviewers use a separate context and edit nothing. Cursor and Antigravity review disposable copies and stop at the first non-read-only tool. [Reviewer selection](../reference/settings.md#second-opinion).
 
 ## Sessions in the App
 
@@ -53,7 +59,7 @@ The **Conversation** view reads each agent's session record ([controls](../app.m
 | Cursor | Thinking, tool output, token counts, context fill, permission questions |
 | GitHub Copilot | Permission questions |
 
-Native permission waits show in Conversation; when a reply is available only in Terminal, the App opens it and offers **Open Terminal**. Cursor, Grok and Antigravity get workflow questions as a numbered list. To continue after a crash, stop the old run and say “Using QL, continue verification of task retry-webhooks.”
+Permission waits show in Conversation. For Terminal-only replies, the App opens Terminal and offers **Open Terminal**. Cursor, Grok and Antigravity receive numbered workflow questions. After a crash, stop the old run and ask “Using QL, continue verification of task retry-webhooks.”
 
 ### Permission modes {#permission-modes}
 
@@ -70,7 +76,7 @@ New managed sessions default to Bypass. Your saved global or per-agent mode take
 | Pi | None; its own tool permissions apply |
 | GitHub Copilot | Manual Approval, Assisted Permissions, Allow All |
 
-Switching an existing session to Bypass, Full access or Run everything asks you to confirm. **Apply and continue** can apply a permission-only change at a supported native permission prompt and resume the same conversation. Older running Copilot sessions can use Terminal’s `/permissions` menu. Pi has no native bypass switch, and OpenCode preserves explicit denials. Your QualityLayer Plan and final approvals remain separate.
+Switching an existing session to Bypass, Full access or Run everything needs confirmation. **Apply and continue** can change permissions at a supported native prompt and resume that conversation. Older Copilot sessions use Terminal's `/permissions` menu. Pi has no native bypass switch; OpenCode keeps explicit denials. Plan and final approvals remain separate.
 
 ### Plan limits {#plan-limits}
 

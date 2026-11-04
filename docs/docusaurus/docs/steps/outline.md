@@ -6,7 +6,7 @@ description: See where the approved Plan changes the code and how your agent wil
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-light.svg)
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-dark.svg)
 
-The build session reads Discuss and the complete saved Plan, including its technical notes, then writes the Outline of code areas, tasks and tests. It continues through Implement and Verify; **no further approval is needed until Review**.
+The build session reads Discuss, the approved Plan and its build notes, then outlines the code areas, tasks and tests. It continues through Implement and Verify; **no further approval is needed until Review**.
 
 ## What is in it {#what-the-agent-does}
 
@@ -18,11 +18,11 @@ The build session reads Discuss and the complete saved Plan, including its techn
 | **Slices** | Pieces that each work end to end, thinnest first, with the test to write first |
 | **Commands** | Every command the build will run. A push or deploy needs the Plan's permission |
 
-The **Outline** page opens on the areas of the code. Open an area for what changes in each file and the decisions made for it. Each **Done means** point links to the scenario that proves it. The slices and their task cards are listed once, on [Implement](implement.md).
+Open a code area for its file changes and decisions. Each **Done means** point links to its proof scenario. Slices and task cards appear on [Implement](implement.md).
 
 For a bug, the Outline keeps reproduction before the root-cause repair and includes the named regression checks. It uses the slices the repair needs; the final project checks run in Verify.
 
-The build session works through the cards in this order. Cards name source files; a file outside the cards needs no amendment, and Review lists it. Check output and pictures stay in the task’s records.
+Cards name source files. Additional files need no amendment and are listed in Review. Check output and pictures stay in the task's records.
 
 ## What you do {#what-you-do}
 

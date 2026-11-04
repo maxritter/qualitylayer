@@ -240,7 +240,7 @@ export const COMPARISONS: Comparison[] = [
     plansWith: "A text plan Claude writes and you can edit",
     runsIn: "Claude Code",
     lead: "Plan mode is built into Claude Code: Claude explores and proposes a plan before editing. QualityLayer runs inside Claude Code too and adds the steps after the plan, from slices to recorded verification and review.",
-    strengths: "Plan mode needs no setup. Claude reads files and runs commands to explore, then presents a plan you can edit in your own editor before approving. Claude Code's docs recommend skipping it when the diff fits in one sentence, and offer separate verification tools such as goals checked by an evaluator, hooks and review subagents.",
+    strengths: "Plan mode needs no setup. Claude explores, then presents a plan you can edit before approving. Its docs recommend skipping planning for a one-sentence diff. Separate verification tools include evaluator-checked goals, hooks and review subagents.",
     agents: "Plan mode is part of Claude Code. QualityLayer starts and works inside Claude Code as well, and also with Codex and other agents.",
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts.", other: "Claude explores without editing source, then presents a text plan you can edit.", source: 1 },
@@ -288,9 +288,9 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "A quick plan in the Codex CLI, with nothing to install",
     plansWith: "A proposed plan Codex writes after reading the code and asking questions",
     runsIn: "Codex",
-    lead: "Plan mode is built into Codex. You switch to it with /plan, and Codex reads the repository, asks clarifying questions and proposes a plan before it edits anything. QualityLayer also runs inside Codex. You approve a visual Plan before code exists, and the agent builds it test first. An agent that did not write the code checks the result. Then you approve the change at Review.",
+    lead: "Codex's /plan reads the repository, asks questions and proposes work before editing. QualityLayer adds visual planning, recorded checks and human Review in the same agent.",
     strengths: "Plan mode needs no setup beyond Codex itself. Codex explores the code, asks the questions it needs answered and proposes an order of work without changing tracked files. For a change you can describe in one or two sentences, that is often all the planning you need.",
-    agents: "Plan mode is part of Codex. QualityLayer also works inside Codex, where you start it with $ql. It works with Claude Code, OpenCode, Pi and other agents too, so another agent can build a Plan written with Codex.",
+    agents: "Ask Codex in plain words: ‘Using QualityLayer, plan this change.’ Another supported agent can build the resulting Plan.",
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts, saved as Markdown in your repository.", other: "Codex reads the repository, asks clarifying questions and proposes a plan in the session.", source: 2 },
       { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Review; teammates can comment on the Plan.", other: "You read the plan in the terminal session and tell Codex to implement it.", source: 1 },
@@ -335,7 +335,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Turning a product requirements document into dependency-ordered tasks",
     plansWith: "A PRD parsed into tasks with dependencies, priorities and a test strategy",
     runsIn: "Cursor, Windsurf, VS Code, Claude Code and other MCP clients, or its own CLI",
-    lead: "Task Master turns a product requirements document into a task list that your coding agent works through one task at a time. QualityLayer starts from a conversation with you and ends with recorded evidence. You approve a visual Plan, the agent builds it test first, and an agent that did not write the code checks the result.",
+    lead: "Task Master turns a product requirements document into ordered tasks for your agent. QualityLayer starts with a conversation and a visual Plan, followed by tests and independent review.",
     strengths: "Task Master is open source and runs as an MCP server or a CLI. It parses a PRD into tasks, each with dependencies, a priority and a test strategy. It scores their complexity, expands the hard ones into subtasks and tells the agent which task comes next. An optional research model can pull in current information while it plans.",
     agents: "Task Master works through MCP in editors such as Cursor, Windsurf and VS Code, and in Claude Code. It can also use Claude Code or the Codex CLI as its model. QualityLayer runs inside Claude Code, Codex and Cursor as well.",
     rows: [
@@ -361,7 +361,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "An open source agent in your editor that asks before each edit and command",
     plansWith: "Plan mode, which reads the code and discusses an approach without changing files",
     runsIn: "VS Code, JetBrains IDEs, a CLI and a desktop app",
-    lead: "Cline is an open source coding agent with two modes. In Plan mode it reads your code and works out an approach with you. In Act mode it makes the changes. QualityLayer works around the agent you already use. You approve a visual Plan before code exists, and an agent that did not write the code checks the result before you approve the change.",
+    lead: "Cline plans with you, then edits in Act mode. QualityLayer structures work around your coding agent, with an approved visual Plan and recorded checks before final Review.",
     strengths: "Cline asks before every file edit and terminal command unless you turn on auto-approve, and it shows each change as a diff. Plan mode cannot modify files or run commands, Act mode keeps the context from planning, and each mode can use its own model. It works with many model providers, MCP servers and project rules.",
     agents: "Cline is its own agent with its own model settings. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot natively, and other agents that can run shell commands through a copied prompt.",
     rows: [
@@ -386,7 +386,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Pair programming in the terminal, with a git commit for each change",
     plansWith: "Ask mode to discuss a change, or architect mode, where one model proposes and another edits",
     runsIn: "Your terminal, with a watch mode for comments you write in your IDE",
-    lead: "Aider is an open source pair programmer that runs in your terminal and edits the files you add to the chat. QualityLayer works around the coding agent you already use. It adds a visual Plan you approve, a test-first build and a check by an agent that did not write the code.",
+    lead: "Aider edits files from your terminal chat. QualityLayer adds a visual Plan and recorded verification around your coding agent.",
     strengths: "Aider builds a map of your whole codebase and connects to almost any model, local ones included. It commits each change with a descriptive message, so ordinary git tools can show or undo it. It lints the files it edits by default. With /test or the auto test setting it also runs your tests and tries to fix what fails. Its docs suggest discussing a change in ask mode before switching to code mode.",
     agents: "Aider is its own agent and works with many cloud and local models. QualityLayer runs inside Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot.",
     rows: [
@@ -412,7 +412,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Handing a task to an agent that works in the background on GitHub",
     plansWith: "Research and a plan it makes in the cloud before it changes code on a branch",
     runsIn: "An ephemeral environment on GitHub, for repositories hosted on GitHub",
-    lead: "GitHub Copilot cloud agent, also known as the Copilot coding agent, works on its own in an ephemeral environment on GitHub. It researches the repository, makes a plan, changes code on a branch and runs your tests and linters. QualityLayer runs your agent where you work and keeps you in the loop at two points: the Plan before code, and Review before the pull request.",
+    lead: "GitHub Copilot cloud agent researches, builds and tests in an ephemeral GitHub environment. QualityLayer runs your agent where you work, with approval at Plan and Review.",
     strengths: "You hand Copilot a task and keep working while it runs in the background. It creates the branch, commits its work, runs tests and linters and keeps session logs you can follow. It supports custom agents, skills, hooks and MCP servers, so a team can shape how it works in their repositories.",
     agents: "Copilot cloud agent is GitHub's own agent. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot CLI on your computer, in a dev container or on a server.",
     rows: [
@@ -463,7 +463,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Running several terminal agents side by side in one window",
     plansWith: "No planning step of its own; each session runs the agent you choose",
     runsIn: "A terminal app on tmux that runs Claude Code, Codex, Gemini, Aider and other agents",
-    lead: "Claude Squad is an open source terminal app that runs several coding agents at once, each in its own git workspace. QualityLayer works on a different problem: one change at a time, from an approved Plan to recorded evidence and your review.",
+    lead: "Claude Squad runs parallel terminal agents in separate git workspaces. QualityLayer structures each change around an approved Plan, recorded checks and human Review.",
     strengths: "Each task gets its own isolated git workspace, so parallel agents do not get in each other's way. You switch between sessions, read the diff, and commit and push a branch from one terminal window. Sessions can keep working in the background, also in auto-accept mode.",
     agents: "Claude Squad starts Claude Code by default and can run Codex, Gemini, Aider and other local agents. Claude Code and Codex are agents QualityLayer supports as well.",
     rows: [
@@ -486,7 +486,7 @@ export const COMPARISONS: Comparison[] = [
     bestFor: "Running Claude Code, Codex, Cursor and OpenCode in parallel workspaces",
     plansWith: "One workspace per shippable piece of work; each agent plans in its own way",
     runsIn: "A Mac app that runs Claude Code, Codex, Cursor and OpenCode",
-    lead: "Conductor runs several coding agents in parallel, each in its own workspace with a branch, files, terminal and diff. QualityLayer focuses on one change at a time. You approve a visual Plan, the agent builds it test first, and an agent that did not write the code checks the result before you approve it.",
+    lead: "Conductor runs parallel agents in separate workspaces. QualityLayer structures each change around a visual Plan you approve and evidence you review after the build.",
     strengths: "Conductor treats each workspace as one stream of work, so you can start a new feature while another agent is still busy. It has a diff viewer whose inline comments go back to the agent, an agent review action and a Checks tab for git status, CI, deployments and todos. It can open the pull request, follow its checks and merge it.",
     agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports all of them and more, including Grok, Antigravity, Pi and GitHub Copilot.",
     rows: [

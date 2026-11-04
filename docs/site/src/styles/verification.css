@@ -5,7 +5,7 @@
 #verify .vx-group{display:flex;flex-direction:column;padding:32px 32px 12px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel)}
 #verify .vx-group[data-who="check"]{--vx:var(--ql-check);--vx-soft:var(--ql-check-soft);--vx-line:var(--ql-check-line);border-color:var(--ql-check-line)}
 #verify .vx-group[data-who="agent"]{--vx:var(--ql-accent);--vx-soft:var(--ql-accent-soft);--vx-line:var(--ql-accent-line);border-color:var(--ql-accent-line)}
-#verify .vx-group h3{margin:0;font-size:26px;line-height:1.1;font-weight:800;letter-spacing:-.035em}
+#verify .vx-group h3{margin:0;font-size:22px;line-height:1.1;font-weight:800;letter-spacing:-.035em}
 #verify .vx-group h3+p{margin:10px 0 0;font-size:16px;line-height:1.5;color:var(--vx);font-weight:600}
 #verify .vx-list{margin:24px 0 0;padding:0;list-style:none}
 #verify .vx-item{display:grid;grid-template-columns:40px minmax(0,11rem) minmax(0,1fr);align-items:center;gap:4px 16px;padding:14px 0;border-top:1px solid var(--mx-line)}

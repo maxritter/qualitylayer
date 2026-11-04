@@ -1,18 +1,18 @@
 ---
 title: Code health and security scans
-description: Your agent gets feedback on complex and duplicated code, leaked secrets, vulnerable packages, unsafe GitHub workflows and risky code, checked on your computer.
+description: Local checks for code complexity, duplication, secrets, vulnerable packages and risky code.
 ---
 
-QualityLayer checks code on your computer and hands the findings to your agent and the reviewers. Code health finds complex and duplicated code. Security scans find leaked secrets, vulnerable or malicious packages, unsafe GitHub workflows and risky code. Neither ever stops the work.
+QualityLayer checks code locally and gives the findings to your agent and reviewers. Code health covers complexity and duplication; security scans cover secrets, vulnerable or malicious packages, unsafe workflows and risky code. Findings do not stop the work.
 
 ![Edited code is checked locally. Your agent reads each finding, fixes a problem or records why the code should stay. Tests verify the change.](pathname:///img/diagrams/code-health-light.svg)
 ![Edited code is checked locally. Your agent reads each finding, fixes a problem or records why the code should stay. Tests verify the change.](pathname:///img/diagrams/code-health-dark.svg)
 
 ## What happens as you work
 
-1. **You or your agent edits code.** At the end of the agent's turn, the edited files get a structure check and a secrets scan.
+1. **You or your agent edits code.** Edited files get a structure check and secrets scan at turn end.
 2. **Your agent gets the findings.** It reads the source and explains the consequence before changing anything.
-3. **It fixes or reviews each finding.** A useful fix is checked with the affected tests. An intentional pattern keeps its review reason.
+3. **It fixes or reviews each finding.** Fixes get the relevant tests; intentional patterns keep a review reason.
 
 Checks do not start another agent turn. Findings reach it when the conversation next continues.
 

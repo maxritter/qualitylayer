@@ -56,4 +56,17 @@ describe("public App capture provenance", () => {
     put(path, "restored UI");
     expect(() => assertSameSource(deleted, captureSource(root, { review: true }))).toThrow("changed during the run");
   });
+  it("keeps appearance compatibility for version metadata but still detects dependency changes", () => {
+    const { root, put } = fixture();
+    const path = "qualitylayer/package.json";
+    put(path, JSON.stringify({ version: "12.9.0", dependencies: { react: "19.3.0" } }));
+    const before = captureSource(root, { review: true });
+    put(path, JSON.stringify({ version: "12.10.0", dependencies: { react: "19.3.0" } }));
+    const bumped = captureSource(root, { review: true });
+    expect(bumped.sourceInputs[path]).not.toBe(before.sourceInputs[path]);
+    expect(bumped.appearanceInputs[path]).toBe(before.appearanceInputs[path]);
+    expect(() => assertSameSource(before, bumped)).toThrow("changed during the run");
+    put(path, JSON.stringify({ version: "12.10.0", dependencies: { react: "20.0.0" } }));
+    expect(captureSource(root, { review: true }).appearanceInputs[path]).not.toBe(before.appearanceInputs[path]);
+  });
 });

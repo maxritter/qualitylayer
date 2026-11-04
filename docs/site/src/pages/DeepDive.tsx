@@ -90,7 +90,7 @@ function Unsubscribe({ token }: { token: string }) {
 
   if (state === "done") return (
     <Done icon={CircleCheck} title="You're unsubscribed">
-      <p>You won't get the QualityLayer newsletter anymore. You can sign up again here at any time.</p>
+      <p>You're off the QualityLayer newsletter list. You can sign up again here.</p>
     </Done>
   );
   return (

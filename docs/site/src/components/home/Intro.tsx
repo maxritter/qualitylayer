@@ -85,7 +85,7 @@ const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: str
 /** From where you work to the files you keep: what QualityLayer connects, all inside one dashed frame, your computer. */
 const CHAIN: { icon: LucideIcon | "mark"; title: string; text: string; chips: string[]; ql?: true }[] = [
   { icon: Laptop, title: "Where you work", text: "Your task on the left, your agent on the right.", chips: ["QualityLayer App", "Browser"] },
-  { icon: KeyRound, title: "Your agent, your subscription", text: "On the plan or API key you already pay for.", chips: AGENTS.map(([label]) => label) },
+  { icon: KeyRound, title: "Your agent, your subscription", text: "Your existing login or API key.", chips: AGENTS.map(([label]) => label) },
   { icon: "mark", title: "QualityLayer", text: "Plan, answer and review beside your agent. The CLI connects any other agent.", chips: ["Visual plans", "Conversation"], ql: true },
   { icon: FileText, title: "Your repository", text: "Every step is a Markdown file you can read, diff and commit.", chips: ["Plan", "Decisions", "Test runs"] },
 ];
@@ -157,7 +157,7 @@ export default function Intro() {
       <section id="agents" className="mx-wrap mx-sec mx-with" aria-labelledby="with-h">
         <div>
           <h2 id="with-h" className="mx-h2">Works with the agents you already use</h2>
-          <p className="mx-lead">Run them in the QualityLayer App or your browser. From your own terminal or IDE, <a href="/docs/agents/other">the CLI connects any other agent.</a></p>
+          <p className="mx-lead">Work in the App, browser, terminal or IDE. <a href="/docs/agents/other">The CLI connects other agents.</a></p>
         </div>
         <ul className="mx-withg">
           {SHOWN.map(([label, agent]) => (
@@ -188,7 +188,7 @@ export default function Intro() {
       <section id="skills" data-screen-label="Skills" className="mx-wrap mx-sec" aria-labelledby="skills-h">
         <div className="mx-head">
           <h2 id="skills-h" className="mx-h2">Your agents can talk to each other</h2>
-          <p className="mx-lead">QualityLayer adds skills to every agent you connect. Claude Code can ask Codex for a review, and the answer comes back to the same session.</p>
+          <p className="mx-lead">Connected agents get skills to plan, design and check work. Claude Code can ask Codex for a review and receive its reply in the same session.</p>
         </div>
         <figure className="sk-stage" aria-label="Example: Claude Code asks Codex for a review">
           <span className="sk-tag">Example</span>
@@ -259,7 +259,7 @@ export default function Intro() {
       <section id="local" className="mx-wrap mx-sec" aria-labelledby="local-h">
         <div className="mx-head">
           <h2 id="local-h" className="mx-h2">Runs on your computer</h2>
-          <p className="mx-lead">Keep your agent, editor and model plan. Nothing to host.</p>
+          <p className="mx-lead">Use your existing agent, editor and model plan.</p>
         </div>
         <div className="mx-local">
           <span className="mx-local-tag"><Laptop size={15} strokeWidth={1.75} aria-hidden="true" />Your computer</span>

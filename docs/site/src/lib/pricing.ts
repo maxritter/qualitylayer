@@ -132,7 +132,7 @@ export const COMPARE: CompareGroup[] = [
     ],
   },
   {
-    name: "For large companies",
+    name: "Custom hosting and terms",
     hue: "plain",
     rows: [
       row("Host the backend yourself", false, false, true, "In your own cloud, on-premise or a private VPC"),

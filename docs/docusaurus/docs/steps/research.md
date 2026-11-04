@@ -30,6 +30,8 @@ Usually nothing. Comment on a finding you disagree with. If the code leaves a re
 
 ## The document {#the-page}
 
-The **Research** page opens with **How it works today**: a summary and picture of the code your request touches. **What it means for your request** follows: what that code makes easy, hard or risky, each item naming the findings it rests on. Click one to open that finding with its evidence. The findings and the Plan's risk checklist fold below; earlier answers and code references stay in `02-research.md`. Your agent asks you only about choices it cannot settle.
+The page opens with **How it works today**, a summary and picture of the relevant code. **What it means for your request** explains what is easy, hard or risky; click an item for the findings behind it.
+
+Findings and the Plan's risk checklist fold below. `02-research.md` retains earlier answers and code references.
 
 Next: [Plan](plan.md).

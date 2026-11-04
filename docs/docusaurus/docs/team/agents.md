@@ -5,8 +5,8 @@ description: A teammate you ask can answer with their own coding agent. The agen
 
 A teammate you ask can let their own agent draft the answer. Nothing is sent without their yes.
 
-![A teammate answers with their own agent: it reads the question and the Plan, drafts an answer, sends it only after their yes, and your App shows it via that agent](pathname:///img/diagrams/team-agents-light.svg)
-![A teammate answers with their own agent: it reads the question and the Plan, drafts an answer, sends it only after their yes, and your App shows it via that agent](pathname:///img/diagrams/team-agents-dark.svg)
+![A teammate reviews an agent's draft before sending it; the requester sees who drafted it](pathname:///img/diagrams/team-agents-light.svg)
+![A teammate reviews an agent's draft before sending it; the requester sees who drafted it](pathname:///img/diagrams/team-agents-dark.svg)
 
 1. Choose **Draft with my agent**: **In the App**, or **In my terminal** with a request such as “Using QL, answer the team ask a1”.
 2. Check the draft, then **Send the draft**, **Edit it** or **Discard the draft**.

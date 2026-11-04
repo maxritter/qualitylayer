@@ -6,7 +6,7 @@ description: Review the code, screens and checks, then approve the change. Open 
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-light.svg)
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-dark.svg)
 
-The final approval is yours. Review opens the code alongside the complete change, screens and checks. Unverified results stay unverified when you approve.
+Review the code, screens and checks, then approve the change. Unverified results stay unverified after approval.
 
 ![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-light.webp)
 ![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-dark.webp)
@@ -28,16 +28,16 @@ Routine choices stay under **Decided while building**. Read them or **Ask why**;
 
 ## The page {#the-page}
 
-The **Review** page opens code review. **Checks and outcomes**, **Screenshots** and **Change details** fold below it; each keeps its full content.
+Code review leads the page. **Checks and outcomes**, **Screenshots** and **Change details** fold below it, retaining the full record.
 
-`07-review.md` keeps the complete record in pull request order; its top becomes the pull request's description. If the task changed a [lasting artifact](../artifacts.md#lasting), you pick which pages to [fold in](../artifacts.md#fold-in).
+The top of `07-review.md` becomes the pull request description; the complete record follows. For changed [lasting artifacts](../artifacts.md#lasting), choose which pages to [fold in](../artifacts.md#fold-in).
 
 ## Read the code {#code}
 
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-light.webp)
 ![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-dark.webp)
 
-**Review the code** opens a file tree and **Unified** or **Split** diff. **Viewed** marks save your reading progress; **All viewed** and **Clear** set every file at once.
+**Review the code** opens the file tree and **Unified / Split** diff. **Viewed** saves reading progress; **All viewed** and **Clear** apply to every file.
 
 ### Comment on any line {#line-comments}
 
@@ -51,23 +51,23 @@ Use a line's **+** and pick the kind:
 
 ### Findings from the agents {#findings}
 
-Security review and second opinion findings appear as threads on their lines. Make one your change request, or say why it is not a problem; your reason is saved as a [project lesson](../memory.md) so later reviews do not raise it again.
+Security and second opinion findings appear on their lines. Request a change or record why a finding is not a problem; the reason becomes a [project lesson](../memory.md) for later reviews.
 
 ### Ask another reviewer {#another-reviewer}
 
-**Ask another reviewer** has an installed agent that did not build the change review one file or all of it. It reads the change and the task's documents, edits nothing, stops after 8 minutes, and posts findings as threads with its cost listed.
+**Ask another reviewer** chooses an installed agent that did not build the change. It reviews one file or all files, reads the task documents, edits nothing and stops after 8 minutes. Findings and cost appear in the threads.
 
 ### Approve with open comments {#open-comments}
 
-Open comments do not block approval and are not sent to your agent. When the pull request opens, they post as one GitHub review on their lines; a **Replace with** becomes a suggestion the author can apply.
+Open comments neither block approval nor go to your agent. Opening the pull request posts them as one GitHub review; **Replace with** becomes an applicable suggestion.
 
 ### Review with your team {#team-review}
 
-**Ask for review** shows the Git remote and commits, then pushes the task's branch to your team's own remote only when you confirm. Teammates with a checkout comment on lines there; others see the walkthrough with file names ([What is shared](../team/plans.md#privacy)).
+**Ask for review** shows the remote and commits before you confirm the push. Teammates with a checkout can comment on lines; others see the walkthrough and file names ([sharing details](../team/plans.md#privacy)).
 
 ## Approve {#approve}
 
-Use the final approval in the page header. There is one approval for the whole change, even if the build agent has stopped.
+Approve the whole change in the page header, including when its agent has stopped.
 
 | Choice | What happens |
 | --- | --- |
@@ -83,7 +83,7 @@ Use the final approval in the page header. There is one approval for the whole c
 ![Review after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-light.webp)
 ![Review after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-dark.webp)
 
-Keep talking to your agent until the change is merged. Ask it to merge, push, deploy or run end-to-end tests; it does none of these on its own.
+Ask your agent to merge, push, deploy or run end-to-end tests. These actions still need your request.
 
 | Review shows | What you do |
 | --- | --- |
@@ -91,7 +91,7 @@ Keep talking to your agent until the change is merged. Ask it to merge, push, de
 | **1 change since your approval** | Your agent committed a tweak. Press **View the change**, then **Approve change** in the header. With an open pull request, your merge accepts it |
 | **Merged into main** | The task is in **Shipped**. New work starts with **Start a follow-up** |
 
-QualityLayer sees a merge in this computer's Git, including a squash or rebase, and reads a pull request it opened on GitHub. A task built on your main branch has no branch of its own: only the fixes your agent made for it count ([where the build lands](implement.md#where-it-lands)). With a pull request open, your agent [watches the checks](pull-request.md#watch) and works through reviewers' threads ([Pull request](pull-request.md#waits)).
+QualityLayer recognizes local merges, including squash and rebase, and checks pull requests it opened on GitHub. For work built directly on main, only that task's fixes count ([details](implement.md#where-it-lands)). While a pull request is open, your agent [watches checks](pull-request.md#watch) and [handles review threads](pull-request.md#waits).
 
 ## Stop, archive or delete a task {#stop-archive-or-delete-a-task}
 

@@ -5,7 +5,7 @@ description: Save lessons about each project and how you work, and choose what t
 
 # Project memory
 
-Keep decisions, fixes, constraints and how you like to work so your agents can reuse them.
+Save decisions, fixes, constraints and working preferences for your agents to reuse.
 
 <figure class="memory-flow" aria-label="How a saved lesson reaches an agent">
   <ol>
@@ -20,19 +20,19 @@ Keep decisions, fixes, constraints and how you like to work so your agents can r
 
 | How | What happens |
 | --- | --- |
-| **Session lessons** | Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching lessons from this project and about you; all but Grok get them again after a compaction. Lessons whose files changed are marked for rechecking; task answers wait for a search. If hooks are off, unavailable or too slow, delivery can be skipped |
+| **Session lessons** | Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching project and personal lessons; all except Grok receive them after compaction too. Changed files mark a lesson for rechecking. Task answers require a search. Delivery can be skipped when hooks are off, unavailable or slow |
 | **Tools** | Claude Code, Codex, Pi, OpenCode, Cursor, Grok and GitHub Copilot use `memory_search`, `memory_read`, `memory_save` and `memory_keep`; Antigravity uses the [CLI](#command-line). Every client can use that fallback |
 | **Task lessons** | Review records decisions, fixed findings and amendments; missing or failed checks never count as passing. The task's **Memory** record in Files shows what was used and saved |
 
-When earlier decisions matter, search and read the relevant lessons in a fresh session or after compaction, even if no automatic context appeared. Lessons are reference data, never instructions; check them against current code.
+Search and read lessons when earlier decisions matter, including after compaction or when automatic context is missing. Check them against current code; lessons are reference data, never instructions.
 
 ## Lessons about you
 
-An agent can save how you like to work as a lesson about you. It applies across repositories on this computer and never goes to Git. Find these lessons under **Yours · every project** in **Settings › Memory**.
+Personal lessons apply across repositories on this computer and never go to Git. Find them under **Settings › Memory › Yours · every project**.
 
 ## Manage your lessons
 
-In **Settings › Memory**, search or edit lessons, pin up to five per project and five of your own, or retire them. Use **Still true** after checking changed files. Lessons left stale for 90 days retire automatically; you can restore them. You can turn off **Lessons in every session** or pause memory.
+In **Settings › Memory**, search, edit or retire lessons, and pin up to five per project and five personal lessons. Use **Still true** after checking changed files. Stale lessons retire after 90 days and can be restored. Turn off automatic delivery with **Lessons in every session**, or pause memory.
 
 <details>
 <summary>See Memory settings</summary>
@@ -56,7 +56,7 @@ Lessons about you, new task answers and Pilot imports stay private. Task answers
 
 ## Import Pilot lessons
 
-The Memory tab imports Pilot JSONL and Markdown files into a project you choose. They stay private and unchecked; re-importing adds no copies.
+Import Pilot JSONL or Markdown into a chosen project. Imported lessons stay private and unchecked; unchanged lessons are not duplicated.
 
 ## Command line
 

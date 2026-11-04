@@ -68,8 +68,8 @@ describe("comparison pages", () => {
     const { body } = await render(`/compare/${c.slug}`);
     const text = plainText(body);
     for (const claim of [c.strengths, c.agents, c.chooseOther, c.chooseQualityLayer]) expect(text).toContain(claim);
-    expect(text).toContain("An agent that did not write the code checks every change");
-    expect(text).toContain("QualityLayer never merges it");
+    expect(text).toContain("An agent that did not write the code checks the change unless disabled in Settings");
+    expect(text).toContain("You control the merge");
     expect(text).toContain("GitHub's gh CLI");
     for (const { url } of c.sources) expect(body).toContain(`href="${url}"`);
     for (const path of ["/compare", ROUNDUP_PATH, "/pricing", "/docs/steps/verify", "/docs/steps/review", "/docs/steps/pull-request"]) expect(body).toContain(`href="${path}"`);

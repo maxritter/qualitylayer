@@ -30,7 +30,7 @@ export default function CheckoutSuccess() {
   const paid = status === "succeeded", failed = ["failed", "expired"].includes(status);
   return <><SEO /><Page><div className="bl-wrap"><section className="bl-confirmation">
     <h1>{paid ? "Your subscription is ready" : failed ? "Payment was not completed" : status === "unknown" ? "Check your subscription" : "Confirming your purchase"}</h1>
-    <p>{paid ? "Activate QualityLayer with your licence key." : failed ? "Return to pricing to try again, or contact support if you need help." : "Polar is still confirming the payment. You can check again in a moment."}</p>
+    <p>{paid ? "Activate QualityLayer with your licence key." : failed ? "Return to pricing to try again, or contact support if you need help." : status === "unknown" ? "We couldn't check the payment. Check again or open your billing account." : "Polar is still confirming the payment. You can check again in a moment."}</p>
     {error && <p role="alert">{error}</p>}
     {paid && <p>Polar emails your licence key. You can also find it in your billing account.</p>}
     <div className="bl-actions">{paid ? <><Button asChild><Link to="/download">Download the App</Link></Button><Button asChild variant="outline"><Link to="/billing">Open your billing account</Link></Button></> : failed ? <Button asChild><Link to="/pricing">Return to pricing</Link></Button> : <><Button disabled={busy} onClick={() => void check()}>{busy ? "Checking…" : "Check payment status"}</Button><Link to="/billing">Open your billing account</Link></>}</div>

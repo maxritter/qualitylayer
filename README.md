@@ -45,17 +45,17 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 >
 > *An engineer who uses QualityLayer*
 
-QualityLayer keeps design decisions and verification visible while your agents work.
+Agree on the change, then review how your agents built and checked it.
 
 | You get | How it works |
 | --- | --- |
-| **Your own agent and plan** | Claude Code, Codex, Cursor and more run on the subscription or API key you already have. |
+| **Your own agent and plan** | Use Claude Code, Codex, Cursor and more with your existing login or API key. |
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. What it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Your own requirements** | Add checks, tools or skills to any step. Review shows what was done or skipped. [Required lines](https://qualitylayer.dev/docs/required-lines). |
-| **Visible decisions and effort** | Each step records its decisions and results in your repository, with time and estimated model cost shown in the App. |
+| **Visible decisions and effort** | Read decisions and results in your repository; see time and estimated model cost in the App. |
 
 ---
 
@@ -63,8 +63,7 @@ QualityLayer keeps design decisions and verification visible while your agents w
 
 ### Prerequisites
 
-- **A coding agent**, installed and signed in: Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode or GitHub Copilot. [Other agents](https://qualitylayer.dev/docs/agents/other) connect through the CLI.
-- **Your own subscription** (Claude, ChatGPT or GitHub Copilot plan, or API key).
+- **A coding agent**, installed and signed in with your subscription or API key: Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode or GitHub Copilot. [Other agents](https://qualitylayer.dev/docs/agents/other) connect through the CLI.
 - **Git** and a repository.
 
 ### Installation
@@ -100,9 +99,9 @@ Run `pilot update` or download the App. An active Pilot Shell licence works with
 
 In the App or browser, choose **+**, then **Task** (Feature or Bugfix) or **Chat**. Pick your repository and agent, and describe what you need.
 
-**Chat** is a conversation without workflow steps. You can use artifacts, checks and reviews as needed, then choose **Convert to task** in the same conversation. [Chat guide](https://qualitylayer.dev/docs/chat).
+**Chat** is a direct conversation with optional artifacts, checks and reviews. **Convert to task** starts the workflow in that conversation. [Chat guide](https://qualitylayer.dev/docs/chat).
 
-For a **Feature** or **Bugfix**, choose **Plan with QualityLayer**, or **Existing plan** to paste or attach a plan. Describe what you want:
+For a **Feature** or **Bugfix**, choose **Plan with QualityLayer** or **Existing plan** to paste or attach your plan. Describe the change:
 
 ```text
 Plan retries for failed webhooks and stop after a few tries.
@@ -110,7 +109,7 @@ Plan retries for failed webhooks and stop after a few tries.
 
 1. Answer questions and comment on the Plan.
 2. Approve the Plan. Your agent builds and verifies the change.
-3. Review the result, including any checks that still need you, and approve it. Keep talking to your agent to merge, deploy or tweak it.
+3. Review the result and open checks, then approve it. Ask your agent to merge, deploy or make further changes.
 
 | Where you work | How to start |
 | --- | --- |
@@ -118,13 +117,13 @@ Plan retries for failed webhooks and stop after a few tries.
 | **Your terminal or IDE** | Choose **In my terminal** to copy the request, or ask there: “Using QualityLayer, plan retries for failed webhooks.” |
 | **Another agent** | Agents that run shell commands can use the CLI. [Supported agents](https://qualitylayer.dev/docs/agents/native). |
 
-To switch agents or environments, stop the run and ask: “Using QL, continue task retry-webhooks.”
+At Plan approval, continue with your planner or choose another agent or session. Outside the App, ask: “Using QL, continue task retry-webhooks.”
 
 QualityLayer runs only when you ask for it. [Your first task](https://qualitylayer.dev/docs/first-task).
 
 ### Skills your agent gets
 
-Setup adds skills to your agents. Ask in plain words, in any language. Your agents can also message each other, for example Claude Code asking Codex for a review.
+Setup adds these skills. Ask in plain words, in any language.
 
 | Skill | For | You say |
 | --- | --- | --- |
@@ -150,7 +149,7 @@ QualityLayer runs your project's checks and security scans. A separate agent rev
 
 <h2 id="features">The workflow</h2>
 
-Seven steps take a change from questions to review, with decisions and checks saved as Markdown in your repository. The Plan is the specification you share; build notes live in a separate file. Export gathers the Plan and its pictures. Existing plans start at Plan. You approve the Plan and finished change, authorize pushes and control the merge.
+Each step saves readable Markdown in your repository. The Plan is the specification you share; build notes live beside it. Export gathers the Plan and its pictures. Existing plans start at Plan. You approve the Plan and finished change, and control pushes and merges.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/docusaurus/static/img/diagrams/flow-pr-dark.svg">
@@ -174,7 +173,7 @@ Your agent maps the files a change will touch and how they connect, before any c
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/change-map-dark.webp">
-  <img src="docs/img/change-map-light.webp" alt="Example change map: a Gateway part with Handler (changed) and a new Meter marked as a risk, linked by Usage to a Billing part with Ledger and price(), both changed. Fictional project." width="640">
+  <img src="docs/img/change-map-light.webp" alt="Fictional change map: Gateway contains a changed Handler and a new, risky Meter. Usage links it to Billing's changed Ledger and price()." width="640">
 </picture>
 
 ### Two levels
@@ -190,12 +189,12 @@ Your agent maps the files a change will touch and how they connect, before any c
 
 | In the App | What you can do |
 | --- | --- |
-| **Chat or a planned task** | Talk directly with your agent or follow the seven-step workflow. The sidebar shows what each agent is doing, and the App notifies you when one needs you. |
+| **Chat or a planned task** | Talk directly with your agent or follow the workflow. See agent activity and get notified when one needs you. |
 | **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and pin feedback. |
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. |
 | **Checks and code review** | Read the evidence and file diffs, and comment on any line. |
 | **Agent controls and usage** | Choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
-| **Memory and team** | Reuse [lessons](https://qualitylayer.dev/docs/memory) about each project and how you work, ask teammates over Slack or email and [share work](https://qualitylayer.dev/docs/team/plans). |
+| **Memory and team** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), ask teammates over Slack or email and [share work](https://qualitylayer.dev/docs/team/plans). |
 
 QualityLayer keeps task files on your computer and encrypts shared tasks first. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).
 

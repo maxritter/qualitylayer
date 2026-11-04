@@ -1,9 +1,9 @@
 ---
 title: Other agents
-description: Use QualityLayer with any coding agent that can run shell commands, including one that runs a model on your own machine.
+description: Use QualityLayer with any coding agent that runs shell commands, including local models.
 ---
 
-[Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot](native.md) run directly in the App or browser beside your task. The CLI connects other agents that can run shell commands in your repository, including one on a local model.
+[Supported agents](native.md) run beside your task in the App or browser. Other agents, including local models, use the CLI to run the same workflow from your repository.
 
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-light.svg)
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-dark.svg)
@@ -19,7 +19,7 @@ description: Use QualityLayer with any coding agent that can run shell commands,
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-light.svg)
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-dark.svg)
 
-Pick **In my terminal** when you start the build, then ask your agent in the project to continue the approved task; a prepared request is there to copy. The agent then follows Outline, Implement and Verify until Review.
+Choose **In my terminal**, then ask your agent in the project to continue the approved task, or copy the prepared request. It follows Outline, Implement and Verify until Review.
 
 ## Run in your terminal {#app-start}
 

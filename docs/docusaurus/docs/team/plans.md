@@ -1,6 +1,6 @@
 ---
 title: Plan reviews
-description: With a Team plan, your team helps shape the Plan before any code, each in their own App, and people outside the team comment through a link.
+description: With a Team plan, review Plans with teammates or invite comments through a shared link.
 ---
 
 With a Team plan, your team reviews the Plan before any code (this page) and the [finished change](changes.md).
@@ -21,9 +21,9 @@ On a shared Plan or Review, **Looks right** sends your review to the owner. **Su
 
 ## Share and reading status
 
-**Share** holds team or group access, people with access, review requests, artifact inclusion and the outside link in one sheet. Seats are managed in Settings.
+**Share** manages people, groups, review requests, artifacts and the outside link. Manage seats in Settings.
 
-The task header shows who it waits on and offers **Remind**. **Seen by** names confirmed readers of the current shared version and opens the same Share sheet. **Not opened yet** appears only when reading data is known; otherwise the App shows no reading status.
+The header shows who is needed and offers **Remind**. **Seen by** lists confirmed readers of the current version and opens Share. **Not opened yet** appears only when reading data is known.
 
 ## Slack and email {#slack}
 
@@ -33,7 +33,7 @@ The team owner connects Slack, turns on email, or both, in **Settings › Team**
 - an optional **Morning digest**, sent by your computer's local time
 - **Follow**, which subscribes you to a shared task's updates
 
-Each message reaches you one way: in Slack when Slack finds your account and your Slack messages are on, otherwise by email if you turned it on. Questions and answers always appear in Team. If your emails differ, link your own Slack account in Settings. Slack controls do-not-disturb hours. Every email has a link that turns email off, and an address that bounces turns it off too.
+Messages use Slack when it finds your account and you enable Slack messages; otherwise they use enabled email. Questions and answers also appear in Team. Link your Slack account in Settings if your emails differ. Slack controls do-not-disturb hours. Email unsubscribe links and bounced addresses turn email off.
 
 ## People outside your team {#outside-links}
 
@@ -43,7 +43,7 @@ Each message reaches you one way: in Slack when Slack finds your account and you
 - A link lasts 14 days; **Revoke** ends it at once.
 - **Include artifacts** adds previews ([Artifacts](../artifacts.md#never-shared)).
 
-If an update cannot be published, Share shows the problem and keeps the last complete copy. Shrink oversized content, then use **Retry sharing** for the team or **Renew** for an external link.
+A failed update keeps the last complete copy and shows its error. Shrink oversized content, then **Retry sharing** for the team or **Renew** an external link.
 
 A coding agent can fetch the shared documents as Markdown, no licence needed:
 

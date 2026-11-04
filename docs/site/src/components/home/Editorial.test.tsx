@@ -45,25 +45,32 @@ it("opens the step a link names, so the hero's stations and /#verify land on it"
   expect(screen.getByText("Agents check", { selector: ".ed-who" })).toBeTruthy();
 });
 
-it("shows the App features as tabs that arrow keys move through, with Teams opening Team", () => {
+const feature = (tabs: HTMLElement, name: string) => within(tabs).getByRole("tab", { name: new RegExp(`^${name}\\b`) });
+
+it("lists the App features with their one line, moves with arrow keys, and Teams opens Team", () => {
   render(<MemoryRouter initialEntries={["/#team"]}><Editorial /></MemoryRouter>);
   const tabs = screen.getByRole("tablist", { name: "Also in the App" });
-  expect(within(tabs).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Memory", "Artifacts", "Team", "Home", "Settings"]);
-  const team = within(tabs).getByRole("tab", { name: "Team" });
+  expect(tabs.getAttribute("aria-orientation")).toBe("vertical");
+  expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector("b")?.textContent)).toEqual(["Memory", "Artifacts", "Team", "Home", "Settings"]);
+  expect(feature(tabs, "Memory").textContent).toContain("Keep useful project lessons");
+  const team = feature(tabs, "Team");
   expect(team.getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tabpanel", { name: "Team" }).textContent).toContain("Ask the people who know");
-  fireEvent.keyDown(team, { key: "ArrowRight" });
-  const home = within(tabs).getByRole("tab", { name: "Home" });
+  expect(screen.getByRole("tabpanel", { name: /^Team/ }).textContent).toContain("Teammates answer plan questions");
+  expect(screen.getByRole("button", { name: "Enlarge Team" })).toBeTruthy();
+  fireEvent.keyDown(team, { key: "ArrowDown" });
+  const home = feature(tabs, "Home");
   expect(home.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(home);
-  fireEvent.keyDown(home, { key: "Home" });
-  expect(within(tabs).getByRole("tab", { name: "Memory" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(home, { key: "ArrowUp" });
+  expect(team.getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(team, { key: "Home" });
+  expect(feature(tabs, "Memory").getAttribute("aria-selected")).toBe("true");
 });
 
-it("opens the Artifacts tab from /#artifacts and links to its docs page", () => {
+it("opens Artifacts from /#artifacts and links to its docs page", () => {
   render(<MemoryRouter initialEntries={["/#artifacts"]}><Editorial /></MemoryRouter>);
   const tabs = screen.getByRole("tablist", { name: "Also in the App" });
-  expect(within(tabs).getByRole("tab", { name: "Artifacts" }).getAttribute("aria-selected")).toBe("true");
+  expect(feature(tabs, "Artifacts").getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("link", { name: "Read about artifacts" }).getAttribute("href")).toBe("/docs/artifacts");
 });
 

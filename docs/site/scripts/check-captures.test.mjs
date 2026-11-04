@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { captureSource } from "./capture-source.mjs";
-import { captureFiles, HERO_FILES } from "./capture-scenes.mjs";
+import { CAPTURE_SCENES, captureFiles, HERO_FILES, sceneFiles } from "./capture-scenes.mjs";
 import { checkCaptures, refreshCaptures } from "./check-captures.mjs";
 import { publishCaptures } from "./capture-publish.mjs";
 
@@ -73,7 +73,69 @@ function fixture() {
   return { root, put, git, source, manifest, manifestPath, check };
 }
 
+function capturedBatch(f, scenes) {
+  const source = captureSource(f.root);
+  const key = hash(JSON.stringify(source.sourceInputs));
+  const manifest = JSON.parse(readFileSync(join(f.root, f.manifestPath), "utf8"));
+  manifest.captureSources[key] = source;
+  const images = new Map(manifest.images.map(image => [image.file, image]));
+  for (const scene of scenes) for (const file of sceneFiles(scene)) {
+    const bytes = Buffer.from(`Refreshed fixture ${file}`);
+    const hero = HERO_FILES.includes(file), phone = file.includes("-phone-");
+    f.put(`docs/site/public/${hero ? "hero" : "product"}/${file}`, bytes);
+    images.set(file, { file, sha256: hash(bytes), width: 100, height: 100, captureSource: key,
+      ...(hero ? { assetGroup: "hero" } : {}),
+      frame: hero ? { kind: "consumer", padding: 12, theme: file.endsWith("-dark.webp") ? "dark" : "light" }
+        : { padding: phone ? 12 : 24, border: 1, radius: phone ? 16 : 20, theme: file.endsWith("-dark.webp") ? "dark" : "light" } });
+  }
+  f.put(f.manifestPath, JSON.stringify({ ...manifest, images: [...images.values()] }));
+}
+
 describe("release media freshness", () => {
+  it("refreshes all scenes in sequential four-scene child cohorts and retains per-image provenance", async () => {
+    const f = fixture();
+    rmSync(join(f.root, "docs/site/public/product/plan-light.webp"));
+    const calls = [];
+    let active = 0, peak = 0;
+    const result = await refreshCaptures(f.root, async (file, args) => {
+      expect(file).toBe("website-screenshots.mjs");
+      expect(args[0]).toBe("--only");
+      const scenes = args[1].split(",");
+      calls.push(scenes);
+      active++; peak = Math.max(peak, active);
+      await Promise.resolve();
+      capturedBatch(f, scenes);
+      active--;
+    }, { chapterIds: ["intro"] });
+    expect(calls).toEqual(Array.from({ length: 5 }, (_, at) => CAPTURE_SCENES.slice(at * 4, at * 4 + 4)));
+    expect(calls.flat()).toEqual(CAPTURE_SCENES);
+    expect(peak).toBe(1);
+    expect(result.ok).toBe(true);
+    const published = JSON.parse(readFileSync(join(f.root, f.manifestPath), "utf8"));
+    expect(published.images.every(image => published.captureSources[image.captureSource])).toBe(true);
+    expect(readFileSync(join(f.root, "docs/docusaurus/static/img/app/plan-light.webp"))).toEqual(readFileSync(join(f.root, "docs/site/public/product/plan-light.webp")));
+  });
+
+  it("stops before later cohorts when a capture child fails", async () => {
+    const f = fixture();
+    rmSync(join(f.root, "docs/site/public/product/plan-light.webp"));
+    const calls = [];
+    await expect(refreshCaptures(f.root, async (_file, args) => {
+      calls.push(args[1].split(","));
+      if (calls.length === 2) throw new Error("capture child failed");
+      capturedBatch(f, calls[0]);
+    }, { chapterIds: ["intro"] })).rejects.toThrow("capture child failed");
+    expect(calls).toEqual([CAPTURE_SCENES.slice(0, 4), CAPTURE_SCENES.slice(4, 8)]);
+  });
+
+  it("refuses dirty capture inputs before starting any child cohort", async () => {
+    const f = fixture();
+    f.put("qualitylayer/src/ui/App.tsx", "uncommitted rendering change");
+    const calls = [];
+    await expect(refreshCaptures(f.root, async (...args) => calls.push(args), { chapterIds: ["intro"] })).rejects.toThrow("Commit capture inputs first");
+    expect(calls).toEqual([]);
+  });
+
   it("admits unchanged inputs without requiring the candidate and producer commits to match", () => {
     const f = fixture();
     f.put("backend.txt", "Backend-only fix"); f.git("add", "backend.txt"); f.git("commit", "-qm", "Backend fix");

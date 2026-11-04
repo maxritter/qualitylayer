@@ -8,6 +8,8 @@ import { assetHash, checkCaptures, inside } from "./capture-evidence.mjs";
 
 export { checkCaptures } from "./capture-evidence.mjs";
 
+const CAPTURE_BATCH_SIZE = 4;
+
 async function copyAlias(repo, alias) {
   const source = resolve(repo, "docs/site/public/product", alias.source);
   const target = resolve(repo, "docs/docusaurus/static/img/app", alias.target);
@@ -27,7 +29,10 @@ export async function refreshCaptures(repo, run = (file, args) => {
 }, options = {}) {
   let state = checkCaptures(repo, options);
   if (state.issues.some(issue => issue.kind === "dirty-source")) throw new Error("Commit capture inputs first; use screenshots --output-dir for drafts");
-  if (state.staleScenes.length) await run("website-screenshots.mjs", ["--only", state.staleScenes.join(",")]);
+  for (let at = 0; at < state.staleScenes.length; at += CAPTURE_BATCH_SIZE) {
+    const scenes = state.staleScenes.slice(at, at + CAPTURE_BATCH_SIZE);
+    await run("website-screenshots.mjs", ["--only", scenes.join(",")]);
+  }
   state = checkCaptures(repo, options);
   for (const alias of state.aliases) await copyAlias(repo, alias);
   if (state.demoNeedsCheck) await run("demo/present.mjs", ["--check"]);

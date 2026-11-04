@@ -24,6 +24,17 @@ it("opens on Discuss and opens any other step with its own screen on a click", (
   expect(screen.getByRole("link", { name: "Review guide" }).getAttribute("href")).toBe("/docs/steps/review");
 });
 
+it("reserves the same captured desktop aspect ratio for all eight workflow screens", () => {
+  render(<MemoryRouter><Editorial /></MemoryRouter>);
+  for (const name of ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"]) {
+    fireEvent.click(step(name));
+    const panel = screen.getByRole("tabpanel", { name: new RegExp(`Step \\d: ${name}$`) });
+    const image = within(panel).getByRole("img") as HTMLImageElement;
+    expect(image.width).toBe(2664);
+    expect(image.height).toBe(1664);
+  }
+});
+
 
 it("moves the workflow selection and focus with arrows, Home and End", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);

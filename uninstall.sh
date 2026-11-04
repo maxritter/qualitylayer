@@ -356,10 +356,10 @@ has_codex_pilot_content() {
 	if [ -f "$CODEX_DIR/config.toml" ] && grep -q -e 'pilot-shell managed MCP servers' -e 'pilot-shell managed env vars' -e '.pilot-model-catalog.json' "$CODEX_DIR/config.toml" 2>/dev/null; then
 		return 0
 	fi
-	if [ -f "$CODEX_DIR/.pilot-model-catalog.json" ]; then
+	if [ -e "$CODEX_DIR/.pilot-model-catalog.json" ] || [ -L "$CODEX_DIR/.pilot-model-catalog.json" ]; then
 		return 0
 	fi
-	if [ -f "$CODEX_DIR/AGENTS.md" ] && grep -q 'PILOT:START' "$CODEX_DIR/AGENTS.md" 2>/dev/null; then
+	if [ -f "$CODEX_DIR/AGENTS.md" ] && grep -q -e 'PILOT:START' -e 'PILOT:END' "$CODEX_DIR/AGENTS.md" 2>/dev/null; then
 		return 0
 	fi
 	if [ -f "$CODEX_DIR/rules/.pilot-rules.json" ]; then
@@ -1151,7 +1151,11 @@ uninstall_extra_plugins() {
 	# the exact legacy hook file Pilot created. Manual commands are printed later.
 	local removed_count=0
 	for hook_file in "${LEGACY_HOOK_FILES[@]}"; do
-		if [ -f "$CLAUDE_DIR/hooks/$hook_file" ]; then
+		if [ -f "$CLAUDE_DIR/hooks/$hook_file" ] || [ -L "$CLAUDE_DIR/hooks/$hook_file" ]; then
+			if ! is_safe_manifest_entry "hooks/$hook_file"; then
+				mark_cleanup_failure "Skipped legacy hook cleanup through an unsafe parent: $CLAUDE_DIR/hooks/$hook_file"
+				continue
+			fi
 			rm -f "$CLAUDE_DIR/hooks/$hook_file"
 			removed_count=$((removed_count + 1))
 		fi
@@ -1231,10 +1235,30 @@ except Exception:
 
 	local skill_dir
 	for skill_dir in "$CLAUDE_DIR/skills/impeccable" "$AGENTS_SKILLS_DIR/impeccable"; do
+		if [ "$skill_dir" = "$CLAUDE_DIR/skills/impeccable" ] && [ -L "$CLAUDE_DIR/skills" ]; then
+			mark_cleanup_failure "Skipped Impeccable cleanup through a symlinked skills directory"
+			return 1
+		fi
 		if [ -L "$skill_dir" ]; then
-			rm -f "$skill_dir"
+			if ! rm -f "$skill_dir"; then
+				mark_cleanup_failure "Could not unlink Impeccable skill: $skill_dir"
+				return 1
+			fi
 		elif [ -d "$skill_dir" ]; then
-			rm -rf "$skill_dir"
+			# Old installs recorded the package, not its complete file inventory.
+			# Remove known entrypoints; untracked resources may include user files.
+			if [ -L "$skill_dir/scripts" ] || [ -L "$skill_dir/agents" ]; then
+				mark_cleanup_failure "Skipped Impeccable cleanup through a symlinked resource directory: $skill_dir"
+				return 1
+			fi
+			if ! rm -f "$skill_dir/SKILL.md" "$skill_dir/scripts/hook.mjs" "$skill_dir/agents/openai.yaml"; then
+				mark_cleanup_failure "Could not remove Impeccable entrypoints: $skill_dir"
+				return 1
+			fi
+			rmdir "$skill_dir/scripts" "$skill_dir/agents" 2>/dev/null || true
+			if ! rmdir "$skill_dir" 2>/dev/null; then
+				echo "    [OK] Preserved untracked Impeccable resources in $skill_dir"
+			fi
 		fi
 	done
 }
@@ -1512,6 +1536,29 @@ hooks = data.get("hooks", {})
 if not isinstance(hooks, dict):
     sys.exit(1)
 
+def valid_entries(entries, baseline=False):
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
+            return False
+        if entry.get("matcher") is not None and not isinstance(entry["matcher"], str):
+            return False
+        if baseline and not entry["hooks"]:
+            return False
+        for hook in entry["hooks"]:
+            if not isinstance(hook, dict):
+                return False
+            if "command" in hook and not isinstance(hook["command"], str):
+                return False
+            if baseline and not hook.get("command"):
+                return False
+    return True
+
+if not all(valid_entries(entries) for entries in hooks.values()):
+    print("Malformed Codex hooks; preserving hooks and ownership baseline", file=sys.stderr)
+    sys.exit(1)
+
 def signature(entry):
     matcher = entry.get("matcher") or ""
     commands = sorted(
@@ -1524,17 +1571,9 @@ if not os.path.exists(baseline_path):
     # A prior uninstaller may already have removed the owned hooks and baseline.
     # Preserve every remaining hook, including user hooks under the Pilot home.
     for entries in hooks.values():
-        if not isinstance(entries, list):
-            sys.exit(1)
         for entry in entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("hooks"), list):
-                sys.exit(1)
             for hook in entry["hooks"]:
-                if not isinstance(hook, dict):
-                    sys.exit(1)
                 command = hook.get("command", "")
-                if not isinstance(command, str):
-                    sys.exit(1)
                 if "/.pilot/" in command:
                     print("Skipped Codex hook cleanup (ownership baseline missing; Pilot-path hooks remain). Review hooks.json manually; no hooks were changed.", file=sys.stderr)
                     sys.exit(1)
@@ -1544,8 +1583,9 @@ if not os.path.exists(baseline_path):
 try:
     with open(baseline_path) as f:
         baseline = json.load(f)
-    if not isinstance(baseline, dict):
-        baseline = {}
+    if not isinstance(baseline, dict) or not all(valid_entries(entries, baseline=True) for entries in baseline.values()):
+        print("Malformed Codex hook ownership baseline; preserving hooks and baseline", file=sys.stderr)
+        sys.exit(1)
 except Exception:
     sys.exit(1)
 
@@ -1678,12 +1718,63 @@ print("    [OK] Removed Pilot managed config block(s) from ~/.codex/config.toml"
 	# pointer written by installer/steps/codex_files.py. User catalog settings
 	# with any other path remain untouched.
 	local model_catalog_file="$CODEX_DIR/.pilot-model-catalog.json"
-	if { [ -f "$model_catalog_file" ] || grep -q '.pilot-model-catalog.json' "$config_file" 2>/dev/null; } && pilot_python_available; then
+	if { [ -e "$model_catalog_file" ] || [ -L "$model_catalog_file" ] || grep -q '.pilot-model-catalog.json' "$config_file" 2>/dev/null; } && pilot_python_available; then
 		if ! PILOT_CODEX_CONFIG="$config_file" PILOT_CODEX_MODEL_CATALOG="$model_catalog_file" pilot_python -c '
 import json, os, stat, sys, tempfile
 
 config_path = os.path.realpath(os.environ["PILOT_CODEX_CONFIG"])
-catalog_path = os.path.realpath(os.environ["PILOT_CODEX_MODEL_CATALOG"])
+catalog_path = os.environ["PILOT_CODEX_MODEL_CATALOG"]
+
+def logical_path(path):
+    # Resolve directory aliases (including macOS /var) without following the leaf.
+    return os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+
+def catalog_value(value):
+    try:
+        if value.startswith(chr(39)):
+            end = value.index(chr(39), 1)
+            parsed, rest = value[1:end], value[end + 1:]
+        else:
+            parsed, end = json.JSONDecoder().raw_decode(value)
+            rest = value[end:]
+        if rest.strip() and not rest.lstrip().startswith("#"):
+            return None
+        return parsed if isinstance(parsed, str) else None
+    except (ValueError, TypeError):
+        return None
+
+def multiline_state(line, state):
+    index = 0
+    quotes = (chr(34), chr(39))
+    while index < len(line):
+        char = line[index]
+        if state:
+            if line.startswith(state, index):
+                state = None
+                index += 3
+            elif state == chr(34) * 3 and char == "\\":
+                index += 2
+            else:
+                index += 1
+        elif char == "#":
+            break
+        elif char in quotes:
+            if line.startswith(char * 3, index):
+                state = char * 3
+                index += 3
+            else:
+                index += 1
+                while index < len(line):
+                    if char == chr(34) and line[index] == "\\":
+                        index += 2
+                    elif line[index] == char:
+                        index += 1
+                        break
+                    else:
+                        index += 1
+        else:
+            index += 1
+    return state
 
 if os.path.exists(config_path):
     try:
@@ -1695,15 +1786,27 @@ else:
     lines = []
 
 filtered = []
+root_scope = True
+retained_reference = False
+multiline = None
 for line in lines:
+    inside_string = multiline is not None
+    multiline = multiline_state(line, multiline)
+    if inside_string:
+        filtered.append(line)
+        continue
     stripped = line.strip()
-    if stripped.startswith("model_catalog_json") and "=" in stripped:
-        try:
-            configured = json.loads(stripped.split("=", 1)[1].strip())
-        except Exception:
-            configured = None
-        if isinstance(configured, str) and os.path.realpath(configured) == catalog_path:
-            continue
+    if stripped.startswith("["):
+        root_scope = False
+    catalog_keys = {"model_catalog_json", chr(34) + "model_catalog_json" + chr(34), chr(39) + "model_catalog_json" + chr(39)}
+    if "=" in stripped and stripped.split("=", 1)[0].strip() in catalog_keys:
+        configured = catalog_value(stripped.split("=", 1)[1].strip())
+        if isinstance(configured, str) and os.path.isabs(configured) and logical_path(configured) == logical_path(catalog_path):
+            if root_scope:
+                continue
+            retained_reference = True
+        elif configured is None:
+            retained_reference = True
     filtered.append(line)
 if filtered != lines:
     fd, temp_path = tempfile.mkstemp(prefix=".pilot-uninstall-", dir=os.path.dirname(config_path))
@@ -1718,6 +1821,10 @@ if filtered != lines:
         except OSError:
             pass
         raise
+
+if retained_reference:
+    print("    [OK] Preserved Pilot catalog referenced by remaining Codex configuration")
+    sys.exit(0)
 
 try:
     os.remove(catalog_path)
@@ -1734,7 +1841,7 @@ print("    [OK] Removed Pilot managed Codex model catalog")
 
 	# Remove <!-- PILOT:START --> ... <!-- PILOT:END --> block from ~/.codex/AGENTS.md.
 	local agents_file="$CODEX_DIR/AGENTS.md"
-	if [ -f "$agents_file" ] && pilot_python_available && grep -q 'PILOT:START' "$agents_file" 2>/dev/null; then
+	if [ -f "$agents_file" ] && pilot_python_available && grep -q -e 'PILOT:START' -e 'PILOT:END' "$agents_file" 2>/dev/null; then
 		if ! PILOT_CODEX_AGENTS="$agents_file" pilot_python -c '
 import os, stat, sys, tempfile
 
@@ -1885,7 +1992,7 @@ if removed > 0:
 		fi
 		if [ -f "$resources_manifest" ] && pilot_python_available; then
 			if ! PILOT_CODEX_SKILL_DIR="$skill_dir" pilot_python -c '
-import json, os, sys
+import errno, json, os, sys
 
 root = os.path.realpath(os.environ["PILOT_CODEX_SKILL_DIR"])
 manifest = os.path.join(root, ".pilot-resources.json")
@@ -1901,7 +2008,7 @@ def safe_path(value):
     if not isinstance(value, str) or not value:
         return None
     parts = value.replace("\\", "/").split("/")
-    if value.startswith(("/", "\\")) or ".." in parts:
+    if value.startswith(("/", "\\")) or any(part in {"", ".", ".."} for part in parts):
         return None
     target = os.path.abspath(os.path.join(root, *parts))
     try:
@@ -1917,7 +2024,13 @@ def safe_path(value):
     return target
 
 files = data.get("files", [])
-files = files if isinstance(files, list) else []
+directories = data.get("directories", [])
+if not isinstance(files, list) or not isinstance(directories, list):
+    print("Malformed skill resource ownership manifest; preserving skill", file=sys.stderr)
+    sys.exit(1)
+if any(safe_path(relative) is None for relative in files + directories):
+    print("Unsafe skill resource ownership path; preserving skill", file=sys.stderr)
+    sys.exit(1)
 for relative in sorted(files, key=lambda value: (-str(value).count("/"), str(value))):
     target = safe_path(relative)
     if target and (os.path.isfile(target) or os.path.islink(target)):
@@ -1928,15 +2041,14 @@ for relative in sorted(files, key=lambda value: (-str(value).count("/"), str(val
         except OSError:
             sys.exit(1)
 
-directories = data.get("directories", [])
-directories = directories if isinstance(directories, list) else []
 for relative in sorted(directories, key=lambda value: (-str(value).count("/"), str(value))):
     target = safe_path(relative)
     if target and os.path.isdir(target) and not os.path.islink(target):
         try:
             os.rmdir(target)
-        except OSError:
-            pass
+        except OSError as error:
+            if error.errno not in {errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT}:
+                sys.exit(1)
 ' 2>&1; then
 				mark_cleanup_failure "Could not safely remove resources for Codex skill $skill"
 				continue
@@ -2005,7 +2117,7 @@ print_summary() {
 		echo "  Shared external tools were preserved."
 		if has_owned_external_tools; then
 			echo "  To remove only tools recorded as originally Pilot-installed, rerun with --remove-tools:"
-			echo "    curl -fsSL https://raw.githubusercontent.com/maxritter/pilot-shell/main/uninstall.sh | bash -s -- --yes --remove-tools"
+			echo "    curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/main/uninstall.sh | bash -s -- --yes --remove-tools"
 		fi
 		echo ""
 	fi

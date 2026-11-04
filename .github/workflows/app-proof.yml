@@ -82,8 +82,7 @@ jobs:
       # The suites that start the App fail, not skip, when a screen or the Tauri command line is missing.
       QUALITYLAYER_REQUIRE_APP: "1"
     steps:
-      # Git for Windows checks out CRLF by default; git-crypt (msys2's git) then sees the whole
-      # tree as modified and refuses to unlock.
+      # Git for Windows checks out CRLF by default; the encrypted files must arrive byte for byte.
       - name: Check out with LF line endings
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
@@ -95,34 +94,8 @@ jobs:
         if: runner.os != 'Windows'
         run: bash .github/workflows/scripts/install-git-crypt.sh
 
-      - name: Setup git-crypt
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
-        with:
-          msystem: MSYS
-          install: git git-crypt
-          update: true
-          path-type: inherit
-
       - name: Unlock repository
         if: runner.os != 'Windows'
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-
-      - name: What makes the checkout look modified (diagnostic)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
-        continue-on-error: true
-        run: |
-          git config --show-origin core.autocrlf || true
-          git status --short | head -n 40
-          git diff --stat | tail -n 5
-          git status --short | head -n 10 | sed 's/^...//' | xargs -r git ls-files --eol --
-
-      - name: Unlock repository (Windows)
-        if: runner.os == 'Windows'
-        shell: msys2 {0}
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
         run: bash .github/workflows/scripts/setup-git-crypt.sh
@@ -131,6 +104,19 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
+
+      # One filter process instead of git-crypt's one process per file under msys2 (about 20
+      # minutes there, about one here), as qualitylayer-ci.yml unlocks its Windows shards.
+      - name: Unlock repository (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies
         working-directory: qualitylayer
@@ -318,33 +304,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Setup git-crypt
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
-        with:
-          msystem: MSYS
-          install: git git-crypt
-          update: true
-          path-type: inherit
-
-      - name: What makes the checkout look modified (diagnostic)
-        shell: msys2 {0}
-        continue-on-error: true
-        run: |
-          git config --show-origin core.autocrlf || true
-          git status --short | head -n 40
-          git diff --stat | tail -n 5
-          git status --short | head -n 10 | sed 's/^...//' | xargs -r git ls-files --eol --
-
-      - name: Unlock repository
-        shell: msys2 {0}
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
+
+      # One filter process instead of git-crypt's one process per file under msys2.
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install dependencies
         working-directory: qualitylayer

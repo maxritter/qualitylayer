@@ -92,6 +92,8 @@ jobs:
         run: |
           bun run typecheck
           bun run lint
+          # No unused file, export or dependency stays behind (knip, a few seconds).
+          bun run deadcode
           bun run test:smoke
 
   # Explicit full regression: six balanced shards per OS keep setup and tests within the
@@ -217,8 +219,11 @@ jobs:
 
       # Every Cockpit view of the demo, at three widths, in Chrome: no text spills out of a
       # button, tab, badge or menu item. The self-test first proves the check still catches one.
+      # The six width cases crawl in three tabs at once (about three times faster than one by one).
       - name: No text overflows a control
         working-directory: qualitylayer
+        env:
+          QUALITYLAYER_OVERFLOW_TABS: "3"
         run: |
           bun scripts/check-overflow.ts --self-test --require-render
           bun run check:overflow -- --require-render
@@ -283,11 +288,13 @@ jobs:
           node scripts/verify-csp-hash.mjs
 
   # Every push runs the Windows-specific suites and a short end-to-end smoke set natively on
-  # windows-2025, split so each job ends within ten minutes. The full end-to-end suite runs on
-  # Linux and macOS above on every push, and on both Windows runners nightly in
-  # qualitylayer-windows-nightly.yml. The dedicated ConPTY job below checks both native targets.
-  # The limit catches a runaway, not a slow hosted runner: shard 3's installer suites take 11-12
-  # minutes on a slow windows-2025 host.
+  # windows-2025, split so each job ends within ten minutes. Linux and macOS run the finite smoke
+  # tier on every push (Release smoke above); the full suite runs when dispatched with
+  # full_regression, and on Windows through qualitylayer-windows-nightly.yml (dispatched too).
+  # The dedicated ConPTY job below checks both native targets.
+  # The limit catches a runaway, not a slow hosted runner. The groups are balanced by the files'
+  # Windows seconds (run 41801865689, 4 November 2026): each holds about 320-390 s of tests, and
+  # the three installer suites (install-ps1 374 s, uninstall-ps1 304 s, mod 272 s) sit apart.
   windows:
     name: Native Windows runtime (${{ matrix.os }}, shard ${{ matrix.shard }}/6)
     runs-on: ${{ matrix.os }}
@@ -303,13 +310,13 @@ jobs:
           - shard: 1
             files: tests/cli/hook-prompt.test.ts tests/e2e/research.test.ts
           - shard: 2
-            files: tests/windows/native.test.ts tests/e2e/sessions.test.ts tests/e2e/statusline.test.ts tests/core/check-process-options.test.ts tests/core/live-signals.test.ts tests/core/interaction-shell-process.test.ts
+            files: tests/windows/native.test.ts tests/e2e/sessions.test.ts tests/e2e/statusline.test.ts tests/core/check-process-options.test.ts tests/core/live-signals.test.ts tests/core/interaction-shell-process.test.ts tests/windows/setup-recovery.test.ts tests/windows/fixture-cleanup.test.ts tests/core/scanner-setup.test.ts
           - shard: 3
-            files: tests/windows/install-ps1.test.ts tests/windows/setup-recovery.test.ts tests/windows/uninstall-ps1.test.ts tests/core/install/mod.test.ts tests/windows/fixture-cleanup.test.ts tests/core/scanner-setup.test.ts
+            files: tests/windows/install-ps1.test.ts
           - shard: 4
-            files: tests/core/team-keys.test.ts tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts
+            files: tests/core/team-keys.test.ts tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts tests/windows/uninstall-ps1.test.ts
           - shard: 5
-            files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts
+            files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts tests/core/install/mod.test.ts
           - shard: 6
             files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts tests/e2e/command-speed.test.ts
     defaults:

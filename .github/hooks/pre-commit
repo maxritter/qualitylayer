@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Pre-commit hook: the fast CI checks, in parallel, scoped to what is staged.
 #
+# Budget: the whole hook is fast feedback and stays under 60 s wall (Max, 4 November 2026). A
+# check that takes longer belongs in CI (.github/workflows/qualitylayer-ci.yml, every push to
+# dev) or the release gate, never here; the summary warns when a run goes over.
+#
 #   • qualitylayer   Biome on the staged files; typecheck when TypeScript is staged; the release
-#                    Cockpit build and the overflow check. All of them run on an isolated
-#                    staged tree   (qualitylayer/ staged)
+#                    Cockpit build and start (about 6 s). All of them run on an isolated staged
+#                    tree   (qualitylayer/ staged). The overflow sweep of every view runs in CI.
 #   • app (Rust)     cargo fmt --check + clippy -D warnings   (a crate under app/ staged)
 #   • plaintext      nothing under qualitylayer/ staged in plaintext   (always)
 #   • shell          shellcheck                          (shell scripts or hooks staged)
@@ -175,7 +179,6 @@ if [ "${QL_ALLOW_REVERT:-0}" != "1" ] && [ "${QUALITYLAYER_PREFLIGHT_HEAD:-0}" !
 fi
 
 qualitylayer_changed=0
-ui_changed=0
 launcher_changed=0
 tauri_changed=0
 workflows_changed=0
@@ -189,7 +192,6 @@ while IFS= read -r f; do
     qualitylayer/app/src-tauri/*) tauri_changed=1 ;;
   esac
   case "$f" in
-    qualitylayer/src/ui/*|qualitylayer/scripts/check-overflow.ts) qualitylayer_changed=1; ui_changed=1 ;;
     qualitylayer/*) qualitylayer_changed=1 ;;
     .github/workflows/*.yml|.github/workflows/*.yaml) workflows_changed=1 ;;
   esac
@@ -266,17 +268,13 @@ job_cockpit() {
   cd "$qualitylayer_tree/qualitylayer" || return 1
   bun run check:cockpit
 }
-# No text spills out of a control in any Cockpit view, at three widths (about a minute).
+# The release preflight (a HEAD snapshot, not a commit) also sweeps every Cockpit view at three
+# widths for text that spills out of a control. That takes minutes, so a commit leaves it to CI.
 # shellcheck disable=SC2329
-job_overflow() {
+job_release_browser_checks() {
+  job_cockpit || return 1
   cd "$qualitylayer_tree/qualitylayer" || return 1
   bun run check:overflow
-}
-# Both browser checks retain their own assertions; release startup precedes the layout matrix.
-# shellcheck disable=SC2329
-job_browser_checks() {
-  job_cockpit || return 1
-  if [ "$ui_changed" = "1" ]; then job_overflow || return 1; fi
 }
 # shellcheck disable=SC2329
 job_plaintext() {
@@ -389,7 +387,11 @@ if [ "$qualitylayer_changed" = "1" ]; then
   if have bun && [ -d qualitylayer/node_modules ]; then
     launch "qualitylayer (typecheck+lint)" job_qualitylayer
     if [ "$cockpit_needed" = "1" ]; then
-      launch "qualitylayer (release Cockpit and controls)" job_browser_checks
+      if [ "${QUALITYLAYER_PREFLIGHT_HEAD:-0}" = "1" ]; then
+        launch "qualitylayer (release Cockpit and controls)" job_release_browser_checks
+      else
+        launch "qualitylayer (release Cockpit)" job_cockpit
+      fi
     else
       echo "Pre-commit: only design artifacts or tests staged — release Cockpit check skipped."
     fi
@@ -470,8 +472,9 @@ for i in "${!job_names[@]}"; do
   fi
 done
 
+overall_wall=$(( $(date +%s) - overall_start ))
 echo ""
-echo "──────── pre-commit summary ($(( $(date +%s) - overall_start ))s wall) ────────"
+echo "──────── pre-commit summary (${overall_wall}s wall) ────────"
 for i in "${!job_names[@]}"; do
   dur="$(cat "${job_durs[$i]}" 2>/dev/null || echo '?')"
   if [ "${job_rcs[$i]}" = "0" ]; then
@@ -485,6 +488,9 @@ for i in "${!job_names[@]}"; do
     echo "  ✖ ${job_names[$i]} (${dur}s) — exit ${job_rcs[$i]}"
   fi
 done
+if [ "$overall_wall" -gt 60 ]; then
+  echo "⚠ Pre-commit took ${overall_wall}s, over its 60 s budget: move the slowest check above to CI (see the header)."
+fi
 
 if [ "$failed" -ne 0 ]; then
   echo "" >&2

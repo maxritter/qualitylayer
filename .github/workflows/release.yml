@@ -359,6 +359,8 @@ jobs:
       - name: No text overflows a control
         if: matrix.shard == 1
         working-directory: qualitylayer
+        env:
+          QUALITYLAYER_OVERFLOW_TABS: "3"
         run: |
           bun scripts/check-overflow.ts --self-test --require-render
           bun run check:overflow -- --require-render

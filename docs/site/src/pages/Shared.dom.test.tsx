@@ -45,7 +45,7 @@ describe("commenting on the step documents", () => {
     const text = within(fallback).getByRole("textbox", { name: "Text to copy" }) as HTMLTextAreaElement;
     expect(text.readOnly).toBe(true);
     expect(text.value).toBe(plan);
-    fireEvent.click(within(fallback).getByRole("button", { name: "Close", exact: true }));
+    fireEvent.click(within(fallback).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Copy unavailable" })).toBeNull());
     await copyMarkdown();
     await screen.findByText("Copied as Markdown. Paste it into your page.");

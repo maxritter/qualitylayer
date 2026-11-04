@@ -55,7 +55,7 @@ describe("the share page draws a document with the App's Reader", () => {
     const text = within(fallback).getByRole("textbox", { name: "Text to copy" }) as HTMLTextAreaElement;
     expect(text.readOnly).toBe(true);
     expect(text.value).toBe(DOC.trim());
-    fireEvent.click(within(fallback).getByRole("button", { name: "Close", exact: true }));
+    fireEvent.click(within(fallback).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Copy unavailable" })).toBeNull());
     await copy();
     await popover().findByText("Copied as Markdown. Paste it into your page.");

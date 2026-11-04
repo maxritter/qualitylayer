@@ -37,7 +37,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: qualitylayer-ci-${{ github.ref }}
+  # The nightly full regression (qualitylayer-nightly.yml) has a group of its own: a push to dev does
+  # not cancel it, and it does not cancel the push's run.
+  group: qualitylayer-ci-${{ github.ref }}${{ inputs.full_regression && '-full' || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -96,8 +98,9 @@ jobs:
           bun run deadcode
           bun run test:smoke
 
-  # Explicit full regression: six balanced shards per OS keep setup and tests within the
-  # fifteen-minute job limit. Mac's five concurrent slots can leave one queued.
+  # Full regression, dispatched every night on dev (qualitylayer-nightly.yml) or by hand: six
+  # balanced shards per OS keep setup and tests within the fifteen-minute job limit. Mac's five
+  # concurrent slots can leave one queued.
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.full_regression
     name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
@@ -289,8 +292,8 @@ jobs:
 
   # Every push runs the Windows-specific suites and a short end-to-end smoke set natively on
   # windows-2025, split so each job ends within ten minutes. Linux and macOS run the finite smoke
-  # tier on every push (Release smoke above); the full suite runs when dispatched with
-  # full_regression, and on Windows through qualitylayer-windows-nightly.yml (dispatched too).
+  # tier on every push (Release smoke above); the full suite runs every night on dev, through
+  # qualitylayer-nightly.yml, here and in qualitylayer-windows-nightly.yml.
   # The dedicated ConPTY job below checks both native targets.
   # The limit catches a runaway, not a slow hosted runner. The groups are balanced by the files'
   # Windows seconds (run 41801865689, 4 November 2026): each holds about 320-390 s of tests, and

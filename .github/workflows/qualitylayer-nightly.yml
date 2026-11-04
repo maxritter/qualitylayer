@@ -1,0 +1,26 @@
+name: QualityLayer nightly regression
+
+# Pushes run the finite smoke gate so feedback stays fast; the whole suite runs once a night on dev
+# instead, so a regression outside the smoke catalog shows the next morning. A schedule runs on the
+# default branch, so this job dispatches the existing full runs against dev rather than copying them.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch the full suites on dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Linux and macOS, every file
+        run: gh workflow run qualitylayer-ci.yml --repo "$GITHUB_REPOSITORY" --ref dev -f full_regression=true
+      - name: Windows, every file
+        run: gh workflow run qualitylayer-windows-nightly.yml --repo "$GITHUB_REPOSITORY" --ref dev

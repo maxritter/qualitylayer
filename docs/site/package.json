@@ -41,7 +41,7 @@
     "dompurify": "^3.4.17",
     "lucide-react": "^1.48.0",
     "marked": "^18.0.14",
-    "mermaid": "^12.0.0",
+    "mermaid": "^12.3.0",
     "parse5": "8.0.1",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",

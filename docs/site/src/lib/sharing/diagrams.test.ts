@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drawDiagram, mermaidThemeVariables } from "./diagrams";
+import { drawDiagram } from "./diagrams";
 
 /**
  * A shared plan's ```mermaid blocks become diagrams; one that does not parse keeps its source.
@@ -7,18 +7,19 @@ import { drawDiagram, mermaidThemeVariables } from "./diagrams";
  */
 
 describe("a diagram on a shared plan", () => {
-  it("is drawn from its source under its own id, and only the sanitised SVG goes on the page", async () => {
+  it("is drawn from its source under its own id, in the page's theme, and only the sanitised SVG goes on the page", async () => {
     const seen: string[] = [];
     const svg = await drawDiagram(
-      async (id, source) => {
-        seen.push(`${id}:${source}`);
+      async (id, source, theme) => {
+        seen.push(`${id}:${source}:${theme}`);
         return `<svg id="${id}"><script/></svg>`;
       },
       "sh-diagram-3",
       "graph LR; A-->B",
+      "dark",
       (raw) => raw.replace("<script/>", ""),
     );
-    expect(seen).toEqual(["sh-diagram-3:graph LR; A-->B"]);
+    expect(seen).toEqual(["sh-diagram-3:graph LR; A-->B:dark"]);
     expect(svg).toBe('<svg id="sh-diagram-3"></svg>');
   });
 
@@ -29,21 +30,13 @@ describe("a diagram on a shared plan", () => {
       },
       "sh-diagram-0",
       "not a diagram",
+      "light",
       (raw) => raw,
     );
     expect(svg).toBeNull();
   });
 
   it("is null when the drawing comes back empty", async () => {
-    expect(await drawDiagram(async () => "", "sh-diagram-0", "graph LR; A-->B", (raw) => raw)).toBeNull();
-  });
-});
-
-describe("a diagram's colours", () => {
-  it("come from the page's own tokens, with a fallback for each", () => {
-    const vars = mermaidThemeVariables((name) => (name === "--ql-text" ? "#111111" : ""));
-    expect(vars.primaryTextColor).toBe("#111111");
-    expect(vars.lineColor).toMatch(/^#/);
-    expect(vars.fontSize).toBe("14px");
+    expect(await drawDiagram(async () => "", "sh-diagram-0", "graph LR; A-->B", "light", (raw) => raw)).toBeNull();
   });
 });

@@ -42,7 +42,7 @@ export function Diagram({ source, title, render = mermaid }: { source: string; t
   useEffect(() => {
     let live = true;
     counter++;
-    void drawDiagram(render, `sh-diagram-${counter}`, source).then((drawn) => {
+    void drawDiagram(render, `sh-diagram-${counter}`, source, theme === "light" ? "light" : "dark").then((drawn) => {
       if (live) setSvg(drawn);
     });
     return () => {

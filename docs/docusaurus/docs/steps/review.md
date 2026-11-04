@@ -18,7 +18,7 @@ Review the code, screens and checks, then approve the change. Unverified results
 | Part | What you read |
 | --- | --- |
 | **Code** | The complete change, with line comments |
-| **Change map** | Where the change landed on the Plan's or Research's map; with a Plan map, what was built as planned and what was not; other changed files listed below |
+| **Change map** | Where the build landed on the Plan's or Research's map. Large changes open by connected area; select one to see its cards. Other changed files stay listed below |
 | **Checks and outcomes** | Every check and its recorded result, including failures and unverified work |
 | **Screenshots** | The changed screens and their comparison evidence |
 | **Change details** | The complete change record, decisions and amendments |

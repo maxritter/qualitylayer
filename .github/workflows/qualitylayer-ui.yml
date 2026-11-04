@@ -65,7 +65,7 @@ jobs:
           if-no-files-found: warn
 
   frontend:
-    name: Source UI browser checks (shard ${{ matrix.shard }}/2)
+    name: Source UI browser checks (shard ${{ matrix.shard }}/4)
     # Forks cannot unlock the encrypted source. Existing plaintext/CI gates remain separate.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
     steps:
@@ -103,7 +103,7 @@ jobs:
       # test:ui builds one private candidate for the explicitly selected feature suites.
       - name: Source UI interactions, geometry and accessibility
         working-directory: qualitylayer
-        run: bun run test:ui --all launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts conversation-footer.spec.ts open-states.spec.ts loading-states.spec.ts usage-foot.spec.ts --shard ${{ matrix.shard }}/2 --reporter=github,./scripts/ui-duration-reporter.ts
+        run: bun run test:ui --all launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts conversation-footer.spec.ts open-states.spec.ts loading-states.spec.ts usage-foot.spec.ts --shard ${{ matrix.shard }}/4 --reporter=github,line,./scripts/ui-duration-reporter.ts
       - name: Setup heap analysis runtime
         if: matrix.shard == 1
         timeout-minutes: 2

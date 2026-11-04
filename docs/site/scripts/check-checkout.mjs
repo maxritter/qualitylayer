@@ -52,7 +52,10 @@ try {
       await page.getByRole("button", { name: "Apply", exact: true }).filter({ visible: true }).first().click();
       const discountedAmount = (amount * 0.85).toFixed(2);
       // Polar renders both responsive summaries; require the visible total.
-      await page.getByText(`€${discountedAmount}`, { exact: true }).filter({ visible: true }).first().waitFor();
+      const exactDiscountedAmount = discountedAmount.endsWith(".00")
+        ? `${discountedAmount.slice(0, -3)}(?:\\.00)?`
+        : discountedAmount.replace(".", "\\.");
+      await page.getByText(new RegExp(`^€${exactDiscountedAmount}$`)).filter({ visible: true }).first().waitFor();
       await page.getByText(/discount \(first year\)/i).filter({ visible: true }).first().waitFor();
       assert((await page.locator("body").innerText()).includes("-15%"), `${name}: newsletter discount missing`);
       for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();

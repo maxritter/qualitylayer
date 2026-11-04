@@ -31,7 +31,7 @@ export const PLANS: Plan[] = [
     id: "solo",
     name: "Solo",
     audience: "For working on your own.",
-    price: { monthly: 29, yearly: 288 },
+    price: { monthly: 19, yearly: 180 },
     per: "per month",
     cta: "Start Solo",
     href: {
@@ -51,7 +51,7 @@ export const PLANS: Plan[] = [
     id: "team",
     name: "Team",
     audience: "For teams, per seat.",
-    price: { monthly: 49, yearly: 468 },
+    price: { monthly: 29, yearly: 276 },
     per: "per seat / month",
     cta: "Start Team",
     href: {
@@ -107,9 +107,6 @@ const row = (feature: string, solo: Cell, team: Cell, enterprise: Cell, note?: s
  * what Enterprise adds. Every feature in detail lives in the docs (Max, 2 November 2026).
  * Public copy never counts the supported agents; the number changes as agents are added.
  */
-/** What Team sharing reveals to us, shown under the comparison so the privacy terms stay on the page. */
-export const TEAM_PRIVACY =
-  "Team plans, comments and links are encrypted on your machine. We can’t read them. We see who shared, who was asked, which task, when and its step. The guest page’s code comes from us. With Slack or email on, task titles and questions pass through our server to Slack or our email provider. Pending notifications expire after 72 hours. Review code travels between your computer and your own Git remote. We store your team’s encrypted comments, the short lines of code they quote and the commits they point to.";
 
 export const COMPARE: CompareGroup[] = [
   {

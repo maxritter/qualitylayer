@@ -150,7 +150,7 @@ QualityLayer runs your project's checks and security scans. A separate agent rev
 
 <h2 id="features">The workflow</h2>
 
-Seven steps take a change from questions to review, with decisions and checks saved as Markdown in your repository. Existing plans start at Plan. You approve the Plan and finished change, authorize pushes and control the merge.
+Seven steps take a change from questions to review, with decisions and checks saved as Markdown in your repository. The Plan is the specification you share; build notes live in a separate file. Export gathers the Plan and its pictures. Existing plans start at Plan. You approve the Plan and finished change, authorize pushes and control the merge.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/docusaurus/static/img/diagrams/flow-pr-dark.svg">

@@ -41,6 +41,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `task set answers=terminal\|app` | Where you answer for the current task |
 | `settings set answers terminal` | The default for new tasks |
 | `read 03-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
+| `plan export --out <folder>` | Write the Plan, `01-discuss.md` and its pictures to a new folder for readers without QualityLayer; names any picture it could not make |
 
 ## Commands by group
 
@@ -48,7 +49,7 @@ Every command starts with `qualitylayer`, as in `qualitylayer gate open 03-plan.
 
 | Group | Commands |
 | --- | --- |
-| Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` |
+| Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` · `plan export` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
 | Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
@@ -112,7 +113,7 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 
 ## Session messaging
 
-Ask Claude Code, Codex or another supported agent to oversee a named task with `qualitylayer status --json --task <task>` from its checkout. `waiting_on` identifies the pending action or unknown activity; `last_decision` retains approvals or requested changes; `answer_mode` reports the answer destination and its recorded origin. Read the task documents for verification evidence. Sessions on the same computer coordinate through `ql-peer` within the work you authorize; you still choose the build session and approve the Plan and final Review.
+Ask Claude Code, Codex or another supported agent to oversee a named task with `qualitylayer status --json --task <task>` from its checkout. `waiting_on` identifies pending human actions, including native permission requests (`reason: agent_permission`), current agent or helper work, or unknown activity; `last_decision` retains approvals or requested changes; `answer_mode` reports the answer destination and its recorded origin. Read the task documents for verification evidence. Sessions on the same computer coordinate through `ql-peer` within the work you authorize; you still choose the build session and approve the Plan and final Review.
 
 ```bash
 qualitylayer peers list

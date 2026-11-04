@@ -8,7 +8,7 @@ description: What a task writes into your repository, what stays on your compute
 ![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-light.svg)
 ![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-dark.svg)
 
-Each task gets a folder in `docs/plans/`: plain Markdown, committed with the change and never touched by uninstalling.
+Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never touched by uninstalling. You decide whether to commit these documents; QualityLayer does not stage or commit them automatically.
 
 | In the folder | What it holds |
 | --- | --- |
@@ -28,7 +28,8 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 | --- | --- |
 | `01-discuss.md` | Your request, the problem, **Done means**, scope and decisions |
 | `02-research.md` | **How it works today:** a picture of the code, findings, risks and tests. A bug's is **Why it breaks** |
-| `03-plan.md` | The decided design, artifacts, **Not doing**, **Before the build** and who reviewed it |
+| `03-plan.md` | The decided design, artifacts, **Not doing**, **Before the build** and who reviewed it, written for people |
+| `agents/03-plan-context.md` | Notes for the build: code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
 | `04-outline.md` | Where the change lands, the slices, checks and build commands |
 | `05-implement.md` | Slice progress, checks and decisions |
 | `06-verify.md` | Each point with its evidence, and what is still open |

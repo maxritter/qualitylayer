@@ -43,7 +43,7 @@ try {
       assert(initialized.response.ok(), `Initial checkout payment-method update failed: HTTP ${initialized.response.status()}`);
       assert.equal(await initialized.response.finished(), null, "Initial checkout payment-method response did not complete");
       for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();
-      const amount = plan === "Solo" ? (billing === "yearly" ? 288 : 29) : (billing === "yearly" ? 468 : 49);
+      const amount = plan === "Solo" ? (billing === "yearly" ? 180 : 19) : (billing === "yearly" ? 276 : 29);
       assert((await page.locator("body").innerText()).includes(`€${amount}`), `${name}: expected price missing`);
       await page.getByRole("button", { name: "Add discount code", exact: true }).click();
       const discount = page.locator('input[name="discount_code"]');

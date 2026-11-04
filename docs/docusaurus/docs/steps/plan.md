@@ -27,7 +27,7 @@ The **Plan** page is the document you approve before the build. The proposed cha
 | **Assumptions** | What the Plan takes for granted |
 | **Before the build** | What must be ready first, such as a login |
 
-The main artifact stays visible; risks, findings and contracts fold below it with a one-line summary. The Product level uses plainer words ([two levels](../intro.md#two-levels)).
+The main artifact stays visible; risks, findings and contracts fold below it with a one-line summary. `03-plan.md` is written for people, so you can share it as it is: it repeats Discuss's **Done means** and **Not doing** under **What we agreed** and links a picture of each artifact. Coding notes for the build go to `agents/03-plan-context.md`, folded under **Build context** in Files; they never change what you approve. `qualitylayer plan export --out <folder>` writes the Plan, `01-discuss.md` and its pictures into a folder anyone can read without QualityLayer. The Product level uses plainer words ([two levels](../intro.md#two-levels)).
 
 ### What to read first {#read-first}
 
@@ -39,7 +39,7 @@ A choice that only appears once an artifact is drawn is a **Your call**. The hea
 
 1. Read the complete Plan.
 2. Pin comments, or press **Give feedback**. Your agent revises; the diff shows what changed.
-3. Press **Approve Plan** at the top right, once every call is answered. It approves the Plan, **Done means** and the artifact together.
+3. Press **Approve and build here** at the top right, once every call is answered: the planning session builds it, with its history and settings, as soon as its current turn ends. **Choose where to build**, under the arrow, opens the build card instead, where you approve. Either way you approve the Plan, **Done means** and the artifact together.
 
 Answering a question does not approve the Plan. Approve in the App, also when the agent works in your terminal, or give an explicit approval through your agent.
 

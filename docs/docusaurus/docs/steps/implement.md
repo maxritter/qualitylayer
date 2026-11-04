@@ -8,7 +8,7 @@ description: Start the build in the App or your terminal. Your agent builds the 
 
 ## Start the build {#start-implement}
 
-After you approve the Plan, **Start the build** appears on the Plan page.
+**Approve and build here** continues in the App's planning session once its turn ends. Otherwise **Start the build** opens on the Plan page.
 
 ![The Implement start card](pathname:///img/app/implement-start-light.webp)
 ![The Implement start card](pathname:///img/app/implement-start-dark.webp)
@@ -22,7 +22,7 @@ After you approve the Plan, **Start the build** appears on the Plan page.
 | **Subagent default** | Claude Code's default for delegated work; other agents choose their own |
 | **Files for the build** and **Workspace** | Attachments, run location and [branch/worktree choices](#where-it-lands) |
 
-Press **Approve & start**, or **Approve & copy prompt** for your terminal; that prompt says `implement the approved task`. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
+Press **Approve & start**. For your terminal, press **Approve**, open the project in your agent and ask it in your own words, for example “Continue the approved QualityLayer task Usage export”; a prepared request is there to copy if you want it. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
 
 ### Where the build lands {#where-it-lands}
 

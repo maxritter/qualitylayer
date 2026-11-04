@@ -70,7 +70,7 @@ New managed sessions default to Bypass. Your saved global or per-agent mode take
 | Pi | None; its own tool permissions apply |
 | GitHub Copilot | Manual Approval, Assisted Permissions, Allow All |
 
-Switching an existing session to Bypass, Full access or Run everything asks you to confirm. Copilot may require its Terminal’s `/permissions` menu to change a resumed session; the App explains this before stopping it. Pi has no native bypass switch, and OpenCode preserves explicit denials. Your QualityLayer Plan and final approvals remain separate.
+Switching an existing session to Bypass, Full access or Run everything asks you to confirm. **Apply and continue** can apply a permission-only change at a supported native permission prompt and resume the same conversation. Older running Copilot sessions can use Terminal’s `/permissions` menu. Pi has no native bypass switch, and OpenCode preserves explicit denials. Your QualityLayer Plan and final approvals remain separate.
 
 ### Plan limits {#plan-limits}
 

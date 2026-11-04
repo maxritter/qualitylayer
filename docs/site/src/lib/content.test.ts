@@ -84,14 +84,14 @@ describe("product facts", () => {
 
   it("keeps the approved full charges and exact monthly equivalents together", () => {
     expect(PLANS.filter((plan) => plan.price !== "Custom").map((plan) => plan.price)).toEqual([
-      { monthly: 29, yearly: 288 },
-      { monthly: 49, yearly: 468 },
+      { monthly: 19, yearly: 180 },
+      { monthly: 29, yearly: 276 },
     ]);
     const annual = PRICING_FAQS.find((faq) => faq.question === "Monthly or yearly?")!.answer;
-    expect(annual).toContain("Solo costs €24 a month instead of €29");
-    expect(annual).toContain("Team €39 per seat a month instead of €49");
-    // The page shows monthly amounts only; checkout shows the yearly total (Max, 2 November 2026).
-    expect(annual).not.toMatch(/€288|€468/);
+    expect(annual).toContain("you save €4 a month on Solo");
+    expect(annual).toContain("€6 per seat a month on Team");
+    // The page shows monthly amounts only; checkout shows the yearly total (Max, 3 November 2026).
+    expect(annual).not.toMatch(/€180|€276/);
   });
 
   it("gives every plan five highlights, as the cards are drawn", () => {
@@ -100,7 +100,7 @@ describe("product facts", () => {
 
   it("publishes the euro charges for search engines", () => {
     expect(PRICING_APPLICATION.offers.map((offer) => [offer.price, offer.priceCurrency, offer.priceSpecification.priceCurrency])).toEqual([
-      [29, "EUR", "EUR"], [288, "EUR", "EUR"], [49, "EUR", "EUR"], [468, "EUR", "EUR"],
+      [19, "EUR", "EUR"], [180, "EUR", "EUR"], [29, "EUR", "EUR"], [276, "EUR", "EUR"],
     ]);
   });
 

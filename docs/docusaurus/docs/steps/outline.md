@@ -6,7 +6,7 @@ description: See where the approved Plan changes the code and how your agent wil
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-light.svg)
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-dark.svg)
 
-The Outline maps the approved Plan to code areas, tasks and tests. Your agent writes it and continues through Implement and Verify; **no further approval is needed until Review**.
+The build session reads Discuss and the complete saved Plan, including its technical notes, then writes the Outline of code areas, tasks and tests. It continues through Implement and Verify; **no further approval is needed until Review**.
 
 ## What is in it {#what-the-agent-does}
 

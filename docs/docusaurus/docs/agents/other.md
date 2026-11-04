@@ -11,15 +11,15 @@ description: Use QualityLayer with any coding agent that can run shell commands,
 ## Start a task {#start}
 
 1. In the agent's terminal, run `qualitylayer help`. Nothing listed? Run `qualitylayer doctor`.
-2. In the App, choose **+ › Task**, describe the change, then choose **In my terminal** and copy the prompt.
-3. Paste it into your agent. It asks its questions and takes your feedback in its own chat.
+2. Tell your agent “Using QualityLayer, plan a CSV export without the App.”
+3. Continue in your agent. It follows the same workflow and saves the documents on disk.
 
 ## Plan with one agent, build with another {#mix}
 
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-light.svg)
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-dark.svg)
 
-Pick **In my terminal** when you start the build and copy its prompt. The agent then follows Outline, Implement and Verify until Review.
+Pick **In my terminal** when you start the build, then ask your agent in the project to continue the approved task; a prepared request is there to copy. The agent then follows Outline, Implement and Verify until Review.
 
 ## Run in your terminal {#app-start}
 
@@ -29,7 +29,7 @@ A copied prompt works in any coding agent, but does not add the App's conversati
 
 | | Natively supported agents | Any other agent |
 | --- | --- | --- |
-| Setup | Done when you install | One pasted prompt |
+| Setup | Done when you install | Ask in your own words |
 | Model and effort | Set in QualityLayer | Set in your agent |
 | Building | One session builds the slices; it can use its agent's own subagents | One session builds the slices with its own tools |
 | Sessions | The App's **Conversation** and supported session controls | Your agent's terminal and its own controls |

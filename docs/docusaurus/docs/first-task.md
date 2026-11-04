@@ -12,8 +12,8 @@ Open QualityLayer in the App or browser, choose **+ › Task** and pick **Featur
 | --- | --- |
 | 1 | Describe the change, attach files if needed, then choose your agent and where it runs |
 | 2 | **Answer the questions** in **Your turn**. Each answer reaches your agent at once |
-| 3 | **Read the Plan**, then **Approve Plan** or **Give feedback** |
-| 4 | **Start the build** |
+| 3 | **Read the Plan**, then **Approve and build here** or **Give feedback** |
+| 4 | The planning session builds; or choose another agent or place with **Choose where to build** |
 | 5 | Follow Outline, Implement and Verify. Anything only you can do is recorded for Review |
 | 6 | **Review the code and checks**, then approve |
 | 7 | **Merge the pull request** on GitHub |
@@ -27,7 +27,7 @@ Steps 1 to 6 happen in the App or browser.
 **New task** and **Start the build** both ask:
 
 - **In the App** (recommended): pick the agent, model, effort, project and branch. Questions and feedback happen in the App.
-- **In my terminal**: copy one prompt into any coding agent, app or IDE; attached files are listed by path. The agent asks in its own chat. You can still approve the Plan and final Review in the App.
+- **In my terminal**: ask any coding agent, app or IDE in your own words, or copy the prepared prompt; attached files are listed by path. The agent asks in its own chat. You can still approve the Plan and final Review in the App.
 
 More in [agent runs](app.md#agent-runs). Claude Code, Codex and other popular agents have [native setup](agents/native.md); others [use the CLI](agents/other.md).
 

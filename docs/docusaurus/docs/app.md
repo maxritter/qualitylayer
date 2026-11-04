@@ -22,9 +22,11 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 Projects are repositories on this computer; tasks waiting on you come first, and a detailed row shows its step on a seven-part strip. A live agent's row says what it is doing and turns amber when it needs you. A toggle on the row opens the agent's task list, where it reports one (Claude Code, Codex, OpenCode), and its helpers. Right-click a project to rename, recolor or hide it, or a task to rename, archive or delete it. The foot shows your agents' [plan limits](agents/native.md#plan-limits) or today's cost.
 
+Collapse the sidebar to a narrow rail with Home, Team, Artifacts, one tile for each task that needs you or is running, your plan limits and Settings. Hover a tile to see where its task stands. The sidebar stays expanded or collapsed as you move between tasks.
+
 **View options** (the sliders icon) filters by name, regroups and sets the row size. **Last activity** (Any, 24 h, 3 d or 7 d) filters by recorded changes; working tasks and the open task stay visible, and **Reset filters** clears them.
 
-**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file in an open task; **⇧⌘N** starts a task in the installed App.
+**⌘K** (**Ctrl+K**) searches actions, projects, tasks and files; **⌘P** opens a file in an open task; **⇧⌘N** starts a task in the installed App. In the installed App, **⌘B** toggles the task list, **⌘J** the right sidebar, **⌘1**, **⌘2** and **⌘3** open Home, Team and Artifacts, and **⌘,** opens Settings (Ctrl instead of ⌘ on Windows/Linux). Hover over these controls to see their shortcuts. Search keeps its project-selection keys; the focused Terminal keeps the agent’s keys.
 
 ## Home {#home}
 
@@ -63,7 +65,7 @@ When you start a task or the build, choose where the agent runs:
 | Where | How |
 | --- | --- |
 | **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
-| **In my terminal** | Copy one prompt into any coding agent. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
+| **In my terminal** | Ask any coding agent in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
 
 Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 

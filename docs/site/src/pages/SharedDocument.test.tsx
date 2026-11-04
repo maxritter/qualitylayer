@@ -120,6 +120,17 @@ describe("the share page draws a document with the App's Reader", () => {
     expect(out).toContain("Kept.");
     expect(withoutShownMockups(md, new Set())).toBe(md);
   });
+
+  it("a same-link poll replaces a same-named mockup and removes it when the new share omits it", async () => {
+    const markdown = "# Plan\n\n```artifact\nartifacts/settings.html\n```\n";
+    const { rerender } = render(<SharedDocument name="03-plan.md" markdown={markdown} docs={{ "artifacts/settings.html": "<html><title>Version A</title><body>First</body></html>" }} comments={[]} onQuote={() => {}} />);
+    const first = await screen.findByTestId("artifact-page-frame");
+    rerender(<SharedDocument name="03-plan.md" markdown={markdown} docs={{ "artifacts/settings.html": "<html><title>Version B</title><body>Second</body></html>" }} comments={[]} onQuote={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("artifact-page-frame")).not.toBe(first));
+    rerender(<SharedDocument name="03-plan.md" markdown={markdown} docs={{}} comments={[]} onQuote={() => {}} />);
+    expect(await screen.findByText("The mockup is not part of this link. Ask for a new link to see it.")).toBeTruthy();
+    expect(screen.queryByTestId("artifact-page-frame")).toBeNull();
+  });
 });
 
 describe("comments on a passage of the document", () => {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LoadedShare, Remark } from "@/lib/sharing/sharing";
 import * as sharing from "@/lib/sharing/sharing";
@@ -41,6 +41,12 @@ describe("commenting on the step documents", () => {
     };
     await copyMarkdown();
     await screen.findByText("Copy failed: select the text instead");
+    const fallback = await screen.findByRole("dialog", { name: "Copy unavailable" });
+    const text = within(fallback).getByRole("textbox", { name: "Text to copy" }) as HTMLTextAreaElement;
+    expect(text.readOnly).toBe(true);
+    expect(text.value).toBe(plan);
+    fireEvent.click(within(fallback).getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Copy unavailable" })).toBeNull());
     await copyMarkdown();
     await screen.findByText("Copied as Markdown. Paste it into your page.");
     expect(clipboard.mock.calls).toEqual([[plan], [plan]]);

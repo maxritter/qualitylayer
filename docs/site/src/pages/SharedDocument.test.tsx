@@ -51,6 +51,12 @@ describe("the share page draws a document with the App's Reader", () => {
     };
     await copy();
     await popover().findByText("Copy failed: select the text instead");
+    const fallback = await screen.findByRole("dialog", { name: "Copy unavailable" });
+    const text = within(fallback).getByRole("textbox", { name: "Text to copy" }) as HTMLTextAreaElement;
+    expect(text.readOnly).toBe(true);
+    expect(text.value).toBe(DOC.trim());
+    fireEvent.click(within(fallback).getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Copy unavailable" })).toBeNull());
     await copy();
     await popover().findByText("Copied as Markdown. Paste it into your page.");
     expect(write.mock.calls.map((call) => String(call[0]).trim())).toEqual([DOC.trim(), DOC.trim()]);

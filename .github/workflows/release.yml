@@ -30,11 +30,14 @@ name: Release
         description: Exact successful attempt (promotion only)
         type: string
       candidate_source_sha:
-        description: Candidate source SHA; must be this dispatch SHA
+        description: Qualified candidate source SHA; maintenance-only producer changes are checked
         type: string
       installed_receipt:
         description: Root's actual installed-release-candidate JSON receipt
         type: string
+
+env:
+  RELEASE_SOURCE_SHA: ${{ inputs.operation == 'promote' && inputs.candidate_source_sha || github.sha }}
 
 jobs:
   check-trigger:
@@ -61,6 +64,9 @@ jobs:
             *) echo "::error::Only main and dev release, not $GITHUB_REF_NAME"; exit 1 ;;
           esac
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ "${{ inputs.operation }}" = promote ]; then
+              bash .github/scripts/verify-promotion-source.sh "$RELEASE_SOURCE_SHA" "$GITHUB_SHA"
+            fi
             echo "Manual trigger - proceeding"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -101,22 +107,22 @@ jobs:
             let latest = null;
             while (Date.now() < deadline) {
               const runs = await github.paginate(github.rest.checks.listForRef, {
-                ...context.repo, ref: context.sha, filter: 'all', per_page: 100
+                ...context.repo, ref: process.env.RELEASE_SOURCE_SHA, filter: 'all', per_page: 100
               });
               latest = runs.filter(r => r.name === expected &&
-                r.head_sha === context.sha && r.app?.slug === 'github-actions')
+                r.head_sha === process.env.RELEASE_SOURCE_SHA && r.app?.slug === 'github-actions')
                 .sort((a, b) => b.id - a.id)[0] ?? null;
               if (latest?.status === 'completed') {
                 if (latest.conclusion === 'success') {
-                  core.info(`${expected} succeeded for ${context.sha} (check ${latest.id}).`);
+                  core.info(`${expected} succeeded for ${process.env.RELEASE_SOURCE_SHA} (check ${latest.id}).`);
                   return;
                 }
-                core.setFailed(`${expected} concluded ${latest.conclusion} for ${context.sha}; release blocked.`);
+                core.setFailed(`${expected} concluded ${latest.conclusion} for ${process.env.RELEASE_SOURCE_SHA}; release blocked.`);
                 return;
               }
               await new Promise(resolve => setTimeout(resolve, 30_000));
             }
-            core.setFailed(`${expected} did not succeed within 20m for ${context.sha}; ` +
+            core.setFailed(`${expected} did not succeed within 20m for ${process.env.RELEASE_SOURCE_SHA}; ` +
               `last status ${latest?.status ?? 'missing'}. Release blocked.`);
 
   supply-chain-gate:
@@ -140,22 +146,22 @@ jobs:
             while (Date.now() < deadline) {
               // Every page: a release commit carries more check runs than one page holds.
               const runs = await github.paginate(github.rest.checks.listForRef, {
-                ...context.repo, ref: context.sha, filter: 'all', per_page: 100
+                ...context.repo, ref: process.env.RELEASE_SOURCE_SHA, filter: 'all', per_page: 100
               });
-              const sc = runs.filter(r => r.name === 'supply-chain' && r.head_sha === context.sha)
+              const sc = runs.filter(r => r.name === 'supply-chain' && r.head_sha === process.env.RELEASE_SOURCE_SHA)
                 .sort((a, b) => b.id - a.id)[0];
               last = sc;
               if (sc && sc.status === 'completed') {
                 if (sc.conclusion === 'success') return;
                 core.setFailed(
-                  `supply-chain check concluded ${sc.conclusion} for ${context.sha}; release blocked.`
+                  `supply-chain check concluded ${sc.conclusion} for ${process.env.RELEASE_SOURCE_SHA}; release blocked.`
                 );
                 return;
               }
               await sleep(20000);
             }
             core.setFailed(
-              `supply-chain check did not complete within 12m for ${context.sha} ` +
+              `supply-chain check did not complete within 12m for ${process.env.RELEASE_SOURCE_SHA} ` +
               `(last status: ${last?.status ?? 'missing'}); release blocked.`
             );
 
@@ -256,12 +262,12 @@ jobs:
               echo "Required CI checks still pending or missing after twenty minutes; run checks"
               exit 0
             fi
-            if ! timeout "${remaining}s" gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" > "$checks"; then
+            if ! timeout "${remaining}s" gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SOURCE_SHA/check-runs?per_page=100" > "$checks"; then
               echo "reuse=false" >> "$GITHUB_OUTPUT"
               echo "CI results unavailable; run checks"
               exit 0
             fi
-            if ! state=$(jq -r --arg sha "$GITHUB_SHA" --rawfile required "$required" '
+            if ! state=$(jq -r --arg sha "$RELEASE_SOURCE_SHA" --rawfile required "$required" '
               [.[].check_runs[] | select(.head_sha == $sha and .app.slug == "github-actions")]
               | group_by(.name) | map(max_by(.id)) as $latest
               | ($required | split("\n") | map(select(length > 0))) as $wanted
@@ -276,11 +282,11 @@ jobs:
             case "$state" in
               success)
                 echo "reuse=true" >> "$GITHUB_OUTPUT"
-                echo "Reuse CI: every required check passed for $GITHUB_SHA"
+                echo "Reuse CI: every required check passed for $RELEASE_SOURCE_SHA"
                 exit 0
                 ;;
               failed)
-                echo "::error::A latest required CI check failed for $GITHUB_SHA; refusing a full-suite fallback"
+                echo "::error::A latest required CI check failed for $RELEASE_SOURCE_SHA; refusing a full-suite fallback"
                 exit 1
                 ;;
               pending)
@@ -378,9 +384,9 @@ jobs:
             exit 1
           fi
           if [ "$REUSE" = true ]; then
-            echo "Reused CI: every required check passed for $GITHUB_SHA"
+            echo "Reused CI: every required check passed for $RELEASE_SOURCE_SHA"
           elif [ "$FALLBACK" = success ]; then
-            echo "Every fallback shard passed for $GITHUB_SHA"
+            echo "Every fallback shard passed for $RELEASE_SOURCE_SHA"
           else
             echo "::error::the fallback suite concluded $FALLBACK"
             exit 1
@@ -418,7 +424,7 @@ jobs:
           set -euo pipefail
           if [ "$OPERATION" = promote ]; then
             [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]
-            [ "$CANDIDATE_SOURCE" = "$GITHUB_SHA" ]
+            [ "$CANDIDATE_SOURCE" = "$RELEASE_SOURCE_SHA" ]
             [[ "$INPUT_VERSION" =~ ^12\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]
             printf 'should_release=true\nversion=%s\n' "$INPUT_VERSION" >> "$GITHUB_OUTPUT"
           else
@@ -508,7 +514,7 @@ jobs:
         run: |
           set -euo pipefail
           bun qualitylayer/scripts/release-candidate.ts identity --candidate candidate/candidate.json --installed "$RUNNER_TEMP/installed.json" --run "$RUNNER_TEMP/candidate-run.json" --artifacts "$RUNNER_TEMP/candidate-artifacts.json" --branch "$GITHUB_REF_NAME" > "$RUNNER_TEMP/validated-candidate.json"
-          jq -e --arg source "$GITHUB_SHA" --arg tree "$(git rev-parse 'HEAD^{tree}')" --arg version "$VERSION" '.sourceCommit==$source and .sourceTree==$tree and .version==$version' "$RUNNER_TEMP/validated-candidate.json"
+          jq -e --arg source "$RELEASE_SOURCE_SHA" --arg tree "$(git rev-parse "$RELEASE_SOURCE_SHA^{tree}")" --arg version "$VERSION" '.sourceCommit==$source and .sourceTree==$tree and .version==$version' "$RUNNER_TEMP/validated-candidate.json"
           jq -r '"assets_id=\(.assetsArtifact.id)\ncatalog_id=\(.catalogArtifact.id)\nbundle_digest=\(.bundleDigest)"' "$RUNNER_TEMP/validated-candidate.json" >> "$GITHUB_OUTPUT"
           echo "manifest_sha256=$(sha256sum candidate/candidate.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -543,7 +549,8 @@ jobs:
           MANIFEST: ${{ needs.verify-candidate.outputs.manifest_sha256 }}
         run: |
           # shellcheck disable=SC2016
-          printf '## Promote v%s\n\nCandidate run %s, attempt %s; source `%s`; manifest `%s`.\n\nRoot installed this exact App/CLI/engine. Source UI, supply-chain, security, tests and five native distribution receipts passed. Publication reuses these bytes without rebuilding or resigning.\n' "$VERSION" "$RUN_ID" "$ATTEMPT" "$GITHUB_SHA" "$MANIFEST" >> "$GITHUB_STEP_SUMMARY"
+          printf '## Promote v%s\n\nCandidate run %s, attempt %s; source `%s`; manifest `%s`.\n\nRoot installed this exact App/CLI/engine. Source UI, supply-chain, security, tests and five native distribution receipts passed. Publication reuses these bytes without rebuilding or resigning.\n' "$VERSION" "$RUN_ID" "$ATTEMPT" "$RELEASE_SOURCE_SHA" "$MANIFEST" >> "$GITHUB_STEP_SUMMARY"
+          printf '\nPublication workflow producer: %s.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   publish-release:
     name: Publish Release
@@ -574,7 +581,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -674,17 +681,17 @@ jobs:
           done
           mkdir -p "$source/.git/git-crypt/keys"
           cp "$common/git-crypt/keys/default" "$source/.git/git-crypt/keys/default"
-          git -C "$source" checkout --quiet -B main "$GITHUB_SHA"
-          [ "$(git -C "$source" rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git -C "$source" checkout --quiet -B main "$RELEASE_SOURCE_SHA"
+          [ "$(git -C "$source" rev-parse HEAD)" = "$RELEASE_SOURCE_SHA" ]
           ln -s "$GITHUB_WORKSPACE/docs/site/node_modules" "$source/docs/site/node_modules"
           preparer="$source/docs/site/scripts/prepare-beta-backend.mjs"
-          node "$preparer" prepare --repo "$source" --frontend "$GITHUB_SHA" --out "$prepared" >/dev/null
-          node "$preparer" verify --prepared "$prepared" --frontend "$GITHUB_SHA"
+          node "$preparer" prepare --repo "$source" --frontend "$RELEASE_SOURCE_SHA" --out "$prepared" >/dev/null
+          node "$preparer" verify --prepared "$prepared" --frontend "$RELEASE_SOURCE_SHA"
           mv "$source/docs/site/api" "$prepared/unused-current-api"
           cp -R "$prepared/api" "$source/docs/site/api"
           cp "$prepared/source-lineage.json" "$source/source-lineage.json"
           cp "$prepared/deployment-script-provenance.json" "$source/deployment-script-provenance.json"
-          node "$preparer" verify --prepared "$prepared" --frontend "$GITHUB_SHA" --api "$source/docs/site/api"
+          node "$preparer" verify --prepared "$prepared" --frontend "$RELEASE_SOURCE_SHA" --api "$source/docs/site/api"
           # The protected schema is pinned by verify; check its version before any database access.
           node -e 'const fs=require("node:fs");const sql=fs.readFileSync(process.argv[1],"utf8");const ns=[...sql.matchAll(/^-- migration (\d+)[ \t]*$/gm)].map(m=>Number(m[1]));if(JSON.stringify(ns)!==JSON.stringify([1,2,3,4,5,6,7,8,9]))throw Error("Stable deployment requires exactly the genuine schema-9 migrations");' "$source/docs/site/api/_lib/schema.sql"
 
@@ -707,7 +714,7 @@ jobs:
           set -euo pipefail
           umask 077
           [ "$GITHUB_REF_NAME" = main ] && [ "$PRODUCTION_BRANCH" = main ]
-          node scripts/prepare-beta-backend.mjs verify --prepared "${PREPARED_BACKEND:?}" --frontend "$GITHUB_SHA" --api "${DEPLOY_SOURCE:?}/docs/site/api"
+          node scripts/prepare-beta-backend.mjs verify --prepared "${PREPARED_BACKEND:?}" --frontend "$RELEASE_SOURCE_SHA" --api "${DEPLOY_SOURCE:?}/docs/site/api"
           pull="${RUNNER_TEMP:?}/database.env"
           trap 'rm -f "$pull"' EXIT
           vercel env pull "$pull" --environment=production --token="$VERCEL_TOKEN" --yes
@@ -736,15 +743,15 @@ jobs:
           prepared="${PREPARED_BACKEND:?}"
           verifier="$source/docs/site/scripts/verify-deployment-runtime.mjs"
           preparer="$source/docs/site/scripts/prepare-beta-backend.mjs"
-          node "$preparer" verify --prepared "$prepared" --frontend "$GITHUB_SHA" --api "$source/docs/site/api"
+          node "$preparer" verify --prepared "$prepared" --frontend "$RELEASE_SOURCE_SHA" --api "$source/docs/site/api"
           backend_base=824d98db82ad92e3c172c6e577f22b461df4442b
           backend_digest="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).overlayDigest)' "$prepared/receipt.json")"
           target=production
-          (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --prod --skip-domain --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$GITHUB_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest") > "$receipt"
+          (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --prod --skip-domain --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$RELEASE_SOURCE_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest") > "$receipt"
           deployment_id=$(node "$verifier" receipt-id --deployment "$receipt")
           vercel api "/v13/deployments/$deployment_id" --method GET --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --raw > "$runtime"
-          DEPLOY_URL=$(node "$verifier" verify --deployment "$receipt" --metadata "$runtime" --project "$VERCEL_PROJECT_ID" --target "$target" --git-ref "$GITHUB_REF_NAME" --git-sha "$GITHUB_SHA")
-          node "$preparer" verify-runtime --prepared "$prepared" --frontend "$GITHUB_SHA" --api "$source/docs/site/api" --metadata "$runtime"
+          DEPLOY_URL=$(node "$verifier" verify --deployment "$receipt" --metadata "$runtime" --project "$VERCEL_PROJECT_ID" --target "$target" --git-ref "$GITHUB_REF_NAME" --git-sha "$RELEASE_SOURCE_SHA")
+          node "$preparer" verify-runtime --prepared "$prepared" --frontend "$RELEASE_SOURCE_SHA" --api "$source/docs/site/api" --metadata "$runtime"
           bash "$source/docs/site/scripts/check-deploy.sh" "$DEPLOY_URL" --pending-release "$VERSION"
           echo "Deployed to: $DEPLOY_URL"
           echo "url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
@@ -757,7 +764,7 @@ jobs:
           if [[ "$VERSION" != *-* ]]; then
             [ "$GITHUB_REF_NAME" = main ] && [ "$PRODUCTION_BRANCH" = main ]
             cd "${DEPLOY_SOURCE:?}/docs/site"
-            node scripts/prepare-beta-backend.mjs verify --prepared "${PREPARED_BACKEND:?}" --frontend "$GITHUB_SHA" --api "${DEPLOY_SOURCE:?}/docs/site/api"
+            node scripts/prepare-beta-backend.mjs verify --prepared "${PREPARED_BACKEND:?}" --frontend "$RELEASE_SOURCE_SHA" --api "${DEPLOY_SOURCE:?}/docs/site/api"
           fi
           # Released stable and beta Apps both use normal Production accounts.
           # This writes only their signed, versioned workflow bundle; beta API code stays in Preview.
@@ -822,16 +829,16 @@ jobs:
           gh release view "v$VERSION" --json body,isDraft,targetCommitish,assets > "$RUNNER_TEMP/existing-release.json"
           if jq -e --arg marker "$marker" '.body | contains($marker)' "$RUNNER_TEMP/existing-release.json" >/dev/null; then
             # A retry may resume only the candidate that owns this draft or published release.
-            jq -e --arg sha "$GITHUB_SHA" '.targetCommitish == $sha' "$RUNNER_TEMP/existing-release.json"
+            jq -e --arg sha "$RELEASE_SOURCE_SHA" '.targetCommitish == $sha' "$RUNNER_TEMP/existing-release.json"
           else
             # Claim only an unpublished, asset-free authoring draft with no earlier candidate marker.
             jq -e '.isDraft == true and (.assets | length) == 0 and (.body | contains("<!-- qualitylayer-candidate:") | not)' "$RUNNER_TEMP/existing-release.json"
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
             git fetch --quiet origin "refs/tags/v$VERSION:refs/tags/v$VERSION"
-            [ "$(git rev-parse "v$VERSION^{commit}")" = "$GITHUB_SHA" ]
+            [ "$(git rev-parse "v$VERSION^{commit}")" = "$RELEASE_SOURCE_SHA" ]
           fi
-          gh release edit "v$VERSION" --target "$GITHUB_SHA" --notes-file "$RELEASE_NOTES_FILE"
+          gh release edit "v$VERSION" --target "$RELEASE_SOURCE_SHA" --notes-file "$RELEASE_NOTES_FILE"
 
       - name: Upload assets to the release
         env:
@@ -899,7 +906,7 @@ jobs:
           bash "${DEPLOY_SOURCE:?}/docs/site/scripts/check-deploy.sh" "$DEPLOY_URL"
           git fetch --quiet origin "$GITHUB_REF_NAME"
           if [ "$(git rev-parse "origin/$GITHUB_REF_NAME")" != "$GITHUB_SHA" ]; then
-            echo "::warning::$GITHUB_REF_NAME moved past $GITHUB_SHA; qualitylayer.dev stays on the newer deployment"
+            echo "::warning::$GITHUB_REF_NAME moved past producer $GITHUB_SHA; qualitylayer.dev stays on the newer deployment"
             exit 0
           fi
           vercel promote "$DEPLOY_URL" --yes --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"

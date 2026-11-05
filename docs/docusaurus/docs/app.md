@@ -90,7 +90,7 @@ Open **Changes** in the header or **Review the code** in Review or Files. Choose
 ![The cost panel: the total, each step with its time, tokens and cost, and each agent named after its work](pathname:///img/diagrams/cost-light.svg)
 ![The cost panel: the total, each step with its time, tokens and cost, and each agent named after its work](pathname:///img/diagrams/cost-dark.svg)
 
-**Cost** in the task header estimates each step from list prices and local logs. Amounts stay hidden until you open it; an unknown price shows a dash. **Usage history** opens Settings › Usage.
+**Cost** in the task header reads local logs: recorded Copilot AI-credit usage value where available, otherwise verified API-price estimates. Credit value is not additional money billed; partial amounts are labelled. Amounts stay hidden until you open it; unknown values show a dash. **Usage history** opens Settings › Usage.
 
 ## Agent runs {#agent-runs}
 

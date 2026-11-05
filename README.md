@@ -56,7 +56,7 @@ Agree on the change, then review how your agents built and checked it.
 | **An independent check** | With independent review on, a separate agent checks the running change against your request. What it cannot verify stays visible in Review. |
 | **Code health checks** | Find complex functions, deeply nested code and duplication. [Code health](https://qualitylayer.dev/docs/reference/code-health). |
 | **Your own requirements** | Add checks, tools or skills to any step. Review shows what was done or skipped. [Required lines](https://qualitylayer.dev/docs/required-lines). |
-| **Visible decisions and effort** | Read decisions and results in your repository; see time and estimated model cost in the App. |
+| **Visible decisions and effort** | Read decisions and results in your repository; see time, model usage value and cost estimates in the App. |
 
 ---
 

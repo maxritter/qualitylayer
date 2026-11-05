@@ -95,7 +95,7 @@ Pick an agent by its mark; every model it uses is on one page. A new task starts
 | **Menu bar readings** | Reported quota windows and daily dollars. Quota choices also select the Usage popup's rows |
 | **Daily total** | Optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison |
 
-Credits stay separate; missing data makes totals partial.
+Credits stay separate in Usage; missing data makes totals partial. The task header’s [Cost](../app.md#cost) uses recorded Copilot AI-credit usage value where available, clearly labelled separately from API-price estimates and money billed.
 
 **Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since.
 

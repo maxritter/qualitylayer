@@ -17,19 +17,22 @@ const contrast = (foreground: string, background: string) => {
 };
 
 describe("illustrations in both themes", () => {
-  it("keeps README theme pairs and a directly linked video poster", () => {
+  it("keeps README theme pairs, the walkthrough opening the demo, and the film and deep dive as buttons", () => {
     const markdown = read("README.md");
     const pictures = [...markdown.matchAll(/<picture>([\s\S]*?)<\/picture>/g)];
     expect(pictures.length).toBeGreaterThan(0);
-    const poster = new RegExp(`<a href="${OVERVIEW_VIDEO_URL.replace(/[.?]/g, "\\$&")}"[^>]*><img src="docs/img/film-poster-dark\\.webp"[^>]*></a>`);
-    expect(markdown, "README film poster opens the film on YouTube").toMatch(poster);
+    const film = new RegExp(`<a href="${OVERVIEW_VIDEO_URL.replace(/[.?]/g, "\\$&")}"><img src="docs/img/watch-the-film\\.svg"[^>]*></a>`);
+    expect(markdown, "README film button opens the film on YouTube").toMatch(film);
     expect(markdown).not.toMatch(/qualitylayer-media[^"]*\.mp4/);
-    expect(existsSync(resolve(root, "docs/img/film-poster-dark.webp"))).toBe(true);
+    expect(existsSync(resolve(root, "docs/img/watch-the-film.svg"))).toBe(true);
     const deepDive = new RegExp(`<a href="${SITE_URL}${DEEP_DIVE.href}"><img src="docs/img/inside-qualitylayer-deep-dive.svg"[^>]*></a>`);
     expect(markdown).toMatch(deepDive);
     expect(existsSync(resolve(root, "docs/img/inside-qualitylayer-deep-dive.svg"))).toBe(true);
+    expect(markdown, "the walkthrough opens the App demo").toContain(`<a href="${SITE_URL}/app-demo/?story&amp;guide"><picture>`);
+    // The walkthrough lives in the media bucket, versioned, under GitHub's 5 MB limit for images it proxies.
+    expect(markdown).toMatch(/srcset="https:\/\/qualitylayer-media\.max-ritter\.workers\.dev\/readme-walkthrough-dark-v\d+\.webp"/);
     const standalone = markdown.replace(/<picture>[\s\S]*?<\/picture>/g, "")
-      .replace(poster, "")
+      .replace(film, "")
       .replace(deepDive, "")
       .replace(/<img\b[^>]*src="https:\/\/img\.shields\.io\/[^>]*>/g, "");
     expect(standalone).not.toMatch(/<img\b/);
@@ -41,7 +44,7 @@ describe("illustrations in both themes", () => {
       expect(fallback).toBeTruthy();
       expect(source).not.toBe(fallback);
       for (const path of [source, fallback]) {
-        if (path!.startsWith("https://")) expect(path).toMatch(/^https:\/\/img\.shields\.io\//);
+        if (path!.startsWith("https://")) expect(path).toMatch(/^https:\/\/(img\.shields\.io\/|qualitylayer-media\.max-ritter\.workers\.dev\/[\w-]+-v\d+\.webp$)/);
         else expect(existsSync(resolve(root, path!)), path).toBe(true);
       }
     }

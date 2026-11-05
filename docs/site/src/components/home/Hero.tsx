@@ -1,57 +1,36 @@
-import { ArrowRight, Code, Download, FileCheck, ListChecks, MessageSquare, MonitorPlay, Network, Search, ShieldCheck, SquarePlay, type LucideIcon } from "lucide-react";
+import { ArrowRight, Download, MonitorPlay, SquarePlay } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { useCallback, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { HeroShowcase, LIVE_DEMO, type ShowcaseHandle } from "./HeroShowcase";
+import { STEP_ICONS } from "@/lib/step-icons";
+
+export { LIVE_DEMO };
 import { useDownload } from "@/hooks/useDownload";
 import { FILMS } from "@/lib/films";
 import { OVERVIEW_VIDEO_URL } from "@/lib/videos";
-import { BRAND_LINE, DEEP_DIVE, DESCRIPTION, SLOGAN } from "@/lib/product";
+import { BRAND_LINE, DEEP_DIVE, DESCRIPTION, LEDE_LEAD, LEDE_REST, SLOGAN } from "@/lib/product";
+import { AgentName, HeroGrid, OsMarks } from "./HeroTouches";
 import { DEEP_DIVE_MINUTES, DEEP_DIVE_VIDEO_URL } from "@/lib/deep-dive";
 import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
 
-const STEP_ICONS: Record<string, LucideIcon> = { discuss: MessageSquare, research: Search, plan: Network, outline: ListChecks, implement: Code, verify: ShieldCheck, review: FileCheck };
-
-/** What the hero picture shows, for screen readers; the phone picture is its question card alone. */
-const SHOT_ALT = "QualityLayer’s Plan asks what happens when a customer reaches their limit. A diagram compares billing overages with blocking requests; Claude Code waits beside it.";
-
-/** The App demo on this site: the billing task from request to merged pull request, with a guide. */
-export const LIVE_DEMO = "/app-demo/?story&guide";
-
-/**
- * The current Plan and agent at 2x from the App demo. Phones keep the focused decision;
- * the full window opens the same demo as the hero action.
- */
-function HeroShot() {
-  return (
-    <div className="sx-pic">
-      <a className="sx-live" href={LIVE_DEMO} aria-label="Try the App in your browser: the usage-based billing example, nothing to install">
-        <figure className="sx-shot">
-          {(["light", "dark"] as const).map((theme) => (
-            <picture key={theme} className={`sx-shot-${theme}`}>
-              <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${theme}.webp`} width={728} height={776} />
-              <img src={`/hero/plan-desktop-${theme}.webp`} alt={SHOT_ALT} width={2664} height={1904} decoding="async" />
-            </picture>
-          ))}
-        </figure>
-      </a>
-    </div>
-  );
-}
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 /**
- * The seven steps as one line of equal stations, a pulse running along it. Each station opens its
- * step in the tour below; a router link, so picking the same step again still selects it.
+ * The seven steps as one line of equal stations. Beside the showcase they follow it: the playing
+ * step is current, the line fills as it plays, and a station plays its step. On a phone (no
+ * showcase) each station opens its step in the tour below, as a router link.
  */
-function Stations() {
+function Stations({ active, onPick, line }: { active: number | null; onPick: (step: number, e: MouseEvent) => void; line: RefObject<HTMLOListElement | null> }) {
   return (
     <nav className="mx-line" aria-label="The seven steps">
-      <ol className="mx-stations">
+      <ol className="mx-stations" ref={line} data-hs={active === null ? undefined : ""}>
         {WORKFLOW_STEPS.map(({ id, name, line, who }, i) => {
           const Glyph = STEP_ICONS[id];
           return (
             <li key={id}>
-              <Link className="mx-station" data-who={who} to={`#${id}`}>
+              <Link className="mx-station" data-who={who} to={`#${id}`} aria-current={active === i ? "step" : undefined} onClick={(e) => onPick(i, e)}>
                 <span className="mx-station-tile" aria-hidden="true"><Glyph size={28} strokeWidth={1.6} /></span>
                 <span className="mx-station-text">
                   <span className="mx-station-name"><span className="mx-station-n" aria-hidden="true">{i + 1}</span>{name}</span>
@@ -70,16 +49,21 @@ function Stations() {
   );
 }
 
-/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film on YouTube), beside the App at a decision. */
+/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film on YouTube), beside the App playing the seven steps. */
 const Hero = () => {
   const download = useDownload();
+  const showcase = useRef<ShowcaseHandle>(null);
+  const line = useRef<HTMLOListElement>(null);
+  const [step, setStep] = useState<number | null>(null);
+  const pick = useCallback((i: number, e: MouseEvent) => { if (showcase.current?.seek(i)) e.preventDefault(); }, []);
   return (
     <section className="sx-hero" id="top" aria-labelledby="hero-h">
+      <HeroGrid />
       <div className="sx-hero-row">
         <div className="sx-hero-copy">
           <p className="mx-qbd"><span aria-hidden="true" className="w7-mark" />{BRAND_LINE}</p>
           <h1 id="hero-h" className="sx-h1">{SLOGAN.split(/\b(you)\b/).map((part, i) => part === "you" ? <span className="sx-human" key={i}>{part}</span> : part)}</h1>
-          <p className="sx-lede">{DESCRIPTION}</p>
+          <p className="sx-lede"><span className="sr-only">{DESCRIPTION}</span><span aria-hidden="true"><span className="sx-lead">{LEDE_LEAD}<br /><AgentName />.</span><span className="sx-lede-rest">{LEDE_REST}</span></span></p>
           <div className="sx-ctas">
             <Button asChild size="xl">{download.direct ? <a href={download.href}><Download size={18} aria-hidden="true" />{download.label}</a> : <Link to={download.href}><Download size={18} aria-hidden="true" />{download.label}</Link>}</Button>
             <Button asChild variant="outline" size="xl">
@@ -91,11 +75,11 @@ const Hero = () => {
             {DEEP_DIVE_VIDEO_URL ? <Button asChild variant="outline" size="xl"><Link to={DEEP_DIVE.href} aria-label={`${DEEP_DIVE.title}, a ${DEEP_DIVE_MINUTES}-minute deep dive`}><MonitorPlay size={18} aria-hidden="true" />{DEEP_DIVE.label} <span className="mx-dur">{DEEP_DIVE_MINUTES} min</span></Link></Button> : null}
             <Button asChild variant="outline" size="xl"><a href={LIVE_DEMO} aria-label="Try the demo in your browser"><SquarePlay size={18} aria-hidden="true" />Try the demo<ArrowRight size={16} aria-hidden="true" /></a></Button>
           </div>
-          <p className="sx-meta">Runs on your computer · <Link to="/download">macOS, Windows and Linux</Link></p>
+          <p className="sx-meta"><OsMarks />Runs on your computer · <Link to="/download">macOS, Windows and Linux</Link></p>
         </div>
-        <HeroShot />
+        <HeroShowcase ref={showcase} line={line} onStep={setStep} />
       </div>
-      <Stations />
+      <Stations active={step} onPick={pick} line={line} />
     </section>
   );
 };

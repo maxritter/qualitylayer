@@ -83,16 +83,76 @@ html{scroll-padding-top:76px}
 .sx-hero-copy .sx-ctas>*{min-width:0;width:100%;padding-inline:12px}
 @container(max-width:640px){.sx-hero-copy .sx-ctas{grid-template-columns:1fr}}
 .sx-meta{max-width:28.5rem;margin:14px 0 0;font-size:14px;color:var(--mx-ink3)}
-/* The App window: captured at 2x, drawn at most at its own size. It ends on the page's right margin, like every section. */
-.sx-shot{position:relative;margin:0;border:1px solid var(--mx-line2);border-radius:8px;background:var(--mx-panel);box-shadow:var(--mx-shadow);overflow:hidden;transition:transform .42s cubic-bezier(.16,1,.3,1),box-shadow .42s cubic-bezier(.16,1,.3,1)}
-/* The window is the door into the App demo. Its chip is always on screen (a phone has no hover); pointer or focus lifts the window and turns the chip blue. */
-.sx-live{display:block;color:inherit;text-decoration:none;border-radius:8px;outline:none}
-.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot{transform:translateY(-4px);box-shadow:0 2px 4px rgb(0 0 0 / 8%),0 30px 70px -24px rgb(0 0 0 / 38%)}
-.sx-live:focus-visible .sx-shot{outline:2px solid var(--ql-accent);outline-offset:4px}
-/* Dark blue is light: dark words on it, as on the dark theme's Download button. */
-.sx-shot picture,.sx-shot img{display:block;width:100%;height:auto}
-@media(min-width:641px){.sx-shot{border:0;border-radius:0;background:transparent;box-shadow:none}.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot{box-shadow:none}}
-@media(max-width:640px){.sx-shot{padding:12px;border-radius:16px;background:var(--ql-surface-2);box-shadow:none}.sx-shot img{box-sizing:border-box;border:1px solid var(--ql-border);border-radius:8px;box-shadow:0 20px 38px -20px rgb(0 0 0 / 35%)}}
+/* The hero line ends on the agent's name: one after another, each letter fading in, the underline sliding to the new width */
+.sx-lede .sx-lead{display:block;font-size:clamp(19px,1.6cqi,22px);line-height:1.4;font-weight:500;letter-spacing:-.015em;color:var(--mx-ink)}
+.sx-lede .sx-lede-rest{display:block;margin-top:10px}
+.sx-agent{position:relative;display:inline-block;vertical-align:bottom;white-space:nowrap;font-weight:700;color:var(--ql-accent-hover);transition:width .32s cubic-bezier(.4,0,.2,1)}
+.sx-agent:after{content:"";position:absolute;left:0;right:0;bottom:-.04em;height:2px;border-radius:2px;background:color-mix(in srgb,var(--ql-accent) 40%,transparent)}
+.sx-agent-word{position:absolute;top:0;left:0;opacity:0;transition:opacity .18s linear}
+.sx-agent-word[data-on]{position:static;opacity:1}
+.sx-agent-word>span{display:inline-block}
+.sx-agent-word[data-on]>span{animation:sx-letter .4s ease both;animation-delay:calc(var(--i) * 26ms)}
+@keyframes sx-letter{from{opacity:0;filter:blur(8px);transform:translateY(.18em)}to{opacity:1;filter:none;transform:none}}
+/* A soft grid behind the hero, fading downwards; a cell lights under the pointer, a ripple crosses it now and then */
+.sx-hero{position:relative}
+.sx-hero>:not(.sx-grid){position:relative;z-index:1}
+.sx-hero-row,.sx-hero>.mx-line{pointer-events:none}
+.sx-hero-row>*,.sx-hero>.mx-line>*{pointer-events:auto}
+.sx-grid{--cell:56px;position:absolute;inset:0 0 auto;z-index:0;height:calc(var(--cell) * 8);overflow:hidden;opacity:.75;-webkit-mask-image:radial-gradient(120% 100% at 50% 0,rgb(0 0 0 / 85%) 0%,rgb(0 0 0 / 45%) 45%,transparent 85%);mask-image:radial-gradient(120% 100% at 50% 0,rgb(0 0 0 / 85%) 0%,rgb(0 0 0 / 45%) 45%,transparent 85%)}
+.sx-grid-cells{display:grid;grid-template-columns:repeat(24,var(--cell));grid-template-rows:repeat(8,var(--cell));width:calc(var(--cell) * 24);margin-inline:auto}
+.sx-grid i{border-right:1px solid var(--mx-line2);border-bottom:1px solid var(--mx-line2);transition:background .15s}
+.sx-grid i:hover{background:var(--mx-sunk)}
+.sx-grid i.sx-ripple{animation:sx-ripple 1.1s linear var(--d,0ms) both}
+@keyframes sx-ripple{0%,100%{background:transparent}30%{background:color-mix(in srgb,var(--ql-accent) 9%,transparent)}}
+/* The three systems' marks before "Runs on your computer" */
+.sx-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.sx-os{display:inline-flex;align-items:center;gap:9px;color:var(--mx-ink2)}
+.sx-os svg{flex:none;width:15px;height:15px}
+@media(prefers-reduced-motion:reduce){.sx-agent,.sx-agent-word{transition:none}.sx-agent-word[data-on]>span,.sx-grid i.sx-ripple{animation:none}}
+/* The App window: the showcase plays the seven steps on 2x captures cropped to the window (their 50 px frame cut by the image offsets).
+   A phone keeps the still question card. The window is the door into the App demo; pointer or focus lifts it. */
+.sx-pic{position:relative}
+.sx-live{display:block;color:inherit;text-decoration:none;border-radius:10px;outline:none}
+.hs-stage{position:relative;padding:1.9%;border-radius:10px;background:radial-gradient(120% 100% at 50% 0%,var(--ql-surface-2),var(--ql-surface-3));transition:transform .42s cubic-bezier(.16,1,.3,1)}
+.sx-live:hover .hs-stage,.sx-live:focus-visible .hs-stage{transform:translateY(-4px)}
+.sx-live:focus-visible .hs-stage{outline:2px solid var(--ql-accent);outline-offset:4px}
+.hs-win{position:relative;aspect-ratio:2564/1564;overflow:hidden;border-radius:7px;background:var(--ql-bg);box-shadow:0 0 0 1px var(--ql-border),0 14px 36px -12px rgb(0 0 0 / 22%);isolation:isolate}
+.sx-shot{position:absolute;inset:0;margin:0}
+.sx-shot picture{display:block}
+.sx-shot img,.hs-layer{position:absolute;left:calc(-50 / 2564 * 100%);top:calc(-50 / 1564 * 100%);display:block;width:calc(2664 / 2564 * 100%);max-width:none;height:auto}
+.hs-cam{position:absolute;inset:0;transform-origin:0 0;transform:translate(calc(var(--tx,0) * 1%),calc(var(--ty,0) * 1%)) scale(var(--s,1));will-change:transform}
+.hs-hl{position:absolute;border:calc(2px / var(--s,1)) solid var(--ql-accent);border-radius:calc(6px / var(--s,1));box-shadow:0 0 0 calc(5px / var(--s,1)) var(--ql-accent-soft);opacity:0;transform:scale(var(--m,1));pointer-events:none}
+.hs-cursor{position:absolute;z-index:3;width:24px;height:24px;margin:-2px 0 0 -3px;transform-origin:3px 2px;transform:scale(calc(var(--k,1) / var(--s,1)));filter:drop-shadow(0 2px 3px rgb(0 0 0 / 28%));pointer-events:none}
+.hs-cursor svg{display:block;width:100%;height:100%}
+.hs-cursor path{fill:var(--ql-text);stroke:var(--ql-bg);stroke-width:1.5;stroke-linejoin:round}
+.hs-ripple{position:absolute;z-index:2;width:44px;height:44px;margin:-22px 0 0 -22px;border:2px solid var(--ql-accent);border-radius:50%;opacity:0;transform:scale(calc(var(--r,1) / var(--s,1)));pointer-events:none}
+.hs-pause{position:absolute;right:12px;bottom:12px;z-index:5;display:grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--ql-border);border-radius:999px;background:color-mix(in srgb,var(--ql-bg) 88%,transparent);color:var(--ql-text-muted);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.hs-pause:hover{color:var(--ql-text)}
+.hs-pause:focus-visible{outline:2px solid var(--ql-accent);outline-offset:2px}
+.hs-pause svg{width:15px;height:15px}
+/* A chip says the picture opens larger; pointer or focus shows it fully. */
+.hs-enlarge{position:absolute;left:calc(1.9% + 10px);bottom:calc(1.9% + 10px);z-index:4;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:5px 10px;border:1px solid var(--mx-line2);border-radius:999px;background:color-mix(in srgb,var(--mx-panel) 92%,transparent);color:var(--mx-ink);font:600 13px Geist,system-ui,sans-serif;opacity:.88;transition:opacity .2s}
+.sx-live:hover .hs-enlarge,.sx-live:focus-visible .hs-enlarge{opacity:1}
+/* The card: the same walkthrough as large as the screen allows, the steps below it */
+.hs-card.hs-card{width:min(1240px,calc(100vw - 32px),calc((100dvh - 210px) * 1.64 + 32px));max-width:none;max-height:calc(100dvh - 24px);gap:14px;padding:16px;border-radius:14px;background:var(--mx-panel);color:var(--mx-ink);overflow:auto}
+.hs-card-head{display:flex;align-items:center;gap:10px}
+.hs-card-head h2{flex:1;min-width:0;margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.hs-card-head>*{flex:none}
+.hs-stage-card{padding:1.2%}
+.hs-steps{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.hs-steps button{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:40px;padding:6px 8px;border:1px solid var(--mx-line2);border-radius:10px;background:var(--mx-panel);color:var(--mx-ink2);font:600 14px Geist,system-ui,sans-serif;cursor:pointer;transition:border-color .2s,background .2s,color .2s}
+.hs-steps button svg{flex:none;color:var(--ink)}
+.hs-steps button:hover{border-color:color-mix(in srgb,var(--hue) 50%,var(--mx-line2));color:var(--mx-ink)}
+.hs-steps button[aria-current="step"]{border-color:var(--hue);background:color-mix(in srgb,var(--hue) 10%,var(--mx-panel));color:var(--mx-ink)}
+.hs-steps button:focus-visible{outline:2px solid var(--ql-accent);outline-offset:2px}
+.hs-card-note{margin:0;font-size:13px;color:var(--mx-ink3)}
+@media(max-width:900px){.hs-steps{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:640px){
+  .hs-stage{padding:12px;border-radius:16px;background:var(--ql-surface-2)}
+  .hs-win{aspect-ratio:auto;overflow:visible;border-radius:0;background:none;box-shadow:none}
+  .sx-shot{position:static}
+  .sx-shot img{position:static;box-sizing:border-box;width:100%;border:1px solid var(--ql-border);border-radius:8px;box-shadow:0 20px 38px -20px rgb(0 0 0 / 35%)}
+}
 .sx-shot .sx-shot-dark{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sx-shot .sx-shot-light{display:none}:root:not([data-theme="light"]) .sx-shot .sx-shot-dark{display:block}}
 :root[data-theme="dark"] .sx-shot .sx-shot-light{display:none}
@@ -117,6 +177,10 @@ html{scroll-padding-top:76px}
 .mx-station-n{margin-right:.3em;font-weight:600;color:var(--mx-ink3)}
 .mx-station-line{max-width:11em;font-size:14px;line-height:1.35;color:var(--mx-ink3)}
 .w7-root .mx-station:hover .mx-station-tile,.w7-root .mx-station:focus-visible .mx-station-tile{border-color:var(--ql-accent);color:var(--ql-accent);transform:translateY(-2px)}
+/* Beside the showcase the line fills as it plays and the playing step's tile rings in its colour */
+.mx-stations[data-hs]:after{animation:none;background:var(--ql-accent) no-repeat 0 0;background-size:calc(var(--hs-p,0) * 100%) 100%}
+.mx-stations[data-hs] .mx-station-tile{transition:border-color .3s,color .3s,transform .3s,box-shadow .3s}
+.w7-root .mx-station[aria-current="step"] .mx-station-tile{border-color:var(--hue,var(--ql-accent));transform:translateY(-2px);box-shadow:0 0 0 4px color-mix(in srgb,var(--hue,var(--ql-accent)) 20%,transparent),0 8px 24px rgb(0 0 0 / 6%)}
 .mx-line-cap{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px 24px;margin:36px 0 0;padding-top:24px;border-top:1px solid var(--mx-line)}
 .mx-line-cap p{margin:0;max-width:46rem;font-size:17px;line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 .mx-line-cap strong{font-weight:700;color:var(--mx-ink)}
@@ -151,11 +215,13 @@ html{scroll-padding-top:76px}
 .mx-h2{margin:0;max-width:15em;font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
 .mx-lead{margin:18px 0 0;max-width:40rem;font-size:clamp(16px,1.25cqi,17px);line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 
-/* Works with: the heading beside four agent tiles */
-.mx-with{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px 64px;align-items:center}
+/* Works with: the heading centred above eight agent tiles in one wide grid */
+.mx-with{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:40px}
+.mx-with>div:first-child{max-width:46rem;text-align:center}
+.mx-with .mx-h2,.mx-with .mx-lead{margin-inline:auto}
 .mx-with .mx-h2{font-size:clamp(30px,3cqi,42px)}
-.mx-withg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0;padding:0;list-style:none}
-.mx-wi{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;gap:22px;min-height:124px;padding:20px 22px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink)}
+.mx-withg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;width:100%;margin:0;padding:0;list-style:none}
+.mx-wi{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;gap:16px;min-height:96px;padding:20px 22px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink)}
 .mx-wi b{font-size:clamp(18px,1.6cqi,22px);line-height:1;font-weight:800;letter-spacing:-.04em}
 .mx-wi .mx-ic{box-sizing:content-box;width:24px;height:24px;padding:11px;border-radius:13px;background-color:var(--mx-sunk);color:var(--mx-ink);-webkit-mask:none;mask:none;position:relative}
 .mx-wi .mx-ic:after{content:"";position:absolute;inset:11px;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
@@ -296,6 +362,10 @@ html{scroll-padding-top:76px}
 .w7-root .pr-hi a{color:var(--ql-accent-hover);text-decoration:underline;text-underline-offset:3px}
 
 
+/* The agents: four to a row, two below 900px */
+@container (max-width: 900px){.mx-withg{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width: 440px){.mx-withg{gap:10px}.w7-root .mx-wi{gap:10px;padding:12px}.mx-wi b{min-width:0;font-size:16px;overflow-wrap:anywhere}.mx-wi .mx-logo{padding:8px;border-radius:10px}}
+
 /* ---- Tablets ---- */
 @container (max-width: 1079px){
   .mx-mq,.mx-with{grid-template-columns:minmax(0,1fr)}
@@ -333,13 +403,13 @@ html{scroll-padding-top:76px}
   .mx-station-text{display:flex;flex-direction:column;gap:2px;min-width:0}
   .mx-station-name{font-size:17px}
   .mx-station-line{max-width:none;font-size:14px}
-  .mx-wi{min-height:116px;gap:18px;padding:18px}
+  .mx-wi{min-height:80px;gap:12px;padding:16px}
   .mx-chip{height:42px;padding:0 14px;font-size:14px}
   .mx-end{grid-template-columns:minmax(0,1fr);padding:28px 20px;border-radius:20px}
   .mx-end .sx-ctas{flex-direction:column;align-items:stretch;max-width:none;margin-left:0;margin-right:0}
   .mx-home .w7-faql [data-slot="accordion-trigger"]{font-size:17px}
 }
-@media(prefers-reduced-motion:reduce){.sx-live:hover .sx-shot,.sx-live:focus-visible .sx-shot{transform:none}}
+@media(prefers-reduced-motion:reduce){.sx-live:hover .hs-stage,.sx-live:focus-visible .hs-stage{transform:none}}
 
 /* ---- Skills: two agent sessions talking, then the other skills (approved 2 November 2026) ---- */
 #skills .sk-stage{margin-left:0;margin-right:0;margin-bottom:0}

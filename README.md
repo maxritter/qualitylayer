@@ -27,13 +27,14 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 
 **[Download the App](https://qualitylayer.dev/download)** for macOS, Windows or Linux.
 
-<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Watch the Inside QualityLayer deep dive" width="332" height="44"></a>
+<a href="https://youtu.be/p1m4O4xRsrQ"><img src="docs/img/watch-the-film.svg" alt="Watch the film on YouTube, 5:20" width="208" height="44"></a>&nbsp;<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Inside QualityLayer, a 27-minute deep dive" width="258" height="44"></a>
 
-<br>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026110502.webp">
+  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026110502.webp" alt="The QualityLayer App: you pick the recommended answer to a Plan decision beside its diagram, then approve the finished change and open its pull request" width="804">
+</picture>
 
-<a href="https://youtu.be/p1m4O4xRsrQ" aria-label="Watch the QualityLayer walkthrough on YouTube, 5 minutes 20 seconds"><img src="docs/img/film-poster-dark.webp" alt="Play video on YouTube: QualityLayer’s seven-step workflow, 5 minutes 20 seconds" width="700"></a>
-
-**[▶ Watch the 5:20 walkthrough on YouTube](https://youtu.be/p1m4O4xRsrQ)**
+<sub>All seven steps play on [qualitylayer.dev](https://qualitylayer.dev). Try it yourself: [the App demo in your browser](https://qualitylayer.dev/app-demo/?story&guide), nothing to install.</sub>
 
 </div>
 

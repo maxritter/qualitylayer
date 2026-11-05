@@ -16,7 +16,7 @@ On Windows, you can also run `irm https://qualitylayer.dev/install.ps1 | iex` in
 
 ## Agent setup {#agent-setup}
 
-Setup enables Claude Code's native task tools and Codex's interactive questions. Explicit disabled settings stay.
+Setup adds missing Claude Code and Codex settings, such as native task tools and commits without attribution ([full list](reference/settings.md#what-setup-sets)). Settings you chose stay.
 
 If you have not chosen native permissions, Claude Code starts in **Bypass** and Codex in **Full access**, including outside QualityLayer. Existing permission settings and saved QualityLayer launch choices stay. Choose another mode in **Settings › Agents › Edit launch…** or in the agent itself.
 

@@ -130,7 +130,7 @@ function Extras({ active, onPick, theme, onOpen }: { active: string; onPick: (id
         {EXTRAS.map((extra, i) => {
           const on = extra.id === current.id;
           return (
-            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" id={extra.id} className="ax-tab" aria-selected={on} aria-controls="extras-panel" tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
+            <button key={extra.id} ref={(el) => { tabs.current[i] = el; }} type="button" role="tab" id={extra.id} className="ax-tab" data-who={extra.who} aria-selected={on} aria-controls="extras-panel" tabIndex={on ? 0 : -1} onClick={() => onPick(extra.id)} onKeyDown={(event) => move(event, i)}>
               <i className="ax-mark" aria-hidden="true"><extra.icon size={18} strokeWidth={1.75} /></i>
               <b>{extra.name}</b>
               <span>{extra.line}</span>

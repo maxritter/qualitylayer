@@ -17,8 +17,11 @@ export const AUTHOR_URL = "https://maxritter.net";
 export const AUTHOR_NAME = "Max Ritter";
 
 /** The hero's subtitle and the default page description. */
-export const DESCRIPTION =
-  "Plan, build and review software with your coding agents. Work side by side in the App or browser, or use your favourite terminal or IDE.";
+/** The hero's first line ends on the agents; on the page it names them one after another. */
+export const LEDE_LEAD = "Plan, build and review software with";
+export const LEDE_AGENTS = "your coding agents";
+export const LEDE_REST = "Work side by side in the App or browser, or use your favourite terminal or IDE.";
+export const DESCRIPTION = `${LEDE_LEAD} ${LEDE_AGENTS}. ${LEDE_REST}`;
 /** The line under the name wherever the product is introduced: the hero, page titles, the README and the CLI. */
 export const SLOGAN = "The software factory with you in the loop";
 /** The brand line, shown with the mark above the slogan (Max, 2026-10-19). Kept out of titles and keywords: alone it does not say what the product is. */

@@ -49,7 +49,7 @@ Hover over controls for their shortcuts. Search keeps its project-selection keys
 
 ## Home {#home}
 
-**Needs you** opens questions, approvals, teammate requests, waiting Chats and agents that stopped early. **Running** shows active work. Each list shows ten rows, then **Show N more**. Notifications arrive when you can act: an agent needs you, it is your turn, or a run stopped early.
+**Needs you** opens questions, approvals, teammate requests, waiting Chats and agents that stopped early. **Running** shows active work. Each list shows ten rows, then **Show N more**. When both are empty, one **All clear** line offers **New task**. A request you typed into New task and closed waits on Home with **Continue**. **Shipped lately** lists your three newest shipped tasks; click its heading to fold it. Notifications arrive when you can act: an agent needs you, it is your turn, or a run stopped early.
 
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-light.svg)
 ![Who hears about what: the App, Slack and the Claude Code band speak only when a person can act, and agent progress and checks never notify](pathname:///img/diagrams/attention-dark.svg)

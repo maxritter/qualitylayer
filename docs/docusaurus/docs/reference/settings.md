@@ -3,7 +3,7 @@ title: Settings
 description: Configure your workflow, agents, usage, sharing and updates.
 ---
 
-Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Use **Save defaults** for model roles; other changes save at once for this computer.
+Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for this computer.
 
 ![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-light.webp)
 ![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-dark.webp)
@@ -15,8 +15,8 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | **New tasks** | **Engineering** (default) or **Product** ([two levels](../intro.md#two-levels)); change per task until the Plan is approved |
 | [Your instructions](#instructions) | Standing instructions for every task |
 | [Independent review](#independent-review) | A switch: on (recommended) or off |
-| [Second opinion](#second-opinion) | **Off** (default) or **Automatic**, once a second coding agent is installed |
-| **Design review** | **Finished designs** (default): a separate agent checks each finished design before you see it. Wireframes are never reviewed |
+| [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed |
+| **Design review** | A switch: on (default), a separate agent checks each finished design before you see it. Wireframes are never reviewed |
 | [Scan each change](#security-scans) | A switch: on (default) or off |
 | [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
 
@@ -26,11 +26,11 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 
 ### Independent review {#independent-review}
 
-**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **QualityLayer helpers: This session** keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. Default models: Opus 5.5 (Claude Code), GPT-6.1 Sol (Codex, Pi, OpenCode), Opus 5.5 (High) (Cursor), Grok 4.7 (Grok), Claude Opus 4.6 (Antigravity).
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **Helpers: This session** in [Models](#models) keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. [Models](#models) sets the model each agent reviews on.
 
 ### Second opinion {#second-opinion}
 
-**Automatic** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing.
+**On** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing; [Models](#models) sets the model each agent gives its second opinion on.
 
 <details>
 <summary>How the reviewer is picked</summary>
@@ -51,9 +51,8 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 
 **On this computer** shows each agent's version, sign-in, integration check and **Use** switch. Problems offer **Repair**, **Out of date** or **Not installed**.
 
-- **Models and roles** (on the row or in **⋯**) sets planning, build and helper defaults, plus Claude Code's build subagents.
+- The model button on the row, or **⋯ › Models**, opens [Models](#models) on that agent.
 - **Install…** opens the vendor's page; QualityLayer never runs an installer.
-- **Show agent sessions as** chooses **Conversation** or **Terminal**.
 
 | **⋯ › Edit launch…** | What it changes |
 | --- | --- |
@@ -64,6 +63,28 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 | **Default permission mode** | Bypass on first use; your saved mode or **Agent settings** wins ([modes](../agents/native.md#permission-modes)) |
 
 Only the App, or a browser paired with its key, can change these.
+
+### What setup sets {#what-setup-sets}
+
+Setup adds each of these only when it is missing, next to QualityLayer's own hooks. Your own values stay, and `qualitylayer uninstall` takes back only what it set.
+
+| Agent | Settings |
+| --- | --- |
+| **Claude Code** permissions | Bypass by default, without its confirmation screen. Existing native and managed policies remain authoritative |
+| **Claude Code** git | No attribution in commits or pull requests; no built-in git instructions |
+| **Claude Code** display | Concise replies, thinking summaries, reduced motion, flicker-free screen |
+| **Claude Code** tools | Task tools, tool search, baseline task reminders, memory consolidation where Claude makes it available, at most 3 Stop-hook continuations in a row, High effort |
+| **Codex** | Full access when no permission policy is set, High effort for the session and subagents, the model's largest context window, questions in Terminal mode |
+
+## Models {#models}
+
+Pick an agent by its mark; every model it uses is on one page. A new task starts with these, and each launch can still pick another model. Each group's **Reset to recommended** puts back only its own rows.
+
+| Group | Rows |
+| --- | --- |
+| **Plan and build** | **Planning**, **Build · full task**, **Build · small change**, **Build subagents** (Claude Code; other agents decide) and **Helpers**: research, fixes, security checks and Chat work. **This session** keeps that work in the lead |
+| **Reviews** | **Independent review**: the model a fresh helper checks each change on when this agent builds. **Second opinion**: the model this agent reviews on when it is picked for another family's work |
+| **Model list** | The built-in models, those the agent reports and those you added, with where each is used. **Add a model…** takes an id the agent accepts; **Remove** puts its roles back on the recommended model |
 
 ## Usage {#usage}
 
@@ -107,6 +128,7 @@ Credits stay separate; missing data makes totals partial.
 | **Theme** | System, Light or Dark |
 | **Text size** | 90%, 100% (default), 115% or 130% for the installed App window. ⌘+/⌘− resize; ⌘0 resets (Ctrl on Windows/Linux). A browser tab uses its own zoom |
 | **Font** | Geist (default), System or Atkinson Hyperlegible. Code, paths and the agent terminal keep their own fonts |
+| **Show agent sessions as** | **Conversation** or **Terminal** for new sessions |
 | **Task rows** | Detailed, Two lines or One line |
 | **Agent terminal** | **Font size** and **Colours** stay in view; **More terminal settings** holds font, weight, spacing, cursor and scrollback. **Reset to recommended** restores defaults |
 

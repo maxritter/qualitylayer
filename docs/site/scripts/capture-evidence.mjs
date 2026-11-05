@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { captureSource } from "./capture-source.mjs";
-import { CAPTURE_SCENES, DOCS_ALIASES, HERO_FILES, sceneFiles } from "./capture-scenes.mjs";
+import { CAPTURE_SCENES, DESKTOP_HERO_FILES, DESKTOP_HERO_VIEWPORT, DOCS_ALIASES, HERO_FILES, sceneFiles } from "./capture-scenes.mjs";
 import { CHAPTERS } from "./demo/story.mjs";
 
 const SHA = /^[a-f0-9]{64}$/;
@@ -81,6 +81,9 @@ function checkProducer(state, image, scene) {
 function approvedFrame(image) {
   const phone = image.file.includes("-phone-");
   const dimensions = [image.width, image.height].every(size => Number.isInteger(size) && size > 0);
+  if (DESKTOP_HERO_FILES.includes(image.file) && [image.scene === "hero", image.assetGroup === "hero",
+    image.capture === "desktop-hero", image.sourceViewport?.width === DESKTOP_HERO_VIEWPORT.width,
+    image.sourceViewport?.height === DESKTOP_HERO_VIEWPORT.height, image.width === 2664, image.height === 1904].some(value => !value)) return false;
   if (HERO_FILES.includes(image.file)) return [dimensions, image.frame?.kind === "consumer", image.frame?.padding === 12,
     image.frame?.theme === (image.file.endsWith("-dark.webp") ? "dark" : "light")].every(Boolean);
   return [dimensions, image.frame?.padding === (phone ? 12 : 24), image.frame?.border === 1,
@@ -89,7 +92,7 @@ function approvedFrame(image) {
 }
 
 function checkDocs(state, image) {
-  if (HERO_FILES.includes(image.file)) return;
+  if (HERO_FILES.includes(image.file) || DESKTOP_HERO_FILES.includes(image.file)) return;
   for (const name of [image.file, DOCS_ALIASES[image.file]].filter(Boolean)) {
     if (!existsSync(resolve(state.docs, name)) && !state.referenced.has(name)) continue;
     if (assetHash(state.repo, state.docs, name) === image.sha256) continue;
@@ -102,7 +105,7 @@ function checkImage(state, scene, file) {
   const image = state.images.get(file);
   if (!image) { state.add("missing-image", file, "Capture is missing", scene); return; }
   checkProducer(state, image, scene);
-  const folder = HERO_FILES.includes(file) ? resolve(state.repo, "docs/site/public/hero") : state.folder;
+  const folder = HERO_FILES.includes(file) || DESKTOP_HERO_FILES.includes(file) ? resolve(state.repo, "docs/site/public/hero") : state.folder;
   if (!SHA.test(image.sha256 ?? "") || assetHash(state.repo, folder, file) !== image.sha256)
     state.add("asset-bytes", file, "Published image is missing, unsafe or differs from its capture", scene);
   if (!approvedFrame(image)) state.add("frame", file, "Capture is missing the approved frame geometry", scene);

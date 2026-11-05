@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { captureSource } from "./capture-source.mjs";
-import { CAPTURE_SCENES, captureFiles, HERO_FILES, sceneFiles } from "./capture-scenes.mjs";
+import { CAPTURE_SCENES, captureFiles, DESKTOP_HERO_FILES, DESKTOP_HERO_VIEWPORT, HERO_FILES, sceneFiles } from "./capture-scenes.mjs";
 import { checkCaptures, refreshCaptures } from "./check-captures.mjs";
 import { publishCaptures } from "./capture-publish.mjs";
 
@@ -65,12 +65,29 @@ function fixture() {
     images.push({ file, assetGroup: "hero", sha256: hash(bytes), width: 1456, height: 1552, captureSource: key,
       frame: { kind: "consumer", padding: 12, theme: file.endsWith("-dark.webp") ? "dark" : "light" } });
   }
+  for (const file of DESKTOP_HERO_FILES) {
+    const bytes = Buffer.from(`Desktop Hero ${file}`);
+    put(`docs/site/public/hero/${file}`, bytes);
+    images.push({ file, scene: "hero", assetGroup: "hero", capture: "desktop-hero", sha256: hash(bytes),
+      width: 2664, height: 1904, sourceViewport: DESKTOP_HERO_VIEWPORT, captureSource: key,
+      frame: { padding: 24, border: 1, radius: 20, theme: file.endsWith("-dark.webp") ? "dark" : "light" } });
+  }
+  put("docs/site/public/hero/desktop-capture.json", JSON.stringify({ capturedAt: "historical", purpose: "Original restored capture" }));
   const manifest = { ...source, sourceMode: "committed", captureSources: { [key]: source }, images };
   const manifestPath = "docs/site/public/product/capture-manifest.json";
   put(manifestPath, JSON.stringify(manifest));
   put("docs/site/public/product/demo-check.json", JSON.stringify({ ...source, status: "passed", mode: "private-source-build", chapters: ["intro"] }));
   const check = () => checkCaptures(root, { scenes: ["plan"], chapterIds: ["intro"] });
   return { root, put, git, source, manifest, manifestPath, check };
+}
+
+function capturedShape(file) {
+  const phone = file.includes("-phone-"), theme = file.endsWith("-dark.webp") ? "dark" : "light";
+  const shape = { width: 100, height: 100, frame: { padding: phone ? 12 : 24, border: 1, radius: phone ? 16 : 20, theme } };
+  if (DESKTOP_HERO_FILES.includes(file)) return { ...shape, assetGroup: "hero", scene: "hero", capture: "desktop-hero",
+    width: 2664, height: 1904, sourceViewport: DESKTOP_HERO_VIEWPORT };
+  if (HERO_FILES.includes(file)) return { ...shape, assetGroup: "hero", frame: { kind: "consumer", padding: 12, theme } };
+  return shape;
 }
 
 function capturedBatch(f, scenes) {
@@ -81,20 +98,68 @@ function capturedBatch(f, scenes) {
   const images = new Map(manifest.images.map(image => [image.file, image]));
   for (const scene of scenes) for (const file of sceneFiles(scene)) {
     const bytes = Buffer.from(`Refreshed fixture ${file}`);
-    const hero = HERO_FILES.includes(file), phone = file.includes("-phone-");
-    f.put(`docs/site/public/${hero ? "hero" : "product"}/${file}`, bytes);
-    images.set(file, { file, sha256: hash(bytes), width: 100, height: 100, captureSource: key,
-      ...(hero ? { assetGroup: "hero" } : {}),
-      frame: hero ? { kind: "consumer", padding: 12, theme: file.endsWith("-dark.webp") ? "dark" : "light" }
-        : { padding: phone ? 12 : 24, border: 1, radius: phone ? 16 : 20, theme: file.endsWith("-dark.webp") ? "dark" : "light" } });
+    const shape = capturedShape(file);
+    f.put(`docs/site/public/${shape.assetGroup ?? "product"}/${file}`, bytes);
+    images.set(file, { file, sha256: hash(bytes), captureSource: key, ...shape });
   }
   f.put(f.manifestPath, JSON.stringify({ ...manifest, images: [...images.values()] }));
 }
 
 describe("release media freshness", () => {
+  it("catalogues the desktop Hero independently from the tour and phone consumer", () => {
+    expect(captureFiles("hero")).toEqual(DESKTOP_HERO_FILES);
+    expect(sceneFiles("plan").filter(file => DESKTOP_HERO_FILES.includes(file))).toEqual([]);
+    const files = CAPTURE_SCENES.flatMap(sceneFiles);
+    expect(new Set(files).size).toBe(files.length);
+    expect(files).toEqual(expect.arrayContaining([...DESKTOP_HERO_FILES, ...HERO_FILES]));
+    expect(DESKTOP_HERO_VIEWPORT).toEqual({ width: 1280, height: 900 });
+  });
+
+  it("rejects corrupted desktop Hero bytes separately from a current Plan tour", () => {
+    const f = fixture();
+    expect(checkCaptures(f.root, { scenes: ["hero"], chapterIds: ["intro"] }).ok).toBe(true);
+    f.put("docs/site/public/hero/plan-desktop-dark.webp", "corrupted desktop Hero");
+    const checked = checkCaptures(f.root, { scenes: ["hero"], chapterIds: ["intro"] });
+    expect(checked.issues).toContainEqual(expect.objectContaining({ kind: "asset-bytes", file: "plan-desktop-dark.webp" }));
+    expect(checked.staleScenes).toEqual(["hero"]);
+    expect(f.check().ok).toBe(true);
+  });
+
+  it.each(["scene", "viewport", "padding", "producer"])("rejects an invalid desktop Hero %s", kind => {
+    const f = fixture();
+    const image = f.manifest.images.find(image => image.file === DESKTOP_HERO_FILES[0]);
+    if (kind === "scene") image.scene = "plan";
+    if (kind === "viewport") image.sourceViewport = { width: 1280, height: 780 };
+    if (kind === "padding") image.frame.padding = 12;
+    if (kind === "producer") image.captureSource = "missing-producer";
+    f.put(f.manifestPath, JSON.stringify(f.manifest));
+    expect(checkCaptures(f.root, { scenes: ["hero"], chapterIds: ["intro"] }).ok).toBe(false);
+  });
+
+  it("refreshes the Plan tour without altering desktop Hero bytes or historical provenance", async () => {
+    const f = fixture();
+    const path = "docs/site/public/hero/desktop-capture.json";
+    const historical = readFileSync(join(f.root, path));
+    const desktop = DESKTOP_HERO_FILES.map(file => readFileSync(join(f.root, "docs/site/public/hero", file)));
+    const receipts = f.manifest.images.filter(image => DESKTOP_HERO_FILES.includes(image.file));
+    f.put("docs/site/public/product/plan-light.webp", "stale tour");
+    const calls = [];
+    const result = await refreshCaptures(f.root, (_file, args) => {
+      calls.push(args[1]); capturedBatch(f, args[1].split(","));
+    }, { scenes: ["plan"], chapterIds: ["intro"] });
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(["plan"]);
+    for (const [index, file] of DESKTOP_HERO_FILES.entries())
+      expect(readFileSync(join(f.root, "docs/site/public/hero", file))).toEqual(desktop[index]);
+    const published = JSON.parse(readFileSync(join(f.root, f.manifestPath), "utf8"));
+    expect(published.images.filter(image => DESKTOP_HERO_FILES.includes(image.file))).toEqual(receipts);
+    expect(readFileSync(join(f.root, path))).toEqual(historical);
+  });
+
   it("refreshes all scenes in sequential four-scene child cohorts and retains per-image provenance", async () => {
     const f = fixture();
     rmSync(join(f.root, "docs/site/public/product/plan-light.webp"));
+    rmSync(join(f.root, "docs/site/public/hero/plan-desktop-light.webp"));
     const calls = [];
     let active = 0, peak = 0;
     const result = await refreshCaptures(f.root, async (file, args) => {
@@ -107,7 +172,7 @@ describe("release media freshness", () => {
       capturedBatch(f, scenes);
       active--;
     }, { chapterIds: ["intro"] });
-    expect(calls).toEqual(Array.from({ length: 5 }, (_, at) => CAPTURE_SCENES.slice(at * 4, at * 4 + 4)));
+    expect(calls).toEqual(Array.from({ length: Math.ceil(CAPTURE_SCENES.length / 4) }, (_, at) => CAPTURE_SCENES.slice(at * 4, at * 4 + 4)));
     expect(calls.flat()).toEqual(CAPTURE_SCENES);
     expect(peak).toBe(1);
     expect(result.ok).toBe(true);
@@ -119,6 +184,7 @@ describe("release media freshness", () => {
   it("stops before later cohorts when a capture child fails", async () => {
     const f = fixture();
     rmSync(join(f.root, "docs/site/public/product/plan-light.webp"));
+    rmSync(join(f.root, "docs/site/public/hero/plan-desktop-light.webp"));
     const calls = [];
     await expect(refreshCaptures(f.root, async (_file, args) => {
       calls.push(args[1].split(","));

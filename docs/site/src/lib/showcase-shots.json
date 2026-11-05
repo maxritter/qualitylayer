@@ -1,0 +1,20 @@
+{
+  "public/product/discuss-light.webp": "ecbc962813500bc014cb0bb9b4b7cbb62542c5e46b58f51b1502cc4ec7c2530b",
+  "public/product/discuss-dark.webp": "0b93fe4be15470ff3cb7c23ad57863909e86e35f4218066594e9a813b2f39c6e",
+  "public/product/research-light.webp": "1f501aadfe3222c3c1443bb13a995605fcd1894a1a88c3a23009341badcc6bbe",
+  "public/product/research-dark.webp": "81278e83dae0fac11578a35731d4af903405f835f5ca215bf57df6ac4a3efe96",
+  "public/hero/plan-desktop-light.webp": "7d63912f00d710f9ba318ea8ef3f929defc652bfea908b96c8bbfb39b1cfe85c",
+  "public/hero/plan-desktop-dark.webp": "e7259cf59d844f8c31eb70c10034edf46d75a0377576b11eb813291030228a61",
+  "public/product/outline-light.webp": "700331655bdde15dd328e5a3c30ddd142101c843e653f47d30a8e1c580480490",
+  "public/product/outline-dark.webp": "3ce6d46aaaa1b0a750ed8c7f9d6a0fdf812a248f954bc7d571709106f23d7ec7",
+  "public/product/implement-light.webp": "4f370f0a60bad6be09169513d85b6d5350bf8e6ce6cdd786d92c3e1628e2d9c3",
+  "public/product/implement-dark.webp": "5feee27b314a2ab4a8aa8b8055d802a65c208981f362d01b4b409428dc586a6b",
+  "public/product/verify-light.webp": "6c2d3ca8b880563c7e63dcb0f8310eafdcde94bbe064e58d44766b7ee1c542a0",
+  "public/product/verify-dark.webp": "ed1039ccb9c951dc5cfb5a355da0ff23528bc4a09344f800b15e348fb936446d",
+  "public/product/review-light.webp": "806cfda3e07a589e9f28438cfd5eabc1ee11afcbd30894f5027e9d5868ef362d",
+  "public/product/review-dark.webp": "225f3e57fec47adfb13400bbd52722ba7ebfedb51c23309e0c835abcfebe1b2a",
+  "public/product/review-approved-light.webp": "46ff30df9b9773afc8b141cda231cafe5e030d00c3162f8fe6eae3c177c7764d",
+  "public/product/review-approved-dark.webp": "f3466487a7cc0122d8495449660d3145f1352a41e0862ccc142b0214a007be7e",
+  "public/product/pull-request-light.webp": "a1b914f6ff6e0da37e18b462fc291a566f77ec9c7ba46c72fc5da41ed3437a83",
+  "public/product/pull-request-dark.webp": "f5cac448d4d409c9225b1af8798c0eb96f761b0e8dfff1b8d6764ff97438c86e"
+}

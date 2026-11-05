@@ -67,7 +67,10 @@
 .ax-tab span{font-size:15px;line-height:1.4;color:var(--mx-ink2)}
 @media(hover:hover){.ax-tab:hover{background:color-mix(in srgb,var(--mx-panel) 60%,transparent)}}
 .ax-tab[aria-selected="true"]{border-color:var(--mx-line2);background:var(--mx-panel);box-shadow:0 1px 2px rgb(0 0 0 / 4%)}
-.ax-tab[aria-selected="true"] .ax-mark{background:var(--mx-ink);color:var(--mx-page)}
+/* Each extra in its meaning colour, as the stations and the tour: the person's in amber, an agent's in blue */
+.ax-tab[data-who] .ax-mark{background:color-mix(in srgb,var(--hue) 12%,var(--mx-panel));color:var(--ink)}
+.ax-tab[data-who][aria-selected="true"]{border-color:color-mix(in srgb,var(--hue) 45%,var(--mx-line2));background:color-mix(in srgb,var(--hue) 6%,var(--mx-panel))}
+.ax-tab[data-who][aria-selected="true"] .ax-mark{background:var(--hue);color:var(--on)}
 .ax-tab:focus-visible{outline:2px solid var(--ql-accent);outline-offset:2px}
 .ax-panel{display:contents}
 .ax-detail{grid-column:1;grid-row:2;margin:20px 12px 0;padding-top:20px;border-top:1px solid var(--mx-line)}

@@ -7,7 +7,7 @@ import PricingSection from "@/components/PricingSection";
 import { BANNED_WORDS } from "@/lib/banned-words";
 import { FAQS, PRICING_FAQS } from "@/lib/content";
 import { COMPARE, PLANS } from "@/lib/pricing";
-import { CHAT_GUIDANCE, DESCRIPTION, ENGINEER_QUOTE } from "@/lib/product";
+import { CHAT_GUIDANCE, DESCRIPTION, ENGINEER_QUOTE, LEDE_AGENTS, LEDE_LEAD, LEDE_REST } from "@/lib/product";
 import { DownloadView } from "./Download";
 import { readFileSync } from "node:fs";
 
@@ -23,7 +23,11 @@ async function textOf(node: React.ReactNode): Promise<string> {
 describe("the site's copy", () => {
   it("summarizes visual planning and checked implementation with the current artifact name", async () => {
     const hero = await textOf(<Hero />);
+    // The hero names one agent after another; screen readers and search read the sentence whole.
+    expect(DESCRIPTION).toBe(`${LEDE_LEAD} ${LEDE_AGENTS}. ${LEDE_REST}`);
     expect(hero).toContain(DESCRIPTION);
+    expect(hero).toContain(LEDE_LEAD);
+    expect(hero).toContain(LEDE_REST);
   });
 
   it("uses the glossary, not the App's internal words, on the home page, download page and pricing page", async () => {

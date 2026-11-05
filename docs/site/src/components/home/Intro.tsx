@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, MessageC
 import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
 import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
+import { SHOWN_AGENTS } from "@/lib/shown-agents";
 import { Component, lazy, Suspense, type ReactNode } from "react";
 
 const ChangeMapDemo = lazy(() => import("./ChangeMapDemo"));
@@ -21,17 +22,6 @@ class MapGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
 
 type Chip = [label: string, icon: string];
 
-/** The eight agents the grid shows, most used first: two columns, so an even count. */
-const SHOWN: [label: string, agent: NativeAgent][] = [
-  ["Claude Code", "claude-code"],
-  ["Codex", "codex"],
-  ["Cursor", "cursor"],
-  ["Antigravity", "antigravity"],
-  ["Pi", "pi"],
-  ["OpenCode", "opencode"],
-  ["Grok", "grok"],
-  ["GitHub Copilot", "copilot"],
-];
 
 /** An agent's own logo, drawn as the App's AgentMark draws it; only the drawings are imported, not the agent registry. */
 const Logo = ({ agent }: { agent: NativeAgent }) => {
@@ -160,7 +150,7 @@ export default function Intro() {
           <p className="mx-lead">Work in the App, browser, terminal or IDE. <a href="/docs/agents/other">The CLI connects other agents.</a></p>
         </div>
         <ul className="mx-withg">
-          {SHOWN.map(([label, agent]) => (
+          {SHOWN_AGENTS.map(([label, agent]) => (
             <li key={label} className="mx-wi" data-agent={agent}><Logo agent={agent} /><b>{label}</b></li>
           ))}
         </ul>
@@ -171,7 +161,7 @@ export default function Intro() {
         <div className="mx-mq">
           <div className="mx-mqt">
             <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
-            <p className="mx-lead">Choose models for building and independent review.</p>
+            <p className="mx-lead">Sign in with the subscription you have or use an API key. Choose models for building and independent review.</p>
           </div>
           <div className="mx-mqr">
             <p className="w7-sr">Models: {MODELS.filter(([, icon]) => icon === "cpu").map(([label]) => label).join(", ")}, through {AGENTS.slice(0, -1).map(([label]) => label).join(", ")} and {AGENTS[AGENTS.length - 1][0]}. {SETUPS.map(([label]) => label).join(". ")}.</p>

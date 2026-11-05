@@ -249,7 +249,9 @@ jobs:
           printf '%s\n' 'Plaintext guard' 'Site API and pages' > "$required"
           printf '%s\n' 'Release smoke (ubuntu-latest)' 'Release smoke (macos-26)' >> "$required"
           for os in ubuntu-latest macos-26; do
-            printf 'No text overflows a control (%s)\n' "$os" >> "$required"
+            for overflow_shard in 1 2; do
+              printf 'No text overflows a control (%s, shard %s/2)\n' "$os" "$overflow_shard" >> "$required"
+            done
           done
           for shard in 1 2 3 4 5 6; do
             printf 'Native Windows runtime (windows-2025, shard %s/6)\n' "$shard" >> "$required"

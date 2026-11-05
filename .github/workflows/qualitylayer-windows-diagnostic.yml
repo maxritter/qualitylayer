@@ -1,0 +1,49 @@
+name: QualityLayer Windows Boolean diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualitylayer-windows-boolean-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boolean-undo:
+    name: Windows PowerShell 5.1 Boolean undo diagnostic
+    runs-on: windows-2025
+    timeout-minutes: 8
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Preserve encrypted checkout bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Exercise all 75 native Boolean safety cases
+        working-directory: qualitylayer
+        run: bun run test tests/windows/uninstall-ps1.test.ts -t 'native Boolean undo \(Windows PowerShell5\.1\)'
+      - name: Keep isolated diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-boolean-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: qualitylayer/dist/test-runs/*.log
+          retention-days: 7
+          if-no-files-found: warn

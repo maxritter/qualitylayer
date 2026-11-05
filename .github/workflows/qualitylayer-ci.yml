@@ -184,9 +184,9 @@ jobs:
           QUALITYLAYER_TEST_ALLOW_LEAKS: "0"
         run: bun run test --all --shard ${{ matrix.shard }}/${{ matrix.shards }}
 
-  # Once per system, not once per test shard: the demo is the same in every shard.
+  # Two disjoint dimension shards per system retain the full demonstration coverage.
   overflow:
-    name: No text overflows a control (${{ matrix.os }})
+    name: No text overflows a control (${{ matrix.os }}, shard ${{ matrix.shard }}/2)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: plaintext-guard
@@ -194,6 +194,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-26]
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -222,14 +223,14 @@ jobs:
 
       # Every Cockpit view of the demo, at three widths, in Chrome: no text spills out of a
       # button, tab, badge or menu item. The self-test first proves the check still catches one.
-      # The six width cases crawl in three tabs at once (about three times faster than one by one).
+      # Each shard crawls three disjoint width/sidebar cases in three tabs; their union keeps all six.
       - name: No text overflows a control
         working-directory: qualitylayer
         env:
           QUALITYLAYER_OVERFLOW_TABS: "3"
         run: |
           bun scripts/check-overflow.ts --self-test --require-render
-          bun run check:overflow -- --require-render
+          bun run check:overflow -- --require-render --shard ${{ matrix.shard }}/2
 
   site:
     name: Site API and pages

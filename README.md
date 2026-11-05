@@ -30,8 +30,8 @@ Work side by side in the App or browser, or use your favourite terminal or IDE.
 <a href="https://youtu.be/p1m4O4xRsrQ"><img src="docs/img/watch-the-film.svg" alt="Watch the film on YouTube, 5:20" width="208" height="44"></a>&nbsp;<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Inside QualityLayer, a 27-minute deep dive" width="258" height="44"></a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026110502.webp">
-  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026110502.webp" alt="The QualityLayer App: you pick the recommended answer to a Plan decision beside its diagram, then approve the finished change and open its pull request" width="804">
+  <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026110504.webp">
+  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026110504.webp" alt="The QualityLayer App: you pick the recommended answer to a Plan decision beside its diagram, then approve the finished change and open its pull request" width="804">
 </picture>
 
 <sub>All seven steps play on [qualitylayer.dev](https://qualitylayer.dev). Try it yourself: [the App demo in your browser](https://qualitylayer.dev/app-demo/?story&guide), nothing to install.</sub>

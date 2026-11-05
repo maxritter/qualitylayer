@@ -129,6 +129,7 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 | **Text size** | 90%, 100% (default), 115% or 130% for the installed App window. ⌘+/⌘− resize; ⌘0 resets (Ctrl on Windows/Linux). A browser tab uses its own zoom |
 | **Font** | Geist (default), System or Atkinson Hyperlegible. Code, paths and the agent terminal keep their own fonts |
 | **Show agent sessions as** | **Conversation** or **Terminal** for new sessions |
+| **Messages while working** | In **Agent controls › Appearance…**: **Steer at next step** (default) or **Queue until the turn ends**; unsupported agents queue without interrupting |
 | **Task rows** | Detailed, Two lines or One line |
 | **Agent terminal** | **Font size** and **Colours** stay in view; **More terminal settings** holds font, weight, spacing, cursor and scrollback. **Reset to recommended** restores defaults |
 

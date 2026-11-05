@@ -305,12 +305,155 @@ function Remove-QlOneHook([string]$t, [string[]]$EventsPath) {
 }
 
 # ---- Undoing one recorded setting ------------------------------------------------------------
-function Undo-QlJsonSetting([string]$t, $Record) {
+# The native-default descriptor mirror is checked against native-defaults.ts by the test suite.
+function Test-QlNativeBooleanRecord($Record, [string]$ClaudeSettings) {
+    if ($Record -isnot [pscustomobject] -or $Record.key -isnot [pscustomobject] -or $Record.id -isnot [string] -or $Record.file -isnot [string]) { return $false }
+    if ($Record.key.format -cne 'json' -or $Record.key.path -isnot [array] -or $Record.key.value -isnot [bool] -or [string]::IsNullOrWhiteSpace($ClaudeSettings)) { return $false }
+    foreach ($extra in @('member', 'hook', 'match')) {
+        if ($null -ne $Record.key.PSObject.Properties[$extra]) { return $false }
+    }
+    if (-not [IO.Path]::IsPathRooted([string]$Record.file)) { return $false }
+    try {
+        $comparison = if ($qlWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        if (-not [string]::Equals([IO.Path]::GetFullPath([string]$Record.file), [IO.Path]::GetFullPath($ClaudeSettings), $comparison)) { return $false }
+    } catch { return $false }
+    $definitions = @'
+[
+  {
+    "id": "claude-code:task-list",
+    "path": [
+      "env",
+      "CLAUDE_CODE_ENABLE_TODO_TOOLS"
+    ],
+    "value": "1"
+  },
+  {
+    "id": "claude-code:task-format",
+    "path": [
+      "env",
+      "CLAUDE_CODE_ENABLE_TASKS"
+    ],
+    "value": "1"
+  },
+  {
+    "id": "claude-code:permission-default",
+    "path": [
+      "permissions",
+      "defaultMode"
+    ],
+    "value": "bypassPermissions"
+  },
+  {
+    "id": "claude-code:bypass-confirmation",
+    "path": [
+      "skipDangerousModePermissionPrompt"
+    ],
+    "value": true
+  },
+  {
+    "id": "claude-code:attribution-commit",
+    "path": [
+      "attribution",
+      "commit"
+    ],
+    "value": ""
+  },
+  {
+    "id": "claude-code:attribution-pr",
+    "path": [
+      "attribution",
+      "pr"
+    ],
+    "value": ""
+  },
+  {
+    "id": "claude-code:git-instructions",
+    "path": [
+      "includeGitInstructions"
+    ],
+    "value": false
+  },
+  {
+    "id": "claude-code:output-style",
+    "path": [
+      "outputStyle"
+    ],
+    "value": "Concise"
+  },
+  {
+    "id": "claude-code:thinking-summaries",
+    "path": [
+      "showThinkingSummaries"
+    ],
+    "value": true
+  },
+  {
+    "id": "claude-code:reduced-motion",
+    "path": [
+      "prefersReducedMotion"
+    ],
+    "value": true
+  },
+  {
+    "id": "claude-code:auto-dream",
+    "path": [
+      "autoDreamEnabled"
+    ],
+    "value": true
+  },
+  {
+    "id": "claude-code:no-flicker",
+    "path": [
+      "env",
+      "CLAUDE_CODE_NO_FLICKER"
+    ],
+    "value": "true"
+  },
+  {
+    "id": "claude-code:tool-search",
+    "path": [
+      "env",
+      "ENABLE_TOOL_SEARCH"
+    ],
+    "value": "true"
+  },
+  {
+    "id": "claude-code:task-reminders",
+    "path": [
+      "env",
+      "CLAUDE_CODE_TODO_REMINDER_MODE"
+    ],
+    "value": "baseline"
+  },
+  {
+    "id": "claude-code:stop-hook-cap",
+    "path": [
+      "env",
+      "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"
+    ],
+    "value": "3"
+  }
+]
+'@ | ConvertFrom-Json
+    $definition = @($definitions | Where-Object { [string]$_.id -ceq [string]$Record.id })
+    if ($definition.Count -ne 1 -or $definition[0].value -isnot [bool]) { return $false }
+    $expected = $definition[0]
+    $path = @($Record.key.path)
+    if ($path.Count -ne @($expected.path).Count) { return $false }
+    for ($i = 0; $i -lt $path.Count; $i++) {
+        if ($path[$i] -isnot [string] -or $path[$i] -cne $expected.path[$i]) { return $false }
+    }
+    return $Record.key.value -ceq $expected.value
+}
+
+function Undo-QlJsonSetting([string]$t, $Record, [string]$ClaudeSettings = '') {
     $path = @($Record.key.path)
     $node = Get-QlNode $t $path
     if ($null -eq $node) { return @{ Text = $t; Done = $false } }
     $token = $t.Substring($node.ValueStart, $node.End - $node.ValueStart)
     $current = if ($token.StartsWith('"')) { Convert-QlJsonString $token } else { $null }
+    $isNativeBoolean = $Record.key.value -is [bool]
+    if ($isNativeBoolean -and -not (Test-QlNativeBooleanRecord $Record $ClaudeSettings)) { return @{ Text = $t; Done = $false } }
     $hasMember = ($null -ne $Record.key.PSObject.Properties['member'])
     $remove = $false
     $replacement = $null
@@ -326,7 +469,10 @@ function Undo-QlJsonSetting([string]$t, $Record) {
         if (-not $found) { return @{ Text = $t; Done = $false } }
         if ($left.Count -eq 0) { $remove = $true } else { $replacement = ConvertTo-QlJsonString ($left -join $separator) }
     } else {
-        if ($null -eq $current -or $current -cne [string]$Record.key.value) { return @{ Text = $t; Done = $false } }
+        if ($isNativeBoolean) {
+            $expectedToken = if ($Record.key.value) { 'true' } else { 'false' }
+            if ($token -cne $expectedToken) { return @{ Text = $t; Done = $false } }
+        } elseif ($null -eq $current -or $current -cne [string]$Record.key.value) { return @{ Text = $t; Done = $false } }
         if ($null -eq $Record.previous -or $Record.obsolete -eq $true) {
             $remove = $true
         } elseif ($Record.previous -is [string]) {
@@ -523,7 +669,7 @@ function Invoke-QlUninstall {
                 for ($r = $mine.Count - 1; $r -ge 0; $r--) {
                     $record = $mine[$r]
                     if ($record.key.format -ne 'json' -or $null -ne $record.key.PSObject.Properties['hook']) { continue }
-                    $result = Undo-QlJsonSetting $text $record
+                    $result = Undo-QlJsonSetting $text $record (Join-Path $claudeRoot 'settings.json')
                     if ($result.Done) { $text = $result.Text; $undone += [string]$record.id }
                     else { Write-QlLine "  Left as it is (changed since install): $($record.id)" }
                 }

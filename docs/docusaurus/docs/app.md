@@ -103,7 +103,7 @@ When you start a task or the build, choose where the agent runs:
 
 Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 
-**Conversation** folds finished turns to one line; **Terminal** shows the local program and is omitted from shared tasks. Below the message box are activity, model, effort, [permissions](agents/native.md#permission-modes), pacing and context; each control opens its own details. In **Agent controls › Appearance…**, set thinking to hidden, collapsed (default) or expanded. **Messages while working** defaults to **Steer at next step** where the agent supports it; otherwise it queues without interrupting. Choose **Queue until the turn ends** to wait instead. Queued words and attachments stay when you switch views.
+**Conversation** folds finished turns to one line; **Terminal** shows the local program and is omitted from shared tasks. Below the message box are activity, model, effort, [permissions](agents/native.md#permission-modes), pacing and context; each control opens its own details. In **Agent controls › Appearance…**, set thinking to hidden, collapsed (default) or expanded. **Messages while working** defaults to **Steer at next step** where the agent supports it; otherwise it queues without interrupting. Choose **Queue until the turn ends** to wait instead. Paste or drop images, PDFs and text files in either view. Conversation shows image previews and file cards; queued messages stay when you switch views.
 
 ## In Claude Code
 

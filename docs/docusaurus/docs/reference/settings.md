@@ -14,6 +14,8 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | --- | --- |
 | **New tasks** | **Engineering** (default) or **Product** ([two levels](../intro.md#two-levels)); change per task until the Plan is approved |
 | [Your instructions](#instructions) | Standing instructions for every task |
+| **Answer questions in** · **Approve in** | **App** or **Your agent**, for tasks you start in an agent; unset until you choose here or your first such task asks ([guide](../work-in-your-agent.md#where)) |
+| **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
 | [Independent review](#independent-review) | A switch: on (recommended) or off |
 | [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed |
 | **Design review** | A switch: on (default), a separate agent checks each finished design before you see it. Wireframes are never reviewed |
@@ -75,6 +77,7 @@ Setup adds each of these only when it is missing, next to QualityLayer's own hoo
 | **Claude Code** display | Concise replies, thinking summaries, reduced motion, flicker-free screen |
 | **Claude Code** tools | Task tools, tool search, baseline task reminders, memory consolidation where Claude makes it available, at most 3 Stop-hook continuations in a row, High effort |
 | **Codex** | Full access when no permission policy is set, High effort for the session and subagents, the model's largest context window, questions in Terminal mode |
+| **Grok** | Questions wait for your answer instead of expiring after 30 minutes |
 
 ## Models {#models}
 

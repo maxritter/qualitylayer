@@ -34,12 +34,13 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Terminal mode
 
-“Using QualityLayer in the terminal, plan a CSV export” keeps questions and approvals in your agent's chat. Only your own picks or words count.
+“Using QualityLayer in the terminal, plan a CSV export” keeps questions and approvals in your agent's chat. Only your own picks or words count ([Work only in your agent](../work-in-your-agent.md)).
 
 | Command | What it does |
 | --- | --- |
-| `task set answers=terminal\|app` | Where you answer for the current task |
-| `settings set answers terminal` | The default for new tasks |
+| `task set answers=terminal\|app` · `approvals=terminal\|app` | Where you answer and approve for the current task |
+| `settings set answers terminal` · `settings set approvals terminal` | Where tasks you start in your agent answer and approve |
+| `settings set offerWorkflow false` | Your agent no longer offers QualityLayer when you ask it to plan |
 | `read 03-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
 | `plan export --out <folder>` | Export the Plan, `01-discuss.md` and pictures; report any picture that could not be made |
 

@@ -59,7 +59,7 @@ The **Conversation** view reads each agent's session record ([controls](../app.m
 | Cursor | Thinking, tool output, token counts, context fill, permission questions |
 | GitHub Copilot | Permission questions |
 
-Permission waits show in Conversation. For Terminal-only replies, the App opens Terminal and offers **Open Terminal**. Cursor, Grok and Antigravity receive numbered workflow questions. After a crash, stop the old run and ask “Using QL, continue verification of task retry-webhooks.”
+Permission waits show in Conversation. For Terminal-only replies, the App opens Terminal and offers **Open Terminal**. Cursor receives numbered workflow questions; the others ask in their own picker ([Work only in your agent](../work-in-your-agent.md#pickers)). After a crash, stop the old run and ask “Using QL, continue verification of task retry-webhooks.”
 
 ### Permission modes {#permission-modes}
 

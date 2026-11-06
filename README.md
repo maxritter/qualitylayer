@@ -10,7 +10,7 @@
 ## The software factory with you in the loop
 
 **Plan each change visually, then let your agents build and verify it.**<br>
-Work side by side in the App or browser, or use your favourite terminal or IDE.
+Work side by side in the App or browser, or do every step from your favourite terminal or IDE.
 
 <a href="https://github.com/maxritter/qualitylayer"><img src="https://img.shields.io/github/stars/maxritter/qualitylayer?style=flat&amp;color=9d6607&amp;labelColor=30363d" alt="Stars"></a>
 <a href="https://star-history.com/#maxritter/qualitylayer&amp;Date"><img src="https://img.shields.io/badge/Star_History-chart-6f4fc2?labelColor=30363d" alt="Star History"></a>
@@ -115,7 +115,7 @@ Plan retries for failed webhooks and stop after a few tries.
 | Where you work | How to start |
 | --- | --- |
 | **App or browser** | Choose **In the App** to keep the agent beside the task. |
-| **Your terminal or IDE** | Choose **In my terminal** to copy the request, or ask there: “Using QualityLayer, plan retries for failed webhooks.” |
+| **Your terminal or IDE** | Choose **In my terminal** to copy the request, or ask there: “Using QualityLayer, plan retries for failed webhooks.” You can [answer and approve there too](https://qualitylayer.dev/docs/work-in-your-agent). |
 | **Another agent** | Agents that run shell commands can use the CLI. [Supported agents](https://qualitylayer.dev/docs/agents/native). |
 
 At Plan approval, continue with your planner or choose another agent or session. Outside the App, ask: “Using QL, continue task retry-webhooks.”

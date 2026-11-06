@@ -12,7 +12,7 @@ description: Use QualityLayer with any coding agent that runs shell commands, in
 
 1. In the agent's terminal, run `qualitylayer help`. Nothing listed? Run `qualitylayer doctor`.
 2. Tell your agent “Using QualityLayer, plan a CSV export without the App.”
-3. Continue in your agent. It follows the same workflow and saves the documents on disk.
+3. Continue in your agent. It follows the same workflow, asks with [numbered choices](../work-in-your-agent.md#pickers) and saves the documents on disk.
 
 ## Plan with one agent, build with another {#mix}
 

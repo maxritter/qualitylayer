@@ -16,7 +16,7 @@ On Windows, you can also run `irm https://qualitylayer.dev/install.ps1 | iex` in
 
 ## Agent setup {#agent-setup}
 
-Setup adds missing Claude Code and Codex settings, such as native task tools and commits without attribution ([full list](reference/settings.md#what-setup-sets)). Settings you chose stay.
+Setup adds missing Claude Code, Codex and Grok settings, such as native task tools, commits without attribution and questions that wait for you ([full list](reference/settings.md#what-setup-sets)). Settings you chose stay.
 
 If you have not chosen native permissions, Claude Code starts in **Bypass** and Codex in **Full access**, including outside QualityLayer. Existing permission settings and saved QualityLayer launch choices stay. Choose another mode in **Settings › Agents › Edit launch…** or in the agent itself.
 
@@ -29,7 +29,7 @@ If you have not chosen native permissions, Claude Code starts in **Bypass** and 
 ![Install QualityLayer where your agent runs, in a dev container, WSL2 or on a server. Its pages open in the browser on your computer through one forwarded port](pathname:///img/diagrams/remote-light.svg)
 ![Install QualityLayer where your agent runs, in a dev container, WSL2 or on a server. Its pages open in the browser on your computer through one forwarded port](pathname:///img/diagrams/remote-dark.svg)
 
-Install QualityLayer where your agent runs; no App is needed there.
+Install QualityLayer where your agent runs; no App is needed there, and you can [work only in your agent](work-in-your-agent.md).
 
 ```bash
 curl -fsSL https://qualitylayer.dev/install.sh | bash

@@ -28,7 +28,7 @@ describe("illustrations in both themes", () => {
     const deepDive = new RegExp(`<a href="${SITE_URL}${DEEP_DIVE.href}"><img src="docs/img/inside-qualitylayer-deep-dive.svg"[^>]*></a>`);
     expect(markdown).toMatch(deepDive);
     expect(existsSync(resolve(root, "docs/img/inside-qualitylayer-deep-dive.svg"))).toBe(true);
-    expect(markdown, "the walkthrough caption opens the App demo").toContain(`[the App demo in your browser](${SITE_URL}/app-demo/?story&guide)`);
+    expect(markdown, "the walkthrough caption opens the App demo").toContain(`[try the demo](${SITE_URL}/app-demo/?story&guide) in your browser`);
     // The walkthrough lives in the media bucket, versioned, under GitHub's 5 MB limit for images it proxies.
     expect(markdown).toMatch(/srcset="https:\/\/qualitylayer-media\.max-ritter\.workers\.dev\/readme-walkthrough-dark-v\d+\.webp"/);
     const standalone = markdown.replace(/<picture>[\s\S]*?<\/picture>/g, "")

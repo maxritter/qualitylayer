@@ -81,7 +81,13 @@ html{scroll-padding-top:76px}
 .sx-ctas{justify-content:flex-start;gap:12px;margin-top:28px}
 .sx-hero-copy .sx-ctas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .sx-hero-copy .sx-ctas>*{min-width:0;width:100%;padding-inline:12px}
-@container(max-width:640px){.sx-hero-copy .sx-ctas{grid-template-columns:1fr}}
+/* Phones: Download and Try the demo keep the full width; the film and the deep dive become one quiet row, so the product picture comes sooner. */
+@container(max-width:640px){
+  .sx-hero-copy .sx-ctas{gap:8px 10px}
+  .sx-hero-copy .sx-ctas>a:first-child,.sx-hero-copy .sx-ctas>a[aria-label^="Try the demo"]{grid-column:1 / -1}
+  .sx-hero-copy .sx-ctas>a[aria-label^="Try the demo"]{order:1}
+  .sx-hero-copy .sx-ctas>a[aria-label^="Watch the film"],.sx-hero-copy .sx-ctas>a[aria-label*="deep dive"]{order:2;min-height:40px;padding-inline:8px;border-color:transparent;background:transparent;box-shadow:none;font-size:14px}
+}
 .sx-meta{max-width:28.5rem;margin:14px 0 0;font-size:14px;color:var(--mx-ink3)}
 /* The hero line ends on the agent's name: one after another, each letter fading in, the underline sliding to the new width */
 .sx-lede .sx-lead{display:block;font-size:clamp(19px,1.6cqi,22px);line-height:1.4;font-weight:500;letter-spacing:-.015em;color:var(--mx-ink)}
@@ -207,18 +213,19 @@ html{scroll-padding-top:76px}
 
 
 /* ---- Shared section frame ---- */
-.mx-sec{padding-top:clamp(80px,11cqi,150px)}
+/* One distance above every section of a page: sections and the tour, the checks and Also in the App use it, so the rhythm never differs. */
+.w7-root{--mx-section-gap:clamp(80px,11cqi,150px)}
+.mx-sec{padding-top:var(--mx-section-gap)}
 .mx-wrap{max-width:1240px;margin:0 auto;padding:0 clamp(16px,3cqi,40px)}
-.mx-wrap.mx-sec{padding-top:clamp(80px,11cqi,150px)}
+.mx-wrap.mx-sec{padding-top:var(--mx-section-gap)}
 .mx-head{max-width:46rem}
 /* Heavy headings, as the hero's: the "Quality by design" voice of the home page */
 .mx-h2{margin:0;max-width:15em;font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
 .mx-lead{margin:18px 0 0;max-width:40rem;font-size:clamp(16px,1.25cqi,17px);line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
 
-/* Works with: the heading centred above eight agent tiles in one wide grid */
-.mx-with{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:40px}
-.mx-with>div:first-child{max-width:46rem;text-align:center}
-.mx-with .mx-h2,.mx-with .mx-lead{margin-inline:auto}
+/* Works with: the heading, left-aligned like every section head, above eight agent tiles in one wide grid */
+.mx-with{display:grid;grid-template-columns:minmax(0,1fr);justify-items:start;gap:40px}
+.mx-with>div:first-child{max-width:46rem}
 .mx-with .mx-h2{font-size:clamp(30px,3cqi,42px)}
 .mx-withg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;width:100%;margin:0;padding:0;list-style:none}
 .mx-wi{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;gap:16px;min-height:96px;padding:20px 22px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink)}
@@ -252,15 +259,12 @@ html{scroll-padding-top:76px}
 .mx-quotes .mx-quote blockquote p{font-size:clamp(22px,2cqi,28px);line-height:1.16}
 @container (max-width:740px){.mx-quotes{grid-template-columns:minmax(0,1fr);gap:40px}}
 
-/* Models: the heading beside two rows of chips drifting in opposite directions, faded at the edges */
+/* Models: the heading beside two still, wrapped rows of chips: the models, then the ways to set it up */
 .mx-mq{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:32px 64px;align-items:center}
 .mx-mqt .mx-h2{font-size:clamp(30px,3cqi,42px)}
 .mx-mqr{min-width:0}
-.mx-mqm{display:flex;flex-direction:column;gap:12px;overflow:hidden;-webkit-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
-.mx-track{display:flex;gap:12px;width:max-content;animation:mx-drift 60s linear infinite}
-.mx-track.rev{animation-direction:reverse;animation-duration:70s}
-.mx-mqm:hover .mx-track{animation-play-state:paused}
-@keyframes mx-drift{to{transform:translateX(calc(-50% - 6px))}}
+.mx-mqm{display:flex;flex-direction:column;gap:20px}
+.mx-chips{display:flex;flex-wrap:wrap;gap:12px;margin:0;padding:0;list-style:none}
 .mx-chip{display:inline-flex;align-items:center;gap:10px;height:50px;padding:0 18px;border:1px solid var(--mx-line2);border-radius:999px;background:var(--mx-panel);font-size:15.5px;letter-spacing:-.01em;color:var(--mx-ink);white-space:nowrap}
 .mx-mqn{margin:16px 0 0;font-size:13.5px;color:var(--mx-ink2)}
 .mx-ic{flex:none;display:inline-block;width:18px;height:18px;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
@@ -292,7 +296,7 @@ html{scroll-padding-top:76px}
 .mx-chain-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:12px}
 .mx-chain-chips span{padding:3px 8px;border-radius:4px;background:var(--mx-sunk);border:1px solid var(--mx-line);font-size:12.5px;font-weight:500;color:var(--mx-ink)}
 .mx-chain-arrow{position:absolute;top:50%;right:-32px;z-index:1;display:grid;place-items:center;width:28px;height:28px;margin-top:-14px;border-radius:50%;background:var(--mx-page);border:1px solid var(--mx-line2);color:var(--mx-ink2)}
-@media (prefers-reduced-motion:reduce){.mx-track{animation:none}.mx-stations:after{display:none;animation:none}.mx-station-tile{transition:none}.w7-root .mx-station:hover .mx-station-tile,.w7-root .mx-station:focus-visible .mx-station-tile{transform:none}}
+@media (prefers-reduced-motion:reduce){.mx-stations:after{display:none;animation:none}.mx-station-tile{transition:none}.w7-root .mx-station:hover .mx-station-tile,.w7-root .mx-station:focus-visible .mx-station-tile{transform:none}}
 
 /* ---- The tour, restyled: a quiet heading, square pills, a flatter window ---- */
 .sx-tour{max-width:1240px;margin-top:clamp(40px,6cqi,80px);--ql-panel-border:var(--mx-line2)}
@@ -310,7 +314,7 @@ html{scroll-padding-top:76px}
 /* The close-ups keep the App's own look (blue action, amber Your turn) inside the site's quiet frame. */
 
 /* ---- Questions: on the home page the heading takes the heavy voice ---- */
-#faq.w7-sec{border-top:0;padding-top:clamp(80px,11cqi,150px);padding-bottom:0}
+#faq.w7-sec{border-top:0;padding-top:var(--mx-section-gap);padding-bottom:0}
 .mx-home .w7-faq > .w7-h2{font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em}
 .mx-home .w7-faql [data-slot="accordion-trigger"]{font-size:17px;font-weight:700;letter-spacing:-.02em}
 

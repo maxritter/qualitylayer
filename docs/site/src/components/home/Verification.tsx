@@ -36,7 +36,7 @@ const LAYERS: { who: "check" | "agent"; id: string; title: string; lead: string;
 
 export default function Verification() {
   return (
-    <section id="verify" className="ed-section mx-wrap" aria-labelledby="vx-h">
+    <section id="checks" className="ed-section mx-wrap" aria-labelledby="vx-h">
       <div className="ed-head">
         <h2 id="vx-h">Checks and independent review</h2>
         <p>QualityLayer runs your project's checks and security scans. A separate agent reviews the change against your request.</p>

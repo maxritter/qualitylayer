@@ -62,20 +62,48 @@ it("lists the App features with their one line, moves with arrow keys, and Teams
   render(<MemoryRouter initialEntries={["/#team"]}><Editorial /></MemoryRouter>);
   const tabs = screen.getByRole("tablist", { name: "Also in the App" });
   expect(tabs.getAttribute("aria-orientation")).toBe("vertical");
-  expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector("b")?.textContent)).toEqual(["Memory", "Artifacts", "Team", "Home", "Settings"]);
+  expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector("b")?.textContent)).toEqual(["Home", "Team", "Artifacts", "Memory", "Settings"]);
   expect(feature(tabs, "Memory").textContent).toContain("Keep useful project lessons");
   const team = feature(tabs, "Team");
   expect(team.getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("tabpanel", { name: /^Team/ }).textContent).toContain("Teammates answer plan questions");
   expect(screen.getByRole("button", { name: "Enlarge Team" })).toBeTruthy();
   fireEvent.keyDown(team, { key: "ArrowDown" });
-  const home = feature(tabs, "Home");
-  expect(home.getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(home);
-  fireEvent.keyDown(home, { key: "ArrowUp" });
+  const artifacts = feature(tabs, "Artifacts");
+  expect(artifacts.getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(artifacts);
+  fireEvent.keyDown(artifacts, { key: "ArrowUp" });
   expect(team.getAttribute("aria-selected")).toBe("true");
-  fireEvent.keyDown(team, { key: "Home" });
-  expect(feature(tabs, "Memory").getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(team, { key: "End" });
+  expect(feature(tabs, "Settings").getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(feature(tabs, "Settings"), { key: "Home" });
+  expect(feature(tabs, "Home").getAttribute("aria-selected")).toBe("true");
+});
+
+it("opens Also in the App on Home, with a crop of the capture that Enlarge still opens whole", () => {
+  render(<MemoryRouter><Editorial /></MemoryRouter>);
+  const tabs = screen.getByRole("tablist", { name: "Also in the App" });
+  expect(feature(tabs, "Home").getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByText("See what needs you, try designs and work with your team.")).toBeTruthy();
+  const frame = screen.getByRole("button", { name: "Enlarge Home" });
+  expect(frame.style.getPropertyValue("--crop-w")).toBe("130.95%");
+  expect(frame.style.getPropertyValue("--crop-x")).toBe("-20%");
+  expect(frame.style.getPropertyValue("--crop-y")).toBe("-5.18%");
+  expect(frame.querySelector("img")?.getAttribute("src")).toMatch(/home-(light|dark)\.webp$/);
+});
+
+it("draws what the page puts between the tour and Also in the App in that place", () => {
+  const { container } = render(<MemoryRouter><Editorial between={<section id="between" />} /></MemoryRouter>);
+  const ids = [...container.querySelectorAll("section")].map((section) => section.id);
+  expect(ids).toEqual(["tour", "between", "extras"]);
+});
+
+it("keeps each id to one element: the Checks section does not share the tour's Verify tab id", async () => {
+  const { default: Verification } = await import("./Verification");
+  const { container } = render(<MemoryRouter><Editorial between={<Verification />} /></MemoryRouter>);
+  expect(container.querySelectorAll('[id="verify"]')).toHaveLength(1);
+  expect(container.querySelector("#verify")?.getAttribute("role")).toBe("tab");
+  expect(container.querySelector("section#checks")).toBeTruthy();
 });
 
 it("opens Artifacts from /#artifacts and links to its docs page", () => {

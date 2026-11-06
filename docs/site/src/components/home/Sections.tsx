@@ -4,7 +4,7 @@ import Questions from "@/components/Questions";
 import { useDownload } from "@/hooks/useDownload";
 import { FAQS } from "@/lib/content";
 import { BRAND_LINE } from "@/lib/product";
-import Intro from "./Intro";
+import Intro, { Principles } from "./Intro";
 import Editorial from "./Editorial";
 import Verification from "./Verification";
 
@@ -32,9 +32,9 @@ function Install() {
 export default function Sections() {
   return (
     <>
+      {/* One change from request to pull request first: the tour, the plan cards, the quotes, the checks, then Also in the App. Compatibility and setup follow. */}
+      <Editorial between={<><Principles /><Verification /></>} />
       <Intro />
-      <Verification />
-      <Editorial />
       <Questions faqs={FAQS} />
       <Install />
     </>

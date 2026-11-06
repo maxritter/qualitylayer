@@ -21,17 +21,6 @@ const Logo = ({ agent }: { agent: NativeAgent }) => {
   );
 };
 
-const AGENTS: Chip[] = [
-  ["Claude Code", "ast"],
-  ["Codex", "braces"],
-  ["Cursor", "code"],
-  ["Grok", "term"],
-  ["Antigravity", "term"],
-  ["Pi", "term"],
-  ["OpenCode", "term"],
-  ["GitHub Copilot", "term"],
-];
-
 const MODELS: Chip[] = [
   ["Opus 5.5", "cpu"],
   ["Sonnet 5.5", "cpu"],
@@ -40,7 +29,6 @@ const MODELS: Chip[] = [
   ["GPT-6.1 Sol", "cpu"],
   ["Grok 4.7", "cpu"],
   ["Gemini 3.8 Flash", "cpu"],
-  ...AGENTS,
 ];
 
 const SETUPS: Chip[] = [
@@ -53,7 +41,7 @@ const SETUPS: Chip[] = [
 
 /** Each card in the App's colours: blue for the agent's work, amber for your decision, violet for what agents checked. */
 const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: string; lead: string; text: string }[] = [
-  { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Keep your existing login or API key." },
+  { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Claude Code, Codex, Cursor and five more." },
   { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on diagrams and clickable mockups." },
   { who: "check", icon: BadgeCheck, title: "Proof", lead: "Independent review", text: "A separate agent checks the result against your plan." },
 ];
@@ -61,7 +49,7 @@ const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: str
 /** From where you work to the files you keep: what QualityLayer connects, all inside one dashed frame, your computer. */
 const CHAIN: { icon: LucideIcon | "mark"; title: string; text: string; chips: string[]; ql?: true }[] = [
   { icon: Laptop, title: "Where you work", text: "Your task on the left, your agent on the right.", chips: ["QualityLayer App", "Browser"] },
-  { icon: KeyRound, title: "Your agent, your subscription", text: "Your existing login or API key.", chips: AGENTS.map(([label]) => label) },
+  { icon: KeyRound, title: "Your agent", text: "Each runs as its own program in its own terminal.", chips: [] },
   { icon: "mark", title: "QualityLayer", text: "Plan, answer and review beside your agent. The CLI connects any other agent.", chips: ["Visual plans", "Conversation"], ql: true },
   { icon: FileText, title: "Your repository", text: "Every step is a Markdown file you can read, diff and commit.", chips: ["Plan", "Decisions", "Test runs"] },
 ];
@@ -115,74 +103,22 @@ const Session = ({ agent, name, lines }: (typeof EXCHANGE)[number]) => (
 
 const Icon = ({ name }: { name: string }) => <i className={`mx-ic mx-i-${name}`} aria-hidden="true" />;
 
-/** One drifting row. The chips are listed twice so the loop has no seam; screen readers get the sentence beside it instead. */
-const Track = ({ chips, reverse }: { chips: Chip[]; reverse?: boolean }) => (
-  <div className={reverse ? "mx-track rev" : "mx-track"}>
-    {[...chips, ...chips].map(([label, icon], i) => (
-      <span key={`${label}-${i}`} className="mx-chip">
+/** One still row of chips, listed once: the list is the text, so screen readers need no second sentence. */
+const Chips = ({ chips, label }: { chips: Chip[]; label: string }) => (
+  <ul className="mx-chips" aria-label={label}>
+    {chips.map(([name, icon]) => (
+      <li key={name} className="mx-chip">
         <Icon name={icon} />
-        {label}
-      </span>
+        {name}
+      </li>
     ))}
-  </div>
+  </ul>
 );
 
-export default function Intro() {
+/** Right after the tour: the plan card row and the people's words, before the compatibility sections. */
+export function Principles() {
   return (
     <>
-      <section id="agents" className="mx-wrap mx-sec mx-with" aria-labelledby="with-h">
-        <div>
-          <h2 id="with-h" className="mx-h2">Works with the agents you already use</h2>
-          <p className="mx-lead">Work in the App, browser, terminal or IDE. <a href="/docs/agents/other">The CLI connects other agents.</a></p>
-        </div>
-        <ul className="mx-withg">
-          {SHOWN_AGENTS.map(([label, agent]) => (
-            <li key={label} className="mx-wi" data-agent={agent}><Logo agent={agent} /><b>{label}</b></li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Right after the agents: the models those agents run, on the plan you already pay for. */}
-      <section className="mx-wrap mx-sec" aria-labelledby="mod-h">
-        <div className="mx-mq">
-          <div className="mx-mqt">
-            <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
-            <p className="mx-lead">Sign in with the subscription you have or use an API key. Choose models for building and independent review.</p>
-          </div>
-          <div className="mx-mqr">
-            <p className="w7-sr">Models: {MODELS.filter(([, icon]) => icon === "cpu").map(([label]) => label).join(", ")}, through {AGENTS.slice(0, -1).map(([label]) => label).join(", ")} and {AGENTS[AGENTS.length - 1][0]}. {SETUPS.map(([label]) => label).join(". ")}.</p>
-            <div className="mx-mqm" aria-hidden="true">
-              <Track chips={MODELS} />
-              <Track chips={SETUPS} reverse />
-            </div>
-            <p className="mx-mqn">+ any model your coding agent offers</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Right after the agents and their models: the skills QualityLayer adds to them, led by two agents talking to each other. */}
-      <section id="skills" data-screen-label="Skills" className="mx-wrap mx-sec" aria-labelledby="skills-h">
-        <div className="mx-head">
-          <h2 id="skills-h" className="mx-h2">Your agents can talk to each other</h2>
-          <p className="mx-lead">Connected agents get skills to plan, design and check work. Claude Code can ask Codex for a review and receive its reply in the same session.</p>
-        </div>
-        <figure className="sk-stage" aria-label="Example: Claude Code asks Codex for a review">
-          <span className="sk-tag">Example</span>
-          <Session {...EXCHANGE[0]} />
-          <div className="sk-wire" aria-hidden="true">
-            <span className="sk-hop">Review <ArrowRight size={14} strokeWidth={1.75} /></span>
-            <span className="sk-hop"><ArrowLeft size={14} strokeWidth={1.75} /> Reply</span>
-          </div>
-          <Session {...EXCHANGE[1]} />
-        </figure>
-        <ul className="sk-more" aria-label="More skills, with what you say">
-          {SKILLS.map(({ icon: Glyph, title, ask }) => (
-            <li key={title}><span className="mx-tile" aria-hidden="true"><Glyph size={20} strokeWidth={1.75} /></span><b>{title}</b><q>{ask}</q></li>
-          ))}
-        </ul>
-        <p className="sk-foot">Ask in plain words, in any language. <a href="/docs/agents/native">More about the skills</a></p>
-      </section>
-
       <section className="mx-sec" aria-labelledby="pr-h">
         <div className="mx-wrap">
           <div className="mx-head">
@@ -214,11 +150,69 @@ export default function Intro() {
           <figcaption>{USER_QUOTE.context}</figcaption>
         </figure>
       </section>
+    </>
+  );
+}
+
+export default function Intro() {
+  return (
+    <>
+      <section id="agents" className="mx-wrap mx-sec mx-with" aria-labelledby="with-h">
+        <div>
+          <h2 id="with-h" className="mx-h2">Works with the agents you already use</h2>
+          <p className="mx-lead">Work in the App, browser, terminal or IDE. <a href="/docs/agents/other">The CLI connects other agents.</a></p>
+        </div>
+        <ul className="mx-withg">
+          {SHOWN_AGENTS.map(([label, agent]) => (
+            <li key={label} className="mx-wi" data-agent={agent}><Logo agent={agent} /><b>{label}</b></li>
+          ))}
+        </ul>
+      </section>
+
+      {/* Right after the agents: the models those agents run, on the plan you already pay for. */}
+      <section className="mx-wrap mx-sec" aria-labelledby="mod-h">
+        <div className="mx-mq">
+          <div className="mx-mqt">
+            <h2 id="mod-h" className="mx-h2">Use the models you already pay for</h2>
+            <p className="mx-lead">Sign in with the subscription you have or use an API key. Choose models for building and independent review.</p>
+          </div>
+          <div className="mx-mqr">
+            <div className="mx-mqm">
+              <Chips chips={MODELS} label="Models" />
+              <Chips chips={SETUPS} label="Ways to set it up" />
+            </div>
+            <p className="mx-mqn">+ any model your coding agent offers</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Right after the agents and their models: the skills QualityLayer adds to them, led by two agents talking to each other. */}
+      <section id="skills" data-screen-label="Skills" className="mx-wrap mx-sec" aria-labelledby="skills-h">
+        <div className="mx-head">
+          <h2 id="skills-h" className="mx-h2">Your agents can talk to each other</h2>
+          <p className="mx-lead">Connected agents get skills to plan, design and check work. Claude Code can ask Codex for a review and receive its reply in the same session.</p>
+        </div>
+        <figure className="sk-stage" aria-label="Example: Claude Code asks Codex for a review">
+          <span className="sk-tag">Example</span>
+          <Session {...EXCHANGE[0]} />
+          <div className="sk-wire" aria-hidden="true">
+            <span className="sk-hop">Review <ArrowRight size={14} strokeWidth={1.75} /></span>
+            <span className="sk-hop"><ArrowLeft size={14} strokeWidth={1.75} /> Reply</span>
+          </div>
+          <Session {...EXCHANGE[1]} />
+        </figure>
+        <ul className="sk-more" aria-label="More skills, with what you say">
+          {SKILLS.map(({ icon: Glyph, title, ask }) => (
+            <li key={title}><span className="mx-tile" aria-hidden="true"><Glyph size={20} strokeWidth={1.75} /></span><b>{title}</b><q>{ask}</q></li>
+          ))}
+        </ul>
+        <p className="sk-foot">Ask in plain words, in any language. <a href="/docs/agents/native">More about the skills</a></p>
+      </section>
 
       <section id="local" className="mx-wrap mx-sec" aria-labelledby="local-h">
         <div className="mx-head">
           <h2 id="local-h" className="mx-h2">Runs on your computer</h2>
-          <p className="mx-lead">Use your existing agent, editor and model plan.</p>
+          <p className="mx-lead">The App, your agent and your repository run on your computer.</p>
         </div>
         <div className="mx-local">
           <span className="mx-local-tag"><Laptop size={15} strokeWidth={1.75} aria-hidden="true" />Your computer</span>
@@ -228,7 +222,7 @@ export default function Intro() {
                 <span className="mx-tile" aria-hidden="true">{Glyph === "mark" ? <span className="mx-tile-mark" /> : <Glyph size={20} strokeWidth={1.75} />}</span>
                 <b>{title}</b>
                 <span className="mx-chain-text">{text}</span>
-                <span className="mx-chain-chips">{chips.map((chip) => <span key={chip}>{chip}</span>)}</span>
+                {chips.length ? <span className="mx-chain-chips">{chips.map((chip) => <span key={chip}>{chip}</span>)}</span> : null}
                 {i < CHAIN.length - 1 ? <span className="mx-chain-arrow" aria-hidden="true"><ArrowRight size={14} strokeWidth={2} /></span> : null}
               </li>
             ))}

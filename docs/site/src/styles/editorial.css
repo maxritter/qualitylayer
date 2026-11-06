@@ -1,6 +1,7 @@
 /* Horizontal workflow and feature pickers, with the selected screenshot below.
    Amber marks human actions, blue agent work, and violet checks. */
-.ed-section{padding-top:clamp(80px,11cqi,150px)}
+/* One distance above every section: --mx-section-gap (minimal.css). .mx-wrap resets padding, so a section with both classes names it again. */
+.ed-section,.ed-section.mx-wrap{padding-top:var(--mx-section-gap)}
 .ed-head{max-width:46rem;margin-bottom:clamp(32px,4cqi,56px)}
 .ed-head h2{margin:0;max-width:15em;font-size:clamp(30px,3cqi,42px);line-height:1.02;font-weight:800;letter-spacing:-.045em;text-wrap:balance}
 .ed-head p{margin:18px 0 0;max-width:40rem;font-size:clamp(16px,1.25cqi,17px);line-height:1.55;color:var(--mx-ink2);text-wrap:pretty}
@@ -17,7 +18,6 @@
 .ed-num{flex:none;display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ink);color:var(--ink);font:700 13px/1 Geist,system-ui,sans-serif;letter-spacing:0;font-variant-numeric:tabular-nums;transition:background-color .2s var(--ql-ease),color .2s var(--ql-ease)}
 
 /* The workflow picker keeps the selected explanation and screenshot together. */
-#tour.ed-section{padding-top:clamp(88px,10cqi,144px)}
 #tour .ed-head{max-width:48rem;margin-bottom:32px}
 .ed-tour{display:flex;flex-direction:column;gap:24px}
 .ed-workflow-tabs{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;width:100%}
@@ -51,7 +51,7 @@
 .ed-frame:hover .ed-enlarge,.ed-frame:focus-visible .ed-enlarge{opacity:1;transform:none}
 @media(hover:none){.ed-enlarge{opacity:1;transform:none}}
 
-.ed-outcome{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 24px;margin-top:40px;padding:24px 0;border-bottom:1px solid var(--mx-line);font-size:15px}
+.ed-outcome{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 24px;margin-top:40px;padding:24px 0 0;font-size:15px}
 .ed-outcome p{margin:0;max-width:50ch;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--mx-ink)}
 .ed-outcome>div{display:flex;flex-wrap:wrap;gap:12px 24px}
 .ed-outcome a{display:inline-flex;align-items:center;min-height:44px}
@@ -92,6 +92,12 @@
 .ed-image-dialog img{display:block;width:100%;height:auto;max-height:calc(100dvh - 160px);object-fit:contain}
 .ed-image-dialog>p{margin:12px 0 0;font-size:12px;line-height:1.6;color:var(--mx-ink2)}
 
+/* Desktop pictures are crops of their captures (EXTRAS in Editorial.tsx sets --crop-w, --crop-x and --crop-y), so the interface text stays readable.
+   The crop moves with the translate property: the reduced-motion rule below sets transform to none. Phones keep their own capture. */
+@container (min-width:721px){
+  .ax-panel>.ed-frame.ed-inline{aspect-ratio:16 / 10;overflow:hidden;border:1px solid var(--mx-line2);border-radius:12px;background:var(--mx-panel);box-shadow:var(--mx-shadow)}
+  .ax-panel>.ed-frame.ed-inline img{position:absolute;top:0;left:0;width:var(--crop-w);height:auto;max-width:none;object-fit:fill;translate:var(--crop-x) var(--crop-y)}
+}
 /* Tablets and phones: one column, the open step and each feature carry their own screen */
 /* Narrow desktops and tablets: a slimmer list, still beside the screen. */
 @container (max-width:1079px){
@@ -99,6 +105,15 @@
   .ax-tab span{display:none}
   .ax-tab{min-height:52px}
   .ax-mark{grid-row:auto}
+}
+/* Tablets: the crops need the full width to stay readable, so the tabs sit above the text and the picture. */
+@container (min-width:721px) and (max-width:1000px){
+  .ax{display:flex;flex-direction:column;align-items:stretch;gap:20px}
+  .ax-list{flex-direction:row;flex-wrap:wrap;gap:8px}
+  .ax-tab{width:auto;min-height:48px;display:inline-flex;align-items:center;gap:10px;padding:6px 16px 6px 8px;border-color:var(--mx-line2);background:var(--mx-panel)}
+  .ax-mark{width:32px;height:32px;border-radius:8px}
+  .ax-detail{margin:0;padding:0;border:0}
+  .ax-panel>.ed-frame.ed-inline{width:100%}
 }
 /* Phones: the list becomes one swipeable row of names, then the text and link, then the App's phone screen. */
 @container (max-width:720px){

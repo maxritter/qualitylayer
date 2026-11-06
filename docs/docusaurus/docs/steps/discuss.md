@@ -16,8 +16,8 @@ Describe the change with **+ › Task**, or ask your agent: “Using QL, plan a 
 ## Answer the batch {#the-question}
 
 1. **Your turn** shows one question at a time. Pick a choice, or write your own answer and press **Send**.
-2. Answer in any order from the numbered strip. **Use recommended** takes the agent's recommendation; **Tell me more** explains.
-3. Each answer reaches your agent immediately. Another question comes only if an answer or finding raises a new decision.
+2. Answer in any order from the numbered strip. **Use all recommended** takes every recommendation; **Tell me more** explains.
+3. Each answer reaches your agent immediately; **Change** reopens it. While questions wait, the document folds to one row, and **Read Discuss** opens it. Another question comes only if an answer or finding raises a new decision.
 
 [Research](research.md) can start while you answer ([all controls](../app.md#questions)).
 

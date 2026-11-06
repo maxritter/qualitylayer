@@ -56,7 +56,7 @@ Hover over controls for their shortcuts. Search keeps its project-selection keys
 
 ## Answering questions {#questions}
 
-**Your turn** shows one question; use its numbered strip to answer in any order.
+**Your turn** shows one question; use its numbered strip to answer in any order. Choices form one column. Where they have facts, the recommended one is open and the others fold to one line.
 
 <details>
 <summary>Answer with the keyboard</summary>

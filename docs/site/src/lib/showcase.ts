@@ -30,8 +30,8 @@ export const CHAPTERS: Chapter[] = [
   { id: "discuss", dur: 6600, beats: [
     [150, "cur", rail("discuss"), 600], [800, "click"], [900, "shot", "discuss"],
     // The first question, answered with its recommended option.
-    [1100, "cam", main(39), 1300],
-    [2500, "cur", { x: 34.4, y: 40.6 }, 800], [3400, "click"], [3500, "mark", { x: 22.2, y: 35.7, w: 50, h: 7.2 }],
+    [1100, "cam", main(43), 1300],
+    [2500, "cur", { x: 34.4, y: 41.2 }, 800], [3400, "click"], [3500, "mark", { x: 20.5, y: 37.1, w: 53.1, h: 8.3 }],
     // Asking in the conversation while it waits.
     [4400, "cam", chat(60), 1100], [4500, "mark", null],
     [5700, "cam", null, 900]] },
@@ -46,11 +46,11 @@ export const CHAPTERS: Chapter[] = [
   { id: "plan", dur: 7800, beats: [
     [0, "cur", rail("plan"), 650], [700, "click"], [800, "shot", "plan"],
     // Read the decision's diagram from the request to both outcomes.
-    [1000, "cam", { x: 41, y: 55.5, s: 2.4 }, 1300],
-    [2500, "cam", { x: 54, y: 55.5, s: 2.4 }, 1400],
+    [1000, "cam", { x: 41, y: 49.6, s: 2.4 }, 1300],
+    [2500, "cam", { x: 54, y: 49.6, s: 2.4 }, 1400],
     // The call is the person's: pick the recommended path.
     [4100, "cam", { x: 47, y: 79, s: 1.8 }, 1000],
-    [4400, "cur", { x: 34.4, y: 82.7 }, 800], [5300, "click"], [5400, "mark", { x: 21.4, y: 77.5, w: 50.2, h: 7.7 }],
+    [4400, "cur", { x: 34.4, y: 68.3 }, 800], [5300, "click"], [5400, "mark", { x: 19.6, y: 64.6, w: 53.9, h: 7.3 }],
     [6800, "cam", null, 900], [6900, "mark", null]] },
   { id: "outline", dur: 6300, beats: [
     [0, "cur", rail("outline"), 650], [700, "click"], [800, "shot", "outline"],

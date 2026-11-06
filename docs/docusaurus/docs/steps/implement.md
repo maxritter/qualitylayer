@@ -38,15 +38,15 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 *Example task in a fictional project.*
 
-**Implement** shows slice progress, folding finished slices in long builds. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
+**Implement** shows the slices with their tasks: every slice open for a small build, the one in work for a larger one, and past 10 slices the finished ones in one row. A task opens to one sentence and its card (files, test first, done when). The header counts tasks and slices and shows a red chip only while a check fails. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)
 
 - Test runs are recorded with their commit and exit code, so [Verify](verify.md) can cite them.
-- Routine choices appear under **Decided while building**. A change to what you approved becomes a visible amendment, listed in Review.
-- A login, secret or other human-only prerequisite stays unverified for Review. Other work continues, blocked checks are never marked passed, and the App never takes the secret.
-- Outline, Implement and Verify ask no workflow questions until Review.
+- Amendments appear under **Decided while building**, each with whether it changes what you approved. A change to what you approved becomes a visible amendment.
+- A login, secret or other human-only prerequisite never counts as passed. Other work continues, you get one question at the end of [Verify](verify.md#when-it-stops), and the App never takes the secret.
+- Outline and Implement ask no workflow questions; Verify asks at most one, at its end.
 - Runs start in the agent's own [permission mode](../agents/native.md#permission-modes). Native permission and sign-in prompts still need your response, and an explicit stop or pause stays in force.
 
 ## When the build is done {#when-done}

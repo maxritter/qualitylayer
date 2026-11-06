@@ -6,7 +6,7 @@ description: Run project checks and independent review against the approved Plan
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-light.svg)
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-dark.svg)
 
-Your agent runs checks and independent review, then fixes the findings. Review opens once every point passes; a failure is never marked passed.
+Your agent runs checks and independent review, then fixes the findings. Review opens once every point passes; a failure is never marked passed. The page shows only a summary and the checks; the findings, commands and every judged round are in `agents/06-verify.md`.
 
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-light.webp)
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-dark.webp)
@@ -42,7 +42,7 @@ If you turn **Independent review** off in [Settings](../reference/settings.md#in
 
 ## Two fix rounds {#rounds}
 
-If the independent review finds gaps, your agent fixes them and commits. A fresh reviewer rechecks the failures and affected code. That can happen twice.
+If the independent review finds gaps, your agent fixes them and commits. A fresh reviewer rechecks the failures and affected code, running only the checks the fix touches. That can happen twice; a round that fixes nothing ends them early.
 
 ## Proof for each point {#live}
 

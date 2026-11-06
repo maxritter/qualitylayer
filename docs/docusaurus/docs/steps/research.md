@@ -30,8 +30,8 @@ Usually nothing. Comment on a finding you disagree with. If the code leaves a re
 
 ## The document {#the-page}
 
-The page opens with **How it works today**, a summary and picture of the relevant code. **What it means for your request** explains what is easy, hard or risky; click an item for the findings behind it.
+The page opens with a **Summary**, then **Current system**: a diagram and one row per part of the code. **Impact** explains what is easy, hard or risky; a row opens to its sources, which link to the findings in the Reader.
 
-Findings and the Plan's risk checklist fold below. `02-research.md` retains earlier answers and code references.
+`02-research.md` holds the findings and questions; the agent's working notes sit under **For agents**.
 
 Next: [Plan](plan.md).

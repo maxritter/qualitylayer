@@ -15,7 +15,7 @@ Choose **+ › Task**, then **Feature** or **Bugfix**, in a repository you know.
 | 3 | **Read the Plan**, then **Approve and build here** or **Give feedback** |
 | 4 | The planning session builds; or choose another agent or place with **Choose where to build** |
 | 5 | Follow Outline, Implement and Verify. Anything only you can do is recorded for Review |
-| 6 | **Review the code and checks**, then approve |
+| 6 | **Review the code**, what changed and the acceptance test, then approve |
 | 7 | **Merge the pull request** on GitHub |
 
 Steps 1 to 6 happen in the App or browser.

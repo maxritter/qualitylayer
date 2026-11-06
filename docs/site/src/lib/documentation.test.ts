@@ -25,11 +25,11 @@ describe("installation and build instructions", () => {
     expect(headless).not.toContain("install.ps1");
   });
 
-  it("keeps human-only prerequisites unverified for Review while available work continues", () => {
+  it("never counts human-only prerequisites as passed while available work continues", () => {
     const implement = doc("steps/implement.md");
-    expect(implement).toMatch(/human-only prerequisite stays unverified for Review/);
+    expect(implement).toMatch(/human-only prerequisite never counts as passed/);
     expect(implement).toMatch(/Other work continues/);
-    expect(implement).toMatch(/blocked checks are never marked passed/);
+    expect(implement).toMatch(/one question at the end of \[Verify\]/);
     expect(implement).toMatch(/the App never takes the secret/i);
     expect(implement).toMatch(/Native permission and sign-in prompts still need your response/);
     expect(implement).toMatch(/explicit stop or pause stays in force/);

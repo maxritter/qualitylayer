@@ -25,7 +25,7 @@ Describe the change with **+ › Task**, or ask your agent: “Using QL, plan a 
 
 `01-discuss.md` records your request, the scope and **Done means**: the numbered results you accept the change by. Verify checks each one. You approve it with the Plan. Later changes are recorded as amendments and remain visible in the final review.
 
-The agent's **Problem**, facts and **Done means** lead the page once written. **Original request** stays collapsed at the bottom; open it to read the complete text.
+The agent's **Problem** (a few bullets), **Done means** (one headline per result; **Details** opens them all) and **Scope** lead the page once written. **Change** on a decided answer opens a small editor. **Original request** stays collapsed at the bottom; open it to read the complete text.
 
 ## Too small for a plan {#too-small}
 

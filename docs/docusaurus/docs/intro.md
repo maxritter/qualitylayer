@@ -59,4 +59,4 @@ Pick a level at **Setup**. Change it in **Settings › Workflow**, or per task u
 ![QualityLayer in the App or browser: your task on the left, your agent on the right. Task files stay in your repository; the CLI also connects external agents. Shared plans and comments reach the server encrypted](pathname:///img/diagrams/architecture-light.svg)
 ![QualityLayer in the App or browser: your task on the left, your agent on the right. Task files stay in your repository; the CLI also connects external agents. Shared plans and comments reach the server encrypted](pathname:///img/diagrams/architecture-dark.svg)
 
-Task documents `01-discuss.md` to `07-review.md` stay in your repository, even after you uninstall ([files](reference/files.md#documents)). Anything you share is encrypted on your computer first ([your data](reference/files.md#privacy)).
+Task documents `01-discuss.md` to `07-review.md`, each with a file for your agents beside it, stay in your repository, even after you uninstall ([files](reference/files.md#documents)). Anything you share is encrypted on your computer first ([your data](reference/files.md#privacy)).

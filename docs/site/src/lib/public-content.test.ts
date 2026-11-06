@@ -42,8 +42,8 @@ describe("current public illustrations and guides", () => {
     const readme = read("README.md");
     expect(readme).not.toMatch(/No waiting while it builds|Nothing waits for you/);
     const implement = read("docs/docusaurus/docs/steps/implement.md");
-    expect(implement).toContain("Outline, Implement and Verify ask no workflow questions until Review");
-    expect(implement).toContain("stays unverified for Review");
+    expect(implement).toContain("Outline and Implement ask no workflow questions; Verify asks at most one, at its end");
+    expect(implement).toContain("never counts as passed");
     expect(implement).toContain("Native permission and sign-in prompts still need your response");
     expect(implement).toContain("explicit stop or pause stays in force");
   });

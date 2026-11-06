@@ -75,7 +75,7 @@ Answers reach your agent immediately and never approve the Plan or change.
 
 ## Documents and feedback {#comments-and-artifacts}
 
-**Files** holds every document, artifact, review and record, plus **Review the code**. **Reader** shows a whole document; its bar holds **On this page**, risky sections and **Copy document**. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
+**Files** holds every document, artifact, review and record, plus **Review the code**. **Reader** shows a whole document; its bar holds **On this page**, the step's file for agents and **Copy document**. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
 
 Select a passage or part of a diagram and choose **Give feedback**. **To** picks the agent, a teammate or **Everyone on the task**.
 

@@ -1,15 +1,15 @@
 ---
 title: Review
-description: Review the code, screens and checks, then approve the change. Open a pull request when you choose.
+description: Review the finished code, what changed and the acceptance test as it ran, then approve the change. Open a pull request when you choose.
 ---
 
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-light.svg)
 ![The workflow, with Review highlighted](pathname:///img/diagrams/track-review-dark.svg)
 
-Review the code, screens and checks, then approve the change. Unverified results stay unverified after approval.
+Review opens once Verify has passed every point, so everything on the page is finished. Read the code, see what changed, then approve the change.
 
-![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-light.webp)
-![Review in the App: code review, checks and screens, with one final approval in the page header](pathname:///img/app/review-dark.webp)
+![Review in the App: the code review first, then what changed, the screens and the acceptance test, with one final approval in the page header](pathname:///img/app/review-light.webp)
+![Review in the App: the code review first, then what changed, the screens and the acceptance test, with one final approval in the page header](pathname:///img/app/review-dark.webp)
 
 *Example task in a fictional project.*
 
@@ -17,20 +17,19 @@ Review the code, screens and checks, then approve the change. Unverified results
 
 | Part | What you read |
 | --- | --- |
-| **Code** | The complete change, with line comments |
-| **Change map** | Where the build landed on the Plan's or Research's map. Large changes open by connected area; select one to see its cards. Other changed files stay listed below |
-| **Checks and outcomes** | Every check and its recorded result, including failures and unverified work |
-| **Screenshots** | The changed screens and their comparison evidence |
-| **Change details** | The complete change record, decisions and amendments |
-| **Open items** | What remains unresolved; approval never marks it passed |
+| **Risk at merge** and **Why** | A one-line risk for merging and a one-sentence refresher of the request |
+| **Code** | The complete change, with line comments and where to start reading |
+| **What changed** | The change in diagrams, in tabs |
+| **Screens** | The designs you approved beside what was built |
+| **Acceptance test** | The Plan's test, a tab per step with its picture or output, and whether it ran as a script or in a real agent session |
 
-Routine choices stay under **Decided while building**. Read them or **Ask why**; none needs a confirmation.
+Anything only you can check, such as your account or a device the agents cannot run, comes to you as a question. What turns up while you review, your agent fixes at once and rechecks.
 
 ## The page {#the-page}
 
-Code review leads the page. **Checks and outcomes**, **Screenshots** and **Change details** fold below it, retaining the full record.
+Code review leads the page. The diagrams, screens and acceptance test follow for a look and a refresher.
 
-`07-review.md` is the pull request description; its pictures stay on your computer unless you publish them. For changed [lasting artifacts](../artifacts.md#lasting), choose which pages to [fold in](../artifacts.md#fold-in).
+`07-review.md` is the pull request description; its pictures stay on your computer unless you publish them. `agents/07-review.md` holds the ship steps, fixes made during Review, follow-ups and lessons to save. For changed [lasting artifacts](../artifacts.md#lasting), choose which pages to [fold in](../artifacts.md#fold-in).
 
 ## Read the code {#code}
 
@@ -63,7 +62,7 @@ Open comments neither block approval nor go to your agent. Opening the pull requ
 
 ### Review with your team {#team-review}
 
-**Ask for review** shows the remote and commits before you confirm the push. Teammates with a checkout can comment on lines; others see the walkthrough and file names ([sharing details](../team/plans.md#privacy)).
+**Ask for review** shows the remote and commits before you confirm the push. Teammates with a checkout can comment on lines; others see the page and file names ([sharing details](../team/plans.md#privacy)).
 
 ## Approve {#approve}
 

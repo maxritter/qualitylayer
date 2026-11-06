@@ -30,7 +30,7 @@ Routine choices stay under **Decided while building**. Read them or **Ask why**;
 
 Code review leads the page. **Checks and outcomes**, **Screenshots** and **Change details** fold below it, retaining the full record.
 
-The top of `07-review.md` becomes the pull request description; the complete record follows. For changed [lasting artifacts](../artifacts.md#lasting), choose which pages to [fold in](../artifacts.md#fold-in).
+`07-review.md` is the pull request description; its pictures stay on your computer unless you publish them. For changed [lasting artifacts](../artifacts.md#lasting), choose which pages to [fold in](../artifacts.md#fold-in).
 
 ## Read the code {#code}
 

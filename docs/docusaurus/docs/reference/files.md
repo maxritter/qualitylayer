@@ -32,8 +32,10 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 | `agents/03-plan.md` | Notes for the build: code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
 | `04-outline.md` | Where the change lands, the slices, checks and build commands |
 | `05-implement.md` | Slice progress, checks and decisions |
-| `06-verify.md` | Each point with its evidence, and what is still open |
-| `07-review.md` | The pull request's description, change details and approval |
+| `06-verify.md` | A summary and one line per check stage |
+| `agents/06-verify.md` | What the agents fix from: failing points, findings, commands, security review and every judged round |
+| `07-review.md` | The pull request's description: why, where to start reading, the change in diagrams, the screens and the acceptance test as it ran |
+| `agents/07-review.md` | What the agents ship and follow up from |
 
 ## Lasting artifacts {#lasting}
 

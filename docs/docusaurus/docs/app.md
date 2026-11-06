@@ -27,7 +27,7 @@ Projects group tasks by repository, with tasks waiting on you first.
 - Right-click a project to rename, recolor or hide it; right-click a task to rename, archive or delete it.
 - The foot shows [plan limits](agents/native.md#plan-limits) or today's cost.
 
-Collapse the sidebar to a narrow rail with Home, Team, Artifacts, one tile for each task that needs you or is running, your plan limits and Settings. Hover a tile to see where its task stands. The sidebar stays expanded or collapsed as you move between tasks.
+Keep dragging towards the outer edge after a sidebar stops shrinking to collapse it. Pull the left rail outward to reopen it. The rail keeps Home, Team, Artifacts, waiting and running tasks, plan limits and Settings. Hover a tile for its status. Sidebar state stays as you move between tasks.
 
 **View options** filters names, groups and row sizes. **Last activity** filters recorded changes: Any, 24 h, 3 d or 7 d. Working and open tasks stay visible. **Reset filters** clears the filters.
 

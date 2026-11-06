@@ -29,7 +29,7 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 | `01-discuss.md` | Your request, the problem, **Done means**, scope and decisions |
 | `02-research.md` | **How it works today:** a picture of the code, findings, risks and tests. A bug's is **Why it breaks** |
 | `03-plan.md` | The decided design, artifacts, **Not doing**, **Before the build** and who reviewed it, written for people |
-| `agents/03-plan-context.md` | Notes for the build: code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
+| `agents/03-plan.md` | Notes for the build: code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
 | `04-outline.md` | Where the change lands, the slices, checks and build commands |
 | `05-implement.md` | Slice progress, checks and decisions |
 | `06-verify.md` | Each point with its evidence, and what is still open |

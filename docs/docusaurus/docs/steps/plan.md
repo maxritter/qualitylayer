@@ -32,7 +32,7 @@ The artifact stays visible; risks, findings and contracts fold to one-line summa
 | Read or share | Where |
 | --- | --- |
 | **The specification** | `03-plan.md`, written for people. **What we agreed** repeats Discuss's **Done means** and **Not doing**; artifact pictures stay linked |
-| **Build notes** | `agents/03-plan-context.md`, folded under **Build context** in Files. They never change what you approve |
+| **Build notes** | `agents/03-plan.md`, folded under **Build context** in Files. They never change what you approve |
 | **A portable copy** | `qualitylayer plan export --out <folder>` exports the Plan, `01-discuss.md` and pictures for readers without QualityLayer |
 
 The Product level uses plainer words ([two levels](../intro.md#two-levels)).

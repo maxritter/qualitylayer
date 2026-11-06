@@ -38,21 +38,9 @@ it("shows the skills right after the models, led by an example exchange between 
   expect(within(skills).getByRole("link", { name: "More about the skills" }).getAttribute("href")).toBe("/docs/agents/native");
 });
 
-it("draws an example change map with the App's own component right after the skills", async () => {
+it("goes from the skills straight to the plan principles, with no change-map example", () => {
   const { container } = render(<Intro />);
   const ids = [...container.querySelectorAll("section")].map(section => section.id || section.getAttribute("aria-labelledby"));
-  expect(ids.slice(2, 4)).toEqual(["skills", "change-map"]);
-  const section = screen.getByRole("region", { name: "See how a change fits together" });
-  const example = within(section).getByRole("figure", { name: "Example change map from a Plan" });
-  expect(within(example).getByText("Example")).toBeTruthy();
-  const map = await within(example).findByTestId("change-map", {}, { timeout: 5000 });
-  expect(map.textContent).toContain("Ledger");
-  expect(map.textContent).not.toContain("does not parse");
-  expect(within(section).getByRole("link", { name: "More about the Plan" }).getAttribute("href")).toBe("/docs/steps/plan");
-});
-
-it("keeps the example change map a valid map", async () => {
-  const { parseChangeMap } = await import("@ql/core/docs/change-map");
-  const { EXAMPLE_MAP } = await import("./change-map-example");
-  expect(parseChangeMap(EXAMPLE_MAP, { shared: true }).ok).toBe(true);
+  expect(ids.slice(2, 4)).toEqual(["skills", "pr-h"]);
+  expect(container.querySelector("#change-map")).toBeNull();
 });

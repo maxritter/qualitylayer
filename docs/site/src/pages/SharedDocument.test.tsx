@@ -76,32 +76,6 @@ describe("the share page draws a document with the App's Reader", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it("a change map in the document is drawn by the App's component, with no action for the owner's checkout", () => {
-    const map = JSON.stringify({ title: "T", parts: [{ id: "app", name: "App", kind: "ui" }], cards: [{ id: "proof", path: "src/ui/Proof.tsx", name: "Proof lanes", part: "app", change: "changed", today: "a", after: "b" }], links: [] });
-    render(<SharedDocument name="03-plan.md" markdown={`# Plan\n\nBefore.\n\n\`\`\`ql-map\n${map}\n\`\`\`\n\nAfter.`} docs={{}} comments={[]} onQuote={() => {}} />);
-    expect(screen.getByTestId("change-map")).toBeTruthy();
-    expect(screen.getByText("Proof lanes")).toBeTruthy();
-    expect(screen.queryByText(/open file/i)).toBeNull();
-  });
-
-  it("a Mermaid flowchart of code files is drawn as a map, with the Mermaid one click away and Mermaid loaded only then", async () => {
-    const render_ = vi.fn(async (_id: string, _source: string) => ({ svg: '<svg role="img" aria-label="drawn"><text>A to B</text></svg>' }));
-    const load = vi.fn(async () => ({ default: { initialize: vi.fn(), render: render_ } }) as never);
-    loadMermaidFrom(load);
-    const code = 'flowchart LR\n  a["Handler<br/>src/server/serve.ts"] -->|sends| b["View<br/>src/web/view.ts"]\n  b --> c["Sort<br/>src/domain/tasks.ts"]\n  a --> d["Browser"]';
-    render(<SharedDocument name="01-research.md" markdown={`# Research\n\nBefore.\n\n\`\`\`mermaid\n${code}\n\`\`\`\n\nAfter.`} docs={{}} comments={[]} onQuote={() => {}} />);
-    expect(screen.getByTestId("change-map")).toBeTruthy();
-    expect(screen.getByText("Handler")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Today/ })).toBeNull();
-    expect(screen.queryByText(/open file/i)).toBeNull();
-    expect(load).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Show as Mermaid" }));
-    expect(await screen.findByLabelText("drawn")).toBeTruthy();
-    expect(render_.mock.calls[0]?.[1]).toBe(code);
-    fireEvent.click(screen.getByRole("button", { name: "Show as map" }));
-    expect(screen.getByTestId("change-map")).toBeTruthy();
-  });
-
   it("a mockup the link carries is shown, and one it does not carry says so", async () => {
     const docs = { "artifacts/settings.html": "<html><body>Settings</body></html>" };
     const doc = (path: string) => `# Plan\n\n\`\`\`artifact\n${path}\n\`\`\`\n`;

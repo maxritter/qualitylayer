@@ -468,23 +468,3 @@ html{scroll-padding-top:76px}
   #skills .sk-more q{grid-column:2}
 }
 @media (prefers-reduced-motion:reduce){#skills .sk-wire:after{animation:none;display:none}}
-
-/* ---- Change map: text beside a small example drawn by the App's own map component, in the dashed example frame ---- */
-#change-map.cm-split{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);column-gap:clamp(32px,4.5cqi,64px);align-items:center}
-#change-map .mx-head{margin:0}
-#change-map .cm-frame{position:relative;min-width:0;margin:0;padding:30px clamp(14px,2cqi,22px) clamp(14px,2cqi,22px);border:1.5px dashed var(--mx-line2);border-radius:24px}
-#change-map .sk-tag{position:absolute;top:-14px;left:24px;z-index:1;padding:3px 12px;border-radius:999px;background:var(--mx-page);border:1px solid var(--mx-line2);font-size:14px;font-weight:600;color:var(--mx-ink2)}
-#change-map .cm-frame > .visual{margin:0;background:var(--mx-panel);box-shadow:var(--mx-shadow)}
-/* The heading names the map and the bar's counts carry the same swatches, so the map's own label and key stay out. */
-#change-map .cm-frame .visual-kind,#change-map .cm-frame .visual-legend{display:none}
-#change-map .cm-wait{min-height:420px;margin:0;border:1px solid var(--mx-line2);border-radius:12px;background:var(--mx-panel)}
-#change-map .cm-failed{display:grid;place-items:center;padding:24px;font-size:15px;color:var(--mx-ink2);text-align:center}
-#change-map .sk-foot{margin:22px 0 0;font-size:15px;color:var(--mx-ink3)}
-#change-map .sk-foot a{color:var(--ql-accent-hover);text-decoration:underline;text-underline-offset:3px}
-@container (max-width:900px){
-  #change-map.cm-split{grid-template-columns:minmax(0,1fr)}
-  #change-map .cm-frame{margin-top:clamp(36px,5cqi,56px)}
-}
-@container (max-width:640px){
-  #change-map .cm-frame{padding:30px 12px 12px}
-}

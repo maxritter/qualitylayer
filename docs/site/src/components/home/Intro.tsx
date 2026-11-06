@@ -5,20 +5,6 @@ import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
 import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
 import { SHOWN_AGENTS } from "@/lib/shown-agents";
-import { Component, lazy, Suspense, type ReactNode } from "react";
-
-const ChangeMapDemo = lazy(() => import("./ChangeMapDemo"));
-
-/** The example map loads on its own; if it cannot load (offline, a stale chunk), the frame says so and the page stays. */
-class MapGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  render() {
-    return this.state.failed ? <p className="cm-wait cm-failed">The example map could not load. Reload the page to try again.</p> : this.props.children;
-  }
-}
 
 type Chip = [label: string, icon: string];
 
@@ -68,7 +54,7 @@ const SETUPS: Chip[] = [
 /** Each card in the App's colours: blue for the agent's work, amber for your decision, violet for what agents checked. */
 const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: string; lead: string; text: string }[] = [
   { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Keep your existing login or API key." },
-  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on change maps, diagrams and clickable mockups." },
+  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on diagrams and clickable mockups." },
   { who: "check", icon: BadgeCheck, title: "Proof", lead: "Independent review", text: "A separate agent checks the result against your plan." },
 ];
 
@@ -195,23 +181,6 @@ export default function Intro() {
           ))}
         </ul>
         <p className="sk-foot">Ask in plain words, in any language. <a href="/docs/agents/native">More about the skills</a></p>
-      </section>
-
-      {/* Right after the agents: what one of them draws before it builds. The App's own map component, loaded on its own. */}
-      <section id="change-map" data-screen-label="Change map" className="mx-wrap mx-sec cm-split" aria-labelledby="map-h">
-        <div className="mx-head">
-          <h2 id="map-h" className="mx-h2">See how a change fits together</h2>
-          <p className="mx-lead">Your agent maps the files a change will touch and how they connect, before any code is written.</p>
-          <p className="sk-foot"><a href="/docs/steps/plan">More about the Plan</a></p>
-        </div>
-        <figure className="cm-frame" aria-label="Example change map from a Plan">
-          <span className="sk-tag">Example</span>
-          <MapGuard>
-            <Suspense fallback={<div className="cm-wait" aria-hidden="true" />}>
-              <ChangeMapDemo />
-            </Suspense>
-          </MapGuard>
-        </figure>
       </section>
 
       <section className="mx-sec" aria-labelledby="pr-h">

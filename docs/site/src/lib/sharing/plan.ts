@@ -19,8 +19,6 @@ export function screenPairsOf(docs: Record<string, string>, stills: unknown) {
 export type PlanBlock =
   | { kind: "html"; key: string; html: string }
   | { kind: "mermaid"; key: string; source: string }
-  /** The body of a ```ql-map fence (JSON). */
-  | { kind: "map"; key: string; source: string }
   | { kind: "wireframe"; key: string; source: string }
   | { kind: "panel"; key: string; source: string }
   /** `path` as the plan's fence names it: `artifacts/settings.html`. */
@@ -41,7 +39,7 @@ function htmlOf(tokens: Token[], links: TokensList["links"]): string {
 const fenceWord = (token: Tokens.Code) => (token.lang ?? "").trim().split(/\s+/)[0];
 
 /**
- * The plan in reading order. A ```mermaid fence is a diagram, a ```ql-map fence a change map, and a ```artifact fence names a
+ * The plan in reading order. A ```mermaid fence is a diagram, and a ```artifact fence names a
  * mockup, in its body or after the word (the App writes the path in the body).
  */
 export function planBlocks(markdown: string): PlanBlock[] {
@@ -56,9 +54,6 @@ export function planBlocks(markdown: string): PlanBlock[] {
     if (token.type === "code" && fenceWord(token as Tokens.Code) === "mermaid") {
       flush();
       blocks.push({ kind: "mermaid", key: `m${blocks.length}`, source: (token as Tokens.Code).text });
-    } else if (token.type === "code" && fenceWord(token as Tokens.Code) === "ql-map") {
-      flush();
-      blocks.push({ kind: "map", key: `c${blocks.length}`, source: (token as Tokens.Code).text });
     } else if (token.type === "code" && ["wireframe", "panel"].includes(fenceWord(token as Tokens.Code))) {
       const code = token as Tokens.Code;
       const kind = fenceWord(code) as "wireframe" | "panel";

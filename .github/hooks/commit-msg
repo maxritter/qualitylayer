@@ -30,7 +30,8 @@ fi
 guard_paths=(qualitylayer/scripts/model-guard.ts qualitylayer/scripts/models)
 # Inert until the guard and the checks it imports are all in the index.
 if ! git ls-files --error-unmatch qualitylayer/scripts/model-guard.ts qualitylayer/scripts/models/guard.ts \
-  qualitylayer/scripts/models/app-coverage.ts qualitylayer/scripts/models/workflow.ts >/dev/null 2>&1; then
+  qualitylayer/scripts/models/app-coverage.ts qualitylayer/scripts/models/workflow.ts \
+  qualitylayer/scripts/models/generator.ts >/dev/null 2>&1; then
   exit 0
 fi
 

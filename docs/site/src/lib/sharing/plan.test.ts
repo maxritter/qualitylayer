@@ -68,12 +68,9 @@ describe("a plan cut into parts", () => {
     expect(blocks[3]).toMatchObject({ kind: "artifact", path: "artifacts/settings.html" });
   });
 
-  it("cuts a ql-map fence into a map block, in reading order, and never keeps its words as text", () => {
-    const map = '{"title":"T","parts":[{"id":"a","name":"App","kind":"ui"}],"cards":[],"links":[]}';
-    const blocks = planBlocks(`Before.\n\n\`\`\`ql-map\n${map}\n\`\`\`\n\nAfter.`);
-    expect(blocks.map((b) => b.kind)).toEqual(["html", "map", "html"]);
-    expect(blocks[1]).toMatchObject({ kind: "map", source: map });
-    expect(blocks.flatMap((b) => (b.kind === "html" ? [b.html] : [])).join("")).not.toContain("parts");
+  it("keeps an old ql-map fence as ordinary code in the text", () => {
+    const blocks = planBlocks("Before.\n\n```ql-map\n{\"title\":\"T\"}\n```\n\nAfter.");
+    expect(blocks.map((b) => b.kind)).toEqual(["html"]);
   });
 
   it("never lets the fence's words stand in for the picture", () => {

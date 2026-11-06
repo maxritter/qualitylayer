@@ -3,7 +3,6 @@ import { mockupHtml } from "@/lib/sharing/plan";
 import { answerWords, type GuestAnswer, type ItemMedia, type PlanStill, type ShareItem } from "@/lib/sharing/sharing";
 import { Diagram } from "./Diagram";
 import { ArtifactStill, MissingMockup, MockupFrame } from "./Frame";
-import { SharedMap } from "./SharedMap";
 
 
 /**
@@ -20,7 +19,6 @@ function Media({ media, docs, stills }: { media: ItemMedia; docs: Record<string,
     return html === undefined ? <MissingMockup /> : <MockupFrame html={html} title={media.title ?? "Mockup"} />;
   }
   if (media.kind === "mermaid") return <Diagram source={media.source} title={media.title} />;
-  if (media.kind === "map") return <SharedMap source={media.source} title={media.title} />;
   return <p className="sh-ask-text">{media.text}</p>;
 }
 

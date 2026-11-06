@@ -99,12 +99,9 @@ describe("the owner's questions", () => {
     expect(parseItems("not a list")).toEqual([]);
   });
 
-  it("a decision's change map travels as { kind: \"map\", source }, like a diagram; one without a source is dropped", () => {
-    const source = '{"title":"T","parts":[],"cards":[],"links":[]}';
-    const [one] = parseItems([{ ...wire, media: { kind: "map", source, title: "Today and after" } }]);
-    expect(one?.media).toEqual({ kind: "map", source, title: "Today and after" });
-    const [bare] = parseItems([{ ...wire, media: { kind: "map" } }]);
-    expect(bare?.media).toBeUndefined();
+  it("drops a picture of a kind the page does not draw, such as an old change map", () => {
+    const [one] = parseItems([{ ...wire, media: { kind: "map", source: "{}", title: "Today and after" } }]);
+    expect(one?.media).toBeUndefined();
   });
 
   it("reads the App's answer names as a guest's three: agree, change, reply", () => {

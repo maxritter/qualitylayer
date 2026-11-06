@@ -42,7 +42,6 @@
       // by hand (src/types/ql); Vite loads the real ones (src/types/ql/ql-typings.test.ts keeps them in step).
       "@ql/ui/steps/StepDocument": ["./src/types/ql/step-document.d.ts"],
       "@ql/ui/reader/MermaidBlock": ["./src/types/ql/mermaid-block.d.ts"],
-      "@ql/ui/reader/ChangeMapBlock": ["./src/types/ql/change-map-block.d.ts"],
       "@ql/ui/components/ui/button": ["./src/types/ql/button.d.ts"],
       "@ql/ui/components/ui/sonner": ["./src/types/ql/sonner.d.ts"],
       "@ql/*": ["../../qualitylayer/src/*"]

@@ -89,8 +89,6 @@ export type GuestAnswer = "agree" | "change" | "reply";
 export type ItemMedia =
   | { kind: "artifact"; name: string; title?: string }
   | { kind: "mermaid"; source: string; title?: string }
-  /** A change map: the body of a `ql-map` fence (JSON), drawn by the App's component. */
-  | { kind: "map"; source: string; title?: string }
   | { kind: "text"; text: string };
 
 /**
@@ -250,7 +248,6 @@ function parseMedia(value: unknown): ItemMedia | undefined {
   const title = str(m.title);
   if (m.kind === "artifact" && str(m.name) !== undefined) return { kind: "artifact", name: m.name as string, ...(title ? { title } : {}) };
   if (m.kind === "mermaid" && str(m.source) !== undefined) return { kind: "mermaid", source: m.source as string, ...(title ? { title } : {}) };
-  if (m.kind === "map" && str(m.source) !== undefined) return { kind: "map", source: m.source as string, ...(title ? { title } : {}) };
   if (m.kind === "text" && str(m.text) !== undefined) return { kind: "text", text: m.text as string };
   return undefined;
 }

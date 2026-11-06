@@ -51,4 +51,4 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 ## When the build is done {#when-done}
 
-The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs reach Review as open items, never as passed.
+The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs stay open in Verify, never passed.

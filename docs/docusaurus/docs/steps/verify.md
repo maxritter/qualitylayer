@@ -6,7 +6,7 @@ description: Run project checks and independent review against the approved Plan
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-light.svg)
 ![The seven steps, with Verify highlighted](pathname:///img/diagrams/track-verify-dark.svg)
 
-Your agent runs checks and independent review, then fixes the findings. Unresolved work reaches Review with its evidence; approval never marks it passed.
+Your agent runs checks and independent review, then fixes the findings. Review opens once every point passes; a failure is never marked passed.
 
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-light.webp)
 ![Verify in the App: the checks and their results](pathname:///img/app/verify-dark.webp)
@@ -40,19 +40,17 @@ Project commands and security scans produce recorded results. Separate agents re
 
 If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify records **Checked without an independent judge**.
 
-## Two runs {#rounds}
+## Two fix rounds {#rounds}
 
-If the independent review finds gaps, your agent fixes them and commits. A second reviewer rechecks the failures and affected code. That is the limit: two runs.
-
-What remains open stays visible in Review. Use **Give feedback** to ask for a fix; your agent rechecks the affected work.
+If the independent review finds gaps, your agent fixes them and commits. A fresh reviewer rechecks the failures and affected code. That can happen twice.
 
 ## Proof for each point {#live}
 
 Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and checking points come first, then those **yours to confirm**, then the rest. Open a check for its commands and output.
 
-## What reaches Review {#when-it-stops}
+## When Verify cannot finish {#when-it-stops}
 
-Failures keep their evidence. Human-only prerequisites, unavailable environments and points open after the second run reach Review as unresolved work, never as passed.
+Failures keep their evidence. A point still failing after the second fix round, a prerequisite only you can supply or an unavailable environment ends Verify with one question: change what **Done means** says, ask for one more fix round, or stop the task. Work outside the task becomes a follow-up with its owner. No answer marks a failing point as passed.
 
 Your agent's native permissions and your explicit stop or pause still apply.
 

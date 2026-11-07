@@ -17,7 +17,7 @@ Review opens once Verify has passed every point, so everything on the page is fi
 
 | Part | What you read |
 | --- | --- |
-| **Risk at merge** and **Why** | A one-line risk for merging and a one-sentence refresher of the request |
+| **Why** | A one-sentence refresher of the request |
 | **Code** | The complete change, with line comments and where to start reading |
 | **What changed** | The change in diagrams, in tabs |
 | **Screens** | The designs you approved beside what was built |

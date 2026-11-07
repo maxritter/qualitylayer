@@ -1,6 +1,6 @@
 ---
 title: Outline
-description: See how your agent will build the approved Plan: the slices, their tasks and the scenarios that prove it.
+description: "See how your agent will build the approved Plan: the slices, their tasks and the scenarios that prove it."
 ---
 
 ![The workflow, with Outline highlighted](pathname:///img/diagrams/track-outline-light.svg)

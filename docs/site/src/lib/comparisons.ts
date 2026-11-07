@@ -27,6 +27,8 @@ export interface Comparison {
   kind?: "agent";
 }
 
+const CHECK_RESULT = "Verify records evidence for each agreed outcome. Review shows the finished change and its proof.";
+
 export const COMPARISONS: Comparison[] = [
   {
     slug: "superpowers",
@@ -41,10 +43,10 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Agree on the change", qualitylayer: "Review architecture diagrams and clickable artifacts, then approve the Plan before code.", other: "Brainstorming proposes two or three approaches, writes a design document and is meant to build nothing until you approve it.", source: 2 },
       { topic: "Build it", qualitylayer: "Slices are built test first, with the agreed outcomes kept beside each slice.", other: "A plan of two-to-five-minute tasks, each with file paths, code and verification steps, run by subagents.", source: 1 },
-      { topic: "Check the result", qualitylayer: "Verify records output, screenshots or files for each agreed outcome, then brings gaps to human Review.", other: "Code review against the plan blocks on critical issues; finishing a branch verifies tests and offers merge, pull request, keep or discard.", source: 1 },
+      { topic: "Check the result", qualitylayer: "Verify records output, screenshots or files for each agreed outcome, then brings the finished change to human Review.", other: "Code review against the plan blocks on critical issues; finishing a branch verifies tests and offers merge, pull request, keep or discard.", source: 1 },
     ],
     chooseOther: "Choose Superpowers if you want disciplined, test-first habits as a plugin or skills in the agents you already use.",
-    chooseQualityLayer: "Choose QualityLayer if you also want a visual Plan to approve, evidence recorded for each agreed outcome and one place to review open checks before the pull request.",
+    chooseQualityLayer: "Choose QualityLayer if you also want a visual Plan to approve, evidence recorded for each agreed outcome and one place to review the finished change before the pull request.",
     sources: [
       { label: "Superpowers repository, skills and supported agents", url: "https://github.com/obra/superpowers" },
       { label: "Superpowers v7.0.1 release notes", url: "https://github.com/obra/superpowers/releases/tag/v7.0.1" },
@@ -65,7 +67,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Define the work", qualitylayer: "Plan visually with diagrams and clickable artifacts; approve the Plan before implementation.", other: "Create a constitution, specification, technical plan and dependency-ordered tasks.", source: 1 },
       { topic: "Check the artifacts", qualitylayer: "Keep the agreed outcomes with the task through implementation and Review.", other: "Use clarification, requirements checklists and cross-artifact analysis as quality checks.", source: 2 },
-      { topic: "Check the implementation", qualitylayer: "Record evidence from the running program for each outcome, then bring gaps to human Review.", other: "Converge assesses code against spec, plan and tasks, appending remaining work. The bug-fixing extension records verification too.", source: 1 },
+      { topic: "Check the implementation", qualitylayer: CHECK_RESULT, other: "Converge assesses code against spec, plan and tasks, appending remaining work. The bug-fixing extension records verification too.", source: 1 },
       { topic: "Adapt the process", qualitylayer: "Use the documented planning, build, Verify and Review flow in the App and your agent.", other: "Customize with extensions, presets, workflows and project-local overrides.", source: 1 },
     ],
     chooseOther: "Choose Spec Kit if you want a toolkit you can customize around your repository's own specification and review conventions. Its convergence checks deserve credit; it goes beyond generating a plan.",
@@ -90,7 +92,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan a change", qualitylayer: "Review diagrams and clickable artifacts in the App, then approve the Plan.", other: "Create a proposal with spec deltas, design and tasks; revise artifacts as needed.", source: 1 },
       { topic: "Verify the code", qualitylayer: "Record evidence from the running program for each agreed outcome, with independent review enabled by default.", other: "The optional verify skill reports completeness, correctness and coherence against the artifacts.", source: 2 },
-      { topic: "Finish the change", qualitylayer: "Review the evidence and open checks; approve locally, or ask QualityLayer to open and follow a pull request.", other: "Archive the change and sync its spec updates. Archive warns about incomplete artifacts or tasks.", source: 2 },
+      { topic: "Finish the change", qualitylayer: "Review the evidence and recorded checks; approve locally, or ask QualityLayer to open and follow a pull request.", other: "Archive the change and sync its spec updates. Archive warns about incomplete artifacts or tasks.", source: 2 },
     ],
     chooseOther: "Choose OpenSpec if maintaining evolving specifications and small change proposals in your repository is the main goal. Its flexible artifact editing fits work where requirements change during implementation.",
     chooseQualityLayer: "Choose QualityLayer if you want explicit human approvals and evidence for the running result in the App. OpenSpec also checks implementation; QualityLayer's emphasis is how that proof reaches your review and pull request.",
@@ -140,7 +142,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Agree on the change", qualitylayer: "Discuss and a visual Plan you approve before code.", other: "Discuss captures implementation decisions; a plan checker confirms plans are complete, consistent and in scope.", source: 2 },
       { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome on the running program.", other: "A verifier checks requirement coverage; a walkthrough logs issues per deliverable, then plans the fixes.", source: 3 },
-      { topic: "Ship", qualitylayer: "Review the evidence and open checks, then approve; QualityLayer can open and follow the pull request.", other: "Ship creates the pull request from the plan and verification status.", source: 3 },
+      { topic: "Ship", qualitylayer: "Review the evidence and recorded checks, then approve; QualityLayer can open and follow the pull request.", other: "Ship creates the pull request from the plan and verification status.", source: 3 },
     ],
     chooseOther: "Choose GSD if you want a light, open source loop with user-acceptance checks that runs in many agents.",
     chooseQualityLayer: "Choose QualityLayer if you want explicit approvals in an App, a visual Plan and evidence you review before approving the change.",
@@ -191,7 +193,7 @@ export const COMPARISONS: Comparison[] = [
     agents: "Traycer's desktop app drives Claude Code, Codex, Cursor and OpenCode. QualityLayer also starts Claude Code, Codex, Cursor and other agents from its App; the difference is the workflow each one runs.",
     rows: [
       { topic: "Plan a feature", qualitylayer: "Discuss, Research and a visual Plan you approve, then an Outline of slices.", other: "Skills write an epic brief, core flows, a tech plan and a ticket breakdown you approve.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; Review shows checks that failed or could not run.", other: "Execution checks each batch against the plan; a review skill writes prioritized findings, and an autobuild mode iterates against a grading rubric with a separate evaluator.", source: 3 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Execution checks each batch against the plan; a review skill writes prioritized findings, and an autobuild mode iterates against a grading rubric with a separate evaluator.", source: 3 },
       { topic: "Follow the process", qualitylayer: "The steps run in order, each with its approval or recorded check.", other: "The steps are skills you pick yourself; Traycer does not enforce them as an automatic pipeline.", source: 3 },
     ],
     chooseOther: "Choose Traycer if running several agents in parallel, with shared tickets and artifacts, is the center of your work.",
@@ -245,7 +247,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts.", other: "Claude explores without editing source, then presents a text plan you can edit.", source: 1 },
       { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Review.", other: "Approve and start, approve with manual edit approval, or keep planning.", source: 1 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; Review shows open checks.", other: "Verification is separate from plan mode: tests, goals, hooks, review subagents and the bundled /verify, which builds and runs your app.", source: 2 },
+      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; Review shows the finished change and its proof.", other: "Verification is separate from plan mode: tests, goals, hooks, review subagents and the bundled /verify, which builds and runs your app.", source: 2 },
     ],
     chooseOther: "Choose plan mode alone for small, well-understood changes where a quick written plan is enough.",
     chooseQualityLayer: "Choose QualityLayer for medium and large changes where you want the plan, the build, verification and review carried through in one flow.",
@@ -269,7 +271,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts.", other: "The agent asks questions, researches the codebase and writes a plan you edit before building.", source: 1 },
       { topic: "Larger work", qualitylayer: "An Outline cuts the approved Plan into slices that agents build test first.", other: "Projects (beta): a coordinator plans and directs agents that implement and test parts in parallel.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; Review shows open checks before approval.", other: "Bugbot, billed separately by usage, reviews pull requests for bugs, security issues and code quality.", source: 3 },
+      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; Review shows the finished change and its proof before approval.", other: "Bugbot, billed separately by usage, reviews pull requests for bugs, security issues and code quality.", source: 3 },
     ],
     chooseOther: "Choose Cursor's plan mode if you work in Cursor and want planning built into the editor.",
     chooseQualityLayer: "Choose QualityLayer if you want the same plan-first flow across agents, with evidence for each agreed outcome and an explicit review before the pull request.",
@@ -294,7 +296,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts, saved as Markdown in your repository.", other: "Codex reads the repository, asks clarifying questions and proposes a plan in the session.", source: 2 },
       { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Review; teammates can comment on the Plan.", other: "You read the plan in the terminal session and tell Codex to implement it.", source: 1 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Checking the result is up to you, your tests and any review step you add after plan mode.", source: 1 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Checking the result is up to you, your tests and any review step you add after plan mode.", source: 1 },
     ],
     chooseOther: "Choose plan mode alone for small, well-understood changes where a short written plan is enough and you review the diff yourself.",
     chooseQualityLayer: "Choose QualityLayer for medium and large changes where you decide on the plan with your team. You see evidence that each agreed outcome works before the pull request.",
@@ -341,7 +343,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Parse a PRD into tasks, analyze their complexity and expand the complex ones into subtasks.", source: 2 },
       { topic: "Build it", qualitylayer: "An Outline cuts the approved Plan into slices built test first, each kept beside its agreed outcomes.", other: "The next command picks a pending task whose dependencies are done, and your agent implements it.", source: 2 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Each task carries a test strategy that describes how to verify it.", source: 2 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Each task carries a test strategy that describes how to verify it.", source: 2 },
     ],
     chooseOther: "Choose Task Master if you start from a written PRD and want your agent to work through a task list in dependency order.",
     chooseQualityLayer: "Choose QualityLayer if you want to shape the plan together with the agent, approve it visually and see evidence that each outcome works before the pull request.",
@@ -392,7 +394,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Ask mode discusses without editing. Architect mode has one model propose the change and an editor model apply it.", source: 1 },
       { topic: "Build it", qualitylayer: "An Outline cuts the approved Plan into slices built test first.", other: "Aider edits the files in the chat and commits each change to git.", source: 3 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Aider lints edited files by default. Tests run when you use /test or turn on auto test, and Aider tries to fix what fails.", source: 2 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Aider lints edited files by default. Tests run when you use /test or turn on auto test, and Aider tries to fix what fails.", source: 2 },
     ],
     chooseOther: "Choose Aider if you want a light terminal tool that edits and commits small changes while you talk them through.",
     chooseQualityLayer: "Choose QualityLayer for larger changes where you want to approve the plan first and see evidence that each agreed outcome works before the pull request.",
@@ -417,7 +419,7 @@ export const COMPARISONS: Comparison[] = [
     agents: "Copilot cloud agent is GitHub's own agent. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot CLI on your computer, in a dev container or on a server.",
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Researches the repository and makes a plan in the cloud before it changes code.", source: 1 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Runs your tests and linters and keeps session logs. GitHub notes that the logs do not replace your own review and testing.", source: 1 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Runs your tests and linters and keeps session logs. GitHub notes that the logs do not replace your own review and testing.", source: 1 },
       { topic: "Pull request", qualitylayer: "After you approve at Review, QualityLayer opens the pull request with gh and follows it through checks.", other: "One repository, one branch and one pull request per task. You review the diff before a pull request is created, or ask for one in the prompt.", source: 1 },
     ],
     chooseOther: "Choose Copilot cloud agent if your code lives on GitHub and you want to hand off well-scoped tasks that run without your own machine.",
@@ -441,7 +443,7 @@ export const COMPARISONS: Comparison[] = [
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts that you approve before code.", other: "Ask mode explores the code and scopes the task, then builds a prompt you send to an Agent session.", source: 2 },
       { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence.", other: "After the pull request, Devin writes a short test plan for one main flow, runs it in a browser and sends a recording.", source: 3 },
-      { topic: "Review", qualitylayer: "Review shows the evidence and what is still open, and you approve before the pull request.", other: "Devin Review organizes the diff, flags likely bugs by confidence and syncs comments to GitHub.", source: 4 },
+      { topic: "Review", qualitylayer: "Review shows the finished change and its evidence, and you approve before the pull request.", other: "Devin Review organizes the diff, flags likely bugs by confidence and syncs comments to GitHub.", source: 4 },
     ],
     chooseOther: "Choose Devin if you want to hand off a backlog of scoped tasks and review the pull requests later.",
     chooseQualityLayer: "Choose QualityLayer if you want to decide the plan before code exists and approve the change with evidence for every agreed outcome.",
@@ -491,7 +493,7 @@ export const COMPARISONS: Comparison[] = [
     agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports all of them and more, including Grok, Antigravity, Pi and GitHub Copilot.",
     rows: [
       { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One workspace per shippable unit, each with its own branch, working tree and app processes.", source: 2 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. Review shows what is still open.", other: "Test in the terminal or the running app, ask an agent to review, and read the Checks tab before merging.", source: 2 },
+      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Test in the terminal or the running app, ask an agent to review, and read the Checks tab before merging.", source: 2 },
       { topic: "Ship it", qualitylayer: "After your approval, QualityLayer opens the pull request with gh and follows it.", other: "Conductor drafts the pull request, follows its GitHub checks, can merge it and then archives the workspace.", source: 2 },
     ],
     chooseOther: "Choose Conductor if you run many agents at once on a Mac and want one place to review and merge their branches.",

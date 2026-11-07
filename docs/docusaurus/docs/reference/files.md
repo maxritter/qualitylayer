@@ -14,7 +14,7 @@ Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never
 | --- | --- |
 | **The seven documents** | One per step that runs ([below](#documents)) |
 | `original-plan.md` | A plan supplied through Existing plan or saved in Chat, unchanged |
-| `artifacts/` | Local artifacts and their revisions. Shared only with **Include artifacts** |
+| `artifacts/` | Local artifacts and their revisions. **Include artifacts** adds previews; a selected Plan preview may already accompany the Plan. |
 | `reviews/` | The Plan review and second opinion, when they ran |
 | `records/` | The raw output of every command, and `pull-request-body.md` |
 | `evidence/` | Pictures and recordings the checks made |
@@ -52,9 +52,9 @@ Your code, diff, documents, evidence and costs stay on your computer until you s
 | | What is sent |
 | --- | --- |
 | **Always** | A daily licence check to qualitylayer.dev (plus activation or trial start), the workflow texts your agent follows, and App updates. No usage events |
-| **When you share** | Tasks, documents and comments, encrypted on your computer with your team's key. **Include artifacts** adds previews (off for existing shares). The server sees names, e-mails, the step and when, never the content. A share link's key never reaches the server |
+| **When you share** | Tasks, documents and comments, encrypted on your computer: with the team key for team shares or the link key for public shares. **Include artifacts** adds previews (off for existing shares). The server sees names, e-mails, the step and when, never the content. A share link's key never reaches the server |
 | **When your team reviews code** | **Ask for review** pushes the branch to your own Git remote. QualityLayer stores the team's line comments, the quoted lines (up to 300 characters each) and the commits, encrypted with your team's key, never the code |
-| **Not included automatically** | Source, diffs, host logs, launch settings, terminal output and command output. Text or attachments you share can contain anything. Shared artifact previews run no scripts |
+| **Not included automatically** | **For agents** files, source, diffs, host logs, launch settings, terminal output and command output. Text or attachments you share can contain anything. Shared artifact previews run no scripts |
 | **With Slack or email** | The task title and the question, through the QualityLayer server to Slack or to Resend for email |
 | **Instructions** | Yours stay local and go to your agent, so a cloud agent may send them to its provider. Team instructions are encrypted with the team's key |
 | **Lessons and lasting artifacts** | Travel through your Git pushes only where you keep them in the repository or turn on [memory sharing](../memory.md) |

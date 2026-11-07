@@ -17,7 +17,7 @@ export const STEPS: Step[] = [
   { id: "implement", name: "Implement", who: "agent", line: "Build it test first", text: "Your agent builds test first and hands independent work to other agents when useful.", alt: "The billing build: slice 6 of 11 in progress with its task cards, finished slices marked done, beside the session writing the next failing test" },
   { id: "verify", name: "Verify", who: "check", line: "Check the running change", text: "Run project checks and independent review. Your agent fixes the findings.", alt: "Verification for the billing change: project checks, independent reviews, security scans and fix rounds" },
   { id: "review", name: "Review", who: "you", line: "Read the change and its proof", text: "Review the code and the acceptance test as it ran, request changes or approve.", alt: "Review of the billing change: code, screens and checks, with one final approval in the page header" },
-  { id: "pull-request", name: "Pull request", who: "agent", line: "Follow it until it is merged", text: "Your agent handles failing checks and review comments. You control the merge.", alt: "Pull request #412: two review threads and a failing check wait on you, above the pull request's checks and reviews" },
+  { id: "pull-request", name: "Pull request", who: "agent", line: "Follow it until it is merged", text: "Your agent handles failing checks and review comments. You control the merge.", alt: "Pull request #412: two review threads and a failing check, above the pull request's checks and reviews" },
 ];
 
 /** The seven steps of every change; the pull request follows them. */

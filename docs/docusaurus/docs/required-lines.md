@@ -5,13 +5,13 @@ description: Make a check, tool or skill part of a workflow step, for yourself o
 
 # Required lines
 
-Make a check, tool or skill part of a step. The agent does it or says why it skipped, and you see which at Review.
+Make a check, tool or skill part of a step. Your agent records each outcome, including why a line does not apply.
 
-<figure class="memory-flow" aria-label="How a required line reaches Review">
+<figure class="memory-flow" aria-label="How a required line is recorded">
   <ol>
     <li><strong>Add a line</strong><span>A checkbox under a step's heading in your or your team's instructions.</span></li>
     <li><strong>The agent does it</strong><span>Each reply in that step lists it first. The agent records it done or skipped.</span></li>
-    <li><strong>You see which</strong><span>Review shows every line with its record. Skips go into the pull request.</span></li>
+    <li><strong>Read the record</strong><span>The instruction record keeps each outcome. Skips remain recorded.</span></li>
   </ol>
   <figcaption>Example: the team's Wiz scan runs in every teammate's Verify.</figcaption>
 </figure>
@@ -38,8 +38,8 @@ Make a check, tool or skill part of a step. The agent does it or says why it ski
 ## What to expect
 
 - A task keeps the lines it started with. An edit applies from your next task.
-- Nothing waits on a line. The agent is reminded once when it leaves the step, and Review lists every line it did not record.
+- Your agent is reminded once when it leaves a step with unrecorded lines. Missing records never count as passing evidence.
 - Review lines are done before the final review opens. Put checks that must run under Verify.
-- A failed command or a missing tool shows at Review and in the pull request. It never stops the task.
-- Team lines come first, and teammates can't remove them. If the agent skips one, the Plan shows it before you approve.
+- Your agent resolves failed or unavailable checks before Review, asking a question when only you can settle them. Unrun checks stay unrun in the record.
+- Team lines come first, and teammates can't remove them. If a line cannot apply, your agent records the reason.
 - Commands and connectors use the logins already on your computer. QualityLayer stores no credentials.

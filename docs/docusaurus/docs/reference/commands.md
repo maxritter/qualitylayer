@@ -76,7 +76,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 qualitylayer share fetch --link-file /path/to/private-link.txt --out ./shared-copies --json
 ```
 
-A link file or `--link-stdin` keeps the link out of shell history. Fetching needs no licence and changes nothing. The key after `#` stays on your computer. Revoking a link cannot remove downloaded copies.
+A link file or `--link-stdin` keeps the link out of shell history. Fetching needs no licence and leaves the owner's task unchanged. The key after `#` stays on your computer. Revoking a link cannot remove downloaded copies.
 
 ## Artifacts {#artifacts}
 

@@ -56,7 +56,7 @@ Work side by side in the App or browser, or stay in your terminal or IDE.
 | **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request before Review opens. |
-| **Your own requirements** | Add checks, tools or skills to any step. Review shows what was done or skipped. [Required lines](https://qualitylayer.dev/docs/required-lines). |
+| **Your own requirements** | Add checks, tools or skills to any step. Your agent records what ran, what did not, and why. [Required lines](https://qualitylayer.dev/docs/required-lines). |
 | **Visible decisions and effort** | Read decisions and results in your repository; see time, model usage value and cost estimates in the App. |
 
 ---
@@ -107,7 +107,7 @@ Plan retries for failed webhooks and stop after a few tries.
 
 1. Answer questions and comment on the Plan.
 2. Approve the Plan. Your agent builds and verifies the change.
-3. Review the result and open checks, then approve it. Ask your agent to merge, deploy or make further changes.
+3. Review the result and recorded checks, then approve it. Ask your agent to merge, deploy or make further changes.
 
 Prefer your terminal or IDE? Choose **In my terminal**, or ask there: “Using QualityLayer, plan retries for failed webhooks.” Other agents use the CLI ([supported agents](https://qualitylayer.dev/docs/agents/native)). **Chat** skips the workflow steps ([Chat guide](https://qualitylayer.dev/docs/chat)). QualityLayer runs only when you ask for it. [Your first task](https://qualitylayer.dev/docs/first-task).
 

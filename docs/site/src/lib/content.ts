@@ -23,7 +23,7 @@ const team = priced("team");
 /** Asked on the home page and on pricing, answered the same way on both. */
 const CODE_LEAVES = faq(
   "Does my code leave my computer?",
-  "Your agent sends code to its provider under your existing data settings. QualityLayer keeps code, plans, artifacts and agent output on your computer. Shared tasks, documents and comments are encrypted there: we can't read them, but see who shared which task, when and at which step. Artifacts are included only if you choose; terminal output and repository code stay out. Your team reviews code through its own Git remote. We store encrypted review comments, short quoted code lines and their commit references. Slack and email notifications send task titles and questions through our server to Slack or our email provider. Check feedback screenshots before attaching them: they can contain code.",
+  "Your agent sends code to its provider under your existing data settings. QualityLayer keeps code, plans, artifacts and agent output on your computer. Shared tasks, documents and comments are encrypted there: we can't read them, but see who shared which task, when and at which step. The selected Plan preview can accompany a share; Include artifacts adds other previews. Terminal output and repository code stay out. Your team reviews code through its own Git remote. We store encrypted review comments, short quoted code lines and their commit references. Slack and email notifications send task titles and questions through our server to Slack or our email provider. Check feedback screenshots before attaching them: they can contain code.",
 );
 
 /** Ordered by what a visitor asks first: cost, the difference, privacy, then how they would use it. */

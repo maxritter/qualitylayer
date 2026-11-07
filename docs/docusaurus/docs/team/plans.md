@@ -37,7 +37,7 @@ Messages use Slack when it finds your account and you enable Slack messages; oth
 
 ## People outside your team {#outside-links}
 
-**Share › Copy link** gives a qualitylayer.dev link. Anyone with it can read and comment without an account. The task owner decides approval.
+**Share › Copy link** gives a qualitylayer.dev link. Anyone with it can read the shared step pages and comment without an account. The task owner decides approval.
 
 - The open page updates as the task changes and keeps your unsent answers and comments.
 - A link lasts 14 days; **Revoke** ends it at once.
@@ -55,9 +55,9 @@ The file holds the whole link, including the part after `#`; keep it private ([d
 
 ## What is shared {#privacy}
 
-- Shared documents, artifacts and comment bodies are encrypted with your team's key before publication. The server stores only ciphertext.
+- Team shares use your team's key; public links use the key after `#`. Documents, previews and comment bodies are encrypted before publication; the server stores ciphertext for their content.
 - Slack messages and emails can include task titles and short question or answer excerpts, which pass through our server to Slack or to our email provider, Resend.
 - Review code travels between your computer and your own Git remote. QualityLayer stores your team's encrypted comments, the short lines of code they quote (up to 300 characters each) and the commits and branch they point to.
-- The shared task includes no source files, diffs or logs.
+- The shared task includes no **For agents** files, source files, diffs or logs.
 
 More in [Files and privacy](../reference/files.md#privacy).

@@ -46,7 +46,7 @@ If the independent review finds gaps, your agent fixes them and commits. A fresh
 
 ## Proof for each point {#live}
 
-Each **Done means** point shows its evidence as it comes in: output, a screenshot or a file. Failed and checking points come first, then those **yours to confirm**, then the rest. Open a check for its commands and output.
+The page shows check stages and their status, with cited pictures below. **Read the record** opens the step document; point-by-point verdicts, commands and output stay in `agents/06-verify.md`.
 
 ## When Verify cannot finish {#when-it-stops}
 

@@ -39,7 +39,7 @@ function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" 
   return (
     <>
     <picture>
-      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 680 : 836} height={shot.id === "plan" ? 542 : 1456} />
+      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 680 : 836} height={shot.id === "plan" ? 542 : shot.id === "discuss" ? 1644 : 1456} />
       <img src={src(shot, theme)} alt={shot.alt} width={2664} height={DESKTOP_HEIGHTS[shot.id] ?? 1496} loading={eager || inDialog ? undefined : "lazy"} decoding="async" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
     </picture>
     {failed ? <span className="ed-image-error">{shot.title} image unavailable. {inDialog ? "Use Full size to retry." : "Open the preview to retry."}</span> : null}

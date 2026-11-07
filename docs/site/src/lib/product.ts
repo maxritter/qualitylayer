@@ -16,18 +16,17 @@ export const CONTACT_EMAIL = "hello@qualitylayer.dev";
 export const AUTHOR_URL = "https://maxritter.net";
 export const AUTHOR_NAME = "Max Ritter";
 
-/** The hero's subtitle and the default page description. */
 /** The hero's first line ends on the agents; on the page it names them one after another. */
 export const LEDE_LEAD = "Plan, build and review software with";
 export const LEDE_AGENTS = "your coding agents";
-export const LEDE_REST = "Work side by side in the App or browser, or use your favourite terminal or IDE.";
+export const LEDE_REST = "Work side by side in the App or browser, or stay in your terminal or IDE: questions and approvals can happen right in your agent's chat.";
 export const DESCRIPTION = `${LEDE_LEAD} ${LEDE_AGENTS}. ${LEDE_REST}`;
 /** The line under the name wherever the product is introduced: the hero, page titles, the README and the CLI. */
 export const SLOGAN = "The software factory with you in the loop";
 /** The brand line, shown with the mark above the slogan (Max, 2026-10-19). Kept out of titles and keywords: alone it does not say what the product is. */
 export const BRAND_LINE = "Quality by design";
 /** The sentence shown when the site is shared or listed in search; also rendered at build time. */
-export const SHARE_DESCRIPTION = DESCRIPTION;
+export const SHARE_DESCRIPTION = "Plan, build and review with your coding agents. Use the App, browser, terminal or IDE, with questions and approvals in your agent's chat.";
 /** The long video beside the short film: the hero's second watch action. Facts about it live in deep-dive.ts. */
 export const DEEP_DIVE = { label: "Deep dive", title: "Inside QualityLayer", href: "/inside" };
 /** One engineer's words about QualityLayer, relayed by Max on 2026-10-15. Quote it as it is; the attribution stays anonymous. */

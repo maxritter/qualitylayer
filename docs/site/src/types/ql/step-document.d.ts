@@ -26,6 +26,7 @@ export type StepDocumentProps = {
   extraTools?: ReactNode | undefined;
   /** Draw the artifacts the document's `ql:artifact` markers name, where they stand (Discuss's wireframe). */
   artifacts?: { open?: ((name: string) => void) | undefined } | undefined;
+  stepFile?: { step: "discuss" | "research" | "plan" | "outline" | "implement" | "verify" | "review"; task?: string; load?: (name: string) => Promise<string> } | undefined;
 };
 
 export function StepDocument(props: StepDocumentProps): ReactNode;

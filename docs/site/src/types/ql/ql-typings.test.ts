@@ -18,6 +18,15 @@ describe("the site's typings of the App's modules", () => {
     expect(propsOf(declared).sort()).toEqual(propsOf(props).sort());
   });
 
+  it("SharedStep exposes exactly its read-only host props", () => {
+    const app = source("step-page/SharedStep.tsx");
+    const start = app.indexOf("export type SharedStepProps = {");
+    const actual = app.slice(start, app.indexOf("\n}", start));
+    const mine = typing("shared-step.d.ts");
+    const declared = mine.slice(mine.indexOf("export type SharedStepProps = {"), mine.indexOf("\n};"));
+    expect(propsOf(declared).sort()).toEqual(propsOf(actual).sort());
+  });
+
   it("a comment needs only what the Reader reads, and every one of those is a field of the App's comment", () => {
     const comment = source("../core/gate/comments.ts");
     for (const field of propsOf(typing("step-document.d.ts").split("export type StepComment = {")[1]?.split("};")[0] ?? "")) {

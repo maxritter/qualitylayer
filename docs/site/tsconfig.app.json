@@ -40,6 +40,7 @@
       // The App's Reader is a React component the site draws, not code it type-checks: following its files
       // would pull the App's server and core into this project. The site types the few modules it uses
       // by hand (src/types/ql); Vite loads the real ones (src/types/ql/ql-typings.test.ts keeps them in step).
+      "@ql/ui/step-page/SharedStep": ["./src/types/ql/shared-step.d.ts"],
       "@ql/ui/steps/StepDocument": ["./src/types/ql/step-document.d.ts"],
       "@ql/ui/reader/MermaidBlock": ["./src/types/ql/mermaid-block.d.ts"],
       "@ql/ui/components/ui/button": ["./src/types/ql/button.d.ts"],

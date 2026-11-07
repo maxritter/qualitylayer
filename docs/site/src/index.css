@@ -6,7 +6,8 @@
 @import "../../../qualitylayer/src/ui/kit/kit.css";
 /* The share page draws the App's Reader: the utility classes its components use are made here too. */
 @source "../../../qualitylayer/src/ui/reader";
-@source "../../../qualitylayer/src/ui/steps/StepDocument.tsx";
+@source "../../../qualitylayer/src/ui/steps";
+@source "../../../qualitylayer/src/ui/step-page";
 @source "../../../qualitylayer/src/ui/components/ui/button.tsx";
 @source "../../../qualitylayer/src/ui/components/ui/dropdown-menu.tsx";
 @source "../../../qualitylayer/src/ui/components/ui/popover.tsx";

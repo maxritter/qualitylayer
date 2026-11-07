@@ -5,8 +5,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadMermaidFrom } from "@ql/ui/reader/MermaidBlock";
 import type { LoadedShare, Remark } from "@/lib/sharing/sharing";
-import { withoutShownMockups } from "@/lib/sharing/plan";
-import { SharedDocument } from "./shared/SharedDocument";
 import { SharedView } from "./Shared";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); });
@@ -17,6 +15,7 @@ const ready = (docs: Record<string, string>): Extract<LoadedShare, { status: "re
 });
 const noSend = async () => ({ ok: true as const });
 const popover = () => within(document.body);
+const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
 
 describe("the share page draws a document with the App's Reader", () => {
   it("has the On this page button and the Copy menu at the top of each document", () => {
@@ -66,44 +65,41 @@ describe("the share page draws a document with the App's Reader", () => {
     const render_ = vi.fn(async (_id: string, _source: string) => ({ svg: '<svg role="img" aria-label="drawn"><text>A to B</text></svg>' }));
     const load = vi.fn(async () => ({ default: { initialize: vi.fn(), render: render_ } }) as never);
     loadMermaidFrom(load);
-    render(<SharedDocument name="03-plan.md" markdown={"# Plan\n\nBefore.\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\nAfter."} docs={{}} comments={[]} onQuote={() => {}} />);
+    render(<SharedView state={ready({ "03-plan.md": "# Plan\n\nBefore.\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\nAfter." })} onSend={noSend} />);
     expect(await screen.findByLabelText("drawn")).toBeTruthy();
     expect(render_.mock.calls[0]?.[1]).toContain("A --> B");
     expect(load).toHaveBeenCalledTimes(1);
     cleanup();
     load.mockClear();
-    render(<SharedDocument name="03-plan.md" markdown="# Plan\n\nNo diagram." docs={{}} comments={[]} onQuote={() => {}} />);
+    render(<SharedView state={ready({ "03-plan.md": "# Plan\n\nNo diagram." })} onSend={noSend} />);
     expect(load).not.toHaveBeenCalled();
   });
 
   it("a mockup the link carries is shown, and one it does not carry says so", async () => {
-    const docs = { "artifacts/settings.html": "<html><body>Settings</body></html>" };
     const doc = (path: string) => `# Plan\n\n\`\`\`artifact\n${path}\n\`\`\`\n`;
-    const { rerender } = render(<SharedDocument name="03-plan.md" markdown={doc("artifacts/settings.html")} docs={docs} comments={[]} onQuote={() => {}} />);
-    const preview = await screen.findByTestId("artifact-preview");
-    await waitFor(() => expect(preview.querySelector("iframe")).not.toBeNull());
-    rerender(<SharedDocument name="03-plan.md" markdown={doc("artifacts/gone.html")} docs={docs} comments={[]} onQuote={() => {}} />);
-    expect(await screen.findByText("The mockup is not part of this link. Ask for a new link to see it.")).toBeTruthy();
+    const { rerender } = render(<SharedView state={ready({ "03-plan.md": doc("artifacts/settings.html"), "plan-artifact.png": png })} onSend={noSend} />);
+    expect(await screen.findByRole("img", { name: "Plan artifact" })).toBeTruthy();
+    expect(document.querySelector("iframe")).toBeNull();
+    rerender(<SharedView state={ready({ "03-plan.md": doc("artifacts/gone.html") })} onSend={noSend} />);
+    expect(await screen.findByText("This picture is not included in this link.")).toBeTruthy();
   });
 
-  it("leaves out the mockups a question already shows, so none is drawn twice", () => {
-    const md = "# Plan\n\n```artifact\nartifacts/settings.html\n```\n\nKept.\n\n```artifact\nartifacts/other.html\n```\n";
-    const out = withoutShownMockups(md, new Set(["settings.html"]));
-    expect(out).not.toContain("settings.html");
-    expect(out).toContain("artifacts/other.html");
-    expect(out).toContain("Kept.");
-    expect(withoutShownMockups(md, new Set())).toBe(md);
+  it("draws a referenced still once through the App Reader", () => {
+    render(<SharedView state={ready({ "03-plan.md": "# Plan\n\n```artifact\nartifacts/settings.html\n```\n\nKept.", "plan-artifact.png": png })} onSend={noSend} />);
+    expect(screen.getAllByRole("img", { name: "Plan artifact" })).toHaveLength(1);
+    expect(screen.getByText("Kept.")).toBeTruthy();
   });
 
   it("a same-link poll replaces a same-named mockup and removes it when the new share omits it", async () => {
     const markdown = "# Plan\n\n```artifact\nartifacts/settings.html\n```\n";
-    const { rerender } = render(<SharedDocument name="03-plan.md" markdown={markdown} docs={{ "artifacts/settings.html": "<html><title>Version A</title><body>First</body></html>" }} comments={[]} onQuote={() => {}} />);
-    const first = await screen.findByTestId("artifact-page-frame");
-    rerender(<SharedDocument name="03-plan.md" markdown={markdown} docs={{ "artifacts/settings.html": "<html><title>Version B</title><body>Second</body></html>" }} comments={[]} onQuote={() => {}} />);
-    await waitFor(() => expect(screen.getByTestId("artifact-page-frame")).not.toBe(first));
-    rerender(<SharedDocument name="03-plan.md" markdown={markdown} docs={{}} comments={[]} onQuote={() => {}} />);
-    expect(await screen.findByText("The mockup is not part of this link. Ask for a new link to see it.")).toBeTruthy();
-    expect(screen.queryByTestId("artifact-page-frame")).toBeNull();
+    const second = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==";
+    const { rerender } = render(<SharedView state={ready({ "03-plan.md": markdown, "plan-artifact.png": png })} onSend={noSend} />);
+    expect((await screen.findByRole("img", { name: "Plan artifact" })).getAttribute("src")).toBe(png);
+    rerender(<SharedView state={ready({ "03-plan.md": markdown, "plan-artifact.png": second })} onSend={noSend} />);
+    await waitFor(() => expect(screen.getByRole("img", { name: "Plan artifact" }).getAttribute("src")).toBe(second));
+    rerender(<SharedView state={ready({ "03-plan.md": markdown })} onSend={noSend} />);
+    expect(await screen.findByText("This picture is not included in this link.")).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Plan artifact" })).toBeNull();
   });
 });
 

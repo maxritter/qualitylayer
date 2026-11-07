@@ -11,7 +11,9 @@
 
 import type { FeedbackPayload, SealedPayload } from "./types";
 import { publicArtifactPayload, type PublicArtifactPayload } from "../../../../../qualitylayer/src/core/artifact/public-link-format.ts";
-import { isBuiltStill, sharedDocuments, sharedScreenStills, stripSharedCode, STEP_DOCS } from "../../../../../qualitylayer/src/core/team/publication.ts";
+import { sharedPresentationDocuments, stripSharedCode, STEP_DOCS } from "../../../../../qualitylayer/src/core/team/publication.ts";
+import { readStepPresentation, type StepPresentation, type SharedPicture } from "../../../../../qualitylayer/src/core/team/step-presentation.ts";
+import { readTaskPictures, stepPictureBudget } from "../../../../../qualitylayer/src/core/team/step-picture-budget.ts";
 import { threadUpdates, type ThreadUpdate } from "../../../../../qualitylayer/src/core/team/thread-publication.ts";
 
 export const SHARE_ID = /^[A-Za-z0-9]{22}$/;
@@ -80,7 +82,7 @@ export type Tab = FlowStep;
 export const ALL_TABS: readonly Tab[] = ["discuss", "research", "plan", "outline", "implement", "verify", "review"];
 
 /** Only raster stills of artifacts referenced by the Plan, never the artifact's source. */
-export type PlanStill = { title: string; image: string; built?: string; outcome?: "omitted: size" };
+export type PlanStill = SharedPicture;
 
 /** What a guest can say to a question: agree, suggest a change, or reply in their own words. */
 export type GuestAnswer = "agree" | "change" | "reply";
@@ -121,11 +123,12 @@ export type LoadedShare =
       /** Who shared it, as the App names them; the page says "the owner" without it. */
       owner?: string;
       stage?: string;
-      /** Documents by name; the page sorts them into steps (`stepDocs`). Research is never among them. */
+      /** Documents by name; the page sorts them into steps (`stepDocs`). Research or diagnosis is included when that step was published. */
       docs: Record<string, string>;
       /** The owner's questions for this link. Empty for a link made before the App sent any. */
       items: ShareItem[];
       stills?: Record<string, PlanStill>;
+      presentation?: StepPresentation;
       /** ISO time the link runs out. */
       expires?: string;
       /** The finished, verified change, when the task got that far (v2 only). */
@@ -296,7 +299,7 @@ export function answerWords(item: Pick<ShareItem, "family">, answer: GuestAnswer
   return answer === "change" ? "Suggest a change" : "Reply";
 }
 
-type Plan = { task: string; owner?: string; stage?: string; docs: Record<string, string>; items: ShareItem[]; stills?: Record<string, PlanStill>; threads?: ThreadUpdate[] };
+type Plan = { task: string; owner?: string; stage?: string; docs: Record<string, string>; items: ShareItem[]; stills?: Record<string, PlanStill>; presentation?: StepPresentation; threads?: ThreadUpdate[] };
 
 /** The plan a link holds: its title and the documents, as text. What opened is still untrusted, so it is rebuilt. */
 export function parsePlan(plain: string | null): Plan | null {
@@ -307,30 +310,16 @@ export function parsePlan(plain: string | null): Plan | null {
   } catch {
     return null;
   }
-  const plan = value as { task?: unknown; owner?: unknown; docs?: unknown; items?: unknown; stage?: unknown; stills?: unknown; threads?: unknown } | null;
+  const plan = value as { task?: unknown; owner?: unknown; docs?: unknown; items?: unknown; stage?: unknown; stills?: unknown; presentation?: unknown; threads?: unknown } | null;
   if (typeof plan !== "object" || plan === null || typeof plan.docs !== "object" || plan.docs === null) return null;
   const all = Object.fromEntries(
     Object.entries(plan.docs).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
-  // Research stays with the agent: even a link that carries it does not hand it to the page.
-  const docs = sharedDocuments(all, typeof plan.stage === "string" ? plan.stage : undefined);
+  const docs = sharedPresentationDocuments(all, typeof plan.stage === "string" ? plan.stage : undefined);
   const owner = str(plan.owner)?.trim().slice(0, 80);
-  const stills: Record<string, PlanStill> = sharedScreenStills(plan.stills);
-  let used = Object.values(stills).reduce((n, still) => n + still.image.length + (still.built?.length ?? 0), 0);
-  let count = Object.values(stills).filter((still) => !still.outcome).length;
-  if (typeof plan.stills === "object" && plan.stills !== null) {
-    for (const [name, raw] of Object.entries(plan.stills)) {
-      const still = raw as Partial<PlanStill> | null;
-      if (/^(?:artifact|artifacts)\/[a-z0-9][a-z0-9-]*\.html$/.test(name) && typeof still?.title === "string" && typeof still.image === "string" && still.image.length <= 400_000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(still.image)) {
-        if (still.built !== undefined && !isBuiltStill(still.built)) continue;
-        const size = still.image.length + (still.built?.length ?? 0);
-        if (count >= 6 || used + size > 400_000) continue;
-        stills[name] = { title: still.title.slice(0, 160), image: still.image, ...(still.built ? { built: still.built } : {}) };
-        used += size;
-        count++;
-      }
-    }
-  }
+  const budget = stepPictureBudget();
+  const stills = readTaskPictures(plan.stills, budget);
+  const presentation = readStepPresentation(plan.presentation, { docs, stills, budget });
   return {
     task: typeof plan.task === "string" ? stripSharedCode(plan.task) : "Shared task",
     ...(owner ? { owner: stripSharedCode(owner) } : {}),
@@ -339,6 +328,7 @@ export function parsePlan(plain: string | null): Plan | null {
     items: [],
     threads: threadUpdates(plan.threads, docs),
     ...(Object.keys(stills).length > 0 ? { stills } : {}),
+    ...(presentation ? { presentation } : {}),
   };
 }
 
@@ -396,6 +386,7 @@ export async function readShareUpdate(id: string, key: string, since?: number, f
     docs,
     items: plan.items,
     ...(plan.stills !== undefined ? { stills: plan.stills } : {}),
+    ...(plan.presentation ? { presentation: plan.presentation } : {}),
     expires: body?.expires,
     ...(review !== undefined ? { review } : {}),
   } };

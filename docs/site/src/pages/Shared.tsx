@@ -1,10 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useLocation, useParams } from "react-router-dom";
-import { DownloadIcon } from "lucide-react";
-import { toast } from "sonner";
+import { SharedStepIcon } from "@ql/ui/step-page/SharedStep";
+import { BotIcon, UserRoundIcon, WorkflowIcon, FrameIcon } from "lucide-react";
 import type { StepComment } from "@ql/ui/steps/StepDocument";
-import { Button } from "@ql/ui/components/ui/button";
 import { Toaster } from "@ql/ui/components/ui/sonner";
 import Page from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,39 +11,30 @@ import { sharedArtifactSources, SHARED_ARTIFACT_NAME } from "@ql/core/artifact/s
 import SEO from "@/components/SEO";
 import { useTheme } from "@/hooks/useTheme";
 import "@/lib/sharing/fragments";
-import { addRemark, answerItem, type Drafts, EMPTY, pending, removeRemark, summary } from "@/lib/sharing/drafts";
-import { contractsOf, mockupName, planBlocks, slicesOf, screenPairsOf } from "@/lib/sharing/plan";
-import { ArtifactStill } from "./shared/Frame";
+import { addRemark, type Drafts, EMPTY, pending, removeRemark, summary } from "@/lib/sharing/drafts";
 import { watchShare } from "@/lib/sharing/poll";
-import { downloadMarkdown } from "@/lib/sharing/exports";
 import {
   ALL_TABS,
-  type ChangeAnchor,
   docOfStep,
-  type GuestAnswer,
   type LoadedShare,
   linkKeyOf,
   newThreadId,
   type Remark,
-  type ShareItem,
   type SubmitResult,
   stepDocs,
   submitRemarks,
   submitArtifactRemark,
   type ArtifactRemark,
   type Tab,
-  tabOfStep,
   where,
 } from "@/lib/sharing/sharing";
-import { Asks } from "./shared/Asks";
-import { Blocks } from "./shared/Blocks";
-import { SharedDocument } from "./shared/SharedDocument";
+import { SharedStepHost } from "./shared/SharedStepHost";
+import { useSharedNavigation } from "./shared/use-shared-navigation";
 import { SharedArtifacts } from "@ql/ui/artifact/SharedArtifacts";
 import { SharedArtifact } from "./shared/SharedArtifact";
-import { ChangeView } from "./SharedChange";
 import "@/styles/shared.css";
 import { flowStepOf } from "@ql/core/flow";
-import { PLAN_STILL, sharedDocuments, stripSharedCode } from "@ql/core/team/publication";
+import { PLAN_STILL, sharedPresentationDocuments, stripSharedCode } from "@ql/core/team/publication";
 
 const NAME_KEY = "qualitylayer-guest-name";
 
@@ -74,24 +64,10 @@ const LABELS: Record<Tab, string> = {
   review: "Review",
 };
 
-/** What a step with nothing in this link says, in one sentence. */
-const notThere = (tab: Tab) => `${LABELS[tab]} has not started yet.`;
-
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Text with `code` spans drawn as code. */
-const Inline = ({ text }: { text: string }) => (
-  <>
-    {text.split(/(`[^`]+`)/).map((part, i) => (
-      // The parts never reorder, so their position is their identity.
-      // biome-ignore lint/suspicious/noArrayIndexKey: static split
-      <Fragment key={i}>{part.startsWith("`") && part.endsWith("`") && part.length > 2 ? <code>{part.slice(1, -1)}</code> : part}</Fragment>
-    ))}
-  </>
-);
-
-/** Where the next comment goes: a quoted passage (or none), a point of the change, or a reply. */
-type Target = { kind: "passage"; quote: string; doc?: string; artifact?: string } | { kind: "anchor"; anchor: ChangeAnchor } | { kind: "reply"; thread: string; label: string };
+/** Where the next comment goes: a quoted passage (or none), or a reply. */
+type Target = { kind: "passage"; quote: string; doc?: string; artifact?: string } | { kind: "reply"; thread: string; label: string };
 
 /** A comment that was sent, kept on the page so the reviewer sees what the owner got. */
 type SentComment = {
@@ -147,117 +123,7 @@ function firstTab(share: ReadyShare, steps: Record<Tab, string[]>): Tab {
   return own ?? [...ALL_TABS].reverse().find((tab) => steps[tab].length > 0) ?? "discuss";
 }
 
-/** Download beside the Reader's Sections and Copy: the document exactly as the link carries it. */
-function DownloadMarkdown({ docs, name }: { docs: Record<string, string>; name: string }) {
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      className="text-muted-foreground"
-      aria-label="Download Markdown"
-      onClick={() => (downloadMarkdown(docs, name) ? toast.success("Markdown download started.") : toast.error("Could not download. Try again."))}
-    >
-      <DownloadIcon />
-      Download
-    </Button>
-  );
-}
-
-function Sections({ share, names, items, drafts, settled, onAnswer, commentsOn, onQuote, onSelected, shownArtifacts = [] }: {
-  shownArtifacts?: readonly string[];
-  share: ReadyShare;
-  names: string[];
-  items: ShareItem[];
-  drafts: Drafts;
-  settled: Record<string, string>;
-  onAnswer: (id: string, answer: GuestAnswer | null, note?: string) => void;
-  /** The comments made on one document, to show under their passages. */
-  commentsOn: (name: string) => StepComment[];
-  /** Start a comment on a passage of a document. */
-  onQuote: (name: string, quote: string) => void;
-  /** Words were selected in the contracts, which the Reader does not draw: they quote like a passage. */
-  onSelected: (doc: string | undefined) => void;
-}) {
-  const details = names.filter((n) => /-details\.md$/.test(n));
-  const main = names.filter((n) => !details.includes(n));
-  const detailText = details.map((n) => share.docs[n] ?? "").join("\n\n");
-  const slices = slicesOf(detailText);
-  const tasks = slices.reduce((sum, s) => sum + s.tasks, 0);
-  const contracts = contractsOf(detailText);
-  const screens = main.some((name) => /review\.md$/.test(name)) ? screenPairsOf(share.docs, share.stills) : [];
-  // A mockup that is a question is drawn there; the plan's own fence for it would draw it twice.
-  const shown = new Set([...shownArtifacts.map(mockupName), ...items.flatMap((i) => (i.media?.kind === "artifact" ? [mockupName(i.media.name)] : []))]);
-  return (
-    <>
-      <Asks items={items} owner={share.owner} docs={share.docs} stills={share.stills} drafts={drafts} settled={settled} onAnswer={onAnswer} />
-      {screens.length > 0 ? <section className="sh-sec" aria-label="Screens compared">
-        <h2>Screens compared</h2>
-        {screens.map((screen) => <div key={`${screen.key}:${screen.width}:${screen.theme}`}>
-          <h3>{screen.key}</h3>
-          <p>{screen.width} px · {screen.theme} · {screen.outcome}{screen.stale ? " · stale: the artifact or build changed after capture" : ""}</p>
-          <div className="grid gap-4 md:grid-cols-2">
-            {screen.image ? <ArtifactStill still={{ title: `Artifact ${screen.key}`, image: screen.image }} /> : <p>Artifact picture unavailable.</p>}
-            {screen.outcome === "captured" && screen.built ? <ArtifactStill still={{ title: `Built ${screen.key}`, image: screen.built }} /> : <p>No built picture. {screen.outcome}</p>}
-          </div>
-          <p><b>Independent review</b> {screen.verdict}</p>
-        </div>)}
-      </section> : null}
-      {main.map((name) => (
-        // The document a selected passage is in, so a comment is filed against it.
-        <div key={name} className="sh-docs" data-doc={name}>
-          <SharedDocument
-            name={name}
-            markdown={share.docs[name] ?? ""}
-            docs={share.docs}
-            comments={commentsOn(name)}
-            onQuote={(quote) => onQuote(name, quote)}
-            extraTools={<DownloadMarkdown docs={share.docs} name={name} />}
-            shown={shown}
-          />
-        </div>
-      ))}
-      {slices.length > 0 ? (
-        <section className="sh-sec" aria-label="The build">
-          <h2>{`The build · ${plural(slices.length, "slice", "slices")}, ${plural(tasks, "task", "tasks")}`}</h2>
-          <ol className="sh-slices">
-            {slices.map((s) => (
-              <li key={s.n}>
-                <span className="sh-num">{s.n}</span>
-                <span className="sh-slice-t">
-                  <Inline text={s.title} />
-                </span>
-                <span className="sh-slice-r">{plural(s.tasks, "task", "tasks")}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-      {contracts.length > 0 ? (
-        // biome-ignore lint/a11y/noStaticElementInteractions: selecting text is how a passage of the contracts is quoted
-        <details className="sh-fold" data-doc={details[0]} onMouseUp={() => onSelected(details[0])}>
-          <summary>
-            <span className="sh-mark todo" aria-hidden="true" />
-            <b>Contracts</b>
-            <span className="sh-fold-line">{`${plural(contracts.length, "interface", "interfaces")} the build must keep, with their diffs`}</span>
-            <span className="sh-chev" aria-hidden="true" />
-          </summary>
-          <div className="sh-fold-body">
-            {contracts.map((c) => (
-              <section key={c.title} className="sh-contract">
-                <h3>
-                  <Inline text={c.title} />
-                </h3>
-                <Blocks blocks={planBlocks(c.body)} docs={share.docs} />
-              </section>
-            ))}
-          </div>
-        </details>
-      ) : null}
-    </>
-  );
-}
-
-/** A shared task: Discuss, Plan and Build, the owner's questions, and a place to answer and comment. */
+/** The shared seven steps and the guest's feedback; keyed by link id to isolate drafts. */
 function Ready({
   share,
   initialTab,
@@ -268,7 +134,7 @@ function Ready({
   onSend: (author: string, remarks: Remark[]) => Promise<SubmitResult>;
 }) {
   const steps = stepDocs(share.docs);
-  const [tab, setTab] = useState<Tab>(initialTab ?? firstTab(share, steps));
+  const { tab, setTab, reader, readDocument } = useSharedNavigation(share, initialTab ?? firstTab(share, steps));
   const [author, setAuthor] = useState(storedName);
   const [drafts, setDrafts] = useState<Drafts>(EMPTY);
   const [settled, setSettled] = useState<Record<string, string>>({});
@@ -297,29 +163,11 @@ function Ready({
   const counts = { ...drafted, answered: drafted.answered + items.filter((item) => settled[item.id] !== undefined).length };
   const waiting = pending(drafts, items);
   const expires = share.expires === undefined ? null : new Date(share.expires);
-  const hasChange = share.review !== undefined;
-  // On the change a comment belongs to a point of it; on a document it may be a general remark.
-  const needsPoint = tab === "review" && hasChange && target.kind === "passage" && !target.artifact;
-
-  const answer = (id: string, a: GuestAnswer | null, note?: string) => {
-    setDelivered(false);
-    setDrafts((d) => answerItem(d, id, a, note));
-  };
-
-  const pick = (anchor: ChangeAnchor) => {
-    setTarget({ kind: "anchor", anchor });
-    box.current?.focus();
-  };
 
   // A passage chosen in a document starts a comment on it, as the + and the selection do in the App.
   const quote = (doc: string, passage: string) => {
     setTarget({ kind: "passage", quote: passage.slice(0, 1000), doc });
     box.current?.focus();
-  };
-
-  const quoteSelection = (doc: string | undefined) => {
-    const picked = window.getSelection()?.toString().trim() ?? "";
-    if (picked !== "") setTarget({ kind: "passage", quote: picked.slice(0, 1000), doc });
   };
 
   // Every comment on a passage stays under it, sent or not, as the App shows a comment.
@@ -336,9 +184,7 @@ function Ready({
     const remark: Drafts["remarks"][number] =
       target.kind === "passage"
         ? { kind: "passage", id: crypto.randomUUID(), doc: target.doc ?? steps[tab][0] ?? docOfStep(tab), quote: target.quote, text, ...(target.artifact ? { section: target.artifact } : {}), ...(recipient === "person" ? { for: "person" as const } : {}) }
-        : target.kind === "anchor"
-          ? { kind: "thread", thread: newThreadId(), anchor: target.anchor, text }
-          : { kind: "reply", thread: target.thread, text };
+        : { kind: "reply", thread: target.thread, text };
     if (remark.kind === "passage" && remark.id !== undefined) {
       const id = remark.id;
       setWritten((w) => ({ ...w, [id]: Date.now() }));
@@ -403,14 +249,12 @@ function Ready({
     return {stills, files, mapped};
   }, [share.docs, share.stills]);
   const artifactCount = gallery.files.length;
-  const [surface, setSurface] = useState(() => artifactCount ? "artifacts" : "workflow");
+  const [surface, setSurface] = useState("workflow");
   const stepsNav = useRef<HTMLElement>(null);
   const feedbackPanel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (surface === "workflow") stepsNav.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [tab, surface]);
-  const names = steps[tab];
-  const tabItems = items.filter((item) => tabOfStep(item.step) === tab);
   const count = `${counts.total > 0 ? `${counts.answered} of ${counts.total} answered · ` : ""}${plural(counts.comments, "feedback message", "feedback messages")}`;
 
   return (
@@ -422,37 +266,21 @@ function Ready({
               expires !== null ? ` · the link runs out on ${expires.toLocaleDateString("en-US", { day: "numeric", month: "short" })}` : ""
             } · project source code is kept private`}
           </p>
-          <div className="sh-heading-tools"><TabsList className="sh-surfaces"><TabsTrigger value="workflow">Workflow</TabsTrigger>{artifactCount ? <TabsTrigger value="artifacts">Artifacts <span className="sh-tab-count">{artifactCount}</span></TabsTrigger> : null}</TabsList><button type="button" className="sh-btn sh-feedback-jump" onClick={() => { feedbackPanel.current?.scrollIntoView({ block: "start" }); feedbackPanel.current?.focus({ preventScroll: true }); }}>Jump to feedback</button></div>
+          <div className="sh-heading-tools"><TabsList className="sh-surfaces"><TabsTrigger value="workflow"><WorkflowIcon className="size-3.5" />Workflow</TabsTrigger>{artifactCount ? <TabsTrigger value="artifacts"><FrameIcon className="size-3.5" />Artifacts <span className="sh-tab-count">{artifactCount}</span></TabsTrigger> : null}</TabsList><button type="button" className="sh-btn sh-feedback-jump" onClick={() => { feedbackPanel.current?.scrollIntoView({ block: "start" }); feedbackPanel.current?.focus({ preventScroll: true }); }}>Jump to feedback</button></div>
         </header>
       <article className="sh-main" data-testid="shared-doc"><TabsContent value="workflow">
 
           <nav ref={stepsNav} className="sh-tabs" aria-label="Steps">
             {ALL_TABS.map((id) => (
-              <button key={id} type="button" aria-current={id === tab ? "page" : undefined} onClick={() => setTab(id)}>
-                {LABELS[id]}
+              <button key={id} type="button" aria-label={LABELS[id]} aria-current={id === tab ? "page" : undefined} onClick={() => setTab(id)}>
+                <SharedStepIcon step={id} className="sh-step-icon" /><span>{LABELS[id]}</span>
               </button>
             ))}
           </nav>
         <div className="sh-body">
 
-          {tab === "review" && hasChange ? (
-            <>
-              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} shownArtifacts={gallery.files} />
-              <ChangeView review={share.review as NonNullable<typeof share.review>} onPick={pick} />
-            </>
-          ) : names.length > 0 || tabItems.length > 0 ? (
-            <>
-              {tab === "plan" && !gallery.mapped && share.docs[PLAN_STILL] !== undefined ? (
-                <figure className="sh-frame" data-testid="shared-plan-still">
-                  <figcaption className="sh-frame-bar">Plan artifact · still image</figcaption>
-                  <img src={share.docs[PLAN_STILL]} alt="Plan artifact" className="block h-auto w-full" />
-                </figure>
-              ) : null}
-              <Sections share={share} names={names} items={tabItems} drafts={drafts} settled={settled} onAnswer={answer} commentsOn={commentsOn} onQuote={quote} onSelected={quoteSelection} shownArtifacts={gallery.files} />
-            </>
-          ) : (
-            <p className="sh-empty">{notThere(tab)}</p>
-          )}
+          <SharedStepHost share={share} step={tab} reader={reader} onRead={readDocument}
+            onBack={() => setTab(tab)} commentsOn={commentsOn} onQuote={quote} />
         </div>
         </TabsContent>
         <TabsContent value="artifacts" className="sh-artboards"><SharedArtifacts docs={share.docs} theme={theme} fit stills={gallery.stills} owner={who} comments={sent.flatMap(c => c.doc ? [{id:c.key,doc:c.doc,remark:c.text,author:author || "Guest"}] : [])} onComment={(file,title) => { setTarget({kind:"passage",quote:"",doc:file,artifact:title}); box.current?.focus(); }} /></TabsContent>
@@ -477,8 +305,8 @@ function Ready({
           </label>
           {target.kind === "passage" ? <>
             <div className="sh-row" role="group" aria-label="Recipient">
-              <button type="button" className="sh-btn" style={{ color: "var(--ql-text)" }} aria-pressed={recipient === "agent"} onClick={() => setRecipient("agent")}>For the agent</button>
-              <button type="button" className="sh-btn" style={{ color: "var(--ql-text)" }} aria-pressed={recipient === "person"} onClick={() => setRecipient("person")}>For {who}</button>
+              <button type="button" className="sh-btn" style={{ color: "var(--ql-text)" }} aria-pressed={recipient === "agent"} onClick={() => setRecipient("agent")}><BotIcon className="size-3.5" />For the agent</button>
+              <button type="button" className="sh-btn" style={{ color: "var(--ql-text)" }} aria-pressed={recipient === "person"} onClick={() => setRecipient("person")}><UserRoundIcon className="size-3.5" />For {who}</button>
             </div>
             {recipient === "person" ? <p className="sh-hint">A note for {who} stays between people. The agent never reads it; {who} can quote it to the agent.</p> : null}
           </> : null}
@@ -489,21 +317,21 @@ function Ready({
                 {target.artifact ? "Change target" : "Drop quote"}
               </button>
             </blockquote>
-          ) : target.kind === "anchor" || target.kind === "reply" ? (
+          ) : target.kind === "reply" ? (
             <blockquote className="sh-quote">
-              {target.kind === "reply" ? `Reply on ${target.label}` : `${where(target.anchor)}${target.anchor.quote ? `: ${target.anchor.quote}` : ""}`}
+              {`Reply on ${target.label}`}
               <button type="button" onClick={() => setTarget({ kind: "passage", quote: "" })}>
                 Cancel
               </button>
             </blockquote>
           ) : (
             <span className="sh-hint">
-              {needsPoint ? "Choose Give feedback beside a point, a check or a picture." : "Select a passage to give feedback on it, or leave a general message."}
+              Select a passage to give feedback on it, or leave a general message.
             </span>
           )}
           <textarea id="sh-remark" ref={box} value={text} onChange={(e) => setText(e.target.value)} rows={4} />
           <div className="sh-row">
-            <button type="button" className="sh-btn" disabled={text.trim() === "" || needsPoint} onClick={add}>
+            <button type="button" className="sh-btn" disabled={text.trim() === ""} onClick={add}>
               Add feedback
             </button>
           </div>
@@ -635,7 +463,7 @@ export function SharedView({
     );
   }
   if (state.kind === "artifact") return <SharedArtifact key={state.id} share={state} onSend={onArtifactSend ?? (async () => ({ ok: false, reason: "network" }))} />;
-  return <Ready key={state.id} share={{ ...state, title: stripSharedCode(state.title), docs: sharedDocuments(state.docs, state.stage), items: [], review: undefined }} initialTab={tab} onSend={onSend} />;
+  return <Ready key={state.id} share={{ ...state, title: stripSharedCode(state.title), docs: sharedPresentationDocuments(state.docs, state.stage), items: [], review: undefined }} initialTab={tab} onSend={onSend} />;
 }
 
 /** One link's page; keyed by the id and key, so another link starts from "loading" again. */

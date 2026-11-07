@@ -3,6 +3,7 @@
    and dark. Scoped .sh- classes only; the documents are the App's Reader and take its own rules. */
 @import "../../../../qualitylayer/src/ui/reader/reader.css";
 @import "../../../../qualitylayer/src/ui/artifact/preview.css";
+@import "../../../../qualitylayer/src/ui/step-page/pages.css";
 .sh-page main{min-height:70vh}
 .sh-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:32px;max-width:1180px;margin:0 auto;padding:28px 28px 72px;align-items:start}
 .sh-main{min-width:0}
@@ -206,7 +207,7 @@
 .sh-heading{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title tools" "meta meta";column-gap:24px;align-items:center;min-width:0;padding-bottom:16px;border-bottom:1px solid var(--ql-line)}
 .sh-heading h1{grid-area:title;font-size:30px;line-height:1.25;letter-spacing:-.025em;max-width:none;overflow-wrap:anywhere}
 .sh-meta{grid-area:meta;max-width:88ch;margin:6px 0 0;line-height:1.65}
-.sh-heading-tools{grid-area:tools;display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.sh-heading-tools{grid-area:tools;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:12px}
 @media(max-width:600px){.sh-heading{grid-template-columns:minmax(0,1fr);grid-template-areas:"title" "meta" "tools";row-gap:10px;padding-bottom:12px}.sh-heading-tools{justify-content:space-between}.sh-meta{margin:0}}
 .sh-surfaces{height:42px;background:var(--ql-surface-2);padding:4px;border:1px solid var(--ql-border);border-radius:10px}
 .sh-surfaces [role=tab]{height:32px;min-width:108px;padding:0 14px;gap:8px;font-size:13px}
@@ -268,9 +269,15 @@
 .sh-docs .page>div:first-child{margin-bottom:20px}
 @container page (max-width:600px){
  .sh-page .w7-hdr-row{padding-inline:16px}
- .sh-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;overflow:visible;border-bottom:0}
- .sh-tabs button{min-width:0;min-height:44px;padding:8px 4px;font-size:12px;border-bottom:1px solid var(--ql-line);margin:0}
+ .sh-tabs{display:flex;flex-wrap:nowrap;gap:4px;overflow:visible;border-bottom:0}
+ .sh-tabs button{flex:1;justify-content:center;min-width:32px;min-height:44px;padding:8px 4px;font-size:12px;border-bottom:1px solid var(--ql-line);margin:0}
+ .sh-tabs button[aria-current=page]{flex:0 1 auto}
  .sh-tabs button[aria-current=page]{border-bottom:2px solid var(--ql-text)}
  .sh-docs .page{padding:20px 0 24px}
  .sh-docs .page>div:first-child{justify-content:flex-start;flex-wrap:wrap;margin:0 0 24px;gap:8px}
 }
+
+.sh-step{container:main / inline-size;min-width:0}.sh-step .sp-page{margin:0;max-width:100%}
+
+.sh-tabs button{display:inline-flex;align-items:center;gap:6px}.sh-step-icon{width:16px;height:16px;flex:none}.sh-reader-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sh-reader-tools code{font-size:12px;color:var(--ql-text-muted)}.sh-reader-tools>:last-child{margin-left:auto}
+@media(max-width:600px){.sh-tabs button>span{display:none}.sh-tabs button[aria-current="page"]>span{display:inline}}

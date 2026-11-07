@@ -4,8 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LoadedShare, Remark } from "@/lib/sharing/sharing";
 import * as sharing from "@/lib/sharing/sharing";
 import { SharedLink, SharedView } from "./Shared";
-import { Asks } from "./shared/Asks";
-import { EMPTY } from "@/lib/sharing/drafts";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); localStorage.clear(); });
 const seen = (text: string) => screen.queryAllByText(text).length > 0;
@@ -86,12 +84,10 @@ describe("commenting on the step documents", () => {
     expect(screen.getByText("Resolved")).toBeTruthy();
     expect(screen.getByText(/via agent/)).toBeTruthy();
   });
-  it("names the owner's question group Your turn and keeps the owner's name", () => {
-    const onAnswer = vi.fn();
-    render(<Asks owner="Max" docs={state.docs} items={[{ id: "d1", family: "decide", kind: "decision", kindLabel: "Engineering decision", what: "Keep one deployment?", options: ["agree", "change"], step: "plan" }]} drafts={EMPTY} settled={{}} onAnswer={onAnswer} />);
-    expect(screen.getByRole("heading", { name: "Your turn · Max asks you" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Agree" }));
-    expect(onAnswer).toHaveBeenCalledWith("d1", "agree", "");
+  it("keeps the owner's identity while excluding local question and approval controls", () => {
+    render(<SharedView state={{ ...state, items: [{ id: "d1", family: "decide", kind: "decision", kindLabel: "Engineering decision", what: "Keep one deployment?", options: ["agree", "change"], step: "plan" }] }} onSend={async () => ({ ok: true })} />);
+    expect(screen.getByText(/Max shared this with you/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Agree|Approve|Change/ })).toBeNull();
   });
 
   it("files the comment on its own step document, without an approval vote", async () => {

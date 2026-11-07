@@ -70,7 +70,7 @@ describe("the approved document view", () => {
     const docs = { "01-discuss.md": "Seven discuss", "02-research.md": "Seven research", "03-plan.md": "Seven plan", "04-outline.md": "Seven outline", "05-implement.md": "Seven build", "06-verify.md": "Seven checks", "07-review.md": "Seven review" };
     const page = await html(<SharedView state={ready(docs)} onSend={noSend} />);
     const tabs = page.match(/<nav class="sh-tabs"[\s\S]*?<\/nav>/)?.[0] ?? "";
-    expect([...tabs.matchAll(/>([A-Za-z]+)<\/button>/g)].map((m) => m[1])).toEqual(["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]);
+    expect([...tabs.matchAll(/<span>([A-Za-z]+)<\/span>/g)].map((m) => m[1])).toEqual(["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]);
     for (const [tab, text] of [["discuss", "Seven discuss"], ["research", "Seven research"], ["plan", "Seven plan"], ["outline", "Seven outline"], ["implement", "Seven build"], ["verify", "Seven checks"], ["review", "Seven review"]] as const)
       expect(await html(<SharedView state={ready(docs)} onSend={noSend} tab={tab} />)).toContain(text);
   });

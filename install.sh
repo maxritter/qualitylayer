@@ -24,7 +24,7 @@
 # older Pilot Shell versions to 11.0.11 with its own installer, pinned by hash.
 # Nothing else of Pilot Shell changes.
 #
-# Environment: VERSION (e.g. 12.0.0; default: the latest stable v12 release),
+# Environment: VERSION (e.g. 13.0.0; default: the latest stable QualityLayer release),
 # QUALITYLAYER_CHANNEL=beta explicitly selects prereleases,
 # QUALITYLAYER_RELEASE_BASE and QUALITYLAYER_RELEASE_API (mirrors and tests).
 # QUALITYLAYER_RELEASE_SIGNER names another signing key for tests, and counts only when the
@@ -195,10 +195,10 @@ trap cleanup EXIT
 
 if [ -z "$VERSION" ]; then
 	fetch "$RELEASE_API" "$work/releases.json" || fail "cannot reach the release list at $RELEASE_API"
-	pattern='"tag_name": *"v12\.[0-9]+\.[0-9]+"'
-	[ "$CHANNEL" != beta ] || pattern='"tag_name": *"v12\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?"'
+	pattern='"tag_name": *"v(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+"'
+	[ "$CHANNEL" != beta ] || pattern='"tag_name": *"v(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?"'
 	VERSION="$(grep -Eo "$pattern" "$work/releases.json" | head -n 1 | sed 's/.*"v\(.*\)"/\1/' || true)"
-	[ -n "$VERSION" ] || fail "no QualityLayer 12 release was found"
+	[ -n "$VERSION" ] || fail "no QualityLayer release was found"
 fi
 
 # The first line says what was found, as the install screen after it says what was done.

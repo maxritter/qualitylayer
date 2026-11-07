@@ -68,7 +68,7 @@ Then open `http://127.0.0.1:41901`. `QUALITYLAYER_PORT=41901 qualitylayer app re
 
 ## Updates {#updates}
 
-The App updates itself: click **Update ready**, then **Restart and update**. Without the App, run `qualitylayer update`. Choose **Stable** or **Beta** in [Settings › About](reference/settings.md#about); see the [changelog](https://qualitylayer.dev/docs/changelog).
+In the App, choose **Restart and update** from **Update ready** or the bar above the page. Without the App, run `qualitylayer update`; if a 12.x install cannot find an update, rerun the installation command above. Choose **Stable** or **Beta** in [Settings › About](reference/settings.md#about); see the [changelog](https://qualitylayer.dev/docs/changelog).
 
 ## Remove it {#uninstall}
 

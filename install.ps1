@@ -1045,15 +1045,15 @@ try {
     if (-not $Version) {
         $qlReleases = Invoke-RestMethod -Uri $qlReleaseApi
         $qlRelease = $qlReleases | Where-Object {
-            -not $_.draft -and $_.tag_name -match '^v12\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$' -and
+            -not $_.draft -and $_.tag_name -match '^v(?:1[2-9]|[2-9]\d|[1-9]\d{2,})\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$' -and
             ($qlChannel -eq 'beta' -or (-not $_.prerelease -and $_.tag_name -notmatch '-')) -and
             ($_.assets.name -contains (& $qlWanted $_.tag_name))
         } | Select-Object -First 1
-        if (-not $qlRelease) { throw "No QualityLayer 12 release carries $(& $qlWanted 'v12')." }
+        if (-not $qlRelease) { throw "No QualityLayer release carries a package for Windows $qlCpu." }
         $Version = $qlRelease.tag_name
     }
     $Version = $Version -replace '^v', ''
-    if ($Version -notmatch '^12\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw "Invalid QualityLayer version: $Version" }
+    if ($Version -notmatch '^(?:1[2-9]|[2-9]\d|[1-9]\d{2,})\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw "Invalid QualityLayer version: $Version" }
     $qlBase = "$qlReleaseBase/download/v$Version"
     $qlQuiet = $NonInteractive -or [Console]::IsInputRedirected
     $qlArguments = @('install')

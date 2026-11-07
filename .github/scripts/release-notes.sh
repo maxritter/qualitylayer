@@ -3,7 +3,7 @@
 set -euo pipefail
 version="${1:-}"
 version="${version#v}"
-if [[ $# -ne 1 || ! "$version" =~ ^12\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+if [[ $# -ne 1 || ! "$version" =~ ^(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
   echo 'Usage: .github/scripts/release-notes.sh <version>' >&2
   exit 1
 fi

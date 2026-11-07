@@ -38,25 +38,25 @@ export const CHAPTERS: Chapter[] = [
   { id: "research", dur: 6200, beats: [
     [0, "cur", rail("research"), 650], [700, "click"], [800, "shot", "research"],
     // The map of what the change touches, the gateway every request passes, then the question about it.
-    [1000, "cam", { x: 47, y: 47, s: 1.9 }, 1300],
-    [2500, "mark", { x: 48.9, y: 42.5, w: 15, h: 6.1 }],
+    [1000, "cam", { x: 47, y: 32, s: 1.9 }, 1300],
+    [2500, "mark", { x: 39.1, y: 34.1, w: 8.2, h: 3.6 }],
     [3600, "cam", chat(63), 1100], [3700, "mark", null],
     [4300, "mark", { x: 76.5, y: 52.2, w: 22.3, h: 5.2 }],
     [5300, "cam", null, 900], [5400, "mark", null]] },
   { id: "plan", dur: 7800, beats: [
     [0, "cur", rail("plan"), 650], [700, "click"], [800, "shot", "plan"],
-    // Read the decision's diagram from the request to both outcomes.
-    [1000, "cam", { x: 41, y: 49.6, s: 2.4 }, 1300],
-    [2500, "cam", { x: 54, y: 49.6, s: 2.4 }, 1400],
+    // The recommended choice has its own facts and request-to-invoice diagram.
+    [1000, "cam", { x: 47, y: 52, s: 1.8 }, 1300],
+    [2500, "cam", { x: 47, y: 65, s: 2 }, 1400],
     // The call is the person's: pick the recommended path.
-    [4100, "cam", { x: 47, y: 79, s: 1.8 }, 1000],
-    [4400, "cur", { x: 34.4, y: 68.3 }, 800], [5300, "click"], [5400, "mark", { x: 19.6, y: 64.6, w: 53.9, h: 7.3 }],
+    [4100, "cam", { x: 47, y: 80, s: 1.8 }, 1000],
+    [4400, "cur", { x: 28.7, y: 87 }, 800], [5300, "click"], [5400, "mark", { x: 24.2, y: 84.7, w: 9.5, h: 4.5 }],
     [6800, "cam", null, 900], [6900, "mark", null]] },
   { id: "outline", dur: 6300, beats: [
     [0, "cur", rail("outline"), 650], [700, "click"], [800, "shot", "outline"],
-    // Where the change lands, risky places flagged.
+    // The slices and their task counts, with scenarios below.
     [1000, "cam", main(31), 1200],
-    [2300, "cur", { x: 65.4, y: 30.9 }, 700], [3000, "mark", { x: 20.4, y: 27.2, w: 53.1, h: 7.2 }],
+    [2300, "cur", { x: 65.4, y: 22.4 }, 700], [3000, "mark", { x: 20.4, y: 19.8, w: 53.1, h: 5.2 }],
     // Slices, each with a scenario for its Done means.
     [3800, "cam", chat(47), 1000], [3900, "mark", null],
     [4400, "mark", { x: 76.5, y: 35.2, w: 22.4, h: 3.4 }],
@@ -65,24 +65,24 @@ export const CHAPTERS: Chapter[] = [
     [0, "cur", rail("implement"), 650], [700, "click"], [800, "shot", "implement"],
     // One slice, task by task.
     [1000, "cam", main(29), 1200],
-    [2300, "cur", { x: 39.5, y: 34.6 }, 700], [3000, "mark", { x: 23.9, y: 32.3, w: 48, h: 4.4 }],
+    [2300, "cur", { x: 39.5, y: 28.6 }, 700], [3000, "mark", { x: 23.9, y: 26.3, w: 48, h: 4.4 }],
     // Its test is written first and fails first.
     [3800, "cam", chat(49), 1000], [3900, "mark", null],
     [4400, "mark", { x: 76.5, y: 36.3, w: 22.4, h: 3.3 }],
     [5300, "cam", null, 900], [5400, "mark", null]] },
   { id: "verify", dur: 6300, beats: [
     [0, "cur", rail("verify"), 650], [700, "click"], [800, "shot", "verify"],
-    // What still needs a person, then who checks the rest.
+    // Recorded progress, then the independent reviewers and fix rounds.
     [1000, "cam", main(29), 1200],
-    [2300, "mark", { x: 21.4, y: 34.4, w: 51.1, h: 4.4 }],
-    [3300, "cam", main(70), 1100], [3400, "mark", null],
-    [4300, "mark", { x: 20.4, y: 68.8, w: 53.1, h: 14.4 }],
+    [2300, "mark", { x: 20.4, y: 23, w: 39.5, h: 4 }],
+    [3300, "cam", main(62), 1100], [3400, "mark", null],
+    [4300, "mark", { x: 20.4, y: 56, w: 53.1, h: 13.8 }],
     [5300, "cam", null, 900], [5400, "mark", null]] },
   { id: "review", dur: 12000, beats: [
     [0, "cur", rail("review"), 650], [700, "click"], [800, "shot", "review"],
     // The finished change and its proof.
     [1000, "cam", main(27), 1200],
-    [2200, "mark", { x: 29.1, y: 27.4, w: 14.8, h: 3.6 }],
+    [2200, "mark", { x: 20.4, y: 23.2, w: 15.5, h: 3.6 }],
     // Approve.
     [3200, "cam", { x: 82, y: 9, s: 2.2 }, 1000], [3300, "mark", null],
     [3500, "cur", { x: 89.4, y: 3.3 }, 800], [4400, "click"], [4550, "shot", "review-approved"],

@@ -32,7 +32,7 @@ it("shows the App beside the copy as a still first frame, light and dark, with a
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");
     expect(phone.getAttribute("srcset")).toBe(`/hero/your-turn-${theme}.webp`);
-    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["728", "776"]);
+    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["1520", "1582"]);
   }
 });
 

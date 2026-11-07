@@ -19,7 +19,7 @@ export const AUTHOR_NAME = "Max Ritter";
 /** The hero's first line ends on the agents; on the page it names them one after another. */
 export const LEDE_LEAD = "Plan, build and review software with";
 export const LEDE_AGENTS = "your coding agents";
-export const LEDE_REST = "Work side by side in the App or browser, or stay in your terminal or IDE: questions and approvals can happen right in your agent's chat.";
+export const LEDE_REST = "Work side by side in the App or browser, or stay in your terminal or IDE.";
 export const DESCRIPTION = `${LEDE_LEAD} ${LEDE_AGENTS}. ${LEDE_REST}`;
 /** The line under the name wherever the product is introduced: the hero, page titles, the README and the CLI. */
 export const SLOGAN = "The software factory with you in the loop";

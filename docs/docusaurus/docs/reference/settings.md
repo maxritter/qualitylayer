@@ -28,7 +28,7 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 
 ### Independent review {#independent-review}
 
-**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **Helpers: This session** in [Models](#models) keeps review in the lead session, marked as not independent. **Off**: Verify records **Checked without an independent judge**. [Models](#models) sets the model each agent reviews on.
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **Helpers: This session** in [Models](#models) keeps review in the lead session, marked as not independent. **Off**: Verify shows **Independent review** as **skipped**. [Models](#models) sets the model each agent reviews on.
 
 ### Second opinion {#second-opinion}
 

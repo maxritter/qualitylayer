@@ -38,7 +38,7 @@ Project commands and security scans produce recorded results. Separate agents re
 | **Design review** | A separate agent checks each finished design before you see it, unless you change **Design review** in [Settings](../reference/settings.md) |
 | **Second opinion** | A reviewer from another agent family checks risky changes when [enabled](../reference/settings.md#second-opinion), or on request. Findings are recorded as **Taken** or **Kept** |
 
-If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify records **Checked without an independent judge**.
+If you turn **Independent review** off in [Settings](../reference/settings.md#independent-review), no fresh agent checks the change; Verify shows **Independent review** as **skipped**.
 
 ## Two fix rounds {#rounds}
 

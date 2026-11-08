@@ -58,6 +58,8 @@ jobs:
             home="$(mktemp -d)"
             if (
               set -e
+              # The installer refuses XDG folders outside the HOME it installs into.
+              unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
               export HOME="$home" PATH="$home/.qualitylayer/bin:$PATH"
               curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/v$v/install.sh" -o "$home/install.sh"
               VERSION="$v" bash "$home/install.sh" --cli-only --non-interactive > "$home/install.log" 2>&1 ||
@@ -83,7 +85,8 @@ jobs:
         run: |
           $failed = $false
           foreach ($v in ($env:VERSIONS -split '\s+' | Where-Object { $_ })) {
-            $userHome = Join-Path $env:RUNNER_TEMP "ql-$v"
+            # Inside the runner's own profile: the installer refuses a HOME with a shared ACL.
+            $userHome = Join-Path $env:USERPROFILE "ql-homes\$v"
             New-Item -ItemType Directory -Force -Path $userHome | Out-Null
             $saved = @{ HOME = $env:HOME; USERPROFILE = $env:USERPROFILE }
             try {

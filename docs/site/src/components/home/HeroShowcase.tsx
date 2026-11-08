@@ -4,7 +4,7 @@ import { STEP_ICONS } from "@/lib/step-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useTheme, type Theme } from "@/hooks/useTheme";
-import { WORKFLOW_STEPS } from "@/lib/steps";
+import { STEPS, WHO, WORKFLOW_STEPS } from "@/lib/steps";
 import { SHOTS, frameAt, shotSrc, stillFrame, type Frame } from "@/lib/showcase";
 import { ShowcasePlayer } from "@/lib/showcase-player";
 
@@ -17,8 +17,6 @@ const SHOT_ALT = "QualityLayer’s App walking through the seven steps of the us
 /** Above this width the showcase plays; a phone keeps the still question card. */
 const WIDE = "(min-width: 641px)";
 const REDUCED = "(prefers-reduced-motion: reduce)";
-/** A stage this wide (CSS px) or narrower zooms fully; a larger one zooms less. */
-const FULL_ZOOM_WIDTH = 680;
 
 export type ShowcaseHandle = {
   /** Plays a step from its start; false when the showcase is not running (a phone), so the station's link applies. */
@@ -66,14 +64,10 @@ function Stage({ player, theme }: { player: ShowcasePlayer; theme: Theme }) {
   useEffect(() => { shown.current = theme; player.paint(); }, [theme, player]);
   useEffect(() => {
     const el = cam.current!;
-    let depth = 1;
-    const size = new ResizeObserver(() => { depth = Math.min(1, FULL_ZOOM_WIDTH / Math.max(1, el.clientWidth)); });
-    size.observe(el);
-    const detach = player.attach((tick) => {
-      const f = tick.still === null ? frameAt(tick.time, depth) : stillFrame(tick.still);
+    return player.attach((tick) => {
+      const f = tick.still === null ? frameAt(tick.time) : stillFrame(tick.still);
       paint(el, parts.current as Parts, f, shown.current, tick.still === null);
     });
-    return () => { size.disconnect(); detach(); };
   }, [player]);
   const set = <K extends keyof Parts>(key: K) => (node: Parts[K] | null) => { if (node) parts.current[key] = node; };
   return (
@@ -87,6 +81,24 @@ function Stage({ player, theme }: { player: ShowcasePlayer; theme: Theme }) {
       </div>
     </div>
   );
+}
+
+/** Under the enlarged stage: who acts in the step playing and what it does, the pull request after Review. */
+function Caption({ player }: { player: ShowcasePlayer }) {
+  const line = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    let shown = "";
+    return player.attach((tick) => {
+      const id = tick.still === null ? frameAt(tick.time).caption : stillFrame(tick.still).caption;
+      const step = STEPS.find((s) => s.id === id);
+      if (!step || !line.current || id === shown) return;
+      shown = id;
+      line.current.dataset.who = step.who;
+      line.current.querySelector("b")!.textContent = WHO[step.who];
+      line.current.querySelector("span")!.textContent = step.line;
+    });
+  }, [player]);
+  return <p className="hs-caption" ref={line} data-who="you"><b>{WHO.you}</b><span>{STEPS[0].line}</span></p>;
 }
 
 function PauseButton({ player }: { player: ShowcasePlayer }) {
@@ -112,6 +124,7 @@ function ShowcaseCard({ player, theme, step, open, onOpenChange, opener }: { pla
           <div className="hs-win"><Stage player={player} theme={theme} /></div>
           <PauseButton player={player} />
         </div>
+        <Caption player={player} />
         <ol className="hs-steps" aria-label="Play a step">
           {WORKFLOW_STEPS.map(({ id, name, who }, i) => {
             const Glyph = STEP_ICONS[id];

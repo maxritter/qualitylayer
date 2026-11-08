@@ -140,7 +140,7 @@ html{scroll-padding-top:76px}
 .hs-enlarge{position:absolute;left:calc(1.9% + 10px);bottom:calc(1.9% + 10px);z-index:4;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:5px 10px;border:1px solid var(--mx-line2);border-radius:999px;background:color-mix(in srgb,var(--mx-panel) 92%,transparent);color:var(--mx-ink);font:600 13px Geist,system-ui,sans-serif;opacity:.88;transition:opacity .2s}
 .sx-live:hover .hs-enlarge,.sx-live:focus-visible .hs-enlarge{opacity:1}
 /* The card: the same walkthrough as large as the screen allows, the steps below it */
-.hs-card.hs-card{width:min(1240px,calc(100vw - 32px),calc((100dvh - 210px) * 1.64 + 32px));max-width:none;max-height:calc(100dvh - 24px);gap:14px;padding:16px;border-radius:14px;background:var(--mx-panel);color:var(--mx-ink);overflow:auto}
+.hs-card.hs-card{width:min(1240px,calc(100vw - 32px),calc((100dvh - 246px) * 1.64 + 32px));max-width:none;max-height:calc(100dvh - 24px);gap:14px;padding:16px;border-radius:14px;background:var(--mx-panel);color:var(--mx-ink);overflow:auto}
 .hs-card-head{display:flex;align-items:center;gap:10px}
 .hs-card-head h2{flex:1;min-width:0;margin:0;font-size:20px;font-weight:700;letter-spacing:-.02em}
 .hs-card-head>*{flex:none}
@@ -152,6 +152,10 @@ html{scroll-padding-top:76px}
 .hs-steps button[aria-current="step"]{border-color:var(--hue);background:color-mix(in srgb,var(--hue) 10%,var(--mx-panel));color:var(--mx-ink)}
 .hs-steps button:focus-visible{outline:2px solid var(--ql-accent);outline-offset:2px}
 .hs-card-note{margin:0;font-size:13px;color:var(--mx-ink3)}
+/* Who acts in the step playing, in its colour, and what the step does */
+.hs-caption{display:flex;align-items:center;gap:10px;min-height:28px;margin:0;font:500 16px/1.3 Geist,system-ui,sans-serif;color:var(--mx-ink)}
+.hs-caption b{display:inline-flex;align-items:center;gap:7px;padding:3px 10px;border-radius:999px;background:color-mix(in srgb,var(--hue) 12%,var(--mx-panel));color:var(--ink);font-size:13px;font-weight:600;white-space:nowrap}
+.hs-caption b::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--hue)}
 @media(max-width:900px){.hs-steps{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:640px){
   .hs-stage{padding:12px;border-radius:16px;background:var(--ql-surface-2)}

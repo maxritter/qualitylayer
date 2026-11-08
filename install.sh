@@ -38,11 +38,14 @@ REPO="maxritter/qualitylayer"
 CHANNEL="${QUALITYLAYER_CHANNEL:-stable}"
 case "$CHANNEL" in stable | beta) ;; *) printf '%s\n' 'QUALITYLAYER_CHANNEL must be stable or beta' >&2; exit 1 ;; esac
 RELEASE_BASE="${QUALITYLAYER_RELEASE_BASE:-https://github.com/${REPO}/releases}"
-release_list="https://api.github.com/repos/${REPO}/releases/latest"
-[ "$CHANNEL" != beta ] || release_list="https://api.github.com/repos/${REPO}/releases?per_page=30"
-RELEASE_API="${QUALITYLAYER_RELEASE_API:-$release_list}"
+# Both channels read the release list and take the highest version, never GitHub's "latest"
+# pointer: that pointer may name a bridge release that old `qualitylayer update` clients follow.
+RELEASE_API="${QUALITYLAYER_RELEASE_API:-https://api.github.com/repos/${REPO}/releases?per_page=100}"
 VERSION="${VERSION:-}"
 VERSION="${VERSION#v}"
+# 12.99.x is the bridge release that carries 13.x to clients accepting only v12 tags, and Pilot
+# Shell's updater asks for it by that number: it names the newest release.
+case "$VERSION" in 12.99.*) VERSION="" ;; esac
 
 # The only key that may sign a release; the same line is built into `qualitylayer update`.
 SIGNER_ID="release@qualitylayer.dev"
@@ -185,6 +188,17 @@ sha256_of() {
 	fi
 }
 
+# The highest of the versions on stdin: numeric parts first, then a release above its prereleases,
+# then the prerelease number (beta.10 above beta.9).
+highest_version() {
+	awk '{
+		core = $0; pre = ""; dash = index($0, "-")
+		if (dash) { core = substr($0, 1, dash - 1); pre = substr($0, dash + 1) }
+		split(core, part, "."); num = pre; sub(/^.*[^0-9]/, "", num)
+		print part[1] + 0, part[2] + 0, part[3] + 0, (pre == "" ? 1 : 0), num + 0, $0
+	}' | sort -k1,1n -k2,2n -k3,3n -k4,4n -k5,5n | tail -n 1 | awk '{ print $NF }'
+}
+
 mounted=""
 work="$(mktemp -d)"
 cleanup() {
@@ -197,7 +211,7 @@ if [ -z "$VERSION" ]; then
 	fetch "$RELEASE_API" "$work/releases.json" || fail "cannot reach the release list at $RELEASE_API"
 	pattern='"tag_name": *"v(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+"'
 	[ "$CHANNEL" != beta ] || pattern='"tag_name": *"v(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?"'
-	VERSION="$(grep -Eo "$pattern" "$work/releases.json" | head -n 1 | sed 's/.*"v\(.*\)"/\1/' || true)"
+	VERSION="$(grep -Eo "$pattern" "$work/releases.json" | sed 's/.*"v\(.*\)"/\1/' | highest_version || true)"
 	[ -n "$VERSION" ] || fail "no QualityLayer release was found"
 fi
 

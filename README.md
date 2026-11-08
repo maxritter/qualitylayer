@@ -10,7 +10,7 @@
 **Plan each change visually, then let your agents build and verify it.**<br>
 Work side by side in the App or browser, or stay in your terminal or IDE.
 
-<a href="https://github.com/maxritter/qualitylayer/releases/latest"><img src="https://img.shields.io/github/v/release/maxritter/qualitylayer?style=for-the-badge&amp;label=latest&amp;color=2076c5&amp;labelColor=30363d" alt="Latest release"></a>
+<a href="https://github.com/maxritter/qualitylayer/releases"><img src="https://img.shields.io/github/v/release/maxritter/qualitylayer?sort=semver&amp;style=for-the-badge&amp;label=latest&amp;color=2076c5&amp;labelColor=30363d" alt="Latest release"></a>
 <a href="https://github.com/maxritter/qualitylayer/releases"><img src="https://img.shields.io/github/downloads/maxritter/qualitylayer/total?style=for-the-badge&amp;color=2076c5&amp;labelColor=30363d" alt="Downloads"></a>
 <a href="https://github.com/maxritter/qualitylayer"><img src="https://img.shields.io/github/stars/maxritter/qualitylayer?style=for-the-badge&amp;color=9d6607&amp;labelColor=30363d" alt="Stars"></a>
 

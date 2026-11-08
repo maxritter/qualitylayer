@@ -28,7 +28,9 @@ if (-not $env:PATHEXT) { $env:PATHEXT = '.COM;.EXE;.BAT;.CMD' }
 $qlChannel = if ($env:QUALITYLAYER_CHANNEL) { $env:QUALITYLAYER_CHANNEL } else { 'stable' }
 if ($qlChannel -notin @('stable', 'beta')) { throw 'QUALITYLAYER_CHANNEL must be stable or beta.' }
 $qlReleaseBase = if ($env:QUALITYLAYER_RELEASE_BASE) { $env:QUALITYLAYER_RELEASE_BASE } else { 'https://github.com/maxritter/qualitylayer/releases' }
-$qlReleaseApi = if ($env:QUALITYLAYER_RELEASE_API) { $env:QUALITYLAYER_RELEASE_API } elseif ($qlChannel -eq 'beta') { 'https://api.github.com/repos/maxritter/qualitylayer/releases?per_page=30' } else { 'https://api.github.com/repos/maxritter/qualitylayer/releases/latest' }
+# Both channels read the release list and take the highest version, never GitHub's "latest"
+# pointer: that pointer may name a bridge release that old `qualitylayer update` clients follow.
+$qlReleaseApi = if ($env:QUALITYLAYER_RELEASE_API) { $env:QUALITYLAYER_RELEASE_API } else { 'https://api.github.com/repos/maxritter/qualitylayer/releases?per_page=100' }
 # The only key that may sign a release; the same line is built into `qualitylayer update`.
 $qlSignerId = 'release@qualitylayer.dev'
 $qlSignerNamespace = 'qualitylayer-release'
@@ -1048,7 +1050,11 @@ try {
             -not $_.draft -and $_.tag_name -match '^v(?:1[2-9]|[2-9]\d|[1-9]\d{2,})\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$' -and
             ($qlChannel -eq 'beta' -or (-not $_.prerelease -and $_.tag_name -notmatch '-')) -and
             ($_.assets.name -contains (& $qlWanted $_.tag_name))
-        } | Select-Object -First 1
+        } | Sort-Object -Descending -Property `
+            @{ Expression = { [version](($_.tag_name -replace '^v', '') -replace '-.*$', '') } },
+            @{ Expression = { $_.tag_name -notmatch '-' } },
+            @{ Expression = { if ($_.tag_name -match '-.*?(\d+)$') { [int]$Matches[1] } else { 0 } } } |
+            Select-Object -First 1
         if (-not $qlRelease) { throw "No QualityLayer release carries a package for Windows $qlCpu." }
         $Version = $qlRelease.tag_name
     }

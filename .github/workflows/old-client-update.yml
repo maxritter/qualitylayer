@@ -1,0 +1,114 @@
+---
+name: Old client update
+
+# Installs real released QualityLayer versions with their own installers, then runs their
+# `qualitylayer update` against live GitHub: each must land on the newest stable release.
+# 12.x accepted only v12 tags, so 13.0.0 stranded it until the v12.99.0 bridge (issue #237).
+# Run it before promoting a release and after any change to GitHub's "latest" release.
+# Each run installs from scratch, which starts a trial on the live backend per version and runner.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: Released versions to start from, space-separated
+        required: false
+        type: string
+        default: "12.0.0 12.9.0 12.10.1 13.0.0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: old-client-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSIONS: ${{ inputs.versions || '12.0.0 12.9.0 12.10.1 13.0.0' }}
+    steps:
+      - name: Newest stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          newest=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '
+            [.[] | select((.prerelease or .draft) | not) | .tag_name
+             | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | ltrimstr("v")]
+            | sort_by(split(".") | map(tonumber)) | last')
+          [ -n "$newest" ]
+          echo "NEWEST=$newest" >> "$GITHUB_ENV"
+          echo "Every version must update to $newest"
+
+      - name: Update from each release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          for v in $VERSIONS; do
+            home="$(mktemp -d)"
+            if (
+              set -e
+              export HOME="$home" PATH="$home/.qualitylayer/bin:$PATH"
+              curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/v$v/install.sh" -o "$home/install.sh"
+              VERSION="$v" bash "$home/install.sh" --cli-only --non-interactive > "$home/install.log" 2>&1 ||
+                { tail -20 "$home/install.log"; exit 1; }
+              [ "$(qualitylayer --version | tail -1)" = "$v" ]
+              qualitylayer update
+              got="$(qualitylayer --version | tail -1)"
+              [ "$got" = "$NEWEST" ] || { echo "::error::$v updated to $got, not $NEWEST"; exit 1; }
+              qualitylayer update | grep -q "up to date" ||
+                { echo "::error::a second update from $v did not settle"; exit 1; }
+              echo "$v -> $got"
+            ); then :; else
+              echo "::error::update from $v failed on $RUNNER_OS $RUNNER_ARCH"
+              failed=1
+            fi
+            rm -rf "$home"
+          done
+          exit "$failed"
+
+      - name: Update from each release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($v in ($env:VERSIONS -split '\s+' | Where-Object { $_ })) {
+            $userHome = Join-Path $env:RUNNER_TEMP "ql-$v"
+            New-Item -ItemType Directory -Force -Path $userHome | Out-Null
+            $saved = @{ HOME = $env:HOME; USERPROFILE = $env:USERPROFILE }
+            try {
+              $env:HOME = $userHome
+              $env:USERPROFILE = $userHome
+              $installer = Join-Path $userHome 'install.ps1'
+              Invoke-WebRequest "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/v$v/install.ps1" -OutFile $installer
+              & pwsh -NoProfile -ExecutionPolicy Bypass -File $installer -Version $v -CliOnly -NonInteractive *> (Join-Path $userHome 'install.log')
+              if ($LASTEXITCODE -ne 0) { Get-Content (Join-Path $userHome 'install.log') -Tail 20; throw "install of $v failed" }
+              $ql = Join-Path $userHome '.qualitylayer\bin\qualitylayer.exe'
+              $before = (& $ql --version | Select-Object -Last 1).Trim()
+              if ($before -ne $v) { throw "installed $before, not $v" }
+              & $ql update
+              if ($LASTEXITCODE -ne 0) { throw "update from $v failed" }
+              $got = (& $ql --version | Select-Object -Last 1).Trim()
+              if ($got -ne $env:NEWEST) { throw "$v updated to $got, not $env:NEWEST" }
+              $again = (& $ql update) -join "`n"
+              if ($again -notmatch 'up to date') { throw "a second update from $v did not settle: $again" }
+              Write-Host "$v -> $got"
+            } catch {
+              Write-Host "::error::update from $v failed on Windows: $_"
+              $failed = $true
+            } finally {
+              $env:HOME = $saved.HOME
+              $env:USERPROFILE = $saved.USERPROFILE
+            }
+          }
+          if ($failed) { exit 1 }

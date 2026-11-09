@@ -43,7 +43,8 @@ export default function cockpitDemo(): Plugin {
         return GUIDE_DIALOG;
       if (source === "/qualitylayer-cockpit-demo.tsx") return path.join(COCKPIT_SOURCE, "demo/main.tsx");
       if (!source.startsWith("@/")) return null;
-      const base = importer?.startsWith(COCKPIT_SOURCE) ? COCKPIT_SOURCE : path.resolve(import.meta.dirname, "src");
+      // Vite names importers with forward slashes; on Windows the folder is spelled with backslashes.
+      const base = importer !== undefined && path.normalize(importer).startsWith(COCKPIT_SOURCE) ? COCKPIT_SOURCE : path.resolve(import.meta.dirname, "src");
       return this.resolve(path.join(base, source.slice(2)), importer, { skipSelf: true });
     },
     load(id) {

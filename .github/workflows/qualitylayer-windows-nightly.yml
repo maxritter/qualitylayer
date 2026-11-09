@@ -9,6 +9,11 @@ on:
         required: false
         default: ""
         type: string
+      benchmark:
+        description: With a list of test files, also run the native compilation benchmark (a full run always does).
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -106,12 +111,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Measure native compilation tradeoffs
-        if: matrix.shard == 1 && inputs.tests == ''
+        if: matrix.shard == 1 && (inputs.tests == '' || inputs.benchmark)
         working-directory: qualitylayer
         run: bun scripts/benchmark-compile.ts --samples 7
 
       - name: Keep the native performance measurements
-        if: matrix.shard == 1 && inputs.tests == ''
+        if: matrix.shard == 1 && (inputs.tests == '' || inputs.benchmark)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: compile-benchmark-${{ matrix.os }}

@@ -111,7 +111,7 @@ the quality owner resolves that mismatch before a new scan, outside an active ru
 - A release enters CI/CD only on a commit the full regression passed (Max, 9 November
   2026): before pushing `main` (stable) or `dev` (beta) to stage, run
   `gh workflow run qualitylayer-ci.yml --ref <branch> -f full_regression=true` on the exact
-  commit to stage and wait for all 12 shards to pass. Release's staging refuses a commit
+  commit to stage and wait for all 15 shards (6 Linux, 9 macOS) to pass. Release's staging refuses a commit
   without them (*The full regression passed on this commit*). Push the commit itself; a
   later commit, even a version bump, needs its own green run.
 - When the full regression fails, collect the completed results of every

@@ -3,12 +3,18 @@ name: QualityLayer Windows nightly
 # Exhaustive Windows regression is explicitly requested; ordinary releases use the bounded gate.
 on:
   workflow_dispatch:
+    inputs:
+      tests:
+        description: Test files to run alone on one runner, separated by spaces. Empty runs the full suite in 16 shards.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: qualitylayer-windows-nightly-${{ github.ref }}
+  group: qualitylayer-windows-nightly-${{ github.ref }}-${{ inputs.tests }}
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-2025]
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard: ${{ fromJSON(inputs.tests == '' && '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]' || '[1]') }}
     defaults:
       run:
         shell: pwsh
@@ -64,7 +70,7 @@ jobs:
           $runtime | ConvertTo-Json -Compress
 
       - name: Typecheck
-        if: matrix.shard == 1
+        if: matrix.shard == 1 && inputs.tests == ''
         working-directory: qualitylayer
         run: bun --bun run typecheck
 
@@ -92,15 +98,20 @@ jobs:
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
           QUALITYLAYER_REQUIRE_WINDOWS_NATIVE: "1"
-        run: bun run test --shard ${{ matrix.shard }}/16 tests/e2e tests/windows tests/core/platform.test.ts tests/core/team-keys.test.ts tests/server/lock.test.ts tests/cli/hook-prompt.test.ts tests/core/install/mod.test.ts tests/scripts/chrome-shutdown.test.ts
+          FOCUS_TESTS: ${{ inputs.tests }}
+        run: |
+          $files = @($env:FOCUS_TESTS -split '\s+' | Where-Object { $_ })
+          if ($files.Count -gt 0) { bun run test @files }
+          else { bun run test --shard ${{ matrix.shard }}/16 tests/e2e tests/windows tests/core/platform.test.ts tests/core/team-keys.test.ts tests/server/lock.test.ts tests/cli/hook-prompt.test.ts tests/core/install/mod.test.ts tests/scripts/chrome-shutdown.test.ts }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Measure native compilation tradeoffs
-        if: matrix.shard == 1
+        if: matrix.shard == 1 && inputs.tests == ''
         working-directory: qualitylayer
         run: bun scripts/benchmark-compile.ts --samples 7
 
       - name: Keep the native performance measurements
-        if: matrix.shard == 1
+        if: matrix.shard == 1 && inputs.tests == ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: compile-benchmark-${{ matrix.os }}

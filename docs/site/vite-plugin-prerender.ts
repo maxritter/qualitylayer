@@ -1,5 +1,5 @@
 import { createServer, type Plugin } from "vite";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PUBLIC_PAGES } from "./src/lib/seo.ts";
 import { COMPARISON_PATHS } from "./src/lib/comparisons.ts";
@@ -29,8 +29,14 @@ export default function prerenderPlugin(): Plugin {
       root = config.root;
       outDir = path.resolve(root, config.build.outDir);
     },
-    async closeBundle() {
-      const template = await readFile(path.join(outDir, "index.html"), "utf8");
+    async closeBundle(error?: Error) {
+      // A build that already failed has no pages to render; its own error is the one to show.
+      if (error) return;
+      const template = await readFile(path.join(outDir, "index.html"), "utf8").catch(async (cause: unknown) => {
+        // Name what the bundle did write: a missing page here usually means it wrote somewhere else.
+        const held = await readdir(outDir).catch(() => ["no folder"]);
+        throw new Error(`Prerender found no index.html in ${outDir} (${String(cause)}); it holds: ${held.slice(0, 40).join(", ")}`);
+      });
       const manifest = JSON.parse(await readFile(path.join(outDir, ".vite/manifest.json"), "utf8")) as Record<string, { css?: string[]; imports?: string[]; dynamicImports?: string[]; isEntry?: boolean }>;
       const entries: Record<string, string> = {
         "/": "src/components/home/Sections.tsx",

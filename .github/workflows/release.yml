@@ -923,26 +923,6 @@ jobs:
             [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "v12.99.0" ]
           fi
 
-      # The bridge carries the newest CLI, so a 12.x `qualitylayer update` lands on this release.
-      - name: Give the v12.99.0 bridge this release's CLI files
-        if: ${{ !contains(env.VERSION, '-') }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          files=(SHA256SUMS SHA256SUMS.sig)
-          for bin in qualitylayer-darwin-arm64 qualitylayer-darwin-x64 qualitylayer-linux-arm64 \
-            qualitylayer-linux-x64 qualitylayer-windows-x64.exe; do
-            files+=("$bin" "$bin.sha256")
-          done
-          for f in "${files[@]}"; do [ -s "release/$f" ] || { echo "::error::release/$f missing"; exit 1; }; done
-          (cd release && gh release upload v12.99.0 "${files[@]}" --clobber)
-          # Read back: every bridge file is byte for byte the one this release published.
-          mkdir -p bridge-readback
-          gh release download v12.99.0 --dir bridge-readback --clobber
-          for f in "${files[@]}"; do cmp "release/$f" "bridge-readback/$f"; done
-          [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "v12.99.0" ]
-
       # A stable release retires the betas that led to it, so the Releases page lists betas only
       # for a version with no stable release yet. Their tags stay.
       - name: Remove the betas this stable release supersedes
@@ -977,6 +957,37 @@ jobs:
             exit 0
           fi
           vercel promote "$DEPLOY_URL" --yes --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+
+      # The bridge carries the newest CLI, so a 12.x `qualitylayer update` lands on this release.
+      # It runs last: the release and qualitylayer.dev are complete before it, so a failure here
+      # leaves only the bridge to refresh by hand (docs/agents/release.md, step 6).
+      - name: Give the v12.99.0 bridge this release's CLI files
+        if: ${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          names=(SHA256SUMS SHA256SUMS.sig)
+          for bin in qualitylayer-darwin-arm64 qualitylayer-darwin-x64 qualitylayer-linux-arm64 \
+            qualitylayer-linux-x64 qualitylayer-windows-x64.exe; do
+            names+=("$bin" "$bin.sha256")
+          done
+          # The published files, wherever the candidate's artifacts put them under release/.
+          paths=()
+          for f in "${names[@]}"; do
+            found=$(find release -type f -name "$f")
+            [ "$(printf '%s\n' "$found" | grep -c .)" = 1 ] || { echo "::error::expected one release/**/$f, found: ${found:-none}"; exit 1; }
+            paths+=("$found")
+          done
+          # Exactly the bytes this release published under the same names.
+          mkdir -p published-cli
+          gh release download "v$VERSION" --dir published-cli --clobber "${names[@]/#/--pattern=}"
+          for i in "${!names[@]}"; do cmp "${paths[$i]}" "published-cli/${names[$i]}"; done
+          gh release upload v12.99.0 "${paths[@]}" --clobber
+          mkdir -p bridge-readback
+          gh release download v12.99.0 --dir bridge-readback --clobber
+          for i in "${!names[@]}"; do cmp "${paths[$i]}" "bridge-readback/${names[$i]}"; done
+          [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "v12.99.0" ]
 
       - name: Remove private stable deployment sources
         if: always()

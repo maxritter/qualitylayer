@@ -72,7 +72,7 @@ In the App, choose **Restart and update** from **Update ready** or the bar above
 
 ## Remove it {#uninstall}
 
-`qualitylayer uninstall` undoes what the installer changed; your plans stay. To move your licence, run `qualitylayer licence activate <key>` on the other computer; a key works on 3 computers ([Licence](reference/settings.md#licence)).
+`qualitylayer uninstall` undoes what the installer changed; your plans stay. Add `--purge` to remove QualityLayer's data too: settings, licence and tasks. To move your licence, run `qualitylayer licence activate <key>` on the other computer; a key works on 3 computers ([Licence](reference/settings.md#licence)).
 
 ### On Windows {#uninstall-windows}
 

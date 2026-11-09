@@ -445,22 +445,22 @@ jobs:
         if: inputs.operation != 'promote' && steps.check.outputs.should_release == 'true'
         run: node docs/site/scripts/check-captures.mjs
       # A release enters CI/CD only on a commit the whole suite passed (Max, 9 November 2026): the
-      # full regression's 15 shards (6 Linux, 9 macOS), run on this exact commit before main or dev was pushed to stage it.
+      # full regression's 18 shards (6 Linux, 12 macOS), run on this exact commit before main or dev was pushed to stage it.
       - name: The full regression passed on this commit
         if: inputs.operation != 'promote' && steps.check.outputs.should_release == 'true'
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           set -euo pipefail
           latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SOURCE_SHA/check-runs?per_page=100" \
-            --jq '.check_runs[] | select(.name | test("^Typecheck, lint, test \\((ubuntu-latest, shard [1-6]/6|macos-26, shard [1-9]/9)\\)$")) | [.id, .name, .status, (.conclusion // "")] | @tsv' |
+            --jq '.check_runs[] | select(.name | test("^Typecheck, lint, test \\((ubuntu-latest, shard [1-6]/6|macos-26, shard ([1-9]|1[0-2])/12)\\)$")) | [.id, .name, .status, (.conclusion // "")] | @tsv' |
             sort -n | awk -F'\t' '{ last[$2] = $3 " " $4 } END { for (n in last) print n "\t" last[n] }')
           passed=$(printf '%s\n' "$latest" | grep -c $'\tcompleted success$' || true)
-          if [ "$passed" -ne 15 ]; then
+          if [ "$passed" -ne 18 ]; then
             printf '%s\n' "$latest"
-            echo "::error::$passed of 15 full-regression shards passed on $RELEASE_SOURCE_SHA. Before staging, run: gh workflow run qualitylayer-ci.yml --ref <the branch at this commit> -f full_regression=true, wait for it to pass, then push."
+            echo "::error::$passed of 18 full-regression shards passed on $RELEASE_SOURCE_SHA. Before staging, run: gh workflow run qualitylayer-ci.yml --ref <the branch at this commit> -f full_regression=true, wait for it to pass, then push."
             exit 1
           fi
-          echo "All 15 full-regression shards passed on $RELEASE_SOURCE_SHA"
+          echo "All 18 full-regression shards passed on $RELEASE_SOURCE_SHA"
 
   candidate:
     name: Stage the exact candidate without publication

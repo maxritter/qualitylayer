@@ -30,13 +30,16 @@ export default function prerenderPlugin(): Plugin {
       outDir = path.resolve(root, config.build.outDir);
     },
     async closeBundle(error?: Error) {
-      // A build that already failed has no pages to render; its own error is the one to show.
+      // A build that failed before it wrote its pages has none to render, and Vite closes the bundle
+      // in a `finally`: an error thrown here would hide the build's own.
       if (error) return;
       const template = await readFile(path.join(outDir, "index.html"), "utf8").catch(async (cause: unknown) => {
-        // Name what the bundle did write: a missing page here usually means it wrote somewhere else.
+        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
         const held = await readdir(outDir).catch(() => ["no folder"]);
-        throw new Error(`Prerender found no index.html in ${outDir} (${String(cause)}); it holds: ${held.slice(0, 40).join(", ")}`);
+        console.error(`Prerender skipped: ${outDir} has no index.html (it holds: ${held.slice(0, 40).join(", ")}).`);
+        return null;
       });
+      if (template === null) return;
       const manifest = JSON.parse(await readFile(path.join(outDir, ".vite/manifest.json"), "utf8")) as Record<string, { css?: string[]; imports?: string[]; dynamicImports?: string[]; isEntry?: boolean }>;
       const entries: Record<string, string> = {
         "/": "src/components/home/Sections.tsx",

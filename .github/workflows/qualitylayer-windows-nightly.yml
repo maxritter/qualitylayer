@@ -68,6 +68,25 @@ jobs:
         working-directory: qualitylayer
         run: bun --bun run typecheck
 
+      # tests/windows/run-job.test.ts runs the installed command path through the Rust launcher
+      # and fails without one (the ConPTY job in qualitylayer-ci.yml builds it the same way).
+      - name: Build matching native Rust launcher for the installed command path
+        timeout-minutes: 5
+        working-directory: qualitylayer
+        run: |
+          $target = 'x86_64-pc-windows-msvc'
+          $toolchain = "stable-$target"
+          rustup toolchain install $toolchain --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $info = rustup run $toolchain rustc -vV
+          if ($LASTEXITCODE -ne 0 -or -not ($info -contains "host: $target")) { throw 'Rust toolchain is not native to the runner architecture' }
+          $output = Join-Path $env:RUNNER_TEMP 'ql-nightly-launcher'
+          rustup run $toolchain cargo build --locked --manifest-path app/launcher/Cargo.toml --target $target --target-dir $output --bin qualitylayer-launcher --jobs 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $launcher = Join-Path $output "$target/debug/qualitylayer-launcher.exe"
+          if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw 'Native launcher artifact is missing' }
+          "QUALITYLAYER_TEST_LAUNCHER=$launcher" >> $env:GITHUB_ENV
+
       - name: Windows workflows and installer
         working-directory: qualitylayer
         env:

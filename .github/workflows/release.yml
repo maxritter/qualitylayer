@@ -446,7 +446,7 @@ jobs:
         run: node docs/site/scripts/check-captures.mjs
       # A release enters CI/CD only on a commit the whole suite passed (Max, 9 November 2026): the
       # full regression's 18 shards (6 Linux, 12 macOS), run on this exact commit before main or dev was pushed to stage it.
-      # A commit that changes only .github/ is checked against the tested commit beneath it. A shard Max
+      # A commit that changes nothing under qualitylayer/ is checked against the tested commit beneath it. A shard Max
       # waived for that tested commit (.github/release-waivers.json: SHA, exact shard names, his words and
       # the reason) counts once, with a warning; the waiver names one commit and nothing else.
       - name: The full regression passed on this commit
@@ -454,12 +454,14 @@ jobs:
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           set -euo pipefail
+          # The full regression runs the qualitylayer/ suite; the site and docs have their own push CI.
           tested="$RELEASE_SOURCE_SHA"
-          if git rev-parse --verify --quiet "$tested^" >/dev/null &&
-            [ -z "$(git diff --name-only "$tested^" "$tested" | grep -v '^\.github/' || true)" ]; then
+          while git rev-parse --verify --quiet "$tested^" >/dev/null &&
+            [ -z "$(git diff --name-only "$tested^" "$tested" | grep '^qualitylayer/' || true)" ] &&
+            [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tested/check-runs?per_page=100" --jq '[.check_runs[] | select(.name | startswith("Typecheck, lint, test ("))] | length')" = 0 ]; do
             tested=$(git rev-parse "$tested^")
-            echo "Only .github/ changed since $tested; checking the regression of that commit"
-          fi
+            echo "Nothing under qualitylayer/ changed since $tested; checking the regression of that commit"
+          done
           latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$tested/check-runs?per_page=100" \
             --jq '.check_runs[] | select(.name | test("^Typecheck, lint, test \\((ubuntu-latest, shard [1-6]/6|macos-26, shard ([1-9]|1[0-2])/12)\\)$")) | [.id, .name, .status, (.conclusion // "")] | @tsv' |
             sort -n | awk -F'\t' '{ last[$2] = $3 " " $4 } END { for (n in last) print n "\t" last[n] }')

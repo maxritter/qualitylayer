@@ -21,7 +21,7 @@ Review opens once Verify has passed every point, so everything on the page is fi
 | **Code** | The complete change, with line comments and where to start reading |
 | **What changed** | The change in diagrams, in tabs |
 | **Screens** | The designs you approved beside what was built |
-| **Acceptance test** | The Plan's test, a tab per step with its picture or output, and whether it ran as a script or in a real agent session |
+| **Acceptance test** | The Plan's test as a numbered list of steps, each opening to its picture or output, with a mark for whether it ran as a script or in a real agent session |
 
 Anything only you can check, such as your account or a device the agents cannot run, comes to you as a question. What turns up while you review, your agent fixes at once and rechecks.
 

@@ -38,7 +38,7 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 *Example task in a fictional project.*
 
-**Implement** shows the slices with their tasks: every slice open for a small build, the one in work for a larger one, and past 10 slices the finished ones in one row. A task opens to one sentence and its card (files, test first, done when). The header counts tasks and slices and shows a red chip only while a check fails. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
+**Implement** shows the slices with their tasks: every slice open for a small build, the one in work for a larger one, and past 10 slices the finished ones in one row. A task opens to one sentence and its card (files, test first, done when). The header counts tasks and slices and names the task in work. A failing check is your agent's to fix, so the page does not flag it; a check that blocks the build reaches you as a question, and [Review](review.md) still refuses a red check. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)

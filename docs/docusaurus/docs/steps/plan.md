@@ -20,7 +20,7 @@ The **Plan** page is the document you approve before the build. The summary, dia
 | **Summary** | The change in a few lines, with the size of the build and what reviewed it |
 | **Diagrams** | Up to three, in tabs: before and after, a flow, a sequence or the architecture. Open one to zoom or enlarge it |
 | **Interface** | One tab per screen: a clickable artifact ([Artifacts](../artifacts.md)), with **Open** for a full view |
-| **Acceptance test** | The deciding test, a tab per step with the screen or output it shows, and how it will run. [Review](review.md) shows the same steps as they ran |
+| **Acceptance test** | The deciding test as a numbered list of steps, each opening to the screen or output it shows, with a mark for how it will run: a scripted run or a real agent session. [Review](review.md) shows the same steps as they ran |
 | **What changes** and **Rollout and operations** | The files that change, one row each, and what ships or needs attention |
 | **Decisions made for you**, **Assumptions**, **Not doing** and **Prerequisites** | Your agent's smaller choices with reasons, what the Plan takes for granted, what stays untouched, and what must be ready first, such as a login |
 

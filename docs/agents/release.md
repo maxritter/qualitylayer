@@ -106,10 +106,15 @@ the quality owner resolves that mismatch before a new scan, outside an active ru
   test setup. Pin the final source and signed artifact identities for staging,
   installation and publication.
 - Run the finite smoke gate plus focused changed-risk tests; target 5–10 minutes
-  per local batch. Stable and beta use this bounded policy. Exhaustive regression
-  and workflow benches run only when Max asks. Keep startup, auth, memory,
+  per local batch. Workflow benches run only when Max asks. Keep startup, auth, memory,
   Team/data, upgrade, signing and installed-App checks and normal hooks intact.
-- When a full regression was requested, collect the completed results of every
+- A release enters CI/CD only on a commit the full regression passed (Max, 9 November
+  2026): before pushing `main` (stable) or `dev` (beta) to stage, run
+  `gh workflow run qualitylayer-ci.yml --ref <branch> -f full_regression=true` on the exact
+  commit to stage and wait for all 12 shards to pass. Release's staging refuses a commit
+  without them (*The full regression passed on this commit*). Push the commit itself; a
+  later commit, even a version bump, needs its own green run.
+- When the full regression fails, collect the completed results of every
   job before choosing the repair join. Read failures recorded before cancellation
   too. Keep one failure inventory and give each independent repair an owner and
   bounded check. After affected checks pass, join the repairs and run the selected
@@ -197,12 +202,10 @@ reviews promptly, preserving their audit records and publication gates.
 For a diagnostic-only commit targeting a known red check, collect that check's
 result before approving another private packaging wave.
 
-Before dispatching a manual regression with the same check names, verify that
-Release's **Reuse CI results** job has completed successfully. Ordinary CI's
-success alone is insufficient: that consumer selects the latest check by name,
-so a newer pending run can hide the passing result and trigger redundant fallback
-tests. Start the requested regression after that acknowledgment, while packaging
-continues on the same source.
+Release's **Reuse CI results** selects the latest check by name on the commit, so a
+regression run on the staged commit after staging (pending, failed or cancelled) hides
+ordinary CI's pass and blocks promotion until ordinary CI is rerun. Run the full
+regression before staging, never between staging and promotion.
 
 ## Preserve the approved main README
 
@@ -316,9 +319,8 @@ hooks and shared/private-index handling.
    `update --version` (POINTER_ONLY in the workflow); later clients read the release list.
    Then dispatch `old-client-update.yml`: earlier releases must reach the new one on Linux,
    macOS and Windows; a failing old client blocks the handover until it has a path.
-   Dispatch the manual full regression only after promotion: Reuse CI reads the latest
-   check of each name on the candidate SHA, so a failed or cancelled full run there blocks
-   promotion until the ordinary CI is rerun.
+   The full regression ran before staging (step above); do not start another on the
+   candidate between staging and promotion.
 
 For a test-fixture or publication-orchestration repair, preserve the qualified
 candidate's source, run, artifact digests and installed receipt. A reviewed recovery

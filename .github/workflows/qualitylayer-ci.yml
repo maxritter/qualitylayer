@@ -98,14 +98,15 @@ jobs:
           bun run deadcode
           bun run test:smoke
 
-  # Full regression, dispatched every night on dev (qualitylayer-nightly.yml) or by hand: six
-  # balanced shards per OS keep setup and tests within the fifteen-minute job limit. Mac's five
-  # concurrent slots can leave one queued.
+  # Full regression, dispatched every night on dev (qualitylayer-nightly.yml) or by hand, and
+  # required green on a commit before it is staged (release.yml). Six balanced shards per OS; Mac's
+  # five concurrent slots can leave one queued. A macOS shard takes 13-15 minutes, so the limit is 25:
+  # a timed-out shard reports "cancelled" and hides its results.
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.full_regression
     name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     needs: plaintext-guard
     strategy:
       fail-fast: false

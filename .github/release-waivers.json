@@ -1,0 +1,12 @@
+{
+  "504450a6d8a50b9467433f5e65cce81a06f02176": {
+    "release": "13.0.2",
+    "approved": "Max, 9 Nov 2026: \"Release now, fix in 13.0.3\"",
+    "reason": "macOS-only: cockpit-large-task fails identically on 13.0.1 (first changes 5.4 s vs 5 s budget); chrome-driver leak and run-workspace-retry pass locally; none touches 13.0.2's changes. Fixed in 13.0.3.",
+    "shards": [
+      "Typecheck, lint, test (macos-26, shard 3/12)",
+      "Typecheck, lint, test (macos-26, shard 7/12)",
+      "Typecheck, lint, test (macos-26, shard 10/12)"
+    ]
+  }
+}

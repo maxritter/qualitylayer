@@ -142,7 +142,7 @@ Pause, search or retire lessons, including **Yours**, the lessons about you. **M
 
 ## Licence
 
-Your plan or trial, and **Open billing account**. Each licence key works on 3 computers; on Team, every seat has its own key. **On another computer** shows how to move the licence. When all 3 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
+Your plan or trial, and **Open billing account**. To use a key you bought, choose **Enter key…** (during the trial too) and paste it from your billing account; Setup offers the same field. From a terminal, run `qualitylayer licence activate <key>`; on Windows before the command is set up, run `& "$env:LOCALAPPDATA\QualityLayer\qualitylayer-cli.exe" licence activate <key>` in PowerShell. Each licence key works on 3 computers; on Team, every seat has its own key. **On another computer** shows how to move the licence. When all 3 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
 
 ## Team
 

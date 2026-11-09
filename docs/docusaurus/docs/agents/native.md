@@ -63,7 +63,7 @@ Permission waits show in Conversation. For Terminal-only replies, the App opens 
 
 ### Permission modes {#permission-modes}
 
-New managed sessions default to Bypass. Your saved global or per-agent mode takes precedence; **Agent settings** explicitly inherits the native policy. Planning remembers your last successful choices, and Build inherits this task’s planning choices, including accepted native permission changes.
+New managed sessions default to Bypass. Your saved global or per-agent mode takes precedence; **Agent settings** explicitly inherits the native policy. Planning remembers your last successful choices and opens on the agent you last planned with. Build opens on the agent you last built with; on the agent that planned the task, it inherits that task’s planning choices, including accepted native permission changes.
 
 | Agent | Modes |
 | --- | --- |

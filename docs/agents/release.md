@@ -216,9 +216,16 @@ in-place Workflow wording corrections in `2154a7b0d` follow the approved
 finished-Review contract. The13.0media refresh changes only the existing
 animation URLs, with both hosted loops verified against their local hashes.
 The approved layout and skills table remain. This full-file digest binds the copy.
+13.0.1 adds two changes: Max's seven-step walkthrough loops in `1b845820f` (his own
+commit, SHA256 `967aaecede64d08b2dee99e4f21cbd13f90903868d2128fedc9093698402b78f`), then the
+release badge sorted by version in `0d9a45fc1` (issue #237: GitHub's "latest" is the v12.99.0
+bridge), approved by Max's overnight delegation of 8 November ("I am away for the night, finish
+autonomously"; Public writing, step 5).
 README SHA256
-`b5e213f653e918de80ca005f9f1f640e1ef8c224da450d8eef1c72410da4f08d`.
+`627c81c688a6c6e5dbbec9069954c705b586cb6086d0f594835e999621928fe9`.
 Earlier approved README SHA256s, newest first:
+13.0.0 as published
+`b5e213f653e918de80ca005f9f1f640e1ef8c224da450d8eef1c72410da4f08d`;
 13.0first candidate with the same approved copy and first refreshed animation URLs
 `009cca24f3c8fdf2b83bbcb5436572dedf9f457ad8bb50b7a103cf61db942196`;
 12.10 concise copy audit and approved walkthrough revision

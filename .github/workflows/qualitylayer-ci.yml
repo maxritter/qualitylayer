@@ -100,13 +100,13 @@ jobs:
 
   # Full regression, dispatched every night on dev (qualitylayer-nightly.yml) or by hand, and
   # required green on a commit before it is staged (release.yml). Six balanced shards per OS; Mac's
-  # five concurrent slots can leave one queued. A macOS shard takes 13-15 minutes, so the limit is 25:
-  # a timed-out shard reports "cancelled" and hides its results.
+  # five concurrent slots can leave one queued. Each shard stays within fifteen minutes
+  # (tests/scripts/ci-matrix.test.ts): a slower suite is split or made cheaper, not given more time.
   test:
     if: github.event_name == 'workflow_dispatch' && inputs.full_regression
     name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 15
     needs: plaintext-guard
     strategy:
       fail-fast: false

@@ -308,11 +308,17 @@ hooks and shared/private-index handling.
    using structured inputs. Keep environment approval, payload, signing,
    notarization, migration and publication gates. Promotion reuses verified bytes;
    changed application/build inputs or signed artifacts require a new stage.
-6. After a stable publication, dispatch `old-client-update.yml`: earlier releases
-   (12.x and the previous 13.x) must update to the new one on Linux, macOS and
-   Windows. The new release takes GitHub's "latest" from the v12.99.0 bridge, so
-   12.x clients then need `update --version`; a failing old client blocks the
-   handover until it has a path (a bridge release on an old-accepted tag).
+6. Right after a stable publication, give GitHub's "latest" back to the v12.99.0 bridge
+   (`gh release edit v12.99.0 --latest`): 12.x clients read only that pointer and accept
+   only v12 tags. Then replace the bridge's CLI files (the five binaries, their `.sha256`,
+   `SHA256SUMS` and `SHA256SUMS.sig`) with the new release's, after checking the signature,
+   and read them back. 13.0.0 also reads only the pointer: it moves with one
+   `update --version` (POINTER_ONLY in the workflow); later clients read the release list.
+   Then dispatch `old-client-update.yml`: earlier releases must reach the new one on Linux,
+   macOS and Windows; a failing old client blocks the handover until it has a path.
+   Dispatch the manual full regression only after promotion: Reuse CI reads the latest
+   check of each name on the candidate SHA, so a failed or cancelled full run there blocks
+   promotion until the ordinary CI is rerun.
 
 For a test-fixture or publication-orchestration repair, preserve the qualified
 candidate's source, run, artifact digests and installed receipt. A reviewed recovery

@@ -35,6 +35,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       VERSIONS: ${{ inputs.versions || '12.0.0 12.9.0 12.10.1 13.0.0' }}
+      # Read only GitHub's "latest" pointer, which the v12.99.0 bridge holds: their plain update keeps
+      # them where they are, and one `update --version` (the 13.0.1 release notes) carries them on.
+      POINTER_ONLY: "13.0.0"
     steps:
       - name: Newest stable release
         shell: bash
@@ -66,6 +69,11 @@ jobs:
                 { tail -20 "$home/install.log"; exit 1; }
               [ "$(qualitylayer --version | tail -1)" = "$v" ]
               qualitylayer update
+              if [[ " $POINTER_ONLY " == *" $v "* ]]; then
+                [ "$(qualitylayer --version | tail -1)" = "$v" ] ||
+                  { echo "::error::$v moved on a plain update"; exit 1; }
+                qualitylayer update --version "$NEWEST"
+              fi
               got="$(qualitylayer --version | tail -1)"
               [ "$got" = "$NEWEST" ] || { echo "::error::$v updated to $got, not $NEWEST"; exit 1; }
               qualitylayer update | grep -q "up to date" ||
@@ -101,6 +109,12 @@ jobs:
               if ($before -ne $v) { throw "installed $before, not $v" }
               & $ql update
               if ($LASTEXITCODE -ne 0) { throw "update from $v failed" }
+              if (" $env:POINTER_ONLY " -like "* $v *") {
+                $kept = (& $ql --version | Select-Object -Last 1).Trim()
+                if ($kept -ne $v) { throw "$v moved on a plain update to $kept" }
+                & $ql update --version $env:NEWEST
+                if ($LASTEXITCODE -ne 0) { throw "update --version from $v failed" }
+              }
               $got = (& $ql --version | Select-Object -Last 1).Trim()
               if ($got -ne $env:NEWEST) { throw "$v updated to $got, not $env:NEWEST" }
               $again = (& $ql update) -join "`n"

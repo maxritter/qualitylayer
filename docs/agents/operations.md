@@ -6,7 +6,10 @@
   overwrite concurrent changes.
 - Several sessions can share one worktree, and its index too. Commit by hand
   through a private index, the way `qualitylayer commit slice` does: set
-  `GIT_INDEX_FILE` to a temporary file, `git read-tree HEAD`, add only your
+  `GIT_INDEX_FILE` to a temporary file, copy `.git/index` to it and run
+  `git read-tree --reset HEAD` (the copy keeps the stat cache; a bare
+  `git read-tree HEAD` makes git re-filter every file through git-crypt and
+  the commit takes minutes instead of seconds), add only your
   files (`git update-index` or `hash-object --path`, which runs the git-crypt
   filter), then commit. Afterwards bring your own paths in the shared index up
   to the new commit with `git update-index --add --cacheinfo <mode>,<blob>,<path>`

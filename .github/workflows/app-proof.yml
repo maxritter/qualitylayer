@@ -29,6 +29,9 @@ name: App proof
       - "qualitylayer/tests/windows/**"
       - "qualitylayer/src/core/run/**"
       - "qualitylayer/src/server/runs.ts"
+      # Machines: a framed page of another local port in each system's webview, and ssh's forward.
+      - "qualitylayer/src/server/machines/**"
+      - "qualitylayer/src/ui/machines/**"
       - "qualitylayer/scripts/native-terminal/**"
       - "qualitylayer/scripts/qualify-terminal.ts"
       - "qualitylayer/scripts/qualify-native-observer.ts"
@@ -172,6 +175,40 @@ jobs:
         if: runner.os == 'Windows' && hashFiles('qualitylayer/tests/windows/install-ps1.test.ts') != ''
         working-directory: qualitylayer
         run: bun run test tests/windows/install-ps1.test.ts tests/windows/setup-recovery.test.ts
+
+      # Machines: on Windows ssh's forward to a machine ends on another loopback address, because a
+      # browser sends its cookies for 127.0.0.1 to every port of it and Windows' ssh takes no socket
+      # file. Proved with the system's own ssh.exe against an ssh server on this runner; the keys
+      # and the known-hosts file are made for the run and live in the runner's temporary folder.
+      - name: An ssh server on this runner, for a machine's forward
+        if: runner.os == 'Windows' && hashFiles('qualitylayer/tests/windows/ssh-forward.test.ts') != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null
+          Start-Service sshd
+          $dir = Join-Path $env:RUNNER_TEMP 'ql-ssh'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $key = Join-Path $dir 'id'
+          $tools = Join-Path $env:SystemRoot 'System32\OpenSSH'
+          # cmd hands ssh-keygen an empty passphrase as an empty argument; PowerShell's own quoting differs by version.
+          cmd /c "`"$tools\ssh-keygen.exe`" -q -t ed25519 -N `"`" -f `"$key`""
+          if ($LASTEXITCODE -ne 0) { throw 'ssh-keygen failed' }
+          # ssh.exe refuses a private key other accounts can read.
+          icacls $key /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+          # The runner's account is an administrator: sshd reads such an account's keys from here only.
+          $authorized = Join-Path $env:ProgramData 'ssh\administrators_authorized_keys'
+          Copy-Item "$key.pub" $authorized -Force
+          icacls $authorized /inheritance:r /grant 'Administrators:F' /grant 'SYSTEM:F' | Out-Null
+          & "$tools\ssh-keyscan.exe" -p 22 127.0.0.1 2>$null | Set-Content -Encoding ascii (Join-Path $dir 'known_hosts')
+          if (-not (Get-Content (Join-Path $dir 'known_hosts'))) { throw 'ssh-keyscan read no host key' }
+          "QL_SSH_FORWARD_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "QL_SSH_FORWARD_USER=$env:USERNAME" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: ssh.exe holds a machine's forward on another loopback address
+        if: runner.os == 'Windows' && hashFiles('qualitylayer/tests/windows/ssh-forward.test.ts') != ''
+        working-directory: qualitylayer
+        run: bun run test tests/windows/ssh-forward.test.ts
 
       - name: Install, start, call and update the App
         id: prove

@@ -173,6 +173,10 @@ and product permission failures.
   Agree the finite run scope before spending provider time or tokens. `bun run
   bench` (skill `ql-bench`, design `docs/designs/workflow-bench.md`) runs
   Claude Code **and** Codex; take the baseline on the same cells.
+- Only a bench takes the machine hold (`qualitylayer heavy hold`), and only a
+  second bench waits for one. A build or verification session never takes a
+  hold and never pauses for another session's bench: its checks, tests and real
+  runs start at once (Max, 10 November 2026).
 - Quality first: keep a measured change only when acceptance and test
   strength are not worse on any cell and agent; then time, cost and fresh
   tokens decide. A verdict with `?` is inconclusive; extra runs need an agreed scope.

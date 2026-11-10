@@ -24,7 +24,7 @@ const Logo = ({ agent }: { agent: NativeAgent }) => {
 const MODELS: Chip[] = [
   ["Opus 5.5", "cpu"],
   ["Sonnet 5.5", "cpu"],
-  ["Fable 5.1", "cpu"],
+  ["Fable 5.2", "cpu"],
   ["Haiku 5.5", "cpu"],
   ["GPT-6.1 Sol", "cpu"],
   ["Grok 4.7", "cpu"],

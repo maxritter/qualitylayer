@@ -55,7 +55,7 @@ it("lists the models and the ways to set it up once, as still rows, without repe
   render(<Intro />);
   const models = screen.getByRole("list", { name: "Models" });
   expect(within(models).getAllByRole("listitem").map(item => item.textContent)).toEqual([
-    "Opus 5.5", "Sonnet 5.5", "Fable 5.1", "Haiku 5.5", "GPT-6.1 Sol", "Grok 4.7", "Gemini 3.8 Flash",
+    "Opus 5.5", "Sonnet 5.5", "Fable 5.2", "Haiku 5.5", "GPT-6.1 Sol", "Grok 4.7", "Gemini 3.8 Flash",
   ]);
   expect(within(screen.getByRole("list", { name: "Ways to set it up" })).getAllByRole("listitem")).toHaveLength(5);
   expect(document.querySelector(".mx-track")).toBeNull();

@@ -44,7 +44,7 @@ Tasks you start in the App always answer in the App.
 
 - **Questions** in Discuss, Research and Plan appear in the agent's own picker.
 - **Plan**: a short summary and the path of the full file, any **Your call** to settle, then **Approve Plan**, **Give feedback** or **Show the Plan**.
-- **Build**: after you approve, choose where to build: **Build here**, **Compact first, then build here** or **Another session**.
+- **Build**: after you approve, choose where to build: **Build here, from the Plan** (compact, then say "build here"), **Keep this conversation** or **Another session or agent**.
 - **Review**: the final approval.
 
 Only your own pick or words count as an answer or an approval. An example at the Plan, with a fictional task:

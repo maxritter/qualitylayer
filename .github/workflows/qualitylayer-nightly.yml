@@ -21,6 +21,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Linux and macOS, every file
-        run: gh workflow run qualitylayer-ci.yml --repo "$GITHUB_REPOSITORY" --ref dev -f full_regression=true
+        run: gh workflow run qualitylayer-ci.yml --repo "$GITHUB_REPOSITORY" --ref dev -f full_regression=true -f macos=true
+      - name: Browser checks, every project
+        run: gh workflow run qualitylayer-ui.yml --repo "$GITHUB_REPOSITORY" --ref dev -f all=true
       - name: Windows, every file
         run: gh workflow run qualitylayer-windows-nightly.yml --repo "$GITHUB_REPOSITORY" --ref dev

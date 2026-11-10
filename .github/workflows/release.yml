@@ -248,10 +248,8 @@ jobs:
           wait=1200
           printf '%s\n' 'Plaintext guard' 'Site API and pages' > "$required"
           printf '%s\n' 'Release smoke (ubuntu-latest)' 'Release smoke (macos-26)' >> "$required"
-          for os in ubuntu-latest macos-26; do
-            for overflow_shard in 1 2; do
-              printf 'No text overflows a control (%s, shard %s/2)\n' "$os" "$overflow_shard" >> "$required"
-            done
+          for overflow_shard in 1 2; do
+            printf 'No text overflows a control (ubuntu-latest, shard %s/2)\n' "$overflow_shard" >> "$required"
           done
           for shard in 1 2 3 4 5 6; do
             printf 'Native Windows runtime (windows-2025, shard %s/6)\n' "$shard" >> "$required"
@@ -401,7 +399,8 @@ jobs:
     # GitHub exposes draft releases only to tokens with push access.
     permissions: { contents: write, checks: read }
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Twenty minutes of waiting for the Linux suite at most, and the selection steps around it.
+    timeout-minutes: 30
     needs: [check-trigger, supply-chain-gate]
     if: needs.check-trigger.outputs.should_run == 'true'
     outputs:
@@ -444,8 +443,10 @@ jobs:
       - name: Published App images and demo match the candidate
         if: inputs.operation != 'promote' && steps.check.outputs.should_release == 'true'
         run: node docs/site/scripts/check-captures.mjs
-      # A release enters CI/CD only on a commit the whole suite passed (Max, 9 November 2026): the
-      # full regression's 18 shards (6 Linux, 12 macOS), run on this exact commit before main or dev was pushed to stage it.
+      # A release is staged only from a commit the whole suite passed on Linux (Max, 10 November 2026):
+      # its eight shards, which the push to main starts itself (qualitylayer-ci.yml) and this step
+      # waits for, up to twenty minutes. macOS and Windows are guarded by their release smoke, the
+      # native Windows runtime shards and the candidate's own builds; their whole suites run nightly.
       # A commit that changes nothing under qualitylayer/ is checked against the tested commit beneath it. A shard Max
       # waived for that tested commit (.github/release-waivers.json: SHA, exact shard names, his words and
       # the reason) counts once, with a warning; the waiver names one commit and nothing else.
@@ -462,10 +463,17 @@ jobs:
             tested=$(git rev-parse "$tested^")
             echo "Nothing under qualitylayer/ changed since $tested; checking the regression of that commit"
           done
-          latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$tested/check-runs?per_page=100" \
-            --jq '.check_runs[] | select(.name | test("^Typecheck, lint, test \\((ubuntu-latest, shard [1-6]/6|macos-26, shard ([1-9]|1[0-2])/12)\\)$")) | [.id, .name, .status, (.conclusion // "")] | @tsv' |
-            sort -n | awk -F'\t' '{ last[$2] = $3 " " $4 } END { for (n in last) print n "\t" last[n] }')
-          passed=$(printf '%s\n' "$latest" | grep -c $'\tcompleted success$' || true)
+          deadline=$(( $(date +%s) + 1200 ))
+          while true; do
+            latest=$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$tested/check-runs?per_page=100" \
+              --jq '.check_runs[] | select(.name | test("^Typecheck, lint, test \\(ubuntu-latest, shard [1-8]/8\\)$")) | [.id, .name, .status, (.conclusion // "")] | @tsv' |
+              sort -n | awk -F'\t' '{ last[$2] = $3 " " $4 } END { for (n in last) print n "\t" last[n] }')
+            passed=$(printf '%s\n' "$latest" | grep -c $'\tcompleted success$' || true)
+            finished=$(printf '%s\n' "$latest" | grep -c $'\tcompleted ' || true)
+            # Every shard has reported, one already failed, or the wait is over: decide below.
+            if [ "$finished" -eq 8 ] || [ "$finished" -gt "$passed" ] || [ "$(date +%s)" -ge "$deadline" ]; then break; fi
+            sleep 30
+          done
           waived=0
           if [ -f .github/release-waivers.json ]; then
             while IFS= read -r shard; do
@@ -476,12 +484,12 @@ jobs:
               fi
             done < <(jq -r --arg s "$tested" '.[$s].shards[]? // empty' .github/release-waivers.json)
           fi
-          if [ $((passed + waived)) -ne 18 ]; then
+          if [ $((passed + waived)) -ne 8 ]; then
             printf '%s\n' "$latest"
-            echo "::error::$passed of 18 full-regression shards passed on $tested ($waived waived). Before staging, run: gh workflow run qualitylayer-ci.yml --ref <the branch at this commit> -f full_regression=true, wait for it to pass, then push."
+            echo "::error::$passed of 8 Linux suite shards passed on $tested ($waived waived). Fix the failing shard and push again; a push to main starts the suite itself."
             exit 1
           fi
-          echo "$passed of 18 full-regression shards passed on $tested, $waived waived"
+          echo "$passed of 8 Linux suite shards passed on $tested, $waived waived"
 
   candidate:
     name: Stage the exact candidate without publication

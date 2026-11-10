@@ -108,12 +108,22 @@ the quality owner resolves that mismatch before a new scan, outside an active ru
 - Run the finite smoke gate plus focused changed-risk tests; target 5–10 minutes
   per local batch. Workflow benches run only when Max asks. Keep startup, auth, memory,
   Team/data, upgrade, signing and installed-App checks and normal hooks intact.
-- A release enters CI/CD only on a commit the full regression passed (Max, 9 November
-  2026): before pushing `main` (stable) or `dev` (beta) to stage, run
-  `gh workflow run qualitylayer-ci.yml --ref <branch> -f full_regression=true` on the exact
-  commit to stage and wait for all 18 shards (6 Linux, 12 macOS) to pass. Release's staging refuses a commit
-  without them (*The full regression passed on this commit*). Push the commit itself; a
-  later commit, even a version bump, needs its own green run.
+- A release run reports within ten minutes, so three failed attempts still fit in half
+  an hour (Max, 10 November 2026). One push to `main` starts everything: the whole suite
+  on Linux in eight shards, the release smoke on Linux and macOS, the native Windows
+  runtime shards, the overflow check and the browser checks in desktop light and the small
+  window. Release's staging waits for the eight Linux shards on that commit (*The full
+  regression passed on this commit*) and refuses a commit where one failed. For a beta
+  from `dev`, start the suite with
+  `gh workflow run qualitylayer-ci.yml --ref dev -f full_regression=true`.
+- The whole suite on macOS and Windows, the dark-theme browser checks and the macOS
+  overflow check run nightly on `dev` and by hand; they do not block a release. What
+  must never ship broken stays in the release run on every system: the update path, the
+  App starting, and each system's build and smoke. Read last night's run before a
+  release and treat its failures as bugs for the next one.
+- Before pushing, run `node docs/site/scripts/check-captures.mjs` and
+  `bun run check:models` locally: both finish in seconds and are the first things the
+  release run would fail on.
 - When the full regression fails, collect the completed results of every
   job before choosing the repair join. Read failures recorded before cancellation
   too. Keep one failure inventory and give each independent repair an owner and
@@ -319,8 +329,8 @@ hooks and shared/private-index handling.
    `update --version` (POINTER_ONLY in the workflow); later clients read the release list.
    Then dispatch `old-client-update.yml`: earlier releases must reach the new one on Linux,
    macOS and Windows; a failing old client blocks the handover until it has a path.
-   The full regression ran before staging (step above); do not start another on the
-   candidate between staging and promotion.
+   The Linux suite ran with the staging push; do not start another on the candidate
+   between staging and promotion.
 
 For a test-fixture or publication-orchestration repair, preserve the qualified
 candidate's source, run, artifact digests and installed receipt. A reviewed recovery

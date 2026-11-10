@@ -12,7 +12,8 @@ All in `qualitylayer/`:
 - `bun run dev:ui` — source-backed App demo on loopback with Vite reload;
   `bun run test:ui` — Playwright checks with semantic interactions, geometry
   and axe, in desktop light while working; `bun run test:ui --all` adds dark
-  and a 1024 × 720 window (CI runs `--all`). Nobody uses the App on a
+  and a 1024 × 720 window (a push runs light and the small window; the nightly
+  runs `--all`). Nobody uses the App on a
   phone: there are no phone checks. Both Claude Code and Codex
   use these commands. Read `qualitylayer/TESTING.md` for setup and evidence.
   A UI change is checked open: every menu, dropdown, popover, card and

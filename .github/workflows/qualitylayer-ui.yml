@@ -19,6 +19,11 @@ on:
       - "docs/site/**"
       - ".github/workflows/qualitylayer-ui.yml"
   workflow_dispatch:
+    inputs:
+      all:
+        description: Run every browser project (nightly); a push runs desktop light and the small window
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -69,7 +74,8 @@ jobs:
     # Forks cannot unlock the encrypted source. Existing plaintext/CI gates remain separate.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # Connected critical journeys in both themes and a compact desktop; full regression is opt-in.
+    # Connected critical journeys in desktop light and the small window on a push, so a run reports
+    # within ten minutes (Max, 10 November 2026); the dark theme joins nightly (inputs.all).
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -103,7 +109,7 @@ jobs:
       # One private candidate per shard; individual isolated cases balance the eight jobs.
       - name: Source UI interactions, geometry and accessibility
         working-directory: qualitylayer
-        run: bun run test:ui --all launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts conversation-footer.spec.ts open-states.spec.ts loading-states.spec.ts usage-foot.spec.ts --fully-parallel --shard ${{ matrix.shard }}/8 --reporter=github,line,./scripts/ui-duration-reporter.ts
+        run: bun run test:ui ${{ inputs.all && '--all' || '--project=desktop-light --project=desktop-small' }} launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts conversation-footer.spec.ts open-states.spec.ts loading-states.spec.ts usage-foot.spec.ts --fully-parallel --shard ${{ matrix.shard }}/8 --reporter=github,line,./scripts/ui-duration-reporter.ts
       - name: Setup heap analysis runtime
         if: matrix.shard == 8
         timeout-minutes: 2

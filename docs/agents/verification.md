@@ -142,9 +142,9 @@ website source changes; record which version each result actually tested.
 
 ## Test cost
 
-- The push tier is budgeted: `qualitylayer/scripts/test-tiers.ts` and
-  `tests/scripts/test-budget.test.ts` hold the smoke tier to 6 worker-minutes.
-  The full suite has no minutes total (Max, 9 November 2026): its limit is each
+- Tests assert behaviour, not wall-clock time or CPU/memory budgets (Max, 10
+  November 2026). `qualitylayer/scripts/test-tiers.ts` lists the slow files with
+  their reasons; the smoke tier's 6 worker-minutes is guidance, not a test. The full suite has no minutes total (Max, 9 November 2026): its limit is each
   CI shard's 15 minutes, and a slower suite is split into more shards or made
   cheaper. The runner names a file over twenty seconds that `SLOW` doesn't list.
   Raising a budget needs the person's approval.

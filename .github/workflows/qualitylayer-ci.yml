@@ -93,7 +93,6 @@ jobs:
         working-directory: qualitylayer
         env:
           QUALITYLAYER_TEST_RETRIES: "0"
-          QUALITYLAYER_TEST_ALLOW_LEAKS: "0"
           QUALITYLAYER_TEST_WORKERS: "2"
         run: |
           bun run typecheck
@@ -184,7 +183,6 @@ jobs:
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
           QUALITYLAYER_TEST_RETRIES: "0"
-          QUALITYLAYER_TEST_ALLOW_LEAKS: "0"
         run: bun run test --all --shard ${{ matrix.shard }}/${{ matrix.shards }}
 
   # The same suite on macOS, nightly and by hand only (inputs.macos): a Mac runner is about twice as
@@ -352,7 +350,7 @@ jobs:
           - shard: 5
             files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts tests/core/install/mod.test.ts
           - shard: 6
-            files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts tests/e2e/command-speed.test.ts
+            files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts
     defaults:
       run:
         shell: pwsh
@@ -403,15 +401,6 @@ jobs:
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
         run: bun run test tests/e2e/cross-review.test.ts -t 'opening the Plan gate starts|a reviewer that fails'
-
-      - name: Keep native Windows hook timing receipts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: native-windows-timings-${{ matrix.shard }}
-          path: qualitylayer/dist/test-runs/command-speed-*.json
-          retention-days: 7
-          if-no-files-found: ignore
 
   windows-terminal:
     name: Native ConPTY (${{ matrix.arch }})

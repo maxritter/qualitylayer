@@ -143,11 +143,9 @@ the quality owner resolves that mismatch before a new scan, outside an active ru
   After a fixture or internal-test correction passes its affected checks and
   supported hook scope, resume the next incomplete publication step.
   Read the contract before treating a fixture constant as a product guarantee.
-  A measurement repair preserves the actual budgets and lifecycle boundaries,
-  explains changed sensitivity, and retains the original measurements.
-  Use performance limits tied to measured baselines, the relevant lifecycle and
-  user impact. A short-window outlier gets a bounded diagnosis of whether a real
-  regression exists, rather than another release round by default.
+  Tests assert behaviour, not wall-clock time or CPU/memory budgets (Max, 10
+  November 2026): a timing or budget failure is removed from the suite, not
+  tuned or retried.
 - Pass `bun run check:models --release`, current local dependency/supply-chain and
   source UI/browser checks, and `quality-release-check` before staging.
   For changed site/docs, build and serve the combined production output before

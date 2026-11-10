@@ -8,10 +8,6 @@ on:
     paths:
       - "qualitylayer/src/**"
       - "qualitylayer/tests/frontend/**"
-      - "qualitylayer/tests/performance/**"
-      - "qualitylayer/scripts/performance/**"
-      - "qualitylayer/tools/performance/**"
-      - "qualitylayer/playwright.performance.config.ts"
       - "qualitylayer/scripts/ui-dev.ts"
       - "qualitylayer/playwright.ui.config.ts"
       - "qualitylayer/package.json"

@@ -127,6 +127,10 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 **Tools** shows whether Git and `gh` are signed in; without `gh`, no pull requests. **Open files and folders in** picks VS Code, Cursor, Zed, Finder or Terminal. **Watch pull requests** (on) wakes the task's agent on a failing check, change request or conflict, at most 3 times a day per pull request, and on people's new review comments up to 2 more times, never below 10 % of the plan left.
 
+## Automations {#automations}
+
+Send task events to a URL or a command. See [Automations](../automations.md).
+
 ## Appearance {#appearance}
 
 | Setting | Choices |

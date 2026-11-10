@@ -51,7 +51,8 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 | Group | Commands |
 | --- | --- |
 | [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
-| Tasks | `find` · `tasks` · `status` · `task set` · `task override` · `task archive\|restore` · `branch new` |
+| [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
+| Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
 | Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
 | Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |

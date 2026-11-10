@@ -105,7 +105,7 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 **Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since.
 
-**What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. All eight agents are supported where records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
+**What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. Every supported agent is covered where its records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
 
 ## Sessions {#sessions}
 
@@ -135,7 +135,7 @@ A machine keeps working while this computer sleeps and reconnects by itself. **s
 
 ## Automations {#automations}
 
-Send task events to a URL or a command. See [Automations](../automations.md).
+Send task events to a URL or a command. A browser that may only watch cannot change them. See [Automations](../automations.md).
 
 ## Appearance {#appearance}
 

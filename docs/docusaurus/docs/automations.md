@@ -93,9 +93,9 @@ The command runs once per event on your computer, in the task's project folder, 
 | `status --task <task> --json` | One task's step, progress and what it waits for |
 | `tasks --cost --since 30d --json` | Each task of the period with its step, cost, active time and tokens |
 | `task start "<request>" --json` | A new task that waits on Home; its id |
-| `task start "<request>" --plan` | The same, and planning starts with your default agent |
+| `task start "<request>" --plan [--agent <id>]` | The same, and planning starts with your default agent, or the one `--agent` names |
 
-Run them in the project's folder. `--plan` starts an agent on your plan with every call. `tasks --cost` answers within 20 seconds; when it says `"complete": false`, run it again for the rest.
+Run them in the project's folder. `--plan` starts an agent on your plan with every call. On a machine without a screen, such a task asks its questions in the App. `tasks --cost` answers within 20 seconds; when it says `"complete": false`, run it again for the rest.
 
 ## What stays with you
 

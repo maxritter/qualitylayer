@@ -54,7 +54,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 | [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
-| Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
+| Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall [--purge | --keep-data]` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
 | Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |
 
 <details>
@@ -65,7 +65,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 | Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` · `plan export` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
 | Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
-| Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
+| Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix [--commit <hash>]` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
 | Review | `comments list\|take\|resolve` · `review fix-open-items` · `pr watch` |
 

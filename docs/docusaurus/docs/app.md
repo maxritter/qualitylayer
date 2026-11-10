@@ -12,7 +12,7 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 | Part | What it does |
 | --- | --- |
-| **Sidebar** | **Search**, Home, Team, Artifacts and your tasks and Chats by project. **+** opens a menu: **Task** (Feature or Bugfix) or [Chat](chat.md) |
+| **Sidebar** | **Search**, Home, Team, Artifacts and your tasks and Chats by project. **+** opens a menu: **Task** (Feature or Bugfix) or [Chat](chat.md). With [machines](reference/settings.md#machines), its head switches computers |
 | **Agent status** | The top-bar chip: working, needs you, quiet or stopped |
 | **Step track** | Where the task stands. A person icon marks the two steps you approve |
 | **Step page** | The step's result, with questions or approval when needed |
@@ -22,7 +22,7 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 Projects group tasks by repository, with tasks waiting on you first.
 
-- A row shows the step strip and live agent activity; amber means it needs you.
+- A row shows the step strip, coloured by stage, and live agent activity; amber means it needs you.
 - The row toggle opens reported task lists (Claude Code, Codex and OpenCode) and helpers.
 - Right-click a project to rename, recolor or hide it; right-click a task to rename, archive or delete it.
 - The foot shows [plan limits](agents/native.md#plan-limits) or today's cost.
@@ -56,7 +56,7 @@ Hover over controls for their shortcuts. Search keeps its project-selection keys
 
 ## Answering questions {#questions}
 
-**Your turn** shows one question; use its numbered strip to answer in any order. Choices form one column. Where they have facts, the recommended one is open and the others fold to one line.
+**Your turn** shows one question; use its numbered strip to answer in any order. Choices form one column. Where they have facts, the recommended one is open and the others fold to one line. A question about a screen shows that screen in the card.
 
 <details>
 <summary>Answer with the keyboard</summary>
@@ -75,7 +75,7 @@ Answers reach your agent immediately and never approve the Plan or change.
 
 ## Documents and feedback {#comments-and-artifacts}
 
-**Files** holds every document, artifact, review and record, plus **Review the code**. **Reader** shows a whole document; its bar holds **On this page** and **Copy document**. Step documents end with **For agents**. Copy includes **Technical** folds. **Copy as Markdown** keeps Mermaid and uses text links to the encrypted task share or picture names; **Copy formatted** includes PNG pictures. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
+**Files** holds every document, artifact, review and record, plus **Review the code** and **View changes**; its **Records** row opens `records/`, `evidence/` and `agents/`. **Reader** shows a whole document; its bar holds **On this page** and **Copy document**. Step documents end with **For agents**. Copy includes **Technical** folds. **Copy as Markdown** keeps Mermaid and uses text links to the encrypted task share or picture names; **Copy formatted** includes PNG pictures. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
 
 Select a passage or part of a diagram and choose **Give feedback**. **To** picks the agent, a teammate or **Everyone on the task**.
 
@@ -83,7 +83,7 @@ Select a passage or part of a diagram and choose **Give feedback**. **To** picks
 
 Open **Changes** in the header or **Review the code** in Review or Files. Choose one file or all files, **Unified / Split** diffs, or **Full file › Version** for an exact revision.
 
-**Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. **Finish code review** returns to the view you opened it from. Approving the change remains a separate action.
+**Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. **Exit** returns to the view you opened it from; while your approval waits it reads **Finish code review**. Approving the change remains a separate action.
 
 ## What it costs {#cost}
 

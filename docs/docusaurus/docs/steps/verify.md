@@ -46,7 +46,7 @@ If the independent review finds gaps, your agent fixes them and commits. A fresh
 
 ## Proof for each point {#live}
 
-The header counts the **Done means** points proven, one tick each. The page shows check stages and their status, with cited pictures below. **Read the record** opens the step document; point-by-point verdicts, commands and output stay in `agents/06-verify.md`.
+The header counts the **Done means** points proven, one tick each. The page shows check stages and their status, with cited pictures below. A **Code** row counts the changed files; **View changes** opens them. **Read the record** opens the step document; point-by-point verdicts, commands and output stay in `agents/06-verify.md`.
 
 ## When Verify cannot finish {#when-it-stops}
 

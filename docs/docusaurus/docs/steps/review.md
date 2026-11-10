@@ -21,7 +21,7 @@ Review opens once Verify has passed every point, so everything on the page is fi
 | **Code** | The complete change, with line comments and where to start reading |
 | **What changed** | The change in diagrams, in tabs |
 | **Screens** | The designs you approved beside what was built |
-| **Acceptance test** | The Plan's test as a row per **Done means** point, opening to its steps with their picture or output, and a mark for whether it ran as a script or in a real agent session |
+| **Acceptance test** | The Plan's test as a row per **Done means** point, opening to its steps with their picture or output, and a mark for whether it ran as a script or in a real agent session; each passed row carries a check |
 
 Anything only you can check, such as your account or a device the agents cannot run, comes to you as a question. What turns up while you review, your agent fixes at once and rechecks.
 
@@ -66,7 +66,7 @@ Open comments neither block approval nor go to your agent. Opening the pull requ
 
 ## Approve {#approve}
 
-Approve the whole change in the page header, including when its agent has stopped.
+Approve the whole change in the page header, including when its agent has stopped. Your approval always saves, also when the code moved after the review or a recheck is running.
 
 | Choice | What happens |
 | --- | --- |

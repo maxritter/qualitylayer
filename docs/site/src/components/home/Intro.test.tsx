@@ -30,7 +30,7 @@ it("puts the plan cards before the quotes, and names each agent once on the card
   expect(ids).toEqual(["pr-h", "customer-quotes"]);
   const cards = [...container.querySelectorAll(".mx-pr")];
   expect(cards.map(card => card.querySelector("p")?.textContent)).toEqual([
-    "Claude Code, Codex, Cursor and five more.",
+    "Claude Code, Codex, Cursor and more.",
     "Comment on diagrams and clickable mockups.",
     "A separate agent checks the result against your plan.",
   ]);

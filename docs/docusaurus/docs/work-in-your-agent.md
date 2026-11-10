@@ -7,7 +7,7 @@ The seven steps run in your agent's chat. You answer questions and approve the P
 
 ## Start a task {#start}
 
-Say “Using QualityLayer, plan a CSV export”, or type `/ql plan a CSV export` (`$ql` in Codex).
+Say “Using QualityLayer, plan a CSV export”.
 
 You can also ask your agent to plan without naming QualityLayer. It offers QualityLayer once, and you pick **Yes** or **No**. An ordinary coding request never starts a workflow on its own.
 

@@ -26,6 +26,6 @@ Cards name source files. Additional files need no amendment. Check output and pi
 
 ## What you do {#what-you-do}
 
-[Start the build](implement.md#start-implement). You can follow progress or comment on a slice. Missing human-only prerequisites never count as passed while available work continues; they create no new approval here.
+[Start the build](implement.md#start-implement). You can follow progress or comment on a slice. A question during the build never stops it. Missing human-only prerequisites never count as passed while available work continues; they create no new approval here.
 
 Next: [Implement](implement.md).

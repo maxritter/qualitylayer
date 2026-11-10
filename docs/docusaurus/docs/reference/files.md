@@ -56,7 +56,7 @@ Your code, diff, documents, evidence and costs stay on your computer until you s
 | **When your team reviews code** | **Ask for review** pushes the branch to your own Git remote. QualityLayer stores the team's line comments, the quoted lines (up to 300 characters each) and the commits, encrypted with your team's key, never the code |
 | **Not included automatically** | **For agents** files, source, diffs, host logs, launch settings, terminal output and command output. Text or attachments you share can contain anything. Shared artifact previews run no scripts |
 | **With Slack or email** | The task title and the question, through the QualityLayer server to Slack or to Resend for email |
-| **Automations** | The events of your tasks, with a task's title and a question's text, to the URLs you set. Nothing passes through qualitylayer.dev. |
+| **Automations** | The events of your tasks, with a task's title and a question's text, to the URLs or the command you set. Nothing passes through qualitylayer.dev. |
 | **Instructions** | Yours stay local and go to your agent, so a cloud agent may send them to its provider. Team instructions are encrypted with the team's key |
 | **Lessons and lasting artifacts** | Travel through your Git pushes only where you keep them in the repository or turn on [memory sharing](../memory.md) |
 

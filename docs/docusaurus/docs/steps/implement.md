@@ -45,8 +45,8 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 - Test runs are recorded with their commit and exit code, so [Verify](verify.md) can cite them.
 - Amendments appear under **Decided while building**, a closed fold with a count; each numbered row opens and says whether it changes what you approved. A change to what you approved becomes a visible amendment.
-- A login, secret or other human-only prerequisite never counts as passed. Other work continues, you get one question at the end of [Verify](verify.md#when-it-stops), and the App never takes the secret.
-- Outline and Implement ask no workflow questions; Verify asks at most one, at its end.
+- A login, secret or other human-only prerequisite never counts as passed. Other work continues: it waits as a need, you get one question at the end of [Verify](verify.md#when-it-stops) if it is still missing, and the App never takes the secret.
+- Outline, Implement and Verify decide for themselves. A matter only you can settle is asked once, and the build goes on while you answer; only Verify's closing question waits for you.
 - Runs start in the agent's own [permission mode](../agents/native.md#permission-modes). Native permission and sign-in prompts still need your response, and an explicit stop or pause stays in force.
 
 ## When the build is done {#when-done}

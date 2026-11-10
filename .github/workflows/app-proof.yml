@@ -232,6 +232,27 @@ jobs:
           done
           exit "$failed"
 
+      # Machines, joined and real: the App this leg built starts its own server, which reaches a
+      # machine through the system's ssh (a key pair, known hosts and ssh config made for the run)
+      # and shows the machine's page in its window. The machine is a container on Linux, a WSL
+      # distribution on Windows (reached with Windows' own ssh.exe), and on a Mac runner, which has
+      # neither, the runner itself through its own ssh server: a macOS machine. Runs even when an
+      # earlier suite failed, so one run shows this result too; it has its own time limit.
+      - name: The built App reaches a real machine over ssh
+        if: ${{ !cancelled() && hashFiles('qualitylayer/tests/proof/machines/run.ts') != '' }}
+        timeout-minutes: 20
+        working-directory: qualitylayer
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+        run: |
+          set -o pipefail
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a --server-args="-screen 0 1280x1024x24" bun run proof:machines --step connect-existing --step app-window --evidence "${RUNNER_TEMP:?}/result/machines" 2>&1 | tee -a "${RUNNER_TEMP:?}/proof.log"
+          else
+            bun run proof:machines --step connect-existing --step app-window --evidence "${RUNNER_TEMP:?}/result/machines" 2>&1 | tee -a "${RUNNER_TEMP:?}/proof.log"
+          fi
+
       - name: Installed Windows terminal receives native keys, clipboard and shortcuts
         if: runner.os == 'Windows'
         shell: pwsh

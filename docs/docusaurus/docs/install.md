@@ -39,7 +39,7 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash
 | --- | --- |
 | **WSL2** | In your Windows browser |
 | **A VS Code dev container** | In your browser; VS Code forwards the port |
-| **A server over SSH** | In VS Code Remote-SSH by themselves. With plain `ssh`, forward the port that `qualitylayer app pair` prints |
+| **A server over SSH** | In the App: add it under [Settings › Machines](reference/settings.md#machines), which also installs QualityLayer there. In a browser: VS Code Remote-SSH opens them by themselves; with plain `ssh`, forward the port that `qualitylayer app pair` prints |
 
 <details>
 <summary>Keep your setup when a dev container is rebuilt</summary>
@@ -56,7 +56,7 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash
 
 ### A port for each machine {#port}
 
-The server listens on port 41888 (41910 on WSL2), or the next free one. Two remote machines cannot both forward to 41888 on your laptop, so give each its own:
+Machines added in Settings › Machines need no port of yours. For the browser: the server listens on port 41888 (41910 on WSL2), or the next free one. Two remote machines cannot both forward to 41888 on your laptop, so give each its own:
 
 ```bash
 qualitylayer settings set cockpit.port 41901   # on the server
@@ -72,7 +72,7 @@ In the App, choose **Restart and update** from **Update ready** or the bar above
 
 ## Remove it {#uninstall}
 
-`qualitylayer uninstall` undoes what the installer changed; your plans stay. Add `--purge` to remove QualityLayer's data too: settings, licence and tasks. To move your licence, run `qualitylayer licence activate <key>` on the other computer; a key works on 3 computers ([Licence](reference/settings.md#licence)).
+`qualitylayer uninstall` undoes what the installer changed; your plans stay. Add `--purge` to remove QualityLayer's data too: settings, licence and tasks. To move your licence, run `qualitylayer licence activate <key>` on the other computer; a key works on 5 computers ([Licence](reference/settings.md#licence)).
 
 ### On Windows {#uninstall-windows}
 

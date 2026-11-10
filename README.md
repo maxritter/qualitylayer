@@ -78,7 +78,7 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash      # macOS, Linux, WSL
 irm https://qualitylayer.dev/install.ps1 | iex             # Windows PowerShell
 ```
 
-The App updates itself; without it, run `qualitylayer update`. [Installation guide](https://qualitylayer.dev/docs/install).
+The App updates itself; without it, run `qualitylayer update`. To work on a Linux or macOS machine you reach over ssh, add it under **Settings › Machines**: the App installs QualityLayer there and shows its tasks. [Installation guide](https://qualitylayer.dev/docs/install).
 
 <details>
 <summary><b>Uninstalling</b></summary>

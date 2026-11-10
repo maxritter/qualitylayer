@@ -58,6 +58,7 @@
     "evals": "bun run tests/release/evals.ts",
     "eval:activation": "bun run tests/release/activation.ts",
     "proof:docker": "bun run tests/proof/docker/run.ts",
+    "proof:machines": "bun run tests/proof/machines/run.ts",
     "proof:done-means": "bun run tests/release/done-means.ts",
     "proof:team-agents": "bun run tests/release/team-agents.ts"
   },

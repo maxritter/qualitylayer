@@ -18,7 +18,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
 | [Independent review](#independent-review) | A switch: on (recommended) or off |
 | [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed |
-| [Plan reviewers](#second-opinion) | One (default) or Panel, shown with Second opinion on; Panel needs three coding agents |
+| [Plan reviewers](#second-opinion) | **One** (default) or **Panel of three**, shown with Second opinion on; a panel needs three coding agents |
 | **Design review** | A switch: on (default), a separate agent checks each finished design before you see it. Wireframes are never reviewed |
 | [Scan each change](#security-scans) | A switch: on (default) or off |
 | [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
@@ -35,7 +35,9 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 
 **On** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing; [Models](#models) sets the model each agent gives its second opinion on.
 
-**Plan reviewers** chooses who reads the Plan: **One** (default) or **Panel**. A panel is up to three models, each on another agent. They read every Plan except a small task's, then each answers the others' findings once. A finding every reviewer backs is taken, or your agent asks you; the rest it decides, with both views recorded. A panel needs three coding agents and runs each reviewer twice. Your agent can set it: `qualitylayer settings set secondOpinion.planReviewers panel`.
+**Plan reviewers** chooses who reads the Plan, and the row lists them: **One** (default) or **Panel of three**. A panel is up to three models, each on another agent; with three agents installed, two read. They read every Plan except a small task's, then each answers the others' findings once. A finding every reviewer backs is taken, or your agent asks you; the rest it decides, with both views recorded. A panel needs three coding agents and runs each reviewer twice.
+
+Each seat of the panel is a picker: **Automatic** (default) or an agent on this computer, which reviews on its Second opinion model in [Models](#models). An agent takes one seat. When a named agent wrote the Plan, shares the planner's model family or is not available, that seat is picked automatically. Your agent can set both: `qualitylayer settings set secondOpinion.planReviewers panel` and `qualitylayer settings set secondOpinion.panel codex,grok,auto`.
 
 <details>
 <summary>How the reviewer is picked</summary>

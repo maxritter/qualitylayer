@@ -6,7 +6,7 @@ description: "Approve the proposed change, design decisions and checks before th
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-light.svg)
 ![The seven steps, with Plan highlighted](pathname:///img/diagrams/track-plan-dark.svg)
 
-The **Plan** page is the document you approve before the build. The summary, diagrams, interface and acceptance test come first. A small change keeps it brief.
+The **Plan** page is the document you approve before the build. The summary, what changes, diagrams, interface and acceptance test come first. A small change keeps it brief.
 
 ![The Plan in the App: its one open decision with both paths drawn, under Give feedback and Approve Plan](pathname:///img/app/plan-light.webp)
 ![The Plan in the App: its one open decision with both paths drawn, under Give feedback and Approve Plan](pathname:///img/app/plan-dark.webp)
@@ -18,10 +18,11 @@ The **Plan** page is the document you approve before the build. The summary, dia
 | Part | What it tells you |
 | --- | --- |
 | **Summary** | The change in a few lines, with the size of the build and what reviewed it |
+| **What changes** | One bullet per change: a bold sentence saying what changes and one more sentence. Anything longer waits under **Details** |
 | **Diagrams** | Up to three, in tabs: before and after, a flow, a sequence or the architecture. Open one full size: drag to pan, scroll to zoom, arrow keys to move |
 | **Interface** | One tab per screen: a clickable artifact ([Artifacts](../artifacts.md)), with **Open** for a full view |
 | **Acceptance test** | The deciding test as a numbered list, one row per **Done means** point, each opening to the steps that prove it (what the step does, then what passes; for a bug fix, also what shows the bug before the fix), with a mark for how it will run: a scripted run or a real agent session. [Review](review.md) shows the same steps as they ran |
-| **What changes** and **Rollout and operations** | The files that change, one row each, and what ships or needs attention |
+| **Rollout and operations** | What ships or needs attention, when more than a normal deploy |
 | **Decisions made for you**, **Assumptions**, **Not doing** and **Prerequisites** | Your agent's smaller choices with reasons, what the Plan takes for granted, what stays untouched, and what must be ready first, such as a login |
 
 Engineering detail (code, data and interfaces, contracts, decisions and checks) folds below. **Done means and scope** repeat Discuss in the Reader.

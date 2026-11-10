@@ -30,7 +30,7 @@ Usually nothing. Comment on a finding you disagree with. If the code leaves a re
 
 ## The document {#the-page}
 
-The page opens with a **Summary**, then **Current system**: a diagram and one row per part of the code. **Impact** explains what is easy, hard or risky; a row opens to its sources, which link to the findings in the Reader.
+The page opens with a **Summary**, then **Current system**: a diagram and one bullet per part of the code, its name in bold. **Impact** explains what is easy, hard or risky in numbered rows; a row opens to its sources, which link to the findings in the Reader.
 
 `02-research.md` holds the findings and questions; the agent's working notes sit under **For agents**.
 

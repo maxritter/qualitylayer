@@ -19,5 +19,6 @@
     "types": ["bun"],
     "paths": { "@/*": ["./src/ui/*"] }
   },
-  "include": ["src", "tests", "scripts"]
+  "include": ["src", "tests", "scripts"],
+  "exclude": ["tests/release/fixtures"]
 }

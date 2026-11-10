@@ -18,6 +18,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 | **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
 | [Independent review](#independent-review) | A switch: on (recommended) or off |
 | [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed |
+| [Plan reviewers](#second-opinion) | One (default) or Panel, shown with Second opinion on; Panel needs three coding agents |
 | **Design review** | A switch: on (default), a separate agent checks each finished design before you see it. Wireframes are never reviewed |
 | [Scan each change](#security-scans) | A switch: on (default) or off |
 | [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
@@ -33,6 +34,8 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 ### Second opinion {#second-opinion}
 
 **On** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing; [Models](#models) sets the model each agent gives its second opinion on.
+
+**Plan reviewers** chooses who reads the Plan: **One** (default) or **Panel**. A panel is up to three models, each on another agent. They read every Plan except a small task's, then each answers the others' findings once. A finding every reviewer backs is taken, or your agent asks you; the rest it decides, with both views recorded. A panel needs three coding agents and runs each reviewer twice. Your agent can set it: `qualitylayer settings set secondOpinion.planReviewers panel`.
 
 <details>
 <summary>How the reviewer is picked</summary>

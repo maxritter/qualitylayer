@@ -15,7 +15,7 @@ Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never
 | **The seven documents** | One per step that runs ([below](#documents)) |
 | `original-plan.md` | A plan supplied through Existing plan or saved in Chat, unchanged |
 | `artifacts/` | Local artifacts and their revisions. **Include artifacts** adds previews; a selected Plan preview may already accompany the Plan. |
-| `reviews/` | The Plan review and second opinion, when they ran |
+| `reviews/` | The Plan review and second opinion, when they ran; with a panel, also each reviewer's answer of both rounds |
 | `records/` | The raw output of every command, and `pull-request-body.md` |
 | `evidence/` | Pictures and recordings the checks made |
 | `chat-plan.md`, `chat-slices.md` | A [Chat](../chat.md)'s saved plan and its build outline |

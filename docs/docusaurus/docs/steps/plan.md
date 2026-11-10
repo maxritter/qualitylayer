@@ -55,7 +55,7 @@ Click any part of a diagram, a screen or a passage to pin a comment; your agent 
 
 ## Before it reaches you {#before-it-reaches-you}
 
-Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion), from one model or, with Plan reviewers on Panel, from up to three that answer each other once. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
+Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion) from another model. With Plan reviewers on Panel, up to three models read every Plan except a small task's and answer each other once. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
 
 ## Start from an existing plan {#existing-plan}
 

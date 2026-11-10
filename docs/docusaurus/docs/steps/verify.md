@@ -34,7 +34,7 @@ Project commands and security scans produce recorded results. Separate agents re
 | Check | What it does |
 | --- | --- |
 | **Security review** | Runs beside the project checks when the change crosses a trust boundary or edits agent controls. Your agent fixes critical and high findings before independent review; remaining findings stay visible |
-| **Independent review** | An agent that did not write the code reads the whole diff, adds missing tests, runs the program's scenarios and compares screens with their artifacts. It records a verdict for each **Done means** point, using red checks as evidence |
+| **Independent review** | An agent that did not write the code reads the whole diff, adds missing tests, runs each step of the Plan's acceptance test and compares screens with their artifacts. A **Done means** point is proven when every step under it passes; red checks are evidence |
 | **Design review** | A separate agent checks each finished design before you see it, unless you change **Design review** in [Settings](../reference/settings.md) |
 | **Second opinion** | A reviewer from another agent family checks risky changes when [enabled](../reference/settings.md#second-opinion), or on request. Findings are recorded as **Taken** or **Kept** |
 
@@ -46,7 +46,7 @@ If the independent review finds gaps, your agent fixes them and commits. A fresh
 
 ## Proof for each point {#live}
 
-The page shows check stages and their status, with cited pictures below. **Read the record** opens the step document; point-by-point verdicts, commands and output stay in `agents/06-verify.md`.
+The header counts the **Done means** points proven, one tick each. The page shows check stages and their status, with cited pictures below. **Read the record** opens the step document; point-by-point verdicts, commands and output stay in `agents/06-verify.md`.
 
 ## When Verify cannot finish {#when-it-stops}
 

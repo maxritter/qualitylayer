@@ -20,7 +20,7 @@ The **Plan** page is the document you approve before the build. The summary, dia
 | **Summary** | The change in a few lines, with the size of the build and what reviewed it |
 | **Diagrams** | Up to three, in tabs: before and after, a flow, a sequence or the architecture. Open one full size: drag to pan, scroll to zoom, arrow keys to move |
 | **Interface** | One tab per screen: a clickable artifact ([Artifacts](../artifacts.md)), with **Open** for a full view |
-| **Acceptance test** | The deciding test as a numbered list of steps, each opening to the screen or output it shows, with a mark for how it will run: a scripted run or a real agent session. [Review](review.md) shows the same steps as they ran |
+| **Acceptance test** | The deciding test as a numbered list, one row per **Done means** point, each opening to the steps that prove it (what the step does, then what passes), with a mark for how it will run: a scripted run or a real agent session. [Review](review.md) shows the same steps as they ran |
 | **What changes** and **Rollout and operations** | The files that change, one row each, and what ships or needs attention |
 | **Decisions made for you**, **Assumptions**, **Not doing** and **Prerequisites** | Your agent's smaller choices with reasons, what the Plan takes for granted, what stays untouched, and what must be ready first, such as a login |
 
@@ -42,7 +42,7 @@ A choice only you can make appears as **Your call** beside its subject. The head
 2. Pin comments, or press **Give feedback**. Your agent revises; the diff shows what changed.
 3. Once every call is answered, choose **Approve and build here**. The planning session keeps its history and settings and builds after its current turn. **Choose where to build**, under the arrow, opens the build card instead. Both approve the Plan, **Done means**, the artifacts and the acceptance test together.
 
-For a waiting terminal planner, **Build in &lt;agent&gt; · terminal** continues that conversation. Otherwise choose to build here, compact first, or use another session with a prepared prompt.
+For a waiting terminal planner, **Build in &lt;agent&gt; · terminal** starts the build from the Plan: run your agent's compact command, then say "build here". Under the arrow you can keep the conversation instead, or use another session with a prepared prompt.
 
 Answering a question does not approve the Plan. Approve in the App, also when the agent works in your terminal, or give an explicit approval through your agent.
 

@@ -100,8 +100,8 @@ jobs:
             qualitylayer/tests/helpers
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
-          bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip' || '' }}
+          bun-version: "1.4.4"
+          bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip' || '' }}
       - name: Install git-crypt
         if: runner.os != 'Windows'
         run: bash .github/workflows/scripts/install-git-crypt.sh
@@ -244,7 +244,7 @@ jobs:
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.4" }
       - run: bun install --frozen-lockfile
         working-directory: qualitylayer
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -336,7 +336,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       - name: Install dependencies
         working-directory: qualitylayer
@@ -483,7 +483,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       - name: Toolchain for the App (Rust, Tauri, the system libraries)
         uses: ./.github/actions/app-toolchain
@@ -722,7 +722,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       - name: Download the compiled command lines
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -829,7 +829,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       # The signed CLI and setup the Windows App job finalized: the bytes the release publishes.
       - name: Download exact release artifacts
@@ -999,8 +999,8 @@ jobs:
             qualitylayer/tests/helpers
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
-          bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-windows-x64.zip' || '' }}
+          bun-version: "1.4.4"
+          bun-download-url: ${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip' || '' }}
       - if: runner.os != 'Windows'
         run: bash .github/workflows/scripts/install-git-crypt.sh
       - if: runner.os != 'Windows'
@@ -1091,7 +1091,7 @@ jobs:
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.4" }
       - run: bun install --frozen-lockfile
         working-directory: qualitylayer
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

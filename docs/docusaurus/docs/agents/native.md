@@ -12,9 +12,9 @@ Install your agent, sign in and start it once, then run QualityLayer setup. It c
 | --- | --- | --- |
 | [Claude Code](https://code.claude.com/docs/en/setup) | 2.1.306 | Skills, lifecycle hooks and its existing prompt integration |
 | [Codex](https://developers.openai.com/codex/cli) | 0.163.0 | Skills, implicit invocation policies and lifecycle hooks |
-| [Cursor](https://cursor.com/docs/cli/installation) | 2026.10.19 | Skills and turn-end hooks in its own hooks file |
+| [Cursor](https://cursor.com/docs/cli/installation) | 2026.10.19 | Skills and lifecycle hooks in its own hooks file |
 | [Grok](https://docs.x.ai/build/overview) | 1.0.62 | Skills and hooks, in its own hooks folder |
-| [Antigravity](https://antigravity.google/docs/getting-started/) | 1.4.12 | Skills, a workflow command and turn-end hooks |
+| [Antigravity](https://antigravity.google/docs/getting-started/) | 1.4.12 | Skills, a workflow command and lifecycle hooks |
 | [Pi](https://pi.dev/docs/latest/quickstart) | 1.2.0 | Skills, a lifecycle extension and fresh helper sessions |
 | [OpenCode](https://opencode.ai/docs/) | 2.0.29 | Skills, a command and a lifecycle plugin |
 | [GitHub Copilot](https://docs.github.com/copilot/how-tos/copilot-cli) | 1.0.105 | Skills, a hook file and the memory server |

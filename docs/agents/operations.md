@@ -12,11 +12,17 @@
   the commit takes minutes instead of seconds), add only your
   files (`git update-index` or `hash-object --path`, which runs the git-crypt
   filter), then commit. Afterwards bring your own paths in the shared index up
-  to the new commit with `git update-index --add --cacheinfo <mode>,<blob>,<path>`
-  (the blob from `git ls-tree HEAD -- <path>`); otherwise it keeps
-  their old blobs and the next commit from it reverts yours. Do not use
-  `git reset -q HEAD -- <paths>` for this: it reads the index before it takes
-  the lock and can write back an index from before another session's update.
+  to the new commit with `.github/scripts/refresh-shared-index.sh <paths>`;
+  otherwise it keeps their old blobs and the next commit from it reverts
+  yours. The script sets all paths in one `git update-index --index-info`
+  call, waits while another git process holds `index.lock` (a status poll,
+  another session's commit) and fails by name if a path is still staged. A
+  loop of one `update-index --cacheinfo` per path stops at the first held
+  lock and leaves the rest stale, and a hidden error then looks like
+  something overwrote the index (10 November 2026). Never discard that
+  command's exit code or stderr. Do not use `git reset -q HEAD -- <paths>` on
+  the shared index: it holds the lock through a full git-crypt refresh, so
+  other sessions' updates fail meanwhile. Never commit from the shared index.
   Never stage, unstage or reset paths in the shared index that are not yours.
   Two commits at the same moment share `.git/COMMIT_EDITMSG`, and the later
   message can land on both: after every commit, check that

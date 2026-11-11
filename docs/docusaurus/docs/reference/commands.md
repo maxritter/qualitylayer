@@ -24,7 +24,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 `qualitylayer task start --from <link>` starts at Plan from a GitHub or GitLab issue or pull request, a Jira issue or a Confluence page, and the task keeps the link. QualityLayer reads GitHub and GitLab with your own `gh` or `glab`: the ticket's title and text become the request, and images and attachments stay links. It signs in to nothing itself, so your agent reads a Jira or Confluence link with its own tools. In the App, paste the link into New task.
 
-`qualitylayer gate open plan --via github|gitlab` also opens a draft pull or merge request with the Plan. An approving review there, by someone with write access, approves the Plan; its comments come back to the agent as feedback.
+`qualitylayer gate open plan --via github|gitlab`, or **Get approval** beside Approve in the App, also opens a draft pull or merge request with the Plan. An approving review there, by someone with write access, approves the Plan; its comments come back to the agent as feedback.
 
 ## Chat {#chat}
 

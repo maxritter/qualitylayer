@@ -74,6 +74,16 @@ describe("the approved document view", () => {
     for (const [tab, text] of [["discuss", "Seven discuss"], ["research", "Seven research"], ["plan", "Seven plan"], ["outline", "Seven outline"], ["implement", "Seven build"], ["verify", "Seven checks"], ["review", "Seven review"]] as const)
       expect(await html(<SharedView state={ready(docs)} onSend={noSend} tab={tab} />)).toContain(text);
   });
+  it("a link made with the three steps draws three, each reading its own document", async () => {
+    const docs = { "01-plan.md": "Three plan", "02-implement.md": "Three build", "03-verify.md": "Three checks" };
+    const page = await html(<SharedView state={ready(docs)} onSend={noSend} />);
+    const tabs = page.match(/<nav class="sh-tabs"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect([...tabs.matchAll(/<span>([A-Za-z]+)<\/span>/g)].map((m) => m[1])).toEqual(["Plan", "Implement", "Verify"]);
+    for (const [tab, text] of [["plan", "Three plan"], ["implement", "Three build"], ["verify", "Three checks"]] as const)
+      expect(await html(<SharedView state={ready(docs)} onSend={noSend} tab={tab} />)).toContain(text);
+    const loaded = await loadShare(ID, KEY, await sealed({ task: "T", stage: "verify", docs: { ...docs, "01-discuss.md": "SECRET_MIXED" } }));
+    expect(loaded.status === "ready" && loaded.kind === "v2" && Object.keys(loaded.docs).sort()).toEqual(["01-plan.md", "02-implement.md", "03-verify.md"]);
+  });
   it("opens a task on the step it is at, and says a step not reached has not started", async () => {
     const docs = { "01-discuss.md": "Seven discuss", "02-research.md": "Seven research" };
     const at = (stage: string, tab?: "outline") => html(<SharedView state={{ ...ready(docs), stage }} onSend={noSend} tab={tab} />);

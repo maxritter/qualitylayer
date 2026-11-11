@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useLocation, useParams } from "react-router-dom";
 import { SharedStepIcon } from "@ql/ui/step-page/SharedStep";
-import { BotIcon, UserRoundIcon, WorkflowIcon, FrameIcon } from "lucide-react";
+import { BotIcon, UserRoundIcon, WorkflowIcon, FrameIcon, MessageSquareIcon, SearchIcon, ListChecksIcon, FileCheckIcon } from "lucide-react";
 import type { StepComment } from "@ql/ui/steps/StepDocument";
 import { Toaster } from "@ql/ui/components/ui/sonner";
 import Page from "@/components/Page";
@@ -14,7 +14,6 @@ import "@/lib/sharing/fragments";
 import { addRemark, type Drafts, EMPTY, pending, removeRemark, summary } from "@/lib/sharing/drafts";
 import { watchShare } from "@/lib/sharing/poll";
 import {
-  ALL_TABS,
   docOfStep,
   type LoadedShare,
   linkKeyOf,
@@ -26,6 +25,7 @@ import {
   submitArtifactRemark,
   type ArtifactRemark,
   type Tab,
+  tabsOf,
   where,
 } from "@/lib/sharing/sharing";
 import { SharedStepHost } from "./shared/SharedStepHost";
@@ -34,7 +34,7 @@ import { SharedArtifacts } from "@ql/ui/artifact/SharedArtifacts";
 import { SharedArtifact } from "./shared/SharedArtifact";
 import "@/styles/shared.css";
 import { flowStepOf } from "@ql/core/flow";
-import { PLAN_STILL, sharedPresentationDocuments, stripSharedCode } from "@ql/core/team/publication";
+import { isSevenStepShare, PLAN_STILL, sevenStepOf, sharedPresentationDocuments, stripSharedCode } from "@ql/core/team/publication";
 
 const NAME_KEY = "qualitylayer-guest-name";
 
@@ -53,7 +53,7 @@ const REASONS: Record<Exclude<SubmitResult, { ok: true }>["reason"], string> = {
   network: "It could not be sent. Check your connection and try again.",
 };
 
-/** The seven steps, named as the App names them. */
+/** Each step's name: the three, and the four more of a link shared with the seven steps, as the App named them. */
 const LABELS: Record<Tab, string> = {
   discuss: "Discuss",
   research: "Research",
@@ -63,6 +63,15 @@ const LABELS: Record<Tab, string> = {
   verify: "Verify",
   review: "Review",
 };
+
+/** The glyphs the App drew for the steps only the seven-step workflow had. */
+const SEVEN_ONLY_ICONS = { discuss: MessageSquareIcon, research: SearchIcon, outline: ListChecksIcon, review: FileCheckIcon } as const;
+
+function StepIcon({ step, className }: { step: Tab; className?: string }) {
+  if (step === "plan" || step === "implement" || step === "verify") return <SharedStepIcon step={step} className={className} />;
+  const Icon = SEVEN_ONLY_ICONS[step];
+  return <Icon className={className} aria-hidden="true" />;
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -118,12 +127,13 @@ function labelOf(remark: Exclude<Remark, {kind: "item"}>, owner: string): string
 type ReadyShare = Extract<LoadedShare, { kind: "v2" }>;
 
 /** The step a link opens on: where the task is, else the furthest step with something in it. */
-function firstTab(share: ReadyShare, steps: Record<Tab, string[]>): Tab {
-  const own = flowStepOf(share.stage ?? "") ?? undefined;
-  return own ?? [...ALL_TABS].reverse().find((tab) => steps[tab].length > 0) ?? "discuss";
+function firstTab(share: ReadyShare, steps: Partial<Record<Tab, string[]>>): Tab {
+  const tabs = tabsOf(share.docs);
+  const own = (isSevenStepShare(share.docs) ? sevenStepOf(share.stage) : flowStepOf(share.stage ?? "")) ?? undefined;
+  return own ?? [...tabs].reverse().find((tab) => (steps[tab]?.length ?? 0) > 0) ?? tabs[0] ?? "plan";
 }
 
-/** The shared seven steps and the guest's feedback; keyed by link id to isolate drafts. */
+/** The shared steps (three, or the seven of an earlier link) and the guest's feedback; keyed by link id to isolate drafts. */
 function Ready({
   share,
   initialTab,
@@ -183,7 +193,7 @@ function Ready({
   const add = () => {
     const remark: Drafts["remarks"][number] =
       target.kind === "passage"
-        ? { kind: "passage", id: crypto.randomUUID(), doc: target.doc ?? steps[tab][0] ?? docOfStep(tab), quote: target.quote, text, ...(target.artifact ? { section: target.artifact } : {}), ...(recipient === "person" ? { for: "person" as const } : {}) }
+        ? { kind: "passage", id: crypto.randomUUID(), doc: target.doc ?? steps[tab]?.[0] ?? docOfStep(tab, isSevenStepShare(share.docs)), quote: target.quote, text, ...(target.artifact ? { section: target.artifact } : {}), ...(recipient === "person" ? { for: "person" as const } : {}) }
         : { kind: "reply", thread: target.thread, text };
     if (remark.kind === "passage" && remark.id !== undefined) {
       const id = remark.id;
@@ -271,9 +281,9 @@ function Ready({
       <article className="sh-main" data-testid="shared-doc"><TabsContent value="workflow">
 
           <nav ref={stepsNav} className="sh-tabs" aria-label="Steps">
-            {ALL_TABS.map((id) => (
+            {tabsOf(share.docs).map((id) => (
               <button key={id} type="button" aria-label={LABELS[id]} aria-current={id === tab ? "page" : undefined} onClick={() => setTab(id)}>
-                <SharedStepIcon step={id} className="sh-step-icon" /><span>{LABELS[id]}</span>
+                <StepIcon step={id} className="sh-step-icon" /><span>{LABELS[id]}</span>
               </button>
             ))}
           </nav>

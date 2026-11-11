@@ -9,6 +9,7 @@ import { downloadMarkdown } from "@/lib/sharing/exports";
 import { linkKeyOf, stepDocs, type LoadedShare, type Tab } from "@/lib/sharing/sharing";
 import type { SharedReaderLocation } from "./use-shared-navigation";
 import "@/lib/sharing/fragments";
+import { isSevenStepShare } from "@ql/core/team/publication";
 
 loadMermaidFrom(() => import("mermaid"));
 
@@ -25,12 +26,14 @@ type Props = {
 export function SharedStepHost({ share, step, reader, onRead, onBack, commentsOn, onQuote }: Props) {
   const [download, setDownload] = useState("");
   const { theme } = useTheme();
-  const file = reader?.file ?? stepDocs(share.docs)[step][0];
+  const file = reader?.file ?? stepDocs(share.docs)[step]?.[0];
+  // A link made with the seven steps has no step-page snapshot: its documents open in the Reader.
+  const seven = isSevenStepShare(share.docs);
   const key = linkKeyOf(window.location.hash);
   // No document names, headings or picture references leave the encrypted fragment in a copy URL.
   const shareUrl = share.id && key ? `${window.location.origin}/s/${share.id}#${key}` : "";
   return <>
-    {file && (reader || !share.presentation) ? <div className="sh-reader-tools">
+    {file && (reader || seven || !share.presentation) ? <div className="sh-reader-tools">
       {reader ? <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeftIcon />Back to the step</Button> : null}
       <code>{file}</code>
       <Button variant="outline" size="sm" onClick={() => setDownload(downloadMarkdown(share.docs, file) ? "Markdown download started." : "The Markdown download could not start. Try again.")} aria-label="Download Markdown"><DownloadIcon />Download</Button>

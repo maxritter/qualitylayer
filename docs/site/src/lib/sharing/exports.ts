@@ -1,6 +1,8 @@
 import { NAMES } from "@ql/core/docs/names";
+import { SEVEN_STEP_DOCS } from "@ql/core/team/publication";
 
-const names = new Set<string>(Object.values(NAMES));
+/** The step files a link may hold: the three, or the seven of a link shared before them. */
+const names = new Set<string>([...Object.values(NAMES), ...Object.values(SEVEN_STEP_DOCS)]);
 
 /** Export exactly the already published text. No key, comments, or private records. */
 export function markdownExport(docs: Record<string, string>, name: string): { name: string; text: string; blob: Blob } | null {

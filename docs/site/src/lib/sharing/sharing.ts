@@ -11,7 +11,7 @@
 
 import type { FeedbackPayload, SealedPayload } from "./types";
 import { publicArtifactPayload, type PublicArtifactPayload } from "../../../../../qualitylayer/src/core/artifact/public-link-format.ts";
-import { sharedPresentationDocuments, stripSharedCode, STEP_DOCS } from "../../../../../qualitylayer/src/core/team/publication.ts";
+import { isSevenStepShare, SEVEN_STEP_DOCS, SEVEN_STEPS, sharedPresentationDocuments, stripSharedCode, STEP_DOCS, type SevenStep } from "../../../../../qualitylayer/src/core/team/publication.ts";
 import { readStepPresentation, type StepPresentation, type SharedPicture } from "../../../../../qualitylayer/src/core/team/step-presentation.ts";
 import { readTaskPictures, stepPictureBudget } from "../../../../../qualitylayer/src/core/team/step-picture-budget.ts";
 import { threadUpdates, type ThreadUpdate } from "../../../../../qualitylayer/src/core/team/thread-publication.ts";
@@ -72,14 +72,19 @@ export async function openFromLink(key: string, purpose: Purpose, sealed: unknow
   }
 }
 
-/** The seven steps a task goes through, as the App names them. */
+/** The three steps a task goes through, as the App names them. */
 export type FlowStep = "plan" | "implement" | "verify";
 
-/** The steps a link reviewer reads, as the App names them. */
-export type Tab = FlowStep;
+/** The steps a link reviewer reads: the three, or the seven of a link made before them (R1 keeps those readable). */
+export type Tab = FlowStep | SevenStep;
 
-/** Every step, in the order the work runs. */
-export const ALL_TABS: readonly Tab[] = ["plan", "implement", "verify"];
+/** The three steps, in the order the work runs. */
+export const THREE_TABS: readonly FlowStep[] = ["plan", "implement", "verify"];
+
+/** The step tabs a link shows: its own workflow's, the seven for a link shared before the three steps. */
+export function tabsOf(docs: Record<string, unknown>): readonly Tab[] {
+  return isSevenStepShare(docs) ? SEVEN_STEPS : THREE_TABS;
+}
 
 /** Only raster stills of artifacts referenced by the Plan, never the artifact's source. */
 export type PlanStill = SharedPicture;
@@ -99,7 +104,7 @@ export type ItemMedia =
  */
 export type ShareItem = {
   id: string;
-  step: FlowStep;
+  step: Tab;
   family: "decide" | "look";
   kind: string;
   kindLabel: string;
@@ -203,26 +208,30 @@ export function parseReview(text: string | undefined): SharedReview | undefined 
   };
 }
 
-/** The step each shared document belongs to: the three numbered files, by their exact names. */
-const STEP_OF_DOC = new Map<string, Tab>(ALL_TABS.flatMap((tab) => STEP_DOCS[tab].map((name) => [name, tab] as const)));
+/** The step each shared document belongs to, by its exact name: the three numbered files, or the seven of an earlier link. */
+const THREE_OF_DOC = new Map<string, Tab>(THREE_TABS.flatMap((tab) => STEP_DOCS[tab].map((name) => [name, tab] as const)));
+const SEVEN_OF_DOC = new Map<string, Tab>(SEVEN_STEPS.map((tab) => [SEVEN_STEP_DOCS[tab], tab] as const));
 
 const byName = (a: string, b: string) => a.replace(/\.md$/, "").localeCompare(b.replace(/\.md$/, ""));
 
 /**
- * The documents a link reader sees under the step tabs, never their file names: only the three
- * step files. Anything else a link carries (data, mockups, a stray file) is not shown as a document.
+ * The documents a link reader sees under its step tabs, never their file names: only the step files
+ * of the link's own workflow (three, or seven for an earlier link). Anything else a link carries
+ * (data, mockups, a stray file) is not shown as a document.
  */
-export function stepDocs(docs: Record<string, string>): Record<Tab, string[]> {
-  const steps: Record<Tab, string[]> = { plan: [], implement: [], verify: [] };
+export function stepDocs(docs: Record<string, string>): Partial<Record<Tab, string[]>> {
+  const seven = isSevenStepShare(docs);
+  const stepOf = seven ? SEVEN_OF_DOC : THREE_OF_DOC;
+  const steps: Partial<Record<Tab, string[]>> = Object.fromEntries(tabsOf(docs).map((tab) => [tab, []]));
   for (const name of Object.keys(docs).sort(byName)) {
-    const tab = STEP_OF_DOC.get(name);
-    if (tab !== undefined) steps[tab].push(name);
+    const tab = stepOf.get(name);
+    if (tab !== undefined) steps[tab]?.push(name);
   }
   return steps;
 }
 
 /** A question stays under the step that asked it. */
-export const tabOfStep = (step: FlowStep): Tab => step;
+export const tabOfStep = (step: Tab): Tab => step;
 
 /** The App's answers, read as a guest's three. */
 const AS_GUEST: Record<string, GuestAnswer> = {
@@ -242,7 +251,7 @@ const AS_GUEST: Record<string, GuestAnswer> = {
 /** What a guest is asked: decisions and things to look at. A question for the agent, a stop, a teammate's question and another agent's finding stay in the App. */
 const GUEST_KINDS = new Set(["decision", "decided", "scope", "done", "asked", "mockup", "result", "diagram"]);
 
-const STEPS: readonly string[] = ALL_TABS;
+const STEPS: readonly string[] = SEVEN_STEPS;
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v : undefined);
 
 function parseMedia(value: unknown): ItemMedia | undefined {
@@ -279,7 +288,7 @@ export function parseItems(value: unknown): ShareItem[] {
     const why = str(i.why);
     items.push({
       id: i.id as string,
-      step: STEPS.includes(i.step as string) ? (i.step as FlowStep) : "plan",
+      step: STEPS.includes(i.step as string) ? (i.step as Tab) : "plan",
       family,
       kind: str(i.kind) ?? "decision",
       kindLabel: str(i.kindLabel) ?? "Question",
@@ -408,7 +417,7 @@ export type ChangeAnchor = { kind: "doneMeans" | "picture" | "check"; id: string
  */
 export type Remark =
   | { kind: "passage"; id?: string; doc: string; quote: string; text: string; for?: "agent" | "person"; before?: string; after?: string; section?: string }
-  | { kind: "item"; id: string; step: FlowStep; doc: string; what: string; answer: GuestAnswer; label: string; note: string }
+  | { kind: "item"; id: string; step: Tab; doc: string; what: string; answer: GuestAnswer; label: string; note: string }
   | { kind: "thread"; thread: string; anchor: ChangeAnchor; text: string }
   | { kind: "reply"; thread: string; text: string };
 
@@ -419,10 +428,12 @@ export const checkId = (label: string) => label.replace(" ", ":");
 export const newThreadId = () => `g-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
 /**
- * The document an answer is recorded against: the step's own, as the App names it.
+ * The document an answer is recorded against: the step's own, as the App names it. A step only the
+ * seven-step workflow had, or an earlier link (`seven`), names its seven-step file.
  */
-export function docOfStep(step: FlowStep): string {
-  return STEP_DOCS[step][0] ?? "";
+export function docOfStep(step: Tab, seven = false): string {
+  if (!seven && (THREE_TABS as readonly string[]).includes(step)) return STEP_DOCS[step as FlowStep][0] ?? "";
+  return SEVEN_STEP_DOCS[step];
 }
 
 const annotation = (blockId: string, originalText: string, body: string, now: number) => ({

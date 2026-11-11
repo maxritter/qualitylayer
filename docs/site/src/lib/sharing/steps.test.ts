@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { answerItem, EMPTY, pending } from "./drafts";
 import {
   answerWords,
+  docOfStep,
   loadShare,
   openFromLink,
   parseItems,
@@ -177,7 +178,10 @@ describe("sending what a guest wrote", () => {
       options: ["agree", "change"],
     };
     const drafts = answerItem(EMPTY, buildItem.id, "agree");
-    expect(remarksPayload("Sam", pending(drafts, [buildItem]), 1).annotations.map((a) => a.blockId)).toEqual(["05-implement.md"]);
+    // A step both workflows have is filed under today's file; a seven-step link names its own.
+    expect(remarksPayload("Sam", pending(drafts, [buildItem]), 1).annotations.map((a) => a.blockId)).toEqual(["02-implement.md"]);
+    expect(docOfStep("implement", true)).toBe("05-implement.md");
+    expect(docOfStep("review")).toBe("07-review.md");
   });
 
   it("names a guest who gave no name Guest", () => {

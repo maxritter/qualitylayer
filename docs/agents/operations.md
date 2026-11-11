@@ -11,7 +11,10 @@
   `git read-tree HEAD` makes git re-filter every file through git-crypt and
   the commit takes minutes instead of seconds), add only your
   files (`git update-index` or `hash-object --path`, which runs the git-crypt
-  filter), then commit. Afterwards bring your own paths in the shared index up
+  filter), then commit with `.github/scripts/commit-serial.sh -F <message-file>`
+  (same arguments as `git commit`; it runs commits one at a time because
+  `git commit -F` goes through the shared `.git/COMMIT_EDITMSG`, so overlapping
+  commits swapped messages). Afterwards bring your own paths in the shared index up
   to the new commit with `.github/scripts/refresh-shared-index.sh <paths>`;
   otherwise it keeps their old blobs and the next commit from it reverts
   yours. The script sets all paths in one `git update-index --index-info`
@@ -32,7 +35,7 @@
   rest still matches the reviewed content, and run the normal hooks again.
 - To check a prepared commit message before the slower hooks, optionally run
   `.github/hooks/commit-msg <message-file>` with the same private index, then
-  commit with `git commit -F <message-file>`. Keep the final normal hook: a
+  commit with `.github/scripts/commit-serial.sh -F <message-file>`. Keep the final normal hook: a
   changed message or index needs its current validation, not a cached pass.
 - Never move source, phase texts, schemas or fixtures out of `qualitylayer/`.
 - Read committed encrypted paths with `git cat-file --filters HEAD:<path>`.

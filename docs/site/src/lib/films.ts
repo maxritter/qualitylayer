@@ -7,7 +7,7 @@ export const FILMS = {
   overview: {
     src: "https://qualitylayer-media.max-ritter.workers.dev/overview.mp4",
     poster: "https://qualitylayer-media.max-ritter.workers.dev/overview.webp",
-    duration: 306,
+    duration: 287,
   },
   insideTrailer: {
     src: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer.mp4",

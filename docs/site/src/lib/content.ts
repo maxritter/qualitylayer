@@ -35,7 +35,7 @@ export const FAQS: Faq[] = [
   faq("Can I use the models and subscriptions I already have?", "Yes. Use your supported agent's existing login or API key. QualityLayer does not add an AI usage bill."),
   faq("How is this different from plan mode?", "QualityLayer adds visual planning, tested implementation and optional independent review. You approve the Plan before building and the finished change after checking."),
   CODE_LEAVES,
-  faq("What about small changes and bugs?", "Use Chat with a supported agent for free-form work, and convert it to a task when it needs a plan. Feature and Bugfix tasks follow the seven steps and your two approvals."),
+  faq("What about small changes and bugs?", "Use Chat with a supported agent for free-form work, and convert it to a task when it needs a plan. Feature and Bugfix tasks follow Plan, Implement and Verify, with your two approvals."),
   faq("Can I run my agent in the App or browser?", "Yes. Your task and agent run side by side. Conversation, Terminal and Files keep the session and its work together. Contextual Ask agent opens an editable draft for you to send through the agent's native input. Agents without Conversation input keep an explicit terminal handoff."),
   PLANS_DIFFER,
   faq("Can I use my own remote computer?", "Yes. Connect a machine you control through Settings › Machines, SSH or a paired browser. Its local server authenticates access to your own work; this does not create a hosted workspace or teammate account."),

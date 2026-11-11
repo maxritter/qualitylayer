@@ -58,7 +58,7 @@ export default function Verification() {
           </div>
         ))}
       </div>
-      <div className="ed-outcome"><p>Review opens once every point passes, with the evidence.</p><div><a className="ed-link" href="/docs/steps/verify">How Verify works</a></div></div>
+      <div className="ed-outcome"><p>Verify turns to you once every point passes, with the evidence.</p><div><a className="ed-link" href="/docs/steps/verify">How Verify works</a></div></div>
     </section>
   );
 }

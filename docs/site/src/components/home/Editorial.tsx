@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { ArrowRight, Brain, Expand, ExternalLink, House, Settings, Shapes, X, type LucideIcon } from "lucide-react";
+import { ArrowRight, Brain, Expand, ExternalLink, GitPullRequest, House, Settings, Shapes, X, type LucideIcon } from "lucide-react";
+import { STEP_ICONS } from "@/lib/step-icons";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import { OVERVIEW_VIDEO_URL } from "@/lib/videos";
-import { FIRST_STEP, STEPS, WHO, type Who } from "@/lib/steps";
+import { STEPS, WHO, type Who } from "@/lib/steps";
 import { scrollAndFocusSection } from "@/utils/navigateToSection";
 import "@/styles/editorial.css";
 
@@ -38,7 +39,7 @@ function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" 
   return (
     <>
     <picture>
-      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 680 : 836} height={shot.id === "plan" ? 542 : shot.id === "discuss" ? 1644 : 1456} />
+      <source media={PHONE} srcSet={phoneSrc(shot, theme)} width={shot.id === "plan" ? 680 : 836} height={shot.id === "plan" ? 542 : 1456} />
       <img src={src(shot, theme)} alt={shot.alt} width={2664} height={DESKTOP_HEIGHTS[shot.id] ?? 1496} loading={eager || inDialog ? undefined : "lazy"} decoding="async" onError={() => setFailed(true)} onLoad={() => setFailed(false)} />
     </picture>
     {failed ? <span className="ed-image-error">{shot.title} image unavailable. {inDialog ? "Use Full size to retry." : "Open the preview to retry."}</span> : null}
@@ -73,37 +74,39 @@ function Inline({ shot, theme, eager, onOpen, style }: { shot: Shot; theme: "lig
   );
 }
 
-/** One selected step, with its screenshot below the horizontal picker. */
-function Tour({ active, onPick, theme, onOpen }: { active: string; onPick: (id: string) => void; theme: "light" | "dark"; onOpen: (shot: Shot, el: HTMLElement) => void }) {
-  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
-  const current = STEPS.find((step) => step.id === active) ?? STEPS[0];
-  const move = (event: KeyboardEvent, index: number) => {
-    const next = { ArrowRight: (index + 1) % STEPS.length, ArrowLeft: (index + STEPS.length - 1) % STEPS.length, Home: 0, End: STEPS.length - 1 }[event.key];
-    if (next === undefined) return;
-    event.preventDefault();
-    onPick(STEPS[next].id);
-    tabs.current[next]?.focus();
-  };
+/**
+ * The three steps as the App shows them: each step's page beside what happens in it, one row a
+ * step, the step track's mark and name leading each row. The pull request closes the list.
+ */
+function Tour({ theme, onOpen }: { theme: "light" | "dark"; onOpen: (shot: Shot, el: HTMLElement) => void }) {
+  const steps = STEPS.filter((step) => step.does.length > 0);
+  const pr = STEPS.find((step) => step.id === "pull-request");
   return (
-    <div className="ed-tour">
-      <div className="ed-workflow-tabs" role="tablist" aria-label="Workflow steps">
-        {STEPS.map((step, i) => (
-          <button key={step.id} ref={(el) => { tabs.current[i] = el; }} id={step.id} type="button" role="tab" className="ed-step-tab" data-who={step.who} aria-label={"Step " + (i + 1) + ": " + step.name} aria-selected={step.id === current.id} aria-controls={"workflow-panel-" + step.id} tabIndex={step.id === current.id ? 0 : -1} onClick={() => onPick(step.id)} onKeyDown={(event) => move(event, i)}>
-            <span className="ed-num" aria-hidden="true">{i + 1}</span><span>{step.name}</span>
-          </button>
-        ))}
-      </div>
-      {STEPS.map((step) => (
-        <div key={step.id} id={"workflow-panel-" + step.id} role="tabpanel" aria-labelledby={step.id} className="ed-step-panel" data-who={step.who} tabIndex={0} hidden={step.id !== current.id}>
-          <div className="ed-step-summary">
-            <p className="ed-text">{step.text}</p>
-            <p className="ed-who"><span className="ed-dot" aria-hidden="true" />{WHO[step.who]}</p>
-            <a className="ed-link" href={"/docs/steps/" + step.id}>{step.name} guide<ArrowRight size={16} aria-hidden="true" /></a>
-          </div>
-          {step.id === current.id ? <Inline shot={shotOf(step)} theme={theme} eager onOpen={onOpen} /> : null}
-        </div>
-      ))}
-    </div>
+    <ol className="ed-tour">
+      {steps.map((step, i) => {
+        const Glyph = STEP_ICONS[step.id];
+        return (
+          <li key={step.id} id={step.id} className="ed-step" data-who={step.who} tabIndex={-1} aria-labelledby={step.id + "-h"}>
+            <div className="ed-step-copy">
+              <p className="ed-step-mark"><span className="ed-step-tile" aria-hidden="true"><Glyph size={22} strokeWidth={1.7} /></span><span className="ed-step-n">Step {i + 1} of {steps.length}</span></p>
+              <h3 id={step.id + "-h"}>{step.name}</h3>
+              <p className="ed-text">{step.text}</p>
+              <ul className="ed-does">{step.does.map((line) => <li key={line}>{line}</li>)}</ul>
+              <p className="ed-who"><span className="ed-dot" aria-hidden="true" />{step.approve ? (step.who === "you" ? "You approve" : "Agents check, then you approve") : WHO[step.who]}</p>
+              <a className="ed-link" href={"/docs/steps/" + step.id}>{step.name} guide<ArrowRight size={16} aria-hidden="true" /></a>
+            </div>
+            <Inline shot={shotOf(step)} theme={theme} eager={i === 0} onOpen={onOpen} />
+          </li>
+        );
+      })}
+      {pr ? (
+        <li id={pr.id} className="ed-step ed-step-end" data-who={pr.who} tabIndex={-1}>
+          <span className="ed-step-tile" aria-hidden="true"><GitPullRequest size={20} strokeWidth={1.7} /></span>
+          <p><b>Then the {pr.name.toLowerCase()}.</b> {pr.text}</p>
+          <a className="ed-link" href={"/docs/steps/" + pr.id}>{pr.name} guide<ArrowRight size={16} aria-hidden="true" /></a>
+        </li>
+      ) : null}
+    </ol>
   );
 }
 
@@ -156,23 +159,20 @@ function Extras({ active, onPick, theme, onOpen }: { active: string; onPick: (id
 /** The tour, then whatever the page puts between it and Also in the App (the plan cards, the quotes and the checks), then Also in the App. */
 export default function Editorial({ between }: { between?: ReactNode } = {}) {
   const { theme } = useTheme();
-  const [step, setStep] = useState(FIRST_STEP);
   const [extra, setExtra] = useState(EXTRAS[0].id);
   const [shown, setShown] = useState<{ shot: Shot; opener: HTMLElement } | null>(null);
   const open = (shot: Shot, opener: HTMLElement) => setShown({ shot, opener });
 
-  // A link to a step or an App feature (the hero's stations and /#review) opens it.
+  // A link to a step or an App feature (the hero's stations and /#verify) brings it into view; a feature also opens.
   // ScrollToHash brings a new hash into view; a repeated link to the same hash changes nothing there, so it scrolls here.
   const { hash, key } = useLocation();
   const last = useRef<string | null>(null);
-  // A layout effect, so the step is open before ScrollToHash measures where to scroll.
+  // A layout effect, so the feature is open before ScrollToHash measures where to scroll.
   useLayoutEffect(() => {
     const id = hash.slice(1);
-    const known = STEPS.some((s) => s.id === id) ? setStep : EXTRAS.some((e) => e.id === id) ? setExtra : null;
-    if (known) {
-      known(id);
-      if (last.current === hash) requestAnimationFrame(() => scrollAndFocusSection(id));
-    }
+    const step = STEPS.some((s) => s.id === id);
+    if (EXTRAS.some((e) => e.id === id)) setExtra(id);
+    if ((step || EXTRAS.some((e) => e.id === id)) && last.current === hash) requestAnimationFrame(() => scrollAndFocusSection(id));
     last.current = hash;
   }, [hash, key]);
 
@@ -180,13 +180,13 @@ export default function Editorial({ between }: { between?: ReactNode } = {}) {
     <>
       <section id="tour" className="ed-section mx-wrap" aria-labelledby="ed-workflow-h">
         <div className="ed-head">
-          <h2 id="ed-workflow-h">From prompt to pull request</h2>
-          <p>Follow one change through planning, implementation and review. Add your own checks, tools and skills to any step. <a href="/docs/required-lines">Set your requirements</a>.</p>
+          <h2 id="ed-workflow-h">Three steps, two approvals</h2>
+          <p>You plan and you verify; agents do everything between. Each step is one page in the App and one Markdown file in your repository. Add your own checks, tools and skills to any step. <a href="/docs/required-lines">Set your requirements</a>.</p>
           <ul className="ed-legend" aria-label="Colours">
             {(Object.keys(WHO) as Who[]).map((who) => <li key={who} data-who={who}><span className="ed-dot" aria-hidden="true" />{WHO[who]}</li>)}
           </ul>
         </div>
-        <Tour active={step} onPick={setStep} theme={theme} onOpen={open} />
+        <Tour theme={theme} onOpen={open} />
         <div className="ed-outcome" id="films"><p>Every decision, document and test run stays with the change.</p><div><a href="/docs/">Read the workflow docs</a><a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer">Watch the walkthrough</a></div></div>
       </section>
       {between}

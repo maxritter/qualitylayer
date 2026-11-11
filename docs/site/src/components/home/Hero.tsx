@@ -1,4 +1,4 @@
-import { ArrowRight, Download, MonitorPlay, SquarePlay } from "lucide-react";
+import { ArrowRight, Download, MonitorPlay, SquarePlay, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useCallback, useRef, useState, type MouseEvent, type RefObject } from "react";
@@ -18,23 +18,25 @@ import { FIRST_STEP, WORKFLOW_STEPS } from "@/lib/steps";
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 /**
- * The seven steps as one line of equal stations. Beside the showcase they follow it: the playing
+ * The three steps as the App's step track: three stations on one line, a person mark on the two
+ * you approve, and the pull request after them. Beside the showcase they follow it: the playing
  * step is current, the line fills as it plays, and a station plays its step. On a phone (no
  * showcase) each station opens its step in the tour below, as a router link.
  */
 function Stations({ active, onPick, line }: { active: number | null; onPick: (step: number, e: MouseEvent) => void; line: RefObject<HTMLOListElement | null> }) {
   return (
-    <nav className="mx-line" aria-label="The seven steps">
+    <nav className="mx-line" aria-label="The three steps">
       <ol className="mx-stations" ref={line} data-hs={active === null ? undefined : ""}>
-        {WORKFLOW_STEPS.map(({ id, name, line, who }, i) => {
+        {WORKFLOW_STEPS.map(({ id, name, line, who, approve }, i) => {
           const Glyph = STEP_ICONS[id];
           return (
             <li key={id}>
               <Link className="mx-station" data-who={who} to={`#${id}`} aria-current={active === i ? "step" : undefined} onClick={(e) => onPick(i, e)}>
-                <span className="mx-station-tile" aria-hidden="true"><Glyph size={28} strokeWidth={1.6} /></span>
+                <span className="mx-station-tile" aria-hidden="true"><Glyph size={30} strokeWidth={1.6} />{approve ? <i className="mx-station-you"><UserRound size={13} strokeWidth={2.2} /></i> : null}</span>
                 <span className="mx-station-text">
                   <span className="mx-station-name"><span className="mx-station-n" aria-hidden="true">{i + 1}</span>{name}</span>
                   <span className="mx-station-line">{line}</span>
+                  {approve ? <span className="mx-station-gate">You approve</span> : <span className="mx-station-gate" data-agents="">Runs on its own</span>}
                 </span>
               </Link>
             </li>
@@ -42,14 +44,14 @@ function Stations({ active, onPick, line }: { active: number | null; onPick: (st
         })}
       </ol>
       <div className="mx-line-cap">
-        <p>You approve the plan and the result. Agents build and check the change.</p>
+        <p>You approve the Plan and the finished change. Agents build and check everything between, then the pull request waits for your merge.</p>
         <Link className="mx-line-link" to={`#${FIRST_STEP}`}>See each step in the App<ArrowRight size={16} aria-hidden="true" /></Link>
       </div>
     </nav>
   );
 }
 
-/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film on YouTube), beside the App playing the seven steps. */
+/** Opens on the brand line, the slogan and its working action (the visitor's own download and the film on YouTube), beside the App playing the three steps. */
 const Hero = () => {
   const download = useDownload();
   const showcase = useRef<ShowcaseHandle>(null);

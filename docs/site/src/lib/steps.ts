@@ -1,27 +1,26 @@
 /**
- * The workflow as the home page tells it: the seven steps under the hero, and the same seven
- * plus the pull request in the tour. Each `id` is also the step's anchor and screenshot name.
+ * The workflow as the home page tells it: the three steps under the hero, and the same three plus
+ * the pull request in the tour. Each `id` is also the step's anchor and screenshot name.
  */
 
 /** Who acts in a step, in the App's colours: amber when you decide, blue when agents work, violet when agents check. */
 export type Who = "you" | "agent" | "check";
-export type Step = { id: string; name: string; who: Who; line: string; text: string; alt: string };
+export type Step = { id: string; name: string; who: Who; approve: boolean; line: string; text: string; does: string[]; alt: string };
 
 export const WHO: Record<Who, string> = { you: "You decide", agent: "Agents work", check: "Agents check" };
 
 export const STEPS: Step[] = [
-  { id: "discuss", name: "Discuss", who: "you", line: "Settle what you want", text: "Settle the open questions with your agent.", alt: "Discuss for usage-based billing: whether the 400 seat customers move to usage or stay on seats, with three choices and a recommendation, beside Claude Code's session" },
-  { id: "research", name: "Research", who: "agent", line: "Read the code first", text: "Agents trace how the code works today and what can be reused.", alt: "Research for usage-based billing: the current system, its impact on the change and the findings, beside the Claude Code session" },
-  { id: "plan", name: "Plan", who: "you", line: "Approve it before any code", text: "Review diagrams and clickable designs, then approve the plan.", alt: "The Plan's limit question: keep serving or block requests, with facts and a diagram for the recommended choice, beside Claude Code's conversation" },
-  { id: "outline", name: "Outline", who: "agent", line: "Split it into tasks", text: "Your agent breaks the plan into small, testable tasks.", alt: "The Outline for usage-based billing: ordered build slices and their tasks" },
-  { id: "implement", name: "Implement", who: "agent", line: "Build it test first", text: "Your agent builds test first and hands independent work to other agents when useful.", alt: "The billing build: slice 6 of 11 in progress with its task cards, finished slices marked done, beside the session writing the next failing test" },
-  { id: "verify", name: "Verify", who: "check", line: "Check the running change", text: "Run project checks and independent review. Your agent fixes the findings.", alt: "Verification for the billing change: project checks, independent reviews, security scans and fix rounds" },
-  { id: "review", name: "Review", who: "you", line: "Read the change and its proof", text: "Review the code and the acceptance test as it ran, request changes or approve.", alt: "Review of the billing change: code, screens and checks, with one final approval in the page header" },
-  { id: "pull-request", name: "Pull request", who: "agent", line: "Follow it until it is merged", text: "Your agent handles failing checks and review comments. You control the merge.", alt: "Pull request #412: two review threads and a failing check, above the pull request's checks and reviews" },
+  { id: "plan", name: "Plan", who: "you", approve: true, line: "Agree on it before any code", text: "Your agent reads the code, asks what only you can answer and writes one Plan. You approve it once.", does: ["Questions, each with a recommended answer", "Done means, with the steps that prove each point", "Diagrams and clickable screens"], alt: "The Plan's limit question: keep serving or block requests, with facts and a diagram for the recommended choice, beside Claude Code's conversation" },
+  { id: "implement", name: "Implement", who: "agent", approve: false, line: "Build it test first", text: "Your agent cuts the Plan into slices and task cards and builds them without a stop.", does: ["A failing test before each change", "Independent slices handed to other agents", "A question only you can answer never stops the build"], alt: "The billing build: slice 6 of 11 in progress with its task cards, finished slices marked done, beside the session writing the next failing test" },
+  { id: "verify", name: "Verify", who: "check", approve: true, line: "Check it, then review it", text: "Agents that did not write the code check every point and fix what fails. Then the page is your review.", does: ["Project checks, security scans and an independent review", "Up to two fix rounds without you", "The code, the screens and each point as it ran"], alt: "Verification for the billing change: project checks, independent reviews, security scans and fix rounds" },
+  { id: "pull-request", name: "Pull request", who: "agent", approve: false, line: "Follow it until it is merged", text: "Your agent handles failing checks and review comments. You control the merge.", does: [], alt: "Pull request #412: two review threads and a failing check, above the pull request's checks and reviews" },
 ];
 
-/** The seven steps of every change; the pull request follows them. */
-export const WORKFLOW_STEPS = STEPS.slice(0, 7);
+/** The three steps of every change; the pull request follows them. */
+export const WORKFLOW_STEPS = STEPS.slice(0, 3);
 
 /** The step the tour opens on. */
-export const FIRST_STEP = "discuss";
+export const FIRST_STEP = "plan";
+
+/** The hero showcase still plays the billing example's earlier captures: each chapter stands for the step it is part of now. */
+export const STEP_OF_CHAPTER: Record<string, string> = { discuss: "plan", research: "plan", plan: "plan", outline: "implement", implement: "implement", verify: "verify", review: "verify", "pull-request": "pull-request" };

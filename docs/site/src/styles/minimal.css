@@ -67,7 +67,7 @@ html{scroll-padding-top:76px}
 .mx-play{flex:none;width:14px;height:14px}
 .mx-dur{font-weight:400;color:var(--mx-ink3)}
 
-/* ---- Hero: the brand line, the slogan and the download beside the App at a decision, then the seven steps as one line ---- */
+/* ---- Hero: the brand line, the slogan and the download beside the App at a decision, then the three steps as one line ---- */
 .sx-hero{max-width:1240px;margin:0 auto;padding:clamp(48px,6cqi,88px) clamp(16px,3cqi,40px) 0;text-align:left}
 .sx-hero-row{display:grid;grid-template-columns:minmax(0,1fr);gap:36px;align-items:center}
 @container (min-width: 900px){.sx-hero-row{grid-template-columns:minmax(0,28.5rem) minmax(0,1fr);gap:clamp(24px,2cqi,32px)}}
@@ -115,7 +115,7 @@ html{scroll-padding-top:76px}
 .sx-os{display:inline-flex;align-items:center;gap:9px;color:var(--mx-ink2)}
 .sx-os svg{flex:none;width:15px;height:15px}
 @media(prefers-reduced-motion:reduce){.sx-agent,.sx-agent-word{transition:none}.sx-agent-word[data-on]>span,.sx-grid i.sx-ripple{animation:none}}
-/* The App window: the showcase plays the seven steps on 2x captures cropped to the window (their 50 px frame cut by the image offsets).
+/* The App window: the showcase plays the three steps on 2x captures cropped to the window (their 50 px frame cut by the image offsets).
    A phone keeps the still question card. The window is the door into the App demo; pointer or focus lifts it. */
 .sx-pic{position:relative}
 .sx-live{display:block;color:inherit;text-decoration:none;border-radius:10px;outline:none}
@@ -170,22 +170,26 @@ html{scroll-padding-top:76px}
 .sx-meta a{color:var(--mx-ink2)}
 .sx-meta a,.w7-root .mx-endn a{text-decoration-line:underline}
 
-/* The seven steps: equal stations on one line, a pulse running along it; each opens its step in the tour */
+/* The three steps as the App's step track: three stations on one line, a pulse running along it, a person
+   mark on the two you approve; each opens its step in the tour */
 .mx-line{margin-top:clamp(56px,7cqi,88px)}
-.mx-stations{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));margin:0;padding:0;list-style:none}
-.mx-stations:before,.mx-stations:after{content:"";position:absolute;top:33px;left:calc(100% / 14);right:calc(100% / 14);height:2px}
+.mx-stations{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0 auto;max-width:1040px;padding:0;list-style:none}
+.mx-stations:before,.mx-stations:after{content:"";position:absolute;top:39px;left:calc(100% / 6);right:calc(100% / 6);height:2px}
 .mx-stations:before{background:var(--mx-line2)}
 .mx-stations:after{background:linear-gradient(90deg,transparent,var(--ql-accent) 50%,transparent) no-repeat;background-size:22% 100%;animation:mx-flow-x 5.6s linear infinite}
 @keyframes mx-flow-x{from{background-position:-30% 0}to{background-position:130% 0}}
 @keyframes mx-flow-y{from{background-position:0 -30%}to{background-position:0 130%}}
 .mx-stations li{position:relative;z-index:1;display:flex}
 .w7-root .mx-station{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:0 6px 6px;border-radius:14px;color:var(--mx-ink);text-align:center;text-decoration:none}
-.mx-station-tile{display:grid;place-items:center;width:68px;height:68px;margin-bottom:10px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink);box-shadow:0 1px 2px rgb(0 0 0 / 4%),0 8px 24px rgb(0 0 0 / 5%);transition:border-color .15s,color .15s,transform .15s}
+.mx-station-tile{position:relative;display:grid;place-items:center;width:80px;height:80px;margin-bottom:12px;border:1px solid var(--mx-line2);border-radius:20px;background:var(--mx-panel);color:var(--mx-ink);box-shadow:0 1px 2px rgb(0 0 0 / 4%),0 8px 24px rgb(0 0 0 / 5%);transition:border-color .15s,color .15s,transform .15s}
 .mx-station-text{display:contents}
 .mx-station[data-who] .mx-station-tile{color:var(--ink);border-color:color-mix(in srgb,var(--hue) 40%,var(--mx-line2));background:color-mix(in srgb,var(--hue) 7%,var(--mx-panel))}
-.mx-station-name{font-size:17px;font-weight:700;letter-spacing:-.02em;white-space:nowrap}
-.mx-station-n{margin-right:.3em;font-weight:600;color:var(--mx-ink3)}
-.mx-station-line{max-width:11em;font-size:14px;line-height:1.35;color:var(--mx-ink3)}
+.mx-station-name{font-size:20px;font-weight:700;letter-spacing:-.025em;white-space:nowrap}
+.mx-station-n{margin-right:.35em;font-weight:600;color:var(--mx-ink3)}
+.mx-station-line{max-width:16em;font-size:15px;line-height:1.4;color:var(--mx-ink2)}
+.mx-station-you{position:absolute;top:-7px;right:-7px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--ql-amber);color:#1d1400;box-shadow:0 0 0 3px var(--mx-page)}
+.mx-station-gate{display:inline-flex;align-items:center;margin-top:4px;padding:2px 10px;border-radius:999px;background:var(--ql-amber-soft);color:var(--ql-amber-ink);box-shadow:inset 0 0 0 1px var(--ql-amber-line);font-size:13px;font-weight:600}
+.mx-station-gate[data-agents]{background:color-mix(in srgb,var(--hue) 8%,var(--mx-panel));color:var(--ink);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--hue) 35%,var(--mx-line2))}
 .w7-root .mx-station:hover .mx-station-tile,.w7-root .mx-station:focus-visible .mx-station-tile{border-color:var(--ql-accent);color:var(--ql-accent);transform:translateY(-2px)}
 /* Beside the showcase the line fills as it plays and the playing step's tile rings in its colour */
 .mx-stations[data-hs]:after{animation:none;background:var(--ql-accent) no-repeat 0 0;background-size:calc(var(--hs-p,0) * 100%) 100%}
@@ -379,8 +383,8 @@ html{scroll-padding-top:76px}
   .mx-mq,.mx-with{grid-template-columns:minmax(0,1fr)}
   .mx-chain{grid-template-columns:repeat(2,minmax(0,1fr))}
   .mx-chain li:nth-child(2) .mx-chain-arrow{display:none}
-  .mx-station-name{font-size:15px}
-  .mx-station-line{font-size:13px}
+  .mx-station-name{font-size:18px}
+  .mx-station-line{font-size:14px}
   .sx-stage{top:60px;background:color-mix(in srgb,var(--mx-page) 88%,transparent);border-bottom-color:var(--mx-line)}
   .sx-ch,.sx-ch.first,.sx-ch.last{scroll-margin-top:116px}
 }
@@ -402,8 +406,11 @@ html{scroll-padding-top:76px}
   .sx-ctas{flex-direction:column;align-items:stretch;max-width:380px;margin-left:0;margin-right:0}
   /* The stations become a list along a vertical line */
   .mx-line{margin-top:48px}
-  .mx-stations{grid-template-columns:minmax(0,1fr);row-gap:10px}
+  .mx-stations{grid-template-columns:minmax(0,1fr);row-gap:18px}
   .mx-stations:before,.mx-stations:after{top:28px;bottom:28px;left:27px;right:auto;width:2px;height:auto}
+  .mx-station-gate{align-self:flex-start}
+  .mx-station-you{top:-5px;right:-5px;width:20px;height:20px}
+  .mx-station-you svg{width:11px;height:11px}
   .mx-stations:after{background:linear-gradient(180deg,transparent,var(--ql-accent) 50%,transparent) no-repeat;background-size:100% 22%;animation-name:mx-flow-y}
   .w7-root .mx-station{flex-direction:row;align-items:center;gap:16px;padding:0;text-align:left}
   .mx-station-tile{flex:none;width:56px;height:56px;margin:0;border-radius:16px}

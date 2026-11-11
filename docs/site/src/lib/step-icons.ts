@@ -1,4 +1,4 @@
-import { Code, FileCheck, ListChecks, MessageSquare, Network, Search, ShieldCheck, type LucideIcon } from "lucide-react";
+import { CodeXml, GitPullRequest, Network, ShieldCheck, type LucideIcon } from "lucide-react";
 
-/** Each workflow step's icon, as the App's step rail draws it. */
-export const STEP_ICONS: Record<string, LucideIcon> = { discuss: MessageSquare, research: Search, plan: Network, outline: ListChecks, implement: Code, verify: ShieldCheck, review: FileCheck };
+/** Each workflow step's icon, as the App's step track draws it; the pull request follows Verify. */
+export const STEP_ICONS: Record<string, LucideIcon> = { plan: Network, implement: CodeXml, verify: ShieldCheck, "pull-request": GitPullRequest };

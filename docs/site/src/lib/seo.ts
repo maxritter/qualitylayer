@@ -3,7 +3,7 @@ import { DEEP_DIVE_PATH, DEEP_DIVE_POSTER, DEEP_DIVE_TITLE } from "./deep-dive.t
 import { FILMS } from "./films.ts";
 
 export const PUBLIC_PAGES = {
-  "/": { title: "QualityLayer | Plan, build and review with coding agents", description: SHARE_DESCRIPTION },
+  "/": { title: "QualityLayer | Plan, implement and verify with coding agents", description: SHARE_DESCRIPTION },
   "/pricing": {
     title: "Pricing | QualityLayer",
     description: "QualityLayer Individual, Business and Enterprise plans, with unlimited tasks, repositories and agents.",
@@ -34,7 +34,7 @@ export const PUBLIC_PAGES = {
   },
   "/compare/traycer": {
     title: "QualityLayer vs Traycer: desktop apps for coding agents",
-    description: "Compare Traycer's parallel agents, artifacts and tickets with QualityLayer's approved Plan, recorded verification and human Review.",
+    description: "Compare Traycer's parallel agents, artifacts and tickets with QualityLayer's approved Plan, recorded verification and human review.",
   },
   "/compare/compound-engineering": {
     title: "QualityLayer vs Compound Engineering: plans and reviews",

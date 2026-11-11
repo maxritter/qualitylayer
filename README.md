@@ -7,7 +7,7 @@
 
 <h1>QualityLayer<br><sub>The software factory with you in the loop</sub></h1>
 
-**Plan each change visually, then let your agents build and verify it.**<br>
+**Plan, implement and verify software with your favorite coding agents.**<br>
 Work side by side in the App or browser, or stay in your terminal or IDE.
 
 <a href="https://github.com/maxritter/qualitylayer/releases"><img src="https://img.shields.io/github/v/release/maxritter/qualitylayer?sort=semver&amp;style=for-the-badge&amp;label=latest&amp;color=2076c5&amp;labelColor=30363d" alt="Latest release"></a>
@@ -35,7 +35,7 @@ Work side by side in the App or browser, or stay in your terminal or IDE.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026111001.webp">
-  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026111001.webp" alt="The QualityLayer App walking through the seven steps of a usage-based billing change: you answer the first question, agents research, you choose in the Plan, agents outline, build and check it, and you approve the change and open its pull request" width="804">
+  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026111001.webp" alt="The QualityLayer App walking through a usage-based billing change: you answer its questions and choose in the Plan, agents build and check it, and you approve the change and open its pull request" width="804">
 </picture>
 
 <sub>Watch it larger on [qualitylayer.dev](https://qualitylayer.dev) or [try the demo](https://qualitylayer.dev/app-demo/?story&guide) in your browser.</sub>
@@ -55,7 +55,7 @@ Work side by side in the App or browser, or stay in your terminal or IDE.
 | **Your own agent and plan** | Use Claude Code, Codex, Cursor and more with your existing login or API key. |
 | **A design you can review** | Ask your agent about diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
-| **An independent check** | With independent review on, a separate agent checks the running change against your request before Review opens. |
+| **An independent check** | With independent review on, a separate agent checks the running change against your request before you review it. |
 | **Your own requirements** | Add checks, tools or skills to any step. Your agent records what ran, what did not, and why. [Required lines](https://qualitylayer.dev/docs/required-lines). |
 | **Your own automations** | Send task events to a URL or a command, and read or start tasks from a script. [Automations](https://qualitylayer.dev/docs/automations). |
 | **Visible decisions and effort** | Read decisions and results in your repository; see time, model usage value and cost estimates in the App. |
@@ -119,7 +119,7 @@ Setup adds these skills. Ask in plain words, in any language.
 | Skill | For | You say |
 | --- | --- | --- |
 | `ql-peer` | Agents talking to each other | “Ask Codex to review what you just built.” |
-| `ql-workflow` | Plan, build and review a change | “Using QualityLayer, add rate limits to the export API.” |
+| `ql-workflow` | Plan, implement and verify a change | “Using QualityLayer, add rate limits to the export API.” |
 | `ql-chat` | Chat without workflow steps | “Using QualityLayer, chat about the billing refactor.” |
 | `ql-artifact` | Designs, diagrams and pages | “Open the settings design in my browser.” |
 | `ql-quality` | Code health and security scans | “Scan this repository for leaked secrets.” |
@@ -131,23 +131,36 @@ Setup adds these skills. Ask in plain words, in any language.
 
 <h2 id="features">The workflow</h2>
 
-Each step saves readable Markdown in your repository, and existing plans start at Plan. You approve the Plan and the finished change, and you control pushes and merges.
+Three steps, two approvals. You plan and you verify; agents do everything between. Each step is one page in the App and one Markdown file in your repository, and existing plans start at Plan.
+
+### 1 · Plan, approved by you
+
+Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, diagrams and clickable screens. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/docusaurus/static/img/diagrams/flow-pr-dark.svg">
-  <img src="docs/docusaurus/static/img/diagrams/flow-pr-light.svg" alt="Discuss, Research, Plan, Outline, Implement, Verify, Review and the pull request: you approve at Plan and at Review and merge the pull request; your agent works in between" width="1000">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">
+  <img src="docs/site/public/product/plan-light.webp" alt="The Plan in the App: a billing decision with its diagram and a recommended choice, beside Claude Code. Fictional project." width="1000">
 </picture>
 
-| Step | What happens |
-|---|---|
-| [Discuss](https://qualitylayer.dev/docs/steps/discuss) | Settles what done means and clarifies a bug report |
-| [Research](https://qualitylayer.dev/docs/steps/research) | Agents read how your code works today; a bug is reproduced and diagnosed here |
-| [Plan](https://qualitylayer.dev/docs/steps/plan) | Diagrams, clickable artifacts and the acceptance test, **approved by you** |
-| [Outline](https://qualitylayer.dev/docs/steps/outline) | Your agent splits the approved Plan into small slices |
-| [Implement](https://qualitylayer.dev/docs/steps/implement) | Your agent builds test first, fixes what fails and decides when it is ready |
-| [Verify](https://qualitylayer.dev/docs/steps/verify) | Your project's checks and an independent agent's review |
-| [Review](https://qualitylayer.dev/docs/steps/review) | The code first, what changed and the acceptance test as it ran, **approved by you** |
-| [Pull request](https://qualitylayer.dev/docs/steps/pull-request) | Failing checks and routine review threads fixed; the task stays open until you merge |
+### 2 · Implement, by your agents
+
+Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. It builds without a stop. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/implement-dark.webp">
+  <img src="docs/site/public/product/implement-light.webp" alt="The build board in the App: slices with their task cards, finished slices done, beside the session writing the next failing test. Fictional project." width="1000">
+</picture>
+
+### 3 · Verify, then approved by you
+
+Agents that did not write the code check every point and fix what fails, up to two rounds. Then the same page is your review: the code, the screens and each point as it ran. [Verify guide](https://qualitylayer.dev/docs/steps/verify)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/verify-dark.webp">
+  <img src="docs/site/public/product/verify-light.webp" alt="Verify in the App: project checks, independent reviews, security scans and fix rounds for the billing change. Fictional project." width="1000">
+</picture>
+
+**Then the pull request.** Your agent fixes failing checks and routine review threads; the task stays open until you merge. [Pull request guide](https://qualitylayer.dev/docs/steps/pull-request)
 
 ## Checks and independent review
 
@@ -161,8 +174,8 @@ Your project's checks, [code health](https://qualitylayer.dev/docs/reference/cod
 ## QualityLayer App
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">
-  <img src="docs/site/public/product/plan-light.webp" alt="Reviewing a billing decision and its diagram beside Claude Code in the App. Fictional project." width="1000">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/home-dark.webp">
+  <img src="docs/site/public/product/home-light.webp" alt="Home in the App: the tasks that need you and the ones running, with their steps. Fictional project." width="1000">
 </picture>
 
 | In the App | What you can do |

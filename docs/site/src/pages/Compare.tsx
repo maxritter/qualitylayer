@@ -23,7 +23,7 @@ function Sources({ sources, checked, from }: { sources: ComparisonSource[]; chec
   return (
     <section className="cp-sources" aria-labelledby="sources">
       <h2 id="sources">Sources, checked {MONTHS[Number(checked.slice(5, 7)) - 1]} {checked.slice(0, 4)}</h2>
-      <p>{from !== undefined && from !== checked ? <>Checked between {longDate(from)} and <time dateTime={checked}>{longDate(checked)}</time></> : <>Checked on <time dateTime={checked}>{longDate(checked)}</time></>}. This compares public documentation; it is not a hands-on benchmark. QualityLayer's claims follow its <a href="/docs/steps/plan">Plan</a>, <a href="/docs/steps/verify">Verify</a>, <a href="/docs/steps/review">Review</a> and <a href="/docs/steps/pull-request">pull request</a> guides.</p>
+      <p>{from !== undefined && from !== checked ? <>Checked between {longDate(from)} and <time dateTime={checked}>{longDate(checked)}</time></> : <>Checked on <time dateTime={checked}>{longDate(checked)}</time></>}. This compares public documentation; it is not a hands-on benchmark. QualityLayer's claims follow its <a href="/docs/steps/plan">Plan</a>, <a href="/docs/steps/implement">Implement</a>, <a href="/docs/steps/verify">Verify</a> and <a href="/docs/steps/pull-request">pull request</a> guides.</p>
       <ol>
         {sources.map(({ label, url }, index) => <li key={url} id={`source-${index + 1}`}><a href={url}>{label}</a></li>)}
       </ol>
@@ -49,7 +49,7 @@ function ComparisonCards({ current }: { current?: string }) {
 
 const QUALITYLAYER_ROW = {
   bestFor: "Approving a visual Plan, then reviewing evidence that the change works",
-  plansWith: "Discuss, Research and a Plan with diagrams and clickable artifacts",
+  plansWith: "A Plan with diagrams and clickable artifacts, written once your agent has read the code",
   runsIn: "Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot, with the App",
 };
 
@@ -100,7 +100,7 @@ function ProofAndReview() {
       <h2 id="proof">How QualityLayer carries proof into review</h2>
       <ul>
         <li><b>Before code</b><span>You approve the Plan: what changes, what stays, and how you will know it works.</span></li>
-        <li><b>After the build</b><span><a href="/docs/steps/verify">Verify</a> records output, screenshots or files for each outcome. Failed and blocked checks stay visible in <a href="/docs/steps/review">Review</a>. An agent that did not write the code checks the change unless disabled in Settings.</span></li>
+        <li><b>After the build</b><span><a href="/docs/steps/verify">Verify</a> records output, screenshots or files for each outcome. Failed and blocked checks stay visible in <a href="/docs/steps/verify#items">your review</a>. An agent that did not write the code checks the change unless disabled in Settings.</span></li>
         <li><b>Until it merges</b><span>With GitHub's <code>gh</code> CLI, QualityLayer <a href="/docs/steps/pull-request">follows PR checks and reviews</a>. You control the merge.</span></li>
       </ul>
     </section>
@@ -244,7 +244,7 @@ function Roundup() {
             <thead><tr><th scope="col">Tool</th><th scope="col">Consider it for</th><th scope="col">What the docs describe</th></tr></thead>
             <tbody>
               {SPEC_TOOLS.map(({ slug, name, bestFor, plansWith, sources: [docs] }) => <tr key={slug}><th scope="row"><Link to={`/compare/${slug}`}>{name}</Link></th><td>{bestFor}</td><td>Plans with: {plansWith}. <a href={docs.url}>Docs</a></td></tr>)}
-              <tr><th scope="row"><Link to="/">QualityLayer</Link></th><td>Visual planning and human review with recorded proof</td><td>Approve the Plan, check agreed outcomes in Verify and review the evidence before opening a pull request. <a href="/docs/steps/review">Docs</a></td></tr>
+              <tr><th scope="row"><Link to="/">QualityLayer</Link></th><td>Visual planning and human review with recorded proof</td><td>Approve the Plan, check agreed outcomes in Verify and review the evidence before opening a pull request. <a href="/docs/steps/verify">Docs</a></td></tr>
             </tbody>
           </table>
         </div>
@@ -268,7 +268,7 @@ function Roundup() {
       <section aria-labelledby="next">
         <h2 id="next">Evaluate it on a real change</h2>
         <p>Use a task with a testable outcome and an edge case. Compare how much you understand before implementation and what you can verify afterward.</p>
-        <p><Link to="/compare">Read the detailed comparisons</Link>, including coding agents such as Cline, Aider and Devin, explore <a href="/docs/steps/verify">Verify</a> and <a href="/docs/steps/review">Review</a>, or check <Link to="/pricing">QualityLayer pricing</Link>.</p>
+        <p><Link to="/compare">Read the detailed comparisons</Link>, including coding agents such as Cline, Aider and Devin, explore <a href="/docs/steps/plan">Plan</a> and <a href="/docs/steps/verify">Verify</a>, or check <Link to="/pricing">QualityLayer pricing</Link>.</p>
       </section>
     </Frame>
   );

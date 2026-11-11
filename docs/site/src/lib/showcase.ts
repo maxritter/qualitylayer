@@ -1,5 +1,5 @@
 /**
- * The hero showcase's timeline: the App walking through the seven steps and the pull request on real
+ * The hero showcase's timeline: the App walking through the billing example, from the first question to the pull request, on real
  * captures, with a camera, a cursor and highlights. Every frame is a pure function of time, so a
  * station can seek to its step and a capture can render any frame. Points and rectangles are
  * percentages of the App window (the capture without its 50 px frame); a camera is a centre and a zoom.

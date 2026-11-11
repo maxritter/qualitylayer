@@ -18,7 +18,7 @@ interface SEOProps {
 }
 
 /** What the shared og.png shows, for readers who cannot see it. */
-const OG_IMAGE_ALT = `QualityLayer, ${BRAND_LINE.toLowerCase()}: ${SLOGAN.charAt(0).toLowerCase()}${SLOGAN.slice(1)}. Seven steps: ${WORKFLOW_STEPS.map((step) => step.name).join(", ")}`;
+const OG_IMAGE_ALT = `QualityLayer, ${BRAND_LINE.toLowerCase()}: ${SLOGAN.charAt(0).toLowerCase()}${SLOGAN.slice(1)}. Three steps: ${WORKFLOW_STEPS.map((step) => step.name).join(", ")}`;
 
 /** Used by both the browser and the build-time renderer. */
 const SEO = ({

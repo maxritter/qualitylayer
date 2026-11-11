@@ -112,7 +112,7 @@ export const COMPARE: CompareGroup[] = [
     name: "The complete local product",
     hue: "build",
     rows: [
-      row("The whole workflow", true, true, true, "Seven steps, with your approval of the Plan and of the final Review"),
+      row("The whole workflow", true, true, true, "Plan, Implement and Verify, with your approval of the Plan and of the finished change"),
       row("Tasks, Chat and Artifacts", true, true, true, "Use your supported coding agents with your own subscriptions or API accounts"),
       row("Checks and independent review", true, true, true, "Tests, security scans and an agent that did not write the code"),
       row("Local work and personal remote access", true, true, true, "Keep work on your computers; reach your own machines through SSH or a paired browser"),

@@ -4,15 +4,23 @@ import { STEP_ICONS } from "@/lib/step-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useTheme, type Theme } from "@/hooks/useTheme";
-import { STEPS, WHO, WORKFLOW_STEPS } from "@/lib/steps";
-import { SHOTS, frameAt, shotSrc, stillFrame, type Frame } from "@/lib/showcase";
+import { STEP_OF_CHAPTER, STEPS, WHO, WORKFLOW_STEPS } from "@/lib/steps";
+import { CHAPTERS, SHOTS, frameAt, shotSrc, stillFrame, type Frame } from "@/lib/showcase";
 import { ShowcasePlayer } from "@/lib/showcase-player";
+
+/** The workflow step a showcase chapter belongs to (the pull request counts after the last). */
+const stepOfChapter = (chapter: number) => {
+  const k = WORKFLOW_STEPS.findIndex((s) => s.id === STEP_OF_CHAPTER[CHAPTERS[chapter]?.id ?? ""]);
+  return k === -1 ? WORKFLOW_STEPS.length - 1 : k;
+};
+/** The first chapter of a workflow step. */
+const chapterOfStep = (step: number) => Math.max(0, CHAPTERS.findIndex((c) => STEP_OF_CHAPTER[c.id] === WORKFLOW_STEPS[step]?.id));
 
 /** The App demo on this site: the billing task from request to merged pull request, with a guide. */
 export const LIVE_DEMO = "/app-demo/?story&guide";
 
 /** What the hero picture shows, for screen readers; the phone picture is its question card alone. */
-const SHOT_ALT = "QualityLayer’s App walking through the seven steps of the usage-based billing example, from the first question to the pull request.";
+const SHOT_ALT = "QualityLayer’s App walking through Plan, Implement and Verify for the usage-based billing example, from the first question to the pull request.";
 
 /** Above this width the showcase plays; a phone keeps the still question card. */
 const WIDE = "(min-width: 641px)";
@@ -83,14 +91,14 @@ function Stage({ player, theme }: { player: ShowcasePlayer; theme: Theme }) {
   );
 }
 
-/** Under the enlarged stage: who acts in the step playing and what it does, the pull request after Review. */
+/** Under the enlarged stage: who acts in the step playing and what it does, the pull request after Verify. */
 function Caption({ player }: { player: ShowcasePlayer }) {
   const line = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     let shown = "";
     return player.attach((tick) => {
       const id = tick.still === null ? frameAt(tick.time).caption : stillFrame(tick.still).caption;
-      const step = STEPS.find((s) => s.id === id);
+      const step = STEPS.find((s) => s.id === STEP_OF_CHAPTER[id]);
       if (!step || !line.current || id === shown) return;
       shown = id;
       line.current.dataset.who = step.who;
@@ -116,7 +124,7 @@ function ShowcaseCard({ player, theme, step, open, onOpenChange, opener }: { pla
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-modal="true" className="hs-card" showCloseButton={false} onCloseAutoFocus={(event) => { event.preventDefault(); opener.current?.focus(); }}>
         <div className="hs-card-head">
-          <DialogTitle>The seven steps in the App</DialogTitle>
+          <DialogTitle>The three steps in the App</DialogTitle>
           <Button asChild size="xl"><a href={LIVE_DEMO}><SquarePlay size={18} aria-hidden="true" />Try it yourself<ArrowRight size={16} aria-hidden="true" /></a></Button>
           <DialogClose asChild><Button type="button" variant="outline" size="xl" aria-label="Close the walkthrough"><X size={18} aria-hidden="true" />Close</Button></DialogClose>
         </div>
@@ -130,7 +138,7 @@ function ShowcaseCard({ player, theme, step, open, onOpenChange, opener }: { pla
             const Glyph = STEP_ICONS[id];
             return (
               <li key={id}>
-                <button type="button" data-who={who} aria-current={step === i ? "step" : undefined} onClick={() => player.seek(i)}>
+                <button type="button" data-who={who} aria-current={step === i ? "step" : undefined} onClick={() => player.seek(chapterOfStep(i))}>
                   <Glyph size={16} strokeWidth={1.8} aria-hidden="true" />{name}
                 </button>
               </li>
@@ -167,8 +175,12 @@ function useClock(player: ShowcasePlayer, { live, line, stage, onStep, onStop }:
     const list = line.current;
     let current = -1;
     const unfollow = player.follow((s, progress) => {
-      list?.style.setProperty("--hs-p", progress.toFixed(4));
-      if (s !== current) { current = s; follow.current.onStep(s); }
+      // The line runs from the first station to the last: the step playing, and how far into its chapters.
+      const k = stepOfChapter(s);
+      const own = CHAPTERS.map((_, i) => i).filter((i) => stepOfChapter(i) === k);
+      const within = (own.indexOf(s) + Math.max(0, progress * (CHAPTERS.length - 1) - s)) / Math.max(1, own.length);
+      list?.style.setProperty("--hs-p", Math.min(1, (k + within) / (WORKFLOW_STEPS.length - 1)).toFixed(4));
+      if (k !== current) { current = k; follow.current.onStep(k); }
     });
     player.start(window.matchMedia(REDUCED).matches);
     const seen = new IntersectionObserver(([e]) => { if (e.isIntersecting) player.viewers.add("hero"); else player.viewers.delete("hero"); }, { threshold: 0.15 });
@@ -179,7 +191,7 @@ function useClock(player: ShowcasePlayer, { live, line, stage, onStep, onStop }:
 }
 
 /**
- * The hero picture: the App on its real captures, playing the seven steps with a camera, a cursor
+ * The hero picture: the App on its real captures, playing the three steps with a camera, a cursor
  * and highlights. Clicking it opens the same walkthrough larger in a card. The stations below
  * follow it through `onStep` and the `--hs-p` progress on their list. A phone keeps the still
  * picture, which opens the App demo.
@@ -210,7 +222,7 @@ export function HeroShowcase({ ref, line, onStep }: { ref?: Ref<ShowcaseHandle>;
   useImperativeHandle(ref, () => ({
     seek(i) {
       if (!live) return false;
-      player.seek(i);
+      player.seek(chapterOfStep(i));
       return true;
     },
   }), [live, player]);
@@ -218,7 +230,7 @@ export function HeroShowcase({ ref, line, onStep }: { ref?: Ref<ShowcaseHandle>;
   return (
     <div className="sx-pic" data-hs={live ? "" : undefined}>
       <a className="sx-live" href={LIVE_DEMO} ref={opener}
-        aria-label={live ? "Watch the seven steps larger" : "Try the App in your browser: the usage-based billing example, nothing to install"}
+        aria-label={live ? "Watch the three steps larger" : "Try the App in your browser: the usage-based billing example, nothing to install"}
         onClick={(event) => { if (live) { event.preventDefault(); setOpen(true); } }}>
         <div className="hs-stage" ref={stage}>
           <div className="hs-win">

@@ -14,7 +14,10 @@
   filter), then commit with `.github/scripts/commit-serial.sh -F <message-file>`
   (same arguments as `git commit`; it runs commits one at a time because
   `git commit -F` goes through the shared `.git/COMMIT_EDITMSG`, so overlapping
-  commits swapped messages). Afterwards bring your own paths in the shared index up
+  commits swapped messages). It refuses a private index when HEAD moved while
+  it waited (rebuild the index on the new HEAD and retry) and, if HEAD does not
+  carry your message, exits non-zero with a receipt in `.git/` instead of
+  amending. Afterwards bring your own paths in the shared index up
   to the new commit with `.github/scripts/refresh-shared-index.sh <paths>`;
   otherwise it keeps their old blobs and the next commit from it reverts
   yours. The script sets all paths in one `git update-index --index-info`

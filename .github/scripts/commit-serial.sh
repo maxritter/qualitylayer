@@ -5,84 +5,110 @@
 #
 # `git commit -F` first copies the message into the single shared .git/COMMIT_EDITMSG and reads it
 # back after the hooks, so two overlapping commits (each with its own GIT_INDEX_FILE) can swap
-# messages (11 November 2026). This takes a lock around the whole commit. No flock on macOS, so the
-# lock is an atomic `mkdir` under the git dir whose `owner` file holds "<pid> <start epoch>".
-# A lock is stale when its owner pid is dead or it is older than 10 minutes; it is then taken over.
+# messages (11 November 2026). This holds one lock around the whole commit:
+#   1. `flock`, if installed (Linux);  2. Python's fcntl.flock via `/usr/bin/python3 -I` (macOS);
+#   3. otherwise an atomic `mkdir` lock whose `owner` file holds "<pid> <start epoch>".
+# The advisory locks (1, 2) are released by the OS when the process dies, so they never go stale.
+# The mkdir lock is taken over only when its owner pid is dead; a live owner is waited for, however
+# old (we cannot tell a slow commit from a safe one). Waits up to 5 minutes, printing the holder.
 # Hooks always run (no --no-verify). GIT_INDEX_FILE and every argument pass through to git.
-# After the commit, HEAD's message must equal the -F file; if not, and HEAD is still the new
-# commit, only the message is amended (inside the lock).
+# HEAD is recorded before waiting: with a private index, a HEAD that moved meanwhile makes the index
+# stale, so the commit is refused. After the commit, HEAD's message must equal the -F file; if not
+# (another writer's commit got there), a receipt is written and the exit is non-zero. No amend.
 set -u
 
-max_age=600    # seconds before a lock counts as stale
-max_wait=300   # seconds to wait for the lock
+max_wait=300 # seconds to wait for the lock
+gitdir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+flockfile="$gitdir/commit-serial.flock" # advisory lock file; holds "<pid> <start epoch>"
+lockdir="$gitdir/commit-serial.lock"    # mkdir fallback
 
-lock="$(cd "$(git rev-parse --git-common-dir)" && pwd)/commit-serial.lock"
+# Stage 1 (not yet locked): remember HEAD, then re-enter under the Python lock if that is the choice.
+if [ -z "${COMMIT_SERIAL_HEAD_BEFORE:-}" ]; then
+  export COMMIT_SERIAL_HEAD_BEFORE
+  COMMIT_SERIAL_HEAD_BEFORE=$(git rev-parse -q --verify HEAD || echo none)
+  if ! command -v flock >/dev/null 2>&1 && /usr/bin/python3 -I -c pass 2>/dev/null; then
+    exec /usr/bin/python3 -I -c '
+import fcntl, os, sys, time
+path, wait, argv = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+end, n = time.time() + wait, 0
+while True:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        break
+    except OSError:
+        if time.time() >= end:
+            sys.exit("commit-serial: gave up after %ds waiting for the lock" % wait)
+        if n % 10 == 0:  # every ~2s
+            holder = os.pread(fd, 100, 0).decode().strip()
+            print("commit-serial: waiting for lock held by (pid, start) %s" % (holder or "?"), file=sys.stderr)
+        n += 1
+        time.sleep(0.2)
+os.set_inheritable(fd, True)  # the lock lives as long as this open file stays open in the commit
+os.execv(argv[0], argv)
+' "$flockfile" "$max_wait" "$BASH" "$0" "$@"
+  fi
+  held=""
+else
+  held=1 # re-entered by the Python locker above: the lock is already ours
+fi
+
+now() { date +%s; }
 mypid=$$
 
-# Read the owner of the current lock: sets owner_pid and owner_start ("" when not written yet).
-read_owner() {
-  owner_pid="" owner_start=""
-  read -r owner_pid owner_start <"$lock/owner" 2>/dev/null || true
-  if [ -z "$owner_start" ]; then
-    # mkdir done, owner file not written yet (or unreadable): age by the directory's mtime.
-    owner_start=$(stat -f %m "$lock" 2>/dev/null || date +%s)
-  fi
-}
-
-# Is the lock we just read stale?
-is_stale() {
-  [ $(($(date +%s) - owner_start)) -gt "$max_age" ] && return 0
-  [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null && return 0
-  return 1
-}
-
-release() {
-  # Only remove a lock that is still ours.
-  read_owner
-  [ "$owner_pid" = "$mypid" ] && rm -rf "$lock"
-}
-
-acquire() {
-  local began delay=0.2 trash
-  began=$(date +%s)
-  until mkdir "$lock" 2>/dev/null; do
-    read_owner
-    if is_stale; then
-      echo "commit-serial: taking over stale lock (pid ${owner_pid:-?}, started $(date -r "$owner_start" +%T))" >&2
-      # mv is atomic: of several sessions taking over, one wins. Check we moved the stale lock
-      # and not a fresh one that appeared in between; if so, put it back.
-      trash="$lock.stale.$mypid"
-      if mv "$lock" "$trash" 2>/dev/null; then
-        read -r p _ <"$trash/owner" 2>/dev/null
-        if [ "${p:-}" != "$owner_pid" ] && [ -n "$owner_pid" ]; then
-          [ -e "$lock" ] || mv "$trash" "$lock" 2>/dev/null
+if [ -z "$held" ]; then
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>>"$flockfile"
+    waited=0
+    until flock -n 9; do
+      [ "$waited" -ge "$max_wait" ] && { echo "commit-serial: gave up after ${max_wait}s" >&2; exit 1; }
+      echo "commit-serial: waiting for lock held by (pid, start) $(cat "$flockfile" 2>/dev/null)" >&2
+      sleep 2
+      waited=$((waited + 2))
+    done
+  else
+    # mkdir fallback: take over only a lock whose owner pid is dead.
+    began=$(now)
+    until mkdir "$lockdir" 2>/dev/null; do
+      read -r opid ostart <"$lockdir/owner" 2>/dev/null || true
+      age=$(($(now) - ${ostart:-$(stat -f %m "$lockdir" 2>/dev/null || now)}))
+      # No owner file after 60s: its creator died between mkdir and writing it.
+      if { [ -n "${opid:-}" ] && ! kill -0 "$opid" 2>/dev/null; } || { [ -z "${opid:-}" ] && [ "$age" -gt 60 ]; }; then
+        echo "commit-serial: taking over lock of dead pid ${opid:-?}" >&2
+        trash="$lockdir.dead.$mypid"
+        # mv is atomic, so one taker wins; put it back if we moved a fresh lock by mistake.
+        if mv "$lockdir" "$trash" 2>/dev/null; then
+          read -r p _ <"$trash/owner" 2>/dev/null
+          [ "${p:-}" = "${opid:-}" ] || { [ -e "$lockdir" ] || mv "$trash" "$lockdir" 2>/dev/null; }
+          rm -rf "$trash"
         fi
-        rm -rf "$trash"
+        continue
       fi
-      continue
-    fi
-    if [ $(($(date +%s) - began)) -ge "$max_wait" ]; then
-      echo "commit-serial: gave up after ${max_wait}s; lock held by pid ${owner_pid:-?}" >&2
-      exit 1
-    fi
-    echo "commit-serial: waiting for pid ${owner_pid:-?} (running $(($(date +%s) - owner_start))s)" >&2
-    sleep "$delay"
-    # Backoff: 0.2s growing to 2s.
-    case "$delay" in 0.2) delay=0.5 ;; 0.5) delay=1 ;; 1) delay=2 ;; esac
-  done
-  printf '%s %s\n' "$mypid" "$(date +%s)" >"$lock/owner"
-}
-
-head_before=$(git rev-parse -q --verify HEAD || echo none)
-acquire
-trap release EXIT
-# A private index prepared before the wait is based on the old HEAD; the commit would revert
-# whatever landed meanwhile. Not blocked (the agent decides), but said out loud.
-if [ "$(git rev-parse -q --verify HEAD || echo none)" != "$head_before" ]; then
-  echo "commit-serial: WARNING HEAD moved while waiting; check the private index is based on it" >&2
+      [ $(($(now) - began)) -ge "$max_wait" ] && { echo "commit-serial: gave up after ${max_wait}s" >&2; exit 1; }
+      echo "commit-serial: waiting for live pid ${opid:-?} (held ${age}s; a live owner is never taken over)" >&2
+      sleep 2
+    done
+    release() { read -r p _ <"$lockdir/owner" 2>/dev/null; [ "${p:-}" = "$mypid" ] && rm -rf "$lockdir"; }
+    trap release EXIT
+  fi
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 fi
-trap 'exit 130' INT
-trap 'exit 143' TERM
+
+# Locked. Record ourselves as the holder (for the others' "waiting" notes).
+if [ -n "$held" ] || command -v flock >/dev/null 2>&1; then
+  printf '%s %s\n' "$mypid" "$(now)" >"$flockfile"
+else
+  printf '%s %s\n' "$mypid" "$(now)" >"$lockdir/owner"
+fi
+
+# A private index prepared before the wait is based on the old HEAD: committing it would revert what
+# landed meanwhile. Refuse; the agent rebuilds the index on the new HEAD and retries.
+head_now=$(git rev-parse -q --verify HEAD || echo none)
+if [ -n "${GIT_INDEX_FILE:-}" ] && [ "$head_now" != "$COMMIT_SERIAL_HEAD_BEFORE" ]; then
+  echo "commit-serial: HEAD moved from $COMMIT_SERIAL_HEAD_BEFORE to $head_now; rebuild your private index on the new HEAD (docs/agents/operations.md) and retry." >&2
+  exit 1
+fi
 
 # The message file given with -F / --file, if any.
 msgfile=""
@@ -101,15 +127,21 @@ status=$?
 [ -n "$msgfile" ] && [ -f "$msgfile" ] || exit 0
 
 # Did HEAD get the intended message? (git strips trailing blanks; stripspace does the same.)
-new=$(git rev-parse HEAD)
+head=$(git rev-parse HEAD)
 want=$(git stripspace <"$msgfile")
-got=$(git log -1 --format=%B "$new")
+got=$(git log -1 --format=%B "$head")
 if [ "$want" != "$got" ]; then
-  echo "commit-serial: HEAD $new has the wrong message; amending the message only" >&2
-  if [ "$(git rev-parse HEAD)" = "$new" ]; then
-    git commit --amend --no-edit -F "$msgfile" || exit $?
-  else
-    echo "commit-serial: HEAD moved; not amending. Fix the message by hand." >&2
-    exit 1
-  fi
+  # HEAD may be another writer's commit: change no history, leave a receipt.
+  receipt="$gitdir/commit-serial-mismatch-$(now).txt"
+  {
+    echo "commit-serial: HEAD does not carry the intended message; nothing was amended."
+    echo "HEAD:    $head"
+    echo "subject: $(git log -1 --format=%s "$head")"
+    echo "files in HEAD:"
+    git show --name-only --format= "$head" | sed 's/^/  /'
+    echo "expected message ($msgfile):"
+    printf '%s\n' "$want" | sed 's/^/  /'
+  } 2>&1 | tee "$receipt" >&2
+  echo "receipt: $receipt" >&2
+  exit 1
 fi

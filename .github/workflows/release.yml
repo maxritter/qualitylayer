@@ -332,7 +332,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       - name: Install dependencies
         working-directory: qualitylayer
@@ -416,7 +416,7 @@ jobs:
         run: bash .github/workflows/scripts/setup-git-crypt.sh
       - if: inputs.operation != 'promote'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.4" }
       - name: Select an unpublished stage or exact promotion version
         id: check
         env:
@@ -538,7 +538,7 @@ jobs:
       - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
         run: bash .github/workflows/scripts/setup-git-crypt.sh
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.4" }
       - name: Read the bounded exact run and artifact identities
         env:
           GH_TOKEN: ${{ github.token }}
@@ -661,7 +661,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       - name: Install dependencies
         working-directory: qualitylayer

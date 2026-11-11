@@ -103,7 +103,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       # One filter process instead of git-crypt's one process per file under msys2 (about 20
       # minutes there, about one here), as qualitylayer-ci.yml unlocks its Windows shards.
@@ -307,7 +307,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: "1.4.2"
+          bun-version: "1.4.4"
 
       # One filter process instead of git-crypt's one process per file under msys2.
       - name: Unlock repository

@@ -30,7 +30,7 @@ Ask in plain language; your agent picks the skill.
 | --- | --- |
 | `ql-workflow` | Plan, build, verify and review a change. The only skill that starts a task |
 | `ql-artifact` | Mockups, diagrams and clickable pages ([Artifacts](../artifacts.md)) |
-| `ql-manage` | Tasks, [memory](../memory.md), sharing, settings and setup |
+| `ql-manage` | Tasks, [memory](../memory.md), settings and setup |
 | `ql-peer` | Let sessions of any of these agents review each other or hand over a task ([session messaging](../reference/commands.md#session-messaging)) |
 | `ql-quality` | Code complexity, structure and duplication ([Code health](../reference/code-health.md)) |
 | `ql-chat` | A [Chat](../chat.md) without workflow steps |

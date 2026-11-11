@@ -6,7 +6,7 @@ export const PUBLIC_PAGES = {
   "/": { title: "QualityLayer | Plan, build and review with coding agents", description: SHARE_DESCRIPTION },
   "/pricing": {
     title: "Pricing | QualityLayer",
-    description: "QualityLayer plans for solo developers, teams and companies, with unlimited tasks, repositories and agents.",
+    description: "QualityLayer Individual, Business and Enterprise plans, with unlimited tasks, repositories and agents.",
   },
   "/inside": {
     title: "Inside QualityLayer: an AI software factory with humans in the loop",
@@ -14,7 +14,7 @@ export const PUBLIC_PAGES = {
   },
   "/download": {
     title: "Download QualityLayer for macOS, Windows and Linux",
-    description: "Download QualityLayer for macOS, Windows and Linux. Plan and review changes with Claude Code, Codex and your team.",
+    description: "Download QualityLayer for macOS, Windows and Linux. Plan and review changes with your supported coding agents on your own machines.",
   },
   "/compare": {
     title: "Compare QualityLayer with spec tools and coding agents",
@@ -110,7 +110,7 @@ export const PUBLIC_PAGES = {
   },
   "/terms": {
     title: "Terms of service | QualityLayer",
-    description: "The terms for qualitylayer.dev, the QualityLayer App and the team service.",
+    description: "The terms for qualitylayer.dev, the QualityLayer App and its ancillary services.",
   },
 } as const;
 

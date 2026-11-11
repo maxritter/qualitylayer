@@ -18,7 +18,7 @@ Review opens once Verify has passed every point, so everything on the page is fi
 | Part | What you read |
 | --- | --- |
 | **Why** | A one-sentence refresher of the request |
-| **Code** | The complete change, with line comments and where to start reading |
+| **Code** | The complete change, where to start reading and contextual requests about any line |
 | **What changed** | The change in diagrams, in tabs |
 | **Screens** | The designs you approved beside what was built |
 | **Acceptance test** | The Plan's test as a row per **Done means** point, opening to its steps with their picture or output, and a mark for whether it ran as a script or in a real agent session; each passed row carries a check |
@@ -33,20 +33,12 @@ Code review leads the page. The diagrams, screens and acceptance test follow for
 
 ## Read the code {#code}
 
-![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-light.webp)
-![The separate code review workspace with changed files by slice and a split diff, a teammate's question on its line](pathname:///img/app/review-code-dark.webp)
 
 **Review the code** opens the file tree and **Unified / Split** diff. **Viewed** saves reading progress; **All viewed** and **Clear** apply to every file.
 
-### Comment on any line {#line-comments}
+### Ask about any line {#line-comments}
 
-Use a line's **+** and pick the kind:
-
-| Kind | What happens |
-| --- | --- |
-| **Ask** | Sent at once. Your agent answers in the thread without changing any code |
-| **Change** | Goes to your agent with your decision. It makes the change test first |
-| **Replace with** | A change that carries the exact lines. Your agent applies them as written |
+Select a line and choose **Ask agent**. Conversation opens with its file, revision and selected context in an editable draft. Write your request and send it through your agent's native input, or use the explicit terminal handoff. The request never approves the change or authorizes a push.
 
 ### Findings from the agents {#findings}
 
@@ -54,15 +46,7 @@ Security and second opinion findings appear on their lines. Request a change or 
 
 ### Ask another reviewer {#another-reviewer}
 
-**Ask another reviewer** chooses an installed agent that did not build the change. It reviews one file or all files, reads the task documents, edits nothing and stops after 8 minutes. Findings and cost appear in the threads.
-
-### Approve with open comments {#open-comments}
-
-Open comments neither block approval nor go to your agent. Opening the pull request posts them as one GitHub review; **Replace with** becomes an applicable suggestion.
-
-### Review with your team {#team-review}
-
-**Ask for review** shows the remote and commits before you confirm the push. Teammates with a checkout can comment on lines; others see the page and file names ([sharing details](../team/plans.md#privacy)).
+**Ask another reviewer** chooses an installed agent that did not build the change. It reviews one file or all files, reads the task documents, edits nothing and stops after 8 minutes. Findings and cost remain in the local review record.
 
 ## Approve {#approve}
 
@@ -74,8 +58,8 @@ Approve the whole change in the page header, including when its agent has stoppe
 | **Approve and create PR** | Pushes the task's branch and opens the pull request. Needs `gh` |
 | **Copy the git commands** | Run them in your terminal |
 
-![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-light.svg)
-![Review comments let you ask a question or request a change before final approval](pathname:///img/diagrams/comments-dark.svg)
+![Ask agent prepares an editable contextual draft; sending and approval remain separate](pathname:///img/diagrams/comments-light.svg)
+![Ask agent prepares an editable contextual draft; sending and approval remain separate](pathname:///img/diagrams/comments-dark.svg)
 
 ### After you approve {#after-approve}
 

@@ -43,7 +43,7 @@ Results depend on the model: it has to call tools reliably over many turns.
 
 The prompt asks the agent to run `qualitylayer next --json`, follow the reply and read the files it names, until the reply says done or stop.
 
-To keep working after a question, run `qualitylayer wait --until-event` in the background. It returns on an answer, comment, review result or finished check, or after 30 minutes.
+To keep working after a question, run `qualitylayer wait --until-event` in the background. It returns on an answer, review result or finished check, or after 30 minutes.
 
 Checks run on a clean copy of the commit, without `.venv` or `node_modules`. Use `$QL_REPO_ROOT` to reach your folder, for example `"$QL_REPO_ROOT/.venv/bin/python" -m pytest`.
 

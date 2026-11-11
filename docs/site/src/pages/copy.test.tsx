@@ -62,10 +62,10 @@ describe("the site's copy", () => {
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");
     expect(intro).toContain('href="/docs/chat"');
     const guide = readFileSync(new URL("../../../docusaurus/docs/chat.md", import.meta.url), "utf8");
-    expect(guide).toContain("direct conversation with **Claude Code or Codex**");
+    expect(guide).toContain("direct conversation with **any supported coding agent**");
     expect(guide).toContain("Supported questions appear above the composer");
     expect(guide).toContain("Outside Codex sessions are read-only here; answer in Codex's terminal");
-    expect(guide).toMatch(/Chat does not (?:have|support) team sharing/);
+    expect(guide).toContain("Chat stays on your own machine");
     expect(guide).toContain("You approve the workflow Plan before later implementation");
   });
 
@@ -83,9 +83,9 @@ describe("the site's copy", () => {
     expect(home).toContain("An engineer who uses QualityLayer");
   });
 
-  it("explains solo and team use in the FAQ", () => {
-    const answer = FAQS.find(({ question }) => question === "Can I use it on my own, or only with a team?")?.answer;
-    expect(answer).toMatch(/Both/);
-    expect(answer).toContain("Team plan");
+  it("explains local product and Business purchasing in the FAQ", () => {
+    const answer = FAQS.find(({ question }) => question === "What do Business and Enterprise add?")?.answer;
+    expect(answer).toContain("same complete local");
+    expect(answer).toContain("centralized seats and billing");
   });
 });

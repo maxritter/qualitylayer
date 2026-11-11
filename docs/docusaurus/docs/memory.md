@@ -46,13 +46,19 @@ In **Settings › Memory**, search, edit or retire lessons, and pin up to five p
 
 Lessons and the search model stay on your computer; no lesson goes to an embedding service. A lesson given to your agent becomes part of its context, and a cloud agent may send that context to its provider. Known native agent and session attribution stays local when a lesson is shared through Git.
 
-## Share lessons through Git
+## Export project lessons to Git
 
-1. In **Manage projects**, turn sharing on for a repository (off by default, this computer only).
-2. Eligible lessons are written to `.qualitylayer/memories/` with a readable `LESSONS.md`. They can include lessons without recorded passing checks.
-3. Review, commit and push them yourself. Memory exchange never commits or pushes.
+1. In **Manage projects**, enable **Store project lessons in Git** for the repository. It is off by default and applies to this computer.
+2. **Export** writes eligible project lessons to `docs/memories/` with a readable `LESSONS.md`, beside `docs/plans/` and `docs/artifacts/`. The local store remains authoritative. A repository that still has `.qualitylayer/memories/` gets its files moved on the next export; you commit the move.
+3. Review the files, then commit and push them yourself. QualityLayer never commits, pushes or pulls for memory.
 
-Lessons about you, new task answers and Pilot imports stay private. Task answers already shared through Git stay there. A filter catches credentials, emails, home paths and transcripts, but review the files anyway: anyone who can read the repository can read them. Turning sharing off stops exchange; committed files stay.
+Anyone who can read the repository can read exported lessons. Personal preferences, credentials, private task answers, Pilot imports and native session attribution stay outside the export. Review the files even though a privacy filter checks them. Turning export off leaves already committed files intact. Existing export consent and earlier eligible lessons keep their origin and provenance.
+
+## Import repository records
+
+Choose **Restore from repository** deliberately in the project where you want those records. The CLI calls this `memory import`. Repository content is untrusted evidence: inspect it and check it against current work. Search, startup and export never import records automatically. Importing from Git is separate from restoring a retired lesson in your local store.
+
+Stable lesson identities, revisions, retirement records and replacements survive export and import across your machines. Missing repository files never retire local lessons. If two machines edited the same revision differently, both candidates remain available; choose **Compare versions**, then **Use selected version** to reconcile explicitly before re-exporting. Re-export refuses to overwrite a conflicting repository revision.
 
 ## Import Pilot lessons
 
@@ -61,7 +67,7 @@ Import Pilot JSONL or Markdown into a chosen project. Imported lessons stay priv
 ## Command line
 
 <details>
-<summary>Search, save, pin and sync from your terminal</summary>
+<summary>Search, save, export and import from your terminal</summary>
 
 ```sh
 qualitylayer memory context "database migration locks" --json
@@ -69,7 +75,10 @@ qualitylayer memory store --title "Bound migration locks" --content "Keep migrat
 qualitylayer memory store --about you --title "Prefer concise replies" --content "Keep replies short unless I ask for detail." --json
 qualitylayer memory pin <id> --json
 qualitylayer memory share on --json
-qualitylayer memory sync --json
+qualitylayer memory export --json
+qualitylayer memory import --json
+qualitylayer memory conflicts --json
+qualitylayer memory reconcile <id> --revision <revision> --candidate local --json
 ```
 
 All commands: [reference](reference/commands.md#memory).

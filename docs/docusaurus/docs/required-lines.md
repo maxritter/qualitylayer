@@ -1,6 +1,6 @@
 ---
 title: Required lines
-description: Make a check, tool or skill part of a workflow step, for yourself or your whole team.
+description: Make a check, tool or skill part of a workflow step, for your projects.
 ---
 
 # Required lines
@@ -9,11 +9,11 @@ Make a check, tool or skill part of a step. Your agent records each outcome, inc
 
 <figure class="memory-flow" aria-label="How a required line is recorded">
   <ol>
-    <li><strong>Add a line</strong><span>A checkbox under a step's heading in your or your team's instructions.</span></li>
+    <li><strong>Add a line</strong><span>A checkbox under a step's heading in your instructions.</span></li>
     <li><strong>The agent does it</strong><span>Each reply in that step lists it first. The agent records it done or skipped.</span></li>
     <li><strong>Read the record</strong><span>The instruction record keeps each outcome. Skips remain recorded.</span></li>
   </ol>
-  <figcaption>Example: the team's Wiz scan runs in every teammate's Verify.</figcaption>
+  <figcaption>Example: a Wiz scan runs during Verify.</figcaption>
 </figure>
 
 ```md
@@ -31,7 +31,7 @@ Make a check, tool or skill part of a step. Your agent records each outcome, inc
 
 ## Add one
 
-- **App**: Settings › Workflow › **Your instructions** › **Steps**. The team's owner uses Settings › Team.
+- **App**: Settings › Workflow › **Your instructions** › **Steps**.
 - **Your agent**: “Make a Wiz scan required in Verify.”
 - **CLI**: `qualitylayer instructions add verify "<line>"`. See [Commands](reference/commands.md).
 
@@ -41,5 +41,4 @@ Make a check, tool or skill part of a step. Your agent records each outcome, inc
 - Your agent is reminded once when it leaves a step with unrecorded lines. Missing records never count as passing evidence.
 - Review lines are done before the final review opens. Put checks that must run under Verify.
 - Your agent resolves failed or unavailable checks before Review, asking a question when only you can settle them. Unrun checks stay unrun in the record.
-- Team lines come first, and teammates can't remove them. If a line cannot apply, your agent records the reason.
 - Commands and connectors use the logins already on your computer. QualityLayer stores no credentials.

@@ -8,8 +8,8 @@ const sidebars: SidebarsConfig = {
     { type: "category", label: "Workflow", collapsed: false, items: [
       "steps/discuss", "steps/research", "steps/plan", "steps/outline", "steps/implement", "steps/verify", "steps/review", "steps/pull-request",
     ] },
-    { type: "category", label: "App and team", collapsed: false, items: [
-      "app", "chat", "artifacts", "reference/code-health", "memory", "required-lines", "automations", "team/plans", "team/agents", "team/changes",
+    { type: "category", label: "App and projects", collapsed: false, items: [
+      "app", "chat", "artifacts", "reference/code-health", "memory", "required-lines", "automations",
     ] },
     { type: "category", label: "Reference", collapsed: false, items: [
       "reference/commands", "reference/settings", "reference/files", "reference/changelog",

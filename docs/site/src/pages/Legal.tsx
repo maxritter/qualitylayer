@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import Page from "@/components/Page";
 import SEO from "@/components/SEO";
-import { LEGAL_UPDATED, RETENTION_DAYS, SELLER } from "@/lib/legal";
+import { LEGAL_UPDATED, SELLER } from "@/lib/legal";
 import { CONTACT_EMAIL, GITHUB_URL } from "@/lib/product";
 import "@/styles/legal.css";
 
@@ -44,9 +44,9 @@ function Privacy() {
   return (
     <>
       <h1>Privacy policy</h1>
-      <Updated date={{ iso: "2026-10-31", label: "31 October 2026" }} />
+      <Updated date={{ iso: "2026-11-10", label: "10 November 2026" }} />
       <p className="lg-lead">
-        Your code, plans and task documents stay on your computer. Code your team reviews travels only to your own Git remote. QualityLayer receives only what you share with your team (a review comment can quote a few lines of code), a daily licence check, and reports you choose to send. What you share is encrypted on your computer first; we cannot read it.
+        QualityLayer keeps tasks, Chats, artifacts, memories and terminal history on machines you control. Your chosen coding agent may send context to its provider under your account and settings. We process licence and trial requests, billing, downloads, updates and reports you choose to send. Older clients may still use the retained services described below during migration.
       </p>
 
       <h2>Who is responsible</h2>
@@ -64,7 +64,7 @@ function Privacy() {
 
       <h2>Licence check and trial</h2>
       <p>
-        The App checks your licence once a day. It sends your licence key, the activation and a code for this computer to our API, which asks Polar, our licence provider (Art. 6 (1) (b)). For a free trial we keep a one-way hash of the computer's code, so each computer gets one trial (Art. 6 (1) (f)). The App sends no usage events.
+        The App checks your licence once a day. It sends your licence key, the activation and a code for this computer to our API, which asks Polar, our licence provider (Art. 6 (1) (b)). For a free trial we keep a one-way keyed hash of the computer’s code and its original trial dates to enforce one trial per computer (Art. 6 (1) (f)). Trial records have no automatic expiry, including after the trial ends. Upstash stores the replacement trial ledger. The App sends no usage events.
       </p>
 
       <h2>Buying and billing</h2>
@@ -72,12 +72,13 @@ function Privacy() {
         Polar Software, Inc. sells QualityLayer as merchant of record. It processes your payment, invoices and taxes as its own controller, under Polar's privacy policy. To sign you in to Billing, we e-mail you a one-time code through Resend, Inc. (USA); the code is kept for 10 minutes (Art. 6 (1) (b)).
       </p>
 
-      <h2>Sharing with your team</h2>
+      <h2>Retained services for older clients</h2>
+      <p>Current local-first clients do not upload task, Chat, artifact or memory content for hosted collaboration. Older clients can still use the services below during the transition. We retain the old-client service and Neon for at least 14 days after both replacement client and backend are available, and until affected users have migrated and the final valid workflow grants and cache allowances have cleared. Some old workflow grants can last 30 days. Retirement requires a separate resource review; elapsed time alone does not authorize deletion. Previously agreed retention and customer rights continue.</p>
       <p>
-        On a Team plan you can share tasks, plans, comments, artifacts and files. They are encrypted on your computer with your team's key, so we store only ciphertext. To route them we also store your team members' names and e-mail addresses from Polar, task names and steps, who asked whom, who read which version, and each computer's public key (Art. 6 (1) (b)).
+        Older Team clients can share tasks, plans, comments, artifacts and files. They are encrypted on your computer with your team's key, so we store only ciphertext. To route them we also store your team members' names and e-mail addresses from Polar, task names and steps, who asked whom, who read which version, and each computer's public key (Art. 6 (1) (b)).
       </p>
       <p>
-        Review code travels between your computer and your own Git remote. When you click Ask for review, QualityLayer pushes the task's branch to your team's Git remote, and teammates with access to it read the code there. We store your team's comments on lines of code, the short lines of code they quote (up to 300 characters each) and the repository, branch and commits they point to. All of it is encrypted on your computer with your team's key. Apart from those quoted lines, we never receive the code.
+        Review code travels between your computer and your own Git remote. When an older client uses Ask for review, QualityLayer pushes the task's branch to your team's Git remote, and teammates with access to it read the code there. We store your team's comments on lines of code, the short lines of code they quote (up to 300 characters each) and the repository, branch and commits they point to. All of it is encrypted on your computer with your team's key. Apart from those quoted lines, we never receive the code.
       </p>
       <table className="lg-table">
         <thead>
@@ -90,14 +91,14 @@ function Privacy() {
         </tbody>
       </table>
       <p>
-        A shared task stays until its owner stops sharing it. When a team's subscription ends, its data is deleted after {RETENTION_DAYS} days. Encrypted backups are kept in the EU for {RETENTION_DAYS} days.
+        Legacy task records and retained copies are assessed separately during migration and retirement. We do not promise automatic deletion after 30 days while the transition retention applies. Previously agreed deletion obligations and statutory access, deletion and restriction rights remain applicable; this transition does not suspend them. Contact us to exercise those rights.
       </p>
-      <h3>Share links</h3>
+      <h3>Older share links</h3>
       <p>A link's content is sealed with a key that sits after the # in the link and never reaches our server. Links and the comments on them end after 14 days.</p>
-      <h3>Slack and email</h3>
-      <p>If a team owner connects Slack, task titles, questions and participant names are sent to Slack Technologies (USA) to deliver messages. Email uses Resend (USA) to send these details to your seat address only when both you and the team owner enable it. A permanent bounce or spam complaint turns your email off. You can also turn it off in Settings or from any message. Queued text is encrypted and removed after 72 hours.</p>
+      <h3>Older-client Slack and email</h3>
+      <p>Collaboration notifications over Slack and email are stopped during this transition; pending collaboration notifications are not delivered. Previously enabled delivery sent task titles, questions and participant names through Slack Technologies (USA), or through Resend (USA) to the enabled seat address. Historical connection and notification records may remain while legacy lifecycle purges are frozen. An expiry timestamp alone does not establish that stored text has been physically deleted. The previously stated 72-hour deletion obligation remains applicable; the purge freeze does not extend it or suspend statutory access, deletion or restriction rights.</p>
 
-      <h2>Feedback reports</h2>
+      <h2>Product reports and private support</h2>
       <p>
         Report bug / idea publishes the title, description, system details and screenshots you approve as a public GitHub issue. Your account name and e-mail are not added automatically. We receive a private e-mail copy through Resend, with licence contact details when available.
       </p>
@@ -138,8 +139,8 @@ function Terms() {
 
       <h2>1. Who and what</h2>
       <p>
-        These terms cover qualitylayer.dev, the QualityLayer App and CLI, and the team service, offered by {SELLER.name} (see the <Link to="/imprint">imprint</Link>). The{" "}
-        <a href={`${GITHUB_URL}/blob/main/LICENSE`}>QualityLayer Software License Agreement</a> grants the licence to the software. Where the two differ, these terms apply to the team service and to liability.
+        These terms cover qualitylayer.dev, the QualityLayer App and CLI, and the ancillary services described here, offered by {SELLER.name} (see the <Link to="/imprint">imprint</Link>). The{" "}
+        <a href={`${GITHUB_URL}/blob/main/LICENSE`}>QualityLayer Software License Agreement</a> grants the licence to the software. These terms do not revoke or narrow rights already granted under an earlier licence or separately agreed contract. Individual agreements and mandatory law prevail where applicable.
       </p>
 
       <h2>2. Buying</h2>
@@ -149,27 +150,26 @@ function Terms() {
       <p>You can try QualityLayer for 7 days without paying, once per computer.</p>
 
       <h2>4. Subscription</h2>
-      <p>A subscription renews every month or year until you cancel it. You can cancel at any time in <Link to="/billing">Billing</Link>; it ends with the paid period. On a Team plan the team owner manages seats.</p>
+      <p>A subscription renews every month or year until you cancel it. You can cancel at any time in <Link to="/billing">Billing</Link>; it ends with the paid period. Business centralizes seats, billing and licence assignment. Existing contractual prices, currencies, seats, benefits, grants, keys, activations and access remain governed by their agreed terms.</p>
 
-      <h2>5. The team service</h2>
-      <p>
-        We run the team service with care but cannot promise it is always available; maintenance and faults can interrupt it. Shared content is encrypted with keys only your team's computers hold: if every computer of a team loses the key, we cannot recover the content. When a subscription ends, its team data is deleted after {RETENTION_DAYS} days.
-      </p>
-
-      <h2>6. Your part</h2>
+      <h2>5. The local product and services</h2>
+      <p>All plans include the same complete local Tasks, Chat and Artifacts product. Business adds centralized seats and billing, assignment and reassignment, priority support and priority feature requests. Priority means earlier consideration, without a delivery promise. Enterprise includes Business plus volume pricing, onboarding, invoicing arrangements and negotiated purchasing and support terms. The new offering includes no hosted collaboration, self-hosted team backend, SSO, private-source or complete-build grant. Existing granted rights, including an earlier Enterprise agreement, remain unaffected.</p>
+      <p>Your own machines, SSH connections and paired browsers remain under your control. Your coding agent uses its own provider and account. Licence, trial, billing, update, support and newsletter services are separate from local work. Maintenance or faults can interrupt these services; the applicable offline allowance remains unchanged. Older-client services remain during the migration described in the privacy policy, without an immediate-deletion promise.</p>
+      <h2>6. Your part and public source</h2>
       <ul>
-        <li>Keep your licence key to yourself and your team.</li>
-        <li>Share only content you may share, and use the service lawfully.</li>
-        <li>Do not attack, overload or work around the service's limits or licence checks.</li>
+        <li>Keep your licence key private and assign each seat to its authorized person.</li>
+        <li>Send only content you may disclose, and use the product and services lawfully.</li>
+        <li>Do not attack or overload services or bypass licence checks, subject to mandatory legal rights.</li>
       </ul>
+      <p>The source-available offering permits inspection and contributions to QualityLayer itself under its exact licence and contribution agreement. It is paid commercial software, with no free complete edition or automatic open-source conversion. The public checkout intentionally excludes private components needed for a complete build. Only Max Ritter produces complete official builds. Your own output remains yours; previously granted rights and mandatory law remain unaffected.</p>
 
       <h2>7. Liability</h2>
       <p>
-        We are liable without limit for intent and gross negligence, for injury to life, body or health, under the Product Liability Act and under any guarantee we give. For slight negligence we are liable only when we breach an obligation that makes the contract possible and on which you may rely, and only for the damage that was typical and foreseeable when the contract was made. Otherwise we are not liable for slight negligence. For lost data we are liable only for what restoring it from your own regular backups would have cost.
+        We are liable without limit for intent and gross negligence, for injury to life, body or health, under the Product Liability Act and under any guarantee we give. For slight negligence we are liable only when we breach an obligation that makes the contract possible and on which you may rely, and only for the damage that was typical and foreseeable when the contract was made. Otherwise we are not liable for slight negligence.
       </p>
 
       <h2>8. Changes to these terms</h2>
-      <p>We tell you by e-mail at least 30 days before a change takes effect. If you do not agree, you can cancel before then.</p>
+      <p>We notify you of proposed contractual changes at least 30 days in advance where applicable. Changes take effect only to the extent validly agreed; continued use alone does not retroactively remove an existing right. Individual agreements and mandatory consumer rights remain unaffected.</p>
 
       <h2>9. Law and courts</h2>
       <p>

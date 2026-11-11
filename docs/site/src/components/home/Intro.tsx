@@ -1,6 +1,6 @@
 /** After the hero: the agents QualityLayer works with, the models you already pay for, the skills it adds to them, what it adds, people's words, and where it runs. */
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, MessageCircle, Palette, ShieldCheck, SquareTerminal, Users, Workflow } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, MessageCircle, Palette, ShieldCheck, SquareTerminal, Workflow } from "lucide-react";
 import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
 import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
@@ -42,7 +42,7 @@ const SETUPS: Chip[] = [
 /** Each card in the App's colours: blue for the agent's work, amber for your decision, violet for what agents checked. */
 const PRINCIPLES: { who: "agent" | "you" | "check"; icon: LucideIcon; title: string; lead: string; text: string }[] = [
   { who: "agent", icon: SquareTerminal, title: "Your agent", lead: "The tools you already use", text: "Claude Code, Codex, Cursor and more." },
-  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Comment on diagrams and clickable mockups." },
+  { who: "you", icon: Workflow, title: "One plan", lead: "Approved by you before any code", text: "Ask about diagrams and clickable mockups." },
   { who: "check", icon: BadgeCheck, title: "Proof", lead: "Independent review", text: "A separate agent checks the result against your plan." },
 ];
 
@@ -60,7 +60,7 @@ const SKILLS: { icon: LucideIcon; title: string; ask: string }[] = [
   { icon: MessageCircle, title: "Chat", ask: "Using QualityLayer, chat about the billing refactor." },
   { icon: Palette, title: "Designs", ask: "Open the settings design in my browser." },
   { icon: ShieldCheck, title: "Security", ask: "Scan this repository for leaked secrets." },
-  { icon: Users, title: "Sharing", ask: "Share this task with my team." },
+  { icon: Laptop, title: "Tasks and settings", ask: "Show my open tasks."},
 ];
 
 type Line = { kind: "you" | "did"; text: string } | { kind: "msg"; from: NativeAgent; label: string; verdict?: string; text: string };

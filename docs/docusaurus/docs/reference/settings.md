@@ -1,6 +1,6 @@
 ---
 title: Settings
-description: Configure your workflow, agents, usage, sharing and updates.
+description: Configure your workflow, agents, memory, usage and updates.
 ---
 
 Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for this computer.
@@ -25,7 +25,7 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 
 ### Your instructions {#instructions}
 
-Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, helpers and reviewers read it each step; documents never copy it. Headings such as `## Plan` and `## Implement` limit lines to that step; checkboxes (`- [ ]`) are [required lines](../required-lines.md). [Team instructions](#team-instructions) win conflicts. Instructions cannot approve a gate.
+Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, helpers and reviewers read it each step; documents never copy it. Headings such as `## Plan` and `## Implement` limit lines to that step; checkboxes (`- [ ]`) are [required lines](../required-lines.md). Instructions cannot approve a gate.
 
 ### Independent review {#independent-review}
 
@@ -127,9 +127,9 @@ A machine keeps working while this computer sleeps and reconnects by itself. **s
 
 ## Notifications {#notifications}
 
-**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound. **Open Feedback automatically** shows incoming questions and replies.
+**Tell me when a task needs me** enables system notifications; **Play a sound with it** adds sound.
 
-**Away from this computer** controls Slack, email and the morning digest. Email uses your seat address when the team owner enables it and Slack cannot reach you ([routing](../team/plans.md#slack)).
+Use your own connected machine or paired browser to return to your work away from this computer.
 
 ## Git and editor {#git-and-editor}
 
@@ -153,25 +153,12 @@ Send task events to a URL or a command. A browser that may only watch cannot cha
 
 ## Memory {#memory}
 
-Pause, search or retire lessons, including **Yours**, the lessons about you. **Manage projects** turns Git sharing on per repository ([Project memory](../memory.md)).
+Pause, search or retire lessons, including **Yours**, the lessons about you. **Manage projects** controls optional Git export per repository ([Project memory](../memory.md)).
 
 ## Licence
 
-Your plan or trial, and **Open billing account**. To use a key you bought, choose **Enter key…** (during the trial too) and paste it from your billing account; Setup offers the same field. From a terminal, run `qualitylayer licence activate <key>`; on Windows before the command is set up, run `& "$env:LOCALAPPDATA\QualityLayer\qualitylayer-cli.exe" licence activate <key>` in PowerShell. Each licence key works on 5 computers, [machines](#machines) included; on Team, every seat has its own key. **On another computer** shows how to move the licence. When all 5 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
+Your plan or trial, and **Open billing account**. To use a key you bought, choose **Enter key…** (during the trial too) and paste it from your billing account; Setup offers the same field. From a terminal, run `qualitylayer licence activate <key>`; on Windows before the command is set up, run `& "$env:LOCALAPPDATA\QualityLayer\qualitylayer-cli.exe" licence activate <key>` in PowerShell. Each licence key works on 5 computers, [machines](#machines) included; on Business, every assigned seat has its own key. **On another computer** shows how to move the licence. When all 5 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
 
-## Team
-
-| Part | What it holds |
-| --- | --- |
-| **People and groups** | Seats and members; lists over 10 add name or email search, an **Owner** / **Member** filter and pages of 10. Invited members and **Waiting for the team key** badges stay listed. Groups limit who sees a shared task |
-| [Team instructions](#team-instructions) | Instructions for every teammate's agent |
-| **Slack** | Workspace connection and your own Slack account; **Slack messages** is in Notifications ([Slack and email](../team/plans.md#slack)) |
-| **Email** | Turns email on for the team and shows how each teammate is reached |
-| **Shared links** | **Copy** and **Revoke** |
-
-### Team instructions {#team-instructions}
-
-The owner writes them; they reach every teammate's agent before the teammate's own and win on conflict. Teammates read them with **View**. They are encrypted with the team's key and kept locally, so they apply offline. Teammates can't remove their [required lines](../required-lines.md).
 
 ## About
 

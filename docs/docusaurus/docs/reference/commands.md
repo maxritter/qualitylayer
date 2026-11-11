@@ -13,8 +13,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | --- | --- |
 | “Using QualityLayer, plan a CSV export” | Starts a task at [Discuss](../steps/discuss.md) |
 | “Using QL, implement the approved plan for task retry-webhooks” | Builds an approved Plan ([Implement](../steps/implement.md#start-implement)) |
-| “Using QL, review task retry-webhooks” | Works through [team](../team/changes.md) or [pull request](../steps/pull-request.md) review threads |
-| “Using QL, answer the team ask a1” | Answers a teammate's question ([Teammates' agents](../team/agents.md)) |
+| “Using QL, review task retry-webhooks” | Reviews the result or follows [pull request](../steps/pull-request.md) review threads |
 | “Open the current QualityLayer artifact in my browser at Billing” | Opens that artifact page and section |
 
 ## Existing plans {#existing-plans}
@@ -23,7 +22,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Chat {#chat}
 
-“Using QualityLayer, chat about retrying failed webhooks” starts a [Chat](../chat.md) in Claude Code or Codex.
+“Using QualityLayer, chat about retrying failed webhooks” starts a [Chat](../chat.md) with a supported coding agent.
 
 | Command | What it does |
 | --- | --- |
@@ -50,7 +49,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 
 | Group | Commands |
 | --- | --- |
-| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>" [--team]` · `instructions done\|skip <step> <n>` |
+| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>"` · `instructions done\|skip <step> <n>` |
 | [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
@@ -64,20 +63,11 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 | --- | --- |
 | Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` · `plan export` |
 | Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
-| Team asks | `ask list` · `ask show` · `ask draft\|answer <ask> --kind ok\|change\|reply` · `ask hand <ask> --to <member>` |
 | Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix [--commit <hash>]` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
 | Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
-| Review | `comments list\|take\|resolve` · `review fix-open-items` · `pr watch` |
+| Review | `review fix-open-items` · `pr watch` |
 
 </details>
-
-## Read a public share
-
-```sh
-qualitylayer share fetch --link-file /path/to/private-link.txt --out ./shared-copies --json
-```
-
-A link file or `--link-stdin` keeps the link out of shell history. Fetching needs no licence and leaves the owner's task unchanged. The key after `#` stays on your computer. Revoking a link cannot remove downloaded copies.
 
 ## Artifacts {#artifacts}
 
@@ -86,12 +76,10 @@ A link file or `--link-stdin` keeps the link out of shell history. Fetching need
 | `artifact new <name> [--wire] [--folder] [--on <artifact>]` | Start an artifact, wireframe, multi-page folder, or draft on a lasting artifact |
 | `artifact show\|open <name> [--page <page>] [--section <id>] [--browser]` | Show the latest version, or open an exact page |
 | `artifact keep <name> [--only-here]` | Make a draft a lasting artifact |
-| `artifact list` · `artifact comments <name> [resolve <id…\|all>]` | List artifacts; read and resolve comments |
+| `artifact list` | List local artifacts |
 | `artifact check\|shot <name> [--page <page>]` · `artifact review <name>` | Check the HTML, take pictures, or brief a design check |
 | `artifact tokens <name> [--refresh]` | Fix values that differ from the project's design file |
 | `artifact library inspect\|rename\|copy\|archive\|restore\|delete <name>` | Manage lasting artifacts |
-| `artifact shared list\|versions\|restore\|pull\|save` | Team-shared artifacts ([Shared artifacts](../artifacts.md#team-shared)) |
-| `artifact link list` · `artifact link revoke <record-id>` | List saved outside links or revoke one, even after its source artifact is removed |
 
 Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact library inspect`. `artifact shot` and `check --render` need Chrome.
 
@@ -118,7 +106,9 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 | `memory confirm\|retire <id> [--reason <text>]` | Confirm a lesson at the current commit, or retire it. Personal lessons have no commit to confirm against |
 | `memory pin\|unpin\|restore <id>` | Keep a lesson in every session, or restore a retired one |
 | `memory pause\|resume` · `memory sessions on\|off` | Pause capture, or session lessons |
-| `memory share on\|off` · `memory sync\|export\|import` | Share lessons through repository files, never committing or pushing |
+| `memory share on\|off` · `memory export` | Opt into project Git export, or write eligible records; never commits, pushes or pulls |
+| `memory import` | Explicitly import repository records; differs from restoring a retired local lesson |
+| `memory conflicts` · `memory reconcile <id> --revision <n> --candidate local\|<fingerprint>` | Inspect conflicting revisions and explicitly reconcile them |
 | `memory mcp` · `memory import-pilot <file>…` | Serve lesson tools over MCP, or import Pilot records |
 
 ## Session messaging

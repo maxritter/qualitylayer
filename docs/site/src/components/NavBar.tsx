@@ -12,7 +12,6 @@ type NavLink = { label: string; to: string; external?: boolean };
 const LINKS: NavLink[] = [
   { label: "Your agents", to: "/#agents" },
   { label: "How it works", to: "/#tour" },
-  { label: "Teams", to: "/#team" },
   { label: "Pricing", to: "/pricing" },
   { label: "Docs", to: DOCS_URL, external: true },
   { label: "Blog", to: BLOG_URL, external: true },

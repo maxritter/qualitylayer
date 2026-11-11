@@ -27,7 +27,7 @@ The **Plan** page is the document you approve before the build. The summary, wha
 
 Engineering detail (code, data and interfaces, contracts, decisions and checks) folds below. **Done means and scope** repeat Discuss in the Reader.
 
-| Read or share | Where |
+| Read | Where |
 | --- | --- |
 | **The specification** | `03-plan.md`, written for people. **What we agreed** repeats Discuss's **Done means** and **Not doing**; artifact pictures stay linked |
 | **Build notes** | `agents/03-plan.md`, listed under **For agents** in the Reader: code to imitate, how to start and test, pitfalls, rejected approaches and the risks with the test that guards each. They never change what you approve |
@@ -35,24 +35,24 @@ Engineering detail (code, data and interfaces, contracts, decisions and checks) 
 
 The Product level uses plainer words ([two levels](../intro.md#two-levels)).
 
-## Approve or give feedback {#answering}
+## Approve or ask for a revision {#answering}
 
 A choice only you can make appears as **Your call** beside its subject. The header counts open calls, and answers reach your agent immediately. The planning agent clears every risk and doubt first, by asking you or settling it itself; the Plan then marks nothing as risky or open.
 
 1. Read the complete Plan.
-2. Pin comments, or press **Give feedback**. Your agent revises; the diff shows what changed.
+2. Choose **Ask agent** on a passage or preview, edit the Conversation draft and send it. Your agent revises; the diff shows what changed.
 3. Once every call is answered, choose **Approve and build here**. The planning session keeps its history and settings and builds after its current turn. **Choose where to build**, under the arrow, opens the build card instead. Both approve the Plan, **Done means**, the artifacts and the acceptance test together.
 
 For a waiting terminal planner, **Build in &lt;agent&gt; · terminal** starts the build from the Plan: run your agent's compact command, then say "build here". Under the arrow you can keep the conversation instead, or use another session with a prepared prompt.
 
 Answering a question does not approve the Plan. Approve in the App, also when the agent works in your terminal, or give an explicit approval through your agent.
 
-![A pinned comment on a diagram: the agent answers and changes the Plan](pathname:///img/diagrams/decision-light.svg)
-![A pinned comment on a diagram: the agent answers and changes the Plan](pathname:///img/diagrams/decision-dark.svg)
+![An example retry decision diagram: Ask agent prepares an editable contextual draft in Conversation](pathname:///img/diagrams/decision-light.svg)
+![An example retry decision diagram: Ask agent prepares an editable contextual draft in Conversation](pathname:///img/diagrams/decision-dark.svg)
 
-### Comment on a diagram {#diagrams}
+### Ask about a diagram {#diagrams}
 
-Click any part of a diagram, a screen or a passage to pin a comment; your agent reads it when it next checks the task. Teammates can comment too ([Plan reviews](../team/plans.md)).
+Choose **Ask agent** on a diagram, screen or passage to prepare a contextual request. Sending the request is separate from approving the displayed Plan. A revised Plan needs approval of its new revision.
 
 ## Before it reaches you {#before-it-reaches-you}
 

@@ -5,7 +5,7 @@
 export const LEGAL_PATHS = ["/imprint", "/privacy", "/terms"] as const;
 
 /** When the privacy policy and the terms last changed; both pages show it. */
-export const LEGAL_UPDATED = { iso: "2026-10-20", label: "20 October 2026" } as const;
+export const LEGAL_UPDATED = { iso: "2026-11-10", label: "10 November 2026" } as const;
 
 export const SELLER = {
   name: "Maximilian Ritter",

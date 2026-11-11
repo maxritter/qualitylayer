@@ -14,7 +14,7 @@ Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never
 | --- | --- |
 | **The seven documents** | One per step that runs ([below](#documents)) |
 | `original-plan.md` | A plan supplied through Existing plan or saved in Chat, unchanged |
-| `artifacts/` | Local artifacts and their revisions. **Include artifacts** adds previews; a selected Plan preview may already accompany the Plan. |
+| `artifacts/` | Local artifacts and their revisions. |
 | `reviews/` | The Plan review and second opinion, when they ran; with a panel, also each reviewer's answer of both rounds |
 | `records/` | The raw output of every command, and `pull-request-body.md` |
 | `evidence/` | Pictures and recordings the checks made |
@@ -43,24 +43,28 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 | --- | --- |
 | `.qualitylayer/artifacts/<name>/` | A [lasting artifact](../artifacts.md#keep) and its `artifact.json`, committed with the change (older `.qualitylayer/designs/` still read) |
 | `docs/artifacts/` | Artifacts kept only on this computer, out of git |
+| `docs/memories/` | Project lessons you [export](../memory.md) to Git, with a readable `LESSONS.md`; you commit them |
 | `~/.qualitylayer/project-look.json` | Sidebar order, colors, names and hidden projects. Delete it to reset |
 
 ## What stays on your computer, and what leaves it {#privacy}
 
-Your code, diff, documents, evidence and costs stay on your computer until you share. Your agent still sends code to its own provider, as always.
+Your code, diff, documents, evidence, memories and costs stay on machines you control. Your chosen agent may send its context to its provider under your account and settings.
 
-| | What is sent |
+| Destination | What is sent |
 | --- | --- |
-| **Always** | A daily licence check to qualitylayer.dev (plus activation or trial start), the workflow texts your agent follows, and App updates. No usage events |
-| **When you share** | Tasks, documents and comments, encrypted on your computer: with the team key for team shares or the link key for public shares. **Include artifacts** adds previews (off for existing shares). The server sees names, e-mails, the step and when, never the content. A share link's key never reaches the server |
-| **When your team reviews code** | **Ask for review** pushes the branch to your own Git remote. QualityLayer stores the team's line comments, the quoted lines (up to 300 characters each) and the commits, encrypted with your team's key, never the code |
-| **Not included automatically** | **For agents** files, source, diffs, host logs, launch settings, terminal output and command output. Text or attachments you share can contain anything. Shared artifact previews run no scripts |
-| **With Slack or email** | The task title and the question, through the QualityLayer server to Slack or to Resend for email |
-| **Automations** | The events of your tasks, with a task's title and a question's text, to the URLs or the command you set. Nothing passes through qualitylayer.dev. |
-| **Instructions** | Yours stay local and go to your agent, so a cloud agent may send them to its provider. Team instructions are encrypted with the team's key |
-| **Lessons and lasting artifacts** | Travel through your Git pushes only where you keep them in the repository or turn on [memory sharing](../memory.md) |
+| **Licence and trial service** | A licence check, activation or trial request with the identifiers needed for entitlement. Existing trial dates and the offline allowance stay unchanged |
+| **Downloads and updates** | Requests for the official App, CLI, update information and release notes |
+| **Your coding agent** | Your request, project instructions and relevant context, through the agent's native integration |
+| **Automations** | Task events, including titles and question text, to the URL or command you explicitly configure. Nothing passes through qualitylayer.dev |
+| **Your own Git remote** | Files you authorize committing and pushing, including optional project [memory exports](../memory.md). Repository readers can read them |
+| **Your own remote machine or paired browser** | Your local work over the authenticated connection you configure; no hosted collaboration workspace is created |
+| **Support** | The report, diagnostics and screenshots you review before sending, through the separate product-support service |
 
-The QualityLayer API runs in Frankfurt; backups are encrypted and kept in the EU. Terminal output of App runs stays in local folders only you can read, never in shared copies. A screenshot you attach to feedback can show it, so check it first.
+Official releases contain their matching readable workflow instructions, templates, schemas and skills locally. Running a workflow does not download instructions from a hosted store. Licensing remains required; public instruction text is not a free product licence.
+
+Personal lessons, private session attribution, credentials, transcripts and terminal streams stay outside project memory exports. Existing tasks, question answers, approval records, artifacts and sessions remain local. Retired annotations and attachments are read-only private records; they never grant approval or create a new agent message.
+
+Older clients can continue to use retained services during migration. The [privacy policy](https://qualitylayer.dev/privacy) describes that transitional processing separately. An upgrade does not itself delete remote records or shorten existing retention obligations.
 
 ## Report a problem {#feedback}
 

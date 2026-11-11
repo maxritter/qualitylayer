@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import { ArrowRight, Brain, Expand, ExternalLink, House, Settings, Shapes, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowRight, Brain, Expand, ExternalLink, House, Settings, Shapes, X, type LucideIcon } from "lucide-react";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
@@ -14,12 +14,11 @@ type Shot = { id: string; title: string; alt: string };
 type Crop = { w: string; x: string; y: string };
 type Extra = { id: string; name: string; icon: LucideIcon; who: Who; line: string; text: string; shot: Shot; crop: Crop; link: { to: string; label: string } };
 
-/** Home, Team and Artifacts lead: they carry the product. Each desktop picture is a crop of its capture, so the interface text stays readable; Enlarge opens the whole capture. */
+/** Home and Artifacts lead: they carry the product. Each desktop picture is a crop of its capture, so the interface text stays readable; Enlarge opens the whole capture. */
 const EXTRAS: Extra[] = [
   { id: "cost", who: "you", name: "Home", icon: House, line: "See what needs you", text: "See waiting and running tasks, their steps and next actions.", shot: { id: "home", title: "Home", alt: "Home with two tasks that need you and two running tasks. Illustrative project data." }, crop: { w: "130.95%", x: "-20%", y: "-5.18%" }, link: { to: "/docs/app#home", label: "Read about Home" } },
-  { id: "team", who: "you", name: "Team", icon: Users, line: "Ask the people who know", text: "Teammates answer plan questions and review the finished change from their own App.", shot: { id: "team", title: "Team", alt: "The Team space: Anna asks about a diagram in her Plan, and an agent's draft answer to Ben's question waits to be sent" }, crop: { w: "130.95%", x: "-20.18%", y: "-3.59%" }, link: { to: "/docs/team/plans", label: "Read about team collaboration" } },
-  { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Pin feedback where you want a change.", shot: { id: "artifact", title: "Artifact", alt: "QualityLayer artifact viewer: a backend request diagram on desktop. On phones, a billing-page feedback thread shows the agent's reply. Illustrative data." }, crop: { w: "130.95%", x: "-20.18%", y: "-8.72%" }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
-  { id: "memory", who: "agent", name: "Memory", icon: Brain, line: "Keep useful project lessons", text: "Reuse lessons about each project and how you work. Share project lessons through Git.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, crop: { w: "171.88%", x: "-21.09%", y: "-28.46%" }, link: { to: "/docs/memory", label: "Read about project memory" } },
+  { id: "artifacts", who: "agent", name: "Artifacts", icon: Shapes, line: "Try the screen before it is built", text: "Try diagrams and clickable mockups before building. Prepare a contextual request with Ask agent.", shot: { id: "artifact", title: "Artifact", alt: "QualityLayer artifact viewer: a backend request diagram on desktop. On phones, a billing-page feedback thread shows the agent's reply. Illustrative data." }, crop: { w: "130.95%", x: "-20.18%", y: "-8.72%" }, link: { to: "/docs/artifacts", label: "Read about artifacts" } },
+  { id: "memory", who: "agent", name: "Memory", icon: Brain, line: "Keep useful project lessons", text: "Reuse lessons about each project and how you work. Export project lessons to Git and restore them explicitly.", shot: { id: "memory", title: "Project memory", alt: "The Memory settings with local lessons, per-project sharing and saved lessons, the newest from the billing task: key each meter event by its request id; illustrative project data" }, crop: { w: "171.88%", x: "-21.09%", y: "-28.46%" }, link: { to: "/docs/memory", label: "Read about project memory" } },
   { id: "setup", who: "you", name: "Settings", icon: Settings, line: "Agents, plan limits and reviewers", text: "Set your workflow, permissions and instructions.", shot: { id: "setup", title: "Settings", alt: "Settings with its sections in the sidebar's place, showing Workflow: the task level, your instructions, the reviews and the reviewer models" }, crop: { w: "160.58%", x: "-19.64%", y: "-16.19%" }, link: { to: "/docs/reference/settings", label: "Read about settings" } },
 ];
 
@@ -31,7 +30,7 @@ const src = (shot: Shot, theme: "light" | "dark") => `/product/${shot.id}-${them
 /** The App's own phone layout, captured at 390 px, so phones get a picture they can read. */
 const phoneSrc = (shot: Shot, theme: "light" | "dark") => `/product/${shot.id}-phone-${theme}.webp`;
 const PHONE = "(max-width: 640px)";
-const DESKTOP_HEIGHTS: Record<string, number> = { team: 2024, artifact: 1944, "artifacts-open": 1944, memory: 2264, "implement-start": 1664, ...Object.fromEntries(STEPS.map(({ id }) => [id, 1664])), plan: 2024 };
+const DESKTOP_HEIGHTS: Record<string, number> = { artifact: 1944, "artifacts-open": 1944, memory: 2264, "implement-start": 1664, ...Object.fromEntries(STEPS.map(({ id }) => [id, 1664])), plan: 2024 };
 
 /** The desktop capture, or on a phone the phone capture. In the preview dialog a failure points at its full-size link. */
 function Picture({ shot, theme, eager, inDialog }: { shot: Shot; theme: "light" | "dark"; eager?: boolean; inDialog?: boolean }) {
@@ -117,7 +116,7 @@ function listTarget(key: string, i: number, count: number): number | undefined {
   return undefined;
 }
 
-/** Also in the App: a vertical list of the five features beside one large screen (a swipeable row on phones).
+/** Also in the App: a vertical list of the local features beside one large screen (a swipeable row on phones).
     Each row names the feature and its one line; the open one adds its text and link. Arrow keys, Home and End move between rows. */
 function Extras({ active, onPick, theme, onOpen }: { active: string; onPick: (id: string) => void; theme: "light" | "dark"; onOpen: (shot: Shot, el: HTMLElement) => void }) {
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -162,7 +161,7 @@ export default function Editorial({ between }: { between?: ReactNode } = {}) {
   const [shown, setShown] = useState<{ shot: Shot; opener: HTMLElement } | null>(null);
   const open = (shot: Shot, opener: HTMLElement) => setShown({ shot, opener });
 
-  // A link to a step or an App feature (the hero's stations, Teams in the header, /#review) opens it.
+  // A link to a step or an App feature (the hero's stations and /#review) opens it.
   // ScrollToHash brings a new hash into view; a repeated link to the same hash changes nothing there, so it scrolls here.
   const { hash, key } = useLocation();
   const last = useRef<string | null>(null);
@@ -192,7 +191,7 @@ export default function Editorial({ between }: { between?: ReactNode } = {}) {
       </section>
       {between}
       <section id="extras" className="ed-section mx-wrap" aria-labelledby="ed-context-h" data-screen-label="Also in the App">
-        <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>See what needs you, try designs and work with your team.</p></div>
+        <div className="ed-head"><h2 id="ed-context-h">Also in the App</h2><p>See what needs you, try designs and keep project lessons.</p></div>
         <Extras active={extra} onPick={setExtra} theme={theme} onOpen={open} />
       </section>
       {shown ? <ImageDialog shot={shown.shot} theme={theme} opener={shown.opener} onClose={() => setShown(null)} /> : null}

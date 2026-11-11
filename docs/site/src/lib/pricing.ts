@@ -14,7 +14,7 @@ export interface Plan {
   id: "solo" | "team" | "enterprise";
   name: string;
   audience: string;
-  /** Full charge in euros for each billing period, per seat for Team. "Custom" for Enterprise. */
+  /** Full charge in euros for each billing period, per seat for Business. "Custom" for Enterprise. */
   price: { monthly: number; yearly: number } | "Custom";
   per: string;
   cta: string;
@@ -29,16 +29,16 @@ export interface Plan {
 export const PLANS: Plan[] = [
   {
     id: "solo",
-    name: "Solo",
-    audience: "For working on your own.",
+    name: "Individual",
+    audience: "For one person.",
     price: { monthly: 19, yearly: 180 },
     per: "per month",
-    cta: "Start Solo",
+    cta: "Start Individual",
     href: {
       monthly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_MONTHLY || "https://buy.polar.sh/polar_cl_7qzxxKiqZXIFe3Uabodh7IauA937iVROT5qVW4VyuUf",
       yearly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_YEARLY || "https://buy.polar.sh/polar_cl_9krLYPvWYMBAXX4nL4LolXKgB5cAEA7J57H8Y3j0oQY",
     },
-    plus: "Everything for working alone:",
+    plus: "The complete local product:",
     highlights: [
       ["plan", "Plan, build, verify and review"],
       ["verify", "Security scans and reviews"],
@@ -49,39 +49,39 @@ export const PLANS: Plan[] = [
   },
   {
     id: "team",
-    name: "Team",
-    audience: "For teams, per seat.",
+    name: "Business",
+    audience: "For centralized purchasing.",
     price: { monthly: 29, yearly: 276 },
     per: "per seat / month",
-    cta: "Start Team",
+    cta: "Start Business",
     href: {
       monthly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_MONTHLY || "https://buy.polar.sh/polar_cl_Qeegkxuq603Ai4UAWSTCT7rOqLmKACxgmKbw40AAj5b",
       yearly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_YEARLY || "https://buy.polar.sh/polar_cl_vDV57vWuG7nb2SCgK9RZUzunpOJo9pfjCELnc1PxhTh",
     },
-    plus: "Everything in Solo, plus:",
+    plus: "The same product, plus:",
     highlights: [
-      ["plan", "Share plans with your team"],
-      ["build", "Team instructions and checks"],
-      ["review", "Review the code as a team"],
-      ["verify", "Slack and email questions"],
-      ["plain", "Seats and billing in one place"],
+      ["plan", "Seats and billing in one place"],
+      ["build", "Assign and reassign licences"],
+      ["review", "Priority support"],
+      ["verify", "Priority feature requests"],
+      ["plain", "Complete local product per person"],
     ],
   },
   {
     id: "enterprise",
     name: "Enterprise",
-    audience: "For custom hosting and terms.",
+    audience: "For negotiated purchasing and support.",
     price: "Custom",
     per: "volume pricing",
     cta: "Contact us",
     href: `mailto:${CONTACT_EMAIL}?subject=QualityLayer%20Enterprise`,
-    plus: "Everything in Team, plus:",
+    plus: "Everything in Business, plus:",
     highlights: [
-      ["plan", "Self-host in your own cloud"],
-      ["build", "Single sign-on for your team"],
-      ["verify", "Volume pricing for many seats"],
+      ["plan", "Volume pricing for many seats"],
+      ["build", "Onboarding for your developers"],
+      ["verify", "Negotiated support terms"],
       ["review", "Invoicing and custom terms"],
-      ["plain", "Onboarding for your team"],
+      ["plain", "Business benefits included"],
     ],
   },
 ];
@@ -103,43 +103,40 @@ const row = (feature: string, solo: Cell, team: Cell, enterprise: Cell, note?: s
 });
 
 /**
- * Three groups of five rows, most important first: what one developer gets, what Team adds,
- * what Enterprise adds. Every feature in detail lives in the docs (Max, 2 November 2026).
+ * The complete local product, Business purchasing and support, then Enterprise arrangements. Every feature in detail lives in the docs (Max, 2 November 2026).
  * Public copy never counts the supported agents; the number changes as agents are added.
  */
 
 export const COMPARE: CompareGroup[] = [
   {
-    name: "Working alone, on your computer",
+    name: "The complete local product",
     hue: "build",
     rows: [
       row("The whole workflow", true, true, true, "Seven steps, with your approval of the Plan and of the final Review"),
-      row("Checked before you see it", true, true, true, "Tests first, security scans and a review by an agent that did not write the code"),
-      row("Your agents, your subscriptions", true, true, true, "Claude Code, Codex and more, with no extra AI bill from us"),
-      row("Your work stays on your computer", true, true, true, "Plans, artifacts and agent output stay local unless you share them"),
+      row("Tasks, Chat and Artifacts", true, true, true, "Use your supported coding agents with your own subscriptions or API accounts"),
+      row("Checks and independent review", true, true, true, "Tests, security scans and an agent that did not write the code"),
+      row("Local work and personal remote access", true, true, true, "Keep work on your computers; reach your own machines through SSH or a paired browser"),
       row("Unlimited tasks and repositories", true, true, true),
     ],
   },
   {
-    name: "Working as a team",
+    name: "Purchasing and support",
     hue: "verify",
     rows: [
-      row("Share plans and collect feedback", false, true, true, "Your team's feedback goes straight to your agent"),
-      row("Shared team instructions and checks", false, true, true, "Your standards, tools and checks for every teammate's tasks"),
-      row("Review the code as a team", false, true, true, "Comments on any line, through your own Git remote"),
-      row("Questions over Slack and email", false, true, true, "Ask a teammate about any part of a plan; morning digests"),
-      row("Guests comment through a link", false, true, true, "Share a plan or an artifact with people outside your team"),
+      row("Centralized seats and billing", false, true, true),
+      row("Licence assignment and reassignment", false, true, true),
+      row("Priority support", false, true, true),
+      row("Priority feature requests", false, true, true, "Earlier consideration during planning; delivery is agreed separately"),
     ],
   },
   {
-    name: "Custom hosting and terms",
+    name: "Negotiated arrangements",
     hue: "plain",
     rows: [
-      row("Host the backend yourself", false, false, true, "In your own cloud, on-premise or a private VPC"),
-      row("Single sign-on", false, false, true, "SAML or OIDC through your identity provider"),
-      row("Volume pricing for many seats", false, false, true),
-      row("Invoicing and custom terms", false, false, true),
-      row("Onboarding for your team", false, false, true, "A working session to set up the workflow with your developers"),
+      row("Volume pricing", false, false, true),
+      row("Invoicing arrangements", false, false, true),
+      row("Onboarding", false, false, true),
+      row("Negotiated purchasing and support terms", false, false, true),
     ],
   },
 ];

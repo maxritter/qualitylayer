@@ -53,8 +53,10 @@ describe("the legal pages", () => {
   it("the privacy policy names every processor, where it runs and how long data stays", async () => {
     const page = text(await html("/privacy"));
     for (const processor of ["Vercel", "Neon", "Upstash", "Cloudflare R2", "Polar", "Resend", "GitHub", "Slack"]) expect(page).toContain(processor);
-    expect(page).toContain("deleted after 30 days");
-    expect(page).toContain("Encrypted backups are kept in the EU for 30 days");
+    expect(page).toContain("Previously agreed deletion obligations");
+    expect(page).toContain("pending collaboration notifications are not delivered");
+    expect(page).toContain("72-hour deletion obligation remains applicable");
+    expect(page).not.toContain("Encrypted backups are kept in the EU for 30 days");
     expect(page).toContain("Private-support screenshot links expire after 90 days");
     expect(page).toContain("Bayerisches Landesamt für Datenschutzaufsicht");
     expect(page).toContain("§ 25 (2) TDDDG");
@@ -65,6 +67,7 @@ describe("the legal pages", () => {
     expect(page).toContain("liable without limit for intent and gross negligence, for injury to life, body or health");
     expect(page).toContain("German law applies");
     expect(page).toContain("merchant of record");
+    expect(page).not.toContain("restoring it from your own regular backups");
     expect(page).not.toMatch(/as is|Netherlands/i);
   });
 });

@@ -41,11 +41,12 @@ describe("installation and build instructions", () => {
     expect(doc("reference/commands.md")).toContain("gate open final");
   });
 
-  it("explains live shared updates and preserved drafts without asking guests to reload", () => {
-    const sharing = doc("team/plans.md");
-    expect(sharing).toContain("The open page updates as the task changes");
-    expect(sharing).toContain("keeps your unsent answers and comments");
-    expect(sharing).not.toContain("Reload the page");
-    expect(sharing).not.toContain("with the time it was last updated");
+  it("explains explicit memory portability without implicit imports or Git writes", () => {
+    const memory = doc("memory.md");
+    expect(memory).toContain("Search, startup and export never import records automatically");
+    expect(memory).toContain("QualityLayer never commits, pushes or pulls for memory");
+    expect(memory).toContain("Missing repository files never retire local lessons");
+    expect(memory).toContain("both candidates remain available");
+    expect(memory).toContain("separate from restoring a retired lesson");
   });
 });

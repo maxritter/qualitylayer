@@ -136,3 +136,8 @@
   .pr-note{font-size:12px}
   .pr-lead{font-size:16.5px}
 }
+
+@media (max-width: 700px){
+  .pr-tr{grid-template-columns:minmax(0,1fr) 68px 66px 76px;gap:5px}
+  .pr-th .pr-c{font-size:12px}
+}

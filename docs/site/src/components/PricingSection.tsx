@@ -23,7 +23,7 @@ function Price({ plan, billing }: { plan: Plan; billing: Billing }) {
     return (
       <>
         <div className="pr-price"><b className="pr-amt">Custom</b><span className="pr-per">{plan.per}</span></div>
-        <p className="pr-bill">Seats, hosting and terms set together</p>
+        <p className="pr-bill">Seats, onboarding and terms set together</p>
       </>
     );
   }
@@ -40,6 +40,26 @@ function Price({ plan, billing }: { plan: Plan; billing: Billing }) {
   );
 }
 
+function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
+  return (
+    <article className="pr-plan" aria-labelledby={`${plan.id}-h`}>
+      <div className="pr-top">
+        <div><h2 id={`${plan.id}-h`} className="pr-name">{plan.name}</h2><p className="pr-aud">{plan.audience}</p></div>
+        {plan.badge ? <span className="pr-badge req">{plan.badge}</span> : null}
+      </div>
+      <Price plan={plan} billing={billing} />
+      {plan.id === "enterprise" ? <Button asChild size="xl" variant="outline" className="pr-btn"><a href={plan.href as string}>{plan.cta}</a></Button> : <Button asChild size="xl" className="pr-btn"><CheckoutLink plan={plan.id} billing={billing} href={typeof plan.href === "string" ? plan.href : plan.href[billing]}>{plan.cta}</CheckoutLink></Button>}
+      <p className="pr-plus">{plan.plus}</p>
+      <ul className="pr-hl">
+        {plan.highlights.map(([h, text]) => (
+          <li key={text} className="pr-hli" style={hue(h)}><span aria-hidden="true" className="pr-ck" /><span className="pr-hlt">{text}</span></li>
+        ))}
+      </ul>
+      <a className="pr-more" href="#compare">Compare the plans</a>
+    </article>
+  );
+}
+
 const PricingSection = () => {
   const [billing, setBilling] = useState<Billing>("monthly");
 
@@ -48,7 +68,7 @@ const PricingSection = () => {
       <section id="plans" className="pr-top-sec" aria-labelledby="pr-h">
         <div className="pr-wrap">
           <h1 id="pr-h" className="pr-h1">Pricing</h1>
-          <p className="pr-lead">Start with a 7-day trial, then pick Solo or Team.</p>
+          <p className="pr-lead">Try the complete local product for 7 days, then choose your plan.</p>
           <div className="pr-seg" role="group" aria-label="Billing">
             <Button type="button" variant={billing === "monthly" ? "default" : "ghost"} aria-pressed={billing === "monthly"} onClick={() => setBilling("monthly")}>Monthly</Button>
             <Button type="button" variant={billing === "yearly" ? "default" : "ghost"} aria-pressed={billing === "yearly"} onClick={() => setBilling("yearly")}>Yearly <span className="pr-save">Save 20%</span></Button>
@@ -56,23 +76,7 @@ const PricingSection = () => {
           <p className="pr-account-link">All prices are in EUR. Tax is included or added at checkout based on your billing country.</p>
           <p className="pr-account-link">Already subscribed? <Link to="/billing">Manage billing</Link></p>
           <div className="pr-plans">
-            {PLANS.map((plan) => (
-              <article key={plan.id} className="pr-plan" aria-labelledby={`${plan.id}-h`}>
-                <div className="pr-top">
-                  <div><h2 id={`${plan.id}-h`} className="pr-name">{plan.name}</h2><p className="pr-aud">{plan.audience}</p></div>
-                  {plan.badge ? <span className="pr-badge req">{plan.badge}</span> : null}
-                </div>
-                <Price plan={plan} billing={billing} />
-                {plan.id === "enterprise" ? <Button asChild size="xl" variant="outline" className="pr-btn"><a href={plan.href as string}>{plan.cta}</a></Button> : <Button asChild size="xl" className="pr-btn"><CheckoutLink plan={plan.id} billing={billing} href={typeof plan.href === "string" ? plan.href : plan.href[billing]}>{plan.cta}</CheckoutLink></Button>}
-                <p className="pr-plus">{plan.plus}</p>
-                <ul className="pr-hl">
-                  {plan.highlights.map(([h, text]) => (
-                    <li key={text} className="pr-hli" style={hue(h)}><span aria-hidden="true" className="pr-ck" /><span className="pr-hlt">{text}</span></li>
-                  ))}
-                </ul>
-                <a className="pr-more" href="#compare">Compare the plans</a>
-              </article>
-            ))}
+            {PLANS.map((plan) => <PlanCard key={plan.id} plan={plan} billing={billing} />)}
           </div>
         </div>
       </section>
@@ -80,11 +84,11 @@ const PricingSection = () => {
       <section id="compare" className="pr-sec sunk" aria-labelledby="compare-h">
         <div className="pr-wrap">
           <h2 id="compare-h" className="pr-h2">Compare the plans</h2>
-          <div className="pr-table" role="table" aria-label="Compare Solo, Team and Enterprise">
+          <div className="pr-table" role="table" aria-label="Compare Individual, Business and Enterprise">
             <div className="pr-tr pr-th" role="row">
               <span role="columnheader">Feature</span>
-              <span className="pr-c" role="columnheader">Solo</span>
-              <span className="pr-c" role="columnheader">Team</span>
+              <span className="pr-c" role="columnheader">Individual</span>
+              <span className="pr-c" role="columnheader">Business</span>
               <span className="pr-c" role="columnheader">Enterprise</span>
             </div>
             {COMPARE.map((group) => (

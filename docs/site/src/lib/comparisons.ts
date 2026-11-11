@@ -295,11 +295,11 @@ export const COMPARISONS: Comparison[] = [
     agents: "Ask Codex in plain words: ‘Using QualityLayer, plan this change.’ Another supported agent can build the resulting Plan.",
     rows: [
       { topic: "Plan", qualitylayer: "Discuss, Research and a visual Plan with diagrams and clickable artifacts, saved as Markdown in your repository.", other: "Codex reads the repository, asks clarifying questions and proposes a plan in the session.", source: 2 },
-      { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Review; teammates can comment on the Plan.", other: "You read the plan in the terminal session and tell Codex to implement it.", source: 1 },
+      { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Review; ask your agent to revise selected passages.", other: "You read the plan in the terminal session and tell Codex to implement it.", source: 1 },
       { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Checking the result is up to you, your tests and any review step you add after plan mode.", source: 1 },
     ],
     chooseOther: "Choose plan mode alone for small, well-understood changes where a short written plan is enough and you review the diff yourself.",
-    chooseQualityLayer: "Choose QualityLayer for medium and large changes where you decide on the plan with your team. You see evidence that each agreed outcome works before the pull request.",
+    chooseQualityLayer: "Choose QualityLayer for medium and large changes where you approve a visual plan. You see evidence that each agreed outcome works before the pull request.",
     sources: [
       { label: "OpenAI Codex developer commands (/plan)", url: "https://learn.chatgpt.com/docs/developer-commands" },
       { label: "OpenAI Codex plan mode instructions", url: "https://github.com/openai/codex/blob/main/codex-rs/collaboration-mode-templates/templates/plan.md" },

@@ -18,10 +18,10 @@ describe("FAQ", () => {
     expect(new Set(home).size).toBe(home.length);
   });
 
-  it("answers for one developer and for a team", () => {
-    const faq = FAQS.find(({ question }) => /on my own/.test(question));
-    expect(faq?.answer).toMatch(/Both/);
-    expect(faq?.answer).toContain("Team plan");
+  it("explains the same local product with separate purchasing benefits", () => {
+    const faq = FAQS.find(({ question }) => /Business and Enterprise/.test(question));
+    expect(faq?.answer).toContain("same complete local");
+    expect(faq?.answer).toContain("centralized seats and billing");
   });
 
   it("keeps feedback diagnostics in the privacy docs rather than the marketing FAQ", () => {
@@ -36,10 +36,10 @@ describe("FAQ", () => {
     expect(docs).toContain("does not add your account name, email, repository paths or terminal logs");
   });
 
-  it("distinguishes the coding agent's provider from QualityLayer sharing and feedback", () => {
+  it("distinguishes the coding agent's provider from QualityLayer services and optional reports", () => {
     for (const faq of [...FAQS, ...PRICING_FAQS].filter((f) => f.question === "Does my code leave my computer?")) {
-      expect(faq.answer).toMatch(/your (AI |coding )?agent.*provider/i);
-      expect(faq.answer).toMatch(/feedback screenshots.*(?:contain|show) code/i);
+      expect(faq.answer).toMatch(/your chosen coding agent.*provider/i);
+      expect(faq.answer).toMatch(/Check support attachments before sending/i);
       expect(faq.answer).not.toMatch(/^No\.|the one way it can leave/i);
     }
   });
@@ -69,7 +69,7 @@ describe("product facts", () => {
     expect(SITE_URL).toBe("https://qualitylayer.dev");
   });
 
-  it("sells Solo and Team through live checkouts, and Enterprise by mail", () => {
+  it("sells Individual and Business through live checkouts, and Enterprise by mail", () => {
     expect(PLANS.map((plan) => plan.id)).toEqual(["solo", "team", "enterprise"]);
     for (const plan of PLANS.filter((p) => p.id !== "enterprise")) {
       const { price, href } = plan;
@@ -88,8 +88,8 @@ describe("product facts", () => {
       { monthly: 29, yearly: 276 },
     ]);
     const annual = PRICING_FAQS.find((faq) => faq.question === "Monthly or yearly?")!.answer;
-    expect(annual).toContain("you save €4 a month on Solo");
-    expect(annual).toContain("€6 per seat a month on Team");
+    expect(annual).toContain("you save €4 a month on Individual");
+    expect(annual).toContain("€6 per seat a month on Business");
     // The page shows monthly amounts only; checkout shows the yearly total (Max, 3 November 2026).
     expect(annual).not.toMatch(/€180|€276/);
   });
@@ -104,8 +104,8 @@ describe("product facts", () => {
     ]);
   });
 
-  it("compares the plans in three groups of five that step up from Solo to Enterprise", () => {
-    expect(COMPARE.map((group) => group.rows.length)).toEqual([5, 5, 5]);
+  it("compares the plans in local product and purchasing differences", () => {
+    expect(COMPARE.map((group) => group.rows.length)).toEqual([5, 4, 4]);
     const [alone, team, large] = COMPARE;
     expect(alone.rows.every((r) => r.solo && r.team && r.enterprise)).toBe(true);
     expect(team.rows.every((r) => !r.solo && r.team && r.enterprise)).toBe(true);

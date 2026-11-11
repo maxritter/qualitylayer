@@ -1,100 +1,61 @@
-/**
- * The website's questions and answers. Each answer must hold for the product as it
- * ships; when the product changes, change it here. Plain text only: the home page's
- * structured data reuses these answers. Words follow the App's glossary: Your turn, passed,
- * Checked by agents, Found while checking, Only you can confirm, Questions for you.
- */
-
 import { PLANS, formatPrice } from "./pricing";
 
 export type Faq = { question: string; answer: string };
-
 const faq = (question: string, answer: string): Faq => ({ question, answer });
-
-/** Monthly and yearly prices of a plan, read from the plans themselves so the answer below never drifts. */
 const priced = (id: "solo" | "team") => {
-  const price = PLANS.find((p) => p.id === id)?.price;
+  const price = PLANS.find((plan) => plan.id === id)?.price;
   if (price === undefined || price === "Custom") throw new Error(`${id} has no price`);
-  return { monthly: formatPrice(price.monthly), yearly: formatPrice(price.yearly / 12), saving: formatPrice(price.monthly - price.yearly / 12) };
+  return { saving: formatPrice(price.monthly - price.yearly / 12) };
 };
-const solo = priced("solo");
-const team = priced("team");
+const individual = priced("solo");
+const business = priced("team");
 
-/** Asked on the home page and on pricing, answered the same way on both. */
 const CODE_LEAVES = faq(
   "Does my code leave my computer?",
-  "Your agent sends code to its provider under your existing data settings. QualityLayer keeps code, plans, artifacts and agent output on your computer. Shared tasks, documents and comments are encrypted there: we can't read them, but see who shared which task, when and at which step. The selected Plan preview can accompany a share; Include artifacts adds other previews. Terminal output and repository code stay out. Your team reviews code through its own Git remote. We store encrypted review comments, short quoted code lines and their commit references. Slack and email notifications send task titles and questions through our server to Slack or our email provider. Automations send task titles and question text only to the URL or command you set. Check feedback screenshots before attaching them: they can contain code.",
+  "Your chosen coding agent sends context to its provider under your account and data settings. QualityLayer keeps tasks, Chats, artifacts, memories and terminal history on machines you control. Licence checks, trials, billing, updates and reports you choose to send use their separate services. Check support attachments before sending them. Project files and optional memory exports become readable to people with repository access when you commit and push them.",
+);
+const PLANS_DIFFER = faq(
+  "What do Business and Enterprise add?",
+  "Every plan includes the same complete local Tasks, Chat and Artifacts product. Business adds centralized seats and billing, licence assignment and reassignment, priority support and priority feature requests. Enterprise includes Business plus volume pricing, onboarding, invoicing arrangements and negotiated purchasing and support terms. Priority feature requests receive earlier consideration, without a promised delivery date. These plans do not add hosted collaboration, a team backend or SSO.",
+);
+const SOURCE = faq(
+  "Is QualityLayer open source?",
+  "QualityLayer is paid commercial software. The source-available offering permits inspection and contributions to QualityLayer itself, including contribution forks and focused public-component checks. It does not grant reuse in another product or distribution of a standalone app. The public checkout intentionally excludes private licensing, backend and complete-build tooling. Only Max Ritter produces complete official builds. Source publication is prepared separately from this release; the published licence and contribution guide define the permissions when available.",
+);
+const MEMORY = faq(
+  "Can I keep project memories in Git?",
+  "Yes, with explicit opt-in for each project. The local store stays authoritative; export writes eligible project lessons for you to review and commit. Anyone with repository access can read them. Personal lessons, credentials and private session data stay outside the export. Repository import is explicit; search and startup do not import, and QualityLayer never pushes or pulls for memory. Retirement and replacement records travel with exports. Conflicting edits keep both versions until you reconcile them. Restoring a retired local lesson is a separate action from importing repository records.",
+);
+const LEGACY = faq(
+  "I use Pilot Shell 11. What happens?",
+  "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. Existing currencies, seats, benefits, keys, activations and already granted contractual rights are preserved. If it ends, a new subscription uses current prices. A computer eligible for its first QualityLayer trial can try it for seven days; an upgrade does not reset earlier trial dates. Import your Pilot memories per project in Settings › Memory; they stay private unless a later explicit action makes them eligible for export.",
 );
 
-/** Ordered by what a visitor asks first: cost, the difference, privacy, then how they would use it. */
 export const FAQS: Faq[] = [
-  faq(
-    "Can I use the models and subscriptions I already have?",
-    "Yes. Use your existing agent login or API key.",
-  ),
-  faq(
-    "How is this different from plan mode?",
-    "QualityLayer adds visual planning, tested implementation and optional independent review. You approve the plan before building and the finished change after checking.",
-  ),
+  faq("Can I use the models and subscriptions I already have?", "Yes. Use your supported agent's existing login or API key. QualityLayer does not add an AI usage bill."),
+  faq("How is this different from plan mode?", "QualityLayer adds visual planning, tested implementation and optional independent review. You approve the Plan before building and the finished change after checking."),
   CODE_LEAVES,
-  faq(
-    "What about small changes and bugs?",
-    "Use Chat with Claude Code or Codex for free-form work, and convert it to a task when it needs a plan. Choose Feature or Bugfix to start with a plan, checks and final review.",
-  ),
-  faq(
-    "Can I run my agent in the App or browser?",
-    "Yes. Your task and agent run side by side in the App or browser, and the sidebar shows when an agent needs you. You can also use your own terminal or IDE.",
-  ),
-  faq(
-    "Can I use it on my own, or only with a team?",
-    "Both. The Team plan adds shared plans, questions over Slack or email and code review with teammates.",
-  ),
-  faq(
-    "Is it for product managers as well as engineers?",
-    "Yes. Choose Engineering for technical plans or Product for a product brief in Settings › Workflow.",
-  ),
-  faq(
-    "Can I see how much of my plan is left?",
-    "Claude Code, Codex and GitHub Copilot show the limits they report, with reset times when available. Stopped builds can resume when their limit resets.",
-  ),
-  faq(
-    "I use Pilot Shell today. What happens?",
-    "An active Pilot Shell licence works with both products. Import your Pilot memories in Settings › Memory. Older purchases may need help moving over.",
-  ),
+  faq("What about small changes and bugs?", "Use Chat with a supported agent for free-form work, and convert it to a task when it needs a plan. Feature and Bugfix tasks follow the seven steps and your two approvals."),
+  faq("Can I run my agent in the App or browser?", "Yes. Your task and agent run side by side. Conversation, Terminal and Files keep the session and its work together. Contextual Ask agent opens an editable draft for you to send through the agent's native input. Agents without Conversation input keep an explicit terminal handoff."),
+  PLANS_DIFFER,
+  faq("Can I use my own remote computer?", "Yes. Connect a machine you control through Settings › Machines, SSH or a paired browser. Its local server authenticates access to your own work; this does not create a hosted workspace or teammate account."),
+  MEMORY,
+  SOURCE,
+  faq("Is it for product managers as well as engineers?", "Yes. Choose Engineering for technical plans or Product for a product brief in Settings › Workflow."),
+  faq("Can I see how much of my plan is left?", "Claude Code, Codex and GitHub Copilot show the limits they report, with reset times when available. Stopped builds can resume when their limit resets."),
+  LEGACY,
 ];
 
 export const PRICING_FAQS: Faq[] = [
-  faq(
-    "How long is the trial?",
-    "Seven days from your first run, with everything in Solo. Sharing with a team needs the Team plan. After the trial, choose a plan to continue.",
-  ),
-  faq(
-    "Monthly or yearly?",
-    `Monthly is the default and you can cancel any time. Billed yearly, you save ${solo.saving} a month on Solo and ${team.saving} per seat a month on Team. Checkout shows the yearly total before you pay.`,
-  ),
-  faq(
-    "Do I pay for AI usage here?",
-    "No. Your coding agents use your own subscriptions or API accounts. QualityLayer charges only for itself.",
-  ),
-  faq(
-    "Is there a limit on tasks or repositories?",
-    "No. Each plan is per developer, with unlimited tasks, repositories and agents. A licence key works on 5 computers.",
-  ),
-  faq(
-    "Which agents does it work with?",
-    "Use your own subscriptions or API keys. Claude Code, Codex and other supported agents have setup, model choices and interactive sessions in the App or browser. Choose an installed agent for independent review. The CLI connects other agents that run shell commands in your terminal or IDE.",
-  ),
-  faq(
-    "Who needs a seat?",
-    "Everyone on your team who uses QualityLayer. Outside people you invite to comment through a link do not.",
-  ),
+  faq("How long is the trial?", "Seven days from your first run, once per computer, with the complete local product. After the trial, choose a plan to continue. The migration preserves original trial dates; it does not restart existing trials."),
+  faq("Monthly or yearly?", `Monthly is the default and you can cancel any time. Billed yearly, you save ${individual.saving} a month on Individual and ${business.saving} per seat a month on Business. Checkout shows the yearly total before you pay.`),
+  faq("Do I pay for AI usage here?", "No. Your coding agents use your own subscriptions or API accounts. QualityLayer charges only for itself."),
+  faq("Is there a limit on tasks or repositories?", "No. Each plan licenses its assigned person, with unlimited tasks, repositories and supported agents. Each licence key works on 5 computers."),
+  faq("Which agents does it work with?", "Use your own subscriptions or API keys. Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot have setup, model choices and interactive sessions in the App or browser. Conversation features follow each agent's native integration; an explicit terminal handoff remains available. The CLI connects other agents that run shell commands in your terminal or IDE."),
+  faq("Who needs a seat?", "Each person using QualityLayer needs an assigned licence. Business centralizes purchasing and seat assignment; it does not give people access to each other's tasks or artifacts."),
+  PLANS_DIFFER,
+  faq("Can I work offline?", "After a successful licence check, QualityLayer keeps its existing allowance of up to seven days offline. Your agent may still need its provider's connection. An expired trial or subscription does not create a perpetual licence."),
   CODE_LEAVES,
-  faq(
-    "What does Enterprise include?",
-    "Custom hosting in your cloud or on-premise, single sign-on, volume pricing, invoicing, custom terms and team onboarding. It's available to companies of any size; contact us to arrange it.",
-  ),
-  faq(
-    "I use Pilot Shell 11. What happens?",
-    "You can use Pilot Shell 11 and QualityLayer in parallel. QualityLayer leaves Pilot Shell, its tools and its configuration in place. Your paid subscription keeps its existing price while it stays active. If it ends, a new subscription uses current prices. Without an active licence, you get a fresh seven-day trial. Import your Pilot memories per project in Settings › Memory.",
-  ),
+  SOURCE,
+  LEGACY,
 ];

@@ -53,7 +53,7 @@ Work side by side in the App or browser, or stay in your terminal or IDE.
 | You get | How it works |
 | --- | --- |
 | **Your own agent and plan** | Use Claude Code, Codex, Cursor and more with your existing login or API key. |
-| **A design you can review** | Comment on diagrams and clickable screens, then approve the Plan before code changes. |
+| **A design you can review** | Ask your agent about diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request before Review opens. |
 | **Your own requirements** | Add checks, tools or skills to any step. Your agent records what ran, what did not, and why. [Required lines](https://qualitylayer.dev/docs/required-lines). |
@@ -106,7 +106,7 @@ In the App or browser, choose **+**, then **Task** (Feature or Bugfix) or **Chat
 Plan retries for failed webhooks and stop after a few tries.
 ```
 
-1. Answer questions and comment on the Plan.
+1. Answer questions and ask your agent to revise the Plan.
 2. Approve the Plan. Your agent builds and verifies the change.
 3. Review the result and recorded checks, then approve it. Ask your agent to merge, deploy or make further changes.
 
@@ -123,7 +123,7 @@ Setup adds these skills. Ask in plain words, in any language.
 | `ql-chat` | Chat without workflow steps | “Using QualityLayer, chat about the billing refactor.” |
 | `ql-artifact` | Designs, diagrams and pages | “Open the settings design in my browser.” |
 | `ql-quality` | Code health and security scans | “Scan this repository for leaked secrets.” |
-| `ql-manage` | Tasks, sharing, settings, setup | “Share this task with my team.” |
+| `ql-manage` | Tasks, settings and setup | “Show my open tasks.” |
 
 [More about the skills](https://qualitylayer.dev/docs/agents/native#the-six-skills)
 
@@ -172,13 +172,13 @@ Your project's checks, [code health](https://qualitylayer.dev/docs/reference/cod
 | In the App | What you can do |
 | --- | --- |
 | **Chat or a planned task** | Talk directly with your agent or follow the workflow. See agent activity and get notified when one needs you. |
-| **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and pin feedback. |
+| **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and prepare contextual requests with Ask agent. |
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. Keep reusable ones in your repository. [Artifacts guide](https://qualitylayer.dev/docs/artifacts). |
-| **Checks and code review** | Read the evidence and file diffs, and comment on any line. |
+| **Checks and code review** | Read the evidence and file diffs, and ask your agent about any line. |
 | **Agent controls and usage** | Choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
-| **Memory and team** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), ask teammates over Slack or email and [share work](https://qualitylayer.dev/docs/team/plans). |
+| **Local memory** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), with optional project Git export and explicit repository import. |
 
-QualityLayer keeps task files on your computer and encrypts shared tasks first. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).
+QualityLayer keeps tasks, Chats, artifacts and memories on machines you control. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).
 
 [Read about the App](https://qualitylayer.dev/docs/app)
 

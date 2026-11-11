@@ -31,7 +31,7 @@ it("puts the plan cards before the quotes, and names each agent once on the card
   const cards = [...container.querySelectorAll(".mx-pr")];
   expect(cards.map(card => card.querySelector("p")?.textContent)).toEqual([
     "Claude Code, Codex, Cursor and more.",
-    "Comment on diagrams and clickable mockups.",
+    "Ask about diagrams and clickable mockups.",
     "A separate agent checks the result against your plan.",
   ]);
 });
@@ -47,7 +47,7 @@ it("shows the skills right after the models, led by an example exchange between 
   expect(within(example).getByText("Example")).toBeTruthy();
   expect([...example.querySelectorAll(".sk-win")].map(win => win.getAttribute("data-agent"))).toEqual(["claude-code", "codex"]);
   const more = within(skills).getByRole("list", { name: "More skills, with what you say" });
-  expect(within(more).getAllByRole("listitem").map(item => item.querySelector("b")?.textContent)).toEqual(["Plan and build", "Chat", "Designs", "Security", "Sharing"]);
+  expect(within(more).getAllByRole("listitem").map(item => item.querySelector("b")?.textContent)).toEqual(["Plan and build", "Chat", "Designs", "Security", "Tasks and settings"]);
   expect(within(skills).getByRole("link", { name: "More about the skills" }).getAttribute("href")).toBe("/docs/agents/native");
 });
 

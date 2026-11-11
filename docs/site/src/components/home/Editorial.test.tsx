@@ -58,33 +58,25 @@ it("opens the step a link names, so the hero's stations and /#verify land on it"
 
 const feature = (tabs: HTMLElement, name: string) => within(tabs).getByRole("tab", { name: new RegExp(`^${name}\\b`) });
 
-it("lists the App features with their one line, moves with arrow keys, and Teams opens Team", () => {
-  render(<MemoryRouter initialEntries={["/#team"]}><Editorial /></MemoryRouter>);
+it("lists the local App features and keeps keyboard navigation after Team removal", () => {
+  render(<MemoryRouter><Editorial /></MemoryRouter>);
   const tabs = screen.getByRole("tablist", { name: "Also in the App" });
-  expect(tabs.getAttribute("aria-orientation")).toBe("vertical");
-  expect(within(tabs).getAllByRole("tab").map((t) => t.querySelector("b")?.textContent)).toEqual(["Home", "Team", "Artifacts", "Memory", "Settings"]);
-  expect(feature(tabs, "Memory").textContent).toContain("Keep useful project lessons");
-  const team = feature(tabs, "Team");
-  expect(team.getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("tabpanel", { name: /^Team/ }).textContent).toContain("Teammates answer plan questions");
-  expect(screen.getByRole("button", { name: "Enlarge Team" })).toBeTruthy();
-  fireEvent.keyDown(team, { key: "ArrowDown" });
-  const artifacts = feature(tabs, "Artifacts");
-  expect(artifacts.getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(artifacts);
-  fireEvent.keyDown(artifacts, { key: "ArrowUp" });
-  expect(team.getAttribute("aria-selected")).toBe("true");
-  fireEvent.keyDown(team, { key: "End" });
+  expect(within(tabs).getAllByRole("tab").map((tab) => tab.querySelector("b")?.textContent)).toEqual(["Home", "Artifacts", "Memory", "Settings"]);
+  const home = feature(tabs, "Home");
+  fireEvent.keyDown(home, { key: "ArrowDown" });
+  expect(feature(tabs, "Artifacts").getAttribute("aria-selected")).toBe("true");
+  expect(document.activeElement).toBe(feature(tabs, "Artifacts"));
+  fireEvent.keyDown(feature(tabs, "Artifacts"), { key: "End" });
   expect(feature(tabs, "Settings").getAttribute("aria-selected")).toBe("true");
   fireEvent.keyDown(feature(tabs, "Settings"), { key: "Home" });
-  expect(feature(tabs, "Home").getAttribute("aria-selected")).toBe("true");
+  expect(home.getAttribute("aria-selected")).toBe("true");
 });
 
 it("opens Also in the App on Home, with a crop of the capture that Enlarge still opens whole", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
   const tabs = screen.getByRole("tablist", { name: "Also in the App" });
   expect(feature(tabs, "Home").getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByText("See what needs you, try designs and work with your team.")).toBeTruthy();
+  expect(screen.getByText("See what needs you, try designs and keep project lessons.")).toBeTruthy();
   const frame = screen.getByRole("button", { name: "Enlarge Home" });
   expect(frame.style.getPropertyValue("--crop-w")).toBe("130.95%");
   expect(frame.style.getPropertyValue("--crop-x")).toBe("-20%");

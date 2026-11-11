@@ -36,5 +36,5 @@ export const USER_QUOTE = {
   context: "Former Pilot Shell user, now using QualityLayer",
 };
 
-/** Chat's first release supports these two agents; workflow integrations have a wider list. */
-export const CHAT_GUIDANCE = "Prefer a conversation? Chat with Claude Code or Codex.";
+/** Conversation capabilities follow each supported agent’s native integration. */
+export const CHAT_GUIDANCE = "Prefer a conversation? Chat with your supported coding agent.";

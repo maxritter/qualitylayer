@@ -1,9 +1,9 @@
 ---
 title: Chat
-description: Work directly with Claude Code or Codex, with plans and checks when you need them.
+description: Work directly with your supported coding agent, with plans and checks when you need them.
 ---
 
-Use **Chat** for a direct conversation with **Claude Code or Codex**, without workflow steps or approval gates.
+Use **Chat** for a direct conversation with **any supported coding agent**, without workflow steps or approval gates.
 
 ![Chat with its conversation, task controls and composer; illustrative data](pathname:///img/app/chat-light.webp)
 ![Chat with its conversation, task controls and composer; illustrative data](pathname:///img/app/chat-dark.webp)
@@ -14,7 +14,7 @@ Use **Chat** for a direct conversation with **Claude Code or Codex**, without wo
 
 Choose **+ › Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session, and the terminal fills the window. Return to the same task to keep its history. The agent's menu in the header has **Interrupt**, **Stop session** and **Resume session**.
 
-To continue a session you started outside QualityLayer, choose it under **Or resume a session in Claude Code** (or Codex) below the card. It opens as a Chat.
+To continue a session you started outside QualityLayer, choose it under **Or resume a session in Claude Code** (or Codex) below the card. It opens as a Chat. Available resume and Conversation controls follow the agent’s native integration.
 
 ## Questions and tasks {#questions}
 
@@ -34,4 +34,4 @@ Choose **Saved plan** to start at Plan from a plan this Chat saved, then **Start
 
 You approve the workflow Plan before later implementation. Let active slice helpers finish or stop them first.
 
-Chat does not support team sharing.
+Chat stays on your own machine. You can reach it through your own authenticated remote-machine connection or paired browser.

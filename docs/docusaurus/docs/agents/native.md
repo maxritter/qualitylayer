@@ -41,6 +41,7 @@ Pick agent, model and effort per task; the default effort is High.
 
 | Agent | Model choices |
 | --- | --- |
+| Codex | The models your Codex account offers, as Codex lists them; a default your plan lacks moves to Codex's own model |
 | Pi / OpenCode | Provider-qualified IDs: `openai-codex/gpt-6.1-sol` / `openai/gpt-6.1-sol`; both can use a Copilot subscription |
 | Cursor / Antigravity | Effort is part of the model name, such as Opus 5.5 (High) |
 | GitHub Copilot | Auto works on every plan; paid plans can choose Claude Opus 5.5 |

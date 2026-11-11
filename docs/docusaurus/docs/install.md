@@ -38,8 +38,8 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash
 | Your agent runs in | The pages open |
 | --- | --- |
 | **WSL2** | In your Windows browser |
-| **A VS Code dev container** | In your browser; VS Code forwards the port |
-| **A server over SSH** | In the App: add it under [Settings › Machines](reference/settings.md#machines), which also installs QualityLayer there. In a browser: VS Code Remote-SSH opens them by themselves; with plain `ssh`, forward the port that `qualitylayer app pair` prints |
+| **A VS Code dev container** | In your browser; VS Code forwards the port. In the App: [add it as a machine](machines.md#dev-containers) |
+| **A server over SSH** | In the App: [add it as a machine](machines.md), which also installs QualityLayer there. In a browser: VS Code Remote-SSH opens them by themselves; with plain `ssh`, forward the port that `qualitylayer app pair` prints |
 
 <details>
 <summary>Keep your setup when a dev container is rebuilt</summary>

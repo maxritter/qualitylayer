@@ -120,7 +120,7 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 ## Machines {#machines}
 
-Work on another Linux or macOS computer you reach over ssh, from this App. **Add machine** picks a host from your ssh config or takes `user@host`, checks it, and after one confirmation installs QualityLayer there and activates your licence key on it. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
+Work on another Linux or macOS computer you reach over ssh, from this App ([setup guide](../machines.md)). **Add machine** picks a host from your ssh config or takes `user@host`, checks it, and after one confirmation installs QualityLayer there and activates your licence key on it. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
 
 A machine keeps working while this computer sleeps and reconnects by itself. **ssh needs you** means ssh wants a key or a host confirmation: run the `ssh` command the row shows once in a terminal, then **Try again**. **Remove…** only drops the connection; tick the box to release the machine's licence activation too. Windows machines keep their own App.
 

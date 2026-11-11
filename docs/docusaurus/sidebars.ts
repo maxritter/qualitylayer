@@ -3,7 +3,7 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     { type: "category", label: "Get started", collapsed: false, items: [
-      "intro", "install", "first-task", "work-in-your-agent", "agents/native", "agents/other", "moving-from-pilot-shell",
+      "intro", "install", "machines", "first-task", "work-in-your-agent", "agents/native", "agents/other", "moving-from-pilot-shell",
     ] },
     { type: "category", label: "Workflow", collapsed: false, items: [
       "steps/plan", "steps/implement", "steps/verify", "steps/pull-request",

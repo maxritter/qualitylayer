@@ -52,7 +52,7 @@ A choice only you can make appears as **Your call** beside its subject. The head
 2. Choose **Ask agent** on a passage or preview, edit the Conversation draft and send it. Your agent revises; the diff shows what changed.
 3. Once every call is answered, choose **Approve and build here**. The planning session keeps its history and settings and builds after its current turn. **Choose where to build**, under the arrow, opens the build card instead. Both approve the Plan, **Done means**, the artifacts and the steps that prove them together.
 
-For a waiting terminal planner, **Build in &lt;agent&gt; · terminal** starts the build from the Plan: run your agent's compact command, then say "build here". Under the arrow you can keep the conversation instead, or use another session with a prepared prompt.
+For a planner waiting in your own agent, **Build in &lt;agent&gt; · your agent** starts the build from the Plan: run your agent's compact command, then say "build here". Under the arrow you can keep the conversation instead, or use another session with a prepared prompt.
 
 Answering a question does not approve the Plan. Approve in the App, also when you work in your own agent, or give an explicit approval through your agent. Later changes to what you approved are recorded as amendments and stay visible on Verify.
 
@@ -65,7 +65,7 @@ Choose **Ask agent** on a diagram, screen or passage to prepare a contextual req
 
 ## Before it reaches you {#before-it-reaches-you}
 
-Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion) from another model. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
+Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion) from another model. For a feature, you can add up to two [extra planners](../reference/settings.md#second-opinion) in **New task**, each with its own agent, model and effort. They review the Plan instead of the second opinion, and each is an extra paid planning run. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
 
 ## A bug {#a-bug}
 

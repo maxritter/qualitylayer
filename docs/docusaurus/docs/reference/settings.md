@@ -12,15 +12,16 @@ Open **Settings** with the gear at the bottom of the sidebar; its search finds a
 
 | Setting | Choices |
 | --- | --- |
-| [Your instructions](#instructions) | Standing instructions for every task |
-| **Answer questions in** · **Approve in** | **In the App** (default) or **Your agent**, for tasks you start in an agent ([guide](../work-in-your-agent.md#where)) |
 | **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
-| [Independent review](#independent-review) | A switch: on (recommended) or off |
-| [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed |
-| [Plan reviewers](#second-opinion) | **One** (default) or **Panel of three**, shown with Second opinion on; a panel needs three coding agents |
-| **Design review** | A switch: on (default), a separate agent checks each finished design before you see it. Wireframes are never reviewed |
+| [Your instructions](#instructions) | Standing instructions for every task |
+| **Answer questions in** · **Approve in** | **In the App** (default) or **In my own agent**: your terminal, IDE or agent app, for tasks you start there ([guide](../work-in-your-agent.md#where)) |
+| [Independent review](#independent-review) | A switch: on (recommended) or off. Runs in Verify and each recheck |
+| **Design review** | A switch: on (default), a separate agent checks each finished design in Plan before you see it. Wireframes are never reviewed |
+| [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed. Runs in Plan and Verify |
 | [Scan each change](#security-scans) | A switch: on (default) or off |
 | [Dependency advisories](#security-scans) | **osv.dev** (default) or **Local copy** |
+
+Each review row lists the model every installed agent uses for it; click a model to change it in [Models](#models).
 
 ### Your instructions {#instructions}
 
@@ -32,14 +33,12 @@ Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, help
 
 ### Second opinion {#second-opinion}
 
-**On** adds a read-only review from another model family for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. Installed agents provide the reviewers: GPT reviews Claude and Claude reviews GPT; Pi on GPT can review Claude Code. Settings shows the pairing; [Models](#models) sets the model each agent gives its second opinion on.
+**On** adds a read-only review by another agent for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. The Workflow row shows which agent reviews which. In [Models](#models) you pick, for each agent, the other installed agent that reviews its work and the model it uses. The default is the first agent here from another model family, so GPT reviews Claude and Claude reviews GPT. If the chosen agent is not installed or not signed in, the default reviews instead. Your agent can set it too: `qualitylayer settings set secondOpinion.reviewers.claude-code '{"agent":"codex","model":"gpt-6.1-sol"}'`.
 
-**Plan reviewers** chooses who reads the Plan, and the row lists them: **One** (default) or **Panel of three**. A panel is up to three models, each on another agent; with three agents installed, two read. They read every Plan except a small task's, then each answers the others' findings once. A finding every reviewer backs is taken, or your agent asks you; the rest it decides, with both views recorded. A panel needs three coding agents and runs each reviewer twice.
-
-Each seat of the panel is a picker: **Automatic** (default) or an agent on this computer, which reviews on its Second opinion model in [Models](#models). An agent takes one seat. When a named agent wrote the Plan, shares the planner's model family or is not available, that seat is picked automatically. Your agent can set both: `qualitylayer settings set secondOpinion.planReviewers panel` and `qualitylayer settings set secondOpinion.panel codex,grok,auto`.
+A feature can also take up to two extra planners, each an agent, model and effort, chosen in **New task** or with `qualitylayer task start "<request>" --planners agent:model[:effort],…`. They review its Plan instead of the second opinion, and each is an extra paid planning run.
 
 <details>
-<summary>How the reviewer is picked</summary>
+<summary>How the default reviewer is picked</summary>
 
 - Pi and OpenCode count by the model they run; Cursor's Auto never counts as another family.
 - Agents that enforce read-only come first, then Claude Code, Codex, Grok, Pi, OpenCode, Cursor, Antigravity, GitHub Copilot. Cursor and Antigravity review a disposable copy.
@@ -90,7 +89,7 @@ Pick an agent by its mark; every model it uses is on one page. A new task starts
 | Group | Rows |
 | --- | --- |
 | **Plan and build** | **Planning**, **Build · full task**, **Build · small change**, **Build subagents** (Claude Code; other agents decide) and **Helpers**: research, fixes, security checks and Chat work. **This session** keeps that work in the lead |
-| **Reviews** | **Independent review**: the model a fresh helper checks each change on when this agent builds. **Second opinion**: the model this agent reviews on when it is picked for another family's work |
+| **Reviews** | **Independent review**: the model a fresh helper checks this agent's change on. **Design review**: the model a fresh helper checks this agent's designs on. **Second opinion**: the other installed agent that reads this agent's risky work, and its model. Each works by command too, such as `qualitylayer settings set models.codex.design gpt-6.1-sol` |
 | **Model list** | The built-in models, those the agent reports and those you added, with where each is used. **Add a model…** takes an id the agent accepts; **Remove** puts its roles back on the recommended model |
 
 ## Usage {#usage}

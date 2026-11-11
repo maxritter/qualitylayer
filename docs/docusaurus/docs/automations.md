@@ -149,6 +149,7 @@ event=$(cat)
 | `task start "<request>" --json` | A new task that waits on Home, with its id |
 | `task start --from <link> --json` | The same, from a GitHub or GitLab issue or pull request, a Jira issue or a Confluence page |
 | `task start "<request>" --plan [--agent <id>]` | The same, and planning starts with your default agent, or the one `--agent` names |
+| `task start "<request>" --planners codex:gpt-6.1-sol:medium` | The same for a feature, with up to two extra planners (`agent:model[:effort]`, comma-separated) that review its Plan instead of the second opinion. Each is an extra paid planning run |
 
 Run them in the project's folder. `--plan` starts an agent on your plan with every call. `tasks --cost` answers within 20 seconds; when it says `"complete": false`, run it again for the rest.
 

@@ -8,7 +8,7 @@
 <h1>QualityLayer<br><sub>The software factory with you in the loop</sub></h1>
 
 **Plan, implement and verify software with your favorite coding agents.**<br>
-Work side by side in the App or browser, or stay in your terminal or IDE.
+Work side by side in the App or browser, or in your own agent: terminal, IDE or agent app.
 
 <a href="https://github.com/maxritter/qualitylayer/releases"><img src="https://img.shields.io/github/v/release/maxritter/qualitylayer?sort=semver&amp;style=for-the-badge&amp;label=latest&amp;color=2076c5&amp;labelColor=30363d" alt="Latest release"></a>
 <a href="https://github.com/maxritter/qualitylayer/releases"><img src="https://img.shields.io/github/downloads/maxritter/qualitylayer/total?style=for-the-badge&amp;color=2076c5&amp;labelColor=30363d" alt="Downloads"></a>

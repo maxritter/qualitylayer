@@ -53,10 +53,10 @@ describe("static marketing shell", () => {
     expect(SHARE_DESCRIPTION.length).toBeLessThanOrEqual(160);
   });
 
-  it("gives crawlers without JavaScript the promise, the seven steps and the install line", () => {
+  it("gives crawlers without JavaScript the promise, the three steps and the install line", () => {
     expect(staticText).toContain(SLOGAN);
     expect(staticText).toContain(ENGINEER_QUOTE);
-    for (const step of ["Discuss:", "Research:", "Plan:", "Outline:", "Implement:", "Verify:", "Review:"]) expect(staticText).toContain(step);
+    for (const step of ["Plan:", "Implement:", "Verify:"]) expect(staticText).toContain(step);
     expect(staticText).toContain("qualitylayer.dev/download");
     expect(staticText).toContain("curl -fsSL https://qualitylayer.dev/install.sh | bash");
     // The first task starts in the App (2026-10-19, a3023a9d7): + New, an agent, the change in words.

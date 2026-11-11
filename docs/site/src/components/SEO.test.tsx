@@ -25,7 +25,7 @@ describe("page component metadata", () => {
 
   it("describes the shared image and keeps the brand line out of the keywords", () => {
     const html = renderToStaticMarkup(<HelmetProvider><StaticRouter location="/"><SEO /></StaticRouter></HelmetProvider>);
-    const alt = "QualityLayer, quality by design: the software factory with you in the loop. Seven steps: Discuss, Research, Plan, Outline, Implement, Verify, Review";
+    const alt = "QualityLayer, quality by design: the software factory with you in the loop. Three steps: Plan, Implement, Verify";
     expect(html).toContain(`property="og:image:alt" content="${alt}"`);
     expect(html).toContain(`name="twitter:image:alt" content="${alt}"`);
     expect(html).toMatch(/name="keywords" content="[^"]*agentic software factory/);

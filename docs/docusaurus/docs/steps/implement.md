@@ -8,7 +8,7 @@ description: Start the build in the App or in your own agent. Your agent cuts th
 
 ## Start the build {#start-implement}
 
-**Approve and build here** continues the App's planning session after its turn. A waiting terminal planner gets **Build in &lt;agent&gt; · terminal**. Otherwise **Start the build** opens on Plan.
+**Approve and build here** continues the App's planning session after its turn. A planner waiting in your own agent gets **Build in &lt;agent&gt; · your agent**. Otherwise **Start the build** opens on Plan.
 
 
 | On the card | What it picks |

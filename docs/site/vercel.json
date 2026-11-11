@@ -1,6 +1,6 @@
 {
   "ignoreCommand": "bash vercel-build-check.sh",
-  "buildCommand": "bash build-all.sh",
+  "buildCommand": "bash scripts/build-deploy.sh",
   "outputDirectory": "dist",
   "framework": null,
   "regions": ["fra1"],

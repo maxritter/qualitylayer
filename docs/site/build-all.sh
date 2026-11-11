@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build both the Vite landing page and Docusaurus docs, combine into single output.
+# Build the website: the Vite landing page and App demo plus the Docusaurus docs and blog,
+# combined into one static output. It needs only the site's and the docs' own dependencies.
 # Output: docs/site/dist/ (Vite) with docs/site/dist/docs/ (Docusaurus)
 set -e
 
@@ -10,13 +11,7 @@ DOCUSAURUS_DIR="$SCRIPT_DIR/../docusaurus"
 echo "=== Building Vite landing page ==="
 cd "$SITE_DIR"
 npm ci --prefer-offline 2>/dev/null || npm install
-if [ "${VERCEL:-}" = "1" ]; then
-  node "$SITE_DIR/scripts/compile-shared-api.mjs" --profile "${QUALITYLAYER_BACKEND_PROFILE:-current}"
-fi
 npm run build
-
-echo "=== Verifying CSP inline-script hashes ==="
-node "$SITE_DIR/scripts/verify-csp-hash.mjs"
 
 echo "=== Building Docusaurus docs ==="
 cd "$DOCUSAURUS_DIR"
@@ -71,18 +66,6 @@ for f in "$BUILD"/*.xml; do
     cp "$f" "$DIST/docs/" 2>/dev/null || true
   fi
 done
-
-# IndexNow: submit /blog/ + /docs/ URLs from the merged Docusaurus sitemap.
-# The Vite plugin runs at the end of `npm run build` and only sees /
-# (Docusaurus hasn't been merged in yet at that point). We submit the rest
-# here, after the merge. Submission is gated by the same INDEXNOW_DISABLE
-# env var as the Vite plugin, and only runs when VERCEL_ENV=production.
-if [ "$VERCEL_ENV" = "production" ] && [ -f "$DIST/docs/sitemap.xml" ]; then
-  echo "=== IndexNow: submitting blog + docs URLs ==="
-  cd "$SITE_DIR"
-  node scripts/indexnow-submit.mjs "$DIST/docs/sitemap.xml" --filter /blog/ || true
-  node scripts/indexnow-submit.mjs "$DIST/docs/sitemap.xml" --filter /docs/ || true
-fi
 
 echo "=== Build complete ==="
 echo "Landing page: $DIST/"

@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /**
- * IndexNow submitter for sitemaps that don't exist when Vite finishes
- * (i.e., the Docusaurus blog + docs sitemap, which build-all.sh merges in
- * after Vite's closeBundle hook has already fired).
+ * IndexNow submitter for the deployed website's sitemaps. The production
+ * assembly (scripts/build-deploy.sh) runs it after build-all.sh has merged
+ * the Vite pages and the Docusaurus docs and blog into dist/.
  *
  * Usage:
- *   node scripts/indexnow-submit.mjs <sitemap-path> [--filter <prefix>]
+ *   node scripts/indexnow-submit.mjs <sitemap-path> [--filter <prefix>] [--root <dist>]
+ *
+ * --root names the published folder; the submission stops when its
+ * <key>.txt is missing, since search engines reject a key they cannot fetch.
  *
  * Examples:
+ *   node scripts/indexnow-submit.mjs dist/sitemap-pages.xml --root dist
  *   node scripts/indexnow-submit.mjs dist/docs/sitemap.xml --filter /blog/
  *   node scripts/indexnow-submit.mjs dist/docs/sitemap.xml          # all
  *
@@ -30,7 +34,7 @@ const filterIdx = args.indexOf("--filter");
 const filterPrefix = filterIdx >= 0 ? args[filterIdx + 1] : null;
 
 if (!sitemapPath) {
-  console.error("usage: indexnow-submit.mjs <sitemap-path> [--filter <prefix>]");
+  console.error("usage: indexnow-submit.mjs <sitemap-path> [--filter <prefix>] [--root <dist>]");
   process.exit(2);
 }
 
@@ -46,6 +50,11 @@ if (!existsSync(absSitemap)) {
 }
 
 const key = process.env.INDEXNOW_KEY ?? DEFAULT_KEY;
+const rootIdx = args.indexOf("--root");
+if (rootIdx >= 0 && !existsSync(resolve(args[rootIdx + 1] ?? "", `${key}.txt`))) {
+  console.log(`\x1b[31m✗\x1b[0m IndexNow: key file ${key}.txt missing from output, aborting submit`);
+  process.exit(0);
+}
 const xml = readFileSync(absSitemap, "utf8");
 let urls = Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/g))
   .map((m) => m[1].trim())

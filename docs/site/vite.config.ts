@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import sitemapPlugin from "./vite-plugin-sitemap.ts";
-import indexNowPlugin from "./vite-plugin-indexnow.ts";
 import prerenderPlugin from "./vite-plugin-prerender.ts";
 import cockpitDemo, { COCKPIT_DEDUPE } from "./vite-plugin-cockpit.ts";
 
@@ -46,7 +45,6 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && docusaurusRedirect(),
     sitemapPlugin(),
     prerenderPlugin(),
-    indexNowPlugin(),
   ].filter(Boolean),
   resolve: {
     // The lifecycle names its routes and optional steps from the product's own tables.

@@ -103,6 +103,8 @@ Command for each family to delete, after a reviewed dry run, with a read-write t
 
 ## Live actions waiting for Max's YES
 
+Done on 11 November with Max's approval: the project's cron jobs were disabled through the Vercel API at 14:40:03 UTC (`crons.disabledAt` set, `vercel crons list` shows disabled; the share API still answers 404 and `/api/workflow` 402 for an invalid trial). The Worker was redeployed at 14:44 UTC as version `165dfc70-afb9-48d1-93d7-06afcb95cd6e`, after the live bundle diff showed only the team-files exclusion; its 14:50 backup run completed. `QL_HEALTH_REDIS_URL` and `QL_HEALTH_REDIS_READ_ONLY_TOKEN` (the store's existing read-only token, which refused a write probe with 403) are set as repository secrets. The licence secrets are not set: no internal test key is named in the repository's notes.
+
 R1, can happen now (each independently):
 
 1. Stop the collaboration cron: after the integrator patch and `8a27005f6` reach `main`, deploy with the deploy-website skill (`bash docs/site/scripts/deploy-website.sh`); or, at once, Dashboard → qualitylayer → Settings → Cron Jobs → Disable Cron Jobs.

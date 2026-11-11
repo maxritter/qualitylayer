@@ -1,9 +1,12 @@
 export const CAPTURE_SCENES = [
   "plan", "hero", "implement", "verify", "verify-checking", "pull-request", "artifact",
   "home", "setup", "memory", "artifacts", "artifacts-open", "chat",
+  "new-task", "automations", "code-health", "question", "verify-review",
 ];
 
-export const DESKTOP_ONLY_SCENES = ["hero", "chat", "verify-checking"];
+/** Pictures only the docs show: captured at desktop width and always copied into the docs' images. */
+export const DOCS_SCENES = ["new-task", "automations", "code-health", "question", "verify-review"];
+export const DESKTOP_ONLY_SCENES = ["hero", "chat", "verify-checking", ...DOCS_SCENES];
 export const DOCS_ALIASES = { "setup-light.webp": "settings-light.webp", "setup-dark.webp": "settings-dark.webp" };
 export const HERO_FILES = ["your-turn-light.webp", "your-turn-dark.webp"];
 export const DESKTOP_HERO_FILES = ["plan-desktop-light.webp", "plan-desktop-dark.webp"];

@@ -1,6 +1,6 @@
-import { SHARED_STEP_DOCS } from "@ql/core/docs/names";
+import { NAMES } from "@ql/core/docs/names";
 
-const names = new Set(Object.values(SHARED_STEP_DOCS).flat());
+const names = new Set<string>(Object.values(NAMES));
 
 /** Export exactly the already published text. No key, comments, or private records. */
 export function markdownExport(docs: Record<string, string>, name: string): { name: string; text: string; blob: Blob } | null {

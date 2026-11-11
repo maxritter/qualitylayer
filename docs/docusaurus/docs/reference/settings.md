@@ -25,7 +25,26 @@ Each review row lists the model every installed agent uses for it; click a model
 
 ### Your instructions {#instructions}
 
-Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, helpers and reviewers read it each step; documents never copy it. Headings such as `## Plan` and `## Implement` limit lines to that step; checkboxes (`- [ ]`) are [required lines](../required-lines.md). Instructions cannot approve a gate.
+Write up to 12,000 characters in `~/.qualitylayer/instructions.md`. Agents, helpers and reviewers read it each step; documents never copy it. Headings such as `## Plan` and `## Implement` limit lines to that step; a checkbox (`- [ ]`) under one is a [step check](#step-checks). Instructions cannot approve a gate.
+
+#### Step checks {#step-checks}
+
+A step check is a checkbox line under a step's heading. The agent must do it, then record it done or skipped with a reason.
+
+```md
+## Verify
+- [ ] run: `wizcli dir scan --path .`
+- [ ] Review auth changes with the threat-model skill
+- Mention Wiz findings in the pull request.
+```
+
+| Line | What happens |
+| --- | --- |
+| `- [ ] run: …` under Implement or Verify | A Project check: the Plan names it, approving the Plan covers running it, and [Verify](../steps/verify.md) records its result |
+| `- [ ]` with other words | The agent does it its own way, with a skill, an MCP tool or by hand, and records a note or a reason |
+| `-` a plain bullet | Guidance only |
+
+Add one in **Your instructions** › **Steps**, ask your agent (“Add a Wiz scan to Verify's step checks”), or run `qualitylayer instructions add verify "<line>"`. A task keeps the checks it started with; skipped ones stay in its record. Commands use the logins already on your computer.
 
 ### Independent review {#independent-review}
 

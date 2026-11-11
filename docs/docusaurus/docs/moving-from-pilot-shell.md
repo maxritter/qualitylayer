@@ -1,5 +1,5 @@
 ---
-title: From Pilot Shell 11
+title: From Pilot Shell
 description: Use QualityLayer alongside Pilot Shell 11 and move at your own pace.
 ---
 

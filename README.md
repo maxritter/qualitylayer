@@ -56,7 +56,7 @@ Work side by side in the App or browser, or in your own agent: terminal, IDE or 
 | **A design you can review** | Ask your agent about diagrams and clickable screens, then approve the Plan before code changes. |
 | **Small, tested changes** | Your agent writes tests before code and hands independent parts to other agents when useful. |
 | **An independent check** | With independent review on, a separate agent checks the running change against your request before you review it. |
-| **Your own requirements** | Add checks, tools or skills to any step. Your agent records what ran, what did not, and why. [Required lines](https://qualitylayer.dev/docs/required-lines). |
+| **Your own requirements** | Add checks, tools or skills to any step. Your agent records what ran, what did not, and why. [Step checks](https://qualitylayer.dev/docs/reference/settings#step-checks). |
 | **Your own automations** | Send task events to a URL or a command, and read or start tasks from a script. [Automations](https://qualitylayer.dev/docs/automations). |
 | **Visible decisions and effort** | Read decisions and results in your repository; see time, model usage value and cost estimates in the App. |
 

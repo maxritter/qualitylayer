@@ -1,5 +1,5 @@
 ---
-title: Code health and security scans
+title: Code health
 description: Local checks for code complexity, duplication, secrets, vulnerable packages and risky code.
 ---
 

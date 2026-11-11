@@ -1,5 +1,5 @@
 ---
-title: Work only in your agent
+title: In your agent
 description: Run the three steps in your coding agent's chat, and answer and approve there without opening the App.
 ---
 

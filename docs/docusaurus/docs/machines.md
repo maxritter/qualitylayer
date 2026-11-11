@@ -1,5 +1,5 @@
 ---
-title: Other machines
+title: Machines
 description: Run agents on a Mac Mini, a server or VS Code dev containers, and manage them from the App on your laptop.
 ---
 

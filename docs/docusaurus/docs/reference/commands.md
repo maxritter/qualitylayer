@@ -41,7 +41,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Terminal mode
 
-“Using QualityLayer in the terminal, plan a CSV export” keeps questions and approvals in your agent's chat. Only your own picks or words count ([Work only in your agent](../work-in-your-agent.md)).
+“Using QualityLayer in the terminal, plan a CSV export” keeps questions and approvals in your agent's chat. Only your own picks or words count ([In your agent](../work-in-your-agent.md)).
 
 | Command | What it does |
 | --- | --- |
@@ -57,7 +57,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open pla
 
 | Group | Commands |
 | --- | --- |
-| [Required lines](../required-lines.md) | `instructions` · `instructions add <step> "<line>"` · `instructions done\|skip <step> <n>` |
+| [Step checks](settings.md#step-checks) | `instructions` · `instructions add <step> "<line>"` · `instructions done\|skip <step> <n>` |
 | [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
@@ -93,7 +93,7 @@ Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact
 
 ## Code health and security scans {#code-health}
 
-Advisory local checks ([Code health and security scans](code-health.md)).
+Advisory local checks ([Code health](code-health.md)).
 
 | Command | What it does |
 | --- | --- |

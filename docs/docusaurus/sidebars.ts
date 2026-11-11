@@ -9,7 +9,7 @@ const sidebars: SidebarsConfig = {
       "steps/plan", "steps/implement", "steps/verify", "steps/pull-request",
     ] },
     { type: "category", label: "App and projects", collapsed: false, items: [
-      "app", "chat", "artifacts", "reference/code-health", "memory", "required-lines", "automations",
+      "app", "chat", "artifacts", "reference/code-health", "memory", "automations",
     ] },
     { type: "category", label: "Reference", collapsed: false, items: [
       "reference/commands", "reference/settings", "reference/files", "reference/changelog",

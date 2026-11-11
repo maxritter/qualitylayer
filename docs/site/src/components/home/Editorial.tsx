@@ -181,7 +181,7 @@ export default function Editorial({ between }: { between?: ReactNode } = {}) {
       <section id="tour" className="ed-section mx-wrap" aria-labelledby="ed-workflow-h">
         <div className="ed-head">
           <h2 id="ed-workflow-h">Three steps, two approvals</h2>
-          <p>You plan and you verify; agents do everything between. Each step is one page in the App and one Markdown file in your repository. Add your own checks, tools and skills to any step. <a href="/docs/required-lines">Set your requirements</a>.</p>
+          <p>You plan and you verify; agents do everything between. Each step is one page in the App and one Markdown file in your repository. Add your own checks, tools and skills to any step. <a href="/docs/reference/settings#step-checks">Add step checks</a>.</p>
           <ul className="ed-legend" aria-label="Colours">
             {(Object.keys(WHO) as Who[]).map((who) => <li key={who} data-who={who}><span className="ed-dot" aria-hidden="true" />{WHO[who]}</li>)}
           </ul>

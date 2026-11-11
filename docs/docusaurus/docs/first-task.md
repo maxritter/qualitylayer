@@ -1,5 +1,5 @@
 ---
-title: Your first task
+title: First task
 description: Choose Chat for a direct conversation, or Feature and Bugfix for a planned change.
 ---
 

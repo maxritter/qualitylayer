@@ -11,7 +11,7 @@ description: Plan, implement and verify software with your favorite coding agent
 
 Plan, implement and verify software with your favorite coding agents. Agree on diagrams and clickable designs before building, then review the tested change.
 
-**Start here:** [Install](install.md) · [Your first task](first-task.md) · [Chat](chat.md) · [The App](app.md) · [Workflow](steps/plan.md) · [Artifacts](artifacts.md)
+**Start here:** [Install](install.md) · [First task](first-task.md) · [Chat](chat.md) · [The App](app.md) · [Workflow](steps/plan.md) · [Artifacts](artifacts.md)
 
 ## Choose how to work {#choose-how-to-work}
 

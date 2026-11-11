@@ -9,6 +9,7 @@
   "cleanUrls": true,
   "redirects": [
     { "source": "/docs/reference/changelog", "destination": "/docs/changelog", "permanent": true },
+    { "source": "/docs/required-lines", "destination": "/docs/reference/settings#step-checks", "permanent": true },
     {
       "source": "/install.ps1",
       "destination": "https://raw.githubusercontent.com/maxritter/qualitylayer/main/install.ps1",

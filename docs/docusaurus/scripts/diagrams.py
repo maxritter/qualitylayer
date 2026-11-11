@@ -625,10 +625,6 @@ def task_example(c: Theme, step: int, sections: list, questions: list, working: 
     return svg(W, H, ''.join(b), f'{STEPS[step][0]}: named agent status, one focused Your turn card above the work, visible own words and Send for questions, and Conversation / Terminal / Files with artifacts within Files')
 
 
-def app(c):
-    return plan_ill(c)
-
-
 def home_ill(c: Theme) -> str:
     W, H = 1100, 540
     b = [window(c, W, H, 'Home · QualityLayer')]
@@ -1176,7 +1172,7 @@ def artifacts_flow(c: Theme) -> str:
 
 
 
-DRAWINGS = [('architecture', architecture), ('flow-pr', lambda c: flow(c, pr=True)), ('slices', slices), ('app', app),
+DRAWINGS = [('architecture', architecture), ('flow-pr', lambda c: flow(c, pr=True)), ('slices', slices),
             ('home', home_ill),
             ('items', items_ill), ('decision', decision_ill),
             ('implement', implement_ill),

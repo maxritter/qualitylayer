@@ -11,6 +11,27 @@ const browser = await chromium.launch({ headless: true });
 const results = [];
 let page;
 let currentCase;
+// The newsletter code PILOTTHANKS15 ends on 20 November 2026; after that the checkout has no code to try.
+const promoLive = Date.now() < Date.UTC(2026, 10, 20);
+
+/** Enters PILOTTHANKS15 at the open checkout and waits for the 15 % total; returns that total. */
+async function applyNewsletterCode(page, amount, name) {
+  await page.getByRole("button", { name: "Add discount code", exact: true }).click();
+  const discount = page.locator('input[name="discount_code"]');
+  await discount.fill("PILOTTHANKS15");
+  await expect(discount).toHaveValue("PILOTTHANKS15");
+  await page.getByRole("button", { name: "Apply", exact: true }).filter({ visible: true }).first().click();
+  const discountedAmount = (amount * 0.85).toFixed(2);
+  // Polar renders both responsive summaries; require the visible total.
+  const exactDiscountedAmount = discountedAmount.endsWith(".00")
+    ? `${discountedAmount.slice(0, -3)}(?:\\.00)?`
+    : discountedAmount.replace(".", "\\.");
+  await page.getByText(new RegExp(`^€${exactDiscountedAmount}$`)).filter({ visible: true }).first().waitFor();
+  await page.getByText(/discount \(first year\)/i).filter({ visible: true }).first().waitFor();
+  assert((await page.locator("body").innerText()).includes("-15%"), `${name}: newsletter discount missing`);
+  return discountedAmount;
+}
+
 try {
   const context = await browser.newContext({ locale: "en-US", viewport: { width: 1280, height: 900 } });
   page = await context.newPage();
@@ -45,24 +66,7 @@ try {
       for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();
       const amount = plan === "Solo" ? (billing === "yearly" ? 180 : 19) : (billing === "yearly" ? 276 : 29);
       assert((await page.locator("body").innerText()).includes(`€${amount}`), `${name}: expected price missing`);
-      // The newsletter code PILOTTHANKS15 ends on 20 November 2026; after that the checkout has no code to try.
-      const promoLive = Date.now() < Date.UTC(2026, 10, 20);
-      let discountedAmount = amount.toFixed(2);
-      if (promoLive) {
-        await page.getByRole("button", { name: "Add discount code", exact: true }).click();
-        const discount = page.locator('input[name="discount_code"]');
-        await discount.fill("PILOTTHANKS15");
-        await expect(discount).toHaveValue("PILOTTHANKS15");
-        await page.getByRole("button", { name: "Apply", exact: true }).filter({ visible: true }).first().click();
-        discountedAmount = (amount * 0.85).toFixed(2);
-        // Polar renders both responsive summaries; require the visible total.
-        const exactDiscountedAmount = discountedAmount.endsWith(".00")
-          ? `${discountedAmount.slice(0, -3)}(?:\\.00)?`
-          : discountedAmount.replace(".", "\\.");
-        await page.getByText(new RegExp(`^€${exactDiscountedAmount}$`)).filter({ visible: true }).first().waitFor();
-        await page.getByText(/discount \(first year\)/i).filter({ visible: true }).first().waitFor();
-        assert((await page.locator("body").innerText()).includes("-15%"), `${name}: newsletter discount missing`);
-      }
+      const discountedAmount = promoLive ? await applyNewsletterCode(page, amount, name) : amount.toFixed(2);
       for (const field of ["Card number", "Expiration date", "Security code"]) await payment.getByRole("textbox", { name: field, exact: true }).waitFor();
       if (output) await page.screenshot({ path: resolve(output, `${plan.toLowerCase()}-${billing}.png`) });
       results.push({ plan, billing, amount, discountedAmount: Number(discountedAmount), promo: promoLive ? "PILOTTHANKS15" : null, currency: "EUR", paymentFieldsReady: true, paymentSubmitted: false });

@@ -50,4 +50,4 @@ If a build fails, inspect the failure first. A missing requirement needs a clear
 
 Keep the model that gives you reliable accepted changes at an acceptable cost. Preserve the evaluation tasks so you can run them again when your repository or agent changes.
 
-For published pricing and availability, use the [current Opus page](https://www.anthropic.com/claude/opus). For the workflow itself, start with [Frame](/docs/steps/discuss): define the outcome before choosing the machinery.
+For published pricing and availability, use the [current Opus page](https://www.anthropic.com/claude/opus). For the workflow itself, start with [Frame](/docs/steps/plan): define the outcome before choosing the machinery.

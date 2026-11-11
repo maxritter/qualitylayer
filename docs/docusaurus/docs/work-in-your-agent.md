@@ -1,9 +1,9 @@
 ---
 title: Work only in your agent
-description: Run the seven steps in your coding agent's chat, and answer and approve there without opening the App.
+description: Run the three steps in your coding agent's chat, and answer and approve there without opening the App.
 ---
 
-The seven steps run in your agent's chat. You answer questions and approve the Plan and the final Review there. Open the App only when you want to read the documents or review the code in it.
+Plan, Implement and Verify run in your agent's chat. You answer questions and approve the Plan and the finished change there. Open the App only when you want to read the documents or review the code in it.
 
 ## Start a task {#start}
 
@@ -42,17 +42,17 @@ Tasks you start in the App always answer in the App.
 
 ## What you see in your agent {#what-you-see}
 
-- **Questions** in Discuss, Research and Plan appear in the agent's own picker.
+- **Questions** in Plan appear in the agent's own picker.
 - **Plan**: a short summary and the path of the full file, any **Your call** to settle, then **Approve Plan**, **Give feedback** or **Show the Plan**.
 - **Build**: after you approve, choose where to build: **Build here, from the Plan** (compact, then say "build here"), **Keep this conversation** or **Another session or agent**.
-- **Review**: the final approval.
+- **Verify**: the final approval, once every point is proven.
 
 Only your own pick or words count as an answer or an approval. An example at the Plan, with a fictional task:
 
 ```text
 Plan ready: Add a CSV export to the Orders page
 Adds an Export button that downloads the rows you filtered.
-Full text: docs/plans/csv-export/03-plan.md
+Full text: docs/plans/csv-export/01-plan.md
 
   Approve Plan
   Give feedback

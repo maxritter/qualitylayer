@@ -25,7 +25,7 @@ Make a check, tool or skill part of a step. Your agent records each outcome, inc
 
 | Line | What happens |
 | --- | --- |
-| `- [ ] run: …` under Implement, Verify or Review | A Project check: the Plan names it, approving the Plan covers running it, and [Verify](steps/verify.md) records its result |
+| `- [ ] run: …` under Implement or Verify | A Project check: the Plan names it, approving the Plan covers running it, and [Verify](steps/verify.md) records its result |
 | `- [ ]` with other words | The agent does it its own way, with a skill, an MCP tool or by hand, then records a note or a reason |
 | `-` a plain bullet | Guidance, as before |
 
@@ -39,6 +39,6 @@ Make a check, tool or skill part of a step. Your agent records each outcome, inc
 
 - A task keeps the lines it started with. An edit applies from your next task.
 - Your agent is reminded once when it leaves a step with unrecorded lines. Missing records never count as passing evidence.
-- Review lines are done before the final review opens. Put checks that must run under Verify.
-- Your agent resolves failed or unavailable checks before Review, asking a question when only you can settle them. Unrun checks stay unrun in the record.
+- Verify's lines are done before Verify turns to you for the final approval.
+- Your agent resolves failed or unavailable checks before your review, asking a question when only you can settle them. Unrun checks stay unrun in the record.
 - Commands and connectors use the logins already on your computer. QualityLayer stores no credentials.

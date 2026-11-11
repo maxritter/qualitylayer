@@ -22,7 +22,7 @@ Save decisions, fixes, constraints and working preferences for your agents to re
 | --- | --- |
 | **Session lessons** | Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching project and personal lessons; all except Grok receive them after compaction too. Changed files mark a lesson for rechecking. Task answers require a search. Delivery can be skipped when hooks are off, unavailable or slow |
 | **Tools** | Claude Code, Codex, Pi, OpenCode, Cursor, Grok and GitHub Copilot use `memory_search`, `memory_read`, `memory_save` and `memory_keep`; Antigravity uses the [CLI](#command-line). Every client can use that fallback |
-| **Task lessons** | Review records decisions, fixed findings and amendments; missing or failed checks never count as passing. The task's **Memory** record in Files shows what was used and saved |
+| **Task lessons** | Verify records decisions, fixed findings and amendments; missing or failed checks never count as passing. The task's **Memory** record in Files shows what was used and saved |
 
 Search and read lessons when earlier decisions matter, including after compaction or when automatic context is missing. Check them against current code; lessons are reference data, never instructions.
 

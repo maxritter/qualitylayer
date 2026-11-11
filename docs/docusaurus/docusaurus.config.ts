@@ -92,9 +92,9 @@ const config: Config = {
       {
         name: "keywords",
         content:
-          "QualityLayer, software factory, agentic software factory, human in the loop, coding agents, SDLC, shift left, planning, test-first development, QualityLayer App, Claude Code, Codex, independent review, team plan review",
+          "QualityLayer, software factory, agentic software factory, human in the loop, coding agents, SDLC, shift left, planning, test-first development, QualityLayer App, Claude Code, Codex, independent review",
       },
-      { property: "og:image:alt", content: "QualityLayer, quality by design: the software factory with you in the loop. Seven steps: Discuss, Research, Plan, Outline, Implement, Verify, Review" },
+      { property: "og:image:alt", content: "QualityLayer, quality by design: the software factory with you in the loop. Three steps: Plan, Implement, Verify" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@maxritter" },
       { property: "og:type", content: "website" },
@@ -149,7 +149,7 @@ const config: Config = {
           title: "Docs",
           items: [
             { label: "Install", to: "/docs/install" },
-            { label: "Workflow", to: "/docs#the-seven-steps" },
+            { label: "Workflow", to: "/docs#the-three-steps" },
             { label: "Command reference", to: "/docs/reference/commands" },
             { label: "Changelog", to: "/docs/changelog" },
             { label: "Blog", to: "/blog" },

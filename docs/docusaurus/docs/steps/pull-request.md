@@ -1,12 +1,12 @@
 ---
 title: Pull request
-description: Choose to open a pull request from Review, then follow its checks and reviewers until you merge it.
+description: Choose to open a pull request when you approve on Verify, then follow its checks and reviewers until you merge it.
 ---
 
-![The workflow, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-light.svg)
-![The workflow, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-dark.svg)
+![The three steps and the pull request, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-light.svg)
+![The three steps and the pull request, with Pull request highlighted](pathname:///img/diagrams/track-pull-request-dark.svg)
 
-Open a pull request from [Review](review.md#approve). QualityLayer follows its checks and comments; you control the merge.
+Open a pull request when you approve on [Verify](verify.md#approve). QualityLayer follows its checks and comments; you control the merge.
 
 ![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-light.webp)
 ![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-dark.webp)
@@ -15,7 +15,7 @@ Open a pull request from [Review](review.md#approve). QualityLayer follows its c
 
 ## Following it {#following}
 
-While the App is open, Review reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge to local Git, or you mark it merged.
+While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge to local Git, or you mark it merged.
 
 ## Your agent watches the checks {#watch}
 

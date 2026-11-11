@@ -75,11 +75,11 @@ Answers reach your agent immediately and never approve the Plan or change.
 
 **Files** holds every document, artifact, review and record, plus **Review the code** and **View changes**; its **Records** row opens `records/`, `evidence/` and `agents/`. **Reader** shows a whole document; its bar holds **On this page** and **Copy document**. Step documents end with **For agents**. Copy includes **Technical** folds. **Copy as Markdown** keeps Mermaid and local picture names; **Copy formatted** includes PNG pictures. Working artifacts are compact entries in **Files**; **Open full size** opens the full page.
 
-Select a passage, code line or artifact spot and choose **Ask agent**. Conversation opens with an editable draft that includes the selected context and revision. Review it and send it through your agent’s native input. With no session, the draft stays while you select an agent. If Conversation input is unsupported, use the explicit terminal/copy handoff. A request never approves a Plan, changes approved scope or settles the final Review.
+Select a passage, code line or artifact spot and choose **Ask agent**. Conversation opens with an editable draft that includes the selected context and revision. Review it and send it through your agent’s native input. With no session, the draft stays while you select an agent. If Conversation input is unsupported, use the explicit terminal/copy handoff. A request never approves a Plan, changes approved scope or settles the final approval.
 
 ## Code review {#code-review}
 
-Open **Changes** in the header or **Review the code** in Review or Files. Choose one file or all files, **Unified / Split** diffs, or **Full file › Version** for an exact revision.
+Open **Changes** in the header or **Review the code** in Verify or Files. Choose one file or all files, **Unified / Split** diffs, or **Full file › Version** for an exact revision.
 
 **Viewed** records your reading progress. Tick a file or a group, or use **All viewed** and **Clear** for every file. **Exit** returns to the view you opened it from; while your approval waits it reads **Finish code review**. Approving the change remains a separate action.
 
@@ -97,7 +97,7 @@ When you start a task or the build, choose where the agent runs:
 | Where | How |
 | --- | --- |
 | **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
-| **In my terminal** | Ask any coding agent in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the final Review in the App |
+| **In my terminal** | Ask any coding agent in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the finished change in the App |
 
 Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
 

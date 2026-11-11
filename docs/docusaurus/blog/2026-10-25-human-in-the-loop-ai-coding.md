@@ -71,6 +71,6 @@ Claude Code, Codex, Cursor, Grok, Antigravity, Pi and OpenCode have native suppo
 
 - [Spec-driven development with Claude Code, Codex and Cursor](/blog/spec-driven-development-guide): the method step by step
 - [The list I write before my coding agent touches anything](/blog/done-means): the Done means list, with or without a tool
-- [The Plan step](/docs/steps/plan), [the Review step](/docs/steps/review) and [reviewing a Plan with your team](/docs/team/plans)
+- [The Plan step](/docs/steps/plan), [the Review step](/docs/steps/verify#items) and [reviewing a Plan with your team](/docs/steps/plan)
 - [How QualityLayer compares to plan modes and other tools](https://qualitylayer.dev/compare)
 - [QualityLayer on GitHub](https://github.com/maxritter/qualitylayer)

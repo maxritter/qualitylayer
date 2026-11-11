@@ -74,7 +74,7 @@ I get back a short report with evidence per point. I read that first. Then I loo
 
 ## How I do this in QualityLayer
 
-QualityLayer is built around this list. Its [Discuss step](/docs/steps/discuss) runs this conversation for every change, and the list ends up in the [Plan](/docs/steps/plan) I approve before any code exists. After the build, an agent that didn't write the code [checks every point](/docs/steps/verify) and shows me the evidence. Anything it can't check stays open for me at [Review](/docs/steps/review). It works with Claude Code, Codex, OpenCode, Pi and others, and the list is a Markdown file in the repo.
+QualityLayer is built around this list. Its [Discuss step](/docs/steps/plan) runs this conversation for every change, and the list ends up in the [Plan](/docs/steps/plan) I approve before any code exists. After the build, an agent that didn't write the code [checks every point](/docs/steps/verify) and shows me the evidence. Anything it can't check stays open for me at [Review](/docs/steps/verify#items). It works with Claude Code, Codex, OpenCode, Pi and others, and the list is a Markdown file in the repo.
 
 In my view, everybody who writes software is becoming a manager of agents. The list is how I stay the engineer in that setup: I decide, review and steer, and the agent does the typing.
 

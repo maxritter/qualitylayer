@@ -6,7 +6,7 @@ const sidebars: SidebarsConfig = {
       "intro", "install", "first-task", "work-in-your-agent", "agents/native", "agents/other", "moving-from-pilot-shell",
     ] },
     { type: "category", label: "Workflow", collapsed: false, items: [
-      "steps/discuss", "steps/research", "steps/plan", "steps/outline", "steps/implement", "steps/verify", "steps/review", "steps/pull-request",
+      "steps/plan", "steps/implement", "steps/verify", "steps/pull-request",
     ] },
     { type: "category", label: "App and projects", collapsed: false, items: [
       "app", "chat", "artifacts", "reference/code-health", "memory", "required-lines", "automations",

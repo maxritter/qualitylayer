@@ -5,14 +5,15 @@ description: What a task writes into your repository, what stays on your compute
 
 ## A task's files
 
-![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-light.svg)
-![A task folder in docs/plans: seven documents, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-dark.svg)
+![A task folder in docs/plans: three documents with their agents' files, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-light.svg)
+![A task folder in docs/plans: three documents with their agents' files, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-dark.svg)
 
 Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never touched by uninstalling. You decide whether to commit these documents; QualityLayer does not stage or commit them automatically.
 
 | In the folder | What it holds |
 | --- | --- |
-| **The seven documents** | One per step that runs ([below](#documents)) |
+| **The three documents** | One per step, each with a file for agents ([below](#documents)) |
+| `research/` | The helpers' reports, one per question |
 | `original-plan.md` | A plan supplied through Existing plan or saved in Chat, unchanged |
 | `artifacts/` | Local artifacts and their revisions. |
 | `reviews/` | The Plan review and second opinion, when they ran; with a panel, also each reviewer's answer of both rounds |
@@ -20,22 +21,18 @@ Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never
 | `evidence/` | Pictures and recordings the checks made |
 | `chat-plan.md`, `chat-slices.md` | A [Chat](../chat.md)'s saved plan and its build outline |
 
-## The seven documents {#documents}
+## The three documents {#documents}
 
-Each opens with what you read first; code shapes, paths and commands follow in the Reader. QualityLayer refuses a document whose marked sections were edited by hand.
+Each opens with what you read first; code shapes, paths and commands follow in the Reader. Each fact is written once, in one file. QualityLayer refuses a document whose marked sections were edited by hand.
 
 | File | What it holds |
 | --- | --- |
-| `01-discuss.md` | Your request, the problem, **Done means**, scope and decisions |
-| `02-research.md` | **How it works today:** a picture of the code, findings, risks and tests. A bug's is **Why it breaks** |
-| `03-plan.md` | The decided design, artifacts, **Not doing**, **Before the build** and who reviewed it, written for people |
-| `agents/03-plan.md` | Notes for the build: code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
-| `04-outline.md` | Where the change lands, the slices, checks and build commands |
-| `05-implement.md` | Slice progress, checks and decisions |
-| `06-verify.md` | A summary and one line per check stage |
-| `agents/06-verify.md` | What the agents fix from: failing points, findings, commands, security review and every judged round |
-| `07-review.md` | The pull request's description: why, where to start reading, the change in diagrams, the screens and the acceptance test as it ran |
-| `agents/07-review.md` | What the agents ship and follow up from |
+| `01-plan.md` | What you approve: the problem, **Done means** with their steps, scope, diagrams, artifacts, the approach and the decisions. Its front matter holds the task's identity |
+| `agents/01-plan.md` | Notes for the build: constraints, findings, code to follow, how to run and test, pitfalls. It grants nothing; the Plan wins |
+| `02-implement.md` | The slices, what was decided while building and known limits |
+| `agents/02-implement.md` | The task cards and the build's notes |
+| `03-verify.md` | The pull request's description: why, the code, the change in diagrams, the screens and **Done means** as it ran |
+| `agents/03-verify.md` | Verdicts, findings, commands, security review, fix rounds, ship steps and follow-ups |
 
 ## Lasting artifacts {#lasting}
 

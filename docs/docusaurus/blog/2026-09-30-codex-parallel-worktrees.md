@@ -52,7 +52,7 @@ When a task returns, inspect its diff and verification result. Re-run checks whe
 
 Keep the acceptance criteria intact. A merge conflict should not become an excuse to quietly simplify what the task promised.
 
-QualityLayer's [Handoff](/docs/steps/implement#start-implement) can recommend a new worktree when another task is building in the same checkout. The final [Review](/docs/steps/review) stage still shows the combined change and evidence.
+QualityLayer's [Handoff](/docs/steps/implement#start-implement) can recommend a new worktree when another task is building in the same checkout. The final [Review](/docs/steps/verify#items) stage still shows the combined change and evidence.
 
 ## Close the worktree carefully
 

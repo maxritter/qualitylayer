@@ -50,4 +50,4 @@ A builder can follow the plan and still misunderstand an interaction. Try the fi
 
 The handoff is useful when it preserves the decisions and makes the result easier to assess. It should not require you to reconstruct a second agent's private conversation.
 
-Start with [your first QualityLayer task](/docs/first-task), or read the [workflow overview](/docs#the-seven-steps).
+Start with [your first QualityLayer task](/docs/first-task), or read the [workflow overview](/docs#the-three-steps).

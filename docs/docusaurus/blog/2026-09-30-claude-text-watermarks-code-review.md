@@ -43,7 +43,7 @@ Save the request, decisions, changes and verification output together. When a re
 
 That record should distinguish a test that passed from a behavior that was tried manually. It should also state what could not be checked. A confident summary that hides those distinctions makes later maintenance harder.
 
-QualityLayer's [Verify](/docs/steps/verify) view groups review rounds and evidence. The [Review](/docs/steps/review) stage puts the change and its manual checks beside the result, so you can inspect them together.
+QualityLayer's [Verify](/docs/steps/verify) view groups review rounds and evidence. The [Review](/docs/steps/verify#items) stage puts the change and its manual checks beside the result, so you can inspect them together.
 
 ## Avoid overreading a detector
 
@@ -51,4 +51,4 @@ Anthropic's own explanation does not present watermark detection as a test of so
 
 The practical engineering decision remains observable: does the running change meet the requirements, and can another person follow the evidence?
 
-Related: [the diagnosis phase](/docs/steps/discuss#a-bug) and [building in working slices](/docs/steps/implement).
+Related: [the diagnosis phase](/docs/steps/plan#a-bug) and [building in working slices](/docs/steps/implement).

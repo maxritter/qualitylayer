@@ -29,9 +29,9 @@ Artifacts and their source stay on machines you control. Copies are independent.
 
 **Save to library…** in a draft's menu stores it **In the repository** (travels with commits) or **Only on this computer** (out of Git). To change a lasting artifact, ask your agent to draft on it. **Files** keeps its source, metadata and revision actions together. Restoring a revision preserves the artifact's identity; deleting a registration never deletes the application source it points to.
 
-### Fold in at Review {#fold-in}
+### Fold in at Verify {#fold-in}
 
-The original stays until Review shows **This task changes …**: pick the pages (**Compare** shows both), then **Fold N pages in**. They join the pull request only with your authorized Git action.
+The original stays until Verify shows **This task changes …**: pick the pages (**Compare** shows both), then **Fold N pages in**. They join the pull request only with your authorized Git action.
 
 ## Existing artifacts
 

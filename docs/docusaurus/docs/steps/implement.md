@@ -1,14 +1,14 @@
 ---
 title: Implement
-description: Start the build in the App or your terminal. Your agent builds the approved Plan test first and decides when it is ready for Verify.
+description: Start the build in the App or your terminal. Your agent cuts the approved Plan into slices and builds them test first, without a stop.
 ---
 
-![The workflow, with Implement highlighted](pathname:///img/diagrams/track-implement-light.svg)
-![The workflow, with Implement highlighted](pathname:///img/diagrams/track-implement-dark.svg)
+![The three steps, with Implement highlighted](pathname:///img/diagrams/track-implement-light.svg)
+![The three steps, with Implement highlighted](pathname:///img/diagrams/track-implement-dark.svg)
 
 ## Start the build {#start-implement}
 
-**Approve and build here** continues the App's planning session after its turn. A waiting terminal planner gets **Build in &lt;agent&gt; · terminal** and writes the Outline next. Otherwise **Start the build** opens on Plan.
+**Approve and build here** continues the App's planning session after its turn. A waiting terminal planner gets **Build in &lt;agent&gt; · terminal**. Otherwise **Start the build** opens on Plan.
 
 ![The Implement start card](pathname:///img/app/implement-start-light.webp)
 ![The Implement start card](pathname:///img/app/implement-start-dark.webp)
@@ -38,17 +38,21 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 *Example task in a fictional project.*
 
-**Implement** shows the slices with their tasks: every slice open for a small build, the one in work for a larger one, and past 10 slices the finished ones in one row. A task opens to one sentence and its card (files, test first, done when). The header counts tasks and slices and names the task in work. A failing check is your agent's to fix, so the page does not flag it; a check that blocks the build reaches you as a question, and [Review](review.md) still refuses a red check. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
+Your agent first cuts the Plan into slices that each work end to end, thinnest first, and each slice into task cards. The first slice starts as soon as its cards exist. For a bug, reproduction comes before the repair.
+
+**Implement** is the build board: every slice open for a small build, the one in work for a larger one, and past 10 slices the finished ones in one row. A task opens to one sentence and its card (files, test first, done when). The header counts tasks and slices and names the task in work. A failing check is your agent's to fix, so the page does not flag it; a check that blocks the build reaches you as a question, and the final approval still refuses a red check. Your agent writes a failing test, builds the change, fixes failures and commits. It may delegate independent slices.
 
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
 ![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)
 
-- Test runs are recorded with their commit and exit code, so [Verify](verify.md) can cite them.
-- Amendments appear under **Decided while building**, a closed fold with a count; each numbered row opens and says whether it changes what you approved. A change to what you approved becomes a visible amendment.
-- A login, secret or other human-only prerequisite never counts as passed. Other work continues: it waits as a need, you get one question at the end of [Verify](verify.md#when-it-stops) if it is still missing, and the App never takes the secret.
-- Outline, Implement and Verify decide for themselves. A matter only you can settle is asked once, and the build goes on while you answer; only Verify's closing question waits for you.
+- Test runs are recorded with their commit and exit code, so [Verify](verify.md) can cite them. Your agent runs each **Done means** step on the built tree before Verify starts.
+- **Known limits**, **Decided while building** and **Program design** fold under the board. A row under **Decided while building** says whether it is the build order or an amendment to what you approved; a task card that changes is the agents' business.
+- A login, secret or other human-only prerequisite never counts as passed. Other work continues: it waits as a need, you get one question at the end of [Verify's checks](verify.md#when-it-stops) if it is still missing, and the App never takes the secret.
+- Implement and Verify decide for themselves. A matter only you can settle is asked once, and the build goes on while you answer.
 - Runs start in the agent's own [permission mode](../agents/native.md#permission-modes). Native permission and sign-in prompts still need your response, and an explicit stop or pause stays in force.
 
 ## When the build is done {#when-done}
 
 The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs stay open in Verify, never passed.
+
+Next: [Verify](verify.md).

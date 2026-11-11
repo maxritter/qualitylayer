@@ -32,13 +32,13 @@ Only then does the build start.
 
 ## Bringing the team in
 
-A plan only helps a team if the team can see it. I can [share a plan](/docs/team/plans) and ask one colleague about one specific decision. They answer in the App, or let their own agent draft an answer and send it after reading it. People without an account, for example a designer or a product manager, can join through a guest link.
+A plan only helps a team if the team can see it. I can [share a plan](/docs/steps/plan) and ask one colleague about one specific decision. They answer in the App, or let their own agent draft an answer and send it after reading it. People without an account, for example a designer or a product manager, can join through a guest link.
 
-For product people there is a [Product level](/docs/steps/discuss#product-level). With it, the plan shows what changes for users first, with the engineering detail one click away.
+For product people there is a [Product level](/docs/steps/plan). With it, the plan shows what changes for users first, with the engineering detail one click away.
 
 ## After approval
 
-After I approve the plan, the agent builds it in small slices, each starting with a failing test. An agent that didn't write the code [checks every point](/docs/steps/verify) the agent and I agreed on and shows me the evidence. At [Review](/docs/steps/review) I approve the finished change, and QualityLayer opens the pull request. It never merges.
+After I approve the plan, the agent builds it in small slices, each starting with a failing test. An agent that didn't write the code [checks every point](/docs/steps/verify) the agent and I agreed on and shows me the evidence. At [Review](/docs/steps/verify#items) I approve the finished change, and QualityLayer opens the pull request. It never merges.
 
 The plan and the evidence stay in the repo. Whoever reviews the pull request can read why the change looks the way it does.
 

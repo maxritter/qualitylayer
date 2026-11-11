@@ -47,7 +47,7 @@ Do not repeat a generated configuration as if it were the source. If a tool owns
 
 AGENTS.md is a poor place for the current task's open questions, abandoned options and progress counter. Those records belong with the task.
 
-A durable plan should say which decisions were approved, what the builder must deliver and how the result will be checked. QualityLayer keeps that material in the task documents, with [Frame](/docs/steps/discuss), [Design](/docs/steps/plan) and [Outline](/docs/steps/plan) serving different purposes.
+A durable plan should say which decisions were approved, what the builder must deliver and how the result will be checked. QualityLayer keeps that material in the task documents, with [Frame](/docs/steps/plan), [Design](/docs/steps/plan) and [Outline](/docs/steps/plan) serving different purposes.
 
 The repository guide can explain where those documents are found without copying them into global instructions.
 

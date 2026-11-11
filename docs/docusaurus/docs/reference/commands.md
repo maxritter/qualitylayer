@@ -11,14 +11,14 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 | Example request | What it does |
 | --- | --- |
-| “Using QualityLayer, plan a CSV export” | Starts a task at [Discuss](../steps/discuss.md) |
+| “Using QualityLayer, plan a CSV export” | Starts a task at [Plan](../steps/plan.md) |
 | “Using QL, implement the approved plan for task retry-webhooks” | Builds an approved Plan ([Implement](../steps/implement.md#start-implement)) |
 | “Using QL, review task retry-webhooks” | Reviews the result or follows [pull request](../steps/pull-request.md) review threads |
 | “Open the current QualityLayer artifact in my browser at Billing” | Opens that artifact page and section |
 
 ## Existing plans {#existing-plans}
 
-`qualitylayer next --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.md#existing-plan)).
+`qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.md#existing-plan)).
 
 ## Chat {#chat}
 
@@ -29,7 +29,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `chat plan save --file <markdown>` | Save `chat-plan.md` (`--text` instead of a file) |
 | `chat build [--file <outline>]` · `--stop <slice>` | Start or resume slice helpers, or record one stopped |
 | `chat check [--slice <n>]` · `chat review` | Print validation commands, or brief a fresh reviewer |
-| `chat promote --type feature\|bugfix [--from-saved-plan]` | Move into the workflow at Discuss, or at Plan from the saved plan |
+| `chat promote --type feature\|bugfix [--from-saved-plan]` | Move into the workflow at Plan, from the conversation or the saved plan |
 
 ## Terminal mode
 
@@ -40,12 +40,12 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `task set answers=terminal\|app` · `approvals=terminal\|app` | Where you answer and approve for the current task |
 | `settings set answers terminal` · `settings set approvals terminal` | Where tasks you start in your agent answer and approve |
 | `settings set offerWorkflow false` | Your agent no longer offers QualityLayer when you ask it to plan |
-| `read 03-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
-| `plan export --out <folder>` | Export the Plan, `01-discuss.md` and pictures; report any picture that could not be made |
+| `read 01-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
+| `plan export --out <folder>` | Export the Plan, its agents' file and pictures; report any picture that could not be made |
 
 ## Commands by group
 
-Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-plan.md`.
+Prefix each command with `qualitylayer`, for example `qualitylayer gate open plan`.
 
 | Group | Commands |
 | --- | --- |
@@ -61,11 +61,11 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open 03-
 
 | Group | Commands |
 | --- | --- |
-| Workflow | `next` · `next --implement` · `next done` · `gate open 03-plan.md` · `gate open final` · `plan draft` · `plan amend` · `plan export` |
-| Questions | `question ask` · `question show` · `question answered` · `question link` · `wait` |
-| Building | `check task T<n>\|slice <n>\|all` · `commit slice <n>\|slices\|fix [--commit <hash>]` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
-| Checking | `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
-| Review | `review fix-open-items` · `pr watch` |
+| Workflow | `next` (reads only) · `brief plan\|implement\|verify` · `task start` · `plan draft` · `gate open plan\|final` · `plan amend` · `plan export` · `wait` |
+| Questions | `question ask` · `question show` · `question answered` · `question link` |
+| Building | `build start` · `build done` · `check task T<n>\|slice <n>\|step A<n>\|all` · `commit slice <n>\|slices\|fix [--commit <hash>]` · `card T<n>` · `need "<what. why>" --for T<n>` · `limit add` · `progress` |
+| Checking | `verify judge\|recheck\|fix\|keep-red` · `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
+| Shipping | `ship` · `pr watch` |
 
 </details>
 
@@ -121,7 +121,7 @@ To oversee a task, ask your agent to run `qualitylayer status --json --task <tas
 | `last_decision` | Approvals and requested changes |
 | `answer_mode` | Where you answer, with its recorded origin |
 
-Sessions on this computer coordinate through `ql-peer` within the work you authorize. You choose the build session and approve the Plan and final Review.
+Sessions on this computer coordinate through `ql-peer` within the work you authorize. You choose the build session and approve the Plan and the finished change.
 
 ```bash
 qualitylayer peers list

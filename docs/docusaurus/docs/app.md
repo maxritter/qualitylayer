@@ -107,7 +107,7 @@ Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session**
 
 ## In Claude Code
 
-A band above your prompt says when something waits for you, and `/task-pane` shows the steps and build progress.
+A band above your prompt says when this task or another one needs you; `/task-pane` adds the steps, build progress and every task that needs you, runs or has an open pull request.
 
 ![The band above the Claude Code prompt: what waits for you in the App, how the build runs, or teammates’ questions for you](pathname:///img/diagrams/band-light.svg)
 ![The band above the Claude Code prompt: what waits for you in the App, how the build runs, or teammates’ questions for you](pathname:///img/diagrams/band-dark.svg)

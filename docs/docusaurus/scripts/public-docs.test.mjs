@@ -40,7 +40,7 @@ test("every guide renders its kit: no raw imports or tags, no placeholder, and a
 });
 
 test("diagrams open at full size from each guide, with an accessible name and the right theme", () => {
-  for (const route of ["", "install/", "first-task/", "steps/implement/", "steps/verify/", "steps/pull-request/", "agents/other/", "reference/code-health/", "reference/files/"]) {
+  for (const route of ["", "install/", "first-task/", "steps/implement/", "steps/pull-request/", "agents/other/", "reference/code-health/", "reference/files/"]) {
     const links = [...article(route).matchAll(/<a\b[^>]*class="ql-diagram"[^>]*>[\s\S]*?<\/a>/g)].map((m) => m[0]);
     assert.ok(links.length >= 2, `${route}: no full-size illustrations; run npm run build first`);
     for (const link of links) {

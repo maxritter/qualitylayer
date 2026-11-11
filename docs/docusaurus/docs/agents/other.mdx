@@ -27,11 +27,7 @@ Any coding agent that runs shell commands, including local models, can run the s
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-light.svg)
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-dark.svg)
 
-On **Start the build**, choose **In my own agent**, then ask your agent in the project to continue the approved task, or paste the prepared request. It follows Implement and Verify until your final approval.
-
-## Run in your own agent {#app-start}
-
-A copied prompt works in any coding agent. It does not add the App's conversation view or session controls; those come with the supported agents.
+On **Start the build**, choose **In my own agent**, then ask your agent in the project to continue the approved task, or paste the prepared request. It follows Implement and Verify until your final approval.<span id="app-start"></span>
 
 ## What changes {#differences}
 
@@ -42,7 +38,6 @@ A copied prompt works in any coding agent. It does not add the App's conversatio
 | Building | One session builds the slices; it can use its agent's own subagents | One session builds the slices with its own tools |
 | Sessions | The App's **Conversation** and session controls | Your agent's own window and controls |
 | Cost panel | Per step, when the agent's records hold token counts | Not shown |
-| [Second opinion](../reference/settings.mdx#second-opinion) | Choose an installed native reviewer | Can use an installed native reviewer |
 
 <details>
 <summary>For the agent's author</summary>

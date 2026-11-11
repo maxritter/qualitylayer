@@ -29,7 +29,7 @@ describe("installation and build instructions", () => {
     const implement = doc("steps/implement.mdx");
     expect(implement).toMatch(/prerequisite only you can provide never counts as passed/);
     expect(implement).toMatch(/the build goes on while you answer/);
-    expect(implement).toMatch(/at the end of \[Verify's checks\][^.]*it reaches you as one question/);
+    expect(implement).toMatch(/at the end of \[Verify's checks\]\([^)]*\), it reaches you as one question/);
     expect(implement).toMatch(/the App never takes the secret/i);
     expect(implement).toMatch(/permission and sign-in prompts still need you/);
     expect(implement).toMatch(/a stop or pause stays in force/);

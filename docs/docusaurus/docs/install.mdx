@@ -46,7 +46,7 @@ Setup adds missing Claude Code, Codex and Grok settings, such as native task too
 
 <Warning>If you have not chosen native permissions, Claude Code starts in **Bypass** and Codex in **Full access**, also outside QualityLayer. Choose another mode in **Settings › Agents › Edit launch…** or in the agent itself.</Warning>
 
-## In your browser {#browser}
+## Without the desktop App {#browser}
 
 `qualitylayer app` opens the same workspace in your browser. Agents run where QualityLayer is installed.
 
@@ -107,7 +107,7 @@ In the App, choose **Restart and update** from **Update ready** or the bar above
   </Tab>
   <Tab value="windows" label="Windows">
 
-<span id="uninstall-windows"></span>This works even when the App or command line is blocked or gone. Your logins, licence and tasks stay; add `-Purge` to remove QualityLayer's data too.
+<span id="uninstall-windows"></span>This works even when the App or command line is blocked or gone. Your plans, logins, licence and tasks stay; add `-Purge` to remove QualityLayer's settings, licence and tasks too.
 
 ```powershell
 & ([scriptblock]::Create((irm https://qualitylayer.dev/install.ps1))) -Uninstall

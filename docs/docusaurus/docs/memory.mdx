@@ -13,7 +13,7 @@ Save decisions, fixes, constraints and working preferences for your agents to re
   label="How a saved lesson reaches an agent"
   nodes={[
     { icon: "file-text", label: "Save a lesson", detail: "A task or agent records something worth reusing" },
-    { icon: "list-todo", label: "Find it locally", detail: "Search matches words, meaning and file paths" },
+    { icon: "search", label: "Find it locally", detail: "Search matches words, meaning and file paths" },
     { icon: "message-square", label: "Use it in context", detail: "Your agent receives the relevant lesson" },
   ]}
 />
@@ -21,7 +21,7 @@ Save decisions, fixes, constraints and working preferences for your agents to re
 ## What your agents get {#what-your-agents-get}
 
 <CardGroup cols={3}>
-  <Card title="Session lessons" icon="message-square">Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching lessons, and all but Grok again after compaction.</Card>
+  <Card title="Session lessons" icon="lightbulb">Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching lessons, and all but Grok again after compaction.</Card>
   <Card title="Tools" icon="square-terminal">`memory_search`, `memory_read`, `memory_save` and `memory_keep`; Antigravity and any other agent use the [command line](#command-line).</Card>
   <Card title="Task lessons" icon="shield-check" tone="verify">Verify records decisions, fixed findings and amendments, never without recorded passing checks.</Card>
 </CardGroup>
@@ -36,7 +36,7 @@ Personal lessons apply across repositories on this computer and never go to Git.
 
 ## Manage your lessons {#manage-your-lessons}
 
-<Screenshot name="memory" alt="Memory settings with project sharing and saved lessons; illustrative project data" />
+<Screenshot name="memory" alt="Memory settings with project sharing and saved lessons" />
 
 In **Settings › Memory**, search, edit or retire lessons, and pin up to five per project and five personal ones. Use **Still true** after checking changed files. Stale lessons retire after 90 days and can be restored. **Lessons in every session** turns off automatic delivery; you can also pause memory.
 
@@ -58,15 +58,15 @@ Lessons and the search model stay on your computer; no lesson goes to an embeddi
 
 Turning sharing off stops exchange and leaves committed files in place.
 
-### Import repository records {#import-repository-records}
+### Restore lessons from Git {#import-repository-records}
 
-Choose **Restore from repository** (`memory import`) in the project where you want those records. Repository content is untrusted evidence; check it against current work. Search, startup and export never import by themselves.
+Choose **Restore from repository** in the project where you want the lessons. Your agent treats them as untrusted until it checks them against the current code. Search, startup and export never import by themselves.
 
-Lesson identities, revisions and retirements survive export and import across your machines, and a missing file never retires a local lesson. If two machines changed the same revision, both stay: **Compare versions**, then **Use selected version**, before you export again. Export refuses to overwrite a conflicting revision.
+Imports keep each lesson's history, and a missing file never retires a local lesson. If two computers changed the same lesson, both stay: choose one with **Compare versions** and **Use selected version** before you export again.
 
 ## Import Pilot lessons {#import-pilot-lessons}
 
-Import Pilot Shell JSONL or Markdown into a chosen project. Imported lessons stay private and unchecked; unchanged lessons are not duplicated ([From Pilot Shell](moving-from-pilot-shell.mdx)).
+Pilot Shell memories import per project: see [From Pilot Shell](moving-from-pilot-shell.mdx#import-memories-per-project).
 
 ## Command line {#command-line}
 

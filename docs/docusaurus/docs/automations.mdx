@@ -5,7 +5,7 @@ mdx:
   format: mdx
 ---
 
-import { Card, CardGroup, Steps, Step, Tabs, Tab, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+import { Card, CardGroup, Steps, Step, Note, Screenshot, NextSteps } from "@site/src/components/kit";
 
 Send task events to your own tools as signed webhooks or commands, and read or start tasks from a script.
 
@@ -42,12 +42,7 @@ createServer((req, res) => {
   <Step title="Send a test event">`qualitylayer automations test <id>`. The receiver prints `verified automation.test`.</Step>
 </Steps>
 
-From now on every task event reaches it.
-
-<Tabs groupId="where">
-  <Tab value="app" label="In the App">**Settings › Automations › Add**, then the send button on its row.</Tab>
-  <Tab value="agent" label="In my own agent">Ask: "Send QualityLayer events to https://example.com/hook."</Tab>
-</Tabs>
+From now on every task event reaches it. In the App, the same steps are **Settings › Automations › Add**, then the send button on its row. Your agent can set it up too: "Send QualityLayer events to https://example.com/hook."
 
 <Screenshot name="automations" alt="Settings › Automations with one webhook, its events and its last delivery" />
 
@@ -171,9 +166,7 @@ event=$(cat)
 
 Run them in the project's folder. `--plan` starts an agent on your plan with every call. `tasks --cost` answers within 20 seconds; when it says `"complete": false`, run it again for the rest.
 
-## What stays with you {#what-stays-with-you}
-
-<Note>No event and none of these commands approves a Plan or a finished change, or answers a question.</Note>
+<span id="what-stays-with-you"></span>No event and none of these commands approves a Plan or a finished change, or answers a question.
 
 <NextSteps items={[
   { title: "Commands", href: "/docs/reference/commands", text: "Every CLI command by group." },

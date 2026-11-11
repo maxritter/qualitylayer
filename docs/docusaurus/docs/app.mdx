@@ -13,7 +13,7 @@ Read the task on the left and work with your agent on the right. Use the desktop
 
 <CardGroup cols={3}>
   <Card title="Sidebar" icon="list-todo" href="#sidebar">Search, Home, Artifacts and your tasks and Chats by project. **+** starts a **Task** or a [Chat](chat.mdx).</Card>
-  <Card title="Step page" icon="network">Where the task stands, and its result. A person icon marks the two steps you approve.</Card>
+  <Card title="Step page" icon="network" href="/docs/steps/plan">Where the task stands, and its result. A person icon marks the two steps you approve.</Card>
   <Card title="Right sidebar" icon="message-square" href="#agent-runs">**Conversation**, **Terminal** and **Files**, beside the page.</Card>
 </CardGroup>
 
@@ -92,7 +92,7 @@ Open **Changes** in the header or **Review the code** in Verify or Files. Choose
 
 ## What it costs {#cost}
 
-**Cost** in the task header reads local logs: Copilot's recorded AI-credit value where available, otherwise estimates at verified API prices. Credit value is not money billed on top; partial amounts are labelled, and unknown values show a dash. Amounts stay hidden until you open it. **Usage history** opens **Settings › Usage**.
+**Cost** in the task header estimates each step from local logs at verified API prices; for Copilot it shows its recorded AI-credit value, which is not money billed on top. Partial amounts are labelled, and unknown values show a dash. Amounts stay hidden until you open it. **Usage history** opens **Settings › Usage**.
 
 ## Agent runs {#agent-runs}
 
@@ -108,6 +108,16 @@ Closing the sidebar keeps the run. The agent's menu has **Interrupt** (**Esc**),
 **Conversation** folds finished turns to one line; **Terminal** shows the agent's own program. Below the message box sit activity, model, effort, [permissions](agents/native.mdx#permission-modes), pacing and context; each opens its own details. Paste or drop files in either view.
 
 <Tip>**Messages while working** steers your agent at its next step where it supports that, and otherwise queues without interrupting. Choose **Queue until the turn ends** to wait instead. Thinking can be hidden, collapsed or expanded under **Agent controls › Appearance…**.</Tip>
+
+## Stop, archive or delete a task {#stop-archive-or-delete-a-task}
+
+| | How | What stays |
+| --- | --- | --- |
+| **Stop** | Tell your agent | The documents |
+| **Archive** | The task header (**More** on compact screens); **Restore** undoes it | Everything |
+| **Delete** | Confirm **Delete for good** in the task header | Task documents and local records are removed; the code and branch stay |
+
+A task from the earlier seven-step workflow cannot be continued or approved. It stays in the task list marked **earlier workflow**, and **Files** opens its documents.
 
 ## In Claude Code {#in-claude-code}
 

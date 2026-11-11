@@ -13,9 +13,6 @@ Agents that did not write the code check every **Done means** point and fix what
 
 ## The checks {#lanes}
 
-![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
-![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
-
 Project commands and scans produce recorded results:
 
 <CardGroup cols={2}>
@@ -30,7 +27,7 @@ Separate agents review the code and its behavior:
 <CardGroup cols={2}>
   <Card title="Independent review" icon="shield-check" tone="verify">Reads the whole diff, adds missing tests, runs each **Done means** step and compares screens with their artifacts. A small task gets one reviewer.</Card>
   <Card title="Security review" icon="key-round">When the change crosses a trust boundary or edits agent controls. Your agent fixes critical and high findings first.</Card>
-  <Card title="Design review" icon="shapes">Checks each finished design before you see it, unless you turn **Design review** off in [Settings](../reference/settings.mdx).</Card>
+  <Card title="Design review" icon="shapes">Checks each finished design before you see it, unless you turn **Design review** off in [Settings](../reference/settings.mdx#workflow).</Card>
   <Card title="Second opinion" icon="network">A reviewer from another agent family checks risky changes [when enabled](../reference/settings.mdx#second-opinion), or on request. Findings are **Taken** or **Kept**.</Card>
 </CardGroup>
 
@@ -40,10 +37,6 @@ Separate agents review the code and its behavior:
 
 A review fails on a **Done means** point, a red check, a critical or high security finding, lost data, or a bug it reproduces in the changed lines. Your agent fixes it and commits; a fresh reviewer rechecks what failed and what the fix changed. That can happen twice, and a round that fixes nothing ends them early.
 
-## Proof for each point {#live}
-
-The header counts the points proven, one tick each, and each point shows its evidence as it comes in. The board shows the four check stages, with cited pictures below. **View changes** opens the changed files; **Read the record** opens `agents/03-verify.md`, with the findings, commands and every judged round.
-
 ## When the checks cannot finish {#when-it-stops}
 
 Some failures end the checks: a point still failing after the second round, a prerequisite only you can supply, or an unavailable environment. You get one question: change what **Done means** says, ask for one more fix round, or stop the task. Work outside the task becomes a follow-up with its owner. No answer marks a failing point as passed.
@@ -52,11 +45,12 @@ Some failures end the checks: a point still failing after the second round, a pr
 
 <Screenshot name="verify" alt="Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header" />
 
-<CardGroup cols={3}>
+<span id="live"></span>The header counts the points proven, one tick each, and each point shows its evidence as it comes in. **Read the record** opens `agents/03-verify.md`, with the findings, commands and every judged round.
+
+<CardGroup cols={2}>
   <Card title="Why" icon="file-text">The request in one sentence, then a release-note line for each change users see.</Card>
   <Card title="Code" icon="code-xml">The complete change and where to start reading.</Card>
-  <Card title="Diagrams" icon="spline">The change in diagrams, in tabs.</Card>
-  <Card title="Interface" icon="shapes">Each screen, switched between **Designed** and **Built**.</Card>
+  <Card title="Diagrams and screens" icon="shapes">The change in diagrams, and each screen switched between **Designed** and **Built**.</Card>
   <Card title="Done means" icon="badge-check">Each point as it ran, with its picture or output, and whether it ran as a script or in a real agent session.</Card>
 </CardGroup>
 
@@ -103,16 +97,6 @@ Ask your agent to merge, push, deploy or run end-to-end tests; each still needs 
 | **Merged into main** | The task is in **Shipped**. New work starts with **Start a follow-up** |
 
 QualityLayer recognizes local merges, including squash and rebase, and pull requests it opened on GitHub. For work built directly on main, only that task's fixes count ([details](implement.mdx#where-it-lands)).
-
-## Stop, archive or delete a task {#stop-archive-or-delete-a-task}
-
-| | How | What stays |
-| --- | --- | --- |
-| **Stop** | Tell your agent | The documents |
-| **Archive** | The task header (**More** on compact screens); **Restore** undoes it | Everything |
-| **Delete** | Confirm **Delete for good** in the task header | Task documents and local records are removed; the code and branch stay |
-
-A task from the earlier seven-step workflow cannot be continued or approved. It stays in the task list marked **earlier workflow**, and **Files** opens its documents.
 
 <NextSteps items={[
   { title: "Pull request", href: "/docs/steps/pull-request", text: "Checks and review threads until you merge." },

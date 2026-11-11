@@ -11,7 +11,7 @@ Open a pull request when you approve on [Verify](verify.mdx#approve). Your agent
 
 <Screenshot name="pull-request" alt="The merged pull request: its checks, its reviewers and the time from the first question to the approval" caption="An example task in a fictional project." />
 
-## Following it {#following}
+## How Verify follows it {#following}
 
 While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
 
@@ -30,18 +30,18 @@ Your agent runs `qualitylayer pr watch` until the checks pass:
 
 ## When something waits for you {#waits}
 
-![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-light.svg)
-![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-dark.svg)
+![Review threads and failing checks come back to you; you push the fix for review threads; you merge](pathname:///img/diagrams/pull-request-light.svg)
+![Review threads and failing checks come back to you; you push the fix for review threads; you merge](pathname:///img/diagrams/pull-request-dark.svg)
 
 Failing checks, review threads and conflicts appear in **Needs you** while the App is open. [Watch pull requests](../reference/settings.mdx#git-and-editor) can wake or resume your agent, also for new comments.
 
 <Steps>
   <Step title="Ask your agent">"Using QL, review task retry-webhooks", with your task's name.</Step>
   <Step title="It fixes the routine requests">Test first, against the code and the approved Plan. Scope or design changes, and replies ready to post, come to you.</Step>
-  <Step title="Push the fix">Press **Push the fix**. Your replies post on GitHub in your name. Merging stays yours.</Step>
+  <Step title="Push the fix">For review threads, the push is yours: press **Push the fix**. Your replies post on GitHub in your name.</Step>
 </Steps>
 
-## Merged or closed {#merged}
+## When you merge {#merged}
 
 When you merge, the task moves to **Shipped** with what it cost. A squash or rebase merge is recognized too, and **Mark as merged** covers any other case. Its documents stay in `docs/plans/`. Further work starts with **Start a follow-up**.
 

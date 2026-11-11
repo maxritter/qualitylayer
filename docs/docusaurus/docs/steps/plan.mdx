@@ -17,7 +17,7 @@ Your agent reads the code, asks what only you can answer and writes one Plan. Yo
   <Tab value="app" label="In the App">
     Choose **+ › Task**, describe the change and keep **Plan with QualityLayer**.
   </Tab>
-  <Tab value="agent" label="In your own agent">
+  <Tab value="agent" label="In my own agent">
 
 Ask in plain words:
 
@@ -63,7 +63,7 @@ Your agent asks only about choices the code leaves open, each with a recommendat
   <Step title="Approve">
     <Tabs groupId="where">
       <Tab value="app" label="In the App">**Approve and build here** builds in the planning session. **Choose where to build**, under the arrow, picks another agent or workspace.</Tab>
-      <Tab value="agent" label="In your own agent">Choose **Build in &lt;agent&gt;**, compact your agent's session, then say "build here".</Tab>
+      <Tab value="agent" label="In my own agent">Choose **Build in &lt;agent&gt;**, compact your agent's session, then say "build here".</Tab>
     </Tabs>
   </Step>
 </Steps>
@@ -75,7 +75,7 @@ Answering a question does not approve the Plan. Changes after approval show on V
 <span id="too-small"></span><span id="prd"></span><span id="existing-plan"></span>
 
 <Tabs groupId="plan-kind">
-  <Tab value="bugfix" label="Bugfix">
+  <Tab value="bugfix" label="Bug">
 
 The Plan finds the cause in the code first, then states the bug in four parts. **Done means** starts with a test that fails today. For example:
 
@@ -87,13 +87,13 @@ The Plan finds the cause in the code first, then states the bug in four parts. *
 </CardGroup>
 
   </Tab>
-  <Tab value="small" label="Small change">
+  <Tab value="small" label="Small">
     A short Plan and one slice. Ask for a plain prompt instead, and your agent hands one back and closes the task.
   </Tab>
-  <Tab value="prd" label="No ticket yet">
+  <Tab value="prd" label="No ticket">
     Ask for a PRD, or leave what to build open: the Plan adds a success measure and a first release. **Copy** exports it.
   </Tab>
-  <Tab value="existing" label="Existing plan">
+  <Tab value="existing" label="Your plan">
     Start from **Existing plan**, or **Saved plan** in a Chat. The original stays as `original-plan.md`; your agent maps it into `01-plan.md`.
   </Tab>
 </Tabs>

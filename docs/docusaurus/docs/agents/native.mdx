@@ -36,10 +36,10 @@ Eight coding agents run natively: QualityLayer adds its skills and hooks to each
 Ask in plain words; your agent picks the skill. An ordinary coding request does not start a workflow.
 
 <CardGroup cols={3}>
-  <Card title="ql-workflow" icon="network" tone="plan">Plan, build, verify and review a change. The only skill that starts a task.</Card>
+  <Card title="ql-workflow" icon="network" tone="plan" href="/docs/steps/plan">Plan, build, verify and review a change. The only skill that starts a task.</Card>
   <Card title="ql-artifact" icon="shapes" href="/docs/artifacts">Mockups, diagrams and clickable pages.</Card>
   <Card title="ql-manage" icon="list-todo" href="/docs/memory">Tasks, memory, settings and setup.</Card>
-  <Card title="ql-peer" icon="message-square" href="/docs/reference/commands#session-messaging">Sessions of any of these agents review each other or hand over a task.</Card>
+  <Card title="ql-peer" icon="messages-square" href="/docs/reference/commands#session-messaging">Sessions of any of these agents review each other or hand over a task.</Card>
   <Card title="ql-quality" icon="badge-check" href="/docs/reference/code-health">Code complexity, structure and duplication.</Card>
   <Card title="ql-chat" icon="message-square" href="/docs/chat">A Chat without workflow steps.</Card>
 </CardGroup>
@@ -73,11 +73,11 @@ The **Conversation** view reads each agent's session record ([controls](../app.m
 
 Permission waits show in Conversation. A reply that only the Terminal view shows gets **Open Terminal**. Cursor gets numbered workflow questions; the others ask in their own picker ([In your agent](../work-in-your-agent.mdx#pickers)).
 
-<Tip>After a crash, stop the old run and ask "Using QL, continue verification of task retry-webhooks."</Tip>
+After a crash, stop the old run and ask "Using QL, continue verification of task retry-webhooks."
 
 ### Permission modes {#permission-modes}
 
-New managed sessions start in Bypass unless you saved a global or per-agent mode; **Agent settings** keeps the agent's own policy. Planning reopens on your last successful choices and agent, and a build on the agent you last built with; a build on the planning agent inherits that task's planning choices, including accepted permission changes.
+New managed sessions start in Bypass unless you saved a global or per-agent mode; **Agent settings** keeps the agent's own policy. A new task opens with the agent and choices you last planned with, and a build with those you last built with. A build on the planning agent keeps the planning session's choices, including permission changes you accepted.
 
 | Agent | Modes |
 | --- | --- |
@@ -88,11 +88,10 @@ New managed sessions start in Bypass unless you saved a global or per-agent mode
 | Antigravity | Ask first, Auto, Accept edits, Bypass |
 | OpenCode | Agent settings, Auto-approve |
 | Pi | None; its own tool permissions apply |
-| GitHub Copilot | Manual Approval, Assisted Permissions, Allow All |
+| GitHub Copilot | Manual Approval, Assisted Permissions, Allow All; older sessions use the Terminal view's `/permissions` menu |
 
 <Warning>Switching a running session to Bypass, Full access or Run everything asks you to confirm. **Apply and continue** changes permissions at a supported prompt and resumes the conversation. Pi has no bypass switch, and OpenCode keeps explicit denials. Your Plan and final approvals stay separate.</Warning>
 
-Older Copilot sessions use the Terminal view's `/permissions` menu.
 
 ### Plan limits {#plan-limits}
 

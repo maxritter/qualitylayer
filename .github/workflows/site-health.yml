@@ -1,8 +1,15 @@
 name: Site health
 
-# Every hour, read-only: the live site's API still reaches its database. A share link that does
-# not exist must answer 404, which only a route that read the database can say; a missing or
-# deleted database answers 500. A failed run mails the repository owner. Nothing is written.
+# Every hour, read-only, against the live service the old and new clients use (R1 of the local-first
+# migration, 11 November 2026). Each check asks a retained route for a real answer: a page, the release
+# feed, a signed workflow grant from the database for a pinned old version, and, once the Redis trial
+# ledger is live, its readiness marker. A missing route, secret or answer fails the run, which mails the
+# repository owner. Nothing is written. The share-link probe is gone: public links are retired.
+#
+# Repository secrets (set by Max, never printed):
+#   QL_HEALTH_LICENCE_KEY, QL_HEALTH_ACTIVATION_ID, QL_HEALTH_FINGERPRINT   one licence activation kept for this check
+#   QL_HEALTH_REDIS_URL, QL_HEALTH_REDIS_READ_ONLY_TOKEN                   the production Upstash REST URL and its read-only token
+# Repository variable: QL_TRIAL_LEDGER_ACTIVE=true once the Redis trial cutover has opened admission.
 
 on:
   schedule:
@@ -15,22 +22,67 @@ concurrency:
   group: site-health
   cancel-in-progress: false
 
+env:
+  SITE: https://qualitylayer.dev
+  # The newest stable version whose texts the old-client workflow store holds; its grant must be exact.
+  PINNED_WORKFLOW_VERSION: 13.0.1
+
 jobs:
-  database:
-    name: The live API reaches its database
+  website:
+    name: The website and the release feed answer
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Ask for a share link that does not exist
+      - name: Pages
         run: |
-          unknown="$(printf 'A%.0s' $(seq 22))"
-          for host in qualitylayer.dev; do
-            code="$(curl -s -o /dev/null -w '%{http_code}' --retry 2 --retry-all-errors --max-time 20 \
-              "https://$host/api/share?id=$unknown")"
-            if [ "$code" = "404" ]; then
-              echo "$host: the share API read its database (404 for an unknown link)"
-            else
-              echo "::error::$host: the share API answered $code for an unknown link, expected 404; is DATABASE_URL set and the database there?"
-              exit 1
-            fi
+          for path in / /pricing /download /docs; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --retry 2 --retry-all-errors --max-time 20 "$SITE$path")"
+            [ "$code" = "200" ] || { echo "::error::$SITE$path answered $code, expected 200"; exit 1; }
+            echo "$path: 200"
           done
+      - name: Release feed
+        run: |
+          body="$(curl -sf --retry 2 --retry-all-errors --max-time 20 "$SITE/app/latest.json")" || { echo "::error::$SITE/app/latest.json did not answer 200"; exit 1; }
+          version="$(printf '%s' "$body" | jq -er '.version | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+"))')" || { echo "::error::the release feed has no version"; exit 1; }
+          echo "release feed: $version"
+
+  workflow:
+    name: The pinned old-client workflow grant comes from the database
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask for a grant
+        env:
+          LICENCE: ${{ secrets.QL_HEALTH_LICENCE_KEY }}
+          ACTIVATION: ${{ secrets.QL_HEALTH_ACTIVATION_ID }}
+          FINGERPRINT: ${{ secrets.QL_HEALTH_FINGERPRINT }}
+        run: |
+          for name in LICENCE ACTIVATION FINGERPRINT; do
+            [ -n "${!name}" ] || { echo "::error::the health licence secret for $name is not set"; exit 1; }
+          done
+          request="$(jq -cn --arg version "$PINNED_WORKFLOW_VERSION" --arg fingerprint "$FINGERPRINT" --arg licence "$LICENCE" --arg activation "$ACTIVATION" '{version: $version, fingerprint: $fingerprint, licence: $licence, activation: $activation}')"
+          answer="$(mktemp)"
+          code="$(curl -s -o "$answer" -w '%{http_code}' --retry 2 --retry-all-errors --max-time 20 -X POST -H 'content-type: application/json' --data-binary @- "$SITE/api/workflow" <<< "$request")"
+          [ "$code" = "200" ] || { echo "::error::/api/workflow answered $code for $PINNED_WORKFLOW_VERSION, expected 200 with a grant"; exit 1; }
+          jq -e --arg version "$PINNED_WORKFLOW_VERSION" '(.grant | type == "string" and length > 0) and (.texts | type == "object" and length > 0) and (has("served") | not)' "$answer" >/dev/null ||
+            { echo "::error::/api/workflow answered 200 without an exact grant and texts for $PINNED_WORKFLOW_VERSION"; exit 1; }
+          echo "/api/workflow: exact grant and $(jq '.texts | length' "$answer") texts for $PINNED_WORKFLOW_VERSION"
+          rm -f "$answer"
+
+  trial-ledger:
+    name: The Redis trial ledger is ready
+    if: vars.QL_TRIAL_LEDGER_ACTIVE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read the readiness marker with the read-only token
+        env:
+          REDIS_URL: ${{ secrets.QL_HEALTH_REDIS_URL }}
+          REDIS_TOKEN: ${{ secrets.QL_HEALTH_REDIS_READ_ONLY_TOKEN }}
+        run: |
+          [ -n "$REDIS_URL" ] && [ -n "$REDIS_TOKEN" ] || { echo "::error::the read-only Redis secrets are not set"; exit 1; }
+          ask() { curl -sf --retry 2 --retry-all-errors --max-time 20 -H "Authorization: Bearer $REDIS_TOKEN" -H 'content-type: application/json' --data "$1" "$REDIS_URL"; }
+          ready="$(ask '["EXISTS","trial-ledger:v1:ready"]' | jq -er '.result')" || { echo "::error::Redis did not answer"; exit 1; }
+          ttl="$(ask '["TTL","trial-ledger:v1:ready"]' | jq -er '.result')" || { echo "::error::Redis did not answer"; exit 1; }
+          [ "$ready" = "1" ] && [ "$ttl" = "-1" ] || { echo "::error::the trial ledger readiness marker is missing or expires (exists=$ready ttl=$ttl)"; exit 1; }
+          echo "trial ledger: ready, no expiry"

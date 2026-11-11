@@ -30,9 +30,9 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 `qualitylayer task start --from <link>` starts at Plan from a GitHub or GitLab issue or pull request, a Jira issue or a Confluence page, and the task keeps the link. QualityLayer reads GitHub and GitLab with your own `gh` or `glab`: the ticket's title and text become the request, and images and attachments stay links. It signs in to nothing itself, so your agent reads a Jira or Confluence link with its own tools. In the App, paste the link into New task.
 
-`qualitylayer gate open plan --via github|gitlab`, or **Get approval** beside Approve in the App, also opens a draft pull or merge request with the Plan. An approving review there, by someone else with write access, approves the Plan, and every comment comes back to the agent as feedback. If you approve the Plan in QualityLayer instead, the draft gets a note, closes and its branch is deleted.
+`qualitylayer gate open plan --via github`, or **Pull request** in the App's header, pushes the Plan on its own branch and opens GitHub's compare page with the title and description filled in. You create the pull request there. An approving review on it, by someone else with write access, approves the Plan, and every comment comes back to the agent as feedback. If you approve the Plan in QualityLayer instead, the pull request gets a note, closes and its branch is deleted.
 
-`qualitylayer gate open final --via github|gitlab`, or **Get approval** on Verify, pushes the task's branch and opens its pull or merge request with the Verify page as the description. An approving review there, by someone else with write access, approves the change, and its comments go to the agents as review feedback.
+`qualitylayer gate open final --via github`, or **Pull request** on Verify, pushes the task's branch and opens GitHub's compare page with the Verify page as the description. An approving review there, by someone else with write access, approves the change, and its comments go to the agents as review feedback. Pull requests for approval work with GitHub only.
 
 ## Chat {#chat}
 

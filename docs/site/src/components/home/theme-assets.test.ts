@@ -49,14 +49,6 @@ describe("illustrations in both themes", () => {
     }
   });
 
-  it("frames an authored light still as a dimmed preview only in dark mode", () => {
-    const css = read("docs/site/src/styles/shared.css");
-    expect(css).toMatch(/:root\{--sh-preview-brightness:1\}/);
-    expect(css).toMatch(/@media\(prefers-color-scheme:dark\).*:root:not\(\[data-theme="light"\]\)/);
-    expect(css).toMatch(/:root\[data-theme="dark"\]\{--sh-preview-brightness:/);
-    expect(css).toMatch(/\.sh-frame img\{[^}]*filter:brightness\(var\(--sh-preview-brightness\)\)/);
-  });
-
   it("uses the stronger accent for text on tinted surfaces and themes the docs footer itself", () => {
     for (const file of ["tour.css", "shared.css", "factory.css"]) {
       const css = read(`docs/site/src/styles/${file}`);

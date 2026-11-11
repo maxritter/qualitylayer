@@ -20,6 +20,10 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 `qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.md#existing-plan)).
 
+## From a ticket {#from-a-ticket}
+
+`qualitylayer task start --from <link>` starts at Plan from a GitHub or GitLab issue or pull request, a Jira issue or a Confluence page. QualityLayer reads it on your computer with `gh`, `glab` or your Atlassian token. The ticket's title and text become the request, images and attachments stay links, and the task keeps the link. In the App, paste the link into New task. Save the Atlassian token in Settings › Git and editor, or with `printf %s "$TOKEN" | qualitylayer integrations login atlassian --site acme.atlassian.net --email you@acme.com --token-stdin`.
+
 ## Chat {#chat}
 
 “Using QualityLayer, chat about retrying failed webhooks” starts a [Chat](../chat.md) with a supported coding agent.
@@ -53,7 +57,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open pla
 | [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
-| Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall [--purge | --keep-data]` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
+| Setup | `doctor [--repair]` · `settings get\|set` · `integrations list\|read\|login\|logout` · `update` · `uninstall [--purge | --keep-data]` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
 | Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |
 
 <details>

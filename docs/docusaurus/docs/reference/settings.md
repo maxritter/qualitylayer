@@ -124,6 +124,8 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 **Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since; **Cancel resume** in the task's agent status stops one.
 
+**Warn about heavy token use** (on) shows one note per task when it passes about 3 times your usual task's tokens (5M before you have three earlier tasks). The task keeps running. Turn it off with `qualitylayer settings set limits.tokenWarning false`.
+
 **What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. Every supported agent is covered where its records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
 
 ## Sessions {#sessions}

@@ -24,12 +24,11 @@ THEMES = {
 SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif"
 MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 
-# The seven steps, in order; Plan and Review wait for your approval, Research and Outline need nothing from you.
-STEPS = [('Discuss', 'blue'), ('Research', 'blue'), ('Plan', 'amber'), ('Outline', 'blue'), ('Implement', 'blue'),
-         ('Verify', 'violet'), ('Review', 'amber')]
-STEPS_PR = STEPS + [('Pull request', 'blue')]  # the eighth step follows the pull request until it is merged
-GATES = {'Plan', 'Review'}
-DOC_FILES = ['01-discuss.md', '02-research.md', '03-plan.md', '04-outline.md', '05-implement.md', '06-verify.md', '07-review.md']
+# The three steps, in order; you approve the Plan and, in Verify, the finished change. Implement needs nothing from you.
+STEPS = [('Plan', 'amber'), ('Implement', 'blue'), ('Verify', 'violet')]
+STEPS_PR = STEPS + [('Pull request', 'blue')]  # the pull request follows Verify until it is merged
+GATES = {'Plan', 'Verify'}
+DOC_FILES = ['01-plan.md', '02-implement.md', '03-verify.md']
 
 
 def T(x: float, y: float, s: str, size: float = 14, fill: str = 'text', weight: int = 400, anchor: str = 'start',
@@ -139,12 +138,12 @@ def num(c: Theme, x: float, y: float, n: int) -> str:
             + T(x, y + 4.5, str(n), 12.5, 'onblue', 700, 'middle', c=c))
 
 
-# ---------------------------------------------------------------- the seven steps
+# ---------------------------------------------------------------- the three steps
 def track(here: str):
     """The steps and the pull request on one line, with the page's own step highlighted."""
     def draw(c: Theme) -> str:
         W, H = 1000, 112
-        xs = [62 + i * 125 for i in range(8)]
+        xs = [112 + i * 258 for i in range(4)]
         cur = [n for n, _ in STEPS_PR].index(here)
         b = [T(0, 16, 'The workflow', 12, 'muted', 600, c=c)]
         b.append(f'<line x1="{xs[0]}" y1="52" x2="{xs[-1]}" y2="52" stroke="{c["line"]}" stroke-width="2"/>')
@@ -254,16 +253,12 @@ def remote_ill(c: Theme) -> str:
 
 # ---------------------------------------------------------------- reference
 def files_ill(c: Theme) -> str:
-    W, H = 1000, 456
-    b = [card(c, 0, 0, 640, 452)]
+    W, H = 1000, 320
+    b = [card(c, 0, 0, 640, 316)]
     b.append(T(18, 30, 'docs/plans/2026-10-06-csv-export/', 13.5, 'text', 700, mono=True, c=c))
-    rows = [('01-discuss.md', 'What you want and what done means', 'amber'),
-            ('02-research.md', 'How the code works today', 'amber'),
-            ('03-plan.md', 'The decided artifact you approve', 'amber'),
-            ('04-outline.md', 'The build, slice by slice', 'amber'),
-            ('05-implement.md', 'The build as it runs', 'amber'),
-            ('06-verify.md', 'What was checked, with its proof', 'amber'),
-            ('07-review.md', 'The change: the pull request text', 'amber'),
+    rows = [('01-plan.md', 'What you approve: questions, decisions, Done means', 'amber'),
+            ('02-implement.md', 'The build as it runs, slice by slice', 'amber'),
+            ('03-verify.md', 'What was checked, with its proof', 'amber'),
             ('artifacts/', 'Interactive pages · local, out of Git', 'lock'),
             ('reviews/', 'What the other agents said, as written', 'blue'),
             ('records/', 'The output of every command', 'blue'),
@@ -278,8 +273,8 @@ def files_ill(c: Theme) -> str:
             b.append(f'<circle cx="54" cy="{y + 6}" r="4.5" fill="{c[kind]}"/>')
         b.append(T(74, y + 10.5, f, 12.5, 'text', 600 if kind == 'amber' else 500, mono=True, c=c))
         b.append(T(622, y + 10.5, what, 12, 'muted', 400, 'end', c=c))
-    b.append(T(18, 436, 'Files lists documents, artifacts, reviews and local records.', 12, 'dim', 500, c=c))
-    b.append(card(c, 660, 0, 340, 452))
+    b.append(T(18, 300, 'Files lists documents, artifacts, reviews and local records.', 12, 'dim', 500, c=c))
+    b.append(card(c, 660, 0, 340, 316))
     b.append(T(678, 30, 'What you can read', 14, 'text', 650, c=c))
     leg = [('amber', 'One document per step'), ('blue', 'Reviews and command output,'),
            (None, 'opened from Files'), ('violet', 'Evidence the checks kept'), ('lock', 'Interactive artifacts stay local')]
@@ -290,11 +285,11 @@ def files_ill(c: Theme) -> str:
         elif k:
             b.append(f'<circle cx="686" cy="{y}" r="5" fill="{c[k]}"/>')
         b.append(T(700, y + 4.5, t, 12.5, 'text' if k else 'muted', 500, c=c))
-    b.append(T(678, 230, 'The seven documents read as plain', 12.5, 'muted', c=c))
+    b.append(T(678, 230, 'The three documents read as plain', 12.5, 'muted', c=c))
     b.append(T(678, 250, 'Markdown on GitHub. They live in your', 12.5, 'muted', c=c))
     b.append(T(678, 270, 'repository and go into Git with', 12.5, 'muted', c=c))
     b.append(T(678, 290, 'the change.', 12.5, 'muted', c=c))
-    return svg(W, H, ''.join(b), 'A task folder in docs/plans: seven documents, one per step, local interactive artifacts out of Git, reviews, command output and evidence. Files lists documents, artifacts and reviews')
+    return svg(W, H, ''.join(b), 'A task folder in docs/plans: three documents, one per step, local interactive artifacts out of Git, reviews, command output and evidence. Files lists documents, artifacts and reviews')
 
 
 # ---------------------------------------------------------------- shared pieces of the App's anatomy
@@ -391,7 +386,7 @@ def tabs(c: Theme, x: float, y: float, here: int, counts: dict | None = None, do
     out, sx = [], x
     for i, (s, _) in enumerate(STEPS):
         label = s + (f'  {counts[s]}' if s in counts else '')
-        kind = 'done' if i < (done if done is not None else here) else ('you' if STEPS[i][1] == 'amber' and i == here else
+        kind = 'done' if i < (done if done is not None else here) else ('you' if STEPS[i][0] in GATES and i == here else
                                                                        'agent' if i == here else 'dim')
         out.append(ring(c, sx + 5, y, kind, 5))
         out.append(f'<text x="{sx + 16}" y="{y + 4}" font-family="{SANS}" font-size="12.5" font-weight="{600 if i == here else 400}" '
@@ -493,19 +488,19 @@ def mini_page(c: Theme, x: float, y: float, w: float, h: float) -> str:
     return ''.join(out)
 
 
-# ---------------------------------------------------------------- the seven steps
+# ---------------------------------------------------------------- the three steps
 def flow(c, pr=False):
-    """The seven steps; with `pr`, the pull request as an eighth column (the README and the website count it)."""
+    """The three steps; with `pr`, the pull request as a fourth column (the README and the website count it)."""
     steps = STEPS_PR if pr else STEPS
-    W, H = (1100, 280) if pr else (1000, 280)
-    x0, cw, bw = (130, 120, 112) if pr else (130, 124, 118)
+    W, H = (1000, 280)
+    x0, cw, bw = (130, 216, 196) if pr else (130, 290, 260)
     cx = [x0 + i * cw + cw / 2 for i in range(len(steps))]
     b = [f'<line x1="{cx[0]}" y1="62" x2="{cx[-1]}" y2="62" stroke="{c["line"]}" stroke-width="2"/>']
     for i, (n, col) in enumerate(steps):
         b.append(T(cx[i], 30, n, 15, 'text', 700, 'middle', c=c))
         b.append(diamond(c, cx[i], 62, 10) if n in GATES else f'<circle cx="{cx[i]}" cy="62" r="10" fill="{c[col]}"/>')
-    you = ['Answer a batch', 'Settle the choices', 'Approve the Plan', None, 'Copy one command', None, 'Approve the change'] + (['Merge it'] if pr else [])
-    agent = ['Asks questions', 'Reads the code', 'Writes the Plan', 'Cuts it into slices', 'Builds test first', 'Agents check it', 'Writes the PR text'] + (['Answers reviews'] if pr else [])
+    you = ['Answer, approve the Plan', None, 'Approve the change'] + (['Merge it'] if pr else [])
+    agent = ['Writes the Plan', 'Builds test first', 'Agents check it'] + (['Answers reviews'] if pr else [])
     for row, (label, col, y, cells) in enumerate([('You', 'amber', 100, you), ('Your agent', 'blue', 166, agent)]):
         b.append(T(0, y + 28, label, 15, col, 700, c=c))
         for i, s in enumerate(cells):
@@ -523,8 +518,8 @@ def flow(c, pr=False):
     b.append(f'<circle cx="{x0 + 178}" cy="{ly - 5}" r="7" fill="{c["blue"]}"/>')
     b.append(T(x0 + 192, ly, 'Your agent works on its own', 13, 'muted', c=c))
     if pr:
-        return svg(W, H, ''.join(b), 'The steps of a QualityLayer task: Discuss, Research, Plan, Outline, Implement, Verify, Review and the pull request. You approve the Plan before any code and the finished change, and you merge the pull request; your agent does the rest')
-    return svg(W, H, ''.join(b), 'The seven steps of a QualityLayer task: Discuss, Research, Plan, Outline, Implement, Verify and Review. You approve the Plan before any code and the finished change at the end; your agent does the rest')
+        return svg(W, H, ''.join(b), 'The steps of a QualityLayer task: Plan, Implement, Verify and the pull request. You approve the Plan before any code and the finished change in Verify, and you merge the pull request; your agent does the rest')
+    return svg(W, H, ''.join(b), 'The three steps of a QualityLayer task: Plan, Implement and Verify. You approve the Plan before any code and the finished change in Verify; your agent does the rest')
 
 
 def slices(c):
@@ -547,15 +542,15 @@ def slices(c):
     b.append(sl(200, 74, 170, 'Slice 2 · Filter', 'T3, T4, test first', 'muted', 'tests · exit 0'))
     b.append(arrow(c, 372, 114, 398))
     b.append(sl(400, 74, 170, 'Slice 3 · Reports', 'Risky: new mail service', 'amber', 'tests · exit 0'))
-    b.append(T(0, 188, 'One session builds the slices in the Outline’s order and fixes what fails.', 12.5, 'muted', c=c))
+    b.append(T(0, 188, 'One session builds the slices in the Plan’s order and fixes what fails.', 12.5, 'muted', c=c))
     b.append(node(c, 606, 44, 186, 80, 'Security review', ['Only when it crosses', 'a trust boundary'], 'cardline', dash=True))
     b.append(node(c, 606, 144, 186, 80, 'Project checks', ['Run once on the', 'committed build'], 'cardline'))
     b.append(curve(c, 792, 84, 812, 134, 'muted'))
     b.append(curve(c, 792, 184, 812, 134, 'muted'))
     b.append(node(c, 814, 94, 186, 80, 'Independent review', ['Adds missing tests,', 'checks every point'], 'violet', 'violetf'))
     b.append(T(W / 2, 258, 'An agent that did not write the code checks every point on the running program.', 13, 'muted', 400, 'middle', c=c))
-    b.append(T(W / 2, 278, 'Up to two reviewer runs; what is still open goes to Review first.', 13, 'muted', 400, 'middle', c=c))
-    return svg(W, H, ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and an agent that did not write the code adds missing tests and checks every point on the running program; what is still open after two reviewer runs goes to Review first')
+    b.append(T(W / 2, 278, 'Up to two fix rounds; then the page is your review, and you approve the change.', 13, 'muted', 400, 'middle', c=c))
+    return svg(W, H, ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and an agent that did not write the code adds missing tests and checks every point on the running program; after up to two fix rounds the Verify page is your review')
 
 
 # ---------------------------------------------------------------- the App window
@@ -572,7 +567,7 @@ def task_example(c: Theme, step: int, sections: list, questions: list, working: 
     b.append(tabs(c, 238, 104, step))
     p, _ = spill(c, 790, 48, 'you' if working == 'Waits for you' else 'agent', working)
     b.append(p)
-    if step == 2 and not questions:
+    if step == 0 and not questions:
         b.append(abtn_svg(c, 1040, 49, 'Ask agent'))
         b.append(abtn_svg(c, 1174, 49, 'Approve Plan', True))
     b.append(f'<line x1="222" y1="82" x2="{W}" y2="82" stroke="{c["cardline"]}"/>')
@@ -603,12 +598,12 @@ def task_example(c: Theme, step: int, sections: list, questions: list, working: 
             b.append(T(x + w - 20, own_y + 96, 'Each answer reaches the agent immediately.', 12, 'muted', 400, 'end', c=c))
         else:
             b.append(T(x + 20, own_y + 96, 'Settle this point, then continue to the next open decision.', 12, 'muted', c=c))
-            if step == 2:
+            if step == 0:
                 b.append(T(x + 20, own_y + 116, 'Answers do not approve the Plan.', 12, 'muted', c=c))
     dx, dy = 258, y + h + 32
     b.append(T(dx, dy, f'{step + 1:02d}-{STEPS[step][0].lower()}.md  ▾', 11.5, 'muted', 500, mono=True, c=c))
     b.append(T(dx + w, dy, 'Read in full', 12, 'blue', 600, 'end', c=c))
-    b.append(T(dx, dy + 36, 'Build' if step == 4 else STEPS[step][0], 23, 'text', 650, c=c))
+    b.append(T(dx, dy + 36, STEPS[step][0], 23, 'text', 650, c=c))
     yy = dy + 65
     for kind, text in sections:
         if kind == 'heading':
@@ -759,48 +754,7 @@ def decision_ill(c: Theme) -> str:
     return svg(W, H, ''.join(b), 'An example retry decision diagram: Ask agent opens an editable contextual Conversation draft, which you explicitly send')
 
 
-# ---------------------------------------------------------------- Discuss and Plan
-def discuss_ill(c: Theme) -> str:
-    return task_example(c, 0, [
-        ('heading', 'The problem'), ('row', 'Settings should be easier to understand.'),
-        ('heading', 'Done means · proposed'), ('row', '1 · Every setting names what it changes.'),
-        ('row', '2 · A risky Plan gets an independent second opinion.'),
-        ('heading', 'Decided with you'), ('agreed', 'Notifications stay on by default.'),
-        ('row', 'Earlier answers stay in Decided with you, with Change.'),
-    ], [
-        ('Question', ['When should a second opinion run?'], ['Risky Plans', 'Every Plan']),
-        ('Question', ['Should notifications start on?'], ['Yes', 'No', 'Tell me more']),
-    ], 'Waits for you')
-
-
-def research_ill(c: Theme) -> str:
-    return task_example(c, 1, [
-        ('heading', 'Summary'), ('row', 'Settings are read in two places and merged by hand.'),
-        ('heading', 'The questions'), ('row', '1 · Where are the settings read? · answered'),
-        ('row', '2 · What decides the order they apply in? · answered'),
-        ('heading', 'Findings'), ('row', 'Two readers share one file, and the second wins ▸'),
-        ('row', 'The settings page writes a copy nobody reads ▸'),
-        ('heading', 'What the goal puts at risk'), ('row', 'The settings merge is reused by three screens.'),
-        ('heading', 'Decided with you'), ('row', 'Your answers to the batch appear here.'),
-    ], [
-        ('Choice the code leaves open · 1 of 3', ['Keep the old file or move the settings?'], ['Keep the old file', 'Move them']),
-        ('Choice the code leaves open · 2 of 3', ['Which reader wins?'], ['The file', 'The page']),
-        ('Choice the code leaves open · 3 of 3', ['Split the task in two?'], ['Keep one task', 'Split']),
-    ], 'Waits for you')
-
-
-def outline_ill(c: Theme) -> str:
-    return task_example(c, 3, [
-        ('heading', 'Summary'), ('row', '4 slices and 11 tasks, in build order, one of them risky.'),
-        ('heading', 'Slices'), ('row', 'Slice 1 · Clearer settings · 3 tasks ▸'),
-        ('row', 'Slice 2 · Sign-in · 2 tasks ▸'),
-        ('row', 'Slice 3 · Large reports · risky · 4 tasks ▸'),
-        ('row', 'Slice 4 · Links, tried on the program · 2 tasks ▸'),
-        ('heading', 'How each point is proved'), ('proof', 'Done means 1 · scenario 1 · after slice 1'),
-        ('row', 'Done means 2 · scenario 2 · after slice 3'),
-    ], [], 'Writing the Outline')
-
-
+# ---------------------------------------------------------------- Plan
 def diagnose_ill(c: Theme) -> str:
     W, H = 1000, 250
     b = []
@@ -819,7 +773,7 @@ def diagnose_ill(c: Theme) -> str:
             b.append(T(x + 16, 66 + k * 20, t, 13, 'text' if i != 1 else 'danger', 500, mono=(i == 0 and k == 1), c=c))
     b.append(T(0, 220, 'The cause, found in the code before anything is planned: an off-by-one in the page query.', 13, 'muted', c=c))
     b.append(T(0, 240, 'Done means adds the checks the fix must pass, starting with a test that fails today.', 13, 'muted', c=c))
-    return svg(W, H, ''.join(b), 'A bug in Discuss: when it happens, what happens today, what is expected, and what must keep working')
+    return svg(W, H, ''.join(b), 'A bug in the Plan: when it happens, what happens today, what is expected, and what must keep working')
 
 
 def approve_card(c: Theme, x: float, y: float, w: float, title: str, note: str, rows: list, foot: str, button: str) -> tuple[str, float]:
@@ -844,7 +798,7 @@ def approve_card(c: Theme, x: float, y: float, w: float, title: str, note: str, 
 
 
 def plan_ill(c: Theme) -> str:
-    return task_example(c, 2, [
+    return task_example(c, 0, [
         ('heading', 'Interface'), ('row', 'Read the full-size artifact and comment on a spot.'),
         ('heading', 'Engineering decisions'), ('agreed', '✓ The Plan determines what each agent builds.'),
         ('heading', 'Done means · proposed'), ('row', '1 · Every setting names what it changes.'),
@@ -857,7 +811,7 @@ def plan_ill(c: Theme) -> str:
 
 # ---------------------------------------------------------------- after the Plan is approved
 def implement_ill(c: Theme) -> str:
-    return task_example(c, 4, [
+    return task_example(c, 1, [
         ('heading', 'The build'), ('agreed', '✓ Slice 1 · Clearer settings · committed'),
         ('row', 'Slice 2 · Sign-in · waiting for your login'),
         ('row', 'Slice 3 · Links · building and checking'),
@@ -883,7 +837,7 @@ def status(c: Theme, x: float, y: float, state: str) -> str:
 
 
 def verify_ill(c: Theme) -> str:
-    return task_example(c, 5, [
+    return task_example(c, 2, [
         ('heading', 'Done means · 1'), ('row', 'Every setting names what it changes.'),
         ('proof', 'Passed · scenario 1 · open output and screenshot'),
         ('heading', 'Done means · 2'), ('row', 'A risky Plan gets a second opinion.'),
@@ -894,9 +848,9 @@ def verify_ill(c: Theme) -> str:
     ], [], 'Checking point 2')
 
 
-# ---------------------------------------------------------------- Review
 def review_ill(c: Theme) -> str:
-    return task_example(c, 6, [
+    """Verify turned to you: every point settled, your questions and the one approval."""
+    return task_example(c, 2, [
         ('heading', 'What changed'), ('row', 'Settings are clearer and links keep their destination.'),
         ('heading', 'How to try it'), ('row', 'Open Settings, then follow a link to a task.'),
         ('heading', 'Done means · 1'), ('row', 'Every setting names what it changes.'),
@@ -920,11 +874,11 @@ def comments_ill(c: Theme) -> str:
                     (128, 'The context opens as an editable Conversation draft.'),
                     (160, 'Check it, edit it, then explicitly send it.'),
                     (218, 'Approve the displayed change separately.'),
-                    (250, 'A request never approves scope or the final Review.')]:
+                    (250, 'A request never approves scope or the final approval.')]:
         b.append(T(20, y, text, 14, 'text', c=c))
     b.append(card(c, 660, 0, 340, 326))
     b.append(T(678, 30, 'Conversation', 15, 'text', 650, c=c))
-    b.append(T(678, 68, 'Draft · Review / settings.tsx:42', 12, 'muted', c=c))
+    b.append(T(678, 68, 'Draft · settings.tsx:42', 12, 'muted', c=c))
     b.append(T(678, 110, 'Explain why this check runs here.', 13, 'text', c=c))
     b.append(T(678, 146, 'Selected context and revision attached', 11.5, 'muted', c=c))
     b.append(button(c, 678, 190, 110, 'Send', primary=True))
@@ -933,7 +887,7 @@ def comments_ill(c: Theme) -> str:
 
 
 def pull_request_ill(c: Theme) -> str:
-    """The eighth step: QualityLayer opens the pull request, follows it, and brings back what waits; you merge."""
+    """After Verify: QualityLayer opens the pull request, follows it, and brings back what waits; you merge."""
     W, H = 1000, 316
     b = []
     top = [(0, 'You approve', ['Approve and open', 'a pull request'], 'amber', 'amberf'),
@@ -1037,7 +991,7 @@ def attention_ill(c: Theme) -> str:
     cols = [(640, 'The App'), (840, 'Claude Code band')]
     for x, t in cols:
         b.append(T(x, 20, t, 12.5, 'text', 650, 'middle', c=c))
-    rows = [('A Plan or Review waits for you', 'you', (1, 1)),
+    rows = [('A Plan or a change waits for you', 'you', (1, 1)),
             ('Your agent asks a question', 'you', (1, 1)),
             ('A run stops early', 'you', (1, 1)),
             ('Agent progress and checks', 'never', (0, 0))]
@@ -1239,9 +1193,9 @@ DRAWINGS = [('architecture', architecture), ('flow-pr', lambda c: flow(c, pr=Tru
             ('home', home_ill), ('plan-full', plan_full),
             ('items', items_ill), ('decision', decision_ill),
             ('implement', implement_ill),
-            ('discuss', discuss_ill), ('research', research_ill), ('diagnose', diagnose_ill), ('plan', plan_ill), ('outline', outline_ill),
+            ('diagnose', diagnose_ill), ('plan', plan_ill),
             ('verify', verify_ill), ('review', review_ill), ('comments', comments_ill),
-            ('pull-request', pull_request_ill), ('band', band_ill), ('cost', cost_ill),
+            ('pull-request', pull_request_ill), ('band', band_ill),
             ('attention', attention_ill), ('feedback', feedback_ill), ('agents-other', agents_other_ill), ('agents-mix', agents_mix_ill),
             ('peers', peers), ('install', install_ill), ('remote', remote_ill), ('firsttask', firsttask_ill), ('update', update_ill),
             ('files', files_ill), ('privacy', privacy_ill),

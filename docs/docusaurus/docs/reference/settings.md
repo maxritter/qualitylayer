@@ -132,7 +132,7 @@ Use your own connected machine or paired browser to return to your work away fro
 
 ## Git and editor {#git-and-editor}
 
-**Tools** shows whether Git and `gh` are signed in; without `gh`, no pull requests. **Open files and folders in** picks VS Code, Cursor, Zed, Finder or Terminal. **Watch pull requests** (on) wakes the task's agent on a failing check, change request or conflict, at most 3 times a day per pull request, and on people's new review comments up to 2 more times, never below 10 % of the plan left. **Tickets** keeps your Atlassian token for each Jira and Confluence site, so a task can [start from a ticket link](commands.md#from-a-ticket). The token stays in an owner-only file on this computer and is always shown masked; `qualitylayer integrations login atlassian` does the same.
+**Tools** shows whether Git and `gh` are signed in; without `gh`, no pull requests. **Open files and folders in** picks VS Code, Cursor, Zed, Finder or Terminal. **Watch pull requests** (on) wakes the task's agent on a failing check, change request or conflict, at most 3 times a day per pull request, and on people's new review comments up to 2 more times, never below 10 % of the plan left.
 
 ## Automations {#automations}
 

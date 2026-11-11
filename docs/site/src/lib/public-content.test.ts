@@ -18,7 +18,8 @@ describe("current public illustrations and guides", () => {
       const run = spawnSync("python3", [join(repo, "docs/docusaurus/scripts/diagrams.py"), output], { encoding: "utf8" });
       expect(run.status, run.stderr).toBe(0);
       const images = readdirSync(output).filter((name) => name.endsWith(".svg"));
-      expect(images.length).toBeGreaterThan(70);
+      // About sixty since the seven-step and team guides left; each one is compared below.
+      expect(images.length).toBeGreaterThan(50);
       for (const name of images) {
         const svg = readFileSync(join(output, name), "utf8");
         expect(svg, `${name} is stale; regenerate diagrams.py`).toBe(readFileSync(join(diagrams, name), "utf8"));
@@ -29,30 +30,26 @@ describe("current public illustrations and guides", () => {
     }
   });
 
-  it("keeps batch answers immediate in the Discuss guide", () => {
-    const discuss = read("docs/docusaurus/docs/steps/discuss.md");
-    expect(discuss).toMatch(/batch/i);
-    expect(discuss).toContain("Independent choices can arrive together");
-    expect(discuss).toContain("a dependent choice follows the answer it needs");
-    expect(discuss).toContain("Answer in any order");
-    expect(discuss).toMatch(/immediately|at once/);
+  it("keeps the Plan's questions answerable in any order", () => {
+    const plan = read("docs/docusaurus/docs/steps/plan.mdx");
+    expect(plan).toContain("Answer in any order");
   });
 
   it("keeps build workflow autonomous while respecting native permissions and explicit stops", () => {
     const readme = read("README.md");
     expect(readme).not.toMatch(/No waiting while it builds|Nothing waits for you/);
     const implement = read("docs/docusaurus/docs/steps/implement.mdx");
-    expect(implement).toContain("Outline, Implement and Verify decide for themselves. A matter only you can settle is asked once, and the build goes on while you answer");
+    expect(implement).toContain("The session decides when the build is ready");
     expect(implement).toContain("never counts as passed");
-    expect(implement).toContain("Native permission and sign-in prompts still need your response");
-    expect(implement).toContain("explicit stop or pause stays in force");
+    expect(implement).toContain("Its own permission and sign-in prompts still need you");
+    expect(implement).toContain("a stop or pause stays in force");
   });
 
   it("leads the pricing comparison with the whole workflow and both approvals", () => {
     const rows = COMPARE.flatMap((group) => group.rows);
     const workflow = rows[0];
     expect(workflow.feature).toBe("The whole workflow");
-    expect(workflow.note).toMatch(/approval of the Plan and of the final Review/);
+    expect(workflow.note).toMatch(/approval of the Plan and of the finished change/);
     expect(workflow.solo).toBe(true);
     expect(workflow.team).toBe(true);
     expect(rows.some((row) => /Done means point separately/.test(row.feature))).toBe(false);

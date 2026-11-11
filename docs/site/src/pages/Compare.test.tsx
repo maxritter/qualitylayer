@@ -72,7 +72,7 @@ describe("comparison pages", () => {
     expect(text).toContain("You control the merge");
     expect(text).toContain("GitHub's gh CLI");
     for (const { url } of c.sources) expect(body).toContain(`href="${url}"`);
-    for (const path of ["/compare", ROUNDUP_PATH, "/pricing", "/docs/steps/verify", "/docs/steps/review", "/docs/steps/pull-request"]) expect(body).toContain(`href="${path}"`);
+    for (const path of ["/compare", ROUNDUP_PATH, "/pricing", "/docs/steps/verify", "/docs/steps/pull-request"]) expect(body).toContain(`href="${path}"`);
     for (const other of COMPARISONS.filter((other) => other.slug !== c.slug)) expect(body).toContain(`href="/compare/${other.slug}"`);
     for (const [, id] of body.matchAll(/href="#(source-\d+)"/g)) expect(body).toContain(`id="${id}"`);
   });

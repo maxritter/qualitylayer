@@ -65,7 +65,7 @@ describe("the site's copy", () => {
     expect(guide).toContain("direct conversation with any supported coding agent");
     expect(guide).toContain("questions appear above the composer");
     expect(guide).toContain("A Codex session started outside QualityLayer is read-only here; answer it in Codex");
-    expect(guide).toContain("A Chat stays on your own machine");
+    expect(guide).toContain("A Chat stays on your computer");
     expect(guide).toContain("before the build");
   });
 

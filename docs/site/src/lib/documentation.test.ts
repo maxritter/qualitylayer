@@ -46,6 +46,6 @@ describe("installation and build instructions", () => {
     expect(memory).toContain("Search, startup and export never import by themselves");
     expect(memory).toContain("Memory exchange never commits, pushes or pulls");
     expect(memory).toContain("a missing file never retires a local lesson");
-    expect(memory).toContain("If two machines changed the same revision, both stay");
+    expect(memory).toContain("If two computers changed the same lesson, both stay");
   });
 });

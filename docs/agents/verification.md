@@ -133,12 +133,24 @@ website source changes; record which version each result actually tested.
   gate includes this check before a release can pass.
 - `npm run verify:commerce` uses `POLAR_ACCESS_TOKEN` for a read-only live catalog
   audit: prices, QL licence benefits, PILOTTHANKS15's 15 percent / 12 months /
-  exact product scope, and archived Pilot Shell products. Missing credentials
-  or incomplete provider inventories fail the audit.
+  exact product scope, and archived Pilot Shell products. PILOTTHANKS15 ends on
+  20 November 2026; after that an ended or removed offer passes. Missing
+  credentials or incomplete provider inventories fail the audit.
 - Checkout readiness and catalog checks do not prove fulfilment. Before a
-  commerce change ships, complete a Polar sandbox purchase, verify the licence
-  grant and delivery, activate in an isolated QualityLayer home, and release
-  that test activation. Keep existing customer subscriptions untouched.
+  commerce change ships, run `node scripts/polar-sandbox-qualify.mjs --sandbox
+  --email <mailbox> --credentials <file>` from `docs/site` (or set
+  `POLAR_SANDBOX_TOKEN`). It refuses any organization but the sandbox one,
+  reuses a catalog tagged `ql-qualify` (production's EUR prices and seat tiers,
+  QL keys with 5 machines, production's webhook events), pays test checkouts
+  with Stripe's test card, and runs the real billing, webhook and entitlement
+  routes with the database unreachable and only the sandbox API reachable:
+  purchase and key, monthly to yearly, cancel at period end, seat increase and
+  decrease, solo/team wire values. Webhooks are Polar's captured sandbox
+  payloads, signed with the endpoint's secret. Each run revokes its
+  subscriptions and deletes its customers; `--cleanup` removes the catalog.
+  The client-side check (activate in an isolated QualityLayer home and
+  release) is `qualitylayer/scripts/qualify-commerce-sandbox.ts`. Keep
+  existing customer subscriptions untouched.
 
 ## Test cost
 

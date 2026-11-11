@@ -18,6 +18,8 @@ docs/site/scripts/deploy-website.sh filter=git-crypt diff=git-crypt
 docs/site/scripts/verify-deployment-runtime.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/verify-commerce.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/verify-commerce.d.mts filter=git-crypt diff=git-crypt
+docs/site/scripts/polar-sandbox-qualify.mjs filter=git-crypt diff=git-crypt
+docs/site/scripts/polar-sandbox-qualify.sandbox.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/configure-polar.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/billing-dev.mjs filter=git-crypt diff=git-crypt
 docs/site/scripts/website-screenshots.mjs filter=git-crypt diff=git-crypt

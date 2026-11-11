@@ -124,6 +124,11 @@ The Artifacts library reads per-machine registrations in `.qualitylayer/artifact
 
 ## Workflow rules that live here, not in a page
 
+- A step page keeps its last complete rendering while an agent writes its file: while the file has a
+  marker problem (a marker opened and not yet closed), the page shows what it showed last for that
+  step, then the new text as soon as the file is whole (`src/ui/step-page/steady.ts`, Max, 10 Nov
+  2026). A file that was never complete renders as it is.
+
 - An explicitly sent comment on the Review file is taken while final approval is pending, including after a page read
   reopens that approval; the comment record says when it was delivered, and a comment never settles a gate or marks a
   result verified.

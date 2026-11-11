@@ -216,12 +216,13 @@ jobs:
           node "$preparer" verify --prepared "$prepared" --frontend "$GITHUB_SHA" --api "$source/docs/site/api"
           backend_base=824d98db82ad92e3c172c6e577f22b461df4442b
           backend_digest="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).overlayDigest)' "$prepared/receipt.json")"
+          trial_digest="$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).trialRuntime.digest)' "$prepared/receipt.json")"
           if [ "$GITHUB_REF_NAME" = "$PRODUCTION_BRANCH" ]; then
             target=production
-            (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --prod --skip-domain --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$GITHUB_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest") > "$receipt"
+            (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --prod --skip-domain --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$GITHUB_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest" --meta "backendTrialDigest=$trial_digest" --meta trialPolicy=closed-until-qualified) > "$receipt"
           else
             target=preview
-            (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --target preview --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$GITHUB_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest") > "$receipt"
+            (cd "$source" && vercel deploy --token="$VERCEL_TOKEN" --target preview --json --build-env QUALITYLAYER_BACKEND_PROFILE=legacy9 --meta "githubCommitRef=$GITHUB_REF_NAME" --meta "githubCommitSha=$GITHUB_SHA" --meta "backendBaseSha=$backend_base" --meta "backendOverlayDigest=$backend_digest" --meta "backendTrialDigest=$trial_digest" --meta trialPolicy=closed-until-qualified) > "$receipt"
           fi
           deployment_id=$(node "$verifier" receipt-id --deployment "$receipt")
           vercel api "/v13/deployments/$deployment_id" --method GET --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID" --raw > "$runtime"

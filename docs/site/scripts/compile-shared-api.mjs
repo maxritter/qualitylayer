@@ -4,10 +4,31 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+export const TRIAL_SHARED_NAMES = ["sha256", "trial-hash", "trial-store", "trial-migration"];
+export const SHARED_COMPILER_VERSION = ts.version;
+export const sourceImports = text => ts.preProcessFile(text).importedFiles.map(file => file.fileName);
 const profiles = {
   current: ["team-files", "team-purge", "screenshots", "sha256", "trial-hash"],
-  legacy9: ["team-files", "screenshots"],
+  legacy9: ["team-files", "screenshots", ...TRIAL_SHARED_NAMES],
 };
+
+function emitModule(text, name, options = {}) {
+  const result = ts.transpileModule(text, {
+    fileName: name,
+    compilerOptions: { ...options, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, rewriteRelativeImportExtensions: true, sourceMap: false, inlineSourceMap: false },
+  });
+  if (ts.preProcessFile(result.outputText).importedFiles.some(({ fileName }) => fileName.startsWith(".") && /\.tsx?$/.test(fileName))) throw new Error(`Unresolved TypeScript import in ${name}`);
+  return result.outputText;
+}
+
+/** The preparer records these exact derived bytes; the Edge build repeats them idempotently. */
+export function emitTrialShared(files) {
+  return new Map(TRIAL_SHARED_NAMES.map(name => {
+    const path = `_lib/${name}.ts`, source = files.get(path);
+    if (!source) throw new Error(`Missing trial runtime helper ${path}`);
+    return [`_lib/${name}.js`, Buffer.from(emitModule(source.toString("utf8"), path))];
+  }));
+}
 
 // These helpers are also loaded directly by Node operator scripts, which need their .ts imports.
 // Vercel's Edge compiler retains those suffixes after emitting .js, so give its resolver explicit JS.
@@ -22,18 +43,12 @@ export async function compileSharedApi(out = resolve(site, "api/_lib"), { profil
     const source = resolve(sourceRoot, "api/_lib", `${name}.ts`);
     const text = await readFile(source, "utf8");
     if (profile === "legacy9" && ts.preProcessFile(text).importedFiles.some(({ fileName }) => fileName.startsWith(".") && /\.tsx?$/.test(fileName))) throw new Error(`Schema-9 helper ${name} needs explicit JavaScript dependency paths`);
-    const result = ts.transpileModule(text, {
-      fileName: source,
-      compilerOptions: { ...parsed.options, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, sourceMap: false, inlineSourceMap: false },
-    });
-    if (ts.preProcessFile(result.outputText).importedFiles.some(({ fileName }) => fileName.startsWith(".") && /\.tsx?$/.test(fileName))) throw new Error(`Unresolved TypeScript import in ${name}`);
-    return { name, text: result.outputText };
+    return { name, text: emitModule(text, source, parsed.options) };
   }));
-  // The deployed schema-9 helpers already use .js imports; emitting launch-only helpers would change that service's module graph.
-  if (profile === "legacy9") return [];
+  const selected = profile === "legacy9" ? emitted.filter(({ name }) => TRIAL_SHARED_NAMES.includes(name)) : emitted;
   await mkdir(out, { recursive: true });
-  for (const { name, text } of emitted) await writeFile(resolve(out, `${name}.js`), text);
-  return names.map((name) => `${name}.js`);
+  for (const { name, text } of selected) await writeFile(resolve(out, `${name}.js`), text);
+  return selected.map(({ name }) => `${name}.js`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {

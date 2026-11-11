@@ -20,6 +20,8 @@ scripts/blog-dates.json
 # Distribution / packaging
 .Python
 build/
+!qualitylayer/scripts/build/
+!qualitylayer/scripts/build/*.ts
 # The docs' Build chapter, not a build output
 !docs/docusaurus/docs/workflow/build/
 develop-eggs/

@@ -21,12 +21,13 @@
   },
   "imports": {
     "#workflow": {
-      "sealed": "./src/workflow/sealed.ts",
-      "default": "./src/workflow/assets.ts"
+      "official": "./src/workflow/local.ts",
+      "default": "./src/workflow/development.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "check:workflow-assets": "bun scripts/public/check-workflow.ts",
     "agent:check": "bun scripts/agent-checks.ts",
     "lint": "biome check . && bun scripts/check-css.ts",
     "check:css": "bun scripts/check-css.ts",

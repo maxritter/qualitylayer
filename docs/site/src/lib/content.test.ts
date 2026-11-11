@@ -26,7 +26,7 @@ describe("FAQ", () => {
 
   it("keeps feedback diagnostics in the privacy docs rather than the marketing FAQ", () => {
     expect(FAQS.some((faq) => /Send feedback/i.test(faq.question))).toBe(false);
-    const docs = readFileSync(new URL("../../../docusaurus/docs/reference/files.md", import.meta.url), "utf8");
+    const docs = readFileSync(new URL("../../../docusaurus/docs/reference/files.mdx", import.meta.url), "utf8");
     expect(docs).toMatch(/feedback/i);
     expect(docs).toMatch(/screenshots/i);
     expect(docs).toMatch(/operating-system and architecture details/i);

@@ -61,12 +61,12 @@ describe("the site's copy", () => {
     expect(home).not.toContain("Available on every task.");
     const intro = readFileSync(new URL("../components/home/Intro.tsx", import.meta.url), "utf8");
     expect(intro).toContain('href="/docs/chat"');
-    const guide = readFileSync(new URL("../../../docusaurus/docs/chat.md", import.meta.url), "utf8");
-    expect(guide).toContain("direct conversation with **any supported coding agent**");
-    expect(guide).toContain("Supported questions appear above the composer");
-    expect(guide).toContain("Outside Codex sessions are read-only here; answer in Codex's terminal");
-    expect(guide).toContain("Chat stays on your own machine");
-    expect(guide).toContain("You approve the workflow Plan before later implementation");
+    const guide = readFileSync(new URL("../../../docusaurus/docs/chat.mdx", import.meta.url), "utf8");
+    expect(guide).toContain("direct conversation with any supported coding agent");
+    expect(guide).toContain("questions appear above the composer");
+    expect(guide).toContain("A Codex session started outside QualityLayer is read-only here; answer it in Codex");
+    expect(guide).toContain("A Chat stays on your own machine");
+    expect(guide).toContain("before the build");
   });
 
   it("lets Pilot users keep both products and import memories when ready", () => {

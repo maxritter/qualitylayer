@@ -41,7 +41,7 @@ describe("current public illustrations and guides", () => {
   it("keeps build workflow autonomous while respecting native permissions and explicit stops", () => {
     const readme = read("README.md");
     expect(readme).not.toMatch(/No waiting while it builds|Nothing waits for you/);
-    const implement = read("docs/docusaurus/docs/steps/implement.md");
+    const implement = read("docs/docusaurus/docs/steps/implement.mdx");
     expect(implement).toContain("Outline, Implement and Verify decide for themselves. A matter only you can settle is asked once, and the build goes on while you answer");
     expect(implement).toContain("never counts as passed");
     expect(implement).toContain("Native permission and sign-in prompts still need your response");

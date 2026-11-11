@@ -60,7 +60,7 @@ describe("comparison pages", () => {
 
     // The new workflow links must target real guides, without changing the docs project.
     for (const [, href] of body.matchAll(/href="(\/docs\/steps\/[^"#]+)(?:#[^"]*)?"/g)) {
-      expect(existsSync(new URL(`../../../docusaurus/docs/${href.slice(6)}.md`, import.meta.url)), href).toBe(true);
+      expect([".md", ".mdx"].some((extension) => existsSync(new URL(`../../../docusaurus/docs/${href.slice(6)}${extension}`, import.meta.url))), href).toBe(true);
     }
   });
 

@@ -63,7 +63,7 @@ describe("illustrations in both themes", () => {
 
   it("pairs every docs illustration with the same diagram in the other theme", () => {
     const docs = "docs/docusaurus/docs";
-    for (const file of readdirSync(resolve(root, docs), { recursive: true }).filter((file) => String(file).endsWith(".md"))) {
+    for (const file of readdirSync(resolve(root, docs), { recursive: true }).filter((file) => /\.mdx?$/.test(String(file)))) {
       const markdown = read(`${docs}/${file}`);
       for (const [, base, theme, extension] of markdown.matchAll(/\]\(pathname:\/\/\/(img\/[^)]+?)-(light|dark)\.(svg|png)\)/g)) {
         const path = `${base}-${theme}.${extension}`;

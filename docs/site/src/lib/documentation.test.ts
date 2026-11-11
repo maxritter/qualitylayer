@@ -11,42 +11,41 @@ describe("installation and build instructions", () => {
     expect(readme).toContain("QualityLayer runs only when you ask for it");
   });
   it("puts native Windows PowerShell installation with the App and WSL with Linux", () => {
-    const install = doc("install.md");
+    const install = doc("install.mdx");
     // Servers and WSL2 sit under "In your browser" as their own ### part; split at both levels.
     const sections = install.split(/^#{2,3} /m);
     const desktop = sections.find((section) => section.startsWith("On your computer\n"));
     const headless = sections.find((section) => section.split("\n")[0].includes("{#without-a-screen}"));
     expect(desktop).toContain("irm https://qualitylayer.dev/install.ps1 | iex");
-    expect(desktop).toContain("This installs the App and the command line");
+    expect(desktop).toContain("install the App and the command line from PowerShell");
     expect(headless).toContain("curl -fsSL https://qualitylayer.dev/install.sh | bash");
     expect(headless).toContain("Install QualityLayer where your agent runs");
-    expect(headless).toContain("**WSL2**");
-    expect(headless).toContain("In your Windows browser");
+    expect(headless).toContain('label="WSL2"');
+    expect(headless).toContain("in your Windows browser");
     expect(headless).not.toContain("install.ps1");
   });
 
   it("never counts human-only prerequisites as passed while available work continues", () => {
-    const implement = doc("steps/implement.md");
-    expect(implement).toMatch(/human-only prerequisite never counts as passed/);
-    expect(implement).toMatch(/Other work continues/);
-    expect(implement).toMatch(/one question at the end of \[Verify\]/);
+    const implement = doc("steps/implement.mdx");
+    expect(implement).toMatch(/prerequisite only you can provide never counts as passed/);
+    expect(implement).toMatch(/the build goes on while you answer/);
+    expect(implement).toMatch(/at the end of \[Verify's checks\][^.]*it reaches you as one question/);
     expect(implement).toMatch(/the App never takes the secret/i);
-    expect(implement).toMatch(/Native permission and sign-in prompts still need your response/);
-    expect(implement).toMatch(/explicit stop or pause stays in force/);
+    expect(implement).toMatch(/permission and sign-in prompts still need you/);
+    expect(implement).toMatch(/a stop or pause stays in force/);
     expect(implement).not.toMatch(/never stops to wait|Nothing waits for you/);
   });
 
   it("includes the document argument required to open an approval", () => {
-    expect(doc("reference/commands.md")).toContain("qualitylayer gate open 03-plan.md");
-    expect(doc("reference/commands.md")).toContain("gate open final");
+    expect(doc("reference/commands.mdx")).toContain("qualitylayer gate open plan");
+    expect(doc("reference/commands.mdx")).toContain("gate open final");
   });
 
   it("explains explicit memory portability without implicit imports or Git writes", () => {
-    const memory = doc("memory.md");
-    expect(memory).toContain("Search, startup and export never import records automatically");
-    expect(memory).toContain("QualityLayer never commits, pushes or pulls for memory");
-    expect(memory).toContain("Missing repository files never retire local lessons");
-    expect(memory).toContain("both candidates remain available");
-    expect(memory).toContain("separate from restoring a retired lesson");
+    const memory = doc("memory.mdx");
+    expect(memory).toContain("Search, startup and export never import by themselves");
+    expect(memory).toContain("Memory exchange never commits, pushes or pulls");
+    expect(memory).toContain("a missing file never retires a local lesson");
+    expect(memory).toContain("If two machines changed the same revision, both stay");
   });
 });

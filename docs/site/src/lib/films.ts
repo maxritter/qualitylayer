@@ -5,13 +5,18 @@ export type Film = { src: string; poster: string; duration: number };
 
 export const FILMS = {
   overview: {
-    src: "https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.mp4",
-    poster: "https://qualitylayer-media.max-ritter.workers.dev/overview-v2026102001.webp",
-    duration: 320,
+    src: "https://qualitylayer-media.max-ritter.workers.dev/overview.mp4",
+    poster: "https://qualitylayer-media.max-ritter.workers.dev/overview.webp",
+    duration: 312,
   },
   insideTrailer: {
-    src: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer-v2026103001.mp4",
-    poster: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer-v2026103001.webp",
-    duration: 56,
+    src: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer.mp4",
+    poster: "https://qualitylayer-media.max-ritter.workers.dev/inside-trailer.webp",
+    duration: 55,
+  },
+  inside: {
+    src: "https://qualitylayer-media.max-ritter.workers.dev/inside-qualitylayer.mp4",
+    poster: "https://qualitylayer-media.max-ritter.workers.dev/inside-qualitylayer.webp",
+    duration: 1552,
   },
 } satisfies Record<string, Film>;

@@ -22,8 +22,7 @@ describe("illustrations in both themes", () => {
     const pictures = [...markdown.matchAll(/<picture>([\s\S]*?)<\/picture>/g)];
     expect(pictures.length).toBeGreaterThan(0);
     const film = new RegExp(`<a href="${OVERVIEW_VIDEO_URL.replace(/[.?]/g, "\\$&")}"><img src="docs/img/watch-the-film\\.svg"[^>]*></a>`);
-    expect(markdown, "README film button opens the film on YouTube").toMatch(film);
-    expect(markdown).not.toMatch(/qualitylayer-media[^"]*\.mp4/);
+    expect(markdown, "README film button opens the film on the media host").toMatch(film);
     expect(existsSync(resolve(root, "docs/img/watch-the-film.svg"))).toBe(true);
     const deepDive = new RegExp(`<a href="${SITE_URL}${DEEP_DIVE.href}"><img src="docs/img/inside-qualitylayer-deep-dive.svg"[^>]*></a>`);
     expect(markdown).toMatch(deepDive);

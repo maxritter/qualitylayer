@@ -69,7 +69,7 @@ const Hero = () => {
           <div className="sx-ctas">
             <Button asChild size="xl">{download.direct ? <a href={download.href}><Download size={18} aria-hidden="true" />{download.label}</a> : <Link to={download.href}><Download size={18} aria-hidden="true" />{download.label}</Link>}</Button>
             <Button asChild variant="outline" size="xl">
-              <a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer" aria-label={`Watch the film on YouTube, ${clock(FILMS.overview.duration)}`}>
+              <a href={OVERVIEW_VIDEO_URL} target="_blank" rel="noopener noreferrer" aria-label={`Watch the film, ${clock(FILMS.overview.duration)}`}>
                 <svg className="mx-play" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z" /></svg>
                 Watch the film <span className="mx-dur">{clock(FILMS.overview.duration)}</span>
               </a>

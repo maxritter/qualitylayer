@@ -31,7 +31,7 @@ Work side by side in the App or browser, or in your own agent: terminal, IDE or 
   </picture>
 </p>
 
-<a href="https://youtu.be/p1m4O4xRsrQ"><img src="docs/img/watch-the-film.svg" alt="Watch the film on YouTube, 5:20" width="208" height="44"></a>&nbsp;<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Inside QualityLayer, a 27-minute deep dive" width="258" height="44"></a>
+<a href="https://qualitylayer-media.max-ritter.workers.dev/overview.mp4"><img src="docs/img/watch-the-film.svg" alt="Watch the film, 5:12" width="208" height="44"></a>&nbsp;<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Inside QualityLayer, a 26-minute deep dive" width="258" height="44"></a>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026111001.webp">

@@ -1,20 +1,26 @@
+import { FILMS } from "./films.js";
+
 /** Inside QualityLayer, the deep-dive video: what its page and emails say about it. Change it here, nowhere else. */
 export const DEEP_DIVE_PATH = "/inside";
 export const DEEP_DIVE_TITLE = "Inside QualityLayer";
 export const DEEP_DIVE_SPEAKER = "Max Ritter";
-/** The final render runs 27:16. */
-export const DEEP_DIVE_MINUTES = 27;
+/** The final render runs 25:52. */
+export const DEEP_DIVE_MINUTES = 26;
 export const DEEP_DIVE_POSTER = `/inside/inside-qualitylayer.webp`;
-/** The full video on YouTube; the email links here, and the hero shows the Deep dive button while it is set. */
-export const DEEP_DIVE_VIDEO_URL: string | null = "https://youtu.be/STtsW6pa6x4";
+/**
+ * The full video on our own media host under a fixed name, so a new cut replaces the file and the emails already
+ * sent keep working (Max, 11 November 2026; the old YouTube copy stays as it is). The email links here, and the hero
+ * shows the Deep dive button while it is set.
+ */
+export const DEEP_DIVE_VIDEO_URL: string | null = FILMS.inside.src;
 
-/** What the page and the email show of the video: five numbered steps, no times (Max, 30 October 2026). The timed chapters live in the YouTube description. */
+/** What the page and the email show of the video: five numbered steps, no times (Max, 30 October 2026). They follow the film's chapters. */
 export const DEEP_DIVE_OUTLINE = [
   { title: "Better models, same problems", line: "Why stronger models still break working code." },
   { title: "From plan mode to the factory", line: "Where people still decide what ships." },
-  { title: "The seven-step workflow", line: "From the first question to the pull request." },
-  { title: "Your team in the loop", line: "Questions and review at the two points that count." },
-  { title: "Demo in the App", line: "One task, start to finish." },
+  { title: "The three-step workflow", line: "You plan and verify; agents do everything between." },
+  { title: "Demo in the App", line: "One task, from the request to the pull request." },
+  { title: "Chat, artifacts and memory", line: "What the App keeps beside every task." },
 ];
 
 /** The code that comes with the email, for anyone who watched; it does not expire (Max, 30 October 2026). */

@@ -91,7 +91,7 @@ it("offers download, film and deep dive actions together in the hero", () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
   const download = screen.getAllByRole("link").find(link => link.textContent?.startsWith("Download"));
   expect(download?.getAttribute("href")).toBe("/download");
-  const film = screen.getByRole("link", { name: /Watch the film on YouTube/ });
+  const film = screen.getByRole("link", { name: /Watch the film/ });
   expect(film.getAttribute("href")).toBe(OVERVIEW_VIDEO_URL);
   expect(film.getAttribute("target")).toBe("_blank");
   expect(film.getAttribute("rel")).toBe("noopener noreferrer");

@@ -1,6 +1,6 @@
 ---
 title: Implement
-description: Start the build in the App or your terminal. Your agent cuts the approved Plan into slices and builds them test first, without a stop.
+description: Start the build in the App or in your own agent. Your agent cuts the approved Plan into slices and builds them test first, without a stop.
 ---
 
 ![The three steps, with Implement highlighted](pathname:///img/diagrams/track-implement-light.svg)
@@ -23,7 +23,7 @@ description: Start the build in the App or your terminal. Your agent cuts the ap
 | **What's different** | What changes for the chosen agent, for example questions as numbered choices |
 | **Files for the build** and **Workspace** | Attachments, run location and [branch/worktree choices](#where-it-lands) |
 
-Press **Approve & start** for an App run. **In my terminal** shows one request box with **Copy** and a folder chip; hover for the full path or click to copy it. Paste into any agent, or ask in your own words.
+Press **Approve & start** for an App run. **In my own agent** shows one request box with **Copy** and a folder chip; hover for the full path or click to copy it. Paste into any agent, or ask in your own words.
 
 For a pending Plan, **Approve and copy** approves it and copies the request. After approval, **Ready to build** offers **Copy prompt**. Closing the sidebar keeps the run ([agent runs](../app.md#agent-runs)).
 

@@ -19,9 +19,9 @@ description: Use QualityLayer with any coding agent that runs shell commands, in
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-light.svg)
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-dark.svg)
 
-Choose **In my terminal**, then ask your agent in the project to continue the approved task, or copy the prepared request. It follows Implement and Verify until your final approval.
+Choose **In my own agent**, then ask your agent in the project to continue the approved task, or copy the prepared request. It follows Implement and Verify until your final approval.
 
-## Run in your terminal {#app-start}
+## Run in your own agent {#app-start}
 
 A copied prompt works in any coding agent, but does not add the App's conversation view or session controls; those belong to the supported agents.
 

@@ -110,7 +110,7 @@ Plan retries for failed webhooks and stop after a few tries.
 2. Approve the Plan. Your agent builds and verifies the change.
 3. Review the result and recorded checks, then approve it. Ask your agent to merge, deploy or make further changes.
 
-Prefer your terminal or IDE? Choose **In my terminal**, or ask there: “Using QualityLayer, plan retries for failed webhooks.” Other agents use the CLI ([supported agents](https://qualitylayer.dev/docs/agents/native)). **Chat** skips the workflow steps ([Chat guide](https://qualitylayer.dev/docs/chat)). QualityLayer runs only when you ask for it. [Your first task](https://qualitylayer.dev/docs/first-task).
+Prefer your terminal, IDE or agent app? Choose **In my own agent**, or ask there: “Using QualityLayer, plan retries for failed webhooks.” Other agents use the CLI ([supported agents](https://qualitylayer.dev/docs/agents/native)). **Chat** skips the workflow steps ([Chat guide](https://qualitylayer.dev/docs/chat)). QualityLayer runs only when you ask for it. [Your first task](https://qualitylayer.dev/docs/first-task).
 
 ### Skills your agent gets
 

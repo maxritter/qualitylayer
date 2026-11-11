@@ -9,7 +9,7 @@ An artifact is a mockup, diagram or clickable set of pages you work on with your
 
 Ask “Using QL, show two layouts for the settings page.” No workflow starts. A task's draft appears as a compact entry in **Files**.
 
-With **In my terminal**, **Create and copy** creates the artifact and copies its request. The folder chip copies its path. Paste into any supported agent, or ask in your own words.
+With **In my own agent**, **Create and copy** creates the artifact and copies its request. The folder chip copies its path. Paste into any supported agent, or ask in your own words.
 
 ### Ask about a spot {#full-size}
 

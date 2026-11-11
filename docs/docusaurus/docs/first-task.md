@@ -27,7 +27,7 @@ To reuse a plan, choose **Existing plan**, paste or attach it, then **Start from
 **New task** and **Start the build** both ask:
 
 - **In the App** (recommended): pick the agent, model, effort, project and branch. Questions and requests to your agent happen in the App.
-- **In my terminal**: ask any coding agent, app or IDE in your own words, or copy the prepared prompt; attached files are listed by path. The agent asks in its own chat. You can still approve the Plan and the finished change in the App, or [work only in your agent](work-in-your-agent.md).
+- **In my own agent**: ask your agent in your terminal, IDE or agent app (Claude Code, Codex, T3 Code, Orca…) in your own words, or copy the prepared prompt; attached files are listed by path. The agent asks in its own chat. You can still approve the Plan and the finished change in the App, or [work only in your agent](work-in-your-agent.md).
 
 [Agent runs](app.md#agent-runs) · [Supported agents](agents/native.md) · [Other agents](agents/other.md)
 

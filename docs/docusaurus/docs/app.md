@@ -94,9 +94,9 @@ When you start a task or the build, choose where the agent runs:
 | Where | How |
 | --- | --- |
 | **In the App** (recommended) | Pick agent, model, effort and branch. You answer in **Conversation** |
-| **In my terminal** | Ask any coding agent in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the finished change in the App |
+| **In my own agent** | Your terminal, IDE or agent app: Claude Code, Codex, T3 Code, Orca… Ask it in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the finished change in the App |
 
-Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my terminal…** in the agent's menu, and **Resume** to return.
+Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session** or **Move to my own agent…** in the agent's menu, and **Resume** to return.
 
 **Conversation** folds finished turns to one line; **Terminal** shows the local program. Below the message box are activity, model, effort, [permissions](agents/native.md#permission-modes), pacing and context; each control opens its own details, a change that must wait for the agent says so on its chip, and a setting the App cannot change shows as text. In **Agent controls › Appearance…**, set thinking to hidden, collapsed (default) or expanded. **Messages while working** defaults to **Steer at next step** where the agent supports it; otherwise it queues without interrupting. Choose **Queue until the turn ends** to wait instead. Paste or drop files in either view. Conversation shows image previews and file cards; queued messages stay when you switch views.
 

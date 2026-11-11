@@ -54,7 +54,7 @@ A choice only you can make appears as **Your call** beside its subject. The head
 
 For a waiting terminal planner, **Build in &lt;agent&gt; · terminal** starts the build from the Plan: run your agent's compact command, then say "build here". Under the arrow you can keep the conversation instead, or use another session with a prepared prompt.
 
-Answering a question does not approve the Plan. Approve in the App, also when the agent works in your terminal, or give an explicit approval through your agent. Later changes to what you approved are recorded as amendments and stay visible on Verify.
+Answering a question does not approve the Plan. Approve in the App, also when you work in your own agent, or give an explicit approval through your agent. Later changes to what you approved are recorded as amendments and stay visible on Verify.
 
 ![An example retry decision diagram: Ask agent prepares an editable contextual draft in Conversation](pathname:///img/diagrams/decision-light.svg)
 ![An example retry decision diagram: Ask agent prepares an editable contextual draft in Conversation](pathname:///img/diagrams/decision-dark.svg)

@@ -33,7 +33,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | Command | What it does |
 | --- | --- |
 | `chat plan save --file <markdown>` | Save `chat-plan.md` (`--text` instead of a file) |
-| `chat build [--file <outline>]` · `--stop <slice>` | Start or resume slice helpers, or record one stopped |
+| `chat build [--file <cards>]` · `--stop <slice>` | Start or resume slice helpers, or record one stopped |
 | `chat check [--slice <n>]` · `chat review` | Print validation commands, or brief a fresh reviewer |
 | `chat promote --type feature\|bugfix [--from-saved-plan]` | Move into the workflow at Plan, from the conversation or the saved plan |
 
@@ -87,7 +87,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open pla
 | `artifact tokens <name> [--refresh]` | Fix values that differ from the project's design file |
 | `artifact library inspect\|rename\|copy\|archive\|restore\|delete <name>` | Manage lasting artifacts |
 
-Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact library inspect`. `artifact shot` and `check --render` need Chrome.
+Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact library inspect`. `artifact shot` and `artifact check --render` need Chrome.
 
 ## Code health and security scans {#code-health}
 

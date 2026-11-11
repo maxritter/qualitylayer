@@ -395,6 +395,8 @@ Tree executed: this checkout's working copy. The whole proof, the self-test file
 
 ### Iteration 4
 
+**Revision:** 592efa318b02665728c5a1ff1b03bb59e09207ddca830a49db364ec419349a71
+
 **Assignment:** 4f0a6e25-d924-4f6e-91f0-e74a460746e3
 **Judge:** fresh helper
 

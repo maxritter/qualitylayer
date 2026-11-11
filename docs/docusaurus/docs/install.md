@@ -10,7 +10,7 @@ description: Use QualityLayer in the desktop App or your browser, with your task
 
 ## On your computer
 
-**[Download the App](https://qualitylayer.dev/download)** and open it. Setup activates your licence or 7-day trial, installs the `qualitylayer` command and connects your agents and recent repositories. Choose Engineering or Product for new tasks ([two levels](intro.md#two-levels)).
+**[Download the App](https://qualitylayer.dev/download)** and open it. Setup activates your licence or 7-day trial, installs the `qualitylayer` command and connects your agents and recent repositories.
 
 On Windows, you can also run `irm https://qualitylayer.dev/install.ps1 | iex` in PowerShell. This installs the App and the command line.
 

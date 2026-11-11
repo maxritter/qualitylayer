@@ -46,6 +46,8 @@ Pick agent, model and effort per task; the default effort is High.
 | Cursor / Antigravity | Effort is part of the model name, such as Opus 5.5 (High) |
 | GitHub Copilot | Auto works on every plan; paid plans can choose Claude Opus 5.5 |
 
+Where the agent says which models your account has (Codex, OpenCode, Cursor and Antigravity), every model menu shows only those. A model a task or setting already uses that your plan lacks stays in the menu as **· not offered**. Claude Code, Pi, Grok and GitHub Copilot list every model QualityLayer knows.
+
 Reviewers use a separate context and edit nothing. Cursor and Antigravity review disposable copies and stop at the first non-read-only tool. [Reviewer selection](../reference/settings.md#second-opinion).
 
 ## Sessions in the App
@@ -82,6 +84,8 @@ Switching an existing session to Bypass, Full access or Run everything needs con
 ### Plan limits {#plan-limits}
 
 **Claude Code**, **Codex** and **GitHub Copilot** show the windows their records report. Percentages default to **Used**, such as **Week · 58 % used**; [Usage display](../reference/settings.md#usage) switches the App and macOS menu bar to **Remaining**. Claude Code uses its `/usage` report, Codex its session/account records, and Copilot its monthly allowance snapshots. Missing or reset readings stay unknown. Agents billed by use show the session's estimated cost instead.
+
+When one of these agents stops at its limit, the task shows **Limit · resets 17:23** instead of a spinner. Its agent status says when the limit resets. With **Resume when a limit resets** on, QualityLayer continues the session then; **Cancel resume** stops that. Otherwise, copy the command that continues the session.
 
 ## How QualityLayer finds your agents {#finding-agents}
 

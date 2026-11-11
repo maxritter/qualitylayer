@@ -44,16 +44,6 @@ The agent decides how to carry out each step. QualityLayer enforces only your tw
 
 Medium and large changes in your repositories. Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot [run natively](agents/native.md); [other agents](agents/other.md) use the CLI. Each keeps its own login.
 
-## Two levels
-
-Pick a level at **Setup**. Change it in **Settings › Workflow**, or per task until you approve its Plan. Both take the same steps and write the same files.
-
-| | Engineering (default) | Product |
-| --- | --- | --- |
-| For | Engineers | Product owners, managers, leadership |
-| Discuss becomes | Numbered points of what done means | A PRD for Confluence, Google Docs or Jira |
-| The Plan shows | Each decision with its diagram, contracts, files and tests | What changes for the user; engineering detail one click away |
-
 ## How it fits together {#how-it-fits-together}
 
 

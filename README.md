@@ -149,10 +149,6 @@ Each step saves readable Markdown in your repository, and existing plans start a
 | [Review](https://qualitylayer.dev/docs/steps/review) | The code first, what changed and the acceptance test as it ran, **approved by you** |
 | [Pull request](https://qualitylayer.dev/docs/steps/pull-request) | Failing checks and routine review threads fixed; the task stays open until you merge |
 
-### Two levels
-
-**Engineering** starts with a technical plan. **Product** starts with a product brief. Choose in Settings › Workflow. [How they differ](https://qualitylayer.dev/docs/#two-levels).
-
 ## Checks and independent review
 
 Your project's checks, [code health](https://qualitylayer.dev/docs/reference/code-health) and security scans run first. Then a separate agent reviews the change against your request. [How Verify works](https://qualitylayer.dev/docs/steps/verify).

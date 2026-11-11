@@ -17,7 +17,7 @@ The **Plan** page is the document you approve before the build. The summary, wha
 
 | Part | What it tells you |
 | --- | --- |
-| **Summary** | The change in a few lines, with the size of the build and what reviewed it |
+| **Summary** | One plain sentence on what users get, then the change in a few lines, with the size of the build and what reviewed it |
 | **What changes** | One bullet per change: a bold sentence saying what changes and one more sentence. Anything longer waits under **Details** |
 | **Diagrams** | Up to three, in tabs: before and after, a flow, a sequence or the architecture. Open one full size: drag to pan, scroll to zoom, arrow keys to move |
 | **Interface** | One tab per screen: a clickable artifact ([Artifacts](../artifacts.md)), with **Open** for a full view |
@@ -32,8 +32,6 @@ Engineering detail (code, data and interfaces, contracts, decisions and checks) 
 | **The specification** | `03-plan.md`, written for people. **What we agreed** repeats Discuss's **Done means** and **Not doing**; artifact pictures stay linked |
 | **Build notes** | `agents/03-plan.md`, listed under **For agents** in the Reader: code to imitate, how to start and test, pitfalls, rejected approaches and the risks with the test that guards each. They never change what you approve |
 | **A portable copy** | `qualitylayer plan export --out <folder>` exports the Plan, `01-discuss.md` and pictures for readers without QualityLayer |
-
-The Product level uses plainer words ([two levels](../intro.md#two-levels)).
 
 ## Approve or ask for a revision {#answering}
 

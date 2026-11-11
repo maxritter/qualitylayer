@@ -41,7 +41,7 @@ export const FAQS: Faq[] = [
   faq("Can I use my own remote computer?", "Yes. Connect a machine you control through Settings › Machines, SSH or a paired browser. Its local server authenticates access to your own work; this does not create a hosted workspace or teammate account."),
   MEMORY,
   SOURCE,
-  faq("Is it for product managers as well as engineers?", "Yes. Choose Engineering for technical plans or Product for a product brief in Settings › Workflow."),
+  faq("Is it for product managers as well as engineers?", "Yes. Each Plan opens with what users get, and a request for a PRD gets one with a success measure and a first release."),
   faq("Can I see how much of my plan is left?", "Claude Code, Codex and GitHub Copilot show the limits they report, with reset times when available. Stopped builds can resume when their limit resets."),
   LEGACY,
 ];

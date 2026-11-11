@@ -17,7 +17,7 @@ Review opens once Verify has passed every point, so everything on the page is fi
 
 | Part | What you read |
 | --- | --- |
-| **Why** | A one-sentence refresher of the request |
+| **Why** | A one-sentence refresher of the request, then a release-note line for each change users see; the pull request carries them |
 | **Code** | The complete change, where to start reading and contextual requests about any line |
 | **What changed** | The change in diagrams, in tabs |
 | **Screens** | The designs you approved beside what was built |

@@ -5,14 +5,13 @@ description: Configure your workflow, agents, memory, usage and updates.
 
 Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for this computer.
 
-![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-light.webp)
-![Settings: its sections in the sidebar's place, with the task level, your instructions and the reviews in Workflow](pathname:///img/app/settings-dark.webp)
+![Settings: its sections in the sidebar's place, with your instructions, where you answer and approve, and the reviews in Workflow](pathname:///img/app/settings-light.webp)
+![Settings: its sections in the sidebar's place, with your instructions, where you answer and approve, and the reviews in Workflow](pathname:///img/app/settings-dark.webp)
 
 ## Workflow
 
 | Setting | Choices |
 | --- | --- |
-| **New tasks** | **Engineering** (default) or **Product** ([two levels](../intro.md#two-levels)); change per task until the Plan is approved |
 | [Your instructions](#instructions) | Standing instructions for every task |
 | **Answer questions in** · **Approve in** | **In the App** (default) or **Your agent**, for tasks you start in an agent ([guide](../work-in-your-agent.md#where)) |
 | **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
@@ -105,7 +104,7 @@ Pick an agent by its mark; every model it uses is on one page. A new task starts
 
 Credits stay separate in Usage; missing data makes totals partial. The task header’s [Cost](../app.md#cost) uses recorded Copilot AI-credit usage value where available, clearly labelled separately from API-price estimates and money billed.
 
-**Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since.
+**Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since; **Cancel resume** in the task's agent status stops one.
 
 **What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. Every supported agent is covered where its records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
 

@@ -106,3 +106,4 @@ Closing the sidebar keeps the run. Use **Interrupt** (**Esc**), **Stop session**
 ## In Claude Code
 
 A band above your prompt says when this task or another one needs you; `/task-pane` adds the steps, build progress and every task that needs you, runs or has an open pull request.
+

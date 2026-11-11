@@ -33,7 +33,7 @@ Small requests keep a short Plan and one slice. If you ask for a plain prompt in
 
 ## Starting without a ticket {#prd}
 
-When what to build is still open, the document becomes a PRD with a success measure and a first release. **Copy** exports it.
+When you ask for a PRD, or what to build is still open, the document becomes one, with a success measure and a first release. **Copy** exports it.
 
 ## A bug {#a-bug}
 
@@ -41,9 +41,5 @@ You agree on when it happens, what goes wrong, what should happen and what must 
 
 ![Bug diagnosis: when, what happens, what is expected, what must keep working](pathname:///img/diagrams/diagnose-light.svg)
 ![Bug diagnosis: when, what happens, what is expected, what must keep working](pathname:///img/diagrams/diagnose-dark.svg)
-
-## At the Product level {#product-level}
-
-Questions use product words and cover only what remains open. Changed screens appear as product-faithful artifacts; wireframes help settle an unresolved layout ([two levels](../intro.md#two-levels)). The page keeps the PRD's sections open, since the file is the PRD.
 
 Next: [Research](research.md).

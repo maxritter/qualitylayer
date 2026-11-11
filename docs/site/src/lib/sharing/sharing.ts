@@ -73,13 +73,13 @@ export async function openFromLink(key: string, purpose: Purpose, sealed: unknow
 }
 
 /** The seven steps a task goes through, as the App names them. */
-export type FlowStep = "discuss" | "research" | "plan" | "outline" | "implement" | "verify" | "review";
+export type FlowStep = "plan" | "implement" | "verify";
 
 /** The steps a link reviewer reads, as the App names them. */
 export type Tab = FlowStep;
 
 /** Every step, in the order the work runs. */
-export const ALL_TABS: readonly Tab[] = ["discuss", "research", "plan", "outline", "implement", "verify", "review"];
+export const ALL_TABS: readonly Tab[] = ["plan", "implement", "verify"];
 
 /** Only raster stills of artifacts referenced by the Plan, never the artifact's source. */
 export type PlanStill = SharedPicture;
@@ -203,17 +203,17 @@ export function parseReview(text: string | undefined): SharedReview | undefined 
   };
 }
 
-/** The step each shared document belongs to: the seven numbered files, by their exact names. */
+/** The step each shared document belongs to: the three numbered files, by their exact names. */
 const STEP_OF_DOC = new Map<string, Tab>(ALL_TABS.flatMap((tab) => STEP_DOCS[tab].map((name) => [name, tab] as const)));
 
 const byName = (a: string, b: string) => a.replace(/\.md$/, "").localeCompare(b.replace(/\.md$/, ""));
 
 /**
- * The documents a link reader sees under the step tabs, never their file names: only the seven
+ * The documents a link reader sees under the step tabs, never their file names: only the three
  * step files. Anything else a link carries (data, mockups, a stray file) is not shown as a document.
  */
 export function stepDocs(docs: Record<string, string>): Record<Tab, string[]> {
-  const steps: Record<Tab, string[]> = { discuss: [], research: [], plan: [], outline: [], implement: [], verify: [], review: [] };
+  const steps: Record<Tab, string[]> = { plan: [], implement: [], verify: [] };
   for (const name of Object.keys(docs).sort(byName)) {
     const tab = STEP_OF_DOC.get(name);
     if (tab !== undefined) steps[tab].push(name);

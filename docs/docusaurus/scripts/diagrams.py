@@ -652,37 +652,6 @@ def home_ill(c: Theme) -> str:
     return svg(W, H, ''.join(b), 'Home: compact task destinations under Needs attention and Running, with spending and Shipped beside them')
 
 
-def plan_full(c: Theme) -> str:
-    W, H = 1100, 530
-    b = [window(c, W, H, 'Plan · QualityLayer')]
-    b.append(T(18, 70, '← Exit full size', 12, 'blue', 600, c=c))
-    b.append(T(216, 70, 'Settings cleanup · Plan', 16, 'text', 650, c=c))
-    p, _ = spill(c, 758, 51, 'agent', 'Writing the Plan')
-    b.append(p)
-    b.append(T(18, 116, 'Outline', 12, 'muted', 650, c=c))
-    for i, text in enumerate(['The problem', 'Done means', 'Interface', 'Decisions', 'Slices', 'Checks']):
-        b.append(T(18, 148 + i * 29, text, 12.5, 'text', 500, c=c))
-    b.append(T(210, 114, '03-plan.md  ▾', 11.5, 'muted', mono=True, c=c))
-    b.append(T(374, 114, 'Path · Editor · More agent records', 11.5, 'blue', c=c))
-    rows = [('01', 'The Plan'), ('02', ''), ('03', 'Done means'), ('04', '1 · Every setting names what it changes.'),
-            ('05', '2 · A risky Plan gets a second opinion.'), ('06', ''), ('07', 'Engineering decisions'),
-            ('08', 'Keep the retry limit visible beside each setting.'), ('09', ''), ('10', 'Slices and checks'),
-            ('11', '1 · Clearer settings · types, tests and build.'), ('12', '2 · Links · end-to-end scenarios.')]
-    for i, (n, text) in enumerate(rows):
-        y = 158 + i * 26
-        if n == '08':
-            b.append(f'<rect x="202" y="{y - 17}" width="588" height="26" fill="{c["amberf"]}"/>')
-            b.append(T(766, y, '+ 1', 11, 'amber', 650, c=c))
-        b.append(T(210, y, n, 11, 'muted', mono=True, c=c))
-        b.append(T(244, y, text, 12.5, 'text', 650 if n in ('01', '03', '07', '10') else 400, c=c))
-    b.append(rside(c, 810, 86, 290, H - 86, 'conversation'))
-    b.append(T(826, 156, 'Line 8 · Anna', 12, 'text', 650, c=c))
-    b.append(T(826, 185, 'Keep the retry limit visible.', 12.5, 'text', c=c))
-    b.append(T(826, 220, 'Agent: changed on line 8.', 12, 'blue', c=c))
-    b.append(T(210, H - 20, 'Illustration · example document and contextual request', 10.5, 'muted', c=c))
-    return svg(W, H, ''.join(b), 'The full-size Plan: outline, document-header file chip, lines with a comment on line 8, named agent status, and Conversation / Terminal / Files')
-
-
 def items_ill(c: Theme) -> str:
     W, H = 1000, 300
     fams = [('Decide', ['Agree', 'Change'], ['Engineering decision', 'Decided by the agent', 'Out of scope', 'Extra review', 'Done means']),
@@ -1047,7 +1016,7 @@ def agents_other_ill(c: Theme) -> str:
     b.append(curve(c, 252, 100, 330, 60, 'line'))
     b.append(curve(c, 252, 150, 330, 190, 'line'))
     b.append(node(c, 332, 20, 300, 80, 'The command line', ['qualitylayer on the agent’s PATH', 'The App sets this up for you'], 'blue', 'bluef'))
-    b.append(node(c, 332, 150, 300, 80, 'One prompt from the App', ['+ New, then In my terminal', 'copies the prompt for your agent'], 'blue', 'bluef'))
+    b.append(node(c, 332, 150, 300, 80, 'One prompt from the App', ['+ New, then In my own agent', 'copies the prompt for your agent'], 'blue', 'bluef'))
     b.append(curve(c, 634, 60, 700, 120, 'blue'))
     b.append(curve(c, 634, 190, 700, 130, 'blue'))
     b.append(node(c, 702, 70, 298, 110, 'The same steps', ['It asks for the next step and records', 'the checks. You decide in the App.'], 'amber', 'amberf'))
@@ -1073,21 +1042,39 @@ def agents_mix_ill(c: Theme) -> str:
 
 # ---------------------------------------------------------------- getting started
 def firsttask_ill(c: Theme) -> str:
-    W, H = 1000, 190
+    """The first task left to right: three moves in Plan, the agents' Implement and Verify, then the merge."""
+    w, gap, y, h = 134, 18, 44, 156
+    W, H = 6 * w + 5 * gap, 240
+    # (step colour, who, title, lines, your approval)
+    moves = [('amber', 'You', 'Describe', ['the change'], False),
+             ('amber', 'You', 'Answer', ['the questions'], False),
+             ('amber', 'You', 'Approve', ['the Plan'], True),
+             ('blue', 'Agents', 'Implement', ['build it', 'test first'], False),
+             ('violet', 'Agents, you', 'Verify', ['agents check,', 'you review', 'and approve'], True),
+             ('blue', 'You', 'Merge', ['the pull', 'request'], False)]
+    fills = {'amber': 'amberf', 'blue': 'bluef', 'violet': 'violetf'}
     b = []
-    steps = [('Describe', 'the change'), ('Answer', 'its questions'), ('Approve', 'the Plan'), ('Start', 'Implement'),
-             ('Agents build', 'and check'), ('Settle', 'what is left'), ('Approve', 'the change')]
-    you = {0, 1, 2, 3, 5, 6}
-    xs = [60 + i * 147 for i in range(len(steps))]
-    b.append(f'<line x1="{xs[0]}" y1="70" x2="{xs[-1]}" y2="70" stroke="{c["line"]}" stroke-width="2"/>')
-    for i, (t, s) in enumerate(steps):
-        col = 'amber' if i in you else 'blue'
-        b.append(f'<circle cx="{xs[i]}" cy="70" r="24" fill="{c["amberf" if i in you else "bluef"]}" stroke="{c[col]}" stroke-width="2"/>')
-        b.append(T(xs[i], 76, str(i + 1), 16, col, 700, 'middle', c=c))
-        b.append(T(xs[i], 124, t, 14, 'text', 650, 'middle', c=c))
-        b.append(T(xs[i], 144, s, 12.5, 'muted', 400, 'middle', c=c))
-    b.append(T(xs[0] - 24, 22, 'Start in the App or browser; your task and agent stay side by side', 12.5, 'muted', 500, c=c))
-    return svg(W, H, ''.join(b), 'Your first task in seven moves: describe the change, answer its questions, approve the Plan, start Implement, agents build and check, settle what is left, approve the change')
+    # The steps above their moves: Plan spans the first three.
+    for name, col, first, last in [('Plan', 'amber', 0, 2), ('Implement', 'blue', 3, 3), ('Verify', 'violet', 4, 4),
+                                   ('Pull request', 'blue', 5, 5)]:
+        x1, x2 = first * (w + gap), last * (w + gap) + w
+        b.append(f'<line x1="{x1}" y1="26" x2="{x2}" y2="26" stroke="{c[col]}" stroke-width="3" stroke-linecap="round"/>')
+        b.append(T((x1 + x2) / 2, 16, name, 16, col, 700, 'middle', c=c))
+    for i, (col, who, title, lines, gate) in enumerate(moves):
+        x = i * (w + gap)
+        b.append(card(c, x, y, w, h, stroke=col, fill=fills[col], sw=2))
+        b.append(T(x + 16, y + 30, who, 14, col, 700, c=c))
+        if gate:
+            b.append(diamond(c, x + w - 17, y + 25, 7))
+        b.append(T(x + 16, y + 66, title, 19, 'text', 700, c=c))
+        for k, line in enumerate(lines):
+            b.append(T(x + 16, y + 94 + k * 21, line, 15, 'muted', c=c))
+        if i < 5:
+            b.append(arrow(c, x + w + 3, y + h / 2, x + w + gap - 3))
+    ly = H - 8
+    b.append(diamond(c, 8, ly - 5, 6))
+    b.append(T(24, ly, 'Your approval', 15, 'muted', c=c))
+    return svg(W, H, ''.join(b), 'Your first task: in Plan you describe the change, answer the questions and approve the Plan; agents implement it test first; in Verify agents check it, then you review and approve; you merge the pull request')
 
 
 def update_ill(c: Theme) -> str:
@@ -1190,7 +1177,7 @@ def artifacts_flow(c: Theme) -> str:
 
 
 DRAWINGS = [('architecture', architecture), ('flow-pr', lambda c: flow(c, pr=True)), ('slices', slices), ('app', app),
-            ('home', home_ill), ('plan-full', plan_full),
+            ('home', home_ill),
             ('items', items_ill), ('decision', decision_ill),
             ('implement', implement_ill),
             ('diagnose', diagnose_ill), ('plan', plan_ill),

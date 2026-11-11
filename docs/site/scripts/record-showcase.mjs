@@ -8,7 +8,8 @@
  *   npx vite --port 5191 &                          # the site, from docs/site
  *   node scripts/record-showcase.mjs [--url http://localhost:5191] [--segments 0-51000]
  *
- * The README plays the whole walkthrough, all seven steps and the pull request. GitHub's image proxy
+ * The README plays the whole walkthrough, the stage card alone (no caption or step row): Plan,
+ * Implement, Verify and the pull request. GitHub's image proxy
  * refuses images over 5 MiB, so frames are encoded by what they show: a frame the picture rests on
  * (a highlight, a step's page) keeps --quality, a frame of a camera move or a fade takes
  * --motion-quality, which motion hides. The loops are written to --out (a temporary folder by
@@ -124,9 +125,9 @@ try {
     await page.waitForSelector(".hs-card");
     await page.waitForTimeout(1500);
     const box = await page.evaluate(() => {
+      // The stage card only: the App already shows which step it is, so the caption and step row stay out (Max, 11 Nov 2026).
       const a = document.querySelector(".hs-stage-card").getBoundingClientRect();
-      const b = document.querySelector(".hs-steps").getBoundingClientRect();
-      return { x: Math.round(a.left) - 2, y: Math.round(a.top) - 2, width: Math.round(a.width) + 4, height: Math.round(b.bottom - a.top) + 4 };
+      return { x: Math.round(a.left) - 2, y: Math.round(a.top) - 2, width: Math.round(a.width) + 4, height: Math.round(a.height) + 4 };
     });
     const duration = await page.evaluate(async () => {
       const player = window.__heroShowcase;

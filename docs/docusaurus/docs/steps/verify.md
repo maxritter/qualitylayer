@@ -8,8 +8,8 @@ description: Agents that did not write the code check every point and fix what f
 
 Verify is one page in two modes. While the agents check, it is their board: project checks and independent review, then fixes for what fails. Once every **Done means** point is proven, the same page becomes your review: the code first, then what changed and each point as it ran. A failure is never marked passed. The findings, commands and every judged round are in `agents/03-verify.md`.
 
-![Verify in the App: the checks and their results](pathname:///img/app/verify-light.webp)
-![Verify in the App: the checks and their results](pathname:///img/app/verify-dark.webp)
+![Verify in the App while the agents check: the project checks, the independent review and the fix rounds](pathname:///img/app/verify-checking-light.webp)
+![Verify in the App while the agents check: the project checks, the independent review and the fix rounds](pathname:///img/app/verify-checking-dark.webp)
 
 *Example task in a fictional project.*
 
@@ -56,8 +56,8 @@ Your agent's native permissions and your explicit stop or pause still apply.
 
 ## Review the result {#items}
 
-![Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header](pathname:///img/app/review-light.webp)
-![Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header](pathname:///img/app/review-dark.webp)
+![Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header](pathname:///img/app/verify-light.webp)
+![Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header](pathname:///img/app/verify-dark.webp)
 
 | Part | What you read |
 | --- | --- |
@@ -101,9 +101,6 @@ Approve the whole change in the page header, including when its agent has stoppe
 ![Ask agent prepares an editable contextual draft; sending and approval remain separate](pathname:///img/diagrams/comments-dark.svg)
 
 ### After you approve {#after-approve}
-
-![Verify after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-light.webp)
-![Verify after the approval: Not merged yet, with requests for the chat and Mark as merged](pathname:///img/app/review-approved-dark.webp)
 
 Ask your agent to merge, push, deploy or run end-to-end tests. These actions still need your request.
 

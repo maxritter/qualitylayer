@@ -237,8 +237,8 @@ export function HeroShowcase({ ref, line, onStep }: { ref?: Ref<ShowcaseHandle>;
             <figure className="sx-shot">
               {(["light", "dark"] as const).map((t) => (
                 <picture key={t} className={`sx-shot-${t}`}>
-                  <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${t}.webp`} width={740} height={1996} />
-                  <img src={`/product/discuss-${t}.webp`} alt={SHOT_ALT} width={2664} height={1664} decoding="async" />
+                  <source media="(max-width: 640px)" srcSet={`/hero/your-turn-${t}.webp`} width={740} height={1664} />
+                  <img src={`/product/plan-${t}.webp`} alt={SHOT_ALT} width={2664} height={2024} decoding="async" />
                 </picture>
               ))}
             </figure>

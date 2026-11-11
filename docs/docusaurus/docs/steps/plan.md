@@ -8,8 +8,8 @@ description: "Your agent reads the code, asks what only you can answer and write
 
 Describe the change with **+ › Task**, or ask your agent: “Using QL, plan a CSV export.” Your agent reads the code, asks only about choices the code leaves open, each with a recommendation, and writes the Plan. You approve it once, before the build. A small change keeps it brief.
 
-![The Plan in the App: its one open decision with both paths drawn, under Give feedback and Approve Plan](pathname:///img/app/plan-light.webp)
-![The Plan in the App: its one open decision with both paths drawn, under Give feedback and Approve Plan](pathname:///img/app/plan-dark.webp)
+![The Plan in the App: its one open decision with both paths drawn, beside the agent's conversation](pathname:///img/app/plan-light.webp)
+![The Plan in the App: its one open decision with both paths drawn, beside the agent's conversation](pathname:///img/app/plan-dark.webp)
 
 *Example task in a fictional project.*
 
@@ -65,7 +65,7 @@ Choose **Ask agent** on a diagram, screen or passage to prepare a contextual req
 
 ## Before it reaches you {#before-it-reaches-you}
 
-Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion) from another model. With Plan reviewers on Panel, up to three models read every Plan except a small task's and answer each other once. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
+Your agent rereads the Plan as a reviewer would. Risky Plans also get a [second opinion when enabled](../reference/settings.md#second-opinion) from another model. Required reviews keep **Approve Plan** blocked with an amber reason until they finish.
 
 ## A bug {#a-bug}
 

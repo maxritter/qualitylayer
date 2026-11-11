@@ -22,5 +22,5 @@ export const WORKFLOW_STEPS = STEPS.slice(0, 3);
 /** The step the tour opens on. */
 export const FIRST_STEP = "plan";
 
-/** The hero showcase still plays the billing example's earlier captures: each chapter stands for the step it is part of now. */
-export const STEP_OF_CHAPTER: Record<string, string> = { discuss: "plan", research: "plan", plan: "plan", outline: "implement", implement: "implement", verify: "verify", review: "verify", "pull-request": "pull-request" };
+/** The hero showcase plays one chapter per step; its caption after Approve is the pull request. */
+export const STEP_OF_CHAPTER: Record<string, string> = { plan: "plan", implement: "implement", verify: "verify", "pull-request": "pull-request" };

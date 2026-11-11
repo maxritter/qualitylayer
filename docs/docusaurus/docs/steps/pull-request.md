@@ -8,8 +8,8 @@ description: Choose to open a pull request when you approve on Verify, then foll
 
 Open a pull request when you approve on [Verify](verify.md#approve). QualityLayer follows its checks and comments; you control the merge.
 
-![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-light.webp)
-![The pull request: two review threads and a failing check wait on you, above its checks and reviewers](pathname:///img/app/pull-request-dark.webp)
+![The merged pull request: its checks, its reviewers and the time from the first question to the approval](pathname:///img/app/pull-request-light.webp)
+![The merged pull request: its checks, its reviewers and the time from the first question to the approval](pathname:///img/app/pull-request-dark.webp)
 
 *Example task in a fictional project.*
 

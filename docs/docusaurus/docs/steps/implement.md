@@ -10,10 +10,6 @@ description: Start the build in the App or in your own agent. Your agent cuts th
 
 **Approve and build here** continues the App's planning session after its turn. A waiting terminal planner gets **Build in &lt;agent&gt; · terminal**. Otherwise **Start the build** opens on Plan.
 
-![The Implement start card](pathname:///img/app/implement-start-light.webp)
-![The Implement start card](pathname:///img/app/implement-start-dark.webp)
-
-*Example task in a fictional project.*
 
 | On the card | What it picks |
 | --- | --- |

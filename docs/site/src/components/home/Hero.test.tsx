@@ -26,7 +26,7 @@ it("shows the App beside the copy as a still first frame, light and dark, with a
   expect(pictures.map((p) => p.className)).toEqual(["sx-shot-light", "sx-shot-dark"]);
   for (const [picture, theme] of pictures.map((p, i) => [p, i ? "dark" : "light"] as const)) {
     const img = picture.querySelector("img")!;
-    expect(img.getAttribute("src")).toBe(`/product/discuss-${theme}.webp`);
+    expect(img.getAttribute("src")).toBe(`/product/plan-${theme}.webp`);
     expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2664", "1664"]);
     expect(img.getAttribute("alt")).toMatch(/seven steps/);
     const phone = picture.querySelector("source")!;

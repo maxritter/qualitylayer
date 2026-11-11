@@ -11,12 +11,12 @@
  */
 import GEOMETRY from "./tour-geometry.json";
 
-export type Shot = "discuss" | "research" | "plan" | "outline" | "implement" | "verify" | "review" | "review-approved" | "pull-request";
+export type Shot = "plan" | "implement" | "verify" | "pull-request";
 export type Point = { x: number; y: number };
 export type Rect = Point & { w: number; h: number };
 export type Camera = Point & { s: number };
 /** What the caption under the stage says: a workflow step, or the pull request after it. */
-export type Caption = "discuss" | "research" | "plan" | "outline" | "implement" | "verify" | "review" | "pull-request";
+export type Caption = "plan" | "implement" | "verify" | "pull-request";
 type Beat =
   | [number, "cam", Camera | null, number]
   | [number, "cur", Point, number]
@@ -46,8 +46,8 @@ function rail(shot: Shot, step: string): Point {
   const [x, y, w, h] = G.shots[shot].rail[step];
   return { x: ((x + w / 2) / G.window.width) * 100, y: ((y + h * 0.36) / G.window.height) * 100 };
 }
-/** The App's sidebar ends where the step rail begins. */
-const SIDEBAR = (G.shots.discuss.rail.discuss[0] / G.window.width) * 100;
+/** The App's sidebar is 232 px wide; the work area starts where it ends. */
+const SIDEBAR = (232 / G.window.width) * 100;
 /**
  * The work area beside the sidebar: the zoom just drops the sidebar. It stays at the top, where the
  * step rail is, and moves down only as far as the lowest of `rects` needs.
@@ -67,15 +67,10 @@ const same = (a: Camera, b: Camera) => Math.abs(a.y - b.y) < 0.01;
  */
 function build(): Chapter[] {
   const r = rect;
-  const discussChoice = r("discuss", "choice"), discussTurn = r("discuss", "turn");
-  const gateway = r("research", "gateway", 3), researchTurn = r("research", "turn");
   const planChoice = r("plan", "choice", 2), choose = r("plan", "choose", 3);
-  const slices = r("outline", "slices"), scenario = r("outline", "scenario");
   const task = r("implement", "task", 2), testFirst = r("implement", "testFirst", 3);
-  const facts = r("verify", "facts"), review = r("verify", "review");
-  const reviewFacts = r("review", "facts"), code = r("review", "code", 3), approve = r("review", "approve", 3);
-  const pr = r("review-approved", "pr", 3);
-  const threads = r("pull-request", "threads");
+  const facts = r("verify", "facts"), review = r("verify", "review"), approve = r("verify", "approve", 3);
+  const merged = r("pull-request", "merged"), card = r("pull-request", "card");
   // Each chapter's rail click lands on the screen the previous chapter ended on.
   const into = (from: Shot, step: string): Beat[] => [[0, "cur", rail(from, step), 650], [700, "click"], [800, "shot", step as Shot], [800, "say", step as Caption]];
   // The cursor moves to point at what lights up, so it never rests on the step it clicked.
@@ -83,62 +78,32 @@ function build(): Chapter[] {
   // Down to what sits low, and back up to the rail before the next step; nothing when it all shows from the top.
   const down = (at: number, cam: Camera): Beat[] => (same(cam, TOP) ? [] : [[at, "cam", cam, 650]]);
   const up = (at: number, cam: Camera): Beat[] => (same(cam, TOP) ? [] : [[at, "cam", TOP, 650]]);
-  const planCam = work(planChoice, choose), implementCam = work(task, testFirst), verifyCam = work(facts, review);
+  const planCam = work(planChoice, choose), implementCam = work(task, testFirst);
   return [
-    { id: "discuss", dur: 6800, beats: [
-      ...into("pull-request", "discuss"),
-      [1000, "cam", work(discussChoice, discussTurn), 1200],
-      // The first question, answered with its recommended option.
-      [2300, "cur", centre(discussChoice), 750], [3100, "click"], [3200, "mark", discussChoice],
-      // Asking in the conversation while it waits.
-      ...show(4500, discussTurn),
-      [6100, "mark", null]] },
-    { id: "research", dur: 5600, beats: [
-      ...into("discuss", "research"),
-      // The gateway every request passes, then the question about it.
-      ...show(1700, gateway),
-      ...show(3100, researchTurn),
-      [4900, "mark", null]] },
     { id: "plan", dur: 7000, beats: [
-      ...into("research", "plan"),
+      ...into("pull-request", "plan"),
       ...down(1000, planCam),
       // The recommended choice with its facts and diagram; the call is the person's.
       ...show(2100, planChoice),
       [3500, "cur", centre(choose), 800], [4400, "click"], [4500, "mark", choose],
       [5800, "mark", null], ...up(5900, planCam)] },
-    { id: "outline", dur: 5600, beats: [
-      ...into("plan", "outline"),
-      // The slices and their task counts, then a scenario that proves a Done means point.
-      ...show(1700, slices),
-      ...show(3100, scenario),
-      [4900, "mark", null]] },
     { id: "implement", dur: 6400, beats: [
-      ...into("outline", "implement"),
+      ...into("plan", "implement"),
       ...down(1000, implementCam),
       // One slice, task by task; its test is written first.
       ...show(2100, task),
       ...show(3500, testFirst),
       [5200, "mark", null], ...up(5300, implementCam)] },
-    { id: "verify", dur: 6400, beats: [
+    { id: "verify", dur: 11800, beats: [
       ...into("implement", "verify"),
-      ...down(1000, verifyCam),
-      // Recorded progress, then the independent reviewers at work.
-      ...show(2100, facts),
-      ...show(3500, review),
-      [5200, "mark", null], ...up(5300, verifyCam)] },
-    { id: "review", dur: 11800, beats: [
-      ...into("verify", "review"),
-      // The finished change and its proof, then the code to read.
-      ...show(1700, reviewFacts),
-      ...show(2900, code),
-      // Approve.
+      // Recorded progress, then the code to read.
+      ...show(1700, facts),
+      ...show(2900, review),
+      // Approve: the pull request opens and agents follow it to the merge.
       [4100, "mark", null],
-      [4200, "cur", centre(approve), 750], [5100, "click"], [5200, "mark", approve], [5400, "shot", "review-approved"], [5500, "mark", null],
-      // Then ask for a pull request.
-      [5700, "cur", centre(pr), 750], [6600, "click"], [6700, "mark", pr],
-      // Its review threads and failing check come back to you; the agent follows them.
-      [7600, "shot", "pull-request"], [7600, "say", "pull-request"], [7700, "mark", null],
-      ...show(8300, threads),
+      [4200, "cur", centre(approve), 750], [5100, "click"], [5200, "mark", approve], [5400, "shot", "pull-request"], [5400, "say", "pull-request"], [5500, "mark", null],
+      ...show(6900, merged),
+      ...show(8500, card),
       [10300, "mark", null], [10500, "cam", null, 1100]] },
   ];
 }
@@ -249,4 +214,4 @@ export function seekTime(step: number): number {
 
 /** Each shot's capture; all share the 50 px frame and the 1280 px App width, so one crop fits them. */
 export const shotSrc = (shot: Shot, theme: "light" | "dark") => `/product/${shot}-${theme}.webp`;
-export const SHOTS: Shot[] = ["discuss", "research", "plan", "outline", "implement", "verify", "review", "review-approved", "pull-request"];
+export const SHOTS: Shot[] = ["plan", "implement", "verify", "pull-request"];

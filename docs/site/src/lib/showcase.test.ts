@@ -42,10 +42,10 @@ it("never moves the camera outside the window", () => {
 
 it("shows each step on its own screen, and after Approve the pull request", () => {
   for (const [i, c] of CHAPTERS.entries()) expect(frameAt(seekTime(i) + 400).to).toBe(c.id);
-  const review = CHAPTERS.findIndex((c) => c.id === "review");
+  const review = CHAPTERS.findIndex((c) => c.id === "verify");
   const shots = new Set<string>();
   for (let t = STARTS[review] + 900; t < STARTS[review] + CHAPTERS[review].dur; t += 100) shots.add(frameAt(t).to);
-  expect([...shots]).toEqual(["review", "review-approved", "pull-request"]);
+  expect([...shots]).toEqual(["verify", "pull-request"]);
 });
 
 it("keeps every highlight and click inside the part of the window the camera shows", () => {

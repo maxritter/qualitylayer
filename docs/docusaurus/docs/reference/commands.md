@@ -62,6 +62,7 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open pla
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
 | Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall [--purge | --keep-data]` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
+| Settings | `settings set <key> <value>` changes any setting except the permission mode, the program an agent or terminal starts and its arguments, and who may type; those stay in the App's Settings |
 | Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |
 
 <details>

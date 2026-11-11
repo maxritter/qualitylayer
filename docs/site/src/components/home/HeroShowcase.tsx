@@ -80,8 +80,8 @@ function Stage({ player, theme }: { player: ShowcasePlayer; theme: Theme }) {
   const set = <K extends keyof Parts>(key: K) => (node: Parts[K] | null) => { if (node) parts.current[key] = node; };
   return (
     <div className="hs-cam" ref={cam} aria-hidden="true">
-      <img className="hs-layer" ref={set("a")} alt="" src={shotSrc("discuss", theme)} />
-      <img className="hs-layer" ref={set("b")} alt="" src={shotSrc("discuss", theme)} />
+      <img className="hs-layer" ref={set("a")} alt="" src={shotSrc("plan", theme)} />
+      <img className="hs-layer" ref={set("b")} alt="" src={shotSrc("plan", theme)} />
       <div className="hs-hl" ref={set("hl")} />
       <div className="hs-ripple" ref={set("ripple")} />
       <div className="hs-cursor" ref={set("cursor")}>

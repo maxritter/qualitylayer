@@ -27,22 +27,22 @@ it("shows the App beside the copy as a still first frame, light and dark, with a
   for (const [picture, theme] of pictures.map((p, i) => [p, i ? "dark" : "light"] as const)) {
     const img = picture.querySelector("img")!;
     expect(img.getAttribute("src")).toBe(`/product/plan-${theme}.webp`);
-    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2664", "1664"]);
-    expect(img.getAttribute("alt")).toMatch(/seven steps/);
+    expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["2664", "2024"]);
+    expect(img.getAttribute("alt")).toMatch(/Plan, Implement and Verify/);
     const phone = picture.querySelector("source")!;
     expect(phone.getAttribute("media")).toBe("(max-width: 640px)");
     expect(phone.getAttribute("srcset")).toBe(`/hero/your-turn-${theme}.webp`);
-    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["740", "1996"]);
+    expect([phone.getAttribute("width"), phone.getAttribute("height")]).toEqual(["740", "1664"]);
   }
 });
 
 it("plays the steps on a wide screen: the stations follow it, a station plays its step, and it pauses", async () => {
   const { container } = render(<MemoryRouter><Hero /><Hash /></MemoryRouter>);
   expect(container.querySelector(".hs-cam")).toBeTruthy();
-  const stations = within(screen.getByRole("navigation", { name: "The seven steps" })).getAllByRole("link").slice(0, 7);
+  const stations = within(screen.getByRole("navigation", { name: "The three steps" })).getAllByRole("link").slice(0, 3);
   await waitFor(() => expect(stations[0].getAttribute("aria-current")).toBe("step"));
-  fireEvent.click(stations[4]);
-  await waitFor(() => expect(stations[4].getAttribute("aria-current")).toBe("step"));
+  fireEvent.click(stations[1]);
+  await waitFor(() => expect(stations[1].getAttribute("aria-current")).toBe("step"));
   expect(screen.getByTestId("hash").textContent).toBe("");
   expect(stations.filter((s) => s.hasAttribute("aria-current"))).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Pause the walkthrough" }));
@@ -54,37 +54,37 @@ it("keeps the still picture and plain station links on a phone", () => {
   const { container } = render(<MemoryRouter><Hero /><Hash /></MemoryRouter>);
   expect(container.querySelector(".hs-cam")).toBeNull();
   expect(screen.queryByRole("button", { name: /walkthrough/ })).toBeNull();
-  const station = within(screen.getByRole("navigation", { name: "The seven steps" })).getAllByRole("link")[2];
+  const station = within(screen.getByRole("navigation", { name: "The three steps" })).getAllByRole("link")[1];
   expect(station.hasAttribute("aria-current")).toBe(false);
   expect(screen.getByRole("link", { name: /^Try the App in your browser: the usage-based billing example/ }).getAttribute("href")).toBe(LIVE_DEMO);
   fireEvent.click(station);
-  expect(screen.getByTestId("hash").textContent).toBe("#plan");
+  expect(screen.getByTestId("hash").textContent).toBe("#implement");
 });
 
 it("opens the walkthrough larger from the picture, with the demo one click away, and the demo from the hero action", async () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
-  const picture = screen.getByRole("link", { name: "Watch the seven steps larger" });
+  const picture = screen.getByRole("link", { name: "Watch the three steps larger" });
   expect(picture.getAttribute("href")).toBe(LIVE_DEMO);
   expect(picture.querySelector(".sx-shot")).toBeTruthy();
   fireEvent.click(picture);
-  const card = await screen.findByRole("dialog", { name: "The seven steps in the App" });
+  const card = await screen.findByRole("dialog", { name: "The three steps in the App" });
   expect(within(card).getByRole("link", { name: /Try it yourself/ }).getAttribute("href")).toBe(LIVE_DEMO);
   const steps = within(within(card).getByRole("list", { name: "Play a step" })).getAllByRole("button");
-  expect(steps.map((s) => s.textContent)).toEqual(["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]);
-  fireEvent.click(steps[6]);
-  await waitFor(() => expect(steps[6].getAttribute("aria-current")).toBe("step"));
+  expect(steps.map((s) => s.textContent)).toEqual(["Plan", "Implement", "Verify"]);
+  fireEvent.click(steps[2]);
+  await waitFor(() => expect(steps[2].getAttribute("aria-current")).toBe("step"));
   fireEvent.click(within(card).getByRole("button", { name: "Close the walkthrough" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("link", { name: "Try the demo in your browser" }).getAttribute("href")).toBe(LIVE_DEMO);
   expect(LIVE_DEMO).toBe("/app-demo/?story&guide");
 });
 
-it("lists the seven steps as stations that each open their step in the tour", () => {
+it("lists the three steps as stations that each open their step in the tour", () => {
   render(<MemoryRouter><Hero /></MemoryRouter>);
-  const stations = within(screen.getByRole("navigation", { name: "The seven steps" })).getAllByRole("listitem");
-  expect(stations.map((s) => s.querySelector(".mx-station-name")?.lastChild?.textContent)).toEqual(["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review"]);
-  expect(stations.map((s) => within(s).getByRole("link").getAttribute("href"))).toEqual(["/#discuss", "/#research", "/#plan", "/#outline", "/#implement", "/#verify", "/#review"]);
-  expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#discuss");
+  const stations = within(screen.getByRole("navigation", { name: "The three steps" })).getAllByRole("listitem");
+  expect(stations.map((s) => s.querySelector(".mx-station-name")?.lastChild?.textContent)).toEqual(["Plan", "Implement", "Verify"]);
+  expect(stations.map((s) => within(s).getByRole("link").getAttribute("href"))).toEqual(["/#plan", "/#implement", "/#verify"]);
+  expect(screen.getByRole("link", { name: "See each step in the App" }).getAttribute("href")).toBe("/#plan");
 });
 
 it("offers download, film and deep dive actions together in the hero", () => {

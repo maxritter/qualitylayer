@@ -6,54 +6,43 @@ import Editorial from "./Editorial";
 
 afterEach(cleanup);
 
-const step = (name: string) => screen.getByRole("tab", { name: new RegExp(`^Step \\d: ${name}$`) });
+const stepRow = (id: string) => document.getElementById(id) as HTMLElement;
 
-it("opens on Discuss and opens any other step with its own screen on a click", () => {
+it("lists Plan, Implement and Verify with their own screens, then the pull request", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  const steps = screen.getByRole("tablist", { name: "Workflow steps" });
-  expect(within(steps).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(
-    ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"].map((name, i) => `Step ${i + 1}: ${name}`),
-  );
-  expect(step("Discuss").getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByRole("button", { name: "Enlarge Discuss" })).toBeTruthy();
-  fireEvent.click(step("Review"));
-  expect(step("Review").getAttribute("aria-selected")).toBe("true");
-  expect(step("Plan").getAttribute("aria-selected")).toBe("false");
-  expect(document.getElementById("workflow-panel-plan")?.hidden).toBe(true);
-  expect(screen.getByRole("button", { name: "Enlarge Review" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Review guide" }).getAttribute("href")).toBe("/docs/steps/review");
+  const tour = document.querySelector("ol.ed-tour") as HTMLElement;
+  expect([...tour.children].map((row) => row.id)).toEqual(["plan", "implement", "verify", "pull-request"]);
+  expect(screen.queryByRole("tablist", { name: "Workflow steps" })).toBeNull();
+  for (const name of ["Plan", "Implement", "Verify"]) {
+    expect(screen.getByRole("heading", { level: 3, name })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Enlarge ${name}` })).toBeTruthy();
+    expect(screen.getByRole("link", { name: `${name} guide` }).getAttribute("href")).toBe(`/docs/steps/${name.toLowerCase()}`);
+  }
+  expect(screen.getAllByText(/^Step \d of 3$/).map((mark) => mark.textContent)).toEqual(["Step 1 of 3", "Step 2 of 3", "Step 3 of 3"]);
+  expect(screen.queryByText("Discuss")).toBeNull();
+  expect(screen.getByText(/Then the pull request\./)).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Pull request guide" }).getAttribute("href")).toBe("/docs/steps/pull-request");
 });
 
 it("reserves each workflow capture's desktop aspect ratio, including the complete Plan question", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  for (const name of ["Discuss", "Research", "Plan", "Outline", "Implement", "Verify", "Review", "Pull request"]) {
-    fireEvent.click(step(name));
-    const panel = screen.getByRole("tabpanel", { name: new RegExp(`Step \\d: ${name}$`) });
-    const image = within(panel).getByRole("img") as HTMLImageElement;
+  for (const id of ["plan", "implement", "verify"]) {
+    const image = within(stepRow(id)).getByRole("img") as HTMLImageElement;
     expect(image.width).toBe(2664);
-    expect(image.height).toBe(name === "Plan" ? 2024 : 1664);
+    expect(image.height).toBe(id === "plan" ? 2024 : 1664);
   }
 });
 
-
-it("moves the workflow selection and focus with arrows, Home and End", () => {
+it("marks who acts in each step: you approve the Plan, agents work, agents check then you approve", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  step("Plan").focus();
-  fireEvent.keyDown(step("Plan"), { key: "ArrowRight" });
-  expect(step("Outline").getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(step("Outline"));
-  fireEvent.keyDown(step("Outline"), { key: "End" });
-  expect(step("Pull request").getAttribute("aria-selected")).toBe("true");
-  fireEvent.keyDown(step("Pull request"), { key: "Home" });
-  expect(step("Discuss").getAttribute("aria-selected")).toBe("true");
-  fireEvent.keyDown(step("Discuss"), { key: "ArrowLeft" });
-  expect(document.activeElement).toBe(step("Pull request"));
+  const who = (id: string) => stepRow(id).querySelector(".ed-who")?.textContent;
+  expect([who("plan"), who("implement"), who("verify")]).toEqual(["You approve", "Agents work", "Agents check, then you approve"]);
 });
 
-it("opens the step a link names, so the hero's stations and /#verify land on it", () => {
+it("keeps a link to a step on that step, so the hero's stations and /#verify land on it", () => {
   render(<MemoryRouter initialEntries={["/#verify"]}><Editorial /></MemoryRouter>);
-  expect(step("Verify").getAttribute("aria-selected")).toBe("true");
-  expect(screen.getByText("Agents check", { selector: ".ed-who" })).toBeTruthy();
+  expect(stepRow("verify").tabIndex).toBe(-1);
+  expect(within(stepRow("verify")).getByText("Agents check, then you approve")).toBeTruthy();
 });
 
 const feature = (tabs: HTMLElement, name: string) => within(tabs).getByRole("tab", { name: new RegExp(`^${name}\\b`) });
@@ -94,7 +83,7 @@ it("keeps each id to one element: the Checks section does not share the tour's V
   const { default: Verification } = await import("./Verification");
   const { container } = render(<MemoryRouter><Editorial between={<Verification />} /></MemoryRouter>);
   expect(container.querySelectorAll('[id="verify"]')).toHaveLength(1);
-  expect(container.querySelector("#verify")?.getAttribute("role")).toBe("tab");
+  expect(container.querySelector("#verify")?.closest("ol.ed-tour")).toBeTruthy();
   expect(container.querySelector("section#checks")).toBeTruthy();
 });
 
@@ -107,14 +96,12 @@ it("opens Artifacts from /#artifacts and links to its docs page", () => {
 
 it("keeps an honest caption when an image fails", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  fireEvent.click(step("Plan"));
   fireEvent.error(screen.getByRole("img", { name: /Plan's limit question/ }));
   expect(screen.getByText("Plan image unavailable. Open the preview to retry.")).toBeTruthy();
 });
 
 it("marks the image preview as modal and returns focus after Escape", async () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
-  fireEvent.click(step("Plan"));
   const open = screen.getByRole("button", { name: "Enlarge Plan" });
   fireEvent.click(open);
   const preview = await screen.findByRole("dialog", { name: "Plan" });

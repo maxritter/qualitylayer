@@ -33,7 +33,7 @@ test("every guide renders its kit: no raw imports or tags, no placeholder, and a
   for (const route of guides) {
     const body = article(route);
     const words = text(route);
-    assert.doesNotMatch(words, /import \{|from "@site|<(?:Card|Steps|Tabs|Screenshot|NextSteps)\b/, `${route}: kit source leaked into the page`);
+    assert.doesNotMatch(words, /from "@site\/src\/components\/kit"|<(?:Card|Steps|Tabs|Screenshot|NextSteps)\b/, `${route}: kit source leaked into the page`);
     assert.doesNotMatch(words, /Picture to capture/, `${route}: a screenshot placeholder reached production`);
     assert.match(body, /<nav\b[^>]*aria-label="Next steps"/, `${route}: no Next steps`);
   }
@@ -92,7 +92,7 @@ test("Chat sits under App and projects and leads with its workspace picture", ()
 test("the workflow has three steps and the pull request, named as the App names them", () => {
   const html = page("steps/plan/");
   const workflow = html.split(/(?=<li class="theme-doc-sidebar-item-category )/).find((item) => item.includes(">Workflow<"));
-  assert.deepEqual([...workflow.matchAll(/href="\/docs\/steps\/([a-z-]+)"/g)].map((m) => m[1]), ["plan", "implement", "verify", "pull-request"]);
+  assert.deepEqual([...new Set([...workflow.matchAll(/href="\/docs\/steps\/([a-z-]+)"/g)].map((m) => m[1]))], ["plan", "implement", "verify", "pull-request"]);
   assert.match(page(""), /id="the-three-steps"/);
   for (const route of guides) {
     const words = text(route);

@@ -1,0 +1,51 @@
+---
+title: Pull request
+description: Choose to open a pull request when you approve on Verify, then follow its checks and reviewers until you merge it.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Open a pull request when you approve on [Verify](verify.mdx#approve). Your agent follows its checks and comments; you merge.
+
+<Screenshot name="pull-request" alt="The merged pull request: its checks, its reviewers and the time from the first question to the approval" caption="An example task in a fictional project." />
+
+## Following it {#following}
+
+While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
+
+## Your agent watches the checks {#watch}
+
+Your agent runs `qualitylayer pr watch` until the checks pass:
+
+<CardGroup cols={2}>
+  <Card title="The checks pass" icon="badge-check">It checks open review threads and reads new comments, and asks you before changing anything they request.</Card>
+  <Card title="A check fails" icon="triangle-alert">It reads the log, fixes the cause, pushes and watches again. It never weakens or skips a check.</Card>
+  <Card title="The branch conflicts" icon="git-pull-request">It merges or rebases the way your repository does, checks that no commit was lost, then pushes.</Card>
+  <Card title="Three attempts used" icon="info">It reports what still fails and stops.</Card>
+</CardGroup>
+
+<Note>Your agent never force-pushes commits that are not its own.</Note>
+
+## When something waits for you {#waits}
+
+![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-light.svg)
+![Review threads and failing checks come back to you; you push the fix; you merge](pathname:///img/diagrams/pull-request-dark.svg)
+
+Failing checks, review threads and conflicts appear in **Needs you** while the App is open. [Watch pull requests](../reference/settings.mdx#git-and-editor) can wake or resume your agent, also for new comments.
+
+<Steps>
+  <Step title="Ask your agent">"Using QL, review task retry-webhooks", with your task's name.</Step>
+  <Step title="It fixes the routine requests">Test first, against the code and the approved Plan. Scope or design changes, and replies ready to post, come to you.</Step>
+  <Step title="Push the fix">Press **Push the fix**. Your replies post on GitHub in your name. Merging stays yours.</Step>
+</Steps>
+
+## Merged or closed {#merged}
+
+When you merge, the task moves to **Shipped** with what it cost. A squash or rebase merge is recognized too, and **Mark as merged** covers any other case. Its documents stay in `docs/plans/`. Further work starts with **Start a follow-up**.
+
+<NextSteps items={[
+  { title: "Verify", href: "/docs/steps/verify", text: "The checks and your review before the pull request." },
+  { title: "Settings", href: "/docs/reference/settings#git-and-editor", text: "Watch pull requests and Git defaults." },
+]} />

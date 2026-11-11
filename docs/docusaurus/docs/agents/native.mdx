@@ -1,0 +1,128 @@
+---
+title: Supported agents
+sidebar_label: Supported agents
+description: Set up supported coding agents and choose their models, permissions and reviewers.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Warning, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Eight coding agents run natively: QualityLayer adds its skills and hooks to each, and the App shows their sessions. Each keeps its own login and provider.
+
+<Steps>
+  <Step title="Install your agent">Sign in and start it once from a terminal.</Step>
+  <Step title="Run Setup">The App's Setup, or `qualitylayer agents check`, connects every supported agent it finds.</Step>
+  <Step title="Start a task">**+ › Task** in the App, or tell your agent "Using QualityLayer, plan a CSV export" (**QL** works too, in any language).</Step>
+</Steps>
+
+<Screenshot name="new-task" alt="New task in the App: the planner shows agent, model and effort in one row" />
+
+| Agent | Checked with | What QualityLayer adds |
+| --- | --- | --- |
+| [Claude Code](https://code.claude.com/docs/en/setup) | 2.1.306 | Skills, lifecycle hooks and its existing prompt integration |
+| [Codex](https://developers.openai.com/codex/cli) | 0.163.0 | Skills, implicit invocation policies and lifecycle hooks |
+| [Cursor](https://cursor.com/docs/cli/installation) | 2026.10.19 | Skills and lifecycle hooks in its own hooks file |
+| [Grok](https://docs.x.ai/build/overview) | 1.0.62 | Skills and hooks, in its own hooks folder |
+| [Antigravity](https://antigravity.google/docs/getting-started/) | 1.4.12 | Skills, a workflow command and lifecycle hooks |
+| [Pi](https://pi.dev/docs/latest/quickstart) | 1.2.0 | Skills, a lifecycle extension and fresh helper sessions |
+| [OpenCode](https://opencode.ai/docs/) | 2.0.29 | Skills, a command and a lifecycle plugin |
+| [GitHub Copilot](https://docs.github.com/copilot/how-tos/copilot-cli) | 1.0.105 | Skills, a hook file and the memory server |
+
+<Note>Cursor, Grok and Antigravity are set up only after you have started them once from a terminal. GitHub Copilot Business and Enterprise need an organization admin to enable Copilot CLI in the Copilot policies.</Note>
+
+## The six skills {#the-six-skills}
+
+Ask in plain words; your agent picks the skill. An ordinary coding request does not start a workflow.
+
+<CardGroup cols={3}>
+  <Card title="ql-workflow" icon="network" tone="plan">Plan, build, verify and review a change. The only skill that starts a task.</Card>
+  <Card title="ql-artifact" icon="shapes" href="/docs/artifacts">Mockups, diagrams and clickable pages.</Card>
+  <Card title="ql-manage" icon="list-todo" href="/docs/memory">Tasks, memory, settings and setup.</Card>
+  <Card title="ql-peer" icon="message-square" href="/docs/reference/commands#session-messaging">Sessions of any of these agents review each other or hand over a task.</Card>
+  <Card title="ql-quality" icon="badge-check" href="/docs/reference/code-health">Code complexity, structure and duplication.</Card>
+  <Card title="ql-chat" icon="message-square" href="/docs/chat">A Chat without workflow steps.</Card>
+</CardGroup>
+
+## Models and reviews
+
+Pick the agent, model and effort for each task; the default effort is High.
+
+| Agent | Model choices |
+| --- | --- |
+| Codex | The models your Codex account offers, as Codex lists them; a default your plan lacks moves to Codex's own model |
+| Pi / OpenCode | Provider-qualified IDs: `openai-codex/gpt-6.1-sol` / `openai/gpt-6.1-sol`; both can use a Copilot subscription |
+| Cursor / Antigravity | Effort is part of the model name, such as Opus 5.5 (High) |
+| GitHub Copilot | Auto works on every plan; paid plans can choose Claude Opus 5.5 |
+
+Where the agent says which models your account has (Codex, OpenCode, Cursor and Antigravity), model menus show only those; a model already in use that your plan lacks shows as **· not offered**. Claude Code, Pi, Grok and GitHub Copilot list every model QualityLayer knows.
+
+Reviewers work in a separate context and edit nothing. Cursor and Antigravity review disposable copies and stop at the first tool that is not read-only ([choosing reviewers](../reference/settings.mdx#second-opinion)).
+
+## Sessions in the App
+
+The **Conversation** view reads each agent's session record ([controls](../app.mdx#agent-runs)). Some records hold less:
+
+| Agent | What its Conversation lacks |
+| --- | --- |
+| Claude Code, Codex, Pi, OpenCode | Nothing |
+| Grok | Context fill, permission questions |
+| Antigravity | Permission questions |
+| Cursor | Thinking, tool output, token counts, context fill, permission questions |
+| GitHub Copilot | Permission questions |
+
+Permission waits show in Conversation. A reply that only the Terminal view shows gets **Open Terminal**. Cursor gets numbered workflow questions; the others ask in their own picker ([In your agent](../work-in-your-agent.mdx#pickers)).
+
+<Tip>After a crash, stop the old run and ask "Using QL, continue verification of task retry-webhooks."</Tip>
+
+### Permission modes {#permission-modes}
+
+New managed sessions start in Bypass unless you saved a global or per-agent mode; **Agent settings** keeps the agent's own policy. Planning reopens on your last successful choices and agent, and a build on the agent you last built with; a build on the planning agent inherits that task's planning choices, including accepted permission changes.
+
+| Agent | Modes |
+| --- | --- |
+| Claude Code | Auto, Ask first, Accept edits, Bypass |
+| Codex | On request, Ask first, Auto review, Full access |
+| Cursor | Ask first, Auto-review, Run everything |
+| Grok | Auto, Ask first, Accept edits, Bypass |
+| Antigravity | Ask first, Auto, Accept edits, Bypass |
+| OpenCode | Agent settings, Auto-approve |
+| Pi | None; its own tool permissions apply |
+| GitHub Copilot | Manual Approval, Assisted Permissions, Allow All |
+
+<Warning>Switching a running session to Bypass, Full access or Run everything asks you to confirm. **Apply and continue** changes permissions at a supported prompt and resumes the conversation. Pi has no bypass switch, and OpenCode keeps explicit denials. Your Plan and final approvals stay separate.</Warning>
+
+Older Copilot sessions use the Terminal view's `/permissions` menu.
+
+### Plan limits {#plan-limits}
+
+**Claude Code**, **Codex** and **GitHub Copilot** show the usage windows their records report, such as **Week · 58 % used**; [Usage display](../reference/settings.mdx#usage) switches the App and the macOS menu bar to **Remaining**. Missing or reset readings stay unknown. Agents billed by use show the session's estimated cost instead.
+
+When one of them stops at its limit, the task shows **Limit · resets 17:23**. With **Resume when a limit resets** on, QualityLayer continues the session then; **Cancel resume** stops that. Otherwise copy the command that continues it.
+
+## How QualityLayer finds your agents {#finding-agents}
+
+**Not installed** means it was not found. Enter the full path in **⋯ › Edit launch…** › **Command**, such as `/opt/tools/bin/codex`, or press **Check again**.
+
+<details>
+<summary>Search order</summary>
+
+1. The **Command** you set. If it cannot run, the agent counts as missing.
+2. The App's PATH, then your login shell's PATH.
+3. `~/.local/bin`, `~/.codex/packages/standalone/current/bin`, Homebrew, `~/.npm-global/bin`, Bun, Volta, pnpm, nvm and fnm.
+4. npm's global folder.
+5. For Codex, the command inside the ChatGPT or Codex desktop app.
+
+`--version` must name the agent, such as `codex-cli 0.163.0`.
+
+</details>
+
+## Setup and removal
+
+`qualitylayer agents list` and `qualitylayer agents check` match **Settings › Agents**. Pi's files go to `~/.pi/agent`, OpenCode's to `~/.config/opencode`, GitHub Copilot's to `~/.copilot`. Updates replace only unchanged files QualityLayer owns; uninstall keeps your logins, settings, session history and edited files.
+
+<NextSteps items={[
+  { title: "Other agents", href: "/docs/agents/other", text: "Any agent that runs shell commands, through the CLI." },
+  { title: "In your agent", href: "/docs/work-in-your-agent", text: "Answer and approve in your agent's chat." },
+  { title: "Settings", href: "/docs/reference/settings#second-opinion", text: "Second opinion and reviewers." },
+]} />

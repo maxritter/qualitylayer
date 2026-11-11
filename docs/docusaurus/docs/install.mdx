@@ -1,0 +1,137 @@
+---
+title: Install
+description: Install the QualityLayer App on macOS, Windows or Linux, or the command line on a server, WSL2 or a dev container.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Note, Warning, NextSteps } from "@site/src/components/kit";
+
+Install the App on a computer with a screen. On WSL2, a dev container or a server, install the command line and open the App in your browser.
+
+![One rule: a machine with a screen gets the App, which updates itself; WSL2, dev containers and servers get the command line and open the App in a browser](pathname:///img/diagrams/install-light.svg)
+![One rule: a machine with a screen gets the App, which updates itself; WSL2, dev containers and servers get the command line and open the App in a browser](pathname:///img/diagrams/install-dark.svg)
+
+## What you need
+
+<CardGroup cols={3}>
+  <Card title="A computer" icon="monitor">macOS, Windows or Linux, with Git.</Card>
+  <Card title="A repository" icon="file-text">Any Git repository you work in.</Card>
+  <Card title="A coding agent" icon="square-terminal">A [supported](agents/native.mdx) or [other](agents/other.mdx) agent, signed in and started once.</Card>
+</CardGroup>
+
+## On your computer
+
+<Steps>
+  <Step title="Download the App">
+    <Tabs groupId="os">
+      <Tab value="mac" label="macOS and Linux">**[Download the App](https://qualitylayer.dev/download)** and open it.</Tab>
+      <Tab value="windows" label="Windows">
+
+**[Download the App](https://qualitylayer.dev/download)**, or install the App and the command line from PowerShell:
+
+```powershell
+irm https://qualitylayer.dev/install.ps1 | iex
+```
+
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Run Setup">Setup activates your licence or 7-day trial, installs the `qualitylayer` command and connects your agents and recent repositories.</Step>
+</Steps>
+
+## Agent setup {#agent-setup}
+
+Setup adds missing Claude Code, Codex and Grok settings, such as native task tools, commits without attribution and questions that wait for you ([full list](reference/settings.mdx#what-setup-sets)). Settings you chose stay.
+
+<Warning>If you have not chosen native permissions, Claude Code starts in **Bypass** and Codex in **Full access**, also outside QualityLayer. Choose another mode in **Settings › Agents › Edit launch…** or in the agent itself.</Warning>
+
+## In your browser {#browser}
+
+`qualitylayer app` opens the same workspace in your browser. Agents run where QualityLayer is installed.
+
+### WSL2, dev containers and servers {#without-a-screen}
+
+![Install QualityLayer where your agent runs, in a dev container, WSL2 or on a server. Its pages open in the browser on your computer through one forwarded port](pathname:///img/diagrams/remote-light.svg)
+![Install QualityLayer where your agent runs, in a dev container, WSL2 or on a server. Its pages open in the browser on your computer through one forwarded port](pathname:///img/diagrams/remote-dark.svg)
+
+Install QualityLayer where your agent runs. No App is needed there, and you can [work only in your agent](work-in-your-agent.mdx).
+
+```bash
+curl -fsSL https://qualitylayer.dev/install.sh | bash
+```
+
+<Tabs groupId="remote">
+  <Tab value="wsl" label="WSL2">The pages open in your Windows browser.</Tab>
+  <Tab value="dev-container" label="Dev container">
+
+The pages open in your browser; VS Code forwards the port. In the App, [add the container as a machine](machines.mdx#dev-containers).
+
+To keep QualityLayer and your agent's sign-in when the container is rebuilt, keep them in volumes:
+
+```json title=".devcontainer/devcontainer.json"
+"mounts": [
+  "source=qualitylayer-${devcontainerId},target=/home/vscode/.qualitylayer,type=volume",
+  "source=claude-${devcontainerId},target=/home/vscode/.claude,type=volume"
+],
+"postCreateCommand": "sudo chown vscode ~/.qualitylayer ~/.claude && curl -fsSL https://claude.ai/install.sh | bash && curl -fsSL https://qualitylayer.dev/install.sh | bash"
+```
+
+  </Tab>
+  <Tab value="server" label="Server over ssh">In the App, [add it as a machine](machines.mdx), which also installs QualityLayer there. In a browser, VS Code Remote-SSH forwards the port for you; with plain `ssh`, forward the port that `qualitylayer app pair` prints.</Tab>
+</Tabs>
+
+### A port for each machine {#port}
+
+Machines added in **Settings › Machines** need no port of yours. In a browser, the server listens on port 41888 (41910 on WSL2), or the next free one. Two remote machines cannot both forward to 41888 on your laptop, so give each its own:
+
+```bash
+qualitylayer settings set cockpit.port 41901   # on the server
+qualitylayer app restart
+ssh -N -L 41901:127.0.0.1:41901 first-server   # on your laptop
+```
+
+Then open `http://127.0.0.1:41901`. `QUALITYLAYER_PORT=41901 qualitylayer app restart` tries a port once without saving it ([Server settings](reference/settings.mdx#server)).
+
+## Updates {#updates}
+
+In the App, choose **Restart and update** from **Update ready** or the bar above the page. Without the App, run `qualitylayer update`; if a 12.x install finds no update, run the installation command again. Choose **Stable** or **Beta** in [Settings › About](reference/settings.mdx#about).
+
+## Remove it {#uninstall}
+
+<Tabs groupId="os">
+  <Tab value="mac" label="macOS and Linux">
+
+`qualitylayer uninstall` undoes what the installer changed; your plans stay. Add `--purge` to remove QualityLayer's settings, licence and tasks too.
+
+  </Tab>
+  <Tab value="windows" label="Windows">
+
+<span id="uninstall-windows"></span>This works even when the App or command line is blocked or gone. Your logins, licence and tasks stay; add `-Purge` to remove QualityLayer's data too.
+
+```powershell
+& ([scriptblock]::Create((irm https://qualitylayer.dev/install.ps1))) -Uninstall
+```
+
+  </Tab>
+</Tabs>
+
+<Note>To move your licence, run `qualitylayer licence activate <key>` on the other computer. A key works on 5 computers ([Licence](reference/settings.mdx#licence)).</Note>
+
+## Windows with Intune or Defender Exploit Guard {#managed-windows}
+
+If Defender Exploit Guard blocks Setup or removes installed files, check your managed-device policy with IT.
+
+| Fix | How |
+| --- | --- |
+| **Exclusion** (IT) | Exclude `%LOCALAPPDATA%\QualityLayer` and `%USERPROFILE%\.qualitylayer\bin` (Intune: *Attack Surface Reduction Only Exclusions*) |
+| **File indicator** (IT) | Allow the setup file by its SHA-256 from `SHA256SUMS` on the release page |
+| **WSL** (no IT) | Install [in WSL2](#without-a-screen) |
+
+Then run `qualitylayer doctor` and open the App once.
+
+<NextSteps items={[
+  { title: "Your first task", href: "/docs/first-task", text: "Plan, build and review one small change." },
+  { title: "Other machines", href: "/docs/machines", text: "Run tasks on a Mac Mini or a server." },
+  { title: "Supported agents", href: "/docs/agents/native", text: "Models, permissions and reviewers per agent." },
+]} />

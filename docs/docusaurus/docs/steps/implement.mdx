@@ -1,0 +1,73 @@
+---
+title: Implement
+description: Start the build in the App or in your own agent. Your agent cuts the approved Plan into slices and builds them test first, without a stop.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Your agent cuts the approved Plan into slices and builds each one test first. You start the build; nothing else waits for you.
+
+<Screenshot name="implement" alt="Implement in the App: the slices and their progress, beside the agent's conversation" caption="An example task in a fictional project." />
+
+## Start the build {#start-implement}
+
+<Tabs groupId="where">
+  <Tab value="app" label="In the App">
+
+**Approve and build here** continues the planning session after its turn. Otherwise **Start the build** on Plan opens the build card:
+
+<CardGroup cols={2}>
+  <Card title="Agent" icon="square-terminal">The coding agent for this build, with **What's different** for that agent.</Card>
+  <Card title="Build model and Effort" icon="code-xml">For the session that writes and tests the code, with the recommended model and why.</Card>
+  <Card title="Subagent model" icon="network">Claude Code only: the model for slices it hands to subagents.</Card>
+  <Card title="Files and Workspace" icon="file-text">Attachments, where it runs, and the [branch or worktree](#where-it-lands).</Card>
+</CardGroup>
+
+Press **Approve & start**. Closing the sidebar keeps the run ([agent runs](../app.mdx#agent-runs)).
+
+  </Tab>
+  <Tab value="agent" label="In my own agent">
+
+A planner waiting in your own agent shows **Build in &lt;agent&gt; · your agent**: run your agent's compact command, then say "build here".
+
+Otherwise the card shows one request box with **Copy** and a folder chip. Paste the request into any agent, or ask in your own words. For a pending Plan, **Approve and copy** approves it and copies the request; after approval, **Ready to build** offers **Copy prompt**.
+
+  </Tab>
+</Tabs>
+
+### Where the build lands {#where-it-lands}
+
+A new branch or worktree starts at this checkout's HEAD. A worktree's name sets its branch and its folder beside the project; by command, `qualitylayer branch new [name]`. A pull request needs a branch other than its target. Pushes and deployments need the Plan's authorization; you merge.
+
+## While the agent builds {#while-the-agent-builds}
+
+![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-light.svg)
+![Slices built test first, one after another, then the checks in Verify](pathname:///img/diagrams/slices-dark.svg)
+
+<Steps>
+  <Step title="Slices">Your agent cuts the Plan into slices that each work end to end, thinnest first, and each slice into task cards. For a bug, the reproduction comes before the repair.</Step>
+  <Step title="Test first">For each card it writes a failing test, builds the change, fixes failures and commits. It may hand independent slices to subagents.</Step>
+  <Step title="Done means">Test runs are recorded with their commit and exit code, so [Verify](verify.mdx) can cite them. Each **Done means** step runs on the built tree before Verify starts.</Step>
+</Steps>
+
+<CardGroup cols={3}>
+  <Card title="The board" icon="list-todo">Every slice of a small build; the one in work of a larger one. A task opens to its card: files, test first, done when.</Card>
+  <Card title="Under the board" icon="file-text">**Known limits**, **Decided while building** and **Program design**. A decision says whether it is build order or an amendment to what you approved.</Card>
+  <Card title="Your part" icon="message-square">A matter only you can settle comes as one question; the build goes on while you answer.</Card>
+</CardGroup>
+
+<Note>A failing check is your agent's to fix, so the page does not flag it, and the final approval still refuses a red check. A login, secret or other prerequisite only you can provide never counts as passed. If it is still missing at the end of [Verify's checks](verify.mdx#when-it-stops), it reaches you as one question; the App never takes the secret.</Note>
+
+<Tip>Runs start in the agent's own [permission mode](../agents/native.mdx#permission-modes). Its own permission and sign-in prompts still need you, and a stop or pause stays in force.</Tip>
+
+## When the build is done {#when-done}
+
+The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs stay open in Verify, never passed.
+
+<NextSteps items={[
+  { title: "Verify", href: "/docs/steps/verify", text: "Checks and a review by another agent, then yours." },
+  { title: "Plan", href: "/docs/steps/plan", text: "What your agent asks and what you approve." },
+  { title: "Supported agents", href: "/docs/agents/native", text: "Models and permissions per agent." },
+]} />

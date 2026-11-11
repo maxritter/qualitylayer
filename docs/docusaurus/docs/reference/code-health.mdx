@@ -1,0 +1,66 @@
+---
+title: Code health
+description: Local checks for code complexity, duplication, secrets, vulnerable packages and risky code.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tip, Note, Warning, Screenshot, NextSteps } from "@site/src/components/kit";
+
+QualityLayer checks code on your computer and gives the findings to your agent and its reviewers. Code health covers complexity and duplication; security scans cover secrets, vulnerable or malicious packages, unsafe workflows and risky code. Findings never stop the work.
+
+<Screenshot name="code-health" alt="Verify's checks for the example task: project checks, security scans with two findings, the security review and the independent review" caption="An example task in a fictional project." />
+
+## What happens as you work {#what-happens-as-you-work}
+
+![Edited code is checked locally. Your agent reads each finding, fixes a problem or records why the code should stay. Tests verify the change.](pathname:///img/diagrams/code-health-light.svg)
+![Edited code is checked locally. Your agent reads each finding, fixes a problem or records why the code should stay. Tests verify the change.](pathname:///img/diagrams/code-health-dark.svg)
+
+<Steps>
+  <Step title="Code is edited">At the end of each turn, edited files get a structure check and a secrets scan.</Step>
+  <Step title="Your agent gets the findings">It reads the source and explains the consequence before changing anything.</Step>
+  <Step title="It fixes or reviews each one">Fixes get the relevant tests; an intentional pattern keeps its review reason.</Step>
+</Steps>
+
+Checks never start another agent turn; findings reach your agent when the conversation next continues.
+
+## Security scans {#security-scans}
+
+In [Verify](../steps/verify.mdx#lanes), the scans read what the task changed, beside your project checks. Each reads only the files it knows:
+
+| Scan | Reads | Tool |
+| --- | --- | --- |
+| Secrets | Every changed file | Betterleaks |
+| Dependencies | A changed lockfile | OSV-Scanner |
+| GitHub workflows | A changed workflow or action | zizmor |
+| Code | Changed JavaScript, TypeScript and Python | OpenGrep, with QualityLayer's rules |
+
+The Security review starts from the findings; the Independent review rules on them. A scan with no file to read is **not needed**. A scan that could not read a file says **not checked**, never clean.
+
+Verify scans the task's registered commits and its recorded edits to tracked files; another task's changes stay outside. Untracked files are not scanned there, but the secrets scan after each agent turn still reads them. Secrets found in the task's records are removed before commit.
+
+<Note>Only dependency advisories leave your computer: when a lockfile changes, its package names and versions are checked against osv.dev. Choose **Local copy** in [Settings](settings.mdx#security-scans) to keep them here; the database is about 250 MB.</Note>
+
+## What a finding means {#what-a-finding-means}
+
+| Finding | What your agent looks for |
+| --- | --- |
+| Complex function | Branches or responsibilities that make a change hard to follow |
+| Duplicated code | Copies that could drift apart; broader duplication checks run when you ask |
+| Possible secret | A key or password in a file; a real one is moved out and rotated |
+| Advisory | A package version with a known vulnerability or known malware |
+| Previously seen | A finding the tool already reported; it still needs review |
+| Acknowledged | A finding kept with a specific reason; the code has not been repaired |
+
+A finding needs a new review when its function, the analyzer configuration or its duplicate changes, or when its metric goes up.
+
+## Ask for a broader check {#ask-for-a-broader-check}
+
+Try "Check this project's duplication", "Review the complexity of the files we changed" or "Scan this branch for secrets." Your agent can also run your project's enabled linters.
+
+<Warning>Code health and security scans are advisory: your tests and release requirements still apply. A failed, skipped or unavailable check never counts as passing.</Warning>
+
+<NextSteps items={[
+  { title: "Commands", href: "/docs/reference/commands#code-health", text: "Code health commands and setup troubleshooting." },
+  { title: "Verify", href: "/docs/steps/verify", text: "Where the scans run beside your checks." },
+]} />

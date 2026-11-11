@@ -1,0 +1,121 @@
+---
+title: Verify
+description: Agents that did not write the code check every point and fix what fails. Then you review the code, see what changed and approve.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Agents that did not write the code check every **Done means** point and fix what fails. Then the same page becomes your review: the code first, then what changed and each point as it ran. A failure is never marked passed.
+
+<Screenshot name="verify-checking" alt="Verify in the App while the agents check: the project checks, the independent review and the fix rounds" caption="An example task in a fictional project." />
+
+## The checks {#lanes}
+
+![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-light.webp)
+![Project checks: tests and types, linters, code health and recorded proof. Independent agents: security review, independent review, design review and an optional second opinion.](pathname:///img/verify/verification-dark.webp)
+
+Project commands and scans produce recorded results:
+
+<CardGroup cols={2}>
+  <Card title="Project checks" icon="square-terminal">Tests, types, lint and build run on the commit. A failure is recorded, and the reviewer rules on it.</Card>
+  <Card title="Code health" icon="badge-check" href="/docs/reference/code-health">Complexity and duplication in the files your agent changed, fed back to it after each turn.</Card>
+  <Card title="Security scans" icon="shield-check" href="/docs/reference/code-health#security-scans">Secrets, dependency advisories, GitHub workflows and risky code. An unavailable scan stays **not checked**.</Card>
+  <Card title="Recorded proof" icon="file-text">A point passes only with evidence: a check's output, a captured response, a screenshot or a file.</Card>
+</CardGroup>
+
+Separate agents review the code and its behavior:
+
+<CardGroup cols={2}>
+  <Card title="Independent review" icon="shield-check" tone="verify">Reads the whole diff, adds missing tests, runs each **Done means** step and compares screens with their artifacts. A small task gets one reviewer.</Card>
+  <Card title="Security review" icon="key-round">When the change crosses a trust boundary or edits agent controls. Your agent fixes critical and high findings first.</Card>
+  <Card title="Design review" icon="shapes">Checks each finished design before you see it, unless you turn **Design review** off in [Settings](../reference/settings.mdx).</Card>
+  <Card title="Second opinion" icon="network">A reviewer from another agent family checks risky changes [when enabled](../reference/settings.mdx#second-opinion), or on request. Findings are **Taken** or **Kept**.</Card>
+</CardGroup>
+
+<Note>With **Independent review** off in [Settings](../reference/settings.mdx#independent-review), no fresh agent checks the change, and Verify shows it as **skipped**.</Note>
+
+## Two fix rounds {#rounds}
+
+A review fails on a **Done means** point, a red check, a critical or high security finding, lost data, or a bug it reproduces in the changed lines. Your agent fixes it and commits; a fresh reviewer rechecks what failed and what the fix changed. That can happen twice, and a round that fixes nothing ends them early.
+
+## Proof for each point {#live}
+
+The header counts the points proven, one tick each, and each point shows its evidence as it comes in. The board shows the four check stages, with cited pictures below. **View changes** opens the changed files; **Read the record** opens `agents/03-verify.md`, with the findings, commands and every judged round.
+
+## When the checks cannot finish {#when-it-stops}
+
+Some failures end the checks: a point still failing after the second round, a prerequisite only you can supply, or an unavailable environment. You get one question: change what **Done means** says, ask for one more fix round, or stop the task. Work outside the task becomes a follow-up with its owner. No answer marks a failing point as passed.
+
+## Review the result {#items}
+
+<Screenshot name="verify" alt="Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header" />
+
+<CardGroup cols={3}>
+  <Card title="Why" icon="file-text">The request in one sentence, then a release-note line for each change users see.</Card>
+  <Card title="Code" icon="code-xml">The complete change and where to start reading.</Card>
+  <Card title="Diagrams" icon="spline">The change in diagrams, in tabs.</Card>
+  <Card title="Interface" icon="shapes">Each screen, switched between **Designed** and **Built**.</Card>
+  <Card title="Done means" icon="badge-check">Each point as it ran, with its picture or output, and whether it ran as a script or in a real agent session.</Card>
+</CardGroup>
+
+Anything only you can check, such as your account or a device the agents cannot run, comes to you as a question. What turns up while you review, your agent fixes at once; **rechecking** shows over the part that changed.
+
+<Note>`03-verify.md` is the pull request description; its pictures stay on your computer unless you publish them. For changed [lasting artifacts](../artifacts.mdx#lasting), choose which pages to [fold in](../artifacts.mdx#fold-in).</Note>
+
+## Read the code {#code}
+
+<Screenshot name="verify-review" alt="Review the code: the file tree and the diff of the example task" />
+
+**Review the code** opens the file tree and a **Unified / Split** diff. **Viewed** saves your reading progress; **All viewed** and **Clear** apply to every file.
+
+### Ask about any line {#line-comments}
+
+Select a line and choose **Ask agent**. Conversation opens an editable draft with the file, revision and selected lines. Sending it never approves the change or allows a push.
+
+### Findings from the agents {#findings}
+
+Security and second-opinion findings appear on their lines. Request a change, or record why a finding is not a problem; the reason becomes a [project lesson](../memory.mdx) for later reviews.
+
+### Ask another reviewer {#another-reviewer}
+
+**Ask another reviewer** picks an installed agent that did not build the change. It reviews one file or all files, edits nothing and stops after 8 minutes.
+
+## Approve {#approve}
+
+Approve the whole change in the page header, also when its agent has stopped. Your approval always saves, even when the code moved after the checks or a recheck is running.
+
+<CardGroup cols={3}>
+  <Card title="Approve" icon="badge-check" tone="verify">Nothing is pushed. The conversation stays open for merge, deploy and tweaks.</Card>
+  <Card title="Approve and create PR" icon="git-pull-request">Pushes the task's branch and opens the [pull request](pull-request.mdx). Needs `gh`.</Card>
+  <Card title="Copy the git commands" icon="clipboard">The commands to push and merge yourself.</Card>
+</CardGroup>
+
+### After you approve {#after-approve}
+
+Ask your agent to merge, push, deploy or run end-to-end tests; each still needs your request.
+
+| Verify shows | What you do |
+| --- | --- |
+| **Not merged yet** | Merge as usual. Merged on the web? Pull the base branch, or press **Mark as merged** |
+| **1 change since your approval** | Your agent committed a tweak. Press **View the change**, then **Approve change** in the header. With an open pull request, your merge accepts it |
+| **Merged into main** | The task is in **Shipped**. New work starts with **Start a follow-up** |
+
+QualityLayer recognizes local merges, including squash and rebase, and pull requests it opened on GitHub. For work built directly on main, only that task's fixes count ([details](implement.mdx#where-it-lands)).
+
+## Stop, archive or delete a task {#stop-archive-or-delete-a-task}
+
+| | How | What stays |
+| --- | --- | --- |
+| **Stop** | Tell your agent | The documents |
+| **Archive** | The task header (**More** on compact screens); **Restore** undoes it | Everything |
+| **Delete** | Confirm **Delete for good** in the task header | Task documents and local records are removed; the code and branch stay |
+
+A task from the earlier seven-step workflow cannot be continued or approved. It stays in the task list marked **earlier workflow**, and **Files** opens its documents.
+
+<NextSteps items={[
+  { title: "Pull request", href: "/docs/steps/pull-request", text: "Checks and review threads until you merge." },
+  { title: "Code health", href: "/docs/reference/code-health", text: "The local checks behind Verify." },
+  { title: "Second opinion", href: "/docs/reference/settings#second-opinion", text: "A review from another model." },
+]} />

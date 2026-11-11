@@ -1,42 +1,48 @@
 ---
 title: Other agents
 description: Use QualityLayer with any coding agent that runs shell commands, including local models.
+mdx:
+  format: mdx
 ---
 
-[Supported agents](native.md) run beside your task in the App or browser. Other agents, including local models, use the CLI to run the same workflow from your repository.
+import { Steps, Step, Tip, Note, NextSteps } from "@site/src/components/kit";
+
+Any coding agent that runs shell commands, including local models, can run the same workflow through the `qualitylayer` command. [Supported agents](native.mdx) also get the App's conversation view and session controls.
 
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-light.svg)
 ![Another agent with the qualitylayer command and a prompt from the App follows the same steps](pathname:///img/diagrams/agents-other-dark.svg)
 
 ## Start a task {#start}
 
-1. In the agent's terminal, run `qualitylayer help`. Nothing listed? Run `qualitylayer doctor`.
-2. Tell your agent “Using QualityLayer, plan a CSV export without the App.”
-3. Continue in your agent. It follows the same workflow, asks with [numbered choices](../work-in-your-agent.md#pickers) and saves the documents on disk.
+<Steps>
+  <Step title="Check the command">Have your agent run `qualitylayer help`. Nothing listed? Run `qualitylayer doctor`.</Step>
+  <Step title="Ask in plain words">"Using QualityLayer, plan a CSV export without the App."</Step>
+  <Step title="Continue in your agent">It follows the same workflow, asks with [numbered choices](../work-in-your-agent.mdx#pickers) and saves the documents on disk.</Step>
+</Steps>
+
+<Note>Results depend on the model: it has to call tools reliably over many turns.</Note>
 
 ## Plan with one agent, build with another {#mix}
 
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-light.svg)
 ![Plan with Claude Code, approve the Plan, build with another agent, then the same checks and your approval](pathname:///img/diagrams/agents-mix-dark.svg)
 
-Choose **In my own agent**, then ask your agent in the project to continue the approved task, or copy the prepared request. It follows Implement and Verify until your final approval.
+On **Start the build**, choose **In my own agent**, then ask your agent in the project to continue the approved task, or paste the prepared request. It follows Implement and Verify until your final approval.
 
 ## Run in your own agent {#app-start}
 
-A copied prompt works in any coding agent, but does not add the App's conversation view or session controls; those belong to the supported agents.
+A copied prompt works in any coding agent. It does not add the App's conversation view or session controls; those come with the supported agents.
 
 ## What changes {#differences}
 
-| | Natively supported agents | Any other agent |
+| | Supported agents | Any other agent |
 | --- | --- | --- |
 | Setup | Done when you install | Ask in your own words |
 | Model and effort | Set in QualityLayer | Set in your agent |
 | Building | One session builds the slices; it can use its agent's own subagents | One session builds the slices with its own tools |
-| Sessions | The App's **Conversation** and supported session controls | Your agent's terminal and its own controls |
+| Sessions | The App's **Conversation** and session controls | Your agent's own window and controls |
 | Cost panel | Per step, when the agent's records hold token counts | Not shown |
-| [Second opinion](../reference/settings.md#second-opinion) | Choose an installed native reviewer | Can use an installed native reviewer |
-
-Results depend on the model: it has to call tools reliably over many turns.
+| [Second opinion](../reference/settings.mdx#second-opinion) | Choose an installed native reviewer | Can use an installed native reviewer |
 
 <details>
 <summary>For the agent's author</summary>
@@ -48,3 +54,8 @@ To keep working after a question, run `qualitylayer wait --until-event` in the b
 Checks run on a clean copy of the commit, without `.venv` or `node_modules`. Use `$QL_REPO_ROOT` to reach your folder, for example `"$QL_REPO_ROOT/.venv/bin/python" -m pytest`.
 
 </details>
+
+<NextSteps items={[
+  { title: "Supported agents", href: "/docs/agents/native", text: "The eight agents that run natively." },
+  { title: "Commands", href: "/docs/reference/commands", text: "The CLI behind every step." },
+]} />

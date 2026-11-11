@@ -1,24 +1,30 @@
 ---
 title: Commands
 description: Ask in plain language, or look up the CLI commands for tasks, artifacts, code health and memory.
+mdx:
+  format: mdx
 ---
 
-Use `qualitylayer help` (`ql` for short) to list commands. Add `--json` for machine-readable output and `--task <slug>` to select an open task.
+import { Tip, Note, NextSteps } from "@site/src/components/kit";
 
-## In your agent
+Ask your agent in plain words, or run the commands yourself. `qualitylayer help` (`ql` for short) lists them.
 
-Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill](../agents/native.md#the-six-skills).
+<Tip>Add `--json` for machine-readable output and `--task <slug>` to pick an open task.</Tip>
+
+## Ask in plain words {#in-your-agent}
+
+Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill](../agents/native.mdx#the-six-skills).
 
 | Example request | What it does |
 | --- | --- |
-| “Using QualityLayer, plan a CSV export” | Starts a task at [Plan](../steps/plan.md) |
-| “Using QL, implement the approved plan for task retry-webhooks” | Builds an approved Plan ([Implement](../steps/implement.md#start-implement)) |
-| “Using QL, review task retry-webhooks” | Reviews the result or follows [pull request](../steps/pull-request.md) review threads |
+| “Using QualityLayer, plan a CSV export” | Starts a task at [Plan](../steps/plan.mdx) |
+| “Using QL, implement the approved plan for task retry-webhooks” | Builds an approved Plan ([Implement](../steps/implement.mdx#start-implement)) |
+| “Using QL, review task retry-webhooks” | Reviews the result or follows [pull request](../steps/pull-request.mdx) review threads |
 | “Open the current QualityLayer artifact in my browser at Billing” | Opens that artifact page and section |
 
 ## Existing plans {#existing-plans}
 
-`qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.md#existing-plan)).
+`qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.mdx#existing-plan)).
 
 ## From a ticket {#from-a-ticket}
 
@@ -30,7 +36,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Chat {#chat}
 
-“Using QualityLayer, chat about retrying failed webhooks” starts a [Chat](../chat.md) with a supported coding agent.
+“Using QualityLayer, chat about retrying failed webhooks” starts a [Chat](../chat.mdx) with a supported coding agent.
 
 | Command | What it does |
 | --- | --- |
@@ -39,9 +45,9 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `chat check [--slice <n>]` · `chat review` | Print validation commands, or brief a fresh reviewer |
 | `chat promote --type feature\|bugfix [--from-saved-plan]` | Move into the workflow at Plan, from the conversation or the saved plan |
 
-## Terminal mode
+## Answer in your agent {#terminal-mode}
 
-“Using QualityLayer in the terminal, plan a CSV export” keeps questions and approvals in your agent's chat. Only your own picks or words count ([In your agent](../work-in-your-agent.md)).
+Keep a task's questions and approvals in your agent's chat. Only your own picks or words count ([In your agent](../work-in-your-agent.mdx)). The value `terminal` means your agent's chat.
 
 | Command | What it does |
 | --- | --- |
@@ -51,19 +57,19 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 | `read 01-plan.md [--lead]` · `read artifact <name>` | Read a document or artifact page as text |
 | `plan export --out <folder>` | Export the Plan, its agents' file and pictures; report any picture that could not be made |
 
-## Commands by group
+## Commands by group {#commands-by-group}
 
 Prefix each command with `qualitylayer`, for example `qualitylayer gate open plan`.
 
 | Group | Commands |
 | --- | --- |
-| [Step checks](settings.md#step-checks) | `instructions` · `instructions add <step> "<line>"` · `instructions done\|skip <step> <n>` |
-| [Automations](../automations.md) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
+| [Step checks](settings.mdx#step-checks) | `instructions` · `instructions add <step> "<line>"` · `instructions done\|skip <step> <n>` |
+| [Automations](../automations.mdx) | `automations list` · `automations add --url <url> \| --command "<command>"` · `automations set\|remove\|test\|log\|secret <id>` · `automations events` |
 | Tasks | `find` · `tasks` · `status` · `task set` · `task start` · `task override` · `task archive\|restore` · `branch new` |
 | App | `app` · `app status` · `app restart` · `agents list\|check\|repair` |
 | Setup | `doctor [--repair]` · `settings get\|set` · `update` · `uninstall [--purge | --keep-data]` · `reset --first-start` · `licence status\|activate\|deactivate\|portal` · `feedback` |
 | Settings | `settings set <key> <value>` changes any setting except the permission mode, the program an agent or terminal starts and its arguments, and who may type; those stay in the App's Settings |
-| Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]` — import a local CSV; reimport to include later usage |
+| Usage | `usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]`: import a local CSV; import again to add later usage |
 
 <details>
 <summary>Workflow commands your agent runs</summary>
@@ -94,7 +100,7 @@ Artifact edits take `--if-match <revision>` from `artifact inspect` or `artifact
 
 ## Code health and security scans {#code-health}
 
-Advisory local checks ([Code health](code-health.md)).
+Advisory local checks ([Code health](code-health.mdx)).
 
 | Command | What it does |
 | --- | --- |
@@ -106,7 +112,7 @@ Advisory local checks ([Code health](code-health.md)).
 
 ## Project memory {#memory}
 
-One local lesson store for the App and your agents ([Project memory](../memory.md)).
+One local lesson store for the App and your agents ([Project memory](../memory.mdx)).
 
 | Command | What it does |
 | --- | --- |
@@ -120,7 +126,7 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 | `memory conflicts` · `memory reconcile <id> --revision <n> --candidate local\|<fingerprint>` | Inspect conflicting revisions and explicitly reconcile them |
 | `memory mcp` · `memory import-pilot <file>…` | Serve lesson tools over MCP, or import Pilot records |
 
-## Session messaging
+## Session messaging {#session-messaging}
 
 To oversee a task, ask your agent to run `qualitylayer status --json --task <task>` from its checkout. Read the task documents for verification evidence.
 
@@ -130,7 +136,7 @@ To oversee a task, ask your agent to run `qualitylayer status --json --task <tas
 | `last_decision` | Approvals and requested changes |
 | `answer_mode` | Where you answer, with its recorded origin |
 
-Sessions on this computer coordinate through `ql-peer` within the work you authorize. You choose the build session and approve the Plan and the finished change.
+<Note>Sessions on this computer coordinate through `ql-peer` within the work you authorize. You choose the build session and approve the Plan and the finished change.</Note>
 
 ```bash
 qualitylayer peers list
@@ -143,4 +149,9 @@ GitHub Copilot, Grok, Cursor and Antigravity sessions join the list at their fir
 
 - At once in a waiting App session.
 - At turn end or the next prompt while the agent works.
-- At the next turn in an idle terminal.
+- At the next turn in an idle session.
+
+<NextSteps items={[
+  { title: "Settings", href: "/docs/reference/settings", text: "Every setting, in the App and by command." },
+  { title: "Automations", href: "/docs/automations", text: "Task events for your own tools and scripts." },
+]} />

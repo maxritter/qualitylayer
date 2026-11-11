@@ -1,0 +1,43 @@
+---
+title: Chat
+description: Work directly with your supported coding agent, with plans and checks when you need them.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+A Chat is a direct conversation with any supported coding agent, without workflow steps or approvals. Move it into the workflow when it grows.
+
+<Screenshot name="chat" alt="Chat with its conversation, task controls and composer; illustrative data" caption="An illustrative task, shown in the full workspace." />
+
+## Start a Chat {#start}
+
+Choose **+ › Chat**, pick your project and describe what you need. **Conversation** and **Terminal** show the same session. Return to the task to keep its history. The agent's menu in the header has **Interrupt**, **Stop session** and **Resume session**.
+
+<Tip>To continue a session you started outside QualityLayer, choose it under **Or resume a session in Claude Code** (or Codex) below the card. It opens as a Chat.</Tip>
+
+## Questions and tasks {#questions}
+
+Your agent's questions appear above the composer: pick a numbered choice or type your answer. When the agent reports a task list, **Tasks** shows its progress. A Codex session started outside QualityLayer is read-only here; answer it in Codex.
+
+## Add what you need {#tools}
+
+Ask your agent to save a plan, make [artifacts](artifacts.mdx), build in slices, run checks or ask for an independent review. Saved plans open in the Reader, artifacts in their viewer, check results in the conversation.
+
+## Convert to task {#convert-to-task}
+
+<Steps>
+  <Step title="Convert">Choose **Convert to task** in the header, then **Feature** or **Bugfix**.</Step>
+  <Step title="Pick the start">**Plan with QualityLayer** continues in Plan with the conversation and saved work as context. **Saved plan**, then **Start at the Plan**, maps a plan this Chat saved into the Plan; the original stays unchanged.</Step>
+  <Step title="Approve the Plan">As for any task, before the build. Let running slice helpers finish, or stop them, first.</Step>
+</Steps>
+
+Both choices keep the same task and agent conversation.
+
+<Note>A Chat stays on your own machine. You reach it from elsewhere only through your own signed-in machine connection or a paired browser.</Note>
+
+<NextSteps items={[
+  { title: "Plan", href: "/docs/steps/plan", text: "What your agent asks and what you approve." },
+  { title: "Artifacts", href: "/docs/artifacts", text: "The diagrams and clickable screens your agent draws." },
+]} />

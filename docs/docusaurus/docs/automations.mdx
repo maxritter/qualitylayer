@@ -1,43 +1,57 @@
 ---
 title: Automations
 description: Send task events to your own tools as signed webhooks or commands, and read or start tasks from a script.
+mdx:
+  format: mdx
 ---
 
-# Automations
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Note, Screenshot, NextSteps } from "@site/src/components/kit";
 
-Send task events to your own tools, and read or start tasks from a script.
+Send task events to your own tools as signed webhooks or commands, and read or start tasks from a script.
 
-## Your first webhook in 2 minutes
+## Your first webhook in 2 minutes {#your-first-webhook-in-2-minutes}
 
-1. Save this receiver as `receiver.mjs`:
+<Steps>
+  <Step title="Save a receiver">
 
-   ```js
-   import { createHmac, timingSafeEqual } from "node:crypto"
-   import { createServer } from "node:http"
+Save this as `receiver.mjs`:
 
-   const secret = process.env.QL_SECRET ?? ""
-   createServer((req, res) => {
-     let body = ""
-     req.on("data", (chunk) => (body += chunk))
-     req.on("end", () => {
-       const [t, v1] = (req.headers["qualitylayer-signature"] ?? "")
-         .split(",")
-         .map((part) => part.slice(part.indexOf("=") + 1))
-       const expected = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex")
-       const ok = v1?.length === expected.length && timingSafeEqual(Buffer.from(v1), Buffer.from(expected))
-       console.log(ok ? "verified" : "bad signature", JSON.parse(body).event)
-       res.writeHead(ok ? 200 : 401).end()
-     })
-   }).listen(8787)
-   ```
+```js title="receiver.mjs"
+import { createHmac, timingSafeEqual } from "node:crypto"
+import { createServer } from "node:http"
 
-2. Add it: `qualitylayer automations add --url http://127.0.0.1:8787/hook`. The reply shows the automation's `id` and its signing `secret`.
-3. Start the receiver with that secret: `QL_SECRET=<secret> node receiver.mjs`.
-4. Send a test event: `qualitylayer automations test <id>`. The receiver prints `verified automation.test`.
+const secret = process.env.QL_SECRET ?? ""
+createServer((req, res) => {
+  let body = ""
+  req.on("data", (chunk) => (body += chunk))
+  req.on("end", () => {
+    const [t, v1] = (req.headers["qualitylayer-signature"] ?? "")
+      .split(",")
+      .map((part) => part.slice(part.indexOf("=") + 1))
+    const expected = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex")
+    const ok = v1?.length === expected.length && timingSafeEqual(Buffer.from(v1), Buffer.from(expected))
+    console.log(ok ? "verified" : "bad signature", JSON.parse(body).event)
+    res.writeHead(ok ? 200 : 401).end()
+  })
+}).listen(8787)
+```
 
-From now on every task event reaches it. In the App, the same steps are Settings › Automations › **Add**, then the send button on its row. Your agent can do it too: “Send QualityLayer events to https://example.com/hook.”
+  </Step>
+  <Step title="Add it">`qualitylayer automations add --url http://127.0.0.1:8787/hook`. The reply shows the automation's `id` and its signing `secret`.</Step>
+  <Step title="Start the receiver">`QL_SECRET=<secret> node receiver.mjs`, with that secret.</Step>
+  <Step title="Send a test event">`qualitylayer automations test <id>`. The receiver prints `verified automation.test`.</Step>
+</Steps>
 
-## Manage automations
+From now on every task event reaches it.
+
+<Tabs groupId="where">
+  <Tab value="app" label="In the App">**Settings › Automations › Add**, then the send button on its row.</Tab>
+  <Tab value="agent" label="In my own agent">Ask: "Send QualityLayer events to https://example.com/hook."</Tab>
+</Tabs>
+
+<Screenshot name="automations" alt="Settings › Automations with one webhook, its events and its last delivery" />
+
+## Manage automations {#manage-automations}
 
 | Command | What it does |
 | --- | --- |
@@ -53,7 +67,7 @@ From now on every task event reaches it. In the App, the same steps are Settings
 
 Every command takes `--json`. `--events task.shipped,task.merged` sends only some events; `--projects shop` sends only some projects' tasks. Both default to all.
 
-## Events
+## Events {#events}
 
 Every event has the same envelope. `task.step` is `plan`, `implement`, `verify` or `shipped`.
 
@@ -106,7 +120,7 @@ task.shipped         {"slices": 2}
 
 `link` opens the task in the App on the computer that sent the event. A test send has the event `automation.test` and a sample task.
 
-## Signature
+## Signature {#signature}
 
 A URL receives a `POST` with these headers:
 
@@ -118,16 +132,20 @@ A URL receives a `POST` with these headers:
 
 `v1` is the HMAC-SHA256 of `<t>.<body>` with the automation's signing secret, as in the receiver above. `t` is the time of that try, so you can refuse old ones. Compare signatures in constant time, and drop an event whose `id` you already have.
 
-## Delivery and retries
+## Delivery and retries {#delivery-and-retries}
 
-- A 2xx answer within 10 seconds is delivered. Redirects are not followed.
-- A URL that fails is tried again after 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours, then given up. Every try sends the same body and `id`.
-- One task's events arrive in order: a later event waits while an earlier one is retried. Other tasks go on.
-- A failing automation never holds a task. Settings › Automations and `automations log` show what failed.
-- QualityLayer keeps running in the background until a failed delivery's tries are done. After sleep or a restart they go on.
-- Events are sent from the computer that runs the task. Nothing passes through qualitylayer.dev. An event carries the task's title and, for a question, its text. It never carries your answer.
+<CardGroup cols={2}>
+  <Card title="Delivered" icon="badge-check">A 2xx answer within 10 seconds. Redirects are not followed.</Card>
+  <Card title="Retried" icon="info">After 1 minute, 5 minutes, 30 minutes, 2 hours and 6 hours, then given up. Every try sends the same body and `id`.</Card>
+  <Card title="In order" icon="list-todo">One task's events arrive in order: a later one waits while an earlier one is retried. Other tasks go on.</Card>
+  <Card title="Never in the way" icon="shield-check">A failing automation never holds a task. **Settings › Automations** and `automations log` show what failed.</Card>
+</CardGroup>
 
-## Run a command
+QualityLayer keeps running in the background until a failed delivery's tries are done, and they go on after sleep or a restart.
+
+<Note>Events are sent from the computer that runs the task; nothing passes through qualitylayer.dev. An event carries the task's title and, for a question, its text, never your answer.</Note>
+
+## Run a command {#run-a-command}
 
 ```sh
 #!/bin/sh
@@ -139,7 +157,7 @@ event=$(cat)
 
 `qualitylayer automations add --command "./scripts/on-event.sh"` runs it once per event, in the task's project folder, with the event's name in `QUALITYLAYER_EVENT`. It has 60 seconds. Exit 0 is delivered; a command is never run twice, and its exit code and last output are kept in the log.
 
-## Read and start tasks from a script
+## Read and start tasks from a script {#read-and-start-tasks-from-a-script}
 
 | Command | Returns |
 | --- | --- |
@@ -153,6 +171,11 @@ event=$(cat)
 
 Run them in the project's folder. `--plan` starts an agent on your plan with every call. `tasks --cost` answers within 20 seconds; when it says `"complete": false`, run it again for the rest.
 
-## What stays with you
+## What stays with you {#what-stays-with-you}
 
-No event and none of these commands approves a Plan or a finished change, or answers a question.
+<Note>No event and none of these commands approves a Plan or a finished change, or answers a question.</Note>
+
+<NextSteps items={[
+  { title: "Commands", href: "/docs/reference/commands", text: "Every CLI command by group." },
+  { title: "Settings", href: "/docs/reference/settings", text: "Automations and the other settings." },
+]} />

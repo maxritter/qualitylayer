@@ -1,20 +1,25 @@
 ---
 title: Settings
 description: Configure your workflow, agents, memory, usage and updates.
+mdx:
+  format: mdx
 ---
+
+import { Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
 
 Open **Settings** with the gear at the bottom of the sidebar; its search finds any setting. Changes save at once for this computer.
 
-![Settings: its sections in the sidebar's place, with your instructions, where you answer and approve, and the reviews in Workflow](pathname:///img/app/settings-light.webp)
-![Settings: its sections in the sidebar's place, with your instructions, where you answer and approve, and the reviews in Workflow](pathname:///img/app/settings-dark.webp)
+<Screenshot name="settings" alt="Settings: its sections in the sidebar's place, with your instructions, where you answer and approve, and the reviews in Workflow" />
 
-## Workflow
+<Tip>Every setting also works by command, `qualitylayer settings set <key> <value>`, or by asking your agent. The [command reference](commands.mdx#commands-by-group) lists the few that stay in the App.</Tip>
+
+## Workflow {#workflow}
 
 | Setting | Choices |
 | --- | --- |
 | **Offer QualityLayer** | A switch: on (default), your agent asks once when you ask it to plan without naming QualityLayer |
 | [Your instructions](#instructions) | Standing instructions for every task |
-| **Answer questions in** · **Approve in** | **In the App** (default) or **In my own agent**: your terminal, IDE or agent app, for tasks you start there ([guide](../work-in-your-agent.md#where)) |
+| **Answer questions in** · **Approve in** | **In the App** (default) or **In my own agent**: your terminal, IDE or agent app, for tasks you start there ([guide](../work-in-your-agent.mdx#where)) |
 | [Independent review](#independent-review) | A switch: on (recommended) or off. Runs in Verify and each recheck |
 | **Design review** | A switch: on (default), a separate agent checks each finished design in Plan before you see it. Wireframes are never reviewed |
 | [Second opinion](#second-opinion) | A switch: off (default); it turns on once a second coding agent is installed. Runs in Plan and Verify |
@@ -40,7 +45,7 @@ A step check is a checkbox line under a step's heading. The agent must do it, th
 
 | Line | What happens |
 | --- | --- |
-| `- [ ] run: …` under Implement or Verify | A Project check: the Plan names it, approving the Plan covers running it, and [Verify](../steps/verify.md) records its result |
+| `- [ ] run: …` under Implement or Verify | A Project check: the Plan names it, approving the Plan covers running it, and [Verify](../steps/verify.mdx) records its result |
 | `- [ ]` with other words | The agent does it its own way, with a skill, an MCP tool or by hand, and records a note or a reason |
 | `-` a plain bullet | Guidance only |
 
@@ -48,13 +53,13 @@ Add one in **Your instructions** › **Steps**, ask your agent (“Add a Wiz sca
 
 ### Independent review {#independent-review}
 
-**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.md). **Helpers: This session** in [Models](#models) keeps review in the lead session, marked as not independent. **Off**: Verify shows **Independent review** as **skipped**. [Models](#models) sets the model each agent reviews on.
+**On**: a separate agent checks each **Done means** point in [Verify](../steps/verify.mdx). **Helpers: This session** in [Models](#models) keeps review in the lead session, marked as not independent. **Off**: Verify shows **Independent review** as **skipped**. [Models](#models) sets the model each agent reviews on.
 
 ### Second opinion {#second-opinion}
 
 **On** adds a read-only review by another agent for risky Plans and changes. Risk includes sign-in, secrets, outside input, or a Plan or slice marked risky. The Workflow row shows which agent reviews which. In [Models](#models) you pick, for each agent, the other installed agent that reviews its work and the model it uses. The default is the first agent here from another model family, so GPT reviews Claude and Claude reviews GPT. If the chosen agent is not installed or not signed in, the default reviews instead. Your agent can set it too: `qualitylayer settings set secondOpinion.reviewers.claude-code '{"agent":"codex","model":"gpt-6.1-sol"}'`.
 
-A feature can also take up to two extra planners, each an agent, model and effort, chosen in **New task** or with `qualitylayer task start "<request>" --planners agent:model[:effort],…`. They review its Plan instead of the second opinion, and each is an extra paid planning run.
+<Note>A feature can also take up to two extra planners, each an agent, model and effort, chosen in **New task** or with `qualitylayer task start "<request>" --planners agent:model[:effort],…`. They review its Plan instead of the second opinion, and each is an extra paid planning run.</Note>
 
 <details>
 <summary>How the default reviewer is picked</summary>
@@ -67,7 +72,7 @@ A feature can also take up to two extra planners, each an agent, model and effor
 
 ### Security scans {#security-scans}
 
-**Scan each change** runs the [security scans](code-health.md#security-scans) in Verify and the secrets scan after each agent turn. **Off**: Verify's Security scans lane says Off; the reviews still run.
+**Scan each change** runs the [security scans](code-health.mdx#security-scans) in Verify and the secrets scan after each agent turn. **Off**: Verify's Security scans lane says Off; the reviews still run.
 
 **Dependency advisories**: **osv.dev** sends the package names and versions of a changed lockfile to Google's open vulnerability database; your code stays here. **Local copy** downloads that database (about 250 MB for npm and PyPI) the first time a project needs it, and nothing leaves this computer.
 
@@ -84,7 +89,7 @@ A feature can also take up to two extra planners, each an agent, model and effor
 | **Extra arguments** | Added to every start; ones that switch off permission checks are refused |
 | **Config folder** | Where the agent keeps its settings |
 | **Default effort** | High is recommended; a per-task choice wins |
-| **Default permission mode** | Bypass on first use; your saved mode or **Agent settings** wins ([modes](../agents/native.md#permission-modes)) |
+| **Default permission mode** | Bypass on first use; your saved mode or **Agent settings** wins ([modes](../agents/native.mdx#permission-modes)) |
 
 Only the App, or a browser paired with its key, can change these.
 
@@ -98,7 +103,7 @@ Setup adds each of these only when it is missing, next to QualityLayer's own hoo
 | **Claude Code** git | No attribution in commits or pull requests; no built-in git instructions |
 | **Claude Code** display | Concise replies, thinking summaries, reduced motion, flicker-free screen |
 | **Claude Code** tools | Task tools, tool search, baseline task reminders, memory consolidation where Claude makes it available, at most 3 Stop-hook continuations in a row, High effort |
-| **Codex** | Full access when no permission policy is set, High effort for the session and subagents, the model's largest context window, questions in Terminal mode |
+| **Codex** | Full access when no permission policy is set, High effort for the session and subagents, the model's largest context window, its question picker |
 | **Grok** | Questions wait for your answer instead of expiring after 30 minutes |
 
 ## Models {#models}
@@ -120,13 +125,13 @@ Pick an agent by its mark; every model it uses is on one page. A new task starts
 | **Menu bar readings** | Reported quota windows and daily dollars. Quota choices also select the Usage popup's rows |
 | **Daily total** | Optional: **API spend ($)** counts metered use; **All usage at API prices ($)** also values subscriptions for comparison |
 
-Credits stay separate in Usage; missing data makes totals partial. The task header’s [Cost](../app.md#cost) uses recorded Copilot AI-credit usage value where available, clearly labelled separately from API-price estimates and money billed.
+Credits stay separate in Usage; missing data makes totals partial. The task header’s [Cost](../app.mdx#cost) uses recorded Copilot AI-credit usage value where available, clearly labelled separately from API-price estimates and money billed.
 
 **Plan limits** shows reported windows for Claude Code, Codex and GitHub Copilot. Visible readings refresh every five minutes; Codex and Copilot depend on their latest source records. **Resume when a limit resets** (on) continues stopped builds unless someone has typed since; **Cancel resume** in the task's agent status stops one.
 
 **Warn about heavy token use** (on) shows one note per task when it passes about 3 times your usual task's tokens (5M before you have three earlier tasks). The task keeps running. Turn it off with `qualitylayer settings set limits.tokenWarning false`.
 
-**What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. Every supported agent is covered where its records provide usage; Cursor needs a [local CSV import](commands.md#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
+**What your agents used** has daily charts, comparisons and model breakdowns for 7 days, 30 days or this month. Every supported agent is covered where its records provide usage; Cursor needs a [local CSV import](commands.mdx#commands-by-group). The same money choice applies to statistics. API-price value is not your bill.
 
 ## Sessions {#sessions}
 
@@ -140,7 +145,7 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 ## Machines {#machines}
 
-Work on another Linux or macOS computer you reach over ssh, from this App ([setup guide](../machines.md)). **Add machine** picks a host from your ssh config or takes `user@host`, checks it, and after one confirmation installs QualityLayer there and activates your licence key on it. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
+Work on another Linux or macOS computer you reach over ssh, from this App ([setup guide](../machines.mdx)). **Add machine** picks a host from your ssh config or takes `user@host`, checks it, and after one confirmation installs QualityLayer there and activates your licence key on it. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
 
 A machine keeps working while this computer sleeps and reconnects by itself. **ssh needs you** means ssh wants a key or a host confirmation: run the `ssh` command the row shows once in a terminal, then **Try again**. **Remove…** only drops the connection; tick the box to release the machine's licence activation too. Windows machines keep their own App.
 
@@ -156,7 +161,7 @@ Use your own connected machine or paired browser to return to your work away fro
 
 ## Automations {#automations}
 
-Send task events to a URL or a command. A browser that may only watch cannot change them. See [Automations](../automations.md).
+Send task events to a URL or a command. A browser that may only watch cannot change them. See [Automations](../automations.mdx).
 
 ## Appearance {#appearance}
 
@@ -172,16 +177,16 @@ Send task events to a URL or a command. A browser that may only watch cannot cha
 
 ## Memory {#memory}
 
-Pause, search or retire lessons, including **Yours**, the lessons about you. **Manage projects** controls optional Git export per repository ([Project memory](../memory.md)).
+Pause, search or retire lessons, including **Yours**, the lessons about you. **Manage projects** controls optional Git export per repository ([Project memory](../memory.mdx)).
 
-## Licence
+## Licence {#licence}
 
 Your plan or trial, and **Open billing account**. To use a key you bought, choose **Enter key…** (during the trial too) and paste it from your billing account; Setup offers the same field. From a terminal, run `qualitylayer licence activate <key>`; on Windows before the command is set up, run `& "$env:LOCALAPPDATA\QualityLayer\qualitylayer-cli.exe" licence activate <key>` in PowerShell. Each licence key works on 5 computers, [machines](#machines) included; on Business, every assigned seat has its own key. **On another computer** shows how to move the licence. When all 5 are in use, release one under **Licence keys** in your billing account, run `qualitylayer licence deactivate` on the old computer, or write to hello@qualitylayer.dev.
 
 
-## About
+## About {#about}
 
-The version, **Check now** and **Update channel**: **Stable** (default) or **Beta**, which also moves to each newer stable release ([Updates](../install.md#updates)).
+The version, **Check now** and **Update channel**: **Stable** (default) or **Beta**, which also moves to each newer stable release ([Updates](../install.mdx#updates)).
 
 ### Server {#server}
 
@@ -189,4 +194,12 @@ The version, **Check now** and **Update channel**: **Stable** (default) or **Bet
 
 ## For one task {#for-one-task}
 
-Tell your agent "skip security", "run the security review", "get a second opinion" or "no second opinion". No setting turns an approval off.
+Tell your agent "skip security", "run the security review", "get a second opinion" or "no second opinion".
+
+<Note>No setting turns an approval off.</Note>
+
+<NextSteps items={[
+  { title: "Commands", href: "/docs/reference/commands", text: "Every setting and step by command." },
+  { title: "Supported agents", href: "/docs/agents/native", text: "Models, permissions and reviewers per agent." },
+  { title: "Files and privacy", href: "/docs/reference/files", text: "What stays on your computer and what leaves it." },
+]} />

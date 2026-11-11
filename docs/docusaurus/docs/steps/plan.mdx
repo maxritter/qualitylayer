@@ -1,0 +1,105 @@
+---
+title: Plan
+description: "Your agent reads the code, asks what only you can answer and writes one Plan. You approve it before any code."
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Your agent reads the code, asks what only you can answer and writes one Plan. You approve it once, before any code is written.
+
+<Screenshot name="plan" alt="A Plan in the App: one open decision with both paths drawn, beside the agent's conversation" caption="An example task in a fictional project." />
+
+## Start a Plan {#start}
+
+<Tabs groupId="where">
+  <Tab value="app" label="In the App">
+    Choose **+ › Task**, describe the change and keep **Plan with QualityLayer**.
+  </Tab>
+  <Tab value="agent" label="In your own agent">
+
+Ask in plain words:
+
+```text
+Plan a CSV export with QualityLayer.
+```
+
+  </Tab>
+</Tabs>
+
+## Answer the questions {#the-question}
+
+Your agent asks only about choices the code leaves open, each with a recommendation. A small change may get none.
+
+<Steps>
+  <Step title="Pick a choice">**Your turn** shows one question at a time. Choose a row, or write your own answer and press **Send**.</Step>
+  <Step title="Go faster">Answer in any order from the numbered strip. **Use all recommended** takes every recommendation; **Tell me more** explains one.</Step>
+  <Step title="Change your mind">Each answer reaches your agent at once. **Change** reopens it.</Step>
+</Steps>
+
+<Screenshot name="question" alt="A Plan question in Your turn: the recommended choice open with its diagram, the other folded to one line, and your own answer below" />
+
+<Tip>Your agent keeps reading the code while you answer. A new question comes only when an answer raises a new decision.</Tip>
+
+## What the Plan shows {#items}
+
+<CardGroup cols={2}>
+  <Card title="Summary" icon="file-text">What users get, the size of the build and what reviewed it.</Card>
+  <Card title="Done means" icon="badge-check">The numbered results you accept the change by. Verify shows each one as it ran.</Card>
+  <Card title="Diagrams" icon="spline">Up to three: before and after, a flow, a sequence or the architecture.</Card>
+  <Card title="Interface" icon="shapes">One clickable [artifact](../artifacts.mdx) per screen.</Card>
+</CardGroup>
+
+<Note>Build notes for the agents are in `agents/01-plan.md`, under **For agents** in the Reader. `qualitylayer plan export --out <folder>` copies the Plan for readers without QualityLayer.</Note>
+
+## Approve {#answering}
+
+<span id="diagrams"></span><span id="before-it-reaches-you"></span>
+
+<Steps>
+  <Step title="Settle your calls">A choice only you can make shows as **Your call**. Approve stays locked until each one is answered and any [second opinion](../reference/settings.mdx#second-opinion) has finished.</Step>
+  <Step title="Ask for changes">Choose **Ask agent** on a passage, diagram or screen, edit the draft and send it. The diff shows what changed.</Step>
+  <Step title="Approve">
+    <Tabs groupId="where">
+      <Tab value="app" label="In the App">**Approve and build here** builds in the planning session. **Choose where to build**, under the arrow, picks another agent or workspace.</Tab>
+      <Tab value="agent" label="In your own agent">Choose **Build in &lt;agent&gt;**, compact your agent's session, then say "build here".</Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+Answering a question does not approve the Plan. Changes after approval show on Verify as amendments.
+
+## Other kinds of Plan {#a-bug}
+
+<span id="too-small"></span><span id="prd"></span><span id="existing-plan"></span>
+
+<Tabs groupId="plan-kind">
+  <Tab value="bugfix" label="Bugfix">
+
+The Plan finds the cause in the code first, then states the bug in four parts. **Done means** starts with a test that fails today. For example:
+
+<CardGroup cols={2}>
+  <Card title="When">Someone opens `/reports?page=2`.</Card>
+  <Card title="Today">The page shows 49 of 50 rows.</Card>
+  <Card title="Expected">Every page shows all of its rows.</Card>
+  <Card title="Must keep working">Page size stays 50; the first page does not change.</Card>
+</CardGroup>
+
+  </Tab>
+  <Tab value="small" label="Small change">
+    A short Plan and one slice. Ask for a plain prompt instead, and your agent hands one back and closes the task.
+  </Tab>
+  <Tab value="prd" label="No ticket yet">
+    Ask for a PRD, or leave what to build open: the Plan adds a success measure and a first release. **Copy** exports it.
+  </Tab>
+  <Tab value="existing" label="Existing plan">
+    Start from **Existing plan**, or **Saved plan** in a Chat. The original stays as `original-plan.md`; your agent maps it into `01-plan.md`.
+  </Tab>
+</Tabs>
+
+<NextSteps items={[
+  { title: "Implement", href: "/docs/steps/implement", text: "Your agent builds the Plan in slices." },
+  { title: "Verify", href: "/docs/steps/verify", text: "Checks and a review by another agent, then yours." },
+  { title: "Second opinion", href: "/docs/reference/settings#second-opinion", text: "A review from another model, and extra planners." },
+]} />

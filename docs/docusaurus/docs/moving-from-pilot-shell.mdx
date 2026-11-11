@@ -1,0 +1,58 @@
+---
+title: From Pilot Shell
+description: Use QualityLayer alongside Pilot Shell 11 and move at your own pace.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Note, NextSteps } from "@site/src/components/kit";
+
+QualityLayer and Pilot Shell 11 can run side by side. Installing QualityLayer keeps Pilot Shell, its configuration and its tools. Version 11 remains the last Pilot Shell version.
+
+## Update from Pilot Shell {#update-from-pilot-shell}
+
+Run `pilot update` in a terminal. Pilot Shell shows the update from v11 to v12 with its release notes and asks **Update now?**. When you confirm:
+
+<Steps>
+  <Step title="The installer starts">It says that Pilot Shell is now QualityLayer and keeps working.</Step>
+  <Step title="It installs QualityLayer">On a Mac, or Linux with a screen, the App and its command line. Over ssh, in WSL or in a container, the command line alone.</Step>
+  <Step title="It connects your agents">It adds the QualityLayer skills to each agent it finds, such as Claude Code and Codex. Every download is checked against the signed release before anything is written.</Step>
+  <Step title="The App opens">To finish setting up. If it cannot open a window, the installer says where the App is.</Step>
+</Steps>
+
+You can also [install QualityLayer](install.mdx) directly; the result is the same.
+
+## Start using QualityLayer {#start-using-qualitylayer}
+
+Ask your agent to plan or implement using QualityLayer or QL.
+
+<CardGroup cols={3}>
+  <Card title="Active Pilot Shell licence" icon="badge-check">Nothing to do.</Card>
+  <Card title="Older or unrecognised key" icon="key-round">Email [hello@qualitylayer.dev](mailto:hello@qualitylayer.dev) from your purchase address. Keep the key private.</Card>
+  <Card title="No licence" icon="download">Start a 7-day trial, even if you used a Pilot Shell trial.</Card>
+</CardGroup>
+
+Repositories, code and Pilot plans stay in place. Choose **Existing plan** in a new Feature or Bugfix to reuse a plan's text; its workflow state is not imported.
+
+## Import memories per project {#import-memories-per-project}
+
+Memories are the only data you need to import. Open **Settings › Memory › Import from Pilot Shell**, select the matching project, then choose its JSONL or Markdown files from `.pilot/memories/` in that repository. Each memory's project name must match.
+
+Lessons are copied into QualityLayer's private project memory; your files stay in place, and a second import skips unchanged lessons ([Pilot memory import](memory.mdx#import-pilot-lessons)).
+
+## Remove Pilot Shell when you are ready {#remove-pilot-shell-when-you-are-ready}
+
+Once your workflows work in QualityLayer, remove Pilot Shell with its own uninstaller:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/maxritter/qualitylayer/main/uninstall.sh | bash
+```
+
+It asks before removing anything and keeps the tools Pilot Shell installed; add `--remove-tools` to remove those too.
+
+<Note>QualityLayer never runs Pilot Shell's uninstaller or removes its tools for you.</Note>
+
+<NextSteps items={[
+  { title: "Your first task", href: "/docs/first-task", text: "Plan, build and review one small change." },
+  { title: "Project memory", href: "/docs/memory", text: "Lessons your agents keep per project." },
+]} />

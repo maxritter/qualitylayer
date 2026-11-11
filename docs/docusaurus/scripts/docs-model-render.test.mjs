@@ -29,6 +29,10 @@ function world() {
   cpSync(join(realModel, "render.mjs"), join(model, "render.mjs"));
   cpSync(join(realModel, "assets.json"), join(model, "assets.json"));
   cpSync(join(realModel, "assets"), join(model, "assets"), { recursive: true });
+  // The kit's icons, which the model draws as the site does.
+  const kit = join(root, "docs/docusaurus/src/components/kit");
+  mkdirSync(kit, { recursive: true });
+  cpSync(fileURLToPath(new URL("../src/components/kit/icons.tsx", import.meta.url)), join(kit, "icons.tsx"));
   // marked comes from the real QualityLayer install; the copy is only read through the link.
   symlinkSync(join(realQualityLayer, "node_modules"), join(root, "qualitylayer/node_modules"), "junction");
   // The shared assets sit where the check looks for them, equal to the model's own.
@@ -84,7 +88,39 @@ function world() {
   return world;
 }
 
-const html = (key) => key === "memory.md" ? "index.html" : `${key.replace(/\.md$/, "").replaceAll("/", "--")}.html`;
+const html = (key) => /^memory\.mdx?$/.test(key) ? "index.html" : `${key.replace(/\.mdx?$/, "").replaceAll("/", "--")}.html`;
+
+test("an .mdx guide's kit renders as cards, steps, callouts, tabs, a flow and next steps", () => {
+  const w = world();
+  const key = keys.find((name) => /^chat\.mdx?$/.test(name));
+  w.pages[key] = [
+    "---", `title: Kit page`, "mdx:", "  format: mdx", "---", "",
+    'import { Card, CardGroup, Steps, Step, Tip, Tabs, Tab, Flow, NextSteps } from "@site/src/components/kit";', "",
+    "Lead with **bold**.", "",
+    "## Cards {#cards}", "",
+    '<CardGroup cols={2}>', '  <Card title="Plan" icon="network" tone="plan" href="/docs/install#cli">Reads **the code**.</Card>', '  <Card title="Plain">One line.</Card>', "</CardGroup>", "",
+    "<Steps>", '  <Step title="First">Do `this`.</Step>', '  <Step title="Second">', "", "```text", "<Step> stays code", "```", "", "  </Step>", "</Steps>", "",
+    "<Tip>A [link](install.md).</Tip>", "",
+    '<Tabs groupId="where">', '  <Tab value="app" label="In the App">Choose **+**.</Tab>', '  <Tab value="agent" label="In my own agent">', "", "Ask in plain words.", "", "  </Tab>", "</Tabs>", "",
+    '<Flow label="Laptop to machine" nodes={[{ icon: "laptop", label: "Laptop" }, { icon: "server", label: "Machine", detail: "Runs it" }]} via={["ssh"]} />', "",
+    '<NextSteps items={[{ title: "Install", href: "/docs/install", text: "Get the App." }, { title: "Overview", href: "/docs", text: "Start." }]} />', "",
+  ].join("\n");
+  const renamed = key.replace(/\.md$/, ".mdx");
+  if (renamed !== key) { w.pages[renamed] = w.pages[key]; delete w.pages[key]; }
+  w.save();
+  const written = w.render("--write", "--pages", renamed);
+  assert.equal(written.status, 0, written.stderr);
+  const page = readFileSync(join(w.model, html(renamed)), "utf8");
+  assert.doesNotMatch(page, /import \{|&lt;Card|<Card\b/);
+  assert.match(page, /<h2 id="cards">Cards<\/h2>/);
+  assert.match(page, /<div class="kit-cards kit-cols-2"><a class="kit-card kit-card-link" href="install\.html#cli">.*kit-plan.*<svg.*Reads <strong>the code<\/strong>/);
+  assert.match(page, /<ol class="kit-steps"><li class="kit-step"><p class="kit-step-title">First<\/p><div class="kit-step-body">Do <code>this<\/code>\.<\/div><\/li>/);
+  assert.match(page, /&lt;Step&gt; stays code/);
+  assert.match(page, /kit-callout kit-tip.*<a href="install\.html">link<\/a>/);
+  assert.match(page, /data-group="where".*aria-selected="true" data-value="app">In the App<\/button>.*In my own agent.*<div class="kit-panel"[^>]*>Choose <strong>\+<\/strong>\.<\/div><div class="kit-panel"[^>]* hidden><p>Ask in plain words\.<\/p>/s);
+  assert.match(page, /<figure class="kit-flow" aria-label="Laptop to machine">.*kit-flow-via">ssh<.*Runs it/);
+  assert.match(page, /kit-next.*href="install\.html".*href="intro\.html"/);
+});
 
 test("a fresh model is written page by page, then the plain and source checks pass", () => {
   const w = world();
@@ -98,8 +134,8 @@ test("a fresh model is written page by page, then the plain and source checks pa
 
 test("every drifted generated page is named, one per line, not only the first", () => {
   const w = world();
-  w.edit("app.md");
-  w.edit("artifacts.md");
+  w.edit("app.mdx");
+  w.edit("artifacts.mdx");
   const checked = w.render();
   assert.equal(checked.status, 1);
   assert.deepEqual(checked.lines, ["Docs model drift: app.html", "Docs model drift: artifacts.html"]);
@@ -117,31 +153,31 @@ test("README source checking reads the repository root and preserves its source"
 
 test("--check-source names every drifted authored page too", () => {
   const w = world();
-  w.edit("app.md");
-  w.edit("artifacts.md");
+  w.edit("app.mdx");
+  w.edit("artifacts.mdx");
   const checked = w.render("--check-source");
   assert.equal(checked.status, 1);
-  assert.deepEqual(checked.lines.sort(), ["Docs copy drift: app.md", "Docs copy drift: artifacts.md", "Docs model drift: app.html", "Docs model drift: artifacts.html"]);
+  assert.deepEqual(checked.lines.sort(), ["Docs copy drift: app.mdx", "Docs copy drift: artifacts.mdx", "Docs model drift: app.html", "Docs model drift: artifacts.html"]);
 
   // Only the authored markdown differs from copy.json: the generated pages are current.
   const v = world();
-  for (const key of ["app.md", "intro.md"]) writeFileSync(join(v.root, "docs/docusaurus/docs", key), body(key, "Edited elsewhere"));
+  for (const key of ["app.mdx", "intro.mdx"]) writeFileSync(join(v.root, "docs/docusaurus/docs", key), body(key, "Edited elsewhere"));
   const authored = v.render("--check-source");
   assert.equal(authored.status, 1);
-  assert.deepEqual(authored.lines.sort(), ["Docs copy drift: app.md", "Docs copy drift: intro.md"]);
+  assert.deepEqual(authored.lines.sort(), ["Docs copy drift: app.mdx", "Docs copy drift: intro.mdx"]);
 });
 
 test("--pages limits the check to those pages", () => {
   const w = world();
-  w.edit("app.md");
+  w.edit("app.mdx");
   for (const flags of [[], ["--check-source"]]) {
-    const other = w.render(...flags, "--pages", "artifacts.md");
+    const other = w.render(...flags, "--pages", "artifacts.mdx");
     assert.equal(other.status, 0, other.stderr);
     assert.match(other.stdout, /Docs model matches 1 authored guide pages/);
   }
-  const named = w.render("--check-source", "--pages", "app.md,artifacts.md");
+  const named = w.render("--check-source", "--pages", "app.mdx,artifacts.mdx");
   assert.equal(named.status, 1);
-  assert.deepEqual(named.lines.sort(), ["Docs copy drift: app.md", "Docs model drift: app.html"]);
+  assert.deepEqual(named.lines.sort(), ["Docs copy drift: app.mdx", "Docs model drift: app.html"]);
   const unknown = w.render("--pages", "nowhere.md");
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /Unknown page: nowhere\.md/);
@@ -149,14 +185,14 @@ test("--pages limits the check to those pages", () => {
 
 test("--write rewrites the drifted generated pages, names them, and the plain check then passes", () => {
   const w = world();
-  w.edit("app.md");
-  w.edit("artifacts.md");
+  w.edit("app.mdx");
+  w.edit("artifacts.mdx");
   const before = w.snapshot();
   const written = w.render("--write");
   assert.equal(written.status, 0, written.stderr);
   assert.match(written.stdout, /Wrote 2 generated pages: (?:app\.html, artifacts\.html|artifacts\.html, app\.html)/);
   assert.equal(w.render().status, 0);
-  assert.match(readFileSync(join(w.model, "app.html"), "utf8"), /Changed body of app\.md/);
+  assert.match(readFileSync(join(w.model, "app.html"), "utf8"), /Changed body of app\.mdx/);
 
   // Nothing but those two generated pages changed: not the authored markdown, copy.json, the assets or a hand-written page.
   const after = w.snapshot();
@@ -164,16 +200,16 @@ test("--write rewrites the drifted generated pages, names them, and the plain ch
   assert.deepEqual(changed, ["app.html", "artifacts.html"]);
   assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort());
   // The authored markdown still differs from the model: --write does not hide that.
-  assert.deepEqual(w.render("--check-source").lines.sort(), ["Docs copy drift: app.md", "Docs copy drift: artifacts.md"]);
+  assert.deepEqual(w.render("--check-source").lines.sort(), ["Docs copy drift: app.mdx", "Docs copy drift: artifacts.mdx"]);
   // Run again: nothing is left to write.
   assert.match(w.render("--write").stdout, /No generated page needed writing/);
 });
 
 test("--write with --pages writes only those pages", () => {
   const w = world();
-  w.edit("app.md");
-  w.edit("artifacts.md");
-  const written = w.render("--write", "--pages", "artifacts.md");
+  w.edit("app.mdx");
+  w.edit("artifacts.mdx");
+  const written = w.render("--write", "--pages", "artifacts.mdx");
   assert.equal(written.status, 0, written.stderr);
   assert.match(written.stdout, /Wrote 1 generated page: artifacts\.html/);
   assert.deepEqual(w.render().lines, ["Docs model drift: app.html"]);
@@ -181,7 +217,7 @@ test("--write with --pages writes only those pages", () => {
 
 test("--patch prints only the pages that differ and writes nothing", () => {
   const w = world();
-  w.edit("app.md");
+  w.edit("app.mdx");
   const before = w.snapshot();
   const patch = w.render("--patch");
   assert.equal(patch.status, 0, patch.stderr);

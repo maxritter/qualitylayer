@@ -1,0 +1,120 @@
+---
+title: The App
+description: Read the work, answer questions and work beside your agent’s conversation.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+Read the task on the left and work with your agent on the right. Use the desktop App on macOS, Windows or Linux, or run `qualitylayer app` for the same workspace in your browser.
+
+<Screenshot name="home" alt="Home: the sidebar with projects, tasks and plan limits, beside a Needs you section for your questions and approvals and a separate Running section for your agents' work" caption="Example projects and people are fictional." />
+
+<CardGroup cols={3}>
+  <Card title="Sidebar" icon="list-todo" href="#sidebar">Search, Home, Artifacts and your tasks and Chats by project. **+** starts a **Task** or a [Chat](chat.mdx).</Card>
+  <Card title="Step page" icon="network">Where the task stands, and its result. A person icon marks the two steps you approve.</Card>
+  <Card title="Right sidebar" icon="message-square" href="#agent-runs">**Conversation**, **Terminal** and **Files**, beside the page.</Card>
+</CardGroup>
+
+The **Agent status** chip in the top bar says whether your agent is working, needs you, is quiet or has stopped.
+
+## The sidebar {#sidebar}
+
+Projects group tasks by repository, with tasks waiting on you first. A row shows the step strip, coloured by stage, and live agent activity; amber means it needs you. Its toggle opens the task lists Claude Code, Codex and OpenCode report, and their helpers.
+
+- Right-click a project to rename, recolor or hide it; right-click a task to rename, archive or delete it.
+- The foot shows [plan limits](agents/native.mdx#plan-limits) or today's cost. With [machines](machines.mdx), the head switches computers.
+- **View options** filters names, groups and row sizes. **Last activity** keeps tasks changed in the last 24 h, 3 d or 7 d; working and open tasks stay visible.
+- Drag past the narrowest width to collapse the sidebar into a rail of Home, Artifacts, waiting and running tasks, plan limits and Settings. Pull the rail outward to reopen it.
+
+**⌘K** searches actions, projects, tasks and files; **⌘P** opens a file in the current task. Use Ctrl instead of ⌘ on Windows and Linux.
+
+<details>
+<summary>More shortcuts in the installed App</summary>
+
+| Shortcut | Action |
+| --- | --- |
+| **⇧⌘N** | New task |
+| **⌘B** / **⌘J** | Toggle the left / right sidebar |
+| **⌘1** / **⌘2** | Home / Artifacts |
+| **⌘,** | Settings |
+
+A focused Terminal keeps the agent's keys, including **Ctrl+Enter** for Claude Code's send now.
+
+</details>
+
+## Home {#home}
+
+<CardGroup cols={3}>
+  <Card title="Needs you" icon="message-square" tone="plan">Questions, approvals, waiting Chats and agents that stopped early.</Card>
+  <Card title="Running" icon="code-xml" tone="implement">Active work, ten rows at a time.</Card>
+  <Card title="Shipped lately" icon="git-pull-request" tone="verify">Your three newest shipped tasks.</Card>
+</CardGroup>
+
+When nothing waits or runs, one **All clear** line offers **New task**. A request you typed into New task and closed waits on Home with **Continue**. Notifications arrive when you can act: an agent needs you, it is your turn, or a run stopped early.
+
+## Answering questions {#questions}
+
+<Screenshot name="question" alt="A Plan question in Your turn: the recommended choice open with its diagram, the other folded to one line, and your own answer below" />
+
+**Your turn** shows one question; its numbered strip lets you answer in any order. Where choices have facts, the recommended one is open and the others fold to one line. A question about a screen shows that screen in the card. Answers reach your agent at once and never approve the Plan or the change.
+
+<details>
+<summary>Answer with the keyboard</summary>
+
+| Key | Action |
+| --- | --- |
+| **1–9** | Pick a choice |
+| **R** / **A** | Take this recommendation / all recommendations in the batch |
+| **T** | Write your own answer, then **Send** |
+| **M** | **Tell me more** |
+| **Enter** | Take the recommendation when the card is focused |
+
+</details>
+
+## Documents and your agent {#comments-and-artifacts}
+
+<CardGroup cols={2}>
+  <Card title="Files" icon="file-text">Every document, artifact, review and record, plus **Review the code** and **View changes**. **Records** opens `records/`, `evidence/` and `agents/`.</Card>
+  <Card title="Reader" icon="app-window">A whole document, with **On this page** and **Copy document**. Step documents end with **For agents**.</Card>
+</CardGroup>
+
+**Copy as Markdown** keeps Mermaid and local picture names; **Copy formatted** includes PNG pictures. Working artifacts are compact entries in **Files**; **Open full size** opens the whole page.
+
+Select a passage, a code line or a spot on an artifact and choose **Ask agent**. Conversation opens an editable draft with the selection and its revision; send it through your agent's own input, or copy it when that input is not supported. A request never approves a Plan, changes approved scope or settles the final approval.
+
+## Code review {#code-review}
+
+<Screenshot name="verify-review" alt="The code review: the changed files by slice beside the diff, with why each file changed" />
+
+Open **Changes** in the header or **Review the code** in Verify or Files. Choose one file or all files, **Unified / Split** diffs, or **Full file › Version** for an exact revision. **Viewed** records your reading progress; **All viewed** and **Clear** apply to every file. **Exit** returns to where you came from; while your approval waits it reads **Finish code review**.
+
+## What it costs {#cost}
+
+**Cost** in the task header reads local logs: Copilot's recorded AI-credit value where available, otherwise estimates at verified API prices. Credit value is not money billed on top; partial amounts are labelled, and unknown values show a dash. Amounts stay hidden until you open it. **Usage history** opens **Settings › Usage**.
+
+## Agent runs {#agent-runs}
+
+When you start a task or the build, choose where the agent runs:
+
+<Tabs groupId="where">
+  <Tab value="app" label="In the App">Recommended. Pick the agent, model, effort and branch. You answer in **Conversation**.</Tab>
+  <Tab value="agent" label="In my own agent">Your terminal, IDE or agent app. Ask it in your own words, or copy the prepared prompt. It asks in its own chat; you can still approve a ready Plan and the finished change in the App.</Tab>
+</Tabs>
+
+Closing the sidebar keeps the run. The agent's menu has **Interrupt** (**Esc**), **Stop session** and **Move to my own agent…**; **Resume** returns.
+
+**Conversation** folds finished turns to one line; **Terminal** shows the agent's own program. Below the message box sit activity, model, effort, [permissions](agents/native.mdx#permission-modes), pacing and context; each opens its own details. Paste or drop files in either view.
+
+<Tip>**Messages while working** steers your agent at its next step where it supports that, and otherwise queues without interrupting. Choose **Queue until the turn ends** to wait instead. Thinking can be hidden, collapsed or expanded under **Agent controls › Appearance…**.</Tip>
+
+## In Claude Code {#in-claude-code}
+
+A band above your prompt says when this task or another one needs you; `/task-pane` adds the steps, build progress and every task that needs you, runs or has an open pull request.
+
+<NextSteps items={[
+  { title: "Your first task", href: "/docs/first-task", text: "Plan, build and review one small change." },
+  { title: "Artifacts", href: "/docs/artifacts", text: "The diagrams and clickable screens your agent draws." },
+  { title: "Settings", href: "/docs/reference/settings", text: "Workflow, agents, memory and usage." },
+]} />

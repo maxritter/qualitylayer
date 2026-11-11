@@ -1,0 +1,55 @@
+---
+title: Artifacts
+description: Create and review mockups, diagrams and clickable pages with your agent, then keep local revisions.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tip, Note, Screenshot, NextSteps } from "@site/src/components/kit";
+
+An artifact is a mockup, a diagram or a clickable set of pages you work on with your agent. A **draft** belongs to one task; a **lasting artifact** is kept for the project.
+
+<Screenshot name="artifacts-open" alt="An open artifact: a clickable page of the example project, with its pages and view controls" />
+
+## Create and review {#create-and-review}
+
+Ask "Using QL, show two layouts for the settings page." No workflow starts. A task's draft appears as a compact entry in **Files**.
+
+<Tip>With **In my own agent**, **Create and copy** creates the artifact and copies its request; the folder chip copies its path. Paste it into any supported agent, or ask in your own words.</Tip>
+
+### Ask about a spot {#full-size}
+
+Choose a spot and **Ask agent**. Conversation opens an editable request with the artifact, page, spot and revision. Say what should change and send it; the answer appears in the conversation. Choosing a spot never sends anything by itself.
+
+Switch **Light**, **Dark**, **Desktop** and **Phone**; **F** goes full screen. Buttons and links work, and pages may run their own scripts, but nothing loads from the network. Your agent checks each page in both themes and widths before you see it.
+
+## The Artifacts place {#artifacts-place}
+
+<Screenshot name="artifacts" alt="The Artifacts Library: artifacts by project, with search, filters and favorites" />
+
+**Artifacts** in the sidebar holds the **Library**. Search by project, artifact or page, narrow with **Filters**, and switch between **List** and **Gallery**. Starred **Favorites** sit above the list. The row menu renames, copies, archives or deletes; **Archived › Recently deleted** restores.
+
+<Note>Artifacts and their source stay on machines you control. A copy is independent, and listing an artifact in another local project uploads nothing.</Note>
+
+## Lasting artifacts {#lasting}
+
+### Keep a draft {#keep}
+
+**Save to library…** in a draft's menu stores it **In the repository**, where it travels with commits, or **Only on this computer**, out of Git. To change a lasting artifact, ask your agent to draft on it. **Files** keeps its source, metadata and revisions together. Restoring a revision keeps the artifact's identity; removing a registration never deletes the application source it points to.
+
+### Fold in at Verify {#fold-in}
+
+<Steps>
+  <Step title="See what changed">Verify shows **This task changes …**; the original stays until then.</Step>
+  <Step title="Pick the pages">**Compare** shows both versions.</Step>
+  <Step title="Fold them in">**Fold N pages in**. They join the pull request only with a Git action you authorize.</Step>
+</Steps>
+
+## Existing artifacts {#existing-artifacts}
+
+Local files and revisions stay usable after an update. Old external-link details stay as history and publish nothing. Earlier private notes and attachments stay as read-only local records and are not sent to an agent.
+
+<NextSteps items={[
+  { title: "Artifact commands", href: "/docs/reference/commands#artifacts", text: "Create, open and copy artifacts by command." },
+  { title: "Plan", href: "/docs/steps/plan", text: "Where artifacts show the screens you approve." },
+]} />

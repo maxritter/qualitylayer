@@ -1,0 +1,107 @@
+/* The docs style kit. Product tokens only (--ql-* from the App palette), both themes, hairlines and no shadows. */
+
+/* Cards */
+.cardGroup { display: grid; gap: 12px; margin: 20px 0 28px; }
+.cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cols3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px 16px 16px; border: 1px solid var(--ql-border); border-radius: 8px; background: var(--ql-bg); }
+.card.cardLink, .card.cardLink:hover { color: inherit; text-decoration: none; }
+.card.cardLink { transition: border-color var(--ql-speed-fast, .12s) ease, background-color var(--ql-speed-fast, .12s) ease; }
+.card.cardLink:hover { border-color: var(--ql-border-strong); background: var(--ql-bg-sunken); }
+.card.cardLink:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: 2px; }
+.cardHead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cardIcon { display: inline-grid; flex: none; place-items: center; width: 30px; height: 30px; border-radius: 7px; background: var(--ql-surface-2); color: var(--ql-text-muted); }
+.cardIcon.plan { background: var(--ql-step-plan-soft); color: var(--ql-step-plan); }
+.cardIcon.implement { background: var(--ql-step-implement-soft); color: var(--ql-step-implement); }
+.cardIcon.verify { background: var(--ql-step-verify-soft); color: var(--ql-step-verify); }
+.cardTitle { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.35; color: var(--ql-text); }
+.cardArrow { display: inline-grid; flex: none; color: var(--ql-text-dim); transition: transform var(--ql-speed-fast, .12s) ease; }
+.cardLink:hover .cardArrow { color: var(--ql-accent); transform: translateX(2px); }
+.cardBody { display: block; font-size: 14px; line-height: 1.55; color: var(--ql-text-muted); }
+.cardBody p { margin: 0; }
+.cardBody code { font-size: 12.5px; }
+
+/* Steps: numbered discs on a rail */
+.steps { counter-reset: kit-step; list-style: none; margin: 20px 0 28px; padding: 0; }
+.step { position: relative; counter-increment: kit-step; margin: 0; padding: 0 0 22px 42px; }
+.step + .step { margin-top: 0; }
+.step::before { content: counter(kit-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--ql-border-strong); border-radius: 999px; background: var(--ql-bg); color: var(--ql-text); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.step::after { content: ""; position: absolute; top: 32px; bottom: 6px; left: 13px; width: 1px; background: var(--ql-border); }
+.step:last-child { padding-bottom: 4px; }
+.step:last-child::after { display: none; }
+.stepTitle { margin: 1px 0 6px; font-size: 16px; font-weight: 600; line-height: 1.4; color: var(--ql-text) !important; }
+.stepBody { font-size: 15px; }
+.stepBody > :last-child { margin-bottom: 0; }
+.stepBody p { margin-bottom: 10px; }
+.stepBody :global(.theme-code-block) { margin-bottom: 12px; }
+
+/* Callouts: a themed admonition laid out as one row, icon first */
+.callout { display: flex; gap: 12px; align-items: flex-start; margin: 20px 0 24px; padding: 12px 16px; font-size: 15px; --ifm-alert-foreground-color: var(--ql-text-muted); }
+.callout > div:first-child { flex: none; margin: 1px 0 0; }
+.callout > div:first-child svg { display: block; width: 17px; height: 17px; fill: none; }
+.callout > div:first-child span { margin: 0; }
+.callout > div:last-child { flex: 1; min-width: 0; }
+.callout p { color: var(--ql-text-muted); }
+.callout > div:last-child > :last-child { margin-bottom: 0; }
+.callout:global(.theme-admonition-tip) { background: var(--ql-bg-sunken); border-color: var(--ql-border); }
+.callout:global(.theme-admonition-tip) > div:first-child { color: var(--ql-accent); }
+.callout:global(.theme-admonition-info) { background: var(--ql-bg-sunken); border-color: var(--ql-border); }
+.callout:global(.theme-admonition-info) > div:first-child { color: var(--ql-text-dim); }
+/* Amber stays on the mark; the box keeps the neutral hairline (DESIGN.md, Colors). */
+.callout:global(.theme-admonition-warning) { background: var(--ql-bg-sunken); border-color: var(--ql-border); }
+.callout:global(.theme-admonition-warning) > div:first-child { color: var(--ql-amber-edge); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Tabs: the App's segmented control */
+.tabs { display: inline-flex; flex-wrap: nowrap; gap: 2px; max-width: 100%; margin: 8px 0 0; padding: 3px; overflow-x: auto; scrollbar-width: none; border: 1px solid var(--ql-border); border-radius: 9px; background: var(--ql-surface-2); }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs :global(.tabs__item) { flex: none; padding: 5px 12px; margin: 0 !important; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1.5; white-space: nowrap; color: var(--ql-text-muted); }
+.tabs :global(.tabs__item:hover) { background: transparent; color: var(--ql-text); }
+.tabs :global(.tabs__item--active) { background: var(--ql-bg); color: var(--ql-text); font-weight: 600; box-shadow: 0 0 0 1px var(--ql-border-strong); }
+.tabs :global(.tabs__item:focus-visible) { outline: 2px solid var(--ql-accent); outline-offset: 1px; }
+.tabs + div { margin-top: 16px !important; }
+
+/* Screenshots */
+.shot { margin: 24px 0 28px; }
+.shotLink { display: block; border-radius: 10px; }
+.shotLink:focus-visible { outline: 2px solid var(--ql-accent); outline-offset: 3px; }
+.shot a.shotLink img { display: block; width: 100%; height: auto; margin: 0; border: 0; cursor: zoom-in; }
+:global([data-theme="light"]) .shotLink.dark, :global([data-theme="dark"]) .shotLink.light { display: none; }
+.shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--ql-text-dim); }
+.placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 160px; aspect-ratio: 16 / 6; padding: 24px; border: 1px dashed var(--ql-border-strong); border-radius: 10px; background: var(--ql-bg-sunken); color: var(--ql-text-dim); text-align: center; }
+.placeholderLabel { font-size: 13px; font-weight: 600; color: var(--ql-text); }
+.placeholderText { max-width: 44ch; font-size: 13px; line-height: 1.5; color: var(--ql-text-muted); }
+
+/* Flow: a small left-to-right diagram */
+.flow { display: flex; align-items: stretch; margin: 24px 0 28px; padding: 0; }
+.flowNode { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; gap: 6px; min-width: 0; padding: 12px 10px; border: 1px solid var(--ql-border); border-radius: 8px; background: var(--ql-bg); text-align: center; }
+.flowLabel { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--ql-text); }
+.flowDetail { font-size: 12.5px; line-height: 1.45; color: var(--ql-text-muted); }
+.flowArrow { position: relative; display: flex; flex: 0 1 64px; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; min-width: 28px; padding: 0 4px; }
+.flowVia { font-family: var(--ifm-font-family-monospace); font-size: 12px; line-height: 1.2; text-align: center; color: var(--ql-text-muted); }
+.flowLine { position: relative; display: block; height: 1px; background: var(--ql-border-strong); }
+.flowLine::after { content: ""; position: absolute; top: -4px; right: 0; border: 4.5px solid transparent; border-right: 0; border-left: 7px solid var(--ql-border-strong); }
+
+/* Next steps */
+.next { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--ql-border); }
+.next .card { padding: 12px 16px 14px; gap: 2px; }
+.nextLabel { margin: 0 0 -8px; font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--ql-text-dim) !important; }
+
+@media (max-width: 760px) {
+  .cols3 { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .cols2 { grid-template-columns: 1fr; }
+  .flow { flex-direction: column; align-items: stretch; }
+  .tabs :global(.tabs__item) { min-height: 40px; padding: 8px 14px; }
+  .flowNode { display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 2px 12px; text-align: left; }
+  .flowNode > :first-child { grid-row: span 2; }
+  .flowArrow { flex: none; flex-direction: row; align-items: center; justify-content: flex-start; min-height: 30px; padding: 2px 0 2px 26px; }
+  .flowLine { order: -1; width: 1px; height: 22px; }
+  .flowLine::after { top: auto; right: -4px; bottom: 0; border: 4.5px solid transparent; border-bottom: 0; border-top: 7px solid var(--ql-border-strong); }
+  .flowVia { margin-left: 10px; text-align: left; }
+  .placeholder { aspect-ratio: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.cardLink, .cardArrow { transition: none; }
+}

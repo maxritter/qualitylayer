@@ -1,14 +1,22 @@
 ---
 title: Files and privacy
 description: What a task writes into your repository, what stays on your computer, and what leaves it.
+mdx:
+  format: mdx
 ---
 
-## A task's files
+import { Note, NextSteps } from "@site/src/components/kit";
+
+What a task writes into your repository, what stays on your computer, and what leaves it.
+
+## A task's files {#a-tasks-files}
 
 ![A task folder in docs/plans: three documents with their agents' files, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-light.svg)
 ![A task folder in docs/plans: three documents with their agents' files, local interactive artifacts, reviews, command output, and evidence pictures and recordings](pathname:///img/diagrams/files-dark.svg)
 
-Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never touched by uninstalling. You decide whether to commit these documents; QualityLayer does not stage or commit them automatically.
+Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never touched by uninstalling.
+
+<Note>You decide whether to commit these documents; QualityLayer never stages or commits them by itself.</Note>
 
 | In the folder | What it holds |
 | --- | --- |
@@ -19,11 +27,13 @@ Each task gets a folder in `docs/plans/`: plain Markdown, kept on disk and never
 | `reviews/` | The Plan review and second opinion, when they ran; with a panel, also each reviewer's answer of both rounds |
 | `records/` | The raw output of every command, and `pull-request-body.md` |
 | `evidence/` | Pictures and recordings the checks made |
-| `chat-plan.md`, `chat-slices.md` | A [Chat](../chat.md)'s saved plan and its build outline |
+| `chat-plan.md`, `chat-slices.md` | A [Chat](../chat.mdx)'s saved plan and its build outline |
 
 ## The three documents {#documents}
 
-Each opens with what you read first; code shapes, paths and commands follow in the Reader. Each fact is written once, in one file. QualityLayer refuses a document whose marked sections were edited by hand.
+Each opens with what you read first; code shapes, paths and commands follow in the Reader. Each fact is written once, in one file.
+
+<Note>QualityLayer refuses a document whose marked sections were edited by hand.</Note>
 
 | File | What it holds |
 | --- | --- |
@@ -38,9 +48,9 @@ Each opens with what you read first; code shapes, paths and commands follow in t
 
 | Location | What it holds |
 | --- | --- |
-| `.qualitylayer/artifacts/<name>/` | A [lasting artifact](../artifacts.md#keep) and its `artifact.json`, committed with the change (older `.qualitylayer/designs/` still read) |
+| `.qualitylayer/artifacts/<name>/` | A [lasting artifact](../artifacts.mdx#keep) and its `artifact.json`, committed with the change (older `.qualitylayer/designs/` still read) |
 | `docs/artifacts/` | Artifacts kept only on this computer, out of git |
-| `docs/memories/` | Project lessons you [export](../memory.md) to Git, with a readable `LESSONS.md`; you commit them |
+| `docs/memories/` | Project lessons you [export](../memory.mdx) to Git, with a readable `LESSONS.md`; you commit them |
 | `~/.qualitylayer/project-look.json` | Sidebar order, colors, names and hidden projects. Delete it to reset |
 
 ## What stays on your computer, and what leaves it {#privacy}
@@ -53,7 +63,7 @@ Your code, diff, documents, evidence, memories and costs stay on machines you co
 | **Downloads and updates** | Requests for the official App, CLI, update information and release notes |
 | **Your coding agent** | Your request, project instructions and relevant context, through the agent's native integration |
 | **Automations** | Task events, including titles and question text, to the URL or command you explicitly configure. Nothing passes through qualitylayer.dev |
-| **Your own Git remote** | Files you authorize committing and pushing, including optional project [memory exports](../memory.md). Repository readers can read them |
+| **Your own Git remote** | Files you authorize committing and pushing, including optional project [memory exports](../memory.mdx). Repository readers can read them |
 | **Your own remote machine or paired browser** | Your local work over the authenticated connection you configure; no hosted collaboration workspace is created |
 | **Support** | The report, diagnostics and screenshots you review before sending, through the separate product-support service |
 
@@ -66,3 +76,8 @@ Older clients can continue to use retained services during migration. The [priva
 ## Report a problem {#feedback}
 
 **Report bug / idea** in the sidebar foot (**Bug / idea** in a narrower sidebar) files a public issue on `maxritter/qualitylayer`: add a title, description and screenshots, choose **Preview public issue**, then **Create public GitHub issue**. Use **Private support** for confidential details. The report adds QualityLayer, operating-system and architecture details and the agent version; it does not add your account name, email, repository paths or terminal logs.
+
+<NextSteps items={[
+  { title: "Settings", href: "/docs/reference/settings", text: "Where each of these is configured." },
+  { title: "Project memory", href: "/docs/memory", text: "What travels through Git and what stays local." },
+]} />

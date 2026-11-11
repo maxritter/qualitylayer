@@ -1,0 +1,95 @@
+---
+title: Project memory
+description: Save lessons about each project and how you work, and choose what travels through Git.
+mdx:
+  format: mdx
+---
+
+import { Card, CardGroup, Steps, Step, Tip, Note, Warning, Screenshot, Flow, NextSteps } from "@site/src/components/kit";
+
+Save decisions, fixes, constraints and working preferences for your agents to reuse, such as "Keep database migrations short and retry busy locks."
+
+<Flow
+  label="How a saved lesson reaches an agent"
+  nodes={[
+    { icon: "file-text", label: "Save a lesson", detail: "A task or agent records something worth reusing" },
+    { icon: "list-todo", label: "Find it locally", detail: "Search matches words, meaning and file paths" },
+    { icon: "message-square", label: "Use it in context", detail: "Your agent receives the relevant lesson" },
+  ]}
+/>
+
+## What your agents get {#what-your-agents-get}
+
+<CardGroup cols={3}>
+  <Card title="Session lessons" icon="message-square">Claude Code, Codex, Pi, OpenCode, Grok and GitHub Copilot receive pinned and matching lessons, and all but Grok again after compaction.</Card>
+  <Card title="Tools" icon="square-terminal">`memory_search`, `memory_read`, `memory_save` and `memory_keep`; Antigravity and any other agent use the [command line](#command-line).</Card>
+  <Card title="Task lessons" icon="shield-check" tone="verify">Verify records decisions, fixed findings and amendments, never without recorded passing checks.</Card>
+</CardGroup>
+
+A changed file marks a lesson for rechecking. If hooks are off, unavailable or too slow, delivery can be skipped; your agent searches when earlier decisions matter. The task's **Memory** record in **Files** shows what was used and saved.
+
+<Note>Lessons are reference data, never instructions: your agent checks them against the current code.</Note>
+
+## Lessons about you {#lessons-about-you}
+
+Personal lessons apply across repositories on this computer and never go to Git. Find them under **Settings › Memory › Yours · every project**.
+
+## Manage your lessons {#manage-your-lessons}
+
+<Screenshot name="memory" alt="Memory settings with project sharing and saved lessons; illustrative project data" />
+
+In **Settings › Memory**, search, edit or retire lessons, and pin up to five per project and five personal ones. Use **Still true** after checking changed files. Stale lessons retire after 90 days and can be restored. **Lessons in every session** turns off automatic delivery; you can also pause memory.
+
+## What stays local {#what-stays-local}
+
+Lessons and the search model stay on your computer; no lesson goes to an embedding service. A lesson given to your agent becomes part of its context, and a cloud agent may send that context to its provider. Agent and session attribution stays local when lessons go to Git.
+
+## Share lessons through Git {#share-lessons-through-git}
+
+<span id="export-project-lessons-to-git"></span>
+
+<Steps>
+  <Step title="Turn it on">In **Manage projects**, enable **Store project lessons in Git** for the repository. It is off by default and applies to this computer.</Step>
+  <Step title="Export">**Export** writes eligible lessons to `docs/memories/` with a readable `LESSONS.md`, beside `docs/plans/`. The local store stays the source. Files in an older `.qualitylayer/memories/` move there on the next export; you commit the move.</Step>
+  <Step title="Commit">Review the files, then commit and push them yourself. Memory exchange never commits, pushes or pulls.</Step>
+</Steps>
+
+<Warning>Anyone who can read the repository can read exported lessons. Personal preferences, credentials, private task answers, Pilot imports and session attribution stay out, and a privacy filter checks the files, but review them anyway.</Warning>
+
+Turning sharing off stops exchange and leaves committed files in place.
+
+### Import repository records {#import-repository-records}
+
+Choose **Restore from repository** (`memory import`) in the project where you want those records. Repository content is untrusted evidence; check it against current work. Search, startup and export never import by themselves.
+
+Lesson identities, revisions and retirements survive export and import across your machines, and a missing file never retires a local lesson. If two machines changed the same revision, both stay: **Compare versions**, then **Use selected version**, before you export again. Export refuses to overwrite a conflicting revision.
+
+## Import Pilot lessons {#import-pilot-lessons}
+
+Import Pilot Shell JSONL or Markdown into a chosen project. Imported lessons stay private and unchecked; unchanged lessons are not duplicated ([From Pilot Shell](moving-from-pilot-shell.mdx)).
+
+## Command line {#command-line}
+
+<details>
+<summary>Search, save, pin and sync from the command line</summary>
+
+```sh
+qualitylayer memory context "database migration locks" --json
+qualitylayer memory store --title "Bound migration locks" --content "Keep migration locks short, because a waiting migration blocks every write." --kind pattern --file db/migrations --json
+qualitylayer memory store --about you --title "Prefer concise replies" --content "Keep replies short unless I ask for detail." --json
+qualitylayer memory pin <id> --json
+qualitylayer memory share on --json
+qualitylayer memory export --json
+qualitylayer memory import --json
+qualitylayer memory conflicts --json
+qualitylayer memory reconcile <id> --revision <revision> --candidate local --json
+```
+
+All commands: [reference](reference/commands.mdx#memory).
+
+</details>
+
+<NextSteps items={[
+  { title: "Settings", href: "/docs/reference/settings", text: "Memory and the other settings." },
+  { title: "Files and privacy", href: "/docs/reference/files#privacy", text: "What stays on your computer and what leaves it." },
+]} />

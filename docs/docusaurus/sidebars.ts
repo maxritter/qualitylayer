@@ -12,7 +12,7 @@ const sidebars: SidebarsConfig = {
       "app", "chat", "artifacts", "reference/code-health", "memory", "automations",
     ] },
     { type: "category", label: "Reference", collapsed: false, items: [
-      "reference/commands", "reference/settings", "reference/files", "reference/changelog",
+      "reference/commands", "reference/settings", "reference/files", "reference/antivirus", "reference/changelog",
     ] },
   ],
 };

@@ -80,10 +80,9 @@ Security and second-opinion findings appear on their lines. Request a change, or
 
 Approve the whole change in the page header, also when its agent has stopped. Your approval always saves, even when the code moved after the checks or a recheck is running.
 
-<CardGroup cols={3}>
-  <Card title="Approve" icon="badge-check" tone="verify">Nothing is pushed. The conversation stays open for merge, deploy and tweaks.</Card>
-  <Card title="Approve and create PR" icon="git-pull-request">Pushes the task's branch and opens the [pull request](pull-request.mdx). Needs `gh`.</Card>
-  <Card title="Copy the git commands" icon="clipboard">The commands to push and merge yourself.</Card>
+<CardGroup cols={2}>
+  <Card title="Approve" icon="badge-check" tone="verify">Approves the change and never pushes. The conversation stays open for merge, deploy and tweaks.</Card>
+  <Card title="Pull request" icon="git-pull-request" href="/docs/steps/pull-request">Pushes the task's branch and opens GitHub's page with the title and description filled in. You create the pull request there. Needs `gh`.</Card>
 </CardGroup>
 
 ### After you approve {#after-approve}
@@ -92,7 +91,7 @@ Ask your agent to merge, push, deploy or run end-to-end tests; each still needs 
 
 | Verify shows | What you do |
 | --- | --- |
-| **Not merged yet** | Merge as usual. Merged on the web? Pull the base branch, or press **Mark as merged** |
+| **Not merged yet** | Merge as usual. Merged on the web? Pull the base branch. While no pull request is open, **Mark as merged** works too |
 | **1 change since your approval** | Your agent committed a tweak. Press **View the change**, then **Approve change** in the header. With an open pull request, your merge accepts it |
 | **Merged into main** | The task is in **Shipped**. New work starts with **Start a follow-up** |
 

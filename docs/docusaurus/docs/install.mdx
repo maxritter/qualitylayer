@@ -65,7 +65,7 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash
   <Tab value="wsl" label="WSL2">The pages open in your Windows browser.</Tab>
   <Tab value="dev-container" label="Dev container">
 
-The pages open in your browser; VS Code forwards the port. In the App, [add the container as a machine](machines.mdx#dev-containers).
+The pages open in your browser; VS Code forwards the port. In the App, [add the container as a machine](machines.mdx#second-machine).
 
 To keep QualityLayer and your agent's sign-in when the container is rebuilt, keep them in volumes:
 
@@ -128,7 +128,7 @@ If Defender Exploit Guard blocks Setup or removes installed files, check your ma
 | **File indicator** (IT) | Allow the setup file by its SHA-256 from `SHA256SUMS` on the release page |
 | **WSL** (no IT) | Install [in WSL2](#without-a-screen) |
 
-Then run `qualitylayer doctor` and open the App once.
+Then run `qualitylayer doctor` and open the App once. If code health setup fails because antivirus holds its tools, see [Setup under antivirus](reference/antivirus.mdx).
 
 <NextSteps items={[
   { title: "Your first task", href: "/docs/first-task", text: "Plan, build and review one small change." },

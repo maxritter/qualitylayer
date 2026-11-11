@@ -5,7 +5,7 @@ mdx:
   format: mdx
 ---
 
-import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Warning, Screenshot, Flow, NextSteps } from "@site/src/components/kit";
+import { Card, CardGroup, Steps, Step, Tabs, Tab, Tip, Note, Screenshot, Flow, NextSteps } from "@site/src/components/kit";
 
 Run tasks on a Mac Mini, a Linux server or a dev container, and follow them from the App on your laptop. Agents there keep working while your laptop sleeps.
 
@@ -22,7 +22,7 @@ Run tasks on a Mac Mini, a Linux server or a dev container, and follow them from
 
 <CardGroup cols={3}>
   <Card title="A machine" icon="server">macOS or Linux, with Git, your repository and your coding agent.</Card>
-  <Card title="An ssh key" icon="key-round">ssh from your laptop with a key. QualityLayer never asks for a password and stores none.</Card>
+  <Card title="An ssh login" icon="key-round">Your ssh key, or the machine's password once. QualityLayer stores no password.</Card>
   <Card title="Room on your licence" icon="monitor">Each machine counts as one of your licence's 5 computers.</Card>
 </CardGroup>
 
@@ -36,80 +36,39 @@ Run tasks on a Mac Mini, a Linux server or a dev container, and follow them from
 <Steps>
   <Step title="Turn on ssh">
     <Tabs groupId="os">
-      <Tab value="macos" label="macOS">**Remote Login** under System Settings › General › Sharing.</Tab>
+      <Tab value="macos" label="macOS">**Remote Login** under System Settings › General › Sharing. It is the one switch you make by hand.</Tab>
       <Tab value="linux" label="Linux">Install `openssh-server`.</Tab>
     </Tabs>
   </Step>
-  <Step title="Let your key in and name the machine">
-
-On your laptop (skip `ssh-keygen` if you already have a key):
-
-```bash
-ssh-keygen -t ed25519
-ssh-copy-id you@mac-mini.local
-```
-
-```text title="~/.ssh/config"
-Host mac-mini
-  HostName mac-mini.local
-  User you
-```
-
-  </Step>
-  <Step title="Accept the host key">Run `ssh mac-mini true` once. It must return without a question; the App never answers one.</Step>
+  <Step title="Add it in the App">**Settings › Machines › Add machine**, or **Add machine** in the sidebar's switch. Under **Computer**, type `user@host` (`user@host:port` works), or pick a Mac from **Nearby** or a host from your ssh config, then **Add**.</Step>
+  <Step title="Let it pair">One progress view runs the steps: Reachable, Key, ssh config, System, QualityLayer, Licence, Connect. **Hide** keeps it going; **Settings › Machines** shows it again with **Show**.</Step>
+  <Step title="Give the password once, if asked">If the machine accepts no key of yours, QualityLayer makes `~/.ssh/qualitylayer_ed25519` and asks for the machine's password once, in a sheet that shows the host key it trusts. The password goes straight to ssh and is never stored. A machine that takes keys only shows a `ssh-copy-id` command to run once, then **Done · try again**.</Step>
   <Step title="Sign in to your agent">On the machine, start your coding agent once and sign in.</Step>
-  <Step title="Add it in the App">**Settings › Machines › Add machine**, pick `mac-mini`, then **Install and add**. The App installs `qualitylayer` there, activates your licence and connects.</Step>
-  <Step title="Switch to it">Choose **mac-mini** in the sidebar's head. On its Setup page, type your project's path, such as `/Users/you/code/api`, and choose **Add folder**.</Step>
+  <Step title="Open it">**Open mac-mini** when the pairing is done. On its Setup page, type your project's path, such as `/Users/you/code/api`.</Step>
 </Steps>
+
+<Note>If your own key already works, nothing is asked. Pairing writes only the host key it showed into `known_hosts` and one marked `Host` block per machine into `~/.ssh/config`.</Note>
 
   </Tab>
   <Tab value="dev-container" label="Dev container">
 
 <Steps>
-  <Step title="Add ssh to the container">
-
-Each container is its own machine with its own ssh port on your laptop: `2223`, `2224` and so on. In the project's `.devcontainer/devcontainer.json`:
-
-```json title=".devcontainer/devcontainer.json"
-{
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-  "features": { "ghcr.io/devcontainers/features/sshd:1": {} },
-  "appPort": ["127.0.0.1:2223:2222"],
-  "mounts": [
-    "source=${localEnv:HOME}/.ssh/id_ed25519.pub,target=/tmp/qualitylayer-key.pub,type=bind,readonly"
-  ],
-  "postCreateCommand": "mkdir -p ~/.ssh && cat /tmp/qualitylayer-key.pub >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
-}
-```
-
-  </Step>
-  <Step title="Start it">**Reopen in Container** in VS Code, or `devcontainer up --workspace-folder .` with the [Dev Container CLI](https://github.com/devcontainers/cli). Start several containers one after the other.</Step>
-  <Step title="Name it and accept the host key">
-
-```text title="~/.ssh/config"
-Host api-devcontainer
-  HostName 127.0.0.1
-  Port 2223
-  User vscode
-```
-
-Then run `ssh api-devcontainer true` once.
-
-  </Step>
-  <Step title="Sign in to your agent">Inside the container, as on any computer.</Step>
-  <Step title="Add it in the App">Add `api-devcontainer` under **Settings › Machines**, choose it in the sidebar's head and add `/workspaces/api` on its Setup page.</Step>
+  <Step title="Start the container">**Reopen in Container** in VS Code, or `devcontainer up --workspace-folder .` with the [Dev Container CLI](https://github.com/devcontainers/cli). QualityLayer never starts or rebuilds containers.</Step>
+  <Step title="Add it in the App">**Add machine › Dev container** lists the running containers from Docker Desktop, OrbStack, Colima or Podman. One that publishes ssh (container port 2222 or 22) adds with **Add**, without a password.</Step>
+  <Step title="Give it ssh, if it needs it">A container without ssh shows **Needs ssh** with the lines to copy into its `devcontainer.json`: the sshd feature, a free port and a volume for its home. Rebuild it, then **Add**.</Step>
+  <Step title="Sign in to your agent">Inside the container, as on any computer, then add `/workspaces/api` on its Setup page.</Step>
 </Steps>
 
-<Warning>A rebuild changes the host key and removes QualityLayer and your agent's sign-in. Run `ssh-keygen -R "[127.0.0.1]:2223"` and `ssh api-devcontainer true` again, or [keep them in volumes](install.mdx#without-a-screen).</Warning>
+<Tip>A rebuilt container pairs again by itself.</Tip>
 
   </Tab>
 </Tabs>
 
-<Screenshot alt="Settings › Machines with Add machine open" todo="Settings › Machines with Add machine open: the hosts from your ssh config, and This computer above them." />
+<Screenshot name="machines-add" alt="Settings › Machines with Add machine open: Computer or Dev container, user@host, a Mac nearby and the hosts from the ssh config" />
 
 ## Work on the machine {#work}
 
-<Screenshot name="machines-switcher" alt="The sidebar's head lists This computer and mac-mini, with 2 waiting on mac-mini" />
+<Screenshot name="machines-switcher" alt="The machine switch in the sidebar's head: This computer, mac-mini, Add machine and Machines" />
 
 <Tabs groupId="where">
   <Tab value="app" label="In the App">
@@ -128,21 +87,25 @@ Open a shell on the machine (`ssh mac-mini`), go to the project and ask your age
   </Tab>
 </Tabs>
 
-<Tip>What waits on another machine raises the count on the sidebar's head. Its notification names the machine first: "mac-mini: Show greet version: Plan ready".</Tip>
+What waits on another machine raises the count on the sidebar's head. Its notification names the machine first: "mac-mini: Show greet version: Plan ready".
 
 ## Remove a machine {#remove}
 
-Under **Settings › Machines**, choose **Remove** and tick **Also release its licence activation**, so the machine stops counting against your licence. Do this before you delete a container.
+Under **Settings › Machines**, choose **Remove**. **Remove QualityLayer's key from it and its ssh config entry here** is on; tick **Also release its licence**, so the machine stops counting against your licence. Do this before you delete a container.
 
 ## When something is off {#troubleshooting}
 
+A step that fails shows its cause and its fix in the progress view; **Try again** resumes there. For a machine already added:
+
 | What you see | What to do |
 | --- | --- |
-| **ssh needs you** or **Unknown host** in Settings › Machines | Run the `ssh` command the row shows once, then **Try again**. |
+| **No answer since 14:02 · Next try in 0:45** | Wait, or choose **Try now**. |
+| **Key refused** | **Pair again**. |
+| **Host key changed** | Compare the new fingerprint it shows, then **Trust new key**. |
 | The agent waits at "Trust this folder?" | Answer in the task's Terminal pane in the App, or in your own session on the machine. Each agent asks once per folder. |
 | An agent shows **Not installed** or not signed in on the machine's Setup page | Install or sign in to it on the machine, then choose **Check again**. |
-| The machine runs an older QualityLayer | Choose **Update to …** in the machine's **⋯** menu under Settings › Machines. |
-| `devcontainer up` hangs for a second container | Start containers one after the other. |
+
+By command, `qualitylayer machines add user@host` asks for the password hidden, and a script pipes it with `--password-stdin`; `qualitylayer machines add --container <name>` adds a dev container ([all machine commands](reference/commands.mdx#machines)).
 
 <NextSteps items={[
   { title: "Install without a screen", href: "/docs/install#without-a-screen", text: "The command line for servers, WSL2 and containers." },

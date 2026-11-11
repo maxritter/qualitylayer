@@ -145,9 +145,9 @@ Credits stay separate in Usage; missing data makes totals partial. The task head
 
 ## Machines {#machines}
 
-Work on another Linux or macOS computer you reach over ssh, from this App ([setup guide](../machines.mdx)). **Add machine** picks a host from your ssh config or takes `user@host`, checks it, and after one confirmation installs QualityLayer there and activates your licence key on it. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
+Work on another Linux or macOS computer, or a dev container, you reach over ssh, from this App ([setup guide](../machines.mdx)). **Add machine** takes `user@host`, a Mac nearby, a host from your ssh config or a running dev container; **Add** pairs it in one progress view, installs QualityLayer there and activates your licence key on it. It asks for the machine's password at most once and stores none. The sidebar's head then switches between **This computer** and each machine, with a count of what waits for you elsewhere.
 
-A machine keeps working while this computer sleeps and reconnects by itself. **ssh needs you** means ssh wants a key or a host confirmation: run the `ssh` command the row shows once in a terminal, then **Try again**. **Remove…** only drops the connection; tick the box to release the machine's licence activation too. Windows machines keep their own App.
+A machine keeps working while this computer sleeps and reconnects by itself. A machine that is down says why and offers its fix: **Try now**, **Pair again** for a refused key, or **Trust new key** with the new fingerprint. **Remove…** also takes QualityLayer's key off the machine and its ssh config entry here, unless you clear that; tick **Also release its licence** to free the machine's activation. Windows machines keep their own App.
 
 ## Notifications {#notifications}
 

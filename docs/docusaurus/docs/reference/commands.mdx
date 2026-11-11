@@ -24,7 +24,7 @@ Name **QualityLayer** or **QL** in a plain request; your agent picks the [skill]
 
 ## Existing plans {#existing-plans}
 
-`qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.mdx#existing-plan)).
+`qualitylayer task start "<request>" --from-plan ./plan.md` starts at Plan from an existing Markdown or plain-text plan. Use `-` for standard input. The original stays unchanged ([Plan](../steps/plan.mdx#a-bug)).
 
 ## From a ticket {#from-a-ticket}
 
@@ -108,7 +108,7 @@ Advisory local checks ([Code health](code-health.mdx)).
 | `quality scan [paths... \| --since <rev>] [--secrets\|--dependencies\|--workflows\|--code] [--local]` | Scan changed or named files for secrets, vulnerable packages, unsafe workflows and risky code |
 | `quality metrics\|lint [paths...]` | Function metrics, or the project's linters |
 | `quality acknowledge <id> --reason "<evidence>"` | Keep a reviewed finding with its reason |
-| `quality status\|setup\|on\|off` | Check, repair (also reinstalls the scanners), pause or resume |
+| `quality status\|setup\|on\|off` | Check, repair (also reinstalls the scanners), pause or resume; on Windows, see [Setup under antivirus](antivirus.mdx) |
 
 ## Project memory {#memory}
 
@@ -125,6 +125,20 @@ One local lesson store for the App and your agents ([Project memory](../memory.m
 | `memory import` | Explicitly import repository records; differs from restoring a retired local lesson |
 | `memory conflicts` · `memory reconcile <id> --revision <n> --candidate local\|<fingerprint>` | Inspect conflicting revisions and explicitly reconcile them |
 | `memory mcp` · `memory import-pilot <file>…` | Serve lesson tools over MCP, or import Pilot records |
+
+## Machines {#machines}
+
+Other computers and dev containers you reach over ssh ([Machines](../machines.mdx)).
+
+| Command | What it does |
+| --- | --- |
+| `machines add user@host [--name <n>] [--trust SHA256:…]` | Pair a computer. It asks for the password hidden when no key of yours works; a script pipes it with `--password-stdin`, never as an argument |
+| `machines add --container <name>` | Pair a running dev container |
+| `machines containers` · `machines snippet [--port <n>]` · `machines nearby` | Running dev containers, the `devcontainer.json` lines that give one ssh, and Macs nearby that offer ssh |
+| `machines list` · `machines status <name>` | Your machines, and how one is reached |
+| `machines pair\|retry <name>` | Pair a machine again, or try one that is down now |
+| `machines trust <name> [--fingerprint …]` | Trust a machine's changed host key |
+| `machines rename <name> <new>` · `machines remove <name> [--release] [--keep-key]` | Rename one, or remove it; `--release` frees its licence, `--keep-key` leaves QualityLayer's key on it |
 
 ## Session messaging {#session-messaging}
 

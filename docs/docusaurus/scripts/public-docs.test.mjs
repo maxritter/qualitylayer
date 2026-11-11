@@ -26,7 +26,7 @@ const guides = [
   "", "install/", "machines/", "first-task/", "work-in-your-agent/", "agents/native/", "agents/other/", "moving-from-pilot-shell/",
   "steps/plan/", "steps/implement/", "steps/verify/", "steps/pull-request/",
   "app/", "chat/", "artifacts/", "reference/code-health/", "memory/", "automations/",
-  "reference/commands/", "reference/settings/", "reference/files/",
+  "reference/commands/", "reference/settings/", "reference/files/", "reference/antivirus/",
 ];
 
 test("every guide renders its kit: no raw imports or tags, no placeholder, and a Next row", () => {
@@ -108,7 +108,7 @@ test("Plan, Implement and Verify explain the current questions, approvals and re
   for (const phrase of ["Approve and build here", "Start the build", "Approve & start", "Approve and copy", "Copy prompt", "Build model", "Effort", "Subagent model", "Workspace", "In my own agent"]) assert.ok(implement.includes(phrase), `Implement: ${phrase}`);
   assert.doesNotMatch(implement, /Start with (?:Codex|Claude Code)|Hand over|hand it to a teammate/);
   const verify = text("steps/verify/");
-  for (const phrase of ["Done means", "point shows its evidence as it comes in", "Review the code", "Approve and create PR", "Ask another reviewer", "rechecking"]) assert.ok(verify.includes(phrase), `Verify: ${phrase}`);
+  for (const phrase of ["Done means", "point shows its evidence as it comes in", "Review the code", "Pull request", "Ask another reviewer", "rechecking"]) assert.ok(verify.includes(phrase), `Verify: ${phrase}`);
 });
 
 test("the App guide names its parts and keeps amounts and reading boundaries", () => {

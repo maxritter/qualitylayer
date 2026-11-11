@@ -1,0 +1,24 @@
+---
+title: Setup under antivirus
+sidebar_label: Antivirus
+description: What to do when quality setup fails on Windows because antivirus holds the new files.
+mdx:
+  format: mdx
+---
+
+import { Steps, Step, Note, NextSteps } from "@site/src/components/kit";
+
+On Windows, antivirus that scans every new file can hold a tool QualityLayer has just downloaded. `qualitylayer quality setup` then fails for that tool.
+
+<Steps>
+  <Step title="Run setup again">Run `qualitylayer quality setup` again. It waits up to 30 seconds for the scan, then copies the files into place. Each tool installs on its own, so one failure leaves the others ready.</Step>
+  <Step title="See what failed">Run `qualitylayer quality status`. It lists each tool and the last error. The full log is `%USERPROFILE%\.qualitylayer\quality-setup.log`.</Step>
+  <Step title="Add an exclusion">If a tool still fails, add `%USERPROFILE%\.qualitylayer\tools` to your antivirus exclusions, or ask your IT team to. Then run `qualitylayer quality setup` once more.</Step>
+</Steps>
+
+<Note>Your tasks keep working meanwhile. Verify names a scanner that is not installed instead of failing the check.</Note>
+
+<NextSteps items={[
+  { title: "Code health", href: "/docs/reference/code-health", text: "The local checks these tools run." },
+  { title: "Install", href: "/docs/install#managed-windows", text: "Windows with Intune or Defender Exploit Guard." },
+]} />

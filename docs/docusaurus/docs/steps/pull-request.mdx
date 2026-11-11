@@ -1,19 +1,19 @@
 ---
 title: Pull request
-description: Choose to open a pull request when you approve on Verify, then follow its checks and reviewers until you merge it.
+description: Push the change and open GitHub's pull request page from Verify, then follow its checks and reviewers until you merge it.
 mdx:
   format: mdx
 ---
 
 import { Card, CardGroup, Steps, Step, Note, Screenshot, NextSteps } from "@site/src/components/kit";
 
-Open a pull request when you approve on [Verify](verify.mdx#approve). Your agent follows its checks and comments; you merge.
+On [Verify](verify.mdx#approve), **Pull request** in the header pushes the task's branch and opens GitHub's page with the title and description filled in. You create the pull request there; your agent follows its checks and comments, and you merge.
 
 <Screenshot name="pull-request" alt="The merged pull request: its checks, its reviewers and the time from the first question to the approval" caption="An example task in a fictional project." />
 
 ## How Verify follows it {#following}
 
-While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
+QualityLayer finds the pull request by its branch, and the button then shows **#N · open**, or **#N · update** once the code moved. While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
 
 ## Your agent watches the checks {#watch}
 
@@ -43,7 +43,7 @@ Failing checks, review threads and conflicts appear in **Needs you** while the A
 
 ## When you merge {#merged}
 
-When you merge, the task moves to **Shipped** with what it cost. A squash or rebase merge is recognized too, and **Mark as merged** covers any other case. Its documents stay in `docs/plans/`. Further work starts with **Start a follow-up**.
+When you merge, the task moves to **Shipped** with what it cost. A squash or rebase merge is recognized too; while no pull request is open, **Mark as merged** covers any other case. Its documents stay in `docs/plans/`. Further work starts with **Start a follow-up**.
 
 <NextSteps items={[
   { title: "Verify", href: "/docs/steps/verify", text: "The checks and your review before the pull request." },

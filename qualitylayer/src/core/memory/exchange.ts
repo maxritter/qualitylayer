@@ -7,7 +7,6 @@ import type { MemoryCatalogAdapter } from "./index.ts"
 import { type MemoryRepositoryIO, openMemoryRepository } from "./repository-io.ts"
 import { memoryIssue, memoryResult } from "./result.ts"
 
-export { safePath } from "./repository.ts"
 export type MemoryExportCatalog = Pick<
   MemoryCatalogAdapter,
   "meta" | "conflict" | "published" | "acceptExistingRepository"

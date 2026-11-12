@@ -1,15 +1,4 @@
-// "Implement this using QualityLayer" names no task. `build start` picks, in this repository, the
-// task whose Plan is approved and whose build has not started: with one it builds that one; with
-// none or several the reply is a stop that starts nothing.
-
-import { join } from "node:path"
-import { type Ctx, ok, type Result } from "../../ctx.ts"
-import { detectAgent } from "../agents/detect.ts"
-import { implementLogPath } from "../docs/build-log.ts"
-import { otherBuildLead } from "../next/build-lead.ts"
-import { resolveRepo } from "../paths.ts"
-import { listTasks, readEvents, type Task } from "../task/store.ts"
-import { implementPrompt } from "./prompt.ts"
+import type { Ctx } from "../../ctx.ts"
 
 /** The same task with the environment naming it, as `--task <slug>` does for any command. */
 export function forTask(ctx: Ctx, slug: string): Ctx {
@@ -21,77 +10,4 @@ export function forTask(ctx: Ctx, slug: string): Ctx {
       get: (name) => (name === "QUALITYLAYER_TASK" ? slug : inner.get(name)),
     },
   }
-}
-
-/** When the Plan was approved: the last approval the task recorded. */
-async function approvedAt(ctx: Ctx, task: Task): Promise<number> {
-  const approval = (await readEvents(ctx, task)).findLast(
-    (event) => event.event === "gate_approved" && typeof event.ts === "number",
-  )
-  return typeof approval?.ts === "number" ? approval.ts : task.created
-}
-
-/** The tasks whose Plan is approved and whose build no session has taken, newest approval first. */
-async function waitingBuilds(ctx: Ctx, tasks: Task[]): Promise<Task[]> {
-  const waiting: { task: Task; approved: number }[] = []
-  for (const task of tasks) {
-    if (task.stage !== "implement") continue
-    if (await ctx.fs.exists(join(task.runtimeDir, "archived.json"))) continue
-    // The build log is written when the build starts, in whichever session.
-    if (await ctx.fs.exists(implementLogPath(task))) continue
-    // Another session already leads its build.
-    if ((await otherBuildLead(ctx, task)) !== null) continue
-    waiting.push({ task, approved: await approvedAt(ctx, task) })
-  }
-  return waiting
-    .sort((a, b) => b.approved - a.approved || b.task.slug.localeCompare(a.task.slug))
-    .map(({ task }) => task)
-}
-
-/** The reply that ends the turn: print `message`, ask nothing, start nothing. */
-function stopReply(stop: string, message: string, extra: Record<string, unknown> = {}) {
-  return {
-    stop,
-    message,
-    instructions:
-      "STOP here: print the `message` text to the user verbatim and end your turn. Ask nothing, " +
-      "start no task and run no other QualityLayer command.",
-    ...extra,
-  }
-}
-
-export type BuildPick = { task: string } | { reply: Record<string, unknown> }
-
-/** The task `next --implement` builds, or the stop that says why it builds none. */
-export async function pickBuild(ctx: Ctx): Promise<Result<BuildPick>> {
-  const repo = await resolveRepo(ctx)
-  if (!repo.ok) return repo
-  const found = await waitingBuilds(ctx, await listTasks(ctx, repo.data))
-  const [only] = found
-  if (found.length === 1 && only !== undefined) return ok({ task: only.slug })
-  if (only === undefined)
-    return ok({
-      reply: stopReply(
-        "no-build-waiting",
-        "No approved Plan waits for its build. Approve a Plan first: open its task in the QualityLayer App, read the Plan and approve it.",
-      ),
-    })
-  const agent = detectAgent(ctx.env)
-  const rows = found.map((task) => ({
-    task: task.slug,
-    title: task.title,
-    command: implementPrompt(task, agent, "", { slices: 0, tasks: 0 }).prompt,
-  }))
-  const width = Math.max(...rows.map((row) => row.command.length))
-  return ok({
-    reply: stopReply(
-      "choose-build",
-      [
-        `${found.length} approved Plans wait for their build, the newest approval first. Type the line of the one to build:`,
-        "",
-        ...rows.map((row) => `  ${row.command.padEnd(width)}  ${row.title}`),
-      ].join("\n"),
-      { waiting: rows },
-    ),
-  })
 }

@@ -1,10 +1,3 @@
-import { join } from "node:path"
-import type { Ctx } from "../ctx.ts"
-import { folderDoc } from "./docs/names.ts"
-import { FLOW_STEPS } from "./flow.ts"
-import { readGate } from "./gate/gate.ts"
-import { readmeFrontmatter, type Task } from "./task/store.ts"
-
 export type PlanningWaitDetails = {
   planning: {
     stage: string
@@ -24,76 +17,4 @@ export type PlanningWaitDetails = {
     message: string
   }
   message: string
-}
-
-/** Explain what an early builder actually waits for without taking the planner's work. */
-export async function planningWaitDetails(ctx: Ctx, task: Task): Promise<PlanningWaitDetails> {
-  const name = folderDoc("plan")
-  const [frontmatter, planExists, gate] = await Promise.all([
-    readmeFrontmatter(ctx, task),
-    ctx.fs.exists(join(task.dir, name)),
-    readGate(ctx, task),
-  ])
-  const key =
-    typeof frontmatter.startup_owner === "string" &&
-    /^[a-f0-9]{16}$/.test(frontmatter.startup_owner)
-      ? frontmatter.startup_owner
-      : null
-  let event: string | null = null
-  let seen: number | null = null
-  if (key !== null) {
-    try {
-      const hook = JSON.parse(
-        await ctx.fs.readFile(join(task.runtimeDir, "live", key, "hook.json")),
-      ) as { event?: unknown; at?: unknown }
-      if (typeof hook.event === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(hook.event))
-        event = hook.event
-      if (typeof hook.at === "number" && Number.isFinite(hook.at)) seen = hook.at
-    } catch {
-      /* No recorded hook for this owner. */
-    }
-  }
-  const stage = typeof frontmatter.stage === "string" ? frontmatter.stage : task.stage
-  const label = FLOW_STEPS.find((step) => step.id === stage)?.label ?? stage
-  const waitingGate = gate?.target === name ? gate : null
-  const pending = planExists && waitingGate?.decision === "pending" && waitingGate.settled !== true
-  const status = pending ? "waits for the Plan's approval" : `waits for planning at ${label}`
-  const state = !planExists
-    ? `No Plan file exists yet (${name}).`
-    : waitingGate === null
-      ? "The Plan exists, but its approval gate has not opened."
-      : `The Plan's recorded gate is ${waitingGate.decision}${waitingGate.settled ? " and settled" : ""}.`
-  const owner =
-    key === null
-      ? "No original planning owner was recorded."
-      : `The original planning session is ${key}${event ? ` (last recorded hook: ${event})` : ""}.`
-  const recovery = {
-    command: "qualitylayer next" as const,
-    where: "the original planning session" as const,
-    message:
-      "Resume the original planning session and run qualitylayer next there to continue its current step. This build session stays waiting and does not take over planning.",
-  }
-  return {
-    planning: {
-      stage,
-      plan_exists: planExists,
-      gate:
-        waitingGate === null
-          ? null
-          : {
-              target: waitingGate.target,
-              decision: waitingGate.decision,
-              settled: waitingGate.settled === true,
-            },
-      owner:
-        key === null
-          ? null
-          : { session_key: key, source: "startup", last_event: event, last_seen: seen },
-    },
-    status,
-    recovery,
-    message: pending
-      ? "The Plan's approval gate is open. This build starts once the person approves it in the App."
-      : `Planning is at ${label}. ${state} ${owner} ${recovery.message}`,
-  }
 }

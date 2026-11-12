@@ -16,7 +16,6 @@ export type IdentityRuntime = {
 export type MachineMetadata = { machine: string; product: string }
 
 export type Tier = "trial" | "solo" | "team"
-export const isPaid = (tier: string): tier is "solo" | "team" => tier === "solo" || tier === "team"
 
 /** Held credential facts for explicit SSH activation and consented support requests. */
 export type PublicHeldLicenceIdentity = {

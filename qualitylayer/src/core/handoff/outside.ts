@@ -417,23 +417,6 @@ export async function foreignBuildLead(
   }
 }
 
-/**
- * The words `next` gives a session that is not the build's lead when it runs plain `next` during
- * the build: planning is finished, the build runs elsewhere, nothing is left to do here.
- */
-export function plannerFinishedWords(lead: ForeignLead): {
-  message: string
-  instructions: string
-} {
-  return {
-    message: `Planning is finished. This task's build runs in ${lead.place}.`,
-    instructions:
-      "If the person asked this session to implement or continue the build, or you are the session that was building it and it was resumed or restarted (QualityLayer then knows you by a new key), run `qualitylayer next implement --task <task>` for the named task, then follow its reply. Otherwise tell the person in one line that planning is finished and where the build runs, then end your turn. " +
-      "Until this session takes the build, do not answer its gates or questions, approve, " +
-      "advance or change it. The person answers in the App or in the session that builds it.",
-  }
-}
-
 /** How a session outside the App is woken with a message: Codex takes one through its own queue. */
 export type OutsideWaker = (threadId: string, text: string, cwd: string) => "queued" | "waiting"
 

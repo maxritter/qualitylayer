@@ -1,4 +1,4 @@
-import { isAbsolute, join, relative, resolve, sep } from "node:path"
+import { isAbsolute, relative, resolve, sep } from "node:path"
 import { openPosixRecord } from "./anchored-posix.ts"
 import { openWindowsRecord } from "./anchored-windows.ts"
 import { type RecordOwner, recordOwnerKey, recordRuntimeDirectory, token } from "./contract.ts"
@@ -15,21 +15,6 @@ function nativeRecord(runtime: string, file: string, createParents: boolean): An
     return openPosixRecord(runtime, file, createParents)
   if (process.platform === "win32") return openWindowsRecord(runtime, file, createParents)
   throw new Error("Safe owner-bound record I/O is unavailable on this platform")
-}
-
-/** Registration is one fixed project-root record, not a task owner with an overridden path. */
-export function readProjectRegistration(owner: RecordOwner) {
-  return readProjectRegistrationScope(owner.home, owner.address.projectId)
-}
-
-export function readProjectRegistrationScope(home: string, projectId: string) {
-  if (!token(projectId)) throw new Error("Invalid registered project")
-  const file = nativeRecord(join(resolve(home), "projects", projectId), "project.json", false)
-  try {
-    return file.read(64 * 1024)
-  } finally {
-    file.close()
-  }
 }
 
 /** All mutations below this boundary use pinned directory objects, never re-resolved ancestors. */
@@ -56,20 +41,6 @@ export function openAnchoredRecord(
   if (isAbsolute(scope) || scope.startsWith(`..${sep}`) || scope === "..")
     throw new Error("Record owner escapes its home")
   return nativeRecord(runtime, file, createParents)
-}
-
-export function writeAnchoredRecord(
-  owner: RecordOwner,
-  file: string,
-  bytes: Uint8Array,
-  replace = true,
-) {
-  const target = openAnchoredRecord(owner, file)
-  try {
-    target.write(bytes, replace)
-  } finally {
-    target.close()
-  }
 }
 
 /** The lock file, its parents and its lifetime share the same native owner boundary as writes. */

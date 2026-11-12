@@ -30,8 +30,6 @@ import type { GitReader } from "./sources.ts"
 import { MemoryWriter } from "./store.ts"
 /** What `store` says about a retired lesson: only a restore brings it back. */
 export const MEMORY_RETIRED = "This lesson is retired; restore it explicitly before updating"
-/** The most lessons one managing search returns for a project; the engine and catalog cap at 100. */
-export { MEMORY_SEARCH_MAX } from "./search/query.ts"
 
 export type MemoryService = MemoryApi & {
   sharingEnabled(project: string): Promise<boolean>

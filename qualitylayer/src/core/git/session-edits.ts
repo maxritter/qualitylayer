@@ -6,7 +6,6 @@ export {
   foreignLooseEdits,
   matchingForeignEdits,
 } from "./session-edits/foreign-edits.ts"
-export type { HookCall } from "./session-edits/process.ts"
 export {
   editsKeptSince,
   otherTasksOnly,
@@ -18,7 +17,7 @@ export {
   recordShellEdits,
 } from "./session-edits/records.ts"
 export { editedPaths, shellCommits, shellPatchedPaths } from "./session-edits/shell.ts"
-export type { OwnChange, OwnChanges, Restoration } from "./session-edits/task-changes.ts"
+export type { OwnChange, OwnChanges } from "./session-edits/task-changes.ts"
 export {
   clearOwnChanges,
   keepOwnChanges,

@@ -564,13 +564,6 @@ export type FoldPreview = {
   conflicts: FoldConflict[]
 }
 
-/** Local recovery information; never part of a team version or its shared metadata. */
-export type ArtifactRecovery = {
-  folder: string
-  copies: { file: string; original: string; bytes: number; retained: boolean }[]
-  problem?: string
-}
-
 export type FoldResult =
   | { folded: false; preview: FoldPreview }
   | {

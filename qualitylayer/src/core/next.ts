@@ -6,7 +6,6 @@
 import { join } from "node:path"
 import { phaseText } from "#workflow"
 import { type Ctx, ok, type Result } from "../ctx.ts"
-import { detectAgent } from "./agents/detect.ts"
 import { ciParityWarning } from "./ci-parity.ts"
 import type { Answers } from "./config-values.ts"
 import { readBuildRecord } from "./docs/build-log.ts"
@@ -768,6 +767,3 @@ export async function afterDecision(
   }
   return { ...outcome, moves }
 }
-
-/** The agent session that runs the command, for a reply that names it. */
-export const agentOf = (ctx: Ctx): string => detectAgent(ctx.env)

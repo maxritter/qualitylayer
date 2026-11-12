@@ -7,6 +7,7 @@ import type { Item } from "../core/items.ts"
 import type { LiveSignals } from "../core/live/liveness.ts"
 import type { AnsweredQuestion, Question } from "../core/task/question.ts"
 import type { Person } from "../core/team/people.ts"
+import type { ThreadReply } from "../core/team/thread-publication.ts"
 import type { DocEntry } from "../server/api.ts"
 
 export type AgentState = "working" | "waits-for-you" | "quiet" | "stopped" | "step-done"
@@ -175,7 +176,7 @@ export type HomeFacts = {
   >
   steps: Record<FlowStepId, string[]>
 }
-export type TeamReply = import("../core/team/thread-publication.ts").ThreadReply
+export type TeamReply = ThreadReply
 export type CommentThread = {
   id: string
   doc: string

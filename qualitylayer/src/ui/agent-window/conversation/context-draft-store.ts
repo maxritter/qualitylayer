@@ -24,7 +24,6 @@ import {
 
 export {
   contextMatchesOwner,
-  contextTargetMatchesRun,
   hasUnsupportedContextOwner,
 } from "./context-launch.ts"
 

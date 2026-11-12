@@ -657,11 +657,6 @@ export function acceptanceRows(
   }
 }
 
-/** The Plan's steps before any run: no run, no mode, no files. */
-export function plannedAcceptance(plan: string): AcceptanceAsRun {
-  return { run: null, mode: null, ...acceptanceRows(proofList(plan), () => []) }
-}
-
 /**
  * The Plan's acceptance test as it ran: each step as the Plan wrote it, with the pictures and
  * outputs the run that passed recorded for it, and how that run happened. With no run that passed,

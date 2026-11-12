@@ -23,11 +23,7 @@ import {
 import { validateRecordOwner } from "./owner.ts"
 
 export { buildAnnotationArchive } from "./legacy-archive.ts"
-export {
-  type AnnotationSource,
-  annotationSourceIndex,
-  readAnnotationSources,
-} from "./legacy-sources.ts"
+export { annotationSourceIndex, readAnnotationSources } from "./legacy-sources.ts"
 
 const decode = (bytes: Uint8Array) => new TextDecoder("utf-8", { fatal: true }).decode(bytes)
 

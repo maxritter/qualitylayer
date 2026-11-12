@@ -6,10 +6,10 @@ import { MemorySourceHistory } from "./source-history.ts"
 import { covers, SHA, type SourcesLesson } from "./source-log.ts"
 import { MemorySourceState } from "./source-state.ts"
 
-export type { GitRead, GitReader } from "./source-git.ts"
-export { boundedRun, gitReader, SOURCES_BOUND } from "./source-git.ts"
+export type { GitReader } from "./source-git.ts"
+export { boundedRun, gitReader } from "./source-git.ts"
 export type { SourcesLesson } from "./source-log.ts"
-export { checkPoint, covers, parseLog } from "./source-log.ts"
+export { checkPoint, covers } from "./source-log.ts"
 
 const PATHS_MAX = 1000
 

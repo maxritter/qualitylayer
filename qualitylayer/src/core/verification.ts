@@ -832,16 +832,6 @@ export async function codeCommittedSinceJudged(ctx: Ctx, task: Task): Promise<bo
   )
 }
 
-/** `verify recheck`: the agent decides a fresh review is needed, so the standing pass is withdrawn. */
-export async function withdrawPass(ctx: Ctx, task: Task): Promise<void> {
-  const receipt = await readAssignment(ctx, task)
-  if (receipt === null || receipt.result !== "pass") return
-  await ctx.fs.atomicWrite(
-    receiptPath(task),
-    `${JSON.stringify({ ...receipt, withdrawn: true })}\n`,
-  )
-}
-
 /**
  * A session of the task edited these files or created these commits, as its hook saw it: kept with
  * the task from the moment a judge is handed out, so the pass that follows knows the task's own

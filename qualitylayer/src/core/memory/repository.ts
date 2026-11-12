@@ -1,4 +1,3 @@
-import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { MemoryRecord } from "../../memory-contracts.ts"
 import { portableDigest } from "./portable.ts"
@@ -26,20 +25,6 @@ async function readTracked(
   const record = validateRecord(JSON.parse(decodeMemoryFile(bytes)))
   validateRepositoryRecord(record, ctx.clock.now())
   return record
-}
-
-export async function safePath(ctx: Ctx, root: string, relative: string): Promise<void> {
-  if (!ctx.fs.lstat) throw new Error("Memory export requires filesystem entry metadata")
-  let absolute = root
-  const base = await ctx.fs.lstat(root)
-  if (base?.kind !== "directory") throw new Error("Memory repository root must be a real directory")
-  for (const part of relative.split("/")) {
-    if (!part || part === "." || part === "..") throw new Error("Unsafe memory path")
-    absolute = join(absolute, part)
-    const entry = await ctx.fs.lstat(absolute)
-    if (entry && (entry.kind === "symlink" || entry.kind === "other"))
-      throw new Error("Memory export refuses symlink paths")
-  }
 }
 
 /** Only tracked regular files supply restore candidates. A worktree edit is never silently accepted. */

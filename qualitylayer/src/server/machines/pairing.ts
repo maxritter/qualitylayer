@@ -871,6 +871,3 @@ export function pairingsOf(deps: PairingDeps): Pairings {
   sets.set(deps.ctx.home, made)
   return made
 }
-
-/** For tests: forget every server's jobs. */
-export const resetPairings = (): void => sets.clear()

@@ -21,9 +21,6 @@ import { keepApprovedPlan } from "./approved-plan.ts"
 /** The Plan section that holds the person's own decisions. */
 export const DECIDED_BY_YOU = "Decided with you"
 
-/** The Plan's sections that are the person's: what they agreed the task is for and must achieve. */
-export const AGREED_SECTIONS = ["Problem", "Scope", "Done means"] as const
-
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
 const baselinePath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "plan-baseline.json")
 

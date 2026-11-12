@@ -420,7 +420,7 @@ export function lastIteration(log: Pick<BuildLog, "verification">): Iteration | 
   return log.verification[log.verification.length - 1] ?? null
 }
 
-export { type Decision, decisionsOf } from "./build-decisions.ts"
+export { decisionsOf } from "./build-decisions.ts"
 
 /** A deviations section that says nothing is treated as empty. */
 export function hasDeviations(log: Pick<BuildLog, "deviations">): boolean {

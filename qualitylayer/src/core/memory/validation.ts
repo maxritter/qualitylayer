@@ -5,11 +5,7 @@ export { hash, segment } from "./identity.ts"
 export { relativeFile, validateInput } from "./input-validation.ts"
 export * from "./limits.ts"
 export { publicationText, safeText } from "./privacy.ts"
-export {
-  validateRecord,
-  validateRepositoryRecord,
-  validateRepositoryTime,
-} from "./record-validation.ts"
+export { validateRecord, validateRepositoryRecord } from "./record-validation.ts"
 export const eligibilityDigest = (record: MemoryRecord): string =>
   hash(
     JSON.stringify([

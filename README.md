@@ -181,7 +181,7 @@ Your project's checks, [code health](https://qualitylayer.dev/docs/reference/cod
 | In the App | What you can do |
 | --- | --- |
 | **Chat or a planned task** | Talk directly with your agent or follow the workflow. See agent activity and get notified when one needs you. |
-| **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and prepare contextual requests with Ask agent. |
+| **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and send quick feedback on marked text, code or artifact spots. |
 | **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. Keep reusable ones in your repository. [Artifacts guide](https://qualitylayer.dev/docs/artifacts). |
 | **Checks and code review** | Read the evidence and file diffs, and ask your agent about any line. |
 | **Agent controls and usage** | Choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |

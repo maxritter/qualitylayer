@@ -1,4 +1,7 @@
-# R2 provider resource manifest
+# Phase 2 obsolete collaboration-resource manifest
+
+<!-- v14-current-handover-pointer -->
+> **Current checkpoint — 11 November, 20:33 UTC:** read [the v14 handover and prioritized TODOs](10-v14-current-handover.md) and [the replacement goal prompt](08-overnight-goal.md) before acting on this document. The prior coordinator/workers are paused. Current source, source-bound evidence and later direct decisions supersede historical implementation statuses, seven-step descriptions, counts and earlier action limits below. The active product has Plan / Implement / Verify. Broader refactoring follows functional correctness; release gates still apply before publication. Actual source publication, key/history changes and infrastructure deletion remain separate. This document retains its original contract or audit history; it is not a current completion receipt.
 
 Prepared 11 November 2026, 14:30 UTC, from read-only provider calls (Vercel API/MCP, Neon MCP, Upstash read-only token, Wrangler, `gh`). Nothing was written, deployed or reconfigured. This is the list to retire later, not an approval to do so.
 

@@ -56,10 +56,10 @@ never installed on this Mac.
    files first: a terminal app's shell/Python wrapper is not the native profile.
    Cover every selected entry path. CLI-mode `--app-approves` requires a separately
    launched browser observer; it does not start one. Use the integrated App-entry
-   driver for its current completed-Review handoff proof. A local
+   driver for its current completed-Verify handoff proof. A local
    “approved” flag is no receipt: verify the real owner gate and resulting task
    state, retaining transport errors separately from delivered outcomes. Match
-   stage-specific API projections: Shipped omits Review-only display fields;
+   stage-specific API projections: Shipped omits final-review display fields from Verify;
    the persisted final gate retains the approved disclosure identity.
    Use one bounded resource monitor. A diagnostic process-scan failure must not
    bypass owned-process cleanup and native-auth reconciliation. Preserve private
@@ -81,14 +81,15 @@ never installed on this Mac.
 
 Claim the Mac's one heavy-job slot when the command is ready: name its owner,
 command, source, budget and active process/receipt. Check its exit and output,
-then release the slot promptly, even while its owner writes the report.
+then release the slot promptly, even while its owner writes the report. The same
+persistent monitored supervisor acquires and releases its hold and reaps its owned children.
 Read-only preparation does not reserve compute; it can continue independently.
 Give a delegated cohort its executable command, `QUALITYLAYER_TEST_WORKERS=1`,
 monitor and finite deadline. Confirm those values in its actual run receipt;
 macOS `ulimit -v` does not enforce the memory budget. Separate monitor and inner
 log paths, and write diagnostic evidence to an explicit retained file: the test
 wrapper discards successful test output. Release compute before report writing.
-Bun, browser, Rust, docs builds and scans share this slot. Monitor the 4 GiB job
+Bun, browser/render, Rust, docs builds, scans and benchmarks share this slot. Monitor the 4 GiB job
 budget; use supported `sonar.javascript.node.maxspace=2048` (MiB) for the JavaScript
 scanner. Start it in a fresh process after coverage merging, so collector data does
 not remain in the monitored process tree. Inspect emitted properties first: an older controller may still emit 4096;
@@ -107,7 +108,7 @@ the quality owner resolves that mismatch before a new scan, outside an active ru
   installation and publication.
 - Run the finite smoke gate plus focused changed-risk tests; target 5–10 minutes
   per local batch. Workflow benches run only when Max asks. Keep startup, auth, memory,
-  Team/data, upgrade, signing and installed-App checks and normal hooks intact.
+  local data, retained old-client service, upgrade, signing and installed-App checks and normal hooks intact.
 - A release enters CI/CD only on a commit the full regression passed (Max, 9 November
   2026): before pushing `main` (stable) or `dev` (beta) to stage, run
   `gh workflow run qualitylayer-ci.yml --ref <branch> -f full_regression=true` on the exact

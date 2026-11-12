@@ -44,13 +44,13 @@ All in `qualitylayer/`:
   `bun run build --all` — the six release targets with checksums
 - `bun run release-gate --agent claude-code|codex|pi|opencode` — a real agent carries the
   reference task (`tests/release/reference-task/`) to shipped: the Plan gate
-  and the final review are approved through the App API, and the harness
+  and the final Verify gate are approved through the App API, and the harness
   starts Implement with a natural-language QualityLayer request. `--plan-only`
   stops at the Implement stop. Uses the agent's own login; all QualityLayer
   state goes to a temp `QUALITYLAYER_HOME`. Defaults to Claude Sonnet 5.5 or GPT-6.1 Terra
   for workflow qualification, including isolated helper/reviewer hints; `--model` overrides
   the worker model and `--config` overrides test settings. Costs real agent time.
-- `bun run evals [--agent …] [--only discuss,plan]` — phase evals
+- `bun run evals [--agent …] [--only plan,implement]` — phase evals
   (`tests/evals/*.json`) judged on real runs of the flow; before releases, not
   per commit
 - `bun scripts/transcript-cost.ts <session id | file | folder> [--json]` or
@@ -79,10 +79,11 @@ sidebar change can join after workflow, memory, backend and permission runs;
 then verify the changed UI and combined App. The release procedure owns evidence
 reuse by affected paths and final signed-artifact verification.
 
-For a lifecycle change, run one complete normal workflow through the public App
+For a lifecycle change, run one complete normal workflow through the user-facing App
 or CLI path before expanding edge-case fixtures. Retain the real persisted gates
 from preceding steps. A final-approval fixture with no stored Plan gate does not
-qualify the Plan-to-Review handoff. Lower-level tests supplement that full run.
+qualify the handoff from Plan to the final review in Verify. Lower-level tests
+supplement that full run.
 
 For every stable/beta release or main/dev staging push, read
 [the canonical release procedure](release.md). It owns source-first quality,
@@ -92,7 +93,7 @@ same-byte promotion and the learning closeout. The
 owns exact Sonar/Qlty/preflight commands. These maintainer requirements remain
 outside the shipped customer workflow.
 
-### Live feedback and sharing
+### Live reporting and retained old-client services
 
 The feedback delivery fixtures mock GitHub and mail. Their passing results do
 not establish that the production token can create issues in the current public
@@ -111,22 +112,22 @@ service, with Max's authorization for the disposable reports:
   links and release test activations. Archive test notifications when authorized;
   keep real customer reports tracked until their fixes are available.
 
-For public workflow and included-artifact sharing, the opt-in browser journey is
-`bun tests/release/public-share-browser.ts --live --artifacts --binary <absolute
-published-CLI-path> --sha <sha256> --keys <private-key-file> --site
-https://qualitylayer.dev --out <private-evidence-directory>` from `qualitylayer/`.
-It uses a disposable home, creates a synthetic link, reads workflow documents and
-two artboards, checks both themes and phone/desktop widths, sends separate
-workflow and artifact feedback, verifies the owner's CLI replies in the guest
-page, revokes the link and releases the activation. Inspect the pictures too:
-document-wide overflow checks can pass while a selector is clipped inside a
-container. A local compiled-site journey complements this live check when the
-website source changes; record which version each result actually tested.
+Current-client qualification covers local Tasks, Chat and Artifacts, their native
+contextual requests and the two approvals. The local-first contract removes public
+sharing and human Team feedback; old public links use the new site's retired-link page. Inspect actual consumer
+widths in both themes: document-wide overflow checks can pass
+while a control is clipped inside its container.
+
+Retained R1 old-client APIs and pinned workflow bundles have a separate compatibility
+scope in [release integration](../plans/2026-11-10-local-first-qualitylayer/06-release-integration.md).
+Their service proof does not establish current-client sharing, and a new client's
+three-step texts do not replace old-client bundles. Record the client and service
+version each result actually tested.
 
 ## Subscription commerce
 
 - From `docs/site`, `npm run test:checkout -- <origin> [private-output-directory]`
-  opens Solo and Team, monthly and yearly, and waits for Stripe's card-number,
+  opens Individual and Business, monthly and yearly, and waits for Stripe's card-number,
   expiry and security-code fields. It never enters payment details or submits a
   purchase. Use a production-mode source server for a local check; development
   environment overrides may point to sandbox products. The Source UI browser
@@ -183,16 +184,17 @@ and product permission failures.
 - A bench runs only when Max asks for one (18 October 2026), whatever the change: a
   plan, a build, a workflow or gate change and a release go ahead without one.
   Agree the finite run scope before spending provider time or tokens. `bun run
-  bench` (skill `ql-bench`, design `docs/designs/workflow-bench.md`) runs
+  bench` (skill `ql-bench`, design `docs/artifacts/workflow-bench.md`) runs
   Claude Code **and** Codex; take the baseline on the same cells.
-- Only a bench takes the machine hold (`qualitylayer heavy hold`), and only a
-  second bench waits for one. A build or verification session never takes a
-  hold and never pauses for another session's bench: its checks, tests and real
-  runs start at once (Max, 10 November 2026).
+- Benches share the single heavy-job slot with builds, tests, browser/render jobs
+  and scans. Follow the [release resource handoff](release.md): the same persistent
+  monitored supervisor acquires and releases the hold, with the existing 4 GiB
+  owned-process budget, finite deadline and child cleanup. Read-only preparation
+  can continue while another job holds the slot.
 - Quality first: keep a measured change only when acceptance and test
   strength are not worse on any cell and agent; then time, cost and fresh
   tokens decide. A verdict with `?` is inconclusive; extra runs need an agreed scope.
 - Put the compare's headline in the commit body and in
-  `docs/designs/workflow-bench-log.md`. Compare QualityLayer with its own
+  `docs/artifacts/workflow-bench-log.md`. Compare QualityLayer with its own
   earlier version only; the plain agents calibrate the acceptance checks.
 

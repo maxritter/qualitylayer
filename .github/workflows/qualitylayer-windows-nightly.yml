@@ -107,7 +107,7 @@ jobs:
         run: |
           $files = @($env:FOCUS_TESTS -split '\s+' | Where-Object { $_ })
           if ($files.Count -gt 0) { bun run test @files }
-          else { bun run test --shard ${{ matrix.shard }}/16 tests/e2e tests/windows tests/core/platform.test.ts tests/core/team-keys.test.ts tests/server/lock.test.ts tests/cli/hook-prompt.test.ts tests/core/install/mod.test.ts tests/scripts/chrome-shutdown.test.ts }
+          else { bun run test --shard ${{ matrix.shard }}/16 tests/e2e tests/windows tests/core/platform.test.ts tests/server/lock.test.ts tests/cli/hook-prompt.test.ts tests/core/install/mod.test.ts tests/scripts/chrome-shutdown.test.ts }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Measure native compilation tradeoffs

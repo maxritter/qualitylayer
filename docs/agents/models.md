@@ -7,7 +7,7 @@ in the same commit (or the model's own commit just before it).
 | --- | --- | --- | --- |
 | App Model | `qualitylayer/artifacts/app/app-model/` and its `coverage.json` | the App (`qualitylayer/src/ui`, `qualitylayer/app/frontend`) | every page listed with status, files and demo; built pages map existing files |
 | Website model | `qualitylayer/artifacts/site/website-model/` (`sync-manifest.json`, `current/`) | `docs/site` source and the shared App source it renders | the manifest's hashes match the source; `current/` matches its manifest |
-| Team Model | `qualitylayer/artifacts/collaboration-data-model/launch.js` and `index.html` | `docs/site/api` | tables after every migration in `_lib/schema.sql` = `launch.js` tables not marked removed; route handlers = `launch.js` routes; retired routes have no handler |
+| Backend Model (`team` check) | `qualitylayer/artifacts/collaboration-data-model/launch.js` and `index.html` | `docs/site/api` | tables after every migration in `_lib/schema.sql` = `launch.js` tables not marked removed; route handlers = `launch.js` routes; retired routes have no handler |
 | Workflow | `qualitylayer/artifacts/app/workflow/` (`model.json`, `coverage.json`, the step pages, `generator/`) | `core/flow.ts`, `core/task/stages.ts`, `core/docs/names.ts`, `src/workflow/schemas`, `src/workflow/phases`; the step pages in `src/ui/steps`, `src/ui/step-page` and the Reader | steps, approvals, files, exits and each step's sections per file (heading, order, file, show, writer) equal the code; the generated files match their frozen inputs and stay under 3 MB |
 
 ## Checking
@@ -60,8 +60,8 @@ Each entry has a status:
 - `exploration`: a study sheet or a superseded page; `note` says which page the App follows.
 
 A built page's `demo` is its own: `check:models` fails when two built pages share one URL, when a
-`?moment=` is not a demo moment, or when the URL uses `#/step/…` (the route of a step another person
-shared; open a step of your own task with `?open=text:<Step>` on `#/task/<id>`). A state the demo
+`?moment=` is not a demo moment, or when the URL uses the retired shared-step route `#/step/…`
+(open a local task's step with `?open=text:<Step>` on `#/task/<id>`). A state the demo
 cannot show gets `demo: null` and a note saying why. It warns when the model's moments (`data.jsx`)
 and the demo's (`demo/task/moments.ts`) differ.
 
@@ -76,7 +76,7 @@ point `files` at the new component when code moves. Delete a page together with 
 - a staged App file that `coverage.json` maps to a page, unless one of those pages, a model file the
   page loads, or the page's coverage entry is staged too (tests are never mapped);
 - a staged `docs/site/api/_lib/schema.sql` change, or an added, removed or renamed route handler,
-  without a Team Model change;
+  without a Backend Model change;
 - a staged phase text, schema, `core/flow.ts`, `core/task/stages.ts` or `core/docs/names.ts` without a
   Workflow artifact change; a staged App file that the Workflow `coverage.json` maps to a step page, without that page,
   a model file it loads or its entry;
@@ -129,16 +129,15 @@ The Artifacts library reads per-machine registrations in `.qualitylayer/artifact
   step, then the new text as soon as the file is whole (`src/ui/step-page/steady.ts`, Max, 10 Nov
   2026). A file that was never complete renders as it is.
 
-- An explicitly sent comment on the Review file is taken while final approval is pending, including after a page read
-  reopens that approval; the comment record says when it was delivered, and a comment never settles a gate or marks a
-  result verified.
-- Review's optional Risk at merge compares the task's attributed files with the Outline cards' Files (in
-  `agents/04-outline.md` after the two-file move, matched with the commit-scope path matcher); with no Outline it is
-  omitted, never reads As planned, and claims no current-source verification.
+- A contextual request about the Verify document never settles its final approval gate or marks a result
+  verified; delivery and approval remain separate facts.
+- The walkthrough's optional change-attribution data compares the task's attributed files with the Implement
+  cards' Files (`agents/02-implement.md`, matched with the commit-scope path matcher). Without cards it is
+  omitted, never reads As planned, and claims no current-source verification. The helper retains the name `riskAtMerge`.
 - If the selected checkout does not contain the product or surface the person asked to change, the agent names it, stops
   editing and advancing and asks the person to restart through New task's project picker with the request and answers
-  kept; it never retargets the run or moves task state. The seven-step `discuss-bugfix-seven.md` said so; the three-step
-  `plan.md` and `plan-bugfix.md` do not yet and must.
+  kept; it never retargets the run or moves task state. The current `plan.md` states this checkout boundary;
+  `plan-bugfix.md` inherits it.
 - The commit hook checks configured scan credential helpers before it builds the staged snapshot, and a commit reports a
   slow checkout inventory and every parent-race retry.
 - A Plan's lead budget counts authored prose and tables only; the generated `ql:artifact` fallback description does not

@@ -340,13 +340,13 @@ jobs:
         # Groups 4 and 6 use the site's in-process Team database.
         include:
           - shard: 1
-            files: tests/cli/hook-prompt.test.ts tests/e2e/research.test.ts
+            files: tests/cli/hook-prompt.test.ts
           - shard: 2
             files: tests/windows/native.test.ts tests/e2e/sessions.test.ts tests/e2e/statusline.test.ts tests/core/check-process-options.test.ts tests/core/live-signals.test.ts tests/core/interaction-shell-process.test.ts tests/windows/setup-recovery.test.ts tests/windows/fixture-cleanup.test.ts tests/core/scanner-setup.test.ts
           - shard: 3
             files: tests/windows/install-ps1.test.ts
           - shard: 4
-            files: tests/core/team-keys.test.ts tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts tests/windows/uninstall-ps1.test.ts
+            files: tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts tests/windows/uninstall-ps1.test.ts
           - shard: 5
             files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts tests/core/install/mod.test.ts
           - shard: 6

@@ -38,11 +38,11 @@ try {
   page.setDefaultTimeout(20000);
   await page.route("**/api/billing", route => route.abort());
   for (const billing of ["yearly", "monthly"]) {
-    for (const plan of ["Solo", "Team"]) {
+    for (const [plan, label] of [["Solo", "Individual"], ["Team", "Business"]]) {
       currentCase = `${plan.toLowerCase()}-${billing}`;
       await page.goto(new URL("/pricing", origin).href);
       await page.getByRole("button", { name: billing === "monthly" ? "Monthly" : /Yearly/, exact: billing === "monthly" }).click();
-      const link = page.getByRole("link", { name: `Start ${plan}`, exact: true });
+      const link = page.getByRole("link", { name: `Start ${label}`, exact: true });
       assert.equal(new URL(await link.getAttribute("href")).origin, "https://buy.polar.sh");
       // Stripe's initial payment-method update can clear an early coupon edit.
       const paymentMethodReady = page.waitForResponse(response => {

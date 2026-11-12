@@ -66,6 +66,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "2.5.14",
+    "@electric-sql/pglite": "0.5.8",
     "@playwright/test": "1.64.0",
     "@tailwindcss/cli": "4.3.3",
     "@testing-library/dom": "10.4.2",
@@ -74,6 +75,7 @@
     "@types/css-tree": "3.2.0",
     "@types/react": "19",
     "@types/react-dom": "19",
+    "@upstash/redis": "1.36.2",
     "axe-core": "4.13.0",
     "happy-dom": "21.0.4",
     "javascript-obfuscator": "5.8.0",

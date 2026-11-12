@@ -1,124 +1,17 @@
 name: QualityLayer Windows nightly
 
-# Exhaustive Windows regression is explicitly requested; ordinary releases use the bounded gate.
 on:
   workflow_dispatch:
-    inputs:
-      tests:
-        description: Test files to run alone on one runner, separated by spaces. Empty runs the full suite in 16 shards.
-        required: false
-        default: ""
-        type: string
-      benchmark:
-        description: With a list of test files, also run the native compilation benchmark (a full run always does).
-        required: false
-        default: false
-        type: boolean
 
-permissions:
-  contents: read
-
-concurrency:
-  group: qualitylayer-windows-nightly-${{ github.ref }}-${{ inputs.tests }}
-  cancel-in-progress: true
+permissions: {}
 
 jobs:
-  windows-full:
-    name: Windows full suite (${{ matrix.os }}, shard ${{ matrix.shard }}/16)
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2025]
-        shard: ${{ fromJSON(inputs.tests == '' && '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]' || '[1]') }}
-    defaults:
-      run:
-        shell: pwsh
+  private-qualification-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
-      - name: Check out with LF line endings
-        run: git config --global core.autocrlf false
-
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.4"
-          bun-download-url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip
-
-      - name: Unlock repository
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+      - name: Refuse unsealed private qualification
         run: |
-          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
-          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
-          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Install dependencies
-        working-directory: qualitylayer
-        run: bun install --frozen-lockfile
-
-      - name: Install the site's dependencies
-        working-directory: docs/site
-        run: npm ci --ignore-scripts
-
-      - name: Verify native runtime architecture
-        run: |
-          $expected = 'x64'
-          $runtime = bun -p 'JSON.stringify({platform:process.platform,arch:process.arch,bun:Bun.version})' | ConvertFrom-Json
-          @{ osArch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString(); runtime = $runtime } | ConvertTo-Json -Compress
-          if ($runtime.platform -ne 'win32' -or $runtime.arch -ne $expected -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() -ne $expected) { throw 'Native architecture mismatch' }
-          "QUALITYLAYER_EXPECT_ARCH=$expected" >> $env:GITHUB_ENV
-          $runtime | ConvertTo-Json -Compress
-
-      - name: Typecheck
-        if: matrix.shard == 1 && inputs.tests == ''
-        working-directory: qualitylayer
-        run: bun --bun run typecheck
-
-      # tests/windows/run-job.test.ts runs the installed command path through the Rust launcher
-      # and fails without one (the ConPTY job in qualitylayer-ci.yml builds it the same way).
-      - name: Build matching native Rust launcher for the installed command path
-        timeout-minutes: 5
-        working-directory: qualitylayer
-        run: |
-          $target = 'x86_64-pc-windows-msvc'
-          $toolchain = "stable-$target"
-          rustup toolchain install $toolchain --profile minimal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $info = rustup run $toolchain rustc -vV
-          if ($LASTEXITCODE -ne 0 -or -not ($info -contains "host: $target")) { throw 'Rust toolchain is not native to the runner architecture' }
-          $output = Join-Path $env:RUNNER_TEMP 'ql-nightly-launcher'
-          rustup run $toolchain cargo build --locked --manifest-path app/launcher/Cargo.toml --target $target --target-dir $output --bin qualitylayer-launcher --jobs 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $launcher = Join-Path $output "$target/debug/qualitylayer-launcher.exe"
-          if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw 'Native launcher artifact is missing' }
-          "QUALITYLAYER_TEST_LAUNCHER=$launcher" >> $env:GITHUB_ENV
-
-      - name: Windows workflows and installer
-        working-directory: qualitylayer
-        env:
-          QUALITYLAYER_REQUIRE_RENDER: "1"
-          QUALITYLAYER_REQUIRE_WINDOWS_NATIVE: "1"
-          FOCUS_TESTS: ${{ inputs.tests }}
-        run: |
-          $files = @($env:FOCUS_TESTS -split '\s+' | Where-Object { $_ })
-          if ($files.Count -gt 0) { bun run test @files }
-          else { bun run test --shard ${{ matrix.shard }}/16 tests/e2e tests/windows tests/core/platform.test.ts tests/server/lock.test.ts tests/cli/hook-prompt.test.ts tests/core/install/mod.test.ts tests/scripts/chrome-shutdown.test.ts }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Measure native compilation tradeoffs
-        if: matrix.shard == 1 && (inputs.tests == '' || inputs.benchmark)
-        working-directory: qualitylayer
-        run: bun scripts/benchmark-compile.ts --samples 7
-
-      - name: Keep the native performance measurements
-        if: matrix.shard == 1 && (inputs.tests == '' || inputs.benchmark)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: compile-benchmark-${{ matrix.os }}
-          path: qualitylayer/dist/compile-benchmark.json
-          retention-days: 7
+          echo "No full-product checks ran. This private-source workflow is quarantined."
+          echo "Use the reviewed private qualification lane; public component checks are separate."
+          exit 1

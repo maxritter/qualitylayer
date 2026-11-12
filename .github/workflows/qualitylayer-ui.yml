@@ -1,169 +1,17 @@
 name: QualityLayer source UI
 
 on:
-  push:
-    branches: [dev, main]
-  pull_request:
-    branches: [dev, main]
-    paths:
-      - "qualitylayer/src/**"
-      - "qualitylayer/tests/frontend/**"
-      - "qualitylayer/scripts/ui-dev.ts"
-      - "qualitylayer/playwright.ui.config.ts"
-      - "qualitylayer/package.json"
-      - "qualitylayer/bun.lock"
-      - "docs/site/**"
-      - ".github/workflows/qualitylayer-ui.yml"
   workflow_dispatch:
-    inputs:
-      all:
-        description: Run every browser project (nightly); a push runs desktop light and the small window
-        type: boolean
-        default: false
 
-permissions:
-  contents: read
-
-concurrency:
-  group: qualitylayer-ui-${{ github.ref }}
-  cancel-in-progress: true
+permissions: {}
 
 jobs:
-  checkout:
-    name: Subscription checkout browser check
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+  private-qualification-required:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 1
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - run: bash .github/workflows/scripts/install-git-crypt.sh
-      - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: actions/setup-node@v6.5.0
-        with: { node-version: "24.20.0" }
-      - run: npm ci --ignore-scripts
-        working-directory: docs/site
-      - run: npx playwright install --with-deps chromium
-        working-directory: docs/site
-      - name: Checkout and catalog regressions
-        run: npm test -- src/components/CheckoutLink.test.tsx scripts/verify-commerce.test.ts
-        working-directory: docs/site
-      - name: Open every plan's real Polar and Stripe form without payment
-        working-directory: docs/site
+      - name: Refuse unsealed private qualification
         run: |
-          npm run dev:site-only -- --host 127.0.0.1 --port 8082 --mode production > "$RUNNER_TEMP/checkout-vite.log" 2>&1 &
-          server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          node --input-type=module -e 'for(let i=0;i<30;i++){try{if((await fetch("http://127.0.0.1:8082/pricing")).ok)process.exit(0)}catch{}await new Promise(r=>setTimeout(r,200))}process.exit(1)'
-          npm run test:checkout -- http://127.0.0.1:8082 "$RUNNER_TEMP/checkout-proof"
-      - name: Keep checkout readiness and failure evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: checkout-readiness-${{ github.run_id }}
-          path: ${{ runner.temp }}/checkout-proof/
-          retention-days: 7
-          if-no-files-found: warn
-
-  frontend:
-    name: Source UI browser checks (shard ${{ matrix.shard }}/8)
-    # Forks cannot unlock the encrypted source. Existing plaintext/CI gates remain separate.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    # Connected critical journeys in desktop light and the small window on a push, so a run reports
-    # within ten minutes (Max, 10 November 2026); the dark theme joins nightly (inputs.all).
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - name: Install git-crypt
-        run: bash .github/workflows/scripts/install-git-crypt.sh
-      - name: Unlock source
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.4"
-      - name: Install locked QualityLayer dependencies
-        working-directory: qualitylayer
-        run: bun install --frozen-lockfile
-      - name: Install locked website dependencies
-        working-directory: docs/site
-        run: npm ci --ignore-scripts
-      - name: Install Chromium system dependencies
-        working-directory: qualitylayer
-        run: ./node_modules/.bin/playwright install-deps chromium
-      - name: Install managed Chromium
-        working-directory: qualitylayer
-        run: ./node_modules/.bin/playwright install chromium
-      # One private candidate per shard; individual isolated cases balance the eight jobs.
-      - name: Source UI interactions, geometry and accessibility
-        working-directory: qualitylayer
-        run: bun run test:ui ${{ inputs.all && '--all' || '--project=desktop-light --project=desktop-small' }} launch-choice.spec.ts seven-batch.spec.ts seven-verify-checks.spec.ts seven-review-walk.spec.ts approval-header-fit.spec.ts memory.spec.ts team-collaboration-ux.spec.ts artifacts-place.spec.ts artifact-sharing-responsive.spec.ts terminal-app.spec.ts shared-artifact-security.spec.ts conversation-footer.spec.ts open-states.spec.ts loading-states.spec.ts usage-foot.spec.ts --fully-parallel --shard ${{ matrix.shard }}/8 --reporter=github,line,./scripts/ui-duration-reporter.ts
-      - name: Keep fixture failure screenshots
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: qualitylayer-source-ui-${{ github.run_id }}-shard-${{ matrix.shard }}
-          # Source-dev traces contain decrypted JS/response bodies. Keep them off public artifacts.
-          path: qualitylayer/dist/ui-test-results/**/*.png
-          if-no-files-found: warn
-          retention-days: 7
-
-  history:
-    name: Conversation history browser checks
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - run: bash .github/workflows/scripts/install-git-crypt.sh
-      - env: { GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}" }
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.4" }
-      - run: bun install --frozen-lockfile
-        working-directory: qualitylayer
-      - run: npm ci --ignore-scripts
-        working-directory: docs/site
-      - run: ./node_modules/.bin/playwright install --with-deps chromium
-        working-directory: qualitylayer
-      - name: Every history pair and explicit navigation in all desktop layouts
-        working-directory: qualitylayer
-        run: ./node_modules/.bin/playwright test tests/frontend/conversation-history.spec.ts tests/frontend/conversation-turns.spec.ts --config playwright.ui.config.ts --project desktop-light --project desktop-dark --project desktop-small --workers=1 --retries=0 --global-timeout=600000 --grep 'all 2,000|explicit turn navigation|keeps its place when older ones open' --reporter=github,./scripts/ui-duration-reporter.ts
-      - name: Keep numeric history evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: qualitylayer-conversation-history-${{ github.run_id }}
-          path: qualitylayer/dist/ui-test-results/**/conversation-full-history.json
-          if-no-files-found: warn
-          retention-days: 7
-
-  # The release waits for this aggregate: every required UI job must pass on this commit.
-  result:
-    name: Source UI browser checks
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    needs: [frontend, checkout, history]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Every shard passed
-        env:
-          RESULT: ${{ needs.frontend.result }}
-          CHECKOUT: ${{ needs.checkout.result }}
-          HISTORY: ${{ needs.history.result }}
-        run: |
-          if [ "$RESULT" != success ] || [ "$CHECKOUT" != success ] || [ "$HISTORY" != success ]; then
-            echo "::error::source UI: $RESULT; subscription checkout: $CHECKOUT; conversation history: $HISTORY"
-            exit 1
-          fi
-          echo "Every source UI shard passed"
+          echo "No full-product checks ran. This private-source workflow is quarantined."
+          echo "Use the reviewed private qualification lane; public component checks are separate."
+          exit 1

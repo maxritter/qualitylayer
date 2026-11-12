@@ -1,89 +1,17 @@
 name: QualityLayer soak
 
-# An hour of work and quiet windows against the built binary, once a night on the three systems the
-# server runs on. The script (qualitylayer/scripts/soak.ts) starts the server on a temp repository
-# and a temp HOME with 50 tasks and an open event stream, alternates five-minute windows of work
-# (a stand-in page, hook calls, bursts of file writes) with five minutes of quiet, kills the server
-# at minute 30, restarts it through `app ensure --json`, and fails when memory, idle CPU, child
-# processes, the size of the home or the restart time pass their limits. The report is kept.
-# The real App's restart, window and page are proven by app-proof.yml.
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
-concurrency:
-  group: qualitylayer-soak-${{ github.ref }}
-  cancel-in-progress: true
+permissions: {}
 
 jobs:
-  soak:
-    name: Soak (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 75
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-26, windows-2025, ubuntu-24.04]
-    defaults:
-      run:
-        shell: bash
+  private-qualification-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
-      # The encrypted files must arrive byte for byte on Windows.
-      - name: Check out with LF line endings
-        if: runner.os == 'Windows'
-        run: git config --global core.autocrlf false
-
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.4"
-
-      # The checkout is encrypted: the repository's own key opens it. The soak itself reads no secret.
-      - name: Install git-crypt
-        if: runner.os != 'Windows'
-        run: bash .github/workflows/scripts/install-git-crypt.sh
-
-      - name: Unlock repository
-        if: runner.os != 'Windows'
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: bash .github/workflows/scripts/setup-git-crypt.sh
-
-      - name: Unlock repository (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+      - name: Refuse unsealed private qualification
         run: |
-          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
-          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
-          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Install dependencies
-        working-directory: qualitylayer
-        run: bun install --frozen-lockfile
-
-      - name: Build the binary
-        working-directory: qualitylayer
-        run: bun run build
-
-      - name: Soak for an hour
-        working-directory: qualitylayer
-        env:
-          SOAK_REPORT: ${{ runner.temp }}/soak-report.json
-        run: bun scripts/soak.ts --minutes 60 --report "$SOAK_REPORT"
-
-      - name: Keep the report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: soak-report-${{ matrix.os }}
-          path: ${{ runner.temp }}/soak-report.json
-          if-no-files-found: warn
-          retention-days: 14
+          echo "No full-product checks ran. This private-source workflow is quarantined."
+          echo "Use the reviewed private qualification lane; public component checks are separate."
+          exit 1

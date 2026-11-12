@@ -49,6 +49,16 @@ while [ $# -gt 0 ]; do
 done
 cd "$REPO_DIR"
 
+# The selective source policy is raw, keyless metadata. It is independent of working attributes.
+if [ -f .github/scripts/check_source_policy.py ]; then
+  if [ -n "$RANGE" ]; then
+    exec python3 .github/scripts/check_source_policy.py --range "$RANGE"
+  fi
+  if [ "$STAGED" = "1" ] && git cat-file -e :.github/scripts/public-source-policy.json 2>/dev/null; then
+    exec python3 .github/scripts/check_source_policy.py --staged
+  fi
+fi
+
 ALLOWLIST=(
   "qualitylayer/package.json"
   "qualitylayer/bun.lock"

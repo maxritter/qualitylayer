@@ -1,0 +1,44 @@
+{
+  "files": {
+    "includes": [
+      "src/core/licensing-client/contract.ts",
+      "src/core/licensing-client/identity.ts",
+      "src/core/licensing-client/links.ts",
+      "src/core/licensing-client/transport.ts",
+      "tests/licensing-client/identity.test.ts",
+      "tests/licensing-client/transport.test.ts",
+      "src/workflow/asset-contract.ts",
+      "src/workflow/asset-bundle.ts",
+      "src/core/redaction.ts",
+      "src/core/licence/mask.ts",
+      "src/core/licence/workflow.ts",
+      "src/workflow/errors.ts",
+      "tests/workflow/asset-bundle.test.ts"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded",
+      "quoteStyle": "double",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

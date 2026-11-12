@@ -1,17 +1,1189 @@
+---
 name: QualityLayer candidate qualification
-
-on:
-  workflow_dispatch:
-
-permissions: {}
-
+permissions:
+  contents: read
 jobs:
-  private-qualification-required:
+  validate-inputs:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 5
     steps:
-      - name: Refuse unsealed private qualification
-        run: |
-          echo "No full-product checks ran. This private-source workflow is quarantined."
-          echo "Use the reviewed private qualification lane; public component checks are separate."
-          exit 1
+    - name: Validate the private staging request
+      env:
+        VERSION: "${{ inputs.version }}"
+        AUTHORIZATION: "${{ inputs.authorization_environment }}"
+      run: |
+        set -euo pipefail
+        [ "$GITHUB_REPOSITORY" = maxritter/qualitylayer ]
+        [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+        [[ "$VERSION" =~ ^(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+        case "$GITHUB_WORKFLOW_REF" in
+          maxritter/qualitylayer/.github/workflows/release.yml@refs/heads/main|maxritter/qualitylayer/.github/workflows/release.yml@refs/heads/dev) ;;
+          *) echo 'Stage through the guarded Release workflow on main or dev'; exit 1 ;;
+        esac
+        case "$AUTHORIZATION" in
+          beta) ;;
+          production) [ "$GITHUB_REF_NAME" = main ] ;;
+          *) echo 'Unknown signing authorization environment'; exit 1 ;;
+        esac
+  memory-payload:
+    name: Native memory payload (${{ matrix.target }})
+    needs:
+    - validate-inputs
+    - private-command-preflight
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: darwin-arm64
+          os: macos-26
+          arch: arm64
+        - target: darwin-x64
+          os: macos-15-intel
+          arch: x64
+        - target: linux-x64
+          os: ubuntu-22.04
+          arch: x64
+        - target: linux-arm64
+          os: ubuntu-24.04-arm
+          arch: arm64
+        - target: win32-x64
+          os: windows-2025
+          arch: x64
+    environment: "${{ inputs.authorization_environment }}"
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Preserve encrypted bytes on Windows
+      if: runner.os == 'Windows'
+      run: git config --global core.autocrlf false
+    - if: runner.os == 'Windows'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Checkout qualification sources
+      if: runner.os != 'Windows'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        fetch-depth: 0
+        persist-credentials: false
+        sparse-checkout: |
+          .github
+          qualitylayer/scripts
+          qualitylayer/src/core
+          qualitylayer/src/memory-engine
+          qualitylayer/tests/helpers
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip'
+          || '' }}"
+        no-cache: true
+    - name: Install git-crypt
+      if: runner.os != 'Windows'
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Unlock repository
+      if: runner.os != 'Windows'
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Unlock repository on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: |
+        $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+        [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+        try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Read pinned current and approved previous bytes without rebuilding Go
+      env:
+        TARGET: "${{ matrix.target }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/0588539f8adaf412e66a535e9b97b218db1b8eeede5b04d00a45622132e75ba0.sh"
+      shell: bash
+    - name: Import the Developer ID certificate
+      if: runner.os == 'macOS'
+      env:
+        APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+        APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/8b2f2b646a95c6e6ba5612520950da7a860a60bb472c7ba921c8a126fab28a54.sh"
+      shell: bash
+    - name: Sign and notarize the actual Darwin engine before compression
+      if: runner.os == 'macOS'
+      env:
+        TARGET: "${{ matrix.target }}"
+        ASC_KEY_ID: "${{ secrets.ASC_KEY_ID }}"
+        ASC_ISSUER_ID: "${{ secrets.ASC_ISSUER_ID }}"
+        ASC_PRIVATE_KEY: "${{ secrets.ASC_PRIVATE_KEY }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/382db28b5eac616c6ed9adc5b62ca1f272d0530225dfa8f1d07f6de89bfabe4a.sh"
+      shell: bash
+    - name: Windows signing
+      id: signing
+      if: runner.os == 'Windows'
+      uses: "./.github/actions/windows-signing"
+      with:
+        client-id: "${{ secrets.AZURE_CLIENT_ID }}"
+        tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
+        subscription-id: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+        resource-group: "${{ vars.AZURE_SIGNING_RESOURCE_GROUP }}"
+        endpoint: "${{ vars.AZURE_SIGNING_ENDPOINT }}"
+        account: "${{ vars.AZURE_SIGNING_ACCOUNT }}"
+        profile: "${{ vars.AZURE_SIGNING_PROFILE }}"
+    - name: Sign the actual Windows engine before compression
+      if: runner.os == 'Windows' && steps.signing.outputs.enabled == 'true'
+      shell: pwsh
+      env:
+        TARGET: "${{ matrix.target }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/fe1971b9184933eff5b548e03b45f108ec9c880eba91aea74253ba0751557297.ps1"
+    - name: Record the exact platform signing policy and stage bytes
+      env:
+        TARGET: "${{ matrix.target }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/2cc529131179271a57954657009dccc9251b9c4f92a461cb89be65c86c70dade.sh"
+      shell: bash
+    - name: 'Stage only reviewed export members: payload'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/piece/"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-memory-payload-13"
+        QL_EXPORT_KIND: payload
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+        QL_EXPORT_TARGET: "${{ matrix.target }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION" --target "$QL_EXPORT_TARGET"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      if: success()
+      with:
+        name: memory-payload-${{ matrix.target }}-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-memory-payload-13"
+        retention-days: 7
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  payload-readiness:
+    needs:
+    - memory-payload
+    - private-command-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      provenance_sha256: "${{ steps.provenance.outputs.sha256 }}"
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+    - run: bash .github/workflows/scripts/install-git-crypt.sh
+    - env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"
+      working-directory: qualitylayer
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        pattern: memory-payload-*-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/pieces"
+    - name: Validate five native cells and bind their exact receipts
+      id: provenance
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ffc1555f8f07cdd28b23b4dcdc6a64823fcad6822408f5fd7e13362d7f0b85d4.sh"
+      env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"sha256":"sha256"}}'
+      shell: bash
+    - name: 'Stage only reviewed export members: payload'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/stage/"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-payload-readiness-7"
+        QL_EXPORT_KIND: payload
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: memory-payload-stage-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-payload-readiness-7"
+        retention-days: 7
+      if: success()
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  payload-authorization:
+    name: Authorize the qualified payload bytes
+    needs:
+    - payload-readiness
+    - private-command-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: "${{ inputs.authorization_environment }}"
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+        sparse-checkout: ".github/scripts"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-stage-${{ github.run_attempt }}
+        path: stage
+    - name: Sign the trusted same-run payload authorization
+      env:
+        EXPECTED_SHA256: "${{ needs.payload-readiness.outputs.provenance_sha256 }}"
+        RELEASE_SIGNING_KEY: "${{ secrets.RELEASE_SIGNING_KEY }}"
+        RELEASE_SIGNER: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOvc89TsfxkzK1lxTNLr/FHwImLq1oUWYmmXQ1iYL2oU
+      run: |
+        set -euo pipefail
+        [ "$(sha256sum stage/provenance.json | awk '{print $1}')" = "$EXPECTED_SHA256" ]
+        jq -e --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" --argjson attempt "$GITHUB_RUN_ATTEMPT" '.kind == "memory-payload-authorization" and .repository == "maxritter/qualitylayer" and .workflow == ".github/workflows/qualitylayer-candidate.yml" and .sourceCommit == $sha and .runId == $run and .runAttempt == $attempt and (.receipts | keys | sort) == ["darwin-arm64","darwin-x64","linux-arm64","linux-x64","win32-x64"]' stage/provenance.json
+        for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+          expected=$(jq -r --arg target "$target" '.receipts[$target]' stage/provenance.json)
+          [ "$(sha256sum "stage/receipts/$target.json" | awk '{print $1}')" = "$expected" ]
+          jq -e --arg sha "$GITHUB_SHA" --arg target "$target" '.status == "passed" and .target == $target and .sourceCommit == $sha' "stage/receipts/$target.json"
+        done
+        key="${RUNNER_TEMP:?}/payload-signing-key"
+        trap 'rm -f "$key"' EXIT
+        [ -n "$RELEASE_SIGNING_KEY" ]
+        (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
+        ssh-keygen -Y sign -f "$key" -n qualitylayer-release stage/provenance.json
+        printf 'release@qualitylayer.dev namespaces="qualitylayer-release" %s\n' "$RELEASE_SIGNER" > "$RUNNER_TEMP/allowed-signers"
+        ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed-signers" -I release@qualitylayer.dev -n qualitylayer-release -s stage/provenance.json.sig < stage/provenance.json
+    - name: 'Stage only reviewed export members: payload-signature'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: stage/provenance.json.sig
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-payload-authorization-3"
+        QL_EXPORT_KIND: payload-signature
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: memory-payload-signature-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-payload-authorization-3"
+        retention-days: 7
+      if: success()
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  build:
+    name: Build QualityLayer (6 targets)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+    - payload-authorization
+    - private-command-preflight
+    if: "${{ (needs.payload-authorization.result == 'success') && needs.private-command-preflight.result
+      == 'success' }}"
+    outputs:
+      bundle_digest: "${{ steps.bundle.outputs.digest }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+    - name: Install git-crypt
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Unlock repository
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - name: Install dependencies
+      working-directory: qualitylayer
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Download qualified payload bytes
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-stage-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/payload-stage"
+    - name: Download payload authorization
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-signature-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/payload-stage"
+    - name: Build release binaries
+      working-directory: qualitylayer
+      env:
+        QUALITYLAYER_VERSION: "${{ inputs.version }}"
+        QUALITYLAYER_MEMORY_PAYLOAD_STAGE: "${{ runner.temp }}/payload-stage"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c14064e49a0fb867584923623a706d7a02ef0fcb46122e9582f94461e7cd098f.sh"
+      shell: bash
+    - name: The release Cockpit draws
+      working-directory: qualitylayer
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/fc16efea0720bae8dbe5725c535d5b1729d4541764904ba850d141c6456cfa69.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Digest of the workflow texts
+      id: bundle
+      working-directory: qualitylayer
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dd340f259a19d8e915e40dab07ca87c0d5ae6b140bb4a306b9fc04af46774f33.sh"
+      env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"digest":"sha256"}}'
+      shell: bash
+    - name: Smoke-test the Linux x64 binary
+      env:
+        EXPECTED: "${{ inputs.version }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/b3f5486da14cdb51ae7ecc193c5e83364859bae4999a1a825d6601c08b40084b.sh"
+      shell: bash
+    - name: Collect release assets
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/cc2f5153bb640b4b6f086963714a08cff26353e85a57a400b1170895499e9cb5.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: 'Stage only reviewed export members: cli'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: release/
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-build-12"
+        QL_EXPORT_KIND: cli
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - name: Upload artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: qualitylayer-release-cli-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-build-12"
+        retention-days: 1
+      if: success()
+  app:
+    name: App package (${{ matrix.name }})
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 60
+    environment: "${{ inputs.authorization_environment }}"
+    needs:
+    - build
+    - private-command-preflight
+    if: "${{ (needs.build.result == 'success') && needs.private-command-preflight.result
+      == 'success' }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - name: macos-arm64
+          target: darwin-arm64
+          os: macos-26
+        - name: macos-x64
+          target: darwin-x64
+          os: macos-15-intel
+        - name: windows-x64
+          target: windows-x64
+          os: windows-2025
+        - name: linux-x64
+          target: linux-x64
+          os: ubuntu-22.04
+        - name: linux-arm64
+          target: linux-arm64
+          os: ubuntu-24.04-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: Check out with LF line endings
+      if: runner.os == 'Windows'
+      run: git config --global core.autocrlf false
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        sparse-checkout: |
+          .github
+          qualitylayer/app
+          qualitylayer/scripts
+        persist-credentials: false
+    - name: Install git-crypt
+      if: runner.os != 'Windows'
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Setup git-crypt
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+      with:
+        msystem: MSYS
+        install: git git-crypt
+        update: true
+        path-type: inherit
+    - name: Unlock repository
+      if: runner.os != 'Windows'
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Unlock repository (Windows)
+      if: runner.os == 'Windows'
+      shell: msys2 {0}
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - name: Toolchain for the App (Rust, Tauri, the system libraries)
+      uses: "./.github/actions/app-toolchain"
+    - name: Import the Developer ID certificate
+      if: runner.os == 'macOS'
+      env:
+        APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}"
+        APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/66d570eae7529a12b65fceeec39c0f697d2dbe6eb5f48a4d5ecc0664b80fded7.sh"
+      shell: bash
+    - name: Download the command line this run built
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-release-cli-${{ github.run_attempt }}
+        path: release
+    - name: Windows signing
+      id: signing
+      if: runner.os == 'Windows'
+      uses: "./.github/actions/windows-signing"
+      with:
+        client-id: "${{ secrets.AZURE_CLIENT_ID }}"
+        tenant-id: "${{ secrets.AZURE_TENANT_ID }}"
+        subscription-id: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+        resource-group: "${{ vars.AZURE_SIGNING_RESOURCE_GROUP }}"
+        endpoint: "${{ vars.AZURE_SIGNING_ENDPOINT }}"
+        account: "${{ vars.AZURE_SIGNING_ACCOUNT }}"
+        profile: "${{ vars.AZURE_SIGNING_PROFILE }}"
+    - name: Sign the standalone Windows CLI
+      if: runner.os == 'Windows' && steps.signing.outputs.enabled == 'true'
+      shell: pwsh
+      env:
+        VERSION: "${{ inputs.version }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/636df6b6965729f6fb4bf372c6e787892df4acaf1fd195b31d371d84112a44f3.ps1"
+    - name: Use TCP for Apple ticket delivery on Intel runners
+      if: matrix.os == 'macos-15-intel'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/7918bc33694a00afca67093b047addfee61c9eb8e98a14c8f250e4cc3e2641f0.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Finalize the standalone Mac CLI signature
+      if: runner.os == 'macOS'
+      env:
+        TARGET: "${{ matrix.target }}"
+        ASC_KEY_ID: "${{ secrets.ASC_KEY_ID }}"
+        ASC_ISSUER_ID: "${{ secrets.ASC_ISSUER_ID }}"
+        ASC_PRIVATE_KEY: "${{ secrets.ASC_PRIVATE_KEY }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/f2085747a633425d1cf7942211918bbb8186e26586f99efdbf4f6b5827dc4f70.sh"
+      shell: bash
+    - name: Build the package
+      working-directory: qualitylayer
+      env:
+        VERSION: "${{ inputs.version }}"
+        TARGET: "${{ matrix.target }}"
+        TAURI_SIGNING_PRIVATE_KEY: "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          }}"
+        ASC_KEY_ID: "${{ secrets.ASC_KEY_ID }}"
+        ASC_ISSUER_ID: "${{ secrets.ASC_ISSUER_ID }}"
+        ASC_PRIVATE_KEY: "${{ secrets.ASC_PRIVATE_KEY }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/661d5e618d28072e5671e3e17e7400436515eefc0878e7c504925dbcd05c4a22.sh"
+      shell: bash
+    - name: A Mac package is accepted by Gatekeeper
+      if: runner.os == 'macOS'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/de58d98efa27ade8e47ef85edf013e17c16e8f59fc3f444c1df46c5a363da532.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Every Windows file is signed
+      if: runner.os == 'Windows' && steps.signing.outputs.enabled == 'true'
+      shell: pwsh
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/f7701f2fe45bee414acb103849519eb6477ec30c610a10d507c2e9a52a58a07e.ps1"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+    - name: Retain the exact standalone Windows CLI
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/31d0012845f7809c82dd8906dd9480625fe0a2fe7e3e30c4e89de39123291307.ps1"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+    - name: Retain the exact signed standalone Mac CLI
+      if: runner.os == 'macOS'
+      env:
+        TARGET: "${{ matrix.target }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/d5ef832ee40709a865db2629c3ead4170d7819b1359838f17b15d87385943e31.sh"
+      shell: bash
+    - name: 'Stage only reviewed export members: app'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: qualitylayer/dist/app/release/
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-app-20"
+        QL_EXPORT_KIND: app
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+        QL_EXPORT_TARGET: "${{ matrix.name }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION" --target "$QL_EXPORT_TARGET"
+    - name: Upload the package
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: app-${{ matrix.name }}-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-app-20"
+        retention-days: 1
+      if: success()
+  assemble-release:
+    name: Assemble Release
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact_id: "${{ steps.assets.outputs.artifact-id }}"
+      artifact_digest: "${{ steps.assets.outputs.artifact-digest }}"
+    needs:
+    - build
+    - app
+    - private-command-preflight
+    if: "${{ (needs.build.result == 'success' && needs.app.result == 'success') &&
+      needs.private-command-preflight.result == 'success' }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+    - name: Install git-crypt
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Unlock repository
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - name: Download the compiled command lines
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-release-cli-${{ github.run_attempt }}
+        path: release
+    - name: Download the native packages and finalized Mac and Windows CLIs
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        pattern: app-*-${{ github.run_attempt }}
+        path: release
+        merge-multiple: true
+    - name: Fetch reviewed release notes (metadata only)
+      env:
+        GH_TOKEN: "${{ github.token }}"
+        VERSION: "${{ inputs.version }}"
+        QL_RELEASE_EXPORTS: "{}"
+        QL_RELEASE_METADATA_CONTROL: 'true'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4e4d6efa62a9c9e04fbfada54eada1367cbcdd1c36a9772153cd51507446248e.sh"
+      shell: bash
+    - name: Checksums and the updater's manifest
+      env:
+        VERSION: "${{ inputs.version }}"
+        INSTALLED_RECEIPT: "${{ inputs.release_authorization }}"
+        INPUT_VERSION: "${{ inputs.version }}"
+        RELEASE_SOURCE_SHA: "${{ github.sha }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/f14b860bac4fa1692d52c8a6d96e0eb126c1c3c9ed8fdb3285f822d9a108c52a.sh"
+      shell: bash
+    - name: Guard the asset list
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/eeeda263cda19c9e7c2a8e469953d5d6cc032f2d1bd0a0b41921b466accfcc87.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: 'Stage only reviewed export members: assets'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: release/
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-assemble-release-9"
+        QL_EXPORT_KIND: assets
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - name: Upload artifact
+      id: assets
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: qualitylayer-candidate-assets-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-assemble-release-9"
+        retention-days: 1
+      if: success()
+  windows-release:
+    name: Native Windows release (${{ matrix.arch }})
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 25
+    needs:
+    - build
+    - app
+    - private-command-preflight
+    if: "${{ (needs.build.result == 'success' && needs.app.result == 'success') &&
+      needs.private-command-preflight.result == 'success' }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: windows-2025
+          arch: x64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+    - name: Check out with LF line endings
+      run: git config --global core.autocrlf false
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        sparse-checkout: |
+          .github
+          qualitylayer/scripts
+          qualitylayer/src/core
+          qualitylayer/src/server
+        persist-credentials: false
+    - name: Setup git-crypt
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+      with:
+        msystem: MSYS
+        install: git git-crypt
+        update: true
+        path-type: inherit
+    - name: Unlock repository
+      shell: msys2 {0}
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - name: Download exact release artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: app-windows-${{ matrix.arch }}-${{ github.run_attempt }}
+        path: release
+    - name: The published Windows files are signed alike
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/f1bf2bb70764d6ce2735f09239c242199599ef48663b6a1e17458561b7f0c9bf.ps1"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: pwsh
+    - name: Verify checksum and version on the native OS
+      env:
+        QL_ARCH: "${{ matrix.arch }}"
+        QL_VERSION: "${{ inputs.version }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/ba3cad47267b56f6a352f7672f187c453115ff625d00546b641a06c59131f5c9.ps1"
+      shell: pwsh
+    - name: 'Stage only reviewed export members: account-acl'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/ql-release-account-acls.json"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-windows-release-8"
+        QL_EXPORT_KIND: account-acl
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - name: Keep the disposable Windows account ACL evidence
+      if: success()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: native-release-account-acls-${{ matrix.arch }}-${{ github.run_attempt
+          }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-windows-release-8"
+        if-no-files-found: ignore
+        retention-days: 7
+    - name: The published Windows Cockpit draws
+      working-directory: qualitylayer
+      env:
+        QL_ARCH: "${{ matrix.arch }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/1b4bd9f2424b01cdaea7c2ddf9c8c4bc7626e9c5d76f59bdbadad1274b502c0d.ps1"
+      shell: pwsh
+  catalog-signing:
+    name: Sign the fixed candidate catalog
+    needs:
+    - assemble-release
+    - private-command-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: "${{ inputs.authorization_environment }}"
+    outputs:
+      artifact_id: "${{ steps.catalog.outputs.artifact-id }}"
+      artifact_digest: "${{ steps.catalog.outputs.artifact-digest }}"
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+        sparse-checkout: ".github/scripts"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-candidate-assets-${{ github.run_attempt }}
+        path: release
+    - name: Sign only the known final assets
+      env:
+        VERSION: "${{ inputs.version }}"
+        RELEASE_SIGNING_KEY: "${{ secrets.RELEASE_SIGNING_KEY }}"
+        RELEASE_SIGNER: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOvc89TsfxkzK1lxTNLr/FHwImLq1oUWYmmXQ1iYL2oU
+      run: |
+        set -euo pipefail
+        [[ "$VERSION" =~ ^(1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+        expected=()
+        for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64 windows-x64.exe; do
+          expected+=("qualitylayer-$target" "qualitylayer-$target.sha256")
+        done
+        for script in install.sh install.ps1; do expected+=("$script" "$script.sha256"); done
+        for arch in arm64 x64; do
+          expected+=("QualityLayer-$VERSION-macos-$arch.dmg" "QualityLayer-$VERSION-macos-$arch.dmg.sha256" "QualityLayer-$VERSION-macos-$arch.app.tar.gz" "QualityLayer-$VERSION-macos-$arch.app.tar.gz.sig")
+          package="QualityLayer-$VERSION-linux-$arch.AppImage"
+          expected+=("$package" "$package.sha256" "$package.sig")
+        done
+        package="QualityLayer-$VERSION-x64-setup.exe"
+        expected+=("$package" "$package.sha256" "$package.sig")
+        expected+=(latest.json)
+        printf '%s\n' "${expected[@]}" | LC_ALL=C sort > "$RUNNER_TEMP/expected-assets"
+        [ -z "$(find release -mindepth 1 -maxdepth 1 ! -type f -print)" ]
+        [ -z "$(find release -type f -size +1G -print)" ]
+        find release -mindepth 1 -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort > "$RUNNER_TEMP/actual-assets"
+        diff -u "$RUNNER_TEMP/expected-assets" "$RUNNER_TEMP/actual-assets"
+        jq -e --arg version "$VERSION" '.version == $version' release/latest.json
+        (cd release && sha256sum -c ./*.sha256)
+        (cd release && printf '%s\n' "${expected[@]}" | LC_ALL=C sort | xargs sha256sum > SHA256SUMS)
+        key="$RUNNER_TEMP/catalog-signing-key"
+        trap 'rm -f "$key"' EXIT
+        [ -n "$RELEASE_SIGNING_KEY" ]
+        (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
+        ssh-keygen -Y sign -f "$key" -n qualitylayer-release release/SHA256SUMS
+        printf 'release@qualitylayer.dev namespaces="qualitylayer-release" %s\n' "$RELEASE_SIGNER" > "$RUNNER_TEMP/allowed-signers"
+        ssh-keygen -Y verify -f "$RUNNER_TEMP/allowed-signers" -I release@qualitylayer.dev -n qualitylayer-release -s release/SHA256SUMS.sig < release/SHA256SUMS
+        mkdir "$RUNNER_TEMP/catalog"
+        cp release/SHA256SUMS release/SHA256SUMS.sig "$RUNNER_TEMP/catalog/"
+    - name: 'Stage only reviewed export members: catalog'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/catalog/"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-catalog-signing-3"
+        QL_EXPORT_KIND: catalog
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      id: catalog
+      with:
+        name: qualitylayer-candidate-catalog-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-catalog-signing-3"
+        retention-days: 7
+      if: success()
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  memory-distribution:
+    name: Final native memory distribution (${{ matrix.target }})
+    needs:
+    - catalog-signing
+    - payload-authorization
+    - private-command-preflight
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: darwin-arm64
+          os: macos-26
+          arch: arm64
+        - target: darwin-x64
+          os: macos-15-intel
+          arch: x64
+        - target: linux-x64
+          os: ubuntu-22.04
+          arch: x64
+        - target: linux-arm64
+          os: ubuntu-24.04-arm
+          arch: arm64
+        - target: win32-x64
+          os: windows-2025
+          arch: x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - if: runner.os == 'Windows'
+      run: git config --global core.autocrlf false
+    - if: runner.os == 'Windows'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+    - name: Checkout qualification sources
+      if: runner.os != 'Windows'
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+        sparse-checkout: |
+          .github
+          qualitylayer/scripts
+          qualitylayer/src/core
+          qualitylayer/src/memory-engine
+          qualitylayer/tests/helpers
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip'
+          || '' }}"
+        no-cache: true
+    - if: runner.os != 'Windows'
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - if: runner.os != 'Windows'
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Unlock repository on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: |
+        $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+        [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+        try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-candidate-assets-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/release"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-candidate-catalog-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/release"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-stage-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/payload-stage"
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-signature-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/payload-stage"
+    - name: Download the published stable 12.0.0 distribution once for this target
+      env:
+        GH_TOKEN: "${{ github.token }}"
+        TARGET: "${{ matrix.target }}"
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"PREVIOUS_CLI":"temp-path","PREVIOUS_PACKAGE":"temp-path"}}'
+        QL_RELEASE_METADATA_CONTROL: 'true'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4c0f04b216444f9f54d7050629a9c864eb2e7bd2202c6d9a629d135bed583be5.sh"
+      shell: bash
+    - name: Execute both real installer and upgrade routes in the disposable principal
+      env:
+        TARGET: "${{ matrix.target }}"
+        VERSION: "${{ inputs.version }}"
+        QL_RELEASE_EXPORTS: "{}"
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c723bc325a8f9c521a8660c4e0c303afe896898f91291aff6aabcf29b92661fd.sh"
+      shell: bash
+    - name: 'Stage only reviewed export members: distribution'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/distribution/"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-memory-distribution-13"
+        QL_EXPORT_KIND: distribution
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+        QL_EXPORT_TARGET: "${{ matrix.target }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION" --target "$QL_EXPORT_TARGET"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      if: success()
+      with:
+        name: memory-distribution-${{ matrix.target }}-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-memory-distribution-13"
+        retention-days: 7
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  distribution-readiness:
+    name: Freeze the successful candidate identity
+    needs:
+    - memory-distribution
+    - windows-release
+    - assemble-release
+    - catalog-signing
+    - build
+    - private-command-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      manifest_sha256: "${{ steps.manifest.outputs.sha256 }}"
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+    - run: bash .github/workflows/scripts/install-git-crypt.sh
+    - env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"
+      working-directory: qualitylayer
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-candidate-assets-${{ github.run_attempt }}
+        path: release
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: qualitylayer-candidate-catalog-${{ github.run_attempt }}
+        path: release
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-stage-${{ github.run_attempt }}
+        path: payload-stage
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        name: memory-payload-signature-${{ github.run_attempt }}
+        path: payload-stage
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      with:
+        pattern: memory-distribution-*-${{ github.run_attempt }}
+        path: distribution
+        merge-multiple: true
+    - name: Validate all five final native receipts without touching public assets
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/0b633415bc73cf9ae673ba229c564d980ca3c94eacdc51ff62f3507df82cc929.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Bind immutable artifact IDs and Root-installable file hashes
+      id: manifest
+      env:
+        VERSION: "${{ inputs.version }}"
+        ASSETS_ID: "${{ needs.assemble-release.outputs.artifact_id }}"
+        ASSETS_DIGEST: "${{ needs.assemble-release.outputs.artifact_digest }}"
+        CATALOG_ID: "${{ needs.catalog-signing.outputs.artifact_id }}"
+        CATALOG_DIGEST: "${{ needs.catalog-signing.outputs.artifact_digest }}"
+        BUNDLE_DIGEST: "${{ needs.build.outputs.bundle_digest }}"
+        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"sha256":"sha256"}}'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c51ea24c4ffb07c8aada7ca5f5339e0e1edcb8c9f01666b6551382b6e30752f3.sh"
+      shell: bash
+    - name: 'Stage only reviewed export members: manifest'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: "${{ runner.temp }}/candidate/candidate.json"
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-distribution-readiness-12"
+        QL_EXPORT_KIND: manifest
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: qualitylayer-candidate-manifest-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-distribution-readiness-12"
+        retention-days: 7
+      if: success()
+    - name: 'Stage only reviewed export members: candidate-receipts'
+      if: success()
+      shell: bash
+      env:
+        QL_EXPORT_SOURCE: distribution
+        QL_EXPORT_DESTINATION: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-distribution-readiness-13"
+        QL_EXPORT_KIND: candidate-receipts
+        QL_EXPORT_VERSION: "${{ inputs.version }}"
+        QL_DISTRIBUTION_SET: "${{ runner.temp }}/distribution-set.json"
+      run: python3 "${{ github.workspace }}/.github/scripts/stage-release-artifact.py"
+        --kind "$QL_EXPORT_KIND" --source "$QL_EXPORT_SOURCE" --destination "$QL_EXPORT_DESTINATION"
+        --version "$QL_EXPORT_VERSION" --distribution-set "$QL_DISTRIBUTION_SET"
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: qualitylayer-candidate-receipts-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-public-upload-qualitylayer-candidate-distribution-readiness-13"
+        retention-days: 7
+      if: success()
+    if: "${{ needs.private-command-preflight.result == 'success' }}"
+  private-command-preflight:
+    name: Private command channel preflight (${{ matrix.target }})
+    needs: validate-inputs
+    permissions:
+      contents: read
+    runs-on: "${{ matrix.os }}"
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - target: darwin-arm64
+          os: macos-26
+          arch: arm64
+        - target: darwin-x64
+          os: macos-15-intel
+          arch: x64
+        - target: linux-x64
+          os: ubuntu-22.04
+          arch: x64
+        - target: linux-arm64
+          os: ubuntu-24.04-arm
+          arch: arm64
+        - target: win32-x64
+          os: windows-2025
+          arch: x64
+    steps:
+    - name: Checkout only public control scripts
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ github.sha }}"
+        persist-credentials: false
+        sparse-checkout: ".github/scripts"
+    - name: Qualify actual POSIX private command channels and cleanup
+      if: runner.os != 'Windows'
+      shell: bash
+      run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+    - name: Qualify actual Windows PowerShell channels and owned cleanup
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py"
+        "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+    - name: Set up the actual pinned Windows MSYS2 toolchain
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+      with:
+        msystem: MSYS
+        install: git git-crypt
+        update: true
+        path-type: inherit
+    - name: Qualify actual Windows MSYS2 channels and native failures
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py"
+        "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py" msys2
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+'on':
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      authorization_environment:
+        required: true
+        type: string
+      release_authorization:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      GIT_CRYPT_KEY:
+        required: true
+      APPLE_CERTIFICATE:
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        required: true
+      ASC_KEY_ID:
+        required: true
+      ASC_ISSUER_ID:
+        required: true
+      ASC_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      RELEASE_SIGNING_KEY:
+        required: true
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_SUBSCRIPTION_ID:
+        required: false
+    outputs:
+      bundle_digest:
+        value: "${{ jobs.build.outputs.bundle_digest }}"
+      candidate_manifest_sha256:
+        value: "${{ jobs.distribution-readiness.outputs.manifest_sha256 }}"

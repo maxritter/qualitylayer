@@ -27,6 +27,15 @@ name: Release
       installed_receipt:
         description: Root's actual installed-release-candidate JSON receipt
         type: string
+      backend_source_sha:
+        description: Explicit qualified backend source SHA; no implicit legacy fallback
+        type: string
+        required: false
+      backend_compatibility:
+        description: Complete current-release reviewed compatibility JSON; protected
+          Production checksum must match
+        type: string
+        required: false
 env:
   RELEASE_SOURCE_SHA: "${{ inputs.operation == 'promote' && inputs.candidate_source_sha
     || github.sha }}"
@@ -67,7 +76,13 @@ jobs:
         set -e
         case "$result" in
           0) echo 'reduced=true' >> "$GITHUB_OUTPUT" ;;
-          2) echo 'The reviewed 14.0.0 authority receipt is required'; exit 1 ;;
+          2)
+                    python3 -c 'import json,os
+        raw=os.environ.get("INSTALLED_RECEIPT","")
+        if raw:
+         value=json.loads(raw)
+         if not isinstance(value,dict) or "releaseException" in value or value.get("kind")=="release14-minimum-authorization":raise SystemExit("Malformed one-release exception rejected")'
+                    echo 'reduced=false' >> "$GITHUB_OUTPUT" ;;
           *) echo 'Release authority receipt rejected'; exit 1 ;;
         esac
     - name: Check commit messages
@@ -201,27 +216,21 @@ jobs:
         "${{ github.workspace }}/.github/scripts/release-private-command.py"
     - name: Install git-crypt
       run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Install the existing pinned Trivy before private source
+      uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
+      with:
+        version: v0.72.0
+        cache: 'false'
     - name: Unlock repository
       env:
         GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
       run: bash .github/workflows/scripts/setup-git-crypt.sh
-    - name: Run Trivy vulnerability and secret scanner
-      uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
+    - name: Scan private source with sealed diagnostics
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/764169e31f32c84038b92af8603fbe9f5502ab96777bd0c1676f0e6d3b8f58b3.sh"
       env:
-        TRIVY_SKIP_VERSION_CHECK: 'true'
-      with:
-        version: v0.72.0
-        scan-type: fs
-        scan-ref: "."
-        scanners: vuln,secret
-        severity: CRITICAL,HIGH
-        limit-severities-for-sarif: true
-        exit-code: '1'
-        ignore-unfixed: true
-        skip-dirs: node_modules,qualitylayer/node_modules,docs/site/api,docs/site/node_modules,docs/docusaurus/node_modules
-        trivyignores: ".trivyignore"
-        format: sarif
-        output: trivy-results.sarif
+        QL_RELEASE_EXPORTS: "{}"
   ci-reuse:
     name: Reuse CI results
     permissions:
@@ -581,15 +590,16 @@ jobs:
         merge-multiple: true
         path: release
     - name: Verify all exact files and the existing production signature
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/20b447b5175a158eadeaa6dd1f0058b811b88908ca77575bdb4393f464ca0ea3.sh"
       env:
         INPUT_VERSION: "${{ inputs.version }}"
         INSTALLED_RECEIPT: "${{ inputs.installed_receipt }}"
         RELEASE_CATALOG: release/SHA256SUMS
         RELEASE_MANIFEST: release/latest.json
         QL_RELEASE_EXPORTS: "{}"
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/9964abb86d2c3ae0b9e014960e9b7bd79469ed82000b93c26545d9dd924c06c0.sh"
-      shell: bash
+        REDUCED: "${{ needs.check-trigger.outputs.reduced }}"
   approve-release:
     name: Authorize promotion of the installed candidate
     permissions:
@@ -624,8 +634,6 @@ jobs:
     permissions:
       contents: write
       actions: read
-      issues: write
-      pull-requests: write
       id-token: write
       attestations: write
     runs-on: ubuntu-latest
@@ -634,6 +642,7 @@ jobs:
     - prepare-release
     - verify-candidate
     - approve-release
+    - check-trigger
     if: "${{ always() && github.event_name == 'workflow_dispatch' && inputs.operation
       == 'promote' && needs.prepare-release.result == 'success' && needs.verify-candidate.result
       == 'success' && needs.approve-release.result == 'success' }}"
@@ -644,6 +653,14 @@ jobs:
       VERCEL_PROJECT_ID: prj_SbOGJL2YBjvq9P5MSjxcrj87IGbi
       PRODUCTION_BRANCH: "${{ !contains(needs.prepare-release.outputs.version, '-')
         && 'main' || vars.SITE_PRODUCTION_BRANCH || 'main' }}"
+      BACKEND_SOURCE_SHA: "${{ inputs.backend_source_sha }}"
+      BACKEND_COMPATIBILITY: "${{ inputs.backend_compatibility }}"
+      QUALIFIED_BACKEND_COMPATIBILITY_SHA256: "${{ vars.QUALIFIED_BACKEND_COMPATIBILITY_SHA256
+        }}"
+      CANDIDATE_RUN_ID: "${{ inputs.candidate_run_id }}"
+      CANDIDATE_RUN_ATTEMPT: "${{ inputs.candidate_run_attempt }}"
+      CANDIDATE_MANIFEST_SHA256: "${{ needs.verify-candidate.outputs.manifest_sha256
+        }}"
     steps:
     - name: Checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -724,59 +741,54 @@ jobs:
       env:
         QL_RELEASE_EXPORTS: "{}"
       shell: bash
-    - name: Install the site's dependencies
-      working-directory: docs/site
+    - name: Require the same protected backend compatibility selection
+      shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/2edd201f34d97547f62ce2c6226040600ef0ee2cb3a1eb256131eb8f28fb2dc3.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dd4d9b1c6d3c3711e9fd3b5d1ec5579b7cb6c82e28ec11b7ceebf2c027ad16b7.sh"
       env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"COMPATIBILITY_FILE":"temp-path","COMPATIBILITY_SHA256":"sha256"}}'
+      if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
+    - name: Read immutable same-run site artifact provenance
+      env:
+        GH_TOKEN: "${{ github.token }}"
+        CANDIDATE_RUN: "${{ inputs.candidate_run_id }}"
+        CANDIDATE_ATTEMPT: "${{ inputs.candidate_run_attempt }}"
+        INSTALLED_RECEIPT: "${{ inputs.installed_receipt }}"
         QL_RELEASE_EXPORTS: "{}"
-      shell: bash
-    - name: Prepare the stable schema-9 deployment source
-      if: "${{ !contains(env.VERSION, '-') }}"
+        QL_RELEASE_METADATA_CONTROL: 'true'
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/9d4efc80628d239d7175132f82ef5aa35bca10cbed74e63e1750f278c2d08b77.sh"
-      env:
-        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"DEPLOY_SOURCE":"temp-path","PREPARED_BACKEND":"temp-path"}}'
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/1e3d85196e666e1d98a567589dd481a65626ab484ae5a50c05bda55041939301.sh"
       shell: bash
-    - name: Test the prepared stable schema-9 API
-      if: "${{ !contains(env.VERSION, '-') }}"
-      working-directory: "${{ env.DEPLOY_SOURCE }}/docs/site"
+      if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
+    - name: Select the immutable same-run website artifact
+      shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/a24002879c886414df662ea5644bacc6089d41ffe2543bdd503fc3d2da675d7f.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ce8e77562855e2543c8df0cb5e80ab2e6bcb9d8c7e4e204521043fffbdfc0727.sh"
       env:
-        QL_RELEASE_EXPORTS: "{}"
+        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"site_artifact_id":"id","site_artifact_digest":"sha256"}}'
+      if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
+      id: site-artifact
+    - name: Download the immutable qualified site identity
+      if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
       shell: bash
-    - name: Apply the database schema
-      if: "${{ !contains(env.VERSION, '-') }}"
-      working-directory: "${{ env.DEPLOY_SOURCE }}/docs/site"
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/cd2d2aa5fdf46130c6c47f8d2b7b74d4cfae3d759332471731b7dd4494080514.sh"
       env:
-        QL_RELEASE_EXPORTS: "{}"
-      shell: bash
-    - name: Deploy the site at this commit
-      if: "${{ !contains(env.VERSION, '-') }}"
-      id: deploy
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/00c1bdb0ddfa1bef713ac6bff972dbe8e55f8bee8f3caf2931926337e733e501.sh"
-      env:
-        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"digest":"sha256","url":"public-url"}}'
-      shell: bash
-    - name: Upload the workflow texts and read them back
-      working-directory: docs/site
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/fa565f76dc7a398ebc54fa602766b474f49a942f277d81382fe29a1316450811.sh"
-      env:
-        QL_RELEASE_EXPORTS: "{}"
-      shell: bash
-    - name: A fresh trial gets the texts from the deployment
-      working-directory: docs/site
-      env:
-        DEPLOY_URL: "${{ steps.deploy.outputs.url || 'https://qualitylayer.dev' }}"
+        GH_TOKEN: "${{ github.token }}"
+        SITE_ARTIFACT_ID: "${{ steps.site-artifact.outputs.site_artifact_id }}"
+        SITE_ARTIFACT_DIGEST: "${{ steps.site-artifact.outputs.site_artifact_digest
+          }}"
+        QL_RELEASE_METADATA_CONTROL: 'true'
         QL_RELEASE_EXPORTS: "{}"
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dfee7dbf8d0e2ce0b2be0415885d8bd4d9911b5f8bdcbcaefe51296fe35d8978.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/020c2dce1664c8b108585c1f81d7c841b383bea28e84c5a270527a8debc6281d.sh"
+    - name: Verify the exact qualified site before binary publication
       shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+      env:
+        QL_SITE_PHASE: identity
+        SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"SITE_URL":"public-url","SITE_SHA256":"sha256"}}'
+      if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
     - name: The release notes, from the manifest
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/67d9931c711cc7486fb3d1f2e8d2aaada28e27101299f4d0c3c810a79db9a495.sh"
@@ -799,6 +811,9 @@ jobs:
           release/QualityLayer-*-setup.exe
           release/QualityLayer-*.AppImage
     - name: Create only the exact promoted candidate release
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/177ef8865966a68c95a020665389479d34ba7eee5859790ec280a9dc68901461.sh"
       env:
         GH_TOKEN: "${{ github.token }}"
         CANDIDATE_RUN: "${{ inputs.candidate_run_id }}"
@@ -806,9 +821,6 @@ jobs:
         MANIFEST_SHA256: "${{ needs.verify-candidate.outputs.manifest_sha256 }}"
         QL_RELEASE_EXPORTS: "{}"
         QL_RELEASE_METADATA_CONTROL: 'true'
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/8c207b0e68e9b7474798c3e1e348cb507a90efff6f5340a17f8defce0ac38524.sh"
-      shell: bash
     - name: Upload assets to the release
       env:
         GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -833,39 +845,23 @@ jobs:
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/cdbe0d3771885388f811ecf854429b42046af32c8961521a52e1c0ec474225a5.sh"
       shell: bash
-    - name: Remove the betas this stable release supersedes
-      if: "${{ !contains(env.VERSION, '-') }}"
-      env:
-        GH_TOKEN: "${{ github.token }}"
-        QL_RELEASE_EXPORTS: "{}"
-        QL_RELEASE_METADATA_CONTROL: 'true'
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/99aea3cb07b472263f9594a3bc9c7b371fdee5ae26502fab24da7a122dfb6294.sh"
+    - name: Promote only the exact previously qualified staged site
       shell: bash
-    - name: Point qualitylayer.dev at this release
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/02663a42a188ccb1359b5389569090cfd8ec0dbe22c7d51a6ce7cee015e3daa1.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
       if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
-      env:
-        DEPLOY_URL: "${{ steps.deploy.outputs.url }}"
-        QL_RELEASE_EXPORTS: "{}"
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4a3993dce5a1ef7ae987f68eb2344e290aef3077defdc9f51135890fce9e2d0f.sh"
+    - name: Verify public alias critical bytes and exact release before completion
       shell: bash
-    - name: Give the v12.99.0 bridge this release's CLI files
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+      env:
+        QL_SITE_PHASE: public
+        SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
+        QL_RELEASE_EXPORTS: "{}"
       if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
-      env:
-        GH_TOKEN: "${{ github.token }}"
-        QL_RELEASE_EXPORTS: "{}"
-        QL_RELEASE_METADATA_CONTROL: 'true'
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/5e654b9680cca2c525a3f0db099f6bd276bac44581d8a0043b9f98484e9e1afe.sh"
-      shell: bash
-    - name: Remove private stable deployment sources
-      if: always()
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/7521d8f5ffcbe68e9938d257c62fb4fa4bbaa6f434d1b732b1cfd5694f8c10f6.sh"
-      env:
-        QL_RELEASE_EXPORTS: "{}"
-      shell: bash
+    environment: "${{ github.ref_name == 'main' && 'production' || 'beta' }}"
   beta-install:
     name: Beta install
     permissions:
@@ -878,3 +874,149 @@ jobs:
     uses: "./.github/workflows/beta-install.yml"
     with:
       version: "${{ needs.prepare-release.outputs.version }}"
+  stage-website:
+    name: Stage and qualify the matching website without publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    needs:
+    - check-trigger
+    - prepare-release
+    - candidate
+    if: "${{ always() && inputs.operation != 'promote' && github.ref_name == 'main'
+      && !contains(needs.prepare-release.outputs.version, '-') && needs.candidate.result
+      == 'success' && needs.prepare-release.result == 'success' }}"
+    environment: production
+    env:
+      VERSION: "${{ needs.prepare-release.outputs.version }}"
+      BACKEND_SOURCE_SHA: "${{ inputs.backend_source_sha }}"
+      BACKEND_COMPATIBILITY: "${{ inputs.backend_compatibility }}"
+      QUALIFIED_BACKEND_COMPATIBILITY_SHA256: "${{ vars.QUALIFIED_BACKEND_COMPATIBILITY_SHA256
+        }}"
+      VERCEL_TOKEN: "${{ secrets.VERCEL_TOKEN }}"
+      CANDIDATE_MANIFEST_SHA256: "${{ needs.candidate.outputs.candidate_manifest_sha256
+        }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ env.RELEASE_SOURCE_SHA }}"
+        fetch-depth: 0
+        token: "${{ secrets.GITHUB_TOKEN }}"
+        persist-credentials: false
+    - name: Qualify private command channels before decryption
+      shell: bash
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+      run: python3 "${{ github.workspace }}/.github/scripts/canary-private-command.py"
+        "${{ github.workspace }}/.github/scripts/release-private-command.py"
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        # Vercel names a preview deployment after the branch it finds in git.
+        git checkout -B "${{ github.ref_name }}"
+    - name: Setup Node.js
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      with:
+        node-version: 24.20.0
+    - name: Install git-crypt
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Unlock repository
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      with:
+        bun-version: 1.4.4
+        no-cache: true
+    - name: Install dependencies
+      working-directory: qualitylayer
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Require the complete protected backend compatibility record
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dd4d9b1c6d3c3711e9fd3b5d1ec5579b7cb6c82e28ec11b7ceebf2c027ad16b7.sh"
+      env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"COMPATIBILITY_FILE":"temp-path","COMPATIBILITY_SHA256":"sha256"}}'
+    - name: Install Vercel CLI
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/2e56da45276b271f93b945c658fe90078e36ae034353221178b81bf369c9cdff.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      shell: bash
+    - name: Stage the selected website without moving domains
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/f21a674b0ad4c1eded4a7c1da1fd9f16ac0566e4c898f6a2dc0f99bc83e46669.sh"
+      env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"SITE_RECEIPT":"temp-path"}}'
+    - name: Install the existing browser driver without shared cache
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/92b6d99bab59b64a584e931a181b71f4b96be8e69e0da44636f45faeeef25bbf.sh"
+      env:
+        QL_RELEASE_EXPORTS: "{}"
+      working-directory: qualitylayer
+    - name: Qualify the actual staged site and export only immutable public identity
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+      env:
+        QL_SITE_PHASE: qualify
+        SITE_EXPORT_DIR: "${{ runner.temp }}/ql-site-export"
+        PLAYWRIGHT_BROWSERS_PATH: "${{ runner.temp }}/ql-site-browsers"
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"SITE_URL":"public-url","SITE_SHA256":"sha256"}}'
+    - name: Retain sanitized same-candidate site identity
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      if: success()
+      with:
+        name: qualitylayer-candidate-site-${{ github.run_attempt }}
+        path: "${{ runner.temp }}/ql-site-export/candidate-site.json"
+        retention-days: 7
+  stage-result:
+    name: Record staged candidate completeness
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs:
+    - prepare-release
+    - candidate
+    - stage-website
+    if: "${{ always() && inputs.operation != 'promote' }}"
+    env:
+      VERSION: "${{ needs.prepare-release.outputs.version }}"
+      PREPARE: "${{ needs.prepare-release.result }}"
+      CANDIDATE: "${{ needs.candidate.result }}"
+      SITE: "${{ needs.stage-website.result }}"
+    steps:
+    - name: Require every applicable stage leg
+      shell: bash
+      run: "set -euo pipefail\n[ \"$PREPARE\" = success ] && [ \"$CANDIDATE\" = success
+        ] || { echo 'Candidate staging incomplete'; exit 1; }\nif [[ \"$VERSION\"
+        != *-* ]]; then [ \"$SITE\" = success ] || { echo 'Stable website staging
+        incomplete'; exit 1; }; fi\necho 'Candidate staged; exact installed approval
+        and publication/public readback remain pending' "
+  release-result:
+    name: Record complete or partial publication
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs:
+    - publish-release
+    if: "${{ always() && inputs.operation == 'promote' }}"
+    env:
+      PUBLISH_RESULT: "${{ needs.publish-release.result }}"
+    steps:
+    - name: Refuse to label partial publication complete
+      shell: bash
+      run: "set -euo pipefail\n[ \"$PUBLISH_RESULT\" = success ] || { echo 'Publication/site
+        state incomplete: resume only the same candidate and staged site'; exit 1;
+        }\necho 'Immutable candidate publication and all applicable public site readbacks
+        completed' "

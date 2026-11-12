@@ -21,14 +21,14 @@
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",
     ".github/workflows/claude.yml": "f943f902c0ce8986bf4e7c16ae8f855f9e30c02ae06b7f55007925edb2ff2c53",
     ".github/workflows/old-client-update.yml": "86b327091bf801e15159ef0303705259bb12ac2b6189fce69d252b316b38fca0",
-    ".github/workflows/qualitylayer-candidate.yml": "911c8442b7ac81442662595f4cbefbc0377b7537727cfe116eaf627fca9c78fd",
+    ".github/workflows/qualitylayer-candidate.yml": "36af736581df80d54f12423f6f8991ada478f7544fac4e78dd7676d9a15e9b28",
     ".github/workflows/qualitylayer-ci.yml": "309c82c787b6145ff7e715fb3d6a4686954a6bb1e7fa6e60ea27740aa9c12d2f",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "c6bb7057def1f1f7a43d74649aa5308f9c9d23be1a0f401012c33142554f843a",
     ".github/workflows/qualitylayer-windows-diagnostic.yml": "775319bd9e17936606b74341253ea5ed751296abade45d9b0c38aebe333ea5a1",
     ".github/workflows/qualitylayer-windows-nightly.yml": "f75a6e450ce7524fb4a8747fd6a643b06c20626c9947bca693700723a92c7e20",
-    ".github/workflows/release.yml": "e463558449365b1cff916ef80e6b3a4fc44bd91b6810429c53811df472b4567e",
+    ".github/workflows/release.yml": "f2e6e03607feb1065236eaaf7f145f228c4c11f0fef6a98c087c3e5462d240c2",
     ".github/workflows/scripts/git-crypt-unlock.ts": "2baf9ae3dee6d1113a128cb1699d091f272ddfb2bab1b0b6d6b0a03c1a162fa4",
     ".github/workflows/scripts/install-git-crypt.sh": "6a57539fe3a34eb06eb43bdff3654c61ce492b5d4fa09a092ff31aed985991cc",
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
@@ -1908,7 +1908,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "ca91c540d81415164a682cc1a35884f2867b033dbff04228e1cb884e2b404c6a",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "38a5a3a509d019509ed8f235616271f31ccebc2509ac3e3fdd0f261b60ef9029",
+  "reviewManifestSha256": "f67e6a20e312088553a3c0c44d918a9f70ea7255136faba4f1b98ac4e5cee94e",
   "schema": 1,
-  "sourceHead": "1df7d416ba50fc38060c2f0f865dd0247fc7b732"
+  "sourceHead": "48f3b9dfe09ab626648fcb780837d8a74dbab4c2"
 }

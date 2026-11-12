@@ -638,15 +638,15 @@ jobs:
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/4e4d6efa62a9c9e04fbfada54eada1367cbcdd1c36a9772153cd51507446248e.sh"
       shell: bash
     - name: Checksums and the updater's manifest
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/029012c945aecba6ddf2d05ef29b48f7b0ecb8232660f091442574287754f2da.sh"
       env:
         VERSION: "${{ inputs.version }}"
         INSTALLED_RECEIPT: "${{ inputs.release_authorization }}"
         INPUT_VERSION: "${{ inputs.version }}"
         RELEASE_SOURCE_SHA: "${{ github.sha }}"
         QL_RELEASE_EXPORTS: "{}"
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/f14b860bac4fa1692d52c8a6d96e0eb126c1c3c9ed8fdb3285f822d9a108c52a.sh"
-      shell: bash
     - name: Guard the asset list
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/eeeda263cda19c9e7c2a8e469953d5d6cc032f2d1bd0a0b41921b466accfcc87.sh"

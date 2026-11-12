@@ -15,7 +15,7 @@
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
     ".github/scripts/release-private-command.py": "2b43ab8013d98f98dda463449184f7bdf8b6b901066400d1f807f34a1545001a",
-    ".github/scripts/stage-release-artifact.py": "d0581c4805b6f10c8f6fbe6785bac7515b47c36acd719f80b7e8cb5ab97134dc",
+    ".github/scripts/stage-release-artifact.py": "42b70363d5fcde0d6603c58edb71356f105376dfb1521efa5d4ec1679b48107d",
     ".github/scripts/verify-release14-exception.py": "f4a7578df5bc30638243b2702d9f03a1ef6d350ab1a000780937f1c59b308a7a",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",
@@ -1908,7 +1908,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "ca91c540d81415164a682cc1a35884f2867b033dbff04228e1cb884e2b404c6a",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "3537f4b536f4bd92dd6ebf3aaf6eb700fdfdf153b55a2d1424fbd6d697fc352c",
+  "reviewManifestSha256": "4b2c403991f74fcc3f728a7cd28b6f6c0bab584a5f2307bacadf21dabaa18517",
   "schema": 1,
-  "sourceHead": "e0020434cbd914c1d1d42269913210da9825e01e"
+  "sourceHead": "11d43365a77c557392cab63f26225e1e4241500e"
 }

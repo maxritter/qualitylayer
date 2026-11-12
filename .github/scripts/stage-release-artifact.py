@@ -193,6 +193,7 @@ def main():
     if not files or len(files) > 200:
         raise ValueError()
     rows = []
+    inspected_digests = {}
     for file in files:
         info = file.lstat()
         relative = file.relative_to(root).as_posix()
@@ -201,7 +202,11 @@ def main():
         if file.suffix == ".json" and args.kind not in ("assets", "app", "cli"):
             if info.st_size > 1024 * 1024:
                 raise ValueError()
-            metadata(json.loads(file.read_bytes()))
+            inspected = file.read_bytes()
+            metadata(json.loads(inspected))
+            inspected_digests[relative] = hashlib.sha256(inspected).hexdigest()
+        else:
+            inspected_digests[relative] = digest(file)
         rows.append((file, relative, info))
     if args.kind == "candidate-receipts":
         if not args.distribution_set:
@@ -211,7 +216,9 @@ def main():
         file = no_symlink_path(args.distribution_set)
         if file.name != "distribution-set.json" or file.is_symlink() or not stat.S_ISREG(file.stat().st_mode) or not 0 < file.stat().st_size <= 1024 * 1024:
             raise ValueError()
-        metadata(json.loads(file.read_bytes()))
+        inspected = file.read_bytes()
+        metadata(json.loads(inspected))
+        inspected_digests[file.name] = hashlib.sha256(inspected).hexdigest()
         rows.append((file, file.name, file.stat()))
     elif args.distribution_set:
         raise ValueError()
@@ -241,12 +248,21 @@ def main():
             descriptor = os.open(file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             with os.fdopen(descriptor, "rb") as incoming, target.open("xb") as outgoing:
                 opened = os.fstat(incoming.fileno())
-                if (before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns):
+                # Windows path stat reports creation time as ctime; fstat reports change time.
+                if (before.st_dev, before.st_ino, stat.S_IFMT(before.st_mode), before.st_size, before.st_mtime_ns) != (opened.st_dev, opened.st_ino, stat.S_IFMT(opened.st_mode), opened.st_size, opened.st_mtime_ns):
                     raise ValueError()
-                shutil.copyfileobj(incoming, outgoing, 1024 * 1024)
+                copied = hashlib.sha256()
+                for block in iter(lambda: incoming.read(1024 * 1024), b""):
+                    outgoing.write(block)
+                    copied.update(block)
+                if copied.hexdigest() != inspected_digests[relative]:
+                    raise ValueError()
                 after = os.fstat(incoming.fileno())
-                if (opened.st_ino, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                if (opened.st_dev, opened.st_ino, opened.st_mode, opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
                     raise ValueError()
+            current_path = file.lstat()
+            if (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (current_path.st_dev, current_path.st_ino, current_path.st_mode, current_path.st_size, current_path.st_mtime_ns, current_path.st_ctime_ns):
+                raise ValueError()
             target.chmod(0o500 if before.st_mode & 0o111 else 0o400)
         if destination.exists() or destination.is_symlink():
             raise ValueError()
@@ -259,6 +275,16 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (Exception, KeyboardInterrupt):
-        print("Release artifact export refused.", file=sys.stderr)
+    except (Exception, KeyboardInterrupt) as error:
+        safe_types = {"ValueError", "KeyError", "TypeError", "OSError", "FileNotFoundError", "PermissionError", "JSONDecodeError", "KeyboardInterrupt", "RuntimeError", "OverflowError"}
+        category = type(error).__name__ if type(error).__name__ in safe_types else "OtherError"
+        code = getattr(error, "errno", 0)
+        code = code if type(code) is int and -(2**31) <= code < 2**31 else 0
+        line = 0
+        trace = error.__traceback__
+        while trace is not None:
+            if trace.tb_frame.f_code.co_filename == __file__:
+                line = trace.tb_lineno
+            trace = trace.tb_next
+        print(f"Release artifact export refused (type={category}, line={line}, errno={code}).", file=sys.stderr)
         sys.exit(1)

@@ -22,12 +22,14 @@ export function renderedHtml(template: string, head: string, body: string) {
 export default function prerenderPlugin(): Plugin {
   let root: string;
   let outDir: string;
+  let mode: string;
   return {
     name: "prerender-marketing-pages",
     apply: "build",
     configResolved(config) {
       root = config.root;
       outDir = path.resolve(root, config.build.outDir);
+      mode = config.mode;
     },
     async closeBundle(error?: Error) {
       // A build that failed before it wrote its pages has none to render, and Vite closes the bundle
@@ -59,6 +61,7 @@ export default function prerenderPlugin(): Plugin {
       const server = await createServer({
         configFile: false,
         root,
+        mode,
         plugins: [cockpitDemo()],
         resolve: { alias: { "@ql": path.resolve(root, "../../qualitylayer/src") }, dedupe: [...COCKPIT_DEDUPE] },
         server: { middlewareMode: true, watch: null },

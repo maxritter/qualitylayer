@@ -1,4 +1,5 @@
 {
+  "git": { "deploymentEnabled": false },
   "ignoreCommand": "bash vercel-build-check.sh",
   "buildCommand": "bash scripts/build-deploy.sh",
   "outputDirectory": "dist",

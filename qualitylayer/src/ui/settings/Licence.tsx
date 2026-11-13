@@ -21,7 +21,7 @@ import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
 export const BILLING = "https://qualitylayer.dev/billing"
 export const ACTIVATE = "qualitylayer licence activate <key>"
 
-/** "Team licence", "Solo licence", "Trial · 5 days left", or why there is none. */
+/** The commercial plan name, the trial's days, or why there is no licence. */
 export function planLine(licence: Licence | null): string {
   if (licence === null) return "Reading the licence…"
   if (licence.state !== "active") {
@@ -31,7 +31,7 @@ export function planLine(licence: Licence | null): string {
     const days = licence.daysLeft ?? 0
     return `Trial · ${days} ${days === 1 ? "day" : "days"} left`
   }
-  return licence.tier === "team" ? "Team licence" : "Solo licence"
+  return licence.tier === "team" ? "Business licence" : "Individual licence"
 }
 
 /** What leaves this computer, one line each, with how often. */
@@ -63,7 +63,12 @@ const LEAVES: { label: string; hint?: string; when: string; icon: ReactNode }[] 
 export const LEAVES_LABELS: readonly string[] = LEAVES.map((row) => row.label)
 
 /** What the licence row may be called, by what the licence is: the search finds it under any of them. */
-export const PLAN_LABELS = ["Team licence", "Solo licence", "Trial", "Not licensed"] as const
+export const PLAN_LABELS = [
+  "Business licence",
+  "Individual licence",
+  "Trial",
+  "Not licensed",
+] as const
 
 /**
  * "renews monthly on Nov 11", "renews yearly on Mar 3, 2027", or "renews monthly" when the date is not

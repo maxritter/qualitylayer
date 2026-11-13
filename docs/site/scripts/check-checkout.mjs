@@ -54,7 +54,7 @@ try {
       // A native link still works if the website's checkout API or iframe is blocked.
       await link.click();
       await page.waitForURL(url => url.origin === "https://polar.sh" && url.pathname.startsWith("/checkout/"));
-      const name = `QualityLayer ${plan}${billing === "yearly" ? " (yearly)" : ""}`;
+      const name = `QualityLayer ${label}${billing === "yearly" ? " (yearly)" : ""}`;
       await page.getByText(name, { exact: true }).waitFor();
       await page.getByRole("textbox", { name: "Email", exact: true }).waitFor();
       const payment = page.frameLocator('iframe[title="Secure payment input frame"]');

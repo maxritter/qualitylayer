@@ -177,7 +177,7 @@ const ENTRIES: readonly SettingsSection[] = [
     lead: "Your plan, your key, and what leaves this computer.",
     words:
       "key billing plan subscription invoice payment activate activation command seats privacy",
-    rows: ["Team licence", "On another computer", ...LEAVES_LABELS],
+    rows: ["Your licence", "On another computer", ...LEAVES_LABELS],
   },
   {
     id: "about",
@@ -238,7 +238,7 @@ const offered = (): readonly SettingsSection[] =>
 export const ROW_ALIASES: Record<string, readonly string[]> = {
   "Tell me when a task needs me": ["Browser notifications"],
   "Check for updates": ["Updates"],
-  "Team licence": PLAN_LABELS.filter((label) => label !== "Team licence"),
+  "Your licence": PLAN_LABELS,
 }
 
 /** The section a route names; Workflow when it names none the page has. */

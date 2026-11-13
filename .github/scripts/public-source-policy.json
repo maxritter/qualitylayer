@@ -14,7 +14,7 @@
     ".github/scripts/commit-serial.sh": "124268f3e079ca5ea522e9196f893e166544e88cac06d6d465e9363df1d18d94",
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
-    ".github/scripts/release-private-command.py": "2b43ab8013d98f98dda463449184f7bdf8b6b901066400d1f807f34a1545001a",
+    ".github/scripts/release-private-command.py": "6ed773d44d7e56a3e6ab38ffe0738c8b65c274e18862c0feb1ce6b97968e206c",
     ".github/scripts/stage-release-artifact.py": "42b70363d5fcde0d6603c58edb71356f105376dfb1521efa5d4ec1679b48107d",
     ".github/scripts/verify-release14-exception.py": "f4a7578df5bc30638243b2702d9f03a1ef6d350ab1a000780937f1c59b308a7a",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
@@ -1969,9 +1969,12 @@
     "qualitylayer/tests/licensing-client/transport.test.ts": "ac1f465f222c10bd5312315869df587b410042deafb58d53ed43cfeea101b76a",
     "qualitylayer/tests/workflow/asset-bundle.test.ts": "2faa93f1ffa193775fbe908aa70a54cbd75cd2954e2fe8c11e76c856fa3b5314",
     "qualitylayer/tests/workflow/composition.test.ts": "ca91c540d81415164a682cc1a35884f2867b033dbff04228e1cb884e2b404c6a",
-    "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
+    "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88",
+    ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
+    ".github/workflows/backup.yml": "ef22a1349081d885e06cdc4725be6fe91190bda21147d44a41dda809591f1ff8",
+    ".github/actions/windows-signing/action.yml": "ddd7b6824f41a2f63c2929869f8ad974ad9cf615caadee82e850a89fcce6df64"
   },
-  "reviewManifestSha256": "1b1153b375cc68708ac89de83677cef2b073e287d3ebb52c0d90d2c781d4d451",
+  "reviewManifestSha256": "04f41deb29efeea9b21646c1ca8f8bd83d9cbb70dff0d5dd34e03f79a565f75c",
   "schema": 1,
-  "sourceHead": "8635ab90a2d13084be33bddfaa74afa5d4d43e49"
+  "sourceHead": "72a34acdcd966dfd9d5feca258ab05fe41f53dc8"
 }

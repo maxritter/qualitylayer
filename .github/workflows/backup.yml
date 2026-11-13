@@ -60,39 +60,27 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Prepare the recorded production backend
-        run: |
-          source="$(git rev-parse HEAD)"
-          prepared="${RUNNER_TEMP:?}/qualitylayer-backup-backend"
-          node docs/site/scripts/prepare-beta-backend.mjs prepare --repo "$GITHUB_WORKSPACE" --frontend "$source" --out "$prepared"
-          node docs/site/scripts/prepare-beta-backend.mjs verify --prepared "$prepared" --frontend "$source"
-          echo "QL_BACKUP_SOURCE=$source" >> "$GITHUB_ENV"
-          echo "QL_BACKUP_PREPARED=$prepared" >> "$GITHUB_ENV"
+        env:
+          QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"QL_BACKUP_SOURCE":"source-sha","QL_BACKUP_PREPARED":"temp-path"}}'
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/backup/prepare.sh"
 
       - name: Copy the database to the bucket
         working-directory: docs/site
         env:
+          QL_RELEASE_EXPORTS: '{}'
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: team_jAsHrk71vRyWK6bCTYGJyp0q
           VERCEL_PROJECT_ID: prj_SbOGJL2YBjvq9P5MSjxcrj87IGbi
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BACKUP_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
           R2_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
-        run: |
-          pull="${RUNNER_TEMP:?}/database.env"
-          vercel env pull "$pull" --environment="$BACKUP_DATABASE" --token="$VERCEL_TOKEN" --yes
-          value() { sed -n "s/^$1=\"\\{0,1\\}\\([^\"]*\\)\"\\{0,1\\}\$/\\1/p" "$pull"; }
-          DATABASE_URL="$(value OWNER_DATABASE_URL)"
-          [ -n "$DATABASE_URL" ] || DATABASE_URL="$(value DATABASE_URL)"
-          rm -f "$pull"
-          [ -n "$DATABASE_URL" ] || { echo "::error::no database is set for $BACKUP_DATABASE"; exit 1; }
-          echo "::add-mask::$DATABASE_URL"
-          export DATABASE_URL
-          node scripts/backup.ts --env "$BACKUP_DATABASE" --prepared "$QL_BACKUP_PREPARED" --source "$QL_BACKUP_SOURCE"
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/backup/copy.sh"
 
       - name: Look at the copy before this one
         working-directory: docs/site
         env:
+          QL_RELEASE_EXPORTS: '{}'
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BACKUP_ACCESS_KEY_ID: ${{ secrets.R2_BACKUP_ACCESS_KEY_ID }}
           R2_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.R2_BACKUP_SECRET_ACCESS_KEY }}
-        run: node scripts/backup.ts --env "$BACKUP_DATABASE" --check
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/backup/check.sh"

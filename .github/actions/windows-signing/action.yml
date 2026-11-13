@@ -1,16 +1,8 @@
 name: Windows signing
 description: >
-  Authenticode signing with QualityLayer's Azure Artifact Signing certificate profile, when that
-  profile exists. A preflight logs in to Azure with this run's GitHub OIDC token (no client
-  secret) and reads the profile. If anything is missing (configuration, login, the profile, or
-  the profile is not Active) the job builds unsigned exactly as before: a ::warning:: says so and
-  `enabled` is false. Once the preflight passes, signing and verification are mandatory: the
-  action installs a pinned signtool and the Artifact Signing client and exports
-  QUALITYLAYER_WINDOWS_SIGN_COMMAND (one {cmd, args} command with "%1" for the file, also Tauri's
-  bundle.windows.signCommand) and QUALITYLAYER_WINDOWS_SIGNING_PROFILE (the profile's resource ID,
-  which verify-authenticode.ps1 re-reads to check each signer certificate belongs to it). The
-  calling job needs `id-token: write` and an environment the federated credential trusts (beta
-  or production).
+  Configure the existing Windows signing identity through sealed private commands.
+  Missing signing configuration leaves the build unsigned. Once preflight passes,
+  signing and verification are mandatory.
 
 inputs:
   client-id: { description: Entra application (client) ID of qualitylayer-github-signing, required: false, default: "" }
@@ -29,7 +21,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Signing preflight (configuration, OIDC login, certificate profile)
+    - name: Private Windows signing preflight
       id: preflight
       shell: pwsh
       env:
@@ -40,89 +32,23 @@ runs:
         QL_ENDPOINT: ${{ inputs.endpoint }}
         QL_ACCOUNT: ${{ inputs.account }}
         QL_PROFILE: ${{ inputs.profile }}
-      run: |
-        $ErrorActionPreference = 'Stop'
-        function Unsigned([string]$reason) {
-          Write-Output "::warning title=Windows build is NOT code-signed::$reason Windows files of this run stay unsigned, as before Authenticode signing existed."
-          'enabled=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          exit 0
-        }
-        if ($env:RUNNER_OS -ne 'Windows') { throw 'Authenticode signing runs on a Windows runner' }
-        foreach ($name in 'QL_CLIENT_ID', 'QL_TENANT_ID', 'QL_SUBSCRIPTION_ID', 'QL_RESOURCE_GROUP', 'QL_ENDPOINT', 'QL_ACCOUNT', 'QL_PROFILE') {
-          if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-            Unsigned "Signing is not configured ($name is empty; secrets AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID, variables AZURE_SIGNING_*)."
-          }
-        }
-        if ($env:QL_ENDPOINT -notmatch '^https://[a-z0-9]+\.codesigning\.azure\.net/?$') { Unsigned "Unexpected signing endpoint $env:QL_ENDPOINT." }
-        if ([string]::IsNullOrEmpty($env:ACTIONS_ID_TOKEN_REQUEST_URL)) { Unsigned 'The job has no id-token: write permission.' }
-        try {
-          $oidc = Invoke-RestMethod -Uri "$($env:ACTIONS_ID_TOKEN_REQUEST_URL)&audience=api://AzureADTokenExchange" -Headers @{ Authorization = "bearer $($env:ACTIONS_ID_TOKEN_REQUEST_TOKEN)" }
-        } catch { Unsigned "No GitHub OIDC token: $($_.Exception.Message)." }
-        az login --service-principal --username $env:QL_CLIENT_ID --tenant $env:QL_TENANT_ID --federated-token $oidc.value --allow-no-subscriptions --output none
-        if ($LASTEXITCODE -ne 0) { Unsigned 'Azure OIDC login failed for qualitylayer-github-signing.' }
-        az account set --subscription $env:QL_SUBSCRIPTION_ID
-        if ($LASTEXITCODE -ne 0) { Unsigned 'The signing subscription is not reachable.' }
-        $id = "/subscriptions/$env:QL_SUBSCRIPTION_ID/resourceGroups/$env:QL_RESOURCE_GROUP/providers/Microsoft.CodeSigning/codeSigningAccounts/$env:QL_ACCOUNT/certificateProfiles/$env:QL_PROFILE"
-        $errors = Join-Path $env:RUNNER_TEMP 'ql-signing-preflight.txt'
-        $json = az rest --method get --url "https://management.azure.com$($id)?api-version=2025-10-13" 2> $errors
-        if ($LASTEXITCODE -ne 0) { Unsigned "Certificate profile $env:QL_PROFILE is not readable or does not exist: $((Get-Content -Raw $errors).Trim())" }
-        $certProfile = ($json | Out-String) | ConvertFrom-Json
-        $state = $certProfile.properties
-        if ($state.provisioningState -ne 'Succeeded') { Unsigned "Certificate profile $env:QL_PROFILE is $($state.provisioningState)." }
-        if ($state.status -and $state.status -ne 'Active') { Unsigned "Certificate profile $env:QL_PROFILE is $($state.status)." }
-        if ($state.profileType -and $state.profileType -ne 'PublicTrust') { Unsigned "Certificate profile $env:QL_PROFILE is $($state.profileType), not PublicTrust." }
-        # From here on, a failure fails the job: the profile exists, so this build must be signed.
-        "QUALITYLAYER_WINDOWS_SIGNING_PROFILE=$id" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        Write-Output "Certificate profile $env:QL_PROFILE is Active: this build is Authenticode-signed and verified."
-        'enabled=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        QL_RELEASE_CAPABILITIES: windows-signing-oidc
+        QL_RELEASE_METADATA_CONTROL: 'false'
+        QL_RELEASE_EXPORTS: '{"GITHUB_OUTPUT":{"enabled":"boolean"},"GITHUB_ENV":{"QUALITYLAYER_WINDOWS_SIGNING_PROFILE":"azure-signing-profile"}}'
+      run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/windows-signing/preflight.ps1"
 
-    # Exact package versions and their SHA-256, so the signing tool cannot change under a release.
-    - name: Pinned signtool and Artifact Signing client
+    - name: Report unsigned fallback
+      if: steps.preflight.outputs.enabled == 'false'
+      shell: pwsh
+      run: Write-Output '::warning::Windows signing is unavailable; files from this run remain unsigned.'
+
+    - name: Private signing tools and command
       if: steps.preflight.outputs.enabled == 'true'
       shell: pwsh
       env:
         QL_ENDPOINT: ${{ inputs.endpoint }}
         QL_ACCOUNT: ${{ inputs.account }}
         QL_PROFILE: ${{ inputs.profile }}
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $root = Join-Path $env:RUNNER_TEMP 'ql-signing'
-        New-Item -ItemType Directory -Path $root -Force | Out-Null
-        $packages = @(
-          @{ Id = 'microsoft.windows.sdk.buildtools'; Version = '10.0.28000.2526'; Sha256 = 'A09A4C9D68160CED4765137A9A7444EA560EA86C45D6A77093DEA58C2F7563A0' },
-          @{ Id = 'microsoft.artifactsigning.client'; Version = '1.0.128'; Sha256 = '74BD7D27E6CE1051409C38D9B46BC8DF0400ECD643D51FFBF2AC00869061E40B' }
-        )
-        foreach ($package in $packages) {
-          $name = "$($package.Id).$($package.Version)"
-          $archive = Join-Path $root "$name.zip"
-          Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/$($package.Id)/$($package.Version)/$name.nupkg" -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5
-          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $package.Sha256) { throw "$name checksum mismatch" }
-          Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $root $package.Id) -Force
-        }
-        $signtool = Join-Path $root 'microsoft.windows.sdk.buildtools\bin\10.0.28000.0\x64\signtool.exe'
-        $dlib = Join-Path $root 'microsoft.artifactsigning.client\bin\x64\Azure.CodeSigning.Dlib.dll'
-        foreach ($file in $signtool, $dlib) { if (-not (Test-Path -LiteralPath $file)) { throw "missing $file" } }
-        # Only the Azure CLI session the preflight opened may sign; no other credential is tried.
-        $metadata = Join-Path $root 'metadata.json'
-        @{
-          Endpoint = $env:QL_ENDPOINT
-          CodeSigningAccountName = $env:QL_ACCOUNT
-          CertificateProfileName = $env:QL_PROFILE
-          ExcludeCredentials = @(
-            'EnvironmentCredential', 'WorkloadIdentityCredential', 'ManagedIdentityCredential',
-            'SharedTokenCacheCredential', 'VisualStudioCredential', 'VisualStudioCodeCredential',
-            'AzurePowerShellCredential', 'AzureDeveloperCliCredential', 'InteractiveBrowserCredential'
-          )
-        } | ConvertTo-Json | Set-Content -LiteralPath $metadata -Encoding utf8
-        $command = @{
-          cmd = $signtool
-          args = @('sign', '/v', '/fd', 'SHA256', '/tr', 'http://timestamp.acs.microsoft.com', '/td', 'SHA256', '/d', 'QualityLayer', '/dlib', $dlib, '/dmdf', $metadata, '%1')
-        } | ConvertTo-Json -Compress
-        "QUALITYLAYER_WINDOWS_SIGN_COMMAND=$command" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        # GitHub's OIDC assertion is short-lived; the access tokens fetched now are cached by the
-        # Azure CLI for about an hour, long enough for Tauri to sign after compiling the App and
-        # for the verification to re-read the profile.
-        foreach ($resource in 'https://codesigning.azure.net', 'https://management.azure.com/') {
-          az account get-access-token --resource $resource --output none
-          if ($LASTEXITCODE -ne 0) { throw "No access token for $resource with this workflow identity" }
-        }
+        QL_RELEASE_METADATA_CONTROL: 'false'
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"QUALITYLAYER_WINDOWS_SIGN_COMMAND":"windows-sign-command"}}'
+      run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/windows-signing/setup.ps1"

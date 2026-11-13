@@ -31,6 +31,18 @@ def checked(value, kind):
         url = urlsplit(value)
         host = url.hostname or ""
         return url.scheme == "https" and not url.username and not url.password and not url.query and not url.fragment and (host == "qualitylayer.dev" or bool(re.fullmatch(r"[a-z0-9.-]+\.(?:vercel\.app|qualitylayer\.dev)", host)))
+    if kind == "azure-signing-profile":
+        return bool(re.fullmatch(r"/subscriptions/[a-fA-F0-9-]{36}/resourceGroups/[A-Za-z0-9_.()-]{1,90}/providers/Microsoft\.CodeSigning/codeSigningAccounts/[A-Za-z0-9-]{1,63}/certificateProfiles/[A-Za-z0-9-]{1,63}", value))
+    if kind == "source-sha":
+        return bool(re.fullmatch(r"[a-f0-9]{40}", value))
+    if kind == "windows-sign-command":
+        command = json.loads(value)
+        root = Path(os.environ["RUNNER_TEMP"]).resolve() / "ql-signing"
+        executable = root / "microsoft.windows.sdk.buildtools" / "bin" / "10.0.28000.0" / "x64" / "signtool.exe"
+        library = root / "microsoft.artifactsigning.client" / "bin" / "x64" / "Azure.CodeSigning.Dlib.dll"
+        metadata = root / "metadata.json"
+        expected = ['sign', '/v', '/fd', 'SHA256', '/tr', 'http://timestamp.acs.microsoft.com', '/td', 'SHA256', '/d', 'QualityLayer', '/dlib', str(library), '/dmdf', str(metadata), '%1']
+        return isinstance(command, dict) and set(command) == {"cmd", "args"} and command["cmd"] == str(executable) and command["args"] == expected
     if kind == "temp-path":
         target = Path(value).resolve()
         temp = Path(os.environ["RUNNER_TEMP"]).resolve()
@@ -165,6 +177,34 @@ def main():
         for key in ("GH_TOKEN", "GITHUB_TOKEN"):
             if key in os.environ:
                 environment[key] = os.environ[key]
+    contract = json.loads(os.environ.get("QL_RELEASE_EXPORTS", "{}"))
+    capability = os.environ.get("QL_RELEASE_CAPABILITIES", "")
+    signing_kinds = {"azure-signing-profile", "windows-sign-command"}
+    signing_exports = isinstance(contract, dict) and any(isinstance(rules, dict) and signing_kinds.intersection(rules.values()) for rules in contract.values())
+    if capability or signing_exports:
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+        signing = workspace / ".github/private-workflows/windows-signing"
+        stages = {
+            "preflight.ps1": ("bed235ca3fc1027c0bacc5d6fea7450a42d6a9bb27b3275e181e5a0c1ddbf32e", "windows-signing-oidc", {"GITHUB_OUTPUT": {"enabled": "boolean"}, "GITHUB_ENV": {"QUALITYLAYER_WINDOWS_SIGNING_PROFILE": "azure-signing-profile"}}),
+            "setup.ps1": ("43b3e8db1fcc5b6a9d93036054ffd1038a35faa7febd2734ecee9df728e52990", "", {"GITHUB_ENV": {"QUALITYLAYER_WINDOWS_SIGN_COMMAND": "windows-sign-command"}}),
+        }
+        selected = Path(script).resolve()
+        stage = stages.get(selected.name)
+        workflow = os.environ.get("GITHUB_WORKFLOW_REF", "")
+        trusted_workflows = ("maxritter/qualitylayer/.github/workflows/release.yml@refs/heads/main", "maxritter/qualitylayer/.github/workflows/release.yml@refs/heads/dev")
+        if not stage or selected.parent != signing or hashlib.sha256(selected.read_bytes()).hexdigest() != stage[0] or capability != stage[1] or contract != stage[2] or shell != "pwsh" or os.name != "nt" or os.environ.get("GITHUB_REPOSITORY") != "maxritter/qualitylayer" or os.environ.get("GITHUB_REF") not in ("refs/heads/main", "refs/heads/dev") or workflow not in trusted_workflows:
+            raise ValueError()
+        if os.environ.get("GITHUB_SHA") != subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).strip():
+            raise ValueError()
+        if os.environ.get("QL_RELEASE_METADATA_CONTROL") == "true":
+            raise ValueError()
+        for key in ("GH_TOKEN", "GITHUB_TOKEN"):
+            environment.pop(key, None)
+        if capability:
+            for key in ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"):
+                if key in os.environ:
+                    environment[key] = os.environ[key]
+    environment.pop("QL_RELEASE_CAPABILITIES", None)
     environment.pop("QL_RELEASE_EXPORTS", None)
     template = Path(script).read_text(encoding="utf-8")
     for name in re.findall(r"@@(QL_EXPR_[0-9]+)@@", template):

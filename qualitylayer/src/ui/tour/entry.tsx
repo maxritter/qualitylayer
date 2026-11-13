@@ -147,6 +147,7 @@ function ConnectedTour({
         licence: async () => {
           const known = tourTier(await readEntitlement())
           return {
+            version: (await demo.api.licence()).version,
             state: "active",
             tier: known ?? undefined,
             name: "Sam Rivera",

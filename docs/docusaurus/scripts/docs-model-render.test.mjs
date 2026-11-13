@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 const realModel = fileURLToPath(new URL("../../../qualitylayer/artifacts/site/website-model/docs/", import.meta.url));
 const realQualityLayer = fileURLToPath(new URL("../../../qualitylayer/", import.meta.url));
 const keys = Object.keys(JSON.parse(readFileSync(join(realModel, "copy.json"), "utf8")).pages);
+const retainedPages = ["blog--hooks-guide.html", "changelog.html", "changelog-loading.html", "changelog-error.html", "changelog-history.html", "changelog-history-error.html"];
 const body = (key, text = "Body") => `---\ntitle: Title of ${key}\n---\n\n## First section\n\n${text} of ${key}.\n`;
 
 let roots = [];
@@ -29,6 +30,11 @@ function world() {
   cpSync(join(realModel, "render.mjs"), join(model, "render.mjs"));
   cpSync(join(realModel, "assets.json"), join(model, "assets.json"));
   cpSync(join(realModel, "assets"), join(model, "assets"), { recursive: true });
+  // Retained captures own their article bodies; the renderer still refreshes their shared sidebar.
+  for (const name of retainedPages) {
+    writeFileSync(join(model, name), `<html><body><nav class="docs-nav">Old navigation</nav><article>Retained fixture: ${name}</article></body></html>\n`);
+  }
+  writeFileSync(join(root, "LICENSE"), "Renderer fixture licence text.\n");
   // The kit's icons, which the model draws as the site does.
   const kit = join(root, "docs/docusaurus/src/components/kit");
   mkdirSync(kit, { recursive: true });
@@ -128,7 +134,7 @@ test("a fresh model is written page by page, then the plain and source checks pa
   for (const flags of [[], ["--check-source"]]) {
     const checked = w.render(...flags);
     assert.equal(checked.status, 0, checked.stderr);
-    assert.match(checked.stdout, new RegExp(`Docs model matches ${keys.length} authored guide pages`));
+    assert.match(checked.stdout, new RegExp(`Docs model matches ${keys.length + retainedPages.length + 1} authored guide pages`));
   }
 });
 

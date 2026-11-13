@@ -1,8 +1,9 @@
 import type { Api, Licence } from "../api.ts"
+import { DEMO_TASK_ID } from "../demo/identity.ts"
 
 export type TourTier = "trial" | "solo" | "team" | null
 
-const CONNECTED_TASKS = new Set(["demo", "product-brief"])
+const CONNECTED_TASKS = new Set([DEMO_TASK_ID, "product-brief"])
 
 /**
  * The tour keeps its workflow tasks and the existing artifact example; the ordinary demo keeps its catalog.
@@ -34,6 +35,7 @@ export function tourExampleApi(source: Api, tier: TourTier): Api {
   return {
     ...source,
     licence: async () => ({
+      version: (await source.licence()).version,
       state: "active",
       tier: tier ?? undefined,
       name: "Sam Rivera",

@@ -73,14 +73,14 @@ describe("the site's copy", () => {
     const pilot = PRICING_FAQS.find((faq) => faq.question === "I use Pilot Shell 11. What happens?")!.answer;
     expect(pilot).toContain("Pilot Shell can stay installed");
     expect(pilot).toContain("Existing paid plan terms and trial dates are preserved");
-    expect(pilot).toContain("accepts project exports");
-    expect(pilot).toContain("cannot import the local SQLite database");
+    expect(pilot).toContain("review and import saved lessons");
+    expect(pilot).toContain("Pilot memory folder, SQLite database, backup or exported files");
     const licence = readFileSync(new URL("../../../../LICENSE", import.meta.url), "utf8").replace(/\s+/g, " ");
     expect(licence).toContain("does not revoke, narrow or replace rights already granted");
     expect(licence).toContain("Existing contractual prices, currencies, seats, benefits, grants, licence keys, activations and access continue under their agreed terms");
     const guide = readFileSync(new URL("../../../docusaurus/docs/moving-from-pilot-shell.mdx", import.meta.url), "utf8");
-    expect(guide).toContain("JSONL or Markdown memory exports");
-    expect(guide).toContain("cannot import the local `pilot-memory.db` database; keep it in place");
+    expect(guide).toContain("existing JSONL/Markdown exports");
+    expect(guide).toContain("Choose your Pilot memory folder, `pilot-memory.db`");
     expect(pilot).not.toMatch(/updater moves you over|replaces Pilot Shell/i);
   });
 

@@ -24,7 +24,7 @@ const SOURCE = faq(
 );
 const LEGACY = faq(
   "I use Pilot Shell 11. What happens?",
-  "Pilot Shell can stay installed. Existing paid plan terms and trial dates are preserved. Memory import currently accepts project exports; it cannot import the local SQLite database.",
+  "Pilot Shell can stay installed. Existing paid plan terms and trial dates are preserved. In Settings › Memory, review and import saved lessons from your Pilot memory folder, SQLite database, backup or exported files.",
 );
 
 export const FAQS: Faq[] = [

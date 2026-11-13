@@ -3,6 +3,7 @@
 // nothing), so no agent is named here. Every answer says where it came from and when; an agent that
 // reports nothing says why. Nothing here polls: it reads when something asks.
 
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { agentBinary, configuredBinary } from "../agents/binary.ts"
 import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../agents/ids.ts"
@@ -53,10 +54,49 @@ async function askAccount(ctx: Ctx): Promise<unknown> {
  * failed question (no login, no program) is not asked again for five minutes either.
  */
 export function accountLimits(ask: (ctx: Ctx) => Promise<unknown> = askAccount): AccountLimits {
+  let source: string | null = null
+  let identity: string | undefined
+  const load = () => {
+    let last: CodexReading | null = null
+    return kept(ACCOUNT_CACHE_MS, async (ctx) => {
+      const fresh = accountReading(await ask(ctx).catch(() => null), ctx.clock.now())
+      last = fresh ?? last
+      return last
+    })
+  }
+  let read = load()
   return {
-    read: kept(ACCOUNT_CACHE_MS, async (ctx) =>
-      accountReading(await ask(ctx).catch(() => null), ctx.clock.now()),
-    ),
+    async read(ctx) {
+      const home = roots(ctx)?.codex ?? ""
+      const key = JSON.stringify([
+        ctx.home,
+        home,
+        await configuredBinary(ctx, "codex"),
+        ctx.env.get("QUALITYLAYER_CODEX_BIN"),
+      ])
+      const observed = await codexIdentity(ctx, home)
+      if (source !== key || (observed !== undefined && identity !== observed)) {
+        read = load()
+        source = key
+        identity = observed
+      }
+      return read(ctx)
+    },
+  }
+}
+
+/** Account metadata bounds a held quota; unreadable auth data cannot establish an account switch. */
+async function codexIdentity(ctx: Ctx, home: string): Promise<string | undefined> {
+  try {
+    const auth = JSON.parse(await ctx.fs.readFile(join(home, "auth.json")))
+    if (!auth || typeof auth !== "object" || Array.isArray(auth)) return undefined
+    if (auth.auth_mode === "apikey") return "apikey"
+    const account = auth.tokens?.account_id
+    return auth.auth_mode === "chatgpt" && typeof account === "string" && account !== ""
+      ? JSON.stringify(["chatgpt", account])
+      : undefined
+  } catch {
+    return undefined
   }
 }
 

@@ -40,7 +40,7 @@ function monthMinutes(reset: number): number {
 function windowOf(quota: Json, now: number): LimitWindow | null {
   const remaining = typeof quota.remainingPercentage === "number" ? quota.remainingPercentage : null
   const entitlement = typeof quota.entitlementRequests === "number" ? quota.entitlementRequests : 0
-  const used = typeof quota.usedRequests === "number" ? quota.usedRequests : 0
+  const used = typeof quota.usedRequests === "number" ? quota.usedRequests : Number.NaN
   const share = usedShare(remaining === null ? (used / entitlement) * 100 : 100 - remaining)
   if (share === null) return null
   const reset = typeof quota.resetDate === "string" ? Date.parse(quota.resetDate) : Number.NaN

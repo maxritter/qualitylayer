@@ -9,6 +9,7 @@
 // another file. OpenCode keeps its calls in a database, so each of its sessions stands for a file.
 
 import type { Ctx } from "../../ctx.ts"
+import { opencodeDatabase } from "../agents/storage.ts"
 import { USAGE_INDEX_FILES_KEPT, USAGE_INDEX_MAX_BYTES } from "../home-caps.ts"
 import { roots } from "../install/agent-settings.ts"
 import type { Call } from "./transcripts.ts"
@@ -53,6 +54,8 @@ export class UsageIndex {
   private files = new Map<string, Indexed>()
   private calls = 0
   private wrote = true
+  private discovered = new Map<Source["agent"], { base: string; wanted: Wanted[] }>()
+  private failedFiles = new Set<string>()
 
   constructor(
     private options: {
@@ -75,6 +78,8 @@ export class UsageIndex {
   drop(): void {
     this.files.clear()
     this.calls = 0
+    this.discovered.clear()
+    this.failedFiles.clear()
   }
 
   private forget(path: string): void {
@@ -86,6 +91,7 @@ export class UsageIndex {
 
   /** Let go of files older than any period, and of files gone from the stretch that was just listed. */
   private evict(now: number, listedFrom: number, present: ReadonlySet<string>): void {
+    for (const path of this.failedFiles) if (!present.has(path)) this.failedFiles.delete(path)
     for (const [path, held] of [...this.files])
       if (
         held.mtimeMs < now - LONGEST_DAYS * DAY_MS ||
@@ -98,7 +104,7 @@ export class UsageIndex {
   private async load(
     ctx: Ctx,
     wanted: readonly Wanted[],
-  ): Promise<{ pending: number; skipped: number; capped: number }> {
+  ): Promise<{ pending: number; skipped: number; capped: number; failed: Set<string> }> {
     const clock = this.options.clock ?? (() => performance.now())
     const started = clock()
     const budget = this.options.budgetMs ?? USAGE_BUDGET_MS
@@ -106,16 +112,46 @@ export class UsageIndex {
     let skipped = 0
     let capped = 0
     let read = 0
-    for (const { source, file } of wanted) {
-      // Every request reads at least one file, so a long list is always worked through.
-      const outOfTime = read > 0 && clock() - started >= budget
-      const outcome = await this.take(ctx, source, file, outOfTime)
-      if (outcome === "read" || outcome === "full") read++
+    const failed = new Set<string>()
+    const retryOrder = new Map([...this.failedFiles].map((path, order) => [path, order + 1]))
+    const ordered = [...wanted].sort(
+      (a, b) => (retryOrder.get(a.file.path) ?? 0) - (retryOrder.get(b.file.path) ?? 0),
+    )
+    for (const { source, file } of ordered) {
+      if (failed.has(source.agent) && file.size > 0) {
+        const held = this.files.get(file.path)
+        if (
+          !this.failedFiles.has(file.path) &&
+          (held?.mtimeMs !== file.mtimeMs || held?.size !== file.size)
+        )
+          pending++
+        continue
+      }
+      // Every request attempts at least one file, so a long list is always worked through.
+      const outOfTime = file.size > 0 && read > 0 && clock() - started >= budget
+      if (outOfTime && this.failedFiles.has(file.path)) {
+        failed.add(source.agent)
+        continue
+      }
+      let outcome: Awaited<ReturnType<UsageIndex["take"]>>
+      try {
+        outcome = await this.take(ctx, source, file, outOfTime)
+      } catch {
+        read++
+        this.failedFiles.delete(file.path)
+        this.failedFiles.add(file.path)
+        failed.add(source.agent)
+        continue
+      }
+      if (outcome === "read" || outcome === "full") {
+        read++
+        this.failedFiles.delete(file.path)
+      }
       if (outcome === "skipped") skipped++
       if (outcome === "full" || outcome === "capped") capped++
       if (outcome === "pending") pending++
     }
-    return { pending, skipped, capped }
+    return { pending, skipped, capped, failed }
   }
 
   /**
@@ -131,13 +167,21 @@ export class UsageIndex {
   ): Promise<"held" | "skipped" | "pending" | "read" | "full" | "capped"> {
     const held = this.files.get(file.path)
     if (held?.mtimeMs === file.mtimeMs && held.size === file.size) return "held"
-    this.forget(file.path)
     // What an earlier server made of this transcript stands while the transcript has not changed.
     const stored = await loadStored(ctx, file, source.agent)
-    if (stored !== null) return this.admit(file, stored) ? "held" : "capped"
-    if (file.size > (this.options.fileMaxBytes ?? USAGE_FILE_MAX_BYTES)) return "skipped"
-    if (outOfTime) return "pending"
+    if (stored !== null) {
+      this.forget(file.path)
+      return this.admit(file, stored) ? "held" : "capped"
+    }
+    if (file.size > (this.options.fileMaxBytes ?? USAGE_FILE_MAX_BYTES)) {
+      this.forget(file.path)
+      return "skipped"
+    }
+    if (outOfTime) {
+      return "pending"
+    }
     const indexed = pack(source, file, await this.callsOf(ctx, source, file))
+    this.forget(file.path)
     this.wrote =
       (await saveStored(ctx, file, indexed, this.options.stored?.fileBytes, source.agent)) ||
       this.wrote
@@ -181,12 +225,32 @@ export class UsageIndex {
     const dirs = roots(ctx)
     if (dirs !== null)
       for (const source of SOURCES) {
-        const files = await source.files(ctx, source.folder(dirs), from)
-        if (files.partial) discovery.set(source.agent, files.partial)
-        for (const file of files) wanted.push({ source, file })
+        const folder = source.folder(dirs)
+        const base = source.agent === "opencode" ? (opencodeDatabase(ctx) ?? "") : folder
+        if (this.discovered.get(source.agent)?.base !== base) this.discovered.delete(source.agent)
+        try {
+          const files = await source.files(ctx, folder, from)
+          if (files.partial) discovery.set(source.agent, files.partial)
+          const entries = files.map((file) => ({ source, file }))
+          this.discovered.set(source.agent, { base, wanted: entries })
+          wanted.push(...entries)
+        } catch {
+          discovery.set(source.agent, "Usage history could not be read")
+          const old = this.discovered.get(source.agent)
+          if (old?.base === base)
+            for (const { file } of old.wanted) {
+              const held = this.files.get(file.path)
+              if (held)
+                wanted.push({
+                  source,
+                  file: { path: file.path, mtimeMs: held.mtimeMs, size: held.size },
+                })
+            }
+        }
       }
     this.evict(to, from, new Set(wanted.map((entry) => entry.file.path)))
     const left = await this.load(ctx, wanted)
+    for (const agent of left.failed) discovery.set(agent, "Usage history could not be read")
     if (this.wrote) {
       this.wrote = false
       await pruneStored(ctx, to - LONGEST_DAYS * DAY_MS, {
@@ -196,7 +260,17 @@ export class UsageIndex {
     }
     const usage = usageOf(this.files, wanted, { period, now: to }, left)
     for (const row of usage.agents)
-      if (discovery.has(row.agent)) row.partial = discovery.get(row.agent)
+      if (discovery.has(row.agent)) {
+        row.partial = discovery.get(row.agent)
+        if (
+          !wanted.some(
+            ({ source, file }) => source.agent === row.agent && this.files.has(file.path),
+          )
+        ) {
+          row.state = "unavailable"
+          row.reason = row.partial ?? null
+        }
+      }
     for (const row of usage.agents)
       if (row.state === "counted") {
         const used = row.models.map((m) => ({ model: m.model, tokens: tokensOf(m.tokens) }))
@@ -217,13 +291,16 @@ export class UsageIndex {
           row.billing = "plan"
       }
     const cursor = usage.agents.find((agent) => agent.agent === "cursor")
-    if (cursor) {
-      const coverage = await cursorCoverage(ctx)
-      if (coverage === "Provider usage export required") {
-        cursor.state = "unavailable"
-        cursor.reason = coverage
-      } else if (coverage) cursor.partial = coverage
-    }
+    if (cursor && !discovery.has("cursor"))
+      try {
+        const coverage = await cursorCoverage(ctx)
+        if (coverage === "Provider usage export required") {
+          cursor.state = "unavailable"
+          cursor.reason = coverage
+        } else if (coverage) cursor.partial = coverage
+      } catch {
+        cursor.partial = "Usage history could not be read"
+      }
     return usage
   }
 }

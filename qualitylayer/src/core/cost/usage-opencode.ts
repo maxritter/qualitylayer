@@ -38,8 +38,6 @@ export function opencodeCandidates(ctx: Ctx, since: number): Candidate[] {
       mtimeMs: row.mtimeMs,
       size: row.size,
     }))
-  } catch {
-    return []
   } finally {
     db?.close()
   }
@@ -48,6 +46,10 @@ export function opencodeCandidates(ctx: Ctx, since: number): Candidate[] {
 /** The calls of one session (not of the sessions it started, which are listed on their own). */
 export function opencodeCalls(ctx: Ctx, candidate: Candidate): Call[] {
   const session = candidate.path.slice(candidate.path.lastIndexOf(SEPARATOR) + 1)
-  const found = opencodeSessions(ctx, [session], session)?.find((one) => one.id === session)
+  const sessions = opencodeSessions(ctx, [session], session)
+  const file = opencodeDatabase(ctx)
+  if (sessions === null && file && existsSync(file))
+    throw new Error("OpenCode usage source could not be read")
+  const found = sessions?.find((one) => one.id === session)
   return found?.calls ?? []
 }

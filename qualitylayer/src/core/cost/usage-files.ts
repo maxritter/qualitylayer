@@ -17,14 +17,16 @@ export const DAY_MS = 24 * 60 * 60_000
 export async function listed(ctx: Ctx, dir: string) {
   try {
     return await ctx.fs.entries(dir)
-  } catch {
-    return []
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return []
+    throw cause
   }
 }
 
 async function candidate(ctx: Ctx, path: string, since: number): Promise<Candidate | null> {
   const stat = await ctx.fs.stat?.(path)
-  return stat === null || stat === undefined || stat.mtimeMs < since
+  if (stat === null) throw new Error("Usage source metadata could not be read")
+  return stat === undefined || stat.mtimeMs < since
     ? null
     : { path, mtimeMs: stat.mtimeMs, size: stat.size }
 }
@@ -58,7 +60,7 @@ export async function* chunksOf(ctx: Ctx, path: string, size: number): AsyncGene
   let offset = 0
   while (offset < size) {
     const bytes = await ctx.fs.readByteRange(path, offset, CHUNK_BYTES)
-    if (bytes.length === 0) return
+    if (bytes.length === 0) throw new Error("Usage source ended before its recorded size")
     const last = offset + bytes.length >= size
     const cut = last ? bytes.length : bytes.lastIndexOf(10) + 1
     // One line longer than a chunk is dropped: it cannot be a usage row.

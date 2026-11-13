@@ -28,7 +28,7 @@ const KINDS: Record<string, { minutes: number; label: string }> = {
   weekly_all: { minutes: WEEK_MINUTES, label: windowLabel(WEEK_MINUTES) },
 }
 
-/** Why Claude Code reports no limits: its report holds none, as for a long-lived token. */
+/** The older cache reason that treated an empty report as an account with no plan. */
 export const CLAUDE_UNREPORTED = "Claude Code doesn't report limits for this sign-in"
 /**
  * Why Claude Code has no plan limits on an API key. It has no plan to limit, so its `/usage` prints
@@ -102,7 +102,7 @@ export function parseUsageReport(text: string, at: number): ClaudeReport {
     const windows = (Array.isArray(limits) ? limits : [])
       .map((entry) => windowOfLimit(record(entry) ?? {}))
       .filter((window): window is ReportedWindow => window !== null)
-    return windows.length === 0 ? noPlan(CLAUDE_UNREPORTED) : { at, windows }
+    return windows.length === 0 ? unanswered() : { at, windows }
   }
   return lines.some(costSummary) ? noPlan(CLAUDE_NO_PLAN) : unanswered()
 }
@@ -179,6 +179,8 @@ async function readStored(ctx: Ctx): Promise<Reading | null> {
     const value = record(JSON.parse(await ctx.fs.readFile(readingFile(ctx))))
     const report = record(value?.report)
     if (typeof value?.at !== "number" || report === null) return null
+    if (report.cause === "no-plan" && report.reason === CLAUDE_UNREPORTED)
+      Object.assign(report, unanswered())
     if (typeof report.reason === "string")
       return CAUSES.includes(report.cause as LimitCause)
         ? { at: value.at, report: { reason: report.reason, cause: report.cause as LimitCause } }

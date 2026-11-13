@@ -48,7 +48,7 @@ describe("current public illustrations and guides", () => {
   it("leads the pricing comparison with the whole workflow and both approvals", () => {
     const rows = COMPARE.flatMap((group) => group.rows);
     const workflow = rows[0];
-    expect(workflow.feature).toBe("The whole workflow");
+    expect(workflow.feature).toBe("Plan, build, verify and review");
     expect(workflow.note).toMatch(/approval of the Plan and of the finished change/);
     expect(workflow.solo).toBe(true);
     expect(workflow.team).toBe(true);

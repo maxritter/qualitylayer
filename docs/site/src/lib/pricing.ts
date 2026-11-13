@@ -44,7 +44,7 @@ export const PLANS: Plan[] = [
       ["verify", "Security scans and reviews"],
       ["build", "Bring your own coding agent"],
       ["review", "Stays on your computer"],
-      ["plain", "Unlimited tasks and repos"],
+      ["plain", "Unlimited tasks and repositories"],
     ],
   },
   {
@@ -60,11 +60,11 @@ export const PLANS: Plan[] = [
     },
     plus: "The same product, plus:",
     highlights: [
-      ["plan", "Seats and billing in one place"],
+      ["plan", "Centralized seats and billing"],
       ["build", "Assign and reassign licences"],
-      ["review", "Priority support"],
+      ["review", "Priority product support"],
       ["verify", "Priority feature requests"],
-      ["plain", "Complete local product per person"],
+      ["plain", "Complete local product per seat"],
     ],
   },
   {
@@ -78,10 +78,10 @@ export const PLANS: Plan[] = [
     plus: "Everything in Business, plus:",
     highlights: [
       ["plan", "Volume pricing for many seats"],
-      ["build", "Onboarding for your developers"],
-      ["verify", "Negotiated support terms"],
+      ["build", "Onboarding for developers"],
+      ["verify", "Support terms by agreement"],
       ["review", "Invoicing and custom terms"],
-      ["plain", "Business benefits included"],
+      ["plain", "All Business benefits included"],
     ],
   },
 ];
@@ -112,9 +112,9 @@ export const COMPARE: CompareGroup[] = [
     name: "The complete local product",
     hue: "build",
     rows: [
-      row("The whole workflow", true, true, true, "Plan, Implement and Verify, with your approval of the Plan and of the finished change"),
+      row("Plan, build, verify and review", true, true, true, "Plan, Implement and Verify, with your approval of the Plan and of the finished change"),
       row("Tasks, Chat and Artifacts", true, true, true, "Use your supported coding agents with your own subscriptions or API accounts"),
-      row("Checks and independent review", true, true, true, "Tests, security scans and an agent that did not write the code"),
+      row("Security scans and reviews", true, true, true, "Tests, security scans and an agent that did not write the code"),
       row("Local work and personal remote access", true, true, true, "Keep work on your computers; reach your own machines through SSH or a paired browser"),
       row("Unlimited tasks and repositories", true, true, true),
     ],
@@ -125,7 +125,7 @@ export const COMPARE: CompareGroup[] = [
     rows: [
       row("Centralized seats and billing", false, true, true),
       row("Licence assignment and reassignment", false, true, true),
-      row("Priority support", false, true, true),
+      row("Priority product support", false, true, true),
       row("Priority feature requests", false, true, true, "Earlier consideration during planning; delivery is agreed separately"),
     ],
   },
@@ -133,9 +133,9 @@ export const COMPARE: CompareGroup[] = [
     name: "Negotiated arrangements",
     hue: "plain",
     rows: [
-      row("Volume pricing", false, false, true),
+      row("Volume pricing for many seats", false, false, true),
       row("Invoicing arrangements", false, false, true),
-      row("Onboarding", false, false, true),
+      row("Onboarding for developers", false, false, true),
       row("Negotiated purchasing and support terms", false, false, true),
     ],
   },

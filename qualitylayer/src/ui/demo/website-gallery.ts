@@ -8,6 +8,7 @@ import type { Project, TaskDetail } from "../api.ts"
 import { setBranchApi } from "../start-branch.ts"
 import type { WalkthroughApi } from "../timeline/walkthrough-api.ts"
 import { flagshipTask } from "./flagship.ts"
+import { DEMO_TASK_ID } from "./identity.ts"
 import { PLAN_AGENTS_DOCUMENT, PLAN_DOCUMENT } from "./plan-doc.ts"
 import { queueConsole } from "./queue-console.ts"
 import { demoTask, type Moment, TASK_AGENT_FILES, TASK_FILES, taskSections } from "./task/index.ts"
@@ -849,10 +850,10 @@ export function websiteGalleryApi(
   const gallery: WalkthroughApi = {
     ...api,
     fileDiff: async (id, path) =>
-      (id === "demo" ? websiteBillingDiff(path) : undefined) ?? api.fileDiff(id, path),
+      (id === DEMO_TASK_ID ? websiteBillingDiff(path) : undefined) ?? api.fileDiff(id, path),
     ...(scene === "verify" ? { currentTurnLayout: true as const } : {}),
     evidence: async (id, name) => {
-      if (id !== "demo" || name !== "evidence/gallery-account-billing.png")
+      if (id !== DEMO_TASK_ID || name !== "evidence/gallery-account-billing.png")
         return api.evidence(id, name)
       const built = billingWalkthrough(scene === "verify" || scene === "pull-request").screens?.[0]
         ?.built
@@ -878,22 +879,23 @@ export function websiteGalleryApi(
       (await api.tasks())
         // The rows the website's projects have no room for stay off the public screenshots.
         .filter((row) => HOMES[row.id] !== null)
-        .map((row) => rehomed(row.id === "demo" ? task : row)),
-    task: async (id) => (id === "demo" ? structuredClone(task) : rehomed(await api.task(id))),
+        .map((row) => rehomed(row.id === DEMO_TASK_ID ? task : row)),
+    task: async (id) => (id === DEMO_TASK_ID ? structuredClone(task) : rehomed(await api.task(id))),
     walkthrough: async (id) => {
-      if (id === "demo") return billingWalkthrough(scene === "verify" || scene === "pull-request")
+      if (id === DEMO_TASK_ID)
+        return billingWalkthrough(scene === "verify" || scene === "pull-request")
       if (api.walkthrough) return api.walkthrough(id)
       throw new Error("This demo task has no recorded walkthrough")
     },
     doc: async (id, name) =>
-      id === "demo" && documents[name]
+      id === DEMO_TASK_ID && documents[name]
         ? { name, markdown: documents[name], validation: { valid: true, errors: [] } }
         : api.doc(id, name),
     // Cut by the schema's rules, as the server cuts a task's document, so each section is drawn,
     // folded or left to the Reader as it is on a real task.
     sections: async (id, name) => {
       const markdown = documents[name]
-      if (id !== "demo" || !markdown) return api.sections(id, name)
+      if (id !== DEMO_TASK_ID || !markdown) return api.sections(id, name)
       const cut = taskSections(name, markdown, task.type)
       if (cut === undefined) throw new Error(`${name} does not exist yet`)
       return cut
@@ -903,7 +905,7 @@ export function websiteGalleryApi(
       return JSON.parse(JSON.stringify(facts).replaceAll("Usage-based billing", task.title))
     },
     taskArtifacts: async (id) =>
-      id === "demo"
+      id === DEMO_TASK_ID
         ? { task: [artifact], projectId: task.project, projectName: task.projectName }
         : api.taskArtifacts(id),
     artifactsOverview: async () => {
@@ -936,10 +938,10 @@ export function websiteGalleryApi(
         registered.page in pageTitles
       )
         return websiteArtifact(registered.page)
-      return where.id === "demo"
+      return where.id === DEMO_TASK_ID
         ? scene === "artifact"
           ? queueConsole()
-          : api.artifact("demo", file)
+          : api.artifact(DEMO_TASK_ID, file)
         : api.artifactPage(where, file)
     },
   }

@@ -26,6 +26,8 @@ export function demoAnswers(search: string) {
     }
     // Add machine lists the ssh config's hosts; Remove asks how many sessions run there.
     if (url.pathname === "/api/machines/hosts") return json({ ok: true, hosts: [] })
+    if (url.pathname === "/api/machines/pairings" && method === "GET")
+      return json({ ok: true, pairings: [] })
     if (/^\/api\/machines\/[^/]+\/sessions$/.test(url.pathname))
       return json({ ok: true, running: 1 })
     return null

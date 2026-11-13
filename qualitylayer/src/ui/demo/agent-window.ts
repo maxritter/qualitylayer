@@ -22,6 +22,7 @@ import {
   demoTurnChanges,
   demoWorkerConversation,
 } from "./conversation.ts"
+import { DEMO_TASK_ID } from "./identity.ts"
 import { demoLimits } from "./limits.ts"
 import { nativeAgentFrom } from "./route.ts"
 import { demoUsage, demoUsageFails, demoUsageScenario } from "./usage.ts"
@@ -77,7 +78,7 @@ const authority = (generation: number, watching: boolean): ViewerState => ({
   canTakeControl: !watching,
   ...(!watching ? { pickerProof: "a".repeat(64) } : {}),
 })
-export function demoRun(moment: RunDemoMoment, task = "demo"): RunWindow {
+export function demoRun(moment: RunDemoMoment, task = DEMO_TASK_ID): RunWindow {
   const galleryArtifact =
     typeof location !== "undefined" &&
     new URLSearchParams(location.search).get("gallery") === "artifact"
@@ -177,7 +178,7 @@ function backgroundRuns(): RunWindow[] {
 export function createDemoRunAdapter(
   initial?: RunDemoMoment,
   changed: () => void = () => {},
-  task = "demo",
+  task = DEMO_TASK_ID,
   allocateTask?: (request: RunStart) => string,
 ): RunAdapter & { reset(): void } {
   const sessionSettings =

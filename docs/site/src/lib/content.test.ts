@@ -19,8 +19,8 @@ describe("FAQ", () => {
   });
 
   it("explains the same local product with separate purchasing benefits", () => {
-    const faq = FAQS.find(({ question }) => /Business and Enterprise/.test(question));
-    expect(faq?.answer).toContain("same complete local");
+    const faq = PRICING_FAQS.find(({ question }) => /Business and Enterprise/.test(question));
+    expect(faq?.answer).toContain("complete local product");
     expect(faq?.answer).toContain("centralized seats and billing");
   });
 
@@ -36,12 +36,27 @@ describe("FAQ", () => {
     expect(docs).toContain("does not add your account name, email, repository paths or terminal logs");
   });
 
-  it("distinguishes the coding agent's provider from QualityLayer services and optional reports", () => {
-    for (const faq of [...FAQS, ...PRICING_FAQS].filter((f) => f.question === "Does my code leave my computer?")) {
-      expect(faq.answer).toMatch(/your chosen coding agent.*provider/i);
-      expect(faq.answer).toMatch(/Check support attachments before sending/i);
-      expect(faq.answer).not.toMatch(/^No\.|the one way it can leave/i);
+  it("explains local plans without hiding the coding agent's provider", () => {
+    for (const questions of [FAQS, PRICING_FAQS]) {
+      const answer = questions.find(({ question }) => question === "Where do my code and plans live?")?.answer;
+      expect(answer).toContain("plans as Markdown files in your project");
+      expect(answer).toContain("doesn’t host your code or project work");
+      expect(answer).toContain("provider under your own account and settings");
     }
+  });
+
+  it("keeps the approved buyer questions concise and source availability current", () => {
+    expect(FAQS).toHaveLength(7);
+    expect(PRICING_FAQS).toHaveLength(8);
+    const source = FAQS.find(({ question }) => question === "Can I read the source?")?.answer;
+    expect(source).toContain("public code is available for inspection and contributions");
+    expect(source).toContain("under the QualityLayer licence");
+    expect(source).toContain("Licensing and billing internals remain private");
+    expect(source).not.toMatch(/prepared|when available|open source/i);
+    const licence = readFileSync(new URL("../../../../LICENSE", import.meta.url), "utf8").replace(/\s+/g, " ");
+    expect(licence).toContain("read Public Source to understand, inspect, evaluate and audit QualityLayer");
+    expect(licence).toContain("submit issues, patches and pull requests to improve QualityLayer itself");
+    expect(licence).toContain("Private licensing/trial enforcement, the commercial backend");
   });
 
   it("calls the second opinion one thing", () => {
@@ -57,9 +72,6 @@ describe("FAQ", () => {
     for (const faq of [...FAQS, ...PRICING_FAQS]) expect(faq.answer, faq.question).not.toMatch(counted);
     for (const row of COMPARE.flatMap((group) => group.rows)) expect(`${row.feature} ${row.note ?? ""}`).not.toMatch(counted);
     for (const plan of PLANS) for (const [, text] of plan.highlights) expect(text).not.toMatch(counted);
-    const agents = PRICING_FAQS.find((faq) => faq.question === "Which agents does it work with?")!.answer;
-    expect(agents).toContain("Claude Code");
-    expect(agents).toContain("Codex");
   });
 });
 

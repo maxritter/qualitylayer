@@ -1,5 +1,6 @@
 import { docBlocks, markerKey } from "../../../core/docs/markers.ts"
 import type { TaskDetail } from "../../api.ts"
+import { DEMO_TASK_ID } from "../identity.ts"
 
 export const PLAN_LONG_ANSWER = `${"Keep the original qualification and every selected option. ".repeat(120).trim()}
 
@@ -50,7 +51,7 @@ function withPlanMarker(task: TaskDetail, name: string, text: string): TaskDetai
 /** Explicit source-preview fixtures; ordinary moments and the person's tasks are untouched. */
 export function demoPlanEntry(task: TaskDetail): TaskDetail {
   const fixture = new URLSearchParams(globalThis.location?.search ?? "").get("plan-entry")
-  if (task.id !== "demo" || task.stage !== "plan" || !task.gate || !fixture) return task
+  if (task.id !== DEMO_TASK_ID || task.stage !== "plan" || !task.gate || !fixture) return task
   if (fixture === "long-answer")
     return withPlanMarker(
       task,

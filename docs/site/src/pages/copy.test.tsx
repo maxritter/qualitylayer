@@ -71,9 +71,16 @@ describe("the site's copy", () => {
 
   it("lets Pilot users keep both products and import memories when ready", () => {
     const pilot = PRICING_FAQS.find((faq) => faq.question === "I use Pilot Shell 11. What happens?")!.answer;
-    expect(pilot).toMatch(/Pilot Shell 11 and QualityLayer in parallel/i);
-    expect(pilot).toMatch(/paid subscription keeps its existing price/i);
-    expect(pilot).toMatch(/Import your Pilot memories per project/i);
+    expect(pilot).toContain("Pilot Shell can stay installed");
+    expect(pilot).toContain("Existing paid plan terms and trial dates are preserved");
+    expect(pilot).toContain("accepts project exports");
+    expect(pilot).toContain("cannot import the local SQLite database");
+    const licence = readFileSync(new URL("../../../../LICENSE", import.meta.url), "utf8").replace(/\s+/g, " ");
+    expect(licence).toContain("does not revoke, narrow or replace rights already granted");
+    expect(licence).toContain("Existing contractual prices, currencies, seats, benefits, grants, licence keys, activations and access continue under their agreed terms");
+    const guide = readFileSync(new URL("../../../docusaurus/docs/moving-from-pilot-shell.mdx", import.meta.url), "utf8");
+    expect(guide).toContain("JSONL or Markdown memory exports");
+    expect(guide).toContain("cannot import the local `pilot-memory.db` database; keep it in place");
     expect(pilot).not.toMatch(/updater moves you over|replaces Pilot Shell/i);
   });
 
@@ -84,8 +91,8 @@ describe("the site's copy", () => {
   });
 
   it("explains local product and Business purchasing in the FAQ", () => {
-    const answer = FAQS.find(({ question }) => question === "What do Business and Enterprise add?")?.answer;
-    expect(answer).toContain("same complete local");
+    const answer = PRICING_FAQS.find(({ question }) => question === "What do Business and Enterprise add?")?.answer;
+    expect(answer).toContain("complete local product");
     expect(answer).toContain("centralized seats and billing");
   });
 });

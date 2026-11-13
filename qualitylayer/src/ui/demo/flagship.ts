@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "./identity.ts"
 // The flagship of the public Cockpit demo: usage-based billing across nine
 // services. Every service, path, number and person is illustrative.
 //
@@ -1603,7 +1604,7 @@ export function flagshipTask(stage: FlagshipStage, now = Date.now()): TaskDetail
   const hasFile = (role: DocRole): boolean => written(role)
   const gate = stage === "plan" ? NAMES.plan : stage === "verify" ? "final" : null
   return {
-    id: "demo",
+    id: DEMO_TASK_ID,
     answers: "app",
     title: "Usage-based billing",
     project: "platform",

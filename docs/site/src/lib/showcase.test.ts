@@ -40,12 +40,27 @@ it("never moves the camera outside the window", () => {
   }
 });
 
-it("shows each step on its own screen, and after Approve the pull request", () => {
+it("shows each step on its own screen, followed by the pull request", () => {
   for (const [i, c] of CHAPTERS.entries()) expect(frameAt(seekTime(i) + 400).to).toBe(c.id);
   const review = CHAPTERS.findIndex((c) => c.id === "verify");
   const shots = new Set<string>();
   for (let t = STARTS[review] + 900; t < STARTS[review] + CHAPTERS[review].dur; t += 100) shots.add(frameAt(t).to);
   expect([...shots]).toEqual(["verify", "pull-request"]);
+});
+
+it("keeps Verify after approval until the separate Pull request action", () => {
+  const index = CHAPTERS.findIndex((c) => c.id === "verify");
+  const chapter = CHAPTERS[index];
+  const actions = chapter.beats.filter((b) => b[1] === "click" && b[0] > 1000);
+  expect(actions).toHaveLength(2);
+  const [approval, request] = actions.map((b) => frameAt(STARTS[index] + b[0]));
+  expect(approval.to).toBe("verify");
+  expect(request.to).toBe("verify");
+  expect(approval.cursor.x).toBeGreaterThan(request.cursor.x);
+  const landing = chapter.beats.find((b) => b[1] === "shot" && b[2] === "pull-request")!;
+  expect(landing[0]).toBeGreaterThan(actions[1][0]);
+  expect(frameAt(STARTS[index] + landing[0] - 1).caption).toBe("verify");
+  expect(frameAt(STARTS[index] + landing[0]).caption).toBe("pull-request");
 });
 
 it("keeps every highlight and click inside the part of the window the camera shows", () => {

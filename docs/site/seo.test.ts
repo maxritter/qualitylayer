@@ -63,7 +63,7 @@ describe("HTML available before JavaScript runs", () => {
     ]);
     expect(data[2]).toMatchObject({
       "@context": "https://schema.org", name: "Inside QualityLayer trailer",
-      description: expect.stringContaining("56 second trailer"),
+      description: "Watch the trailer for Inside QualityLayer, a deep dive into building software with coding agents.",
       thumbnailUrl: `https://qualitylayer.dev${DEEP_DIVE_POSTER}`,
       uploadDate: "2026-10-29", duration: "PT55S", contentUrl: FILMS.insideTrailer.src,
     });

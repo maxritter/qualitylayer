@@ -22,6 +22,7 @@ import { withDemoConfig } from "./config.ts"
 import { withDemoDelays } from "./delay.ts"
 import { withDemoFailures } from "./fail.ts"
 import { installDemoFetch } from "./fetch.ts"
+import { demoTaskHash } from "./identity.ts"
 import { calmFrom, variantFrom } from "./items.ts"
 import {
   forgetSharedRoute,
@@ -112,6 +113,13 @@ window.EventSource = Events as unknown as typeof EventSource
 window.WebSocket = Events as unknown as typeof WebSocket
 // Get approval and the machine dialogs ask the server directly: the demo answers them in the page.
 installDemoFetch(window.location.search)
+const canonicalHash = demoTaskHash(window.location.hash)
+if (canonicalHash !== window.location.hash)
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}${canonicalHash}`,
+  )
 applyMotion()
 const gallery = websiteScene(window.location.search)
 if (gallery === undefined) seedUnread()
@@ -171,18 +179,25 @@ const saveSetupQuietly = async (patch: unknown) => {
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin || event.source !== window.parent) return
   if (event.data?.type === "qualitylayer-demo-open" && validRoute(event.data.route))
-    window.location.hash = routeHash(event.data.route)
+    window.location.hash = demoTaskHash(routeHash(event.data.route))
   if (event.data?.type === "qualitylayer-demo-reset") {
     demo.reset()
     runDemo.reset()
   }
 })
-window.addEventListener("hashchange", () =>
+window.addEventListener("hashchange", () => {
+  const hash = demoTaskHash(window.location.hash)
+  if (hash !== window.location.hash)
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    )
   window.parent.postMessage(
     { type: "qualitylayer-demo-route", route: parseRoute(window.location.hash) },
     window.location.origin,
-  ),
-)
+  )
+})
 
 // The demo story (`?story`) keeps one ordinary day's tasks, its own project first.
 const story = storyWorldFrom(window.location.search)

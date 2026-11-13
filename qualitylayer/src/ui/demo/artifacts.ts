@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "./identity.ts"
 // The demo's lasting artifacts: an App Model, a Workflow and a Website kept by one project (the App Model
 // is changing in two open tasks), a second project with one lasting artifact and a draft, and a project
 // with none. Everything lives in memory: Keep adds an artifact, Fold in lands pages in one and moves its
@@ -395,7 +396,7 @@ function storySeed(now: number) {
   const drafts: DemoDraft[] = [
     {
       project: "platform",
-      task: "demo",
+      task: DEMO_TASK_ID,
       name: "billing-admin-usage",
       title: "Billing admin with usage",
       purpose: "The billing-mode switch and the invoice with usage lines.",
@@ -411,7 +412,7 @@ function storySeed(now: number) {
     },
     {
       project: "platform",
-      task: "demo",
+      task: DEMO_TASK_ID,
       name: "portal-limits",
       title: "Plan and limits with usage",
       purpose: "Use against the limits, and the alerts at 80 % and 100 %.",
@@ -1236,8 +1237,8 @@ export function createDemoArtifacts(options: DemoArtifactsOptions) {
           at: now(),
           subject: "Show the last switch under the billing-mode button",
           task: {
-            id: "demo",
-            title: options.markOf("demo")?.title ?? "Usage-based billing",
+            id: DEMO_TASK_ID,
+            title: options.markOf(DEMO_TASK_ID)?.title ?? "Usage-based billing",
           },
         })
     },

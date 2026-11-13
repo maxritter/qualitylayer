@@ -2,6 +2,7 @@ import type { CostHelper, CostStep, TaskCost } from "../../core/cost/labels.ts"
 import { modelLabel, tokenWords } from "../../core/cost/labels.ts"
 import { PRICE_NOTE } from "../../core/cost/prices.ts"
 import type { FlowStepId } from "../../core/flow.ts"
+import { DEMO_TASK_ID } from "./identity.ts"
 import { MIN } from "./story.ts"
 
 const opus = "claude-opus-5-5"
@@ -140,7 +141,7 @@ const OTHERS: Record<string, [FlowStepId, number, number][]> = {
  * story, never another task's.
  */
 export function demoCost(id: string, stage = "verify"): TaskCost {
-  if (id === "demo") return demoTaskCost(stage)
+  if (id === DEMO_TASK_ID) return demoTaskCost(stage)
   if (id === "export") return exportCost()
   return plain(OTHERS[id] ?? [["plan", 5, 0.6]])
 }

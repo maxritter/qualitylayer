@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "./identity.ts"
 // The demo story's world (`?story`, docs/artifacts/demo-story.md): the same demo, with only what one
 // person's QualityLayer holds on an ordinary day. Home shows what waits for them (the billing task
 // and one change to review) and two agents at work, so both fit on one screen. The full demo keeps every task, as
@@ -10,7 +11,7 @@ import { DEMO_LOOKS } from "./api.ts"
 import { helperOf, liveReportOf, permissionSignals, signalsOf, todoOf } from "./live-rows.ts"
 
 /** The tasks the story keeps: the billing task, one change to review, two running, one shipped. */
-const STORY_TASKS = new Set(["demo", "export", "webhook", "tokens", "audit"])
+const STORY_TASKS = new Set([DEMO_TASK_ID, "export", "webhook", "tokens", "audit"])
 
 export const storyWorldFrom = (search: string) => new URLSearchParams(search).has("story")
 
@@ -26,7 +27,7 @@ export const STORY_LOOKS: ProjectLooks = {
  */
 const STARTED_AGO = 70 * 60_000
 const fresh = <T extends { id: string; created?: number }>(task: T): T =>
-  task.id === "demo" ? { ...task, created: Date.now() - STARTED_AGO } : task
+  task.id === DEMO_TASK_ID ? { ...task, created: Date.now() - STARTED_AGO } : task
 
 /**
  * The agents report as their hooks do, so their sidebar rows show what each does now, its own task list
@@ -86,7 +87,7 @@ export function storyWorldApi(api: WalkthroughApi): WalkthroughApi {
   // The demo's own tasks at load: the story keeps its five of them, and every task made since (New task).
   let seeded: Set<string> | undefined
   const kept = (id: string) =>
-    seeded?.has(id) === true ? STORY_TASKS.has(id) && !(before && id === "demo") : true
+    seeded?.has(id) === true ? STORY_TASKS.has(id) && !(before && id === DEMO_TASK_ID) : true
   return {
     ...api,
     tasks: async () => {

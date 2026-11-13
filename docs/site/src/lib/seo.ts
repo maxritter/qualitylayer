@@ -139,7 +139,7 @@ export const DEEP_DIVE_STRUCTURED_DATA = [
     "@type": "VideoObject",
     "@id": `${SITE_URL}${DEEP_DIVE_PATH}#trailer`,
     name: `${DEEP_DIVE_TITLE} trailer`,
-    description: "Watch the 56 second trailer for Inside QualityLayer, a deep dive into building software with coding agents.",
+    description: "Watch the trailer for Inside QualityLayer, a deep dive into building software with coding agents.",
     thumbnailUrl: `${SITE_URL}${DEEP_DIVE_POSTER}`,
     uploadDate: "2026-10-29",
     duration: `PT${FILMS.insideTrailer.duration}S`,

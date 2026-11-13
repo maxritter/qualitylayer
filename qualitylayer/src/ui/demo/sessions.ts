@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "./identity.ts"
 // The demo's running sessions for Settings › Sessions: four different agents on four tasks, one of them idle
 // for hours. Stop idle ends the idle one and keeps its conversation, as the real one does.
 
@@ -13,7 +14,7 @@ const SEEDS: Seed[] = [
   {
     agent: "claude-code",
     task: "Usage-based billing",
-    taskId: "demo",
+    taskId: DEMO_TASK_ID,
     project: { id: "platform", name: "acme/platform" },
     step: "Implement",
     state: "working",

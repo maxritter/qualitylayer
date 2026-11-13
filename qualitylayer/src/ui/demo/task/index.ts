@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "../identity.ts"
 // The demo's task at any of its moments: Plan, Implement and Verify. It is reached with
 // `?moment=<id>` on the demo address and `#/task/demo`; without `?moment=` the demo has no such
 // task, so the existing demo pages and checks are unchanged.
@@ -40,9 +41,9 @@ import { status as statusArea } from "./status.ts"
 import { story as storyArea } from "./story.ts"
 import { verify as verifyArea } from "./verify.ts"
 
+export { DEMO_TASK_ID } from "../identity.ts"
 export { MOMENT_IDS, type Moment, TASK_AGENT_FILES, TASK_FILES }
 
-export const DEMO_TASK_ID = "demo"
 const SLUG = "usage-based-billing"
 const PROJECT = "acme/platform"
 

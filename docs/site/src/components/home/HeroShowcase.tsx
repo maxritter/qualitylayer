@@ -145,7 +145,7 @@ function ShowcaseCard({ player, theme, step, open, onOpenChange, opener }: { pla
             );
           })}
         </ol>
-        <DialogDescription className="hs-card-note">The usage-based billing example, from the first question to the pull request. In the demo you click through it yourself.</DialogDescription>
+        <DialogDescription className="hs-card-note">The fictional usage-based billing example, from the first question to the pull request. In the demo you click through it yourself. <a href="https://qualitylayer-media.max-ritter.workers.dev/hero-walkthrough-v2026111301.mp4" target="_blank" rel="noopener noreferrer">Watch as video</a>.</DialogDescription>
       </DialogContent>
     </Dialog>
   );

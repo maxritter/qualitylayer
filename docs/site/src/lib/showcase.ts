@@ -69,7 +69,7 @@ function build(): Chapter[] {
   const r = rect;
   const planChoice = r("plan", "choice", 2), choose = r("plan", "choose", 3);
   const task = r("implement", "task", 2), testFirst = r("implement", "testFirst", 3);
-  const facts = r("verify", "facts"), review = r("verify", "review"), approve = r("verify", "approve", 3);
+  const facts = r("verify", "facts"), review = r("verify", "review"), approve = r("verify", "approve", 3), pullRequest = r("verify", "pullRequest", 3);
   const merged = r("pull-request", "merged"), card = r("pull-request", "card");
   // Each chapter's rail click lands on the screen the previous chapter ended on.
   const into = (from: Shot, step: string): Beat[] => [[0, "cur", rail(from, step), 650], [700, "click"], [800, "shot", step as Shot], [800, "say", step as Caption]];
@@ -99,11 +99,12 @@ function build(): Chapter[] {
       // Recorded progress, then the code to read.
       ...show(1700, facts),
       ...show(2900, review),
-      // Approve: the pull request opens and agents follow it to the merge.
+      // Approve saves the decision; Pull request is the separate action that starts publication.
       [4100, "mark", null],
-      [4200, "cur", centre(approve), 750], [5100, "click"], [5200, "mark", approve], [5400, "shot", "pull-request"], [5400, "say", "pull-request"], [5500, "mark", null],
-      ...show(6900, merged),
-      ...show(8500, card),
+      [4200, "cur", centre(approve), 750], [5100, "click"], [5200, "mark", approve], [5600, "mark", null],
+      [5700, "cur", centre(pullRequest), 650], [6500, "click"], [6600, "mark", pullRequest], [6800, "shot", "pull-request"], [6800, "say", "pull-request"], [6900, "mark", null],
+      ...show(8000, merged),
+      ...show(9300, card),
       [10300, "mark", null], [10500, "cam", null, 1100]] },
   ];
 }

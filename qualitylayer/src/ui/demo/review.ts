@@ -1,3 +1,4 @@
+import { DEMO_TASK_ID } from "./identity.ts"
 // The final approval in the demo: what the server leaves of a task once the person approves its
 // change, with a pull request only when they chose to open one.
 
@@ -61,7 +62,7 @@ export function shipDemoReview(
     pr,
     prError: null,
     // What the person decided: the 8 Plan items of the billing task, the 5 items of your review, 2 of them fixes.
-    decided: { planItems: task.id === "demo" ? 8 : 4, answered: 5, fixes: 2 },
+    decided: { planItems: task.id === DEMO_TASK_ID ? 8 : 4, answered: 5, fixes: 2 },
     // The same total the header and the cost panel show: the task's own, as the server reads it.
     cost: {
       usd: demoCost(task.id, task.stage).total.usd,

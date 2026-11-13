@@ -843,7 +843,7 @@ jobs:
         QL_RELEASE_EXPORTS: "{}"
         QL_RELEASE_METADATA_CONTROL: 'true'
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/cdbe0d3771885388f811ecf854429b42046af32c8961521a52e1c0ec474225a5.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/1e9f2b317cc6c9d3ecfe6900811e436fe1c32f00b7c3ee46a036dbbd2947ed9a.sh"
       shell: bash
     - name: Promote only the exact previously qualified staged site
       shell: bash

@@ -3,8 +3,8 @@ name: Old client update
 
 # Installs real released QualityLayer versions with their own installers, then runs their
 # `qualitylayer update` against live GitHub: each must land on the newest stable release.
-# 12.x accepted only v12 tags, so 13.0.0 stranded it until the v12.99.0 bridge (issue #237).
-# Run it before promoting a release and after any change to GitHub's "latest" release.
+# Standalone 12.x accepts only v12 tags and needs one explicit-version migration when Latest is 14.x.
+# 13.0.0 accepts the current Latest; later clients enumerate releases. Exercise each supported path.
 # Each run installs from scratch, which starts a trial on the live backend per version and runner.
 
 "on":
@@ -35,9 +35,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       VERSIONS: ${{ inputs.versions || '12.0.0 12.9.0 12.10.1 13.0.0' }}
-      # Read only GitHub's "latest" pointer, which the v12.99.0 bridge holds: their plain update keeps
-      # them where they are, and one `update --version` (the 13.0.1 release notes) carries them on.
-      POINTER_ONLY: "13.0.0"
+      # These old clients cannot discover a 14.x Latest; the supported one-time migration is explicit.
+      EXPLICIT_VERSION_ONLY: "12.0.0 12.9.0 12.10.1"
     steps:
       - name: Newest stable release
         shell: bash
@@ -68,11 +67,11 @@ jobs:
               VERSION="$v" bash "$home/install.sh" --cli-only --non-interactive > "$home/install.log" 2>&1 ||
                 { tail -20 "$home/install.log"; exit 1; }
               [ "$(qualitylayer --version | tail -1)" = "$v" ]
-              qualitylayer update
-              if [[ " $POINTER_ONLY " == *" $v "* ]]; then
-                [ "$(qualitylayer --version | tail -1)" = "$v" ] ||
-                  { echo "::error::$v moved on a plain update"; exit 1; }
+              if [[ " $EXPLICIT_VERSION_ONLY " == *" $v "* ]]; then
+                echo "Legacy $v uses the supported explicit-version migration"
                 qualitylayer update --version "$NEWEST"
+              else
+                qualitylayer update
               fi
               got="$(qualitylayer --version | tail -1)"
               [ "$got" = "$NEWEST" ] || { echo "::error::$v updated to $got, not $NEWEST"; exit 1; }
@@ -107,14 +106,13 @@ jobs:
               $ql = Join-Path $userHome '.qualitylayer\bin\qualitylayer.exe'
               $before = (& $ql --version | Select-Object -Last 1).Trim()
               if ($before -ne $v) { throw "installed $before, not $v" }
-              & $ql update
-              if ($LASTEXITCODE -ne 0) { throw "update from $v failed" }
-              if (" $env:POINTER_ONLY " -like "* $v *") {
-                $kept = (& $ql --version | Select-Object -Last 1).Trim()
-                if ($kept -ne $v) { throw "$v moved on a plain update to $kept" }
+              if (" $env:EXPLICIT_VERSION_ONLY " -like "* $v *") {
+                Write-Host "Legacy $v uses the supported explicit-version migration"
                 & $ql update --version $env:NEWEST
-                if ($LASTEXITCODE -ne 0) { throw "update --version from $v failed" }
+              } else {
+                & $ql update
               }
+              if ($LASTEXITCODE -ne 0) { throw "supported update from $v failed" }
               $got = (& $ql --version | Select-Object -Last 1).Trim()
               if ($got -ne $env:NEWEST) { throw "$v updated to $got, not $env:NEWEST" }
               $again = (& $ql update) -join "`n"

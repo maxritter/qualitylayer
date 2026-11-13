@@ -118,20 +118,13 @@ export function usageMenu(
     rows,
     money: {
       label: `Today · ${preferences.money === "value" ? "API-price value" : "API spend"}`,
-      text:
-        money.usd === null
-          ? "?"
-          : `${money.reported ? "" : "≈ "}$${money.usd.toFixed(2)}${money.partial ? "+" : ""}`,
-      note: money.omitted.length
-        ? `${money.omitted.length} ${money.omitted.length === 1 ? "source" : "sources"} incomplete`
-        : money.partial
-          ? "Still counting"
-          : "",
+      text: money.usd === null ? "?" : `$${money.usd.toFixed(2)}`,
+      note: "",
       day: money.day,
       description:
         preferences.money === "value"
-          ? `All priced usage at API prices, not a bill${money.omitted.length ? `; missing: ${money.omitted.join(", ")}` : ""}`
-          : `Metered API spend${money.omitted.length ? `; missing: ${money.omitted.join(", ")}` : ""}`,
+          ? "All priced usage at API prices, not a bill"
+          : "Metered API spend",
     },
     checkedAt: times.length ? Math.min(...times) : null,
   }

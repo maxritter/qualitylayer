@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto"
-import type { AnchoredEntry, NativeFileProbe, NativeFileSnapshot } from "./anchored-root.ts"
+import type {
+  AnchoredEntry,
+  NativeFileProbe,
+  NativeFileSnapshot,
+  NativeFileStream,
+} from "./anchored-root.ts"
 import {
   access,
   api,
@@ -47,6 +52,46 @@ export function bounded(parent: HeldParent, maximum: number): NativeFileSnapshot
   })
   try {
     return readHeld(handle, maximum)
+  } finally {
+    api().CloseHandle(handle)
+  }
+}
+
+export async function stream(
+  parent: HeldParent,
+  maximum: number,
+  consume: (bytes: Uint8Array) => Promise<void>,
+): Promise<NativeFileStream> {
+  if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error("Invalid stream byte cap")
+  const handle = openChild(parent.handle, parent.name, {
+    desired: access.read,
+    disposition: 1,
+    directory: false,
+  })
+  try {
+    const before = requireKind(handle, false)
+    if (before.size > BigInt(maximum)) throw new Error("Unsafe or oversized streamed source")
+    const bytes = Buffer.alloc(64 * 1024),
+      count = Buffer.alloc(4)
+    let used = 0
+    for (;;) {
+      if (!api().ReadFile(handle, bytes, bytes.length, count, null))
+        throw failure("Read streamed source")
+      const received = count.readUInt32LE()
+      if (!received) break
+      used += received
+      if (received > bytes.length || BigInt(used) > before.size)
+        throw new Error("Source changed during stream")
+      await consume(bytes.subarray(0, received))
+    }
+    if (BigInt(used) !== before.size || before.version !== requireKind(handle, false).version)
+      throw new Error("Source changed during stream")
+    return {
+      identity: before.identity,
+      version: before.version,
+      size: used,
+      mtimeMs: before.mtimeMs,
+    }
   } finally {
     api().CloseHandle(handle)
   }

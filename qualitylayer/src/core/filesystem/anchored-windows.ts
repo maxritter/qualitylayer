@@ -9,6 +9,7 @@ import {
   lock,
   probe,
   rename,
+  stream,
   verifyVersion,
 } from "./windows-files.ts"
 import {
@@ -146,6 +147,23 @@ class WindowsRoot implements AnchoredRoot {
   }
   probe(path: string, maximum: number) {
     return this.readFrom(path, (parent) => probe(parent, maximum))
+  }
+
+  async stream(path: string, maximum: number, consume: (bytes: Uint8Array) => Promise<void>) {
+    let parent: HeldParent | undefined
+    let consuming = false
+    try {
+      parent = this.parent(path, false)
+      return await stream(parent, maximum, async (bytes) => {
+        consuming = true
+        await consume(bytes)
+      })
+    } catch (cause) {
+      if (!consuming && (cause as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw cause
+    } finally {
+      parent?.close()
+    }
   }
   private readFrom<T>(path: string, read: (parent: HeldParent) => T): T | null {
     let parent: HeldParent | undefined

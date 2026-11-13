@@ -309,10 +309,6 @@ export function Usage({
               Plan pacing · {agentName}
               {source}
             </h3>
-            <p className="cv-usage-line cv-pacing-note">
-              Plan usage compared with the time left until each window resets. The tick marks an
-              even pace. This is not a cost and not the context window.
-            </p>
             <div className="cv-usage-lim">
               {limits.windows.map((window) => (
                 <LimitRow key={window.label} window={window} />

@@ -63,7 +63,7 @@ export function UsageDisplaySettings({
             Daily total{" "}
             <InfoHint
               label="About daily totals"
-              text="API spend includes metered usage with known billing. API-price value compares all priced token usage, including subscriptions, at the same rates. Credits are never dollars; missing data makes totals partial."
+              text="API spend includes metered usage with known billing. API-price value compares all priced token usage, including subscriptions, at the same rates. Credits are never dollars."
             />
           </>
         }
@@ -112,7 +112,10 @@ export function UsageDisplaySettings({
                 </div>
                 <div className="q-usage-options">
                   {choices.map((choice) => (
-                    <label key={choice.id} title={choice.reason}>
+                    <label
+                      key={choice.id}
+                      title={choice.kind === "cost" && choice.available ? undefined : choice.reason}
+                    >
                       <input
                         type="checkbox"
                         checked={selected.some((one) => one.id === choice.id)}

@@ -15,6 +15,8 @@ import { createServer, type Socket } from "node:net"
 import { join } from "node:path"
 import { createHeadlessTerminal } from "restty/headless"
 import { realCtx } from "../../ctx.ts"
+import { readGate } from "../gate/gate.ts"
+import { lockPath as gateLockPath } from "../gate/lock.ts"
 import { plannerFinishMessage } from "../handoff/finish-message.ts"
 import { keyOf } from "../task/binding.ts"
 import {
@@ -60,7 +62,7 @@ import {
   writeToken,
 } from "./registry.ts"
 import { BoundaryTracker, CursorStateTracker, rebuild, screenText } from "./restore.ts"
-import { inputSteps, typedMessage } from "./send-message.ts"
+import { inputBoundaryMatches, inputSteps, typedMessage } from "./send-message.ts"
 import { spawnError } from "./spawn-error.ts"
 import { watchStartupPrompt } from "./startup-prompt.ts"
 import { watchTurnSnapshots } from "./turn-snapshots.ts"
@@ -355,39 +357,113 @@ export async function runAgentHost(
     let inputQueue: (Uint8Array | number)[] = []
     let inputBytes = 0
     let inputTimer: ReturnType<typeof setTimeout> | undefined
+    let guardedInput:
+      | {
+          boundary: NonNullable<Extract<ServerFrame, { type: "input" }>["boundary"]>
+          inputSequence: number
+          reply: (accepted: boolean) => void
+        }
+      | undefined
+    const finishGuardedInput = (accepted: boolean) => {
+      const pending = guardedInput
+      guardedInput = undefined
+      pending?.reply(accepted)
+      if (!accepted && pending) {
+        inputQueue = []
+        inputBytes = 0
+        if (inputTimer) clearTimeout(inputTimer)
+        inputTimer = undefined
+      }
+    }
     let pumping = false
     let pty: Bun.Terminal | undefined
-    const pumpInput = () => {
+    const inputCtx = realCtx({
+      env: { ...launch.env, QUALITYLAYER_HOME: home },
+      cwd: launch.cwd,
+    })
+    const writeQueuedInput = (bytes: Uint8Array) => {
+      const written = pty?.write(bytes) ?? 0
+      if (written > 0) {
+        inputBytes -= written
+        if (written >= bytes.length) inputQueue.shift()
+        else inputQueue[0] = bytes.subarray(written)
+      }
+      return written
+    }
+    const pumpInput = async () => {
       if (pumping || !pty || !inputAllowed) return
       pumping = true
       try {
         while (inputQueue.length) {
+          const pending = guardedInput
+          const currentInput = () => {
+            const current = readRun(home, id)
+            return (
+              pending !== undefined &&
+              guardedInput === pending &&
+              inputAllowed &&
+              current?.status === "running" &&
+              current.generation === pending.boundary.generation &&
+              current.nativeSession === pending.boundary.nativeSession &&
+              current.task === pending.boundary.task &&
+              current.eventSequence === pending.inputSequence &&
+              current.intent?.state !== "paused" &&
+              !(
+                current.recovery?.generation === current.generation &&
+                current.recovery.state === "cancelled"
+              )
+            )
+          }
           const bytes = inputQueue[0]
           if (typeof bytes === "number") {
             if (!inputTimer)
               inputTimer = setTimeout(() => {
                 inputTimer = undefined
                 inputQueue.shift()
-                pumpInput()
+                void pumpInput()
               }, bytes)
             break
           }
           if (!bytes) break
-          const written = pty.write(bytes)
-          if (written > 0) {
-            inputBytes -= written
-            if (written >= bytes.length) inputQueue.shift()
-            else inputQueue[0] = bytes.subarray(written)
-          }
+          const queue = inputQueue
+          let written: number
+          if (pending) {
+            const current = readRun(home, id)
+            const runtimeDir = current?.taskRuntimeDir
+            if (!runtimeDir || !currentInput()) {
+              finishGuardedInput(false)
+              continue
+            }
+            const task = { runtimeDir }
+            const submitted = await inputCtx.fs
+              .withLock(gateLockPath(task), async () => {
+                const gate = await readGate(inputCtx, task)
+                if (!currentInput()) return undefined
+                if (gate?.decision === "approved") {
+                  finishGuardedInput(false)
+                  return undefined
+                }
+                // Approval and the actual PTY write share one boundary; connection and paste delay do not.
+                return writeQueuedInput(bytes)
+              })
+              .catch(() => {
+                if (guardedInput === pending) finishGuardedInput(false)
+                return undefined
+              })
+            if (submitted === undefined || inputQueue !== queue || guardedInput !== pending)
+              continue
+            written = submitted
+          } else written = writeQueuedInput(bytes)
           if (written < bytes.length) {
             if (!inputTimer)
               inputTimer = setTimeout(() => {
                 inputTimer = undefined
-                pumpInput()
+                void pumpInput()
               }, 10)
             break
           }
         }
+        if (!inputQueue.length) finishGuardedInput(true)
       } finally {
         pumping = false
       }
@@ -397,7 +473,7 @@ export async function runAgentHost(
       if (!inputAllowed || inputBytes + bytes.length > LIMITS.inboundBytes) return false
       inputQueue.push(...inputSteps(bytes.slice()))
       inputBytes += bytes.length
-      pumpInput()
+      void pumpInput()
       return true
     }
     const drop = (attachment: Attachment) => {
@@ -635,7 +711,7 @@ export async function runAgentHost(
       }
     })
     pty = child.terminal ?? undefined
-    pumpInput()
+    void pumpInput()
     lead = processIdentity(child.pid, "lead")
     if (!lead) {
       child.kill()
@@ -657,6 +733,7 @@ export async function runAgentHost(
     const stop = (): Promise<void> => {
       if (stopping) return stopping
       inputAllowed = false
+      finishGuardedInput(false)
       inputQueue = []
       inputBytes = 0
       if (inputTimer) clearTimeout(inputTimer)
@@ -698,6 +775,7 @@ export async function runAgentHost(
           guardedRestart: true,
           permissionRestart: true,
           acknowledges: true,
+          guardedInput: true,
           protocol: PROTOCOL_VERSION,
           run: id,
           generation: run.generation,
@@ -730,6 +808,19 @@ export async function runAgentHost(
         if (refused !== null)
           send(attachment, { type: "error", code: BOUNDARY_REFUSED[frame.type], message: refused })
       } else if (frame.type === "input" && inputAllowed) {
+        finishGuardedInput(false)
+        if (frame.boundary) {
+          const current = readRun(home, id)
+          if (
+            !current ||
+            inputBytes !== 0 ||
+            !inputBoundaryMatches(current, frame.boundary) ||
+            terminalPermissionScreen(screenText(terminal))
+          ) {
+            send(attachment, { type: "input-result", ...frame.boundary, accepted: false })
+            return
+          }
+        }
         if (frame.data.length) {
           noteInput()
           idle?.changed()
@@ -746,6 +837,19 @@ export async function runAgentHost(
             broadcast({ type: "attention", kind: "clear" })
           }
         }
+        const inputBoundary = frame.boundary
+        if (inputBoundary)
+          guardedInput = {
+            boundary: inputBoundary,
+            inputSequence: readRun(home, id)?.eventSequence ?? -1,
+            reply: (accepted) =>
+              send(attachment, {
+                type: "input-result",
+                generation: inputBoundary.generation,
+                sequence: inputBoundary.sequence,
+                accepted,
+              }),
+          }
         if (!queueInput(frame.data)) attachment.socket.destroy()
       } else if (frame.type === "resize" && inputAllowed) {
         terminal.resize(frame.cols, frame.rows)
@@ -755,6 +859,7 @@ export async function runAgentHost(
       } else if (frame.type === "control") {
         if (frame.action === "stop" || frame.action === "move") void stop()
         else if (frame.action === "interrupt" && inputAllowed) {
+          finishGuardedInput(false)
           const interrupt = AGENT_CAPABILITIES[run.agent].interruptKey
           if (interrupt) {
             invalidateRunBoundary({ home }, id, run.generation, true)

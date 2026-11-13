@@ -21,6 +21,8 @@ import { useTurnSnapshot } from "../turn/projection.ts"
 import type { TaskSurfaceProps } from "./props.ts"
 export function TaskWorkspace({ now, children }: { now: ReactNode; children: ReactNode }) {
   const surface = isValidElement<TaskSurfaceProps>(now) ? now.props : null
+  const decision = useRef<HTMLElement | null>(null)
+  const handledFocus = useRef<number | null>(null)
   const windows = useOptionalRuns()
   const managedRun =
     windows?.runs.some(
@@ -75,6 +77,59 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
         (question) => step !== "verify" || !isFinalApprovalQuestion(surface.task, question),
       )
     : []
+  useLayoutEffect(() => {
+    if (!surface) return
+    const request = surface.turnFocus
+    if (!request || handledFocus.current === request.sequence) return
+    const complete = () => {
+      handledFocus.current = request.sequence
+      surface.onTurnFocusHandled?.(request.sequence)
+    }
+    const pending = questions.filter((question) =>
+      request.questions.some(
+        (target) => target.id === question.id && target.asked === question.asked,
+      ),
+    )
+    if (
+      request.task !== surface.task.id ||
+      request.view !== surface.view ||
+      request.navigation !== window.location.hash ||
+      request.step !== step ||
+      request.step !== flowStepOf(surface.task.stage) ||
+      surface.task.archived ||
+      surface.task.stage === "shipped" ||
+      surface.task.stage === "abandoned" ||
+      reading ||
+      readingRecord ||
+      pending.length === 0
+    ) {
+      complete()
+      return
+    }
+    const region = decision.current
+    const card = Array.from(
+      region?.querySelectorAll<HTMLElement>(
+        '[data-testid="focus-card"], [data-testid="question-batch"]',
+      ) ?? [],
+    ).find((element) =>
+      pending.some(
+        (question) =>
+          element.dataset.itemId === `question:${question.id}` ||
+          element.getAttribute("aria-label") ===
+            `Question ${question.number}: ${question.question}`,
+      ),
+    )
+    const active = document.activeElement
+    const fromTurn = active === request.origin || active === request.focusAtRequest
+    if (active && active !== document.body && !fromTurn) {
+      complete()
+      return
+    }
+    if (!card) return
+    complete()
+    card.scrollIntoView?.({ block: "start" })
+    card.focus({ preventScroll: true })
+  }, [surface, questions, step, reading, readingRecord])
   if (surface && native && phase === "future")
     return (
       <NeedsAboveContext value={autonomous}>
@@ -107,6 +162,9 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
         <StepSupportingContext value={supporting}>
           <div className="ir-stage" data-step={step} data-testid="interaction-workspace">
             <div
+              ref={(element) => {
+                decision.current = element
+              }}
               hidden={reading || readingRecord || !waiting}
               className="ir-stage-decision"
               data-testid="interaction-now"
@@ -162,7 +220,14 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
     <NeedsAboveContext value={autonomous}>
       <StepSupportingContext value={supporting}>
         <div className="ir-workspace" data-testid="interaction-workspace">
-          <aside className="ir-now" aria-label="Now" data-testid="interaction-now">
+          <aside
+            ref={(element) => {
+              decision.current = element
+            }}
+            className="ir-now"
+            aria-label="Now"
+            data-testid="interaction-now"
+          >
             {now}
           </aside>
           <div className="ir-work" data-testid="interaction-work">

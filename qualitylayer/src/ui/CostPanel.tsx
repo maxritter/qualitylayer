@@ -218,14 +218,16 @@ export function CostTable({ cost, live }: { cost: TaskCost; live?: FlowStepId })
         </b>
         <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
           {cost.total.nativeCredits?.amount !== undefined
-            ? `${cost.total.estimateUsd !== undefined ? "Usage value + list estimate" : "AI-credit usage value"}${cost.total.nativeCredits.status === "partial" ? " · partial" : ""}`
+            ? cost.total.estimateUsd !== undefined
+              ? "Usage value + list estimate"
+              : "AI-credit usage value"
             : "so far"}
           {cost.total.ms > 0 ? ` · ${timeWords(cost.total.ms)}` : ""}
           <InfoHint
             text={
               cost.total.nativeCredits?.amount !== undefined
-                ? cost.note
-                : "Estimated at list price, read on this computer. Nothing is sent anywhere."
+                ? "Copilot credit value; not an additional charge. Other usage at API prices."
+                : "Estimated at list price."
             }
           />
         </span>
@@ -381,12 +383,6 @@ export function CostTable({ cost, live }: { cost: TaskCost; live?: FlowStepId })
           <span>
             <b className="font-semibold">Worth a look.</b> {worth.text}
           </span>
-        </p>
-      ) : null}
-      {cost.missing > 0 ? (
-        <p className="m-0 text-[12px] text-muted-foreground">
-          {cost.missing === 1 ? "One session's" : `${cost.missing} sessions'`} transcript is not on
-          this machine and is not counted.
         </p>
       ) : null}
       <p className="m-0 text-right text-[12px]">

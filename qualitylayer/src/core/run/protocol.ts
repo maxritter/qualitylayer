@@ -11,9 +11,15 @@ export const LIMITS = {
   scrollbackBytes: 4 * 1024 * 1024,
   helloMs: 2000,
 } as const
+export type InputBoundary = {
+  generation: number
+  nativeSession: string
+  sequence: number
+  task: string
+}
 export type ServerFrame =
   | { type: "hello"; protocol: number; token: string }
-  | { type: "input"; data: Uint8Array }
+  | { type: "input"; data: Uint8Array; boundary?: InputBoundary }
   | { type: "resize"; cols: number; rows: number }
   | { type: "control"; action: RunControl; generation: number }
   | { type: "attach"; generation: number }
@@ -44,6 +50,7 @@ export type HostFrame =
       permissionRestart?: boolean
       /** The host takes `ack` frames: only a viewer that sees this sends them (an older host would close on one). */
       acknowledges?: boolean
+      guardedInput?: boolean
     }
   | { type: "output"; seq: number; data: Uint8Array }
   | {
@@ -62,6 +69,7 @@ export type HostFrame =
   | { type: "resync"; reason: string }
   | { type: "error"; code: string; message: string }
   | { type: "exit"; code: number; cleanupComplete: boolean }
+  | { type: "input-result"; generation: number; sequence: number; accepted: boolean }
   | {
       type: "fresh-result"
       generation: number
@@ -94,6 +102,7 @@ export const FRAME_SCHEMA = {
   "fresh-result": { id: 18, direction: "host", introduced: 1 },
   "guarded-stop": { id: 19, direction: "server", introduced: 1 },
   ack: { id: 20, direction: "server", introduced: 1 },
+  "input-result": { id: 21, direction: "host", introduced: 1 },
 } as const
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8", { fatal: true })
@@ -119,7 +128,21 @@ export function validateFrame(value: unknown, direction?: Direction): Frame {
       valid = integer(f.protocol, 1) && text(f.token, 256)
       break
     case "input":
-      valid = binary(LIMITS.inputBytes)
+      valid =
+        binary(LIMITS.inputBytes) &&
+        (f.boundary === undefined ||
+          (typeof f.boundary === "object" &&
+            f.boundary !== null &&
+            integer((f.boundary as Record<string, unknown>).generation, 1) &&
+            integer((f.boundary as Record<string, unknown>).sequence, 1) &&
+            text((f.boundary as Record<string, unknown>).nativeSession, 128) &&
+            text((f.boundary as Record<string, unknown>).task, 512) &&
+            Object.keys(f.boundary).every((key) =>
+              ["generation", "nativeSession", "sequence", "task"].includes(key),
+            )))
+      break
+    case "input-result":
+      valid = integer(f.generation, 1) && integer(f.sequence, 1) && typeof f.accepted === "boolean"
       break
     case "resize":
       valid = validSize(f.cols, f.rows)
@@ -194,6 +217,7 @@ export function validateFrame(value: unknown, direction?: Direction): Frame {
       valid =
         valid && (f.permissionRestart === undefined || typeof f.permissionRestart === "boolean")
       valid = valid && (f.acknowledges === undefined || typeof f.acknowledges === "boolean")
+      valid = valid && (f.guardedInput === undefined || typeof f.guardedInput === "boolean")
       break
     case "output":
       valid = integer(f.seq, 1) && binary(32 * 1024)

@@ -1021,6 +1021,29 @@ function memoryParams(input: object): string {
 }
 
 export const memoryApi: MemoryApi = {
+  pilotMigration: {
+    scan: (input, signal) =>
+      call("/api/memory/import/pilot/scan", {
+        method: "POST",
+        body: JSON.stringify(input),
+        signal,
+      }),
+    records: (scan, group, offset) =>
+      call("/api/memory/import/pilot/records", {
+        method: "POST",
+        body: JSON.stringify({ scan, group, offset }),
+      }),
+    review: (input) =>
+      call("/api/memory/import/pilot/review", { method: "POST", body: JSON.stringify(input) }),
+    apply: (input, signal) =>
+      call("/api/memory/import/pilot/apply", {
+        method: "POST",
+        body: JSON.stringify(input),
+        signal,
+      }),
+    cancel: (scan) =>
+      call("/api/memory/import/pilot/cancel", { method: "POST", body: JSON.stringify({ scan }) }),
+  },
   activity: (project, task) =>
     call(`/api/memory/projects/${enc(project)}/tasks/${enc(task)}/activity`),
   overview: (project) => call(`/api/memory/overview${memoryParams({ project })}`),

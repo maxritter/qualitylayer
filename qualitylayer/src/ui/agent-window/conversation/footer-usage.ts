@@ -17,9 +17,6 @@ const SHORT_WINDOW: Record<string, string> = {
   "This week · Fable": "Fable week",
 }
 
-/** What the plan chip's gauge means: it is not the context window and not money. */
-export const PACING_NOTE = "plan usage compared with time to reset, not a cost"
-
 export type SessionUse =
   | {
       kind: "plan"
@@ -49,8 +46,8 @@ export function sessionUse(input: {
     const amount = estimatedUsd < 0.005 ? "< $0.01" : usd(estimatedUsd)
     return {
       kind: "key",
-      word: `≈ ${amount}`,
-      title: `This session, ≈ ${amount} · estimated at list prices`,
+      word: amount,
+      title: `This session, ${amount} · estimated at list prices`,
       label: `This session ${amount}, estimate · usage details`,
     }
   }
@@ -66,8 +63,8 @@ export function sessionUse(input: {
     kind: "plan",
     word: `${SHORT_WINDOW[window.label] ?? window.label} · ${amount} % ${mode}`,
     ahead,
-    title: `Plan pacing: ${window.label.toLowerCase()} · ${amount} % ${mode}${reset ? ` · resets in ${reset}` : ""}${ahead ? " · ahead of an even pace" : ""} · ${PACING_NOTE}`,
-    label: `Plan pacing: ${window.label}, ${amount} percent ${mode}${ahead ? ", ahead of pace" : ""} · ${PACING_NOTE} · open pacing details`,
+    title: `Plan pacing: ${window.label.toLowerCase()} · ${amount} % ${mode}${reset ? ` · resets in ${reset}` : ""}${ahead ? " · ahead of pace" : ""}`,
+    label: `Plan pacing: ${window.label}, ${amount} percent ${mode}${ahead ? ", ahead of pace" : ""} · open pacing details`,
   }
 }
 

@@ -6,6 +6,7 @@ import {
   type AnchoredEntry,
   type NativeFileProbe,
   type NativeFileSnapshot,
+  type NativeFileStream,
   relativeParts,
 } from "./anchored-root.ts"
 
@@ -140,6 +141,46 @@ export function bounded(parent: number, name: string, maximum: number) {
 export function snapshot(parent: number, name: string, maximum: number): NativeFileSnapshot {
   const { bytes, info } = regularRead(parent, name, maximum)
   return { bytes, identity: fileObjectIdentity(info), version: fileVersion(info) }
+}
+
+export async function stream(
+  parent: number,
+  name: string,
+  maximum: number,
+  consume: (bytes: Uint8Array) => Promise<void>,
+): Promise<NativeFileStream> {
+  if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error("Invalid stream byte cap")
+  const fd = api().openat(
+    parent,
+    cString(name),
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | closeOnExec,
+    0,
+  )
+  if (fd < 0) throw failure("Open streamed source")
+  try {
+    const before = fstatSync(fd)
+    if (!before.isFile() || before.size > maximum)
+      throw new Error("Unsafe or oversized streamed source")
+    const bytes = new Uint8Array(64 * 1024)
+    let used = 0
+    for (;;) {
+      const count = readSync(fd, bytes, 0, bytes.length, used)
+      if (!count) break
+      used += count
+      if (used > before.size) throw new Error("Source changed during stream")
+      await consume(bytes.subarray(0, count))
+    }
+    if (used !== before.size || !sameFileIdentity(before, fstatSync(fd)))
+      throw new Error("Source changed during stream")
+    return {
+      identity: fileObjectIdentity(before),
+      version: fileVersion(before),
+      size: used,
+      mtimeMs: before.mtimeMs,
+    }
+  } finally {
+    api().close(fd)
+  }
 }
 
 export function probe(parent: number, name: string, maximum: number): NativeFileProbe {

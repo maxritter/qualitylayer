@@ -42,7 +42,7 @@ export function usageSnapshot(
   })
   const money = dailyMoney(usage, preferences.money, now)
   const totalText = money.usd === null ? "?" : `$${money.usd.toFixed(2)}`
-  const totalDescription = `Today · ${preferences.money === "value" ? "all priced usage at API prices, not a bill" : "API spend"} · ${totalText}${money.partial ? ` · partial${money.omitted.length ? `: ${money.omitted.join(", ")}` : ""}` : ""}`
+  const totalDescription = `Today · ${preferences.money === "value" ? "all priced usage at API prices, not a bill" : "API spend"} · ${totalText}`
   if (preferences.total)
     items.unshift({ icon: "coins", text: totalText, description: totalDescription })
   const times = shown.flatMap((agent) =>

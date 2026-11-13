@@ -131,7 +131,7 @@ export async function gateCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
                 presentation: planPresentation(
                   inManagedTaskTerminal(ctx, task.data),
                   approvalsOf(task.data),
-                  gated.data.reviews?.some((review) => review.state === "running") === true,
+                  (await gate.readGate(ctx, task.data))?.waitsFor !== undefined,
                 ),
               }
             : {}),

@@ -4,8 +4,9 @@
 // check that the session is waiting and that nobody is typing.
 
 import type { Ctx } from "../../ctx.ts"
+import { acceptedStopSequence } from "./bind.ts"
 import type { RunRecord } from "./contracts.ts"
-import { LIMITS } from "./protocol.ts"
+import { type InputBoundary, LIMITS } from "./protocol.ts"
 import { readRun } from "./registry.ts"
 import { connectOrRevive } from "./settle.ts"
 
@@ -19,6 +20,21 @@ export function typedMessage(text: string): string {
 export const PASTE_GAP_MS = 200
 
 const PASTE_THEN_ENTER = Buffer.from("\x1b[201~\r")
+
+export function inputBoundaryMatches(run: RunRecord, boundary: InputBoundary): boolean {
+  return (
+    run.generation === boundary.generation &&
+    run.nativeSession === boundary.nativeSession &&
+    run.task === boundary.task &&
+    acceptedStopSequence(run) === boundary.sequence &&
+    !run.runEvents?.at(-1)?.interrupted &&
+    !run.waitSince &&
+    !run.terminalPrompt &&
+    !run.startupPrompt &&
+    run.intent?.state !== "paused" &&
+    !(run.recovery?.generation === run.generation && run.recovery.state === "cancelled")
+  )
+}
 
 /**
  * Input as the host writes it: a bracketed paste that ends with Enter becomes the paste, a pause,
@@ -36,7 +52,12 @@ export async function sendToRun(
   ctx: Pick<Ctx, "home">,
   run: RunRecord,
   text: string,
-  options: { beforeSend?: () => void; onWrite?: () => void; strictFlush?: boolean } = {},
+  options: {
+    beforeSend?: () => void | Promise<void>
+    onWrite?: () => void
+    strictFlush?: boolean
+    boundary?: InputBoundary
+  } = {},
 ): Promise<void> {
   const bytes = Buffer.from(typedMessage(text))
   if (bytes.length > LIMITS.inputBytes) throw new Error("The message exceeds one input frame")
@@ -47,9 +68,29 @@ export async function sendToRun(
       readRun(ctx.home, run.id)?.generation !== run.generation
     )
       throw new Error("stale run generation")
-    options.beforeSend?.()
+    if (options.boundary && !host.ready.guardedInput)
+      throw new Error("This host cannot confirm an idle answer handoff")
+    await options.beforeSend?.()
     options.onWrite?.()
-    host.send({ type: "input", data: bytes })
+    if (options.boundary) {
+      const boundary = options.boundary
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Answer handoff was not confirmed")), 2000)
+        const off = host.onFrame((frame) => {
+          if (
+            frame.type !== "input-result" ||
+            frame.generation !== boundary.generation ||
+            frame.sequence !== boundary.sequence
+          )
+            return
+          clearTimeout(timer)
+          off()
+          if (frame.accepted) resolve()
+          else reject(new Error("The planner changed before its answers could be sent"))
+        })
+        host.send({ type: "input", data: bytes, boundary })
+      })
+    } else host.send({ type: "input", data: bytes })
     // Destroying the socket drops what it has not flushed: end it, and close once it is written.
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(

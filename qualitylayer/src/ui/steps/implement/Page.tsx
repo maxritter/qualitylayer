@@ -7,18 +7,23 @@
 
 import { BanIcon, LayersIcon, SplitIcon } from "lucide-react"
 import { useMemo } from "react"
+import { shellStatus } from "../../../core/interaction-shell/status.ts"
 import { agentName } from "../../../core/live/liveness.ts"
 import { buildsNextLine } from "../../outside.ts"
 import { AgentTurn } from "../../shell/AgentTurn.tsx"
 import { Bands } from "../../step-page/bands/Bands.tsx"
 import { FoldedGroup } from "../../step-page/bands/FoldedGroup.tsx"
 import { metaLine } from "../../step-page/bands/Gist.tsx"
+import { YourMove } from "../../step-page/bands/YourMove.tsx"
 import { StepTools } from "../../step-page/StepTools.tsx"
 import { sectionId } from "../../step-page/sections.ts"
+import { useSteadyStep } from "../../step-page/steady.ts"
 import { STEP_TITLES, stepTitleOf } from "../../step-page/titles.ts"
-import { useStepsNow } from "../context.ts"
+import { useStepSupporting, useStepsNow } from "../context.ts"
 import type { StepPageProps } from "../page-props.ts"
 import { TechnicalPart } from "../plan/Technical.tsx"
+import { readableBuild, restingBuild, stepIsWorking } from "../readiness.ts"
+import { StepQuiet } from "../StepQuiet.tsx"
 import { buildTiming } from "../summary-facts.ts"
 import { agentCardShows } from "./agent-card.ts"
 import { Board } from "./Board.tsx"
@@ -34,17 +39,30 @@ const nameOf = (agent: string) =>
 const PROGRAM_DESIGN = [{ title: "Program design", icon: SplitIcon }] as const
 
 export function ImplementStepPage(props: StepPageProps) {
-  const { task, document, sections, state, mode, live } = props
+  const { task, document: incoming, sections: incomingSections, state, mode, live } = props
   const inNow = useStepsNow()
-  const view = state.implement
+  const supporting = useStepSupporting()
+  const readable = readableBuild(state.implement)
+  const whole = (task.pages?.find((page) => page.step === "implement")?.problems.length ?? 0) === 0
+  const steady = useSteadyStep(
+    `${task.id}:implement`,
+    { document: incoming, view: readable.view },
+    incomingSections,
+    readable.complete && whole,
+  )
+  const { document } = steady.doc
+  const sections = steady.sections
+  const working = mode !== "live" || stepIsWorking(task, state.at)
+  const stopped = shellStatus(task, state.at).state === "stopped"
+  const view = working ? steady.doc.view : restingBuild(steady.doc.view, stopped)
   const summary = document.markers.find((m) => m.name === "summary")?.fallback ?? ""
   const timing = buildTiming(summary)
   // Beside the count, the cards the agents work on now: only a live page reads them, never a share.
   const header = headerOf(view, mode === "live" ? task.live?.progress?.underWay : undefined)
-  const limits = useMemo(
-    () => limitsOf(document.markers.find((m) => m.name === "limits")?.fallback ?? ""),
-    [document.markers],
-  )
+  const limitsText = document.markers.find((m) => m.name === "limits")?.fallback ?? ""
+  const limits = useMemo(() => limitsOf(limitsText), [limitsText])
+  const limitsRecorded =
+    (whole || steady.held) && limitsText.replace(/<!--[\s\S]*?-->/g, "").trim() !== ""
   const decisions = useMemo(
     () => (view?.decisions ?? []).map((d, index) => decisionRowOf(d, index)),
     [view?.decisions],
@@ -57,8 +75,22 @@ export function ImplementStepPage(props: StepPageProps) {
   const stageTitle = stepTitleOf(task.stage)
   const built = view?.slices.every((s) => s.status === "done") === true
 
+  if ((view?.slices.length ?? 0) === 0 && decisions.length === 0 && mode !== "plain")
+    return (
+      <>
+        <YourMove>{card}</YourMove>
+        {supporting}
+        <StepQuiet step="implement" kind={working ? "writing" : "draft"} back={null} />
+      </>
+    )
+
   return (
-    <div className="sp-page" data-testid="step-page" data-mode={mode} data-step="implement">
+    <div
+      className="sp-page sp-enter"
+      data-testid="step-page"
+      data-mode={mode}
+      data-step="implement"
+    >
       <Bands
         yourMove={card}
         gist={{
@@ -88,15 +120,17 @@ export function ImplementStepPage(props: StepPageProps) {
                 <Board slices={view.slices} />
               </IconPart>
             ) : null}
-            <IconPart id={`${sectionId("Known limits")}-h`} title="Known limits" icon={BanIcon}>
-              {limits.length > 0 ? (
-                <LimitRows rows={limits} />
-              ) : (
-                <p className="ib-none" data-testid="known-limits">
-                  None left.
-                </p>
-              )}
-            </IconPart>
+            {limitsRecorded ? (
+              <IconPart id={`${sectionId("Known limits")}-h`} title="Known limits" icon={BanIcon}>
+                {limits.length > 0 ? (
+                  <LimitRows rows={limits} />
+                ) : (
+                  <p className="ib-none" data-testid="known-limits">
+                    None left.
+                  </p>
+                )}
+              </IconPart>
+            ) : null}
           </>
         }
         folds={

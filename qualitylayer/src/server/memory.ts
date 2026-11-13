@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { join } from "node:path"
+import type { MemoryService } from "../core/memory/index.ts"
 import { readMemoryActivity } from "../core/memory-activity.ts"
 import type { Ctx } from "../ctx.ts"
 import type {
@@ -18,10 +19,13 @@ import type {
 import { PERSONAL_PROJECT } from "../memory-contracts.ts"
 import { memoryService } from "../memory-runtime.ts"
 import { registeredProjects } from "./api.ts"
+import { PilotMemoryMigration } from "./pilot-memory.ts"
 
 const MAX_BODY = 3 * 1024 * 1024
 const MAX_QUERY = 500
 type Service = MemoryApi & {
+  reviewPilotRecords?: MemoryService["reviewPilotRecords"]
+  importPilotRecords?: MemoryService["importPilotRecords"]
   registerProject(project: {
     id: string
     name: string
@@ -328,6 +332,7 @@ async function retainedMissingProject(
 
 /** Called only after the App's origin, session and entitlement guards. */
 export function createMemoryHandler(ctx: Ctx, make: () => Service = () => memoryService(ctx)) {
+  const pilotMigration = new PilotMemoryMigration(() => ctx.clock.now())
   let registeredAt = -Infinity
   let registryStamp = ""
   let registrations: { id: string; name: string; root: string; commonDir?: string }[] = []
@@ -385,6 +390,10 @@ export function createMemoryHandler(ctx: Ctx, make: () => Service = () => memory
       }
       const path = url.pathname.slice("/api/memory/".length).split("/").map(decodeURIComponent)
       const method = request.method
+      if (method === "POST" && path[0] === "import" && path[1] === "pilot" && path.length === 3)
+        return reply(
+          await pilotMigration.handle(path[2]!, await body(request), service, request.signal),
+        )
       if (
         method === "GET" &&
         path[0] === "projects" &&

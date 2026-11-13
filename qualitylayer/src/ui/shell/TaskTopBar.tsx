@@ -18,7 +18,14 @@ import { setDocumentFullSize, setDocumentRecord } from "../docs/mode.ts"
 import { useQuery, useViewportWidth } from "../hooks.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { offersHostActions } from "../machines/framed.ts"
-import { autonomous, pendingGate, personVerify, type StageTab, viewedStep } from "../model.ts"
+import {
+  autonomous,
+  pendingGate,
+  personVerify,
+  type StageTab,
+  stepView,
+  viewedStep,
+} from "../model.ts"
 import { ProjectOrigin, useProjectFacts } from "../sidebar/look-context.tsx"
 import { LandingActions, landingActionsShow } from "../steps/verify/LandingActions.tsx"
 import { ReviewApproval } from "../steps/verify/ReviewApproval.tsx"
@@ -543,12 +550,15 @@ function OwnTaskTopBar(props: OwnerBarProps) {
                       type="button"
                       className="ir-turn-pill"
                       disabled={openCount === 0}
-                      onClick={() => {
+                      onClick={(event) => {
+                        if (props.onRevealTurn) {
+                          props.onRevealTurn(event.currentTarget)
+                          return
+                        }
                         setDocumentFullSize(false)
                         setDocumentRecord(null)
-                        document
-                          .querySelector<HTMLElement>('[data-testid="interaction-now"]')
-                          ?.scrollIntoView({ block: "start" })
+                        const current = flowStepOf(props.task.stage)
+                        if (current !== null) props.onOpen(stepView(props.task, current))
                       }}
                     >
                       {openCount ? `Your turn · ${openCount}` : "Nothing needs you"}

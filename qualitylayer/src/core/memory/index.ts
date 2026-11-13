@@ -16,10 +16,12 @@ import type {
   MemoryStoreInput,
 } from "../../memory-contracts.ts"
 import type { MemoryCatalog } from "../../memory-store/catalog.ts"
+import type { PilotReceipt, PilotReview } from "../../pilot-memory-contracts.ts"
 import type { GitObjectReader } from "./git-object.ts"
 import { MemoryMutations } from "./mutations.ts"
 import { MemoryNavigation } from "./navigation.ts"
 import { PilotImporter } from "./pilot-import.ts"
+import { type MappedPilotRecord, PilotMigrationWriter } from "./pilot-migration.ts"
 import { MemoryPortability } from "./portability.ts"
 import { MemoryProjects } from "./projects.ts"
 import { MemoryRuntime } from "./runtime.ts"
@@ -32,6 +34,12 @@ import { MemoryWriter } from "./store.ts"
 export const MEMORY_RETIRED = "This lesson is retired; restore it explicitly before updating"
 
 export type MemoryService = MemoryApi & {
+  reviewPilotRecords(input: MappedPilotRecord[], leftOut: number): Promise<PilotReview>
+  importPilotRecords(
+    input: MappedPilotRecord[],
+    leftOut: number,
+    signal?: AbortSignal,
+  ): Promise<PilotReceipt>
   sharingEnabled(project: string): Promise<boolean>
   registerProject(input: {
     id: string
@@ -112,6 +120,7 @@ export function createMemoryService(
   const mutations = new MemoryMutations(ctx, runtime, projects)
   const writer = new MemoryWriter(ctx, runtime, projects)
   const pilot = new PilotImporter(ctx, runtime, projects)
+  const pilotMigration = new PilotMigrationWriter(ctx, runtime, projects)
   const portability = new MemoryPortability(ctx, runtime, projects, options)
   const sources = new MemorySourceCatalog(ctx, runtime, projects, mutations, options)
   const retrieval = new MemorySearch(runtime, {
@@ -135,6 +144,8 @@ export function createMemoryService(
     confirm: mutations.confirm.bind(mutations),
     store: writer.store.bind(writer),
     importPilot: pilot.importPilot.bind(pilot),
+    reviewPilotRecords: pilotMigration.review.bind(pilotMigration),
+    importPilotRecords: pilotMigration.apply.bind(pilotMigration),
     exchange: portability.exchange.bind(portability),
     restoreProject: portability.restoreProject.bind(portability),
     conflicts: portability.conflicts.bind(portability),

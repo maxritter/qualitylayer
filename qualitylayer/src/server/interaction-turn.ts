@@ -4,6 +4,7 @@ import { readGate } from "../core/gate/gate.ts"
 import { flattenItems } from "../core/items.ts"
 import { projectRuntimeDir } from "../core/paths.ts"
 import { token } from "../core/records/contract.ts"
+import { continueAnsweredBatch } from "../core/run/answer-continuation.ts"
 import { currentTaskRecordOwner } from "../core/task/answer-migration.ts"
 import { taskItems } from "../core/task/items.ts"
 import { applyPointAgreements, pointAgreements } from "../core/task/point-confirmations.ts"
@@ -173,7 +174,10 @@ export const turnRoute: InteractionRoute = async (ctx, id, path, request) => {
         .length !== 1
     )
       return response(bad("expected {batch, id, choice | choices | text | unsure | more}"))
-    return response(await answerBatch(ctx, host, { ...answer, batch: body.batch }, { files }))
+    const answered = await answerBatch(ctx, host, { ...answer, batch: body.batch }, { files })
+    if (answered.ok && "answer" in answered.data && answered.data.answer.id && found?.ok)
+      await continueAnsweredBatch(ctx, found.data.task, answered.data.answer.id)
+    return response(answered)
   }
   if (action === "cancel-more") {
     if (typeof body.batch !== "string" || typeof body.id !== "string")

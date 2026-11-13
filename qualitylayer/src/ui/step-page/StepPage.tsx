@@ -89,6 +89,7 @@ import { parseRoute } from "../hooks.ts"
 import { BuildAutonomyContext } from "../interaction/build-autonomy.ts"
 import { OutsideContext } from "../outside.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
+import { useStepSupporting } from "../steps/context.ts"
 import { ReviewedBy } from "../steps/plan/parts.tsx"
 import { withoutCallLines } from "../steps/plan/plan-model.ts"
 import { StepQuiet } from "../steps/StepQuiet.tsx"
@@ -98,7 +99,8 @@ import { foldGroupOf } from "./bands/FoldedGroup.tsx"
 import type { GistProps } from "./bands/Gist.tsx"
 import { AsOf } from "./bands/Gist.tsx"
 import { SummaryPart } from "./bands/SummaryPart.tsx"
-import { CommentBlock, DocMarkdown } from "./DocMarkdown.tsx"
+import { YourMove } from "./bands/YourMove.tsx"
+import { CommentBlock, DocMarkdown, hasWrittenMarkdown } from "./DocMarkdown.tsx"
 import type { StepDocument } from "./document.ts"
 import { jumpTo } from "./jump.ts"
 import { LeadFold } from "./LeadFold.tsx"
@@ -348,6 +350,7 @@ export function StepPage({
   foldGroups: groupsOf,
 }: Props) {
   const ownedByNow = usePlanNow()
+  const supporting = useStepSupporting()
   const acts = mode === "live" ? live : undefined
   const commentActs = state.closed ? undefined : acts
   const [drawer, setDrawer] = useState<Drawer | null>(null)
@@ -359,37 +362,24 @@ export function StepPage({
 
   if (mode === "live" && state.preparing)
     return (
-      <div className="sp-page" data-testid="plan-preparing" data-step="plan">
-        <Bands
-          gist={{
-            title: gist?.title ?? stepTitleOf(doc.step) ?? state.title,
-            meta: gist?.meta ?? "the Plan is not written yet",
-          }}
-          core={
-            <section className="sp-plan-pending" aria-label="The Plan is not written yet">
-              <FileTextIcon size={20} aria-hidden="true" />
-              <div>
-                <h2>Nothing written yet</h2>
-                <p>
-                  The Summary, Done means and any questions appear here as the agent writes them.
-                </p>
-              </div>
-            </section>
-          }
-          more={<OriginalRequest key={taskId} request={state.preparing.request} />}
-        />
+      <div data-testid="plan-preparing" data-step="plan">
+        <YourMove>{yourMove}</YourMove>
+        {supporting}
+        <StepQuiet step="plan" kind={state.working ? "writing" : "draft"} back={null} />
+        <div className="sp-doc">
+          <OriginalRequest key={taskId} request={state.preparing.request} />
+        </div>
       </div>
     )
 
   // A document that exists but holds nothing yet is still being written, as a missing one is.
   if (mode !== "plain" && doc.markdown.trim() === "")
     return (
-      <StepQuiet
-        step={doc.step}
-        kind="writing"
-        line="It opens here with the first draft"
-        back={null}
-      />
+      <>
+        <YourMove>{yourMove}</YourMove>
+        {supporting}
+        <StepQuiet step={doc.step} kind={state.working ? "writing" : "draft"} back={null} />
+      </>
     )
 
   if (mode === "plain") {
@@ -418,7 +408,10 @@ export function StepPage({
     options: { first: boolean; hide?: readonly string[]; keyPrefix?: string },
   ): ReactNode {
     const segments = segmentsOf(document)
-    const hiddenHeadings = new Set([...emptySections(segments, draws), ...(options.hide ?? [])])
+    const hiddenHeadings = new Set([
+      ...emptySections(segments, draws, document.step !== "plan"),
+      ...(options.hide ?? []),
+    ])
     const prefix = options.keyPrefix ?? ""
     const drawSegment = (segment: Segment, index: number): ReactNode => {
       const key = `${prefix}${segment.key}`
@@ -426,7 +419,11 @@ export function StepPage({
         return (
           <DocMarkdown
             key={key}
-            markdown={segment.markdown}
+            markdown={
+              document.step === "plan"
+                ? segment.markdown.replace(/<!--\s*fill:[\s\S]*?-->/g, "")
+                : segment.markdown
+            }
             state={state}
             first={options.first && index === 0}
             live={acts}
@@ -535,6 +532,14 @@ export function StepPage({
       </div>
     )
     const ctx = ctxOf(section, false)
+    const namedPoints = section.title === "Done means" && (state.decided?.points.length ?? 0) > 0
+    if (
+      doc.step === "plan" &&
+      !namedPoints &&
+      !hasWrittenMarkdown(ctx.doc.markdown) &&
+      !ctx.doc.markers.some(draws)
+    )
+      return null
     const custom = sectionViews?.[section.title]
     if (custom !== undefined) {
       const made = custom(ctx)
@@ -569,7 +574,7 @@ export function StepPage({
   }
 
   function emptyOf(document: StepDocument, title: string): boolean {
-    return emptySections(segmentsOf(document), draws).includes(title)
+    return emptySections(segmentsOf(document), draws, document.step !== "plan").includes(title)
   }
 
   /** One lead-folded section: a Fold with its heading, count and takeaway, or a quiet line, or nothing. */
@@ -741,7 +746,7 @@ export function StepPage({
     <BuildAutonomyContext value={autonomous}>
       <OutsideContext value={state.outside === true}>
         <div
-          className="sp-page"
+          className="sp-page sp-enter"
           ref={root}
           data-testid="step-page"
           data-mode={mode}
@@ -776,14 +781,15 @@ export function StepPage({
 }
 
 /** Whether a token draws anything on the page: a template's `fill` note does, any other comment does not. */
-function drawsToken(token: Token): boolean {
+function drawsToken(token: Token, includeFill = true): boolean {
   if (token.type === "space") return false
   if (token.type === "html" && /^<!--[\s\S]*-->$/.test(token.raw.trim()))
-    return /^<!--\s*fill:/.test(token.raw.trim())
+    return includeFill && /^<!--\s*fill:/.test(token.raw.trim())
   return true
 }
 
-const rendersMarkdown = (markdown: string): boolean => marked.lexer(markdown).some(drawsToken)
+const rendersMarkdown = (markdown: string): boolean =>
+  marked.lexer(markdown).some((token) => drawsToken(token))
 
 /**
  * The second-level headings whose section draws nothing on the page: no words under them and no
@@ -792,6 +798,7 @@ const rendersMarkdown = (markdown: string): boolean => marked.lexer(markdown).so
 function emptySections(
   segments: Segment[],
   draws: (marker: StepDocument["markers"][number]) => boolean,
+  includeFill = true,
 ): string[] {
   const empty: string[] = []
   let open: string | null = null
@@ -814,7 +821,7 @@ function emptySections(
         }
         continue
       }
-      if (open !== null && token.type !== "heading" && drawsToken(token)) filled = true
+      if (open !== null && token.type !== "heading" && drawsToken(token, includeFill)) filled = true
     }
   }
   close()

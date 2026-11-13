@@ -12,7 +12,7 @@ import "./usage.css"
 
 /** How the number is worked out, said wherever a dollar amount stands. */
 export const ESTIMATE_WORDS =
-  "Reported dollar costs where available; otherwise estimated from local token counts at list prices. Missing data makes totals partial. Your bill can differ."
+  "Reported dollar costs where available; otherwise estimated from local token counts at list prices. Your bill can differ."
 /** What a plan agent's dollars are, when the person asks to see them. */
 export const NOT_BILLED_WORDS =
   "What this plan use would cost at API prices, for comparison. Your plan is not billed by use."

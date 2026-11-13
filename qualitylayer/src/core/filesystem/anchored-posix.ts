@@ -19,6 +19,7 @@ import {
   PosixFile,
   probe,
   snapshot,
+  stream,
   tryNativeLock,
 } from "./posix-system.ts"
 
@@ -129,6 +130,23 @@ class PosixRoot implements AnchoredRoot {
       return probe(parent.fd, parent.name, maximum)
     } catch (cause) {
       if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw cause
+    } finally {
+      parent?.close()
+    }
+  }
+
+  async stream(path: string, maximum: number, consume: (bytes: Uint8Array) => Promise<void>) {
+    let parent: ReturnType<PosixRoot["parent"]> | undefined
+    let consuming = false
+    try {
+      parent = this.parent(path, false)
+      return await stream(parent.fd, parent.name, maximum, async (bytes) => {
+        consuming = true
+        await consume(bytes)
+      })
+    } catch (cause) {
+      if (!consuming && (cause as NodeJS.ErrnoException).code === "ENOENT") return null
       throw cause
     } finally {
       parent?.close()

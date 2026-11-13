@@ -19,11 +19,19 @@ export type ItemTarget = {
   threadId?: string
 }
 export type QuestionPointLink = { questionId: string; points: number[] }
+export type BatchPlanner = { run: string; generation: number; nativeSession: string; task: string }
+export type BatchContinuation = BatchPlanner & {
+  revision: string
+  at: number
+  state: "attempted" | "sent" | "uncertain" | "paused"
+}
 export type QuestionBatch = {
   id: string
   asked: number
   agent: string | null
   session: string | null
+  planner?: BatchPlanner
+  continuation?: BatchContinuation
   questions: Question[]
   links: QuestionPointLink[]
   /** The step that asked it (`discuss`, `research`, `plan`, `review`); a task counts batches per step. */

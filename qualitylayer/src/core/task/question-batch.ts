@@ -1,11 +1,12 @@
 // Batch membership is durable; answers and corrections use the existing question delivery log.
 
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import type {
   AskedBatch,
   BatchAnswer,
+  BatchContinuation,
   BatchStrip,
   DeliveryReceipt,
   QuestionBatch,
@@ -14,6 +15,7 @@ import { recommendedLabel } from "../../interaction/question-recommendations.ts"
 import { doneMeansOf } from "../done-means.ts"
 import { takeImmediate } from "../gate/comments.ts"
 import { applyGatePick, readGate } from "../gate/gate.ts"
+import { listRuns } from "../run/registry.ts"
 import { type AnswerUpload, withAnswerFiles } from "./answer-files.ts"
 import { matchesChatQuestion, terminalTaskFor } from "./chat-questions.ts"
 import { consumePickedCall, type PickedTarget } from "./picked-calls.ts"
@@ -40,6 +42,7 @@ import { typedAnswer } from "./typed-choice.ts"
 
 type Host = Pick<Task, "runtimeDir" | "stage">
 type StoredBatch = QuestionBatch & {
+  continuations?: BatchContinuation[]
   replies?: Record<string, { text: string; at: number; answerAt: number }>
   cancelled?: Record<string, { at: number; reason: string }>
 }
@@ -105,6 +108,10 @@ async function write(ctx: Ctx, task: Pick<Task, "runtimeDir">, batches: StoredBa
 }
 const latest = (history: AnsweredQuestion[], q: Question) =>
   history.findLast((a) => a.id === q.id && a.at >= q.asked)
+const answerRevision = (batch: QuestionBatch, history: AnsweredQuestion[]) =>
+  createHash("sha256")
+    .update(JSON.stringify(batch.questions.map((q) => [q.id, latest(history, q)?.at])))
+    .digest("hex")
 async function current(
   ctx: Ctx,
   task: Pick<Task, "runtimeDir">,
@@ -114,6 +121,9 @@ async function current(
   const gate = await readGate(ctx, task)
   return {
     ...batch,
+    continuation: batch.continuations?.findLast(
+      (attempt) => attempt.revision === answerRevision(batch, history),
+    ),
     questions: batch.questions.filter((q) => {
       if (batch.cancelled?.[q.id]) return false
       const answer = latest(history, q)
@@ -423,6 +433,24 @@ export async function askBatch(
       ...(line(given.ahead, 200) ? { ahead: line(given.ahead, 200) } : {}),
       ...(line(given.small, 300) ? { small: line(given.small, 300) } : {}),
       ...(line(given.why_another, 300) ? { whyAnother: line(given.why_another, 300) } : {}),
+    }
+    if (task.stage === "plan" && batch.session) {
+      const planners = listRuns(ctx.home).filter(
+        (run) =>
+          run.status === "running" &&
+          run.nativeSession === batch.session &&
+          run.taskRuntimeDir === task.runtimeDir &&
+          (run.purpose.kind === "new-task" ||
+            (run.purpose.kind === "task" && run.purpose.phase === "planning")),
+      )
+      const planner = planners.length === 1 ? planners[0] : undefined
+      if (planner?.nativeSession && planner.task)
+        batch.planner = {
+          run: planner.id,
+          generation: planner.generation,
+          nativeSession: planner.nativeSession,
+          task: planner.task,
+        }
     }
     await write(ctx, task, [...batches, batch])
     // One record for the batch, naming the questions it brings (an open single question was told of
@@ -1128,6 +1156,39 @@ export async function pollBatch(ctx: Ctx, task: Pick<Task, "runtimeDir">, batchI
         (receipt) => batchId === undefined || receipt.id.startsWith(`${batchId}:`),
       ),
     }
+  })
+}
+
+/** The completed App batch and its one handoff share the same lock as wait/poll pickup. */
+export async function withCompletedBatch(
+  ctx: Ctx,
+  task: Task,
+  questionId: string,
+  act: (
+    batch: QuestionBatch,
+    revision: string,
+    save: (attempt: BatchContinuation) => Promise<void>,
+  ) => Promise<void>,
+): Promise<void> {
+  await locked(ctx, task, async () => {
+    if (task.stage !== "plan" || task.answers !== "app") return
+    const all = await stored(ctx, task)
+    const batch = holding(all, questionId)
+    if (!batch?.planner || batch.questions.some((q) => q.gate)) return
+    if ((await openBatches(ctx, task, all)).length || (await openQuestion(ctx, task))) return
+    const history = await answeredQuestions(ctx, task)
+    const answers = batch.questions.map((q) => latest(history, q))
+    if (!answers.length || answers.some((a) => !a || a.reopened || a.via !== "app")) return
+    if (answers.every((a) => a?.delivered !== false)) return
+    const revision = answerRevision(batch, history)
+    if (batch.continuations?.some((attempt) => attempt.revision === revision)) return
+    await act(batch, revision, async (attempt) => {
+      batch.continuations = [
+        ...(batch.continuations ?? []).filter((prior) => prior.revision !== revision),
+        attempt,
+      ]
+      await write(ctx, task, all)
+    })
   })
 }
 /** `1,3` (or `none`) as Done means numbers, or why it is not one. */

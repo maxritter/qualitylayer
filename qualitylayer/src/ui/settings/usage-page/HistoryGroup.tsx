@@ -12,12 +12,10 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 import { Switch } from "@/components/ui/switch"
-import { moneyAmount } from "../../../core/cost/display.ts"
 import type { Usage, UsagePeriod } from "../../../core/cost/usage.ts"
 import { tokensIn } from "../../../core/cost/usage-spend.ts"
 import { joinNames } from "../../kit/LimitsPanel.tsx"
 import { AgentMark } from "../../kit/marks/index.ts"
-import { WhoMark } from "../../kit/WhoMark.tsx"
 import { useUsageDisplay } from "../../usage/display-context.tsx"
 import { agentColor } from "../../usage/parts.tsx"
 import { Choice, SettingRow, SettingsGroup } from "../Rows.tsx"
@@ -105,12 +103,9 @@ export function HistoryGroup({
   const amountOf = (agent: (typeof agents)[number]) =>
     shown === "cost" ? agent.costUsd : tokensIn(agent.tokens)
   const whole = agents.reduce((n, agent) => n + amountOf(agent), 0)
-  const uncounted = uncountedGroups(usage)
-  const missing = usage.agents.filter(
-    (agent) =>
-      agent.state === "unavailable" ||
-      agent.partial ||
-      moneyAmount(agent, agent.billing, preferences.money).partial,
+  const uncounted = uncountedGroups(usage).filter(
+    ({ reason }) =>
+      !["Session records hold no token counts", "Its usage is not counted"].includes(reason),
   )
   return (
     <SettingsGroup
@@ -118,29 +113,14 @@ export function HistoryGroup({
       testId="usage-history"
       end={
         counting !== null ? (
-          <span className="q-ug-counting" role="status">
-            <WhoMark who="agent" running />
-            Still counting · {counting.files} {counting.files === 1 ? "file" : "files"} left
-            {counting.retry !== undefined ? (
-              <>
-                {" "}
-                <button type="button" className="q-link" onClick={counting.retry}>
-                  Try again
-                </button>
-              </>
-            ) : null}
-          </span>
-        ) : missing.length ? (
-          <span
-            title={missing
-              .map(
-                (agent) =>
-                  `${agent.name}: ${agent.partial ?? agent.reason ?? "unpriced or unknown billing"}`,
-              )
-              .join("; ")}
-          >
-            Partial · {missing.length} {missing.length === 1 ? "agent" : "agents"}
-          </span>
+          counting.retry !== undefined ? (
+            <span className="q-ug-counting" role="status">
+              Couldn't finish reading usage.{" "}
+              <button type="button" className="q-link" onClick={counting.retry}>
+                Try again
+              </button>
+            </span>
+          ) : null
         ) : (
           "updated now"
         )
@@ -239,9 +219,7 @@ export function HistoryGroup({
               <AgentMark key={agent} agent={agent} size={13} title={names[at] ?? agent} />
             ))}
           </span>
-          {reason === "Session records hold no token counts"
-            ? `${joinNames(names)} keep no token counts in their records.`
-            : `${joinNames(names)}: no usage counted; ${clause(reason)}.`}
+          {`${joinNames(names)}: no usage counted; ${clause(reason)}.`}
         </p>
       ))}
       {view.plan.length > 0 ? (

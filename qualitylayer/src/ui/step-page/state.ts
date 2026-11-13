@@ -7,6 +7,7 @@
 import { marked } from "marked"
 import { referenceName } from "../../core/artifact/reference.ts"
 import { type Decision, decisionsOf } from "../../core/docs/build-decisions.ts"
+import { withoutMarkerText } from "../../core/docs/markers.ts"
 import { agentFileOf } from "../../core/docs/names.ts"
 import type { FlowStepId } from "../../core/flow.ts"
 import { shellStatus } from "../../core/interaction-shell/status.ts"
@@ -24,10 +25,12 @@ import type { Need } from "../../core/need/need.ts"
 import type { AnsweredQuestion } from "../../core/task/question.ts"
 import type { TimelineSlice } from "../../core/timeline.ts"
 import type { PointProof } from "../../interaction/contracts.ts"
+import planSchema from "../../workflow/schemas/plan.json" with { type: "json" }
 import type { TaskDetail } from "../api.ts"
 import { type RowState, rowState } from "../kit/ItemRow.tsx"
 import { shortNeed } from "../live-status.ts"
 import { agentInfo, inReview, pendingGate, reviewGate } from "../model.ts"
+import { stepIsWorking } from "../steps/readiness.ts"
 import {
   artifactFile,
   artifactItem,
@@ -278,6 +281,7 @@ export type ReviewView = {
 }
 
 export type StepState = {
+  working?: boolean
   /** Only the recorded request and empty scaffold exist; no process activity is implied. */
   preparing?: { request: string }
   pointProof?: PointProof[]
@@ -846,19 +850,28 @@ export const OWN_TITLE = new Set(["Checked by agents"])
 
 // ---------------------------------------------------------------- the whole
 
-/** The initial Plan contains the recorded request, hints and empty managed fallbacks only. */
-function planPreparation(task: TaskDetail, doc: StepDocument | null): StepState["preparing"] {
+const PLAN_LEAD = new Set(
+  planSchema.sections
+    .filter((section) => section.show === "lead")
+    .map((section) => section.heading),
+)
+
+/** The initial Plan has no authored lead content; managed fallbacks and decisions are not its draft. */
+export function planPreparation(
+  task: TaskDetail,
+  doc: StepDocument | null,
+): StepState["preparing"] {
   if (
     task.stage !== "plan" ||
     task.archived ||
     doc?.step !== "plan" ||
     donePointItems(task.items ?? []).length > 0 ||
-    (task.answeredQuestions?.length ?? 0) > 0
+    doc.markers.some((marker) => marker.name === "artifact")
   )
     return undefined
   let section = ""
   let request = ""
-  for (const token of marked.lexer(doc.markdown)) {
+  for (const token of marked.lexer(withoutMarkerText(doc.markdown))) {
     if (token.type === "space") continue
     if (token.type === "heading") {
       if (token.depth === 2) section = token.text
@@ -873,11 +886,12 @@ function planPreparation(task: TaskDetail, doc: StepDocument | null): StepState[
       request = task.request ?? quotedRequest(token.raw)
       continue
     }
+    if (!PLAN_LEAD.has(section)) continue
     if (token.type === "paragraph" && /^Not written yet\.?$/i.test(token.text.trim())) continue
     if (token.type === "table" && token.rows.length === 0) continue
     return undefined
   }
-  return request ? { request } : undefined
+  return { request: task.request ?? request }
 }
 
 export function stepState(
@@ -894,6 +908,7 @@ export function stepState(
   const mode = options.mode ?? "live"
   const now = options.now ?? Date.now()
   const base = {
+    working: stepIsWorking(task, now),
     step,
     mode,
     title: task.title,

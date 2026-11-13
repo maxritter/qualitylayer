@@ -645,25 +645,27 @@ body:has(.ir-steps-phone) .ir-phone-tabs {
   }
 }
 
-/* The quiet state of a step with nothing to read yet: the agent's ring turns around the icon while
-   it writes, and stands still under reduced motion. */
-.sq-icon {
-  position: relative;
+.sq[data-kind="writing"] .sq-icon {
+  color: var(--ql-accent);
 }
-.sq-ring {
-  position: absolute;
-  inset: -6px;
-  border: 2px solid var(--ql-accent);
-  border-right-color: transparent;
-  border-radius: 16px;
-  pointer-events: none;
+
+.sp-enter {
+  animation: step-appear 160ms ease-out both;
 }
-:where(:root:not([data-motion="gentle"])) .sq-ring {
-  animation: sq-spin 2.4s steps(8, end) infinite;
-}
-@keyframes sq-spin {
+@keyframes step-appear {
+  from {
+    opacity: 0.65;
+  }
   to {
-    transform: rotate(360deg);
+    opacity: 1;
+  }
+}
+:root[data-motion="gentle"] .sp-enter {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-enter {
+    animation: none;
   }
 }
 

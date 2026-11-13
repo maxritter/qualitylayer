@@ -1,6 +1,7 @@
 export type AnchoredEntry = { name: string; kind: "file" | "directory" | "other" }
 export type NativeFileSnapshot = { bytes: Uint8Array; identity: string; version: string }
 export type NativeFileProbe = { bytes: Uint8Array; size: number; mtimeMs: number }
+export type NativeFileStream = { identity: string; version: string; size: number; mtimeMs: number }
 export type AnchoredRoot = {
   readonly identity: string
   directory(path: string): AnchoredRoot
@@ -8,6 +9,12 @@ export type AnchoredRoot = {
   snapshot(path: string, maximum: number): NativeFileSnapshot | null
   /** Metadata and at most the final maximum bytes, from one held regular file. */
   probe(path: string, maximum: number): NativeFileProbe | null
+  /** Read chunks through one held regular file; no ancestor pathname is re-resolved. */
+  stream?(
+    path: string,
+    maximum: number,
+    consume: (bytes: Uint8Array) => Promise<void>,
+  ): Promise<NativeFileStream | null>
   write(path: string, bytes: Uint8Array, replace: boolean): void
   entries(path: string, maximum: number): AnchoredEntry[] | null
   moveExclusive(from: string, to: string, expectedVersion?: string): void

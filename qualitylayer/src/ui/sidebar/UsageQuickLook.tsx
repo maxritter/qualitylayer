@@ -66,25 +66,11 @@ export function UsageQuickLook({
         </p>
       ) : null}
       {money.usd !== null ? (
-        <>
-          <div className="q-usage-quick-total">
-            <CoinsIcon size={14} />
-            <span>{preferences.money === "value" ? "Today at API prices" : "API spend today"}</span>
-            <b>
-              {money.reported ? "" : "≈ "}
-              {usd(money.usd)}
-              {money.partial ? "+" : ""}
-            </b>
-          </div>
-          {money.partial ? (
-            <p title={money.omitted.join(", ")}>
-              Partial ·{" "}
-              {money.omitted.length > 0
-                ? `${money.omitted.length} agents have missing data`
-                : "still counting"}
-            </p>
-          ) : null}
-        </>
+        <div className="q-usage-quick-total">
+          <CoinsIcon size={14} />
+          <span>{preferences.money === "value" ? "Today at API prices" : "API spend today"}</span>
+          <b>{usd(money.usd)}</b>
+        </div>
       ) : null}
     </div>
   )

@@ -263,6 +263,7 @@ export interface MemoryEngine {
 }
 
 export interface MemoryApi {
+  pilotMigration?: import("./pilot-memory-contracts.ts").PilotMigrationApi
   activity?(project: string, task: string): Promise<MemoryTaskActivityView>
   overview(project?: string): Promise<MemoryOverview>
   /** Changes the settings named in `patch`; an empty patch reads them. */

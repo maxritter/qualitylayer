@@ -1,9 +1,21 @@
 // Frozen lane seam. Implementations can read live task data and use existing guarded actions.
 import type { ReactNode } from "react"
+import type { FlowStepId } from "../../core/flow.ts"
 import type { Item } from "../../core/items.ts"
 import type { Api, TaskDetail } from "../api.ts"
 import type { NextStep, StageTab } from "../model.ts"
 import type { StepLive } from "../step-page/live.ts"
+export type TurnFocusRequest = {
+  task: string
+  view: string
+  fromView: string
+  navigation: string
+  step: FlowStepId
+  questions: readonly { id: string; asked: number }[]
+  sequence: number
+  origin?: HTMLElement
+  focusAtRequest: Element | null
+}
 export type TaskSurfaceProps = {
   task: TaskDetail
   api: Api
@@ -16,6 +28,9 @@ export type TaskSurfaceProps = {
   step: NextStep
   tabs: StageTab[]
   onOpen: (view: string) => void
+  onRevealTurn?: (origin: HTMLElement) => void
+  turnFocus?: TurnFocusRequest
+  onTurnFocusHandled?: (sequence: number) => void
   onOpenDoc: (view: string, heading?: string) => void
   onCopy: (text: string, note: string) => void
   reload: () => void

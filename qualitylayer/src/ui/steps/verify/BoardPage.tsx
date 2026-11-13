@@ -11,14 +11,19 @@ import { useNow, useQuery } from "../../hooks.ts"
 import { Bands } from "../../step-page/bands/Bands.tsx"
 import type { Fact } from "../../step-page/bands/FactRow.tsx"
 import { metaLine } from "../../step-page/bands/Gist.tsx"
+import { YourMove } from "../../step-page/bands/YourMove.tsx"
 import { FileRow } from "../../step-page/kit/FileRow.tsx"
 import { readWholeFile } from "../../step-page/kit/read-file.ts"
 import { TICKS_UP_TO } from "../../step-page/proof.ts"
 import { useSelectionMark } from "../../step-page/StepPage.tsx"
 import { StepTools } from "../../step-page/StepTools.tsx"
+import { useSteadyStep } from "../../step-page/steady.ts"
 import { STEP_TITLES } from "../../step-page/titles.ts"
+import { useStepSupporting } from "../context.ts"
 import { PageSection } from "../PageSection.tsx"
 import type { StepPageProps } from "../page-props.ts"
+import { stepIsWorking, verificationReady } from "../readiness.ts"
+import { StepQuiet } from "../StepQuiet.tsx"
 import { VerifyBoard } from "./Board.tsx"
 import { CodeAccess } from "./CodeAccess.tsx"
 import { picturesOf, VerifyPictures } from "./Pictures.tsx"
@@ -29,15 +34,47 @@ const clip = (text: string, at = 56) =>
   text.length <= at ? text : `${text.slice(0, at - 1).trimEnd()}…`
 
 export function VerifyBoardPage(props: StepPageProps) {
-  const { task, document, sections, state, mode, live, api } = props
+  const {
+    task,
+    document: incomingDocument,
+    sections: incomingSections,
+    state,
+    mode,
+    live,
+    api,
+  } = props
+  const supporting = useStepSupporting()
   const root = useRef<HTMLDivElement | null>(null)
   useSelectionMark(root, state.closed || mode !== "live" ? undefined : live)
   const verifying = mode === "live" && task.stage === "verify"
   const now = useNow(verifying, 30_000)
-  const view = useMemo(
+  const incomingView = useMemo(
     () => verifyView(task, task.verifyLanes ?? [], state.verify?.proof.rows ?? [], now),
     [task, state.verify?.proof.rows, now],
   )
+  const ready =
+    verificationReady(task) ||
+    (state.verify?.proof.rows.some((row) => row.state !== "waiting") ?? false)
+  const steady = useSteadyStep(
+    `${task.id}:verify`,
+    { document: incomingDocument, view: incomingView },
+    incomingSections,
+    ready,
+  )
+  const { document } = steady.doc
+  const sections = steady.sections
+  const view = { ...steady.doc.view, phase: incomingView.phase, now: incomingView.now }
+  const stages =
+    mode !== "live" || stepIsWorking(task, state.at)
+      ? view.stages
+      : view.stages.map((stage) => ({
+          ...stage,
+          state: stage.state === "running" ? ("waiting" as const) : stage.state,
+          checks: stage.checks.map((check) =>
+            check.state === "running" ? { ...check, state: "waiting" as const } : check,
+          ),
+          segments: stage.segments.map((segment) => (segment === "w" ? ("" as const) : segment)),
+        }))
   const evidenceVersion = (task.evidence ?? [])
     .filter((file) => /(?:^|\/)screen-[a-f0-9]{24}\.png$/.test(file))
     .join("\n")
@@ -106,8 +143,22 @@ export function VerifyBoardPage(props: StepPageProps) {
       : {}),
   }
 
+  if (!ready && !steady.held && mode !== "plain")
+    return (
+      <>
+        <YourMove>{supporting}</YourMove>
+        <StepQuiet step="verify" kind={stepIsWorking(task) ? "writing" : "draft"} back={null} />
+      </>
+    )
+
   return (
-    <div className="sp-page" data-testid="step-page" data-step="verify" ref={root}>
+    <div
+      className="sp-page sp-enter"
+      data-testid="step-page"
+      data-step="verify"
+      data-mode={mode}
+      ref={root}
+    >
       <Bands
         gist={gist}
         core={
@@ -116,7 +167,7 @@ export function VerifyBoardPage(props: StepPageProps) {
               title="Checks"
               icon={<ClipboardCheckIcon className="size-3.5" aria-hidden="true" />}
             >
-              <VerifyBoard stages={view.stages} />
+              <VerifyBoard stages={stages} />
             </PageSection>
             {mode === "live" ? (
               <PageSection title="Code" icon={<CodeIcon className="size-3.5" aria-hidden="true" />}>

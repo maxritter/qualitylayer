@@ -39,6 +39,8 @@ import { ModelPick } from "../ModelPick.tsx"
 import { useProjectLooks } from "../sidebar/look-context.tsx"
 import { ProjectTile } from "../sidebar/ProjectTile.tsx"
 import { projectFacts } from "../sidebar/project-model.ts"
+import { pilotFile } from "./memory-import/files.ts"
+import { PilotMigration } from "./memory-import/PilotMigration.tsx"
 import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
 
 /** The projects dialog pages by this many projects. */
@@ -129,24 +131,6 @@ const count = (value: number, noun: string) =>
 const toCheck = (
   overview: { projectIssues?: { id: string; name: string; reason: string }[] } | null | undefined,
 ) => (overview?.projectIssues ?? []).filter((project) => project.reason !== "root-unavailable")
-
-function safeRelativePath(path: string): string | null {
-  if (!path || path.length > 1024 || /^[/]/.test(path) || /[\\:]|\p{Cc}/u.test(path)) return null
-  return path.split("/").some((part) => !part || part === "." || part === "..") ? null : path
-}
-
-async function pilotFile(file: File): Promise<{ name: string; content: string }> {
-  const content = await file.text()
-  const relative = safeRelativePath(file.webkitRelativePath ?? "")
-  if (relative) return { name: relative, content }
-  if (!globalThis.crypto?.subtle)
-    throw new Error("Open the App or a secure browser connection to identify imported files.")
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content))
-  const digest = Array.from(new Uint8Array(bytes), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("")
-  return { name: `imports/${digest}/${file.name}`, content }
-}
 
 /** A saved lesson as one line of the list: its scope mark, its title, where it lives in words, a mark when pinned, a chevron. */
 function MemoryRow({
@@ -1310,7 +1294,7 @@ export function MemoryTab({
         <SettingRow
           label="Memories from Pilot Shell"
           icon={<ImportIcon className="size-[15px]" />}
-          hint="Import memory files on this computer. Imported history stays private until checked."
+          hint="Import saved knowledge from a Pilot folder, database, backup or exported files. Imported lessons stay private."
         >
           <Button
             type="button"
@@ -1342,7 +1326,11 @@ export function MemoryTab({
         }}
       >
         <DialogContent
-          className="q-memory-dialog sm:max-w-[600px]"
+          className={
+            dialog === "import" && api.pilotMigration
+              ? "q-memory-dialog q-pilot-dialog flex flex-col overflow-hidden sm:max-w-[720px]"
+              : "q-memory-dialog sm:max-w-[600px]"
+          }
           finalFocus={() => {
             setPendingFocus(true)
             return false
@@ -1413,7 +1401,26 @@ export function MemoryTab({
           {dialog === "detail" ? (
             <MemoryDetail key={detailId} api={api} id={detailId} changed={refresh} />
           ) : null}
-          {dialog === "import" ? (
+          {dialog === "import" && api.pilotMigration ? (
+            <PilotMigration
+              api={api.pilotMigration}
+              completed={refresh}
+              close={() => setDialog(null)}
+              viewImported={() => {
+                setSource("pilot")
+                setProject(null)
+                setDraft("")
+                setQuery("")
+                setLessonState("active")
+                setCursors([undefined])
+                refresh()
+                setDialog(null)
+              }}
+              projectPicker={(choose) => (
+                <ProjectManager api={api} changed={refresh} choose={choose} />
+              )}
+            />
+          ) : dialog === "import" ? (
             <PilotImport
               api={api}
               project={importProject}

@@ -71,7 +71,7 @@ import { useFollowOpenedGate } from "./gate-follow.ts"
 import { type Route, useViewportWidth } from "./hooks.ts"
 import { type BuildLaunchSelection, ImplementStart } from "./ImplementStart.tsx"
 import { ItemMedia } from "./ItemMedia.tsx"
-import type { TaskSurfaceProps } from "./interaction/props.ts"
+import type { TaskSurfaceProps, TurnFocusRequest } from "./interaction/props.ts"
 import { StepWork } from "./interaction/StepWork.tsx"
 import { TaskWorkspace } from "./interaction/TaskWorkspace.tsx"
 import { LoadingState } from "./kit/LoadingState.tsx"
@@ -140,8 +140,9 @@ import {
 import type { StepLive } from "./step-page/live.ts"
 import { jumpTo as jumpToPart } from "./step-page/StepPage.tsx"
 import { forAgentOf } from "./step-page/StepTools.tsx"
-import { jumpId, stepState } from "./step-page/state.ts"
+import { jumpId, planPreparation, stepState } from "./step-page/state.ts"
 import { useSteadyStep } from "./step-page/steady.ts"
+import { stepIsWorking } from "./steps/readiness.ts"
 import { StepPage } from "./steps/StepPage.tsx"
 import { StepQuiet, stepBefore } from "./steps/StepQuiet.tsx"
 import { questionActionsFor } from "./task-view/question-actions.ts"
@@ -150,6 +151,7 @@ import { useBuildHandoff } from "./task-view/useBuildHandoff.ts"
 import { useTaskApproval } from "./task-view/useTaskApproval.ts"
 import { useTaskData } from "./task-view/useTaskData.ts"
 import { useTaskSidebar } from "./task-view/useTaskSidebar.ts"
+import { humanQuestions } from "./turn/ApproveCard.tsx"
 import { useTurnSnapshot, useTurnTask } from "./turn/projection.ts"
 import { turnLayoutFor, YourTurn } from "./turn/YourTurn.tsx"
 import { useAnswers } from "./useAnswers.ts"
@@ -431,6 +433,42 @@ function TaskViewContent({
     () => itemPreview(task, answers, turnLayoutReady),
     [task, answers, turnLayoutReady],
   )
+  const [turnFocus, setTurnFocus] = useState<TurnFocusRequest | null>(null)
+  const focusSequence = useRef(0)
+  const arrivedFocus = useRef<number | null>(null)
+  const currentTurn = useTurnSnapshot(task.id)
+  const focusQuestions = humanQuestions(visibleTask, currentTurn?.questions)
+  const focusNavigation = window.location.hash
+  useEffect(() => {
+    if (turnFocus?.view === view) arrivedFocus.current = turnFocus.sequence
+    if (
+      turnFocus !== null &&
+      (turnFocus.task !== task.id ||
+        turnFocus.navigation !== focusNavigation ||
+        (turnFocus.view !== view &&
+          (turnFocus.fromView !== view || arrivedFocus.current === turnFocus.sequence)) ||
+        turnFocus.step !== flowStepOf(task.stage) ||
+        task.archived ||
+        task.stage === "shipped" ||
+        task.stage === "abandoned" ||
+        fullDocument ||
+        !turnFocus.questions.some((target) =>
+          focusQuestions.some(
+            (question) => question.id === target.id && question.asked === target.asked,
+          ),
+        ))
+    )
+      setTurnFocus(null)
+  }, [
+    turnFocus,
+    task.id,
+    task.stage,
+    task.archived,
+    view,
+    fullDocument,
+    focusNavigation,
+    focusQuestions,
+  ])
   useEffect(() => {
     onVisibleTask?.(visibleTask)
   }, [visibleTask, onVisibleTask])
@@ -494,10 +532,12 @@ function TaskViewContent({
     ? (task.pages ?? []).find((page) => page.step === stepDoc.step)
     : undefined
   const steady = useSteadyStep(
-    `${task.id}:${stepDoc?.step ?? ""}`,
+    `${task.id}:${stepDoc?.step ?? viewedStep(view) ?? ""}`,
     stepDoc,
     sections.data,
-    (stepFile?.problems.length ?? 0) === 0,
+    stepDoc !== null &&
+      (stepFile?.problems.length ?? 0) === 0 &&
+      planPreparation(task, stepDoc) === undefined,
   )
   // The task's artifacts and its project's: the Artifacts tab, the Plan's previews, an artifact open.
   const openArtifact = (
@@ -691,6 +731,7 @@ function TaskViewContent({
     return () => window.removeEventListener("qualitylayer:build-options", open)
   }, [task.id])
   const openDoc = (doc: string, heading?: string) => {
+    setTurnFocus(null)
     if (readingFrom?.taskId !== task.id) setDocumentReturn({ taskId: task.id, view })
     setDocumentFullSize(true)
     go({ view: "task", id: task.id, doc, ...(heading !== undefined ? { at: heading } : {}) })
@@ -782,6 +823,7 @@ function TaskViewContent({
   const agent = agentInfo(task.session?.agent)
   const closed = task.stage === "shipped" || task.stage === "abandoned"
   const open = (next: string) => {
+    setTurnFocus(null)
     if (artifactFileOfView(next) !== null && artifactFile === null) {
       artifactReturnFull.current = fullDocument
       artifactReturnReading.current = readingFrom
@@ -796,6 +838,25 @@ function TaskViewContent({
       setDocumentReturn(null)
     }
     go({ view: "task", id: task.id, doc: next })
+  }
+  const revealQuestion = (origin?: HTMLElement) => {
+    const current = flowStepOf(task.stage)
+    if (!focusQuestions.length || !current) return false
+    const destination = stepView(task, current)
+    const focusAtRequest = document.activeElement
+    open(destination)
+    setTurnFocus({
+      task: task.id,
+      view: destination,
+      fromView: view,
+      navigation: window.location.hash,
+      step: current,
+      questions: focusQuestions.map(({ id, asked }) => ({ id, asked })),
+      sequence: ++focusSequence.current,
+      focusAtRequest,
+      ...(origin ? { origin } : {}),
+    })
+    return true
   }
   // A gate that opens takes the person to its step page, where its Your turn waits (gate-follow.ts).
   useFollowOpenedGate(pendingGate(task), closed, () => {
@@ -837,18 +898,7 @@ function TaskViewContent({
         ),
       )
     if (target?.kind === "question") {
-      if (focus?.kind === "asking" && document.querySelector('[data-testid="focus-card"]') !== null)
-        card.back()
-      else {
-        open(defaultDoc(task))
-        window.requestAnimationFrame(() =>
-          window.requestAnimationFrame(() => {
-            const question = document.querySelector<HTMLElement>('[data-testid="focus-card"]')
-            question?.scrollIntoView?.({ block: "start", behavior: "smooth" })
-            question?.focus({ preventScroll: true })
-          }),
-        )
-      }
+      if (!revealQuestion()) open(defaultDoc(task))
       return
     }
     if (target?.kind === "item") {
@@ -929,10 +979,17 @@ function TaskViewContent({
     ...(markTarget !== null && (stepDoc?.markdown ?? markdown) !== undefined
       ? {
           mark: (mark: ReaderMark) => markPassage(mark),
-          markSource: stepDoc?.markdown ?? markdown,
+          markSource: steady.doc?.markdown ?? stepDoc?.markdown ?? markdown,
           askAbout: (words: string, anchor: Element) =>
             openQuickAsk(
-              quoteMark(task, markTarget, view, stepDoc?.markdown ?? markdown ?? "", words, anchor),
+              quoteMark(
+                task,
+                markTarget,
+                view,
+                steady.doc?.markdown ?? stepDoc?.markdown ?? markdown ?? "",
+                words,
+                anchor,
+              ),
             ),
         }
       : {}),
@@ -984,6 +1041,21 @@ function TaskViewContent({
     step,
     tabs,
     onOpen: open,
+    onRevealTurn: (origin) => {
+      if (!revealQuestion(origin)) goToStatus()
+    },
+    ...(turnFocus?.task === task.id &&
+    turnFocus.view === view &&
+    turnFocus.navigation === focusNavigation &&
+    turnFocus.questions.some((target) =>
+      focusQuestions.some(
+        (question) => question.id === target.id && question.asked === target.asked,
+      ),
+    )
+      ? { turnFocus }
+      : {}),
+    onTurnFocusHandled: (sequence) =>
+      setTurnFocus((current) => (current?.sequence === sequence ? null : current)),
     onOpenDoc: openDoc,
     onCopy,
     reload,
@@ -1856,14 +1928,14 @@ function TaskViewContent({
                           />
                         </div>
                       ) : null}
-                      {stepDoc !== null ? (
+                      {steady.doc !== null ? (
                         <ArtifactHostProvider value={artifacts.host}>
                           {/* A step renders from its own folder (steps/<step>/Page.tsx). */}
                           <StepPage
                             task={task}
-                            document={steady.doc ?? stepDoc}
+                            document={steady.doc}
                             sections={steady.sections}
-                            state={stepState(visibleTask, steady.doc ?? stepDoc, {
+                            state={stepState(visibleTask, steady.doc, {
                               answers,
                               mode: "live",
                             })}
@@ -1877,8 +1949,7 @@ function TaskViewContent({
                         writingQuiet !== null ? (
                           <StepQuiet
                             step={writingQuiet.step}
-                            kind="writing"
-                            line="It opens here with the first draft"
+                            kind={stepIsWorking(task) ? "writing" : "draft"}
                             back={
                               writingQuiet.back === null
                                 ? null

@@ -57,6 +57,9 @@ if [ -f .github/scripts/check_source_policy.py ]; then
   if [ "$STAGED" = "1" ] && git cat-file -e :.github/scripts/public-source-policy.json 2>/dev/null; then
     exec python3 .github/scripts/check_source_policy.py --staged
   fi
+  if [ "$STAGED" = "0" ] && git cat-file -e HEAD:.github/scripts/public-source-policy.json 2>/dev/null; then
+    exec python3 .github/scripts/check_source_policy.py --tree HEAD
+  fi
 fi
 
 ALLOWLIST=(

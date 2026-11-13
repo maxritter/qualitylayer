@@ -60,7 +60,7 @@
     "docs/site/scripts/polar-sandbox-qualify.d.mts": "e3bd6934b1905979334ac350b1245093f2686d613347689617f27bde6f6b07d5",
     "docs/site/scripts/verify-csp-hash.mjs": "bb66d118406f726ab7b29b3d844fff145239e66b5d1f4028bb08fe342cf0d943",
     "docs/site/tsconfig.api.json": "557f5d36578550dd9e4fe23460a8ceff55cfb0d6bc2d09f871b7a844f5074e23",
-    "docs/site/vercel.json": "3356a6d94611aa1138affd374f133873d1df1eb2099037090eea4892d039736e",
+    "docs/site/vercel.json": "b55dcc4fa6087f61890765f196208b90e6c82bf811768ebecca6f14e4d300db8",
     "qualitylayer/app/frontend/index.html": "769959d730db07b2ea7377792460afb320c357e46fa8f10cb64920931af6956e",
     "qualitylayer/app/launcher/Cargo.lock": "2b7a01d8a5cec4107f9b5550b6f39fe585c48ccd01beab38a323b2fa13857db5",
     "qualitylayer/app/launcher/examples/echo_cli.rs": "d00a16c48f0a9b6aa1cee9334c85ef391c04f3b288ec130318d8ca6a77611aa3",
@@ -1971,7 +1971,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "ca91c540d81415164a682cc1a35884f2867b033dbff04228e1cb884e2b404c6a",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "4bf637de10d123e8293b7510b30984e3f0e00a65e1f8991dcd680b4279a26b00",
+  "reviewManifestSha256": "ffb0efc69afb5f2c99c1355e037e9a417d5cb463b8e83ec7211016ca3899b2c0",
   "schema": 1,
-  "sourceHead": "d0a9ccfc3f90a59bc7f786a8e8666c8dc24f5b7c"
+  "sourceHead": "605e2383d2902e4b5c32a3a31f34cc893b630778"
 }

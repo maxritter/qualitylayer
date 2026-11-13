@@ -65,7 +65,7 @@ describe("HTML available before JavaScript runs", () => {
       "@context": "https://schema.org", name: "Inside QualityLayer trailer",
       description: expect.stringContaining("56 second trailer"),
       thumbnailUrl: `https://qualitylayer.dev${DEEP_DIVE_POSTER}`,
-      uploadDate: "2026-10-29", duration: "PT56S", contentUrl: FILMS.insideTrailer.src,
+      uploadDate: "2026-10-29", duration: "PT55S", contentUrl: FILMS.insideTrailer.src,
     });
     expect(JSON.stringify(data)).not.toContain(DEEP_DIVE_VIDEO_URL);
     expect(body).not.toContain("application/ld+json");

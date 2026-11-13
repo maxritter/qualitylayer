@@ -59,7 +59,7 @@
     { "source": "/docs/phases/approve", "destination": "/docs/steps/verify#items", "permanent": true },
     { "source": "/docs/phases/shipped", "destination": "/docs/steps/pull-request#merged", "permanent": true },
     { "source": "/docs/phases/stopped-verification", "destination": "/docs/steps/verify#when-it-stops", "permanent": true },
-    { "source": "/docs/phases/abandon", "destination": "/docs/steps/verify#stop-archive-or-delete-a-task", "permanent": true },
+    { "source": "/docs/phases/abandon", "destination": "/docs/app#stop-archive-or-delete-a-task", "permanent": true },
     { "source": "/docs/phases/quick", "destination": "/docs/steps/plan#too-small", "permanent": true },
     { "source": "/docs/cockpit", "destination": "/docs/app", "permanent": true },
     { "source": "/docs/workflow/overview", "destination": "/docs#the-three-steps", "permanent": true },

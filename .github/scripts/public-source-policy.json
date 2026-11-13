@@ -22,10 +22,10 @@
     ".github/workflows/claude.yml": "f943f902c0ce8986bf4e7c16ae8f855f9e30c02ae06b7f55007925edb2ff2c53",
     ".github/workflows/old-client-update.yml": "86b327091bf801e15159ef0303705259bb12ac2b6189fce69d252b316b38fca0",
     ".github/workflows/qualitylayer-candidate.yml": "36af736581df80d54f12423f6f8991ada478f7544fac4e78dd7676d9a15e9b28",
-    ".github/workflows/qualitylayer-ci.yml": "309c82c787b6145ff7e715fb3d6a4686954a6bb1e7fa6e60ea27740aa9c12d2f",
+    ".github/workflows/qualitylayer-ci.yml": "8c4cf26a0f5ab27713c902dacaa9e2a3a4ca3dd4bff7fbfc9b8f49f41bd5f309",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
-    ".github/workflows/qualitylayer-ui.yml": "c6bb7057def1f1f7a43d74649aa5308f9c9d23be1a0f401012c33142554f843a",
+    ".github/workflows/qualitylayer-ui.yml": "7b6b1387265b94e0456a1b9669bbb751026a8cfad64b5c83e2857bbc20374946",
     ".github/workflows/qualitylayer-windows-diagnostic.yml": "775319bd9e17936606b74341253ea5ed751296abade45d9b0c38aebe333ea5a1",
     ".github/workflows/qualitylayer-windows-nightly.yml": "f75a6e450ce7524fb4a8747fd6a643b06c20626c9947bca693700723a92c7e20",
     ".github/workflows/release.yml": "f2e6e03607feb1065236eaaf7f145f228c4c11f0fef6a98c087c3e5462d240c2",
@@ -1974,7 +1974,7 @@
     ".github/workflows/backup.yml": "ef22a1349081d885e06cdc4725be6fe91190bda21147d44a41dda809591f1ff8",
     ".github/actions/windows-signing/action.yml": "ddd7b6824f41a2f63c2929869f8ad974ad9cf615caadee82e850a89fcce6df64"
   },
-  "reviewManifestSha256": "04f41deb29efeea9b21646c1ca8f8bd83d9cbb70dff0d5dd34e03f79a565f75c",
+  "reviewManifestSha256": "3d8883edee3c82a2f3adca53fafbad19aea3ead43a626b9897011e9cd69f51b0",
   "schema": 1,
-  "sourceHead": "72a34acdcd966dfd9d5feca258ab05fe41f53dc8"
+  "sourceHead": "54fd6604878564eb98d969773311cce4dab502ac"
 }

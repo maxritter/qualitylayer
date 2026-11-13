@@ -1,17 +1,645 @@
 name: QualityLayer CI
-
 on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - qualitylayer/**
+      - docs/site/**
+      - install.sh
+      - install.ps1
+      - .github/workflows/qualitylayer-ci.yml
+      - .github/workflows/release.yml
+      - .github/workflows/scripts/**
+      - .github/scripts/check_qualitylayer_encrypted.sh
+      - .github/private-workflows/ci-commands/**
+      - .github/scripts/release-private-command.py
+      - .github/scripts/canary-private-command.py
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - qualitylayer/**
+      - docs/site/**
+      - install.sh
+      - install.ps1
+      - .github/workflows/qualitylayer-ci.yml
+      - .github/scripts/check_qualitylayer_encrypted.sh
   workflow_dispatch:
-
-permissions: {}
-
+    inputs:
+      full_regression:
+        description: Run the whole suite on Linux explicitly
+        type: boolean
+        default: false
+      macos:
+        description: Also run the whole suite and the overflow check on macOS (nightly)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: qualitylayer-ci-${{ github.ref }}${{ inputs.full_regression && '-full' || '' }}
+  cancel-in-progress: true
 jobs:
-  private-qualification-required:
+  plaintext-guard:
+    name: Plaintext guard
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 10
     steps:
-      - name: Refuse unsealed private qualification
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Check the encrypted paths are encrypted
+        run: bash .github/scripts/check_qualitylayer_encrypted.sh
+  beta-smoke:
+    name: Release smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: plaintext-guard
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-26
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - run: bash .github/workflows/scripts/install-git-crypt.sh
+      - env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+        working-directory: qualitylayer
+      - run: npm ci --ignore-scripts
+        working-directory: docs/site
+      - name: Install GNU catalog-test tools on macOS
+        if: runner.os == 'macOS'
         run: |
-          echo "No full-product checks ran. This private-source workflow is quarantined."
-          echo "Use the reviewed private qualification lane; public component checks are separate."
-          exit 1
+          brew install bash coreutils
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Typecheck, lint and finite beta smoke
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_TEST_RETRIES: "0"
+          QUALITYLAYER_TEST_WORKERS: "2"
+          QL_RELEASE_EXPORTS: "{}"
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/7b274efc5c72dba1574a585a6505ffcbfc65fcbefc99f251118be82084aded3a.sh"
+        shell: bash
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+  test:
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && ((github.event_name == 'workflow_dispatch' && inputs.full_regression) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: plaintext-guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shard: 1
+            shards: 8
+          - os: ubuntu-latest
+            shard: 2
+            shards: 8
+          - os: ubuntu-latest
+            shard: 3
+            shards: 8
+          - os: ubuntu-latest
+            shard: 4
+            shards: 8
+          - os: ubuntu-latest
+            shard: 5
+            shards: 8
+          - os: ubuntu-latest
+            shard: 6
+            shards: 8
+          - os: ubuntu-latest
+            shard: 7
+            shards: 8
+          - os: ubuntu-latest
+            shard: 8
+            shards: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - name: Install shellcheck
+        if: runner.os == 'macOS'
+        run: |
+          brew install shellcheck bash coreutils
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Install managed Mac test browsers
+        if: runner.os == 'macOS'
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/473fa6fea87bda43d24f8402a812b7a50020c1f96394de6bb5e4e4cc35cdf163.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Install the site's dependencies
+        working-directory: docs/site
+        run: npm ci --ignore-scripts
+      - name: Install the pinned native Claude Code for mod tests
+        run: bash .github/workflows/scripts/setup-claude-code.sh "${RUNNER_TEMP:?}/ql-native-claude"
+      - name: Typecheck
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/74972bf0d10c696441b2fff200280c5ac8b6f904dd74173a58f073d3ea7616b3.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Lint
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/62c1bfc8d3174964498b295800e51c92cba6d8f3b98eb08b7666c593dd55222c.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Test
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_REQUIRE_RENDER: "1"
+          QUALITYLAYER_TEST_RETRIES: "0"
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ matrix.shard }}
+          QL_CI_INPUT_2: ${{ matrix.shards }}
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/e3edfd1a940d93a8a05987e0bf97a1571dee275c50eb2693f1b1961f687b72d7.sh"
+        shell: bash
+  test-macos:
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name == 'workflow_dispatch' && inputs.full_regression && inputs.macos)
+    name: Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: plaintext-guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            shard: 1
+            shards: 12
+          - os: macos-26
+            shard: 2
+            shards: 12
+          - os: macos-26
+            shard: 3
+            shards: 12
+          - os: macos-26
+            shard: 4
+            shards: 12
+          - os: macos-26
+            shard: 5
+            shards: 12
+          - os: macos-26
+            shard: 6
+            shards: 12
+          - os: macos-26
+            shard: 7
+            shards: 12
+          - os: macos-26
+            shard: 8
+            shards: 12
+          - os: macos-26
+            shard: 9
+            shards: 12
+          - os: macos-26
+            shard: 10
+            shards: 12
+          - os: macos-26
+            shard: 11
+            shards: 12
+          - os: macos-26
+            shard: 12
+            shards: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - name: Install shellcheck
+        if: runner.os == 'macOS'
+        run: |
+          brew install shellcheck bash coreutils
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Install managed Mac test browsers
+        if: runner.os == 'macOS'
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/473fa6fea87bda43d24f8402a812b7a50020c1f96394de6bb5e4e4cc35cdf163.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Install the site's dependencies
+        working-directory: docs/site
+        run: npm ci --ignore-scripts
+      - name: Install the pinned native Claude Code for mod tests
+        run: bash .github/workflows/scripts/setup-claude-code.sh "${RUNNER_TEMP:?}/ql-native-claude"
+      - name: Typecheck
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/74972bf0d10c696441b2fff200280c5ac8b6f904dd74173a58f073d3ea7616b3.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Lint
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/62c1bfc8d3174964498b295800e51c92cba6d8f3b98eb08b7666c593dd55222c.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Test
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_REQUIRE_RENDER: "1"
+          QUALITYLAYER_TEST_RETRIES: "0"
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ matrix.shard }}
+          QL_CI_INPUT_2: ${{ matrix.shards }}
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/e3edfd1a940d93a8a05987e0bf97a1571dee275c50eb2693f1b1961f687b72d7.sh"
+        shell: bash
+  overflow:
+    name: No text overflows a control (${{ matrix.os }}, shard ${{ matrix.shard }}/2)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    needs: plaintext-guard
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.macos && '["ubuntu-latest","macos-26"]' || '["ubuntu-latest"]') }}
+        shard:
+          - 1
+          - 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Install the isolated macOS test browser
+        if: runner.os == 'macOS'
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install chromium-headless-shell
+      - name: No text overflows a control
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_OVERFLOW_TABS: "3"
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ matrix.shard }}
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/2d869828c37f66e254f5268b3058dfc174ff2dd1f32e42c5091498f11d8e660f.sh"
+        shell: bash
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+  site:
+    name: Site API and pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: plaintext-guard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.20.0
+      - name: Install dependencies
+        working-directory: docs/site
+        run: npm ci
+      - name: Typecheck the app, the build config and the API
+        working-directory: docs/site
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/b6b89339da9820a8a9941b6edc62a190bab6988091d64c792e0e2442dae37c05.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Setup Bun for the isolated billing service
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install the billing test browser
+        working-directory: docs/site
+        run: npx playwright install --with-deps chromium
+      - name: Test
+        working-directory: docs/site
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/360d1e597726e4c2c20e907360649892014679ad150efefafdb3a6256d8049fa.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Test billing across QualityLayer and legacy Pilot Shell products
+        working-directory: docs/site
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/dec156d56ddce42ddad440771fd1f84868feeeedc0e16e6d4b9baf6ab7a900de.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Build production pages and App demo with only site dependencies
+        working-directory: docs/site
+        env:
+          INDEXNOW_DISABLE: "1"
+          QL_RELEASE_EXPORTS: "{}"
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/d1970621026f26e8128720ba4398c546260000acede7bbc9224f807a92fdf93f.sh"
+        shell: bash
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+  windows:
+    name: Native Windows runtime (${{ matrix.os }}, shard ${{ matrix.shard }}/6)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    needs: plaintext-guard
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2025
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+        include:
+          - shard: 1
+            files: tests/cli/hook-prompt.test.ts
+          - shard: 2
+            files: tests/windows/native.test.ts tests/e2e/sessions.test.ts tests/e2e/statusline.test.ts tests/core/check-process-options.test.ts tests/core/live-signals.test.ts tests/core/interaction-shell-process.test.ts tests/windows/setup-recovery.test.ts tests/windows/fixture-cleanup.test.ts tests/core/scanner-setup.test.ts
+          - shard: 3
+            files: tests/windows/install-ps1.test.ts
+          - shard: 4
+            files: tests/scripts/chrome-shutdown.test.ts tests/windows/repair-defender.test.ts tests/windows/process-output.test.ts tests/windows/uninstall-ps1.test.ts
+          - shard: 5
+            files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts tests/core/install/mod.test.ts
+          - shard: 6
+            files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Unlock repository
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Install the site's dependencies
+        if: matrix.shard == 4 || matrix.shard == 6
+        working-directory: docs/site
+        run: npm ci --ignore-scripts --omit=dev --no-audit --no-fund
+      - name: Windows suites and end-to-end smoke
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_REQUIRE_RENDER: "1"
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ matrix.files }}
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/19fe19eca00d95666640c96ebd29ea897d0c4d579133b5851a818da002f81e48.ps1"
+        shell: pwsh
+      - name: Compiled reviewer starts and fails safely
+        if: matrix.shard == 5
+        working-directory: qualitylayer
+        env:
+          QUALITYLAYER_REQUIRE_RENDER: "1"
+          QL_RELEASE_EXPORTS: "{}"
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/45b2b4050d5a50fe4b816e19ad688c12fc2835ec172a9fe20c6522b606366e52.ps1"
+        shell: pwsh
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+  windows-terminal:
+    name: Native ConPTY (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    needs: plaintext-guard
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            arch: x64
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: qualitylayer
+    steps:
+      - name: Check out with LF line endings
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+          bun-download-url: https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip
+      - name: Unlock repository
+        working-directory: .
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
+          [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
+          try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: bun install --frozen-lockfile
+      - name: Verify OS and Bun run natively
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/141445ce5e6ca4a1e8969875b08951f663cc24e106f063ff0392fce92d23b570.ps1"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ matrix.arch }}
+        shell: pwsh
+      - name: Build matching private candidate and key
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/689ab30db69c53ad2c59730125870ae5d66c34c20877c2627a32ce8ac36bcc97.ps1"
+        env:
+          QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"QUALITYLAYER_TEST_BINARY":"temp-path","QUALITYLAYER_TEST_TRIAL_KEY_FILE":"temp-path"}}'
+          QL_CI_INPUT_1: ${{ matrix.arch }}
+        shell: pwsh
+      - name: Build matching native Rust launcher for the installed command path
+        timeout-minutes: 5
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/7038860822a12e6a787b467251f868f3a1f350e59dcfc7038ba99d52c408c8c5.ps1"
+        env:
+          QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"QUALITYLAYER_TEST_LAUNCHER":"temp-path"}}'
+        shell: pwsh
+      - name: Execute compiled ConPTY and Job lifecycle contracts
+        env:
+          QUALITYLAYER_REQUIRE_WINDOWS_NATIVE: "1"
+          QUALITYLAYER_EXPECT_ARCH: ${{ matrix.arch }}
+          QL_RELEASE_EXPORTS: "{}"
+        run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/8ddbce549a39af350fd503051010d819cdbf4a2abf915afb3dfedb7288f0ebbf.ps1"
+        shell: pwsh
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')

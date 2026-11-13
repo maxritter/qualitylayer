@@ -1,17 +1,217 @@
 name: QualityLayer source UI
-
 on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - "**"
+      - .github/private-workflows/ci-commands/**
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - qualitylayer/src/**
+      - qualitylayer/tests/frontend/**
+      - qualitylayer/scripts/ui-dev.ts
+      - qualitylayer/playwright.ui.config.ts
+      - qualitylayer/package.json
+      - qualitylayer/bun.lock
+      - docs/site/**
+      - .github/workflows/qualitylayer-ui.yml
   workflow_dispatch:
-
-permissions: {}
-
+    inputs:
+      all:
+        description: Run every browser project (nightly); a push runs desktop light and the small window
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: qualitylayer-ui-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  private-qualification-required:
+  checkout:
+    name: Subscription checkout browser check
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 8
     steps:
-      - name: Refuse unsealed private qualification
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - run: bash .github/workflows/scripts/install-git-crypt.sh
+      - env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: 24.20.0
+      - run: npm ci --ignore-scripts
+        working-directory: docs/site
+      - run: npx playwright install --with-deps chromium
+        working-directory: docs/site
+      - name: Checkout and catalog regressions
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/3d5cefb6e4bf27a813d11ab1f89e5a3b948d2df0726d7ca05ebd9de8da2d65bd.sh"
+        working-directory: docs/site
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+      - name: Open every plan's real Polar and Stripe form without payment
+        working-directory: docs/site
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/248f3b275183bea152c4a2751dad18619b7e2bdff70d80b2682b8d9ddeaa5537.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+  frontend:
+    name: Source UI browser checks (shard ${{ matrix.shard }}/8)
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+          - 6
+          - 7
+          - 8
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Install git-crypt
+        run: bash .github/workflows/scripts/install-git-crypt.sh
+      - name: Unlock source
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Install locked QualityLayer dependencies
+        working-directory: qualitylayer
+        run: bun install --frozen-lockfile
+      - name: Install locked website dependencies
+        working-directory: docs/site
+        run: npm ci --ignore-scripts
+      - name: Install Chromium system dependencies
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install-deps chromium
+      - name: Install managed Chromium
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install chromium
+      - name: Source UI interactions, geometry and accessibility
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/23a6a7ac3acd3e433690869c5cb0ab466838516b5fb7c39e37c1cf2389342680.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+          QL_CI_INPUT_1: ${{ inputs.all && '--all' || '--project=desktop-light --project=desktop-small' }}
+          QL_CI_INPUT_2: ${{ matrix.shard }}
+        shell: bash
+  history:
+    name: Conversation history browser checks
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/qualitylayer/dist/.ui-browsers
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Qualify public POSIX command channels before private source
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python3 "$GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - name: Qualify public Windows command channels before private source
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QL_CANARY_ONLY: ""
+          PYTHONPATH: ""
+          QL_CANARY_TRACE_PATH: ""
+        run: python "$env:GITHUB_WORKSPACE/.github/scripts/canary-private-command.py" "$env:GITHUB_WORKSPACE/.github/scripts/release-private-command.py"
+      - run: bash .github/workflows/scripts/install-git-crypt.sh
+      - env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: bash .github/workflows/scripts/setup-git-crypt.sh
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+        working-directory: qualitylayer
+      - run: npm ci --ignore-scripts
+        working-directory: docs/site
+      - run: ./node_modules/.bin/playwright install --with-deps chromium
+        working-directory: qualitylayer
+      - name: Every history pair and explicit navigation in all desktop layouts
+        working-directory: qualitylayer
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/afc02f514d36b677678262d03f147595dd8f67897fe795a4f0311b5cd9664753.sh"
+        env:
+          QL_RELEASE_EXPORTS: "{}"
+        shell: bash
+  result:
+    name: Source UI browser checks
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
+    needs:
+      - frontend
+      - checkout
+      - history
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          RESULT: ${{ needs.frontend.result }}
+          CHECKOUT: ${{ needs.checkout.result }}
+          HISTORY: ${{ needs.history.result }}
         run: |
-          echo "No full-product checks ran. This private-source workflow is quarantined."
-          echo "Use the reviewed private qualification lane; public component checks are separate."
-          exit 1
+          if [ "$RESULT" != success ] || [ "$CHECKOUT" != success ] || [ "$HISTORY" != success ]; then
+            echo "::error::source UI: $RESULT; subscription checkout: $CHECKOUT; conversation history: $HISTORY"
+            exit 1
+          fi
+          echo "Every source UI shard passed"

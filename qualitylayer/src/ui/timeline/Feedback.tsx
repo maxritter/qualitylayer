@@ -3,7 +3,6 @@
 // just reported, then answered with what changed. The build reads comments with `comments take`
 // after each task and answers each with `comments resolve --answer`.
 
-import { MessageSquareIcon } from "lucide-react"
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react"
 import type { BuildAnchor, Comment } from "../../core/gate/comments.ts"
 import { ago } from "../hooks.ts"
@@ -82,42 +81,6 @@ export function standing(c: BuildComment): string {
   return state === "answered"
     ? `Picked up by the build${after} · answered`
     : `Picked up by the build${after}`
-}
-
-/** The button on an item: opens the composer, and counts what was said. */
-export function CommentButton({
-  anchor,
-  label,
-  className = "q-cbtn",
-  children,
-}: {
-  anchor: BuildAnchor
-  label: string
-  className?: string
-  children?: ReactNode
-}) {
-  const feedback = useContext(FeedbackContext)
-  if (feedback === null) return null
-  const count = feedback.comments.filter((c) => matches(c, anchor)).length
-  const key = keyOf(anchor)
-  const open = feedback.composing === key
-  return (
-    <button
-      type="button"
-      className={className}
-      aria-label={`Give feedback on ${label}`}
-      aria-expanded={open}
-      title="Give feedback here; the build reads it after its next task"
-      onClick={() => feedback.compose(open ? null : key)}
-    >
-      {children ?? (
-        <>
-          <MessageSquareIcon className="size-3.5" aria-hidden="true" />
-          {count > 0 ? <span className="n">{count}</span> : null}
-        </>
-      )}
-    </button>
-  )
 }
 
 /** Under an item: the composer when it is open, then each comment with where it stands. */

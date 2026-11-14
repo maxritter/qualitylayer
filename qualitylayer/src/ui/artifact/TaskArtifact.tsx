@@ -20,7 +20,6 @@ import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import type { TaskCost } from "../../core/cost/labels.ts"
 import { flowStepOf } from "../../core/flow.ts"
 import type { Api, ArtifactWhere, TaskArtifacts, TaskDetail } from "../api.ts"
-import { ArtifactProvenance } from "../artifacts/ArtifactProvenance.tsx"
 import { PLAN_TURN_READY } from "../docs/PlanTurn.tsx"
 import { type Query, useQuery } from "../hooks.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
@@ -189,29 +188,6 @@ export function TaskArtifactsTab({
       current={current}
       onOpen={onOpen}
       foot={<>Ask your agent to draw one: “mock up the settings page”.</>}
-    />
-  )
-}
-
-export function TaskArtifactActivity({
-  api,
-  where,
-  file,
-}: {
-  api: Api
-  where: ArtifactWhere
-  file: string
-}) {
-  const history = useQuery(
-    () => api.artifactProvenance?.(where, file) ?? Promise.resolve(null),
-    [api, where.scope, where.id, file],
-  )
-  return (
-    <ArtifactProvenance
-      history={history.data}
-      loading={history.loading}
-      error={history.error?.message}
-      file={file}
     />
   )
 }

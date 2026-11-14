@@ -2,18 +2,11 @@
 // window of that task takes it as its draft (nothing is sent: the person reads it and presses
 // Send); when no window takes it, the caller says so and the words go to the clipboard instead.
 
-import { useCallback, useEffect } from "react"
+import { useEffect } from "react"
 
 const SAY = "qualitylayer:conversation-say"
 
 type Ask = { task: string; text: string; taken: boolean }
-
-/** Puts `text` into the draft of the task's open Conversation; false when no window took it. */
-export function sayInConversation(task: string, text: string): boolean {
-  const ask: Ask = { task, text, taken: false }
-  window.dispatchEvent(new CustomEvent<Ask>(SAY, { detail: ask }))
-  return ask.taken
-}
 
 /** The Conversation's side: `take` runs for each ask for this task while the window shows. */
 export function useConversationSay(
@@ -31,21 +24,4 @@ export function useConversationSay(
     window.addEventListener(SAY, listen)
     return () => window.removeEventListener(SAY, listen)
   }, [task, enabled, take])
-}
-
-/** The window's side for a composer draft: the words join the draft on a new line, nothing is sent. */
-export function useSayInDraft<Draft extends { text: string }>(
-  task: string | undefined,
-  enabled: boolean,
-  change: (next: (before: Draft) => Draft) => void,
-): void {
-  const take = useCallback(
-    (text: string) =>
-      change((before) => ({
-        ...before,
-        text: before.text.trim() ? `${before.text.trimEnd()}\n${text}` : text,
-      })),
-    [change],
-  )
-  useConversationSay(task, enabled, take)
 }

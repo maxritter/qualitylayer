@@ -174,18 +174,6 @@ export function diffHtml(source: string): string {
   return `<pre class="diff"><code>${rows.join("")}</code></pre>`
 }
 
-/** One line of agent-written text outside a document, with its `backtick` spans shown as code. */
-export function InlineCode({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/`([^`]+)`/).map((part, index) =>
-        // biome-ignore lint/suspicious/noArrayIndexKey: the fixed parts of one string
-        index % 2 === 1 ? <code key={index}>{part}</code> : part,
-      )}
-    </>
-  )
-}
-
 /** Separator breaks add no characters to a path’s copied or quoted text. */
 function markdownRenderer() {
   const renderer = new marked.Renderer()
@@ -208,8 +196,7 @@ const inlineOf = (tokens: Token[]) =>
 
 /**
  * One line of agent-written prose with its bold, italics and code, rendered and sanitised the way
- * the document reader renders them. `InlineCode` stays for machine-written lines (a progress line
- * with a glob in it must not turn into emphasis).
+ * the document reader renders them.
  */
 export const InlineMarkdown = memo(function InlineMarkdown({ text }: { text: string }) {
   const tokens = marked.Lexer.lexInline(text)

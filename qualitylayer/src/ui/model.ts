@@ -1847,19 +1847,3 @@ export function notificationsFor(
   }
   return out
 }
-
-/** What a recorded result says on screen: the log keeps PASS, FAIL, MISSING and USER; a person reads words. */
-export function resultWords(verdict: string): string {
-  switch (verdict) {
-    case "PASS":
-      return "passed"
-    case "FAIL":
-      return "failed"
-    case "MISSING":
-      return "not covered"
-    case "USER":
-      return "needs you"
-    default:
-      return verdict.toLowerCase()
-  }
-}

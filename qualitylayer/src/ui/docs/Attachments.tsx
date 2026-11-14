@@ -16,10 +16,6 @@ export type ShownFile = {
   blob?: Blob
 }
 
-/** The address the App serves one file of a comment from. */
-export const attachmentUrl = (task: string, comment: string, name: string) =>
-  `/api/tasks/${encodeURIComponent(task)}/interaction/docs/attachment?${new URLSearchParams({ comment, name })}`
-
 function ImageThumbnail({
   file,
   label,

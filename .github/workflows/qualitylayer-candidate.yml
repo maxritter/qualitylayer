@@ -101,6 +101,8 @@ jobs:
       env:
         GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
       run: |
+        $env:BUN_RUNTIME_TRANSPILER_CACHE_PATH = Join-Path $env:RUNNER_TEMP 'ql-git-crypt-transpiler-cache'
+        "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$env:BUN_RUNTIME_TRANSPILER_CACHE_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
         [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
         try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }
@@ -913,6 +915,8 @@ jobs:
       env:
         GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
       run: |
+        $env:BUN_RUNTIME_TRANSPILER_CACHE_PATH = Join-Path $env:RUNNER_TEMP 'ql-git-crypt-transpiler-cache'
+        "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$env:BUN_RUNTIME_TRANSPILER_CACHE_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         $key = Join-Path $env:RUNNER_TEMP 'git-crypt.key'
         [IO.File]::WriteAllBytes($key, [Convert]::FromBase64String($env:GIT_CRYPT_KEY))
         try { bun .github/workflows/scripts/git-crypt-unlock.ts $key } finally { Remove-Item -LiteralPath $key -Force }

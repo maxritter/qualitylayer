@@ -1,52 +1,10 @@
-// The Review page's strip: "Checked by agents", the lanes that ran in one violet line, and the same
-// lanes with who ran each and how it ended behind its chevron (App Model: Review · review). The lanes
-// are the Verify document's `lanes` section, read from the task's pages, so the strip and the Verify
-// page never disagree.
+// The lanes recorded in the task's Verify document, shared with the reviews reader.
 
-import { createContext, useContext } from "react"
-import { type LaneRow, laneNameOf, withoutStateWord } from "../../../core/pages/lanes.ts"
+import type { LaneRow } from "../../../core/pages/lanes.ts"
 import type { TaskDetail } from "../../api.ts"
-import { WhoMark } from "../../kit/WhoMark.tsx"
-
-/** The lanes of the task's Verify document; null on a task whose Verify holds none yet. */
-export const LanesContext = createContext<readonly LaneRow[] | null>(null)
-export const useLanes = () => useContext(LanesContext)
 
 /** The lanes the last refresh recorded, in the order they run; null when it recorded none. */
 export function lanesOfTask(task: Pick<TaskDetail, "verifyLanes">): LaneRow[] | null {
   const rows = task.verifyLanes ?? []
   return rows.length === 0 ? null : rows
-}
-
-/** A lane that ran on this change: not one left out, and not one still waiting its turn. */
-const ran = (row: LaneRow) => row.state !== "skipped" && row.state !== "waiting"
-
-/**
- * The strip's facts, never more than the line holds: the Independent review's result first (what it
- * proved), then each other lane that ran, by its name.
- */
-export function laneFacts(rows: readonly LaneRow[]): string[] {
-  const judge = rows.find((row) => row.id === "judge" && ran(row) && row.result !== "")
-  const others = rows.filter((row) => row !== judge && ran(row) && row.id !== "fix")
-  return [
-    ...(judge !== undefined ? [withoutStateWord(judge.result)] : []),
-    ...others.map((row) => laneNameOf(row.id).toLowerCase()),
-  ]
-}
-
-/** One row per lane that ran: its name and who ran it, and how it ended. */
-export function LaneRows({ rows }: { rows: readonly LaneRow[] }) {
-  return (
-    <div className="vl-strip" data-testid="strip-lanes">
-      {rows.filter(ran).map((row) => (
-        <div className="r" key={row.id} data-lane={row.id}>
-          <WhoMark who={row.state === "fail" ? "stop" : row.state === "you" ? "you" : "check"} />
-          <span>
-            {laneNameOf(row.id)} · {row.who}
-          </span>
-          <span className="s">{row.result !== "" ? withoutStateWord(row.result) : row.state}</span>
-        </div>
-      ))}
-    </div>
-  )
 }

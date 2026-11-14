@@ -39,13 +39,3 @@ export function focusFirstControl(popup: HTMLElement | null, openType: string): 
   popup.focus({ preventScroll: true })
   return false
 }
-
-/**
- * For content that arrives after its dialog or popover opened (a read in flight): once it is there,
- * a surface that still holds the focus itself hands it to the first control. Anything the person
- * focused or typed into meanwhile keeps it.
- */
-export function focusFirstControlWhenReady(inside: Element | null): void {
-  const popup = inside?.closest<HTMLElement>('[role="dialog"], [data-slot="popover-content"]')
-  if (popup && document.activeElement === popup) focusFirstControl(popup, "keyboard")
-}

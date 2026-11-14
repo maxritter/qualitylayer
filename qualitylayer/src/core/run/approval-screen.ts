@@ -10,7 +10,7 @@ const CONFIRM = /^press enter to confirm or esc to cancel$/
 /** Codex's status line while a turn runs: "Working (3m 03s • esc to interrupt)". */
 const WORKING = /^(?:• )?working \([^)]*esc to interrupt\)$/
 /** The hint line under Codex's empty composer, the screen's last line when no overlay is open. */
-const COMPOSER = /^\? for shortcuts\b/
+const COMPOSER = /^(?:[←→↑↓↔⌃⌘][^·|]*[·|]\s*)*\? for shortcuts\b/
 /** How far from the bottom the working line sits: it, a tip, the composer and its hints. */
 const WORKING_ROWS = 8
 
@@ -25,7 +25,11 @@ export function approvalScreen(screen: string): "asking" | "working" | null {
     .filter((row) => row !== "")
   if (CONFIRM.test(rows.at(-1) ?? "")) return "asking"
   if (!COMPOSER.test(rows.at(-1) ?? "")) return null
-  return rows.slice(-WORKING_ROWS).some((row) => WORKING.test(row)) ? "working" : null
+  const bottom = rows.slice(-WORKING_ROWS)
+  const working = bottom.findLastIndex((row) => WORKING.test(row))
+  const confirmation = bottom.findLastIndex((row) => CONFIRM.test(row))
+  if (confirmation > working) return "asking"
+  return working >= 0 ? "working" : null
 }
 
 /**

@@ -49,8 +49,6 @@ export function closeQuickAsk(mark?: QuickAskMark): void {
   notify()
 }
 
-export const quickAskOpen = (): QuickAskMark | null => current
-
 export function useQuickAskMark(): QuickAskMark | null {
   return useSyncExternalStore(
     (listen) => {

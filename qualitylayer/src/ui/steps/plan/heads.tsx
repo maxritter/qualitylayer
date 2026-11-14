@@ -1,12 +1,9 @@
 // What the Plan draws as the Workflow model does: a core part's heading with its icon first
-// (`IconPart`, the bands' Part with an icon), and the file row that ends each page: the whole file and
-// Read, which opens the Reader on it (`ReadRow`).
+// (`IconPart`, the bands' Part with an icon).
 
-import { ChevronsUpDownIcon, type LucideIcon } from "lucide-react"
-import { type ReactNode, type RefObject, useEffect, useState } from "react"
+import type { LucideIcon } from "lucide-react"
+import type { ReactNode } from "react"
 import { headingSlug } from "../../../core/docs/anchor.ts"
-import { FileRow } from "../../step-page/kit/FileRow.tsx"
-import { readWholeFile } from "../../step-page/kit/read-file.ts"
 
 /** A titled part of the core with its icon; the count and an aside (a control) follow the title. */
 export function IconPart({
@@ -36,61 +33,5 @@ export function IconPart({
       </h2>
       {children}
     </section>
-  )
-}
-
-/** The button that opens every row of a part, or closes them again. */
-export function DetailsButton({ root }: { root: RefObject<HTMLElement | null> }) {
-  const [all, setAll] = useState(false)
-  useEffect(() => {
-    const el = root.current
-    if (el === null) return undefined
-    const sync = () => {
-      const rows = [...el.querySelectorAll("details")]
-      setAll(rows.length > 0 && rows.every((row) => row.open))
-    }
-    el.addEventListener("toggle", sync, true)
-    return () => el.removeEventListener("toggle", sync, true)
-  }, [root])
-  return (
-    <button
-      type="button"
-      className="q-btn quiet xs"
-      aria-pressed={all}
-      data-testid="details-all"
-      onClick={() => {
-        const next = !all
-        for (const row of root.current?.querySelectorAll("details") ?? []) row.open = next
-        setAll(next)
-      }}
-    >
-      <ChevronsUpDownIcon className="size-3" aria-hidden="true" />
-      Details
-    </button>
-  )
-}
-
-/** The page's last row: its file and Read, which opens the Reader on the whole file. */
-export function ReadRow({
-  taskId,
-  file,
-  label,
-  text = "the whole file, as Copy gives it",
-}: {
-  taskId: string
-  file: string
-  /** The button's words: `Read the Plan`. */
-  label: string
-  text?: string
-}) {
-  return (
-    <FileRow
-      file={file}
-      text={text}
-      label={label}
-      onRead={() => {
-        readWholeFile(taskId, file)
-      }}
-    />
   )
 }

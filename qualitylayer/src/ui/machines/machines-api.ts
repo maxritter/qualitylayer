@@ -72,7 +72,6 @@ export const SSH_MISSING = "ssh was not found"
 
 /** Set once a reply said ssh is not on this computer: Settings then says so in place of Add machine. */
 const sshMissing = sharedValue<boolean>(false)
-export const markSshMissing = (): void => sshMissing.set(true)
 export const useSshMissing = (): boolean =>
   useSyncExternalStore(sshMissing.subscribe, sshMissing.get)
 export const isSshMissing = (reason: string | undefined): boolean =>
@@ -155,63 +154,6 @@ export async function readHosts(signal?: AbortSignal): Promise<string[]> {
   } catch {
     return []
   }
-}
-
-/** The computers one licence key covers, and how many are in use once the machine is added. */
-export type Computers = { inUse: number; after: number; of: number; full: boolean }
-
-/** What adding does about the licence: activate this computer's key there, or leave the machine to its own. */
-export type LicencePlan = "activate" | "full" | "trial" | "kept"
-
-/** A machine the check reached that can be added: what needs doing there, and what it would mean. */
-export type Setup = {
-  reach: "ok"
-  system: string
-  version: string | null
-  /** Install, update, or nothing to do before it connects. */
-  verdict: "install" | "update" | "ready"
-  plan: LicencePlan
-  computers: Computers
-  /** This computer's QualityLayer: what an install or update brings the machine to. */
-  thisVersion: string
-}
-
-/** What a look at a machine found: it answered, or ssh says why it did not. */
-export type Checked =
-  | Setup
-  | { reach: "ok"; system: string; version: string | null; verdict: "unsupported" }
-  | { reach: "needs-you" | "unknown-host" | "offline"; reason: string }
-
-/** Reach the machine once over ssh and say what runs there; nothing is changed on it. */
-export async function checkTarget(target: string): Promise<Checked> {
-  return await send<{ ok: boolean } & Checked>("POST", "/api/machines/check", { target })
-}
-
-/** Store a machine that already runs a current QualityLayer; the server connects it. Nothing changes there. */
-export async function addMachine(name: string, target: string): Promise<void> {
-  await send("POST", "/api/machines", { name, target })
-}
-
-/** What adding a machine after the person's confirmation did there. */
-export type Added = {
-  installed: "installed" | "updated" | "none"
-  licence: "activated" | "trial" | "kept"
-  /** The licence has no free computer: the machine runs on its own trial. */
-  full: boolean
-}
-
-/**
- * Install or update, activate the licence and store the machine: one request, sent only after the
- * person confirmed. The server leaves the machine out of the list when any part of it failed and
- * says which part (`Refused.reason`).
- */
-export async function addConfirmed(name: string, target: string): Promise<Added> {
-  return await send<{ ok: boolean } & Added>(
-    "POST",
-    "/api/machines",
-    { name, target, confirmed: true },
-    LONG,
-  )
 }
 
 /** Update QualityLayer on a machine that is added; the server runs the same installer as for an add. */

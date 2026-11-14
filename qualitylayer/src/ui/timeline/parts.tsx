@@ -1,17 +1,11 @@
 // Pieces the build's three views share: the kinds of notes, a note, evidence
 // the runner or the judge kept, a copyable command, and a clock for "4 s ago".
 
-import { cn } from "cn"
-import { CheckIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import type { Evidence } from "../api.ts"
-import { Disclosure } from "../kit/Fold.tsx"
-import { InlineCode } from "../reader/DocReader.tsx"
 import { terminalText } from "../reader/terminal-text.ts"
 import { FullscreenDialog } from "../reader/VisualParts.tsx"
-import { CommentButton, Thread } from "./Feedback.tsx"
-import { splitTry } from "./review-shape.ts"
 
 export type LoadEvidence = (name: string) => Promise<Evidence>
 
@@ -141,52 +135,6 @@ function terminalLines(text: string, max: number): { cls: string; text: string }
 /** What a checkpoint's picture is: the captured file, shown as a screenshot or as terminal text. */
 export type PictureData = { file: string; caption: string }
 
-/** One picture of a checkpoint run with its caption; it opens in the viewer. */
-export function PictureTile({
-  picture,
-  load,
-  onOpen,
-}: {
-  picture: PictureData
-  load: LoadEvidence
-  onOpen: () => void
-}) {
-  const { evidence, error } = useEvidence(picture.file, load)
-  const label = `Open the picture: ${picture.caption}`
-  const anchor = { kind: "picture" as const, id: picture.file, quote: picture.caption }
-  return (
-    <figure className="bv-shot" data-testid="picture">
-      {error !== null ? (
-        <div className="bv-pic" role="alert">
-          <span className="bv-quiet">{error}</span>
-        </div>
-      ) : evidence === null ? (
-        <div className="bv-pic">
-          <span className="bv-quiet">Loading…</span>
-        </div>
-      ) : evidence.kind === "image" ? (
-        <button type="button" className="bv-pic" aria-label={label} onClick={onOpen}>
-          <img src={`data:${evidence.type};base64,${evidence.base64}`} alt={picture.caption} />
-        </button>
-      ) : (
-        <button type="button" className="bv-term" aria-label={label} onClick={onOpen}>
-          {terminalLines(evidence.text, 6).map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a terminal's lines are positional
-            <span key={i} className={line.cls}>
-              {line.text}
-            </span>
-          ))}
-        </button>
-      )}
-      <figcaption>{picture.caption}</figcaption>
-      <div className="bv-rowc pic">
-        <CommentButton anchor={anchor} label={`the picture “${picture.caption}”`} />
-      </div>
-      <Thread anchor={anchor} label={`the picture “${picture.caption}”`} />
-    </figure>
-  )
-}
-
 /** The big picture: every picture of the build, one at a time, with arrow keys and Esc. */
 export function PictureViewer({
   pictures,
@@ -275,94 +223,5 @@ export function PictureViewer({
         </p>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** What changed in the checkout after a run was recorded: the code it ran, and the rest. */
-export function MovedSince({ moved }: { moved: { exercised: string[]; others: string[] } }) {
-  // One line with the counts; the paths fold out on a click.
-  const counts = [
-    moved.exercised.length > 0 ? `${plural(moved.exercised.length, "file")} it ran` : null,
-    moved.others.length > 0 ? `${plural(moved.others.length, "other file")}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ")
-  return (
-    <Disclosure
-      className="bv-look-for bv-moved"
-      data-testid="moved-since"
-      head={
-        <>
-          <b>Changed since this run:</b> {counts}
-        </>
-      }
-    >
-      {moved.exercised.length > 0 ? <p>Code it ran: {moved.exercised.join(", ")}.</p> : null}
-      {moved.others.length > 0 ? <p>Not run by it: {moved.others.join(", ")}.</p> : null}
-    </Disclosure>
-  )
-}
-
-/** One command on its own line, with a Copy button that says so once pressed. */
-export function CommandLine({
-  command,
-  onCopy,
-}: {
-  command: string
-  onCopy: (text: string, note: string) => void
-}) {
-  // The SPA keeps no timers: "Copied" stays until the line is drawn again.
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="bv-cmd" data-testid="command">
-      <code>{command}</code>
-      <button
-        type="button"
-        className={cn("bv-copy txt", copied && "done")}
-        aria-label="Copy the command"
-        onClick={() => {
-          onCopy(command, "Command copied")
-          setCopied(true)
-        }}
-      >
-        {copied ? <CheckIcon className="size-3.5" aria-hidden="true" /> : null}
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
-  )
-}
-
-/** The steps to see it yourself: what to do, each command on its own line with Copy, then what to expect. */
-export function TryList({
-  steps,
-  onCopy,
-}: {
-  steps: { text: string; command: string | null }[]
-  onCopy: (text: string, note: string) => void
-}) {
-  return (
-    <ol className="bv-try">
-      {steps.map((step) => {
-        const shape = splitTry(step.text)
-        const commands = [...(step.command !== null ? [step.command] : []), ...shape.commands]
-        return (
-          <li key={`${step.text}${step.command ?? ""}`} data-testid="try-step">
-            <div className="bv-tryb">
-              <p>
-                <InlineCode text={shape.say} />
-              </p>
-              {commands.map((command) => (
-                <CommandLine key={command} command={command} onCopy={onCopy} />
-              ))}
-              {shape.expect !== "" ? (
-                <p className="bv-expect">
-                  <b>Expect</b> <InlineCode text={shape.expect} />
-                </p>
-              ) : null}
-            </div>
-          </li>
-        )
-      })}
-    </ol>
   )
 }

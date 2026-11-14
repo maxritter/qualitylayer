@@ -46,11 +46,6 @@ export function fragmentsReady(): Promise<FragmentsModule> {
   return pending
 }
 
-/** The parsers if they have arrived, for code that runs outside a component. */
-export function fragmentsNow(): FragmentsModule | null {
-  return loaded
-}
-
 /**
  * The parsers, null until they have arrived (the component draws again when they do), or why they
  * could not be fetched. A failed fetch is not kept: the next component that asks fetches again.

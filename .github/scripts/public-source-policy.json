@@ -118,7 +118,7 @@
     "qualitylayer/app/src-tauri/windows/repair-defender.ps1": "27e788dd8b3d9cc994596dd25b1dd75be4d4db2f1e40f35f7c3ba050fe83652f",
     "qualitylayer/biome.json": "65a321f6b36fad59c99bcbe59889c862b27a5b2ef589c7bda2ecbd3a988dac16",
     "qualitylayer/bun.lock": "a106dfda85775e8bf3a367590badc52574b52ef34c13bd30db87998151571fe5",
-    "qualitylayer/package.json": "33b1630cecb378bbf3121202e58f09f5a2c8d8deeb66d10d05b499f7cc1ff709",
+    "qualitylayer/package.json": "da3ababc57579ac4a663cdab182df95e26ebcdceb6af85e2714685ab58488a4a",
     "qualitylayer/patches/@xterm%2Faddon-webgl@0.19.0.patch": "7615d3c9473ee084dd41f5788872c7016b4473bf0571e87e9bd4d6c36319e1e0",
     "qualitylayer/patches/@xterm%2Fxterm@6.0.0.patch": "5aaf80d1f5af38fc45003cfa83bfef21c75b27d101071c14b4fc393dcf5573eb",
     "qualitylayer/scripts/public/check-licensing.ts": "316f14a7fdc75a51d0538fa3289d973dde91b2c7e107e44aa87a82ff1761c622",

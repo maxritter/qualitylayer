@@ -208,7 +208,6 @@ export class XtermView implements TerminalView {
   }
   private writeOutput(text: string) {
     if (!text || this.disposed) return
-    this.keyProtocol = keyProtocolAfter(text, this.keyProtocol)
     for (const echo of this.echoes) echo.output(text)
     if (!this.drawing()) {
       // A hidden window parses nothing. It keeps what arrives, up to a limit, and draws it when it
@@ -540,6 +539,15 @@ export class XtermView implements TerminalView {
     this.terminal.loadAddon(new Unicode11Addon())
     this.terminal.unicode.activeVersion = "11"
     ownNoQueries(this.terminal)
+    for (const prefix of ["<", ">", "="])
+      this.terminal.parser.registerCsiHandler({ prefix, final: "u" }, (params) => {
+        this.keyProtocol = keyProtocolSwitch(prefix, params, "u", this.keyProtocol)
+        return false
+      })
+    this.terminal.parser.registerCsiHandler({ prefix: ">", final: "m" }, (params) => {
+      this.keyProtocol = keyProtocolSwitch(">", params, "m", this.keyProtocol)
+      return false
+    })
     // Mouse tracking belongs to the controlling viewer. Watching keeps ordinary text selection.
     for (const final of ["h", "l"])
       this.terminal.parser.registerCsiHandler({ prefix: "?", final }, (params) => {
@@ -920,37 +928,21 @@ const isCtrlEnter = (event: KeyboardEvent): boolean =>
   event.ctrlKey &&
   !(event.metaKey || event.altKey || event.shiftKey || event.isComposing)
 
-/**
- * The key protocol in force after `text`, from the last switch in it: kitty push (`CSI > n u`) or
- * set (`CSI = n u`, n > 0) turns it on, a pop (`CSI < n u`) or `CSI = 0 u` off; modifyOtherKeys
- * level 2 or more (`CSI > 4 ; n m`) counts when kitty is off.
- */
-export function keyProtocolAfter(
-  text: string,
-  current: "kitty" | "modify" | null,
-): "kitty" | "modify" | null {
-  if (!text.includes("\x1b[")) return current
-  let state = current
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal output carries key-protocol escape sequences
-  for (const match of text.matchAll(/\x1b\[([<>=])(\d*)(?:;(\d*))?([um])/g))
-    state = keySwitch(match[1] ?? "", match[2] ?? "", match[3] ?? "", match[4] ?? "", state)
-  return state
-}
-
 type KeyProtocol = "kitty" | "modify" | null
 
 /** One protocol switch: kitty's push, pop or set (`u`), or modifyOtherKeys (`> 4 ; n m`). */
-function keySwitch(
+export function keyProtocolSwitch(
   lead: string,
-  first: string,
-  second: string,
-  final: string,
+  params: (number | number[])[],
+  final: "u" | "m",
   state: KeyProtocol,
 ): KeyProtocol {
+  const [first = 0, second = 0] = params
+  if (typeof first !== "number" || typeof second !== "number") return state
   if (final === "u") {
-    if (lead === "=") return Number(first || "0") > 0 ? "kitty" : null
+    if (lead === "=") return first > 0 ? "kitty" : null
     return lead === ">" ? "kitty" : null
   }
-  if (lead !== ">" || first !== "4" || state === "kitty") return state
-  return Number(second || "0") >= 2 ? "modify" : null
+  if (lead !== ">" || first !== 4 || state === "kitty") return state
+  return second >= 2 ? "modify" : null
 }

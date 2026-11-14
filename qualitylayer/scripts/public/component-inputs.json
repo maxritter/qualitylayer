@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "ab6404ff901642c3266f0fa70803f8a790d600f6",
-  "catalogSha256": "ca9c43349fb99a3255b819403c0008c226fa5abefcd3708bd878bb56e44efce8",
+  "sourceHead": "d860a770d002703cb68f87fc0c5f0fc67b93405e",
+  "catalogSha256": "15664dc44c98e701a466b4e382dd5f0cc0764c6760a54b74f3b77ffa0326b077",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -8551,7 +8551,7 @@
     },
     {
       "path": "qualitylayer/src/ui/agent-window/xterm-view.ts",
-      "sha256": "f716b54cea2db725dfd879e55a18e00be4c873641d7158d244617602c2d289e3",
+      "sha256": "cc27950b096037f985bc4ca818ec87444236ca565983c0d269050e249f6ca3bf",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11591,7 +11591,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/TaskAgentLaunch.tsx",
-      "sha256": "4af75e6cd3aea7d04800a541d957f3efc0089358c96f48aa61b9edd60bd8e386",
+      "sha256": "172faa4c347cbbf879305abf5180e73c85877eb7168acc6d0da41438343ccfee",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11727,7 +11727,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/task-agent-launch.css",
-      "sha256": "2ed1448f55535e8cdf9705dc6cd473c9fa5c2986923cb56332ced27304945a98",
+      "sha256": "82e41d4a52c05ee403602b425203515e589db07934ae2ae81aa8a3a099069e61",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

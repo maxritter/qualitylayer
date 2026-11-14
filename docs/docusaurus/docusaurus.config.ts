@@ -94,7 +94,7 @@ const config: Config = {
         content:
           "QualityLayer, software factory, agentic software factory, human in the loop, coding agents, SDLC, shift left, planning, test-first development, QualityLayer App, Claude Code, Codex, independent review",
       },
-      { property: "og:image:alt", content: "QualityLayer, quality by design: the software factory with you in the loop. Three steps: Plan, Implement, Verify" },
+      { property: "og:image:alt", content: "QualityLayer, quality by design: the software factory with you in the loop. Three steps: Plan, Implement, Verify. You approve the Plan and finished work; agents build, test and check." },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@maxritter" },
       { property: "og:type", content: "website" },

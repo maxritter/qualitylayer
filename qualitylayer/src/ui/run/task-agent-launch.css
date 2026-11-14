@@ -1,26 +1,56 @@
 .q-task-launch-folder {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  margin: 18px 0;
-  color: var(--ql-text-muted);
-  font-size: 12px;
-}
-.q-task-launch-folder > span {
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 20px;
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+  color: var(--ql-text-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+.q-task-launch-folder > span {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+}
+.q-task-launch-folder svg {
+  flex: none;
+}
+.q-task-launch-folder b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--ql-text);
 }
 .q-task-launch-folder code {
   display: block;
-  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   font-size: 12px;
-  line-height: 1.6;
-  color: var(--ql-text);
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ql-text-muted);
 }
 /* Start here keeps its distance from the agent and model row above it. */
 [data-testid="task-agent-launch"] > .q-btn {
   margin-top: 14px;
+}
+.q-task-launch-folder + .q-btn {
+  margin-top: 0;
 }
 /* Ready to build (4 November 2026): one compact card, a status mark, the Plan's size and two moves. */
 .q-agent-ready {

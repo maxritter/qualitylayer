@@ -31,6 +31,19 @@ export function taskLaunchKey(task: Pick<TaskDetail, "id" | "stage" | "gate">): 
   return `${task.id}:${planningLaunch(task) ? "planning" : "build"}`
 }
 
+function checkoutContext(path: string) {
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  const name = parts.at(-1) ?? path
+  if (path.length <= 46 || parts.length <= 3) return { name, shown: path }
+  const separator = path.includes("\\") ? "\\" : "/"
+  const prefix = path.startsWith("\\\\")
+    ? `\\\\${parts[0]}`
+    : path.startsWith("/")
+      ? `/${parts.slice(0, 2).join("/")}`
+      : parts[0]
+  return { name, shown: [prefix, "…", ...parts.slice(-2)].join(separator) }
+}
+
 export function TaskAgentLaunch({
   task,
   config,
@@ -113,6 +126,7 @@ export function TaskAgentLaunch({
   // A task from before the three steps opens as files only: nothing continues it.
   const earlier = task.earlier === true
   const ended = task.archived || task.stage === "abandoned" || earlier
+  const folder = task.checkout ? checkoutContext(task.checkout) : null
   const ready =
     config !== null && installed != null && launchAgentAvailable(agent, installed) && !ended
   const purpose = {
@@ -303,13 +317,18 @@ export function TaskAgentLaunch({
             location={false}
           />
           {task.checkout ? (
-            <div className="q-task-launch-folder">
-              <span>
+            <fieldset
+              className="q-task-launch-folder"
+              aria-label={`Project folder: ${task.checkout}`}
+            >
+              <span aria-hidden="true">
                 <FolderIcon size={14} aria-hidden="true" />
-                Project folder
+                <b title={task.checkout}>{folder?.name}</b>
               </span>
-              <code title={task.checkout}>{task.checkout}</code>
-            </div>
+              <code title={task.checkout} aria-hidden="true">
+                {folder?.shown}
+              </code>
+            </fieldset>
           ) : null}
           <button
             type="button"

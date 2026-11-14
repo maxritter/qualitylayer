@@ -142,7 +142,7 @@ async function captureSource(ctx: Ctx, task: Task): Promise<string> {
 }
 
 const SHOT_USAGE =
-  "usage: qualitylayer evidence shot <key> --url <loopback URL> --run <id> --mode scripted|real-session [--step A<n>] [--width <px>] [--height <px>] [--theme light|dark] [--wait-for <selector>] [--click <selector>]... [--crop <selector>]"
+  "usage: qualitylayer evidence shot <key> --url <loopback URL> --run <id> --mode scripted|real-session [--step A<n>] [--width <px>] [--height <px>] [--theme light|dark] [--wait-for <selector>] [--click <selector>]... [--crop <selector>]\nkey: use the Plan's named surface; a single-file task artifact artifacts/page.html#section uses page#section, keeping the section"
 const ADD_USAGE =
   "usage: qualitylayer evidence add --run <id> --mode scripted|real-session [--step A<n>] <file>   (a PNG picture or a text output of that run)"
 
@@ -279,7 +279,10 @@ export async function evidenceCmd(given: Ctx, called: string[]): Promise<Result<
   if (!found.ok) return found
   const task = found.data
   const surface = (await screenSurfaces(ctx, task)).find((surface) => surface.key === key)
-  if (!surface) return bad(`No planned screen surface named ${key}`)
+  if (!surface)
+    return bad(
+      `No planned screen surface named ${key}. For artifacts/page.html#section, use page#section. For a separate capture, use qualitylayer evidence add.`,
+    )
   const width = flags.width === undefined ? surface.width : Number(flags.width)
   if (!Number.isInteger(width) || width < 240 || width > 8000)
     return bad("--width must be a whole number from 240 to 8000")

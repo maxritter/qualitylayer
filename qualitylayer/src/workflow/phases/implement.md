@@ -20,9 +20,10 @@ without a report, until the page turns to the person.
 2. **Write the cards** under *Task cards* in `agents/{implement_doc}` from its template, numbered `T1`,
    `T2` … across the task, each under its slice. A card says what done is: every behaviour it adds and
    how each fails, each with a test that names two real inputs, one of them awkward. A card that
-   implements approved copy quotes it. Its **Files** are every file it touches: search for each name it
-   adds to, renames or removes, and include fixtures, shared helpers and the tests of the old
-   behaviour. Repository paths only, lasting models included.
+   implements approved copy quotes it. Its **Files** are the repository source paths it creates, edits,
+   renames or removes: search for each affected name, including tests, fixtures, shared helpers, docs
+   and lasting models. Task records, evidence and draft artifacts are never Files. Use `none` when no
+   source changes, including evidence-only qualification; put inspected paths in **Read only**.
 3. **Order the proof.** *Proof order*: one line per Done means step, `A3 · after slice 2`, so each
    step runs as soon as its slice is committed. Look once for gaps in the steps (blockers, cancel
    paths, boundary inputs, two at once): a missing step is added to the Plan with `qualitylayer plan

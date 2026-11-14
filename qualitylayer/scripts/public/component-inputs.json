@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "55ad71e7a65d8759e6b97a3837922457d00147c8",
-  "catalogSha256": "ea9279da96662682f23c3878fcdc79e20ec8215daee180c97e64ffdf2adcabd4",
+  "sourceHead": "ab6404ff901642c3266f0fa70803f8a790d600f6",
+  "catalogSha256": "ca9c43349fb99a3255b819403c0008c226fa5abefcd3708bd878bb56e44efce8",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -215,7 +215,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/evidence.ts",
-      "sha256": "5b4d7638206c9ff8c959eefefa59c5c9aada1873b8c50e61b19c5af2c231e0d9",
+      "sha256": "8e4d15ad05e272f56a0fa9fd42604d30336b443f87b5a11c68d0a841d5d8b473",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1439,7 +1439,7 @@
     },
     {
       "path": "qualitylayer/src/core/combined-review.ts",
-      "sha256": "6c7e77e9eb22d61bfa04e6871c1977e1ac23f3c8c24b52272cafaa484d3c32cd",
+      "sha256": "759cd90d909487738815f96e939431ca1d12cb586ddac836e17946b2020dc2d4",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6375,7 +6375,7 @@
     },
     {
       "path": "qualitylayer/src/main.ts",
-      "sha256": "bb1f45f363f1da55fcafed04420caa41d785ebbc807e034f822a0be76fa2ea67",
+      "sha256": "00fe045fcd4a1a324c54c17cc8243cb5d01d09fd45176f63afefdc6824245920",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14559,7 +14559,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/implement.md",
-      "sha256": "abf5e849d35cc269c39139c9b0cd5c5f3deec922a132d0e2cc798c3bba7a7d30",
+      "sha256": "ee7e4dce7ded5b7766677d46a89c1c916be23e584c801eb0e9d814e32c6debba",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14583,7 +14583,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/judge.md",
-      "sha256": "78ebd437db4617b66e467ae95737ec6ebc20db12cfb41f849a1fd383492ed1a9",
+      "sha256": "350c8a518a0eb9f466a4e98f754ec01ec28824faf27515e8bee4408b33372f67",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14679,7 +14679,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/verify-judge.md",
-      "sha256": "d535132de780143c343b606e17b655472cf9d7fae666c46845d7e082e870dc51",
+      "sha256": "ca4bc856c1b198b286df29145fb9c2536a34d3db61b99713214f76a05129d87f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

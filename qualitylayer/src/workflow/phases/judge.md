@@ -14,8 +14,12 @@ speculative edge case, a wish beyond the Plan), is a `[NOTE]` with its evidence:
 answers it Taken or Kept, and the person sees the kept ones. A step that passes on a retry is
 `[PASS]` with a note on the retry.
 
-Finish the assignment: write its iteration and every verdict under *Verification* in `agents/{verify_doc}`,
-validate it, and report progress `done` when the brief names an id. Use its exact invocation and read *Your
+If the person requires no file changes, keep normal access and return your review, exact verdicts
+and test/doc proposals instead of writing them. The session records them verbatim with your identity
+and evidence, without supplying its own judgement.
+
+Otherwise, finish the assignment: write its iteration and every verdict under *Verification* in
+`agents/{verify_doc}`, validate it, and report progress `done` when the brief names an id. Use its exact invocation and read *Your
 documents* in full; this brief already holds what the build left for you and, on a later round, the
 lines that failed. Open a file under *Read on demand* when a verdict needs it. Keep each verdict on the
 pinned commit even if HEAD moves (report the move).
@@ -58,7 +62,7 @@ A `### Security` block read the change first: cite it and add only what it misse
 against the diff that no trust boundary is crossed.
 
 `[NOTE]` is real but small and never fails the round. Every `[FAIL]`, `[MISSING]` and `[NOTE]` opens with
-one short plain sentence without paths or commands. Record each check as you finish it with `qualitylayer
+one short plain sentence without paths or commands. When writes are allowed, record each check as you finish it with `qualitylayer
 verdict <assignment> <item> pass|fail|missing|user|note "<text>" [--evidence <returned file>] [--run <run
 id> --mode scripted|real-session]`; items are `acceptance A<n>` and `review`, and the ones this brief
 lists (`scenario <n>`, `done <n>`, `dod T<n>`, `check`). A runtime pass cites the capture command's
@@ -68,8 +72,9 @@ recorded file is never edited, and a counted round's file is replaced only by a 
 each acceptance step's picture or output with `qualitylayer evidence shot <key> --url <loopback-url>
 --run <run id> --mode ... --step A<n>` (a built screen) or `qualitylayer evidence add --run <run id>
 --mode ... --step A<n> <file>`: one run id for all the Done means steps, `real-session` only when an
-agent session ran it. Use the returned path unchanged; do not invent or move it to another folder.
-At the end append one block to *Verification*:
+agent session ran it. For `artifacts/page.html#section`, the shot key is `page#section`. Use the returned
+path unchanged; do not invent or move it to another folder. When writes are allowed, append one block
+to *Verification*:
 
 ```text
 ### Iteration 1
@@ -86,4 +91,4 @@ At the end append one block to *Verification*:
 ```
 
 `**Result:** pass` needs every line `[PASS]`, `[NOTE]` or `[USER]` and proof for runtime verdicts.
-Change only the report and permitted tests/docs. Report the result, failing verdicts and verification gaps.
+Change only files permitted above. Report the result, failing verdicts and verification gaps.

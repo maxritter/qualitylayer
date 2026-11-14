@@ -54,7 +54,7 @@ export function combinedSection(repoRoot: string, receipts: readonly SourceRecei
   return [
     "## You also add the missing tests",
     "",
-    "You are this change's **Independent review**, and you did not write any of the code. You also add the tests nobody wrote. Do both, the tests first.",
+    "You are this change's **Independent review**, and you did not write any of the code. Add the missing tests first, subject to the judge brief's no-file-change rule: propose tests/docs instead of editing them when it applies.",
     "",
     `1. **The missing tests, in the checkout at \`${repoRoot}\`.** Read the diff once and add the tests nobody wrote: for each function, command or screen the change adds or alters, the empty or malformed input, the boundary, the error path a person sees. Name the plausible wrong implementation each test would reject; leave out a test none could fail. Expected values come from the contract, never from what the code prints. Make a doc the change made wrong true. Do not refactor, rename or restructure. Leave every file you write unstaged (tests and docs only, never production code), run each new test once, and list the files in your report: the session commits them after your report.`,
     "2. **A new test that fails has found a defect.** Keep it out of the checkout, and record it in your iteration as `[FAIL] review: D<n> · <the test and what it showed>`. The fix round writes the test and fixes the code.",
@@ -64,7 +64,7 @@ export function combinedSection(repoRoot: string, receipts: readonly SourceRecei
     "",
     reuse,
     "",
-    "Say in the review line what you added: `tests: <n> tests added · docs: <paths or no doc impact>`.",
+    "Say in the review line what you added: `tests: <n> tests added · docs: <paths or no doc impact>`. Label proposals as proposals.",
   ].join("\n")
 }
 

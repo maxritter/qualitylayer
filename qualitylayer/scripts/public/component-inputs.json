@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "f1af6c91ae1065af51c043844e81c840997172b2",
-  "catalogSha256": "1664a41d3ddcf7f989851dc14199696a82b81155f839f4e3f0b4e52fa0bca39a",
+  "sourceHead": "55ad71e7a65d8759e6b97a3837922457d00147c8",
+  "catalogSha256": "ea9279da96662682f23c3878fcdc79e20ec8215daee180c97e64ffdf2adcabd4",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -1007,7 +1007,7 @@
     },
     {
       "path": "qualitylayer/src/core/artifact/store.ts",
-      "sha256": "f2a3bd0ccf9e5841d0532ec0557f29f5af681d4c4808fad457f0db4d0b43890a",
+      "sha256": "66d85385d00347d18c8128017cf73e66f01c7ab50c5c37ca13b5ffc5ae380c56",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3095,7 +3095,7 @@
     },
     {
       "path": "qualitylayer/src/core/instructions.ts",
-      "sha256": "fb845737965cd997249dc954dc731f7861c7d66e2c08fb3e8d5e5c2598b9abfd",
+      "sha256": "9d21cf46973d599097a3c529b789e80c63263f7de5bc5ea7201eb4c0d3d7a3d9",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3151,7 +3151,7 @@
     },
     {
       "path": "qualitylayer/src/core/integrations/tickets.ts",
-      "sha256": "5b018c28f707591e309fb972ee8013b2a0e90aee1d4614acb230910e0468703f",
+      "sha256": "194eccb3e486803be16936e3b17d3aa0a5fadb8c334eabcc2eaf201c500bc10a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3743,7 +3743,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/privacy.ts",
-      "sha256": "efe27e982a348e29101cd4c8d2c6a8755ea01b9d3dcb9f89bb9217815ee866a8",
+      "sha256": "58f4b5f7f975d4f934253e5d230317d0b955ffe5feccd09785e9aecb7313dcc2",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5023,7 +5023,7 @@
     },
     {
       "path": "qualitylayer/src/core/review/panel.ts",
-      "sha256": "7f00c890781dd4c9691b00289f62ec6355ac4e809c38cd32e7772043e3958cfb",
+      "sha256": "a05087633c9a08249ba538bd78f04d2b9b42baf29f6d090fa2c0e864c81deab3",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5927,7 +5927,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/items.ts",
-      "sha256": "6a2c5d4f0f0b9eb2236375b9ce7874659aa260e8347ff2d23ed669421b63a644",
+      "sha256": "269c15a0ac11878b8e42743e1a2a03eb2fedf5c1d3b2d89a9e715ba163bbea40",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6047,7 +6047,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/session-proof.ts",
-      "sha256": "44aa0d34c3dd8fa87c4018a4abad0710c97b2b124afc5a50b44773a517a46fb0",
+      "sha256": "a405e6c6f63622e3e75ba921adcd85c86a19db84b70684dbd117b1a4b5a3b9f4",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7079,7 +7079,7 @@
     },
     {
       "path": "qualitylayer/src/server/machines/hosts.ts",
-      "sha256": "1001eb5990da6c1770f0ae760e4ac07a7a21154563c14049bc027745823f6d63",
+      "sha256": "01dbbf15eb8fbac904287bdfb8b8ced05e0b4908ac79148a71d0a37abc1265fb",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7135,7 +7135,7 @@
     },
     {
       "path": "qualitylayer/src/server/machines/nearby.ts",
-      "sha256": "bbb2de027241146a84d869e5e626f24745ed61f46b81fee0eaca06282a7df805",
+      "sha256": "954299f6ad3f31f05e4041c84966a22268fcc84304730e7565569cd9d4272f66",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7143,7 +7143,7 @@
     },
     {
       "path": "qualitylayer/src/server/machines/pairing.ts",
-      "sha256": "2ed69d0ace311de87561514b34d340492086a02b84bca2c52e4694f0b7af8335",
+      "sha256": "8c04cbeae197a5afb40a6054c3614235a066997bcf966352f06a846c36b1787e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7199,7 +7199,7 @@
     },
     {
       "path": "qualitylayer/src/server/machines/ssh-files.ts",
-      "sha256": "909bed002674aca5dd90eb00f46631ca6f3f6d7f53b5e0e026d8fd2bb5690078",
+      "sha256": "4a0e5105ade0475009b9696fc8a7b86210eae9411f7317943227e0bc9e3fddb5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10839,7 +10839,7 @@
     },
     {
       "path": "qualitylayer/src/ui/new-task-link.tsx",
-      "sha256": "c3257967a6272b0859c1b0e450e2ffbd9140d5cd6b1b77ca8a0fb36612c928ad",
+      "sha256": "ed0002ef344859cede7250da563f3c848e05be25d13ec2327157555b99bb6dd7",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10983,7 +10983,7 @@
     },
     {
       "path": "qualitylayer/src/ui/quick-ask/sent.ts",
-      "sha256": "c25db527db006655023615f4393766c6337f7ef33db69cdcb9288228d7c6ebba",
+      "sha256": "e18c87c618b6927bbd96d02b190f53d0ee33d80097613ac4bffbf7e11248b789",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11335,7 +11335,7 @@
     },
     {
       "path": "qualitylayer/src/ui/review-workspace/ReviewWorkspace.tsx",
-      "sha256": "d6322b377ba0f261896bc6b13dcbe7b11fa35d0f40350442659445e7217c01fa",
+      "sha256": "085a8df41c7609828056e750e62ad9c4cb4d39e6e49d1b482d737f81eb15a9c8",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12959,7 +12959,7 @@
     },
     {
       "path": "qualitylayer/src/ui/step-page/kit/LeadBullets.tsx",
-      "sha256": "7f330558de26bcf93ea4c0e3ad5edb2b7d55a9cdfd0e3bb926c236f561a0bfc5",
+      "sha256": "0dace4030a05ff03f75a65bad65d915e602d200e1035e30174dc3603e075eaa4",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13263,7 +13263,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/plan/Approach.tsx",
-      "sha256": "b3d2ad02aae2c56802ac273a8eca58d216f4be4078bd8ee7c1018e9aa351b6a4",
+      "sha256": "2c053716db9810a907b5a6b3da0619e418ba0f0f18f443e46ab85fe6c4f0ddc1",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13367,7 +13367,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/plan/scope-model.ts",
-      "sha256": "5257cabb312baa6f637679fe1ca15e7680d589ec1392c1eed37361774f0cc88f",
+      "sha256": "7b975168a848c8eedbc4a3a6b9f0cb0049fb7636e9e45661d3691e6f8d3098d5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14983,7 +14983,39 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/readiness.ts",
-      "sha256": "51e051e42b5d4950dfaec0aba576a8f974f1c0b7bfcb041093a7c36c3611ce2f",
+      "sha256": "07cf0693fe1004865d51298aa0483257bc0e717a55f5e8f81a3854fe15e6a157",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/core/artifact/worktree-pointer.ts",
+      "sha256": "3ff93ac4f67b879f150c60c9e7bbdeb951099e525c3255e64bb936007ae8626b",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/core/review/line-readers.ts",
+      "sha256": "e348fb69bf00f994205232d2cef20d6b3aa6cc0e1e775402a2496aff622a317b",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/core/text-boundaries.ts",
+      "sha256": "d0c38d9bf8f163299c286c06da1f0cc2e551f1e139b51b0fe1d4c5ea29525c55",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/server/machines/system-name.ts",
+      "sha256": "8d82af7f09e73fbdbe56e3ec20f0c95113615c06b830df0a6c82add74be6e86e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

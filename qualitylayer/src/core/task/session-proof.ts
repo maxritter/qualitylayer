@@ -3,7 +3,12 @@ import { createHash } from "node:crypto"
 import { dirname, isAbsolute, join, relative, sep } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import type { Ctx } from "../../ctx.ts"
-import { isCompressedRollout, isRolloutOf, readCompressed } from "../agents/codex-rollout.ts"
+import {
+  isCompressedRollout,
+  isRolloutOf,
+  oncePerSession,
+  readCompressed,
+} from "../agents/codex-rollout.ts"
 import { cursorUserMessage } from "../agents/cursor-messages.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import {
@@ -288,9 +293,10 @@ async function transcript(ctx: Ctx, request: SessionRequest): Promise<string | n
       for (const month of await names(ctx, join(sessions, year))) {
         for (const day of await names(ctx, join(sessions, year, month))) {
           const dir = join(sessions, year, month, day)
-          const found = (await names(ctx, dir)).filter((name) => isRolloutOf(name, session))
-          // Codex leaves the compressed rollout once it has written the plain one back.
-          if (found.length === 2) found.sort().pop()
+          const found = oncePerSession(
+            (await names(ctx, dir)).filter((name) => isRolloutOf(name, session)),
+            (name) => name,
+          )
           if (found.length > 1) return null
           if (found.length === 1) {
             file = join(dir, found[0] as string)

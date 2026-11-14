@@ -1,4 +1,5 @@
 import type { MemoryRecord } from "../../memory-contracts.ts"
+import { skipWhitespace } from "../text-boundaries.ts"
 export function safeText(text: string): void {
   if (Buffer.from(text, "utf8").toString("utf8") !== text || text.includes(String.fromCharCode(0)))
     throw new Error("Memory must contain valid text")
@@ -26,9 +27,20 @@ export function publicationText(record: MemoryRecord): void {
   )
     throw new Error("Personal preferences, contact details and home paths cannot be shared")
   if (
-    /(?:\b(?:user prompt|system prompt|transcript|terminal stream)\b|^\s*(?:USER|ASSISTANT|SYSTEM):)/im.test(
-      text,
-    )
+    /\b(?:user prompt|system prompt|transcript|terminal stream)\b/i.test(text) ||
+    hasRoleLine(text)
   )
     throw new Error("Prompts, transcripts and terminal streams cannot be shared")
+}
+
+function hasRoleLine(text: string): boolean {
+  let at = 0
+  while (at < text.length) {
+    at = skipWhitespace(text, at)
+    if (/^(?:USER|ASSISTANT|SYSTEM):/i.test(text.slice(at, at + 10))) return true
+    // The next line start, including bare CR and Unicode line separators, may name a role.
+    while (at < text.length && !/[\r\n\u2028\u2029]/.test(text.charAt(at))) at++
+    if (at < text.length) at++
+  }
+  return false
 }

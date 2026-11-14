@@ -1,6 +1,7 @@
 // What the Plan page reads out of its Scope section, apart from any drawing: its two lists. Pure,
 // so a test reads it as it is.
 
+import { isLineText, skipWhitespace, trimmedLineTail } from "../../../core/text-boundaries.ts"
 import { bodyOf } from "../../step-page/sections.ts"
 
 export type Scope = { inScope: string[]; outOfScope: string[] }
@@ -8,8 +9,9 @@ export type Scope = { inScope: string[]; outOfScope: string[] }
 const bulletsOf = (lines: string[]): string[] => {
   const out: string[] = []
   for (const line of lines) {
-    const bullet = /^[-*+]\s+(.*)$/.exec(line)
-    if (bullet?.[1] !== undefined) out.push(bullet[1].trim())
+    const start = skipWhitespace(line, 1)
+    const bullet = /^[-*+]/.test(line) && start > 1 && isLineText(line.slice(start))
+    if (bullet) out.push(line.slice(start).trim())
     else if (/^\s+\S/.test(line) && out.length > 0) out[out.length - 1] += ` ${line.trim()}`
   }
   return out
@@ -25,7 +27,7 @@ export function scopeOf(section: string): Scope {
     lines = []
   }
   for (const line of bodyOf(section).split(/\r?\n/)) {
-    const head = /^###\s+(.+?)\s*$/.exec(line)?.[1]
+    const head = line.startsWith("###") ? (trimmedLineTail(line, 3, 1) ?? undefined) : undefined
     if (head !== undefined) {
       close()
       into = /^out of\b/i.test(head) ? "outOfScope" : /^in\b/i.test(head) ? "inScope" : null

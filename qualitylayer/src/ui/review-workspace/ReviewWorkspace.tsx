@@ -183,7 +183,7 @@ function LineOpener({
 }) {
   const [line, setLine] = useState("")
   const open = (from: HTMLElement) => {
-    const [a, b] = line.split(/\s*[-–]\s*/).map(Number)
+    const [a, b] = line.split(/[-–]/).map(Number)
     if (a === undefined || !Number.isInteger(a) || a < 1) return
     const end = b !== undefined && Number.isInteger(b) && b >= a ? b : a
     const box = from.getBoundingClientRect()

@@ -14,12 +14,13 @@ import {
 import { useEffect, useState } from "react"
 import { KIND_LABEL, parseTicketLink, type TicketLink } from "../core/integrations/links.ts"
 import type { TicketPreview } from "../core/integrations/tickets.ts"
+import { trimEndCharacters } from "../core/text-boundaries.ts"
 import "./new-task-link.css"
 
 /** The first ticket link in what the person typed, and their words without it. */
 export function ticketIn(text: string): { link: TicketLink; words: string } | null {
   for (const match of text.matchAll(/https:\/\/\S+/g)) {
-    const link = parseTicketLink(match[0].replace(/[).,;]+$/, ""))
+    const link = parseTicketLink(trimEndCharacters(match[0], ").,;"))
     if (link !== null) return { link, words: text.replace(match[0], "").trim() }
   }
   return null

@@ -6,6 +6,7 @@ import { join } from "node:path"
 import type { Ctx } from "../ctx.ts"
 import { FLOW_STEPS, type FlowStepId } from "./flow.ts"
 import type { Task } from "./task/store.ts"
+import { trimEndCharacters } from "./text-boundaries.ts"
 
 export const INSTRUCTIONS_MAX_CHARS = 12_000
 const CUT_NOTE = "(cut at 12,000 characters)"
@@ -52,13 +53,7 @@ export function withThreeStepHeadings(text: string): string {
       continue
     }
     if (!line.startsWith("## ")) continue
-    const step =
-      EARLIER_HEADINGS[
-        line
-          .slice(3)
-          .replace(/[ \r]+$/, "")
-          .toLowerCase()
-      ]
+    const step = EARLIER_HEADINGS[trimEndCharacters(line.slice(3), " \r").toLowerCase()]
     if (step === undefined) continue
     const label = FLOW_STEPS.find((s) => s.id === step)?.label ?? step
     lines[at] = `## ${label}${line.endsWith("\r") ? "\r" : ""}`

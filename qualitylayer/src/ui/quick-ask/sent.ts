@@ -28,12 +28,17 @@ function json(text: string | undefined): string | undefined {
   }
 }
 
+function withoutPasteEnd(text: string): string {
+  const end = text.trimEnd().length
+  const tag = "</pasted_content>"
+  if (text.slice(Math.max(0, end - tag.length), end).toLowerCase() !== tag) return text
+  return text.slice(0, end - tag.length).trimEnd()
+}
+
 /** Undefined for an ordinary message, so it renders exactly as before. */
 export function readSentMessage(recorded: string): SentMessage | undefined {
   // A long typed message is recorded as a paste: the wrapper is the agent's, not the person's words.
-  const text = recorded
-    .replace(/^\s*<pasted_content\b[^>]*>\s*/i, "")
-    .replace(/\s*<\/pasted_content>\s*$/i, "")
+  const text = withoutPasteEnd(recorded.replace(/^\s*<pasted_content\b[^>]*>\s*/i, ""))
   const at = text.startsWith(HEAD) ? 0 : text.indexOf(`\n\n${HEAD}\n`)
   if (at < 0) return undefined
   let before = at === 0 ? "" : text.slice(0, at)

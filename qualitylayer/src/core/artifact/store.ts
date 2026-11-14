@@ -42,6 +42,7 @@ import {
 } from "./format.ts"
 import { parseArtifactReference } from "./reference.ts"
 import { type ProductTokens, withTokens } from "./tokens.ts"
+import { worktreePointer } from "./worktree-pointer.ts"
 
 /** Where an artifact belongs: a task (its folder and runtime folder) or a project's repository. */
 export type ArtifactHome =
@@ -487,11 +488,9 @@ const ARTIFACT_STAGE_EXCLUDES = [
 async function stageGitDirectory(project: AnchoredRoot, root: string, commonDir: string) {
   if (commonDir === join(root, ".git")) return project.directory(".git")
   const marker = project.read(".git", 4096)
-  const found =
-    marker &&
-    /^gitdir: ([^\r\n]+)\s*$/.exec(new TextDecoder("utf8", { fatal: true }).decode(marker))
+  const found = marker && worktreePointer(new TextDecoder("utf8", { fatal: true }).decode(marker))
   if (!found) throw new Error("Registered worktree Git pointer is invalid")
-  const admin = resolve(root, found[1] as string)
+  const admin = resolve(root, found)
   const common = await openRegisteredRoot(commonDir, async () => project.assertCurrentRoot())
   try {
     const scope = relative(commonDir, admin)

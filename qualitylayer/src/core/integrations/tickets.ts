@@ -209,13 +209,36 @@ const cut = (text: string, max: number) =>
   text.length <= max ? text : `${text.slice(0, max).trimEnd()}\n[… cut; the rest is at the link]`
 
 /** Images in Markdown stay links: `![alt](url)` reads `[image: alt](url)`. */
-const imagesAsLinks = (text: string) =>
-  text
-    .replace(
-      /!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g,
-      (_, alt: string, url: string) => `[image${alt ? `: ${alt}` : ""}](${url})`,
+function imagesAsLinks(text: string): string {
+  const parts: string[] = []
+  let kept = 0
+  let at = 0
+  while (at < text.length) {
+    const start = text.indexOf("![", at)
+    if (start < 0) break
+    const bracket = text.indexOf("]", start + 2)
+    if (bracket < 0) break
+    at = bracket + 1
+    if (text.charAt(at) !== "(") continue
+    const urlStart = at + 1
+    if (urlStart === text.length || /[)\s]/.test(text.charAt(urlStart))) continue
+    const end = text.indexOf(")", urlStart)
+    if (end < 0) break
+    let urlEnd = urlStart
+    while (urlEnd < end && !/\s/.test(text.charAt(urlEnd))) urlEnd++
+    const alt = text.slice(start + 2, bracket)
+    parts.push(
+      text.slice(kept, start),
+      `[image${alt ? `: ${alt}` : ""}](${text.slice(urlStart, urlEnd)})`,
     )
+    at = end + 1
+    kept = at
+  }
+  parts.push(text.slice(kept))
+  return parts
+    .join("")
     .replace(/<img\b[^>]*\bsrc="([^"]+)"[^>]*>/gi, (_, url: string) => `[image](${url})`)
+}
 
 const quoted = (text: string) =>
   imagesAsLinks(text.replace(/\r\n?/g, "\n").trim())

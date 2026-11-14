@@ -58,6 +58,7 @@ import {
   repairedMachine,
   type StoredMachine,
 } from "./store.ts"
+import { linuxSystemName } from "./system-name.ts"
 
 export type StepKey =
   | "find"
@@ -211,11 +212,7 @@ async function systemWords(ssh: Ssh, target: string, uname: string): Promise<str
   } else {
     const said = await ssh.run(target, ["cat", "/etc/os-release"], { timeoutMs: 15_000 })
     const pretty = said.ok ? /^PRETTY_NAME="?([^"\n]+)"?/m.exec(said.out)?.[1] : undefined
-    if (pretty !== undefined)
-      name = pretty
-        .replace(/\s+LTS$/, "")
-        .replace(/(\d+\.\d+)\.\d+/, "$1")
-        .slice(0, 40)
+    if (pretty !== undefined) name = linuxSystemName(pretty)
   }
   return arch === "" ? name : `${name} · ${arch}`
 }

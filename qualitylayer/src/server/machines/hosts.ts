@@ -5,6 +5,7 @@
 
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { skipWhitespace, trimmedLineTail } from "../../core/text-boundaries.ts"
 import type { Ctx } from "../../ctx.ts"
 import { isTarget } from "./store.ts"
 
@@ -14,8 +15,16 @@ const isPlain = (name: string): boolean => !/[*?!]/.test(name) && isTarget(name)
 /** The plain `Host` names of an ssh config, in its order, each once. */
 export function hostsOf(config: string): string[] {
   const names = config.split(/\r?\n/).flatMap((line) => {
-    const found = /^\s*host(?:\s+|\s*=\s*)(.+?)\s*$/i.exec(line)
-    return found === null ? [] : (found[1] ?? "").split(/\s+/).map((name) => name.replace(/"/g, ""))
+    const start = skipWhitespace(line, 0)
+    if (!/^host/i.test(line.slice(start, start + 4))) return []
+    const afterHost = start + 4
+    let tail = trimmedLineTail(line, afterHost, 1)
+    if (tail === null) {
+      const equals = skipWhitespace(line, afterHost)
+      if (line.charAt(equals) !== "=") return []
+      tail = trimmedLineTail(line, equals + 1, 0)
+    }
+    return tail === null ? [] : tail.split(/\s+/).map((name) => name.replace(/"/g, ""))
   })
   return [...new Set(names.filter(isPlain))]
 }

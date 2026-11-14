@@ -8,6 +8,7 @@
 import { appendFile, chmod, mkdir, readFile, writeFile } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
 import { dirname, join } from "node:path"
+import { trimEdgeCharacters } from "../../core/text-boundaries.ts"
 import { hostsOf } from "./hosts.ts"
 import type { LocalRun } from "./local.ts"
 
@@ -219,10 +220,7 @@ export function hostBlock(files: SshFiles, entry: HostEntry): string {
 export async function freeAlias(files: SshFiles, wanted: string): Promise<string> {
   const taken = new Set(hostsOf(await readOr(files.config, "")).map((name) => name.toLowerCase()))
   const base =
-    wanted
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^[-.]+|[-.]+$/g, "") || "machine"
+    trimEdgeCharacters(wanted.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-.") || "machine"
   let alias = base
   for (let n = 2; taken.has(alias); n++) alias = `${base}-${n}`
   return alias

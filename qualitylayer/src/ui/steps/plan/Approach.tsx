@@ -3,6 +3,7 @@
 // The heading counts the changes. Text in another shape stays the document's own drawing.
 
 import { SplitIcon } from "lucide-react"
+import { isLineText, skipWhitespace } from "../../../core/text-boundaries.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { LeadBullets } from "../../step-page/kit/LeadBullets.tsx"
 import { bodyOf } from "../../step-page/sections.ts"
@@ -14,8 +15,14 @@ export type ApproachView = {
   bullets: string[]
 }
 
-const LABEL = /^\*\*(Chosen|Gives|Costs):\*\*\s*(.+)$/
-const BULLET = /^[-*]\s+(.+)$/
+const LABEL = /^\*\*(Chosen|Gives|Costs):\*\*/
+
+function approachTail(line: string, at: number, requiredSpace: boolean): string | null {
+  const start = skipWhitespace(line, at)
+  if (requiredSpace && start === at) return null
+  const text = line.slice(start)
+  return text !== "" && isLineText(text) ? text : null
+}
 
 /** The Approach's labelled lines and bullets, or null when a line has another shape. */
 export function approachOf(markdown: string): ApproachView | null {
@@ -24,10 +31,11 @@ export function approachOf(markdown: string): ApproachView | null {
     const line = raw.trim()
     if (line === "") continue
     const label = LABEL.exec(line)
-    const bullet = BULLET.exec(line)
-    if (label !== null && view.bullets.length === 0)
-      view.labels.push({ label: label[1] as string, text: label[2] as string })
-    else if (bullet !== null) view.bullets.push(bullet[1] as string)
+    const labelled = label === null ? null : approachTail(line, label[0].length, false)
+    const bullet = /^[-*]/.test(line) ? approachTail(line, 1, true) : null
+    if (label !== null && labelled !== null && view.bullets.length === 0)
+      view.labels.push({ label: label[1] as string, text: labelled })
+    else if (bullet !== null) view.bullets.push(bullet)
     else return null
   }
   return view.labels.length === 0 ? null : view

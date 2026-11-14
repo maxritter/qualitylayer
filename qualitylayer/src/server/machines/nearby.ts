@@ -5,6 +5,7 @@
  */
 
 import { hostname, userInfo } from "node:os"
+import { isLineText, skipWhitespace } from "../../core/text-boundaries.ts"
 import type { LocalRun } from "./local.ts"
 
 export type Nearby = { host: string; user: string }
@@ -14,8 +15,24 @@ const BROWSE_MS = 1500
 /** The instance names `dns-sd -B` printed. */
 export function instancesIn(out: string): string[] {
   const names = out.split("\n").flatMap((line) => {
-    const found = /\sAdd\s+\d+\s+\d+\s+local\.\s+_ssh\._tcp\.\s+(.+?)\s*$/.exec(line)
-    return found === null ? [] : [found[1] as string]
+    const end = line.trimEnd().length
+    const lastBreak = Math.max(
+      line.lastIndexOf("\r", end - 1),
+      line.lastIndexOf("\n", end - 1),
+      line.lastIndexOf("\u2028", end - 1),
+      line.lastIndexOf("\u2029", end - 1),
+    )
+    const prefixes = line.matchAll(/\sAdd\s+\d+\s+\d+\s+local\.\s+_ssh\._tcp\./g)
+    for (const prefix of prefixes) {
+      const after = prefix.index + prefix[0].length
+      const start = skipWhitespace(line, after)
+      if (start === after) continue
+      if (start < end && start > lastBreak) return [line.slice(start, end)]
+      if (start === line.length)
+        for (let at = line.length - 1; at > after; at--)
+          if (isLineText(line.charAt(at))) return [line.charAt(at)]
+    }
+    return []
   })
   return [...new Set(names)]
 }

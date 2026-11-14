@@ -1,4 +1,5 @@
 import { shellStatus } from "../../core/interaction-shell/status.ts"
+import { trimEndCharacters } from "../../core/text-boundaries.ts"
 import type { TaskDetail } from "../api.ts"
 import type { ImplementView } from "../step-page/state.ts"
 
@@ -12,7 +13,7 @@ export function stepIsWorking(task: TaskDetail, now = Date.now()): boolean {
 }
 
 const named = (title: string, fallback: string): boolean => {
-  const label = title.trim().replace(/[.:]+$/, "")
+  const label = trimEndCharacters(title.trim(), ".:")
   return (
     label !== "" &&
     label.toLowerCase() !== fallback.toLowerCase() &&

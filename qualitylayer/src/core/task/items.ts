@@ -50,6 +50,7 @@ import {
   type StepParts,
 } from "../items.ts"
 import { readRun, reviewFile } from "../review/cross.ts"
+import { backingLine } from "../review/line-readers.ts"
 import { crossesBoundary } from "../scaling.ts"
 import { findingAnswers } from "../small-findings.ts"
 import { taskFlow } from "../task-flow.ts"
@@ -876,9 +877,6 @@ export type Finding = {
   answer?: string
 }
 
-/** The line a review panel writes under each finding: who backs it and who objects. */
-const PANEL_LINE = /^\s*Panel:\s*(all|split|one)\b\s*[·:—–-]?\s*(.*)$/i
-
 /** The heading of a review's closing section: `*Not checked:*`, `**Not checked:**` or `*Not checked*`. */
 const NOT_CHECKED_LINE = /^\s*(\*{1,2})Not checked:?\1/i
 
@@ -903,7 +901,7 @@ export function reviewFindings(markdown: string): Finding[] {
     let answer: { stance?: "taken" | "kept" | "ask"; text: string } | undefined
     let panel: Finding["panel"]
     for (const line of lines) {
-      const backed = line.match(PANEL_LINE)
+      const backed = backingLine(line)
       if (backed !== null) {
         panel = {
           backing: (backed[1] ?? "").toLowerCase() as "all" | "split" | "one",

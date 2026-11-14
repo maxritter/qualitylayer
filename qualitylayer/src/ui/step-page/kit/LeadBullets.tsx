@@ -6,6 +6,7 @@
 // words (`below`); the form stays one.
 
 import type { ReactNode } from "react"
+import { trimEndCharacters } from "../../../core/text-boundaries.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 
 export type LeadBullet = {
@@ -25,7 +26,7 @@ export type LeadBullet = {
 
 /** A bullet's Markdown: the lead bold and ending in a full stop, then its text. */
 export function leadBulletText({ lead = "", text }: Pick<LeadBullet, "lead" | "text">): string {
-  const head = lead.trim().replace(/[:.]+$/, "")
+  const head = trimEndCharacters(lead.trim(), ":.")
   if (head === "") return text
   return `**${head}${/[!?]$/.test(head) ? "" : "."}**${text === "" ? "" : ` ${text}`}`
 }

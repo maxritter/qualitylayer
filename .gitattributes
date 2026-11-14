@@ -2047,3 +2047,7 @@ qualitylayer/src/ui/settings/memory-import/pilot-import.css !filter !diff
 qualitylayer/src/ui/settings/memory-import/preview.ts !filter !diff
 qualitylayer/src/ui/settings/memory-import/usePilotMigration.ts !filter !diff
 qualitylayer/src/ui/steps/readiness.ts !filter !diff
+qualitylayer/src/core/artifact/worktree-pointer.ts !filter !diff
+qualitylayer/src/core/review/line-readers.ts !filter !diff
+qualitylayer/src/core/text-boundaries.ts !filter !diff
+qualitylayer/src/server/machines/system-name.ts !filter !diff

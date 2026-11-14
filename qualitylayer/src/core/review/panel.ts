@@ -1,3 +1,4 @@
+import { nothingLine, panelReason, stanceLine, verdictLine } from "./line-readers.ts"
 // A Plan's review panel: two or three reviewers read the Plan side by side (round one), each then
 // reads the others' findings once and says agree or disagree (round two), and their answers are
 // merged into the one review file the gate and the Plan page already read. This module runs the
@@ -88,8 +89,6 @@ export type PanelResult =
 /** A finding's number as reviewers write it: `1.`, `2)`, or bold `**3.**`. */
 const NUMBERED = /^(?:\*\*|__)?\d+[.)](?:\*\*|__)?\s+/
 const BULLET = /^[-*•]\s+/
-/** A verdict line, bold or not: the word, then whatever follows it on that same line. */
-const VERDICT = /^[*_]*(APPROVE|REVISE|BLOCK)\b[*_]*:?[*_]*[ \t]*(.*)$/
 /** The heading of the closing note: `*Not checked:*`, `**Not checked**`, or a plain `Not checked:` at the margin. */
 const NOT_CHECKED = /^\s*(\*{1,2}|_{1,2})Not checked:?\1/i
 
@@ -118,7 +117,7 @@ function firstRound(answer: string): FirstRound {
     // the list: a finding's wrapped line may itself begin "not checked by any test".
     if (NOT_CHECKED.test(raw) || /^Not checked:/.test(raw)) break
     const line = unwrapped(raw)
-    const verdict = read.verdict === null ? line.match(VERDICT) : null
+    const verdict = read.verdict === null ? verdictLine(line) : null
     if (verdict === null) {
       // A heading is never a finding or part of one.
       read.lines.push(/^#/.test(line) ? "" : line)
@@ -148,16 +147,8 @@ function itemsBy(lines: readonly string[], marker: RegExp): string[] {
       const odd = (text.match(/\*\*/g)?.length ?? 0) % 2 === 1
       return odd && text.endsWith("**") ? text.slice(0, -2).trim() : text
     })
-    .filter((text) => text !== "" && !NOTHING.test(text))
+    .filter((text) => text !== "" && !nothingLine(text))
 }
-
-/**
- * An item that is nothing but a reviewer saying it has nothing: "None.", "(none)", "N/A",
- * "No new findings.", "Nothing to add.", "Nothing else." The whole item, word for word: a finding
- * that only begins that way ("Nothing tests the migration.", "None of the steps can fail.") is read.
- */
-const NOTHING =
-  /^\(?\s*(none|n\/a|nothing|no (new |further |more )?(findings?|items?|issues?)|nothing (more|else|further)|nothing (more |else |further )?to add)\s*\.?\s*\)?$/i
 
 /** Each run of lines between blank ones, as one paragraph. */
 function paragraphs(lines: readonly string[]): string[] {
@@ -194,9 +185,6 @@ export function findingsOf(answer: string, bullets = false): string[] {
 const approves = (answer: string): boolean =>
   firstRound(answer).verdict === "APPROVE" && findingsOf(answer).length === 0
 
-const STANCE_LINE =
-  /^\s*(?:[-*>#]\s*)*\**\s*(M)?#?(\d+)\**\s*[:.)\-–—]*\s*\**\s*(AGREE|DISAGREE|SAME\s+AS)\b\**\s*(.*)$/i
-
 /**
  * The stances of a second-round answer. `shown` are the numbers of the other reviewers' findings in
  * this member's brief; `own` maps its own `M<k>` to the finding's number. A line about a number it
@@ -212,7 +200,7 @@ export function readStances(
   const lines = answer.split(/\r?\n/)
   const added = lines.findIndex((l) => /^\s*(?:[#*_]\s*)*NEW\b[\s*_:]*$/i.test(l))
   for (const line of added === -1 ? lines : lines.slice(0, added)) {
-    const said = line.match(STANCE_LINE)
+    const said = stanceLine(line)
     if (said === null) continue
     const n = Number(said[2])
     const word = (said[3] ?? "").toUpperCase().replace(/\s+/g, " ")
@@ -237,7 +225,7 @@ export function readStances(
             lines
               .slice(added + 1)
               // A stance written after NEW: is neither a stance nor part of an added finding.
-              .filter((l) => !STANCE_LINE.test(l))
+              .filter((l) => stanceLine(l) === null)
               .join("\n"),
             true,
           ),
@@ -318,7 +306,7 @@ export function mergePanel(
       else if (stance.kind === "agree") backers.push(seat)
       else
         objections.push(
-          `${name(seat)} disagrees${stance.reason === "" ? "" : `: ${stance.reason.replace(/\s*·\s*/g, ", ")}`}`,
+          `${name(seat)} disagrees${stance.reason === "" ? "" : `: ${panelReason(stance.reason)}`}`,
         )
     }
     const who = list(backers.map(name))

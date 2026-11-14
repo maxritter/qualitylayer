@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "1f75752bb3e1d046e0918dba0e4e0ee1428f5318",
-  "sourceTree": "6de6c5d7c634f8891c01e8ffde447ea99104507c",
+  "sourceCommit": "b9a21b3e3d48fb6448a461d56b1bcbfde7b5c78f",
+  "sourceTree": "165f674c80429f067769d56f0fad0452c256f14b",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "821daf4de59fc8bc16cc052623f32e4202f2071c8c624506fb4b6fa1485687bf",
@@ -327,7 +327,7 @@
     "qualitylayer/src/ui/docs/RecordReader.tsx": "264c818fe69528859f60e71c4fb22d222a9449330505ef789b1431276edddba6",
     "qualitylayer/src/ui/docs/attachment-preview.css": "491553819e1fe90169ee4ea308d9b4feab96b5c022f8f91a4c146bcb0b76da72",
     "qualitylayer/src/ui/docs/context.ts": "a108146abd8ea6b12c0502d00ef8989a1a78de31f9432ceb72d280dbf8d25016",
-    "qualitylayer/src/ui/docs/docs.css": "1f676a1a5a32b16c120dac2d675a1c90906ed709c1498e7c7b9fdc80df73edc1",
+    "qualitylayer/src/ui/docs/docs.css": "03712cbb7cb456c9ae2bcf937e86aad0114e25fedf031d7ae656c9c1200ab125",
     "qualitylayer/src/ui/docs/document-states.ts": "6c7512000bb33ffb753f6a76ad94ce5182cb6cac316efc061aa94c45b2761697",
     "qualitylayer/src/ui/docs/files/FeedbackHistory.tsx": "c38a086a49c96c702e4b96547e38d4ea68ad1b679319ec82e5bf2fd4714d4077",
     "qualitylayer/src/ui/docs/files/Records.tsx": "d9c6990bf236dc9439e86682afbaa7889f82d911306c2c7fa5d3bfd17183d3b7",
@@ -1247,7 +1247,7 @@
     "qualitylayer/src/ui/docs/RecordReader.tsx": "264c818fe69528859f60e71c4fb22d222a9449330505ef789b1431276edddba6",
     "qualitylayer/src/ui/docs/attachment-preview.css": "491553819e1fe90169ee4ea308d9b4feab96b5c022f8f91a4c146bcb0b76da72",
     "qualitylayer/src/ui/docs/context.ts": "a108146abd8ea6b12c0502d00ef8989a1a78de31f9432ceb72d280dbf8d25016",
-    "qualitylayer/src/ui/docs/docs.css": "1f676a1a5a32b16c120dac2d675a1c90906ed709c1498e7c7b9fdc80df73edc1",
+    "qualitylayer/src/ui/docs/docs.css": "03712cbb7cb456c9ae2bcf937e86aad0114e25fedf031d7ae656c9c1200ab125",
     "qualitylayer/src/ui/docs/document-states.ts": "6c7512000bb33ffb753f6a76ad94ce5182cb6cac316efc061aa94c45b2761697",
     "qualitylayer/src/ui/docs/files/FeedbackHistory.tsx": "c38a086a49c96c702e4b96547e38d4ea68ad1b679319ec82e5bf2fd4714d4077",
     "qualitylayer/src/ui/docs/files/Records.tsx": "d9c6990bf236dc9439e86682afbaa7889f82d911306c2c7fa5d3bfd17183d3b7",
@@ -1844,7 +1844,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-14T18:06:46.967Z",
+  "checkedAt": "2026-11-14T22:10:11.256Z",
   "chapters": [
     "setup",
     "welcome",

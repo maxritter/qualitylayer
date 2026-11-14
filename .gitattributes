@@ -2018,3 +2018,32 @@ qualitylayer/app/src-tauri/src/zoom.rs !filter !diff
 qualitylayer/app/src-tauri/tauri.conf.json !filter !diff
 qualitylayer/app/src-tauri/windows/hooks.nsh !filter !diff
 qualitylayer/app/src-tauri/windows/repair-defender.ps1 !filter !diff
+
+# Exact nonlicensing runtime publication inputs; private roots remain filtered.
+qualitylayer/src/core/memory/pilot-identities.ts !filter !diff
+qualitylayer/src/core/memory/pilot-migration.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/anchor.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/archive.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/files.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/knowledge.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/lineage.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/normalize.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/scan.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/snapshot.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/sqlite.ts !filter !diff
+qualitylayer/src/core/memory/pilot-source/types.ts !filter !diff
+qualitylayer/src/core/run/answer-continuation.ts !filter !diff
+qualitylayer/src/pilot-memory-contracts.ts !filter !diff
+qualitylayer/src/server/pilot-memory-apply.ts !filter !diff
+qualitylayer/src/server/pilot-memory.ts !filter !diff
+qualitylayer/src/ui/demo/identity.ts !filter !diff
+qualitylayer/src/ui/settings/memory-import/Mapping.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-import/PilotMigration.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-import/Receipt.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-import/Records.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-import/Source.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-import/files.ts !filter !diff
+qualitylayer/src/ui/settings/memory-import/pilot-import.css !filter !diff
+qualitylayer/src/ui/settings/memory-import/preview.ts !filter !diff
+qualitylayer/src/ui/settings/memory-import/usePilotMigration.ts !filter !diff
+qualitylayer/src/ui/steps/readiness.ts !filter !diff

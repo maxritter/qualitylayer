@@ -52,7 +52,7 @@
     "docs/site/scripts/compile-shared-api.d.mts": "28e843d74aa901ca7bb9eda89bb7e633e0cf6df10adbbb7702b891dc63a6a9ea",
     "docs/site/scripts/docusaurus-analytics.js": "59abc90371c9f3d9c7fa699ad1d908f353aaf2033836a4462cf48c0eb85e7068",
     "docs/site/scripts/export-brand.mjs": "0bca19b97529258348ba592dae05b7fd4eba77e933e47d6f440463f09e01c0ce",
-    "docs/site/scripts/export-social.mjs": "b5d3718a39d773aee6f02e90f12c4f63a3abd43e47f4b74deb3317d0e560e8d7",
+    "docs/site/scripts/export-social.mjs": "8eda04c0a14a6c611a534e08f6cf046069cc03d4a71ff748a4dd03f71b72c31d",
     "docs/site/scripts/generate-docs-sitemap.d.mts": "607405bea029d950101d4900e568e4776312e460932fc9825e41d0cfdbb15bb8",
     "docs/site/scripts/generate-docs-sitemap.mjs": "95328c547186cf5410be994f074540ba70deda21a738719e6fc6a1df7a2c433e",
     "docs/site/scripts/inject-docusaurus-analytics.d.mts": "83e646538879998480de8ebcc386b8d2da5061c68f2c0fb3e8a94adc3134fb72",

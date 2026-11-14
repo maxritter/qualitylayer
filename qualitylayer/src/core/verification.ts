@@ -33,7 +33,7 @@ import {
 } from "./gate/revision.ts"
 import { sliceCommits } from "./git/build-start.ts"
 import { type JudgeInputs, judgeInputs, RecordedHistoryRewritten } from "./git/judge-inputs.ts"
-import { OwnedTreeMoved } from "./git/owned-tree.ts"
+import { OwnedTreeMoved, treeEntriesAt } from "./git/owned-tree.ts"
 import { revisionPaths } from "./git/revision-paths.ts"
 import {
   clearOwnChanges,
@@ -918,6 +918,46 @@ async function commitPaths(
   return names.code === 0 ? names.stdout.split("\0").filter((path) => path !== "") : null
 }
 
+/** Pinned committed identities shared only within one evaluation; null is a queried missing path. */
+function committedObjects(ctx: Ctx, task: Task) {
+  const aliases = new Map<string, string>()
+  const known = new Map<string, Map<string, string | null>>()
+  const resolve = async (ref: string): Promise<string | null> => {
+    if (!/^[a-f0-9]{7,64}$/.test(ref)) return null
+    const alias = aliases.get(ref)
+    if (alias !== undefined) return alias
+    const found = await ctx.git.run(task.repoRoot, ["rev-parse", "--verify", `${ref}^{commit}`], {
+      fresh: true,
+    })
+    const sha = found.stdout.trim()
+    if (found.code !== 0 || !OBJECT_ID.test(sha)) return null
+    aliases.set(ref, sha)
+    return sha
+  }
+  const load = async (ref: string, paths: readonly string[]) => {
+    if (paths.length === 0) return new Map<string, string | null>()
+    try {
+      const sha = await resolve(ref)
+      if (sha === null) return null
+      const entries = known.get(sha) ?? new Map<string, string | null>()
+      const missing = [...new Set(paths)].filter((path) => !entries.has(path))
+      if (missing.length > 0) {
+        const found = await treeEntriesAt(ctx, task, sha, missing, { fresh: true })
+        for (const path of missing) entries.set(path, found.get(path)?.object ?? null)
+        known.set(sha, entries)
+      }
+      return entries
+    } catch {
+      // A failed query supplies no missing-path evidence and is not memoized as a successful read.
+      return null
+    }
+  }
+  return {
+    load,
+    at: async (ref: string, path: string) => (await load(ref, [path]))?.get(path) ?? null,
+  }
+}
+
 /**
  * Whether a commit holds, for one file, exactly what the judge read: the bytes it read
  * uncommitted (their digest is on the receipt), or for a file it read committed the judged
@@ -930,24 +970,17 @@ async function holdsJudged(
   receipt: Assignment,
   commit: string,
   path: string,
+  object: (ref: string, path: string) => Promise<string | null>,
 ): Promise<boolean> {
   try {
     const head = receipt.head
     if (head === undefined || !OBJECT_ID.test(head)) return false
-    const options = { fresh: true } as const
     const was = receipt.looseFiles?.[path]
     if (was === undefined) {
-      // One object a call: `rev-parse --verify` takes a single revision.
-      const blob = async (at: string) => {
-        const id = await ctx.git.run(
-          task.repoRoot,
-          ["rev-parse", "--verify", `${at}:${path}`],
-          options,
-        )
-        return id.code === 0 && OBJECT_ID.test(id.stdout.trim()) ? id.stdout.trim() : null
-      }
-      const mine = await blob(commit)
-      return mine !== null && mine === (await blob(head))
+      const judged = await object(head, path)
+      if (judged === null) return false
+      const mine = await object(commit, path)
+      return mine !== null && mine === judged
     }
     return (await committedDigest(ctx, task, commit, path)) === was
   } catch {
@@ -1242,6 +1275,7 @@ async function ownMoves(
   try {
     const head = receipt.head
     if (head === undefined || !OBJECT_ID.test(head)) return unknown
+    const objects = committedObjects(ctx, task)
     const passed = (await readEvents(ctx, task))
       .filter(
         (event) =>
@@ -1305,6 +1339,14 @@ async function ownMoves(
       if (await within(commit, head)) continue
       const paths = await commitPaths(ctx, task, commit, combined)
       if (paths === null) return unknown
+      if (evidence.kind === "registered") {
+        const committed = paths.filter((path) => receipt.looseFiles?.[path] === undefined)
+        const judged = await objects.load(head, committed)
+        if (judged !== null) {
+          const present = committed.filter((path) => judged.get(path) != null)
+          if (present.length > 0) await objects.load(commit, present)
+        }
+      }
       for (const path of paths) {
         if (evidence.kind === "seq") bySeq(path, evidence.seq)
         else if (evidence.kind === "time") byTime(path, evidence.at)
@@ -1313,7 +1355,7 @@ async function ownMoves(
           // file was seen back at the judged bytes left nothing of its own in it.
           // And one that holds, for the file, exactly the bytes the judge read contributed
           // nothing unjudged: read off the commit itself, whether or not anyone looked since.
-          let held = await holdsJudged(ctx, task, receipt, commit, path)
+          let held = await holdsJudged(ctx, task, receipt, commit, path, objects.at)
           for (const seen of kept.restored.get(path)?.heads ?? [])
             held = held || (await within(commit, seen))
           stands(path, !held)
@@ -1399,7 +1441,8 @@ async function ownMoves(
           const digest = await committedDigest(ctx, task, commit, path)
           const theirBytes =
             digest !== null && recorded?.theirs.has(digest) === true && !recorded.ours.has(digest)
-          if (!theirBytes && !(await holdsJudged(ctx, task, receipt, commit, path))) foreign = false
+          if (!theirBytes && !(await holdsJudged(ctx, task, receipt, commit, path, objects.at)))
+            foreign = false
         }
         if (!foreign) doubtful.push(path)
       }

@@ -26,13 +26,21 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
 function requireTree(value: unknown): asserts value {
   if (!value) throw Error("Committed task-owned source authority is unavailable")
 }
-async function git(ctx: Ctx, task: Task, args: string[], immutable = false): Promise<string> {
+async function git(
+  ctx: Ctx,
+  task: Task,
+  args: string[],
+  immutable = false,
+  fresh = false,
+): Promise<string> {
   const key = JSON.stringify([task.repoRoot, args])
   const kept = cache.get(ctx.git) ?? new Map<string, string>()
   cache.set(ctx.git, kept)
-  const known = immutable ? kept.get(key) : undefined
+  const known = immutable && !fresh ? kept.get(key) : undefined
   if (known !== undefined) return known
-  const result = await ctx.git.run(task.repoRoot, args)
+  const result = fresh
+    ? await ctx.git.run(task.repoRoot, args, { fresh: true })
+    : await ctx.git.run(task.repoRoot, args)
   // Name the git call that left the authority unavailable: the message alone says nothing of which.
   if (result.code !== 0)
     throw Error(
@@ -42,7 +50,7 @@ async function git(ctx: Ctx, task: Task, args: string[], immutable = false): Pro
     throw Error(
       `Committed task-owned source authority is unavailable (git ${args.slice(0, 2).join(" ")} printed more than 1 MB)`,
     )
-  if (immutable) {
+  if (immutable && !fresh) {
     if (kept.size >= 16) kept.delete(kept.keys().next().value as string)
     kept.set(key, result.stdout)
   }
@@ -54,6 +62,65 @@ async function commit(ctx: Ctx, task: Task, value: string): Promise<string> {
   const resolved = (await git(ctx, task, ["rev-parse", "--verify", `${value}^{commit}`])).trim()
   requireTree(full.test(resolved))
   return resolved
+}
+/** Bounded literal-path entries at one Git revision; callers may request a fresh authority read. */
+export async function treeEntriesAt(
+  ctx: Ctx,
+  task: Task,
+  sha: string,
+  paths: readonly string[],
+  options: { fresh?: true } = {},
+): Promise<Map<string, Entry>> {
+  requireTree(paths.length <= 4096 && Buffer.byteLength(JSON.stringify(paths)) <= 256 * 1024)
+  if (paths.length === 0) return new Map<string, Entry>()
+  // A command line holds only so much (Windows: 32,767 characters). The paths go to git in as
+  // many calls as it takes; their rows are disjoint, and are put back in git's single-call order.
+  const groups: string[][] = [[]]
+  let used = 0
+  for (const path of paths) {
+    const spec = `:(literal)${path}`
+    if (used + spec.length + 3 > COMMAND_LINE_PATHS && (groups.at(-1)?.length ?? 0) > 0) {
+      groups.push([])
+      used = 0
+    }
+    groups.at(-1)?.push(spec)
+    used += spec.length + 3
+  }
+  const rows: string[] = []
+  for (const group of groups)
+    rows.push(
+      ...(
+        await git(
+          ctx,
+          task,
+          ["ls-tree", "-r", "-z", "--full-tree", sha, "--", ...group],
+          true,
+          options.fresh === true,
+        )
+      )
+        .split("\0")
+        .filter(Boolean),
+    )
+  if (groups.length > 1)
+    rows.sort((a, b) =>
+      Buffer.compare(
+        Buffer.from(a.slice(a.indexOf("\t") + 1)),
+        Buffer.from(b.slice(b.indexOf("\t") + 1)),
+      ),
+    )
+  const entries = new Map<string, Entry>()
+  for (const row of rows) {
+    const at = row.indexOf("\t")
+    requireTree(at > 0)
+    const [mode, kind, object] = row.slice(0, at).split(" ")
+    const path = row.slice(at + 1)
+    requireTree(mode && object && full.test(object) && ["blob", "commit"].includes(kind ?? ""))
+    if (!path.startsWith("docs/plans/")) {
+      requireTree(entries.size < 16_384)
+      entries.set(path, { mode, object })
+    }
+  }
+  return entries
 }
 export async function ownedTree(
   ctx: Ctx,
@@ -117,51 +184,8 @@ export async function ownedTree(
       paths.length + scope.external.length <= 4096 &&
       Buffer.byteLength(JSON.stringify([paths, scope.external])) <= 256 * 1024,
   )
-  const inventory = async (sha: string) => {
-    if (paths.length === 0) return new Map<string, Entry>()
-    // A command line holds only so much (Windows: 32,767 characters). The paths go to git in as
-    // many calls as it takes; their rows are disjoint, and are put back in git's single-call order.
-    const groups: string[][] = [[]]
-    let used = 0
-    for (const path of paths) {
-      const spec = `:(literal)${path}`
-      if (used + spec.length + 3 > COMMAND_LINE_PATHS && (groups.at(-1)?.length ?? 0) > 0) {
-        groups.push([])
-        used = 0
-      }
-      groups.at(-1)?.push(spec)
-      used += spec.length + 3
-    }
-    const rows: string[] = []
-    for (const group of groups)
-      rows.push(
-        ...(await git(ctx, task, ["ls-tree", "-r", "-z", "--full-tree", sha, "--", ...group], true))
-          .split("\0")
-          .filter(Boolean),
-      )
-    if (groups.length > 1)
-      rows.sort((a, b) =>
-        Buffer.compare(
-          Buffer.from(a.slice(a.indexOf("\t") + 1)),
-          Buffer.from(b.slice(b.indexOf("\t") + 1)),
-        ),
-      )
-    const entries = new Map<string, Entry>()
-    for (const row of rows) {
-      const at = row.indexOf("\t")
-      requireTree(at > 0)
-      const [mode, kind, object] = row.slice(0, at).split(" ")
-      const path = row.slice(at + 1)
-      requireTree(mode && object && full.test(object) && ["blob", "commit"].includes(kind ?? ""))
-      if (!path.startsWith("docs/plans/")) {
-        requireTree(entries.size < 16_384)
-        entries.set(path, { mode, object })
-      }
-    }
-    return entries
-  }
-  const before = await inventory(pin)
-  const after = head === pin ? before : await inventory(head)
+  const before = await treeEntriesAt(ctx, task, pin, paths)
+  const after = head === pin ? before : await treeEntriesAt(ctx, task, head, paths)
   const delta = [...new Set([...before.keys(), ...after.keys()])]
     .sort()
     .filter((path) => JSON.stringify(before.get(path)) !== JSON.stringify(after.get(path)))

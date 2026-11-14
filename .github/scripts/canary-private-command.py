@@ -24,7 +24,7 @@ def run_case(root, name, body, shell="bash", contract=None, expected=0):
     nonce = os.urandom(24).hex()
     script = case / ("fixture.ps1" if shell == "pwsh" else "fixture.sh")
     script.write_text(body)
-    env = {key: os.environ[key] for key in ("PATH", "HOME", "SystemRoot", "WINDIR", "PATHEXT", "LANG", "PYTHONPATH", "QL_CANARY_TRACE_PATH") if key in os.environ}
+    env = {key: os.environ[key] for key in ("PATH", "HOME", "SystemDrive", "SystemRoot", "WINDIR", "PATHEXT", "LANG", "PYTHONPATH", "QL_CANARY_TRACE_PATH") if key in os.environ}
     env.update(RUNNER_TEMP=str(case), QL_CANARY_NONCE=nonce, QL_CANARY_CASE=str(case), QL_CANARY_PYTHON=sys.executable, QL_RELEASE_EXPORTS=json.dumps(contract or {}))
     for channel in channels:
         file = case / ("parent-" + channel)

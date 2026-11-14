@@ -1587,6 +1587,7 @@ button.ir-doc-step:hover {
   font-weight: 600;
 }
 .ir-history-head small {
+  font-size: inherit;
   color: var(--ql-text-dim);
   font-weight: 400;
 }

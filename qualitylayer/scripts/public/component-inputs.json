@@ -2623,7 +2623,7 @@
     },
     {
       "path": "qualitylayer/src/core/git/owned-tree.ts",
-      "sha256": "126a72c7607cec4a61993f7fa87b742b8c5f053b616de1aacca518663a40aaad",
+      "sha256": "239aec3868218b032a41c2b7c65cb4b670f256fab32764f9bd38a7a97dca7b42",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6279,7 +6279,7 @@
     },
     {
       "path": "qualitylayer/src/core/verification.ts",
-      "sha256": "64d6c713aea91837dbce16b37d47ce01ddb89f481d1109335c21b76e186c9dd6",
+      "sha256": "1d6551a9d17119abada124e13e31f482812dc8760cecf1c0e4f2d26b73c0b5b1",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10071,7 +10071,7 @@
     },
     {
       "path": "qualitylayer/src/ui/docs/docs.css",
-      "sha256": "1f676a1a5a32b16c120dac2d675a1c90906ed709c1498e7c7b9fdc80df73edc1",
+      "sha256": "03712cbb7cb456c9ae2bcf937e86aad0114e25fedf031d7ae656c9c1200ab125",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

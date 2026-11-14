@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "4cc269d02492c93f66cfda8070490c7f659a9165",
-  "catalogSha256": "49cbe4fa8fe1504deb45d29657e8a8c728ad831e38d329f7e14eb685f36dae1c",
+  "sourceHead": "f1af6c91ae1065af51c043844e81c840997172b2",
+  "catalogSha256": "1664a41d3ddcf7f989851dc14199696a82b81155f839f4e3f0b4e52fa0bca39a",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -7911,7 +7911,7 @@
     },
     {
       "path": "qualitylayer/src/ui/TaskView.tsx",
-      "sha256": "b615fb24cb85b80d29df723c8805e399bb57ab085fcc2cf76d7ea05dd9990b4b",
+      "sha256": "dd1c2f8a62f47e87027f8c5f77b2343285a4d24d6121e391d0854b8235f2eafe",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

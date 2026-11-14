@@ -532,7 +532,7 @@ function TaskViewContent({
     ? (task.pages ?? []).find((page) => page.step === stepDoc.step)
     : undefined
   const steady = useSteadyStep(
-    `${task.id}:${stepDoc?.step ?? viewedStep(view) ?? ""}`,
+    `${task.id}:${stepDoc?.step ?? viewedStep(view) ?? ""}:${fileReader ? `reader:${view}` : "page"}`,
     stepDoc,
     sections.data,
     stepDoc !== null &&

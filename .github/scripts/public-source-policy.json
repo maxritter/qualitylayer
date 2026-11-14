@@ -125,10 +125,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "51279930a2d34f2e524442b9d9ffb91860bb268013b58dccb3208d9804224750",
+    "qualitylayer/scripts/public/component-inputs.json": "9e7c4c3325dd7dfbb22a4050d78ca6b6da7174f81ee6ae4a75395a312cfecd5d",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "9df22fedcb98a613ddfc55794e588fdd1ba953f81f014d9ffcb4c7e2bca84f83",
+    "qualitylayer/scripts/public/component-workspace.mjs": "a8a1d7e2361c4765399449759c4fb09fabe865849e8c195767772068a71e2d97",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -1111,7 +1111,7 @@
     "qualitylayer/src/ui/StepTabs.tsx": "558bc38aede475c22b4e92075b59a553ef435ae7999e52e773417b57145ba84e",
     "qualitylayer/src/ui/TaskLoading.tsx": "95b9fb0ce0bb6520cc1cae53e57288cbeb29035a4bddda8036fa5ffb2623d595",
     "qualitylayer/src/ui/TaskPointMenu.tsx": "42eba5570c8ebdb22ccbacd376ba20db887549b41699244ed72e3794bdab8c49",
-    "qualitylayer/src/ui/TaskView.tsx": "b615fb24cb85b80d29df723c8805e399bb57ab085fcc2cf76d7ea05dd9990b4b",
+    "qualitylayer/src/ui/TaskView.tsx": "dd1c2f8a62f47e87027f8c5f77b2343285a4d24d6121e391d0854b8235f2eafe",
     "qualitylayer/src/ui/TrialEnded.tsx": "bf33e65aba5787dca73d6d77886c6697ca77d1fcfc11c0e59114fdb7886a8939",
     "qualitylayer/src/ui/Trouble.tsx": "a363e03d062ce816ac062b38487af719c0255d897def64ff77db9243316313af",
     "qualitylayer/src/ui/Updates.tsx": "43713adb02642c03bcdc7631276e9ecd5d36dec2e4365435ae6c7cfd2af2c440",
@@ -2001,7 +2001,7 @@
     "qualitylayer/src/ui/settings/memory-import/usePilotMigration.ts": "4b89fc1e50065ca3c91106874737659cb73d290a4b40c4cf00fd23976decc22b",
     "qualitylayer/src/ui/steps/readiness.ts": "51e051e42b5d4950dfaec0aba576a8f974f1c0b7bfcb041093a7c36c3611ce2f"
   },
-  "reviewManifestSha256": "50c7e2d285141719553e84b47a46e52e2c95b77ca4427df5d5395d53643d0923",
+  "reviewManifestSha256": "4e139d6ea5c3acd41837a846ad739241699b134e122ca7a4c84617a9364b7a96",
   "schema": 1,
-  "sourceHead": "4cc269d02492c93f66cfda8070490c7f659a9165"
+  "sourceHead": "f1af6c91ae1065af51c043844e81c840997172b2"
 }

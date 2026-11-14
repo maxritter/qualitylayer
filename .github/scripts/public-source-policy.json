@@ -15,7 +15,7 @@
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
     ".github/scripts/release-private-command.py": "6ed773d44d7e56a3e6ab38ffe0738c8b65c274e18862c0feb1ce6b97968e206c",
-    ".github/scripts/stage-release-artifact.py": "42b70363d5fcde0d6603c58edb71356f105376dfb1521efa5d4ec1679b48107d",
+    ".github/scripts/stage-release-artifact.py": "4523a50bfa6dc1cd9fb7cb3698d3ede5912e861d80f31be3a8223e7fbb2df85f",
     ".github/scripts/verify-release14-exception.py": "f4a7578df5bc30638243b2702d9f03a1ef6d350ab1a000780937f1c59b308a7a",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",

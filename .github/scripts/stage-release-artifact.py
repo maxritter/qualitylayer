@@ -163,7 +163,7 @@ def main():
     parser.add_argument("--distribution-set")
     parser.add_argument("--target")
     args = parser.parse_args()
-    if args.version != "14.0.0":
+    if not re.fullmatch(r"(?:1[2-9]|[2-9][0-9]|[1-9][0-9]{2,})\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", args.version):
         raise ValueError()
     if args.kind not in ("payload", "payload-signature", "cli", "app", "assets", "catalog", "manifest", "distribution", "candidate-receipts", "account-acl"):
         raise ValueError()

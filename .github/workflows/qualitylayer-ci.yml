@@ -216,6 +216,7 @@ jobs:
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
           QUALITYLAYER_TEST_RETRIES: "0"
+          QUALITYLAYER_TEST_WORKERS: "1"
           QL_RELEASE_EXPORTS: "{}"
           QL_CI_INPUT_1: ${{ matrix.shard }}
           QL_CI_INPUT_2: ${{ matrix.shards }}
@@ -336,6 +337,7 @@ jobs:
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
           QUALITYLAYER_TEST_RETRIES: "0"
+          QUALITYLAYER_TEST_WORKERS: "1"
           QL_RELEASE_EXPORTS: "{}"
           QL_CI_INPUT_1: ${{ matrix.shard }}
           QL_CI_INPUT_2: ${{ matrix.shards }}

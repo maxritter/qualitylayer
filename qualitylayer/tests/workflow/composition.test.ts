@@ -22,7 +22,7 @@ describe("canonical workflow source composition", () => {
     )
     expect(currentIds.sort()).toEqual(Object.keys(current).sort())
     for (const [id, text] of Object.entries(current))
-      expect(texts[id as keyof typeof texts]).toBe(text)
+      expect(assetHash(texts[id as keyof typeof texts] as string)).toBe(assetHash(text))
     for (const asset of bundle.assets)
       for (const source of asset.sources) {
         expect(assetHash(await readFile(join(PACKAGE_ROOT, source.path), "utf8"))).toBe(
@@ -36,10 +36,11 @@ describe("canonical workflow source composition", () => {
 
   test("accounts for all declared native and mod installation inputs without modifying them", async () => {
     const texts = assetTexts(await generateWorkflowBundle("13.1.0"))
-    for (const file of MOD_FILES) expect(texts[`bootstrap:mod/${file.path}`]).toBe(file.text)
+    for (const file of MOD_FILES)
+      expect(assetHash(texts[`bootstrap:mod/${file.path}`] as string)).toBe(assetHash(file.text))
     for (const name of ["pi.ts.tmpl", "opencode.ts.tmpl", "peers.js.tmpl"])
-      expect(texts[`native:${name}`]).toBe(
-        await readFile(join(PACKAGE_ROOT, "src/workflow/native", name), "utf8"),
+      expect(assetHash(texts[`native:${name}`] as string)).toBe(
+        assetHash(await readFile(join(PACKAGE_ROOT, "src/workflow/native", name), "utf8")),
       )
   })
 
@@ -54,8 +55,8 @@ describe("canonical workflow source composition", () => {
       for await (const path of new Bun.Glob(glob).scan({ cwd: PACKAGE_ROOT }))
         expect(inputs.has(path)).toBe(true)
     const first = await generateWorkflowBundle("13.1.0")
-    expect(serializeAssetBundle(await generateWorkflowBundle("13.1.0"))).toBe(
-      serializeAssetBundle(first),
+    expect(assetHash(serializeAssetBundle(await generateWorkflowBundle("13.1.0")))).toBe(
+      assetHash(serializeAssetBundle(first)),
     )
     const composers = new Set(first.composition.map((source) => source.path))
     for (const path of [

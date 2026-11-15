@@ -619,9 +619,7 @@ const drawOthers = ($: any, ui: any, palette: Palette, now: Board, width: number
   return (
     <Box key={alone ? 'ql-band' : 'ql-others'} width={width} flexShrink={0}>
       <Text dimColor={alone}>{lead}</Text>
-      <Button key="ql-others-open" plain onPress={() => openPane($)}>
-        <Text bold color={palette.you.ink}>{count}</Text>
-      </Button>
+      <Button key="ql-others-open" label={count} plain onPress={() => openPane($)} />
       <Text wrap="truncate-end">
         {title !== '' ? <Text><Text dimColor> · </Text><Text>{title}</Text></Text> : null}
         {words !== '' ? <Text><Text dimColor> · </Text><Text color={palette.you.ink}>{words}</Text></Text> : null}
@@ -750,9 +748,7 @@ const drawPart = ($: any, kit: Kit, now: Board, part: (typeof PARTS_DRAWN)[numbe
   const toggle = () => update($, folds, list => (list.includes(part.key) ? list.filter(k => k !== part.key) : [...list, part.key]))
   return (
     <Box key={`ql-part-${part.key}`} flexDirection="column" marginTop={1}>
-      <Button key={`ql-fold-${part.key}`} plain onPress={toggle}>
-        <Text bold color={part.ink(kit.palette)}>{`${isFolded ? '▸' : '▾'} ${part.title} · ${count}`}</Text>
-      </Button>
+      <Button key={`ql-fold-${part.key}`} label={`${isFolded ? '▸' : '▾'} ${part.title} · ${count}`} plain onPress={toggle} />
       {isFolded ? null : rows.map(row => (part.key === 'needs' ? needRow($, kit, row) : part.key === 'running' ? runRow(kit, row) : prRow(kit, row)))}
       {!isFolded && count > rows.length ? <Text dimColor>{`  +${count - rows.length} more`}</Text> : null}
     </Box>

@@ -423,7 +423,16 @@ test('every live row, including questions and errors, stacks once above the othe
     const tree = await ui.drawn()
     expect(tree.props.flexDirection).toBe('column')
     expect(tree.children).toHaveLength(2)
-    expect(tree.children[0].props.key).toBe('ql-band')
+    const firstPart = tree.children[0]
+    const hostOwnsPart = firstPart.props.key === undefined && firstPart.part?.plugin === 'qualitylayer'
+    if (hostOwnsPart) {
+      expect(firstPart.type).toBe('Box')
+      expect(firstPart.props.flexDirection).toBe('column')
+      expect(firstPart.children).toHaveLength(2)
+      expect(firstPart.children[1].type).toBe('engine')
+    }
+    expect((hostOwnsPart ? firstPart.children[0] : firstPart).props.key).toBe('ql-band')
+    expect(await ui.findAll({ key: 'ql-band' })).toHaveLength(1)
     expect(withoutHostPart(tree.children[1])).toEqual(other)
     expect((await bandText(ui)).length).toBe(55)
   }
@@ -1130,11 +1139,10 @@ const othersText = async (ui: any) => {
   const line = await ui.find({ type: 'Box', key: 'ql-others' })
   return line === undefined ? '' : textOf(line)
 }
-/** The count is drawn by the open button's child Text. */
+/** The SDK draws the open button's explicit label. */
 const openLabel = async (ui: any) => {
   const button = await ui.find({ type: 'Button', key: 'ql-others-open' })
-  const label = button === undefined ? undefined : (await ui.findAll({ type: 'Text', text: /^! \d+ / })).at(0)
-  return label?.text ?? ''
+  return button?.props.label ?? ''
 }
 
 test('a second band line says how many other tasks need you, the first one, and what runs, wide and at 55 columns', async ($, on) => {
@@ -1145,6 +1153,9 @@ test('a second band line says how many other tasks need you, the first one, and 
   await clock.settle()
   const wide = await band($, 130)
   expect(await openLabel(wide)).toBe('! 4 other tasks need you')
+  const openButton = await wide.find({ type: 'Button', key: 'ql-others-open' })
+  expect(openButton?.props.plain).toBe(true)
+  expect(openButton?.props.label).toBe('! 4 other tasks need you')
   const text = await othersText(wide)
   expect(text.length).toBe(125)
   expect(text).toContain('Refund webhooks')
@@ -1212,19 +1223,22 @@ test('the pane lists All tasks in three parts with ages, links, +N more, and eve
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: 'All tasks' })).toBeDefined()
   expect(await ui.find({ type: 'Link', props: { label: 'Home ↗' } })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▾ Needs you · 4' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▾ Running · 1' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▾ Pull requests · 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-needs', props: { label: '▾ Needs you · 4' } })).toBeDefined()
+  const headingButton = await ui.find({ type: 'Button', key: 'ql-fold-needs' })
+  expect(headingButton?.props.plain).toBe(true)
+  expect(headingButton?.props.label).toBe('▾ Needs you · 4')
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-running', props: { label: '▾ Running · 1' } })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-prs', props: { label: '▾ Pull requests · 1' } })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '12m' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '  +1 more' })).toBeDefined()
   expect(await ui.find({ type: 'Link', props: { href: 'http://127.0.0.1:41888/#/task/p~refund' } })).toBeDefined()
   expect(await ui.find({ type: 'Link', props: { label: '#418' } })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '9/17' }) ?? await ui.find({ type: 'Text', text: ' 9/17' })).toBeDefined()
   await ui.press({ key: 'ql-fold-needs' })
-  expect(await ui.find({ type: 'Text', text: '▸ Needs you · 4' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-needs', props: { label: '▸ Needs you · 4' } })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '  +1 more' })).toBeUndefined()
   await ui.press({ key: 'ql-fold-needs' })
-  expect(await ui.find({ type: 'Text', text: '▾ Needs you · 4' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-needs', props: { label: '▾ Needs you · 4' } })).toBeDefined()
   await ui.unmount()
 })
 
@@ -1263,7 +1277,7 @@ test('with no task and an empty board the pane says so; parts with no rows are l
   await $.command.run({ command: 'task-pane' } as any)
   const ui = await pane($)
   expect(await ui.find({ type: 'Text', text: /No open QualityLayer task/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '▾ Running · 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'ql-fold-running', props: { label: '▾ Running · 1' } })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
   seen.board = boardAnswer(EMPTY_BOARD)
   await ui.unmount()

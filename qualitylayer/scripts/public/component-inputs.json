@@ -14407,7 +14407,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.test.tsx",
-      "sha256": "67540d67830fcb583fa3773d2e946f3e3869d3e7fd1467b5cbf3741ad943996b",
+      "sha256": "3ca6f5a54761ae72e1252ca715f46c934bd4cebc3e8ee401bf62d8df4c412567",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14415,7 +14415,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.tsx",
-      "sha256": "7d8039d36155f04de1f4e29c72ac8669e4336624204f817137a35e4440f03e61",
+      "sha256": "671f49ef40929d43a9478f2de9a902bb05c31fabed2f221449ce41a875d99853",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

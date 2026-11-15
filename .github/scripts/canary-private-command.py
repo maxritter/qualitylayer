@@ -16,7 +16,7 @@ results = []
 channels = ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "GITHUB_PATH")
 capabilities = ("ACTIONS_RUNTIME_TOKEN", "ACTIONS_RUNTIME_URL", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "GH_TOKEN", "GITHUB_TOKEN")
 
-def run_case(root, name, body, shell="bash", contract=None, expected=0):
+def run_case(root, name, body, shell="bash", contract=None, expected=0, workspace=None):
     if os.environ.get("QL_CANARY_ONLY") and os.environ["QL_CANARY_ONLY"] != name:
         return None
     case = root / name
@@ -26,6 +26,9 @@ def run_case(root, name, body, shell="bash", contract=None, expected=0):
     script.write_text(body)
     env = {key: os.environ[key] for key in ("PATH", "HOME", "SystemDrive", "SystemRoot", "WINDIR", "PATHEXT", "LANG", "PYTHONPATH", "QL_CANARY_TRACE_PATH") if key in os.environ}
     env.update(RUNNER_TEMP=str(case), QL_CANARY_NONCE=nonce, QL_CANARY_CASE=str(case), QL_CANARY_PYTHON=sys.executable, QL_RELEASE_EXPORTS=json.dumps(contract or {}))
+    if workspace is not None:
+        env["GITHUB_WORKSPACE"] = str(workspace)
+        env["GITHUB_SHA"] = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True).strip() if (workspace / ".git").exists() else "a" * 40
     for channel in channels:
         file = case / ("parent-" + channel)
         file.touch()
@@ -52,16 +55,96 @@ def run_case(root, name, body, shell="bash", contract=None, expected=0):
     results.append(row)
     return case
 
+def test_path_cases(root):
+    workspace = root / "public-test-paths"
+    tests = workspace / "qualitylayer/tests"
+    tests.mkdir(parents=True)
+    source = workspace / "qualitylayer/src/nested"
+    source.mkdir(parents=True)
+    (source / "view.test.tsx").write_text("// synthetic source-colocated test\n")
+    (source / "view.ts").write_text("// not a test file\n")
+    escaped = 'quoted"%##[warning]::notice::.test.ts'
+    for name in ("failed.test.ts", "passed.test.tsx", escaped, "control\npath.test.ts"):
+        (tests / name).write_text("// synthetic source must never become a public diagnostic\n")
+    git_home = root / "canary-git-home"
+    git_home.mkdir()
+    git_environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    git_environment.update(HOME=str(git_home), XDG_CONFIG_HOME=str(git_home))
+    for command in (["init", "--quiet"], ["add", "."], ["-c", "user.name=Canary", "-c", "user.email=canary@example.invalid", "commit", "--quiet", "-m", "public dummy test paths"]):
+        subprocess.run(["git", "-C", str(workspace), *command], env=git_environment, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    body = """"$QL_CANARY_PYTHON" - <<'PY'
+import json,os,sys,time,subprocess
+from pathlib import Path
+root=Path(os.environ['GITHUB_WORKSPACE']);folder=root/'qualitylayer/dist/test-runs';folder.mkdir(parents=True,exist_ok=True)
+mode=MODE
+record={'schema':1,'pid':os.getpid(),'state':'failed','sourceDrift':[],'active':[],'unrun':[],
+ 'buildSource':{'mode':'private-binary-build-source','digest':'a'*64,'scope':['qualitylayer/src'],'files':1,'bytes':1,'tests':'live-source','dependencies':'borrowed-node-modules'},
+ 'results':[{'file':'tests/failed.test.ts','code':1,'pass':0,'fail':1,'seconds':.1},{'file':'tests/passed.test.tsx','code':0,'pass':1,'fail':0,'seconds':.1}],
+ 'cancelToken':os.environ['QL_CANARY_NONCE'],'privateError':os.environ['QL_CANARY_NONCE'],'attachments':[os.environ['QL_CANARY_NONCE']]}
+if mode=='escaped':record['results'][0]['file']='tests/'+ESCAPED
+elif mode=='source-only':record['results'][0]['file']='src/nested/view.test.tsx'
+elif mode=='source-colocated':record['results'].append({'file':'src/nested/view.test.tsx','code':1,'pass':0,'fail':1,'seconds':.1})
+elif mode=='unknown-source':record['results'][0]['file']='src/'+os.environ['QL_CANARY_NONCE']+'.test.tsx'
+elif mode=='source-non-test':record['results'][0]['file']='src/nested/view.ts'
+elif mode=='source-head-fields':record.update(head=os.environ['QL_CANARY_NONCE'],sourceCommit=os.environ['QL_CANARY_NONCE'])
+elif mode=='absolute':record['results'][0]['file']='/private/'+os.environ['QL_CANARY_NONCE']+'.test.ts'
+elif mode=='unknown':record['results'][0]['file']='tests/'+os.environ['QL_CANARY_NONCE']+'.test.ts'
+elif mode=='control':record['results'][0]['file']='tests/control\\npath.test.ts'
+elif mode=='parent':record['results'][0]['file']='tests/../tests/failed.test.ts'
+elif mode=='drift':record['sourceDrift']=[{'phase':'after-tests','observation':{'paths':[os.environ['QL_CANARY_NONCE']],'total':1}}]
+elif mode=='running':record['state']='running'
+elif mode=='changed-head':subprocess.run(['git','-C',str(root),'-c','user.name=Canary','-c','user.email=canary@example.invalid','commit','--quiet','--allow-empty','-m','changed source'],env={**os.environ,'HOME':str(root.parent/'canary-git-home'),'XDG_CONFIG_HOME':str(root.parent/'canary-git-home')},check=True)
+elif mode=='git-failure':(root/'.git/HEAD').rename(root/'.git/HEAD.private')
+path=folder/(str(time.time_ns())+'.json')
+if mode=='malformed':path.write_text('{'+os.environ['QL_CANARY_NONCE'])
+elif mode=='duplicate':path.write_text(json.dumps(record).replace('"schema": 1','"schema": 1, "schema": 1'))
+elif mode=='oversized':path.write_text(json.dumps({**record,'privateError':os.environ['QL_CANARY_NONCE']*32768}))
+elif mode=='symlink':
+ foreign=Path(os.environ['QL_CANARY_CASE'])/'foreign.json';foreign.write_text(json.dumps(record));path.symlink_to(foreign)
+elif mode!='missing':path.write_text(json.dumps(record))
+if mode=='stale':os.utime(path,(1,1))
+print(os.environ['QL_CANARY_NONCE']);print(os.environ['QL_CANARY_NONCE'],file=sys.stderr)
+sys.exit(EXIT)
+PY
+"""
+    for mode in ("valid", "escaped", "source-only", "source-colocated", "unknown-source", "source-non-test", "source-head-fields", "absolute", "unknown", "control", "parent", "drift", "running", "changed-head", "malformed", "duplicate", "oversized", "symlink", "missing", "stale", "valid-after-malformed", "git-failure"):
+        exit_code = 127 if mode in ("missing", "git-failure") else 17
+        script = body.replace("MODE", repr(mode)).replace("ESCAPED", repr(escaped)).replace("EXIT", str(exit_code))
+        case = run_case(root, "failed-test-paths-" + mode, script, expected=exit_code if exit_code < 126 else 1, workspace=workspace)
+        if case is None:
+            continue
+        output = (case / "public.stdout.private").read_text()
+        metadata = json.loads(output)
+        expected = ["qualitylayer/tests/" + (escaped if mode == "escaped" else "failed.test.ts")] if mode in ("valid", "escaped", "valid-after-malformed") else []
+        if mode == "source-only":
+            expected = ["qualitylayer/src/nested/view.test.tsx"]
+        elif mode == "source-colocated":
+            expected = ["qualitylayer/src/nested/view.test.tsx", "qualitylayer/tests/failed.test.ts"]
+        elif mode == "source-head-fields":
+            expected = ["qualitylayer/tests/failed.test.ts"]
+        assert set(metadata) == {"failedTestFiles"}
+        assert metadata["failedTestFiles"] == expected
+        assert output.count("\n") == 1
+        assert "::notice::" not in output and "##[warning]" not in output
+        assert not (case / "public.stderr.private").read_bytes()
+        results[-1]["onlyCurrentHeadTrackedFailedTestPaths"] = True
+
 folder = tempfile.mkdtemp(prefix="ql-sealer-source-free-canary-retained-")
 print(json.dumps({"retainedPrivateCases": folder}), flush=True)
 with nullcontext(folder) as folder:
     root = Path(folder)
-    if sys.argv[2:] == ["msys2"]:
+    if sys.argv[2:] == ["test-paths"]:
+        if os.name == "nt":
+            raise RuntimeError("test-paths canaries require a POSIX runner")
+        test_path_cases(root)
+        windows = "unrun: focused POSIX test-path privacy cases only"
+    elif sys.argv[2:] == ["msys2"]:
         body = 'printf "::error::%s\\n::group::%s\\n" "$QL_CANARY_NONCE" "$QL_CANARY_NONCE"\nprintf "%s\\n" "$QL_CANARY_NONCE" >&2\nfor key in GITHUB_ENV GITHUB_OUTPUT GITHUB_STATE GITHUB_STEP_SUMMARY GITHUB_PATH; do printf "%s\\n" "$QL_CANARY_NONCE" > "${!key}"; done\nfor key in ACTIONS_RUNTIME_TOKEN ACTIONS_RUNTIME_URL ACTIONS_RESULTS_URL ACTIONS_CACHE_URL ACTIONS_CACHE_SERVICE_V2 ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL GH_TOKEN GITHUB_TOKEN; do test -z "${!key-}"; done\n'
         run_case(root, "msys2-private-channels", body, shell="msys2")
         run_case(root, "msys2-native-failure-preserved", '"$QL_CANARY_PYTHON" -c "import sys;sys.exit(17)"\n', shell="msys2", expected=17)
         windows = "executed actual msys2 cases"
     elif os.name != "nt":
+        test_path_cases(root)
         channels_case = """"$QL_CANARY_PYTHON" - <<'PY'
 import os,sys
 from pathlib import Path

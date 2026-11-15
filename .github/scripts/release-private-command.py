@@ -2,19 +2,112 @@
 """Run a release command with private diagnostics and explicit scalar exports."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from urllib.parse import urlsplit
 
 CHANNELS = ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "GITHUB_PATH")
 CAPABILITIES = ("ACTIONS_RUNTIME_TOKEN", "ACTIONS_RUNTIME_URL", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "GH_TOKEN", "GITHUB_TOKEN")
+
+def test_record_directory(workspace):
+    directory = workspace
+    for part in ("qualitylayer", "dist", "test-runs"):
+        directory = directory / part
+        if directory.is_symlink() or directory.resolve() != directory or (directory.exists() and not directory.is_dir()):
+            raise ValueError()
+    return directory
+
+def failure_scope():
+    try:
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+        head = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        if not re.fullmatch(r"[a-f0-9]{40}", head) or os.environ.get("GITHUB_SHA", head) != head:
+            return None
+        tree = subprocess.check_output(["git", "-C", str(workspace), "ls-tree", "-r", "-z", "--full-tree", "HEAD", "--", "qualitylayer/tests", "qualitylayer/src"], stderr=subprocess.DEVNULL, timeout=5)
+        if len(tree) > 4 * 1024 * 1024:
+            return None
+        tracked = set()
+        for row in tree.split(b"\0"):
+            if row:
+                metadata, path = row.split(b"\t", 1)
+                mode, kind, _oid = metadata.split()
+                path = path.decode("utf-8")
+                if mode in (b"100644", b"100755") and kind == b"blob" and path.endswith((".test.ts", ".test.tsx")):
+                    tracked.add(path)
+        existing = {path.name for path in test_record_directory(workspace).glob("*.json")}
+        return (workspace, head, tracked, existing) if len(existing) <= 1024 else None
+    except Exception:
+        return None
+
+def json_object(pairs):
+    value = dict(pairs)
+    if len(value) != len(pairs):
+        raise ValueError()
+    return value
+
+def invalid_json_constant(_value):
+    raise ValueError()
+
+def test_run_record(path, started, finished):
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 1024 * 1024 or not started <= before.st_mtime <= finished:
+        raise ValueError()
+    with os.fdopen(os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
+        opened = os.fstat(source.fileno())
+        content = source.read(1024 * 1024 + 1)
+        after = os.fstat(source.fileno())
+    identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+    if len(content) > 1024 * 1024 or any(identity(value) != identity(before) for value in (opened, after, path.lstat())):
+        raise ValueError()
+    record = json.loads(content, object_pairs_hook=json_object, parse_constant=invalid_json_constant)
+    if not isinstance(record, dict) or type(record.get("schema")) is not int or record["schema"] != 1 or record.get("state") not in ("passed", "failed", "interrupted", "incomplete") or record.get("sourceDrift") != [] or not isinstance(record.get("results"), list):
+        raise ValueError()
+    build = record.get("buildSource")
+    if build is not None and (not isinstance(build, dict) or build.get("mode") not in ("private-binary-build-source", "provided-runtime") or build.get("tests") != "live-source"):
+        raise ValueError()
+    return record
+
+def failed_test_paths(scope, started):
+    try:
+        if scope is None:
+            return []
+        workspace, head, tracked, existing = scope
+        current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        if current != head:
+            return []
+        records = [path for path in test_record_directory(workspace).glob("*.json") if path.name not in existing]
+        if len(records) > 32:
+            return []
+        failed = set()
+        finished = time.time()
+        for path in records:
+            record = test_run_record(path, started, finished)
+            if len(record["results"]) > 2048:
+                return []
+            for row in record["results"]:
+                file = row.get("file") if isinstance(row, dict) else None
+                if not isinstance(file, str) or not file.startswith(("tests/", "src/")) or len(file) > 1024 or "\\" in file or any(part in ("", ".", "..") for part in file.split("/")) or any(unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") for char in file) or "qualitylayer/" + file not in tracked or any(type(row.get(key)) is not int for key in ("code", "pass", "fail")) or row["pass"] < 0 or row["fail"] < 0 or type(row.get("seconds")) not in (int, float) or not math.isfinite(row["seconds"]) or row["seconds"] < 0 or ("signal" in row and not isinstance(row["signal"], str)):
+                    return []
+                if record["state"] != "passed" and (row["code"] != 0 or row["fail"] > 0 or row.get("signal")):
+                    failed.add("qualitylayer/" + file)
+        return sorted(failed) if len(failed) <= 2048 else []
+    except Exception:
+        return []
+
+def failure_metadata(scope, started):
+    metadata = {"failedTestFiles": failed_test_paths(scope, started)}
+    # Keep exact JSON values without allowing tracked filenames to become Actions commands.
+    return json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).replace("::", "\\u003a\\u003a").replace("#", "\\u0023").replace("%", "\\u0025")
 
 def checked(value, kind):
     if not isinstance(value, str) or not value or len(value) > 2048 or any(ord(c) < 32 for c in value):
@@ -226,6 +319,8 @@ def main():
     child = None
     job = None
     log = directory / "diagnostics.private"
+    scope = failure_scope()
+    started = time.time()
     try:
         with log.open("xb") as output:
             log.chmod(0o600)
@@ -242,7 +337,7 @@ def main():
         child = None
         job = None
         if code != 0:
-            print("Private release command failed; diagnostics retained privately on the owned runner.")
+            print(failure_metadata(scope, started))
             return code if 0 < code < 126 else 1
         exports = []
         for channel, rules in contract.items():

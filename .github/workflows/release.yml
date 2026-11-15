@@ -783,7 +783,7 @@ jobs:
     - name: Verify the exact qualified site before binary publication
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
       env:
         QL_SITE_PHASE: identity
         SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
@@ -855,7 +855,7 @@ jobs:
     - name: Verify public alias critical bytes and exact release before completion
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
       env:
         QL_SITE_PHASE: public
         SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
@@ -969,7 +969,7 @@ jobs:
     - name: Qualify the actual staged site and export only immutable public identity
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/ca5150901c24546b3386c5a97e3520abedba4f6c27954e238e00bb96540aadb1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
       env:
         QL_SITE_PHASE: qualify
         SITE_EXPORT_DIR: "${{ runner.temp }}/ql-site-export"

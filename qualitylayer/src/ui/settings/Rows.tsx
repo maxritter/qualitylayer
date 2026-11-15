@@ -13,6 +13,7 @@ export function Pick(props: {
   value: string
   options: PickOption[]
   onChange: (id: string) => void
+  onReselect?: (id: string) => void
   dim?: boolean
   disabled?: boolean
   /** The agent whose model menu also takes a typed provider/model id. */
@@ -26,6 +27,7 @@ export function Pick(props: {
       value={props.value}
       options={props.options}
       onChange={props.onChange}
+      onReselect={props.onReselect}
       dim={props.dim ?? false}
       disabled={props.disabled ?? false}
     />

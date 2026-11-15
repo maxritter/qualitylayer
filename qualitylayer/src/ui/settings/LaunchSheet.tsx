@@ -195,6 +195,7 @@ function EffortField({
         options={options}
         disabled={disabled}
         onChange={(next) => onChange(fromPick(next) as EffortChoice)}
+        onReselect={(next) => onChange(fromPick(next) as EffortChoice)}
       />
       <p className="q-ag-note">
         New sessions start at this effort. A task’s own pick wins; running sessions keep theirs.

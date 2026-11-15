@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { PERSONAL_PROJECT } from "../../../memory-contracts.ts"
 import type { PilotGroup, PilotMigrationApi } from "../../../pilot-memory-contracts.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 import { ModelPick } from "../../ModelPick.tsx"
 import { PilotRecords } from "./Records.tsx"
 import { AdditionalFolders } from "./Source.tsx"
@@ -133,8 +134,7 @@ export function PilotMapping({
           />
           Include {scan.counts.learning} saved session learnings
         </label>
-        <details className="q-pilot-details">
-          <summary>Review records and exclusions</summary>
+        <Disclosure className="q-pilot-details" head="Review records and exclusions">
           <p>
             {scan.counts.invalid} invalid · {scan.counts.excluded} excluded. Retired records and
             changed records that conflict with an existing lesson are left out. Prompts and session
@@ -151,7 +151,7 @@ export function PilotMapping({
               ))}
             </ul>
           ) : null}
-        </details>
+        </Disclosure>
         {m.reviewing ? (
           <p role="status">Checking selected destinations…</p>
         ) : m.currentReview ? (

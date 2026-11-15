@@ -7743,7 +7743,7 @@
     },
     {
       "path": "qualitylayer/src/ui/ModelPick.tsx",
-      "sha256": "7e01a0a30e7ebc549d80d410a4e716c30b04ed3f4b9804d9ab093cdab342a54c",
+      "sha256": "a97975d1619d0029c0da53962964d9c723eb3da6571f50a7a12ef51293d9fd16",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10975,7 +10975,7 @@
     },
     {
       "path": "qualitylayer/src/ui/quick-ask/quick-ask.css",
-      "sha256": "59a25858a0ab094381e5a4c24091d0ebed563428b138879559e10b289bce2155",
+      "sha256": "0927d561a431ad6ae341b8d2f79863a255000b0e43bf89595a2ec103c930db9a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11831,7 +11831,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/LaunchSheet.tsx",
-      "sha256": "628d47646e00b72b59c5d75bcbd8bc8400cea3a47c8f93c8a1c2d98bc0bce2f7",
+      "sha256": "1c9feb96a8afe4cc0205a9aefb10ee93f3feaf65fb392b68147e20aae2a9268a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11887,7 +11887,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Rows.tsx",
-      "sha256": "85b21f9e15bd7b04788d1340809305902a3169a5e8b8b17f56d1ef661994b69b",
+      "sha256": "73854be0830e3830970f66f44eef605b48ac3e14699b843b3f3df9833ef77d9a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13423,7 +13423,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/steps.css",
-      "sha256": "047d708ab18b219632f3f08fa52e81e0cf20d2ecde73515e60993d16562e9bab",
+      "sha256": "a763d0e9b6187442819865b1c1171943b16b1cf404941c50d57bc7c371e84fbe",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14903,7 +14903,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/memory-import/Mapping.tsx",
-      "sha256": "0c306aff1c5bcc12ef0afbcdd19394d7294cc562b6d772d473e31161c1766a8b",
+      "sha256": "6827efce1ce8301d023869bcf4b3fb324b6786e3838ea935543562ac34143027",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14919,7 +14919,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/memory-import/Receipt.tsx",
-      "sha256": "808c163da64320a0c54cd5ce67ca6c002e3da07843d292beffbfc5a5aa7c6fb3",
+      "sha256": "55807c2949611b9d30b44a0279199e866761c55296ebb236021870a8fe7b9813",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14927,7 +14927,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/memory-import/Records.tsx",
-      "sha256": "a584471333655b460806687bcd704f42688dddb7e316f8975c54e4c588d462b1",
+      "sha256": "d26fe0644495348af9693d76434a3da5f17c01bc432a7e76b7351ccf4c7f7a0d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14935,7 +14935,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/memory-import/Source.tsx",
-      "sha256": "68612f33c65c8167de521ffd8237a2b866e4ba41002ca6ac658a7827e4ea33b2",
+      "sha256": "3b26f61bd436a360a16429104862d4adde9d6605616f53ad1a4512797fb931a1",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

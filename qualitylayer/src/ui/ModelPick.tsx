@@ -124,6 +124,8 @@ type PickProps = {
   value: string
   options: PickOption[]
   onChange: (id: string) => void
+  /** An explicit pick of the current value, when that choice carries separate intent. */
+  onReselect?: (id: string) => void
   footer?: ReactNode
   /** Drawn quieter: the value is an absence, as No subagents is. */
   dim?: boolean
@@ -138,6 +140,7 @@ function PlainPick({
   value,
   options,
   onChange,
+  onReselect,
   footer,
   dim = false,
   look = "node",
@@ -155,7 +158,11 @@ function PlainPick({
   return (
     <Select.Root
       value={value}
-      onValueChange={(next) => next !== null && next !== value && onChange(next)}
+      onValueChange={(next) => {
+        if (next === null) return
+        if (next === value) onReselect?.(next)
+        else onChange(next)
+      }}
       disabled={disabled}
     >
       <Select.Trigger

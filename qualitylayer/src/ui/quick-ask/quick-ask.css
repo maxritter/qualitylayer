@@ -267,8 +267,11 @@
     transform: rotate(360deg);
   }
 }
+:root[data-motion="gentle"] .qa-spin {
+  animation: none;
+}
 @media (prefers-reduced-motion: reduce) {
-  .qa-spin {
+  :where(:root:not([data-motion])) .qa-spin {
     animation: none;
   }
 }

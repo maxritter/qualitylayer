@@ -664,7 +664,7 @@ body:has(.ir-steps-phone) .ir-phone-tabs {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .sp-enter {
+  :where(:root:not([data-motion])) .sp-enter {
     animation: none;
   }
 }

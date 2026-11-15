@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { PERSONAL_PROJECT } from "../../../memory-contracts.ts"
 import type { PilotReceipt, PilotScan } from "../../../pilot-memory-contracts.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 import { sourceNames } from "./Source.tsx"
 import type { PilotDestination } from "./usePilotMigration.ts"
 
@@ -64,8 +65,7 @@ export function PilotReceiptView({
             created.
           </p>
         ) : null}
-        <details className="q-pilot-details">
-          <summary>Import details</summary>
+        <Disclosure className="q-pilot-details" head="Import details">
           <p>
             Read-only source snapshot · {sourceNames[scan.source]}. No existing QualityLayer lesson
             was overwritten. Imported records are not marked verified.
@@ -79,7 +79,7 @@ export function PilotReceiptView({
           ) : (
             <p>No import errors.</p>
           )}
-        </details>
+        </Disclosure>
       </div>
       <footer className="q-pilot-actions">
         <Button type="button" variant="outline" disabled={busy} onClick={retry}>

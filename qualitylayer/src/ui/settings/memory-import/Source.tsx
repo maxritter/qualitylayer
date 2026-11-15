@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { PilotSourceInput, PilotSourceKind } from "../../../pilot-memory-contracts.ts"
 import { api } from "../../api.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 import { offersHostActions } from "../../machines/framed.ts"
 import { pilotFile } from "./files.ts"
 
@@ -111,8 +112,7 @@ export function AdditionalFolders({
           />
         </>
       ) : null}
-      <details className="q-pilot-details">
-        <summary>Project knowledge</summary>
+      <Disclosure className="q-pilot-details" head="Project knowledge">
         <p>Add .pilot/knowledge and legacy exports from a checkout you choose.</p>
         <SourcePath
           label="Checkout folder"
@@ -152,7 +152,7 @@ export function AdditionalFolders({
             </Button>
           </div>
         ))}
-      </details>
+      </Disclosure>
     </>
   )
 }
@@ -259,13 +259,12 @@ export function PilotSource({
         </p>
         <p>The import stays on this computer. Pilot Shell files stay as they are.</p>
         <AdditionalFolders input={input} onChange={onChange} busy={busy || reading} />
-        <details className="q-pilot-details">
-          <summary>What is included</summary>
+        <Disclosure className="q-pilot-details" head="What is included">
           <p>
             Saved observations, knowledge documents and selected session learnings. Prompts,
             transcripts, pending tool activity, credentials and settings are left out.
           </p>
-        </details>
+        </Disclosure>
         {reading ? <p role="status">Reading selected exports…</p> : null}
         {error ? <p role="alert">{error}</p> : null}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { PilotMigrationApi, PilotRecordPreview } from "../../../pilot-memory-contracts.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 import { importError } from "./Source.tsx"
 
 export function PilotRecords({
@@ -41,7 +42,8 @@ export function PilotRecords({
     }
   }
   return (
-    <details
+    <Disclosure
+      head="Review records"
       className="q-pilot-details"
       open={open}
       onToggle={(event) => {
@@ -49,7 +51,6 @@ export function PilotRecords({
         if (event.currentTarget.open && total === null && !busy && !error) void load()
       }}
     >
-      <summary>Review records</summary>
       {items.length ? (
         <ul className="q-pilot-records">
           {items.map((record, index) => (
@@ -84,6 +85,6 @@ export function PilotRecords({
           {items.length} of {total} records
         </p>
       ) : null}
-    </details>
+    </Disclosure>
   )
 }

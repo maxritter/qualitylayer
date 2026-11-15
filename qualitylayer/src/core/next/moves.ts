@@ -76,10 +76,7 @@ export function movesOf(state: MoveState): Move[] {
     case "verify":
       return verifyMoves(state.mode)
     case "shipped":
-      return [
-        { command: "qualitylayer ship", does: "the landing steps after the approval", by: "agent" },
-        { command: "qualitylayer pr watch", does: "watch the pull request's checks", by: "agent" },
-      ]
+      return [{ command: "qualitylayer ship", does: "finish the approved handoff", by: "agent" }]
     case "abandoned":
       return [{ ...START, does: "start a new task" }]
   }

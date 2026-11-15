@@ -201,7 +201,7 @@ function messageOf(task: Task, state: MoveState): string {
           "Verify: the code or the Plan changed since the pass (the task's own change or the person's comment); recheck it. The person's approval still saves.",
       }[state.mode]
     case "shipped":
-      return `${task.slug} is approved; ship lands it and watches the pull request.`
+      return `${task.slug} is approved; ship follows the chosen delivery.`
     case "abandoned":
       return `${task.slug} is closed; its files stay.`
     case "chat":

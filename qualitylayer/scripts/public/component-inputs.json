@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "d860a770d002703cb68f87fc0c5f0fc67b93405e",
-  "catalogSha256": "15664dc44c98e701a466b4e382dd5f0cc0764c6760a54b74f3b77ffa0326b077",
+  "sourceHead": "e3d13c861bf75ee8630f648732c1231b91d6f4bd",
+  "catalogSha256": "f4ac151ee7b2e7f2652ede3a84da18219970555cd4a86791fa07eb459156e054",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -4039,7 +4039,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/compass.ts",
-      "sha256": "dc23d0fd62938ed528148336029436f54d1df4a87ba258641da487e4c3e88d84",
+      "sha256": "2d135e7e25d2ee0f8afab0003caffecd2ce43fe893b52d881f42cf93f35326cc",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4055,7 +4055,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/moves.ts",
-      "sha256": "d1d1028505f7a4f5d03ffd41803f917e3b7004704de4e9a0107a58e824dc70b0",
+      "sha256": "9a7f9b9aafacc630e7fa5afe5260d66961e5bd1b8882c6c1981391d5a289b63a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

@@ -8,7 +8,7 @@ import { hasHookFile } from "../install/agent-hooks.ts"
 import { recordLiveness } from "../peers/claude.ts"
 import { lsofHoldersChecked } from "../peers/codex.ts"
 import { homeVariable } from "../platform.ts"
-import { acceptedTurnBoundary, permissionChangeBoundary } from "./bind.ts"
+import { acceptedStopSequence, acceptedTurnBoundary, permissionChangeBoundary } from "./bind.ts"
 import {
   type ControlRequest,
   canRecoverRun,
@@ -519,14 +519,15 @@ async function guardedRestartStop(
   const permissionPause = permissionInputAt !== undefined
   // The host, rather than an earlier HTTP projection, reserves the accepted boundary.
   const current = readRun(ctx.home, run.id)
-  const sequence = run.runEvents?.at(-1)?.sequence
+  const sequence = permissionPause ? run.runEvents?.at(-1)?.sequence : acceptedStopSequence(run)
   if (
     !current ||
     current.generation !== run.generation ||
     current.status !== "running" ||
     !(permissionPause ? permissionChangeBoundary(current) : acceptedTurnBoundary(current)) ||
     current.nativeSession !== run.nativeSession ||
-    current.runEvents?.at(-1)?.sequence !== sequence
+    (permissionPause ? current.runEvents?.at(-1)?.sequence : acceptedStopSequence(current)) !==
+      sequence
   )
     throw new Error("The turn changed before Restart. Stop and Resume here instead.")
   const connection = await connectOrRevive(ctx.home, run.id)

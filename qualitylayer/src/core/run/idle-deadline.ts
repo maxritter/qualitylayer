@@ -9,6 +9,7 @@
 // record has been quiet for a moment.
 
 import type { IdleStop } from "../config-values.ts"
+import { acceptedStopEvent } from "./bind.ts"
 import type { RunRecord } from "./contracts.ts"
 import { idleRunBoundary } from "./idle.ts"
 import { listedRun } from "./listed-run.ts"
@@ -93,7 +94,7 @@ export class IdleDeadline {
     const run = this.deps.readRun(id)
     if (!run || !listedRun(run) || idleRunBoundary(run) === undefined) return null
     const period = await this.deps.period()
-    const last = Date.parse(run.runEvents?.at(-1)?.at ?? "")
+    const last = Date.parse(acceptedStopEvent(run)?.at ?? "")
     return period === undefined || !Number.isFinite(last) ? null : { run, at: last + period }
   }
 

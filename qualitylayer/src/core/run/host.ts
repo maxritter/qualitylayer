@@ -27,6 +27,7 @@ import {
 } from "./approval-screen.ts"
 import {
   AttentionSignals,
+  inputBoundaryEvent,
   invalidateRunBoundary,
   reserveGuardedStop,
   reserveRunRestart,
@@ -45,7 +46,14 @@ import {
 } from "./launch-hooks.ts"
 import { AGENT_CAPABILITIES } from "./launch-spec.ts"
 import { OWNER_ENV, ownerHash, PROCESS_LIMITS } from "./processes.ts"
-import { encodeFrame, FrameDecoder, type HostFrame, LIMITS, type ServerFrame } from "./protocol.ts"
+import {
+  encodeFrame,
+  FrameDecoder,
+  type HostFrame,
+  isTerminalFocusReport,
+  LIMITS,
+  type ServerFrame,
+} from "./protocol.ts"
 import {
   cleanupOwned,
   identityState,
@@ -406,7 +414,7 @@ export async function runAgentHost(
               current.generation === pending.boundary.generation &&
               current.nativeSession === pending.boundary.nativeSession &&
               current.task === pending.boundary.task &&
-              current.eventSequence === pending.inputSequence &&
+              inputBoundaryEvent(current)?.sequence === pending.inputSequence &&
               current.intent?.state !== "paused" &&
               !(
                 current.recovery?.generation === current.generation &&
@@ -808,6 +816,12 @@ export async function runAgentHost(
         if (refused !== null)
           send(attachment, { type: "error", code: BOUNDARY_REFUSED[frame.type], message: refused })
       } else if (frame.type === "input" && inputAllowed) {
+        if (isTerminalFocusReport(frame.data)) {
+          if (!queueInput(frame.data)) attachment.socket.destroy()
+          if (frame.boundary)
+            send(attachment, { type: "input-result", ...frame.boundary, accepted: false })
+          return
+        }
         finishGuardedInput(false)
         if (frame.boundary) {
           const current = readRun(home, id)

@@ -6,7 +6,7 @@ import { keyOf } from "../task/binding.ts"
 import { withCompletedBatch } from "../task/question-batch.ts"
 import type { Task } from "../task/store.ts"
 import { hasActiveWait } from "../wait.ts"
-import { acceptedStopSequence } from "./bind.ts"
+import { acceptedStopEvent } from "./bind.ts"
 import { readHost, readRun } from "./registry.ts"
 import { inputBoundaryMatches, sendToRun } from "./send-message.ts"
 
@@ -38,8 +38,9 @@ export async function continueAnsweredBatch(
       return
     }
     if (run.status !== "running") return
-    const sequence = acceptedStopSequence(run)
-    if (sequence === undefined) return
+    const stop = acceptedStopEvent(run)
+    if (stop === undefined) return
+    const sequence = stop.sequence
     const boundary = {
       generation: run.generation,
       nativeSession: owner.nativeSession,
@@ -62,7 +63,7 @@ export async function continueAnsweredBatch(
     )
       return
     const inputAt = readHost(ctx.home, run.id)?.lastInputAt ?? 0
-    if (inputAt > Date.parse(run.runEvents?.at(-1)?.at ?? "")) return
+    if (inputAt > Date.parse(stop.at)) return
     await save({ ...record, state: "attempted" })
     try {
       await sendToRun(

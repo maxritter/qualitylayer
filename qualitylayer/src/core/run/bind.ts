@@ -313,7 +313,12 @@ export async function recordRunHook(
     return {
       runEvents: retainEvents([...before, row]),
       eventSequence: row.sequence,
-      ...(current.guardedRestart && !shutdown
+      ...(current.guardedRestart &&
+      !shutdown &&
+      !(
+        informationalRunEvent(row) &&
+        acceptedStopEvent(current)?.sequence === current.guardedRestart.sequence
+      )
         ? { guardedRestart: { ...current.guardedRestart, valid: false } }
         : {}),
       ...(lead && event === "UserPromptSubmit"
@@ -437,23 +442,50 @@ export async function continueRunIntent(
   return facts.boundary === "human" && !stopped && !waiting ? null : false
 }
 
-export function acceptedTurnBoundary(run: RunRecord): boolean {
-  const rows = (run.runEvents ?? []).filter((row) => row.generation === run.generation)
-  const last = rows.at(-1)
-  if (!last?.lead || last.event !== "Stop" || last.accepted !== true) return false
+const informationalRunEvent = (row: RunEvent): boolean =>
+  !row.interrupted &&
+  (row.event === "SubagentStop" ||
+    (row.event === "Notification" && row.notificationType === "idle_prompt"))
+
+/** The actual boundary event survives only known, uninterrupted lifecycle notices. */
+export function inputBoundaryEvent(
+  run: Pick<RunRecord, "generation" | "runEvents">,
+): RunEvent | undefined {
+  const rows = run.runEvents ?? []
+  for (let at = rows.length - 1; at >= 0; at--) {
+    const row = rows[at]
+    if (!row || row.generation !== run.generation || row.interrupted) return undefined
+    if (!informationalRunEvent(row)) return row
+  }
+  return undefined
+}
+
+export function acceptedStopEvent(run: RunRecord): RunEvent | undefined {
+  const last = inputBoundaryEvent(run)
+  if (
+    !last?.lead ||
+    last.event !== "Stop" ||
+    last.accepted !== true ||
+    !Number.isFinite(Date.parse(last.at)) ||
+    !run.nativeSession ||
+    last.nativeSession !== run.nativeSession
+  )
+    return undefined
   const prompt = run.lastPrompt
-  return (
-    !!prompt &&
+  return prompt &&
     prompt.generation === run.generation &&
     prompt.sequence < last.sequence &&
     (!prompt.turn || !last.turn || prompt.turn === last.turn)
-  )
+    ? last
+    : undefined
+}
+
+export function acceptedTurnBoundary(run: RunRecord): boolean {
+  return acceptedStopEvent(run) !== undefined
 }
 
 export function acceptedStopSequence(run: RunRecord): number | undefined {
-  return run.status === "running" && acceptedTurnBoundary(run)
-    ? run.runEvents?.at(-1)?.sequence
-    : undefined
+  return run.status === "running" ? acceptedStopEvent(run)?.sequence : undefined
 }
 
 /** A current native tool dialog, not a completed turn or a QualityLayer approval. */
@@ -485,7 +517,9 @@ export function reserveRunRestart(
       !(permissionSession
         ? permissionChangeBoundary(current) && current.nativeSession === permissionSession
         : acceptedTurnBoundary(current)) ||
-      current.runEvents?.at(-1)?.sequence !== sequence
+      (permissionSession
+        ? current.runEvents?.at(-1)?.sequence
+        : acceptedStopEvent(current)?.sequence) !== sequence
     )
       throw new Error("The turn changed before Restart. Stop and Resume here instead.")
     return { status: "stopping", guardedRestart: { sequence, valid: true } }

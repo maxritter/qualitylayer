@@ -5,7 +5,7 @@ import { readGate } from "../gate/gate.ts"
 import { readNeeds } from "../need/need.ts"
 import { openQuestion } from "../task/question.ts"
 import { readBatch } from "../task/question-batch.ts"
-import { acceptedStopSequence } from "./bind.ts"
+import { acceptedStopEvent } from "./bind.ts"
 import type { RunRecord } from "./contracts.ts"
 import { nativeSessionFile } from "./control.ts"
 import { intentHelperRunning } from "./intent.ts"
@@ -18,15 +18,8 @@ export function idleRunBoundary(run: RunRecord): number | undefined {
   if (run.agent === "other" || !run.nativeSession || run.waitSince || run.terminalPrompt)
     return undefined
   if (run.intent && !["paused", "blocked", "complete"].includes(run.intent.state)) return undefined
-  const rows = (run.runEvents ?? []).filter((row) => row.generation === run.generation)
-  while (
-    rows.at(-1)?.event === "SubagentStop" ||
-    (rows.at(-1)?.event === "Notification" && rows.at(-1)?.notificationType === "idle_prompt")
-  )
-    rows.pop()
-  const sequence = acceptedStopSequence({ ...run, runEvents: rows })
-  const at = Date.parse(run.runEvents?.at(-1)?.at ?? "")
-  return sequence !== undefined && Number.isFinite(at) ? sequence : undefined
+  const stop = run.status === "running" ? acceptedStopEvent(run) : undefined
+  return stop && Number.isFinite(Date.parse(stop.at)) ? stop.sequence : undefined
 }
 
 /**
@@ -220,7 +213,7 @@ export function watchIdleRun(options: {
     }
     const finished = handedOffBoundary(run, sequence)
     if (!finished && options.attached()) return
-    const since = Math.max(detachedAt, Date.parse(run.runEvents?.at(-1)?.at ?? ""))
+    const since = Math.max(detachedAt, Date.parse(acceptedStopEvent(run)?.at ?? ""))
     timer = setTimeout(
       () => {
         timer = undefined

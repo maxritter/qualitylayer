@@ -27,7 +27,6 @@ export function inputBoundaryMatches(run: RunRecord, boundary: InputBoundary): b
     run.nativeSession === boundary.nativeSession &&
     run.task === boundary.task &&
     acceptedStopSequence(run) === boundary.sequence &&
-    !run.runEvents?.at(-1)?.interrupted &&
     !run.waitSince &&
     !run.terminalPrompt &&
     !run.startupPrompt &&

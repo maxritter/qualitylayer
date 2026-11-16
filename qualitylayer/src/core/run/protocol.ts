@@ -106,6 +106,20 @@ export const FRAME_SCHEMA = {
 } as const
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8", { fatal: true })
+
+/** Focus reports carry terminal state, never the person's keys or paste. */
+export function isTerminalFocusReport(bytes: Uint8Array): boolean {
+  if (bytes.length === 0 || bytes.length % 3 !== 0) return false
+  for (let at = 0; at < bytes.length; at += 3)
+    if (
+      bytes[at] !== 0x1b ||
+      bytes[at + 1] !== 0x5b ||
+      (bytes[at + 2] !== 0x49 && bytes[at + 2] !== 0x4f)
+    )
+      return false
+  return true
+}
+
 const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= max
 export const validSize = (cols: unknown, rows: unknown) =>

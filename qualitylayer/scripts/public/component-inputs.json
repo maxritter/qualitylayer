@@ -759,7 +759,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/subagent-model.ts",
-      "sha256": "18c3cd49b16fd123456c151709929e8d36a786254773ed95be7f49265497eccb",
+      "sha256": "0249f53fa4899428381f7e1d45524afae5d972cc20ae1ef18eb35cee6d230b37",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

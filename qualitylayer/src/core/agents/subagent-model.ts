@@ -72,7 +72,8 @@ const withAdded = (catalog: { id: string; name: string }[], ids: readonly string
 /** One entry per installed agent that has subagents and that Settings leaves on. */
 export async function subagentModels(ctx: Ctx): Promise<SubagentModels[]> {
   const { agents } = await readConfig(ctx)
-  return (await installedSubagentModels(ctx)).filter((entry) => agents[entry.agent].enabled)
+  const enabled = NATIVE_AGENTS.filter((agent) => agents[agent].enabled)
+  return enabled.length === 0 ? [] : installedSubagentModels(ctx, enabled)
 }
 
 /**
@@ -108,17 +109,19 @@ async function configAgentModels(
   }
 }
 
-async function installedSubagentModels(ctx: Ctx): Promise<SubagentModels[]> {
+async function installedSubagentModels(
+  ctx: Ctx,
+  enabled: readonly NativeAgent[],
+): Promise<SubagentModels[]> {
   const { addedModels: added } = await readConfig(ctx)
   const dirs = roots(ctx)
   if (dirs === null) return []
   const out: SubagentModels[] = []
   // An agent that was installed but never started has no configuration folder yet: it is listed too.
-  const searches = new Map(
-    NATIVE_AGENTS.map((agent) => [agent, installedBinary(ctx, agent)] as const),
-  )
+  const searches = new Map(enabled.map((agent) => [agent, installedBinary(ctx, agent)] as const))
   const here = async (agent: SubagentAgent, folder: string) =>
-    (await ctx.fs.exists(folder)) || (await searches.get(agent)) !== null
+    enabled.includes(agent) &&
+    ((await ctx.fs.exists(folder)) || (await searches.get(agent)) !== null)
   if (await here("claude-code", dirs.claude)) {
     const file = join(dirs.claude, "settings.json")
     let current: string | null = null

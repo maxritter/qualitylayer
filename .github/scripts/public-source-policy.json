@@ -1,6 +1,6 @@
 {
   "publicFiles": {
-    ".gitattributes": "720fb4f4eb0354d4d5c797202f70726389f38ea99e76bcaae504f1f80b154110",
+    ".gitattributes": "b3affb643851f78c752912af627aea49ced8defbd83b5e84e70bab2de08e0e51",
     ".github/ISSUE_TEMPLATE/bug_report.md": "e5cf52ae0c128b0a993d5a486302cc452f559fef2d27fb7c3d5f4b58cb47e5be",
     ".github/ISSUE_TEMPLATE/config.yml": "1f103c6a9dd07cd13a9a6f17ace6b813f47747eb9cb7e00488cb2073caaf91bb",
     ".github/ISSUE_TEMPLATE/feature_request.md": "439282284ccc5dfead99aa040a6490cd92710afa6d45f065c75f6ff23e3465e9",
@@ -1804,7 +1804,7 @@
     "qualitylayer/src/ui/steps/summary-facts.ts": "82682804b34bea70f13bd00ec8cef03021c7197b7d84f6c6d92008629a3e5a96",
     "qualitylayer/src/ui/steps/supporting-evidence.tsx": "38cbbef416c99c167a6693e8e19a525cdd892df5c6cb3b8c66f238b1ed342137",
     "qualitylayer/src/ui/steps/verify/Board.tsx": "e2a91cbe1692f6dcdb2d4e48c06a15292db85c14768d208f7d6e4a878ff88da9",
-    "qualitylayer/src/ui/steps/verify/BoardPage.tsx": "b1d5c124d0ca153afcca305e1e111949c518580ca535e7fcc43c2a5bf80df713",
+    "qualitylayer/src/ui/steps/verify/BoardPage.tsx": "cccc8b499398113b785e5a7d0fb8bd13488da09a775781e4ef84321aa50e0d2a",
     "qualitylayer/src/ui/steps/verify/CodeAccess.tsx": "a4dcb329c392e2ea310cc994072280cc713b0880c6c9c264013acbfbd3b3ac2f",
     "qualitylayer/src/ui/steps/verify/CodeRow.tsx": "8db12cde5512b228a92051acb6fb718ee335c89486a072c182e78a3164f84245",
     "qualitylayer/src/ui/steps/verify/DecisionQueue.tsx": "bfb0600586aa9a0061ace115716c424964b3835527836dfad06e07d5a016fdd1",
@@ -2177,11 +2177,13 @@
     "qualitylayer/src/server/export-figures.ts": "db1e66a13e3966ca4cd2548b796fc41f8e7e795cf5abc65cd9f5cbfdc6b66847",
     "qualitylayer/tests/server/export-figures.test.ts": "fb51caf64afc66e6ab0e0c3dd8e0fbee67cad5f5664855841aab4b82e127047f",
     "qualitylayer/tests/e2e/export-complete-document.test.ts": "f685ecd3836adc8af8d00d808f09e385645ac74f00052baecef6f0a7dddc0242",
-    "qualitylayer/tests/e2e/calm-step-transitions.test.ts": "5203012914e460f1f42b16481472edf48e4bb169cb53c710fcbfe1cbf7f50a92",
+    "qualitylayer/tests/e2e/calm-step-transitions.test.ts": "44979bebabebcd81bf40ad3efb74c1f02e3a28ce0784937ab27779b9ccfde403",
     "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-light.png": "1e1d3cfeb790b74dfbcf687b7cde0800bcfd28c14386065fb492319edad7f2ad",
-    "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-dark.png": "0e9cdb95f7d3fbdf887adbec3c62f3be8c8ae2df4f4cde1580a9eb2f3c2c0cd8"
+    "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-dark.png": "0e9cdb95f7d3fbdf887adbec3c62f3be8c8ae2df4f4cde1580a9eb2f3c2c0cd8",
+    "qualitylayer/src/ui/steps/verify/board-view.ts": "f68b43911cb1c9153a57252b0e64a20c52d7e0d2c90db91ffaa2b7893a7b18f5",
+    "qualitylayer/src/ui/steps/verify/use-recorded-screens.ts": "09e3ce8ff69f0c0cd25e5ea92b77556a54a7bed026a227d57749f4413d66a6da"
   },
-  "reviewManifestSha256": "0059995a1dca59a7db0288543b48551c394ef23196eb03384356e82347b4ebec",
+  "reviewManifestSha256": "9b73ca35d5cf90cc8ae92daa8c9036222f7001978bd42b01b454da3453241eb2",
   "schema": 1,
-  "sourceHead": "916a0bd04153f5484f77cfe1a1d23f52b1c68dea"
+  "sourceHead": "b20d0f6ecf1d19123610cf4e583f6a2b5411534e"
 }

@@ -6,15 +6,11 @@
 
 import { ClipboardCheckIcon, CodeIcon, ImageIcon } from "lucide-react"
 import { useMemo, useRef } from "react"
-import type { VerificationRun } from "../../../core/review/screen-evidence.ts"
-import { useNow, useQuery } from "../../hooks.ts"
+import { useNow } from "../../hooks.ts"
 import { Bands } from "../../step-page/bands/Bands.tsx"
-import type { Fact } from "../../step-page/bands/FactRow.tsx"
-import { metaLine } from "../../step-page/bands/Gist.tsx"
 import { YourMove } from "../../step-page/bands/YourMove.tsx"
 import { FileRow } from "../../step-page/kit/FileRow.tsx"
 import { readWholeFile } from "../../step-page/kit/read-file.ts"
-import { TICKS_UP_TO } from "../../step-page/proof.ts"
 import { useSelectionMark } from "../../step-page/StepPage.tsx"
 import { StepTools } from "../../step-page/StepTools.tsx"
 import { useSteadyStep } from "../../step-page/steady.ts"
@@ -25,24 +21,14 @@ import type { StepPageProps } from "../page-props.ts"
 import { stepIsWorking, verificationReady } from "../readiness.ts"
 import { StepQuiet } from "../StepQuiet.tsx"
 import { VerifyBoard } from "./Board.tsx"
+import { verifyBoardHeader, verifyBoardStages } from "./board-view.ts"
 import { CodeAccess } from "./CodeAccess.tsx"
 import { picturesOf, VerifyPictures } from "./Pictures.tsx"
-import { spanWords, verifyView, whenWords } from "./progress.ts"
-import { loadVerificationScreens } from "./screens-api.ts"
-
-const clip = (text: string, at = 56) =>
-  text.length <= at ? text : `${text.slice(0, at - 1).trimEnd()}…`
+import { verifyView } from "./progress.ts"
+import { useRecordedScreens } from "./use-recorded-screens.ts"
 
 export function VerifyBoardPage(props: StepPageProps) {
-  const {
-    task,
-    document: incomingDocument,
-    sections: incomingSections,
-    state,
-    mode,
-    live,
-    api,
-  } = props
+  const { task, document: incomingDocument, sections: incomingSections, state, mode, live } = props
   const supporting = useStepSupporting()
   const root = useRef<HTMLDivElement | null>(null)
   useSelectionMark(root, state.closed || mode !== "live" ? undefined : live)
@@ -65,83 +51,12 @@ export function VerifyBoardPage(props: StepPageProps) {
   const { document } = steady.doc
   const sections = steady.sections
   const view = { ...steady.doc.view, phase: incomingView.phase, now: incomingView.now }
-  const stages =
-    mode !== "live" || stepIsWorking(task, state.at)
-      ? view.stages
-      : view.stages.map((stage) => ({
-          ...stage,
-          state: stage.state === "running" ? ("waiting" as const) : stage.state,
-          checks: stage.checks.map((check) =>
-            check.state === "running" ? { ...check, state: "waiting" as const } : check,
-          ),
-          segments: stage.segments.map((segment) => (segment === "w" ? ("" as const) : segment)),
-        }))
-  const evidenceVersion = (task.evidence ?? [])
-    .filter((file) => /(?:^|\/)screen-[a-f0-9]{24}\.png$/.test(file))
-    .join("\n")
-  const recorded = useQuery(
-    (signal) =>
-      api === undefined || mode !== "live"
-        ? Promise.resolve(null)
-        : loadVerificationScreens(api, task.id, signal),
-    [api, task.id, mode, evidenceVersion],
-  )
-  const runs: readonly VerificationRun[] = recorded.data?.runs ?? []
-
-  const { phase, points } = view
-  const meta =
-    phase === "verified"
-      ? metaLine(
-          view.started !== null && view.ended !== null
-            ? `verified ${whenWords(view.started)} to ${whenWords(view.ended)}`
-            : "verified",
-          view.started !== null && view.ended !== null
-            ? spanWords(view.ended - view.started)
-            : undefined,
-          undefined,
-        )
-      : phase === "decision"
-        ? "fix rounds done · one decision for you, then your review"
-        : metaLine(
-            view.started !== null ? `started ${whenWords(view.started)}` : undefined,
-            view.elapsed !== null ? `${view.elapsed} so far` : undefined,
-            undefined,
-          )
-  // A Plan that lists its Acceptance test by Done means point: the count is the points proven, one tick
-  // each (a bar past 24, where the ticks would wrap); a Plan with numbered steps counts judged points.
-  const byPoint = view.byPoint
-  const counted = byPoint || phase !== "checking" ? points.passed : points.judged
-  const facts: Fact[] =
-    phase === "decision" || points.total === 0
-      ? []
-      : [
-          {
-            value: `${counted} of ${points.total}`,
-            label: byPoint
-              ? "Done means proven"
-              : phase === "checking"
-                ? "points judged"
-                : "points pass",
-            ...(byPoint && view.ticks.length <= TICKS_UP_TO
-              ? { ticks: view.ticks }
-              : { bar: { done: counted, total: points.total } }),
-            ...(view.roundWords !== "" ? { sub: view.roundWords } : {}),
-          },
-        ]
+  const stages = verifyBoardStages(view, mode !== "live" || stepIsWorking(task, state.at))
+  const runs = useRecordedScreens(props)
   const gist = {
     title: STEP_TITLES.verify,
     actions: <StepTools doc={document} cut={sections} live={mode === "live" ? live : undefined} />,
-    meta,
-    facts,
-    ...(view.now !== null && phase !== "decision" && phase !== "verified"
-      ? {
-          now: {
-            id: view.now.stage,
-            label: clip(view.now.line),
-            target: `vb-lane-${view.now.lane}`,
-          },
-        }
-      : {}),
+    ...verifyBoardHeader(view),
   }
 
   if (!ready && !steady.held && mode !== "plain")

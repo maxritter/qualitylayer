@@ -76,6 +76,8 @@ for (const theme of ["light", "dark"] as const)
         let active = false
         let stopped = false
         let verification: LaneRow[] | undefined
+        let screen: { file: string; label: string } | undefined
+        let screenReads = 0
         let responseCount = 0
         let starts = 0
         const proof = output ? join(output, `${theme}-${width}`) : undefined
@@ -94,6 +96,26 @@ for (const theme of ["light", "dark"] as const)
           const cards = join(folder, "agents", "02-implement.md")
           const person = join(folder, "02-implement.md")
           const verifyFile = join(folder, "03-verify.md")
+          await page.route(`**${path}/screens`, async (route) => {
+            screenReads++
+            await route.fulfill({
+              json: {
+                ok: true,
+                screens: [],
+                runs: screen
+                  ? [
+                      {
+                        run: "it1",
+                        mode: "scripted",
+                        at: 1,
+                        passed: true,
+                        files: [{ file: screen.file, kind: "picture", cites: screen.label, at: 1 }],
+                      },
+                    ]
+                  : [],
+              },
+            })
+          })
           await page.route(`**${path}`, async (route) => {
             const response = await route.fetch()
             const body = await response.json()
@@ -282,6 +304,73 @@ for (const theme of ["light", "dark"] as const)
             "Partial replacement runner",
           )
           await capture("verify-retained")
+          const picture = Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII=",
+            "base64",
+          )
+          const firstPicture = "evidence/screen-aaaaaaaaaaaaaaaaaaaaaaaa.png"
+          screen = {
+            file: firstPicture,
+            label: "Fixture first capture",
+          }
+          await update(() => Bun.write(join(folder, firstPicture), picture))
+          await page.getByRole("button", { name: "Open picture: Fixture first capture" }).click()
+          const viewer = page.getByTestId("picture-dialog")
+          await webExpect(viewer).toBeVisible()
+          await webExpect
+            .poll(() =>
+              viewer
+                .locator(".pv-view img")
+                .evaluate((node) => (node as HTMLImageElement).naturalWidth),
+            )
+            .toBe(1)
+          await capture("verify-recorded-picture")
+          await page.keyboard.press("Escape")
+          await webExpect(viewer).toHaveCount(0)
+          const replacementPicture = "evidence/screen-bbbbbbbbbbbbbbbbbbbbbbbb.png"
+          screen = {
+            file: replacementPicture,
+            label: "Fixture replacement capture",
+          }
+          await update(() => Bun.write(join(folder, replacementPicture), picture))
+          const replacement = page.getByRole("button", {
+            name: "Open picture: Fixture replacement capture",
+          })
+          await webExpect(replacement).toBeVisible()
+          await webExpect(
+            page.getByRole("button", { name: "Open picture: Fixture first capture" }),
+          ).toHaveCount(0)
+          await replacement.focus()
+          await page.keyboard.press("Enter")
+          await webExpect(viewer).toContainText("Fixture replacement capture")
+          await page.keyboard.press("Escape")
+          expect(screenReads).toBeGreaterThanOrEqual(3)
+          await capture("verify-replacement-picture")
+          verification = [
+            {
+              id: "checks",
+              who: "QualityLayer",
+              state: "running",
+              result: "Fixture check running",
+            },
+          ]
+          await update(() => Bun.write(verifyFile, "# Verify\n\n## Checks\n\nRunning check.\n"))
+          await webExpect(
+            page.locator('[data-testid="board-check"][data-state="running"]'),
+          ).toHaveCount(1)
+          stopped = true
+          await update(() =>
+            Bun.write(verifyFile, "# Verify\n\n<!-- ql:checks -->\nPartial stopped refresh\n"),
+          )
+          await webExpect(
+            page.locator('[data-testid="board-check"][data-state="running"]'),
+          ).toHaveCount(0)
+          await webExpect(
+            page.locator('[data-testid="board-stage"][data-state="running"]'),
+          ).toHaveCount(0)
+          await webExpect(page.locator(".vb-segs .w")).toHaveCount(0)
+          await webExpect(page.getByTestId("verify-board")).toContainText("Fixture check running")
+          await capture("verify-stopped-retained")
           expect(errors).toEqual([])
           expect(starts).toBe(0)
           if (proof)
@@ -295,6 +384,7 @@ for (const theme of ["light", "dark"] as const)
                   starts,
                   captures,
                   scroll,
+                  screenReads,
                   seen,
                   mode: "Actual compiled App with real CLI-approved Plan, build start and files; synthetic live signals and Verify lane API fixture; no native provider ran",
                 },

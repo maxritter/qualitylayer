@@ -2231,3 +2231,5 @@ qualitylayer/tests/e2e/export-complete-document.test.ts !filter !diff
 qualitylayer/tests/e2e/calm-step-transitions.test.ts !filter !diff
 qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-light.png !filter !diff
 qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-dark.png !filter !diff
+qualitylayer/src/ui/steps/verify/board-view.ts !filter !diff
+qualitylayer/src/ui/steps/verify/use-recorded-screens.ts !filter !diff

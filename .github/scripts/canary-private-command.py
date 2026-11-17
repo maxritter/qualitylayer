@@ -25,7 +25,7 @@ def run_case(root, name, body, shell="bash", contract=None, expected=0, workspac
     script = case / ("fixture.ps1" if shell == "pwsh" else "fixture.sh")
     script.write_text(body)
     env = {key: os.environ[key] for key in ("PATH", "HOME", "SystemDrive", "SystemRoot", "WINDIR", "PATHEXT", "LANG", "PYTHONPATH", "QL_CANARY_TRACE_PATH") if key in os.environ}
-    env.update(RUNNER_TEMP=str(case), QL_CANARY_NONCE=nonce, QL_CANARY_CASE=str(case), QL_CANARY_PYTHON=sys.executable, QL_RELEASE_EXPORTS=json.dumps(contract or {}))
+    env.update(RUNNER_TEMP=str(case), QL_CANARY_NONCE=nonce, QL_CANARY_CASE=str(case), QL_CANARY_PYTHON=sys.executable, QL_RELEASE_EXPORTS=json.dumps(contract or {}), PYTHONIOENCODING="utf-8")
     if workspace is not None:
         env["GITHUB_WORKSPACE"] = str(workspace)
         env["GITHUB_SHA"] = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True).strip() if (workspace / ".git").exists() else "a" * 40
@@ -55,7 +55,7 @@ def run_case(root, name, body, shell="bash", contract=None, expected=0, workspac
     results.append(row)
     return case
 
-def test_path_cases(root):
+def test_path_cases(root, encrypted=False):
     workspace = root / "public-test-paths"
     tests = workspace / "qualitylayer/tests"
     tests.mkdir(parents=True)
@@ -66,12 +66,26 @@ def test_path_cases(root):
     escaped = 'quoted"%##[warning]::notice::.test.ts'
     for name in ("failed.test.ts", "passed.test.tsx", escaped, "control\npath.test.ts"):
         (tests / name).write_text("// synthetic source must never become a public diagnostic\n")
+    policy = workspace / ".github/scripts/public-source-policy.json"
+    policy.parent.mkdir(parents=True)
+    policy.write_text(json.dumps({"publicFiles": {"qualitylayer/tests/failed.test.ts": hashlib.sha256((tests / "failed.test.ts").read_bytes()).hexdigest()}}))
+    encrypted_body = "// ENCRYPTED_PRIVATE_SOURCE_CANARY\nconst secret = 'ENCRYPTED_PRIVATE_VALUE'\n// third line\n"
+    if encrypted:
+        (tests / "encrypted.test.ts").write_text(encrypted_body)
+        (workspace / ".gitattributes").write_text("qualitylayer/tests/encrypted.test.ts filter=git-crypt diff=git-crypt\n")
     git_home = root / "canary-git-home"
     git_home.mkdir()
     git_environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     git_environment.update(HOME=str(git_home), XDG_CONFIG_HOME=str(git_home))
-    for command in (["init", "--quiet"], ["add", "."], ["-c", "user.name=Canary", "-c", "user.email=canary@example.invalid", "commit", "--quiet", "-m", "public dummy test paths"]):
+    subprocess.run(["git", "-C", str(workspace), "init", "--quiet"], env=git_environment, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if encrypted:
+        subprocess.run(["git-crypt", "init"], cwd=workspace, env=git_environment, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        smudge = subprocess.check_output(["git", "-C", str(workspace), "config", "--get", "filter.git-crypt.smudge"], text=True).strip()
+    for command in (["add", "."], ["-c", "user.name=Canary", "-c", "user.email=canary@example.invalid", "commit", "--quiet", "-m", "public dummy test paths"]):
         subprocess.run(["git", "-C", str(workspace), *command], env=git_environment, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if encrypted:
+        raw = subprocess.check_output(["git", "-C", str(workspace), "cat-file", "blob", "HEAD:qualitylayer/tests/encrypted.test.ts"])
+        assert raw.startswith(b"\x00GITCRYPT\x00") and encrypted_body.encode() not in raw
     body = """"$QL_CANARY_PYTHON" - <<'PY'
 import json,os,sys,time,subprocess
 from pathlib import Path
@@ -103,11 +117,35 @@ elif mode=='symlink':
  foreign=Path(os.environ['QL_CANARY_CASE'])/'foreign.json';foreign.write_text(json.dumps(record));path.symlink_to(foreign)
 elif mode!='missing':path.write_text(json.dumps(record))
 if mode=='stale':os.utime(path,(1,1))
+if mode.startswith('location-'):
+ kind=mode.removeprefix('location-')
+ if kind in ('assertion','ansi') or kind.startswith('encrypted'):print(('\\x1b[31m' if kind=='ansi' else '')+'error: expect(received).toBe(expected) '+os.environ['QL_CANARY_NONCE']+('\\x1b[0m' if kind=='ansi' else ''))
+ elif kind=='timeout':print('TimeoutError: '+os.environ['QL_CANARY_NONCE'])
+ elif kind=='process':print('exit 1 · signal SIGTERM')
+ else:print('PRIVATE_NAME PRIVATE_VALUE PRIVATE_SOURCE PRIVATE_ENV '+os.environ['QL_CANARY_NONCE'])
+ line='999' if kind in ('outside','encrypted-outside') else '0' if kind=='zero' else '2' if kind.startswith('encrypted') else '1'
+ file='tests/encrypted.test.ts' if kind.startswith('encrypted') else 'src/nested/view.test.tsx' if kind=='nonpublic' else 'tests/'+os.environ['QL_CANARY_NONCE']+'.test.ts' if kind=='injection' else 'tests/failed.test.ts'
+ if kind=='nonpublic' or kind.startswith('encrypted'):
+  record['results'][0]['file']=file;path.write_text(json.dumps(record))
+ print('    at PRIVATE_FUNCTION_'+os.environ['QL_CANARY_NONCE']+' ('+str((root/'qualitylayer'/file).resolve())+':'+line+':2)')
+ if kind=='utf8':sys.stdout.flush();os.write(1,bytes([255]))
+ if kind=='oversized-log':print('x'*(8*1024*1024+1))
+ if kind in ('symlink-log','hardlink-log'):
+  log=Path(os.environ['GITHUB_OUTPUT']).parent/'diagnostics.private'
+  foreign=Path(os.environ['QL_CANARY_CASE'])/'foreign-private-log'
+  if kind=='symlink-log':foreign.write_text('PRIVATE_ENV '+os.environ['QL_CANARY_NONCE']);log.unlink();log.symlink_to(foreign)
+  else:os.link(log,foreign)
+ if kind=='encrypted-filter-changed':subprocess.run(['git','-C',str(root),'config','filter.git-crypt.smudge','SHOULD_NEVER_EXECUTE'],check=True)
+ if kind=='encrypted-process-changed':subprocess.run(['git','-C',str(root),'config','filter.git-crypt.process','SHOULD_NEVER_EXECUTE'],check=True)
+ if kind=='encrypted-working-drift':(root/'qualitylayer/tests/encrypted.test.ts').write_text('// ENCRYPTED_PRIVATE_CHANGED '+os.environ['QL_CANARY_NONCE'])
+ if kind=='working-drift':(root/'qualitylayer/tests/failed.test.ts').write_text('// changed private body '+os.environ['QL_CANARY_NONCE'])
 print(os.environ['QL_CANARY_NONCE']);print(os.environ['QL_CANARY_NONCE'],file=sys.stderr)
 sys.exit(EXIT)
 PY
 """
-    for mode in ("valid", "escaped", "source-only", "source-colocated", "unknown-source", "source-non-test", "source-head-fields", "absolute", "unknown", "control", "parent", "drift", "running", "changed-head", "malformed", "duplicate", "oversized", "symlink", "missing", "stale", "valid-after-malformed", "git-failure"):
+    for mode in ("valid", "escaped", "source-only", "source-colocated", "unknown-source", "source-non-test", "source-head-fields", "absolute", "unknown", "control", "parent", "drift", "running", "changed-head", "malformed", "duplicate", "oversized", "symlink", "missing", "stale", "valid-after-malformed", "location-assertion", "location-timeout", "location-process", "location-unknown", "location-outside", "location-zero", "location-injection", "location-nonpublic", "location-utf8", "location-working-drift", "location-ansi", "location-oversized-log", "location-symlink-log", "location-hardlink-log", "location-encrypted", "location-encrypted-outside", "location-encrypted-filter-changed", "location-encrypted-working-drift", "location-encrypted-process-changed", "git-failure"):
+        if mode.startswith("location-encrypted") != encrypted:
+            continue
         exit_code = 127 if mode in ("missing", "git-failure") else 17
         script = body.replace("MODE", repr(mode)).replace("ESCAPED", repr(escaped)).replace("EXIT", str(exit_code))
         case = run_case(root, "failed-test-paths-" + mode, script, expected=exit_code if exit_code < 126 else 1, workspace=workspace)
@@ -116,24 +154,46 @@ PY
         output = (case / "public.stdout.private").read_text()
         metadata = json.loads(output)
         expected = ["qualitylayer/tests/" + (escaped if mode == "escaped" else "failed.test.ts")] if mode in ("valid", "escaped", "valid-after-malformed") else []
+        if mode.startswith("location-"):
+            expected = ["qualitylayer/tests/encrypted.test.ts"] if mode.startswith("location-encrypted") else ["qualitylayer/src/nested/view.test.tsx"] if mode == "location-nonpublic" else ["qualitylayer/tests/failed.test.ts"]
         if mode == "source-only":
             expected = ["qualitylayer/src/nested/view.test.tsx"]
         elif mode == "source-colocated":
             expected = ["qualitylayer/src/nested/view.test.tsx", "qualitylayer/tests/failed.test.ts"]
         elif mode == "source-head-fields":
             expected = ["qualitylayer/tests/failed.test.ts"]
-        assert set(metadata) == {"failedTestFiles"}
+        assert set(metadata) == {"failedTestFiles", "failedTestLocations"}
+        location = [{"file": "qualitylayer/tests/failed.test.ts", "line": 1, "kind": "assertion" if mode == "location-ansi" else mode.removeprefix("location-")}] if mode in ("location-assertion", "location-timeout", "location-process", "location-unknown", "location-ansi") else []
+        if mode == "location-nonpublic":
+            location = [{"file": "qualitylayer/src/nested/view.test.tsx", "line": 1, "kind": "unknown"}]
+        elif mode == "location-encrypted":
+            location = [{"file": "qualitylayer/tests/encrypted.test.ts", "line": 2, "kind": "assertion"}]
+        assert metadata["failedTestLocations"] == location
+        assert all(term not in output for term in ("PRIVATE_NAME", "PRIVATE_VALUE", "PRIVATE_SOURCE", "PRIVATE_ENV", "PRIVATE_FUNCTION", "ENCRYPTED_PRIVATE_SOURCE_CANARY", "ENCRYPTED_PRIVATE_VALUE", "ENCRYPTED_PRIVATE_CHANGED", "SHOULD_NEVER_EXECUTE"))
         assert metadata["failedTestFiles"] == expected
         assert output.count("\n") == 1
         assert "::notice::" not in output and "##[warning]" not in output
         assert not (case / "public.stderr.private").read_bytes()
+        if mode == "location-working-drift":
+            (tests / "failed.test.ts").write_text("// synthetic source must never become a public diagnostic\n")
+        if mode == "location-encrypted-filter-changed":
+            subprocess.run(["git", "-C", str(workspace), "config", "filter.git-crypt.smudge", smudge], check=True)
+        if mode == "location-encrypted-process-changed":
+            subprocess.run(["git", "-C", str(workspace), "config", "--unset", "filter.git-crypt.process"], check=True)
+        if mode == "location-encrypted-working-drift":
+            (tests / "encrypted.test.ts").write_text(encrypted_body)
         results[-1]["onlyCurrentHeadTrackedFailedTestPaths"] = True
 
 folder = tempfile.mkdtemp(prefix="ql-sealer-source-free-canary-retained-")
 print(json.dumps({"retainedPrivateCases": folder}), flush=True)
 with nullcontext(folder) as folder:
     root = Path(folder)
-    if sys.argv[2:] == ["test-paths"]:
+    if sys.argv[2:] == ["test-paths-encrypted"]:
+        if os.name == "nt":
+            raise RuntimeError("encrypted path canaries require a POSIX runner with git-crypt already installed")
+        test_path_cases(root, encrypted=True)
+        windows = "unrun: selected actual encrypted cases only; requires preinstalled git-crypt"
+    elif sys.argv[2:] == ["test-paths"]:
         if os.name == "nt":
             raise RuntimeError("test-paths canaries require a POSIX runner")
         test_path_cases(root)

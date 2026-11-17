@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import signal
 import stat
 import subprocess
@@ -27,6 +28,22 @@ def test_record_directory(workspace):
             raise ValueError()
     return directory
 
+def trusted_git_crypt(workspace):
+    try:
+        command = subprocess.check_output(["git", "-C", str(workspace), "config", "--get", "filter.git-crypt.smudge"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        process = subprocess.run(["git", "-C", str(workspace), "config", "--get", "filter.git-crypt.process"], capture_output=True, timeout=5)
+        if process.returncode not in (0, 1) or process.stdout.strip():
+            return None
+        parts = shlex.split(command)
+        if len(parts) != 2 or Path(parts[0]).name != "git-crypt" or parts[1] != "smudge":
+            return None
+        executable = Path(shutil.which(parts[0]) or parts[0]).resolve(strict=True)
+        if not executable.is_file() or executable.stat().st_size > 16 * 1024 * 1024:
+            return None
+        return (command, str(executable), hashlib.sha256(executable.read_bytes()).hexdigest())
+    except Exception:
+        return None
+
 def failure_scope():
     try:
         workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
@@ -45,7 +62,7 @@ def failure_scope():
                 if mode in (b"100644", b"100755") and kind == b"blob" and path.endswith((".test.ts", ".test.tsx")):
                     tracked.add(path)
         existing = {path.name for path in test_record_directory(workspace).glob("*.json")}
-        return (workspace, head, tracked, existing) if len(existing) <= 1024 else None
+        return (workspace, head, tracked, existing, trusted_git_crypt(workspace)) if len(existing) <= 1024 else None
     except Exception:
         return None
 
@@ -81,7 +98,7 @@ def failed_test_paths(scope, started):
     try:
         if scope is None:
             return []
-        workspace, head, tracked, existing = scope
+        workspace, head, tracked, existing, _crypt = scope
         current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
         if current != head:
             return []
@@ -104,8 +121,85 @@ def failed_test_paths(scope, started):
     except Exception:
         return []
 
-def failure_metadata(scope, started):
-    metadata = {"failedTestFiles": failed_test_paths(scope, started)}
+def committed_test_lines(scope, files):
+    """Names are public metadata; decrypted test contents never leave this private process."""
+    workspace, head, tracked, _existing, crypt = scope
+    counts = {}
+    environment = {**os.environ, "GIT_ATTR_SOURCE": head}
+    for file in files:
+        if file not in tracked:
+            continue
+        reference = head + ":" + file
+        size = subprocess.check_output(["git", "-C", str(workspace), "cat-file", "-s", reference], stderr=subprocess.DEVNULL, timeout=5)
+        if int(size) > 2 * 1024 * 1024:
+            continue
+        attribute = subprocess.check_output(["git", "-C", str(workspace), "check-attr", "--source=" + head, "-z", "filter", "--", file], stderr=subprocess.DEVNULL, timeout=5)
+        if attribute not in ((file + "\0filter\0" + name + "\0").encode() for name in ("unspecified", "unset", "git-crypt")):
+            continue
+        encrypted = attribute.endswith(b"git-crypt\0")
+        options = []
+        if encrypted:
+            if crypt is None or trusted_git_crypt(workspace) != crypt:
+                continue
+            # Use only the pre-command admitted existing tool, never a child-supplied filter.
+            options = ["-c", "filter.git-crypt.smudge=" + shlex.quote(crypt[1]) + " smudge", "-c", "filter.git-crypt.required=true"]
+        body = subprocess.check_output(["git", "-C", str(workspace), *options, "cat-file", "--filters" if encrypted else "blob", reference], env=environment, stderr=subprocess.DEVNULL, timeout=5)
+        if len(body) > 2 * 1024 * 1024 or body.startswith(b"\x00GITCRYPT\x00"):
+            continue
+        body.decode("utf-8", errors="strict")
+        working = workspace / file
+        if working.resolve() != working or not stat.S_ISREG(working.lstat().st_mode) or working.stat().st_size != len(body):
+            continue
+        with os.fdopen(os.open(working, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
+            if hashlib.sha256(source.read(2 * 1024 * 1024 + 1)).digest() != hashlib.sha256(body).digest():
+                continue
+        counts[file] = body.count(b"\n") + int(bool(body) and not body.endswith(b"\n"))
+    return counts
+
+def failed_test_locations(scope, files, log):
+    try:
+        if scope is None or not files or len(files) > 64 or log is None:
+            return []
+        before = log.lstat()
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 8 * 1024 * 1024:
+            return []
+        with os.fdopen(os.open(log, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
+            content = source.read(8 * 1024 * 1024 + 1)
+            after = os.fstat(source.fileno())
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+        if len(content) > 8 * 1024 * 1024 or any(identity(value) != identity(before) for value in (after, log.lstat())):
+            return []
+        counts = committed_test_lines(scope, files)
+        workspace, head, _tracked, _existing, _crypt = scope
+        found, context = set(), []
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", content.decode("utf-8", errors="strict"))
+        for line in clean.splitlines():
+            if len(line) > 16 * 1024:
+                context = []
+                continue
+            if re.fullmatch(r"──── (?:FAIL )?(?:tests|src)/[^\r\n]+ ────", line):
+                context = []
+            # Bun stacks may contain names/values; only the independently validated location escapes.
+            context = (context + [line])[-16:]
+            for file, maximum in counts.items():
+                relative = file.removeprefix("qualitylayer/")
+                paths = (str(workspace / file), "./" + relative, relative, file)
+                frame = re.search(r"(?:^|[\s(])(?:" + "|".join(re.escape(path) for path in paths) + r"):([1-9][0-9]{0,8})(?::[1-9][0-9]{0,8})?\)?\s*$", line)
+                if frame is None or int(frame[1]) > maximum:
+                    continue
+                nearby = "\n".join(context)
+                kind = "timeout" if re.search(r"(?:^|\n)(?:TimeoutError:|error: Test [^\n]* timed out after [0-9]+ ?ms)", nearby) else "assertion" if re.search(r"(?:^|\n)(?:AssertionError:|error: expect\()", nearby) else "process" if re.search(r"(?:^|\n)exit -?[0-9]+ · signal (?:SIG[A-Z0-9]+|[1-9][0-9]*)\s*(?:\n|$)", nearby) else "unknown"
+                found.add((file, int(frame[1]), kind))
+                if len(found) > 256:
+                    return []
+        current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        return [{"file": file, "line": line, "kind": kind} for file, line, kind in sorted(found)] if current == head else []
+    except Exception:
+        return []
+
+def failure_metadata(scope, started, log=None):
+    files = failed_test_paths(scope, started)
+    metadata = {"failedTestFiles": files, "failedTestLocations": failed_test_locations(scope, files, log)}
     # Keep exact JSON values without allowing tracked filenames to become Actions commands.
     return json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).replace("::", "\\u003a\\u003a").replace("#", "\\u0023").replace("%", "\\u0025")
 
@@ -337,7 +431,7 @@ def main():
         child = None
         job = None
         if code != 0:
-            print(failure_metadata(scope, started))
+            print(failure_metadata(scope, started, log))
             return code if 0 < code < 126 else 1
         exports = []
         for channel, rules in contract.items():

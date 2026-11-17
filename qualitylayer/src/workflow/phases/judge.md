@@ -25,7 +25,9 @@ lines that failed. Open a file under *Read on demand* when a verdict needs it. K
 pinned commit even if HEAD moves (report the move).
 
 **Tests alone never verify.** Run the program, capture its output, response or screenshot, and exercise
-one behaviour only the new code has. For a user interface also run the scenarios in a browser and judge
+one behaviour only the new code has. When the change scores, parses or transforms another system's
+output, exercise representative redacted samples of recorded output as well as constructed cases
+within the approved test scope. For a user interface also run the scenarios in a browser and judge
 each changed screen against its artifact at its widths, themes and states, with every menu, dropdown,
 popover and card the change touches opened in light and dark. Start the program as the Plan's agents'
 file says. Never deploy, touch real user data or use a production service. A blocked live check is

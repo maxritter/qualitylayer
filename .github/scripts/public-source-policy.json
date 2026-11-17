@@ -2123,7 +2123,7 @@
     "qualitylayer/src/workflow/phases/implement.md": "bd943f42e0f0c18b3494f51af2358d6d3603990f1ffc5cc7c44063fb7c38e2ec",
     "qualitylayer/src/workflow/phases/judge-bugfix.md": "65c8fe376f1d53a4d7e4bf7a01f35d509b1c4c4089a7202987f58cdde2f8998f",
     "qualitylayer/src/workflow/phases/judge-rerun.md": "c5b32b7d0c2d698be958878d272f77ae1b83c506efbfb03fef145e641248a4bb",
-    "qualitylayer/src/workflow/phases/judge.md": "4bd3b5ba5a2bc6d3dd824541f8d04b3be89e1e2e0a69f51ef49f660228cb68c3",
+    "qualitylayer/src/workflow/phases/judge.md": "80fadd2f31ade5846506cf5b663992ad791bb915bd936fa0f61a939df356957e",
     "qualitylayer/src/workflow/phases/line-question.md": "57028b186f7a54ef06ac7c582d15ff9d6792c0534a0b545fb25fb2331960c4ce",
     "qualitylayer/src/workflow/phases/plan-adopted.md": "d71fe4ffb890a9a6d0d3db139a83eca1d97a554340b1ee0d57dd738fc0151ab7",
     "qualitylayer/src/workflow/phases/plan-bugfix.md": "62415ecb5702fb0313e017054428dd66f042390461f64d25f57e77b78f3f90ea",
@@ -2193,7 +2193,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "87c93dd40604518a2b6c243d199617cba5922171fbc05b3f28d601afe4ff2da2",
+  "reviewManifestSha256": "812891e41009fb5b4ef2bc50326f98f1361a7706dece15e34f1dac4676f062a1",
   "schema": 1,
-  "sourceHead": "70d2c4f80a332c70bc0c6b02c16dd988c6c828b9"
+  "sourceHead": "eef08fee3c15ebee5cc6757267844061e80aaf72"
 }

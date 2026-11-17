@@ -4,9 +4,10 @@ A native agent may start in checkout A and explicitly join a QualityLayer task
 in checkout B. Its authoritative workflow binding selects the task. Its native
 working directory interprets relative tool paths. The task's recorded checkout
 selects Git, file journals and the App's Changes view. Before using a recorded
-checkout, bounded Git discovery must still match the project's common directory;
-a reused path belonging to another repository grants no task authority. No task or checkout is
-silently moved, and ordinary CLI commands retain their explicit-checkout rules.
+checkout, bounded Git discovery must still match the project's common directory.
+When Git returns the physical spelling of a recorded alias, the task keeps its
+registered project identity. A reused path belonging to another repository grants no task authority.
+No task or checkout is silently moved, and ordinary CLI commands retain their explicit-checkout rules.
 
 Cost follows the exact bound native sessions and their verified helper lineage,
 from each task claim until that session's next task assignment. Earlier session

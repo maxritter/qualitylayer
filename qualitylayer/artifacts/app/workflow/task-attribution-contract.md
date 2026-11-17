@@ -6,7 +6,8 @@ different checkout. The task keeps its recorded target checkout. Native cwd is
 path and native-message proof context; it never selects another task merely because a hook runs there.
 CLI execution retains its existing explicit-checkout behavior. A recorded
 checkout must still resolve through the existing cached Git discovery to the
-same project common directory; a reused path cannot select the old task.
+same project common directory. An alias of that directory keeps its registered
+project identity. A reused path for another repository cannot select the old task.
 
 Cost assignment starts at the session's recorded task claim and ends at its next
 assignment. Exact native session identities and helper lineage determine which

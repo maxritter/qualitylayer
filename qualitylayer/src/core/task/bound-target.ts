@@ -2,6 +2,7 @@ import { isAbsolute, join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { NATIVE_AGENTS } from "../agents/ids.ts"
 import { type RepoRef, repoIdFrom, resolveRepo } from "../paths.ts"
+import { canonicalPath } from "../platform.ts"
 import {
   type BindingTarget,
   bindingIndexPath,
@@ -15,6 +16,14 @@ import {
 export type ObservedTarget =
   | { kind: "bound"; repo: RepoRef; slug: string; generation: number }
   | { kind: "absent" | "blocked" }
+
+/** Git can report the physical checkout while an existing project uses the caller's alias. */
+function registeredRepo(found: RepoRef, repoId: string, commonDir: string): RepoRef | null {
+  if (found.id === repoId && found.commonDir === commonDir) return found
+  const physical = canonicalPath(commonDir, true)
+  if (physical === commonDir || physical !== canonicalPath(found.commonDir, true)) return null
+  return { ...found, id: repoId, commonDir }
+}
 
 /** Legacy sessions already have exact per-agent assignment histories; no project inventory is needed. */
 async function legacyTarget(
@@ -69,6 +78,7 @@ async function resolveTarget(
   if (
     !project ||
     typeof project.commonDir !== "string" ||
+    !isAbsolute(project.commonDir) ||
     repoIdFrom(project.commonDir) !== target.repoId
   )
     return { kind: "blocked" }
@@ -90,10 +100,11 @@ async function resolveTarget(
     const found = await resolveRepo({ ...ctx, env: { ...ctx.env, cwd: () => root } }).catch(
       () => null,
     )
-    if (found?.ok && found.data.id === target.repoId && found.data.commonDir === project.commonDir)
+    const repo = found?.ok ? registeredRepo(found.data, target.repoId, project.commonDir) : null
+    if (repo !== null)
       return {
         kind: "bound",
-        repo: found.data,
+        repo,
         slug: target.slug,
         generation: binding.at,
       }

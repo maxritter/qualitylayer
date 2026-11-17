@@ -27,7 +27,9 @@ without a report, until the page turns to the person.
    and lasting models. Task records, evidence and draft artifacts are never Files. Use `none` when no
    source changes, including evidence-only qualification; put inspected paths in **Read only**.
 3. **Order the proof.** *Proof order*: one line per Done means step, `A3 · after slice 2`, so each
-   step runs as soon as its slice is committed. Look once for gaps in the steps (blockers, cancel
+   step can run as soon as its slice is committed. For a step only the person can do, name the
+   slice that makes it possible and add `(the person confirms it in Verify)` to the line. Look once
+   for gaps in the steps (blockers, cancel
    paths, boundary inputs, two at once): a missing step is added to the Plan with `qualitylayer plan
    amend --by agent --note "<the step, and why>"`, where the person sees it.
 4. **Keep commands safe to run alone**: from the repository root, unattended, and pushing, deploying or
@@ -54,9 +56,10 @@ what you approved: ...".
 5. When a slice is done: `qualitylayer check slice <n>`, then `qualitylayer commit slice <n>`
    (`--commit <fullsha>` for a commit you made by hand). The commit takes this task's changes: read its
    `left_out` list and keep other sessions' edits out. A tick never waits for a commit.
-6. When a slice's Done means steps are due (*Proof order*), run each on the built tree and record it.
-   `build done` refuses while a step never ran green, so the fresh reviewer is never the first to run
-   them.
+6. When a slice's Done means steps are due (*Proof order*), run and record the ones you can prove
+   on the built tree. For a step only the person can do, run `qualitylayer build done --defer
+   "<step and why only the person can do it>"`. Ask the person in Verify. Any action that
+   needs a separate approval waits for that approval.
 
 ## Limits
 

@@ -9,8 +9,8 @@ only what an attacker could use: a short, honest record in minutes, no audit of 
 1. **Boundaries**: name the trust boundaries the diff touches in three to five lines. None touched: say so
    in one line and stop; the block is clean.
 2. **Candidates**: start from the *Security scans* findings in your brief, then add one per independently
-   reachable sink the scans missed. A scan finding you drop gets one line with the reason; a scan that was
-   not checked is a `**Not checked:**` path.
+   reachable sink the scans missed. Record a finding you could not assess under `**Not checked:**`
+   with its path. Drop an assessed finding only when you can give a one-line reason.
 3. **Per candidate** ask *Reach* (can an attacker get input here, from where?), *Impact* (what is lost?) and
    *Defenses* (what already stops it?). Keep what you are 8 out of 10 sure is real and reachable; drop
    denial of service, missing rate limits, code only tests use, hardening advice with no attack path,

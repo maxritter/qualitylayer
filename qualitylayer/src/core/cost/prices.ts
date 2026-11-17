@@ -51,18 +51,19 @@ export const allTokens = (t: Tokens): number =>
   t.input + t.output + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h
 
 /** USD per million tokens. Cache writes cost 1.25× input (5 minutes) or 2× (1 hour). */
-const PRICES: {
+type Price = {
   model: RegExp
   input: number
   output: number
   cacheRead: number
   cacheWrite1h?: number
   cacheWrite5m?: number
-  family?: "grok" | "gemini"
+  family?: "grok" | "gemini" | "openai"
   next?: { at: number; input: number; output: number; cacheRead: number }
-  openai?: true
   ultrafast?: { promotionEnds: number }
-}[] = [
+}
+
+const PRICES: Price[] = [
   // Vendor text-token rates checked 2026-11-02; storage/tools are outside token valuation.
   // https://docs.x.ai/developers/pricing
   {
@@ -105,7 +106,7 @@ const PRICES: {
     input: 8,
     output: 40,
     cacheRead: 0.4,
-    openai: true,
+    family: "openai",
     ultrafast: { promotionEnds: Date.UTC(2027, 2, 1, 8) },
   },
   {
@@ -113,7 +114,7 @@ const PRICES: {
     input: 2,
     output: 10,
     cacheRead: 0.1,
-    openai: true,
+    family: "openai",
     ultrafast: { promotionEnds: Date.UTC(2027, 2, 1, 8) },
   },
   // Current estimate rates verified 2026-10-08, not a reconstruction of historical invoices:
@@ -125,7 +126,7 @@ const PRICES: {
     output: 10,
     cacheRead: 0.1,
     cacheWrite1h: 2.5,
-    openai: true,
+    family: "openai",
   },
 ]
 
@@ -147,7 +148,7 @@ const priceRowOf = (model: string, at = 0) => {
 }
 
 /** The tiers that change a price, as a multiplier on it. */
-const TIERS: Record<string, number> = {
+const OPENAI_TIERS: Record<string, number> = {
   standard: 1,
   default: 1,
   auto: 1,
@@ -156,7 +157,72 @@ const TIERS: Record<string, number> = {
   batch: 0.5,
   flex: 0.5,
 }
-const FAST_TIERS: readonly string[] = ["priority", "fast"]
+const GROK_TIERS: Record<string, number> = {
+  standard: 1,
+  default: 1,
+  auto: 1,
+  priority: 2,
+  fast: 2,
+  batch: 0.8,
+}
+const GEMINI_TIERS: Record<string, number> = {
+  standard: 1,
+  default: 1,
+  auto: 1,
+  priority: 1.8,
+  batch: 0.5,
+  flex: 0.5,
+}
+
+type Multipliers = { input: number; output: number; tier: number }
+const STANDARD_MULTIPLIERS: Multipliers = { input: 1, output: 1, tier: 1 }
+
+function openAiTier(price: Price, name: string, at: number | undefined): number | undefined {
+  if (price.ultrafast === undefined) return OPENAI_TIERS[name]
+  if (name === "flex") return undefined
+  if (name === "ultrafast") return (at ?? Date.now()) < price.ultrafast.promotionEnds ? 3 : 6
+  return OPENAI_TIERS[name]
+}
+
+function serviceTierMultiplier(
+  price: Price,
+  family: NonNullable<Price["family"]>,
+  name: string,
+  long: boolean,
+  at: number | undefined,
+): number | undefined {
+  switch (family) {
+    case "grok":
+      return long && name === "fast" ? 1.5 : GROK_TIERS[name]
+    case "gemini":
+      return GEMINI_TIERS[name]
+    case "openai":
+      return openAiTier(price, name, at)
+  }
+}
+
+/** Determine the applicable context and service-tier rates before pricing each token kind. */
+function requestMultipliers(
+  price: Price,
+  tokens: Tokens,
+  context: PricingContext,
+): Multipliers | null {
+  const family = price.family
+  if (family === undefined) return STANDARD_MULTIPLIERS
+  const prompt =
+    context.promptTokens ??
+    tokens.input + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h
+  if (!Number.isFinite(prompt) || prompt < 0) return null
+  const long = (family === "grok" && prompt >= 200_000) || (family === "openai" && prompt > 272_000)
+  const name = context.serviceTier?.toLowerCase() ?? "standard"
+  const tier = serviceTierMultiplier(price, family, name, long, context.at)
+  if (typeof tier !== "number") return null
+  return {
+    input: long ? 2 : 1,
+    output: long ? (family === "grok" ? 2 : 1.5) : 1,
+    tier: tier * (context.regional && family !== "gemini" ? 1.1 : 1),
+  }
+}
 
 /**
  * Whether a call was billed on the fast (priority) tier: its recorded tier says so, and the model
@@ -166,11 +232,7 @@ export function isFastTier(model: string, context: PricingContext = {}): boolean
   const price = priceRowOf(model, context.at)
   const tier = context.serviceTier?.toLowerCase()
   if (tier === "ultrafast") return price?.ultrafast !== undefined
-  return (
-    (price?.openai === true || price?.family === "grok" || price?.family === "gemini") &&
-    tier !== undefined &&
-    FAST_TIERS.includes(tier)
-  )
+  return price?.family !== undefined && (tier === "priority" || tier === "fast")
 }
 
 /** One model's tokens in USD, by kind of token; null when no confirmed price exists for the model. */
@@ -183,67 +245,9 @@ export function priceParts(
   const price = priceRowOf(model, context.at)
   if (price === undefined) return null
   if (Object.values(tokens).some((n) => !Number.isFinite(n) || n < 0)) return null
-  let inputMultiplier = 1
-  let outputMultiplier = 1
-  let modifier = 1
-  if (price.family) {
-    const prompt =
-      context.promptTokens ??
-      tokens.input + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h
-    const tier = context.serviceTier?.toLowerCase() ?? "standard"
-    if (!Number.isFinite(prompt) || prompt < 0) return null
-    if (price.family === "grok") {
-      const long = prompt >= 200_000
-      if (long) {
-        inputMultiplier = 2
-        outputMultiplier = 2
-      }
-      const rates: Record<string, number> = {
-        standard: 1,
-        default: 1,
-        auto: 1,
-        priority: 2,
-        fast: long ? 1.5 : 2,
-        batch: 0.8,
-      }
-      const rate = rates[tier]
-      if (typeof rate !== "number") return null
-      modifier = rate * (context.regional ? 1.1 : 1)
-    } else {
-      const rates: Record<string, number> = {
-        standard: 1,
-        default: 1,
-        auto: 1,
-        priority: 1.8,
-        batch: 0.5,
-        flex: 0.5,
-      }
-      const rate = rates[tier]
-      if (typeof rate !== "number") return null
-      modifier = rate
-    }
-  }
-  if (price.openai) {
-    const name = context.serviceTier?.toLowerCase() ?? "standard"
-    if (price.ultrafast && name === "flex") return null
-    const tier =
-      name === "ultrafast" && price.ultrafast
-        ? (context.at ?? Date.now()) < price.ultrafast.promotionEnds
-          ? 3
-          : 6
-        : TIERS[name]
-    // A tier that is not listed (or is an inherited name such as "toString") is not priced.
-    if (typeof tier !== "number") return null
-    modifier = tier * (context.regional ? 1.1 : 1)
-    const prompt =
-      context.promptTokens ??
-      tokens.input + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h
-    if (!Number.isFinite(prompt) || prompt < 0) return null
-    if (prompt > 272_000) {
-      inputMultiplier = 2
-      outputMultiplier = 1.5
-    }
-  }
+  const multipliers = requestMultipliers(price, tokens, context)
+  if (multipliers === null) return null
+  const { input: inputMultiplier, output: outputMultiplier, tier: modifier } = multipliers
   const perToken = (usd: number) => usd / 1_000_000
   return {
     input: modifier * tokens.input * perToken(price.input) * inputMultiplier,

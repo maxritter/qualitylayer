@@ -53,7 +53,14 @@ export function renderText(result: Result<unknown>): string {
     summaryFirst && Array.isArray(data.summary)
       ? data.summary.filter((line): line is string => typeof line === "string")
       : []
+  // A long Verify brief lives on disk. Keep its two working files visible above the helper payload.
+  const fileKeys =
+    data.phase === "verify" && Array.isArray(data.helpers_pending)
+      ? ["instructions_ref", "record_in"].filter((key) => typeof data[key] === "string")
+      : []
+  for (const key of fileKeys) lines.push(`${key}: ${data[key]}`)
   for (const [key, value] of Object.entries(data)) {
+    if (fileKeys.includes(key)) continue
     if (value === undefined) continue
     if (key === "summary" && Array.isArray(value)) {
       if (!summaryFirst)

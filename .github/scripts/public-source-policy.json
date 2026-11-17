@@ -20,7 +20,7 @@
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
-    ".github/workflows/old-client-update.yml": "d1e9ce1efef9f095b95b7f5be81efb224f1ef6752415ee14de6bd0e49fca088f",
+    ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
     ".github/workflows/qualitylayer-ci.yml": "3f620a85ecf935fa30d2c8c1d58d671b1f93c4c08160c3e2e693cb0e2f8391e1",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
@@ -283,7 +283,7 @@
     "qualitylayer/src/core/checks.ts": "5318262a04456c38fd460247827c89115f240960726a5fbceeef7a9809e2c562",
     "qualitylayer/src/core/ci-parity.ts": "2376df75808ef3fa3a9559701858b93d9b42986192bcaa6523e3aa235fa694d9",
     "qualitylayer/src/core/code-order.ts": "ba05d46971da3b657fdfa7e843790babdc0280beedfb6cb67f709e6f5653a5ec",
-    "qualitylayer/src/core/code-quality/engine.ts": "d8aaca7487d92177d73d44da6437705bdd1cf89d2e826b2d2a7623db31763d9a",
+    "qualitylayer/src/core/code-quality/engine.ts": "29fb281904908fc9891ab5da79c8cff261086fa5ca0a76b6e586a521dc762150",
     "qualitylayer/src/core/code-quality/hook.ts": "0a677f37eb00554fb194a9e95513600b2e2d8ecb59e23d802a9393125b557c36",
     "qualitylayer/src/core/code-quality/pinned-download.ts": "78f6476d6fe932ff1f3bb0b2647659cbfea7a7c0307726767556cf90fa651907",
     "qualitylayer/src/core/code-quality/project.ts": "91f0bdfdb79362e76fe4b0a39041df1a4b96c8e88d13df747d2cea4fce5648c9",
@@ -2175,7 +2175,7 @@
     "qualitylayer/artifacts/app/app-model/coverage.json": "023db51908e23a6f8ce58b0ce3b425439488db1a997ebb77b6c154cbb922da46",
     "qualitylayer/tests/cli/machines-prompt.test.ts": "92ae460e60402c0fd344602b4467165c91c9cbbcfc353d6a7b3e9f92408bba33"
   },
-  "reviewManifestSha256": "968dd0e1eb529a163ca3312a325909b5ec5e75d7cd2af832fd112367949b9c47",
+  "reviewManifestSha256": "9e25a41fe7d09707532250023b3783a62775b8cd90e8ffcc02f7f991679f7be3",
   "schema": 1,
-  "sourceHead": "eded70fc1e70627ccf6a9b0569c6d42d14d835ab"
+  "sourceHead": "22fb045af582f2a3e2715f0e71a6c2c87a16bbc0"
 }

@@ -59,7 +59,6 @@ jobs:
           http_probe_dir="$(mktemp -d)"
           trap 'rm -f "$http_probe_dir/observed"; rmdir "$http_probe_dir" 2>/dev/null || true' EXIT
           update_diagnostic() {
-            [ "$RUNNER_OS" = macOS ] || return 0
             [ ! -e "$http_probe_dir/observed" ] || return 0
             : > "$http_probe_dir/observed"
             local http_status curl_status=0
@@ -125,7 +124,8 @@ jobs:
               curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/v$v/install.sh" -o "$home/install.sh"
               VERSION="$v" bash "$home/install.sh" --cli-only --non-interactive > "$home/install.log" 2>&1 ||
                 { tail -20 "$home/install.log"; exit 1; }
-              [ "$(qualitylayer --version | tail -1)" = "$v" ]
+              [ "$(qualitylayer --version | tail -1)" = "$v" ] ||
+                { echo "::error::installed version does not match requested origin"; exit 1; }
               update_status=0
               if [[ " $EXPLICIT_VERSION_ONLY " == *" $v "* ]]; then
                 echo "Legacy $v uses the supported explicit-version migration"

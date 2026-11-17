@@ -211,11 +211,19 @@ function sourcePath(root: string, uri: string): string {
     .join("/")
 }
 
+function pluginRegion(value: Record<string, unknown>): Record<string, unknown> {
+  const region = { ...value }
+  if (region.startColumn === 0) region.startColumn = 1
+  if (region.endLine === 0) delete region.endLine
+  if (region.endColumn === 0) delete region.endColumn
+  return region
+}
+
 function location(
   value: unknown,
   run: Record<string, unknown>,
   root: string,
-  wholeLines = false,
+  coordinates: "strict" | "whole-lines" | "plugin" = "strict",
 ): QualityLocation {
   const physical = object(object(value).physicalLocation)
   let artifact = object(physical.artifactLocation)
@@ -237,12 +245,13 @@ function location(
       throw new Error("Invalid SARIF URI base")
     uri = new URL(uri, base).href
   }
-  const region = object(physical.region === undefined ? {} : physical.region)
+  const supplied = object(physical.region === undefined ? {} : physical.region)
+  const region = coordinates === "plugin" ? pluginRegion(supplied) : supplied
   const line = positive(region.startLine, 1)
   const endLine = positive(region.endLine, line)
   if (endLine < line) throw new Error("Invalid SARIF line range")
   const result: QualityLocation = { path: sourcePath(root, uri), line, endLine }
-  if (wholeLines && region.startColumn === 0 && region.endColumn === 0) {
+  if (coordinates === "whole-lines" && region.startColumn === 0 && region.endColumn === 0) {
     result.startColumn = 0
     result.endColumn = 0
   } else {
@@ -264,11 +273,12 @@ function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex")
 }
 
-/** Reads a SARIF 2.1.0 report into findings with paths inside `root`; throws on anything malformed. */
+/** Strict SARIF parsing; manual lint may normalize plugins' zero coordinate sentinels. */
 export function parseSarif(
   stdout: string,
   root: string,
   findings: QualityFinding[],
+  pluginRegions = false,
 ): { version?: string; failed: boolean } {
   const report = object(JSON.parse(stdout))
   if (report.version !== "2.1.0") throw new Error("Unsupported SARIF version")
@@ -301,14 +311,19 @@ export function parseSarif(
       const message = object(result.message)
       const text = message.text ?? message.markdown
       if (typeof text !== "string") throw new Error("SARIF finding has no message")
-      const wholeLines = driver.name === "qlty" && rule === "qlty:similar-code"
-      const locations = list(result.locations).map((item) => location(item, run, root, wholeLines))
+      const coordinates =
+        driver.name === "qlty" && rule === "qlty:similar-code"
+          ? "whole-lines"
+          : pluginRegions && !rule.startsWith("qlty:")
+            ? "plugin"
+            : "strict"
+      const locations = list(result.locations).map((item) => location(item, run, root, coordinates))
       const primary = locations[0]
       if (!primary) throw new Error("SARIF finding has no source location")
       const related = [
         ...locations.slice(1),
         ...list(result.relatedLocations === undefined ? [] : result.relatedLocations).map((item) =>
-          location(item, run, root, wholeLines),
+          location(item, run, root, coordinates),
         ),
       ]
       const finding: QualityFinding = {
@@ -403,7 +418,7 @@ export async function runQuality(
         return { ...base, status: "failed", reason: "Qlty metrics did not complete" }
       return { ...base, status: "complete", metrics: output.stdout }
     }
-    const parsed = parseSarif(output.stdout, root, findings)
+    const parsed = parseSarif(output.stdout, root, findings, input.mode === "lint")
     base.version = parsed.version ?? base.version
     if (parsed.failed || (output.exitCode !== 0 && !(output.exitCode === 1 && findings.length)))
       return {

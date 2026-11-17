@@ -1111,7 +1111,7 @@
     "qualitylayer/src/ui/StepTabs.tsx": "558bc38aede475c22b4e92075b59a553ef435ae7999e52e773417b57145ba84e",
     "qualitylayer/src/ui/TaskLoading.tsx": "95b9fb0ce0bb6520cc1cae53e57288cbeb29035a4bddda8036fa5ffb2623d595",
     "qualitylayer/src/ui/TaskPointMenu.tsx": "4af4676f2fb4948b29b8c42ada8d327595ebb5d7b8519c0e7bb1c1d396854da7",
-    "qualitylayer/src/ui/TaskView.tsx": "862313160803554066a72906613ffd79c8d5424078feb9c5349d30f0dfe1b475",
+    "qualitylayer/src/ui/TaskView.tsx": "6cc2480278df1fc952a7fc7934e3eee6a7de7625a1aac3197be3479eee2ace17",
     "qualitylayer/src/ui/TrialEnded.tsx": "bf33e65aba5787dca73d6d77886c6697ca77d1fcfc11c0e59114fdb7886a8939",
     "qualitylayer/src/ui/Trouble.tsx": "a363e03d062ce816ac062b38487af719c0255d897def64ff77db9243316313af",
     "qualitylayer/src/ui/Updates.tsx": "43713adb02642c03bcdc7631276e9ecd5d36dec2e4365435ae6c7cfd2af2c440",
@@ -1410,7 +1410,7 @@
     "qualitylayer/src/ui/fonts/geist-mono-latin.woff2": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b",
     "qualitylayer/src/ui/gate-follow.ts": "b34c1239c3d498222a4c3e07db4abab0736709a9a4eb5477dd1cf73e998e3254",
     "qualitylayer/src/ui/globals.css": "51fc6e71166f5aa5d49261aec9af3c64c36d55fd9fd2b711db20dc1aed251691",
-    "qualitylayer/src/ui/home-rows.ts": "553525307399a78839d6ae2da39ccebcd77a9ac1ddebb962b2411aab5800122d",
+    "qualitylayer/src/ui/home-rows.ts": "df70adc290fa2c4a7296fc48802a62aa27af9b6df0e55e879ac411e2ea4860d9",
     "qualitylayer/src/ui/home.css": "fc1e083074c852c700c00955a6954bdfeeff4435abcd7bd6143128e47da81c85",
     "qualitylayer/src/ui/home/QuietParts.tsx": "2a76646db252d15d6eff8c5cc081965620470e070cdb8cc605dc94ca19660c8c",
     "qualitylayer/src/ui/hooks.ts": "96fa0eb063fc02936fa5c749565b577b8be95f8954756faaad4777a3237125a0",
@@ -1766,7 +1766,7 @@
     "qualitylayer/src/ui/steps/StepQuiet.tsx": "b81b6d4754f50ded4bf8666bf6762f3cfd62ed15d737ee3bce06072596916090",
     "qualitylayer/src/ui/steps/StepReceipts.tsx": "58bdf5116ce6a7c9ed5952ce6fbaafd313be05fddde69418492d9aa6ed2f3fa9",
     "qualitylayer/src/ui/steps/StepTurn.tsx": "f1012e569fca142e912b144fda35852f4eed15f81a170ad6155b3dff5be4178a",
-    "qualitylayer/src/ui/steps/StepWork.tsx": "b9333ca61304856d5309f6b7bb819e94b3400bba92329bc7da9b00a42ef6fb86",
+    "qualitylayer/src/ui/steps/StepWork.tsx": "1e333dd013552eebc34f6ae35be6de99d066149add0947522ebba9209c662c29",
     "qualitylayer/src/ui/steps/StepsAgentTurn.tsx": "259a733c34e03767b722381fc863ac6baacf34d56ead24e5e1c239ce851037d1",
     "qualitylayer/src/ui/steps/context.ts": "ff8db9259b902bc9eb4816d2924a6e530dad5bd5514cbc0e656dc5e08afc0162",
     "qualitylayer/src/ui/steps/evidence-pictures.ts": "224248d21e20513a840d2adbd32bc90291f545a16b3b44c999954e9a37a6e98d",
@@ -2172,10 +2172,10 @@
     "qualitylayer/tests/ui/export-card.test.tsx": "3d5077a9ac7a30785b31e74d969d8bc33511142ed79600fc952337cd589b3fb7",
     "qualitylayer/tests/ui/machine-setup.test.tsx": "1fd5cfa3c802151b8280bdcdce346cf384253b9c011c4a8a94d71562e174ed3a",
     "qualitylayer/tests/ui/artifact-feedback.test.tsx": "64b2d456595a78071e7e44bda7e3435308bb6883d2deef61b1e06ba6e4ff3f79",
-    "qualitylayer/artifacts/app/app-model/coverage.json": "023db51908e23a6f8ce58b0ce3b425439488db1a997ebb77b6c154cbb922da46",
+    "qualitylayer/artifacts/app/app-model/coverage.json": "2392d535e249623994349ee7e2cd15600848e98db4b9e2fb243d0c78ad773315",
     "qualitylayer/tests/cli/machines-prompt.test.ts": "92ae460e60402c0fd344602b4467165c91c9cbbcfc353d6a7b3e9f92408bba33"
   },
-  "reviewManifestSha256": "9e25a41fe7d09707532250023b3783a62775b8cd90e8ffcc02f7f991679f7be3",
+  "reviewManifestSha256": "bf033a85c8690ee05d47543ceea95b89dc39c6428396f860e2656fc80dbf0b10",
   "schema": 1,
-  "sourceHead": "22fb045af582f2a3e2715f0e71a6c2c87a16bbc0"
+  "sourceHead": "a621b1902d44302d5beea3a15ce4b75c6ded61a1"
 }

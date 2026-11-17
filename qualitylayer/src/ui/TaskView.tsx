@@ -1937,7 +1937,16 @@ function TaskViewContent({
                           />
                         </div>
                       ) : null}
-                      {steady.doc !== null ? (
+                      {viewedStep(view) === "implement" &&
+                      task.action === "implement" &&
+                      !managedRun &&
+                      buildsNext !== null &&
+                      (steady.doc === null || steady.doc.markdown.trim() === "") ? (
+                        // Approved for its own outside session: no start card while it gets going.
+                        <p className="q-body q-dim m-0" data-testid="implement-builds-next">
+                          {buildsNext}
+                        </p>
+                      ) : steady.doc !== null ? (
                         <ArtifactHostProvider value={artifacts.host}>
                           {/* A step renders from its own folder (steps/<step>/Page.tsx). */}
                           <StepPage
@@ -1993,14 +2002,6 @@ function TaskViewContent({
                             ? "The build's record is not available."
                             : "Implement starts once the Plan is approved."}
                         </div>
-                      ) : view === "implement" &&
-                        task.action === "implement" &&
-                        !managedRun &&
-                        buildsNext !== null ? (
-                        // Approved for its own outside session: no start card while it gets going.
-                        <p className="q-body q-dim m-0" data-testid="implement-builds-next">
-                          {buildsNext}
-                        </p>
                       ) : view === "implement" && task.action === "implement" && !managedRun ? (
                         <div className="px-8 py-6 @max-[900px]:px-5">
                           {/* What to do with the card, above it: the pill says whose move it is. */}

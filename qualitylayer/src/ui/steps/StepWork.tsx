@@ -5,7 +5,9 @@ import { STEPS_TURN_READY } from "./StepTurn.tsx"
 import "./steps.css"
 export function StepWork({ task, view, children, onOpenDoc }: TaskSurfaceProps) {
   // The approved Plan waits to be started: the Plan page carries the start.
-  const starting = STEPS_TURN_READY && view === "implement" && task.action === "implement"
+  const outside = task.start?.route === true && task.start.where === "here"
+  const starting =
+    STEPS_TURN_READY && view === "implement" && task.action === "implement" && !outside
   return (
     <StepsNowContext value={STEPS_TURN_READY}>
       <div className="ir-steps-work">

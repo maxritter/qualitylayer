@@ -150,12 +150,14 @@ function ownWords(
   if (pullRequest !== null)
     // Changes after the approval wait for Approve change; the pull request's own words wait on GitHub.
     return { move: openMove(task), work: prWords(task, pullRequest), note: waits }
-  if (!building && task.action === "implement")
+  if (!building && task.action === "implement") {
+    const outside = task.start?.route === true && task.start.where === "here"
     return {
-      move: "Start the build",
-      work: "Plan approved · nothing builds until you start it",
+      move: outside ? "Open the task" : "Start the build",
+      work: outside ? status.doing : "Plan approved · nothing builds until you start it",
       note: waits,
     }
+  }
   if (task.action === "review" && !task.gate?.locked)
     return { move: "Review the Plan", work: "Complete · ready to approve", note: waits }
   if (task.action === "final")

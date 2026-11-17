@@ -34,7 +34,7 @@
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
     ".github/workflows/scripts/setup-git-crypt.sh": "b78b31c8b49f8030254423e09f73587bf421f16eb748cff2755eaaf0077edb49",
     ".github/workflows/site-health.yml": "370405ce200355b10d5dd73b50d970b348285cfe9109681e984d57b15f68f001",
-    ".github/workflows/supply-chain.yml": "ca2e466c3957f2efecf439645cdc4f1bd5a38ab90e6f52a590f6de055047d06a",
+    ".github/workflows/supply-chain.yml": "31525964b340923822fc0245204afadffe6e8eae09673dd9c310fa8aed3babd5",
     ".qlty/qlty.toml": "c06a70783017a321dd2666bb918fc51a238341cbaba46d52b6e8c2a5e785530e",
     ".releaserc.json": "a8e47f31fb2703b31d74c3a318fc1cbfefe43a8cb995928f22f00f2ba10af9fb",
     ".trivyignore": "2f2d84916d8a8c7549fdbd7f9a135c0837362cc6848b2c01c622a589922ee027",
@@ -1922,8 +1922,8 @@
     "qualitylayer/src/workflow/mod-files.ts": "6557595da04d9527e32873e24aa5328c029625e6fe3dae5d766e9cf1c3018e2c",
     "qualitylayer/src/workflow/mod/qualitylayer/.claude-plugin/plugin.json": "a91d4ddf3b28a83d10215b9719402a473cf06dde434cb7dfe149fd347f3c1695",
     "qualitylayer/src/workflow/mod/qualitylayer/hooks/hooks.json": "d842d789476d67282d0f04b7e5fdc68a3d981ccec65dd79cfa2d11eed13fb828",
-    "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.test.tsx": "3ca6f5a54761ae72e1252ca715f46c934bd4cebc3e8ee401bf62d8df4c412567",
-    "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.tsx": "671f49ef40929d43a9478f2de9a902bb05c31fabed2f221449ce41a875d99853",
+    "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.test.tsx": "4ec8250b62535dad759e29aa63322c7cc20cef0dc6ab4ecd73cb5ae4804f32d5",
+    "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.tsx": "b5af316c0cffe8db6327fd63d7ee7e6e30bdc54cf9b10ba9de552bd6041f77b8",
     "qualitylayer/src/workflow/mod/qualitylayer/types/index.d.ts": "94d0be3b1aaffed2ba08ae551fc0100d66efb9d06606235d930b66f3af1ae4b4",
     "qualitylayer/src/workflow/native/opencode.ts.tmpl": "bf516994e108930977b93e44de4638eb55964e912f9a67fda4a25998dc70794a",
     "qualitylayer/src/workflow/native/peers.js.tmpl": "76d0b48e474d816f95a4a937a5e77aa2ab42f5fc320babe392e0521f71ea2917",
@@ -2183,7 +2183,7 @@
     "qualitylayer/src/ui/steps/verify/board-view.ts": "f68b43911cb1c9153a57252b0e64a20c52d7e0d2c90db91ffaa2b7893a7b18f5",
     "qualitylayer/src/ui/steps/verify/use-recorded-screens.ts": "09e3ce8ff69f0c0cd25e5ea92b77556a54a7bed026a227d57749f4413d66a6da"
   },
-  "reviewManifestSha256": "7bff47f8d5543d24794ce037224ac3fa208353f34303cdabfaf1e5cf1eee71f6",
+  "reviewManifestSha256": "075e0033b6a5f77c335a32bf5234ae69067a43416f4b4057d32b2203dd51369c",
   "schema": 1,
-  "sourceHead": "75dfaf315c16707dee328701204d6031deab891e"
+  "sourceHead": "afab21a9adae7f34a3c6c6c531c24425823c9b97"
 }

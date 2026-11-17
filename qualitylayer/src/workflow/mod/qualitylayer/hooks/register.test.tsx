@@ -75,6 +75,7 @@ const at = (stage: string) => ({
 function world(on: any, first: unknown) {
   const world = {
     report: first as unknown,
+    sessionId: SESSION,
     toasts: [] as string[],
     statuses: 0,
     runs: [] as string[][],
@@ -143,7 +144,7 @@ function world(on: any, first: unknown) {
     }
   })
   on('session.start', (_$: any, e: any) => ({ cwd: e.cwd }))
-  on('session.id', () => ({ value: SESSION }))
+  on('session.id', () => ({ value: world.sessionId }))
   return { world, clock: mock.clock(on, { now: NOW }) }
 }
 
@@ -1023,12 +1024,16 @@ for (const [name, failure] of [
   await ui.unmount()
 })
 
-test('a slow CLI becomes unavailable within a refresh and its late answer cannot restore stale task text', async ($, on) => {
+test('a single timeout keeps this session’s status, a second reports failure, and late answers are ignored', async ($, on) => {
   const { world: seen, clock } = world(on, WAITING)
   await start($)
   const ui = await band($)
   seen.slow = true
   await clock.advance(5000)
+  await clock.advance(2000)
+  expect(await leafText(ui, 'Version flag')).toBeDefined()
+  expect(await leafText(ui, 'Status unavailable')).toBeUndefined()
+  await clock.advance(3000)
   await clock.advance(2000)
   expect(await leafText(ui, 'Status unavailable')).toBeDefined()
   expect(await leafText(ui, 'Version flag')).toBeUndefined()
@@ -1041,6 +1046,19 @@ test('a slow CLI becomes unavailable within a refresh and its late answer cannot
   await clock.advance(3000)
   expect(await leafText(ui, 'Status unavailable')).toBeUndefined()
   expect(await leafText(ui, 'Version flag')).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a previous session cannot mask the first timeout in a new session', async ($, on) => {
+  const { world: seen, clock } = world(on, WAITING)
+  await start($)
+  const ui = await band($)
+  seen.sessionId = 'different-session'
+  seen.slow = true
+  await clock.advance(5000)
+  await clock.advance(2000)
+  expect(await leafText(ui, 'Version flag')).toBeUndefined()
+  expect(await leafText(ui, 'Status unavailable')).toBeDefined()
   await ui.unmount()
 })
 

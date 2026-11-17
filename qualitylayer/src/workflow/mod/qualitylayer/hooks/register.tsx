@@ -33,7 +33,7 @@ const paneShown = atom({ plugin: 'qualitylayer', key: 'paneShown' } as const, fa
 const error = atom({ plugin: 'qualitylayer', key: 'error' } as const, null)
 const theme = atom({ plugin: 'qualitylayer', key: 'theme' } as const, null)
 const progressCue = atom({ plugin: 'qualitylayer', key: 'progressCue' } as const, null)
-type CueControl = { enabled: boolean; ready: boolean; timer: Timer | null; version: number; refreshing: boolean }
+type CueControl = { enabled: boolean; ready: boolean; timer: Timer | null; version: number; refreshing: boolean; lastGoodSession: string | null }
 
 type Turn = 'you' | 'agents' | 'failed' | null
 /** One tone: the stripe and bar colour, and the row's tint behind it (none where the theme is unknown). */
@@ -365,6 +365,7 @@ async function refresh($: any, cues: CueControl): Promise<void> {
   try {
     await refreshFromCli($, cues)
   } catch (failure) {
+    cues.lastGoodSession = null
     try {
       await clearCue($, cues)
       await update($, snapshot, () => null)
@@ -401,14 +402,20 @@ async function refreshFromCli($: any, cues: CueControl): Promise<void> {
   const id = await sessionId($)
   if (id === '') throw new Error('session id unavailable')
   let deadline: Timer | null = null
-  const timeout = new Promise<never>((_resolve, reject) => {
-    deadline = $.clock.after(STATUS_TIMEOUT_MS, () => reject(new Error('status timed out')))
+  const timedOut = Symbol()
+  const timeout = new Promise<typeof timedOut>(resolve => {
+    deadline = $.clock.after(STATUS_TIMEOUT_MS, () => resolve(timedOut))
   })
   let run: any
   try {
     run = await Promise.race([$.process.run([BIN, 'status', '--json', '--session', id]), timeout])
   } finally {
     deadline?.cancel()
+  }
+  if (run === timedOut) {
+    if (cues.lastGoodSession !== id || await sessionId($) !== id) throw new Error('status timed out')
+    cues.lastGoodSession = null
+    return
   }
   if (run.exitCode !== 0) {
     throw new Error(`exit ${run.exitCode}`)
@@ -444,6 +451,7 @@ async function refreshFromCli($: any, cues: CueControl): Promise<void> {
   await update($, snapshot, () => next)
   await update($, error, () => null)
   cues.ready = true
+  cues.lastGoodSession = id
   if (next === null) return
 
   if (gateReady(next) && (before === null || !gateReady(before) || next.gate?.target !== before.gate?.target)) {
@@ -772,7 +780,7 @@ const drawAllTasks = ($: any, kit: Kit, now: Board, folded: BoardPartKey[]) => {
 }
 
 export const register: Register = (on, options) => {
-  const cues: CueControl = { enabled: options.progressCue !== false, ready: false, timer: null, version: 0, refreshing: false }
+  const cues: CueControl = { enabled: options.progressCue !== false, ready: false, timer: null, version: 0, refreshing: false, lastGoodSession: null }
   const boards: BoardControl = { reading: false, prReading: false, prReadAt: 0 }
   // One timer each for the module's life: `session.start` fires again after /clear and on a resume.
   let timer = false

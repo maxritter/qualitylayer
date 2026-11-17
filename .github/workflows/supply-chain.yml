@@ -44,14 +44,19 @@ jobs:
         working-directory: qualitylayer
         run: bun install --frozen-lockfile --ignore-scripts
 
-      # GHSA-vfj7-8cjw-p6xm: braces <=3.0.3 can run out of stack on a deeply nested glob
-      # pattern, and 3.0.3 is still its latest release. It is a dependency of development tools
-      # only (@tailwindcss/cli's file watcher and the shadcn CLI, through micromatch); they hand
-      # it this repository's own patterns, never input from outside, and none of it is in the
-      # shipped binary. Max accepted that on 2026-10-03. Drop the --ignore once braces ships a fix.
+      - name: Known vulnerabilities in production dependencies
+        working-directory: qualitylayer
+        run: bun audit --production --audit-level=high
+
+      # Retain the existing braces exception (GHSA-vfj7-8cjw-p6xm).
+      # Picomatch GHSA-fc5q-39xc-vjpf has no patched release as of 17 November 2026.
+      # These matchers are development dependencies, outside the shipped App runtime.
+      # Untrusted repository/PR configuration can still cause CI or developer denial of service.
+      # The production audit above has no exceptions. Recheck before the next release
+      # and remove each development exception as soon as its patched version is available.
       - name: Known vulnerabilities in dependencies
         working-directory: qualitylayer
-        run: bun audit --audit-level=high --ignore=GHSA-vfj7-8cjw-p6xm
+        run: bun audit --audit-level=high --ignore=GHSA-vfj7-8cjw-p6xm --ignore=GHSA-fc5q-39xc-vjpf
 
       - name: Open issue on nightly failure
         if: failure() && github.event_name == 'schedule'

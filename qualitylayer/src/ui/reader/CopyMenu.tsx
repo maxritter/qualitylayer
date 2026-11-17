@@ -75,6 +75,7 @@ type Props = {
    */
   agents?: { step: FlowStepId; load: () => Promise<string> }
   prepareBlocks?: () => Promise<PlainBlock[]>
+  prepareFormatted?: () => Promise<Formatted>
 }
 
 /** One menu item: its icon, what it does and what it copies in a muted line under it. */
@@ -137,6 +138,7 @@ export function CopyMenu({
   labelled = false,
   agents,
   prepareBlocks,
+  prepareFormatted,
 }: Props) {
   const [fallback, setFallback] = useState<string | null>(null)
   const writeText = async (text: string, said: string) => {
@@ -183,13 +185,24 @@ export function CopyMenu({
   // the item holds the HTML as a promise, so the write starts inside the click.
   const copyFormatted = () => {
     const markdown = toMarkdown(body, true)
-    const made = (prepareBlocks ? prepareBlocks() : Promise.resolve(blocks)).then((prepared) =>
-      toFormatted(prepared, { theme, renderMermaid, loadArtifact, rasterise }),
-    )
+    const made = prepareFormatted
+      ? prepareFormatted()
+      : (prepareBlocks ? prepareBlocks() : Promise.resolve(blocks)).then((prepared) =>
+          toFormatted(prepared, { theme, renderMermaid, loadArtifact, rasterise }),
+        )
     const html = made.then((m) => new Blob([m.html], { type: "text/html" }))
     void html.catch(() => {})
-    const fallback = () =>
-      writeText(markdown, "The browser refused formatted copy: copied as Markdown instead.")
+    const fallback = async () => {
+      try {
+        await made
+      } catch (cause) {
+        toast.error(
+          cause instanceof Error ? cause.message : "The pictures could not be prepared. Try again.",
+        )
+        return
+      }
+      await writeText(markdown, "The browser refused formatted copy: copied as Markdown instead.")
+    }
     try {
       const item = new ClipboardItem({
         "text/html": html,

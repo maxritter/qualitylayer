@@ -45,11 +45,11 @@ export async function copyPictureBody(
       const found = await load(image.name.replace(/^evidence\//, ""))
       if (
         found.kind === "image" &&
-        found.type === "image/png" &&
+        /^image\/(?:png|jpeg|webp|gif)$/.test(found.type ?? "") &&
         found.base64 &&
         /^[A-Za-z0-9+/=]+$/.test(found.base64)
       )
-        replacement = `![${image.title.replace(/[\\[\]]/g, "\\$&")}](data:image/png;base64,${found.base64})`
+        replacement = `![${image.title.replace(/[\\[\]]/g, "\\$&")}](data:${found.type};base64,${found.base64})`
     } catch {
       /* The copied document names the omitted picture. */
     }
@@ -199,7 +199,10 @@ async function piece(block: PlainBlock, host: Host): Promise<Piece> {
       // A document leaves the App drawn light, whatever the App's theme: it lands on a white page.
       const svg = await host.renderMermaid(`copy-${block.key}`, block.source, "light")
       const png = await host.rasterise.diagram(svg)
-      return { html: `<p><img src="${png}" alt="Diagram"></p>`, made: "diagram" }
+      return {
+        html: `<p><img src="${png}" alt="Diagram" data-export-block="${escapeHtml(block.key)}" data-export-scale="2"></p>`,
+        made: "diagram",
+      }
     } catch {
       return { html: `<pre><code>${escapeHtml(block.source)}</code></pre>` }
     }
@@ -210,7 +213,10 @@ async function piece(block: PlainBlock, host: Host): Promise<Piece> {
       const png = host.artifactPicture
         ? await host.artifactPicture(block.path)
         : await host.rasterise.mockup(await host.loadArtifact(name))
-      return { html: `<p><img src="${png}" alt="Mockup: ${escapeHtml(name)}"></p>`, made: "mockup" }
+      return {
+        html: `<p><img src="${png}" alt="Mockup: ${escapeHtml(name)}" data-export-block="${escapeHtml(block.key)}"></p>`,
+        made: "mockup",
+      }
     } catch {
       return { html: `<p>${escapeHtml(mockupLine(name))}</p>`, made: "line" }
     }
@@ -227,7 +233,8 @@ async function piece(block: PlainBlock, host: Host): Promise<Piece> {
 
 /** The document as HTML, its pictures drawn at the same time. */
 export async function toFormatted(blocks: PlainBlock[], host: Host): Promise<Formatted> {
-  const pieces = await Promise.all(blocks.map((block) => piece(block, host)))
+  const pieces: Piece[] = []
+  for (const block of blocks) pieces.push(await piece(block, host))
   const count = (made: Piece["made"]) => pieces.filter((p) => p.made === made).length
   return {
     html: pieces.map((p) => p.html).join("\n"),

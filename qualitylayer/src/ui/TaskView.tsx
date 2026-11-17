@@ -1253,6 +1253,7 @@ function TaskViewContent({
       <DocReader
         key={`${task.id}:${task.created}:${view}`}
         markdown={content.data?.markdown ?? ""}
+        exportFile={api.exportFile}
         loadEvidence={loadEvidence}
         planExport={
           (task.type === "feature" || task.type === "bugfix") && view === fileOf(task, "plan")

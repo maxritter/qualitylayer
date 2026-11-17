@@ -6,7 +6,7 @@
 import { useMemo, useRef } from "react"
 import type { DocSections, TaskDetail } from "../api.ts"
 import { ExportCard } from "../export/ExportCard.tsx"
-import { workflowExport } from "../export/workflow-export.ts"
+import { workflowExport, workflowFormatted } from "../export/workflow-export.ts"
 import { CopyMenu } from "../reader/CopyMenu.tsx"
 import { agentsPathOf, copyPictureBody, stepCopy } from "../reader/copy-out.ts"
 import {
@@ -82,6 +82,17 @@ export function StepTools({
         renderMermaid={renderWithMermaid}
         loadArtifact={live?.loadArtifact ?? noArtifact}
         rasterise={browserRasterise}
+        prepareFormatted={
+          live?.exportFile
+            ? () =>
+                workflowFormatted({
+                  body: plain,
+                  write: live.exportFile as NonNullable<StepLive["exportFile"]>,
+                  loadArtifact: live.loadArtifact,
+                  loadEvidence: live.loadEvidence,
+                }).then((result) => result.formatted)
+            : undefined
+        }
         pathHint={file}
         prepareBlocks={async () => {
           const load = live?.loadEvidence

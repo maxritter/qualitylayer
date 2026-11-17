@@ -1271,6 +1271,7 @@ fn main() {
                     .title("QualityLayer")
                     // File bytes belong to the App's DOM paste/drop handlers, not Tauri events.
                     .disable_drag_drop_handler()
+                    .initialization_script(downloads::INITIALIZATION_SCRIPT)
                     .on_download(downloads::handle)
                     .inner_size(1280.0, 860.0)
                     .min_inner_size(900.0, 600.0)

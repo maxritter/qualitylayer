@@ -19,6 +19,8 @@ export { passageSection, selectedPassage } from "./selected-passage.ts"
 
 import type { DocSections, Evidence } from "../api.ts"
 import { ArtifactPreview } from "../artifact/ArtifactPreview.tsx"
+import type { ExportWriter } from "../export/ExportCard.tsx"
+import { workflowFormatted } from "../export/workflow-export.ts"
 import { useClaimReaderBar, useReaderBarSlot } from "../sidebar/ReaderBar.tsx"
 import { NamedScreen } from "../step-page/kit/GalleryTabs.tsx"
 import { LeadFold } from "../step-page/LeadFold.tsx"
@@ -453,6 +455,7 @@ export type ReaderMark = {
 }
 
 type Props = {
+  exportFile?: ExportWriter
   markdown: string
   theme: string
   loadArtifact: (name: string) => Promise<string>
@@ -600,6 +603,7 @@ export function DocReader({
   artifacts,
   stepFile,
   loadEvidence,
+  exportFile,
 }: Props) {
   const drawsArtifacts = artifacts !== undefined
   const plain = useMemo(
@@ -867,6 +871,17 @@ export function DocReader({
         renderMermaid={renderMermaid}
         loadArtifact={loadArtifact}
         rasterise={rasterise}
+        prepareFormatted={
+          exportFile
+            ? () =>
+                workflowFormatted({
+                  body: copied.body,
+                  write: exportFile,
+                  loadArtifact,
+                  loadEvidence,
+                }).then((result) => result.formatted)
+            : undefined
+        }
         prepareBlocks={async () => {
           const load = loadEvidence
           return load ? toBlocks(await copyPictureBody(copied.body, load)) : copied.blocks

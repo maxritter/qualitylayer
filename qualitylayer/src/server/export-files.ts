@@ -4,6 +4,7 @@ import { prepareSharedArtifact } from "../core/artifact/inert.ts"
 import type { ExportFile, ExportInput, ExportPage } from "../core/export/types.ts"
 import { crc32, zip } from "../core/export/zip.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
+import { figureStyles, readableFigures } from "./export-figures.ts"
 import { findChrome, NO_CHROME, renderArtifacts } from "./render.ts"
 
 const MAX_BYTES = 20 * 1024 * 1024
@@ -133,11 +134,21 @@ function suppliedAssets(input: ExportInput) {
   })
 }
 
+function cellText(node: Html.ChildNode): string {
+  if (node.nodeName === "#text") return (node as Html.TextNode).value
+  return "childNodes" in node ? node.childNodes.map(cellText).join("") : ""
+}
+
 function documentBody(page: ExportPage, assets: ReturnType<typeof suppliedAssets>): string {
   const source = parse(page.html)
   const embed = (parent: Html.ParentNode) => {
     for (const node of parent.childNodes)
       if ("tagName" in node) {
+        if (node.tagName === "td" || node.tagName === "th") {
+          node.attrs = node.attrs.filter((attr) => attr.name !== "data-export-short-cell")
+          if (/^\S{1,24}$/u.test(cellText(node).trim()))
+            node.attrs.push({ name: "data-export-short-cell", value: "" })
+        }
         const src = node.attrs.find((attr) => attr.name === "src")
         const asset =
           src &&
@@ -162,11 +173,11 @@ function documentBody(page: ExportPage, assets: ReturnType<typeof suppliedAssets
   }
   collect(safe)
   const heading = /<h1(?:\s|>)/i.test(body) ? "" : `<h1>${text(page.title)}</h1>`
-  return `${styles}<section class="document">${heading}${body}</section>`
+  return `${styles}<section class="document">${heading}${readableFigures(body, pngSize)}</section>`
 }
 
 function htmlDocument(title: string, content: string, styles = ""): string {
-  return `<!doctype html><html lang="en" data-theme="light" style="color-scheme:light"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}"><title>${text(title)}</title><style>html{color-scheme:light;background:white;color:#171717}body{margin:24px;font:15px/1.5 system-ui,sans-serif}img{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:6px;text-align:left}.document{break-after:page;overflow-wrap:anywhere}.document:last-child{break-after:auto}@page{size:A4;margin:14mm}h1,h2,h3{break-after:avoid}img,svg{break-inside:avoid}${styles}</style></head><body>${content}</body></html>`
+  return `<!doctype html><html lang="en" data-theme="light" style="color-scheme:light"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}"><title>${text(title)}</title><style>html{color-scheme:light;background:white;color:#171717}body{margin:0 auto;font:15px/1.5 system-ui,sans-serif}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%;table-layout:auto}td,th{border:1px solid #bbb;padding:6px;text-align:left;overflow-wrap:anywhere;word-break:normal}[data-export-short-cell]{white-space:nowrap}td:first-child{min-width:3ch}.document{max-width:680px;margin:0 auto;break-after:page;overflow-wrap:break-word}.document:last-child{break-after:auto}@page{size:A4;margin:14mm}h1,h2,h3{break-after:avoid}img,svg,tr{break-inside:avoid}${figureStyles}${styles}</style></head><body>${content}</body></html>`
 }
 
 function exportStem(name: string): string {

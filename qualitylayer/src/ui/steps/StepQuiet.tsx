@@ -53,10 +53,20 @@ type Props = {
   line?: string
   /** The link back: its label names the step, `open` takes the person there. */
   back: { label: string; open: () => void } | null
+  /** A current move in the same quiet presentation, such as opening the approved Plan. */
+  action?: { label: string; open: () => void }
   testId?: string
 }
 
-export function StepQuiet({ step, kind, heading, line, back, testId = "step-quiet" }: Props) {
+export function StepQuiet({
+  step,
+  kind,
+  heading,
+  line,
+  back,
+  action,
+  testId = "step-quiet",
+}: Props) {
   const pending = kind !== "future"
   return (
     <section className="ir-future-step sq" data-testid={testId} data-kind={kind}>
@@ -68,7 +78,11 @@ export function StepQuiet({ step, kind, heading, line, back, testId = "step-quie
           (kind === "writing" ? WRITING_HEADING[step] : pending ? "Draft" : FUTURE_HEADING[step])}
       </h1>
       <p>{line ?? (pending ? WRITING_LINE[step] : FUTURE_LINE[step])}</p>
-      {back !== null ? (
+      {action ? (
+        <button type="button" className="q-btn quiet" onClick={action.open}>
+          {action.label}
+        </button>
+      ) : back !== null ? (
         <button type="button" className="q-btn quiet" onClick={back.open}>
           <ArrowLeftIcon aria-hidden="true" /> Back to {back.label}
         </button>

@@ -78,7 +78,9 @@ async function includePictures(body: string, load: Input["loadEvidence"], signal
   return prepared
 }
 
-async function artifactPictures(blocks: PlainBlock[], input: Input) {
+type ContentInput = Pick<Input, "body" | "signal" | "write" | "loadArtifact" | "loadEvidence">
+
+async function artifactPictures(blocks: PlainBlock[], input: ContentInput) {
   const sources = new Map<string, string>()
   const pictures = new Map<string, string>()
   for (const block of blocks) {
@@ -115,13 +117,13 @@ async function artifactPictures(blocks: PlainBlock[], input: Input) {
   return pictures
 }
 
-export async function workflowExport(input: Input): Promise<ExportInput> {
-  const { body, title, format } = input
-  if (!body.trim())
+/** File export and rich copy use one completed, sequential visual preparation. */
+export async function workflowFormatted(input: ContentInput) {
+  if (!input.body.trim())
     throw new Error("The document is still being written. Try again when it is ready.")
-  const revision = await exportRevision(body)
   checkCancelled(input.signal)
-  const blocks = toBlocks(await includePictures(body, input.loadEvidence, input.signal))
+  const body = await includePictures(input.body, input.loadEvidence, input.signal)
+  const blocks = toBlocks(body)
   const pictures = await artifactPictures(blocks, input)
   const formatted = await toFormatted(blocks, {
     theme: "light",
@@ -140,13 +142,33 @@ export async function workflowExport(input: Input): Promise<ExportInput> {
     formatted.diagrams !== blocks.filter((block) => block.kind === "mermaid").length
   )
     throw new Error("A design or diagram could not be included. Check its preview and try again.")
+  if (new TextEncoder().encode(formatted.html).length > 20 * 1024 * 1024)
+    throw new Error("The document exceeds 20 MiB.")
+  const page = new DOMParser().parseFromString(formatted.html, "text/html")
+  let pixels = 0
+  for (const image of page.querySelectorAll("img")) {
+    const encoded = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(image.src)?.[1]
+    if (!encoded)
+      throw new Error("A picture is not available offline. Save it in the task and try again.")
+    const header = Uint8Array.from(atob(encoded).slice(0, 24), (char) => char.charCodeAt(0))
+    if (header.length < 24) throw new Error("A picture could not be prepared.")
+    const view = new DataView(header.buffer)
+    pixels += view.getUint32(16) * view.getUint32(20)
+    if (pixels > 64_000_000) throw new Error("The document's pictures exceed the pixel limit.")
+  }
+  return { body, formatted }
+}
+
+export async function workflowExport(input: Input): Promise<ExportInput> {
+  const { body, title, format } = input
+  const revision = await exportRevision(body)
+  const prepared = await workflowFormatted(input)
+  const formatted = prepared.formatted
   const html = sanitize(formatted.html)
   const page = new DOMParser().parseFromString(html, "text/html")
   const assets: ExportAsset[] = []
-  let markdown = toMarkdown(body, true).replace(
-    /\(open it in QualityLayer\)/g,
-    "(see images below)",
-  )
+  const sources = new Map<string, string>()
+  const figures = new Map<string, { name: string; alt: string }>()
   for (const image of page.querySelectorAll("img")) {
     const source = image.getAttribute("src") ?? ""
     const base64 = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(source)?.[1]
@@ -154,13 +176,27 @@ export async function workflowExport(input: Input): Promise<ExportInput> {
       throw new Error("A picture is not available offline. Save it in the task and try again.")
     const name = `image-${assets.length + 1}.png`
     assets.push({ name, type: "image/png", base64 })
-    markdown = markdown.replaceAll(source, `assets/${name}`)
+    sources.set(source, `assets/${name}`)
+    const key = image.getAttribute("data-export-block")
+    if (key) figures.set(key, { name, alt: image.getAttribute("alt") ?? "Picture" })
   }
-  if (assets.length)
-    markdown += `\n\n## Images\n\n${assets.map((asset, index) => `![Image ${index + 1}](assets/${asset.name})`).join("\n\n")}\n`
+  let markdown = marked
+    .lexer(prepared.body)
+    .map((token, index) => {
+      if (token.type === "space") return token.raw
+      const figure = figures.get(`${index}-${token.type}`)
+      if (figure) {
+        const caption = figure.alt.replace(/[[\]\\]/g, "")
+        const source = token.type === "code" && token.lang === "mermaid" ? token.raw : ""
+        return `${source}\n![${caption}](assets/${figure.name})\n\n`
+      }
+      return toMarkdown(token.raw)
+    })
+    .join("")
+  for (const [source, path] of sources) markdown = markdown.replaceAll(source, path)
   const record = `Snapshot ${revision}${input.state ? ` · ${input.state}` : ""}`
   markdown += `\n\n---\n${record}\n`
-  const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font:14px/1.55 system-ui,sans-serif;color:#171717;background:#fff;margin:32px auto;max-width:760px;padding:0 24px}img{max-width:100%;height:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere}table{border-collapse:collapse;width:100%}td,th{padding:7px;border:1px solid #aaa;text-align:left}h1,h2,h3{break-after:avoid}img,tr{break-inside:avoid}footer{margin-top:28px;font-size:10px;overflow-wrap:anywhere;color:#555}@page{size:A4;margin:16mm}</style></head><body>${html}<footer>${escapeHtml(record)}</footer></body></html>`
+  const document = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>footer{margin-top:28px;font-size:10px;overflow-wrap:anywhere;color:#555}</style></head><body>${html}<footer>${escapeHtml(record)}</footer></body></html>`
   return {
     format,
     title,

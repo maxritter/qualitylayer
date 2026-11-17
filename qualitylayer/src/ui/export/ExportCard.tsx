@@ -14,6 +14,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { ExportFile, ExportFormat, ExportInput } from "../../core/export/types.ts"
 import "./export.css"
 import { exportName } from "./filename.ts"
+import {
+  NATIVE_DOWNLOAD_ERROR,
+  nativeDownloadPending,
+  nativeDownloadsAvailable,
+} from "./useNativeDownloads.ts"
 
 export type ExportWriter = (input: ExportInput, signal?: AbortSignal) => Promise<ExportFile>
 export type ExportScope = "current" | "all"
@@ -33,16 +38,59 @@ const formats = {
   markdown: { title: "Markdown", hint: "With pictures", Icon: HashIcon },
 }
 
-export function downloadExport(file: ExportFile) {
+export function downloadExport(
+  file: ExportFile,
+  signal?: AbortSignal,
+): Promise<"started" | "saved" | "cancelled"> {
   const bytes = Uint8Array.from(atob(file.base64), (char) => char.charCodeAt(0))
   const url = URL.createObjectURL(new Blob([bytes], { type: file.type }))
-  const link = document.createElement("a")
-  link.href = url
-  link.download = file.name
-  document.body.append(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  const native = nativeDownloadsAvailable()
+  return new Promise((resolve, reject) => {
+    const clean = () => {
+      window.removeEventListener("qualitylayer-download-result", result)
+      signal?.removeEventListener("abort", abort)
+      nativeDownloadPending.delete(url)
+      if (native) URL.revokeObjectURL(url)
+      else window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    }
+    const abort = () => {
+      clean()
+      reject(new DOMException("Export cancelled", "AbortError"))
+    }
+    const result = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.detail?.url !== url) return
+      const status = event.detail.status
+      if (!["saved", "cancelled", "failed"].includes(status)) return
+      clean()
+      if (status === "failed") reject(new Error(NATIVE_DOWNLOAD_ERROR))
+      else resolve(status)
+    }
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    if (native) {
+      nativeDownloadPending.add(url)
+      window.addEventListener("qualitylayer-download-result", result)
+      signal?.addEventListener("abort", abort, { once: true })
+    }
+    const link = document.createElement("a")
+    link.href = url
+    link.download = file.name
+    document.body.append(link)
+    try {
+      link.click()
+      if (!native) {
+        clean()
+        resolve("started")
+      }
+    } catch (cause) {
+      clean()
+      reject(cause)
+    } finally {
+      link.remove()
+    }
+  })
 }
 
 export function ExportCard({ title, kind, pages = 1, disabled, write, prepare }: Props) {
@@ -53,6 +101,7 @@ export function ExportCard({ title, kind, pages = 1, disabled, write, prepare }:
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [done, setDone] = useState("")
+  const [result, setResult] = useState<"started" | "saved" | "cancelled" | "">("")
   const pending = useRef<AbortController | null>(null)
   const again = useRef<HTMLButtonElement | null>(null)
   useEffect(() => () => pending.current?.abort(), [])
@@ -68,6 +117,7 @@ export function ExportCard({ title, kind, pages = 1, disabled, write, prepare }:
   const reset = () => {
     setError("")
     setDone("")
+    setResult("")
   }
   const changeOpen = (next: boolean) => {
     if (!next) {
@@ -88,8 +138,10 @@ export function ExportCard({ title, kind, pages = 1, disabled, write, prepare }:
       if (controller.signal.aborted) return
       const file = await write(input, controller.signal)
       if (controller.signal.aborted) return
-      downloadExport(file)
-      setDone(file.name)
+      const outcome = await downloadExport(file, controller.signal)
+      if (controller.signal.aborted) return
+      setResult(outcome)
+      if (outcome !== "cancelled") setDone(file.name)
     } catch (cause) {
       if (!controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : "Could not export. Try again.")
@@ -200,10 +252,11 @@ export function ExportCard({ title, kind, pages = 1, disabled, write, prepare }:
             {error}
           </p>
         ) : null}
+        {result === "cancelled" ? <p role="status">Save cancelled</p> : null}
         {done ? (
           <div className="q-export-done" role="status">
             <CheckCircle2Icon aria-hidden="true" />
-            <span>Download started</span>
+            <span>{result === "saved" ? "Saved" : "Download started"}</span>
             <Button ref={again} variant="ghost" size="sm" onClick={reset}>
               Export again
             </Button>

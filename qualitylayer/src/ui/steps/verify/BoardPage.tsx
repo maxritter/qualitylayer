@@ -55,11 +55,12 @@ export function VerifyBoardPage(props: StepPageProps) {
   const ready =
     verificationReady(task) ||
     (state.verify?.proof.rows.some((row) => row.state !== "waiting") ?? false)
+  const whole = (task.pages?.find((page) => page.step === "verify")?.problems.length ?? 0) === 0
   const steady = useSteadyStep(
     `${task.id}:verify`,
     { document: incomingDocument, view: incomingView },
     incomingSections,
-    ready,
+    ready && whole,
   )
   const { document } = steady.doc
   const sections = steady.sections

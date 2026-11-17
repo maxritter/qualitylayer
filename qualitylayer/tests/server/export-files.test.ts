@@ -144,6 +144,28 @@ test("document HTML keeps readable text and web links while scripts and external
   expect(calls.length).toBe(0)
 })
 
+test("document tables keep short identifiers whole while long paths can wrap", async () => {
+  const path = `qualitylayer/src/${"unbrokencomponent".repeat(12)}/export.ts`
+  const result = await exportFile(ctx, {
+    format: "html",
+    title: "Table",
+    name: "table",
+    pages: [
+      {
+        ...page,
+        kind: "document",
+        html: `<table><tr><th>Step</th><th>File</th></tr><tr><td>A12</td><td><code>${path}</code></td></tr></table>`,
+      },
+    ],
+  })
+  if (!result.ok) throw new Error(result.error.message)
+  const html = Buffer.from(result.data.base64, "base64").toString()
+  expect(html).toContain('<td data-export-short-cell="">A12</td>')
+  expect(html).toContain(`<td><code>${path}</code></td>`)
+  expect(html).toContain("overflow-wrap:anywhere")
+  expect(html).toContain("[data-export-short-cell]{white-space:nowrap}")
+})
+
 test("document PDF prints the sanitized document directly rather than rasterizing its text", async () => {
   const result = await exportFile(ctx, {
     format: "pdf",

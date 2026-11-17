@@ -5,7 +5,7 @@ import { mountDom, type Rtl, unmountDom } from "../helpers/dom.ts"
 import { PNG } from "../helpers/feedbackBackend.ts"
 
 const rtl: Rtl = await mountDom()
-const { ExportCard } = await import("../../src/ui/export/ExportCard.tsx")
+const { ExportCard, downloadExport } = await import("../../src/ui/export/ExportCard.tsx")
 const { workflowExport } = await import("../../src/ui/export/workflow-export.ts")
 const file: ExportFile = {
   name: "checkout.pdf",
@@ -24,6 +24,8 @@ const url = spyOn(URL, "createObjectURL").mockReturnValue("blob:test-export")
 const revoke = spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
 const click = spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
 afterEach(() => {
+  delete (window as Window & { __QUALITYLAYER_NATIVE_DOWNLOADS__?: boolean })
+    .__QUALITYLAYER_NATIVE_DOWNLOADS__
   rtl.cleanup()
   prepare.mockClear()
   click.mockClear()
@@ -34,6 +36,54 @@ afterAll(() => {
   revoke.mockRestore()
   click.mockRestore()
   unmountDom(rtl)
+})
+
+test("native export waits for its own confirmed result", async () => {
+  Object.defineProperty(window, "__QUALITYLAYER_NATIVE_DOWNLOADS__", {
+    value: true,
+    configurable: true,
+  })
+  let finished = false
+  const saving = downloadExport(file).then((status) => {
+    finished = true
+    return status
+  })
+  window.dispatchEvent(
+    new CustomEvent("qualitylayer-download-result", {
+      detail: { url: "blob:another-export", status: "saved" },
+    }),
+  )
+  await Promise.resolve()
+  expect(finished).toBe(false)
+  window.dispatchEvent(
+    new CustomEvent("qualitylayer-download-result", {
+      detail: { url: "blob:test-export", status: "saved" },
+    }),
+  )
+  expect(await saving).toBe("saved")
+  expect(revoke).toHaveBeenCalledWith("blob:test-export")
+})
+
+test("native cancellation leaves the card ready without a success result", async () => {
+  Object.defineProperty(window, "__QUALITYLAYER_NATIVE_DOWNLOADS__", {
+    value: true,
+    configurable: true,
+  })
+  const view = rtl.render(
+    <ExportCard title="Plan" kind="plan" write={async () => file} prepare={prepare} />,
+  )
+  rtl.fireEvent.click(view.getByRole("button", { name: "Export" }))
+  rtl.fireEvent.click(await view.findByRole("button", { name: "Export PDF" }))
+  await rtl.waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+  window.dispatchEvent(
+    new CustomEvent("qualitylayer-download-result", {
+      detail: { url: "blob:test-export", status: "cancelled" },
+    }),
+  )
+  expect(await view.findByText("Save cancelled")).toBeTruthy()
+  expect(view.queryByText("Saved")).toBeNull()
+  expect(view.getByRole("button", { name: "Export PDF" }).getAttribute("aria-busy")).toBe("false")
+  expect(click).toHaveBeenCalledTimes(1)
 })
 
 test("artifact opens only three formats and retains the selected page scope", async () => {
@@ -160,6 +210,10 @@ test("multiple embedded designs capture sequentially through the single-export s
   expect(peak).toBe(1)
   expect(result.assets).toHaveLength(2)
   expect(result.markdown).toContain("assets/image-2.png")
+  expect(result.markdown).not.toContain("## Images")
+  expect(result.markdown?.indexOf("assets/image-1.png")).toBeLessThan(
+    result.markdown?.indexOf("assets/image-2.png") ?? -1,
+  )
 })
 
 test("cancelled preparation never starts a capture after a delayed artifact read", async () => {

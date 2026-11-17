@@ -306,10 +306,11 @@ for (const theme of ["light", "dark"] as const)
           stopped = false
           await Bun.write(cards, namedCards)
           await Bun.write(person, workingDocument)
+          // The live App can receive the stage change before runAgent returns.
+          verification = []
           const built = await runAgent(repo, "", { build: true, stopAt: "verify" })
           expect(built.final.json.ok).toBe(true)
           expect(((await server.json(path)).task as TaskDetail).stage).toBe("verify")
-          verification = []
           await page.goto(`${server.base}/#/task/${encodeURIComponent(task.id)}/verify`)
           await dismissWelcome(page)
           await webExpect(quiet).toContainText("Preparing verification")

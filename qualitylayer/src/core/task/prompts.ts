@@ -14,6 +14,7 @@ import { detectAgent, sessionIdentity } from "../agents/detect.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import { isNativeAgent } from "../agents/ids.ts"
 import { projectRuntimeDir, resolveRepo } from "../paths.ts"
+import { trimEndCharacters } from "../text-boundaries.ts"
 import { isArchived } from "./archive.ts"
 import { keyOf } from "./binding.ts"
 import { observedTarget } from "./bound-target.ts"
@@ -299,10 +300,7 @@ const CLOSES = /^[ \t]*(?:$|\n|[.!?;:,)]|(?:\d+[.)]|[-*•])\s)/
  * of its own; a `strict` one (an approval, a gate's answer) must also be typed, not pasted.
  */
 export function heldIn(message: string, quote: string, strict = false): boolean {
-  const q = lines(ownWords(quote, false))
-    .replace(/\n/g, " ")
-    .replace(/[.!]+$/, "")
-    .trim()
+  const q = trimEndCharacters(lines(ownWords(quote, false)).replace(/\n/g, " "), ".!").trim()
   if (q === "") return false
   const clause = strict || q.length <= 2 || /^\d+$/.test(q)
   const said = lines(ownWords(message, strict))

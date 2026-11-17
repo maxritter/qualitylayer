@@ -37,6 +37,7 @@ import {
 } from "../paths.ts"
 import { OVERRIDES } from "../scaling.ts"
 import { followsOpenPullRequest } from "../ship/pr-open.ts"
+import { trimEdgeCharacters, trimEndCharacters } from "../text-boundaries.ts"
 import { answerModeStamp, approvalModeStamp } from "./answer-mode.ts"
 import { placeFor } from "./answers.ts"
 import { bindSession, boundSlug, claimedByOthers, keyOf, sessionKey } from "./binding.ts"
@@ -97,12 +98,8 @@ export const EARLIER_LAYOUT_REASON =
   "Made with the earlier seven-step workflow; it cannot be continued. Its files stay as they are: open them in Files, or start a new task."
 
 export function slugify(words: string, maxLength = 40): string {
-  const slug = words
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, maxLength)
-    .replace(/-+$/g, "")
+  const normalized = words.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  const slug = trimEndCharacters(trimEdgeCharacters(normalized, "-").slice(0, maxLength), "-")
   return slug !== "" ? slug : "task"
 }
 
@@ -173,15 +170,29 @@ const LEADING_ATTACHMENT =
   /^(?:(?:["'`‘“])(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*?["'`’”](?=\s|[-–—:]|$)|(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*?\.(?:png|jpe?g|gif|webp|avif|svg|pdf|txt|md|log|json|csv)(?=\s|$))\s*(?:[-–—:]\s*)?/i
 
 // A separately delimited checkout/file and GitHub repository are request context, not the action.
-const LEADING_RESOURCE_CONTEXT =
-  /^(?:(?:["'`‘“])(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*?["'`’”]|(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/)[^\r\n]*?)(?<![ \t])[ \t]+[-–—][ \t]+https?:\/\/(?:www\.)?github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/?(?:[?#][^ \t\r\n]*)?[ \t]+[-–—][ \t]+([\s\S]+)$/i
+function resourceContext(text: string): string | undefined {
+  const prefix = /^(["'`‘“])?(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/)/i.exec(text)
+  if (!prefix) return undefined
+  const lineEnd = text.search(/[\r\n]/)
+  const repository =
+    /https?:\/\/(?:www\.)?github\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/?(?:[?#][^ \t\r\n]*)?[ \t]+[-–—][ \t]+/iy
+  for (const separator of text.matchAll(/(?<![ \t])[ \t]+[-–—][ \t]+(?=https?:\/\/)/gi)) {
+    const at = separator.index
+    if (lineEnd >= 0 && at > lineEnd) break
+    if (at < prefix[0].length) continue
+    if (prefix[1] && !/["'`’”]/.test(text.charAt(at - 1))) continue
+    repository.lastIndex = at + separator[0].length
+    if (repository.test(text)) return text.slice(repository.lastIndex).trim()
+  }
+  return undefined
+}
 
 function provisionalTitle(words: string): string {
   let prose = words.slice(0, 8192).trim()
   let attached = false
   for (let count = 0; count < 8; count++) {
     const withoutLabel = prose.replace(/^\[Image\s*#?\d+\]\s*[-–—:]?\s*/i, "")
-    const context = withoutLabel.match(LEADING_RESOURCE_CONTEXT)?.[1]?.trim()
+    const context = resourceContext(withoutLabel)
     const next =
       context && !/^["'`‘“]?(?:\/|[A-Za-z]:[\\/]|\\\\|file:\/\/|https?:\/\/)/i.test(context)
         ? context
@@ -204,11 +215,9 @@ function provisionalTitle(words: string): string {
     prose = next
   }
   const first = prose.match(/^(.+?[.!?])(?:\s|$)/)?.[1] ?? prose
-  const subject = first
-    .replace(/(?:\s+with\s+some\s+ideas|\s+for\s+me|[,;]?\s+please)[.!]?$/i, "")
-    .trim()
+  const subject = first.replace(/(?: with some ideas| for me|[,;]? please)[.!]?$/i, "").trim()
   cleaned ||= subject !== first
-  const sentence = cleaned ? subject.replace(/[.]+$/, "") : subject
+  const sentence = cleaned ? trimEndCharacters(subject, ".") : subject
   if (!sentence) return attached ? "Review attached files" : "New task"
   return cleaned ? sentence[0]?.toLocaleUpperCase() + sentence.slice(1) : sentence
 }
@@ -228,7 +237,7 @@ export function taskTitle(words: string, given?: string): string {
 function cutAtWord(text: string): string {
   const cut = text.slice(0, TITLE_MAX - 1)
   const space = cut.lastIndexOf(" ")
-  return `${(space > TITLE_MAX / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, "")}…`
+  return `${trimEndCharacters(space > TITLE_MAX / 2 ? cut.slice(0, space) : cut, " ,;:.-")}…`
 }
 
 export type CreateOptions = {
@@ -382,7 +391,8 @@ export async function createTask(
   const quoted = request
     .split("\n")
     .map((line) => {
-      const [, marks = "", rest = ""] = line.match(/^((?:> ?)*)([\s\S]*)$/) ?? []
+      const marks = /^(?:> ?)*/.exec(line)?.[0] ?? ""
+      const rest = line.slice(marks.length)
       return `> ${marks}${rest
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")

@@ -12,10 +12,11 @@ export function stepIsWorking(task: TaskDetail, now = Date.now()): boolean {
 }
 
 const named = (title: string, fallback: string): boolean => {
-  const label = title
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .replace(/[`*_~]/g, "")
-    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
+  const label =
+    title
+      .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+      .replace(/[`*_~]/g, "")
+      .match(/[\p{L}\p{N}](?:[\s\S]*[\p{L}\p{N}])?/u)?.[0] ?? ""
   return (
     /[\p{L}\p{N}]/u.test(label) &&
     label.toLowerCase() !== fallback.toLowerCase() &&

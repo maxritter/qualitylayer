@@ -1410,7 +1410,7 @@ export const ruleBreak = (name: string, found: readonly string[]): string =>
 
 /** How many findings the answer lists: its numbered items. */
 function findingsIn(answer: string): number {
-  return (answer.match(/^\s*\d+[.)]\s/gm) ?? []).length
+  return (answer.match(/^[^\S\r\n\u2028\u2029]*\d+[.)]\s/gm) ?? []).length
 }
 
 /** How an attempt to run the reviewer ended; `reason` is the plain-words cause when it did not answer. */

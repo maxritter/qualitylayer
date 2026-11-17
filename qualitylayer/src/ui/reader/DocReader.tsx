@@ -118,7 +118,7 @@ const SAFE_URL = /^(https?:|mailto:|data:image\/(png|jpeg|gif|webp);)/i
  * Rich HTML belongs in an artifact, which is sandboxed.
  */
 function neutralise(tokens: Token[]): void {
-  marked.walkTokens(tokens, (token) => {
+  void marked.walkTokens(tokens, (token) => {
     if (token.type === "html")
       token.text = /^<!--[\s\S]*?-->[ \t\r\n]*$/.test(token.raw) ? "" : escapeHtml(token.raw)
     if ((token.type === "link" || token.type === "image") && !SAFE_URL.test(token.href.trim())) {

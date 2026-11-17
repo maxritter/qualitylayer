@@ -82,7 +82,17 @@ export function KeyRows({ rows }: { rows: readonly { label: string; text: string
 /** The bullets the Approach shows before "Show all N". */
 const SHOWN = 5
 
-const LEAD = /^\*\*(.+?)\*\*[ \t]+(.+)$/
+function labelledBullet(text: string): { lead: string; detail: string } | null {
+  if (!text.startsWith("**") || !isLineText(text)) return null
+  const closing = /\*\*(?=[ \t])/g
+  closing.lastIndex = 3
+  const end = closing.exec(text)?.index
+  if (end === undefined) return null
+  let start = end + 3
+  while (start < text.length - 1 && (text[start] === " " || text[start] === "\t")) start++
+  if (start === text.length) return null
+  return { lead: text.slice(2, end), detail: text.slice(start) }
+}
 
 export function ApproachPart({ view }: { view: ApproachView }) {
   const shown = useShown(view.bullets, SHOWN)
@@ -91,7 +101,7 @@ export function ApproachPart({ view }: { view: ApproachView }) {
   const rows = shown.rows.map((text) => {
     const occurrence = (occurrences.get(text) ?? 0) + 1
     occurrences.set(text, occurrence)
-    return { key: `${text}\0${occurrence}`, text, named: LEAD.exec(text) }
+    return { key: `${text}\0${occurrence}`, text, named: labelledBullet(text) }
   })
   return (
     <PlanPart
@@ -129,12 +139,12 @@ export function ApproachPart({ view }: { view: ApproachView }) {
                       className="pl-approach-fold"
                       head={
                         <b>
-                          <InlineMarkdown text={named[1] ?? ""} />
+                          <InlineMarkdown text={named.lead} />
                         </b>
                       }
                     >
                       <p>
-                        <InlineMarkdown text={named[2] ?? ""} />
+                        <InlineMarkdown text={named.detail} />
                       </p>
                     </Disclosure>
                   )}

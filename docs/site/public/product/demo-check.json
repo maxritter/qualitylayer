@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "0fb1af99970ab776a0c32a07297622792c4a6510",
-  "sourceTree": "700ed505b87d09586da6fd94da3f9fb70126e3cc",
+  "sourceCommit": "cb439374f28f99cbc9e70368bcd63ab1c08fce8d",
+  "sourceTree": "c6257af5ea9a5e3aebf2d916938c43476bd24d15",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "821daf4de59fc8bc16cc052623f32e4202f2071c8c624506fb4b6fa1485687bf",
@@ -415,7 +415,7 @@
     "qualitylayer/src/ui/live-notify.ts": "1fac909c42aba06b9c7dcbaa0bab6b64b253187717a84798577b7c3b47d945b9",
     "qualitylayer/src/ui/live-status.ts": "9d2dac45d049cd30a2a3e4174ddfed79f47f37f6710fc12e09bddf3f5af9df7b",
     "qualitylayer/src/ui/machines/AddMachine.tsx": "d1dbd51fd3c22ad0614c7d2d63026790e182bffa24e61920f7dd2ae49af1900b",
-    "qualitylayer/src/ui/machines/MachineAgents.tsx": "add1915d5121b121204b8957b6bdf3f84f595bb2a357bb5f12c302561c6a697d",
+    "qualitylayer/src/ui/machines/MachineAgents.tsx": "1aa8183e0d59bfae7eb8ce87c8ad51d43fd794c3da902fbc4a024c655b78ecd8",
     "qualitylayer/src/ui/machines/MachineDown.tsx": "c911b9dc79ad26894ad83b67290e5b4d4296c4090afc78335b9e1108ca256161",
     "qualitylayer/src/ui/machines/MachineFrames.tsx": "573a8168036f1187280b3b8f949d1d2e60ac563482483e0d6aa827153fd03034",
     "qualitylayer/src/ui/machines/MachineProject.tsx": "1a97794e6a055b561640c4a996109c8b04f62a7a9300a7f48fdd57aa161e6b30",
@@ -1351,7 +1351,7 @@
     "qualitylayer/src/ui/live-notify.ts": "1fac909c42aba06b9c7dcbaa0bab6b64b253187717a84798577b7c3b47d945b9",
     "qualitylayer/src/ui/live-status.ts": "9d2dac45d049cd30a2a3e4174ddfed79f47f37f6710fc12e09bddf3f5af9df7b",
     "qualitylayer/src/ui/machines/AddMachine.tsx": "d1dbd51fd3c22ad0614c7d2d63026790e182bffa24e61920f7dd2ae49af1900b",
-    "qualitylayer/src/ui/machines/MachineAgents.tsx": "add1915d5121b121204b8957b6bdf3f84f595bb2a357bb5f12c302561c6a697d",
+    "qualitylayer/src/ui/machines/MachineAgents.tsx": "1aa8183e0d59bfae7eb8ce87c8ad51d43fd794c3da902fbc4a024c655b78ecd8",
     "qualitylayer/src/ui/machines/MachineDown.tsx": "c911b9dc79ad26894ad83b67290e5b4d4296c4090afc78335b9e1108ca256161",
     "qualitylayer/src/ui/machines/MachineFrames.tsx": "573a8168036f1187280b3b8f949d1d2e60ac563482483e0d6aa827153fd03034",
     "qualitylayer/src/ui/machines/MachineProject.tsx": "1a97794e6a055b561640c4a996109c8b04f62a7a9300a7f48fdd57aa161e6b30",
@@ -1876,7 +1876,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-17T01:19:03.477Z",
+  "checkedAt": "2026-11-17T03:22:25.540Z",
   "chapters": [
     "setup",
     "welcome",
@@ -1891,7 +1891,7 @@
     "machines",
     "settings"
   ],
-  "theme": "light",
+  "theme": "dark",
   "viewport": {
     "width": 1440,
     "height": 900

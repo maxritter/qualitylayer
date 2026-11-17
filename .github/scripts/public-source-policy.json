@@ -173,7 +173,7 @@
     "qualitylayer/src/cli/commands/pr.ts": "43815510580f21f2da7354a0a6154a9ff96ee5d335a11fc5ea300eb4f30c7ca4",
     "qualitylayer/src/cli/commands/progress.ts": "3ea7c7c7e1c91315696b623cffacbaf03965a754606907f8b29a6c332ce0fc74",
     "qualitylayer/src/cli/commands/quality.ts": "4c704789b3b42eaf81882885bab86ffcc012c7e9c6fd8dac36bc400fb4e4ff5f",
-    "qualitylayer/src/cli/commands/question.ts": "9e0979aec1c05cc6a669addbc48e37b2ceae6a92d6bfde48d22fd8e125baf7a6",
+    "qualitylayer/src/cli/commands/question.ts": "e9d3b20f5a1359e5269139335603df9f1659551ced53361cbab5ed1390f5c0d6",
     "qualitylayer/src/cli/commands/read.ts": "a4a31c1c0cbb908bfe4ca1102317eaae1ebefa8c38994a472a81ba67cd45469e",
     "qualitylayer/src/cli/commands/reset.ts": "faefc38159b4e41f430b66eebcb98a0759be0f3c08db1a1581af95550553c4ad",
     "qualitylayer/src/cli/commands/retention.ts": "1d5204b1dacc3d87d8fd920c7c65848fe2ef0ebd4505cfea542a55076612582f",
@@ -629,7 +629,7 @@
     "qualitylayer/src/core/next/build-lead.ts": "708b7b18faba85504792377911d1a87249537bf985b8cf7447763048f65ffeaa",
     "qualitylayer/src/core/next/compass.ts": "2f5f99ea2fdc7bfa0ee1747c0aec08b18f9caa62f3a525e3b0842fa9e73dfd2b",
     "qualitylayer/src/core/next/implement.ts": "364a6ff32b5723223ea5d7b3edf7fb708ab3ddb029b9249390e32e83170d951a",
-    "qualitylayer/src/core/next/moves.ts": "9a7f9b9aafacc630e7fa5afe5260d66961e5bd1b8882c6c1981391d5a289b63a",
+    "qualitylayer/src/core/next/moves.ts": "60ffac8e124e06e0b05802e3bcc2ab280e214ecf183a7fdfc1fe47dc4c364285",
     "qualitylayer/src/core/next/plan.ts": "56feff1f4930e61d7fc208389fa60aa642afdf1c1a30d30f2d8a848b884092b5",
     "qualitylayer/src/core/next/refusal.ts": "4db404c8e1b3c52ddcab5399ab247e5735bfec1cd7d5c5ff2ba8a15303f5d8b4",
     "qualitylayer/src/core/next/reply.ts": "c535ef55736a1e408844d200846a004c70686979022acdab05ef5e49d2d50580",
@@ -1931,7 +1931,7 @@
     "qualitylayer/src/workflow/notice.ts": "17412c8100d65a79bfe4edcff316129c414923debe787ed0aaf8fce04490ff58",
     "qualitylayer/src/workflow/phases/_pictures.md": "199820c99c14966ef672550251b85b55426d744eceec16ba846afed4b125d6c1",
     "qualitylayer/src/workflow/phases/_product.md": "f197dd8ed9cf57e1a2309f9adba4939bbb9902a8a4eb2ab4f2bcf21550b2b550",
-    "qualitylayer/src/workflow/phases/_style.md": "736cf00ef4379172f67dced2a3ab43962501bd824285e23b3f4deff106e364ee",
+    "qualitylayer/src/workflow/phases/_style.md": "456423f20baf59de3c99882b0c38bbbf8834d7a3311e24369e40c5a3ffc8c349",
     "qualitylayer/src/workflow/phases/another-review.md": "c14c8e03fbde4b7e549349b8764d9545090495893529470d7bcd34eddbc110af",
     "qualitylayer/src/workflow/phases/artifact-authoring.md": "1cbda4d53992a0f6b3ff2acd8fa976a62ae51ee077dfbb10de62b062cca54667",
     "qualitylayer/src/workflow/phases/artifact-check.md": "152bfd4804319c430f23ee8e610014ae5c69f10304da69cc9583884ea7de19a1",
@@ -2046,7 +2046,7 @@
     "qualitylayer/artifacts/app/workflow/answer-authority-contract.md": "7cc72d8a4c1c7c9d7dbbb59d123ecaad652dd270a5ae46037ee61d41a7e6d7a4",
     "qualitylayer/artifacts/app/workflow/implement.html": "258eb3525be7926d706c5968bab3552d0bdcfd25eefddf7312c360d3c364bbe7",
     "qualitylayer/artifacts/app/workflow/index.html": "c55642912fa40b87639d75d2e60af511d00e3a6d4b153a1b41f2a2b91dcb08cb",
-    "qualitylayer/artifacts/app/workflow/plan.html": "c53736deb877d4e400db06b28b3c534ec01a4c34ca6e7837626e4797d7649e1b",
+    "qualitylayer/artifacts/app/workflow/plan.html": "e976931fe02f9251f2565bad7db1fcd636c426c13d20c70a6e9030eb892b49da",
     "qualitylayer/artifacts/site/website-model/current/billing.html": "d8d1b6f1d41d0d060de2071df673ec9491846fe1ca903072445e5750d7f7b415",
     "qualitylayer/artifacts/site/website-model/current/compare-bmad-method.html": "00b15e18de112bdddb1b6c2b0cb161c621984e019de0e839d407bcf29ef1a74a",
     "qualitylayer/artifacts/site/website-model/current/compare-claude-code-plan-mode.html": "f7f8c95ce8e00faf62cdc4454ff51591120f3d5f8082faf6e9910fd0a85e4dea",
@@ -2183,7 +2183,7 @@
     "qualitylayer/src/ui/steps/verify/board-view.ts": "f68b43911cb1c9153a57252b0e64a20c52d7e0d2c90db91ffaa2b7893a7b18f5",
     "qualitylayer/src/ui/steps/verify/use-recorded-screens.ts": "09e3ce8ff69f0c0cd25e5ea92b77556a54a7bed026a227d57749f4413d66a6da"
   },
-  "reviewManifestSha256": "9b73ca35d5cf90cc8ae92daa8c9036222f7001978bd42b01b454da3453241eb2",
+  "reviewManifestSha256": "7bff47f8d5543d24794ce037224ac3fa208353f34303cdabfaf1e5cf1eee71f6",
   "schema": 1,
-  "sourceHead": "b20d0f6ecf1d19123610cf4e583f6a2b5411534e"
+  "sourceHead": "75dfaf315c16707dee328701204d6031deab891e"
 }

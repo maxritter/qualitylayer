@@ -95,7 +95,7 @@ function planMoves(gate: PlanGate): Move[] {
         },
         {
           command: "qualitylayer plan draft",
-          does: "validate the Plan after a change",
+          does: "validate the Plan; start the enabled review or reuse its existing run",
           by: "agent",
         },
       ]
@@ -107,7 +107,7 @@ function planMoves(gate: PlanGate): Move[] {
         ),
         {
           command: "qualitylayer plan draft",
-          does: "validate the Plan again after a change",
+          does: "validate the Plan; start the enabled review or reuse its existing run",
           by: "agent",
         },
         {
@@ -142,7 +142,7 @@ function planMoves(gate: PlanGate): Move[] {
         brief("plan"),
         {
           command: "qualitylayer plan draft",
-          does: "validate the Plan; lists what is missing",
+          does: "validate the Plan; start the enabled review or reuse its existing run",
           by: "agent",
         },
         {

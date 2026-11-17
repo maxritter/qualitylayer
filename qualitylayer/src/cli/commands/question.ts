@@ -93,7 +93,10 @@ function parsed(raw: string): Result<unknown> {
   try {
     return ok(JSON.parse(raw) as unknown)
   } catch {
-    return err({ code: "bad_args", message: `the question is not valid JSON. ${usage()}` })
+    return err({
+      code: "bad_args",
+      message: `the question is not valid JSON. For a batch file, use qualitylayer question ask --batch --file <path>. ${usage()}`,
+    })
   }
 }
 

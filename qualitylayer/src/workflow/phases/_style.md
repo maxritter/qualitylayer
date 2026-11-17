@@ -5,9 +5,10 @@ list it under *Decisions made for you*. When a new feature runs and whether its 
 are the person's choices: ask them, never settle them. A risk is asked or settled, then accepted. A judgement only
 they can make (a design, the wording) they make when they approve what shows it.
 
-Ask in the App with `qualitylayer question ask --batch '<json>'` (or `--file <path>`); it returns at
-once. Batch independent choices, the one that unblocks most first, and ask a dependent choice once its
-options are known. A clear request may need no question. Keep working on what no open answer blocks.
+Ask in the App with `qualitylayer question ask --batch '<json>'` or
+`qualitylayer question ask --batch --file <path>`; it returns at once. Batch independent choices, the
+one that unblocks most first, and ask a dependent choice once its options are known. A clear request
+may need no question. Keep working on what no open answer blocks.
 
 | Field | Holds |
 | --- | --- |

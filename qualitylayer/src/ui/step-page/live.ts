@@ -4,6 +4,7 @@
 import type { ItemAnswer } from "../../core/items.ts"
 import type { Evidence } from "../api.ts"
 import type { ClipboardCopy } from "../clipboard.ts"
+import type { ExportWriter } from "../export/ExportCard.tsx"
 import type { QuestionActions } from "../FocusQuestion.tsx"
 import type { BuildArtifacts } from "../ImplementStart.tsx"
 import type { ReaderMark } from "../reader/DocReader.tsx"
@@ -11,6 +12,8 @@ import type { ReaderMark } from "../reader/DocReader.tsx"
 export type ShipChoice = "pull-request" | "only" | "commands"
 
 export type StepLive = {
+  exportFile?: ExportWriter
+  exportContext?: { title: string; recordedDecision: string }
   /** Words selected on the page: the quick field opens there and sends to the task's session. */
   mark?: (mark: ReaderMark) => void
   /** The Markdown the page draws, whose hash names the revision a mark was made on. */

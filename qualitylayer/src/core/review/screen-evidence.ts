@@ -240,6 +240,8 @@ export type AcceptanceRow = {
   evidence: { file: string; kind: EvidenceKind }[]
   /** How this step ran, when its own record says so (a run can mix scripted steps and real sessions). */
   mode?: EvidenceMode
+  /** The original run of standing proof carried from an earlier review. */
+  run?: string
 }
 
 /** A Done means point of a points Plan with the steps that prove it, as the run recorded them. */

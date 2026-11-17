@@ -1,0 +1,17 @@
+# Approved deliberate feedback on artifacts
+
+Max approved the Opus 5.5 high-effort design on 16 November 2026: “Alright, looks good. Please implement it like that”. Approved source: `artifact-feedback.html` (copied unchanged from `docs/artifacts/artifact-interaction-feedback/artifact-canvas.html` in the primary checkout).
+
+Clicking, dragging and selecting text on an artifact always use the artifact. Nothing the page shows decides whether a plain click is feedback.
+
+- **Feedback** toolbar button (message-square-plus icon, `aria-pressed`) sits before Export. It is labelled on wide headers, icon-only with its accessible name in compact headers, and never hidden.
+- **Armed, one shot:** the page is held, so no click, key, drag or context menu reaches it. The page shows a crosshair and an accent ring, and a hint pill reads "Click a spot or drag an area" with an Esc chip. One click marks a spot and an 8 px or longer drag marks an area. The quick field opens at the mark and the mode ends.
+- **Keyboard:** while armed, focus moves into the page; Tab moves between its controls; Enter or Space marks the focused element instead of pressing it.
+- **Words:** selecting text keeps normal selection and copy. A small Feedback chip appears by the selection; choosing it marks the passage.
+- **Cancel:** Esc, the pill's Esc chip or the button again leave the mode and return focus to Feedback. Esc or Cancel in the quick field drops the mark and returns focus.
+- **Touch and narrow:** while armed, a tap is a spot and a drag is an area. The page only stops scrolling while armed.
+- Option-click no longer marks.
+
+Every mark goes into the existing quick field and feedback record; nothing else changes. Marking gives no approval and changes no workflow state.
+
+Bridge messages from the artifact frame stay untrusted: source-window check, shape and bounds validation, sandboxed frame, no network.

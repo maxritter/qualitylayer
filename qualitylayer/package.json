@@ -1,6 +1,6 @@
 {
   "name": "qualitylayer",
-  "version": "14.1.1",
+  "version": "14.2.0",
   "private": true,
   "type": "module",
   "qualitylayer": {
@@ -53,7 +53,6 @@
     "dev:models": "bun artifacts/app/serve.ts",
     "dev:skill": "bun run scripts/dev-skill.ts",
     "release-gate": "bun run tests/release/run-agent.ts",
-    "bench": "bun run tests/release/bench.ts",
     "person-test": "bun run tests/release/person-session.ts",
     "beta-smoke": "bun run tests/release/beta-smoke.ts",
     "evals": "bun run tests/release/evals.ts",
@@ -80,7 +79,7 @@
     "happy-dom": "21.0.4",
     "javascript-obfuscator": "5.8.0",
     "knip": "6.38.0",
-    "next": "16.4.2",
+    "next": "16.4.6",
     "onnxruntime-web": "1.30.0",
     "shadcn": "4.22.1",
     "tailwindcss": "4.3.3",
@@ -92,7 +91,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "lodash-es": "4.18.1",
     "dompurify": "3.4.17",
-    "next": "16.4.2",
+    "next": "16.4.6",
     "source-map-js": "1.2.2",
     "body-parser@^2.0.0": "2.4.0",
     "undici@^6.0.0": "6.29.1",

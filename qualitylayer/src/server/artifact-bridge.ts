@@ -1,7 +1,7 @@
 // An artifact is shown in a sandboxed frame without allow-same-origin, so it cannot reach the App or the
 // network. Before it is handed out, two things go into it: a policy that allows no network, first in
 // the page, and a small script, the frame's only way to speak, that tells the App the page's natural
-// size, its parts and, while marking is on, the spot, region or passage the person marked.
+// size, its parts, the words selected and, once the person arms Feedback, the spot or area they marked.
 
 /** What an artifact may load: nothing from anywhere; inline styles and scripts, `data:` pictures and fonts. */
 export const ARTIFACT_PAGE_CSP =
@@ -19,22 +19,18 @@ export function withPolicy(html: string): string {
 
 /**
  * The frame's side. It posts `{ type: "ql:artifact", kind: "layout", size, sections }` whenever the
- * page's size or parts move, `kind: "click"` with the spot in page pixels in comment mode,
- * `kind: "mark"` with a spot, region or selected passage while marking is on, and
- * `kind: "key"` for the App's own keys pressed inside the frame, and `kind: "page"` with the file
- * name when the person follows a link to another page of the same folder artifact (the click is
- * stopped, the App switches the page). It listens to its parent only, and only for comment mode on
- * and off.
+ * page's size or parts move, `kind: "selection"` with the selected words (empty when cleared),
+ * `kind: "mark"` with the spot or region marked while Feedback is armed, `kind: "key"` for the App's
+ * own keys pressed inside the frame, and `kind: "page"` with the file name when the person follows a
+ * link to another page of the same folder artifact (the click is stopped, the App switches the page).
+ * It listens to its parent only, and only for the mode: marks offered, Feedback armed, theme, panning.
  */
 export const BRIDGE = `(() => {
   const post = (data) => parent.postMessage(Object.assign({ type: "ql:artifact" }, data), "*");
   const failed = (value) => { let message; try { message = String(value && value.message || value || "The artifact's script failed"); } catch (_) { message = "The artifact's script failed"; } post({ kind: "runtime-error", message: message.slice(0, 600) }); };
   addEventListener("error", (event) => { if (event.message) failed(event.message); });
   addEventListener("unhandledrejection", (event) => failed(event.reason));
-  let commenting = false;
   let panning = false;
-  const style = document.createElement("style");
-  style.textContent = "*, *::before, *::after { cursor: crosshair !important; }";
   const parts = () => Array.from(document.querySelectorAll("[data-screen-label][id]")).map((el) => {
     const r = el.getBoundingClientRect();
     const part = { id: el.id, label: el.getAttribute("data-screen-label") || "", top: Math.round(r.top + scrollY), left: Math.round(r.left + scrollX), width: Math.round(r.width), height: Math.round(r.height) };
@@ -137,10 +133,11 @@ export const BRIDGE = `(() => {
     for (const p of parts()) if (p.top <= y) found = p.label;
     return found;
   };
-  // Marking (the App's quick field): a click on the page's own surface is a spot, a drag over it a
-  // region, a text selection a passage. Links, buttons and fields keep working; nothing is held.
-  let marking = false;
-  const CONTROLS = "a, button, input, textarea, select, summary, label, option, video, audio, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='checkbox'], [role='switch'], [role='slider'], [contenteditable=''], [contenteditable='true'], [onclick]";
+  // Feedback is deliberate. Plain clicks, drags and selections always belong to the page. The App's
+  // Feedback button arms one mark: while armed the page hears nothing, a click marks a spot, a drag an
+  // area, Enter or Space the focused element, and Escape leaves. Selected words are only reported, so
+  // the App can offer its Feedback chip beside them.
+  let marking = false, armed = false;
   const flat = (text, n) => String(text || "").replace(/\\s+/g, " ").trim().slice(0, n);
   const owned = (el) => {
     if (!el) return "";
@@ -148,64 +145,65 @@ export const BRIDGE = `(() => {
     return flat(label ? label.textContent + " · " + (el.value || "") : (el.value || el.textContent || el.getAttribute && (el.getAttribute("alt") || el.getAttribute("aria-label")) || ""), 300);
   };
   const box = (r) => ({ x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) });
-  // A plain click on a control works it; Option-click (Alt) marks it instead, and holding Option outlines
-  // the controls so the person sees what they would mark.
-  const altStyle = document.createElement("style");
-  altStyle.textContent = "html[data-ql-alt] :is(" + CONTROLS + "){outline:2px dashed #2076c5 !important;outline-offset:2px;cursor:crosshair !important}";
-  const altOn = (on) => { if (!marking) on = false; if (on) { document.documentElement.setAttribute("data-ql-alt", ""); if (!altStyle.isConnected) document.head.appendChild(altStyle); } else document.documentElement.removeAttribute("data-ql-alt"); };
-  addEventListener("keydown", (event) => { if (event.key === "Alt") altOn(true); }, true);
-  addEventListener("keyup", (event) => { if (event.key === "Alt") altOn(false); }, true);
-  addEventListener("blur", () => altOn(false));
-  const ownText = (el) => { for (const child of Array.from((el && el.childNodes) || [])) if (child.nodeType === 3 && child.textContent.trim()) return true; return false; };
-  let press = null, drawn = null, swallow = false;
+  const armedStyle = document.createElement("style");
+  armedStyle.textContent = "*,*::before,*::after{cursor:crosshair !important;user-select:none !important;-webkit-user-select:none !important;touch-action:none !important}[data-ql-hover]{outline:1.5px dashed #2076c5 !important;outline-offset:2px !important}:focus-visible{outline:2px dashed #2076c5 !important;outline-offset:2px !important}";
+  let press = null, drawn = null, hovered = null, trailingPointer = false;
+  const heldKeys = new Set();
+  const holding = () => armed || trailingPointer;
+  const unhover = () => { if (hovered) { hovered.removeAttribute("data-ql-hover"); hovered = null; } };
   const drawBox = (a, b) => {
     if (!drawn) { drawn = document.createElement("div"); drawn.setAttribute("aria-hidden", "true"); drawn.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;border:1.5px solid #2076c5;background:rgb(32 118 197 / 10%);border-radius:4px"; document.documentElement.appendChild(drawn); }
     drawn.style.left = Math.min(a.x, b.x) + "px"; drawn.style.top = Math.min(a.y, b.y) + "px";
     drawn.style.width = Math.abs(b.x - a.x) + "px"; drawn.style.height = Math.abs(b.y - a.y) + "px";
   };
   const dropBox = () => { if (drawn) { drawn.remove(); drawn = null; } };
+  const arm = (on) => {
+    if (armed === on) return;
+    press = null; dropBox(); unhover();
+    armed = on;
+    if (!on) { armedStyle.remove(); return; }
+    (document.head || document.documentElement).appendChild(armedStyle);
+    const selection = getSelection();
+    if (selection) selection.removeAllRanges();
+    const active = document.activeElement;
+    if (!active || active === document.body || active === document.documentElement) {
+      const first = document.querySelector("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])");
+      if (first && first.focus) first.focus({ preventScroll: true });
+    }
+  };
+  // One mark ends the mode; the click the browser sends after the pointer lifts is held too.
+  const marked = (data) => { arm(false); post(Object.assign({ kind: "mark" }, data)); };
+  const spot = (el, px, py) => marked({ mark: "spot", x: Math.round(px), y: Math.round(py), section: sectionAt(el, py), quote: owned(el), boxes: [] });
+  const stop = (event) => {
+    if (!holding()) return false;
+    if (event.cancelable) event.preventDefault();
+    event.stopImmediatePropagation();
+    if (!armed && event.type === "click") trailingPointer = false;
+    return true;
+  };
+  for (const name of ["mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "submit", "dragstart", "selectstart", "touchstart", "touchmove", "touchend", "mouseover", "mouseout", "mousemove", "pointerover", "pointerout"]) addEventListener(name, stop, { capture: true, passive: false });
   addEventListener("pointerdown", (event) => {
-    press = null;
-    if (!marking || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
-    const t = event.target;
-    if (!(t instanceof Element)) return;
-    const control = t.closest(CONTROLS);
-    if (control && !event.altKey) return;
-    press = { x: event.clientX, y: event.clientY, px: event.pageX, py: event.pageY, target: t, control, text: !control && ownText(t) && getComputedStyle(t).userSelect !== "none" };
-    // Dragging from empty space draws a region instead of starting a selection; a marked control is not pressed.
-    if (control || !press.text) event.preventDefault();
+    if (!armed) trailingPointer = false;
+    if (!stop(event) || !armed || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+    press = { x: event.clientX, y: event.clientY, px: event.pageX, py: event.pageY, target: event.target };
   }, true);
-  addEventListener("mousedown", (event) => { if (press && (press.control || !press.text)) event.preventDefault(); }, true);
-  addEventListener("click", (event) => { if (swallow) { swallow = false; event.preventDefault(); event.stopImmediatePropagation(); } }, true);
   addEventListener("pointermove", (event) => {
-    if (!press || press.text || press.control) return;
+    if (!stop(event) || !armed) return;
+    if (!press) {
+      const t = event.target instanceof Element ? event.target : null;
+      if (t !== hovered) { unhover(); if (t && t !== document.documentElement && t !== document.body) { hovered = t; t.setAttribute("data-ql-hover", ""); } }
+      return;
+    }
     if (Math.abs(event.clientX - press.x) + Math.abs(event.clientY - press.y) < 8) return;
-    event.preventDefault();
+    unhover();
     drawBox(press, { x: event.clientX, y: event.clientY });
   }, true);
   addEventListener("pointerup", (event) => {
+    if (!stop(event) || !armed) return;
     const at = press; press = null;
-    if (!marking || !at) { dropBox(); return; }
-    const selection = getSelection();
-    const words = selection && selection.rangeCount ? flat(selection.toString(), 600) : "";
-    if (words.length >= 3) {
-      dropBox();
-      const range = selection.getRangeAt(0);
-      const node = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
-      const boxes = Array.from(range.getClientRects()).filter((r) => r.width > 1).map(box);
-      const first = range.getBoundingClientRect();
-      post({ kind: "mark", mark: "text", x: Math.round(first.left + scrollX), y: Math.round(first.top + scrollY), section: sectionAt(node, first.top + scrollY), quote: words, boxes });
-      return;
-    }
-    const moved = Math.abs(event.clientX - at.x) + Math.abs(event.clientY - at.y);
-    if (moved < 8 || at.control) {
-      dropBox();
-      if (at.control) swallow = true;
-      const el = at.control || document.elementFromPoint(at.x, at.y);
-      post({ kind: "mark", mark: "spot", x: Math.round(at.px), y: Math.round(at.py), section: sectionAt(el, at.py), quote: owned(el), boxes: [] });
-      return;
-    }
-    if (!drawn) return;
+    if (!at) return;
+    trailingPointer = true;
+    if (!drawn) { spot(document.elementFromPoint(at.x, at.y) || at.target, at.px, at.py); return; }
     const r = drawn.getBoundingClientRect();
     dropBox();
     const inside = Array.from(document.querySelectorAll("h1,h2,h3,h4,label,p,span,button,input,small,li,td,th,a")).filter((el) => {
@@ -213,14 +211,49 @@ export const BRIDGE = `(() => {
       return e.width && e.left >= r.left - 2 && e.right <= r.right + 2 && e.top >= r.top - 2 && e.bottom <= r.bottom + 2 && !el.querySelector("label,p,span,button,input,small");
     }).map((el) => el.tagName === "INPUT" ? el.value : flat(el.textContent, 120)).filter(Boolean);
     const centre = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    post({ kind: "mark", mark: "region", x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), width: Math.round(r.width), height: Math.round(r.height), section: sectionAt(centre, r.top + scrollY), quote: flat(inside.join(" · "), 300) || owned(centre), boxes: [box(r)] });
+    marked({ mark: "region", x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), width: Math.round(r.width), height: Math.round(r.height), section: sectionAt(centre, r.top + scrollY), quote: flat(inside.join(" · "), 300) || owned(centre), boxes: [box(r)] });
   }, true);
+  addEventListener("pointercancel", () => { press = null; trailingPointer = false; dropBox(); }, true);
+  // Keys while armed: Tab moves between the page's controls, Enter or Space marks the focused one,
+  // Escape leaves; nothing else reaches the page.
+  const keyHold = (event) => {
+    if (!armed && event.type === "keydown" && !event.repeat) heldKeys.delete(event.key);
+    if (!armed && !heldKeys.has(event.key)) return;
+    if (event.key === "Tab") { event.stopImmediatePropagation(); return; }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.type === "keyup") { heldKeys.delete(event.key); return; }
+    if (!armed) return;
+    heldKeys.add(event.key);
+    if (event.type !== "keydown") return;
+    if (event.key === "Escape") { arm(false); post({ kind: "key", key: "Escape" }); return; }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const el = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.documentElement;
+    const r = el.getBoundingClientRect();
+    spot(el, r.left + Math.min(r.width, 24) / 2 + scrollX, r.top + Math.min(r.height, 24) / 2 + scrollY);
+  };
+  for (const name of ["keydown", "keypress", "keyup"]) addEventListener(name, keyHold, true);
+  // Selected words are reported, never marked: the App shows its Feedback chip beside them.
+  let shown = false, picking = 0;
+  const reportSelection = () => {
+    picking = 0;
+    const selection = getSelection();
+    const words = !armed && marking && selection && selection.rangeCount && !selection.isCollapsed ? flat(selection.toString(), 600) : "";
+    if (words.length < 3) { if (shown) { shown = false; post({ kind: "selection", quote: "" }); } return; }
+    const range = selection.getRangeAt(0);
+    const node = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    const boxes = Array.from(range.getClientRects()).filter((r) => r.width > 1).map(box);
+    const first = range.getBoundingClientRect();
+    shown = true;
+    post({ kind: "selection", quote: words, x: Math.round(first.left + scrollX), y: Math.round(first.top + scrollY), section: sectionAt(node, first.top + scrollY), boxes });
+  };
+  document.addEventListener("selectionchange", () => { if (!picking) picking = setTimeout(reportSelection, 120); });
   addEventListener("message", (event) => {
     if (event.source !== parent) return;
     const data = event.data;
     if (!data || data.type !== "ql:artifact" || data.kind !== "mode") return;
-    commenting = data.comment === true;
     marking = data.mark === true;
+    arm(marking && data.armed === true);
     panning = data.pan === true;
     if (data.theme === "light" || data.theme === "dark") {
       document.documentElement.dataset.theme = data.theme;
@@ -228,17 +261,9 @@ export const BRIDGE = `(() => {
       document.documentElement.style.colorScheme = data.theme;
       if (typeof CustomEvent === "function") dispatchEvent(new CustomEvent("ql:artifact-mode", { detail: { theme: data.theme } }));
     }
-    if (commenting) document.head.appendChild(style); else style.remove();
+    reportSelection();
     report();
   });
-  const hold = (event) => { if (!commenting) return; event.preventDefault(); event.stopPropagation(); };
-  for (const name of ["pointerdown", "mousedown", "pointerup", "mouseup", "dblclick", "auxclick", "contextmenu", "submit"]) addEventListener(name, hold, true);
-  addEventListener("click", (event) => {
-    if (!commenting) return;
-    event.preventDefault();
-    event.stopPropagation();
-    post({ kind: "click", x: Math.round(event.pageX), y: Math.round(event.pageY), section: sectionAt(event.target, event.pageY) });
-  }, true);
   // A link to another page of a folder artifact (a relative address of a .html file at the top of the
   // folder) switches the App's page. Fragment links stay in this srcdoc instead of resolving
   // against the embedding App URL; the parent canvas owns the scaled scroll position.
@@ -248,7 +273,7 @@ export const BRIDGE = `(() => {
     return /^[A-Za-z0-9_][A-Za-z0-9._-]*\\.html$/.test(path) ? path : null;
   };
   addEventListener("click", (event) => {
-    if (commenting || event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
     if (!link || (link.target && link.target !== "_self")) return;
     const href = link.getAttribute("href");
@@ -311,7 +336,7 @@ export const BRIDGE = `(() => {
     const offsets = { ArrowDown: [0, 40], ArrowUp: [0, -40], ArrowLeft: [-40, 0], ArrowRight: [40, 0], PageDown: [0, innerHeight], PageUp: [0, -innerHeight], Home: [0, -innerHeight], End: [0, innerHeight] };
     const offset = offsets[event.key];
     if (panning && offset && !canScroll(t, offset[0], offset[1])) { post({ kind: "key", key: event.key }); event.preventDefault(); return; }
-    if (["c", "C", "f", "F", "Escape", "+", "=", "-", "0"].includes(event.key)) { post({ kind: "key", key: event.key }); if (commenting || event.key === "Escape") event.preventDefault(); }
+    if (["c", "C", "f", "F", "Escape", "+", "=", "-", "0"].includes(event.key)) { post({ kind: "key", key: event.key }); if (event.key === "Escape") event.preventDefault(); }
   }, true);
 })();`
 

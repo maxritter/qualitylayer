@@ -1,11 +1,11 @@
-// The App's first start: the licence, the command line agents call, the agents found and your
-// projects, set up without a terminal. The page asks the server what it would do (`#/setup`);
-// one button, Open QualityLayer, puts the command line, skills and hooks in place and goes on.
+// First start and the selected machine's setup. Native installers and sign-in use its managed
+// terminal; the command line, skills and hooks retain the existing first-start procedure.
 
-import { CheckIcon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { CheckIcon, ServerIcon } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Input } from "@/components/ui/input"
 import type { AgentHealth } from "../core/agents/health-types.ts"
+import type { NativeAgent } from "../core/agents/ids.ts"
 import {
   api as appApi,
   type Licence as LicenceIdentity,
@@ -18,7 +18,11 @@ import { AgentHealthStatuses } from "./kit/AgentHealthStatus.tsx"
 import { Disclosure } from "./kit/Fold.tsx"
 import { Logo } from "./Logo.tsx"
 import { machineFrame } from "./machines/framed.ts"
+import { MachineAgents } from "./machines/MachineAgents.tsx"
+import { MachineProject } from "./machines/MachineProject.tsx"
 import { CornerSwitch } from "./machines/MachineSwitch.tsx"
+import type { MachineHealthApi } from "./machines/useMachineSetup.ts"
+import type { ProjectTarget } from "./ProjectPicker.tsx"
 import { addCheckedProjects, ProjectsStep } from "./SetupProjects.tsx"
 import { useAgentHealth } from "./settings/AgentHealth.tsx"
 import { useIntegration } from "./settings/useIntegration.ts"
@@ -37,6 +41,7 @@ export type SetupPageApi = SetupApi &
     agentSignIns?: typeof appApi.agentSignIns
     agentIntegration?: typeof appApi.agentIntegration
     repairAgent?: typeof appApi.repairAgent
+    agentSetup?: typeof appApi.agentSetup
   }
 
 const words = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
@@ -340,6 +345,7 @@ export const defaultSetupPageApi: SetupPageApi = {
   agentSignIns: appApi.agentSignIns,
   agentIntegration: appApi.agentIntegration,
   repairAgent: appApi.repairAgent,
+  agentSetup: appApi.agentSetup,
   foundProjects: appApi.foundProjects,
   chooseProjectFolder: appApi.chooseProjectFolder,
   pickProjectFolder: appApi.pickProjectFolder,
@@ -351,12 +357,27 @@ export function Setup({
   onDone = () => {
     window.location.hash = "#/"
   },
+  onStartTask,
 }: {
   api?: SetupPageApi
   onDone?: () => void
+  onStartTask?: (target: ProjectTarget, agent: NativeAgent) => void
 }) {
   const read = useQuery(() => api.state(), [])
   const state = read.data
+  const machine = useQuery(() => api.agentSetup?.() ?? Promise.resolve(null), [api])
+  const machineHealth = useMemo<MachineHealthApi | null>(() => {
+    const { agentHealth, checkAgents, agentSignIns } = api
+    if (!agentHealth || !checkAgents) return null
+    return {
+      agentHealth: () => agentHealth.call(api),
+      checkAgents: (agent) => checkAgents.call(api, agent),
+      agentSignIns: () => (agentSignIns ?? agentHealth).call(api),
+    }
+  }, [api])
+  const [readyAgent, setReadyAgent] = useState<NativeAgent | null>(null)
+  const [projectPath, setProjectPath] = useState("")
+  const [terminalRoot, setTerminalRoot] = useState<HTMLDivElement | null>(null)
   const identity = useQuery(() => api.identity?.() ?? Promise.resolve(null), [api])
   const [name, setName] = useState("")
   const nameDirty = useRef(false)
@@ -410,7 +431,9 @@ export function Setup({
     state !== null &&
     (state.app.folder !== null || state.app.cliOnly === true)
   const installed = state?.app.installed === true
-  const canOpen = licensed && anyReady && (installed || canInstall) && working === null
+  const guided = machine.data !== null && licensed && (installed || state?.app.cliOnly === true)
+  const agentsReady = machine.data && machineHealth ? readyAgent !== null : anyReady
+  const canOpen = licensed && agentsReady && (installed || canInstall) && working === null
   const found = useFoundProjects(api, licensed)
   /**
    * Leave Setup: the checked projects go in first, each through the add-project route. One that
@@ -458,6 +481,26 @@ export function Setup({
     }
   }
 
+  const startTask = async () => {
+    if (!onStartTask || !readyAgent || !licensed || !projectPath.trim() || opening.current) return
+    if (!api.projectFolder || !api.chooseProjectFolder) return
+    opening.current = true
+    setWorking("open")
+    setFailure(null)
+    try {
+      const folder = await api.projectFolder(projectPath.trim())
+      if (!folder.checkout) throw new Error("That folder has no Git repository.")
+      const target = await api.chooseProjectFolder(folder.checkout)
+      if (hooksPending) markCodexHooksPending()
+      onStartTask(target, readyAgent)
+    } catch (cause) {
+      setFailure(words(cause))
+    } finally {
+      opening.current = false
+      setWorking(null)
+    }
+  }
+
   return (
     <div
       className="q-onb q-onb-setup"
@@ -465,114 +508,169 @@ export function Setup({
       data-ready={state !== null ? "true" : "false"}
     >
       {machineFrame() === null ? null : <CornerSwitch />}
-      <div className="q-onb-card">
-        <h1>
-          <Logo className="size-6" />
-          Set up QualityLayer
-        </h1>
-        <div className="grid gap-1.5">
-          <label htmlFor="setup-name" className="flex items-center gap-2 text-sm">
-            What should we call you?{" "}
-            <span id="setup-name-optional" className="text-muted-foreground">
-              Optional
-            </span>
-          </label>
-          <Input
-            id="setup-name"
-            aria-label="What should we call you?"
-            aria-describedby="setup-name-optional"
-            autoComplete="name"
-            maxLength={80}
-            value={name}
-            disabled={working !== null}
-            onChange={(event) => {
-              nameDirty.current = true
-              setName(event.target.value)
-            }}
-          />
-        </div>
-        <Disclosure className="text-[13.5px] text-muted-foreground" head="Coming from Pilot Shell?">
-          <p>
-            Keep using Pilot Shell 11 until you’re ready to switch. Your active licence works here.
-            Import project memory in Settings → Memory.
-          </p>
-        </Disclosure>
-        {read.error !== null && state === null ? (
-          // Setup could not be read: a bought key is still taken here, and the page asks again.
-          <div className="q-steps" data-testid="setup-unread">
-            <p role="alert" className="alert">
-              {read.error.message}{" "}
-              <button type="button" className="q-link" onClick={() => read.reload()}>
-                Try again
-              </button>
-            </p>
-            <Licence
-              state={UNREAD_LICENCE}
-              disabled={working !== null}
-              error={licenceError}
-              onActivate={(key) => void activate(key)}
-            />
-          </div>
-        ) : null}
-        {state !== null ? (
-          <div className="q-steps">
-            {state.licence.state === "active" &&
-            state.licence.tier !== "trial" &&
-            ownCommandLine(state.app) ? (
-              <DoneStrip licence={state.licence} />
+      <div className="q-machine-layout">
+        <div className="q-onb-card">
+          <h1>
+            {guided ? (
+              <>
+                <ServerIcon className="size-5" />
+                {machine.data?.machine}
+              </>
             ) : (
               <>
-                <Licence
-                  state={state.licence}
-                  disabled={working !== null}
-                  error={licenceError}
-                  onActivate={(key) => void activate(key)}
-                />
-                <CommandLineStep app={state.app} />
+                <Logo className="size-6" />
+                Set up QualityLayer
               </>
             )}
-            <Agents
-              agents={state.agents}
-              hooksPending={hooksPending}
-              healthApi={api}
-              onChecked={read.reload}
-            />
-            {found.available ? <ProjectsStep found={found} number={4} /> : null}
-          </div>
-        ) : null}
-        {steps.length > 0 ? (
-          <ol className="m-0 grid list-none gap-0.5 p-0 text-[13px] text-muted-foreground">
-            {steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        ) : null}
-        {failure !== null ? (
-          <p role="alert" className="alert">
-            {failure}
-          </p>
-        ) : null}
-        {hooksPending ? (
-          <div className="grid gap-2 text-[13px]" role="alert">
-            <p>QualityLayer hooks still need review in Codex.</p>
-            <p>
-              Open /hooks in Codex and review the QualityLayer entries. You can continue for now.
+          </h1>
+          {guided ? null : (
+            <>
+              <div className="grid gap-1.5">
+                <label htmlFor="setup-name" className="flex items-center gap-2 text-sm">
+                  What should we call you?{" "}
+                  <span id="setup-name-optional" className="text-muted-foreground">
+                    Optional
+                  </span>
+                </label>
+                <Input
+                  id="setup-name"
+                  aria-label="What should we call you?"
+                  aria-describedby="setup-name-optional"
+                  autoComplete="name"
+                  maxLength={80}
+                  value={name}
+                  disabled={working !== null}
+                  onChange={(event) => {
+                    nameDirty.current = true
+                    setName(event.target.value)
+                  }}
+                />
+              </div>
+              <Disclosure
+                className="text-[13.5px] text-muted-foreground"
+                head="Coming from Pilot Shell?"
+              >
+                <p>
+                  Keep using Pilot Shell 11 until you’re ready to switch. Your active licence works
+                  here. Import project memory in Settings → Memory.
+                </p>
+              </Disclosure>
+            </>
+          )}
+          {read.error !== null && state === null ? (
+            // Setup could not be read: a bought key is still taken here, and the page asks again.
+            <div className="q-steps" data-testid="setup-unread">
+              <p role="alert" className="alert">
+                {read.error.message}{" "}
+                <button type="button" className="q-link" onClick={() => read.reload()}>
+                  Try again
+                </button>
+              </p>
+              <Licence
+                state={UNREAD_LICENCE}
+                disabled={working !== null}
+                error={licenceError}
+                onActivate={(key) => void activate(key)}
+              />
+            </div>
+          ) : null}
+          {state !== null ? (
+            <div className="q-steps">
+              {state.licence.state === "active" &&
+              state.licence.tier !== "trial" &&
+              ownCommandLine(state.app) ? (
+                <DoneStrip licence={state.licence} />
+              ) : (
+                <>
+                  <Licence
+                    state={state.licence}
+                    disabled={working !== null}
+                    error={licenceError}
+                    onActivate={(key) => void activate(key)}
+                  />
+                  <CommandLineStep app={state.app} />
+                </>
+              )}
+              {licensed && machine.data && machineHealth ? (
+                <MachineAgents
+                  state={machine.data}
+                  api={machineHealth}
+                  number={guided ? 1 : 3}
+                  onReady={setReadyAgent}
+                  terminalRoot={terminalRoot}
+                />
+              ) : (
+                <Agents
+                  agents={state.agents}
+                  hooksPending={hooksPending}
+                  healthApi={api}
+                  onChecked={read.reload}
+                />
+              )}
+              {guided && machine.data ? (
+                <MachineProject
+                  found={found}
+                  value={projectPath}
+                  onChange={setProjectPath}
+                  machine={machine.data.machine}
+                />
+              ) : found.available ? (
+                <ProjectsStep found={found} number={4} />
+              ) : null}
+            </div>
+          ) : null}
+          {steps.length > 0 ? (
+            <ol className="m-0 grid list-none gap-0.5 p-0 text-[13px] text-muted-foreground">
+              {steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : null}
+          {failure !== null ? (
+            <p role="alert" className="alert">
+              {failure}
             </p>
-            <HooksCommand />
-          </div>
-        ) : null}
-        {state !== null ? (
-          <div className="foot">
-            <button
-              type="button"
-              className="q-btn primary end"
-              disabled={!canOpen}
-              onClick={() => void open()}
-            >
-              {hooksPending ? "Continue for now" : "Open QualityLayer"}
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+          {hooksPending ? (
+            <div className="grid gap-2 text-[13px]" role="alert">
+              <p>QualityLayer hooks still need review in Codex.</p>
+              <p>
+                Open /hooks in Codex and review the QualityLayer entries. You can continue for now.
+              </p>
+              <HooksCommand />
+            </div>
+          ) : null}
+          {state !== null ? (
+            <div className="foot">
+              {guided && onStartTask ? (
+                <button
+                  type="button"
+                  className="q-btn primary end"
+                  disabled={
+                    !readyAgent ||
+                    !projectPath.trim() ||
+                    !api.projectFolder ||
+                    !api.chooseProjectFolder ||
+                    working !== null
+                  }
+                  onClick={() => void startTask()}
+                >
+                  {working === "open" ? "Opening…" : "Start a task"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="q-btn primary end"
+                  disabled={!canOpen}
+                  onClick={() => void open()}
+                >
+                  {hooksPending ? "Continue for now" : "Open QualityLayer"}
+                </button>
+              )}
+            </div>
+          ) : null}
+        </div>
+        <div className="q-machine-terminal-slot" ref={setTerminalRoot} />
       </div>
     </div>
   )

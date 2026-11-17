@@ -45,9 +45,10 @@ with `qualitylayer question link <id> --points 1,3`.
 
 Fill both templates in place and keep `{plan_doc}`'s front matter: it is the task's identity, and a
 file written over it loses the task. The template lists every section with what goes in it.
-**Summary**, **Done means** and **Approach** are always there; write any other section only when it has something to say. Its length is the
-person's time: a Summary of about 150 words, a whole Plan of 1,000 to 1,500 words, up to 3,000 for a
-large change. Each fact is written once.
+**Summary**, **Done means** and **Approach** are always there; write any other section only when it has
+something to say. Keep the Summary and Plan as short as the task allows. Include enough to settle
+the approved behavior, approach and proof; do not pad a small task to a word target. Each fact is
+written once.
 
 - `{plan_doc}` is for people, colleagues on GitHub too: plain words, no `file:line` in the lead
   sections, each list item opening with a **bold headline sentence**. *Summary*: one plain sentence on

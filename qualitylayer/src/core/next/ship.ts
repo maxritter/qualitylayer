@@ -13,7 +13,6 @@ import { agentFileOf, IDENTITY_FILE } from "../docs/names.ts"
 import { showMeName } from "../docs/visuals.ts"
 import { buildBase } from "../git/base.ts"
 import { currentBranch } from "../git/repo.ts"
-import { otherTasksOnly } from "../git/session-edits.ts"
 import { projectRuntimeDir, type RepoRef, taskDir } from "../paths.ts"
 import { readReview, sayInReview } from "../review/threads.ts"
 import { awaitsFix, openThreads } from "../review/triage.ts"
@@ -149,9 +148,7 @@ async function shipPayload(
     instructions: phaseText("ship"),
     description,
     description_file: descriptionFile,
-    ...(since !== null
-      ? { diff: codeDiff(`${since}..HEAD`, await otherTasksOnly(ctx, repo, slug)) }
-      : {}),
+    ...(since !== null ? { diff: codeDiff(`${since}..HEAD`) } : {}),
     ...(shipped !== null ? await shipChoiceFields(ctx, shipped) : {}),
   }
 }

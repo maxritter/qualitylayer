@@ -11,6 +11,7 @@ import { dirname, join } from "node:path"
 import { trimEdgeCharacters } from "../../core/text-boundaries.ts"
 import { hostsOf } from "./hosts.ts"
 import type { LocalRun } from "./local.ts"
+import { splitTarget } from "./store.ts"
 
 export const KEY_NAME = "qualitylayer_ed25519"
 
@@ -81,7 +82,13 @@ export const publicKeyOf = async (files: SshFiles): Promise<string | null> =>
   (await readOr(`${files.key}.pub`, "")).trim() || null
 
 /** What `ssh -G <target>` resolves: the address, port and user ssh would use, and whether a proxy carries it. */
-export type Resolved = { host: string; port: number; user: string; proxied: boolean }
+export type Resolved = {
+  host: string
+  port: number
+  user: string
+  proxied: boolean
+  hostKeyAlias?: string
+}
 
 export async function resolveTarget(
   local: LocalRun,
@@ -90,13 +97,15 @@ export async function resolveTarget(
   target: string,
   typedPort?: number,
 ): Promise<Resolved | null> {
+  const native = splitTarget(target)
+  const portOverride = typedPort ?? native.port
   const ran = await local(
     [
       program,
       ...(configFile ? ["-F", configFile] : []),
       "-G",
-      ...(typedPort === undefined ? [] : ["-p", String(typedPort)]),
-      target,
+      ...(portOverride === undefined ? [] : ["-p", String(portOverride)]),
+      native.target,
     ],
     { timeoutMs: 10_000 },
   )
@@ -113,6 +122,7 @@ export async function resolveTarget(
     port: Number.isInteger(port) && port > 0 ? port : 22,
     user: value("user"),
     proxied: proxy("proxycommand") || proxy("proxyjump"),
+    ...(proxy("hostkeyalias") ? { hostKeyAlias: value("hostkeyalias") } : {}),
   }
 }
 
@@ -199,18 +209,26 @@ export type HostEntry = {
   user: string
   /** False when the person's own key reaches it: the block then names no key. */
   ownKey?: boolean
+  /** Retain the native host's routing/trust rules and add only QualityLayer's identity. */
+  identityOnly?: true
 }
 
 /** The block pairing appends for one machine. */
 export function hostBlock(files: SshFiles, entry: HostEntry): string {
   return [
     begin(entry.alias),
-    `Host ${entry.alias}`,
-    `  HostName ${entry.host}`,
-    ...(entry.user !== "" ? [`  User ${entry.user}`] : []),
-    `  Port ${entry.port}`,
-    ...(entry.ownKey === false ? [] : [`  IdentityFile ${files.key}`, "  IdentitiesOnly yes"]),
-    `  UserKnownHostsFile ${files.knownHosts}`,
+    ...(entry.identityOnly
+      ? [`Host ${entry.host}`, `  IdentityFile ${JSON.stringify(files.key)}`]
+      : [
+          `Host ${entry.alias}`,
+          `  HostName ${entry.host}`,
+          ...(entry.user !== "" ? [`  User ${entry.user}`] : []),
+          `  Port ${entry.port}`,
+          ...(entry.ownKey === false
+            ? []
+            : [`  IdentityFile ${files.key}`, "  IdentitiesOnly yes"]),
+          `  UserKnownHostsFile ${files.knownHosts}`,
+        ]),
     end(entry.alias),
     "",
   ].join("\n")
@@ -218,7 +236,11 @@ export function hostBlock(files: SshFiles, entry: HostEntry): string {
 
 /** A name for the machine's `Host` that the config does not use yet. */
 export async function freeAlias(files: SshFiles, wanted: string): Promise<string> {
-  const taken = new Set(hostsOf(await readOr(files.config, "")).map((name) => name.toLowerCase()))
+  const config = await readOr(files.config, "")
+  const marked = [...config.matchAll(/^# QualityLayer machine (\S+) \(begin\)$/gm)].map(
+    (match) => match[1] as string,
+  )
+  const taken = new Set([...hostsOf(config), ...marked].map((name) => name.toLowerCase()))
   const base =
     trimEdgeCharacters(wanted.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-.") || "machine"
   let alias = base

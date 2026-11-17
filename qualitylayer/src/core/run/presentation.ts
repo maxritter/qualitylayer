@@ -11,12 +11,12 @@ export function planPresentation(
       answers === "terminal"
         ? reviewPending
           ? "Read the Plan or give feedback in your agent's chat. Approval follows once the review is folded in."
-          : "Your turn: approve the Plan or give feedback in your agent's chat."
+          : "Your turn: read the Plan or give feedback in your agent's chat."
         : reviewPending
           ? "Your turn: read the Plan in QualityLayer; Approve unlocks once the review is folded in."
           : inApp
-            ? "Your turn: use Approve and build here, the arrow beside it for another way to build, or mark what should change in the Plan."
-            : "Your turn: open QualityLayer and approve the Plan, or mark what should change in it.",
+            ? "Your turn: read the Plan here, or mark what should change."
+            : "Your turn: open QualityLayer to read the Plan, or mark what should change.",
   }
 }
 

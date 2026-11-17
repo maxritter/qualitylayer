@@ -30,7 +30,7 @@ import { createMemoryLookApi } from "../sidebar/look-api.ts"
 import { setBranchApi } from "../start-branch.ts"
 import type { ScreenEvidenceApi } from "../steps/verify/screens-api.ts"
 import type { WalkthroughApi } from "../timeline/walkthrough-api.ts"
-import { createDemoIntegration, demoAccount } from "./agent-setup.ts"
+import { createDemoIntegration, demoAccount, demoAgentSetup } from "./agent-setup.ts"
 import { createDemoRunAdapter, type RunDemoMoment, runMomentFrom } from "./agent-window.ts"
 import { demoArtifactSource } from "./artifact-source.ts"
 import { createDemoArtifacts } from "./artifacts.ts"
@@ -43,7 +43,7 @@ import {
   chatTurnChanges,
   chatWalkthrough,
 } from "./chat-changes.ts"
-import { demoCost, demoTokenWarning } from "./cost.ts"
+import { demoCost } from "./cost.ts"
 import {
   EARLIER_DOCS,
   EARLIER_TASK,
@@ -1057,13 +1057,7 @@ export function createDemoApi(
     // An illustrative cost, of the size a real feature run has; no transcript is read.
     cost: async (id) => {
       const found = get(id)
-      const cost = demoCost(id, found.stage)
-      // ?tokens=high: the demo task's tokens run well above the usual one (the token warning).
-      return id === DEMO_TASK_ID &&
-        typeof location !== "undefined" &&
-        new URLSearchParams(location.search).get("tokens") === "high"
-        ? { ...cost, tokenWarning: demoTokenWarning(cost.total.all) }
-        : cost
+      return demoCost(id, found.stage)
     },
     // Explicitly illustrative ledger records exercise the same Home contract as the local server.
     homeFacts: async ({ project, agent, timezone }) => {
@@ -1684,6 +1678,7 @@ export function createDemoApi(
     }),
     subagents: async () => clone(subagents),
     agentHealth: async () => demoAgentHealth(),
+    agentSetup: async () => demoAgentSetup(),
     checkAgents: async () => demoAgentHealth(),
     tools: async () => demoTools.read(),
     checkTools: async () => demoTools.check(),

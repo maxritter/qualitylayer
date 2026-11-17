@@ -32,8 +32,8 @@ export async function foreignOwners(
 /** The refusal for a file that holds another session's edits; `who` is its owner as `foreignOwners` gives it. */
 export function foreignRefusal(path: string, who: string): string {
   const byHand =
-    "commit this task's hunks of it through a private index on HEAD and register that commit with `qualitylayer commit slice <n> --commit <hash>` (a fix: `qualitylayer commit fix --commit <hash>`)"
+    "commit this task's hunks through a private index on HEAD, then register with `qualitylayer commit slice <n> --commit <hash>` or `qualitylayer commit fix --commit <hash>`"
   if (who === UNRECORDED)
-    return `${path} changed after this task's last edit of it and may hold another session's work; nothing was committed. If \`git diff -- ${path}\` is all this task's, commit again with \`--accept-edits ${path}\`; if not, ${byHand}.`
-  return `${path} also holds edits the session building ${who} made and has not committed; nothing was committed. ${byHand[0]?.toUpperCase()}${byHand.slice(1)}.`
+    return `${path} changed after this task's last edit; nothing was committed. If \`git diff -- ${path}\` is all this task's, retry with \`--accept-edits ${path}\`; otherwise, ${byHand}.`
+  return `${path} holds uncommitted edits from ${who}; nothing was committed. ${byHand[0]?.toUpperCase()}${byHand.slice(1)}.`
 }

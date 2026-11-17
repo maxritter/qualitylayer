@@ -494,7 +494,7 @@ function Frames({
   const place =
     down !== undefined ? (
       <div className="fixed inset-0 z-[60] bg-background" data-testid="machine-place">
-        <MachineDown machine={down} view={view} onTry={() => tryNow(down.id)} />
+        <MachineDown key={down.id} machine={down} view={view} onTry={() => tryNow(down.id)} />
       </div>
     ) : null
   if (connected.length === 0)

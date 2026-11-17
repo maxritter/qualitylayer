@@ -174,11 +174,11 @@ export function useTaskPointMenu({
             </button>
             <button
               type="button"
-              className="q-btn"
+              className="q-btn q-delete-confirm"
               disabled={busy}
               onClick={() => deleting && void remove(deleting)}
             >
-              Delete for good
+              Delete
             </button>
           </div>
         </DialogContent>

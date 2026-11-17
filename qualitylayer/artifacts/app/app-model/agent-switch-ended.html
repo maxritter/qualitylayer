@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Continue task · Agent stopped</title>
+  <meta name="ql:group" content="Agent and conversation">
+  <meta name="description" content="The Agent sidebar drawn as a conversation: the same native session as the terminal, read from the agent's own session record, with messages, thinking, tool calls, task files, usage and context. The switch beside the session menu changes Conversation and Terminal. When your turn starts (a gate opens, an approval is asked) the log moves to the latest message, unless you scrolled it in the last few seconds. Prototype controls show every agent and state; all output is illustrative.">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="model.css">
+  <link rel="stylesheet" href="local-first.css">
+  <link rel="stylesheet" href="machines.css">
+  <link rel="stylesheet" href="onboarding.css">
+  <link rel="stylesheet" href="attention.css">
+  <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="agent-conversation.css">
+  <link rel="stylesheet" href="artifact-agent.css">
+  <link rel="stylesheet" href="page-frame.css">
+  <link rel="stylesheet" href="question-choices.css">
+  <link rel="stylesheet" href="handoff-request.css">
+  <link rel="stylesheet" href="marks.css">
+  <link rel="stylesheet" href="usage.css">
+  <link rel="stylesheet" href="agent-switch.css">
+</head>
+<body style="margin:0">
+  <div id="root"></div>
+  <script>window.QL_SWITCH_PREVIEW="ended";window.QL_SWITCH_REASON="quota";window.QL_CONVERSATION_PREVIEW={view:"conversation",agent:"claude",state:"stopped"};window.QL_MOMENT_PREVIEW="impl-stopped";window.QL_PAGE_PRESET={run:{id:"illustrative-previous",agent:"claude",state:"stopped",phase:"building",model:"Opus 5.5",effort:"High",nativeSession:"illustrative-previous"},cvState:"stopped",railOpen:true,railTab:"agent",railWidth:520,config:{installedAgents:["claude","codex","cursor"]}};window.module={exports:{}};</script>
+  <script type="text/babel" src="icons.jsx"></script>
+  <script type="text/babel" src="data.jsx"></script>
+  <script type="text/babel" src="artifact-documents.jsx"></script>
+  <script type="text/babel" src="task-details.jsx"></script>
+  <script type="text/babel" src="parts.jsx"></script>
+  <script type="text/babel" src="marks.jsx"></script>
+  <script type="text/babel" src="usage.jsx"></script>
+  <script type="text/babel" src="local-first.jsx"></script>
+  <script type="text/babel" src="settings.jsx"></script>
+  <script type="text/babel" src="machines.jsx"></script>
+  <script type="text/babel" src="shell.jsx"></script>
+  <script type="text/babel" src="task.jsx"></script>
+  <script type="text/babel" src="page-frame.jsx"></script>
+  <script type="text/babel" src="pages.jsx"></script>
+  <script type="text/babel" src="onboarding.jsx"></script>
+  <script type="text/babel" src="attention.jsx"></script>
+  <script type="text/babel" src="agent.jsx"></script>
+  <script src="current-agent.js"></script>
+  <script type="text/babel" src="agent-conversation.jsx"></script>
+  <script type="text/babel" src="agent-switch.jsx"></script>
+  <script type="text/babel" src="App.jsx"></script>
+  <script type="text/babel">ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(module.exports.QLApp));</script>
+</body>
+</html>

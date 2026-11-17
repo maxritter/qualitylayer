@@ -51,6 +51,7 @@ import {
   isEventSocket,
   watchEventSession,
 } from "./event-socket.ts"
+import { exportFile } from "./export-files.ts"
 import { diagnosticsPreview, feedbackWho, postFeedback, startOutboxRetry } from "./feedback.ts"
 import {
   publicFeedbackCancel,
@@ -98,6 +99,7 @@ import { pullRequestWatched, startPullRequestPoll } from "./pull-request-poll.ts
 import { wakeDeps } from "./pull-request-wake.ts"
 import { readAnswerRequest } from "./question-files.ts"
 import { findChrome, stopRenderBrowsers } from "./render.ts"
+import { readArtifactBody } from "./request-body.ts"
 import { Pace, startResourceGuard } from "./resource-guard.ts"
 import { attachRunId, RunAttachments } from "./runs.ts"
 import { runtimeRecordRoute } from "./runtime-records.ts"
@@ -618,6 +620,17 @@ export function createHandler(
         answer = await entitlementPending
       }
       if (answer !== null && !answer.ok) return json(answer)
+    }
+
+    if (path === "/api/export" && request.method === "POST") {
+      const bytes = await readArtifactBody(request, 28 * 1024 * 1024)
+      let input: unknown
+      try {
+        input = JSON.parse(new TextDecoder().decode(bytes))
+      } catch {
+        return json(err({ code: "bad_args", message: "The export request could not be read." }))
+      }
+      return json(await exportFile(ctx, input))
     }
 
     const machinesAnswer = await machinesRoute(

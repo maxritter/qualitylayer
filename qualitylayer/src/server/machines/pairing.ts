@@ -57,6 +57,7 @@ import {
   readMachines,
   repairedMachine,
   type StoredMachine,
+  splitTarget,
 } from "./store.ts"
 import { linuxSystemName } from "./system-name.ts"
 
@@ -158,6 +159,7 @@ type Job = {
   known?: string
   /** The person's own setup reaches it (a key in their agent, their config): nothing of ours is written. */
   usesOwn?: boolean
+  nativeConfig?: boolean
   ownKey?: boolean
   alias?: string
   /** What the stored machine's target becomes. */
@@ -170,14 +172,6 @@ type Job = {
   /** The answer the job waits for; resolved with null when it is cancelled. */
   answer?: (text: string | null) => void
   cancelled?: boolean
-}
-
-/** `user@host:2223` → `user@host` and 2223; the rest as it is. */
-export function splitTarget(typed: string): { target: string; port?: number } {
-  const found = /^(.+@[^:@[\]]+):(\d{1,5})$/.exec(typed) ?? /^([^:@[\]]+):(\d{1,5})$/.exec(typed)
-  if (found === null) return { target: typed }
-  const port = Number(found[2])
-  return port > 0 && port < 65_536 ? { target: found[1] as string, port } : { target: typed }
 }
 
 /** The name a machine gets from how it is reached: `mac-mini` for `max@mac-mini.local`. */
@@ -242,9 +236,14 @@ export class Pairings {
       const existing = stored.find((one) => one.id === input.machine)
       if (existing === undefined) return { refused: "No such machine." }
       const container = existing.container !== undefined
-      job = this.made(container ? "container" : "computer", existing.name, existing.target, {
+      const typed = container ? existing.target : (existing.typed ?? existing.target)
+      const native = splitTarget(typed)
+      job = this.made(container ? "container" : "computer", existing.name, typed, {
         existing,
-        sshTarget: existing.target,
+        sshTarget: native.target,
+        typedPort: native.port,
+        ownKey: existing.ownKey,
+        alias: existing.alias,
       })
       if (container)
         job.container = {
@@ -466,15 +465,21 @@ export class Pairings {
     if (resolved === null || resolved.host === "")
       stop("ssh cannot read this name", "Type it as user@host")
     const where = resolved
+    const nativeHost = job.sshTarget.split("@").pop() as string
     Object.assign(job, {
       host: where.host,
       port: where.port,
       user: where.user,
       proxied: where.proxied,
+      nativeConfig:
+        where.proxied ||
+        where.host !== nativeHost ||
+        where.hostKeyAlias !== undefined ||
+        (await hasHost(this.files, nativeHost)),
     })
     await this.notAddedYet(job, where)
     // A machine paired again under its Host name shows how it is reached, as when it was added.
-    if (job.existing !== undefined && !where.proxied && !job.view.target.includes("@"))
+    if (job.existing !== undefined && !job.nativeConfig && !job.view.target.includes("@"))
       job.view.target = `${where.user ? `${where.user}@` : ""}${where.host}${where.port === 22 ? "" : `:${where.port}`}`
     if (where.proxied) return { detail: "through your ssh config" }
     const reached = await this.probe(where.host, where.port)
@@ -494,8 +499,10 @@ export class Pairings {
       stop("Windows isn’t supported yet", "Add a Mac or Linux machine, or WSL on it", {
         again: false,
       })
-    job.known = knownName(where.host, where.port)
-    job.hostKeys = await scanHostKeys(this.local, where.host, where.port)
+    if (!job.nativeConfig) {
+      job.known = knownName(where.host, where.port)
+      job.hostKeys = await scanHostKeys(this.local, where.host, where.port)
+    }
     return { detail: `${softwareOf(reached.greeting)} · port ${where.port}` }
   }
 
@@ -659,7 +666,11 @@ export class Pairings {
         configFile: this.deps.ssh.configFile,
         target: job.sshTarget,
         port: job.port ?? 22,
-        knownHosts: job.known === undefined ? "" : knownHostsText(job.known, job.hostKeys),
+        knownHosts: job.nativeConfig
+          ? undefined
+          : job.known === undefined
+            ? ""
+            : knownHostsText(job.known, job.hostKeys),
         script: takeKeyScript(publicKey),
         password: password as string,
         ask: async (prompt) => {
@@ -698,14 +709,15 @@ export class Pairings {
     const container = job.view.kind === "container"
     // What the person typed reaches it with their own setup, on ssh's own port: nothing is written
     // besides the host key that was shown.
-    if (job.usesOwn && job.typedPort === undefined) {
+    if (job.usesOwn) {
       if (
         job.known !== undefined &&
         job.hostKeys.length > 0 &&
         (await knownKeys(this.local, files, job.known)).length === 0
       )
         await trustKeys(this.local, files, job.known, job.hostKeys)
-      job.finalTarget = job.sshTarget
+      job.finalTarget =
+        job.typedPort === undefined ? job.sshTarget : `${job.sshTarget}:${job.typedPort}`
       return {
         detail: (await hasHost(files, job.sshTarget))
           ? `Host ${job.sshTarget} · yours`
@@ -721,20 +733,31 @@ export class Pairings {
         files,
         plainName ? `ql-${job.view.name}${job.port === 22 ? "" : `-${job.port}`}` : job.view.name,
       ))
+    const nativeHost = job.sshTarget.split("@").pop() as string
+    const nativeConfig = !container && job.nativeConfig === true
     if (job.known !== undefined && job.hostKeys.length > 0)
       await trustKeys(this.local, files, job.known, job.hostKeys)
     await writeHostBlock(files, {
       alias,
-      host: job.host ?? "127.0.0.1",
+      host: nativeConfig ? nativeHost : (job.host ?? "127.0.0.1"),
       port: job.port ?? 22,
       user: job.user ?? "",
-      ownKey: job.usesOwn !== true,
+      ownKey: true,
+      ...(nativeConfig ? { identityOnly: true as const } : {}),
     })
     job.alias = alias
-    job.finalTarget = alias
-    const checked = await this.deps.ssh.run(alias, ["true"], { timeoutMs: 25_000 })
+    job.finalTarget = nativeConfig
+      ? job.typedPort === undefined
+        ? job.sshTarget
+        : `${job.sshTarget}:${job.typedPort}`
+      : alias
+    const checked = await this.deps.ssh.run(job.finalTarget, ["true"], { timeoutMs: 25_000 })
     if (!checked.ok) stop(checked.reason || "ssh could not sign in with the new entry", "Try again")
-    return { detail: container ? `Host ${alias} · port ${job.port}` : `Host ${alias}` }
+    return {
+      detail: container
+        ? `Host ${alias} · port ${job.port}`
+        : `Host ${nativeConfig ? nativeHost : alias}`,
+    }
   }
 
   private async system(job: Job): Promise<{ detail: string }> {
@@ -807,7 +830,9 @@ export class Pairings {
     return {
       ...(job.alias !== undefined ? { alias: job.alias } : {}),
       ...(job.ownKey ? { ownKey: true as const } : {}),
-      ...(job.view.target.includes("@") ? { typed: job.view.target } : {}),
+      ...(job.view.kind === "computer" || job.view.target.includes("@")
+        ? { typed: job.view.target }
+        : {}),
       ...(job.view.kind === "container" && job.container
         ? { container: { folder: job.container.folder } }
         : {}),

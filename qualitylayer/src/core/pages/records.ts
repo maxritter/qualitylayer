@@ -63,7 +63,7 @@ export type StepRecords = {
   second?: PlanReviewState
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
+const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`
 
 /** `3 h 10 min`, `48 min`, `under a minute`. */
 export function spent(ms: number): string {
@@ -447,7 +447,7 @@ export async function stepRecords(ctx: Ctx, task: Task, input: Inputs): Promise<
                     ? `${plural(fixFacts.fixed, "finding")} fixed`
                     : plural(second.findings.length, "finding"),
                   ...(fixFacts.planned > 0
-                    ? [`${plural(fixFacts.planned, "fix")} awaiting checks`]
+                    ? [`${plural(fixFacts.planned, "fix", "fixes")} awaiting checks`]
                     : []),
                   ...(fixFacts.kept > 0 ? [`${fixFacts.kept} kept`] : []),
                 ])

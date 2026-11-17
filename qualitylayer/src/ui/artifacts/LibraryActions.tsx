@@ -783,13 +783,13 @@ function DeleteDialog({
           ) : null}
           <button
             type="button"
-            className="q-btn danger"
+            className="q-btn danger q-delete-confirm"
             disabled={!ready}
             aria-busy={busy}
             aria-describedby={ids.problem}
             onClick={() => void submit()}
           >
-            {busy ? "Deleting…" : problem !== null ? "Try deleting again" : "Delete artifact"}
+            {busy ? "Deleting…" : problem !== null ? "Try deleting again" : "Delete"}
           </button>
         </DialogFooter>
       </DialogContent>

@@ -208,11 +208,11 @@ export function ArtifactManage({
                   <p>Remove this artboard? Its source stays in version history for recovery.</p>
                   <button
                     type="button"
-                    className="q-btn quiet sm"
+                    className="q-btn q-delete-confirm sm"
                     disabled={busy}
                     onClick={() => void change({ action: "delete", expected })}
                   >
-                    Delete artifact
+                    Delete
                   </button>
                   <button
                     type="button"

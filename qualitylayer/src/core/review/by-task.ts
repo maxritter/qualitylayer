@@ -9,7 +9,6 @@
 import type { Ctx } from "../../ctx.ts"
 import { noteTasks, parseNotes } from "../docs/build-log.ts"
 import { allTasks, emptyOutline, type Outline } from "../docs/outline.ts"
-import { BUILD_COMMITS } from "../git/base.ts"
 import { readBuildStart, sliceCommits } from "../git/build-start.ts"
 import { type Changes, isPlanPath } from "../git/changes.ts"
 import { otherTasksOnly } from "../git/session-edits.ts"
@@ -228,21 +227,21 @@ async function changesSentAt(ctx: Ctx, task: Task): Promise<number | null> {
 
 /**
  * Files of the commits made after `since`, by git's own commit dates: a filter, not the evidence.
- * The commits are the build's range from `base`, or exactly the task's own recorded commits.
+ * Only the task's own recorded commits are eligible; their dates never establish ownership.
  */
 async function filesSince(
   ctx: Ctx,
   task: Task,
-  commits: { base: string } | { own: string[] },
+  commits: string[],
   since: number,
 ): Promise<Set<string>> {
-  if ("own" in commits && commits.own.length === 0) return new Set()
+  if (commits.length === 0) return new Set()
   const log = await ctx.git.run(task.repoRoot, [
     "log",
-    ...("base" in commits ? BUILD_COMMITS : ["--no-walk=unsorted"]),
+    "--no-walk=unsorted",
     "--format=%x1e%ct",
     "--name-only",
-    ...("base" in commits ? [`${commits.base}..HEAD`] : commits.own),
+    ...commits,
   ])
   const files = new Set<string>()
   if (log.code !== 0) return files
@@ -274,11 +273,8 @@ export async function changesByTask(
   }))
   const sent = await changesSentAt(ctx, task)
   const own = await sliceCommits(ctx, task)
-  // Fixed after feedback: the build's range, or only the task's own recorded commits, never a branch range.
-  const fixed =
-    sent === null
-      ? new Set<string>()
-      : await filesSince(ctx, task, diff.base !== null ? { base: diff.base } : { own }, sent)
+  // Feedback time filters recorded ownership; a branch range cannot supply it.
+  const fixed = sent === null ? new Set<string>() : await filesSince(ctx, task, own, sent)
   return tagChanges({
     files: diff.files,
     outline: plan,

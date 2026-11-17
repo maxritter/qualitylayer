@@ -122,7 +122,7 @@ function HelpGroup() {
       </SettingRow>
       <SettingRow
         label="App tour"
-        hint="Explore Chat, planned changes, artifacts, Team and Settings."
+        hint="Explore Chat, planned changes, artifacts and Settings."
         icon={<RouteIcon className={ICON} />}
       >
         <button

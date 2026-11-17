@@ -1,5 +1,13 @@
 import type { CheckRecord } from "../checks.ts"
 
+function successfulCurrentCheck(row: CheckRecord | undefined, reviewedAt: number): boolean {
+  if (row?.ran !== true || row.exit !== 0) return false
+  if (row.notRun !== undefined || row.timedOut === true) return false
+  if (typeof row.key !== "string" || row.key.length === 0) return false
+  if (typeof row.head !== "string" || !/^[a-f0-9]{7,64}$/.test(row.head)) return false
+  return row.at >= reviewedAt
+}
+
 /** A taken finding remains planned until the recorded fix has current, complete project checks. */
 export function reviewFixFacts(
   findings: readonly { stance?: string; answer?: string }[],
@@ -14,17 +22,7 @@ export function reviewFixFacts(
   const checked =
     reviewedAt !== undefined &&
     commands.length > 0 &&
-    latest.every(
-      (row) =>
-        row?.ran === true &&
-        row.exit === 0 &&
-        row.notRun === undefined &&
-        row.reused !== true &&
-        typeof row.key === "string" &&
-        typeof row.head === "string" &&
-        /^[a-f0-9]{7,64}$/.test(row.head) &&
-        row.at >= reviewedAt,
-    ) &&
+    latest.every((row) => successfulCurrentCheck(row, reviewedAt)) &&
     new Set(latest.map((row) => row?.head)).size === 1
   const fixed = checked
     ? taken.filter((finding) => (finding.answer?.trim().length ?? 0) > 0).length

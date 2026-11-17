@@ -184,6 +184,7 @@ export function forAgentMarkdown(
 }
 
 type Host = {
+  artifactPicture?: (path: string) => Promise<string>
   theme: string
   renderMermaid: Renderer
   loadArtifact: (name: string) => Promise<string>
@@ -206,7 +207,9 @@ async function piece(block: PlainBlock, host: Host): Promise<Piece> {
   if (block.kind === "artifact") {
     const name = artifactName(block.path)
     try {
-      const png = await host.rasterise.mockup(await host.loadArtifact(name))
+      const png = host.artifactPicture
+        ? await host.artifactPicture(block.path)
+        : await host.rasterise.mockup(await host.loadArtifact(name))
       return { html: `<p><img src="${png}" alt="Mockup: ${escapeHtml(name)}"></p>`, made: "mockup" }
     } catch {
       return { html: `<p>${escapeHtml(mockupLine(name))}</p>`, made: "line" }

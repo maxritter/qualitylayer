@@ -445,6 +445,7 @@ export function workflowChangesView(
 /** Keep build evidence and approvals intact; replace only the App's file inventory and totals. */
 export function scopeWalkthrough(view: Walkthrough, projection: WorkflowProjection): Walkthrough {
   const left = new Map(projection.files.map((file) => [file.path, file]))
+  const ownPaths = new Set(left.keys())
   const replace = (files: WalkFile[]) =>
     files.flatMap((old) => {
       const own = left.get(old.path)
@@ -466,6 +467,15 @@ export function scopeWalkthrough(view: Walkthrough, projection: WorkflowProjecti
   decided.push(...left.values())
   return {
     ...view,
+    ...(view.risk
+      ? {
+          risk: {
+            ...view.risk,
+            outside: view.risk.outside.filter((path) => ownPaths.has(path)),
+            dependencies: view.risk.dependencies.filter((path) => ownPaths.has(path)),
+          },
+        }
+      : {}),
     counted: true,
     slices,
     fixes,

@@ -46,7 +46,7 @@ ${checks}
 ## Changed from the Plan
 
 <!-- ql:risk -->
-As planned: built inside the Plan's cards, no dependency file changed, no amendment.
+As planned.
 <!-- /ql:risk -->
 
 ## Ship

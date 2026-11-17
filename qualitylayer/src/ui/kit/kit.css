@@ -173,6 +173,17 @@
     border-color: var(--ql-accent-hover);
     color: var(--ql-text-on-accent);
   }
+  .q-btn.q-delete-confirm,
+  .q-btn.q-delete-confirm.danger {
+    border-color: var(--ql-danger);
+    background: var(--ql-danger);
+    color: var(--ql-bg);
+  }
+  .q-btn.q-delete-confirm:hover:not(:disabled) {
+    border-color: var(--ql-danger);
+    background: color-mix(in srgb, var(--ql-danger) 90%, var(--ql-text));
+    color: var(--ql-bg);
+  }
   .q-btn.sm {
     height: 28px;
     padding: 0 10px;

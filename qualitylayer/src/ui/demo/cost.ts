@@ -1,5 +1,5 @@
 import type { CostHelper, CostStep, TaskCost } from "../../core/cost/labels.ts"
-import { modelLabel, tokenWords } from "../../core/cost/labels.ts"
+import { modelLabel } from "../../core/cost/labels.ts"
 import { PRICE_NOTE } from "../../core/cost/prices.ts"
 import type { FlowStepId } from "../../core/flow.ts"
 import { DEMO_TASK_ID } from "./identity.ts"
@@ -144,16 +144,6 @@ export function demoCost(id: string, stage = "verify"): TaskCost {
   if (id === DEMO_TASK_ID) return demoTaskCost(stage)
   if (id === "export") return exportCost()
   return plain(OTHERS[id] ?? [["plan", 5, 0.6]])
-}
-
-/** The token warning the demo task carries at `?tokens=high`: its own tokens, against a usual task a quarter of it. */
-export function demoTokenWarning(tokens: number): NonNullable<TaskCost["tokenWarning"]> {
-  const typical = Math.round(tokens / 4)
-  return {
-    tokens,
-    typical,
-    text: `This task has used ${tokenWords(tokens)} tokens, about 4× your usual task.`,
-  }
 }
 
 /** The demo task's cost: one row per step it has reached, each with its own tint in the panel. */

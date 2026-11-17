@@ -33,8 +33,8 @@ export type CopyRequest = {
   /** `user@host`, as ssh is given it. */
   target: string
   port: number
-  /** The host keys the person was shown; the run trusts exactly these. */
-  knownHosts: string
+  /** The shown host keys, or native known_hosts rules when the destination already has config. */
+  knownHosts?: string
   /** The script the machine runs with `sh -s`. */
   script: string
   password: string
@@ -78,7 +78,7 @@ export async function copyKeyWithPassword(
   try {
     const made = await local(["mkfifo", "-m", "600", pipe], { timeoutMs: 5000 })
     if (made.code !== 0) return { ok: false, why: "failed", said: "mkfifo is missing here" }
-    writeFileSync(known, request.knownHosts, { mode: 0o600 })
+    if (request.knownHosts !== undefined) writeFileSync(known, request.knownHosts, { mode: 0o600 })
     writeFileSync(
       script,
       `#!/bin/sh\nprintf '%s' "$1" > "${folder}/prompt.$$"\nexec cat "${pipe}"\n`,
@@ -92,10 +92,9 @@ export async function copyKeyWithPassword(
         "BatchMode=no",
         "-o",
         "StrictHostKeyChecking=yes",
-        "-o",
-        `UserKnownHostsFile=${known}`,
-        "-o",
-        "GlobalKnownHostsFile=/dev/null",
+        ...(request.knownHosts === undefined
+          ? []
+          : ["-o", `UserKnownHostsFile=${known}`, "-o", "GlobalKnownHostsFile=/dev/null"]),
         "-o",
         "PubkeyAuthentication=no",
         "-o",

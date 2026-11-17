@@ -4,6 +4,7 @@
 import type { AgentHealth } from "../core/agents/health-types.ts"
 import type { FoundProject } from "../core/agents/history.ts"
 import type { NativeAgent } from "../core/agents/ids.ts"
+import type { AgentSetupState } from "../core/agents/setup.ts"
 import type { SubagentModels } from "../core/agents/subagent-model.ts"
 import type {
   Artifact,
@@ -26,6 +27,7 @@ import type {
 import type { Config, Editor } from "../core/config-values.ts"
 import type { TaskCost } from "../core/cost/index.ts"
 import type { Usage, UsagePeriod } from "../core/cost/usage.ts"
+import type { ExportFile, ExportInput } from "../core/export/types.ts"
 import type { Delivery } from "../core/feedback/outbox.ts"
 import type {
   PublicDelivery,
@@ -344,6 +346,8 @@ export type AutomationsApi = {
 }
 
 export const api = {
+  exportFile: (input: ExportInput, signal?: AbortSignal) =>
+    call<ExportFile>("/api/export", { method: "POST", body: JSON.stringify(input), signal }),
   get memory(): MemoryApi {
     return memoryApi
   },
@@ -791,11 +795,13 @@ export const api = {
       body: JSON.stringify({ remember: true }),
     }).then(() => undefined),
   subagents: () => call<{ agents: SubagentModels[] }>("/api/subagents").then((r) => r.agents),
+  agentSetup: () => call<AgentSetupState>("/api/agents/setup"),
   agentHealth: () => call<{ agents: AgentHealth[] }>("/api/agents").then((r) => r.agents),
-  checkAgents: () =>
-    call<{ agents: AgentHealth[] }>("/api/agents/check", { method: "POST", body: "{}" }).then(
-      (r) => r.agents,
-    ),
+  checkAgents: (agent?: NativeAgent) =>
+    call<{ agents: AgentHealth[] }>("/api/agents/check", {
+      method: "POST",
+      body: JSON.stringify(agent === undefined ? {} : { agent }),
+    }).then((r) => r.agents),
   /** Waits for the sign-ins a check started, then gives every agent's row again. */
   agentSignIns: () => call<{ agents: AgentHealth[] }>("/api/agents/sign-in").then((r) => r.agents),
   /** Whether QualityLayer's skills, commands and turn-end hooks are in place for each agent. */
@@ -910,6 +916,7 @@ export type InstructionsOutcome = { saved: InstructionsText } | { conflict: Inst
 export type Api = Omit<
   typeof api,
   | "memory"
+  | "exportFile"
   | "automations"
   | "projectFolder"
   | "projectFolders"
@@ -942,6 +949,7 @@ export type Api = Omit<
   | "tools"
   | "checkTools"
 > & {
+  exportFile?: typeof api.exportFile
   /** A source demo adapter that implements the current task-turn controls. */
   currentTurnLayout?: true
   /** A source demo's batch lets the person jump to another open member from the strip. */

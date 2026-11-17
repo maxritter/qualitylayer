@@ -1,12 +1,12 @@
 import { useCallback } from "react"
+import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import type { Api, TaskDetail } from "../api.ts"
 import type { viewFile } from "../DocPathChip.tsx"
 import { useQuery } from "../hooks.ts"
 import type { stepDocumentOrPending } from "../step-page/document.ts"
-import { useTokenWarning } from "./useTokenWarning.ts"
 
 type TaskData = {
-  api: Pick<Api, "doc" | "sections" | "cost" | "artifact" | "evidence">
+  api: Pick<Api, "doc" | "sections" | "cost" | "artifactPage" | "evidence">
   task: TaskDetail
   view: string
   isDoc: boolean
@@ -55,12 +55,20 @@ export function useTaskData({
         .catch(() => null),
     [task.id, slow],
   )
-  useTokenWarning(task.id, cost.data)
   // File events refresh embedded content too; ArtifactFrame keeps an unchanged frame.
   // biome-ignore lint/correctness/useExhaustiveDependencies: version invalidates file content
   const loadArtifact = useCallback(
-    (name: string) => api.artifact(task.id, name),
-    [api, task.id, version],
+    (name: string) => {
+      const reference = parseArtifactReference(name) ?? parseArtifactReference(`artifacts/${name}`)
+      if (!reference) return Promise.reject(new Error("The design reference could not be read."))
+      return api.artifactPage(
+        reference.scope === "project"
+          ? { scope: "project", id: task.project }
+          : { scope: "task", id: task.id },
+        reference.file,
+      )
+    },
+    [api, task.id, task.project, version],
   )
   // biome-ignore lint/correctness/useExhaustiveDependencies: version invalidates file content
   const loadEvidence = useCallback(

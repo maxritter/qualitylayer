@@ -69,13 +69,14 @@ export function useSavedPaths(files: File[], save: (files: File[]) => Promise<st
   }
 }
 
-/** The folder the card opens on: the project asked for by name, else the one already selected. */
+/** The requested project keeps its selected checkout, even before the catalog has refreshed. */
 export function firstTarget(
   projects: Project[],
   named: string | undefined,
   selected: ProjectTarget | null | undefined,
 ): ProjectTarget | null {
   if (named === undefined) return selected ?? null
+  if (selected?.project.id === named) return selected
   const project = projects.find((p) => p.id === named)
   return project?.paths[0] ? { project, path: project.paths[0] } : null
 }

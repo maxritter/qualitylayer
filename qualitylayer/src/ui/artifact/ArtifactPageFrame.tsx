@@ -1,7 +1,7 @@
 // An artifact in its sandbox: an iframe with allow-scripts and no allow-same-origin, its page given as
 // srcdoc with the no-network policy first, so it cannot reach the App, its token or the network. The
-// bridge the server put into the page is its only voice: the page's natural size and parts, a click
-// in comment mode, and the App's keys pressed inside it, accepted from this frame's own window only.
+// bridge the server put into the page is its only voice: layout, deliberate feedback, selected words
+// and the App's keys pressed inside it, accepted from this frame's own window only.
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { ARTIFACT_PAGE_NAME } from "../../core/artifact/format.ts"
@@ -25,7 +25,6 @@ export type ArtifactLayout = {
   contentHeight?: number
   parts: ArtifactPart[]
 }
-export type ArtifactClick = { x: number; y: number; section?: string }
 /** What the person marked on the page: a spot, a dragged region or selected words. */
 export type ArtifactMark = {
   mark: "spot" | "region" | "text"
@@ -53,11 +52,16 @@ type Props = {
   /** Its height; the page's own once it said so. */
   height: number
   scale: number
-  commenting?: boolean
-  /** Marks are heard: a click on the page's surface, a drag, a selection open the quick field. */
+  /**
+   * Feedback is armed: the page is held and the next click marks a spot, a drag an area. Without it
+   * the page works as authored; marks are offered only when `onMark` is given.
+   */
+  armed?: boolean
+  /** A spot or area the person marked with Feedback armed, on the App's screen. */
   onMark?: (mark: ArtifactMark) => void
+  /** Words selected on the page (null once cleared), for the Feedback chip beside them. */
+  onSelection?: (selection: ArtifactMark | null) => void
   onLayout?: (layout: ArtifactLayout) => void
-  onClick?: (click: ArtifactClick) => void
   onKey?: (key: string) => void
   onScroll?: (scroll: ArtifactScroll) => void
   onAnchor?: (position: { x: number; y: number }) => void
@@ -132,13 +136,13 @@ export function readBridge(
   data: unknown,
 ):
   | { kind: "layout"; layout: ArtifactLayout }
-  | { kind: "click"; click: ArtifactClick }
   | { kind: "key"; key: string }
   | { kind: "scroll"; scroll: ArtifactScroll }
   | { kind: "anchor"; x: number; y: number }
   | { kind: "page"; page: string; section?: string }
   | { kind: "runtime-error"; message: string }
   | { kind: "mark"; mark: ArtifactMark }
+  | { kind: "selection"; selection: ArtifactMark | null }
   | null {
   if (typeof data !== "object" || data === null) return null
   const d = data as Record<string, unknown>
@@ -227,21 +231,6 @@ export function readBridge(
       },
     }
   }
-  if (d.kind === "click") {
-    const x = num(d.x)
-    const y = num(d.y)
-    if (x === null || y === null || x < 0 || y < 0) return null
-    return {
-      kind: "click",
-      click: {
-        x: Math.round(x),
-        y: Math.round(y),
-        ...(typeof d.section === "string" && d.section !== ""
-          ? { section: d.section.slice(0, 200) }
-          : {}),
-      },
-    }
-  }
   if (d.kind === "anchor") {
     const x = num(d.x)
     const y = num(d.y)
@@ -255,12 +244,17 @@ export function readBridge(
     if (d.unit !== 0 && d.unit !== 1 && d.unit !== 2 && d.unit !== 3) return null
     return { kind: "scroll", scroll: { x, y, unit: d.unit } }
   }
-  if (d.kind === "mark") {
+  // The frame marks only what the person armed Feedback for: a spot or an area. Words become a mark
+  // in the App, from the chip beside a reported selection.
+  if (d.kind === "mark" || d.kind === "selection") {
+    const quote = typeof d.quote === "string" ? d.quote.slice(0, 600) : ""
+    if (d.kind === "selection" && quote.trim().length < 3)
+      return { kind: "selection", selection: null }
     const x = num(d.x)
     const y = num(d.y)
-    const what = d.mark
-    if (x === null || y === null || (what !== "spot" && what !== "region" && what !== "text"))
-      return null
+    const what =
+      d.kind === "selection" ? "text" : d.mark === "spot" || d.mark === "region" ? d.mark : null
+    if (what === null || x === null || y === null || x > 8_000 || y > 200_000) return null
     const width = num(d.width)
     const height = num(d.height)
     const boxes = (Array.isArray(d.boxes) ? d.boxes : []).slice(0, 40).flatMap((raw) => {
@@ -270,22 +264,20 @@ export function readBridge(
         ? [box as ArtifactMark["boxes"][number]]
         : []
     })
-    return {
-      kind: "mark",
-      mark: {
-        mark: what,
-        x: Math.max(0, Math.round(x)),
-        y: Math.max(0, Math.round(y)),
-        ...(what === "region" && width !== null && height !== null
-          ? { width: Math.round(width), height: Math.round(height) }
-          : {}),
-        ...(typeof d.section === "string" && d.section !== ""
-          ? { section: d.section.slice(0, 200) }
-          : {}),
-        quote: typeof d.quote === "string" ? d.quote.slice(0, 600) : "",
-        boxes,
-      },
+    const mark: ArtifactMark = {
+      mark: what,
+      x: Math.max(0, Math.round(x)),
+      y: Math.max(0, Math.round(y)),
+      ...(what === "region" && width !== null && height !== null
+        ? { width: Math.round(width), height: Math.round(height) }
+        : {}),
+      ...(typeof d.section === "string" && d.section !== ""
+        ? { section: d.section.slice(0, 200) }
+        : {}),
+      quote,
+      boxes,
     }
+    return d.kind === "selection" ? { kind: "selection", selection: mark } : { kind: "mark", mark }
   }
   if (d.kind === "key" && typeof d.key === "string" && d.key.length <= 12)
     return { kind: "key", key: d.key }
@@ -314,10 +306,10 @@ export function ArtifactPageFrame({
   width,
   height,
   scale,
-  commenting = false,
+  armed = false,
   onMark,
+  onSelection,
   onLayout,
-  onClick,
   onKey,
   onScroll,
   onAnchor,
@@ -353,25 +345,29 @@ export function ArtifactPageFrame({
   }, [html, query, still])
   const handlers = useRef({
     onLayout,
-    onClick,
     onKey,
     onScroll,
     onAnchor,
     onPage,
     onRuntimeError,
     onMark,
+    onSelection,
   })
   handlers.current = {
     onLayout,
-    onClick,
     onKey,
     onScroll,
     onAnchor,
     onPage,
     onRuntimeError,
     onMark,
+    onSelection,
   }
   const marking = onMark !== undefined
+  // Marks the page reports are only heard while they are offered: a stray message after Feedback
+  // was cancelled opens nothing.
+  const live = useRef({ marking, armed })
+  live.current = { marking, armed }
   // Listening from layout, not a passive effect, so a page that reports before effects flush is still heard.
   useLayoutEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -379,14 +375,23 @@ export function ArtifactPageFrame({
       const said = readBridge(event.data)
       if (said === null) return
       if (said.kind === "layout") handlers.current.onLayout?.(said.layout)
-      else if (said.kind === "click") handlers.current.onClick?.(said.click)
-      else if (said.kind === "scroll") handlers.current.onScroll?.(said.scroll)
+      else if (said.kind === "selection") {
+        if (!live.current.marking || live.current.armed || said.selection === null) {
+          handlers.current.onSelection?.(null)
+          return
+        }
+        handlers.current.onSelection?.({
+          ...said.selection,
+          boxes: onScreen(frame.current, said.selection.boxes),
+        })
+      } else if (said.kind === "scroll") handlers.current.onScroll?.(said.scroll)
       else if (said.kind === "anchor") handlers.current.onAnchor?.({ x: said.x, y: said.y })
       else if (said.kind === "page") {
         if (said.section) handlers.current.onPage?.(said.page, said.section)
         else handlers.current.onPage?.(said.page)
       } else if (said.kind === "runtime-error") handlers.current.onRuntimeError?.(said.message)
       else if (said.kind === "mark") {
+        if (!live.current.marking || !live.current.armed) return
         // The canvas lays the page out at its whole height, so page pixels are the frame's own.
         const el = frame.current
         const [point] = onScreen(el, [{ x: said.mark.x, y: said.mark.y, width: 0, height: 0 }])
@@ -400,23 +405,27 @@ export function ArtifactPageFrame({
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
   }, [])
-  // Comment mode is said to the page whenever it changes, and again whenever the page reloads.
+  // The mode is said to the page whenever it changes, and again whenever the page reloads.
   const tell = () =>
     frame.current?.contentWindow?.postMessage(
       {
         type: "ql:artifact",
         kind: "mode",
-        comment: commenting,
-        mark: marking && !commenting,
+        mark: marking,
+        armed: marking && armed,
         theme,
         pan: onScroll !== undefined,
       },
       "*",
     )
   // biome-ignore lint/correctness/useExhaustiveDependencies: the mode is what is said
-  useEffect(() => {
+  useLayoutEffect(() => {
     tell()
-  }, [commenting, marking, theme])
+  }, [armed, marking, theme])
+  // Armed, the page takes the keyboard: Tab walks its controls, Enter marks, Escape leaves.
+  useEffect(() => {
+    if (armed && marking) frame.current?.focus({ preventScroll: true })
+  }, [armed, marking])
   return (
     <iframe
       ref={frame}

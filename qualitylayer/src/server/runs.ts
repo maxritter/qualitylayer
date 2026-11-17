@@ -2,16 +2,10 @@ import { randomBytes } from "node:crypto"
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import type { ServerWebSocket } from "bun"
-import { checkedAgentBinary, runnableFile } from "../core/agents/binary.ts"
-import { AGENT_NAMES, isNativeAgent, validModelId } from "../core/agents/ids.ts"
+import { checkedAgentBinary } from "../core/agents/binary.ts"
+import { AGENT_NAMES, isNativeAgent } from "../core/agents/ids.ts"
 import { AGENT_OWN } from "../core/agents/model-values.ts"
 import { readConfig } from "../core/config.ts"
-import {
-  type Config,
-  defaultAgentView,
-  type PlanningLaunch,
-  SESSION_MODEL,
-} from "../core/config-values.ts"
 import {
   pendingRunApproval,
   stopViewing,
@@ -27,7 +21,7 @@ import { cleanPickerAnswers, decidePicker, listPickers } from "../core/conversat
 import { nativeRun, readConversation } from "../core/conversation/service.ts"
 import { parseDoc } from "../core/docs/frontmatter.ts"
 import { folderDoc } from "../core/docs/names.ts"
-import { readGate, settle } from "../core/gate/gate.ts"
+import { settle } from "../core/gate/gate.ts"
 import { approvalCurrent } from "../core/gate/revision.ts"
 import { createBranch, suggestedBranch } from "../core/git/branch.ts"
 import { currentBranch } from "../core/git/repo.ts"
@@ -36,12 +30,7 @@ import { agentEntry } from "../core/install/where.ts"
 import type { Incoming } from "../core/interaction-docs/attachments.ts"
 import { readLive } from "../core/live/read.ts"
 import { canonicalPath, nativeCommand } from "../core/platform.ts"
-import {
-  type ExtraPlanner,
-  readPlanners,
-  validatePlanners,
-  writePlanners,
-} from "../core/review/planners.ts"
+import { type ExtraPlanner, readPlanners, writePlanners } from "../core/review/planners.ts"
 import { installedAgents } from "../core/review/vendors.ts"
 import { reconcileAbandonedStarts } from "../core/run/abandoned.ts"
 import { agentEnvironment } from "../core/run/agent-env.ts"
@@ -54,45 +43,29 @@ import {
   taskBriefsDirectory,
 } from "../core/run/bind.ts"
 import {
-  type AgentKind,
   isNoProgressHalt,
-  isRunPurpose,
   PROTECTED_SETTINGS,
-  type RunPurpose,
   type RunRecord,
   type RunSettings,
   type RunSummary,
   type StartRequest,
 } from "../core/run/contracts.ts"
 import {
-  assertNativeAvailable,
   controlRun,
   nativeSessionFile,
   type ResumePreparation,
   stopRunAtBoundary,
   validateControl,
 } from "../core/run/control.ts"
-import { createNativeSession } from "../core/run/create-session.ts"
 import {
   NativeSettingsUnknownError,
   observedNativeSettings,
   reportedNativePermission,
 } from "../core/run/effective-native-settings.ts"
-import { acceptedFreshPermission, freshConversation } from "../core/run/fresh.ts"
+import { freshConversation } from "../core/run/fresh.ts"
 import { armIntent, INTENT_HELPER_WAIT, intentFacts, intentWaitStatus } from "../core/run/intent.ts"
 import { launchDiagnostic } from "../core/run/launch-diagnostics.ts"
-import { createLaunchOverlays, launchHooks, launchHooksFolder } from "../core/run/launch-hooks.ts"
-import {
-  AGENT_CAPABILITIES,
-  chosenNativeSession,
-  defaultPermissionChoice,
-  launchSpec,
-  ownPermissionOnly,
-  permissionChoice,
-  permissionDescription,
-  permissionFor,
-  resumeLine,
-} from "../core/run/launch-spec.ts"
+import { launchSpec, permissionDescription, resumeLine } from "../core/run/launch-spec.ts"
 import { acquireRunLeases, runTaskLeaseKey } from "../core/run/lease.ts"
 import {
   planningStartOf,
@@ -108,7 +81,6 @@ import {
   LIMITS,
   type ServerFrame,
   validateViewerState,
-  validSize,
 } from "../core/run/protocol.ts"
 import { recoverInterruptedRuns } from "../core/run/recovery.ts"
 import {
@@ -126,7 +98,6 @@ import {
   updateRun,
   writeLaunch,
 } from "../core/run/registry.ts"
-import { START_SETTINGS, validateRunSettings } from "../core/run/settings-check.ts"
 import { applyQueuedSettings, queueSettings, settingsLock } from "../core/run/settings-intent.ts"
 import { connectOrRevive, settleDeadHost } from "../core/run/settle.ts"
 import { allocatePlanningTask } from "../core/run/start-task.ts"
@@ -150,7 +121,7 @@ import {
 import { VERSION } from "../core/version.ts"
 import type { Ctx } from "../ctx.ts"
 import { listProjects, locate } from "./api.ts"
-import { refreshArtifactAgentContext, resolveArtifactAgentContext } from "./artifact-agent.ts"
+import { refreshArtifactAgentContext } from "./artifact-agent.ts"
 import { handoffChatWorkflow } from "./chat-workflow-handoff.ts"
 import {
   approvalResponse,
@@ -171,14 +142,22 @@ import {
 } from "./native-question-files.ts"
 import { pickerHost, pickerRequest, pickerRunId } from "./pickers.ts"
 import { keepLaunchFiles, readLaunchBody } from "./run-launch-files.ts"
+import { launchHooksFor, prepareStartProcess, readyLaunchHooks } from "./run-launch-process.ts"
+import {
+  agentArgs,
+  assertEnabled,
+  availableShells,
+  chosenSession,
+  loginShell,
+  prepareStartSettings,
+  settingsOf,
+} from "./run-launch-settings.ts"
 import { messageFilesResponse, messageFilesRunId } from "./run-message-files.ts"
+import { purposeContext } from "./run-purpose-context.ts"
+import { readRunBody as body, parseRunStart, parseSettings } from "./run-start-request.ts"
 import { turnChangesResponse, turnChangesRunId } from "./turn-changes.ts"
 
-/** A new run's native session id when the agent takes one QualityLayer chooses; none for an agent that picks or creates its own. */
-function chosenSession(agent: AgentKind): { nativeSession?: string } {
-  const nativeSession = chosenNativeSession(agent)
-  return nativeSession === undefined ? {} : { nativeSession }
-}
+export { availableShells, loginShell, parseRunStart, settingsOf }
 
 export type AgentSocketData = {
   run: string
@@ -214,224 +193,6 @@ export function attachRunId(path: string) {
 
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { "cache-control": "no-store" } })
-const BODY_BYTES = 64 * 1024
-async function body(request: Request): Promise<unknown> {
-  if (Number(request.headers.get("content-length")) > BODY_BYTES)
-    throw new Error("Run request is too large")
-  const reader = request.body?.getReader()
-  if (!reader) throw new Error("Expected a run request")
-  let size = 0
-  const pieces: Uint8Array[] = []
-  try {
-    for (;;) {
-      const chunk = await reader.read()
-      if (chunk.done) break
-      size += chunk.value.length
-      if (size > BODY_BYTES) {
-        await reader.cancel()
-        throw new Error("Run request is too large")
-      }
-      pieces.push(chunk.value)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-  return JSON.parse(Buffer.concat(pieces).toString("utf8"))
-}
-function parseSettings(input: unknown): Partial<RunSettings> {
-  if (input === undefined) return {}
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("Invalid run settings")
-  validateRunSettings(input, START_SETTINGS)
-  return input as Partial<RunSettings>
-}
-export function parseRunStart(input: unknown): StartRequest {
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("Expected a run start")
-  const v = input as StartRequest
-  if (
-    (!isNativeAgent(v.agent) && v.agent !== "other") ||
-    !isRunPurpose(v.purpose) ||
-    typeof v.idempotencyKey !== "string" ||
-    !v.idempotencyKey ||
-    v.idempotencyKey.length > 256 ||
-    Array.from(v.idempotencyKey).some(
-      (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
-    )
-  )
-    throw new Error("Invalid agent, purpose or idempotency key")
-  const allowed = new Set([
-    "agent",
-    "purpose",
-    "cwd",
-    "idempotencyKey",
-    "allocateTask",
-    "planners",
-    "settings",
-    "works",
-    "mode",
-    "branch",
-    "worktreePath",
-    "cols",
-    "rows",
-    "colors",
-    "confirmBypass",
-    "startAnyway",
-    "workers",
-    "resumeNative",
-  ])
-  if (Object.keys(v).some((key) => !allowed.has(key))) throw new Error("Unknown run start choice")
-  if (
-    v.allocateTask !== undefined &&
-    (typeof v.allocateTask !== "boolean" ||
-      v.purpose.kind !== "new-task" ||
-      !isNativeAgent(v.agent))
-  )
-    throw new Error("Task allocation is only available for a new native planning run")
-  const planners = v.planners === undefined ? undefined : parsePlannersChoice(v)
-  permissionChoice(v.agent, parseSettings(v.settings))
-  if (isNativeAgent(v.agent) && v.settings?.model && !validModelId(v.agent, v.settings.model))
-    throw new Error(`Invalid model for ${v.agent}`)
-  if (v.cwd !== undefined && (typeof v.cwd !== "string" || !v.cwd || v.cwd.includes("\0")))
-    throw new Error("Invalid checkout")
-  if (
-    v.worktreePath !== undefined &&
-    (typeof v.worktreePath !== "string" ||
-      !v.worktreePath ||
-      /[\0\r\n]/.test(v.worktreePath) ||
-      v.worktreePath.length > 4096 ||
-      v.works !== "worktree")
-  )
-    throw new Error("Invalid worktree path")
-  if (v.purpose.kind === "task" && v.purpose.phase !== undefined && v.purpose.phase !== "planning")
-    throw new Error("Invalid task launch phase")
-  if (
-    v.resumeNative !== undefined &&
-    (typeof v.resumeNative !== "string" ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(v.resumeNative) ||
-      v.purpose.kind !== "task" ||
-      !isNativeAgent(v.agent) ||
-      AGENT_CAPABILITIES[v.agent].resume === null)
-  )
-    throw new Error("Only a task's native agent session can be resumed here")
-  if (v.works !== undefined && !["checkout", "branch", "worktree"].includes(v.works))
-    throw new Error("Invalid works choice")
-  if (v.mode !== undefined && !["goal", "plain"].includes(v.mode))
-    throw new Error("Invalid run mode")
-  for (const key of ["confirmBypass", "startAnyway"] as const)
-    if (v[key] !== undefined && typeof v[key] !== "boolean") throw new Error(`Invalid ${key}`)
-  if (!validSize(v.cols ?? 80, v.rows ?? 24)) throw new Error("Invalid terminal size")
-  if (
-    v.colors &&
-    (!v.colors ||
-      [v.colors.fg, v.colors.bg, v.colors.cursor].some(
-        (n) => !Number.isInteger(n) || n < 0 || n > 0xffffff,
-      ))
-  )
-    throw new Error("Invalid terminal colors")
-  if (
-    v.workers !== undefined &&
-    (typeof v.workers !== "string" ||
-      (isNativeAgent(v.agent)
-        ? v.workers !== AGENT_OWN && !validModelId(v.agent, v.workers)
-        : !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(v.workers)))
-  )
-    throw new Error("Invalid workers model")
-  if (
-    v.purpose.kind === "new-task" &&
-    v.purpose.title !== undefined &&
-    (typeof v.purpose.title !== "string" ||
-      v.purpose.title.length > 200 ||
-      v.purpose.title.includes("\0"))
-  )
-    throw new Error("Invalid new task title")
-  if (
-    v.purpose.kind === "new-task" &&
-    v.purpose.type !== undefined &&
-    v.purpose.type !== "feature" &&
-    v.purpose.type !== "bugfix" &&
-    v.purpose.type !== "chat"
-  )
-    throw new Error("The task type must be feature or bugfix or chat")
-  if (
-    v.purpose.kind === "new-task" &&
-    v.purpose.fromPlan !== undefined &&
-    (typeof v.purpose.fromPlan !== "string" ||
-      v.purpose.fromPlan === "" ||
-      v.purpose.fromPlan.length > 255 ||
-      /[/\\\0]/.test(v.purpose.fromPlan) ||
-      v.purpose.type === "chat")
-  )
-    throw new Error("A task from an existing plan names one attached Markdown or text file")
-  const purpose: RunPurpose =
-    v.purpose.kind === "task"
-      ? {
-          kind: "task" as const,
-          task: v.purpose.task,
-          ...(v.purpose.phase ? { phase: v.purpose.phase } : {}),
-        }
-      : v.purpose.kind === "terminal"
-        ? {
-            kind: "terminal" as const,
-            ...(v.purpose.shell ? { shell: true as const } : {}),
-            ...(v.purpose.context ? { context: v.purpose.context } : {}),
-          }
-        : v.purpose.kind === "artifact"
-          ? {
-              kind: "artifact",
-              scope: v.purpose.scope,
-              id: v.purpose.id,
-              file: v.purpose.file,
-              revision: v.purpose.revision,
-              request: v.purpose.request,
-            }
-          : {
-              kind: "new-task" as const,
-              request: v.purpose.request,
-              ...(v.purpose.title !== undefined ? { title: v.purpose.title } : {}),
-              ...(v.purpose.type !== undefined ? { type: v.purpose.type } : {}),
-              ...(v.purpose.fromPlan !== undefined ? { fromPlan: v.purpose.fromPlan } : {}),
-            }
-  const purposeFields =
-    v.purpose.kind === "task"
-      ? ["kind", "task", "phase"]
-      : v.purpose.kind === "terminal"
-        ? ["kind", "shell", "context"]
-        : v.purpose.kind === "artifact"
-          ? ["kind", "scope", "id", "file", "revision", "request"]
-          : ["kind", "request", "title", "type", "fromPlan"]
-  if (v.purpose.kind === "terminal" && v.purpose.shell === true && v.agent !== "other")
-    throw new Error("A shell terminal starts as another program")
-  if (Object.keys(v.purpose).some((key) => !purposeFields.includes(key)))
-    throw new Error("Unknown run purpose field")
-  const { planners: _sent, ...rest } = v
-  return {
-    ...rest,
-    purpose,
-    ...(planners !== undefined && planners.length > 0 ? { planners } : {}),
-  }
-}
-
-/**
- * A start's extra planners, checked as `task start --planners` checks them: a feature task's
- * planning only, at most two, each agent once and not the run's own, at an effort it takes.
- * Whether each can run on this computer is checked when the run starts.
- */
-function parsePlannersChoice(v: StartRequest): ExtraPlanner[] {
-  const planning =
-    (v.purpose.kind === "new-task" && v.allocateTask === true) ||
-    (v.purpose.kind === "task" && v.purpose.phase === "planning")
-  if (!planning || !isNativeAgent(v.agent))
-    throw new Error("Extra planners start with a native planning run for a new or waiting task")
-  if (v.purpose.kind === "new-task" && v.purpose.type !== undefined && v.purpose.type !== "feature")
-    throw new Error(
-      `Extra planners are for feature tasks, not a ${v.purpose.type === "bugfix" ? "bug fix" : "Chat"}`,
-    )
-  const planners = validatePlanners(v.planners, v.agent)
-  if (typeof planners === "string") throw new Error(planners)
-  return planners
-}
-
 /** Extra planners run only for a feature task, on agents this computer can start. */
 async function assertPlannersRun(ctx: Ctx, planners: readonly ExtraPlanner[], task?: Task) {
   if (task !== undefined && task.type !== "feature")
@@ -501,125 +262,6 @@ async function terminalInCheckout(ctx: Ctx, task: Task, cwd: string) {
   return false
 }
 
-async function knownCheckout(ctx: Ctx, cwd: string): Promise<string> {
-  const canonical = canonicalPath(realpathSync(resolve(cwd)))
-  for (const project of await listProjects(ctx))
-    for (const path of project.paths) {
-      try {
-        if (canonicalPath(realpathSync(path)) === canonical) return canonical
-      } catch {
-        /* missing registered checkout */
-      }
-    }
-  throw new Error("Choose a project folder QualityLayer knows on this computer")
-}
-async function purposeContext(ctx: Ctx, request: StartRequest, config: Config, retry?: RunRecord) {
-  if (request.purpose.kind === "task") {
-    const found = await locate(ctx, request.purpose.task)
-    if (!found.ok) throw new Error(found.error.message)
-    const task = found.data.task
-    if (await isArchived(ctx, task))
-      throw new Error("Restore this archived task before starting its agent")
-    if (task.stage === "chat" || request.purpose.phase === "planning") {
-      if (!["chat", "plan"].includes(task.stage))
-        throw new Error("Planning is finished; start the approved build instead")
-      const cwd = realpathSync(
-        task.stage === "chat"
-          ? ((await readSession(ctx, task))?.checkout ?? task.repoRoot)
-          : task.repoRoot,
-      )
-      if (request.cwd && realpathSync(resolve(request.cwd)) !== cwd)
-        throw new Error("Planning continues in this task's recorded checkout")
-      if (request.works && request.works !== "checkout")
-        throw new Error("An existing plan continues in its recorded checkout")
-      return { cwd, task, works: "checkout" as const }
-    }
-    if (!["implement", "plan", "verify", "shipped"].includes(task.stage))
-      throw new Error("The task must have an approved build to continue")
-    const planGate = task.stage === "plan" ? await readGate(ctx, task) : undefined
-    if (
-      task.stage === "plan" &&
-      (!planGate ||
-        planGate.target !== folderDoc("plan") ||
-        planGate.decision !== "approved" ||
-        planGate.settled === true)
-    )
-      throw new Error("The Plan must be approved before starting its build")
-    const cwd = realpathSync(task.repoRoot)
-    if (
-      request.cwd &&
-      realpathSync(resolve(request.cwd)) !== cwd &&
-      !(retry?.sourceCheckout === request.cwd && retry.worktreePath === cwd && retry.cwd === cwd)
-    )
-      throw new Error("This task's build stays in its recorded checkout")
-    const works =
-      request.works ??
-      (request.agent === "other"
-        ? "checkout"
-        : config.implement.defaults[request.agent].buildingWorks)
-    if (!["checkout", "branch", "worktree"].includes(works))
-      throw new Error("Choose this checkout, a new branch or a new worktree")
-    return { cwd, task, planGate, works: works as "checkout" | "branch" | "worktree" }
-  }
-  if (request.purpose.kind === "artifact") {
-    if (request.works && request.works !== "checkout")
-      throw new Error("Artifact iteration stays in its registered source checkout")
-    const { kind: _kind, ...address } = request.purpose
-    if (!/^[a-f0-9]{64}$/.test(address.revision))
-      throw new Error("Refresh the artifact source before starting")
-    const resolved = await resolveArtifactAgentContext(ctx, address)
-    if (!resolved.ok) throw new Error(resolved.error.message)
-    const cwd = realpathSync(resolved.data.binding.folder)
-    if (request.cwd && realpathSync(resolve(request.cwd)) !== cwd)
-      throw new Error("This artifact opens in its registered source folder")
-    return { cwd, works: "checkout" as const, artifact: resolved.data }
-  }
-  if (request.purpose.kind === "terminal") {
-    if (request.works && request.works !== "checkout")
-      throw new Error("A terminal opens in the project's checkout")
-    const scope = request.purpose.context
-    if (scope) {
-      let cwd: string
-      if (scope.kind === "task") {
-        const found = await locate(ctx, scope.task)
-        if (!found.ok) throw new Error(found.error.message)
-        if (await isArchived(ctx, found.data.task))
-          throw new Error("Restore this task before opening its terminal")
-        cwd = realpathSync(found.data.task.repoRoot)
-      } else {
-        const { kind: _kind, ...address } = scope
-        const resolved = await resolveArtifactAgentContext(ctx, {
-          ...address,
-          request: "Open the project shell.",
-        })
-        if (!resolved.ok) throw new Error(resolved.error.message)
-        cwd = realpathSync(resolved.data.binding.folder)
-        if (request.cwd && realpathSync(resolve(request.cwd)) !== cwd)
-          throw new Error("This artifact terminal opens in its registered source folder")
-        return { cwd, works: "checkout" as const, terminalArtifactBinding: resolved.data.binding }
-      }
-      if (request.cwd && realpathSync(resolve(request.cwd)) !== cwd)
-        throw new Error("This terminal belongs to another checkout")
-      return { cwd, works: "checkout" as const }
-    }
-    if (!request.cwd) throw new Error("A terminal needs a registered project folder")
-    return { cwd: await knownCheckout(ctx, request.cwd), works: "checkout" as const }
-  }
-  const requestText = request.purpose.request.trim()
-  if (!requestText || requestText.length > 16_384 || requestText.includes("\0"))
-    throw new Error("New task needs a bounded request")
-  if (!request.cwd) throw new Error("New task needs a registered project folder")
-  const works =
-    request.works ??
-    (request.agent === "other" ? "checkout" : config.planning.defaults[request.agent].planningWorks)
-  if (!["checkout", "branch", "worktree"].includes(works))
-    throw new Error("Choose this checkout, a new branch or a new worktree")
-  return {
-    cwd: await knownCheckout(ctx, request.cwd),
-    works: works as "checkout" | "branch" | "worktree",
-  }
-}
-
 function requestState(ctx: Ctx, run: string): { sent?: boolean } {
   try {
     return JSON.parse(readFileSync(join(runDir(ctx.home, run), "request-state.json"), "utf8"))
@@ -642,153 +284,6 @@ async function readyHost(ctx: Ctx, id: string, deadline: number) {
     }
   }
   throw new Error(`Agent host did not become ready within 10 seconds: ${String(last)}`)
-}
-/**
- * The person's persisted default, or the first-use default, when the agent supports it.
- */
-function defaultPermission(
-  agent: Exclude<RunRecord["agent"], "other">,
-  config: Config,
-): RunSettings["perm"] {
-  return permissionFor(agent, config.perm)
-}
-export function settingsOf(
-  config: Config,
-  request: StartRequest,
-  planned?: PlanningLaunch | null,
-): RunSettings {
-  const agent = request.agent === "other" ? "codex" : request.agent
-  const building = request.purpose.kind === "task" && request.purpose.phase !== "planning"
-  const defaults = building ? config.implement.defaults[agent] : config.planning.defaults[agent]
-  const model = building
-    ? config.implement.defaults[agent].orchestrator
-    : config.planning.defaults[agent].model
-  // New terminal opens the agent as the person would in their own terminal: its own settings.
-  const plain = request.purpose.kind === "terminal"
-  const subagentModel = request.workers ?? config.implement.defaults[agent].subagents
-  const inherited = building
-    ? planned?.agent === request.agent
-      ? planned
-      : undefined
-    : request.purpose.kind === "new-task" && config.planning.lastStart?.agent === request.agent
-      ? config.planning.lastStart
-      : undefined
-  return {
-    perm: plain || request.agent === "other" ? "own" : defaultPermission(request.agent, config),
-    typeFrom: config.typeFrom,
-    onQuit: config.onQuit,
-    windowMode: plain ? "open" : config.windowMode,
-    agentView: plain ? "terminal" : defaultAgentView(config),
-    ...(["new-task", "task"].includes(request.purpose.kind) ? { answers: "app" as const } : {}),
-    ...(request.agent === "other" || plain ? {} : { model, effort: defaults.effort }),
-    ...(building && request.agent === "claude-code"
-      ? { subagentModel: subagentModel === SESSION_MODEL ? AGENT_OWN : subagentModel }
-      : {}),
-    ...(inherited
-      ? {
-          model: inherited.model,
-          ...permissionChoice(request.agent, {
-            perm: inherited.perm,
-            ...(inherited.permMode ? { permMode: inherited.permMode } : {}),
-          }),
-        }
-      : {}),
-    ...request.settings,
-    ...permissionChoice(request.agent, request.settings ?? {}),
-    ...(inherited ? {} : agentPermission(request, config)),
-    fastMode: undefined,
-  }
-}
-/**
- * The permission mode an agent's session starts in when the launch names none: the mode set in
- * Settings › Agents for that agent. A launch names one with a `permMode` or any explicit level,
- * including `own`. A plain terminal, an ask and another agent
- * always use the agent's own settings. The global `perm` level stays the default for the rest.
- */
-function agentPermission(
-  request: StartRequest,
-  config: Config,
-): ReturnType<typeof permissionChoice> {
-  const { agent, settings, purpose } = request
-  if (agent === "other" || purpose.kind === "terminal") return {}
-  const mode = config.agents[agent].permMode
-  const named = settings?.permMode !== undefined || settings?.perm !== undefined
-  return mode === "" || named
-    ? {}
-    : permissionChoice(agent, mode === "own" ? { perm: "own" } : { permMode: mode })
-}
-/** An agent turned off in Settings is never started. */
-function assertEnabled(agent: RunRecord["agent"], config: Config): void {
-  if (agent !== "other" && !config.agents[agent].enabled)
-    throw new Error(`${AGENT_NAMES[agent]} is turned off in Settings`)
-}
-/** The extra arguments Settings › Agents adds to every start of a native agent. */
-function agentArgs(agent: RunRecord["agent"], config: Config): string[] | undefined {
-  return agent === "other" ? undefined : config.agents[agent].args
-}
-/**
- * The hooks the launch of this generation of the run carries (`launch-hooks.ts`). Nothing is made on
- * disk yet: `readyLaunchHooks` makes the overlay folders once the launch has been validated.
- */
-function launchHooksFor(
-  ctx: Ctx,
-  run: string,
-  generation: number,
-  agent: RunRecord["agent"],
-  version: string,
-  settings?: Partial<Pick<RunSettings, "perm" | "permMode">>,
-  resume = false,
-) {
-  if (agent === "other") return undefined
-  const folder = launchHooksFolder(ctx.home, run, generation)
-  const mode = permissionChoice(agent, settings ?? {}).permMode
-  return launchHooks({
-    agent,
-    binary: agentEntry(ctx),
-    folder,
-    version,
-    ...(mode ? { permissionMode: mode } : {}),
-    resume,
-  })
-}
-/**
- * Make the overlay folders of a validated launch from the person's own agent folders. The agent host
- * removes them when its agent ends; each generation has its own, so a restart never takes the
- * folder of the launch it is replacing.
- */
-function readyLaunchHooks(
-  ctx: Ctx,
-  run: string,
-  generation: number,
-  hooks: ReturnType<typeof launchHooksFor>,
-  env: Record<string, string>,
-) {
-  if (hooks) createLaunchOverlays(launchHooksFolder(ctx.home, run, generation), hooks.overlays, env)
-}
-/** The shells this computer lists, for New terminal's choice; at most 32. */
-export function availableShells(): string[] {
-  if (process.platform === "win32") return []
-  try {
-    return readFileSync("/etc/shells", "utf8")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("/") && runnableFile(line))
-      .slice(0, 32)
-  } catch {
-    return []
-  }
-}
-export function loginShell(ctx: Ctx): string {
-  return (
-    ctx.env.get("SHELL") ||
-    (process.platform === "win32" ? ctx.env.get("COMSPEC") || "cmd.exe" : "/bin/sh")
-  )
-}
-const LOGIN_ARGS = process.platform === "win32" ? [] : ["-l"]
-/** A shell tab's program: the chosen shell or the login shell, with its arguments or `-l`. */
-function terminalShell(ctx: Ctx, config: Config): { program: string; args: string[] } {
-  const { program, args } = config.terminal.shell
-  return { program: program || loginShell(ctx), args: args.length > 0 ? args : [...LOGIN_ARGS] }
 }
 export async function refreshRunIntentWait(ctx: Ctx, run: RunRecord): Promise<RunRecord> {
   const intent = run.intent
@@ -1714,9 +1209,7 @@ export class RunAttachments {
     const nextGeneration = run.generation + 1
     const hooks = launchHooksFor(
       this.ctx,
-      run.id,
-      nextGeneration,
-      run.agent,
+      { id: run.id, generation: nextGeneration, agent: run.agent },
       binary.version,
       settings,
       true,
@@ -2092,22 +1585,11 @@ export class RunAttachments {
     const planned = initialContext?.task
       ? await readPlanningStart(this.ctx, initialContext.task)
       : null
-    const settings = settingsOf(config, input, planned)
-    if (initialContext?.task && input.settings?.answers === undefined)
-      settings.answers = initialContext.task.answers
-    if (input.agent === "other" && !ownPermissionOnly(settings))
-      throw new Error("This run uses the agent's own settings")
-    if (
-      settings.perm === "bypass" &&
-      input.confirmBypass !== true &&
-      defaultPermissionChoice(
-        config,
-        input.agent,
-        input.purpose.kind === "new-task" ? config.planning.lastStart : planned,
-      ).perm !== "bypass" &&
-      !(existing && (await acceptedFreshPermission(this.ctx, existing, settings)))
-    )
-      throw new Error("Confirm this agent's Bypass permission mode for this run")
+    const settings = await prepareStartSettings(this.ctx, config, input, {
+      planned,
+      task: initialContext?.task,
+      existing,
+    })
     if (
       input.branch !== undefined &&
       (typeof input.branch !== "string" ||
@@ -2419,90 +1901,16 @@ export class RunAttachments {
           const { approvals: _split, ...followed } = context.task
           context.task = { ...followed, answers: current.settings.answers }
         }
-        const env = await agentEnvironment(this.ctx, current.id, process.env, diagnostic?.login)
-        env.PWD = context.cwd
-        if (current.task) env.QUALITYLAYER_TASK = current.task.split("~").at(-1) ?? current.task
-        if (current.agent !== "other") env.QUALITYLAYER_AGENT = current.agent
-        let binary: { path: string; version: string }
-        const shell = current.purpose.kind === "terminal" && current.purpose.shell === true
-        const shellProgram = shell ? terminalShell(this.ctx, nowConfig) : undefined
-        if (current.agent === "other") {
-          const program = shellProgram?.program ?? nowConfig.otherAgent.program
-          const path = isAbsolute(program) ? program : Bun.which(program, { PATH: env.PATH })
-          if (!path || !runnableFile(path))
-            throw new Error(`Another agent's program cannot run: ${program || "not configured"}`)
-          binary = { path, version: "unknown" }
-        } else
-          binary = await checkedAgentBinary(this.ctx, current.agent, {
-            env,
-            timeoutMs: Math.max(1, deadline - Date.now()),
-            observe: diagnostic?.binary,
-          })
-        const create =
-          current.agent === "other"
-            ? undefined
-            : AGENT_CAPABILITIES[current.agent].startSession?.create
-        if (create && !current.nativeSession) {
-          const nativeSession = await createNativeSession({
-            program: binary.path,
-            create,
-            cwd: context.cwd,
-            env,
-            timeoutMs: Math.max(1, deadline - Date.now()),
-          })
-          current = updateRun(this.ctx.home, current.id, current.generation, { nativeSession })
-        }
-        // Resuming the outside session's own conversation: nothing else may hold it now.
-        if (input.resumeNative !== undefined) assertNativeAvailable(this.ctx, current)
-        const hooks = launchHooksFor(
-          this.ctx,
-          current.id,
-          current.generation,
-          current.agent,
-          binary.version,
-          current.settings,
-          input.resumeNative !== undefined,
-        )
-        const spec = launchSpec({
-          ...(input.resumeNative !== undefined ? { resume: true, continue: true } : {}),
-          agent: current.agent,
-          launchFiles: current.launchFiles,
-          toolsFolder: dirname(agentEntry(this.ctx)),
-          answers: context.task?.answers ?? current.settings?.answers,
-          artifactPrompt: context.artifact
-            ? await refreshArtifactAgentContext(
-                this.ctx,
-                context.artifact.binding,
-                current.purpose.kind === "artifact" ? current.purpose.request : "",
-                { expectedRevision: context.artifact.revision },
-              ).then((result) => {
-                if (!result.ok) throw new Error(result.error.message)
-                return result.data.prompt
-              })
-            : undefined,
-          stage: context.task?.stage,
-          purpose: context.task ? { kind: "task", task: context.task.slug } : current.purpose,
-          managed: true,
-          session: current.nativeSession,
-          taskBriefsDir:
-            context.task && current.agent !== "other"
-              ? await taskBriefsDirectory(this.ctx, context.task)
-              : undefined,
-          runBriefsDir:
-            current.purpose.kind === "new-task" && current.agent !== "other"
-              ? await runBriefsDirectory(this.ctx, current.id)
-              : undefined,
-          perm: current.settings?.perm,
-          permMode: current.settings?.permMode,
-          model: current.settings?.model,
-          effort: current.settings?.effort,
-          subagentModel: current.settings?.subagentModel,
-          works: context.works === "worktree" ? "checkout" : context.works,
-          mode: current.purpose.kind === "task" ? "plain" : (input.mode ?? "plain"),
-          otherAgent: shellProgram ?? nowConfig.otherAgent,
-          agentArgs: agentArgs(current.agent, nowConfig),
-          hooks,
+        const prepared = await prepareStartProcess(this.ctx, {
+          input,
+          run: current,
+          context,
+          config: nowConfig,
+          deadline,
+          diagnostic,
         })
+        current = prepared.run
+        const { env, binary, hooks, spec } = prepared
         if (
           context.task &&
           context.task.stage === "implement" &&

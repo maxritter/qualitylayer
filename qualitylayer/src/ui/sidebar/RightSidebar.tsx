@@ -169,7 +169,7 @@ export function RightSidebar({
           {taskAgent && open ? (
             <span
               className="q-agent-controls-slot"
-              style={{ width: 26, height: 26 }}
+              style={{ minWidth: 26, height: 26 }}
               ref={terminalLayout.controls}
             />
           ) : null}

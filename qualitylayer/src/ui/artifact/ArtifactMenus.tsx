@@ -511,8 +511,13 @@ function DeleteDialog({
           <button type="button" className="q-btn quiet" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="q-btn" disabled={busy} onClick={() => void remove()}>
-            Delete for good
+          <button
+            type="button"
+            className="q-btn q-delete-confirm"
+            disabled={busy}
+            onClick={() => void remove()}
+          >
+            Delete
           </button>
         </div>
       </DialogContent>

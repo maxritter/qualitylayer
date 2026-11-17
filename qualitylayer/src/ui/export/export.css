@@ -1,0 +1,169 @@
+.q-export {
+  width: min(320px, calc(100vw - 16px));
+  gap: 12px;
+  padding: 12px;
+}
+.q-export-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.q-export-head > b {
+  font-size: 13px;
+  font-weight: 600;
+}
+.q-export-head > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ql-text-muted);
+  font-size: 12px;
+}
+.q-export-formats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.q-export-format {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 84px;
+  padding: 9px 3px;
+  border: 1px solid var(--ql-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.q-export-format:hover {
+  border-color: var(--ql-border-strong);
+}
+.q-export-format[data-selected="true"] {
+  border-color: var(--ql-accent);
+  background: var(--ql-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--ql-accent);
+}
+.q-export-format > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--ql-text-muted);
+}
+.q-export-format > b {
+  font-size: 12px;
+  font-weight: 600;
+}
+.q-export-format > small {
+  font-size: 11px;
+  color: var(--ql-text-muted);
+  white-space: nowrap;
+}
+.q-export input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.q-export label:has(input:focus-visible) {
+  outline: 2px solid var(--ql-accent);
+  outline-offset: 2px;
+}
+.q-export fieldset:disabled {
+  opacity: 0.6;
+}
+.q-export-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 12px;
+}
+.q-export-scope > legend {
+  float: left;
+  padding: 0;
+  color: var(--ql-text-muted);
+}
+.q-export-scope > div {
+  display: flex;
+  padding: 2px;
+  background: var(--ql-surface-2);
+  border-radius: 7px;
+}
+.q-export-scope label {
+  position: relative;
+  padding: 4px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.q-export-scope label[data-selected="true"] {
+  background: var(--ql-bg);
+  box-shadow: 0 0 0 1px var(--ql-border);
+}
+.q-export-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--ql-bg-sunken);
+  font-size: 12px;
+}
+.q-export-file > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ql-text-muted);
+}
+.q-export-file > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-export-file > small {
+  margin-left: auto;
+  flex: none;
+  color: var(--ql-text-muted);
+}
+.q-export-go {
+  width: 100%;
+}
+.q-export-go[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.q-export-error {
+  font-size: 12px;
+  color: var(--ql-danger);
+  overflow-wrap: anywhere;
+}
+.q-export-done {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.q-export-done > svg {
+  width: 17px;
+  height: 17px;
+  color: var(--ql-pass);
+  flex: none;
+}
+.q-export-done > span {
+  flex: 1;
+}
+.q-export-format[data-selected="true"] > svg {
+  color: var(--ql-accent);
+}

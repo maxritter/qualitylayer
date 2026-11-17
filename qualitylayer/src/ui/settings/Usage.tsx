@@ -4,7 +4,7 @@
 // are never summed. Every block says what it is waiting for or why it has nothing: loading, unreadable,
 // empty, still counting, or not counted by an agent.
 
-import { CircleAlertIcon, GaugeIcon, HourglassIcon } from "lucide-react"
+import { CircleAlertIcon, HourglassIcon } from "lucide-react"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { usageForMoney } from "../../core/cost/display.ts"
@@ -125,33 +125,6 @@ function WhenUsedUpGroup({
   )
 }
 
-/** The token warning's switch, for every agent, on a plan or billed by use. */
-function TokenWarningGroup({
-  config,
-  onChange,
-}: {
-  config: Config
-  onChange: (patch: unknown) => void
-}) {
-  return (
-    <SettingsGroup title="Token use" testId="token-use">
-      <SettingRow
-        label="Warn about heavy token use"
-        hint="Once per task, at about 3× your usual task. The task keeps running."
-        testId="token-warning"
-        icon={<GaugeIcon className="size-[15px]" />}
-        stay
-      >
-        <Switch
-          checked={config.limits.tokenWarning}
-          aria-label="Warn about heavy token use"
-          onCheckedChange={(tokenWarning) => onChange({ limits: { tokenWarning } })}
-        />
-      </SettingRow>
-    </SettingsGroup>
-  )
-}
-
 /** The page's lead line: with no agent on a plan there are no plan limits to name. */
 export const USAGE_LEAD_BILLED = "What your agents used, and its estimated cost."
 
@@ -242,7 +215,6 @@ export function UsageTab({
           <WhenUsedUpGroup config={config} onChange={onChange} />
         </>
       ) : null}
-      <TokenWarningGroup config={config} onChange={onChange} />
       {reading.status === "loading" ? (
         <SettingsGroup title="What your agents used" testId="usage-history">
           <div className="q-ug-top">

@@ -152,7 +152,7 @@ async function openBatches(ctx: Ctx, task: Pick<Task, "runtimeDir">, all: Stored
 /**
  * One batch by its id, or the one the App's card shows: a batch asked while an earlier one waits
  * never hides it, so the card holds every open question, the earliest batch's first, under the
- * newest open batch's id and words.
+ * newest open batch's id. Batch-specific wording is shown only for a single open batch.
  */
 export async function readBatch(
   ctx: Ctx,
@@ -170,11 +170,14 @@ export async function readBatch(
     const last = all.at(-1)
     return newest ?? (last ? current(ctx, task, last) : null)
   }
-  return {
+  const combined = {
     ...newest,
     questions: open.flatMap((b) => b.view.questions),
     links: open.flatMap((b) => b.view.links),
   }
+  delete combined.title
+  delete combined.ahead
+  return combined
 }
 export type ClarificationRequest = {
   batch: string
@@ -313,8 +316,8 @@ export async function batchStrip(
   return {
     id: batch.id,
     ...(batch.step ? { step: batch.step } : {}),
-    ...(batch.title ? { title: batch.title } : {}),
-    ...(batch.ahead ? { ahead: batch.ahead } : {}),
+    ...(open.length === 1 && batch.title ? { title: batch.title } : {}),
+    ...(open.length === 1 && batch.ahead ? { ahead: batch.ahead } : {}),
     members,
   }
 }

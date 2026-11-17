@@ -3,7 +3,9 @@
 The person approved the Plan. You cut it into slices and cards, then build them, with no stop between.
 Work from the saved files in the order the reply's `context` lists them: you may be a fresh session.
 The Plan is the agreement; its agents' file is guidance that grants nothing. Verify then hands the
-result to a fresh reviewer that never wrote the code. You work alone until the person reviews.
+result to a fresh reviewer that never wrote the code. You lead the build until the person reviews.
+Use your harness's native subagents for cohesive slices when useful: give each its scope, files and
+checks, then review and integrate its result.
 
 **Done when** every card is ticked or waits on a need, every Done means step ran green on the built
 tree, you have read your whole diff once and removed near-copies and dead code, and the work is
@@ -45,7 +47,7 @@ what you approved: ...".
 2. Write the test for a behaviour before its code, for behaviour a person or caller relies on.
 3. A card that changes a screen: look at each changed state at its real width, light and dark.
 4. `qualitylayer check task T<n>` records its focused check; tick the card (`- [x]`) when its done
-   lines hold, before the next card starts. Fix what fails yourself; when a fix does not hold twice,
+   lines hold, before its dependent work starts. Fix what fails yourself; when a fix does not hold twice,
    change the mechanism. A failure predates the task only when it fails on the base commit's own
    files. When a check fails only on files another session changed, `check slice` runs it again on a
    copy of HEAD with this slice's files and says so: that run is the record.

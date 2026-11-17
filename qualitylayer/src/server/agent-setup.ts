@@ -9,6 +9,7 @@ import { repairAgent } from "../core/install/install.ts"
 import { integrationHealth } from "../core/install/integration.ts"
 import { readTools } from "../core/tools-status.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
+import { readAgentSetup } from "./agent-setup-command.ts"
 
 /** The longest the sign-in route waits; each command has 10 s, so this is a net, not the usual wait. */
 export const SIGN_IN_WAIT_MS = 45_000
@@ -17,6 +18,7 @@ const refusal = (what: string) =>
   new Response(`Only the App and browsers it opened may ${what}.`, { status: 403 })
 
 async function readRoute(ctx: Ctx, path: string): Promise<Result<unknown> | null> {
+  if (path === "/api/agents/setup") return ok(await readAgentSetup(ctx))
   if (path === "/api/agents") return ok({ agents: await readAgentHealth(ctx) })
   if (path === "/api/tools") return ok({ tools: await readTools(ctx) })
   if (path === "/api/agents/sign-in") {
@@ -45,10 +47,13 @@ export async function agentSetupRoute(
   readBody: () => Promise<Record<string, unknown>>,
 ): Promise<Result<unknown> | Response | null> {
   if (request.method !== "POST") return request.method === "GET" ? readRoute(ctx, path) : null
-  if (path === "/api/agents/check")
-    return paired()
-      ? ok({ agents: await checkAgentHealth(ctx) })
-      : refusal("check installed agents")
+  if (path === "/api/agents/check") {
+    if (!paired()) return refusal("check installed agents")
+    const agent = (await readBody()).agent
+    if (agent !== undefined && !isNativeAgent(agent))
+      return err({ code: "bad_args", message: "Unknown native agent" })
+    return ok({ agents: await checkAgentHealth(ctx, agent === undefined ? undefined : [agent]) })
+  }
   if (path === "/api/tools/check")
     return paired() ? ok({ tools: await readTools(ctx, true) }) : refusal("check git and gh")
   if (path === "/api/agents/repair")

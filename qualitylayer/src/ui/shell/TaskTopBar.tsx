@@ -296,7 +296,7 @@ export function TaskActions({
                 </button>
                 <button
                   type="button"
-                  className="q-btn"
+                  className="q-btn q-delete-confirm"
                   disabled={busy}
                   onClick={() =>
                     void run(async () => {
@@ -307,7 +307,7 @@ export function TaskActions({
                     })
                   }
                 >
-                  Delete for good
+                  Delete
                 </button>
               </div>
             </>

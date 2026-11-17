@@ -1,7 +1,6 @@
 import { CopyIcon, FolderIcon, HammerIcon, PlayIcon } from "lucide-react"
 import { useRef, useState } from "react"
 import { type Config, DEFAULT_CONFIG } from "../../core/config-values.ts"
-import { startDefaults } from "../../core/handoff/start-values.ts"
 import { agentIdOf } from "../../core/interaction-shell/status.ts"
 import { agentName } from "../../core/live/liveness.ts"
 import { taskLaunchPrompt } from "../../core/run/launch-spec.ts"
@@ -21,14 +20,11 @@ import {
 import { AgentTabLinks, type AgentTabTerminal, OutsideDialog } from "./AgentTab.tsx"
 import { taskApprovalReady } from "./approval-ready.ts"
 import { ExistingPlanContext } from "./ExistingPlanContext.tsx"
+import { taskAgentDefaults, taskAgentRequest, taskPlanningLaunch } from "./task-launch.ts"
 import "./task-agent-launch.css"
 
-function planningLaunch(task: Pick<TaskDetail, "stage" | "gate">): boolean {
-  return task.stage === "plan" && task.gate?.decision !== "approved"
-}
-
 export function taskLaunchKey(task: Pick<TaskDetail, "id" | "stage" | "gate">): string {
-  return `${task.id}:${planningLaunch(task) ? "planning" : "build"}`
+  return `${task.id}:${taskPlanningLaunch(task) ? "planning" : "build"}`
 }
 
 function checkoutContext(path: string) {
@@ -79,22 +75,9 @@ export function TaskAgentLaunch({
   const runs = useOptionalRuns()
   const saved = config ?? DEFAULT_CONFIG
   const agent = value?.agent ?? preferredLaunchAgent(installed)
-  const planning = planningLaunch(task)
+  const planning = taskPlanningLaunch(task)
   const own = agent === "other" ? null : agent
-  const defaultsFor = (next: AgentLaunchValue["agent"]) => ({
-    model:
-      next === "other"
-        ? ""
-        : planning
-          ? saved.planning.defaults[next].model
-          : startDefaults(saved, next, task.flow?.light === true, next).model,
-    effort:
-      next === "other"
-        ? ("high" as const)
-        : planning
-          ? saved.planning.defaults[next].effort
-          : saved.implement.defaults[next].effort,
-  })
+  const defaultsFor = (next: AgentLaunchValue["agent"]) => taskAgentDefaults(task, saved, next)
   const choice: AgentLaunchValue = {
     ...(value?.agent === agent
       ? value
@@ -129,11 +112,6 @@ export function TaskAgentLaunch({
   const folder = task.checkout ? checkoutContext(task.checkout) : null
   const ready =
     config !== null && installed != null && launchAgentAvailable(agent, installed) && !ended
-  const purpose = {
-    kind: "task" as const,
-    task: task.id,
-    ...(planning ? { phase: "planning" as const } : {}),
-  }
   const command = taskLaunchPrompt(
     agent,
     task.id,
@@ -142,18 +120,7 @@ export function TaskAgentLaunch({
   )
   const start = async () => {
     if (!ready || !runs || !own || !runs.support?.canStart || busy) return
-    const request = {
-      agent: own,
-      purpose,
-      ...(task.checkout ? { cwd: task.checkout } : {}),
-      works: "checkout" as const,
-      mode: "plain" as const,
-      settings: {
-        answers: "app" as const,
-        model: choice.model,
-        effort: choice.effort,
-      },
-    }
+    const request = taskAgentRequest(task, choice)
     const { cwd: _checkout, ...choices } = request
     const key = JSON.stringify(choices)
     if (attempt.current.key !== key) attempt.current = { key, id: crypto.randomUUID() }

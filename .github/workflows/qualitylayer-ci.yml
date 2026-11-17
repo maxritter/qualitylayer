@@ -56,6 +56,28 @@ jobs:
         run: bash .github/workflows/scripts/install-git-crypt.sh
       - name: Check the encrypted paths are encrypted
         run: bash .github/scripts/check_qualitylayer_encrypted.sh
+      - name: Set up Bun for public component checks
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.4
+      - name: Check the public workflow component
+        working-directory: qualitylayer
+        run: |
+          if bun scripts/public/check-workflow.ts > /dev/null 2>&1; then
+            echo "Public workflow checks passed."
+          else
+            echo "Public workflow checks failed."
+            exit 1
+          fi
+      - name: Check the public licensing component
+        working-directory: qualitylayer
+        run: |
+          if bun scripts/public/check-licensing.ts > /dev/null 2>&1; then
+            echo "Public licensing checks passed."
+          else
+            echo "Public licensing checks failed."
+            exit 1
+          fi
   beta-smoke:
     name: Release smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -504,7 +526,7 @@ jobs:
           - shard: 5
             files: tests/server/lock.test.ts tests/windows/review-startup.test.ts tests/e2e/cockpit-diagrams.test.ts tests/core/platform.test.ts tests/core/install/mod.test.ts
           - shard: 6
-            files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts
+            files: tests/e2e/documents.test.ts tests/e2e/resource-budget.test.ts tests/e2e/server-survives.test.ts tests/windows/automation-command.test.ts
     defaults:
       run:
         shell: pwsh

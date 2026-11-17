@@ -103,6 +103,31 @@ pub fn for_navigation(url: &Url) -> Place {
     navigation_in(url, &allowed_ports())
 }
 
+fn download_in(url: &Url, ports: &[u16]) -> bool {
+    let origin = if url.scheme() == "blob" {
+        // ExportCard creates a Blob in the App, not in the opaque artifact iframe.
+        if url.query().is_some() || url.fragment().is_some() {
+            return false;
+        }
+        let Ok(origin) = Url::parse(url.path()) else {
+            return false;
+        };
+        origin
+    } else {
+        url.clone()
+    };
+    origin.scheme() == "http"
+        && origin.username().is_empty()
+        && origin.password().is_none()
+        && is_loopback(&origin)
+        && is_the_app(&origin, ports)
+}
+
+/// Downloads have their own gate; a Blob is still never an allowed window navigation.
+pub fn for_download(url: &Url) -> bool {
+    download_in(url, &allowed_ports())
+}
+
 /// A new window the page asked for (`window.open`, `target="_blank"`): the App never opens a second
 /// window, so a web link goes to the browser and anything else is refused.
 pub fn for_new_window(url: &Url) -> Place {
@@ -166,6 +191,36 @@ mod tests {
 
     fn nav(text: &str) -> Place {
         navigation_in(&url(text), PORTS)
+    }
+
+    #[test]
+    fn downloads_accept_only_trusted_app_origins_and_nonopaque_blobs() {
+        for link in [
+            "blob:http://127.0.0.1:41888/owned",
+            "blob:http://localhost:41888/owned",
+            "blob:http://[::1]:41888/owned",
+            "blob:http://127.0.0.1:41940/owned",
+        ] {
+            assert!(download_in(&url(link), PORTS), "{link}");
+            assert_eq!(navigation_in(&url(link), PORTS), Place::Refuse);
+        }
+        assert!(download_in(
+            &url("http://127.0.0.1:41888/attachment?id=owned"),
+            PORTS
+        ));
+        for link in [
+            "blob:null/opaque",
+            "blob:https://example.com/owned",
+            "blob:http://127.0.0.1:9999/owned",
+            "blob:http://user@127.0.0.1:41888/owned",
+            "blob:http://127.0.0.1.evil.test:41888/owned",
+            "blob:tauri://localhost/owned",
+            "blob:http://127.0.0.1:41888/owned?changed",
+            "data:application/pdf;base64,AA==",
+            "file:///tmp/export.pdf",
+        ] {
+            assert!(!download_in(&url(link), PORTS), "{link}");
+        }
     }
 
     #[test]

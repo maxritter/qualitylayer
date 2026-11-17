@@ -6,7 +6,7 @@ export const isPlanPath = (path: string) => path.startsWith("docs/plans/")
 
 export type DiffFile = {
   path: string
-  /** `n` is the line's number in the new file (the old file for a deletion); null for a hunk header. */
+  /** `n` is the line's number in the new file (old file for a deletion); null for diff metadata. */
   lines: { kind: "add" | "del" | "hunk" | "ctx"; text: string; n: number | null }[]
 }
 
@@ -23,6 +23,11 @@ export function parseDiff(diff: string): DiffFile[] {
       continue
     }
     if (current === null) continue
+    if (line === "") continue
+    if (line === "\\ No newline at end of file") {
+      current.lines.push({ kind: "ctx", text: line, n: null })
+      continue
+    }
     if (
       /^(index |--- |\+\+\+ |new file|deleted file|similarity|rename |old mode|new mode)/.test(line)
     )

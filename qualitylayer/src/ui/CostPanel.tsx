@@ -2,7 +2,7 @@
 // by step, and per step its time, tokens and cost, with the agents each step ran named after their
 // work and model. Dollar figures cover known list prices; tokens stay in their own column.
 
-import { ChevronDownIcon, GaugeIcon } from "lucide-react"
+import { ChevronDownIcon } from "lucide-react"
 import { type Dispatch, Fragment, type SetStateAction, useState } from "react"
 import { type CostHelper, type TaskCost, tokenWords, worthALook } from "../core/cost/labels.ts"
 import { FLOW_STEPS, type FlowStepId } from "../core/flow.ts"
@@ -232,15 +232,6 @@ export function CostTable({ cost, live }: { cost: TaskCost; live?: FlowStepId })
           />
         </span>
       </div>
-      {cost.tokenWarning ? (
-        <p
-          className="m-0 flex items-center gap-1.5 text-[12px] text-muted-foreground"
-          data-testid="cost-token-warning"
-        >
-          <GaugeIcon className="size-3.5 shrink-0" aria-hidden="true" />
-          {cost.tokenWarning.text}
-        </p>
-      ) : null}
       {cost.steps.length === 0 ? (
         <p className="m-0 text-muted-foreground">
           No transcript of this task's sessions is on this machine yet.

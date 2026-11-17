@@ -70,6 +70,7 @@ export const isAgentKind = (value: unknown): value is AgentKind =>
 export type TerminalContext =
   | { kind: "task"; task: string }
   | { kind: "artifact"; scope: "task" | "project"; id: string; file: string; revision: string }
+  | { kind: "agent-setup"; agent: NativeAgent; operation: "install" | "sign-in" }
 export type RunPurpose =
   | { kind: "task"; task: string; phase?: "planning" }
   | {
@@ -419,6 +420,12 @@ export function isRunPurpose(value: unknown): value is RunPurpose {
 export function isTerminalContext(value: unknown): value is TerminalContext {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   const v = value as Record<string, unknown>
+  if (v.kind === "agent-setup")
+    return (
+      Object.keys(v).every((key) => ["kind", "agent", "operation"].includes(key)) &&
+      isNativeAgent(v.agent) &&
+      (v.operation === "install" || v.operation === "sign-in")
+    )
   const bounded = (key: string) =>
     typeof v[key] === "string" &&
     (v[key] as string).length > 0 &&

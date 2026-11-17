@@ -1,0 +1,148 @@
+.q-machine-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 560px);
+  justify-content: center;
+  align-items: start;
+  gap: 16px;
+  width: 100%;
+  max-width: 1120px;
+}
+.q-machine-layout > .q-onb-card {
+  width: 100%;
+  max-width: none;
+}
+.q-machine-layout h1 {
+  overflow-wrap: anywhere;
+}
+.q-machine-layout:has(.q-machine-terminal) {
+  grid-template-columns: minmax(0, 540px) minmax(0, 460px);
+}
+.q-machine-terminal-slot:empty {
+  display: none;
+}
+.q-machine-repositories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.q-machine-repositories .q-btn {
+  max-width: 100%;
+  font-size: 12px;
+}
+.q-machine-agent-list {
+  display: grid;
+  gap: 2px;
+}
+.q-machine-agent {
+  display: grid;
+  grid-template-columns: 18px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  font-size: 13px;
+}
+.q-machine-agent > b {
+  font-weight: 500;
+}
+.q-machine-agent-state {
+  justify-self: end;
+  color: var(--ql-text-muted);
+  font-size: 12px;
+}
+.q-machine-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.q-machine-agent-detail {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--ql-text-muted);
+}
+.q-machine-agent-detail p {
+  overflow-wrap: anywhere;
+}
+.q-machine-more > summary {
+  cursor: pointer;
+  padding: 7px 0;
+  color: var(--ql-text-muted);
+  font-size: 12px;
+}
+.q-machine-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 390px;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--ql-border);
+  border-radius: 12px;
+  background: var(--ql-bg-sunken);
+}
+.q-machine-terminal > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 4px 7px 4px 12px;
+  border-bottom: 1px solid var(--ql-border);
+  font-size: 12px;
+}
+.q-machine-terminal > header > b {
+  min-width: 0;
+  max-width: 35%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.q-machine-terminal > header > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ql-text-muted);
+}
+.q-machine-repositories .q-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-machine-terminal > header > button {
+  margin-left: auto;
+  flex: none;
+}
+.q-machine-terminal-view {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.q-machine-terminal > p,
+.q-machine-terminal > footer {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.q-machine-terminal > footer {
+  border-top: 1px solid var(--ql-border);
+}
+@media (max-width: 1100px) {
+  .q-machine-layout:has(.q-machine-terminal) {
+    grid-template-columns: minmax(0, 560px);
+  }
+}
+@media (max-width: 600px) {
+  .q-machine-agent {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+  }
+  .q-machine-agent-state {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+  .q-machine-agent-actions {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+  .q-machine-terminal {
+    height: 340px;
+  }
+}

@@ -78,7 +78,7 @@ curl -fsSL https://qualitylayer.dev/install.sh | bash      # macOS, Linux, WSL
 irm https://qualitylayer.dev/install.ps1 | iex             # Windows PowerShell
 ```
 
-The App updates itself; without it, run `qualitylayer update`. To work on a Linux or macOS machine you reach over ssh, add it under **Settings › Machines**: the App installs QualityLayer there and shows its tasks. [Installation guide](https://qualitylayer.dev/docs/install).
+The App updates itself; without it, run `qualitylayer update`. To work on a Linux or macOS machine you reach over ssh, add it under **Settings › Machines**: the App installs QualityLayer there and lets you set up its agents and projects. [Installation guide](https://qualitylayer.dev/docs/install).
 
 <details>
 <summary><b>Uninstalling</b></summary>
@@ -182,9 +182,9 @@ Your project's checks, [code health](https://qualitylayer.dev/docs/reference/cod
 | --- | --- |
 | **Chat or a planned task** | Talk directly with your agent or follow the workflow. See agent activity and get notified when one needs you. |
 | **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and send quick feedback on marked text, code or artifact spots. |
-| **Artifacts** | Try mockups, diagrams and clickable pages before any code exists. Keep reusable ones in your repository. [Artifacts guide](https://qualitylayer.dev/docs/artifacts). |
+| **Artifacts** | Try clickable designs, keep them in your repository, and export designs, Plans and Reviews for teammates. [Artifacts guide](https://qualitylayer.dev/docs/artifacts). |
 | **Checks and code review** | Read the evidence and file diffs, and ask your agent about any line. |
-| **Agent controls and usage** | Choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
+| **Agent controls and usage** | Switch agents, choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
 | **Local memory** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), with optional project Git export and explicit repository import. |
 
 QualityLayer keeps tasks, Chats, artifacts and memories on machines you control. Your coding agent uses its own provider. [Files and privacy](https://qualitylayer.dev/docs/reference/files#privacy).

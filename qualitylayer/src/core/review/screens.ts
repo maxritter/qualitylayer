@@ -25,8 +25,9 @@ import {
   SCREEN_REFERENCE_DOCS_KEPT,
 } from "../home-caps.ts"
 import { ASSETS_DIR, currentPlanAsset } from "../plan-assets.ts"
+import { type CarriedStep, recheckOf, roundAssignment } from "../recheck.ts"
 import type { Task } from "../task/store.ts"
-import { acceptanceVerdicts, passedRun } from "../verdicts.ts"
+import { acceptanceVerdicts, passedRun, readVerdicts, type VerdictEntry } from "../verdicts.ts"
 import { namedPlanFences } from "./mockup-shots.ts"
 import {
   type AcceptanceAsRun,
@@ -38,9 +39,11 @@ import {
   type EvidenceRow,
   type EvidenceRun,
   type EvidenceSource,
+  isEvidenceMode,
   isEvidenceRow,
   isOutputFile,
   isPictureFile,
+  isRunId,
   isScreenRow,
   type ScreenOutcome,
   type ScreenRow,
@@ -588,6 +591,98 @@ const citeWords = (kind: string, subject: string): string =>
               ? "Review"
               : subject
 
+type StandingProof = {
+  verdict: string
+  evidence: AcceptanceRow["evidence"]
+  run?: string
+  mode?: EvidenceMode
+}
+
+const outputKind = (file: string): EvidenceKind =>
+  /\.(png|jpe?g|webp|gif)$/i.test(file) ? "picture" : "output"
+
+function recordedSource(
+  step: CarriedStep,
+  entry: VerdictEntry | undefined,
+  byFile: ReadonlyMap<string, EvidenceRow>,
+): { run: string | undefined; mode: EvidenceMode | undefined } {
+  if (
+    entry?.verdict !== "pass" ||
+    entry.evidence === undefined ||
+    !step.evidence.includes(entry.evidence)
+  )
+    return { run: undefined, mode: undefined }
+  const primary = byFile.get(entry.evidence)
+  return {
+    run: primary?.run ?? (isRunId(entry.run) ? entry.run : undefined),
+    mode: primary?.mode ?? (isEvidenceMode(entry.mode) ? entry.mode : undefined),
+  }
+}
+
+function inheritedProof(
+  step: CarriedStep,
+  entry: VerdictEntry | undefined,
+  byFile: ReadonlyMap<string, EvidenceRow>,
+): StandingProof {
+  const cited = step.evidence.flatMap((file) => {
+    const row = byFile.get(file)
+    return row === undefined ? [] : [row]
+  })
+  const recorded = recordedSource(step, entry, byFile)
+  const run =
+    recorded.run ?? (new Set(cited.map((row) => row.run)).size === 1 ? cited[0]?.run : undefined)
+  const mode =
+    recorded.mode ?? (new Set(cited.map((row) => row.mode)).size === 1 ? cited[0]?.mode : undefined)
+  return {
+    verdict: step.verdict.toLowerCase(),
+    evidence: step.evidence.map((file) => ({
+      file,
+      kind: byFile.get(file)?.kind ?? outputKind(file),
+    })),
+    ...(run === undefined ? {} : { run }),
+    ...(mode === undefined ? {} : { mode }),
+  }
+}
+
+/** Only the current round's authorized carry supplies an older step's proof. */
+async function standingProof(
+  ctx: Ctx,
+  task: Task,
+  runs: EvidenceRun[],
+  record: Awaited<ReturnType<typeof readBuildRecord>>,
+): Promise<{ carried: Map<string, StandingProof>; current: Map<string, VerdictEntry> | null }> {
+  const carried = new Map<string, StandingProof>()
+  const latest = lastIteration(record)
+  const assignment = await roundAssignment(ctx, task.runtimeDir, latest?.assignment)
+  if (latest === null || assignment === null) return { carried, current: null }
+  const current = new Map(
+    [...(await readVerdicts(ctx, task, assignment.id))]
+      .filter(([id]) => id.startsWith("acceptance:"))
+      .map(([id, entry]) => [id.slice("acceptance:".length), entry] as const),
+  )
+  const recheck = await recheckOf(ctx, task.runtimeDir, assignment, record.verification, (file) =>
+    ctx.fs.exists(join(task.dir, file)),
+  )
+  const own = new Set(
+    latest.verdicts.filter((v) => v.kind === "acceptance").map((v) => v.subject.toUpperCase()),
+  )
+  const byFile = new Map(
+    runs.flatMap((run) =>
+      run.records.flatMap((row) => (row.file === null ? [] : [[row.file, row] as const])),
+    ),
+  )
+  const originals = new Map<string, Map<string, VerdictEntry>>()
+  for (const [id, step] of recheck?.carried ?? []) {
+    if (own.has(id) || current.has(id)) continue
+    const origin = record.verification.find((round) => round.n === step.iteration)?.assignment
+    if (origin !== undefined && !originals.has(origin))
+      originals.set(origin, await readVerdicts(ctx, task, origin))
+    const entry = origin === undefined ? undefined : originals.get(origin)?.get(`acceptance:${id}`)
+    carried.set(id, inheritedProof(step, entry, byFile))
+  }
+  return { carried, current }
+}
+
 /**
  * The pictures and outputs the verdicts cite, by run, the latest run first: what the Verify viewer
  * steps through. A file no verdict names is not listed, and a run none of whose files is cited is
@@ -598,6 +693,7 @@ export async function citedEvidence(ctx: Ctx, task: Task): Promise<VerificationR
   if (runs.length === 0) return []
   const record = await readBuildRecord(ctx, task)
   const verdicts = lastIteration(record)?.verdicts ?? []
+  const standing = await standingProof(ctx, task, runs, record)
   // What each file proves, in the words of the verdict that cites it: "Done means 3", "Scenario 5".
   const cites = new Map<string, string[]>()
   for (const verdict of verdicts) {
@@ -605,6 +701,9 @@ export async function citedEvidence(ctx: Ctx, task: Task): Promise<VerificationR
     for (const file of evidenceIn(verdict.text))
       cites.set(file, [...new Set([...(cites.get(file) ?? []), what])])
   }
+  for (const [step, proof] of standing.carried)
+    for (const { file } of proof.evidence)
+      cites.set(file, [...new Set([...(cites.get(file) ?? []), citeWords("acceptance", step)])])
   return runs.flatMap((run) => {
     const files = run.records
       .filter((row) => row.file !== null && cites.has(row.file))
@@ -621,29 +720,25 @@ export async function citedEvidence(ctx: Ctx, task: Task): Promise<VerificationR
   })
 }
 
-/**
- * The Plan's steps as rows, each with the files `evidenceOf` gives it, grouped under the Done means
- * point each proves (a step that proves two shows under both), each step's action and what passes
- * kept apart.
- */
-export function acceptanceRows(
+type StepProjection = Pick<AcceptanceRow, "evidence" | "mode" | "run"> & { step: ProofStep }
+
+function projectAcceptance(
   list: ProofList,
-  evidenceOf: (step: ProofStep) => AcceptanceRow["evidence"],
-  modeOf: (step: ProofStep) => EvidenceMode | undefined = () => undefined,
+  resolved: StepProjection[],
 ): { steps: AcceptanceRow[]; points?: AcceptancePointRow[] } {
-  const steps = list.steps.map((step): AcceptanceRow => {
-    const mode = modeOf(step)
-    return {
+  const steps = resolved.map(
+    ({ step, evidence, mode, run }): AcceptanceRow => ({
       id: step.id,
       n: step.n,
       text: step.text,
       action: step.action,
       expected: step.expected,
       ...(step.before !== "" ? { before: step.before } : {}),
-      evidence: evidenceOf(step),
+      evidence,
       ...(mode !== undefined ? { mode } : {}),
-    }
-  })
+      ...(run !== undefined ? { run } : {}),
+    }),
+  )
   return {
     steps,
     points: list.points.map((point) => ({
@@ -658,6 +753,83 @@ export function acceptanceRows(
 }
 
 /**
+ * The Plan's steps as rows, each with the files `evidenceOf` gives it, grouped under the Done means
+ * point each proves (a step that proves two shows under both), each step's action and what passes
+ * kept apart.
+ */
+export function acceptanceRows(
+  list: ProofList,
+  evidenceOf: (step: ProofStep) => AcceptanceRow["evidence"],
+  modeOf: (step: ProofStep) => EvidenceMode | undefined = () => undefined,
+  runOf: (step: ProofStep) => string | undefined = () => undefined,
+): { steps: AcceptanceRow[]; points?: AcceptancePointRow[] } {
+  const resolved = list.steps.map((step) => {
+    const mode = modeOf(step)
+    const run = runOf(step)
+    return { step, evidence: evidenceOf(step), mode, run }
+  })
+  return projectAcceptance(list, resolved)
+}
+
+function recordedAcceptance(
+  list: ProofList,
+  run: EvidenceRun | undefined,
+  carried: ReadonlyMap<string, StandingProof>,
+) {
+  const resolved = list.steps.map((step): StepProjection => {
+    const proof = carried.get(step.id)
+    if (proof !== undefined) return { step, ...proof }
+    const records = (run?.records ?? []).filter((row) => row.step === step.id)
+    return {
+      step,
+      evidence: records
+        .filter((row) => row.file !== null)
+        .map((row) => ({ file: row.file as string, kind: row.kind })),
+      mode: records[0]?.mode,
+    }
+  })
+  return projectAcceptance(list, resolved)
+}
+
+function judgedAcceptance(
+  list: ProofList,
+  carried: ReadonlyMap<string, StandingProof>,
+  verdicts: ReadonlyMap<string, VerdictEntry>,
+): AcceptanceAsRun | null {
+  const resolved = list.steps.map((step) => {
+    const inherited = carried.get(step.id)
+    const entry = verdicts.get(step.id)
+    const proof =
+      inherited ??
+      (entry === undefined
+        ? undefined
+        : {
+            ...entry,
+            evidence:
+              entry.evidence === undefined
+                ? []
+                : [{ file: entry.evidence, kind: outputKind(entry.evidence) }],
+          })
+    return { step, proof, inherited: inherited !== undefined }
+  })
+  if (!resolved.every(({ proof }) => proof?.verdict === "pass")) return null
+  return {
+    run: resolved.find(({ proof }) => proof?.run !== undefined)?.proof?.run ?? null,
+    mode: resolved.find(({ proof }) => proof?.mode !== undefined)?.proof?.mode ?? null,
+    judged: true,
+    ...projectAcceptance(
+      list,
+      resolved.map(({ step, proof, inherited }) => ({
+        step,
+        evidence: proof?.evidence ?? [],
+        mode: proof?.mode,
+        run: inherited ? proof?.run : undefined,
+      })),
+    ),
+  }
+}
+
+/**
  * The Plan's acceptance test as it ran: each step as the Plan wrote it, with the pictures and
  * outputs the run that passed recorded for it, and how that run happened. With no run that passed,
  * the steps stand without evidence and the run and mode are null.
@@ -668,17 +840,7 @@ export async function acceptanceAsRun(ctx: Ctx, task: Task): Promise<AcceptanceA
   const runs = await evidenceByRun(ctx, task)
   const passed = runs.find((run) => run.passed)
   const list = proofList(plan)
-  const steps = list.steps
-  const rowsOf = (run: EvidenceRun | undefined) =>
-    acceptanceRows(
-      list,
-      (step) =>
-        (run?.records ?? [])
-          .filter((row) => row.step === step.id && row.file !== null)
-          .map((row) => ({ file: row.file as string, kind: row.kind })),
-      // Each step as its own record says it ran (an evidence run keeps one mode; verdicts may not).
-      (step) => run?.records.find((row) => row.step === step.id)?.mode,
-    )
+  const standing = await standingProof(ctx, task, runs, await readBuildRecord(ctx, task))
   // A bug's test is shown before the fix and after it: the baseline run is the earliest run that is not
   // the one that passed and recorded a file for a step.
   const baseline =
@@ -687,34 +849,23 @@ export async function acceptanceAsRun(ctx: Ctx, task: Task): Promise<AcceptanceA
       : undefined
   // No evidence run passed, but the judge passed every step with its evidence cited: the acceptance
   // test stands as the verdicts recorded it, with their files and the run and mode they name.
-  if (passed === undefined && steps.length > 0) {
-    const verdicts = await acceptanceVerdicts(ctx, task)
-    const all = steps.map((step) => verdicts.get(step.id))
-    if (all.every((v) => v?.verdict === "pass")) {
-      const first = all.find((v) => v?.run !== undefined)
-      return {
-        run: first?.run ?? null,
-        mode: all.find((v) => v?.mode !== undefined)?.mode ?? null,
-        judged: true,
-        ...acceptanceRows(
-          list,
-          (step) => {
-            const file = verdicts.get(step.id)?.evidence
-            return file === undefined
-              ? []
-              : [{ file, kind: /\.(png|jpe?g|webp|gif)$/i.test(file) ? "picture" : "output" }]
-          },
-          (step) => verdicts.get(step.id)?.mode,
-        ),
-      }
-    }
+  if (passed === undefined && list.steps.length > 0) {
+    const verdicts = standing.current ?? (await acceptanceVerdicts(ctx, task))
+    const judged = judgedAcceptance(list, standing.carried, verdicts)
+    if (judged !== null) return judged
   }
   return {
     run: passed?.run ?? null,
     mode: passed?.mode ?? null,
-    ...rowsOf(passed),
+    ...recordedAcceptance(list, passed, standing.carried),
     ...(baseline !== undefined
-      ? { before: { run: baseline.run, mode: baseline.mode, steps: rowsOf(baseline).steps } }
+      ? {
+          before: {
+            run: baseline.run,
+            mode: baseline.mode,
+            steps: recordedAcceptance(list, baseline, new Map()).steps,
+          },
+        }
       : {}),
   }
 }

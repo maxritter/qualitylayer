@@ -17,7 +17,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
  * *Changed from the Plan*: what left the approved Plan, in one line when nothing did. The agent reads it and
  * names where to look first under *Code*.
  */
-export function riskMarkdown(risk: RiskAtMerge): string {
+export function riskMarkdown(risk: RiskAtMerge, pending = false): string {
+  const dependencies = risk.dependencies.filter((path) => risk.outside.includes(path))
   const names = (files: readonly string[]) =>
     `${files
       .slice(0, 3)
@@ -30,18 +31,17 @@ export function riskMarkdown(risk: RiskAtMerge): string {
           `- ${count(risk.outside.length, "file", "files")} outside the task cards: ${names(risk.outside)}`,
         ]
       : []),
-    ...(risk.dependencies.length > 0
+    ...(dependencies.length > 0
       ? [
-          `- ${count(risk.dependencies.length, "dependency file", "dependency files")} changed: ${names(risk.dependencies)}`,
+          `- ${count(dependencies.length, "dependency file", "dependency files")} changed: ${names(dependencies)}`,
         ]
       : []),
     ...(risk.amendments > 0
       ? [`- ${count(risk.amendments, "amendment", "amendments")} to the approved Plan`]
       : []),
   ]
-  return lines.length === 0
-    ? "As planned: built inside the task cards, no dependency file changed, no amendment."
-    : lines.join("\n")
+  if (lines.length > 0) return lines.join("\n")
+  return pending ? "" : "As planned."
 }
 
 /**
@@ -146,7 +146,7 @@ export function acceptanceMarkdown(acceptance: AcceptanceAsRun): string {
       : `Passed in ${acceptance.mode === "scripted" ? "a scripted run" : "a real agent session"}${otherWay(acceptance)} (run ${acceptance.run}).`
   const cited = (step: AcceptanceAsRun["steps"][number]) =>
     step.evidence.length > 0
-      ? ` · ${step.evidence.map((item) => `\`${item.file}\``).join(", ")}`
+      ? ` · ${step.evidence.map((item) => `\`${item.file}\``).join(", ")}${step.run !== undefined && step.run !== acceptance.run ? ` · run ${step.run}` : ""}`
       : ""
   // A Plan that lists its test by Done means point: a heading per point with its steps under it,
   // the step ids as the Plan has them (a step that proves two points is listed under both).
@@ -170,7 +170,12 @@ export function acceptanceMarkdown(acceptance: AcceptanceAsRun): string {
 export const reviewSections: SectionWriters = {
   /** What left the approved Plan. */
   risk: (state) =>
-    state.walkthrough?.risk !== undefined ? riskMarkdown(state.walkthrough.risk) : null,
+    state.walkthrough?.risk !== undefined
+      ? riskMarkdown(
+          state.walkthrough.risk,
+          (state.walkthrough.changeScope?.pending.length ?? 0) > 0,
+        )
+      : null,
   /** The points that pass, the task's own commits and the security counts. */
   code: (state) =>
     state.walkthrough === undefined

@@ -951,6 +951,11 @@ function TaskViewContent({
   // What a step page can do: the actions this page already has, by the ids the page knows.
   const forAgent = forAgentOf(task)
   const stepLive: StepLive = {
+    exportFile: api.exportFile,
+    exportContext: {
+      title: task.title,
+      recordedDecision: `Recorded ${task.gate?.target || "workflow"} decision: ${task.gate?.decision || "not recorded"}`,
+    },
     ...(approvedUnstarted && (waitingHere !== null || (outlineHere && planner !== null))
       ? {
           buildHere: {
@@ -1775,8 +1780,12 @@ function TaskViewContent({
                   <Button variant="outline" onClick={() => setConfirmDelete(false)}>
                     Cancel
                   </Button>
-                  <Button variant="destructive" onClick={() => void remove()}>
-                    Delete for good
+                  <Button
+                    variant="destructive"
+                    className="q-delete-confirm"
+                    onClick={() => void remove()}
+                  >
+                    Delete
                   </Button>
                 </span>
               </DialogFooter>

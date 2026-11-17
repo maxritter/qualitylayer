@@ -7,9 +7,16 @@ import {
   accountShown,
 } from "../../core/agents/health-types.ts"
 import { NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
+import { type AgentSetupState, agentSetupCapabilities } from "../../core/agents/setup.ts"
 import type { RepairReport } from "../../core/install/install.ts"
 import type { IntegrationHealth, IntegrationItem } from "../../core/install/integration.ts"
 import type { Api } from "../api.ts"
+
+export const demoAgentSetup = (): AgentSetupState => ({
+  machine: "Example Mac",
+  platform: "darwin",
+  agents: agentSetupCapabilities("darwin", () => true),
+})
 
 /** What each agent's own status command reports, in the shapes the real check stores: Antigravity names no plan. */
 const DEMO_ACCOUNTS: Record<NativeAgent, Pick<AgentAccount, "state" | "plan" | "providers">> = {

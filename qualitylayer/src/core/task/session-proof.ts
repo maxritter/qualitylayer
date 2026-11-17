@@ -3,12 +3,7 @@ import { createHash } from "node:crypto"
 import { dirname, isAbsolute, join, relative, sep } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import type { Ctx } from "../../ctx.ts"
-import {
-  isCompressedRollout,
-  isRolloutOf,
-  oncePerSession,
-  readCompressed,
-} from "../agents/codex-rollout.ts"
+import { isRolloutOf, oncePerSession } from "../agents/codex-rollout.ts"
 import { cursorUserMessage } from "../agents/cursor-messages.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import {
@@ -21,6 +16,7 @@ import {
   piSessionDirectory,
 } from "../agents/storage.ts"
 import { canonicalPath, homeVariable } from "../platform.ts"
+import { MAX_SESSION_RECORD_BYTES as MAX_BYTES, readSessionRecord } from "./session-proof-record.ts"
 
 export type SessionAnswer = { question: string; answer: string; labels?: string[]; notes?: string }
 export type SessionProof = {
@@ -35,8 +31,6 @@ export type SessionProof = {
 export type SessionRequest = { agent: NativeAgent; session: string; cwd?: string }
 export type UserMessageProof = SessionRequest & { recordedAt: number; prompt: string }
 
-const MAX_BYTES = 8 * 1024 * 1024
-const HEADER_BYTES = 1024 * 1024
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -306,58 +300,7 @@ async function transcript(ctx: Ctx, request: SessionRequest): Promise<string | n
       }
     }
   }
-  if (!file) return null
-  if (isCompressedRollout(file)) {
-    const bytes = await readCompressed(file)
-    if (bytes === null) return null
-    return framedRecord(agent, bytes.length, async (offset, length) =>
-      bytes.subarray(offset, offset + length).toString("utf8"),
-    )
-  }
-  const info = await ctx.fs.stat?.(file)
-  if (!info) return null
-  return framedRecord(
-    agent,
-    info.size,
-    ctx.fs.readRange
-      ? async (offset, length) => (await ctx.fs.readRange?.(file, offset, length)) ?? ""
-      : undefined,
-    () => ctx.fs.readFile(file),
-  )
-}
-
-/** A record within `MAX_BYTES`: whole, or its identity rows and its last bytes. */
-async function framedRecord(
-  agent: string,
-  size: number,
-  range: ((offset: number, length: number) => Promise<string>) | undefined,
-  whole?: () => Promise<string>,
-): Promise<string | null> {
-  if (size > MAX_BYTES) {
-    if (!range) return null
-    const head = await range(0, HEADER_BYTES)
-    const tail = await range(size - MAX_BYTES + HEADER_BYTES, MAX_BYTES - HEADER_BYTES)
-    // Only complete rows are evidence; the window edges can cut through JSON or UTF-8.
-    const headerRows = head
-      .slice(0, head.lastIndexOf("\n") + 1)
-      .trim()
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => object(JSON.parse(line)))
-    if (!headerRows.length) return null
-    const identity =
-      agent === "claude-code"
-        ? headerRows.map((row) => ({ sessionId: row?.sessionId }))
-        : headerRows.filter(
-            (row) =>
-              row?.type === "session" ||
-              row?.type === "session_meta" ||
-              row?.type === "session.start",
-          )
-    return `${identity.map((row) => JSON.stringify(row)).join("\n")}\n${JSON.stringify({ type: "qualitylayer_omitted_prefix" })}\n${tail.slice(tail.indexOf("\n") + 1, tail.lastIndexOf("\n") + 1)}`
-  }
-  const text = range ? await range(0, MAX_BYTES + 1) : ((await whole?.()) ?? "")
-  return Buffer.byteLength(text) > MAX_BYTES ? null : text
+  return file ? readSessionRecord(ctx, agent, file) : null
 }
 
 type Row = Record<string, unknown>

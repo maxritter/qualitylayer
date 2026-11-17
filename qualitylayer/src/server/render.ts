@@ -84,6 +84,11 @@ export const NO_CHROME =
   "drawing an artifact needs Chrome or Chromium on this computer, and none was found; install one, or set QUALITYLAYER_CHROME to its path"
 
 export type ShotSpec = {
+  /** File export prints the ready page instead of taking a screenshot. */
+  format?: "pdf"
+  imagePages?: boolean
+  /** Exports refuse a truncated page; ordinary thumbnails retain their height cap. */
+  refuseClipped?: boolean
   query?: string
   /** The page's width in CSS pixels; the artifact's own width when it names one, else 1280. */
   width: number
@@ -599,6 +604,40 @@ async function shootOne(
       })()`)
       spec.onRendered(html)
     }
+    if (spec.format === "pdf") {
+      if (spec.imagePages) {
+        const sized = await evaluate<boolean>(`(() => {
+          const sheets = [...document.querySelectorAll('[data-export-image-page]')];
+          const style = document.createElement('style'); let css = '';
+          for (const [index, sheet] of sheets.entries()) {
+            const box = sheet.getBoundingClientRect(), width = Math.ceil(box.width), height = Math.ceil(box.height);
+            if (width < 1 || width > 8000 || height < 1 || height > 18500) return false;
+            const name = 'exportImage' + index; sheet.style.page = name;
+            css += '@page ' + name + '{size:' + width + 'px ' + height + 'px;margin:0}';
+          }
+          style.textContent = css; document.head.append(style); return sheets.length > 0;
+        })()`)
+        if (!sized) throw new Error("The export page exceeds the PDF size limit")
+      }
+      const printed = (await send(
+        "Page.printToPDF",
+        {
+          printBackground: true,
+          preferCSSPageSize: true,
+          displayHeaderFooter: false,
+          marginTop: 0,
+          marginBottom: 0,
+          marginLeft: 0,
+          marginRight: 0,
+        },
+        sessionId,
+      )) as { data: string }
+      return Uint8Array.from(Buffer.from(printed.data, "base64"))
+    }
+    if (spec.refuseClipped && (box.h > MAX_HEIGHT || box.w > 8_000))
+      throw new Error(
+        "This page is too large for a complete image export; use a paginated document",
+      )
     const height = Math.max(
       1,
       Math.min(spec.height ?? Math.ceil(box.h), MAX_HEIGHT, Math.ceil(box.h) || 1),
@@ -819,6 +858,7 @@ export async function renderUrl(
 export async function renderArtifacts(
   chrome: string,
   jobs: { html: string; spec: ShotSpec }[],
+  budget?: { maxBytes: number; maxPixels: number; timeoutMs: number },
 ): Promise<(Uint8Array | Error)[]> {
   const profile = await mkdtemp(join(tmpdir(), "ql-artifact-chrome-"))
   let exited = false
@@ -828,12 +868,41 @@ export async function renderArtifacts(
     })
     try {
       const out: (Uint8Array | Error)[] = []
+      const deadline = Date.now() + (budget?.timeoutMs ?? Number.POSITIVE_INFINITY)
+      let totalBytes = 0,
+        totalPixels = 0
       for (const [index, job] of jobs.entries()) {
         const page = join(profile, `artifact-${index}.html`)
         await writeFile(page, withPolicy(job.html), "utf8")
         try {
-          out.push(await shootOne(browser.send, page, job.spec))
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const remaining = deadline - Date.now()
+          if (remaining <= 0) throw new Error("Export rendering timed out")
+          try {
+            const picture = await (budget
+              ? Promise.race([
+                  shootOne(browser.send, page, job.spec),
+                  new Promise<never>((_, reject) => {
+                    timer = setTimeout(
+                      () => reject(new Error("Export rendering timed out")),
+                      remaining,
+                    )
+                  }),
+                ])
+              : shootOne(browser.send, page, job.spec))
+            totalBytes += picture.byteLength
+            if (budget && job.spec.format !== "pdf" && picture.byteLength >= 24) {
+              const size = new DataView(picture.buffer, picture.byteOffset, picture.byteLength)
+              totalPixels += size.getUint32(16) * size.getUint32(20)
+            }
+            if (budget && (totalBytes > budget.maxBytes || totalPixels > budget.maxPixels))
+              throw new Error("Export rendering exceeds its size limit")
+            out.push(picture)
+          } finally {
+            clearTimeout(timer)
+          }
         } catch (cause) {
+          if (budget) throw cause
           out.push(cause instanceof Error ? cause : new Error(String(cause)))
         }
       }

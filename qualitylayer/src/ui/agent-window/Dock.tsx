@@ -40,6 +40,7 @@ import { STARTUP_PROMPT_STATUS } from "../../core/run/startup-prompt.ts"
 import { useViewportWidth } from "../hooks.ts"
 import { type ScopedTerminalReceipt, TerminalReceipt } from "../quick-ask/TerminalReceipt.tsx"
 import { useQuickAskTerminal } from "../quick-ask/terminal.ts"
+import { AgentSwitchButton, StoppedAgentSwitch } from "../run/AgentSwitch.tsx"
 import { StartupPromptCard } from "../run/StartupPromptCard.tsx"
 import {
   type RunAction,
@@ -335,6 +336,7 @@ type RunDockProps = {
   agentHeader?: ReactNode
   /** The tab's other ways to work in its session menu; `live` while the shown session runs. */
   agentMenu?: (live: boolean) => ReactNode
+  continueAgent?: { available(run: RunWindow): boolean; open(run: RunWindow): void }
   agentRunId?: string | null
   agentScopeKey?: string
   /** How windows the person has not switched are drawn: Settings, else the level. */
@@ -380,6 +382,7 @@ function DockRuns({
   agentScopeKey,
   agentHeader,
   agentMenu,
+  continueAgent,
   agentView,
   onOpenTaskFile,
   agentReadOnly = false,
@@ -396,6 +399,7 @@ function DockRuns({
   followOutside?: boolean
   agentHeader?: ReactNode
   agentMenu?: (live: boolean) => ReactNode
+  continueAgent?: { available(run: RunWindow): boolean; open(run: RunWindow): void }
   agentRunId?: string | null
   agentScopeKey?: string
   agentView?: AgentView
@@ -461,6 +465,8 @@ function DockRuns({
     ? taskRuns.find((run) => history?.task === scope && run.id === history.id)
     : undefined
   const shownRun = taskAgent ? lead : undefined
+  const continuation =
+    shownRun && !agentReadOnly && continueAgent?.available(shownRun) ? continueAgent : undefined
   const inheritedView = arrivingView(pendingView, scope, shownRun?.startedAt)
   const shownId = shownRun?.id
   useEffect(() => {
@@ -498,6 +504,16 @@ function DockRuns({
   }, [runs, key, loaded])
   return (
     <>
+      {continuation &&
+      shownRun &&
+      !historyRun &&
+      layout?.agentControls &&
+      layout.panel === "terminal"
+        ? createPortal(
+            <AgentSwitchButton onClick={() => continuation.open(shownRun)} />,
+            layout.agentControls,
+          )
+        : null}
       {runs
         .filter(
           (r) =>
@@ -542,16 +558,24 @@ function DockRuns({
         <AgentEmpty
           header={agentHeader}
           menu={agentMenu?.(false)}
-          recovering={agentReadOnly ? undefined : recovering}
+          recovering={agentReadOnly || continuation ? undefined : recovering}
           onView={
             scope && !recovering
               ? (view) => setPendingView({ scope, view, at: Date.now() })
               : undefined
           }
         >
-          {typeof agentEmpty === "function"
-            ? agentEmpty({ runs: conversations, open: showHistory })
-            : agentEmpty}
+          {recovering && continuation ? (
+            <StoppedAgentSwitch
+              run={recovering}
+              onSwitch={() => continuation.open(recovering)}
+              onHistory={() => showHistory(recovering.id)}
+            />
+          ) : typeof agentEmpty === "function" ? (
+            agentEmpty({ runs: conversations, open: showHistory })
+          ) : (
+            agentEmpty
+          )}
         </AgentEmpty>
       ) : null}
     </>

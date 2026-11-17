@@ -5,7 +5,7 @@
 // password is never an argument: in a terminal it is asked with the input hidden, and a script
 // passes it on standard input (`--password-stdin`).
 
-import { openSync, readSync, writeSync } from "node:fs"
+import { closeSync, openSync, readSync, writeSync } from "node:fs"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { ensureCockpit, type Lock } from "../../server/lock.ts"
 import { snippetOf } from "../../server/machines/containers.ts"
@@ -91,23 +91,27 @@ function prompt(question: string, hidden: boolean): string | null {
   } catch {
     return null
   }
-  writeSync(tty, question)
-  if (hidden) Bun.spawnSync(["stty", "-echo"], { stdin: tty })
-  let line = ""
-  const one = Buffer.alloc(1)
   try {
+    if (hidden) Bun.spawnSync(["stty", "-echo"], { stdin: tty })
+    writeSync(tty, question)
+    const bytes: number[] = []
+    const one = Buffer.alloc(1)
     while (readSync(tty, one, 0, 1, null) === 1) {
-      const char = one.toString("utf8")
-      if (char === "\n" || char === "\r") break
-      line += char
+      const byte = one.readUInt8(0)
+      if (byte === 10 || byte === 13) break
+      bytes.push(byte)
     }
+    return Buffer.from(bytes).toString("utf8")
   } finally {
-    if (hidden) {
-      Bun.spawnSync(["stty", "echo"], { stdin: tty })
-      writeSync(tty, "\n")
+    try {
+      if (hidden) {
+        Bun.spawnSync(["stty", "echo"], { stdin: tty })
+        writeSync(tty, "\n")
+      }
+    } finally {
+      closeSync(tty)
     }
   }
-  return line
 }
 
 const interactive = (): boolean => process.stdin.isTTY === true || process.stderr.isTTY === true

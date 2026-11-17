@@ -1,6 +1,7 @@
-// The canvas owns pages and zoom. A click on the page's surface, a drag or a text selection is a mark
-// (`onMark`): the quick field opens there. A standalone viewer portals only its toolbar and navigation
-// above the canvas/sidebar grid, so changing the chrome never replaces the iframe.
+// The canvas owns pages and zoom. Plain clicks, drags and selections use the artifact; feedback is
+// deliberate (`onMark`): the Feedback button arms one spot or area mark, and selected words offer a
+// Feedback chip; the quick field opens there. A standalone viewer portals only its toolbar and
+// navigation above the canvas/sidebar grid, so changing the chrome never replaces the iframe.
 
 import { cn } from "cn"
 import {
@@ -44,6 +45,7 @@ import {
   artifactMeta,
   folderArtifactOf,
 } from "../../core/artifact/format.ts"
+import { ArtifactExport } from "../export/ArtifactExport.tsx"
 import { agoPhrase, useRoute } from "../hooks.ts"
 import { appShortcut, CHORD, useCommandKeys } from "../kit/command-keys.ts"
 import { LoadingState } from "../kit/LoadingState.tsx"
@@ -52,6 +54,7 @@ import { TaskListToggle } from "../shell/TaskListToggle.tsx"
 import { Hint } from "../sidebar/Hint.tsx"
 import { useArtifactViewing } from "../viewing.tsx"
 import { ArtifactCanvas } from "./ArtifactCanvas.tsx"
+import { FeedbackButton, FeedbackHint, SelectionChip } from "./ArtifactFeedback.tsx"
 import { ArtifactManage, type ArtifactManager } from "./ArtifactManage.tsx"
 import {
   type ArtifactLayout,
@@ -81,7 +84,7 @@ type Props = {
   /** The page with the App's bridge in it; null while it loads. */
   html: string | null
   error?: string | null
-  /** A spot clicked, a region dragged or words selected on the page; absent when it is read-only. */
+  /** A spot or area marked with Feedback, or words marked from their chip; absent when read-only. */
   onMark?: (mark: ArtifactPageMark) => void
   /** `labelled`: a task's artifact leads its bar with the words "Back to the Plan", not only the arrow. */
   back: { label: string; onClick: () => void; labelled?: boolean }
@@ -236,6 +239,14 @@ export function ArtifactPage({
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [linkedSection, setLinkedSection] = useState<{ file: string; section: string } | null>(null)
+  // Feedback is armed for one mark; words selected on the page offer their chip.
+  const [armed, setArmed] = useState(false)
+  const [selection, setSelection] = useState<ArtifactMark | null>(null)
+  const feedbackButton = useRef<HTMLButtonElement | null>(null)
+  const disarm = useCallback((returnFocus: boolean) => {
+    setArmed(false)
+    if (returnFocus) feedbackButton.current?.focus({ preventScroll: true })
+  }, [])
 
   // An artifact that is a folder has pages: the picker switches them, and so does a link inside the artifact.
   const pages: ArtifactPageInfo[] = artifact?.pages ?? []
@@ -417,8 +428,8 @@ export function ArtifactPage({
   }
 
   // The keys read this render's state through a ref: the listener is set once.
-  const now = useRef({ fullScreen, onFullScreen, step })
-  now.current = { fullScreen, onFullScreen, step }
+  const now = useRef({ fullScreen, onFullScreen, step, armed, disarm })
+  now.current = { fullScreen, onFullScreen, step, armed, disarm }
   const key = useCallback((pressed: string) => {
     const at = now.current
     const el = canvas.current
@@ -453,7 +464,9 @@ export function ArtifactPage({
           left: pressed === "ArrowRight" ? 40 : pressed === "ArrowLeft" ? -40 : 0,
         })
     } else if (pressed === "Escape") {
-      if (at.fullScreen) at.onFullScreen(false)
+      // Escape leaves armed Feedback first, and only then full screen.
+      if (at.armed) at.disarm(true)
+      else if (at.fullScreen) at.onFullScreen(false)
     } else if (pressed === "f" || pressed === "F") {
       at.onFullScreen(!at.fullScreen)
     } else if (pressed === "+" || pressed === "=") at.step(1)
@@ -527,6 +540,13 @@ export function ArtifactPage({
             ...(paged && !onEntry && current !== undefined ? { page: current.page } : {}),
           })
       : undefined
+  const marks = mark !== undefined
+  // A new page, a reload or marks no longer offered end armed Feedback and drop a stale chip.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these changes are what reset it
+  useEffect(() => {
+    setArmed(false)
+    setSelection(null)
+  }, [shownFile, reload, marks])
 
   // Source and History work on the file being shown: a page of a folder artifact is a file of its own.
   const pageManager: ArtifactManager | undefined =
@@ -849,6 +869,28 @@ export function ArtifactPage({
               {/* One order on every header: agent, labelled actions, More, Archive and Delete. */}
               {rail === undefined ? agent : null}
               {share ? <span className="dg-share-slot">{share}</span> : null}
+              <span className="dg-mark-tools">
+                {mark !== undefined ? (
+                  <FeedbackButton
+                    ref={feedbackButton}
+                    armed={armed}
+                    labelled={!narrow}
+                    onToggle={() => {
+                      setSelection(null)
+                      setArmed((was) => !was)
+                    }}
+                  />
+                ) : null}
+                <ArtifactExport
+                  api={manager?.api}
+                  artifact={artifact}
+                  title={title}
+                  html={pageHtml}
+                  pages={pages}
+                  currentFile={shownFile}
+                  loadPage={loadPage}
+                />
+              </span>
               {actions && header !== undefined && !fullScreen ? (
                 actions(toolItems)
               ) : (
@@ -915,10 +957,21 @@ export function ArtifactPage({
               {sectionProblem}
             </p>
           ) : null}
-          <div className="dm-workspace flex min-h-0 flex-1">
+          <div className={cn("dm-workspace flex min-h-0 flex-1", armed && "dg-workspace-armed")}>
+            {armed && mark !== undefined ? <FeedbackHint onCancel={() => disarm(true)} /> : null}
+            {selection !== null && mark !== undefined && !armed ? (
+              <SelectionChip
+                selection={selection}
+                onMark={(words) => {
+                  setSelection(null)
+                  mark(words)
+                }}
+              />
+            ) : null}
             <section
               ref={canvas}
-              className="dg-cvs min-w-0 flex-1"
+              className={cn("dg-cvs min-w-0 flex-1", armed && "armed")}
+              onScroll={() => setSelection(null)}
               data-testid="artifact-canvas"
               data-scale={scale}
               onWheelCapture={() => {
@@ -975,7 +1028,16 @@ export function ArtifactPage({
                     height={height}
                     scale={scale}
                     theme={theme}
-                    {...(mark ? { onMark: mark } : {})}
+                    {...(mark
+                      ? {
+                          armed,
+                          onMark: (said: ArtifactMark) => {
+                            disarm(false)
+                            mark(said)
+                          },
+                          onSelection: setSelection,
+                        }
+                      : {})}
                     onLayout={setLayout}
                     onRuntimeError={setRuntimeError}
                     onPage={(name, targetSection) => {

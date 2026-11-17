@@ -5,6 +5,8 @@
 
 import { useMemo, useRef } from "react"
 import type { DocSections, TaskDetail } from "../api.ts"
+import { ExportCard } from "../export/ExportCard.tsx"
+import { workflowExport } from "../export/workflow-export.ts"
 import { CopyMenu } from "../reader/CopyMenu.tsx"
 import { agentsPathOf, copyPictureBody, stepCopy } from "../reader/copy-out.ts"
 import {
@@ -104,6 +106,27 @@ export function StepTools({
             }
           : {})}
       />
+      {(doc.step === "plan" || doc.step === "verify") && live !== undefined ? (
+        <ExportCard
+          kind={doc.step === "plan" ? "plan" : "review"}
+          title={`${live.exportContext?.title ?? task ?? "Task"} · ${doc.step === "plan" ? "Plan" : "Review"}`}
+          disabled={!plain.trim()}
+          write={live.exportFile}
+          prepare={async (format, _scope, signal) => {
+            if (!live.exportFile) throw new Error("Export is available in the App.")
+            return workflowExport({
+              body: plain,
+              title: `${live.exportContext?.title ?? task ?? "Task"} · ${doc.step === "plan" ? "Plan" : "Review"}`,
+              format,
+              signal,
+              state: live.exportContext?.recordedDecision,
+              write: live.exportFile,
+              loadArtifact: live.loadArtifact,
+              loadEvidence: live.loadEvidence,
+            })
+          }}
+        />
+      ) : null}
       {entries.length > 0 ? (
         <OutlineButton
           always

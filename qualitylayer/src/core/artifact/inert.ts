@@ -87,7 +87,23 @@ export function localArtifactCss(
   }
 }
 
-export function prepareSharedArtifact(html: string): string {
+function portableWebLink(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      !url.username &&
+      !url.password &&
+      url.hostname !== "localhost" &&
+      url.hostname !== "[::1]" &&
+      !url.hostname.startsWith("127.")
+    )
+  } catch {
+    return false
+  }
+}
+
+export function prepareSharedArtifact(html: string, options: { links?: boolean } = {}): string {
   const tree = parse(html)
   const visit = (parent: Html.ParentNode): void => {
     parent.childNodes = parent.childNodes.filter(
@@ -97,6 +113,13 @@ export function prepareSharedArtifact(html: string): string {
       if (!("tagName" in node)) continue
       node.attrs = node.attrs
         .filter((attr) => {
+          if (
+            options.links &&
+            node.tagName === "a" &&
+            attr.name === "href" &&
+            portableWebLink(attr.value)
+          )
+            return true
           if (
             attr.name.toLowerCase().startsWith("on") ||
             loadingAttributes.has(attr.name.toLowerCase())

@@ -10,7 +10,7 @@ import { connect } from "node:net"
 import { join } from "node:path"
 import type { Failure } from "./connection.ts"
 import type { LocalEnd } from "./pass-headers.ts"
-import { isMachineId, isTarget } from "./store.ts"
+import { isMachineId, isTarget, splitTarget } from "./store.ts"
 
 /** A started ssh, as much of it as the runner uses. */
 export interface Child {
@@ -262,12 +262,20 @@ class Runner implements Ssh {
 
   async run(target: string, command: string[], options: RunOptions = {}): Promise<Ran | Failed> {
     if (!isTarget(target)) return failed("offline", "this is not a name ssh can connect to")
+    const native = splitTarget(target)
     if (command.some((word) => !WORD.test(word)))
       return failed("offline", "a command word for a machine must be a plain word")
     // `asIs`: a question for a shell that may not be a unix one (Windows' `cmd /c ver`).
     const remote = options.asIs === true ? command : [...PRIVATE_FILES, ...command]
     const child = this.start(
-      [...base(this.deps), ...(options.sshOptions ?? []), "-T", target, ...remote],
+      [
+        ...base(this.deps),
+        ...(native.port === undefined ? [] : ["-p", String(native.port)]),
+        ...(options.sshOptions ?? []),
+        "-T",
+        native.target,
+        ...remote,
+      ],
       options.stdin ?? null,
     )
     if ("ok" in child) return child
@@ -326,19 +334,21 @@ class Runner implements Ssh {
     // The id only names the socket file (hashed) and the Windows address: any id the store can hold.
     if (!isTarget(target) || !isMachineId(id))
       return failed("offline", "this is not a name ssh can connect to")
+    const native = splitTarget(target)
     const local = this.localEnd(id, port)
     if ("ok" in local) return local
     const { end, spec, more } = local
     const child = this.start(
       [
         ...base(this.deps),
+        ...(native.port === undefined ? [] : ["-p", String(native.port)]),
         "-o",
         "ExitOnForwardFailure=yes",
         ...more,
         "-N",
         "-L",
         `${spec}:127.0.0.1:${port}`,
-        target,
+        native.target,
       ],
       null,
     )

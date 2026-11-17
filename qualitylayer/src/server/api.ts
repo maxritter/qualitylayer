@@ -1149,19 +1149,6 @@ async function listNames(ctx: Ctx, dir: string): Promise<string[]> {
   }
 }
 
-/**
- * What `scripts/runtime-bench.ts --profile` sets to time each part of a task's detail, in
- * milliseconds per read; null in the server, where `timed` only runs its part.
- */
-export const detailProfile: { parts: Map<string, number[]> | null } = { parts: null }
-
-function keepTime(part: string, ms: number): void {
-  const times = detailProfile.parts?.get(part) ?? []
-  times.push(ms)
-  detailProfile.parts?.set(part, times)
-}
-
-/** A part that runs beside others, timed from its start to its end. */
 /** The start card's reason for a worktree: read only until the build has started in the checkout. */
 async function startCheckoutBusy(
   ctx: Ctx,
@@ -1170,23 +1157,6 @@ async function startCheckoutBusy(
   if (!["plan", "implement"].includes(task.stage)) return {}
   if ((await readBuildStart(ctx, task)) !== null) return {}
   return { checkoutBusy: await checkoutBusy(ctx, task) }
-}
-
-function timed<T>(part: string, run: () => Promise<T>): Promise<T> {
-  if (detailProfile.parts === null) return run()
-  const began = performance.now()
-  return run().finally(() => keepTime(part, performance.now() - began))
-}
-
-/** Parts that run one after another: each call names what has run since the one before. */
-function laps(): (part: string) => void {
-  let last = performance.now()
-  return (part) => {
-    if (detailProfile.parts === null) return
-    const now = performance.now()
-    keepTime(part, now - last)
-    last = now
-  }
 }
 
 export async function taskDetail(
@@ -1253,7 +1223,6 @@ async function readTaskDetail(
       pages: [],
     })
   }
-  const lap = laps()
   const docs: DocEntry[] = []
   for (const [name, label] of docList()) {
     const path = join(task.dir, name)
@@ -1278,7 +1247,6 @@ async function readTaskDetail(
     })
   }
 
-  lap("documents")
   const record = await readBuildRecord(ctx, task)
   const verification: TaskDetail["verification"] = record.verification.map((i) => ({
     n: i.n,
@@ -1292,9 +1260,7 @@ async function readTaskDetail(
     })),
   }))
 
-  lap("build record")
   const flowed = await taskFlow(ctx, task)
-  lap("flow")
   const outline: Outline | null = flowed.plan
   const cachedLog = await cachedBuildLog(ctx, task)
   const logText = cachedLog?.text ?? null
@@ -1359,12 +1325,10 @@ async function readTaskDetail(
   // The Plan's agents' file, a regular file only: the Files tab folds it under Build context.
   const support = await planSupport(ctx, task)
 
-  lap("files and evidence")
   const prPath = descriptionPath(task)
   // A shipped task's pull request is read first: the summary below says what waits from what this read keeps.
   const shippedPr = task.stage === "shipped" ? await cachedPullRequest(ctx, task) : null
   // The parts that do not need each other are read side by side.
-  lap("pull request")
   // Verify turned to the person: the final approval is theirs to give.
   const reviewing = await inPersonReview(ctx, task)
   const gateFile = reviewing ? await ensureFinalReview(ctx, task) : await readGate(ctx, task)
@@ -1382,15 +1346,13 @@ async function readTaskDetail(
     planDiff,
     changedFiles,
   ] = await Promise.all([
-    timed("page items and summary", () =>
-      taskPage(ctx, task, gateFile).then(async (found) => ({
-        items: found.items,
-        parts: found.parts,
-        checked: found.checked,
-        summary: await summarise(ctx, project, task, found.items),
-      })),
-    ),
-    outline !== null ? timed("timeline", () => timeline(ctx, task, outline, logText ?? "")) : null,
+    taskPage(ctx, task, gateFile).then(async (found) => ({
+      items: found.items,
+      parts: found.parts,
+      checked: found.checked,
+      summary: await summarise(ctx, project, task, found.items),
+    })),
+    outline !== null ? timeline(ctx, task, outline, logText ?? "") : null,
     Promise.all([readComments(ctx, task), readTeamComments(ctx, task), readReview(ctx, task)]).then(
       ([own, team, review]) => [
         ...own,
@@ -1401,15 +1363,13 @@ async function readTaskDetail(
     ),
     readEvents(ctx, task).then((all) => all.slice(-200)),
     ctx.fs.exists(prPath).then((there) => (there ? ctx.fs.readFile(prPath) : null)),
-    timed("review", () =>
-      reviewOf(ctx, task, record, evidence, {
-        withChanges: false,
-        pullRequest: cachedPullRequest,
-      }),
-    ),
-    timed("decided elsewhere", () => decidedElsewhereOf(ctx, task, gateFile)),
-    timed("plan changes", () => planChanges(ctx, task)),
-    timed("changed files", async () => {
+    reviewOf(ctx, task, record, evidence, {
+      withChanges: false,
+      pullRequest: cachedPullRequest,
+    }),
+    decidedElsewhereOf(ctx, task, gateFile),
+    planChanges(ctx, task),
+    (async () => {
       // Proof links belong to Verify. Reading hundreds of dirty encrypted files must
       // not hold the task shell or its independent native terminal behind a Git scan.
       const needed = options.proofFiles ?? ["verify", "shipped"].includes(task.stage)
@@ -1420,18 +1380,15 @@ async function readTaskDetail(
       return changedPaths(ctx, task.repoRoot, base, {
         since: await buildBegan(ctx, task),
       })
-    }),
+    })(),
   ])
-  lap("side by side")
   const gate = summary.gate
-  const outside = isTerminal(task.stage)
-    ? null
-    : await timed("outside lead", () => outsideLead(ctx, task))
+  const outside = isTerminal(task.stage) ? null : await outsideLead(ctx, task)
   // Also between the approval and the build's start, so the page says which session builds next.
   const start =
     outside === null && summary.action !== "implement" ? null : await readStart(ctx, task)
-  const plannedIn = await timed("planned place", () => plannedPlace(ctx, task))
-  const builtIn = await timed("built place", () => builtPlace(ctx, task))
+  const plannedIn = await plannedPlace(ctx, task)
+  const builtIn = await builtPlace(ctx, task)
   return ok({
     ...summary,
     planningStart: await readPlanningStart(ctx, task),
@@ -1442,29 +1399,27 @@ async function readTaskDetail(
     viewingEligible: (await claimedByOthers(ctx, task.repoId, null)).has(task.slug),
     ...((await usesGitCrypt(ctx, task.repoRoot)) ? { gitCrypt: true } : {}),
     ...(gate !== null ? { gate } : {}),
-    checkProgress: await timed("check progress", () => readCheckProgress(ctx, task)),
-    taskProgress: await timed("task progress", () => buildLine(ctx, task)),
+    checkProgress: await readCheckProgress(ctx, task),
+    taskProgress: await buildLine(ctx, task),
     reusedChecks: [
       ...new Map(
-        (await timed("check records", () => readCheckRecords(ctx, task)))
+        (await readCheckRecords(ctx, task))
           .filter((r) => r.scope !== "base")
           .map((r) => [r.command, r]),
       ).values(),
     ]
       .filter((r) => r.reused && r.exit === 0)
       .map((r) => r.command),
-    ...(await timed("required lines", async () => {
+    ...(await (async () => {
       const required = await requiredViewIfTaken(ctx, task)
       return required === null ? {} : { required }
-    })),
+    })()),
     items,
     parts,
     checked,
-    question: gateFile?.finalReview
-      ? null
-      : await timed("open question", () => openQuestion(ctx, task)),
-    answeredQuestions: await timed("answered questions", () => answeredQuestions(ctx, task)),
-    questionWait: await timed("question wait", () => readHeartbeat(ctx, task)),
+    question: gateFile?.finalReview ? null : await openQuestion(ctx, task),
+    answeredQuestions: await answeredQuestions(ctx, task),
+    questionWait: await readHeartbeat(ctx, task),
     ...(planDiff !== null ? { planDiff } : {}),
     ...(decidedElsewhere !== undefined ? { decidedElsewhere } : {}),
     ...(gateFile?.finalReview?.code
@@ -1483,12 +1438,12 @@ async function readTaskDetail(
     changedFiles,
     // What the agents found on lines of the change, and the reviewer asked from the workspace.
     ...(reviewing || task.stage === "shipped"
-      ? await timed("line findings", async () => ({
+      ? await (async () => ({
           findings: await lineFindings(ctx, task, changedFiles ?? []),
           anotherReviews: (await readAnotherRuns(ctx, task)).map(
             ({ findings: _f, pid: _p, ...run }) => run,
           ),
-        }))
+        }))()
       : {}),
     buildLog,
     // Verify's stages keep their results after the checks: while the person reviews and once shipped.
@@ -1496,7 +1451,7 @@ async function readTaskDetail(
       ? { verifyLanes: await servedVerifyLanes(ctx, task) }
       : {}),
     checklist: ["verify", "shipped"].includes(task.stage)
-      ? await timed("checklist", () => readChecklist(ctx, task, { helpers: summary.helpers }))
+      ? await readChecklist(ctx, task, { helpers: summary.helpers })
       : null,
     quality:
       flowed !== null
@@ -1508,13 +1463,13 @@ async function readTaskDetail(
           )
         : [],
     flow: flowed !== null && outline !== null ? flowed.flow : null,
-    intake: await timed("intake", () => intakeOf(ctx, task)),
+    intake: await intakeOf(ctx, task),
     implementStart,
-    ...(await timed("checkout busy", () => startCheckoutBusy(ctx, task))),
+    ...(await startCheckoutBusy(ctx, task)),
     docs,
     // What the team said sits beside the owner's drafts; the Cockpit's draft saving never rewrites it.
     comments,
-    answering: await timed("answering", () => answering(ctx, task, comments)),
+    answering: await answering(ctx, task, comments),
     events,
     prDescription,
     verification,
@@ -1530,11 +1485,11 @@ async function readTaskDetail(
     !review?.approve
       ? { reviewApproval: await approveChoices(ctx, task, await currentBranch(ctx, task.repoRoot)) }
       : {}),
-    changesRequested: await timed("changes requested", () => changesRequested(ctx, task, gateFile)),
+    changesRequested: await changesRequested(ctx, task, gateFile),
     ...(task.stage === "shipped"
       ? {
           shipped: await (async () => {
-            const total = (await timed("cost", () => taskCost(ctx, task))).total
+            const total = (await taskCost(ctx, task)).total
             return shippedFacts(ctx, task, {
               pr: shippedPr,
               usd: total.usd,
@@ -1545,7 +1500,7 @@ async function readTaskDetail(
         }
       : {}),
     me: await profileOf(ctx),
-    pages: await timed("pages", () => stepPages(ctx, task)),
+    pages: await stepPages(ctx, task),
   })
 }
 

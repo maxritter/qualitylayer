@@ -208,6 +208,7 @@ function entryOf(value: unknown, index: number): Automation | string {
   if (!projects.ok) return `${at}: ${projects.error.message}`
   if (raw.kind === "url" && (typeof raw.secret !== "string" || raw.secret === ""))
     return `${at} is a URL without a secret`
+  if (raw.on !== undefined && typeof raw.on !== "boolean") return `${at}.on must be true or false`
   return {
     id: raw.id,
     kind: raw.kind,

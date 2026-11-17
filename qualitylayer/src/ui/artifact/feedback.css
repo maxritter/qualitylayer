@@ -1,0 +1,116 @@
+@layer components {
+  /* Feedback and Export sit together before More; in a narrow header they keep their own row. */
+  .dg-mark-tools {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+  }
+  .dg-workspace-armed {
+    position: relative;
+  }
+  .dg-cvs.armed .dg-stage {
+    box-shadow:
+      0 0 0 2px var(--ql-accent),
+      var(--ql-shadow-window);
+  }
+  .dg-mark-hint {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 24px);
+    height: 30px;
+    padding: 0 6px 0 12px;
+    border: 1px solid var(--ql-accent-line);
+    border-radius: 999px;
+    background: var(--ql-surface);
+    box-shadow: var(--ql-shadow-sm);
+    color: var(--ql-text);
+    font-size: 12.5px;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .dark .dg-mark-hint,
+  .dark .dg-mark-chip {
+    background: var(--ql-surface-2);
+  }
+  .dg-mark-hint > svg {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--ql-accent);
+  }
+  .dg-mark-hint > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dg-mark-esc {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    min-width: 30px;
+    height: 22px;
+    padding: 0 6px;
+    border: 1px solid var(--ql-border);
+    border-radius: 5px;
+    background: var(--ql-surface-2);
+    color: var(--ql-text-muted);
+    font: 500 12px / 1 var(--font-sans);
+    cursor: pointer;
+  }
+  .dg-mark-esc:hover {
+    color: var(--ql-text);
+  }
+  .dg-mark-chip {
+    position: fixed;
+    z-index: var(--ql-z-overlay, 50);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--ql-border);
+    border-radius: 7px;
+    background: var(--ql-surface);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+    color: var(--ql-text);
+    font: 500 12.5px / 1 var(--font-sans);
+    cursor: pointer;
+  }
+  .dg-mark-chip > svg {
+    width: 14px;
+    height: 14px;
+    color: var(--ql-accent);
+  }
+  .dg-mark-hint :focus-visible,
+  .dg-mark-chip:focus-visible {
+    outline: 2px solid var(--ql-accent);
+    outline-offset: 2px;
+  }
+  @media (max-width: 480px) {
+    .dg-mark-hint > span {
+      display: none;
+    }
+    /* The picker yields columns 4 and 5 of the second row to Feedback and Export; view options keep 6. */
+    .dg-bar.dg-bar.tools.compact[data-testid="artifact-header"]:has(> .dg-mark-tools) .dg-pp {
+      grid-area: 2 / 1 / 3 / 4;
+    }
+    .dg-bar.dg-bar.tools.compact[data-testid="artifact-header"] > .dg-mark-tools {
+      grid-area: 2 / 4 / 3 / 6;
+      justify-self: end;
+      min-height: 44px;
+    }
+    .dg-bar.dg-bar.tools.compact[data-testid="artifact-header"]:has(> .dg-mark-tools)
+      [data-testid="artifact-view-options"] {
+      grid-area: 2 / 6;
+    }
+    .dg-bar.dg-bar.tools.compact[data-testid="artifact-header"] .dg-mark-tools .dg-fb {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+}

@@ -59,6 +59,7 @@ import { useArtifactsOverview } from "./artifacts/useArtifacts.ts"
 import { BuildHereContinuation } from "./BuildHereContinuation.tsx"
 import { BoundedCache } from "./bounded-cache.ts"
 import { type ClipboardText, writeClipboardText } from "./clipboard.ts"
+import { useNativeDownloads } from "./export/useNativeDownloads.ts"
 import { FeedbackSheet, type FeedbackStart } from "./FeedbackSheet.tsx"
 import { FirstRun } from "./FirstRun.tsx"
 import { useFollowUp } from "./follow-up.ts"
@@ -112,9 +113,11 @@ import { questionPreview } from "./question-preview.ts"
 import { Resizer, useStoredWidth } from "./Resizer.tsx"
 import { onFeedbackRequest, pageNow, reportableErrors } from "./report.ts"
 import { type AgentLaunchValue, preferredLaunchAgent } from "./run/AgentLaunchFields.tsx"
+import { AgentSwitchDialog } from "./run/AgentSwitch.tsx"
 import { ShellBar } from "./run/AgentTab.tsx"
 import { AgentTabMenu, type AgentTabMode } from "./run/AgentTabMenu.tsx"
 import { ArtifactAgentLaunch } from "./run/ArtifactAgentLaunch.tsx"
+import { canSwitchTaskAgent } from "./run/agent-switch.ts"
 import { taskApprovalReady } from "./run/approval-ready.ts"
 import { OpenTerminal } from "./run/OpenTerminal.tsx"
 import { continueOutsideLead, outsideAsks, taskAgentEmpty } from "./run/OutsideLead.tsx"
@@ -446,6 +449,7 @@ export function App({
   runAdapter,
   ...props
 }: Parameters<typeof AppPage>[0] & { runAdapter?: RunAdapter }) {
+  useNativeDownloads()
   const [outsideInterest, setOutsideInterest] = useState<OutsideConversationInterest | null>(null)
   const registerOutside = useCallback((interest: OutsideConversationInterest) => {
     setOutsideInterest(interest)
@@ -781,6 +785,11 @@ function AppPage({
       : null
     : undefined
   const openId = route.view === "task" ? route.id : null
+  const [agentSwitch, setAgentSwitch] = useState<{ task: string; previous: RunWindow }>()
+  useEffect(
+    () => setAgentSwitch((before) => (before?.task === openId ? before : undefined)),
+    [openId],
+  )
   const [planControls, setPlanControls] = useState<{
     task: string | null
     controls: TaskAgentControls | undefined
@@ -1228,7 +1237,20 @@ function AppPage({
   // A browser the server does not know has no key to show: it is paired, not given one in a link.
   if (blocked instanceof ApiError && blocked.status === 401) return <NoKey />
   // The licence is one of setup's own steps, so setup shows before the licence screen does.
-  if (route.view === "setup") return <Setup api={setup} onDone={() => go({ view: "home" })} />
+  if (route.view === "setup")
+    return (
+      <Setup
+        api={setup}
+        onDone={() => go({ view: "home" })}
+        onStartTask={(target, agent) => {
+          openNewTaskIn(target.project.id, null)
+          setNewTaskTarget(target)
+          setNewTaskAgent(agent)
+          go({ view: "home" })
+          projects.reload()
+        }}
+      />
+    )
   if (blocked instanceof ApiError) {
     return (
       <TrialEnded
@@ -1636,6 +1658,18 @@ function AppPage({
                 open.data.type === "chat" &&
                 workspaceMode !== "shell" ? null : (
                   <RunDock
+                    continueAgent={
+                      route.view === "task" &&
+                      open.data?.id === route.id &&
+                      workspaceMode === "agent" &&
+                      runs?.support?.supported &&
+                      runs.support.canStart
+                        ? {
+                            available: canSwitchTaskAgent.bind(null, open.data),
+                            open: (run) => setAgentSwitch({ task: route.id, previous: run }),
+                          }
+                        : undefined
+                    }
                     contextTarget={draftTarget}
                     keepSessionControls
                     onTaskControls={
@@ -1784,6 +1818,22 @@ function AppPage({
                   />
                 )}
               </ConversationActionsContext.Provider>
+              {agentSwitch &&
+              route.view === "task" &&
+              open.data?.id === agentSwitch.task &&
+              route.id === agentSwitch.task &&
+              runs?.runs.some((run) => run.id === agentSwitch.previous.id) &&
+              canSwitchTaskAgent(open.data, agentSwitch.previous) ? (
+                <AgentSwitchDialog
+                  key={`${agentSwitch.task}:${agentSwitch.previous.id}:${agentSwitch.previous.generation}`}
+                  task={open.data}
+                  previous={agentSwitch.previous}
+                  config={config.data}
+                  installed={subagents.data}
+                  onClose={() => setAgentSwitch(undefined)}
+                  onStarted={() => terminalLayout?.setPanel("terminal")}
+                />
+              ) : null}
             </div>
           </div>
           {compact ? (

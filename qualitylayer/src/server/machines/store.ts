@@ -10,7 +10,7 @@ export type StoredMachine = {
   id: string
   /** The person's name for it; need not be the host name. */
   name: string
-  /** What ssh is given: a host of the ssh config or `user@host`. */
+  /** Native ssh destination: a config host or `user@host`, optionally with an explicit port. */
   target: string
   /** The port of this computer its page is served on; kept, so the page keeps its saved state. */
   localPort: number
@@ -20,7 +20,7 @@ export type StoredMachine = {
    * Absent for a machine on its own trial or key, and for entries saved before this was kept.
    */
   activated?: true
-  /** The `Host` block pairing wrote for it in the ssh config (`target` is then that name). */
+  /** The marked config block pairing owns; it may add only an identity to a native host. */
   alias?: string
   /** QualityLayer's own key was put in its authorized_keys; Remove can take it out again. */
   ownKey?: true
@@ -115,6 +115,14 @@ export type AddRefusal = "no-port" | "duplicate" | "bad-target" | "bad-name"
 /** What ssh accepts as one argument and cannot read as an option. */
 export const isTarget = (target: string): boolean =>
   /^[A-Za-z0-9._~@:[\]-]{1,255}$/.test(target) && !target.startsWith("-")
+
+/** `user@host:2223` → the unchanged native destination and its explicit port. */
+export function splitTarget(typed: string): { target: string; port?: number } {
+  const found = /^(.+@[^:@[\]]+):(\d{1,5})$/.exec(typed) ?? /^([^:@[\]]+):(\d{1,5})$/.exec(typed)
+  if (found === null) return { target: typed }
+  const port = Number(found[2])
+  return port > 0 && port < 65_536 ? { target: found[1] as string, port } : { target: typed }
+}
 
 const cleanName = (name: string): string => name.replace(/\s+/g, " ").trim().slice(0, 60)
 

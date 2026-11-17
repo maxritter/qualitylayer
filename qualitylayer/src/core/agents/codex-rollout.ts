@@ -8,6 +8,7 @@ import { createReadStream, readFileSync, statSync } from "node:fs"
 import { stat } from "node:fs/promises"
 import { basename } from "node:path"
 import { createZstdDecompress } from "node:zlib"
+import { RolloutWindow } from "./rollout-window.ts"
 
 const PLAIN = ".jsonl"
 const COMPRESSED = ".jsonl.zst"
@@ -118,6 +119,36 @@ export async function readCompressedHead(
       text: entry.bytes.subarray(0, bytes).toString("utf8"),
       more: !entry.whole || entry.bytes.length > bytes,
     }
+  } catch {
+    return null
+  }
+}
+
+/** Keep exact byte windows for proof readers without retaining the decompressed middle. */
+export async function readCompressedWindow(
+  path: string,
+  headBytes: number,
+  tailBytes: number,
+): Promise<{ size: number; head: Buffer; tail: Buffer } | null> {
+  const window = new RolloutWindow(headBytes, tailBytes)
+  try {
+    const key = keyOf(path, await stat(path))
+    const cached = held(key)
+    if (cached?.whole)
+      return {
+        size: cached.bytes.length,
+        head: cached.bytes.subarray(0, headBytes),
+        tail: cached.bytes.subarray(Math.max(0, cached.bytes.length - tailBytes)),
+      }
+    for await (const piece of decompressed(path)) window.append(piece)
+    const frame = window.frame()
+    if (frame.size <= headBytes + tailBytes)
+      keep(
+        key,
+        Buffer.concat([frame.head.subarray(0, frame.size - frame.tail.length), frame.tail]),
+        true,
+      )
+    return frame
   } catch {
     return null
   }

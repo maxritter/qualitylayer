@@ -13,6 +13,7 @@
 #![deny(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)]
 
 mod cli;
+mod downloads;
 mod external;
 mod links;
 mod liveness;
@@ -92,6 +93,7 @@ fn record_quit_failure(home: &Path, message: &str) {
 }
 
 fn on_exit(reason: u8) {
+    downloads::cleanup();
     if !user_quit(reason) {
         return;
     }
@@ -1269,6 +1271,7 @@ fn main() {
                     .title("QualityLayer")
                     // File bytes belong to the App's DOM paste/drop handlers, not Tauri events.
                     .disable_drag_drop_handler()
+                    .on_download(downloads::handle)
                     .inner_size(1280.0, 860.0)
                     .min_inner_size(900.0, 600.0)
                     // The window shows the App's own page. A link to the web, from the page or

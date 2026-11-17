@@ -19,6 +19,7 @@
 // (slice-land.ts), and its message lives in a file of its own. `git commit` would keep the message
 // in the one `.git/COMMIT_EDITMSG`, where two commits made at the same moment in one checkout read
 // each other's.
+// Model: qualitylayer/artifacts/app/workflow/commit-ownership-contract.md
 
 import { createHash } from "node:crypto"
 import { constants, existsSync } from "node:fs"
@@ -114,10 +115,12 @@ async function keepOthersCommits(
   scratch: string,
   path: string,
   o: { from: string | undefined; to: string; own: readonly string[] },
-): Promise<{ conflict: string } | null> {
-  if (o.from === undefined || !/^[0-9a-f]{40,64}$/.test(o.from)) return null
+): Promise<{ conflict: string } | { unreadable: string } | null> {
+  if (o.from === undefined) return null
+  if (!/^[0-9a-f]{40,64}$/.test(o.from) || o.from.trim() !== o.from)
+    return { unreadable: "the recorded build-start history is invalid" }
   const log = await git(root, ["log", "--format=%H", `${o.from}..${o.to}`, "--", path])
-  if (log.code !== 0) return null
+  if (log.code !== 0) return { unreadable: "Git could not read the history since the build began" }
   const own = new Set(o.own)
   const others = log.text
     .split("\n")
@@ -126,24 +129,29 @@ async function keepOthersCommits(
   if (others.length === 0) return null
   const file = join(root, path)
   const before = await sliceInputFile(root, file, HASH_LIMIT).catch(() => null)
-  if (before === null) return null
+  if (before === null) return { unreadable: "the current file could not be read safely" }
   let work: Uint8Array = before
   for (const sha of others) {
     const [parent, landed] = await Promise.all([
       smudged(root, `${sha}^:${path}`, path),
       smudged(root, `${sha}:${path}`, path),
     ])
-    if (parent === null || landed === null || equal(parent, landed)) continue
+    if (parent === null || landed === null)
+      return { unreadable: `the file versions for commit ${sha.slice(0, 9)} could not be compared` }
+    if (equal(parent, landed)) continue
     const merged = await merge3(scratch, work, parent, landed)
     if (merged === null) return { conflict: sha }
     work = merged
   }
   // Written only over the bytes it was merged from: a writer that came in between keeps its own.
-  if (
-    !equal(work, before) &&
-    equal((await sliceInputFile(root, file, HASH_LIMIT).catch(() => null)) ?? work, before)
-  )
+  if (!equal(work, before)) {
+    const current = await sliceInputFile(root, file, HASH_LIMIT).catch(() => null)
+    if (current === null || !equal(current, before))
+      return {
+        unreadable: "the file changed or could not be read before its merged bytes were saved",
+      }
     await writeFile(file, work)
+  }
   return null
 }
 
@@ -1450,6 +1458,11 @@ async function commitOnce(
             })
           : null
       if (kept !== null) {
+        if ("unreadable" in kept)
+          return err({
+            code: "bad_args",
+            message: `${path}: ${kept.unreadable}; nothing was committed. Inspect the committed and working versions. Commit only this task's reviewed hunks using a temporary index on HEAD, then record that commit.`,
+          })
         const short = kept.conflict.slice(0, 9)
         return err({
           code: "bad_args",

@@ -118,7 +118,7 @@ export async function screenSurfaces(ctx: Ctx, task: Task): Promise<ScreenSurfac
       .map((reference) => reference.file.replace(/^artifacts\//, "")),
   )
   for (const match of source.matchAll(
-    /^\s*<!--\s*ql:artifact\s+([a-z0-9-]+\/[A-Za-z0-9_.-]+\.html)\s*-->/gm,
+    /^[^\S\r\n\u2028\u2029]*<!--\s*ql:artifact\s+([a-z0-9-]+\/[A-Za-z0-9_.-]+\.html)\s*-->/gm,
   ))
     names.add(match[1] ?? "")
   for (const reference of references.filter((reference) => reference.scope === "project")) {
@@ -989,7 +989,7 @@ export function screenComparison(
       if (!line.startsWith(prefix)) continue
       const suffix = line.slice(prefix.length)
       const pair =
-        /^\s*·\s*(\d+)(?:\s*[×x]\s*(\d+))?\s*(?:px)?\s*(?:·\s*)?(light|dark)\s*:\s*(\S.*)$/.exec(
+        /^\s*·\s*(\d+)(?:\s*[×x]\s*(\d+))?(?:\s*px)?(?:\s*·)?\s*(light|dark)\s*:\s*(\S.*)$/.exec(
           suffix,
         )
       if (pair && Number(pair[1]) === width && pair[3] === theme) {

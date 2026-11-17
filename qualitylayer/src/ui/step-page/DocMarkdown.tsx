@@ -10,7 +10,7 @@ import { CopyIcon } from "lucide-react"
 import { marked, type Token, type Tokens } from "marked"
 import { Fragment, type ReactNode, useMemo } from "react"
 import { headingSlug } from "../../core/docs/anchor.ts"
-import { trimEndCharacters } from "../../core/text-boundaries.ts"
+import { isLineText, trimEndCharacters, trimEndWhile } from "../../core/text-boundaries.ts"
 import { InlineMarkdown, stripFrontmatter, toBlocks } from "../reader/DocReader.tsx"
 import { diagramTheme, MermaidBlock } from "../reader/MermaidBlock.tsx"
 import { WireframeBlock } from "../reader/WireframeBlock.tsx"
@@ -239,11 +239,19 @@ function StepLines({
 
 /** "Start the Builder, then open it: `bun run dev:builder`" → the step and its command. */
 export function stepCommand(text: string): { step: string; command: string | null } {
-  const found = /^(.*?)[:\s]*`([^`]+)`\s*\.?$/.exec(text.trim())
-  if (found === null || found[1] === undefined || found[2] === undefined)
-    return { step: text, command: null }
-  const step = found[1].trim().replace(/[:,]$/, "")
-  return { step: /[.!?]$/.test(step) ? step : `${step}.`, command: found[2] }
+  const body = text.trim()
+  const commandEnd = body.endsWith(".") ? body.slice(0, -1).trimEnd() : body
+  const close = commandEnd.length - 1
+  if (commandEnd.charAt(close) !== "`") return { step: text, command: null }
+  const open = commandEnd.lastIndexOf("`", Math.max(0, close - 1))
+  if (open < 0 || open >= close - 1) return { step: text, command: null }
+  const prefix = trimEndWhile(commandEnd.slice(0, open), (character) => /[:\s]/.test(character))
+  if (!isLineText(prefix)) return { step: text, command: null }
+  const step = prefix.trim().replace(/[:,]$/, "")
+  return {
+    step: /[.!?]$/.test(step) ? step : `${step}.`,
+    command: commandEnd.slice(open + 1, close),
+  }
 }
 
 function Html({
@@ -287,11 +295,17 @@ function Html({
   )
 }
 
+function numberedHeading(text: string): { number: string; label: string } | null {
+  // A required label can consume the final character of an otherwise whitespace-only tail.
+  const match = /^(\d+)\.\s+(\S.*|[^\S\r\n\u2028\u2029])$/.exec(text)
+  return match === null ? null : { number: match[1] ?? "", label: match[2] ?? "" }
+}
+
 function Heading({ token, state }: { token: Tokens.Heading; state: StepState }) {
   const text = token.text
   if (state.implement !== undefined && text === "Decided while building") return null
   // A numbered decision or step (`### 2. …`, `#### 1. …`) shows its number apart.
-  const numbered = /^(\d+)\.\s+(.+)$/.exec(text)
+  const numbered = numberedHeading(text)
   if (token.depth === 3 || (token.depth === 4 && numbered !== null)) {
     const Tag = token.depth === 3 ? "h3" : "h4"
     return (
@@ -300,8 +314,8 @@ function Heading({ token, state }: { token: Tokens.Heading; state: StepState }) 
         aria-label={numbered !== null ? text : undefined}
         {...(token.depth === 4 ? { className: "sp-numbered" } : {})}
       >
-        {numbered !== null ? <span className="sp-hno">{numbered[1]}</span> : null}
-        <InlineMarkdown text={numbered?.[2] ?? text} />
+        {numbered !== null ? <span className="sp-hno">{numbered.number}</span> : null}
+        <InlineMarkdown text={numbered?.label ?? text} />
       </Tag>
     )
   }

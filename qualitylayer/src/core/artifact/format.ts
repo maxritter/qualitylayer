@@ -1,3 +1,4 @@
+import { isLineText, skipWhitespace } from "../text-boundaries.ts"
 // The artifact format: one self-contained HTML page an agent draws for the person. Its name, purpose
 // and last change are read from the file itself (<title>, the description, `ql:changed`), and the
 // parts the App can jump to are its elements with `data-screen-label` and an id. Free of imports, so
@@ -400,10 +401,14 @@ export function wireframePage(template: string, options: boolean): string {
 
 /** The parts of a section's label: "3 Plan · 03-plan.md" is number 3, "Plan · 03-plan.md". */
 export function labelParts(label: string): { n: string | null; text: string } {
-  const match = label.match(/^(\d+[a-z]?)\s+(.+)$/)
-  return match !== null
-    ? { n: match[1] as string, text: match[2] as string }
-    : { n: null, text: label }
+  const prefix = /^\d+[a-z]?/.exec(label)?.[0]
+  if (prefix) {
+    let start = skipWhitespace(label, prefix.length)
+    if (start === label.length && start > prefix.length + 1) start--
+    const text = label.slice(start)
+    if (start > prefix.length && text !== "" && isLineText(text)) return { n: prefix, text }
+  }
+  return { n: null, text: label }
 }
 
 // ---------------------------------------------------------------- what the lasting artifacts' routes answer

@@ -4,7 +4,7 @@
 
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
-import { isAbsolute, join, resolve } from "node:path"
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { taskSummary } from "../../server/api.ts"
 import { cockpitUrl, liveLock } from "../../server/lock.ts"
@@ -82,7 +82,14 @@ export function git(
   args: string[],
   options: { raw?: boolean; timeout?: number } = {},
 ) {
-  const run = spawnSync("git", ["-C", cwd, "--no-optional-locks", ...args], {
+  const searchPath = (process.env.PATH ?? (process.platform === "win32" ? "" : "/usr/bin:/bin"))
+    .split(delimiter)
+    .map((entry) => (process.platform === "win32" ? entry.replace(/^"(.*)"$/, "$1") : entry))
+    .filter(isAbsolute)
+    .join(delimiter)
+  const executable = Bun.which("git", { PATH: searchPath, cwd: dirname(process.execPath) })
+  if (!executable || !isAbsolute(executable)) return null
+  const run = spawnSync(executable, ["-C", cwd, "--no-optional-locks", ...args], {
     encoding: "utf8",
     timeout: options.timeout ?? 2000,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },

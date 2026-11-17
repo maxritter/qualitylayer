@@ -5,6 +5,7 @@
 // folder maps each key to the hash of the text it was saved from.
 
 import { basename, join } from "node:path"
+import { replaceInlineLinksOnLines } from "./core/docs/inline-links.ts"
 import { MEMORY_CAPTURED_MAX_BYTES } from "./core/home-caps.ts"
 import { MEMORY_RETIRED, type MemoryService } from "./core/memory/index.ts"
 import { cutChars } from "./core/memory/ranking.ts"
@@ -55,11 +56,11 @@ function lessonText(text: string, task: Task): string | null {
     .replaceAll(`${root}\\`, "")
   // A path outside this repository has no honest repository-relative replacement.
   if (/(?:\/Users\/|\/home\/|[A-Z]:[\\/]Users[\\/]|~[\\/])/i.test(local)) return null
-  return local
-    .replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (_, label: string, target: string) =>
-      /^(?:https?:|mailto:)/i.test(target) ? `${label} (${target})` : target,
-    )
-    .replace(/^(\s*(?:\d+[.)][ \t]+)?)\[P\d\][ \t]*/gim, "$1")
+  const links = replaceInlineLinksOnLines(local, (label, target) =>
+    /^(?:https?:|mailto:)/i.test(target) ? `${label} (${target})` : target,
+  )
+  return links
+    .replace(/^([^\S\r\n\u2028\u2029]*(?:\d+[.)][ \t]+)?)\[P\d\][ \t]*/gim, "$1")
     .replace(
       /`([^`\n]+)`|\*\*([^\n]+?)\*\*|(?<![\w/])__([^_\n]+)__(?![\w.])/g,
       (_, code: string | undefined, strong: string | undefined, emphasis: string | undefined) =>

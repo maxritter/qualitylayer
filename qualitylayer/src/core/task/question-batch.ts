@@ -1019,7 +1019,7 @@ export function pickedBatchAnswer(
     if (/^(?:not sure|unsure)$/i.test(text)) return { ...base, unsure: true }
   }
   const picks = labels.map((label) => {
-    const plain = label.replace(/\s*\(Recommended\)$/i, "").trim()
+    const plain = label.replace(/\(Recommended\)$/i, "").trim()
     if (source !== "typed") return q.choices.findIndex((choice) => sameText(choice.label, plain))
     // Words beside the choice stay words: answering records them as the note of the choice.
     const own = typedAnswer(plain, q.choices, { recommended: q.recommended, own: true })

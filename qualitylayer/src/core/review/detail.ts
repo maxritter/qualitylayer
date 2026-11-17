@@ -36,6 +36,7 @@ import {
 } from "../ship/pull-request.ts"
 import { type Task, taskDocPath } from "../task/store.ts"
 import { taskFlow } from "../task-flow.ts"
+import { trimEndWhile } from "../text-boundaries.ts"
 import { parseFinalChecks } from "../timeline.ts"
 import { itemId } from "../verdicts.ts"
 import { changesByTask } from "./by-task.ts"
@@ -110,10 +111,10 @@ function tilesOf(iteration: Iteration | null): ResultTile[] {
 
 /** The proof the judge wrote for a Done means, without the evidence paths it cites. */
 const proofText = (text: string) =>
-  text
-    .replace(/\s*[—–-]?\s*`(?:evidence|records)\/[^`]+`/g, "")
-    .replace(/[\s,;]+$/, "")
-    .trim()
+  trimEndWhile(
+    text.replace(/(?<!\s)\s*(?:[—–-]\s*)?`(?:evidence|records)\/[^`]+`/g, ""),
+    (character) => /[\s,;]/.test(character),
+  ).trim()
 
 function doneMeansViews(frame: string, verdicts: readonly Verdict[]): DoneMeansView[] {
   return doneMeansOf(frame).map((item) => {
@@ -140,7 +141,7 @@ export function implementModules(cards: string): CodeHealth["modules"] {
   return cards
     .split(/\r?\n/)
     .slice(range.start, range.end - 1)
-    .filter((line) => /^\s*\|/.test(line) && !/^\s*\|[\s:|-]+\|?\s*$/.test(line))
+    .filter((line) => /^\s*\|/.test(line) && !/^\s*\|[\s:|-]+$/.test(line))
     .slice(1)
     .map((line) => line.split("|").map((cell) => cell.trim()))
     .map((cells) => ({

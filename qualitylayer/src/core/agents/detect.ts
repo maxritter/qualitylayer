@@ -7,6 +7,7 @@ import { roots } from "../install/agent-settings.ts"
 import { userHome } from "../install/manifest.ts"
 import { windows } from "../platform.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
+import { isLineText } from "../text-boundaries.ts"
 import { recentWindowsProcesses, type WindowsProcess } from "../windows-processes.ts"
 import { runnableFile } from "./binary.ts"
 import { BINARIES, isNativeAgent, NATIVE_AGENTS, type NativeAgent } from "./ids.ts"
@@ -129,9 +130,11 @@ function nearestAgentInfo(): NearestAgent | null {
   try {
     for (let depth = 0; depth < 12 && pid > 1 && found === null; depth++) {
       const ps = Bun.spawnSync(["ps", "-o", "ppid=,comm=", "-p", String(pid)])
-      const match = /^(\d+)\s+(.*)$/.exec(ps.stdout.toString().trim())
+      const processLine = ps.stdout.toString().trim()
+      const match = /^(\d+)\s+/.exec(processLine)
       if (ps.exitCode !== 0 || match === null) break
-      const path = match[2] ?? ""
+      const path = processLine.slice(match[0].length)
+      if (!isLineText(path)) break
       const name = path.split("/").pop() ?? ""
       const named = agentOfProcess(name)
       if (named !== null) found = { agent: named, path }

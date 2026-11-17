@@ -174,7 +174,15 @@ const NAME = "qualitylayer"
 const NAME_SLIPS = 2
 
 /** What sentences and markup put around a word; a `$` is not among it, so `$ql` stays a command. */
-const EDGE = /^[\s"'“”‘’«».,;:!?()[\]{}<>*_…–—-]+|[\s"'“”‘’«».,;:!?()[\]{}<>*_…–—-]+$/g
+const EDGE = /[\s"'“”‘’«».,;:!?()[\]{}<>*_…–—-]/u
+
+function trimWordEdges(token: string): string {
+  let start = 0
+  let end = token.length
+  while (start < end && EDGE.test(token.charAt(start))) start++
+  while (end > start && EDGE.test(token.charAt(end - 1))) end--
+  return token.slice(start, end)
+}
 
 /** Whether `a` is at most `limit` single-letter edits away from `b`. */
 function within(a: string, b: string, limit: number): boolean {
@@ -200,7 +208,7 @@ function within(a: string, b: string, limit: number): boolean {
  */
 function wordOf(token: string): string | null {
   if (/[/\\]/.test(token)) return null
-  const word = token.replace(EDGE, "").replace(/['’]s$/i, "")
+  const word = trimWordEdges(token).replace(/['’]s$/i, "")
   return word === "" || word.includes(".") ? null : word
 }
 

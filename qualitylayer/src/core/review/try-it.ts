@@ -3,7 +3,17 @@
 // `### Docs`. The App shows it in the Approve view, and the document is the one place that holds it.
 // Pure text, so the rule and the readers share it.
 
+import { recordLineTail } from "../docs/record-lines.ts"
 import { proseLines, sectionRanges } from "../docs/rules/types.ts"
+import { isLineText } from "../text-boundaries.ts"
+
+function tryStepTitle(line: string): string | null {
+  if (!line.startsWith("#### ")) return null
+  const rest = line.slice(5)
+  const number = /^\d+\./.exec(rest)?.[0]
+  const numbered = number === undefined ? null : recordLineTail(rest, number.length, 0)
+  return numbered ?? (rest !== "" && isLineText(rest) ? rest.trim() : null)
+}
 
 /** The text under `## Try it yourself`, without its heading; null when the document has no such section. */
 export function tryItSection(markdown: string): string | null {
@@ -53,9 +63,9 @@ export function tryItSteps(markdown: string): { title: string; line: number; tex
       inTry = (h3[1] ?? "").trim().toLowerCase() === "try it"
       continue
     }
-    const h4 = line.match(/^#### (?:\d+\.\s*)?(.+)$/)
-    if (inTry && h4 !== null) {
-      steps.push({ title: (h4[1] ?? "").trim(), line: index + 1, text: "" })
+    const title = tryStepTitle(line)
+    if (inTry && title !== null) {
+      steps.push({ title, line: index + 1, text: "" })
       continue
     }
     const last = steps[steps.length - 1]

@@ -262,9 +262,25 @@ export function defaultSocketDir(): string {
 
 const WRAPPER_MARKUP_RE = /<(\/?)(cross-session-message)/gi
 const REQUEST_MARKUP_RE = /<(\/?)(session-peers-request)/gi
-const WRAPPER_RE =
-  /^\s*<cross-session-message\s+([^>]*)>\n?([\s\S]*?)\n?<\/cross-session-message>\s*$/
-const ATTR_RE = /([A-Za-z][A-Za-z0-9-]*)="([^"]*)"/g
+const OPEN_FRAME = /^<cross-session-message\s+/
+const CLOSE_FRAME = "</cross-session-message>"
+
+function frameAttributes(header: string): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  const tokens = /[A-Za-z0-9-]+/g
+  for (let match = tokens.exec(header); match !== null; match = tokens.exec(header)) {
+    if (!header.startsWith('="', tokens.lastIndex)) continue
+    const firstLetter = match[0].search(/[A-Za-z]/)
+    if (firstLetter === -1) continue
+    const start = tokens.lastIndex + 2
+    const end = header.indexOf('"', start)
+    if (end === -1) break
+    attrs[match[0].slice(firstLetter)] = header.slice(start, end)
+    tokens.lastIndex = end + 1
+  }
+  return attrs
+}
+
 /** A visible stand-in for the `<` of a wrapper tag inside a body. */
 const LT_SUBSTITUTE = "‹"
 const PEER_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/
@@ -339,13 +355,15 @@ export function unwrapMessage(content: unknown): [string, Record<string, string>
       .join("\n")
   }
   if (typeof text !== "string") return ["", {}]
-  const match = WRAPPER_RE.exec(text)
-  if (match === null) return [text, {}]
-  const attrs: Record<string, string> = {}
-  for (const [, key, value] of (match[1] ?? "").matchAll(ATTR_RE)) {
-    if (key !== undefined && value !== undefined) attrs[key] = value
-  }
-  return [match[2] ?? "", attrs]
+  const frame = text.trim()
+  const opening = OPEN_FRAME.exec(frame)
+  if (!opening || !frame.endsWith(CLOSE_FRAME)) return [text, {}]
+  const end = frame.length - CLOSE_FRAME.length
+  const start = frame.indexOf(">", opening[0].length)
+  if (start === -1 || start >= end) return [text, {}]
+  const head = frame.slice(opening[0].length, start)
+  const body = frame.slice(start + 1, end).replace(/^\n|\n$/g, "")
+  return [body, frameAttributes(head)]
 }
 
 export type UserFrame = {

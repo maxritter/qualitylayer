@@ -22,6 +22,7 @@ import {
 } from "../docs/build-log.ts"
 import { parseDoc } from "../docs/frontmatter.ts"
 import { allTasks, emptyOutline, type Outline } from "../docs/outline.ts"
+import { recordLineTail } from "../docs/record-lines.ts"
 import { buildBase, mainLine } from "../git/base.ts"
 import { changes, isPlanPath } from "../git/changes.ts"
 import { covers } from "../git/slice-commit.ts"
@@ -246,10 +247,11 @@ function itemsOf(section: string): string[] {
   const items: string[] = []
   let listed = false
   for (const raw of section.split(/\r?\n/)) {
-    const item = raw.match(/^\s*(?:[-*]|\d+[.)])\s+(.*)$/)
+    const prefix = /^\s*(?:[-*]|\d+[.)])/.exec(raw)
+    const item = prefix === null ? null : recordLineTail(raw, prefix[0].length, 1, true)
     if (item !== null) {
       listed = true
-      items.push((item[1] ?? "").trim())
+      items.push(item)
     } else if (raw.trim() !== "" && listed && /^\s+\S/.test(raw) && items.length > 0)
       items[items.length - 1] = `${items[items.length - 1]} ${raw.trim()}`
   }

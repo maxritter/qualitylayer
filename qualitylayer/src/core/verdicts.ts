@@ -48,7 +48,7 @@ const KINDS: Record<string, RegExp> = {
 export function itemId(raw: string): string | null {
   const text = raw.trim()
   if (/^(?:review|check)$/i.test(text)) return text.toLowerCase()
-  const parts = text.match(/^([A-Za-z]+)[\s:_-]+(\S+)$/)
+  const parts = /^([A-Za-z]+)[\s:_-]+([A-Za-z\d]+)$/.exec(text)
   const kind = parts?.[1]?.toLowerCase()
   const subject = parts?.[2]
   if (kind === undefined || subject === undefined) return null

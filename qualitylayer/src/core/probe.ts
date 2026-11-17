@@ -25,6 +25,12 @@ export type ProbeResult = {
 
 const DEFAULT_TIMEOUT_MS = 5_000
 
+/** The first three-part version a tool reports, optionally with its prerelease. */
+export function versionFromOutput(text: string | null, includePrerelease = false): string | null {
+  const match = /(?<!\d)(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.]+)?/.exec(text ?? "")
+  return (includePrerelease ? match?.[0] : match?.[1]) ?? null
+}
+
 /** Kills the group `leader` started and everything still in it. Best effort, never throws. */
 function killGroup(leader: number): void {
   try {

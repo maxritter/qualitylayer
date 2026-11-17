@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { type Ctx, err, type Result } from "../ctx.ts"
 import { appendToSection, sectionText, verifyLogPath } from "./docs/build-log.ts"
 import { removeLeftoverSlots } from "./docs/slots.ts"
+import { qualityFinding, qualityHeading, qualityResult } from "./review/quality-lines.ts"
 import type { Flow } from "./scaling.ts"
 import type { Task } from "./task/store.ts"
 
@@ -66,19 +67,7 @@ const RECHECK_HEADING = "Security re-check"
 /** Fixed before the judge: a critical or high security finding. */
 const severe = (item: QualityItem) => item.severity === "critical" || item.severity === "high"
 
-const FINDING = /^[-*]\s+(?:\[([ xX])\]\s+)?(S\d+)\s+(critical|high|medium|low)\b\s*(?:·\s*)?(.*)$/
 const RECHECK_FIXED = /^[-*]\s+(S\d+)\s+fixed\b/
-
-function itemOf(line: string): QualityItem | null {
-  const finding = line.match(FINDING)
-  if (finding === null) return null
-  return {
-    id: finding[2] ?? "",
-    severity: (finding[3] ?? "high") as Severity,
-    ticked: finding[1] === "x" || finding[1] === "X",
-    text: (finding[4] ?? "").trim(),
-  }
-}
 
 function readCoverageLine(block: QualityBlock, line: string, collecting: boolean): boolean {
   const uncovered = line.match(/^\s*\*\*Not checked:\*\*(.*)/i)
@@ -107,7 +96,7 @@ export function parseQualityPass(log: string): Map<QualityRole, QualityBlock> {
   let recheck = false
   let notCheckedList = false
   for (const line of sectionText(log, SECURITY_SECTION).split(/\r?\n/)) {
-    const heading = line.match(/^###\s+(.+?)\s*$/)?.[1]?.toLowerCase()
+    const heading = qualityHeading(line)
     if (heading !== undefined) {
       notCheckedList = false
       recheck = heading === RECHECK_HEADING.toLowerCase()
@@ -126,13 +115,13 @@ export function parseQualityPass(log: string): Map<QualityRole, QualityBlock> {
     }
     if (block === null) continue
     notCheckedList = readCoverageLine(block, line, notCheckedList)
-    const resultLine = line.match(/^\*\*Result:\*\*\s*(.+?)\s*$/)?.[1] ?? null
+    const resultLine = qualityResult(line)
     if (!recheck && block.result === null) block.result = resultLine
     if (recheck && block.recheckResult === null) block.recheckResult = resultLine
     // A re-check clears a finding only with its own `- S<n> fixed` line; the latest line of an id stands.
     const fixed = recheck ? line.trim().match(RECHECK_FIXED)?.[1] : undefined
     if (fixed !== undefined) block.rechecked.add(fixed)
-    const found = itemOf(line.trim())
+    const found = qualityFinding(line.trim())
     if (found === null) continue
     // A finding written again as a box, by the re-check or after it, is unchecked until checked again.
     block.rechecked.delete(found.id)

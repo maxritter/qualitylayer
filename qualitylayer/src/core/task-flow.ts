@@ -42,7 +42,7 @@ function proseMatch(plan: string, pattern: RegExp): string | null {
 
 /** The Plan's `**Trust boundary:** …` value; null without the line. */
 export function trustBoundaryOf(plan: string): string | null {
-  return proseMatch(plan, /^\*\*Trust boundary:\*\*[ \t]*(.*)$/i)?.trim() ?? null
+  return proseMatch(plan, /^\*\*Trust boundary:\*\*(.*)$/i)?.trim() ?? null
 }
 
 /** The slices the Plan's `**Size:** about N slices …` line names; null without the line. */

@@ -92,15 +92,23 @@ type Input = TaskSummary &
 
 const MIN = 60_000
 
+/** The slice or task is already identified beside the need. */
+export function withoutNeedScope(what: string, includeIn = false): string {
+  const suffix = /(?<!\s)\s+(for|in)\s+(?:slice|task)\s+\S+$/i.exec(what)
+  return suffix !== null && (includeIn || suffix[1]?.toLowerCase() === "for")
+    ? what.slice(0, suffix.index)
+    : what
+}
+
 /** "A Stripe test key for slice 4" → "Stripe test key": the need in a few words. */
 export function shortNeed(what: string): string {
   // A need is written as a sentence or two ("<what is needed>. <why the agent cannot>"): its short
   // form is the first sentence, cut at a word within about eight words, never mid-word.
-  const first = (what.split(/(?<=[.!?])\s+|\s+[—–]\s+|:\s/)[0] ?? what).replace(/[.!?]$/, "")
-  const short = first
-    .replace(/^(an?|the)\s+/i, "")
-    .replace(/\s+(for|in)\s+(slice|task)\s+\S+$/i, "")
-    .trim()
+  const first = (what.split(/(?<=[.!?])\s+|(?<!\s)\s+[—–]\s+|:\s/, 1)[0] ?? what).replace(
+    /[.!?]$/,
+    "",
+  )
+  const short = withoutNeedScope(first.replace(/^(an?|the)\s+/i, ""), true).trim()
   if (short.length <= SHORT_NEED) return short
   const cut = short.slice(0, SHORT_NEED + 1)
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).replace(/[,;]$/, "")}…`
@@ -111,7 +119,7 @@ const SHORT_NEED = 48
 
 /** "Plan refused" → "the Plan was refused twice". */
 function twiceWords(lead: string): string {
-  const what = lead.replace(/\s+refused$/i, "")
+  const what = lead.replace(/(?<!\s)\s+refused$/i, "")
   if (what === lead) return `${lead} twice`
   return `${what === "Plan" ? "the Plan" : what} was refused twice`
 }
@@ -543,7 +551,7 @@ function liveStatusOf(task: Input, now: number): Status {
       state: "needs-you",
       kind: "you",
       icon: "hour",
-      text: `The build waits for you · ${waitedFor.what.replace(/\s+for\s+(slice|task)\s+\S+$/i, "").replace(/^./, (c) => c.toLowerCase())}`,
+      text: `The build waits for you · ${withoutNeedScope(waitedFor.what).replace(/^./, (c) => c.toLowerCase())}`,
       short: `The build waits · ${shortNeed(waitedFor.what)}`,
       meta: since,
       shortMeta: since,

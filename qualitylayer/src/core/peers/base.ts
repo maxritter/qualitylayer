@@ -287,7 +287,7 @@ export function stableDir(preferred?: string | null): string {
 }
 
 export function parseVersion(text: string | null): number[] | null {
-  const match = text?.match(/(\d+(?:\.\d+)+)/)
+  const match = text?.match(/(?<!\d)(\d+(?:\.\d+)+)/)
   return match?.[1] !== undefined ? match[1].split(".").map(Number) : null
 }
 

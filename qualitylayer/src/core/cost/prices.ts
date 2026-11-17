@@ -117,6 +117,14 @@ const PRICES: Price[] = [
     family: "openai",
     ultrafast: { promotionEnds: Date.UTC(2027, 2, 1, 8) },
   },
+  {
+    model: /^gpt-5\.6-luna$/i,
+    input: 0.2,
+    output: 1.2,
+    cacheRead: 0.02,
+    cacheWrite1h: 0.5,
+    family: "openai",
+  },
   // Current estimate rates verified 2026-10-08, not a reconstruction of historical invoices:
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   // Fast's priority alias: https://developers.openai.com/api/docs/guides/fast-mode

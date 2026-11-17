@@ -9,6 +9,7 @@ import { CheckIcon, HourglassIcon, LockIcon, TriangleAlertIcon } from "lucide-re
 import { useState } from "react"
 import { KEY_REFUSED, looksLikeKey } from "../../core/need/key.ts"
 import type { Need } from "../../core/need/need.ts"
+import { withoutNeedScope } from "../live-status.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
 
 const clock = (at: number) =>
@@ -260,7 +261,7 @@ export function NeedReceipt({ need, agent }: { need: Need; agent: string }) {
     <div className="q-need-receipt" data-testid="need-receipt">
       <CheckIcon className="q-need-i" aria-hidden="true" />
       <span>
-        {need.what.replace(/\s+for\s+(slice|task)\s+\S+$/i, "")}
+        {withoutNeedScope(need.what)}
         {need.set !== null ? ` · set by you at ${clock(need.set.at)}` : ""}
       </span>
       <b>

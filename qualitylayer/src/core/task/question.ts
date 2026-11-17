@@ -25,6 +25,7 @@ import type { AnswerKind, Item } from "../items.ts"
 import type { RepoRef } from "../paths.ts"
 import { waitFor } from "../wait.ts"
 import { ANSWER_FILES_HINT } from "./answer-files.ts"
+import { findingHeading } from "./finding-heading.ts"
 import { applyPlacePick, PLACE_QUESTION_ID } from "./place.ts"
 import { questionsAhead } from "./question-ahead.ts"
 import { readBatch } from "./question-batch.ts"
@@ -998,8 +999,8 @@ export async function answerQuestion(
 export function h3Titles(markdown: string): string[] {
   const titles: string[] = []
   for (const { text: line } of proseLines(markdown)) {
-    const heading = /^###\s+(.+?)\s*#*\s*$/.exec(line)
-    if (heading?.[1]) titles.push(heading[1].trim())
+    const heading = findingHeading(line)
+    if (heading !== null) titles.push(heading)
   }
   return titles
 }

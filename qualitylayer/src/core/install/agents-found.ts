@@ -8,7 +8,7 @@ import type { Ctx } from "../../ctx.ts"
 import type { Reviewer } from "../agents/binary.ts"
 import { AGENT_NAMES, BINARIES } from "../agents/ids.ts"
 import { nativeCommand, pickEnv, windows } from "../platform.ts"
-import { probe, versionTextOf } from "../probe.ts"
+import { probe, versionFromOutput, versionTextOf } from "../probe.ts"
 import type { DiscoveryObservation } from "../run/launch-diagnostics.ts"
 import { userHome } from "./manifest.ts"
 
@@ -250,7 +250,7 @@ async function versionOf(ctx: Ctx, path: string): Promise<string | null> {
     env: withCommandFolder(pickEnv(ctx.env, PASSED), path),
     timeoutMs: 5_000,
   })
-  return text?.match(/\d+\.\d+\.\d+/)?.[0] ?? null
+  return versionFromOutput(text)
 }
 
 /** Both agents, with the version of each that was found. */

@@ -12,17 +12,37 @@ const HEADLINE_MAX = 120
  */
 const FILE_LIKE = /^[\w.@~-]+(?:\/[\w.@~-]+)+\/?$|^[\w.@~-]+\.(?:tsx?|jsx?|css|rs|sh|py|tmpl)$/i
 
+function skipBefore(text: string, at: number, characters: RegExp): number {
+  while (at > 0 && characters.test(text.charAt(at - 1))) at--
+  return at
+}
+
+function withoutEvidenceSuffix(text: string): string {
+  const separators = /[\s,;and]/u
+  let end = skipBefore(text, text.length, separators)
+  let cut = text.length
+  while (end > 1 && text.charAt(end - 1) === "`") {
+    const open = text.lastIndexOf("`", end - 2)
+    if (open === -1) break
+    const dash = skipBefore(text, open, /\s/u) - 1
+    if (dash < open - 1 && text.charAt(dash) === "—") {
+      const before = skipBefore(text, dash, /\s/u)
+      if (before < dash) cut = before
+    }
+    end = skipBefore(text, open, separators)
+  }
+  return text.slice(0, cut)
+}
+
 /**
  * The first sentence of a verdict's text, without code, paths or the evidence it cites: the judge
  * opens every finding with one (the judge's phase text asks for it); a text that does
  * not is cut down the same way.
  */
 export function headline(text: string): string {
-  const body = text
-    // the evidence a line ends with: " — `evidence/…`, `records/…`"
-    .replace(/\s+—\s+(?:`[^`]*`[\s,;and]*)+$/u, "")
+  const body = withoutEvidenceSuffix(text)
     // an aside that is only code: " (`core/gate/revision.ts`)"
-    .replace(/\s*\([^()]*`[^()]*\)/g, "")
+    .replace(/(?<!\s)\s*\([^()]*\)/g, (aside) => (aside.includes("`") ? "" : aside))
     .replace(/\*\*|__/g, "")
     .replace(/\s+/g, " ")
     .trim()

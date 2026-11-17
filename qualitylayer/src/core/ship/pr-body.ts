@@ -29,8 +29,7 @@ export function pullRequestBody(review: string): string {
       start = index + 1
       continue
     }
-    const heading = line.match(/^## (.+?)\s*$/)?.[1]
-    if (heading !== undefined && AFTER_BODY.has(heading)) {
+    if (line.startsWith("## ") && AFTER_BODY.has(line.slice(3).trimEnd())) {
       end = index
       break
     }

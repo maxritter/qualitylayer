@@ -1,4 +1,6 @@
 // GitHub release bodies, shared by the App, update sheet and terminal.
+import { replaceInlineLinks } from "../docs/inline-links.ts"
+import { recordLineTail } from "../docs/record-lines.ts"
 import { proseLines } from "../docs/rules/types.ts"
 
 /** The GitHub repository that publishes the releases; the downloader and the App's release links share it. */
@@ -30,13 +32,14 @@ export function parseNotes(markdown: string): NoteGroup[] {
       continue
     }
     if (line.trim() === "") continue
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(line)
+    const bullet = /^\s*[-*]/.exec(line)
+    const item = bullet === null ? null : recordLineTail(line, bullet[0].length, 1, true)
     group ??= (() => {
       const first: NoteGroup = { title: "", items: [] }
       groups.push(first)
       return first
     })()
-    if (bullet !== null) group.items.push((bullet[1] as string).trim())
+    if (item !== null) group.items.push(item)
     else if (/^\s+\S/.test(line) && group.items.length > 0)
       group.items[group.items.length - 1] += ` ${line.trim()}`
     else group.items.push(line.trim())
@@ -46,9 +49,7 @@ export function parseNotes(markdown: string): NoteGroup[] {
 
 /** One item of Markdown as plain text: no emphasis marks, no code ticks, a link is its words. */
 export function plainText(markdown: string): string {
-  return markdown
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+  return replaceInlineLinks(markdown.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1"), (label) => label)
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, "$1$2")
     .replace(/`([^`]+)`/g, "$1")

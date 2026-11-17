@@ -2240,3 +2240,6 @@ qualitylayer/src/core/task/bound-target.ts !filter !diff
 qualitylayer/src/core/review/plan-input.ts !filter !diff
 qualitylayer/src/core/docs/record-lines.ts !filter !diff
 qualitylayer/src/ui/step-page/section-text.ts !filter !diff
+qualitylayer/src/core/docs/inline-links.ts !filter !diff
+qualitylayer/src/core/review/quality-lines.ts !filter !diff
+qualitylayer/src/core/task/finding-heading.ts !filter !diff

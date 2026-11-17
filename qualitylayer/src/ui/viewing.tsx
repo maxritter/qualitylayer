@@ -11,6 +11,7 @@ import {
 } from "react"
 import { folderArtifactOf } from "../core/artifact/format.ts"
 import { headingSlug } from "../core/docs/anchor.ts"
+import { trimmedLineTail } from "../core/text-boundaries.ts"
 import type { Viewing } from "../core/viewing.ts"
 import type { Api } from "./api.ts"
 
@@ -132,8 +133,11 @@ export function useSectionViewing(
             !heading.querySelector("h1,h2,h3,h4,h5,h6"),
         )
         .map((element) => {
-          const raw = element.closest<HTMLElement>("[data-comment-source]")?.dataset.commentSource
-          const text = raw?.match(/^#{1,6}\s+(.+?)\s*$/)?.[1] ?? element.textContent ?? ""
+          const raw =
+            element.closest<HTMLElement>("[data-comment-source]")?.dataset.commentSource ?? ""
+          const mark = /^#{1,6}/.exec(raw)?.[0]
+          const source = mark === undefined ? null : trimmedLineTail(raw, mark.length, 1)
+          const text = source ?? element.textContent ?? ""
           return { element, slug: headingSlug(text) }
         })
     const update = () => {

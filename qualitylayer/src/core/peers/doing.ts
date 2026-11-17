@@ -16,6 +16,7 @@ import {
 } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { isLineText, skipWhitespace } from "../text-boundaries.ts"
 import { asRecord, claudeConfigDir, isUuid } from "./base.ts"
 import type { Said } from "./claims.ts"
 import { currentTaskText, type TaskStatus } from "./task-status.ts"
@@ -273,6 +274,21 @@ export async function doingOf(input: {
 
 // ------------------------------------------------------------------ where and when
 
+function gitDirectoryPointer(text: string): string | undefined {
+  for (const prefix of text.matchAll(/^gitdir:/gm)) {
+    const after = prefix.index + prefix[0].length
+    const start = skipWhitespace(text, after)
+    if (start === text.length) {
+      for (let i = start - 1; i >= after; i--) if (isLineText(text.charAt(i))) return text.charAt(i)
+      continue
+    }
+    const remainder = text.slice(start)
+    const nextBreak = remainder.search(/[\r\n\u2028\u2029]/)
+    return (nextBreak === -1 ? remainder : remainder.slice(0, nextBreak)).trimEnd()
+  }
+  return undefined
+}
+
 /** The branch checked out where `cwd` is, from git's own files; "detached at <sha>" off a branch; null outside git. */
 export function branchOf(cwd: string | null): string | null {
   if (!cwd) return null
@@ -285,7 +301,7 @@ export function branchOf(cwd: string | null): string | null {
       if (st.isDirectory()) gitDir = dotGit
       else if (st.isFile()) {
         // A worktree's .git is a file naming its own folder under the repository's.
-        const named = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"))?.[1]
+        const named = gitDirectoryPointer(readFileSync(dotGit, "utf8"))
         if (named !== undefined) gitDir = isAbsolute(named) ? named : resolve(dir, named)
       }
     } catch {

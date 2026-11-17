@@ -10,7 +10,7 @@ import { agentBinary, type Reviewer } from "../agents/binary.ts"
 import { NATIVE_AGENTS } from "../agents/ids.ts"
 import { loadIdentity as loadState } from "../licence/identity-access.ts"
 import { nativeCommand } from "../platform.ts"
-import { probe, versionTextOf } from "../probe.ts"
+import { probe, versionFromOutput, versionTextOf } from "../probe.ts"
 import { cleanLaunchDiagnostic, type LaunchDiagnostic } from "../run/launch-diagnostics.ts"
 import { listRuns } from "../run/registry.ts"
 import { VERSION } from "../version.ts"
@@ -18,7 +18,7 @@ import { type Diagnostics, pageKindOf, recentErrorsOf, versionKey } from "./word
 
 /** The version in a command's `--version` line, or null. */
 export function versionIn(line: string): string | null {
-  return /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/.exec(line)?.[1] ?? null
+  return versionFromOutput(line, true)
 }
 
 export type SystemFacts = {

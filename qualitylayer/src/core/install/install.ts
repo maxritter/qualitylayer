@@ -58,7 +58,7 @@ import {
   renameWithRetry,
   windows,
 } from "../platform.ts"
-import { versionTextOfSync } from "../probe.ts"
+import { versionFromOutput, versionTextOfSync } from "../probe.ts"
 import { effectiveChannel } from "../update/channel.ts"
 import { readUpdate } from "../update/state.ts"
 import { VERSION } from "../version.ts"
@@ -568,8 +568,8 @@ function claudeLoadsMods(ctx: Ctx, claude: string | null): boolean {
     return false
   }
   const text = versionTextOfSync(claude, command, { timeoutMs: 5_000 })
-  const version = text?.match(/\d+\.\d+\.\d+/)?.[0]
-  return version !== undefined && compareVersions(version, MOD_MIN_VERSION) >= 0
+  const version = versionFromOutput(text)
+  return version !== null && compareVersions(version, MOD_MIN_VERSION) >= 0
 }
 
 function onPath(ctx: Ctx, dir: string): boolean {

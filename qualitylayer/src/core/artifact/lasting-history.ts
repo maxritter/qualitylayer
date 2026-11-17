@@ -6,6 +6,7 @@
 
 import { join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { recordLineTail } from "../docs/record-lines.ts"
 import type { HistoryEntry } from "./format.ts"
 import { LASTING_HISTORY_KEPT, LASTING_HISTORY_MAX } from "./format.ts"
 
@@ -41,8 +42,8 @@ export async function headOf(ctx: Ctx, root: string): Promise<string | null> {
         .catch(() => gitDir)
     } else if (kind !== "directory") return null
     const head = (await ctx.fs.readFile(join(gitDir, "HEAD"))).trim()
-    const ref = /^ref:\s*(.+)$/.exec(head)?.[1]?.trim()
-    if (ref === undefined) return /^[0-9a-f]{40,64}$/.test(head) ? head : null
+    const ref = head.startsWith("ref:") ? recordLineTail(head, 4, 0) : null
+    if (ref === null) return /^[0-9a-f]{40,64}$/.test(head) ? head : null
     for (const base of [gitDir, common]) {
       const loose = await ctx.fs.readFile(join(base, ref)).catch(() => null)
       if (loose !== null && /^[0-9a-f]{40,64}\s*$/.test(loose)) return `${ref}@${loose.trim()}`

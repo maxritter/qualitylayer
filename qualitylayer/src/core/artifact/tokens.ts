@@ -4,6 +4,7 @@
 
 import { basename, join, relative, sep } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { isLineText, lastLineBreak, skipWhitespace } from "../text-boundaries.ts"
 
 /** One colour: its light value, and its dark value when the design file names a twin. */
 export type Colour = { light: string; dark: string; twin: boolean }
@@ -40,7 +41,15 @@ type Tree = { [key: string]: string | Tree }
 
 const unquote = (value: string): string => {
   const quoted = /^(["'])(.*)\1\s*(?:#.*)?$/.exec(value)
-  return quoted !== null ? (quoted[2] ?? "") : value.replace(/\s+#.*$/, "").trim()
+  if (quoted !== null) return quoted[2] ?? ""
+  for (
+    let at = value.indexOf("#", lastLineBreak(value) + 1);
+    at >= 0;
+    at = value.indexOf("#", at + 1)
+  ) {
+    if (at > 0 && /\s/.test(value.charAt(at - 1))) return value.slice(0, at).trim()
+  }
+  return value.trim()
 }
 
 /** The nested `key: value` lines of a design file's frontmatter (maps and scalars, as the file uses them). */
@@ -52,13 +61,14 @@ function frontmatterTree(markdown: string): Tree {
   for (const raw of lines.slice(1)) {
     if (raw.trim() === "---") break
     if (raw.trim() === "" || raw.trim().startsWith("#")) continue
-    const match = /^(\s*)([A-Za-z0-9_-]+):\s*(.*)$/.exec(raw)
+    const match = /^(\s*)([A-Za-z0-9_-]+):/.exec(raw)
     if (match === null) continue
+    const value = raw.slice(match[0].length).trimStart()
+    if (!isLineText(value)) continue
     const indent = (match[1] ?? "").length
     while (stack.length > 1 && (stack[stack.length - 1]?.indent ?? -1) >= indent) stack.pop()
     const parent = stack[stack.length - 1]?.node ?? root
     const key = match[2] ?? ""
-    const value = match[3] ?? ""
     if (value === "") {
       const child: Tree = {}
       parent[key] = child
@@ -173,11 +183,21 @@ export type Palette = Map<string, { light: string; dark: string }>
 
 const declarations = (css: string): Map<string, string> => {
   const found = new Map<string, string>()
-  for (const match of css
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .matchAll(/--ql-([A-Za-z0-9-]+)\s*:\s*([^;{}]+);/g)) {
-    const value = cssValue(match[2])
-    if (value !== null) found.set(match[1] ?? "", value)
+  const statements = css.replace(/\/\*[\s\S]*?\*\//g, "").split(";")
+  for (const statement of statements.slice(0, -1)) {
+    const declaration = statement.slice(
+      Math.max(statement.lastIndexOf("{"), statement.lastIndexOf("}")) + 1,
+    )
+    for (const name of declaration.matchAll(/[A-Za-z0-9-]+/g)) {
+      const prefix = name[0].indexOf("--ql-")
+      if (prefix === -1 || prefix + 5 === name[0].length) continue
+      const colon = skipWhitespace(declaration, name.index + name[0].length)
+      if (declaration[colon] !== ":") continue
+      const raw = declaration.slice(colon + 1)
+      const value = cssValue(raw.trimStart() || raw.slice(-1))
+      if (value !== null) found.set(name[0].slice(prefix + 5), value)
+      break
+    }
   }
   return found
 }

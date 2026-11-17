@@ -33,7 +33,7 @@ export function reviewLine(summary: string): string {
   for (const part of summary
     .trim()
     .replace(/\.$/, "")
-    .split(/\s+·\s+/)) {
+    .split(/(?<!\s)\s+·\s+/)) {
     // The verdict, raw ("REVISE: 1 items") or in words ("asked for 1 change", "approved", "blocked").
     const verdict =
       part.match(/^(?:APPROVE|REVISE|BLOCK)\b(?:\W+(\d+)\s+items?\b)?/i) ??
@@ -44,11 +44,19 @@ export function reviewLine(summary: string): string {
   const counts = rest
     .join(", ")
     .replace(/^(\d+ findings?):\s*/, "$1, ")
-    .split(/\s*,\s*/)
+    .split(/,\s*|(?<!\s)\s+,\s*/)
     .filter((part) => part !== "" && !/^0 /.test(part))
   if (total !== null && !counts.some((part) => /^\d+ findings?$/.test(part)))
     counts.unshift(`${total} ${total === "1" ? "finding" : "findings"}`)
   return counts.length > 0 ? counts.join(", ") : "nothing to change"
+}
+
+function withoutReviewerAside(who: string): string {
+  const text = who.trimEnd()
+  if (!text.endsWith(")")) return who
+  const previous = text.lastIndexOf(")", text.length - 2)
+  const open = text.indexOf("(", previous + 1)
+  return open < 0 ? who : text.slice(0, open).trimEnd()
 }
 
 export function reviewsOf(task: Pick<TaskDetail, "pages" | "verifyLanes">): ReviewRow[] {
@@ -62,10 +70,7 @@ export function reviewsOf(task: Pick<TaskDetail, "pages" | "verifyLanes">): Revi
       step: "plan",
       title: /^second opinion/i.test(kind) ? "Second opinion on the Plan" : "Plan review",
       // "GPT-6.1 Sol (no second vendor installed)": the row names the reader; the review says why.
-      who: who
-        .join(" · ")
-        .replace(/\*\*/g, "")
-        .replace(/\s*\([^)]*\)\s*$/, ""),
+      who: withoutReviewerAside(who.join(" · ").replace(/\*\*/g, "")),
       line: reviewLine(reviewed.summary),
     })
   }

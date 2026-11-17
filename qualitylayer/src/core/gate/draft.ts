@@ -20,6 +20,7 @@ import {
   reviewerOf,
   startReview,
 } from "../review/cross.ts"
+import { planReviewCoverage, planReviewCoverageNote } from "../review/plan-input.ts"
 import { appendEvent, type Task } from "../task/store.ts"
 import { taskFlow } from "../task-flow.ts"
 import { lockPath } from "./lock.ts"
@@ -120,6 +121,7 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
       then,
     })
   const handle = handleOf(task, run)
+  const coverage = planReviewCoverageNote(await planReviewCoverage(ctx, task, run))
   const reading =
     run.state === "running"
       ? run.panel !== undefined
@@ -145,7 +147,7 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
           `locked, so the person reads the Plan while ${run.panel !== undefined ? "the panel" : run.name} does. Start \`${handle.wait}\` in the ` +
           `background (or run it after the gate opens); when it returns, ${fold}, and run \`${then}\` ` +
           "again: that unlocks Approve."
-        : `${document} is drafted and valid.${aside} ${reading} Reread the Plan as the reviewer will and ${fold}. ` +
+        : `${document} is drafted and valid.${aside} ${reading} ${coverage}Reread the Plan as the reviewer will and ${fold}. ` +
           `Then run \`${then}\`: the person is told once the gate is open and the findings are processed.`,
     then,
     wait_background: handle.wait,

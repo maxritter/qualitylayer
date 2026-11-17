@@ -47,12 +47,15 @@ function Row({
 }) {
   const mark = MARKS[row.state]
   const more = notes(row)
+  const tree = row.rev.split(" (")[0] ?? row.rev
+  const displayRevision = /^[0-9a-f]{13,}$/i.test(row.rev) ? row.rev.slice(0, 8) : tree
+  const revisionLabel = tree === row.rev ? `Revision ${row.rev}` : row.rev
   const title = [
     row.command,
     row.runs > 1
       ? `Ran ${row.runs} times; this is the latest${row.failedBefore ? ", after an earlier run failed" : ""}`
       : null,
-    `Revision ${row.rev}`,
+    revisionLabel,
   ]
     .filter((line) => line !== null)
     .join("\n")
@@ -74,14 +77,14 @@ function Row({
           </span>
         ))}
         {row.secs !== null ? <span className="ck-secs">{formatSecs(row.secs)}</span> : null}
-        <span className="ck-rev" title={`Revision ${row.rev}`}>
-          {row.rev.length > 12 ? (
-            <>
-              <span aria-hidden="true">{row.rev.slice(0, 8)}</span>
-              <span className="sr-only">Revision {row.rev}</span>
-            </>
-          ) : (
+        <span className="ck-rev" title={revisionLabel}>
+          {displayRevision === row.rev ? (
             row.rev
+          ) : (
+            <>
+              <span aria-hidden="true">{displayRevision}</span>
+              <span className="sr-only">{revisionLabel}</span>
+            </>
           )}
         </span>
       </span>

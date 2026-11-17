@@ -49,6 +49,11 @@ import {
   startReview,
   unanimousKeptLine,
 } from "../review/cross.ts"
+import {
+  type PlanReviewCoverage,
+  planReviewCoverage,
+  planReviewCoverageNote,
+} from "../review/plan-input.ts"
 import { fixesBuilt } from "../review/triage.ts"
 import { listRuns } from "../run/registry.ts"
 import { applyOverrides } from "../scaling.ts"
@@ -208,12 +213,9 @@ export type GateFile = {
   settled?: boolean
   /** Opened while this review ran: Approve stays locked until the agent opens the gate again. */
   waitsFor?: CrossReviewPoint
-  /**
-   * The revision the other agent's review settled on: the first opening after that review ended
-   * (its findings folded in), with the review's start to tell it from a later review. A revision
-   * after it is a change no reviewer read: the page says "reviewed before the last change".
-   */
+  /** Gate revision captured when a completed review actually matched the Plan documents. */
   reviewed?: { revision: string; run: number }
+  planReviewCoverage?: PlanReviewCoverage
   /** The agent session that opened it (null for an agent that names none): only a message typed in it approves by chat. */
   session?: string | null
   /** Recorded by the agent at the person's request (`--asked`): the words they typed. */
@@ -914,15 +916,23 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
     revision,
   }
   const opened = keptId && standing !== null ? standing.opened : now
-  // The revision the ended review settled on: kept from the standing gate for the same review run,
-  // else this opening's, the first after that review ended (a record; it holds nothing back).
   const settledRun = review ?? (point !== null ? await readRun(ctx, task, point) : null)
+  const coverage =
+    target === PLAN_TARGET ? await planReviewCoverage(ctx, task, settledRun) : undefined
   const reviewed =
-    settledRun === null || settledRun.state !== "done" || waitsFor !== undefined
+    settledRun === null || waitsFor !== undefined
       ? undefined
-      : standing?.target === target && standing.reviewed?.run === settledRun.started
+      : standing?.target === target &&
+          standing.planReviewCoverage !== undefined &&
+          standing.reviewed?.run === settledRun.started
         ? standing.reviewed
-        : { revision, run: settledRun.started }
+        : coverage === "current"
+          ? { revision, run: settledRun.started }
+          : undefined
+  const shownCoverage =
+    coverage === "current" && reviewed !== undefined && reviewed.revision !== revision
+      ? "earlier"
+      : coverage
 
   await writeGate(ctx, task, {
     ...identity,
@@ -931,6 +941,7 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
     decision: "pending",
     session: agentSession(ctx.env),
     ...(reviewed !== undefined ? { reviewed } : {}),
+    ...(shownCoverage !== undefined ? { planReviewCoverage: shownCoverage } : {}),
     ...(review !== null && review.state === "running" ? { waitsFor: review.point } : {}),
     ...(plannerWork !== null && plannerWork.pending.length > 0
       ? { waitsFor: "plan" as const }
@@ -958,6 +969,7 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
     // What stands, in a line: how to present the gate and ask its questions is the step's text.
     message:
       couldNotRunLead(review) +
+      planReviewCoverageNote(shownCoverage) +
       (folding !== null
         ? folding.message
         : approvesInAgent(task)

@@ -34,7 +34,7 @@ export type ChecksModel = {
 
 type Run = Omit<CheckRow, "runs" | "failedBefore"> & { label: string; repeats: number }
 
-const RUN = /^- (.+?) · (\S+) · `(.+?)` · (.+)$/
+const RUN = /^- (.+?) · ([^·]+?) · `(.+?)` · (.+)$/
 const SECONDS = /^\d+(?:\.\d+)?s$/
 /** A line the CLI wrote again for the same check ends in how many times it ran. */
 const REPEATS = /^(\d+) runs$/

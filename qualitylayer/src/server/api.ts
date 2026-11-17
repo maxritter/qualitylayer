@@ -311,6 +311,8 @@ export type TaskSummary = {
     folding?: number
     /** The Plan changed after the other agent's review settled: no reviewer read the last change. */
     reviewedBefore?: true
+    /** A review exists without a recorded input revision. */
+    reviewInputUnknown?: true
     /** Which round of review this is: 2 after changes were sent once, and so on. */
     round?: number
   } | null
@@ -881,8 +883,10 @@ async function summarise(
             ? { approvedDuring: gateFile.approvedDuring }
             : {}),
           ...(await planGateLock(ctx, task, gateFile)),
-          ...(gateFile.reviewed !== undefined && gateFile.reviewed.revision !== gateFile.revision
-            ? { reviewedBefore: true as const }
+          ...(gateFile.planReviewCoverage === "earlier" ? { reviewedBefore: true as const } : {}),
+          ...(gateFile.planReviewCoverage === "unknown" ||
+          (gateFile.planReviewCoverage === undefined && gateFile.reviewed !== undefined)
+            ? { reviewInputUnknown: true as const }
             : {}),
           round:
             (await readDecided(ctx, task)).filter(

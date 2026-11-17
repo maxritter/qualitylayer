@@ -56,6 +56,7 @@ import { guardOf } from "./headless-events.ts"
 import { mockupSection, mockupShots, shotPaths } from "./mockup-shots.ts"
 import { opencodeReviewEnvironment } from "./native-environment.ts"
 import { type PanelProgress, type PanelSeat, runPanel } from "./panel.ts"
+import { capturePlanReviewInput, type PlanReviewInput } from "./plan-input.ts"
 import { plannerEfforts, readPlanners } from "./planners.ts"
 import { type ProcessResult, runProcess } from "./reviewer-process.ts"
 import { stopStrayWorkers } from "./stray-workers.ts"
@@ -508,6 +509,8 @@ export type ReviewRun = {
   kind?: ReviewKind
   /** A panel's round and how each member stands; absent for a single review. */
   panel?: PanelProgress
+  /** Digest of the Plan documents supplied to the reviewer. Older records have no binding. */
+  planInput?: string
 }
 
 const runPath = (task: Pick<Task, "runtimeDir">, point: ReviewPoint) =>
@@ -885,18 +888,27 @@ export async function waitForReview(
 // --- the review itself --------------------------------------------------------
 
 /** The files the reviewer reads: the plan, the build's record for the built change, and every mockup they embed. */
-async function documentsFor(ctx: Ctx, task: Task, point: ReviewPoint): Promise<string[]> {
+async function documentsFor(
+  ctx: Ctx,
+  task: Task,
+  point: ReviewPoint,
+  input?: PlanReviewInput,
+): Promise<string[]> {
   // The Plan is read with its agents' file; the built change with the Plan, Implement's agents' file
   // and the diff. The Verify record stays on demand (build-package.ts).
-  const files = await contextOf(
-    ctx,
-    point === "plan" ? "secondPlan" : point === "build" ? "secondBuild" : "secondVerify",
-    task,
-  )
+  const files =
+    input === undefined
+      ? await contextOf(
+          ctx,
+          point === "plan" ? "secondPlan" : point === "build" ? "secondBuild" : "secondVerify",
+          task,
+        )
+      : [...input.files.keys()]
   // Every mockup a document embeds is part of what it says.
   for (const path of [...files]) {
-    if (!(await ctx.fs.exists(path))) continue
-    for (const fence of extractFences(await ctx.fs.readFile(path))) {
+    const source = input?.files.get(path) ?? path
+    if (!(await ctx.fs.exists(source))) continue
+    for (const fence of extractFences(await ctx.fs.readFile(source))) {
       if (fence.kind !== "artifact") continue
       const named = artifactPath(fence)
       if ("path" in named) files.push(join(task.dir, named.path))
@@ -904,8 +916,9 @@ async function documentsFor(ctx: Ctx, task: Task, point: ReviewPoint): Promise<s
   }
   // The Plan names its artifacts with `ql:artifact <name>` markers: each is read too.
   const plan = join(task.dir, folderDoc("plan"))
-  if (await ctx.fs.exists(plan))
-    for (const marker of parseMarkers(await ctx.fs.readFile(plan)).markers)
+  const planSource = input?.files.get(plan) ?? plan
+  if (await ctx.fs.exists(planSource))
+    for (const marker of parseMarkers(await ctx.fs.readFile(planSource)).markers)
       if (marker.name === "artifact") {
         const reference = parseArtifactReference(marker.args[0] ?? "")
         if (!reference) continue
@@ -920,7 +933,7 @@ async function documentsFor(ctx: Ctx, task: Task, point: ReviewPoint): Promise<s
           if (source) files.push(source.path)
         }
       }
-  return [...new Set(files)]
+  return [...new Set(files.map((file) => input?.files.get(file) ?? file))]
 }
 
 /** Paths handed to one git call, so a huge change stays under the command line's limit. */
@@ -1077,9 +1090,10 @@ export async function briefFor(
   task: Task,
   point: ReviewPoint,
   kind?: ReviewKind,
+  input?: PlanReviewInput,
 ): Promise<string> {
   const files: string[] = []
-  for (const path of await documentsFor(ctx, task, point)) {
+  for (const path of await documentsFor(ctx, task, point, input)) {
     if (await ctx.fs.exists(path)) files.push(path)
   }
   const parts = [
@@ -1096,6 +1110,10 @@ export async function briefFor(
     `## You are reviewing: ${REVIEWING[point]}`,
     `## Read these files\n\n${files.map((f) => `- \`${f}\``).join("\n")}`,
   ]
+  if (input !== undefined)
+    parts.push(
+      "Read the saved Plan documents listed here. Links in them resolve from their original locations in the task folder.",
+    )
   // The Plan's artifacts as drawn, not only their HTML: the reviewer is told where the pictures are.
   if (point === "plan") {
     const mockups = mockupSection(await mockupShots(ctx, task))
@@ -1447,9 +1465,14 @@ export const panelAnswerFile = (task: Pick<Task, "dir">, by: string, round: 1 | 
   join(task.dir, REVIEWS_DIR, `plan-${by}-${round}.md`)
 
 /** The second round's brief: its text, the Plan's files and the findings, quoted as data. */
-export async function secondRoundBrief(ctx: Ctx, task: Task, findings: string): Promise<string> {
+export async function secondRoundBrief(
+  ctx: Ctx,
+  task: Task,
+  findings: string,
+  input?: PlanReviewInput,
+): Promise<string> {
   const files: string[] = []
-  for (const path of await documentsFor(ctx, task, "plan")) {
+  for (const path of await documentsFor(ctx, task, "plan", input)) {
     if (await ctx.fs.exists(path)) files.push(path)
   }
   return [
@@ -1471,6 +1494,7 @@ async function runPanelReview(
   task: Task,
   step: CrossReviewStep,
   seats: ReviewSeat[],
+  input?: PlanReviewInput,
 ): Promise<Result<CrossReviewResult>> {
   await ctx.fs.mkdir(join(task.dir, REVIEWS_DIR))
   const hardStop = hardStopMs(ctx, "plan")
@@ -1484,6 +1508,7 @@ async function runPanelReview(
     state: "running",
     started: gateRun?.started ?? ctx.clock.now(),
     pid: process.pid,
+    ...(input !== undefined ? { planInput: input.digest } : {}),
     ...(why !== undefined ? { why } : {}),
     panel: { round: 1, members: seats.map((seat) => ({ ...seat, round1: "running" as const })) },
   }
@@ -1523,8 +1548,8 @@ async function runPanelReview(
                     member.effort,
                   ),
                   round === 1
-                    ? await briefFor(ctx, task, "plan")
-                    : await secondRoundBrief(ctx, task, findings ?? ""),
+                    ? await briefFor(ctx, task, "plan", undefined, input)
+                    : await secondRoundBrief(ctx, task, findings ?? "", input),
                   left,
                   () => {},
                   member.by,
@@ -1576,7 +1601,8 @@ async function runPanelReview(
     // Nobody answered: what a single review that could not run falls back to (D18), when it can.
     const { panel: _seats, ...single } = step
     const fallback = result.timedOut ? single : await retryStep(ctx, task, single)
-    if (fallback.kind === "sonnet") return runCrossReview(ctx, task, "plan", fallback)
+    if (fallback.kind === "sonnet")
+      return runCrossReviewWithInput(ctx, task, "plan", fallback, input)
     await ctx.fs.writeFile(
       step.file,
       `# Plan review by a panel: ${step.name}\n\nThe review did not complete: no reviewer answered.\n\n${result.members.map((m) => `- ${m.name}: ${m.reason ?? (m.round1 === "timed_out" ? "ran out of time" : "did not answer")}`).join("\n")}\n`,
@@ -1645,6 +1671,21 @@ export async function runCrossReview(
   /** The review the gate that started this worker decided on; none when a person runs the command. */
   decided: CrossReviewStep | null = null,
 ): Promise<Result<CrossReviewResult>> {
+  const input = point === "plan" ? await capturePlanReviewInput(ctx, task) : undefined
+  try {
+    return await runCrossReviewWithInput(ctx, task, point, decided, input)
+  } finally {
+    await input?.close()
+  }
+}
+
+async function runCrossReviewWithInput(
+  ctx: Ctx,
+  task: Task,
+  point: ReviewPoint,
+  decided: CrossReviewStep | null,
+  input?: PlanReviewInput,
+): Promise<Result<CrossReviewResult>> {
   const first = decided ?? (await crossReviewStep(ctx, task, point))
   if (first === null) {
     return err({
@@ -1656,7 +1697,7 @@ export async function runCrossReview(
     })
   }
   if (first.panel !== undefined && first.panel.length >= 2)
-    return runPanelReview(ctx, task, first, first.panel)
+    return runPanelReview(ctx, task, first, first.panel, input)
   const binary = await reviewerBinary(ctx, first.by)
   if (binary === null) return err({ code: "bad_args", message: `${first.name} is not on PATH` })
   await ctx.fs.mkdir(join(task.dir, REVIEWS_DIR))
@@ -1675,6 +1716,7 @@ export async function runCrossReview(
       state: "running",
       started,
       pid: process.pid,
+      ...(input !== undefined ? { planInput: input.digest } : {}),
       ...(step.kind !== undefined ? { kind: step.kind } : {}),
       ...(why !== undefined ? { why } : {}),
     }
@@ -1726,7 +1768,7 @@ export async function runCrossReview(
               point === "plan" ? shotPaths(await mockupShots(ctx, task)) : [],
               step.effort,
             ),
-            await briefFor(ctx, task, point, step.kind),
+            await briefFor(ctx, task, point, step.kind, input),
             hardStop,
             seen,
             step.by,

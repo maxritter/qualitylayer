@@ -761,6 +761,8 @@ export async function runCheck(
         if (current.data.now.length === 0) return noCommands()
         const commands = current.data
         const rev = await shortRev(ctx, task)
+        const base = rev === "no-commit" ? "no commit" : `base ${rev}`
+        const workingTree = `working tree (${base})`
         const revision = await buildRevision(ctx, task).catch(() => rev)
         const commit = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
         const head = commit.code === 0 ? commit.stdout.trim() : undefined
@@ -848,7 +850,7 @@ export async function runCheck(
             if (!approved) {
               finish({ command, ran: false, exit: null, secs: 0, log: null, passed: false })
               lines.push(
-                `- ${name} · ${rev} · \`${command}\` · not run by QualityLayer: changed after approval`,
+                `- ${name} · ${workingTree} · \`${command}\` · not run by QualityLayer: changed after approval`,
               )
               records.push({
                 ...(head !== undefined ? { head } : {}),
@@ -897,7 +899,7 @@ export async function runCheck(
                   )
                   .at(-1)?.at ?? previous.at
               lines.push(
-                `- ${name} · ${rev} · \`${command}\` · reused: nothing changed since it passed at ${clockTime(passedAt)}`,
+                `- ${name} · ${workingTree} · \`${command}\` · reused: nothing changed since it passed at ${clockTime(passedAt)}`,
               )
               records.push({
                 ...previous,
@@ -1012,7 +1014,8 @@ export async function runCheck(
               ran.isolated === undefined
                 ? ""
                 : ` · on a clean copy of HEAD plus this ${whose}'s own files (in the checkout: ${runOutcome(ran.first ?? ran, null)}; left out ${ran.isolated.length} file${ran.isolated.length === 1 ? "" : "s"} that ${ran.isolated.length === 1 ? "is" : "are"} not this ${whose}'s: ${ran.isolated.slice(0, 5).join(", ")}${ran.isolated.length > 5 ? ", …" : ""})`
-            lines.push(`- ${name} · ${rev} · \`${command}\` · ${text} · ${secs}s${onCopy}`)
+            const checkedTree = ran.isolated === undefined ? workingTree : `isolated copy (${base})`
+            lines.push(`- ${name} · ${checkedTree} · \`${command}\` · ${text} · ${secs}s${onCopy}`)
             if (unsettled) {
               unsettledCommands.add(command)
               failed.push(

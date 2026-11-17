@@ -49,7 +49,9 @@ function planMetaLine(
   return metaLine(
     task.type === "bugfix" ? "bug fix" : undefined,
     where,
-    reviewMeta(reviewView, task.gate?.reviewedBefore === true) ?? undefined,
+    task.gate?.reviewInputUnknown === true
+      ? undefined
+      : (reviewMeta(reviewView, task.gate?.reviewedBefore === true) ?? undefined),
   )
 }
 

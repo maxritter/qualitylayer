@@ -20,6 +20,7 @@ import {
   type TestFirst,
   type TreeFile,
 } from "./docs/outline.ts"
+import { checkField, checkHeading, checkListItem } from "./docs/record-lines.ts"
 import { sectionRanges } from "./docs/rules/types.ts"
 import { PLAN_GATE_DOCS } from "./docs/schema.ts"
 import { BUILD_COMMITS, buildBase } from "./git/base.ts"
@@ -317,16 +318,14 @@ export function parseFinalChecks(markdown: string): {
     return range === undefined ? [] : lines.slice(range.start, range.end - 1)
   }
   const items = (body: string[]) =>
-    body
-      .map((l) => l.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/)?.[1]?.trim() ?? "")
-      .filter((l) => l !== "")
+    body.map((line) => checkListItem(line) ?? "").filter((l) => l !== "")
   const tries: TryStep[] = []
   let step: TryStep | null = null
   for (const line of section("Try it")) {
-    const heading = line.match(/^###\s+(?:\d+\.\s*)?(.+)$/)
+    const heading = checkHeading(line)
     if (heading !== null) {
       step = {
-        title: (heading[1] ?? "").trim(),
+        title: heading,
         what: "",
         command: null,
         expected: "",
@@ -336,12 +335,9 @@ export function parseFinalChecks(markdown: string): {
       tries.push(step)
       continue
     }
-    const field = line.match(
-      /^\s*[-*]\s+\*{0,2}(Do|Run|Expect|Expected|Saw)\*{0,2}:\*{0,2}\s*(.*)$/i,
-    )
+    const field = checkField(line)
     if (field !== null && step !== null) {
-      const value = (field[2] ?? "").trim()
-      const name = (field[1] ?? "").toLowerCase()
+      const { name, value } = field
       if (name === "do") step.what = value
       else if (name === "run") step.command = value.match(/`([^`]+)`/)?.[1] ?? value
       else if (name.startsWith("expect")) step.expected = value
@@ -351,9 +347,8 @@ export function parseFinalChecks(markdown: string): {
       }
       continue
     }
-    const item = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/)
-    if (item !== null && step === null) {
-      const text = (item[1] ?? "").trim()
+    const text = checkListItem(line)
+    if (text !== null && step === null) {
       tries.push({
         title: text,
         what: "",

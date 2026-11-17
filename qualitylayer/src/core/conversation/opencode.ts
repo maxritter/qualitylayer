@@ -1,8 +1,10 @@
 // OpenCode 2.x keeps a session as typed messages in SQLite (`session_message`). An assistant message holds its text,
 // reasoning and tool calls as content items and is rewritten while it streams, so the reader returns whole messages
 // changed since a watermark and the caller merges the events by id. The terminal stays the agent's engine.
+
 import { Database } from "bun:sqlite"
 import { existsSync } from "node:fs"
+import { trimEndCharacters } from "../text-boundaries.ts"
 import { conversationAttachments, imageContentText, imageMessageText } from "./attachments.ts"
 import { estimatedUsd } from "./estimate.ts"
 import { editDiff, firstText, inputJson, linesLabel, patchDiffs, shellKind } from "./tools.ts"
@@ -59,7 +61,7 @@ function iso(ms: unknown): string | undefined {
 const firstLine = (value: string): string => bounded(value.trim().split("\n")[0] ?? "", 120)
 
 function lines(value: string): number {
-  const trimmed = value.replace(/\n+$/, "")
+  const trimmed = trimEndCharacters(value, "\n")
   return trimmed === "" ? 0 : trimmed.split("\n").length
 }
 

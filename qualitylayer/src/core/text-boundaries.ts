@@ -15,6 +15,13 @@ export function trimEdgeCharacters(text: string, characters: string): string {
   return trimEndCharacters(text.slice(start), characters)
 }
 
+/** Normalize CR/LF and strip trailing spaces or tabs from each logical line used in a fingerprint. */
+export function normalizedLineEnds(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\n\u2028\u2029]+/g, (line) => trimEndCharacters(line, " \t"))
+}
+
 export function skipWhitespace(text: string, at: number): number {
   while (at < text.length && /\s/.test(text.charAt(at))) at++
   return at

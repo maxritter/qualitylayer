@@ -7,6 +7,7 @@ import { lstatSync, realpathSync as realpathPortable } from "node:fs"
 import { basename, dirname, isAbsolute, join, normalize, parse, posix, win32 } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { homeVariable, insidePath } from "../platform.ts"
+import { trimEndCharacters } from "../text-boundaries.ts"
 
 /**
  * The real path. On Windows the portable form keeps 8.3 short names (`C:\Users\RUNNER~1`), so the
@@ -61,7 +62,7 @@ export function userHome(ctx: Ctx): { ok: true; home: string } | { ok: false; re
   if (!isAbsolute(home)) return { ok: false, reason: `HOME is not an absolute path: ${home}` }
   const normal = normalize(home)
   if (normal === parse(normal).root) return { ok: false, reason: "HOME is the filesystem root" }
-  const clean = normal.replace(/[\\/]+$/, "")
+  const clean = trimEndCharacters(normal, "\\/")
   // The real path, so that the same HOME reached through a symlink (macOS's /var is
   // /private/var; install.sh resolves HOME the same way) records and matches the same paths.
   let real = clean
@@ -81,7 +82,7 @@ export function realDir(path: string): string {
     return realpathSync(path)
   } catch {
     const clean = normalize(path)
-    return clean === parse(clean).root ? clean : clean.replace(/[\\/]+$/, "")
+    return clean === parse(clean).root ? clean : trimEndCharacters(clean, "\\/")
   }
 }
 

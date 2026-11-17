@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { normalizedLineEnds } from "../text-boundaries.ts"
 import type { LaneRow } from "./lanes.ts"
 
 /** Per document (its name from the task folder): per marker key. */
@@ -26,15 +27,7 @@ export function withPagesLock<T>(
 
 /** The fingerprint of a text as QualityLayer compares it: line endings and trailing blanks aside. */
 export const fingerprint = (text: string): string =>
-  createHash("sha256")
-    .update(
-      text
-        .replace(/\r\n?/g, "\n")
-        .replace(/[ \t]+$/gm, "")
-        .trim(),
-    )
-    .digest("hex")
-    .slice(0, 16)
+  createHash("sha256").update(normalizedLineEnds(text).trim()).digest("hex").slice(0, 16)
 
 export async function readPagesRecord(ctx: Ctx, runtimeDir: string): Promise<PagesRecord> {
   const path = recordPath(runtimeDir)

@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { TaskFile } from "../core/docs/names.ts"
+import { trimEndCharacters } from "../core/text-boundaries.ts"
 import type { Api, TaskDetail } from "./api.ts"
 import { api as liveApi } from "./api.ts"
 import { setDocumentRecord, useDocumentRecord } from "./docs/mode.ts"
@@ -41,7 +42,7 @@ export function viewFile(detail: Pick<TaskDetail, "files">, view: string): TaskF
 /** The path on disk of a file in the task folder, spelt with the separator the folder's path uses. */
 export function fullPathOf(detail: Pick<TaskDetail, "dir">, name: string): string {
   const sep = detail.dir.includes("\\") && !detail.dir.includes("/") ? "\\" : "/"
-  return `${detail.dir.replace(/[\\/]+$/, "")}${sep}${name}`
+  return `${trimEndCharacters(detail.dir, "\\/")}${sep}${name}`
 }
 
 /**

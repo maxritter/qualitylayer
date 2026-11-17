@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { type ReactNode, useEffect, useId, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { trimEndCharacters } from "../../core/text-boundaries.ts"
 import { WhoMark } from "../kit/WhoMark.tsx"
 import { offersHostActions } from "../machines/framed.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
@@ -37,7 +38,7 @@ export type Drawer =
       open?: string
     }
 
-const fullPath = (dir: string, path: string) => `${dir.replace(/[\\/]+$/, "")}/${path}`
+const fullPath = (dir: string, path: string) => `${trimEndCharacters(dir, "\\/")}/${path}`
 
 function RecordBody({ record, live }: { record: RecordView; live: StepLive }) {
   const [text, setText] = useState<string | null>(null)
@@ -56,7 +57,7 @@ function RecordBody({ record, live }: { record: RecordView; live: StepLive }) {
   }, [record, live])
   const lines =
     text !== null
-      ? terminalText(text).replace(/\n+$/, "").split("\n")
+      ? trimEndCharacters(terminalText(text), "\n").split("\n")
       : (record.lines ?? []).map(terminalText)
   return (
     <>

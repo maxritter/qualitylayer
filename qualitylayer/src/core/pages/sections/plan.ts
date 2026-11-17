@@ -4,6 +4,7 @@
 // drawn by `fallbackOf` (render.ts). Plain Markdown: GitHub and an editor read exactly this, and the
 // App draws its own parts over it.
 
+import { isLineText } from "../../text-boundaries.ts"
 import type { PageState, SectionWriters } from "../render.ts"
 
 /** A finding's answer as the line says it: Taken, Kept or Ask, with the words under it. */
@@ -34,8 +35,11 @@ export function verdictWords(verdict: string | null): string | null {
     const n = revise[1] === undefined ? null : Number(revise[1])
     return n === null ? "asked for changes" : `asked for ${n} ${n === 1 ? "change" : "changes"}`
   }
-  const block = text.match(/^BLOCK\b[:\s]*(.*)$/)
-  if (block !== null) return block[1] ? `blocked: ${block[1]}` : "blocked"
+  const block = /^BLOCK\b[:\s]*/.exec(text)
+  if (block !== null) {
+    const reason = text.slice(block[0].length)
+    if (isLineText(reason)) return reason ? `blocked: ${reason}` : "blocked"
+  }
   return text
 }
 

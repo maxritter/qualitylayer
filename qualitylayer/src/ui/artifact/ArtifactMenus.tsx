@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import type { Artifact } from "../../core/artifact/format.ts"
+import { trimEndCharacters } from "../../core/text-boundaries.ts"
 import type {
   Api,
   ArtifactWhere,
@@ -235,7 +236,7 @@ export function useArtifactMenus({
     items.push({
       label: "Copy path",
       icon: <CopyIcon aria-hidden="true" />,
-      onSelect: () => copyText(`${task.dir.replace(/[\\/]+$/, "")}/${draft.file}`),
+      onSelect: () => copyText(`${trimEndCharacters(task.dir, "\\/")}/${draft.file}`),
     })
     if (!readOnly && draft.pages === undefined)
       items.push("separator", {

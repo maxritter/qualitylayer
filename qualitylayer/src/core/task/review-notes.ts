@@ -2,6 +2,7 @@
 // words behind it, and whether a commit after the judged one touched what a finding names.
 
 import type { Ctx } from "../../ctx.ts"
+import { trimEndCharacters } from "../text-boundaries.ts"
 
 const HEADLINE_MAX = 120
 
@@ -26,11 +27,11 @@ export function headline(text: string): string {
     .replace(/\s+/g, " ")
     .trim()
   const first = body.split(/(?<=[.!?])\s+(?=[A-Z0-9`"“*(])/u)[0] ?? body
-  const words = first
+  const phrase = first
     // code reads as its name: `NO_CODE_KINDS = new Set([…])` → NO_CODE_KINDS, `judgeShares(x)` → judgeShares
     .replace(/`([^`]*)`/g, (_, code: string) => code.replace(/^([\w.$]+)\s*(?:=|\().*$/s, "$1"))
-    .replace(/[.:;,]+$/, "")
-    .trim()
+
+  const words = trimEndCharacters(phrase, ".:;,").trim()
   const capital = words.charAt(0).toUpperCase() + words.slice(1)
   if (capital.length <= HEADLINE_MAX) return capital
   const cut = capital.slice(0, HEADLINE_MAX - 1)

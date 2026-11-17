@@ -6,6 +6,7 @@ import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { Task } from "../task/store.ts"
 import { agentFileOf, LOGS } from "./names.ts"
+import { noteLine } from "./record-lines.ts"
 import { proseLines, sectionRanges } from "./rules/types.ts"
 import { OPTIONAL_SLOT_LINE, slotHeading } from "./slots.ts"
 
@@ -332,8 +333,6 @@ export type Note = {
   line: number
 }
 
-const NOTE =
-  /^[-*]\s+(T\d+(?:\s*,\s*T\d+)*|Plan)\s*\((tactical|glue|amended|agreed|judged)\)\s*:\s*(.+)$/i
 const BASELINE = /^[-*]\s+Baseline\s*:\s*(\S.*)$/i
 
 /** The heading of the Implement agents' file that holds the build's decisions and Plan amendments. */
@@ -365,19 +364,19 @@ export function parseNotes(markdown: string): Note[] {
       })
       continue
     }
-    const note = line.match(NOTE)
+    const note = noteLine(line)
     if (note === null) continue
-    const raw = (note[2] ?? "").toLowerCase()
+    const raw = note.kind.toLowerCase()
     notes.push({
       task:
-        note[1]?.toLowerCase() === "plan"
+        note.task.toLowerCase() === "plan"
           ? null
-          : (note[1] ?? "")
+          : note.task
               .split(",")
               .map((id) => id.trim().toUpperCase())
               .join(", "),
       kind: raw === "glue" ? "tactical" : (raw as NoteKind),
-      text: (note[3] ?? "").trim(),
+      text: note.text,
       line: index + 1,
     })
   }

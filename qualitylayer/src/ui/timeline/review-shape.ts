@@ -1,3 +1,5 @@
+import { trimEndWhile } from "../../core/text-boundaries.ts"
+
 // How Review keeps its long lists short: a Try it step split into its words, its commands (each
 // copied on its own) and what to expect; the terminal proof grouped by kind with one row per
 // scenario or truth; the plan's changes once each. Plain functions, so the suite pins them.
@@ -23,9 +25,8 @@ export function splitTry(text: string): TryShape {
       .join("")
   const first = at[0] as number
   const last = at[at.length - 1] as number
-  const say = join(0, first)
-    .replace(/[\s:,;(]+$/, "")
-    .replace(/\s+then$/i, "")
+  const before = trimEndWhile(join(0, first), (char) => /[\s:,;(]/.test(char))
+  const say = /\sthen$/i.test(before) ? before.slice(0, -4).trimEnd() : before
   const after = join(last + 1, parts.length).replace(/^[\s.,:;)]+/, "")
   return {
     say,

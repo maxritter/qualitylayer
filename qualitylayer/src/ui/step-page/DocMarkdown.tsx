@@ -10,6 +10,7 @@ import { CopyIcon } from "lucide-react"
 import { marked, type Token, type Tokens } from "marked"
 import { Fragment, type ReactNode, useMemo } from "react"
 import { headingSlug } from "../../core/docs/anchor.ts"
+import { trimEndCharacters } from "../../core/text-boundaries.ts"
 import { InlineMarkdown, stripFrontmatter, toBlocks } from "../reader/DocReader.tsx"
 import { diagramTheme, MermaidBlock } from "../reader/MermaidBlock.tsx"
 import { WireframeBlock } from "../reader/WireframeBlock.tsx"
@@ -391,7 +392,7 @@ export function DocMarkdown({ markdown, state, first, live, bare = false, hidden
   const rawOf = (from: number, to: number) =>
     tokens
       .slice(from, to)
-      .map((t) => t.raw.replace(/\n*$/, "\n\n"))
+      .map((t) => `${trimEndCharacters(t.raw, "\n")}\n\n`)
       .join("")
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as Token

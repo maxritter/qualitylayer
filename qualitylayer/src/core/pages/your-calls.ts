@@ -48,7 +48,7 @@ export function yourCallsOf(plan: string): Record<string, YourCallRecord> {
     const b = optionText(text, "B")
     calls[block.id] = {
       what: block.title,
-      recommended: /^\s*\*\*Recommended:\*\*\s*B\b/im.test(text) ? "B" : "A",
+      recommended: /^[^\S\r\n\u2028\u2029]*\*\*Recommended:\*\*\s*B\b/im.test(text) ? "B" : "A",
       ...(a !== undefined ? { A: a } : {}),
       ...(b !== undefined ? { B: b } : {}),
     }

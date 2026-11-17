@@ -156,7 +156,7 @@ const STEP_NAMES = new Set<string>(FLOW_STEPS.map((step) => step.id))
 /** The step a `## ` line names (any case, trailing spaces allowed), or null. */
 function stepHeading(line: string): string | null {
   if (!line.startsWith("## ")) return null
-  const name = line.slice(3).replace(/ +$/, "").toLowerCase()
+  const name = trimEndCharacters(line.slice(3), " ").toLowerCase()
   return STEP_NAMES.has(name) ? name : null
 }
 

@@ -61,7 +61,7 @@ const plain = (text: string) =>
 
 /** A recorded line as a sentence: its first letter up, a full stop at its end, its paths out. */
 const sentence = (text: string) => {
-  const bare = plain(text.replace(/\s*[—–-]?\s*`(?:evidence|records)\/[^`]+`/g, ""))
+  const bare = plain(text.replace(/(?<!\s)\s*(?:[—–-]\s*)?`(?:evidence|records)\/[^`]+`/g, ""))
   if (bare === "") return ""
   const upper = bare.charAt(0).toUpperCase() + bare.slice(1)
   return /[.!?]$/.test(upper) ? upper : `${upper}.`

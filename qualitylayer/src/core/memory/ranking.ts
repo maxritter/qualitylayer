@@ -1,3 +1,4 @@
+import { trimEndCharacters } from "../text-boundaries.ts"
 // How a search ranks lessons: full-text hits and meaning (cosine similarity) are fused, and a lesson
 // that matches neither way never enters. Pure: no I/O, so the ranking test calls it directly.
 
@@ -75,8 +76,7 @@ export function matchesPaths(paths: readonly string[], files: readonly string[])
 export function searchWords(query: string): string[] {
   const paths = /(?:[\w.-]+\/)+[\w.-]+/g
   const fromPaths = (query.match(paths) ?? []).flatMap((path) =>
-    path
-      .replace(/[.-]+$/, "")
+    trimEndCharacters(path, ".-")
       .replace(/\.[A-Za-z0-9]{1,8}$/, "")
       .split(/[/.]/)
       .filter((part) => part.length >= 3 && !COMMON_PATH_WORDS.has(part.toLowerCase())),

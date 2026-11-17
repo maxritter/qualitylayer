@@ -53,8 +53,10 @@ export function markText(text: string, hash: string): string {
   const paragraphs = unmarked(text).split("\n\n")
   const last = paragraphs.length - 1
   return paragraphs
-    .map((paragraph, index) =>
-      index % 2 === 0 || index === last ? paragraph.replace(/(\s*)$/, `${mark}$1`) : paragraph,
-    )
+    .map((paragraph, index) => {
+      if (index % 2 !== 0 && index !== last) return paragraph
+      const body = paragraph.trimEnd()
+      return body + mark + paragraph.slice(body.length)
+    })
     .join("\n\n")
 }

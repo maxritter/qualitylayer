@@ -59,7 +59,7 @@ function checklist(done: CheckRow["state"][], extra: Partial<Checklist> = {}): C
     {
       id: "review",
       title: "Code review",
-      rows: [row("review", "Code review", extra.failed ? "waiting" : "waiting")],
+      rows: [row("review", "Code review", "waiting")],
     },
   ]
   const rows = groups.flatMap((g) => g.rows)

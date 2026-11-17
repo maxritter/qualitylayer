@@ -29,6 +29,7 @@ import { ANSWER_MODE_FIELDS, APPROVAL_MODE_FIELDS } from "../task/answer-mode.ts
 import { planningQuestionAnswers } from "../task/planning-answers.ts"
 import { answeredQuestions } from "../task/question.ts"
 import { readmeFrontmatter, type Task } from "../task/store.ts"
+import { normalizedLineEnds, trimEndCharacters } from "../text-boundaries.ts"
 
 const digest = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex")
 
@@ -59,12 +60,7 @@ export async function evidenceRevision(ctx: Ctx, path: string): Promise<string> 
   } catch {
     return digest(bytes)
   }
-  return `text:${digest(
-    text
-      .replace(/\r\n?/g, "\n")
-      .replace(/[ \t]+$/gm, "")
-      .replace(/\n+$/, ""),
-  )}`
+  return `text:${digest(trimEndCharacters(normalizedLineEnds(text), "\n"))}`
 }
 
 /**

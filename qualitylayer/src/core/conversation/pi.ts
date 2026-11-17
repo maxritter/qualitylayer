@@ -4,6 +4,7 @@
 import { readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { trimEndCharacters } from "../text-boundaries.ts"
 import { conversationAttachments, imageContentText, imageMessageText } from "./attachments.ts"
 import { estimatedUsd } from "./estimate.ts"
 import { editDiff, firstText, inputJson, linesLabel, patchDiffs, shellKind } from "./tools.ts"
@@ -110,7 +111,7 @@ function contentText(content: unknown): string {
 const firstLine = (value: string): string => bounded(value.trim().split("\n")[0] ?? "", 120)
 
 function lines(value: string): number {
-  const trimmed = value.replace(/\n+$/, "")
+  const trimmed = trimEndCharacters(value, "\n")
   return trimmed === "" ? 0 : trimmed.split("\n").length
 }
 

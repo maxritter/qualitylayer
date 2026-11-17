@@ -3,9 +3,13 @@
 // the counts a Summary line carries. Pure, so a test reads it as it is.
 
 import { headingSlug } from "../../core/docs/anchor.ts"
+import { trimmedLineTail } from "../../core/text-boundaries.ts"
 import type { DocSection, DocSections } from "../api.ts"
 import { foldsOnPage } from "../steps/fold.ts"
 import type { Fact } from "./bands/FactRow.tsx"
+import { factsOfLine, isDivider, plain } from "./section-text.ts"
+
+export { factsOfLine } from "./section-text.ts"
 
 /** The DOM id of a section on the page: its fold's summary, or its heading's wrapper. */
 export const sectionId = (title: string): string => `bd-sec-${headingSlug(title)}`
@@ -34,9 +38,6 @@ function proseOf(markdown: string): string {
   return out.join("\n")
 }
 
-/** A table's divider row (`|---|---|`) and nothing else. */
-const DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
-
 /** Lines of a section a person reads: not blank, not a heading, not a table's divider or header. */
 export function visibleLines(markdown: string): string[] {
   const lines = proseOf(markdown)
@@ -44,9 +45,9 @@ export function visibleLines(markdown: string): string[] {
     .filter((line) => line.trim() !== "")
   const out: string[] = []
   lines.forEach((line, index) => {
-    if (/^#{1,6}\s/.test(line) || DIVIDER.test(line)) return
+    if (/^#{1,6}\s/.test(line) || isDivider(line)) return
     // A table's header row is the one before its divider.
-    if (/^\s*\|/.test(line) && DIVIDER.test(lines[index + 1] ?? "")) return
+    if (/^\s*\|/.test(line) && isDivider(lines[index + 1] ?? "")) return
     out.push(line)
   })
   return out
@@ -57,13 +58,6 @@ export const lineCount = (markdown: string): number => visibleLines(markdown).le
 
 const clip = (text: string, at: number): string =>
   text.length <= at ? text : `${text.slice(0, at - 1).trimEnd()}…`
-
-const plain = (text: string): string =>
-  text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/[`*_]/g, "")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .trim()
 
 /** A paragraph's sentences; a full stop inside a code span never ends one. */
 export function sentencesOf(text: string): string[] {
@@ -172,8 +166,8 @@ export function takeawaysOf(markdown: string): { intro: string; items: Takeaway[
       if (fence === null) fence = opened.slice(0, 3)
       else if (opened.startsWith(fence)) fence = null
     }
-    const head = fence === null ? /^###\s+(.+?)\s*$/.exec(line)?.[1] : undefined
-    if (head !== undefined) {
+    const head = fence === null && line.startsWith("###") ? trimmedLineTail(line, 3, 1) : null
+    if (head !== null) {
       flush()
       current = { title: head, lines: [line] }
       continue
@@ -183,17 +177,6 @@ export function takeawaysOf(markdown: string): { intro: string; items: Takeaway[
   }
   flush()
   return { intro: intro.join("\n").trim(), items: out }
-}
-
-/** The facts a Summary's counts line carries: `12 Done means · 4 answers` → two facts. */
-export function factsOfLine(line: string): Fact[] {
-  const facts: Fact[] = []
-  for (const part of plain(line).split(/\s+[·•]\s+/)) {
-    const found = /^((?:about\s+)?\d[\d,.]*(?:\s?%)?)\s+(.+)$/i.exec(part.trim())
-    if (found?.[1] !== undefined && found[2] !== undefined)
-      facts.push({ value: found[1], label: found[2].replace(/[.]$/, "") })
-  }
-  return facts
 }
 
 /**

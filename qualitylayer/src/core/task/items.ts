@@ -28,6 +28,7 @@ import { parseMarkers } from "../docs/markers.ts"
 import { diagramKind } from "../docs/mermaid-style.ts"
 import { agentFileOf, folderDoc, isAgentFile, RESEARCH_QUESTIONS } from "../docs/names.ts"
 import { parsePrerequisites } from "../docs/outline.ts"
+import { findingAnswerLine, recordLineTail } from "../docs/record-lines.ts"
 import { isYourCall } from "../docs/rules/doc-rules.ts"
 import { proseLines, sectionRanges } from "../docs/rules/types.ts"
 import { artifactPath, extractFences } from "../docs/visuals.ts"
@@ -56,6 +57,7 @@ import { findingAnswers } from "../small-findings.ts"
 import { taskFlow } from "../task-flow.ts"
 import { isStructured, readTeamComments } from "../team/comments.ts"
 import { commentAuthor } from "../team/people.ts"
+import { trimEndCharacters } from "../text-boundaries.ts"
 import { readAssignment } from "../verification.ts"
 import { readHandback } from "./handback.ts"
 import { applyPointAgreements, pointAgreements } from "./point-confirmations.ts"
@@ -129,8 +131,10 @@ const firstSentence = (text: string) => clip(plain(text).split(/(?<=[.!?])\s/)[0
 /** The nearest heading above a line: what a picture is about. */
 function headingAbove(lines: string[], line: number): string | null {
   for (let index = line - 2; index >= 0; index--) {
-    const match = (lines[index] ?? "").match(/^#{2,4}\s+(.+)$/)
-    if (match?.[1] !== undefined) return plain(match[1])
+    const text = lines[index] ?? ""
+    const marks = /^#{2,4}/.exec(text)?.[0]
+    const title = marks === undefined ? null : recordLineTail(text, marks.length, 1)
+    if (title !== null) return plain(title)
   }
   return null
 }
@@ -755,8 +759,8 @@ function subsection(section: string, heading: string): string {
   const out: string[] = []
   let inside = false
   for (const line of section.split(/\r?\n/)) {
-    const match = line.match(/^###\s+(.+)$/)
-    if (match?.[1] !== undefined) inside = match[1].trim().toLowerCase() === heading.toLowerCase()
+    const title = line.startsWith("###") ? recordLineTail(line, 3, 1) : null
+    if (title !== null) inside = title.toLowerCase() === heading.toLowerCase()
     else if (inside) out.push(line)
   }
   return out.join("\n")
@@ -857,9 +861,6 @@ export function askedFromDocs(body: string, words: string, bug: boolean): Item[]
 
 // ---------------------------------------------------------------- the other agent's review
 
-const ANSWER_LINE =
-  /^\s*(?:[-*>]\s*)?\*{0,2}Answer:?\*{0,2}\s*(?:(Taken|Kept|Ask)\b)?\s*[·:—–-]?\s*(.*)$/i
-
 /**
  * One finding of the other agent's review, with the working agent's own answer under it, when it
  * has one. `ask`: the agent could not settle it and asks the person; `answer` is its question.
@@ -909,14 +910,9 @@ export function reviewFindings(markdown: string): Finding[] {
         }
         continue
       }
-      const said = line.match(ANSWER_LINE)
-      if (said !== null) {
-        const stance = (said[1] ?? "").toLowerCase()
-        answer = {
-          ...(stance === "taken" || stance === "kept" || stance === "ask" ? { stance } : {}),
-          text: plain(said[2] ?? ""),
-        }
-      } else asked.push(line)
+      const said = findingAnswerLine(line)
+      if (said !== null) answer = { ...said, text: plain(said.text) }
+      else asked.push(line)
     }
     const joined = plain(asked.join(" "))
     const first = joined.split(/(?<=[.!?])\s/)[0] ?? joined
@@ -1028,7 +1024,11 @@ export function planLists(plan: string): NonNullable<StepParts["plan"]> {
       const text = plain(line)
       const owner = text.match(/\b(T\d+)\b/)?.[1] ?? null
       // The task tag goes first, then the marker an answer the person did not know carries.
-      const untagged = text.replace(/\s*[(·—–-]*\s*\bT\d+\b\)?\s*\.?$/, "").trim()
+      const tag = /\bT\d+\b\)?\s*\.?$/.exec(text)
+      const untagged =
+        tag === null
+          ? text
+          : trimEndCharacters(text.slice(0, tag.index).trimEnd(), "(·—–-").trimEnd()
       const marker = /\s*\(unconfirmed\)$/i
       const unconfirmed = marker.test(untagged)
       return {

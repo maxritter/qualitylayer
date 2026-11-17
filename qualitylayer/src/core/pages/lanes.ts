@@ -6,6 +6,14 @@
 
 import { VERIFY_LANES, type VerifyLaneId } from "../flow.ts"
 import type { ScreenPair } from "../review/screens.ts"
+import {
+  isLineText,
+  lastLineBreak,
+  skipWhitespace,
+  trimEdgeCharacters,
+  trimEndCharacters,
+  trimEndWhile,
+} from "../text-boundaries.ts"
 
 /** What the independent review's screen comparison adds to its result: the problems when there are some, else the count. */
 export function screenFacts(pairs: readonly Pick<ScreenPair, "outcome" | "stale">[]): string[] {
@@ -71,7 +79,7 @@ export const LANE_STATE_WORDS: readonly string[] = [
  * pass · 1 yours`. A result that is only a state word is returned as written.
  */
 export function withoutStateWord(result: string): string {
-  const parts = result.split(/\s*·\s*/).map((part) => part.trim())
+  const parts = result.split("·").map((part) => part.trim())
   const facts = parts.filter(
     (part) => part !== "" && !LANE_STATE_WORDS.includes(part.toLowerCase()),
   )
@@ -112,8 +120,21 @@ export function laneResult(state: LaneState | "not run", facts: readonly string[
 export function countedFacts(result: string): string[] {
   return result
     .split(" · ")
-    .map((part) => part.replace(/\s*\([^)]*\)/g, "").trim())
+    .map((part) => withoutParentheticals(part).trim())
     .filter((part) => /^(?:\d|no\b|nothing\b|none\b)/i.test(part))
+}
+
+function withoutParentheticals(text: string): string {
+  const parts: string[] = []
+  let at = 0
+  for (let open = text.indexOf("("); open >= 0; open = text.indexOf("(", at)) {
+    const close = text.indexOf(")", open + 1)
+    if (close < 0) break
+    parts.push(text.slice(at, open).trimEnd())
+    at = close + 1
+  }
+  parts.push(text.slice(at))
+  return parts.join("")
 }
 
 /**
@@ -218,6 +239,55 @@ const REASON_MAX = 140
 
 const FILE_EXTENSIONS =
   "ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|mdx|css|html|yml|yaml|toml|sh|py|rs|go|sql|lock|txt"
+const FILE_NAME = new RegExp(`^[\\w@-][\\w@.-]*\\.(?:${FILE_EXTENSIONS})$`, "i")
+const TOKEN_START = "(\"'["
+const TOKEN_END = ")\"'],;:.!?"
+const REASON_EDGE = " ,;:—–-"
+
+function isReasonPath(token: string): boolean {
+  // Two alphabetic words such as `and/or` are prose.
+  if (token.includes("/")) return !/^[A-Za-z]+\/[A-Za-z]+$/.test(token)
+  return /^[\w@.-]+\.\w{1,5}:\d+/.test(token) || FILE_NAME.test(token)
+}
+
+function withoutEmptyAsides(text: string): string {
+  return text.replace(/\(([^()]*)\)/g, (aside, contents: string) => {
+    const rest = contents
+      .trimStart()
+      .replace(/^(?:see|in|at|from|via)/i, "")
+      .trim()
+    return rest === "" || /^[,;:]$/.test(rest) ? " " : aside
+  })
+}
+
+/** Group punctuation and its closing quotes before looking for a following sentence. */
+function joinReasonSentences(text: string): string {
+  const parts: string[] = []
+  let kept = 0
+  for (let at = 0; at < text.length; ) {
+    const stop = at
+    if (!".!?".includes(text.charAt(at))) {
+      at++
+      continue
+    }
+    while (at < text.length && ".!?".includes(text.charAt(at))) at++
+    while (at < text.length && "\"')]".includes(text.charAt(at))) at++
+    const next = skipWhitespace(text, at)
+    if (next > at && next < text.length) {
+      parts.push(text.slice(kept, stop), ", ")
+      kept = next
+    }
+    at = next
+  }
+  parts.push(text.slice(kept))
+  return parts.join("")
+}
+
+function reasonSpacing(text: string): string {
+  return text.replace(/\s+/g, (space, offset: number) =>
+    /[,;:]/.test(text.charAt(offset + space.length)) ? "" : " ",
+  )
+}
 
 /** The text without a bracket that has no partner. */
 function withoutStrayBrackets(text: string): string {
@@ -231,12 +301,7 @@ function withoutStrayBrackets(text: string): string {
     }
   }
   for (const i of open) stray.add(i)
-  return [...text]
-    .filter((_, i) => !stray.has(i))
-    .join("")
-    .replace(/\s+/g, " ")
-    .replace(/\s+([,;:])/g, "$1")
-    .trim()
+  return reasonSpacing([...text].filter((_, i) => !stray.has(i)).join("")).trim()
 }
 
 /**
@@ -249,48 +314,36 @@ export function plainReason(line: string | null | undefined): string {
   if (line === null || line === undefined) return ""
   const words: string[] = []
   for (const token of line.replace(/`[^`]*`/g, " ").split(/\s+/)) {
-    const bare = token.replace(/^[("'[]+|[)"'\],;:.!?]+$/g, "")
-    // A path, a route or a `file:line`; `and/or` is two plain words.
-    const dropped =
-      bare !== "" &&
-      ((bare.includes("/") && !/^[A-Za-z]+\/[A-Za-z]+$/.test(bare)) ||
-        /^[\w@.-]+\.\w{1,5}:\d+/.test(bare) ||
-        new RegExp(`^[\\w@-][\\w@.-]*\\.(?:${FILE_EXTENSIONS})$`, "i").test(bare))
-    if (!dropped) {
+    let start = 0
+    while (start < token.length && TOKEN_START.includes(token.charAt(start))) start++
+    const bare = trimEndCharacters(token.slice(start), TOKEN_END)
+    if (!isReasonPath(bare)) {
       words.push(token)
       continue
     }
     // The dropped token's closing punctuation (the end of a sentence, a bracket) stays.
-    const tail = token.match(/[)"'\],;:.!?]+$/)?.[0] ?? ""
+    const tail = token.slice(trimEndCharacters(token, TOKEN_END).length)
     if (words.length > 0) words[words.length - 1] += tail
     // An HTTP verb that named the route goes with it.
-    if (/^(?:GET|PUT|POST|PATCH|DELETE)$/.test(words[words.length - 1]?.replace(/\W+$/, "") ?? ""))
-      words.pop()
+    const previous = trimEndWhile(words.at(-1) ?? "", (character) => /\W/.test(character))
+    if (/^(?:GET|PUT|POST|PATCH|DELETE)$/.test(previous)) words.pop()
   }
-  let text = words
-    .join(" ")
-    .replace(/\(\s*(?:(?:see|in|at|from|via)\s*)?[,;:]?\s*\)/gi, " ")
-    .replace(/[.!?]+(?:["')\]]*)\s+(?=\S)/g, ", ")
-    .replace(/\s+([,;:])/g, "$1")
-    .replace(/([,;:])(?:\s*[,;:])+/g, "$1")
-    .replace(/\s+/g, " ")
-    .replace(/^[\s,;:—–-]+|[\s,;:—–-]+$/g, "")
-    .replace(/[.!?]+$/, "")
-    .trim()
+  let text = reasonSpacing(joinReasonSentences(withoutEmptyAsides(words.join(" "))))
+  text = text.replace(/[,;:]+/g, (marks) => marks.charAt(0))
+  text = trimEndCharacters(trimEdgeCharacters(text, REASON_EDGE), ".!?").trim()
   // What was left hanging by a removed path ("the config in") goes too.
   const hanging = /(?:^|[\s,;:])(?:in|on|at|of|to|by|via|from|with|through|and|or|the|a|an|see)$/i
   const leading = /^(?:and|or)\s+/i
   text = withoutStrayBrackets(text)
   for (let again = true; again; ) {
-    const next = text
+    const kept = text
       .replace(
         /\s+(?:in|on|at|of|to|by|via|from|with|through|and|or|the|an?|see)(?=\s*[,;:])/gi,
         "",
       )
       .replace(hanging, "")
       .replace(leading, "")
-      .replace(/[\s,;:—–-]+$/, "")
-      .trim()
+    const next = trimEndCharacters(kept, REASON_EDGE).trim()
     again = next !== text
     text = next
   }
@@ -299,7 +352,7 @@ export function plainReason(line: string | null | undefined): string {
   if (/^(?:[A-Z][a-z]|A\s)/.test(text)) text = text.charAt(0).toLowerCase() + text.slice(1)
   if (text.length > REASON_MAX) {
     const cut = text.slice(0, REASON_MAX)
-    text = cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).replace(/[\s,;:—–-]+$/, "")
+    text = trimEndCharacters(cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)), REASON_EDGE)
   }
   return text
 }
@@ -325,30 +378,60 @@ export function lanesText(rows: readonly LaneRow[]): string {
   }).join("\n")
 }
 
+function laneHeading(line: string): { name: string; who: string } | null {
+  if (!line.startsWith("- **")) return null
+  const nameStart = 4
+  const firstBreak = line.search(/[\r\n\u2028\u2029]/)
+  const lastBreak = lastLineBreak(line)
+  for (let end = line.indexOf("**", nameStart + 1); end >= 0; end = line.indexOf("**", end + 1)) {
+    if (firstBreak >= 0 && firstBreak < end) break
+    const separator = skipWhitespace(line, end + 2)
+    if (line.charAt(separator) !== "·") continue
+    const who = skipWhitespace(line, separator + 1)
+    if (who > lastBreak) return { name: line.slice(nameStart, end), who: line.slice(who).trim() }
+  }
+  return null
+}
+
+function laneField(line: string): { name: string; value: string } | null {
+  const indent = skipWhitespace(line, 0)
+  if (indent === 0 || !line.startsWith("- ", indent)) return null
+  const colon = line.indexOf(":", indent + 2)
+  if (colon < 0) return null
+  const name = line.slice(indent + 2, colon)
+  if (!["State", "Result", "Freshness", "Why it runs here"].includes(name)) return null
+  const value = line.slice(skipWhitespace(line, colon + 1))
+  return isLineText(value) ? { name, value: value.trim() } : null
+}
+
 /** The lanes a document's *How it is checked* section holds, in the order written; none for text that holds none. */
 export function parseLanes(markdown: string): LaneRow[] {
   const rows: LaneRow[] = []
   let row: LaneRow | null = null
   for (const line of markdown.split(/\r?\n/)) {
-    const head = line.match(/^- \*\*(.+?)\*\*\s*·\s*(.*)$/)
+    const head = laneHeading(line)
     if (head !== null) {
-      const lane = VERIFY_LANES.find((l) => l.name === head[1])
-      row =
-        lane === undefined
-          ? null
-          : { id: lane.id, who: (head[2] ?? "").trim(), state: "waiting", result: "" }
+      const lane = VERIFY_LANES.find((l) => l.name === head.name)
+      row = lane === undefined ? null : { id: lane.id, who: head.who, state: "waiting", result: "" }
       if (row !== null) rows.push(row)
       continue
     }
-    const field = line.match(/^\s+- (State|Result|Freshness|Why it runs here):\s*(.*)$/)
+    const field = laneField(line)
     if (field === null || row === null) continue
-    const value = (field[2] ?? "").trim()
-    if (field[1] === "State") {
-      if ((STATES as readonly string[]).includes(value)) row.state = value as LaneState
-    } else if (field[1] === "Result") row.result = value === LANE_NO_RESULT ? "" : value
-    else if (field[1] === "Freshness") {
-      if (value === "needs refresh") row.needsRefresh = true
-    } else row.why = value
+    const { name, value } = field
+    switch (name) {
+      case "State":
+        if ((STATES as readonly string[]).includes(value)) row.state = value as LaneState
+        break
+      case "Result":
+        row.result = value === LANE_NO_RESULT ? "" : value
+        break
+      case "Freshness":
+        if (value === "needs refresh") row.needsRefresh = true
+        break
+      default:
+        row.why = value
+    }
   }
   return rows
 }

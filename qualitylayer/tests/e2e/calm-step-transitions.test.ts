@@ -252,6 +252,38 @@ for (const theme of ["light", "dark"] as const)
             await toggle.click()
           await capture("named-board-expanded")
           const workingDocument = await Bun.file(person).text()
+          const limitsBlock = /<!-- ql:limits -->[\s\S]*?<!-- \/ql:limits -->/
+          const withLimit = (text: string) => {
+            const block = `<!-- ql:limits -->\n${text}\n<!-- /ql:limits -->`
+            return limitsBlock.test(workingDocument)
+              ? workingDocument.replace(limitsBlock, block)
+              : `${workingDocument}\n\n## Known limits\n\n${block}\n`
+          }
+          await update(() =>
+            Bun.write(person, withLimit("- T12 · Fixture limit from the build record.")),
+          )
+          const knownLimits = page.locator("details[data-fold='Known limits']")
+          await webExpect(knownLimits.locator("summary")).toBeVisible()
+          await webExpect(
+            knownLimits.getByText("Fixture limit from the build record."),
+          ).toBeHidden()
+          await knownLimits.scrollIntoViewIfNeeded()
+          await capture("known-limits-closed")
+          await knownLimits.locator("summary").press("Enter")
+          await webExpect(
+            knownLimits.getByText("Fixture limit from the build record."),
+          ).toBeVisible()
+          await capture("known-limits-open")
+          await knownLimits.locator("summary").press("Enter")
+          await webExpect(
+            knownLimits.getByText("Fixture limit from the build record."),
+          ).toBeHidden()
+          await update(() => Bun.write(person, withLimit("None left.")))
+          await webExpect(page.getByTestId("known-limits")).toHaveText("Known limits: none left.")
+          await webExpect(knownLimits).toHaveCount(0)
+          await page.getByTestId("known-limits").scrollIntoViewIfNeeded()
+          await capture("known-limits-quiet")
+          await update(() => Bun.write(person, workingDocument))
           await page.getByTestId("task-scroll").evaluate((root) => {
             root.scrollTop = 120
           })

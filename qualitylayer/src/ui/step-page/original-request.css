@@ -1,40 +1,47 @@
-@layer components {
-  .sp-plan-pending {
-    display: grid;
-    grid-template-columns: 32px minmax(0, 1fr);
-    align-items: flex-start;
-    gap: 12px;
-    padding: 16px 0;
-    border-top: 1px solid var(--ql-border);
-    color: var(--ql-text-muted);
-  }
-  .sp-plan-pending > svg {
-    flex: none;
-    box-sizing: border-box;
-    width: 32px;
-    height: 32px;
-    padding: 6px;
-    margin-top: 0;
-    border: 1px solid var(--ql-border);
-    border-radius: 8px;
-    background: var(--ql-bg-sunken);
-    color: var(--ql-text-dim);
-  }
-  .sp-plan-pending h2 {
-    margin: 0 0 5px;
-    padding: 0;
-    border: 0;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--ql-text);
-  }
-  .sp-plan-pending p {
-    margin: 0;
-    max-width: 56ch;
-    font-size: 13px;
-    line-height: 1.6;
-  }
+.sp-plan-preparing > .sp-doc {
+  gap: 24px;
+}
+.sp-plan-preparing .sq {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 5px 12px;
+  max-width: none;
+  margin: 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--ql-border);
+  color: var(--ql-text-muted);
+  text-align: start;
+}
+.sp-plan-preparing .sq-icon {
+  grid-row: 1 / 3;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border: 1px solid var(--ql-border);
+  border-radius: 8px;
+  background: var(--ql-bg-sunken);
+  color: var(--ql-text-dim);
+}
+.sp-plan-preparing .sq h1 {
+  grid-column: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ql-text);
+}
+.sp-plan-preparing .sq p {
+  grid-column: 2;
+  margin: 0;
+  max-width: 56ch;
+  font-size: 13px;
+  line-height: 1.6;
+}
 
+@layer components {
   .sp-original-request {
     min-width: 0;
     border: 1px solid var(--ql-border);

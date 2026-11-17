@@ -1,14 +1,14 @@
-// The Plan's Approach (Workflow model: Plan, `.kv.appr`): Chosen, Gives and Costs as quiet labels
-// beside their sentence, a rule, then the changes as bullets, five shown and "Show all N" for the rest.
-// The heading counts the changes. Text in another shape stays the document's own drawing.
+// The Plan's Approach uses optional labelled lines and native disclosures for explicit lead bullets.
+// Plain bullets and other prose retain their full text.
 
 import { SplitIcon } from "lucide-react"
 import { isLineText, skipWhitespace } from "../../../core/text-boundaries.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
-import { LeadBullets } from "../../step-page/kit/LeadBullets.tsx"
 import { bodyOf } from "../../step-page/sections.ts"
 import { useShown } from "./BoundaryParts.tsx"
 import { PlanPart } from "./Pictures.tsx"
+import { DetailsToggle } from "./Technical.tsx"
 
 export type ApproachView = {
   labels: { label: string; text: string }[]
@@ -38,7 +38,7 @@ export function approachOf(markdown: string): ApproachView | null {
     else if (bullet !== null) view.bullets.push(bullet)
     else return null
   }
-  return view.labels.length === 0 ? null : view
+  return view.labels.length === 0 && view.bullets.length === 0 ? null : view
 }
 
 /**
@@ -82,31 +82,66 @@ export function KeyRows({ rows }: { rows: readonly { label: string; text: string
 /** The bullets the Approach shows before "Show all N". */
 const SHOWN = 5
 
+const LEAD = /^\*\*(.+?)\*\*[ \t]+(.+)$/
+
 export function ApproachPart({ view }: { view: ApproachView }) {
   const shown = useShown(view.bullets, SHOWN)
   const count = view.bullets.length
+  const occurrences = new Map<string, number>()
+  const rows = shown.rows.map((text) => {
+    const occurrence = (occurrences.get(text) ?? 0) + 1
+    occurrences.set(text, occurrence)
+    return { key: `${text}\0${occurrence}`, text, named: LEAD.exec(text) }
+  })
   return (
     <PlanPart
       title="Approach"
       icon={SplitIcon}
-      action={count > 0 ? <span className="q-disc-n">{count}</span> : undefined}
+      action={
+        <>
+          {count > 0 ? <span className="q-disc-n">{count}</span> : null}
+          {rows.some((row) => row.named !== null) ? <DetailsToggle /> : null}
+        </>
+      }
     >
-      <dl className={count > 0 ? "pl-appr" : "pl-appr alone"} data-testid="plan-approach-labels">
-        {view.labels.map((row) => (
-          <div key={row.label}>
-            <dt>{row.label}</dt>
-            <dd>
-              <InlineMarkdown text={row.text} />
-            </dd>
-          </div>
-        ))}
-      </dl>
+      {view.labels.length === 0 ? null : (
+        <dl className={count > 0 ? "pl-appr" : "pl-appr alone"} data-testid="plan-approach-labels">
+          {view.labels.map((row) => (
+            <div key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>
+                <InlineMarkdown text={row.text} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {count > 0 ? (
         <>
-          <LeadBullets
-            testId="plan-approach-bullets"
-            items={shown.rows.map((text, at) => ({ text, key: `${at}` }))}
-          />
+          <div className="bd-sumb" data-testid="plan-approach-bullets">
+            <ul className="bd-bul">
+              {rows.map(({ key, text, named }) => (
+                <li key={key} className={named === null ? undefined : "pl-approach-lead"}>
+                  {named === null ? (
+                    <InlineMarkdown text={text} />
+                  ) : (
+                    <Disclosure
+                      className="pl-approach-fold"
+                      head={
+                        <b>
+                          <InlineMarkdown text={named[1] ?? ""} />
+                        </b>
+                      }
+                    >
+                      <p>
+                        <InlineMarkdown text={named[2] ?? ""} />
+                      </p>
+                    </Disclosure>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
           {shown.more}
         </>
       ) : null}

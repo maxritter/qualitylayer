@@ -208,6 +208,7 @@ details.tfold[open] > summary { margin-bottom: 12px; }
 details.tfold[open] > summary .chev { transform: rotate(90deg); }
 
 </style>
+<style>.sp-part .dm.approach-leads>li>details>summary{grid-template-columns:minmax(0,1fr) 14px}.sp-part .dm.approach-leads .how{padding-left:0}</style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -345,7 +346,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
     <li><span class="ico"><svg class="ic s14"><use href="#x-alert"/></svg></span><span class="now"><b>Problem</b> is the second section: who has it, what it costs, what is missing</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-ccheck"/></svg></span><span class="now"><b>Done means, with its proof.</b> A row is a point; it opens to how it shows and the steps that prove it. The heading says how it will be proven. Verify shows the same rows as they ran. A point is something a user can observe</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-scope"/></svg></span><span class="now"><b>Scope</b> has two columns, In scope and Out of scope</span></li>
-    <li><span class="ico"><svg class="ic s14"><use href="#i-split"/></svg></span><span class="now"><b>Approach.</b> Three lines first: what was chosen, what it gives, what it costs. Then at most five bullets of what changes</span></li>
+    <li><span class="ico"><svg class="ic s14"><use href="#i-split"/></svg></span><span class="now"><b>Approach.</b> Show Chosen, Gives and Costs when recorded. Bold headlines open to their explanations, and plain bullets read in full. Details opens or closes the rows</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-ucheck"/></svg></span><span class="now"><b>Decided with you and Decisions made for you:</b> one list each, in one group of folds, with Change on every answer</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#s-research"/></svg></span><span class="now"><b>The agent reads the code while the page fills in.</b> The Plan's header says so. Current system is a Technical fold; the findings are in the agents' file, one line each. What a finding means for you shows up as a Done means point, a Scope line or a question</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-wrench"/></svg></span><span class="now"><b>Technical: four closed folds,</b> the ones a person has to agree with or live with: Current system, Data and interfaces, Engineering decisions, Assumptions. What only the build needs (internal contracts, the check commands, what to read first, pitfalls) is in the agents' file. A contract a caller meets, such as an API or a command, is an Interface tab</span></li>
@@ -498,19 +499,19 @@ Plan this with QualityLayer?
         </section>
 
         <section class="sp-part" aria-label="Approach" id="approach" data-screen-label="Approach">
-      <h2><svg class="ic s14"><use href="#i-split"/></svg><span class="grow">Approach</span><span class="chip note" title="7 changes">7</span></h2>
+      <h2><svg class="ic s14"><use href="#i-split"/></svg><span class="grow">Approach</span><span class="chip note" title="7 changes">7</span><button type="button" class="q-btn quiet xs" data-all><svg class="ic s13" aria-hidden="true"><use href="#i-unfold"/></svg><span>Details</span></button></h2>
             <dl class="kv appr">
         <dt>Chosen</dt><dd>Two saved places, one for questions and one for approvals. A first agent task asks once and saves both.</dd>
         <dt>Gives</dt><dd>People who live in their agent never need the App, and the two can still be split.</dd>
         <dt>Costs</dt><dd>Every approval path reads its own value now, and three more agents' pick records have to be read.</dd>
       </dl>
-      <ul class="sp-bul">
-        <li><b>Questions and approvals each get a saved place.</b> Settings, the CLI and the first start set them. Without one, a task follows the questions setting.</li>
-        <li><b>A first agent task asks once where you answer.</b> The pick saves both places; every later task uses them.</li>
-        <li><b>Asking your agent to plan offers QualityLayer.</b> One offer, once, from the skill's own words. A setting turns it off.</li>
-        <li><b>Every agent gets its own picker.</b> Antigravity, Grok and Copilot join; Cursor keeps numbered choices.</li>
-        <li><b>The docs and the App Model show the two rows.</b> The settings reference gains them; the model's Settings page draws them.</li>
-      </ul>
+      <ol class="dm at approach-leads">
+          <li><details><summary><span class="hl"><b>Questions and approvals each get a saved place.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">Settings, the CLI and the first start set them. Without one, a task follows the questions setting.</p></div></details></li>
+          <li><details><summary><span class="hl"><b>A first agent task asks once where you answer.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">The pick saves both places; every later task uses them.</p></div></details></li>
+          <li><details><summary><span class="hl"><b>Asking your agent to plan offers QualityLayer.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">One offer, once, from the skill's own words. A setting turns it off.</p></div></details></li>
+          <li><details><summary><span class="hl"><b>Every agent gets its own picker.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">Antigravity, Grok and Copilot join; Cursor keeps numbered choices.</p></div></details></li>
+          <li><details><summary><span class="hl"><b>The docs and the App Model show the two rows.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">The settings reference gains them; the model's Settings page draws them.</p></div></details></li>
+      </ol>
       <div class="more-row"><button type="button" class="q-btn quiet xs"><svg class="ic s12"><use href="#i-unfold"/></svg><span>Show all 7</span></button></div>
     </section>
 
@@ -1119,7 +1120,7 @@ What the planner ran to be sure, with its output.</pre>
     <div><b>Problem</b><span class="now">Two to four one-line bullets, the Plan's second section.</span></div>
     <div><b>Done means</b><span class="now">Per point a heading of at most 10 words, one sentence on how it shows, and its steps as a Step · Action · Expected table. A point is something a user can observe; a point that only restates a step or a task is left out. No cap on the number. First line <code>Runs as:</code> a script, a fixture or a real agent session, with the setup all steps share; a point proven another way says so on its own line. A step that proves two points is named under the second (<code>also A2</code>). A point with no step is refused with its number.</span></div>
     <div><b>Scope</b><span class="now">In and Out, at most 6 words per item. Out names what a reasonable reader might assume is included and is not. Scope is the only list of what stays out.</span></div>
-    <div><b>Approach</b><span class="now">Chosen, Gives and Costs in one line each, then at most 5 bullets of what changes. The reasons in full and the rejected approaches go to the agents' file. No file table.</span></div>
+    <div><b>Approach</b><span class="now">Chosen, Gives and Costs appear when recorded. Bold-led Approach bullets open individually, and Details opens or closes the rows together. Plain bullets and prose read in full. The reasons in full and the rejected approaches go to the agents' file. No file table.</span></div>
     <div><b>Questions</b><span class="now">Asked when they arise, batched: usually once on the request, once after reading the code, and once more when a picture shows a choice. Allowed, never required. Only about something that changes scope, design or what the user sees. A reversible implementation choice is the agent's.</span></div>
     <div><b>Reading the code</b><span class="now">By size: no helper for a small task, one or two otherwise. Reading stops once each Done means point has a place in the code, an approach and a way to prove it. A report holds about 250 words a question and 1,200 in all. The agents' file gets one line per finding.</span></div>
     <div><b>Constraints</b><span class="now">In the agents' file, one line per value, copied as it is (a key, a format, a limit, an exact string). Every task card and every reviewer is handed this list.</span></div>
@@ -1160,6 +1161,7 @@ What the planner ran to be sure, with its output.</pre>
 </div>
 <section class="part" id="calm-plan-start" data-screen-label="Before the first Plan content">
   <h2>Before the first Plan content</h2>
+  <p class="note2">With a saved request, the compact pen row and Original request share the document column. The request opens in place to its full selectable text.</p>
   <p class="lead">Max approved the calm-working-states preview on 13 November 2026. A still pen accompanies “Writing the Plan” and “The Plan opens here when it is ready.” A quiet or stopped agent says “Draft”; the existing question, approval and Continue controls stay live.</p>
   <p class="note2">An authored paragraph or named row in the core lead appears as soon as it is readable. The title, empty scaffold, saved request, recorded decisions and harness-managed fallback text do not become a draft Plan by themselves. A later unfinished edit keeps the last complete display and scroll position; fresh questions, answers, permissions and stop state are never retained with that display. Complete content fades in once over 160 ms, disabled for reduced motion. App Model: calm-working-states-contract.md. Actual compiled App parity is recorded in <a href="../app-model/calm-working-states.html">Calm working states</a>; surrounding illustrative-page gaps remain in coverage.</p>
 </section>

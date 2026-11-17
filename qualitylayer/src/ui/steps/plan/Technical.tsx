@@ -18,7 +18,7 @@ import {
   UserCheckIcon,
   WrenchIcon,
 } from "lucide-react"
-import { type ReactNode, useRef, useState } from "react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { headingSlug } from "../../../core/docs/anchor.ts"
 import type { DocSection } from "../../api.ts"
 import { usePlanNow } from "../../docs/context.ts"
@@ -100,18 +100,33 @@ function TechFold({
 
 /** Details in a part's heading: opens or closes every fold of that part together. */
 export function DetailsToggle() {
+  const button = useRef<HTMLButtonElement>(null)
   const [all, setAll] = useState(false)
   const Toggle = all ? ChevronsDownUpIcon : ChevronsUpDownIcon
+  useEffect(() => {
+    const section = button.current?.closest("section")
+    if (!section) return
+    const sync = () => {
+      const folds = Array.from(section.querySelectorAll("details"))
+      setAll(folds.length > 0 && folds.every((fold) => fold.open))
+    }
+    section.addEventListener("toggle", sync, true)
+    sync()
+    return () => section.removeEventListener("toggle", sync, true)
+  }, [])
   return (
     <button
+      ref={button}
       type="button"
       className="q-btn quiet xs"
       aria-pressed={all}
       onClick={(event) => {
-        for (const fold of event.currentTarget.closest("section")?.querySelectorAll("details") ??
-          [])
-          fold.open = !all
-        setAll(!all)
+        const folds = Array.from(
+          event.currentTarget.closest("section")?.querySelectorAll("details") ?? [],
+        )
+        const open = !folds.every((fold) => fold.open)
+        for (const fold of folds) fold.open = open
+        setAll(open)
       }}
     >
       <Toggle className="size-3" aria-hidden="true" />

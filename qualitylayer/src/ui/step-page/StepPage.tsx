@@ -360,17 +360,26 @@ export function StepPage({
   const show = (next: Drawer) => (mode === "live" ? setDrawer(next) : undefined)
   const plain = useMemo(() => plainMarkdown(doc), [doc])
 
-  if (mode === "live" && state.preparing)
+  if (mode === "live" && state.preparing) {
+    const request = state.preparing.request
+    const quiet = <StepQuiet step="plan" kind={state.working ? "writing" : "draft"} back={null} />
     return (
       <div data-testid="plan-preparing" data-step="plan">
         <YourMove>{yourMove}</YourMove>
         {supporting}
-        <StepQuiet step="plan" kind={state.working ? "writing" : "draft"} back={null} />
-        <div className="sp-doc">
-          <OriginalRequest key={taskId} request={state.preparing.request} />
-        </div>
+        {request === "" ? (
+          quiet
+        ) : (
+          <div className="sp-page sp-plan-preparing">
+            <div className="sp-doc">
+              {quiet}
+              <OriginalRequest key={taskId} request={request} />
+            </div>
+          </div>
+        )}
       </div>
     )
+  }
 
   // A document that exists but holds nothing yet is still being written, as a missing one is.
   if (mode !== "plain" && doc.markdown.trim() === "")

@@ -120,17 +120,29 @@ export function ImplementStepPage(props: StepPageProps) {
                 <Board slices={view.slices} />
               </IconPart>
             ) : null}
-            {limitsRecorded ? (
-              <IconPart id={`${sectionId("Known limits")}-h`} title="Known limits" icon={BanIcon}>
-                {limits.length > 0 ? (
-                  <LimitRows rows={limits} />
-                ) : (
-                  <p className="ib-none" data-testid="known-limits">
-                    None left.
-                  </p>
-                )}
-              </IconPart>
-            ) : null}
+            {limitsRecorded &&
+              (limits.length > 0 ? (
+                <FoldedGroup>
+                  <IconFold
+                    id={sectionId("Known limits")}
+                    title="Known limits"
+                    icon={BanIcon}
+                    count={limits.length}
+                  >
+                    <LimitRows rows={limits} />
+                  </IconFold>
+                </FoldedGroup>
+              ) : (
+                <p
+                  className="ib-none"
+                  id={sectionId("Known limits")}
+                  data-testid="known-limits"
+                  data-passage-section="known-limits"
+                  tabIndex={-1}
+                >
+                  Known limits: none left.
+                </p>
+              ))}
           </>
         }
         folds={

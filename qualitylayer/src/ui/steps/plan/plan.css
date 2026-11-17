@@ -373,6 +373,25 @@
   .pl-appr + .bd-sumb > .bd-bul {
     margin-top: 0;
   }
+  .pl-approach-lead {
+    list-style: none;
+  }
+  .pl-approach-fold {
+    border-bottom: 1px solid var(--ql-line);
+  }
+  .pl-approach-fold > summary {
+    padding: 8px 0;
+    overflow-wrap: anywhere;
+  }
+  .pl-approach-fold > summary .q-disc-chev {
+    order: 1;
+    margin-inline-start: auto;
+  }
+  .pl-approach-fold > p {
+    margin: 0;
+    padding: 2px 0 10px;
+    overflow-wrap: anywhere;
+  }
   @container bands (max-width: 480px) {
     .pl-appr {
       grid-template-columns: minmax(0, 1fr);

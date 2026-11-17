@@ -24,10 +24,10 @@ async function entered(page: Page, expected = '[data-testid="artifact-page"]') {
 }
 
 function exportDownload(page: Page) {
-  const file = page.waitForEvent("download", { timeout: 12_000 })
+  const file = page.waitForEvent("download", { timeout: 0 })
   const failed = page
     .locator(".q-export-error")
-    .waitFor({ state: "visible", timeout: 12_000 })
+    .waitFor({ state: "visible", timeout: 0 })
     .then(async () => {
       throw new Error(await page.locator(".q-export-error").innerText())
     })
@@ -151,7 +151,29 @@ test.skipIf(!chrome)(
       await frame.locator("#normal").press("Enter")
       await webExpect(frame.locator("#normal")).toHaveText("Native control 2")
       expect(await page.locator('[data-testid="quick-ask"]').count()).toBe(0)
-      await frame.locator("#words").click({ clickCount: 3 })
+      const words = await frame.locator("#words").evaluate((element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const ink = range.getClientRects()[0]
+        if (!ink) throw new Error("The paragraph has no visible text")
+        return {
+          x: ink.left + Math.min(4, ink.width / 2),
+          y: ink.top + ink.height / 2,
+          width: innerWidth,
+          height: innerHeight,
+        }
+      })
+      const frameBox = await page
+        .locator('[data-testid="artifact-page"] iframe[data-testid="artifact-page-frame"]')
+        .evaluate((element) => {
+          const { x, y, width, height } = element.getBoundingClientRect()
+          return { x, y, width, height }
+        })
+      await page.mouse.click(
+        frameBox.x + (words.x * frameBox.width) / words.width,
+        frameBox.y + (words.y * frameBox.height) / words.height,
+        { clickCount: 3 },
+      )
       await webExpect(page.locator('[data-testid="artifact-feedback-chip"]')).toBeVisible()
       expect(await page.locator('[data-testid="quick-ask"]').count()).toBe(0)
       await page.locator('[data-testid="artifact-feedback-chip"]').click()

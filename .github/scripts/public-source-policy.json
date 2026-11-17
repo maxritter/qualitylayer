@@ -2163,7 +2163,7 @@
     "qualitylayer/src/ui/run/agent-switch.ts": "869736aff8a6d97c0e3a6aaf8c39cd98c05d65486d8e86d60d135dc1b5746fc7",
     "qualitylayer/src/ui/run/task-launch.ts": "f57edc5b9810d237701dcc483e3beb60d152ffd1e6294504e04221fb42cea215",
     "qualitylayer/tests/core/agent-setup.test.ts": "9b5c10fa3a5e21a1c00e75055be2ae054bd502faa33b6c6d657dbaa1d021a5b1",
-    "qualitylayer/tests/e2e/artifact-export-feedback.test.ts": "59088811e24170e6143aa2085a2161ae59e505128fbb1528cbe9c55d4c148b8e",
+    "qualitylayer/tests/e2e/artifact-export-feedback.test.ts": "2f23909a74dec3c70ccac091622e78bf905ffd0708d2e75cf60edecaaad1316c",
     "qualitylayer/tests/e2e/machine-agent-setup.test.ts": "003623ff80b3bfae20c2ff623b3ec8abdbadbe266a13d9581fbe22f8a018e10f",
     "qualitylayer/tests/server/agent-setup-command.test.ts": "65480e71077d99ac9d6b72230177e310e3761f63170383e6201870673f08b946",
     "qualitylayer/tests/server/export-files.test.ts": "8b2fc380e6734342f33e681989ea7331e47354a589eaca1108b8347ec9f61ffb",

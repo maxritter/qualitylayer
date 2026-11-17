@@ -149,8 +149,12 @@ jobs:
           QL_CI_INPUT_2: ${{ matrix.shard }}
         shell: bash
   history:
-    name: Conversation history browser checks
+    name: Conversation history browser checks (${{ matrix.layout }})
     if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        layout: [desktop-light, desktop-dark, desktop-small]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -188,10 +192,11 @@ jobs:
         working-directory: docs/site
       - run: ./node_modules/.bin/playwright install --with-deps chromium
         working-directory: qualitylayer
-      - name: Every history pair and explicit navigation in all desktop layouts
+      - name: Every history pair and explicit navigation
         working-directory: qualitylayer
-        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/afc02f514d36b677678262d03f147595dd8f67897fe795a4f0311b5cd9664753.sh"
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/d9861aee63b0ad189debdd660a0499df79a3750884be357e15cce66a7b0bde7a.sh"
         env:
+          QL_CI_INPUT_1: ${{ matrix.layout }}
           QL_RELEASE_EXPORTS: "{}"
         shell: bash
   result:

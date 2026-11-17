@@ -4,7 +4,7 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../ctx.ts"
-import { configDirVariable } from "./agents/config-dir.ts"
+import { configDirEnvironment, configDirVariable } from "./agents/config-dir.ts"
 import {
   AGENT_NAMES,
   isNativeAgent,
@@ -12,6 +12,7 @@ import {
   type NativeAgent,
   validModelId,
 } from "./agents/ids.ts"
+import { codexCacheChanged, listFile, ownModel, readIds } from "./agents/model-list-readers.ts"
 import { knownFrom, storedModelLists } from "./agents/model-list-store.ts"
 import {
   AGENT_OWN,
@@ -781,7 +782,12 @@ async function readStoredConfig(ctx: Ctx): Promise<Config> {
     // Keep that explicit opt-in, without enabling a new, empty or models-only preference.
     if (isRecord(saved) && isRecord(saved.secondOpinion)) {
       const second = saved.secondOpinion
-      if (
+      const legacy = Object.fromEntries(
+        AGENTS.flatMap((agent) =>
+          typeof second[agent] === "string" ? [[agent, second[agent]]] : [],
+        ),
+      )
+      const enabled =
         !("enabled" in second) &&
         (second.agent === "auto" ||
           isNativeAgent(second.agent) ||
@@ -789,8 +795,14 @@ async function readStoredConfig(ctx: Ctx): Promise<Config> {
           second.plan === "always" ||
           second.change === "risky" ||
           second.change === "always")
-      )
-        return settle(base, { ...saved, secondOpinion: { ...second, enabled: true } })
+      return settle(base, {
+        ...saved,
+        secondOpinion: {
+          ...second,
+          ...(enabled ? { enabled: true } : {}),
+          models: { ...legacy, ...(isRecord(second.models) ? second.models : {}) },
+        },
+      })
     }
     return settle(base, saved)
   } catch {
@@ -843,13 +855,27 @@ function usableModels(config: Config, agent: StepAgent, from: KnownModels): Conf
  * The settings in force. An agent that lists its own models (`modelList` in `agents.json`) may not
  * have a login for the catalog's: where its stored list is known, a choice that is a catalog model
  * missing from it becomes the model the agent itself would start with. A custom or listed model is
- * never touched. This reads the stored list only; it never starts the agent.
+ * never touched. Codex can update its native catalog between reads of our list. This never starts
+ * the agent.
  */
 export async function readConfig(ctx: Ctx): Promise<Config> {
   const config = await readStoredConfig(ctx)
   const lists = await storedModelLists(ctx)
+  const codex = lists.codex
+  let nativeCodex: KnownModels | null = null
+  if (codex) {
+    const env = configDirEnvironment(ctx.env, config.agents)
+    if (await codexCacheChanged(ctx, codex.checkedAt, env)) {
+      const text = await listFile(ctx, "codex", "models_cache.json", env)
+      const listed = text === null ? [] : readIds("codex-cache", "codex", text)
+      if (listed.length > 0) {
+        const own = await ownModel(ctx, "codex", "codex-config", env)
+        nativeCodex = { listed, own: own ?? listed[0] ?? null }
+      }
+    }
+  }
   return AGENTS.reduce((held, agent) => {
-    const from = knownFrom(lists[agent])
+    const from = (agent === "codex" ? nativeCodex : null) ?? knownFrom(lists[agent])
     return from === null ? held : usableModels(held, agent, from)
   }, config)
 }

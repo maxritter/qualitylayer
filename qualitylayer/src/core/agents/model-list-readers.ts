@@ -225,3 +225,15 @@ export async function listFile(
   const folder = folderOf(ctx, agent, env)
   return folder === null ? null : settingsText(ctx, join(folder, file), LIST_FILE_MAX_BYTES)
 }
+
+/** The Codex cache can change outside QualityLayer, without waiting for a picker to refresh. */
+export async function codexCacheChanged(
+  ctx: Ctx,
+  checkedAt: number,
+  env: Record<string, string>,
+): Promise<boolean> {
+  const folder = folderOf(ctx, "codex", env)
+  if (folder === null) return false
+  const stat = await ctx.fs.stat?.(join(folder, "models_cache.json"))
+  return stat !== null && stat !== undefined && stat.mtimeMs > checkedAt
+}

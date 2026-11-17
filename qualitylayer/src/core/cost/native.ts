@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { opencodeDatabase, piSessionDirectory } from "../agents/storage.ts"
 import { indexedTranscript } from "./ledger.ts"
@@ -11,9 +11,53 @@ import { providerBillingKind } from "./usage-billing.ts"
 type Parsed = ReturnType<typeof codexCalls>
 const SESSIONS = 4096
 
-export async function piSessions(ctx: Ctx, cwd: string, wanted: string[]): Promise<Parsed[]> {
-  const root = piSessionDirectory(ctx, cwd)
-  if (!root) return []
+const piId = (name: string) => /_([0-9a-f-]{36})\.jsonl$/i.exec(name)?.[1] ?? null
+
+async function piNames(ctx: Ctx, root: string): Promise<string[]> {
+  return ctx.fs.readdir(root).catch(() => [])
+}
+
+/** Proven claims can locate their exact native IDs outside the checkout's directory. */
+async function piRoots(ctx: Ctx, cwd: string, wanted: string[]): Promise<string[]> {
+  const primary = piSessionDirectory(ctx, cwd)
+  if (!primary) return []
+  const roots = [primary]
+  if (wanted.length === 0 || ctx.env.get("PI_CODING_AGENT_SESSION_DIR")) return roots
+  const missing = new Set(wanted)
+  const found = (names: string[]) => {
+    let own = false
+    for (const name of names) {
+      const id = piId(name)
+      if (id && missing.delete(id)) own = true
+    }
+    return own
+  }
+  found(await piNames(ctx, primary))
+  const base = dirname(primary)
+  const directories = await ctx.fs.entries(base).catch(() => [])
+  for (const directory of directories) {
+    if (missing.size === 0) break
+    const path = join(base, directory.name)
+    if (directory.kind !== "directory" || path === primary) continue
+    if (found(await piNames(ctx, path))) roots.push(path)
+  }
+  return roots
+}
+
+export async function piSessions(
+  ctx: Ctx,
+  cwd: string,
+  wanted: string[],
+  claimed: string[] = [],
+): Promise<Parsed[]> {
+  const result = new Map<string, Parsed>()
+  for (const root of await piRoots(ctx, cwd, claimed))
+    for (const session of await piInDirectory(ctx, root, wanted))
+      if (session.id && !result.has(session.id)) result.set(session.id, session)
+  return [...result.values()]
+}
+
+async function piInDirectory(ctx: Ctx, root: string, wanted: string[]): Promise<Parsed[]> {
   let names: string[]
   try {
     const all = (await ctx.fs.readdir(root))
@@ -21,7 +65,7 @@ export async function piSessions(ctx: Ctx, cwd: string, wanted: string[]): Promi
       .sort()
       .reverse()
     const selected = new Set(wanted)
-    const chosen = (name: string) => selected.has(/_([0-9a-f-]{36})\.jsonl$/i.exec(name)?.[1] ?? "")
+    const chosen = (name: string) => selected.has(piId(name) ?? "")
     names = [...all.filter(chosen), ...all.filter((name) => !chosen(name)).slice(0, SESSIONS)]
   } catch {
     return []
@@ -29,7 +73,7 @@ export async function piSessions(ctx: Ctx, cwd: string, wanted: string[]): Promi
   const candidates: { file: string; id: string; parent?: string }[] = []
   const selected = new Set(wanted)
   for (const name of names) {
-    const id = /_([0-9a-f-]{36})\.jsonl$/i.exec(name)?.[1]
+    const id = piId(name)
     if (!id) continue
     const file = join(root, name)
     if (selected.has(id)) {

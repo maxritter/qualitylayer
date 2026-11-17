@@ -529,9 +529,9 @@ export async function buildStart(ctx: Ctx, task: Task): Promise<Result<NextPaylo
   const mine = before !== null && before.session === sessionKey(ctx.env)
   const started = await ctx.fs.exists(implementLogPath(task))
   const agent = detectAgent(ctx.env)
-  await noteBuildLead(ctx, task)
-  // The session is recorded first, so the App's planner is told which agent builds.
+  // Admission succeeds before a new build owner is published.
   await touchSession(ctx, task, agent)
+  await noteBuildLead(ctx, task)
   // The build started outside the App: the App's planner finishes (handoff/outside.ts).
   await finishPlannerForOutsideBuild(ctx, task)
   await setCheckout(ctx, task, task.repoRoot)

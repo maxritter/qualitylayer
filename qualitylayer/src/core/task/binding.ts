@@ -11,6 +11,15 @@ import { join } from "node:path"
 import type { Ctx, Env } from "../../ctx.ts"
 import { detectAgent, sessionIdentity } from "../agents/detect.ts"
 import { closeWorkingRecords } from "../git/working-records.ts"
+import {
+  assignBinding,
+  bindingIndexPath,
+  bindingTargetOf,
+  readBindingJson,
+  retireBindingIndex,
+  workflowBindingOf,
+  workflowBindingPath,
+} from "./binding-index.ts"
 
 /** Older Codex and manually supplied session ids, after the current native identity. */
 const NATIVE = ["CODEX_SESSION_ID", "QUALITYLAYER_SESSION"]
@@ -69,10 +78,7 @@ function sessionsDir(ctx: Pick<Ctx, "home">, repoId: string): string {
 export async function bindSession(ctx: Ctx, task: { repoId: string; slug: string }): Promise<void> {
   const key = sessionKey(ctx.env)
   if (key === null) return
-  const dir = sessionsDir(ctx, task.repoId)
-  await ctx.fs.mkdir(dir)
-  const binding: Binding = { slug: task.slug, at: ctx.clock.now(), source: "workflow" }
-  await ctx.fs.writeFile(join(dir, `${key}.json`), `${JSON.stringify(binding)}\n`)
+  await assignBinding(ctx, key, task)
 }
 
 /**
@@ -83,14 +89,24 @@ export async function bindSession(ctx: Ctx, task: { repoId: string; slug: string
 export async function adoptPaneBinding(ctx: Ctx, repoId: string, sessionId: string): Promise<void> {
   const own = keyOf(sessionId)
   const pane = sessionKey(ctx.env)
-  if (pane === null || pane === own || boundSlug(ctx, repoId, own) !== null) return
-  const slug = boundSlug(ctx, repoId, pane)
-  if (slug === null) return
-  const binding: Binding = { slug, at: ctx.clock.now(), source: "workflow" }
-  await ctx.fs.writeFile(
-    join(sessionsDir(ctx, repoId), `${own}.json`),
-    `${JSON.stringify(binding)}\n`,
+  if (pane === null || pane === own) return
+  const existing = workflowBindingOf(
+    await readBindingJson(ctx, workflowBindingPath(ctx, { repoId }, own)),
   )
+  if (existing) return
+  const indexed = bindingTargetOf(await readBindingJson(ctx, bindingIndexPath(ctx, own)))
+  if (indexed) {
+    const binding = workflowBindingOf(
+      await readBindingJson(ctx, workflowBindingPath(ctx, indexed, own)),
+    )
+    if (binding?.slug === indexed.slug && binding.at === indexed.at) return
+  }
+  const paneBinding = workflowBindingOf(
+    await readBindingJson(ctx, workflowBindingPath(ctx, { repoId }, pane)),
+  )
+  if (paneBinding === null) return
+  const slug = paneBinding.slug
+  await assignBinding(ctx, own, { repoId, slug })
 }
 
 /** A task that leaves active work releases every session, without disturbing other tasks. */
@@ -113,7 +129,10 @@ export async function clearTaskBindings(
       // A torn note does not identify this task.
       continue
     }
-    if (slug === task.slug) await ctx.fs.remove(path)
+    if (slug === task.slug) {
+      await ctx.fs.remove(path)
+      await retireBindingIndex(ctx, name.slice(0, -5), task)
+    }
   }
 }
 

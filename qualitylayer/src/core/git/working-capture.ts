@@ -12,7 +12,7 @@ import type { RunEvent } from "../run/contracts.ts"
 import { readRun } from "../run/registry.ts"
 import { gitCall, gitEnv } from "../run/turn-git.ts"
 import { isArchived } from "../task/archive.ts"
-import { boundSlug, CLAIM_MS, keyOf } from "../task/binding.ts"
+import { boundSlug, keyOf } from "../task/binding.ts"
 import type { Task } from "../task/store.ts"
 import { nativeEdits, replayNativeEdit } from "./native-edit.ts"
 import {
@@ -122,7 +122,7 @@ async function captureBinding(
       ![task.slug, `${task.repoId}~${task.slug}`].includes(target ?? "")
     )
       return null
-  } else if (ctx.clock.now() - binding.at >= CLAIM_MS) return null
+  }
   const generation = event?.generation ?? binding.at
   const input = JSON.stringify([payload.tool_name, payload.tool_input])
   if (Buffer.byteLength(input) > WORKING_EVENT_READ_BYTES) return null

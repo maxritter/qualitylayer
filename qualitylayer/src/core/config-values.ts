@@ -493,16 +493,16 @@ export const DEFAULT_CONFIG: Config = {
   // A design is looked at on the model the change is judged on, unless the person picks another.
   models: {
     "claude-code": { helpers: "sonnet", judge: "opus", design: "opus" },
-    codex: { helpers: "gpt-6.1-sol", judge: "gpt-6.1-sol", design: "gpt-6.1-sol" },
+    codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-sol", design: "gpt-6.2-sol" },
     pi: {
       helpers: "openai-codex/gpt-6.1-sol",
       judge: "openai-codex/gpt-6.1-sol",
       design: "openai-codex/gpt-6.1-sol",
     },
     opencode: {
-      helpers: "openai/gpt-6.1-sol",
-      judge: "openai/gpt-6.1-sol",
-      design: "openai/gpt-6.1-sol",
+      helpers: "openai/gpt-6.2-sol",
+      judge: "openai/gpt-6.2-sol",
+      design: "openai/gpt-6.2-sol",
     },
     cursor: { helpers: "auto", judge: "claude-opus-5-5-high", design: "claude-opus-5-5-high" },
     grok: { helpers: "grok-4.7", judge: "grok-4.7", design: "grok-4.7" },
@@ -522,9 +522,9 @@ export const DEFAULT_CONFIG: Config = {
     change: "risky",
     models: {
       "claude-code": "sonnet",
-      codex: "gpt-6.1-sol",
+      codex: "gpt-6.2-sol",
       pi: "openai-codex/gpt-6.1-sol",
-      opencode: "openai/gpt-6.1-sol",
+      opencode: "openai/gpt-6.2-sol",
       cursor: "auto",
       grok: "grok-4.7",
       antigravity: "gemini-3.8-flash-high",

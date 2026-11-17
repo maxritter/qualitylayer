@@ -16,6 +16,7 @@ import { isNativeAgent } from "../agents/ids.ts"
 import { projectRuntimeDir, resolveRepo } from "../paths.ts"
 import { isArchived } from "./archive.ts"
 import { keyOf } from "./binding.ts"
+import { observedTarget } from "./bound-target.ts"
 import { terminalTaskFor } from "./chat-questions.ts"
 import { latestUserMessage, userMessages } from "./session-proof.ts"
 import { isTerminal, loadTask, type Task } from "./store.ts"
@@ -36,6 +37,14 @@ async function activePromptTask(
   ctx: Ctx,
   session: string,
 ): Promise<{ task: Task; project: string } | null> {
+  const target = await observedTarget(ctx, keyOf(session))
+  if (target.kind === "blocked") return null
+  if (target.kind === "bound") {
+    const task = await loadTask(ctx, target.repo, target.slug)
+    return task === null || isTerminal(task.stage) || (await isArchived(ctx, task))
+      ? null
+      : { task, project: target.repo.id }
+  }
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return null
   let slug = ctx.env.get("QUALITYLAYER_TASK")

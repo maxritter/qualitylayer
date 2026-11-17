@@ -462,9 +462,8 @@ async function scanHome(ctx: Ctx, now: number): Promise<SweepEntry[]> {
       )
         out.push({ ...entry, kind: "thumbnail" })
       else if (
-        at[0] === "projects" &&
-        at.length === 4 &&
-        at[2] === "sessions" &&
+        ((at[0] === "projects" && at.length === 4 && at[2] === "sessions") ||
+          (at[0] === "session-bindings" && at.length === 2)) &&
         /^[a-f0-9]{16}\.json$/.test(child.name)
       )
         out.push({ ...entry, kind: "binding" })

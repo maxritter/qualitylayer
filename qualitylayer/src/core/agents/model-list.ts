@@ -8,12 +8,14 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { readConfig } from "../config.ts"
 import { runBounded } from "../limits/bounded-run.ts"
 import { agentEnvironment } from "../run/agent-env.ts"
 import agentsJson from "./agents.json" with { type: "json" }
 import { agentBinary } from "./binary.ts"
+import { configDirEnvironment } from "./config-dir.ts"
 import type { NativeAgent } from "./ids.ts"
-import { listFile, ownModel, readIds } from "./model-list-readers.ts"
+import { codexCacheChanged, listFile, ownModel, readIds } from "./model-list-readers.ts"
 import { type StoredModelList, storedModelLists, storeModelList } from "./model-list-store.ts"
 import { listsModels } from "./model-values.ts"
 
@@ -159,7 +161,19 @@ export async function readModelList(
   if (!listsModels(agent)) return null
   const held = (await storedModelLists(ctx))[agent]
   const binary = await agentBinary(ctx, agent)
-  if (binary === null || settled(ctx, agent, binary, held)) return held ?? null
+  if (binary === null) return held ?? null
+  if (settled(ctx, agent, binary, held)) {
+    if (
+      agent !== "codex" ||
+      held === undefined ||
+      !(await codexCacheChanged(
+        ctx,
+        Math.max(held.checkedAt, held.failedAt ?? 0),
+        configDirEnvironment(ctx.env, (await readConfig(ctx)).agents),
+      ))
+    )
+      return held ?? null
+  }
   return shared(ctx, agent, () =>
     ask(ctx, agent, binary, held, timeoutMs).catch(() => held ?? null),
   )

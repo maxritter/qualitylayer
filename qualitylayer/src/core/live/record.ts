@@ -41,6 +41,7 @@ import { readRun } from "../run/registry.ts"
 import { pidAlive } from "../self.ts"
 import { isArchived } from "../task/archive.ts"
 import { boundSlug, keyOf, sessionKey, WORKFLOW_OWNER_COMMANDS } from "../task/binding.ts"
+import { observedTarget } from "../task/bound-target.ts"
 import { loadTask, resolveTask } from "../task/store.ts"
 import { recentWindowsProcesses } from "../windows-processes.ts"
 import type { EndKind } from "./liveness.ts"
@@ -442,6 +443,16 @@ async function boundTask(
   ctx: Ctx,
   key: string | null,
 ): Promise<{ repo: RepoRef; slug: string; runtimeDir: string } | null> {
+  if (key !== null) {
+    const target = await observedTarget(ctx, key)
+    if (target.kind === "blocked") return null
+    if (target.kind === "bound") {
+      const task = await loadTask(ctx, target.repo, target.slug)
+      return task && !(await isArchived(ctx, task))
+        ? { repo: target.repo, slug: task.slug, runtimeDir: task.runtimeDir }
+        : null
+    }
+  }
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return null
   const named = ctx.env.get("QUALITYLAYER_TASK")

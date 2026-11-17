@@ -61,6 +61,7 @@ const PRICES: {
   family?: "grok" | "gemini"
   next?: { at: number; input: number; output: number; cacheRead: number }
   openai?: true
+  ultrafast?: { promotionEnds: number }
 }[] = [
   // Vendor text-token rates checked 2026-11-02; storage/tools are outside token valuation.
   // https://docs.x.ai/developers/pricing
@@ -98,6 +99,23 @@ const PRICES: {
   { model: /opus/i, input: 4, output: 20, cacheRead: 0.2 },
   { model: /sonnet/i, input: 2, output: 10, cacheRead: 0.2 },
   { model: /haiku/i, input: 1, output: 5, cacheRead: 0.1 },
+  // https://developers.openai.com/api/docs/pricing.md
+  {
+    model: /^gpt-6\.2-astra$/i,
+    input: 8,
+    output: 40,
+    cacheRead: 0.4,
+    openai: true,
+    ultrafast: { promotionEnds: Date.UTC(2027, 2, 1, 8) },
+  },
+  {
+    model: /^gpt-6\.2-sol$/i,
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    openai: true,
+    ultrafast: { promotionEnds: Date.UTC(2027, 2, 1, 8) },
+  },
   // Current estimate rates verified 2026-10-08, not a reconstruction of historical invoices:
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   // Fast's priority alias: https://developers.openai.com/api/docs/guides/fast-mode
@@ -146,10 +164,12 @@ const FAST_TIERS: readonly string[] = ["priority", "fast"]
  */
 export function isFastTier(model: string, context: PricingContext = {}): boolean {
   const price = priceRowOf(model, context.at)
+  const tier = context.serviceTier?.toLowerCase()
+  if (tier === "ultrafast") return price?.ultrafast !== undefined
   return (
     (price?.openai === true || price?.family === "grok" || price?.family === "gemini") &&
-    context.serviceTier !== undefined &&
-    FAST_TIERS.includes(context.serviceTier.toLowerCase())
+    tier !== undefined &&
+    FAST_TIERS.includes(tier)
   )
 }
 
@@ -204,7 +224,14 @@ export function priceParts(
     }
   }
   if (price.openai) {
-    const tier = TIERS[context.serviceTier?.toLowerCase() ?? "standard"]
+    const name = context.serviceTier?.toLowerCase() ?? "standard"
+    if (price.ultrafast && name === "flex") return null
+    const tier =
+      name === "ultrafast" && price.ultrafast
+        ? (context.at ?? Date.now()) < price.ultrafast.promotionEnds
+          ? 3
+          : 6
+        : TIERS[name]
     // A tier that is not listed (or is an inherited name such as "toString") is not priced.
     if (typeof tier !== "number") return null
     modifier = tier * (context.regional ? 1.1 : 1)

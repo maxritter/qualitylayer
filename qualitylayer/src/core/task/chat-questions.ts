@@ -7,6 +7,7 @@ import { homeVariable } from "../platform.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
 import { renderTerminal } from "../terminal/render.ts"
 import { keyOf } from "./binding.ts"
+import { observedTarget } from "./bound-target.ts"
 import type { Question } from "./question.ts"
 import { inAgent } from "./sides.ts"
 import { loadTask, type Task } from "./store.ts"
@@ -34,8 +35,15 @@ const PICKER_TOOLS: Partial<Record<NativeAgent, string>> = {
 export const TERMINAL_YOUR_TURN = "🔔 Your turn: answer in your agent's chat."
 
 export async function terminalTaskFor(ctx: Ctx, session: string): Promise<Task | null> {
+  if (!session) return null
+  const target = await observedTarget(ctx, keyOf(session))
+  if (target.kind === "blocked") return null
+  if (target.kind === "bound") {
+    const task = await loadTask(ctx, target.repo, target.slug)
+    return task && inAgent(task) ? task : null
+  }
   const repo = await resolveRepo(ctx)
-  if (!repo.ok || !session) return null
+  if (!repo.ok) return null
   try {
     const binding = JSON.parse(
       await ctx.fs.readFile(

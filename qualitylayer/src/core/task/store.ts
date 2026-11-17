@@ -40,6 +40,8 @@ import { followsOpenPullRequest } from "../ship/pr-open.ts"
 import { answerModeStamp, approvalModeStamp } from "./answer-mode.ts"
 import { placeFor } from "./answers.ts"
 import { bindSession, boundSlug, claimedByOthers, keyOf, sessionKey } from "./binding.ts"
+import { BindingStorageError, touchBindingIndex } from "./binding-index.ts"
+import { observedTarget } from "./bound-target.ts"
 // Type-only import: store must not import machine values (machine imports store).
 import type { Stage } from "./machine.ts"
 import { STAGE_ORDER, TERMINAL_STAGES } from "./stages.ts"
@@ -807,10 +809,6 @@ export async function touchSession(
     // The build's checkout is sticky: it is where the task lives.
     checkout: previous?.checkout ?? task.repoRoot,
   }
-  await ctx.fs.writeFile(
-    join(task.runtimeDir, "session.json"),
-    `${JSON.stringify(session, null, 2)}\n`,
-  )
   // The calling session now works on this task; its status line and its next
   // command follow it, whatever other sessions pick up. A session that only asks about or waits
   // on a task it names keeps its own binding.
@@ -818,6 +816,12 @@ export async function touchSession(
   const visiting = key !== null && boundSlug(ctx, task.repoId, key) !== task.slug
   if (options.bind !== false && !visiting) {
     await bindSession(ctx, task)
+  }
+  await ctx.fs.writeFile(
+    join(task.runtimeDir, "session.json"),
+    `${JSON.stringify(session, null, 2)}\n`,
+  )
+  if (options.bind !== false && !visiting) {
     // Its raw id stays local, for the cost view to find its transcript.
     await noteCostSession(ctx, task)
   }
@@ -830,7 +834,8 @@ const TOOL_CALL_QUIET_MS = 30_000
  * The agent working on the open task of this directory just did something, so its session is
  * alive. A QualityLayer command keeps the state the session is in (a gate's wait stays a wait); a
  * tool call, reported by the agent's hook after every tool, means it works, and writes at most
- * once per 30 s. It never fails the caller: no task or a broken file means nothing to touch.
+ * once per 30 s. Passive failures do not interrupt tools; an explicit command must
+ * report a failed session-claim admission rather than continuing as if it joined.
  */
 export async function keepAlive(
   ctx: Ctx,
@@ -838,31 +843,43 @@ export async function keepAlive(
   sessionId?: string,
 ): Promise<void> {
   try {
-    const repo = await resolveRepo(ctx)
-    if (!repo.ok) return
     const key = sessionId ? keyOf(sessionId) : sessionKey(ctx.env)
+    const target = source === "tool" && key !== null ? await observedTarget(ctx, key) : null
+    if (target?.kind === "blocked") return
+    const repo =
+      target?.kind === "bound" ? { ok: true as const, data: target.repo } : await resolveRepo(ctx)
+    if (!repo.ok) return
     // A command that names its task (`--task`) joins it: this session works on it from now on,
     // from whichever home it runs.
     // A visit (a question, a wait) keeps the session's own task alive instead.
     const named =
       source === "command" && !ctx.visitsTask ? ctx.env.get("QUALITYLAYER_TASK") : undefined
     const slug =
-      named !== undefined && named !== ""
-        ? named
-        : key !== null
-          ? boundSlug(ctx, repo.data.id, key)
-          : null
+      target?.kind === "bound"
+        ? target.slug
+        : named !== undefined && named !== ""
+          ? named
+          : key !== null
+            ? boundSlug(ctx, repo.data.id, key)
+            : null
     const task = slug !== null ? await loadTask(ctx, repo.data, slug) : null
     if (task === null) return
     const previous = await readSession(ctx, task)
     if (source === "tool") {
       if (previous !== null && ctx.clock.now() - previous.heartbeat < TOOL_CALL_QUIET_MS) return
+      if (target?.kind === "bound" && key !== null)
+        await touchBindingIndex(ctx, key, {
+          repoId: target.repo.id,
+          slug: target.slug,
+          at: target.generation,
+        })
       await touchSession(ctx, task, detectAgent(ctx.env), "busy", { bind: false })
     } else {
       await touchSession(ctx, task, detectAgent(ctx.env), previous?.state ?? "busy")
     }
-  } catch {
-    // A heartbeat is never worth a failed command.
+  } catch (cause) {
+    if (source === "command" && cause instanceof BindingStorageError) throw cause
+    // Passive heartbeat failure must not interrupt a native tool.
   }
 }
 

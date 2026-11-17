@@ -215,16 +215,34 @@
     "goal": "/goal {objective}",
     "invoke": "$ql",
     "helperModels": {
+      "gpt-6.2-sol": "GPT-6.2 Sol",
+      "gpt-6.2-astra": "GPT-6.2 Astra",
       "gpt-6.1-sol": "GPT-6.1 Sol",
       "gpt-6-astra": "GPT-6 Astra",
       "gpt-6.1-terra": "GPT-6.1 Terra",
       "gpt-6-luna": "GPT-6 Luna"
     },
-    "modelOrder": ["gpt-6.1-sol", "gpt-6-astra", "gpt-6.1-terra", "gpt-6-luna"],
-    "modelCost": { "gpt-6-luna": 1, "gpt-6.1-terra": 2, "gpt-6.1-sol": 3, "gpt-6-astra": 4 },
+    "modelOrder": [
+      "gpt-6.2-sol",
+      "gpt-6.2-astra",
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6.1-terra",
+      "gpt-6-luna"
+    ],
+    "modelCost": {
+      "gpt-6-luna": 1,
+      "gpt-6.1-terra": 2,
+      "gpt-6.1-sol": 3,
+      "gpt-6.2-sol": 3,
+      "gpt-6.2-astra": 4,
+      "gpt-6-astra": 5
+    },
     "plan": {
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6.2-sol",
       "models": [
+        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
+        { "id": "gpt-6.2-astra", "name": "GPT-6.2 Astra" },
         { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -233,6 +251,16 @@
     },
     "build": {
       "models": [
+        {
+          "id": "gpt-6.2-sol",
+          "name": "GPT-6.2 Sol",
+          "why": "For everyday implementation from a finished Plan."
+        },
+        {
+          "id": "gpt-6.2-astra",
+          "name": "GPT-6.2 Astra",
+          "why": "For implementation that needs deeper reasoning."
+        },
         {
           "id": "gpt-6.1-sol",
           "name": "GPT-6.1 Sol",
@@ -255,11 +283,13 @@
         }
       ],
       "orchestrator": {
-        "id": "gpt-6.1-sol",
-        "name": "GPT-6.1 Sol",
-        "why": "It cuts the Plan into cards and builds them itself, test first, fixes what fails and commits. GPT-6 Astra costs five times as much and is never the default."
+        "id": "gpt-6.2-sol",
+        "name": "GPT-6.2 Sol",
+        "why": "Leads a full build from a finished Plan."
       },
       "orchestrators": [
+        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
+        { "id": "gpt-6.2-astra", "name": "GPT-6.2 Astra" },
         { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -449,16 +479,34 @@
     "goal": null,
     "invoke": "/ql",
     "helperModels": {
+      "openai/gpt-6.2-sol": "GPT-6.2 Sol",
+      "openai/gpt-6.2-astra": "GPT-6.2 Astra",
       "openai/gpt-6.1-sol": "GPT-6.1 Sol",
       "openai/gpt-6-astra": "GPT-6 Astra",
       "openai/gpt-6.1-terra": "GPT-6.1 Terra",
       "openai/gpt-6-luna": "GPT-6 Luna"
     },
-    "modelOrder": ["gpt-6.1-sol", "gpt-6-astra", "gpt-6.1-terra", "gpt-6-luna"],
-    "modelCost": { "gpt-6-luna": 1, "gpt-6.1-terra": 2, "gpt-6.1-sol": 3, "gpt-6-astra": 4 },
+    "modelOrder": [
+      "gpt-6.2-sol",
+      "gpt-6.2-astra",
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6.1-terra",
+      "gpt-6-luna"
+    ],
+    "modelCost": {
+      "gpt-6-luna": 1,
+      "gpt-6.1-terra": 2,
+      "gpt-6.1-sol": 3,
+      "gpt-6.2-sol": 3,
+      "gpt-6.2-astra": 4,
+      "gpt-6-astra": 5
+    },
     "plan": {
-      "model": "openai/gpt-6.1-sol",
+      "model": "openai/gpt-6.2-sol",
       "models": [
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
+        { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
         { "id": "openai/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai/gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -467,6 +515,16 @@
     },
     "build": {
       "models": [
+        {
+          "id": "openai/gpt-6.2-sol",
+          "name": "GPT-6.2 Sol",
+          "why": "For everyday implementation from a finished Plan."
+        },
+        {
+          "id": "openai/gpt-6.2-astra",
+          "name": "GPT-6.2 Astra",
+          "why": "For implementation that needs deeper reasoning."
+        },
         {
           "id": "openai/gpt-6.1-sol",
           "name": "GPT-6.1 Sol",
@@ -489,11 +547,13 @@
         }
       ],
       "orchestrator": {
-        "id": "openai/gpt-6.1-sol",
-        "name": "GPT-6.1 Sol",
-        "why": "Cuts the Plan into cards and builds them itself, test first, and may start child sessions for independent slices."
+        "id": "openai/gpt-6.2-sol",
+        "name": "GPT-6.2 Sol",
+        "why": "Leads a full build from a finished Plan."
       },
       "orchestrators": [
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
+        { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
         { "id": "openai/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai/gpt-6.1-terra", "name": "GPT-6.1 Terra" },

@@ -14,7 +14,7 @@ import {
   readCompressedHead,
 } from "../agents/codex-rollout.ts"
 import { sessionIdentity } from "../agents/detect.ts"
-import { isNativeAgent, type NativeAgent } from "../agents/ids.ts"
+import { AGENT_NAMES, isNativeAgent, type NativeAgent } from "../agents/ids.ts"
 import { readCheckRecords } from "../checks.ts"
 import { type FlowStepId, flowStepOf } from "../flow.ts"
 import {
@@ -25,6 +25,7 @@ import {
 } from "../home-caps.ts"
 import { projectRuntimeDir, repoIdFrom } from "../paths.ts"
 import { keyOf } from "../task/binding.ts"
+import { readBindingJson, workflowBindingOf, workflowBindingPath } from "../task/binding-index.ts"
 import { readEvents, type Task } from "../task/store.ts"
 import {
   type CostHelper,
@@ -60,7 +61,7 @@ import { readsRecordCost, recordCalls, sessionRecordPath } from "./session-calls
 import { type Brief, type Call, codexCalls, mergeNativeCredits } from "./transcripts.ts"
 
 type Agent = NativeAgent
-type SessionNote = { agent: Agent; id: string; at: number }
+type SessionNote = { agent: Agent; id: string; at: number; source?: "workflow" }
 
 const SESSIONS_FILE = "cost-sessions.json"
 
@@ -91,6 +92,16 @@ async function readNotes(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<Sess
 
 type CostTask = Pick<Task, "runtimeDir" | "repoId" | "slug">
 
+/** An incidental legacy note does not establish authority over another checkout. */
+async function claimedSession(ctx: Ctx, note: SessionNote, task: CostTask): Promise<boolean> {
+  if (note.source === "workflow") return true
+  if (!task.repoId) return false
+  const binding = workflowBindingOf(
+    await readBindingJson(ctx, workflowBindingPath(ctx, task, keyOf(note.id))),
+  )
+  return binding?.slug === task.slug
+}
+
 /**
  * Note the calling session as one of this task's (once per session), and when it moves on to this
  * task from another, the moment it did: one session may work on several tasks in turn.
@@ -102,10 +113,13 @@ export async function noteCostSession(ctx: Ctx, task: CostTask): Promise<void> {
   await noteSwitch(ctx, note, task)
   const notes = await readNotes(ctx, task)
   if (notes.some((n) => n.agent === note.agent && n.id === note.id)) return
+  const recorded = (await claimedSession(ctx, note, task))
+    ? { ...note, source: "workflow" as const }
+    : note
   await ctx.fs.mkdir(task.runtimeDir)
   await ctx.fs.writeFile(
     join(task.runtimeDir, SESSIONS_FILE),
-    `${JSON.stringify([...notes, note], null, 2)}\n`,
+    `${JSON.stringify([...notes, recorded], null, 2)}\n`,
   )
 }
 
@@ -177,14 +191,20 @@ async function timelineOf(ctx: Ctx, note: SessionNote, task: CostTask): Promise<
 
 /**
  * Whether a moment of the session belongs to this task: the task it last switched to by then.
- * Before its first switch it worked toward the first task (the request that created it); a moment
- * the transcript does not date goes with where the session is now. No timeline: all of it counts.
+ * A proven claim excludes earlier history; unproven legacy imports keep their existing window.
+ * A moment the transcript does not date goes
+ * with where the session is now. No timeline: legacy records retain their existing attribution.
  */
-function ownedBy(timeline: Switch[], task: CostTask): (at: number | null) => boolean {
+function ownedBy(
+  timeline: Switch[],
+  task: CostTask,
+  claimed: boolean,
+): (at: number | null) => boolean {
   if (timeline.length === 0) return () => true
   const mine = (s: Switch | undefined) => s?.repoId === task.repoId && s?.slug === task.slug
   return (at) => {
     if (at === null) return mine(timeline.at(-1))
+    if (claimed && at < (timeline[0]?.at ?? -Infinity)) return false
     let owner = timeline[0]
     for (const s of timeline) {
       if (s.at > at) break
@@ -531,9 +551,12 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
       }[]
     | null = null
   const notes = await readNotes(ctx, task)
+  const claims = new Set<SessionNote>()
+  for (const note of notes) if (await claimedSession(ctx, note, task)) claims.add(note)
   const native = new Map<Agent, Awaited<ReturnType<typeof piSessions>>>()
   const countedNative = new Set<string>()
   for (const note of notes) {
+    const claimed = claims.has(note)
     session = note.id
     agent = note.agent
     if (note.agent === "claude-code") {
@@ -549,11 +572,10 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
         calls: parsedMain.calls.filter((c) => !counted.has(c.id ?? "")),
       }
       for (const call of main.calls) counted.add(call.id ?? "")
-      // A session started in another repository only looked at this task: its work is not this task's.
-      if (!(await ours(main.cwd))) continue
+      if (!claimed && !(await ours(main.cwd))) continue
       for (const id of counted) seen.add(id)
       // One session may plan one task and build another: each call goes to the task it was on.
-      const owns = ownedBy(await timelineOf(ctx, note, task), task)
+      const owns = ownedBy(await timelineOf(ctx, note, task), task, claimed)
       for (const call of main.calls) if (owns(call.at)) record(call, null)
       for (const file of files.subagents) {
         const parsedSub = await indexedTranscript(ctx, file, "claude-code")
@@ -572,7 +594,14 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
         const wanted = notes.filter((row) => row.agent === note.agent).map((row) => row.id)
         parsed =
           note.agent === "pi"
-            ? await piSessions(ctx, task.repoRoot, wanted)
+            ? await piSessions(
+                ctx,
+                task.repoRoot,
+                wanted,
+                notes
+                  .filter((note) => note.agent === "pi" && claims.has(note))
+                  .map((note) => note.id),
+              )
             : (opencodeSessions(ctx, wanted) ?? [])
         native.set(note.agent, parsed)
       }
@@ -581,7 +610,7 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
         if (!knownSessions.has(`${note.agent}:${note.id}`)) missing++
         continue
       }
-      const owns = ownedBy(await timelineOf(ctx, note, task), task)
+      const owns = ownedBy(await timelineOf(ctx, note, task), task, claimed)
       const related = new Set([note.id])
       let grew = true
       while (grew) {
@@ -594,7 +623,11 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
       }
       for (const row of parsed) {
         if (!row.id || !related.has(row.id)) continue
-        if (!row.id || countedNative.has(`${note.agent}:${row.id}`) || !(await ours(row.cwd)))
+        if (
+          !row.id ||
+          countedNative.has(`${note.agent}:${row.id}`) ||
+          (!claimed && !(await ours(row.cwd)))
+        )
           continue
         if (row.id !== note.id && !owns(firstAt(row.calls))) continue
         countedNative.add(`${note.agent}:${row.id}`)
@@ -617,7 +650,7 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
       }
       if (countedNative.has(`${note.agent}:${note.id}`)) continue
       countedNative.add(`${note.agent}:${note.id}`)
-      const owns = ownedBy(await timelineOf(ctx, note, task), task)
+      const owns = ownedBy(await timelineOf(ctx, note, task), task, claimed)
       for (const call of await recordCalls(ctx, note.agent, path))
         if (owns(call.at)) record(call, null)
     } else if (note.agent === "codex") {
@@ -647,10 +680,10 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
         if (!knownSessions.has(`${note.agent}:${note.id}`)) missing++
         continue
       }
-      if (!(await ours(own.cwd))) continue
+      if (!claimed && !(await ours(own.cwd))) continue
       if (countedCodex.has(note.id)) continue
       countedCodex.add(note.id)
-      const owns = ownedBy(await timelineOf(ctx, note, task), task)
+      const owns = ownedBy(await timelineOf(ctx, note, task), task, claimed)
       // Helpers note their own sessions when they call the CLI. A noted child is still a helper,
       // and its parent's scan must not count it a second time (in either note order).
       const ownRow = own.parent !== null ? rowOf(own, `thread-${note.id}`, null) : null
@@ -820,7 +853,7 @@ export async function taskCost(ctx: Ctx, task: Task): Promise<TaskCost> {
           kind === "own-helper"
             ? label.replace(
                 /^(?:Claude Code's own helper|Agent's own helper)/,
-                row.agent === "codex" ? "Codex's own helper" : "Claude Code's own helper",
+                `${AGENT_NAMES[row.agent ?? "claude-code"]}'s own helper`,
               )
             : label,
         model: mainModel(row),

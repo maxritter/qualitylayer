@@ -84,7 +84,8 @@ import {
 import type { RunEvent } from "../../core/run/contracts.ts"
 import { liveTaskFor, probeCheckout } from "../../core/status/report.ts"
 import { isArchived } from "../../core/task/archive.ts"
-import { adoptPaneBinding, boundSlug, keyOf } from "../../core/task/binding.ts"
+import { adoptPaneBinding, boundSlug, keyOf, sessionKey } from "../../core/task/binding.ts"
+import { observedTarget } from "../../core/task/bound-target.ts"
 import { chatQuestions } from "../../core/task/chat-questions.ts"
 import {
   applyPickerProof,
@@ -166,6 +167,12 @@ function inDirectory(ctx: Ctx, cwd: unknown): Ctx {
 async function hookTask(ctx: Ctx, payload: Prompt) {
   const session = typeof payload.session_id === "string" ? payload.session_id.trim() : ""
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(session)) return null
+  const target = await observedTarget(ctx, keyOf(session))
+  if (target.kind === "blocked") return null
+  if (target.kind === "bound") {
+    const task = await loadTask(ctx, target.repo, target.slug)
+    return task === null || isTerminal(task.stage) || (await isArchived(ctx, task)) ? null : task
+  }
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return null
   const slug = boundSlug(ctx, repo.data.id, keyOf(session))
@@ -270,8 +277,7 @@ async function recordOwnWork(
   event: { call?: "done" | "failed"; ended?: "turn" | "session" },
 ): Promise<string[]> {
   if (typeof payload.session_id !== "string") return []
-  const repo = await resolveRepo(at)
-  if (!repo.ok) return []
+  const repo = { id: task.repoId, root: task.repoRoot }
   const key = keyOf(payload.session_id)
   const call =
     event.call === undefined
@@ -284,7 +290,7 @@ async function recordOwnWork(
           // A stop that failed has stopped nothing: its start stays open (`settleCommits`).
           failed: event.call === "failed" || payload.is_error === true,
         }
-  const settled = await settleCommits(at, repo.data, key, task.slug, {
+  const settled = await settleCommits(at, repo, key, task.slug, {
     ...(call !== undefined ? { call } : {}),
     ...(event.ended !== undefined ? { ended: event.ended } : {}),
   }).catch(() => ({
@@ -297,14 +303,14 @@ async function recordOwnWork(
   const edited = event.call === "done" ? editedPaths(payload.tool_name, payload.tool_input) : []
   const patched = call !== undefined ? shellPatchedPaths(payload.tool_name, payload.tool_input) : []
   const touched = await recordEdits(at, {
-    repo: repo.data,
+    repo: repo,
     key: key,
     task: task.slug,
     cwd: cwd,
     paths: edited,
   })
   const shelled = await recordShellEdits(at, {
-    repo: repo.data,
+    repo: repo,
     key: key,
     task: task.slug,
     cwd: cwd,
@@ -316,7 +322,7 @@ async function recordOwnWork(
     window: settled.gained,
     unsure: settled.unsure,
   }).catch(() => {})
-  await recordShapes(at, repo.data, key, task.slug, [...touched, ...shelled]).catch(() => {})
+  await recordShapes(at, repo, key, task.slug, [...touched, ...shelled]).catch(() => {})
   return shelled
 }
 
@@ -686,7 +692,11 @@ async function adoptTerminalSession(ctx: Ctx, payload: Prompt): Promise<void> {
     const session = typeof payload.session_id === "string" ? payload.session_id.trim() : ""
     if (!/^[A-Za-z0-9_.-]{1,128}$/.test(session)) return
     const at = inDirectory(ctx, payload.cwd)
-    const repo = await resolveRepo(at)
+    const pane = sessionKey(at.env)
+    const target = pane !== null ? await observedTarget(at, pane) : null
+    if (target?.kind === "blocked") return
+    const repo =
+      target?.kind === "bound" ? { ok: true as const, data: target.repo } : await resolveRepo(at)
     if (repo.ok) await adoptPaneBinding(at, repo.data.id, session)
   } catch {
     // The hook goes on with whatever binding the session has.
@@ -748,11 +758,11 @@ async function liveHook(ctx: Ctx, payload: Prompt, forceStop: boolean): Promise<
       if (task && !forceStop && named === "PreToolUse") {
         const key = keyOf(payload.session_id as string)
         const repo = shellCommits(payload.tool_name, payload.tool_input)
-          ? await resolveRepo(at)
+          ? { id: task.repoId, root: task.repoRoot }
           : null
-        if (repo?.ok)
+        if (repo)
           await noteCommitStart(at, {
-            repo: repo.data,
+            repo,
             key: key,
             call: { tool: payload.tool_name, input: payload.tool_input, id: payload.tool_use_id },
           }).catch(() => {})

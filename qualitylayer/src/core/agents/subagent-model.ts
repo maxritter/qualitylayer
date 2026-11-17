@@ -165,7 +165,7 @@ async function installedSubagentModels(
       models,
       ...(own === null ? {} : { listed: { models: own.models, own: own.own } }),
       current: unquote(tomlGet(text, "agents", "default_subagent_model")),
-      recommended: models[0]?.id ?? "gpt-6.1-sol",
+      recommended: models[0]?.id ?? "gpt-6.2-sol",
       effort:
         unquote(tomlGet(text, "agents", "default_subagent_reasoning_effort")) ??
         unquote(tomlGet(text, null, "model_reasoning_effort")),

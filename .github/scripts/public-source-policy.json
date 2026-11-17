@@ -20,7 +20,7 @@
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
-    ".github/workflows/old-client-update.yml": "09ed49c0d18dced36c984367236bb3f78aeccaf524c5d0899e8c40dc24974cdf",
+    ".github/workflows/old-client-update.yml": "d1e9ce1efef9f095b95b7f5be81efb224f1ef6752415ee14de6bd0e49fca088f",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
     ".github/workflows/qualitylayer-ci.yml": "3f620a85ecf935fa30d2c8c1d58d671b1f93c4c08160c3e2e693cb0e2f8391e1",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
@@ -2175,7 +2175,7 @@
     "qualitylayer/artifacts/app/app-model/coverage.json": "023db51908e23a6f8ce58b0ce3b425439488db1a997ebb77b6c154cbb922da46",
     "qualitylayer/tests/cli/machines-prompt.test.ts": "92ae460e60402c0fd344602b4467165c91c9cbbcfc353d6a7b3e9f92408bba33"
   },
-  "reviewManifestSha256": "49940a1ecfdb0bed406b11f77a976be109ad0f6c5f9d6112f92bc949d8acee94",
+  "reviewManifestSha256": "968dd0e1eb529a163ca3312a325909b5ec5e75d7cd2af832fd112367949b9c47",
   "schema": 1,
-  "sourceHead": "5af72741bbd8ce0b85cb1107fbfae4ce73914b65"
+  "sourceHead": "eded70fc1e70627ccf6a9b0569c6d42d14d835ab"
 }

@@ -56,6 +56,65 @@ jobs:
         run: |
           set -uo pipefail
           failed=0
+          http_probe_dir="$(mktemp -d)"
+          trap 'rm -f "$http_probe_dir/observed"; rmdir "$http_probe_dir" 2>/dev/null || true' EXIT
+          update_diagnostic() {
+            [ "$RUNNER_OS" = macOS ] || return 0
+            [ ! -e "$http_probe_dir/observed" ] || return 0
+            : > "$http_probe_dir/observed"
+            local http_status curl_status=0
+            http_status=$(curl -q --silent --max-time 15 --output /dev/null \
+              --dump-header "$home/update-http.headers" --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'User-Agent: qualitylayer-updater' \
+              'https://api.github.com/repos/maxritter/qualitylayer/releases?per_page=100' \
+              2> "$home/update-http-error.private") || curl_status=$?
+            python3 - "$1" "$2" "$3" "$http_status" "$curl_status" "$home/update-http.headers" <<'PY'
+          import json, re, sys
+          from pathlib import Path
+
+          def number(value):
+              return int(value) if re.fullmatch(r"[0-9]{1,12}", value or "") else None
+
+          def bounded(path):
+              try:
+                  with Path(path).open("rb") as stream:
+                      return stream.read(65536)
+              except OSError:
+                  return b""
+
+          headers = {}
+          for line in bounded(sys.argv[6]).decode("latin-1").splitlines():
+              name, separator, value = line.partition(":")
+              if separator:
+                  headers[name.lower()] = value.strip()
+          status = number(sys.argv[4])
+          status = status if status is not None and 100 <= status <= 599 else 0
+          curl_exit = number(sys.argv[5])
+          remaining = number(headers.get("x-ratelimit-remaining"))
+          retry_after = number(headers.get("retry-after"))
+          category = (
+              "primary_rate_limit" if status == 403 and remaining == 0 else
+              "retry_requested" if status in (403, 429) and retry_after is not None else
+              "forbidden_unclassified" if status == 403 else
+              "rate_limit_unclassified" if status == 429 else
+              "request_now_succeeds" if status == 200 and curl_exit == 0 else
+              "transport_unavailable" if curl_exit else "http_other"
+          )
+          updater_exit = number(sys.argv[2])
+          original = (
+              "release_list_http403" if b"the release list answered HTTP 403" in bounded(sys.argv[3]) else
+              "updater_exit" if updater_exit else "up_to_date_missing"
+          )
+          print(json.dumps({
+              "observation": "followup", "phase": "first" if sys.argv[1] == "first" else "second",
+              "originalFailure": original, "updaterExit": updater_exit,
+              "category": category, "httpStatus": status, "curlExit": curl_exit,
+              "rateLimitRemaining": remaining, "rateLimitLimit": number(headers.get("x-ratelimit-limit")),
+              "rateLimitReset": number(headers.get("x-ratelimit-reset")), "retryAfterSeconds": retry_after,
+          }, separators=(",", ":")))
+          PY
+          }
           for v in $VERSIONS; do
             home="$(mktemp -d)"
             if (
@@ -67,16 +126,27 @@ jobs:
               VERSION="$v" bash "$home/install.sh" --cli-only --non-interactive > "$home/install.log" 2>&1 ||
                 { tail -20 "$home/install.log"; exit 1; }
               [ "$(qualitylayer --version | tail -1)" = "$v" ]
+              update_status=0
               if [[ " $EXPLICIT_VERSION_ONLY " == *" $v "* ]]; then
                 echo "Legacy $v uses the supported explicit-version migration"
-                qualitylayer update --version "$NEWEST"
+                qualitylayer update --version "$NEWEST" > "$home/update-first.private" 2>&1 || update_status=$?
               else
-                qualitylayer update
+                qualitylayer update > "$home/update-first.private" 2>&1 || update_status=$?
+              fi
+              if [ "$update_status" -ne 0 ]; then
+                update_diagnostic first "$update_status" "$home/update-first.private"
+                echo "::error::update from $v failed"
+                exit 1
               fi
               got="$(qualitylayer --version | tail -1)"
               [ "$got" = "$NEWEST" ] || { echo "::error::$v updated to $got, not $NEWEST"; exit 1; }
-              qualitylayer update | grep -q "up to date" ||
-                { echo "::error::a second update from $v did not settle"; exit 1; }
+              update_status=0
+              qualitylayer update > "$home/update-second.private" 2>&1 || update_status=$?
+              if [ "$update_status" -ne 0 ] || ! grep -q "up to date" "$home/update-second.private"; then
+                update_diagnostic second "$update_status" "$home/update-second.private"
+                echo "::error::a second update from $v did not settle"
+                exit 1
+              fi
               echo "$v -> $got"
             ); then :; else
               echo "::error::update from $v failed on $RUNNER_OS $RUNNER_ARCH"

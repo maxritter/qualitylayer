@@ -792,7 +792,7 @@ POST /api/tasks                                   <span class="c"># { "from": ["
       </div>
     </div>
   </div>
-  <p class="lead" style="margin-top:10px">On approval the agent prints the approval message and ends its turn. The person compacts, or opens a new conversation, and says "build here"; the agent then runs <code>qualitylayer build start</code>. Only when the person chose to keep the conversation does the build start at once in the same conversation. The sizes of the two conversations are not shown: QualityLayer does not read a terminal session's conversation.</p>
+  <p class="lead" style="margin-top:10px">With no build choice recorded, the agent shows the ways to build and ends its turn. Build here, from the Plan keeps the compact boundary: the person compacts and says "build here", then the agent runs <code>qualitylayer build start</code>. Keep this conversation hands that same move to the waiting session at once, without another choice or a stop. The approval reply and <code>next</code> keep the person's choice for that Plan and session. The sizes of the two conversations are not shown: QualityLayer does not read a terminal session's conversation.</p>
 </section>
 
 <section class="part" id="change-answer" data-screen-label="Change an answer">

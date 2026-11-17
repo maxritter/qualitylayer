@@ -482,7 +482,7 @@
     "qualitylayer/src/core/handoff/pick-build.ts": "50775e9b3c22b662e149136c5d316b4862fda9dc9853e212c1d59f80d8cb1dec",
     "qualitylayer/src/core/handoff/prompt.ts": "c1caf81ee889cd0b024192ecaba47048e176b69871079205601c83fd48adda38",
     "qualitylayer/src/core/handoff/start-values.ts": "5d566c01a73ade8b8a207859a3b4ffc42d7fe900402206b4a09f0d519f9f6fdb",
-    "qualitylayer/src/core/handoff/start.ts": "144f5891a3f8898da8e81516e5bf4391e22cfaaa1a793687eea9442458a93203",
+    "qualitylayer/src/core/handoff/start.ts": "b6830f953b8b769a0d1ce9e1ff9345d5e0d97763c109e57771bb0afd2b971b78",
     "qualitylayer/src/core/heavy-hold.ts": "4794726bf0a5229d4cdc38b109c6f0d8ca9952b29d7ef6385a74f73d606ea5f5",
     "qualitylayer/src/core/helper-history.ts": "f75150f310a66ab7d14fb6d87bc3992b76acc558fb7b122cd91f683a6f528446",
     "qualitylayer/src/core/helper-staff.ts": "f4bbd249a4965e0cbaf16486fca5f98f94c57ef0298b983a7bf38b899ba99e4a",
@@ -625,10 +625,10 @@
     "qualitylayer/src/core/need/key.ts": "a03ad6ca6f7373f8ea65042c278c06ef9ef01c02e555fd3f584fe46275956515",
     "qualitylayer/src/core/need/need.ts": "07b9800c241dce89d86b7053e0cf81e6c7aeef481cb8abe2ec06c4dd0409c446",
     "qualitylayer/src/core/needs.ts": "38187c85ca1d51def3bd6c4e0b72bf11c34cf8339bcd892cd21838cd4956e8c1",
-    "qualitylayer/src/core/next.ts": "650a8cb9c402c2420a02d3e9263fa07e3f54e6512471af42a7e3ccbf54f14181",
+    "qualitylayer/src/core/next.ts": "0206421f865f5490091d67b32c5ffc21ab0634493be47581e674ea85adc363a0",
     "qualitylayer/src/core/next/build-lead.ts": "708b7b18faba85504792377911d1a87249537bf985b8cf7447763048f65ffeaa",
-    "qualitylayer/src/core/next/compass.ts": "2d135e7e25d2ee0f8afab0003caffecd2ce43fe893b52d881f42cf93f35326cc",
-    "qualitylayer/src/core/next/implement.ts": "697aa06bc75240ef9033312efac8e97ed566c26b29ae7b7d348b7a79454b2acd",
+    "qualitylayer/src/core/next/compass.ts": "2f5f99ea2fdc7bfa0ee1747c0aec08b18f9caa62f3a525e3b0842fa9e73dfd2b",
+    "qualitylayer/src/core/next/implement.ts": "364a6ff32b5723223ea5d7b3edf7fb708ab3ddb029b9249390e32e83170d951a",
     "qualitylayer/src/core/next/moves.ts": "9a7f9b9aafacc630e7fa5afe5260d66961e5bd1b8882c6c1981391d5a289b63a",
     "qualitylayer/src/core/next/plan.ts": "56feff1f4930e61d7fc208389fa60aa642afdf1c1a30d30f2d8a848b884092b5",
     "qualitylayer/src/core/next/refusal.ts": "4db404c8e1b3c52ddcab5399ab247e5735bfec1cd7d5c5ff2ba8a15303f5d8b4",
@@ -2046,7 +2046,7 @@
     "qualitylayer/artifacts/app/workflow/answer-authority-contract.md": "7cc72d8a4c1c7c9d7dbbb59d123ecaad652dd270a5ae46037ee61d41a7e6d7a4",
     "qualitylayer/artifacts/app/workflow/implement.html": "25b1d56241daa9284d13ad0bb0c611c885c07766c875cc85339722370c527ecd",
     "qualitylayer/artifacts/app/workflow/index.html": "c55642912fa40b87639d75d2e60af511d00e3a6d4b153a1b41f2a2b91dcb08cb",
-    "qualitylayer/artifacts/app/workflow/plan.html": "f6913ddaba5f7502dfc3e7a5b10e0c57e7ea7193fd24406a0ba7fbf8dea59c07",
+    "qualitylayer/artifacts/app/workflow/plan.html": "c53736deb877d4e400db06b28b3c534ec01a4c34ca6e7837626e4797d7649e1b",
     "qualitylayer/artifacts/site/website-model/current/billing.html": "d8d1b6f1d41d0d060de2071df673ec9491846fe1ca903072445e5750d7f7b415",
     "qualitylayer/artifacts/site/website-model/current/compare-bmad-method.html": "00b15e18de112bdddb1b6c2b0cb161c621984e019de0e839d407bcf29ef1a74a",
     "qualitylayer/artifacts/site/website-model/current/compare-claude-code-plan-mode.html": "f7f8c95ce8e00faf62cdc4454ff51591120f3d5f8082faf6e9910fd0a85e4dea",
@@ -2175,7 +2175,7 @@
     "qualitylayer/artifacts/app/app-model/coverage.json": "2392d535e249623994349ee7e2cd15600848e98db4b9e2fb243d0c78ad773315",
     "qualitylayer/tests/cli/machines-prompt.test.ts": "92ae460e60402c0fd344602b4467165c91c9cbbcfc353d6a7b3e9f92408bba33"
   },
-  "reviewManifestSha256": "bf033a85c8690ee05d47543ceea95b89dc39c6428396f860e2656fc80dbf0b10",
+  "reviewManifestSha256": "c26f7c4b5d8b83b97c75d27db8b75a7baf4d60e2ee5befd90e34f29b15a2421d",
   "schema": 1,
-  "sourceHead": "a621b1902d44302d5beea3a15ce4b75c6ded61a1"
+  "sourceHead": "521c6a6660d5ff2e802bbdbb4180fe25b5186748"
 }

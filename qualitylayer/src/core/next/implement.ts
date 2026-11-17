@@ -141,13 +141,13 @@ export async function buildRouteOpen(ctx: Ctx, task: Task): Promise<boolean> {
 }
 
 /**
- * The Plan's approval was just applied: planning ends here until the person chooses where the build
- * runs. The prompt starts a fresh session; this one builds only on `build start`.
+ * The Plan's approval was applied: honour its recorded choice, or let the person choose.
+ * Every build is still taken explicitly with `build start`.
  */
 export async function implementStop(
   ctx: Ctx,
   task: Task,
-  chosen: { compact?: boolean } = {},
+  chosen?: { compact?: boolean },
 ): Promise<NextPayload> {
   const flow = await taskFlow(ctx, task)
   const agent = detectAgent(ctx.env)
@@ -166,11 +166,19 @@ export async function implementStop(
       ? { slices: outline.slices.length, tasks: allTasks(outline).length }
       : { slices: planned?.slices ?? 0, tasks: planned?.tasks ?? 0, planned: true },
   )
+  const build = `qualitylayer build start --task ${task.slug}`
+  if (chosen !== undefined && chosen.compact !== true)
+    return base(task, {
+      next: build,
+      prompt: stop.prompt,
+      ...flowFields(flow),
+      message: `Plan approved · ${task.slug}. The person chose Keep this conversation; this session builds it next.`,
+      instructions: `Continue here with \`${build}\`.`,
+    })
   await touchSession(ctx, task, agent, "waiting")
   await appendEvent(ctx, task, { event: "implement_stop_shown" })
-  const build = `qualitylayer build start --task ${task.slug}`
   // The person chose Compact first in the App: this session builds, after its conversation is compacted.
-  if (chosen.compact === true)
+  if (chosen?.compact === true)
     return base(task, {
       stop: "implement",
       prompt: stop.prompt,

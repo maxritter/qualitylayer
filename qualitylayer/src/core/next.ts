@@ -24,6 +24,7 @@ import {
   settle,
 } from "./gate/gate.ts"
 import { readBuildStart, stagedBaseline, withStagedBaseline } from "./git/build-start.ts"
+import { matchingStartRoute, readStart } from "./handoff/start.ts"
 import { otherBuildLead, readBuildLead } from "./next/build-lead.ts"
 import { moveStateOf } from "./next/compass.ts"
 import { buildDone, buildStart, implementPayload, implementStop } from "./next/implement.ts"
@@ -741,9 +742,19 @@ export async function afterDecision(
   outcome: GateOutcome,
 ): Promise<NextPayload> {
   const now = (await loadTask(ctx, { root: task.repoRoot, id: task.repoId }, task.slug)) ?? task
-  const moves = movesOf((await moveStateOf(ctx, now)).state)
-  if (outcome.decision === "approved" && now.stage === "implement")
-    return { ...outcome, ...(await implementStop(ctx, now)), moves }
+  const { state } = await moveStateOf(ctx, now)
+  const moves = movesOf(state)
+  if (outcome.decision === "approved" && now.stage === "implement") {
+    const chosen =
+      state.stage === "implement" && !state.started
+        ? matchingStartRoute(
+            await readStart(ctx, now),
+            await readGate(ctx, now),
+            sessionKey(ctx.env),
+          )
+        : null
+    return { ...outcome, ...(await implementStop(ctx, now, chosen ?? undefined)), moves }
+  }
   if (outcome.decision === "approved" && now.stage === "shipped")
     return {
       ...outcome,

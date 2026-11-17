@@ -8,6 +8,7 @@ import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { allTasks } from "../docs/outline.ts"
 import { flowStepOf } from "../flow.ts"
 import { FINAL, readGate } from "../gate/gate.ts"
+import { matchingStartRoute, readStart } from "../handoff/start.ts"
 import { humanNeedBlockedTasks } from "../open-items.ts"
 import { resolveRepo } from "../paths.ts"
 import { reviewFile } from "../review/cross.ts"
@@ -256,6 +257,14 @@ export async function compass(ctx: Ctx, rawWords = ""): Promise<Result<Compass>>
       message: `${task.slug} is archived. Restore it with qualitylayer task restore ${task.slug} before continuing.`,
     })
   const { state, open } = await moveStateOf(ctx, task)
+  const chosen =
+    state.stage === "implement" && !state.started
+      ? matchingStartRoute(
+          await readStart(ctx, task),
+          await readGate(ctx, task),
+          sessionKey(ctx.env),
+        )
+      : null
   const step = flowStepOf(task.stage)
   const briefed = briefStepOf(state)
   const waiting = waitingFor(state)
@@ -271,7 +280,12 @@ export async function compass(ctx: Ctx, rawWords = ""): Promise<Result<Compass>>
     ...(waiting !== null ? { waiting_for: waiting } : {}),
     moves: movesOf(state),
     ...(briefed !== null ? { brief: `qualitylayer brief ${briefed}` } : {}),
-    message: messageOf(task, state),
+    message:
+      chosen === null
+        ? messageOf(task, state)
+        : chosen.compact === true
+          ? 'Implement: Build here, from the Plan was chosen. Compact in your agent, then say "build here".'
+          : "Implement: Keep this conversation was chosen; this session builds it next.",
     ...(meant !== null ? { meant } : {}),
   })
 }

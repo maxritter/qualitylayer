@@ -6,7 +6,10 @@ import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { NATIVE_AGENTS, type NativeAgent, validModelId } from "../agents/ids.ts"
 import { AGENT_OWN } from "../agents/model-values.ts"
+import { folderDoc } from "../docs/names.ts"
+import type { GateFile } from "../gate/gate.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
+import { keyOf } from "../task/binding.ts"
 import type { Task } from "../task/store.ts"
 import {
   START_EFFORTS,
@@ -149,4 +152,23 @@ export async function readStart(
   } catch {
     return null
   }
+}
+
+/** The App's existing choice belongs only to its approved Plan and the waiting planner. */
+export function matchingStartRoute(
+  start: StartRecord | null,
+  gate: GateFile | null,
+  session: string | null,
+): StartRecord | null {
+  if (start === null || gate === null || session === null) return null
+  if (start.where !== "here" || start.session !== session || start.gate !== gate.id) return null
+  if (
+    gate.target !== folderDoc("plan") ||
+    gate.decision !== "approved" ||
+    gate.settled !== true ||
+    !gate.session ||
+    keyOf(gate.session) !== session
+  )
+    return null
+  return start
 }

@@ -105,6 +105,21 @@ test.skipIf(!chrome)(
       const frame = page.frameLocator(
         '[data-testid="artifact-page"] iframe[data-testid="artifact-page-frame"]',
       )
+      await webExpect
+        .poll(() => frame.locator("html").evaluate(() => document.readyState))
+        .toBe("complete")
+      await frame.locator("html").evaluate(() => document.fonts.ready.then(() => true))
+      let previousBox: string | null = null
+      let stableBoxes = 0
+      await webExpect
+        .poll(async () => {
+          const box = await page.locator('[data-testid="artifact-page-frame"]').boundingBox()
+          const snapshot = box ? JSON.stringify(box) : null
+          stableBoxes = snapshot !== null && snapshot === previousBox ? stableBoxes + 1 : 0
+          previousBox = snapshot
+          return stableBoxes >= 2
+        })
+        .toBe(true)
       await frame.locator("#normal").click()
       await webExpect(frame.locator("#normal")).toHaveText("Native control 1")
       await frame.locator("#custom").click()

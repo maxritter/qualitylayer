@@ -2,6 +2,8 @@
 // A second opinion is only independent when another maker's model gives it, whatever agent runs it,
 // so the reviewer pick compares makers, not tools. Pure: the App's Settings page reads it too.
 
+import { lastLineBreak } from "../text-boundaries.ts"
+
 export const MODEL_MAKERS = [
   "anthropic",
   "openai",
@@ -74,7 +76,9 @@ const NAMES: readonly [RegExp, ModelMaker][] = [
  */
 export function modelMaker(id: string | null | undefined): ModelMaker | null {
   if (id === null || id === undefined) return null
-  const model = (id.split("/").at(-1) ?? "").replace(/\[.*$/, "").trim().toLowerCase()
+  const name = id.slice(id.lastIndexOf("/") + 1)
+  const parameters = name.indexOf("[", lastLineBreak(name) + 1)
+  const model = (parameters === -1 ? name : name.slice(0, parameters)).trim().toLowerCase()
   for (const [pattern, maker] of NAMES) if (pattern.test(model)) return maker
   return null
 }

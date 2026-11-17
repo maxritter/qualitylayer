@@ -29,7 +29,7 @@ function namesFile(path: string, line: string | undefined, next: string): boolea
 export function firstLookFiles(section: string): string[] | null {
   const files: string[] = []
   for (const line of section.split(/\r?\n/)) {
-    if (!/^\s*\|/.test(line) || /^\s*\|[\s:|-]+\|?\s*$/.test(line)) continue
+    if (!/^\s*\|/.test(line) || /^\s*\|[\s:|-]+$/.test(line)) continue
     for (const match of line.matchAll(FILE)) {
       const path = match[1] ?? ""
       const next = line.charAt((match.index ?? 0) + match[0].length)

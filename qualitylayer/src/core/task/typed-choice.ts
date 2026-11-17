@@ -3,6 +3,8 @@
 // Plan" in Cursor's chat as it does where a hook reads the message. The words are never replaced:
 // this only says which choice they point at, and refuses to guess between two.
 
+import { trimEndWhile } from "../text-boundaries.ts"
+
 export type TypedChoice =
   /** Exactly one choice: its zero-based index. */
   | { kind: "choice"; index: number }
@@ -43,11 +45,11 @@ function tokens(words: string): string[] {
     .filter((word) => word !== "")
 }
 
-const NUMBER = /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})\s*[.)]?\s*$/i
+const NUMBER = /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})(?:\s*[.)])?$/i
 
 /** A number in front of words, as a picker's list shows them: "1. Approve", "2) Request changes". */
 const NUMBER_THEN_WORDS =
-  /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})\s*[.):\-\u2013\u2014]?\s+(\S[\s\S]*)$/i
+  /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})(?:\s*[.):\-\u2013\u2014])?\s+(\S[\s\S]*)$/i
 
 const NONE: TypedChoice = { kind: "none" }
 
@@ -79,7 +81,7 @@ export function typedChoice(words: string, choices: readonly Choice[]): TypedCho
       : NONE
   }
   if (said.length > 6) return NONE
-  const numbered = NUMBER.exec(words.replace(/^\/(?:ql|qualitylayer)\s+/i, ""))
+  const numbered = NUMBER.exec(words.replace(/^\/(?:ql|qualitylayer)\s+/i, "").trimEnd())
   if (numbered) {
     const index = Number(numbered[1]) - 1
     return index >= 0 && index < choices.length ? { kind: "choice", index } : NONE
@@ -171,8 +173,12 @@ const ORDINAL =
 const RECOMMENDATION =
   /^\s*(?:(?:please|ok|okay)[\s,]+)?(?:(?:go with|go for|use|take|pick|choose|i(?:'ll| will)? (?:go with|take))\s+)?(?:your|the)\s+(?:recommendation|recommended(?:\s+(?:one|option|choice|answer))?)(?:[\s,]+please)?[\s.!]*$/i
 
-const stripTag = (label: string) => label.replace(/\s*\(recommended\)\s*$/i, "").trim()
-const stripEnd = (words: string) => words.trim().replace(/[\s.!]+$/, "")
+const stripTag = (label: string) =>
+  label
+    .trimEnd()
+    .replace(/\(recommended\)$/i, "")
+    .trim()
+const stripEnd = (words: string) => trimEndWhile(words.trimStart(), (c) => /[\s.!]/.test(c))
 
 /**
  * Which choice typed words answer, for a question the person answers by typing. A bare number is
@@ -217,7 +223,7 @@ export function typedAnswer(
   if (
     choices[0]?.words !== true &&
     APPROVING.test(choices[0]?.label ?? "") &&
-    AFFIRMATION.test(said)
+    AFFIRMATION.test(stripEnd(said))
   )
     return { kind: "choice", index: 0 }
   if (options.own !== true) return typedChoice(said, choices)
@@ -253,10 +259,10 @@ export function typedAnswer(
 
 /** A number, then words about it: "2, but keep the comma". */
 const NUMBER_THEN_REMARK =
-  /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})\s*[.):,;\-\u2013\u2014]?\s+(\S[\s\S]*)$/i
+  /^\s*(?:(?:option|choice|number|no\.?|nr\.?|#)\s*)?(\d{1,2})(?:\s*[.):,;\-\u2013\u2014])?\s+(\S[\s\S]*)$/i
 
 const APPROVING = /^(?:approve|agree|confirm|yes)\b/i
 const AFFIRMATION =
-  /^\s*(?:(?:option\s+|choice\s+|number\s+|no\.?\s+|#)?1\s*[.):,\u2013\u2014-]?\s+)?(?:yes|yep|yeah|ok|okay|confirmed?|looks good|lgtm|sounds good|ship it|go ahead|go for it|correct|that'?s right)(?:[,\s]+(?:thanks|thank you|please))?[\s.!]*$/i
+  /^\s*(?:(?:option\s+|choice\s+|number\s+|no\.?\s+|#)?1(?:\s*[.):,\u2013\u2014-])?\s+)?(?:yes|yep|yeah|ok|okay|confirmed?|looks good|lgtm|sounds good|ship it|go ahead|go for it|correct|that'?s right)(?:[,\s]+(?:thanks|thank you|please))?$/i
 
 const FILLER_ONLY = /^(?:one|option|choice|please|thanks|thank you|ok|okay)[\s.!]*$/i

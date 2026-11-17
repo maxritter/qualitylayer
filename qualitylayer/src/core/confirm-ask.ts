@@ -3,6 +3,8 @@
 // question; what it saw follows and waits behind Details. A line that does not open with one (an
 // older record, a judge that wrote about the person in the third person) is never asked as it is.
 
+import { trimEndWhile } from "./text-boundaries.ts"
+
 const MAX_QUESTION = 140
 
 /** Words that put the person in the third person: "Max must confirm …", "his recorded choices". */
@@ -40,8 +42,8 @@ const lowerFirst = (text: string) =>
 export function confirmQuestionOf(words: string, what: string): string {
   const said = words.trim()
   if (said.endsWith("?")) return said
-  const bare = said.replace(/[.?!\s]+$/, "")
+  const bare = trimEndWhile(said, (c) => /[.?!\s]/.test(c))
   if (bare !== "")
     return STATEMENT.test(bare) ? `Is this right: ${bare}?` : `Did you do this: ${bare}?`
-  return `Is this right: ${lowerFirst(what.trim().replace(/[.?!\s]+$/, ""))}?`
+  return `Is this right: ${lowerFirst(trimEndWhile(what.trim(), (c) => /[.?!\s]/.test(c)))}?`
 }

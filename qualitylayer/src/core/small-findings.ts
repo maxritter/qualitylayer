@@ -10,6 +10,7 @@ import type { Ctx } from "../ctx.ts"
 import type { BuildLog } from "./docs/build-log.ts"
 import { withoutExemptNotesLog } from "./exempt-notes.ts"
 import type { Task } from "./task/store.ts"
+import { lastLineBreak } from "./text-boundaries.ts"
 
 export type SmallFinding = {
   key: string
@@ -26,7 +27,22 @@ export const smallFindingsPath = (task: Pick<Task, "dir">): string =>
 const keyOf = (verdict: string, point: string, text: string): string =>
   createHash("sha256").update(`${verdict}\0${point}\0${text}`).digest("hex").slice(0, 10)
 
-const HEADER = /^\d+\.\s+\[(\w+)\]\s+(.*?):\s+(.*)$/
+function headerKey(line: string): string | null {
+  const prefix = /^\d+\.\s+\[(\w+)\]\s+/.exec(line)
+  if (!prefix) return null
+  const body = line.slice(prefix[0].length)
+  const firstBreak = body.search(/[\r\n\u2028\u2029]/)
+  const lastBreak = firstBreak < 0 ? -1 : lastLineBreak(body)
+  for (const delimiter of body.matchAll(/:\s+/g)) {
+    if (firstBreak >= 0 && delimiter.index > firstBreak) break
+    const start = delimiter.index + delimiter[0].length
+    if (start > lastBreak) {
+      const text = body.slice(start).replace(/\s+/g, " ").trim()
+      return keyOf(prefix[1] ?? "", body.slice(0, delimiter.index), text)
+    }
+  }
+  return null
+}
 const ANSWER = /^\s*Answer:\s*(Taken|Kept|Ask)\s*·\s*(\S.*)$/i
 
 /** The findings in the judge's record, in order, each once. */
@@ -51,9 +67,9 @@ export function answersIn(markdown: string): Map<string, NonNullable<SmallFindin
   const answers = new Map<string, NonNullable<SmallFinding["answer"]>>()
   let key: string | null = null
   for (const line of markdown.split(/\r?\n/)) {
-    const header = HEADER.exec(line)
+    const header = headerKey(line)
     if (header !== null) {
-      key = keyOf(header[1] ?? "", header[2] ?? "", (header[3] ?? "").replace(/\s+/g, " ").trim())
+      key = header
       continue
     }
     const answer = ANSWER.exec(line)

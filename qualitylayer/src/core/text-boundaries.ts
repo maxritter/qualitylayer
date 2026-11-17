@@ -1,7 +1,11 @@
 /** Remove only the requested ending characters, keeping every other part of the text. */
 export function trimEndCharacters(text: string, characters: string): string {
+  return trimEndWhile(text, (character) => characters.includes(character))
+}
+
+export function trimEndWhile(text: string, matches: (character: string) => boolean): string {
   let end = text.length
-  while (end > 0 && characters.includes(text.charAt(end - 1))) end--
+  while (end > 0 && matches(text.charAt(end - 1))) end--
   return text.slice(0, end)
 }
 
@@ -14,6 +18,15 @@ export function trimEdgeCharacters(text: string, characters: string): string {
 export function skipWhitespace(text: string, at: number): number {
   while (at < text.length && /\s/.test(text.charAt(at))) at++
   return at
+}
+
+export function lastLineBreak(text: string): number {
+  return Math.max(
+    text.lastIndexOf("\r"),
+    text.lastIndexOf("\n"),
+    text.lastIndexOf("\u2028"),
+    text.lastIndexOf("\u2029"),
+  )
 }
 
 /** JavaScript's dot excludes these four line terminators. */

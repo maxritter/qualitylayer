@@ -2188,7 +2188,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "d7d7fca7ee7723fa0d248c57fab7f998a719ceccb6ee25c0d8ce0ffcce8da70c",
+  "reviewManifestSha256": "58a49140b6ab79da39c21d4f8079765d7a4ceea7fc50320bf32b9a6c6b4e9efb",
   "schema": 1,
-  "sourceHead": "196a36ce1b93f823b2ed4044cfb8f82098710a12"
+  "sourceHead": "b08698b815e3095900589b98e63b2bc17fb0684c"
 }

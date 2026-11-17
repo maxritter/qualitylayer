@@ -2,8 +2,28 @@
 // left. Pure: the block draws these, the logic suites test them.
 
 import type { AgentLimits, LimitWindow } from "../../core/limits/index.ts"
+import { readingId } from "../../core/usage-display.ts"
 import { LOW_LEFT, leftIn, resetIn } from "../agent-window/conversation/limit-values.ts"
 import { creditsLine, creditWindow } from "../kit/credits-note.ts"
+
+/** The saved quota selection, shared by the sidebar trigger and its quick look. */
+export function selectedQuotaLimits(
+  limits: readonly AgentLimits[],
+  readings: readonly string[],
+): readonly AgentLimits[] {
+  const selected = new Set(readings)
+  if (selected.has("auto")) return limits
+  return limits
+    .filter((agent) => readings.some((id) => id.startsWith(`${agent.agent}:limit:`)))
+    .map((agent) => ({
+      ...agent,
+      windows: selected.has(readingId(agent.agent, "limit", "closest"))
+        ? agent.windows
+        : agent.windows.filter((window) =>
+            selected.has(readingId(agent.agent, "limit", window.label)),
+          ),
+    }))
+}
 
 /** One agent's tightest window, as the block's face shows it. */
 export type LimitFace = {

@@ -2,11 +2,11 @@ import { CoinsIcon } from "lucide-react"
 import { dailyMoney } from "../../core/cost/display.ts"
 import type { Usage } from "../../core/cost/usage.ts"
 import type { AgentLimits } from "../../core/limits/index.ts"
-import { percentage, readingId } from "../../core/usage-display.ts"
+import { percentage } from "../../core/usage-display.ts"
 import { AgentMark } from "../kit/marks/index.ts"
 import { useUsageDisplay } from "../usage/display-context.tsx"
 import { usd } from "../usage/format.ts"
-import { limitFaces } from "./limits-face.ts"
+import { limitFaces, selectedQuotaLimits } from "./limits-face.ts"
 import "./usage-quick-look.css"
 
 export function UsageQuickLook({
@@ -19,21 +19,7 @@ export function UsageQuickLook({
   now: number
 }) {
   const preferences = useUsageDisplay()
-  const selected = new Set(preferences.readings)
-  const visibleLimits = selected.has("auto")
-    ? limits
-    : limits
-        .filter((agent) =>
-          preferences.readings.some((id) => id.startsWith(`${agent.agent}:limit:`)),
-        )
-        .map((agent) => ({
-          ...agent,
-          windows: selected.has(readingId(agent.agent, "limit", "closest"))
-            ? agent.windows
-            : agent.windows.filter((window) =>
-                selected.has(readingId(agent.agent, "limit", window.label)),
-              ),
-        }))
+  const visibleLimits = selectedQuotaLimits(limits, preferences.readings)
   const faces = limitFaces(visibleLimits, now)
   const money = dailyMoney(usage, preferences.money, now)
   const unread = visibleLimits.filter(

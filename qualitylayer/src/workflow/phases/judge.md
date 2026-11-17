@@ -36,8 +36,14 @@ cites the same proof; one failing verdict without it makes the round a code fail
 round.
 
 1. **The Done means steps**, step by step on the running program, as `acceptance A1`, `acceptance A2`
-   ...: run each step as written, then probe one or two inputs past it (empty, invalid, boundary). The
-   suite passing is not the walkthrough, and a stub fails. A step the Plan gave to the person, or one
+   ...: run each step as written. For a paid or real-agent step, inspect its recorded run first. Reuse
+   it when you can establish that its source and inputs still apply and its output shows the full
+   Expected result. An exit code alone proves only that the command exited. Cite the original
+   evidence with its run and mode, then probe a relevant boundary locally. If the record is stale
+   or incomplete, repeat only the unproved part within the Plan's approvals. Bound any needed
+   attempt against an outside service (`verdict run --timeout` can capture a timeout); if it stalls,
+   record `environment:` with the captured output and continue with the other steps. The suite
+   passing is not the walkthrough, and a stub fails. A step the Plan gave to the person, or one
    that needs their own account, device or an app you cannot run, is `[USER]`, opened with the
    question they are asked. QualityLayer marks a Done means point proven when every step under it
    passes.

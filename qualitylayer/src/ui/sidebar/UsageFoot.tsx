@@ -17,7 +17,12 @@ import { useUsageDisplay } from "../usage/display-context.tsx"
 import { keyedAgents } from "../usage/facts.ts"
 import { usd, usdShort } from "../usage/format.ts"
 import { Spark } from "../usage/parts.tsx"
-import { oldestReading, type StripCell, type UnknownFace } from "./limits-face.ts"
+import {
+  oldestReading,
+  type StripCell,
+  selectedQuotaLimits,
+  type UnknownFace,
+} from "./limits-face.ts"
 import { UsageQuickLook } from "./UsageQuickLook.tsx"
 import { type Foot, type FootCell, footOf } from "./usage-foot-model.ts"
 import { useSidebarLimits } from "./use-sidebar-limits.ts"
@@ -207,13 +212,12 @@ export function UsageFoot({
   const usageRead = useSidebarUsage(windows?.adapter.usage)
   const [open, setOpen] = useState(false)
   const { usage } = usageRead
-  const foot = footOf(usage, limitsRead.limits, now, preferences.percent)
+  const limits = selectedQuotaLimits(limitsRead.limits, preferences.readings)
+  const foot = footOf(usage, limits, now, preferences.percent)
   if (foot === null) return null
   const keyed = usage === null ? [] : keyedAgents(usage)
   const billed = new Set(keyed.map((agent) => agent.agent))
-  const planLimits: readonly AgentLimits[] = limitsRead.limits.filter(
-    (agent) => !billed.has(agent.agent),
-  )
+  const planLimits: readonly AgentLimits[] = limits.filter((agent) => !billed.has(agent.agent))
   const hasPlan = foot.cells.some((cell) => cell.kind === "limit")
   const both = hasPlan && keyed.length > 0
   const running = windows?.runs.filter(listedRun).length ?? 0

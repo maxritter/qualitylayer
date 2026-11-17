@@ -26,6 +26,8 @@ without a report, until the page turns to the person.
    renames or removes: search for each affected name, including tests, fixtures, shared helpers, docs
    and lasting models. Task records, evidence and draft artifacts are never Files. Use `none` when no
    source changes, including evidence-only qualification; put inspected paths in **Read only**.
+   When staging by hand, select the intended paths and follow the repository's rule for committing
+   task records under `docs/plans/`.
 3. **Order the proof.** *Proof order*: one line per Done means step, `A3 · after slice 2`, so each
    step can run as soon as its slice is committed. For a step only the person can do, name the
    slice that makes it possible and add `(the person confirms it in Verify)` to the line. Look once
@@ -44,8 +46,9 @@ what you approved: ...".
 
 ## Build, card by card
 
-1. `qualitylayer progress "<current work>" --for T<n>` before you edit. When helpers build cards for
-   you, write each card's line as its helper starts.
+1. `qualitylayer progress "<current work>" --for T<n>` before you edit. When helpers build in
+   parallel, agree the shared interfaces first and give each separate Files. Write one progress
+   line per card as its helper starts.
 2. Write the test for a behaviour before its code, for behaviour a person or caller relies on.
 3. A card that changes a screen: look at each changed state at its real width, light and dark.
 4. `qualitylayer check task T<n>` records its focused check; tick the card (`- [x]`) when its done
@@ -55,10 +58,13 @@ what you approved: ...".
    copy of HEAD with this slice's files and says so: that run is the record.
 5. When a slice is done: `qualitylayer check slice <n>`, then `qualitylayer commit slice <n>`
    (`--commit <fullsha>` for a commit you made by hand). The commit takes this task's changes: read its
-   `left_out` list and keep other sessions' edits out. A tick never waits for a commit.
+   `left_out` list and keep other sessions' edits out. A file the person deferred belongs to the
+   later slice that owns its commit. Record later work that needs separate approval in Notes and
+   wait for that approval. A tick never waits for a commit.
 6. When a slice's Done means steps are due (*Proof order*), run and record the ones you can prove
-   on the built tree. For a step only the person can do, run `qualitylayer build done --defer
-   "<step and why only the person can do it>"`. Ask the person in Verify. Any action that
+   on the built tree. Give `check step` a command that fails unless the whole Expected result
+   holds. Use `check task` for a narrower test. For a step only the person can do, use
+   `qualitylayer build done --defer "<step and why only the person can do it>"` and ask them in Verify. Any action that
    needs a separate approval waits for that approval.
 
 ## Limits
@@ -78,9 +84,10 @@ what you approved: ...".
 
 ## The record
 
-QualityLayer writes `{implement_doc}` for people. You keep `agents/{implement_doc}` current for the next
-agent: where each slice stands and the failing test, the environment the build needs, what you tried
-and dropped, one note per tactical change, and *For Verify*: what the reviewer should open and in which
+QualityLayer writes `{implement_doc}` for people and updates *Checks* in `agents/{implement_doc}`
+when a check finishes. Wait for those writes and reread the file before editing the other sections.
+Keep them current for the next agent: where each slice stands and the failing test, the environment
+the build needs, what you tried and dropped, one note per tactical change, and *For Verify*: what the reviewer should open and in which
 state (it is handed *Environment* and *For Verify* as you wrote them). After a compaction, read the Plan
 and the agents' files again. Give each module one responsibility: when a change adds an unrelated one
 to an existing controller, separate it behind a clear interface and keep its consumers' contracts.

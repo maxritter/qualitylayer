@@ -2,7 +2,6 @@ import { AGENT_SETUP, type AgentHealth, SIGNING_IN } from "./health-types.ts"
 import { NATIVE_AGENTS, type NativeAgent } from "./ids.ts"
 
 export type AgentSetupOperation = "install" | "sign-in"
-export type SetupPlatform = "darwin" | "linux" | "win32"
 export type AgentSetupMethod =
   | { kind: "installer"; script: string; needs: readonly string[] }
   | { kind: "login"; args: readonly string[]; env?: Readonly<Record<string, string>> }

@@ -8,6 +8,7 @@ import {
   type AgentSetupState,
   usableSetupAgent,
 } from "../../core/agents/setup.ts"
+import { Disclosure } from "../kit/Fold.tsx"
 import { AgentMark } from "../kit/marks/index.ts"
 import { MachineSetupTerminal } from "./MachineSetupTerminal.tsx"
 import {
@@ -96,10 +97,9 @@ function AgentRow({ capability, setup }: { capability: AgentSetupCapability; set
         ) : null}
       </span>
       {health?.detail ? (
-        <details className="q-machine-agent-detail">
-          <summary>Details</summary>
+        <Disclosure className="q-machine-agent-detail" head="Details">
           <p>{health.detail}</p>
-        </details>
+        </Disclosure>
       ) : null}
     </div>
   )
@@ -153,10 +153,9 @@ export function MachineAgents({
         <div className="d q-machine-agent-list">
           {rows.slice(0, 2)}
           {rows.length > 2 ? (
-            <details className="q-machine-more">
-              <summary>{rows.length - 2} more agents</summary>
+            <Disclosure className="q-machine-more" head={`${rows.length - 2} more agents`}>
               {rows.slice(2)}
-            </details>
+            </Disclosure>
           ) : null}
         </div>
         {setup.error ? (

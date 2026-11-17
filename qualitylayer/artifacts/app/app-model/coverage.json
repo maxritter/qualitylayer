@@ -1,6 +1,96 @@
 {
   "$comment": "One entry per App Model page: status built (the App matches), planned (agreed design the App does not match yet; gap says how) or exploration (a study sheet or superseded page). files are the App source that renders the page; demo is where /app-demo shows that state, or null. Fresh New task, artifact, implementation and ask launchers begin In the App; legacy runWhere is last-used only, genuine unfinished drafts and existing host/resume state retain their explicit mode, and Other/unavailable App falls back to terminal. Hook lifecycle resource contract: retain native-agent name matching, the 16-ancestor and cycle limits, fresh process discovery per hook and existing ownership checks. A bounded POSIX process-table snapshot may replace repeated per-ancestor subprocesses; one hook reuses its own discovery result, including an unknown result. The snapshot uses an OS-managed absolute command and a linear row parser; inherited agent PATH cannot replace its command. No control, record, authority or Windows census changes. Update the entry in the same commit as the page or the App code; `bun run check:models` checks it and docs/agents/models.md explains the rules.",
   "pages": {
+    "historical-discuss-q.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-discuss-small.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-discuss-handed-back.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-discuss-dm.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-discuss-outside.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-research-work.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-research-q.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-outline-work.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-outline-outside.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-verify-work.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-verify-recheck.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-review-open.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-review.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "historical-review-outside.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Historical prototype permalink. This fixture keeps the earlier renderer and is separate from the current workflow demo."
+    },
+    "current-demo.html": {
+      "status": "exploration",
+      "files": [],
+      "demo": null,
+      "note": "Source-backed directory of the current App workflow demo moments. Each entry opens the production App component and matching demo fixture offline. Earlier prototype links keep their original entry URLs."
+    },
     "v14-scope.html": {
       "status": "exploration",
       "files": [],

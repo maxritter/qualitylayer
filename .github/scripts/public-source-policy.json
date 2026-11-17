@@ -120,7 +120,7 @@
     "qualitylayer/app/src-tauri/tauri.conf.json": "dcd04443edf3ec8794e13d12e5bf96bc326d442ae1711f6d37ae3f4b9a78c82d",
     "qualitylayer/app/src-tauri/windows/hooks.nsh": "23e64b3f3a0f8a7eed1d31e712aeceb1391e79368177abd66a213d8637580fd0",
     "qualitylayer/app/src-tauri/windows/repair-defender.ps1": "27e788dd8b3d9cc994596dd25b1dd75be4d4db2f1e40f35f7c3ba050fe83652f",
-    "qualitylayer/artifacts/app/app-model/App.jsx": "8693bc9c201aa0f822b3068386413f6af75d110bfb1f4e685d6f5637c813497d",
+    "qualitylayer/artifacts/app/app-model/App.jsx": "12a8dc2f1d72bbda3c1682f8199bea277643b391f8a32741ddb010b8555fb415",
     "qualitylayer/artifacts/app/app-model/agent-switch-contract.md": "b4ed88d682c8b8e99822d45c05c75280eeb12c2ceff0c36802ce864bc69f249d",
     "qualitylayer/artifacts/app/app-model/agent-switch-ended.html": "335fc2b0917c382dd07888c2b09311e1398d81d754da2c6eb1c11ce6d8465475",
     "qualitylayer/artifacts/app/app-model/agent-switch-running.html": "c6e0c343f69c36eb93023c9e30e8aed5d2595b7d95ab0b1490c16bd02a87d5dd",
@@ -140,7 +140,7 @@
     "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-dark.png": "0e9cdb95f7d3fbdf887adbec3c62f3be8c8ae2df4f4cde1580a9eb2f3c2c0cd8",
     "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-light.png": "1e1d3cfeb790b74dfbcf687b7cde0800bcfd28c14386065fb492319edad7f2ad",
     "qualitylayer/artifacts/app/app-model/conversation-markdown.html": "5944894e816b1e5aadd078d33c56daedb50a4c18f69562e300d932d82756a67e",
-    "qualitylayer/artifacts/app/app-model/coverage.json": "fdad7a16d6d80f221384b29c570fbf64da8998eeeb8a0ed21407dea1036bd169",
+    "qualitylayer/artifacts/app/app-model/coverage.json": "fb0448acd8c66ccb243ee9488733fd2dbf8940838641b14810d9b56e53a35b15",
     "qualitylayer/artifacts/app/app-model/data.jsx": "f5c7661dfb1d66d1910dac8db788ef3a00b2f09092f2447bdff991230d3db897",
     "qualitylayer/artifacts/app/app-model/local-first-contract.md": "8f99ce7ec29dbf99de94e8f960a697f18b76998c09e498cf8b1a48f9b191de8c",
     "qualitylayer/artifacts/app/app-model/machine-first-task.html": "9fb9ab9d951b09687ac8596f02a83ea47439502464265a5951df8eb33809ee12",
@@ -2188,7 +2188,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "84ec274a80261ab13638a819329f36f9ef3c6454359550013dee81d23384a57b",
+  "reviewManifestSha256": "e95802344160af9693d9f985b3f8730625d8a948b34adcfb6fb6f82ac6541c9b",
   "schema": 1,
-  "sourceHead": "ae042355692b7f15616bef198c98b239d98c200b"
+  "sourceHead": "f0538675aac35632967f18ed55869cd0267059e5"
 }

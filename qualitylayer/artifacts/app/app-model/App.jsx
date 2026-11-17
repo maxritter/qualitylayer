@@ -698,7 +698,7 @@
             <button type="button" className={pop === "more" ? "on" : ""} data-pm-open={pop === "more" ? "" : undefined} aria-haspopup="dialog" aria-expanded={pop === "more"} onClick={() => setPop(pop === "more" ? null : "more")}><Icon name="ellipsis" size={12} /> More states <Icon name={pop === "more" ? "chevron-down" : "chevron-up"} size={12} /></button>
           </span>
         ) : null}
-        <span className="pstrip-sum">Sample data · <a href="v14-scope.html">v14 scope</a></span>
+        <span className="pstrip-sum">Sample data · <a href="current-demo.html">Current workflow demo</a> · <a href="v14-scope.html">v14 scope</a></span>
         <span className="pstrip-sp" />
         <button type="button" aria-pressed={!!s.previewNoProjects} onClick={() => app.set(s.previewNoProjects ? { previewNoProjects: false, lib: s.previewLibrary } : { previewNoProjects: true, previewLibrary: s.lib, lib: [], route: Object.assign({}, s.route, { view: "artifacts" }), pop: null, dialog: null })}>{s.previewNoProjects ? "Sample projects" : "No projects"}</button>
         <button type="button" onClick={() => app.set({ theme: s.theme === "dark" ? "light" : "dark" })}>{s.theme === "dark" ? "Light" : "Dark"}</button>

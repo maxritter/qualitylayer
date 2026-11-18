@@ -282,7 +282,7 @@
     "qualitylayer/src/cli/commands/plan.ts": "bc964abf167888dc49daf9009cc4dbc5516beaaccb2d1cde59cb34bf88bd7ffb",
     "qualitylayer/src/cli/commands/pr.ts": "43815510580f21f2da7354a0a6154a9ff96ee5d335a11fc5ea300eb4f30c7ca4",
     "qualitylayer/src/cli/commands/progress.ts": "3ea7c7c7e1c91315696b623cffacbaf03965a754606907f8b29a6c332ce0fc74",
-    "qualitylayer/src/cli/commands/quality.ts": "4c704789b3b42eaf81882885bab86ffcc012c7e9c6fd8dac36bc400fb4e4ff5f",
+    "qualitylayer/src/cli/commands/quality.ts": "8720a376bd47852267b72fcddc6bf116555033fa6ed780fa9709b9bb1b41b341",
     "qualitylayer/src/cli/commands/question.ts": "7d9f5aedf1818628c54d4e77f35567a34b026342bdb5052a64dfdce6d1ccf601",
     "qualitylayer/src/cli/commands/read.ts": "a4a31c1c0cbb908bfe4ca1102317eaae1ebefa8c38994a472a81ba67cd45469e",
     "qualitylayer/src/cli/commands/reset.ts": "faefc38159b4e41f430b66eebcb98a0759be0f3c08db1a1581af95550553c4ad",
@@ -300,7 +300,7 @@
     "qualitylayer/src/cli/commands/verify.ts": "7f9a6e2d453226c3ea96a926bef058d50c8de286e92cca9f50dd06d1276a70fd",
     "qualitylayer/src/cli/commands/wait.ts": "1df373b640123be398df38e4ef3b2ec9f98464544ea76407c40eb49e1d0e051c",
     "qualitylayer/src/cli/install-view.ts": "889b2d726f8671a44713309f5db4fccb61c2c626919873d4918d3a2f31d42590",
-    "qualitylayer/src/cli/output.ts": "2f872396ecebadba82e776fcb2b13dd7564808c74b5f9706e2998d63bd2fdaf7",
+    "qualitylayer/src/cli/output.ts": "266b8566e295a935317872372d6d7ea5245089f2f5b83461402404a44c905033",
     "qualitylayer/src/core/acceptance.ts": "b70b68dd5e4eb516bf5ba783700037a947acda22884826b48f2a4cd9af29f155",
     "qualitylayer/src/core/agents/account-readers.ts": "b0e3a081c5ec314ccaa9b5a520138f4ab924e7c530a15236f08336558d739a69",
     "qualitylayer/src/core/agents/account-reading.ts": "e29ebf68ac2488108ed203a3c2c10b6f7b8af70fd5eab721346bc5735fe1e420",
@@ -1052,7 +1052,7 @@
     "qualitylayer/src/core/wait-rules.ts": "428b4b89c8fc76f7da57e66a6dbd20ffc574d333577a5779b18930a9e1d909fe",
     "qualitylayer/src/core/wait.ts": "9c3f98bd1e80be8e1fa10efebe9fcea986e8992dd748911897e136066dc7c092",
     "qualitylayer/src/core/windows-processes.ts": "4e7b6addc1fdb4fff4463a05c9fd1ce39a22f7a8ae069dab6095fb1b4c5be7b2",
-    "qualitylayer/src/ctx.ts": "fedd0aebec49961fff9336ca1c9f59013bdef09095e75ba6e985d0cd3a189a18",
+    "qualitylayer/src/ctx.ts": "b7c1bbf7e31401b188e166bc0f66d9db7b1f39d4af5f444816594f5ab3b28602",
     "qualitylayer/src/file-lock.ts": "9b57002ec217e01ff6801b4a926aa2bb0b040997dce24eadfc8927ffc15b15bf",
     "qualitylayer/src/files.ts": "8ade85530357438d044f273c8876b7ee2463687c416573447c870a17d4c29b98",
     "qualitylayer/src/interaction/contracts.ts": "63823b067b6ca8daa340781c8051aa6209f5adc910870f5512ad0d9039299192",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "59e64df760b1c1809aef8f5fcf95cef1ec965aec8a4e44b8e5fb4a5d20ca37c4",
+  "reviewManifestSha256": "e010d4b0fac184b9dfd7af9f14c60247e355c1e279d5a15610e1e69b17df385a",
   "schema": 1,
-  "sourceHead": "fb3d77626b5327db148389c28ea31ecaba4ad38f"
+  "sourceHead": "c3154663e8615b6cf3411c29524ef710e36a77a3"
 }

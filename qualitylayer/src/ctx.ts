@@ -203,7 +203,9 @@ export type HarnessError =
   | { code: "team_email_off"; message: string }
   | { code: "not_implemented"; message: string }
 
-export type Result<T> = { ok: true; data: T } | { ok: false; error: HarnessError }
+export type Result<T> =
+  | { ok: true; data: T; terminalText?: string }
+  | { ok: false; error: HarnessError }
 
 export function ok<T>(data: T): Result<T> {
   return { ok: true, data }

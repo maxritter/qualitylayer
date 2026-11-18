@@ -44,9 +44,8 @@ export function renderText(result: Result<unknown>): string {
     return text
   }
   const data = actionFirst(result.data as Record<string, unknown>)
-  // Only `update` and `feedback` set `printed`: it is the whole text mode output, as written.
-  // (`text` is ordinary data: an attestation or verdict entry carries it next to its item.)
-  if (typeof data.printed === "string") return data.printed
+  const printed = result.terminalText ?? data.printed
+  if (typeof printed === "string") return printed
   // A reply may open with one plain line per item (a wait's answers); the details follow as before.
   const summaryFirst = data === result.data
   const lines: string[] =

@@ -7,7 +7,12 @@ import {
   setQualityEnabled,
 } from "../../core/code-quality/project.ts"
 import { SCANNERS } from "../../core/code-quality/scanners/registry.ts"
-import { type ScanKind, scanChanges, scanLine } from "../../core/code-quality/scanners/scan.ts"
+import {
+  type ScanKind,
+  type ScanResult,
+  scanChanges,
+  scanLine,
+} from "../../core/code-quality/scanners/scan.ts"
 import { scanSettings } from "../../core/code-quality/scanners/settings.ts"
 import { ensureScanners } from "../../core/code-quality/scanners/setup.ts"
 import { ensureQualityTool } from "../../core/code-quality/setup.ts"
@@ -53,6 +58,27 @@ const SCAN_FLAGS: Readonly<Record<string, ScanKind>> = {
   "--code": "code",
 }
 
+function scanText(result: ScanResult): string[] {
+  const summary =
+    result.state === "not_checked"
+      ? `${result.name} ${result.version} · ${result.kind} · not checked`
+      : scanLine({ ...result, notChecked: [] })
+  return [
+    summary,
+    ...result.findings.map(
+      ({ path, line, rule, message }) => `  ${path}:${line} [${rule}] ${message}`,
+    ),
+    ...result.notChecked.map(
+      ({ path, reason }) => `  Not checked · ${path ? `${path} · ` : ""}${reason}`,
+    ),
+  ].map((line) =>
+    line.replace(
+      /[\p{Cc}\p{Bidi_Control}\p{Zl}\p{Zp}]/gu,
+      (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    ),
+  )
+}
+
 /** `quality scan`: the security scans of changed (or named) files, as records; never a failing exit for findings. */
 async function scanCommand(
   ctx: Ctx,
@@ -86,7 +112,11 @@ async function scanCommand(
     advisories: advisories ?? settings.advisories,
     off: !settings.enabled,
   })
-  return ok({ root, results, lines: results.map(scanLine) })
+  return {
+    ok: true,
+    data: { root, results, lines: results.map(scanLine) },
+    terminalText: results.flatMap(scanText).join("\n"),
+  }
 }
 
 export type QualityCommandDependencies = {

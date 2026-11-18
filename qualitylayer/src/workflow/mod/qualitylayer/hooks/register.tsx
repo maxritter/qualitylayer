@@ -29,7 +29,6 @@ const PR_READ_TIMEOUT_MS = 60_000
 const snapshot = atom({ plugin: 'qualitylayer', key: 'snapshot' } as const, null)
 const board = atom({ plugin: 'qualitylayer', key: 'board' } as const, null)
 const folds = atom({ plugin: 'qualitylayer', key: 'folds' } as const, [])
-const paneShown = atom({ plugin: 'qualitylayer', key: 'paneShown' } as const, false)
 const error = atom({ plugin: 'qualitylayer', key: 'error' } as const, null)
 const theme = atom({ plugin: 'qualitylayer', key: 'theme' } as const, null)
 const progressCue = atom({ plugin: 'qualitylayer', key: 'progressCue' } as const, null)
@@ -448,7 +447,7 @@ async function refreshFromCli($: any, cues: CueControl): Promise<void> {
   }
   const setting = await themeSetting($)
   if (setting !== (await read($, theme))) await update($, theme, () => setting)
-  await update($, snapshot, () => next)
+  await update($, snapshot, () => next === null ? null : { ...next, boundSession: id })
   await update($, error, () => null)
   cues.ready = true
   cues.lastGoodSession = id
@@ -567,88 +566,7 @@ const age = (ms: number): string => {
 }
 
 async function openPane($: any): Promise<void> {
-  const opened = await $.ui.open({ id: PANE, title: 'QualityLayer' })
-  await update($, paneShown, () => opened?.isPlaced !== false)
-}
-
-/**
- * The band's line for the other tasks: "! 3 other tasks need you · Refund webhooks · Plan waits for
- * your approval +2", and on the right how many run and how many pull requests are open. Alone (no
- * task in this session) it is the band itself, with QL in front and Details on the right. The count
- * opens the pane. In a narrow band the words go first, then the title, then the words of the counts.
- */
-type Count = { mark: string; agents: boolean; words: string }
-
-/** The count of the tasks that need you, in the band's words. */
-const needCount = (n: number, alone: boolean, narrow: boolean): string => {
-  const need = n === 1 ? 'needs' : 'need'
-  if (alone) return `! ${n} ${n === 1 ? 'task' : 'tasks'} ${need} you`
-  return narrow ? `! ${n} ${n === 1 ? 'other' : 'others'}` : `! ${n} other ${n === 1 ? 'task' : 'tasks'} ${need} you`
-}
-
-/** On the right: how many run and how many pull requests are open, with or without their words. */
-const countsOf = (now: Board, short: boolean): Count[] => {
-  const out: Count[] = []
-  const r = now.running.count
-  const p = now.prs.count
-  if (r > 0) out.push({ mark: '◐', agents: true, words: short ? ` ${r}` : ` ${r} running` })
-  if (p > 0) out.push({ mark: '⑂', agents: false, words: short ? ` ${p}` : ` ${p} ${p === 1 ? 'PR' : 'PRs'}` })
-  return out
-}
-
-/** The line laid out to its width: words give way first, then the counts' words, then the title. */
-function othersLayout(now: Board, width: number, alone: boolean) {
-  const n = now.needs.count
-  const narrow = width <= 55
-  const lead = alone ? 'QL ' : '   '
-  const count = needCount(n, alone, narrow)
-  const control = alone ? 'd: Details' : ''
-  const more = n > 1 ? `  +${n - 1}` : ''
-  let right = countsOf(now, narrow)
-  let title = now.needs.rows[0]?.title ?? ''
-  let words = narrow ? '' : (now.needs.rows[0]?.words ?? '')
-  const rightSize = () => right.reduce((sum, one, i) => sum + (i > 0 ? 3 : 0) + 1 + cellsOf(one.words), 0) +
-    (right.length > 0 ? 2 : 0) + cellsOf(control)
-  const titleSize = () => (title ? 3 + cellsOf(title) + cellsOf(more) : 0)
-  const leftSize = () => cellsOf(lead) + cellsOf(count) + titleSize() + (words ? 3 + cellsOf(words) : 0)
-  const over = () => leftSize() + rightSize() + 2 > width
-  if (over()) words = ''
-  if (over()) right = countsOf(now, true)
-  if (over()) {
-    const room = width - rightSize() - 2 - cellsOf(lead) - cellsOf(count) - 3 - cellsOf(more)
-    title = room >= 4 ? clip(title, room) : ''
-  }
-  return { lead, count, control, more, right, title, words, gap: Math.max(1, width - leftSize() - rightSize()) }
-}
-
-const drawOthers = ($: any, ui: any, palette: Palette, now: Board, width: number, alone: boolean) => {
-  const { Box, Text, Button } = ui
-  const { lead, count, control, more, right, title, words, gap } = othersLayout(now, width, alone)
-  return (
-    <Box key={alone ? 'ql-band' : 'ql-others'} width={width} flexShrink={0}>
-      <Text dimColor={alone}>{lead}</Text>
-      <Button key="ql-others-open" label={count} plain onPress={() => openPane($)} />
-      <Text wrap="truncate-end">
-        {title !== '' ? <Text><Text dimColor> · </Text><Text>{title}</Text></Text> : null}
-        {words !== '' ? <Text><Text dimColor> · </Text><Text color={palette.you.ink}>{words}</Text></Text> : null}
-        {title !== '' && more !== '' ? <Text dimColor>{more}</Text> : null}
-        <Text>{' '.repeat(gap)}</Text>
-        {right.map((one, i) => (
-          <Text key={one.mark}>
-            {i > 0 ? '   ' : ''}
-            <Text color={one.agents ? palette.agents.ink : undefined}>{one.mark}</Text>
-            <Text dimColor>{one.words}</Text>
-          </Text>
-        ))}
-        {right.length > 0 ? '  ' : ''}
-      </Text>
-      {alone ? (
-        <Box flexShrink={0} width={cellsOf(control)}>
-          <Button key="ql-details" label="Details" plain dimColor hotkey="d" onPress={() => openPane($)} />
-        </Box>
-      ) : null}
-    </Box>
-  )
+  await $.ui.open({ id: PANE, title: 'QualityLayer' })
 }
 
 /** What every row of All tasks draws with. `$` is passed beside it: the engine keeps it out of objects. */
@@ -801,12 +719,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Closing the pane gives the band back its line for the other tasks.
-  on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await update($, paneShown, () => false)
-    return next(e)
-  })
-
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     await refresh($, cues)
@@ -819,13 +731,10 @@ export const register: Register = (on, options) => {
     return { text: 'QualityLayer pane opened.' }
   })
 
-  // One line above the prompt while a task is live, a second while another task needs you (alone
-  // when this session has no task), and nothing when there is neither.
+  // The prompt belongs to this native session. Other tasks are available in /task-pane.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const now = await read($, snapshot)
-    const others = await read($, board)
-    const paneOpen = await read($, paneShown)
     const failed = await read($, error)
     const cue = await read($, progressCue)
     const ui = $.ui.resolve(e) as any
@@ -842,19 +751,9 @@ export const register: Register = (on, options) => {
         </ui.Box>
       )
     }
-    const othersNeed = others !== null && others.needs.count > 0
-    // The pane lists the other tasks while it is open; the band keeps its own line.
-    const second = othersNeed && !paneOpen ? drawOthers($, ui, palette, others, width, false) : null
-    const withOthers = (mine: unknown) => (second === null ? mine : (
-      <ui.Box key="ql-lines" flexDirection="column">
-        {mine}
-        {second}
-      </ui.Box>
-    ))
-    if (failed !== null) return withBelow(withOthers(drawBand($, ui, palette, { text: 'Status unavailable', extras: [], turn: 'failed' }, null, width, false, false, true)))
-    if (now !== null) return withBelow(withOthers(drawBand($, ui, palette, bandLine(now), now, width, cue?.task === now.task.id, e.props.isWorking)))
-    if (!othersNeed) return next(e)
-    return withBelow(drawOthers($, ui, palette, others, width, true))
+    if (failed !== null) return withBelow(drawBand($, ui, palette, { text: 'Status unavailable', extras: [], turn: 'failed' }, null, width, false, false, true))
+    if (now === null || (now as Snapshot & { boundSession?: string }).boundSession !== await sessionId($)) return next(e)
+    return withBelow(drawBand($, ui, palette, bandLine(now), now, width, cue?.task === now.task.id, e.props.isWorking))
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

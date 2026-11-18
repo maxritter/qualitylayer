@@ -26,9 +26,11 @@ import {
   type UnnamedCheck,
 } from "../../core/git/slice-commit.ts"
 import { missingSliceCheck } from "../../core/helpers.ts"
+import { openExitQuestion, readVerifyExit } from "../../core/next/verify-exit.ts"
 import { resolveRepo } from "../../core/paths.ts"
 import { noteOwnCommit } from "../../core/ship/landing.ts"
 import type { Task } from "../../core/task/store.ts"
+import { readVerifyMode } from "../../core/task/verify-mode.ts"
 import { readOutline } from "../../core/task-flow.ts"
 import { REVIEWER_TEST_PATHS } from "../../core/verification.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
@@ -401,8 +403,19 @@ async function registerFix(ctx: Ctx, task: Task, hash: string): Promise<Result<u
     commit,
     subject,
     files,
-    message: `Fix commit ${short} (${subject}) is registered as this task's, beside its slice receipts, which are unchanged; the task's review diff now includes it. Nothing was committed now.`,
+    message:
+      `Fix commit ${short} (${subject}) is registered as this task's, beside its slice receipts, which are unchanged; the task's review diff now includes it. Nothing was committed now.` +
+      (await fixRegisteredWait(ctx, task).catch(() => "")),
   })
+}
+
+/** Registration adds to the review diff while an existing Verify exit still needs an answer. */
+async function fixRegisteredWait(ctx: Ctx, task: Task): Promise<string> {
+  if ((await readVerifyMode(ctx, task)) !== "asked") return ""
+  const exit = await readVerifyExit(ctx, task)
+  return exit !== null && (await openExitQuestion(ctx, task, exit.id)) !== null
+    ? " Verify still needs the person's answer before another review. Run `qualitylayer wait --for answer`."
+    : ""
 }
 
 /**

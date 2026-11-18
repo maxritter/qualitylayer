@@ -530,7 +530,7 @@ test('a cue left in session state by a reload is cleared on the first read, incl
   world(on, SAMPLE_BUILD)
   let staleCue: unknown = { task: SAMPLE_BUILD.task.id, version: 3 }
   let version = 0
-  on('state.get', { plugin: 'qualitylayer', key: 'snapshot' }, () => ({ value: { value: SAMPLE_BUILD, version: 0 } }))
+  on('state.get', { plugin: 'qualitylayer', key: 'snapshot' }, () => ({ value: { value: { ...SAMPLE_BUILD, boundSession: SESSION }, version: 0 } }))
   on('state.get', { plugin: 'qualitylayer', key: 'progressCue' }, () => ({ value: { value: staleCue, version } }))
   on('state.set', { plugin: 'qualitylayer', key: 'progressCue' }, (_$: any, e: any) => {
     staleCue = e.value
@@ -1153,80 +1153,36 @@ test('Plan review work never asks for approval until the CLI says it is the pers
 
 // ---------------------------------------------------------------- the other tasks (the board)
 
-const othersText = async (ui: any) => {
-  const line = await ui.find({ type: 'Box', key: 'ql-others' })
-  return line === undefined ? '' : textOf(line)
-}
-/** The SDK draws the open button's explicit label. */
-const openLabel = async (ui: any) => {
-  const button = await ui.find({ type: 'Button', key: 'ql-others-open' })
-  return button?.props.label ?? ''
-}
-
-test('a second band line says how many other tasks need you, the first one, and what runs, wide and at 55 columns', async ($, on) => {
-  const { world: seen, clock } = world(on, SAMPLE_BUILD)
+test('an unbound session stays quiet when a different session in its checkout needs approval', async ($, on) => {
+  const { world: seen, clock } = world(on, NO_TASK)
   seen.board = boardAnswer(BOARD)
-  on('config.list', () => ({ value: [{ key: 'theme', value: 'dark' }] }))
   await start($)
   await clock.settle()
-  const wide = await band($, 130)
-  expect(await openLabel(wide)).toBe('! 4 other tasks need you')
-  const openButton = await wide.find({ type: 'Button', key: 'ql-others-open' })
-  expect(openButton?.props.plain).toBe(true)
-  expect(openButton?.props.label).toBe('! 4 other tasks need you')
-  const text = await othersText(wide)
-  expect(text.length).toBe(125)
-  expect(text).toContain('Refund webhooks')
-  expect(text).toContain('Plan waits for your approval')
-  expect(text).toContain('+3')
-  expect(text).toContain('1 running')
-  expect(text).toContain('1 PR')
-  expect((await leafText(wide, 'Plan waits for your approval'))?.props.color).toBe('#f7b23b')
-  // The task's own line stays first and whole.
-  const lines = (await wide.find({ type: 'Box', key: 'ql-lines' }))?.children ?? []
-  expect(lines.map((one: any) => one.props.key)).toEqual(['ql-band', 'ql-others'])
-  await wide.unmount()
-  const narrow = await band($, 60)
-  expect(await openLabel(narrow)).toBe('! 4 others')
-  expect(await othersText(narrow)).not.toContain('Plan waits')
-  expect(await othersText(narrow)).not.toContain('running')
-  expect((await othersText(narrow)).length).toBe(55)
-  await narrow.unmount()
-  // In between, the words give way first and the counts keep theirs.
-  const middle = await band($, 105)
-  expect(await othersText(middle)).toContain('Refund webhooks')
-  expect(await othersText(middle)).not.toContain('Plan waits')
-  expect(await othersText(middle)).toContain('1 running')
-  await middle.unmount()
+  const ui = await band($, 130)
+  expect(await ui.find({ type: 'Box', key: 'ql-band' })).toBeUndefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
+  await $.command.run({ command: 'task-pane' } as any)
+  const details = await pane($)
+  expect(await details.find({ type: 'Text', text: 'All tasks' })).toBeDefined()
+  await details.unmount()
+  await ui.unmount()
 })
 
-// Closing the pane (the engine's `ui.close` with origin `person`) gives the line back; the kit
-// cannot raise a person's close, so the real Claude Code run checks that part.
-test('the count opens the pane, and while it is open the band keeps one line', async ($, on) => {
+test('the bound session keeps its own band and changing native identity hides its cached task', async ($, on) => {
   const { world: seen, clock } = world(on, WAITING)
   seen.board = boardAnswer(BOARD)
   await start($)
   await clock.settle()
-  const ui = await band($)
-  await ui.press({ key: 'ql-others-open' })
-  expect(seen.opened.at(-1)).toMatchObject({ id: 'ql-progress', title: 'QualityLayer' })
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
-  expect(await ui.find({ type: 'Box', key: 'ql-band' })).toBeDefined()
-  await ui.unmount()
-})
-
-test('with no task here the board is the band itself, with QL, the count and Details; nothing waiting draws nothing', async ($, on) => {
-  const { world: seen, clock } = world(on, NO_TASK)
-  seen.board = boardAnswer({ ...BOARD, needs: { rows: BOARD.needs.rows.slice(0, 1), count: 1 } })
-  await start($)
-  await clock.settle()
   const ui = await band($, 130)
-  expect(await openLabel(ui)).toBe('! 1 task needs you')
-  expect(textOf(await ui.find({ type: 'Box', key: 'ql-band' }))).toMatch(/^QL .*Refund webhooks · Plan waits for your approval.*d: Details$/)
+  expect(await ui.find({ type: 'Box', key: 'ql-band' })).toBeDefined()
   expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
-  seen.board = boardAnswer({ ...BOARD, needs: { rows: [], count: 0 } })
-  await clock.advance(15_000)
-  expect(await ui.find({ type: 'Box', key: 'ql-band' })).toBeUndefined()
+  seen.sessionId = 'another-session-in-the-same-checkout'
+  seen.report = NO_TASK
+  const fresh = await band($, 130)
+  expect(await fresh.find({ type: 'Box', key: 'ql-band' })).toBeUndefined()
+  await clock.advance(5000)
+  expect(await fresh.find({ type: 'Box', key: 'ql-band' })).toBeUndefined()
+  await fresh.unmount()
   await ui.unmount()
 })
 
@@ -1307,7 +1263,7 @@ test('the board reads on its own 15-second clock, and a slow or failed board rea
   await start($)
   await clock.settle()
   const ui = await band($)
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
   const before = seen.boardRuns.length
   await clock.advance(5000)
   expect(seen.boardRuns.length).toBe(before)
@@ -1319,13 +1275,13 @@ test('the board reads on its own 15-second clock, and a slow or failed board rea
   await clock.advance(15_000)
   await clock.advance(5_000)
   expect(await leafText(ui, 'Status unavailable')).toBeUndefined()
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
   // After the read gave up, a failing one keeps the last board too.
   await clock.advance(10_000)
   seen.boardSlow = false
   seen.boardFail = true
   await clock.advance(15_000)
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -1357,9 +1313,9 @@ test('an answer that is not a board is ignored, and the band keeps what it showe
   await start($)
   await clock.settle()
   const ui = await band($)
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
   seen.board = { ok: true, board: { needs: 'nope' } }
   await clock.advance(15_000)
-  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeDefined()
+  expect(await ui.find({ type: 'Box', key: 'ql-others' })).toBeUndefined()
   await ui.unmount()
 })

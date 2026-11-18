@@ -592,46 +592,18 @@ async function planningAnswerContext(ctx: Ctx, payload: Prompt): Promise<string 
   if (owner && owner !== keyOf(batch.session)) return null
   const progress = await batchProgress(ctx, task, batch.id)
   const members = new Set(progress?.members)
-  const history = (await answeredQuestions(ctx, task)).filter(
-    (answer) => answer.id !== undefined && members.has(answer.id),
+  const saved = (await answeredQuestions(ctx, task)).some(
+    (answer) =>
+      answer.id !== undefined &&
+      members.has(answer.id) &&
+      ((!answer.reopened && answer.delivered === false) || answer.changed?.delivered === false),
   )
-  const fresh = history
-    .filter((answer) => !answer.reopened && answer.delivered === false)
-    .map((answer) => ({ id: answer.id, choice: answer.choice, answer_at: answer.at }))
-  const changed = history
-    .filter((answer) => answer.changed?.delivered === false)
-    .map((answer) => ({
-      id: answer.id,
-      was: answer.changed?.was,
-      now: answer.choice,
-      answer_at: answer.at,
-    }))
-  const more = batch.questions
-    .filter((question) => question.more && question.more.cancelled === undefined)
-    .map((question) => ({
-      id: question.id,
-      request: question.more?.request,
-      request_at: question.more?.at,
-    }))
-  if (!fresh.length && !changed.length && !more.length) return null
-  const saved = JSON.stringify({
-    batch: batch.id,
-    answered_meanwhile: fresh,
-    changed_answers: changed,
-    more_requests: more,
-  })
-  const details =
-    saved.length <= 12000
-      ? saved
-      : JSON.stringify({
-          batch: batch.id,
-          answer_ids: fresh.map((answer) => answer.id),
-          changed_ids: changed.map((answer) => answer.id),
-          more_ids: more.map((question) => question.id),
-          omitted:
-            "Answer contents exceed this hook's context limit; read them with the named poll.",
-        })
-  return `QualityLayer saved App answers or Tell me more requests for your batch. Read them with \`qualitylayer question poll --batch ${batch.id} --json\`.\n${details}`
+  const more = batch.questions.some(
+    (question) => question.more && question.more.cancelled === undefined,
+  )
+  return saved || more
+    ? `The App saved updates for batch ${batch.id}. Read them with \`qualitylayer question poll --batch ${batch.id} --json\`.`
+    : null
 }
 
 async function stopHook(ctx: Ctx, payload: Prompt, event: RunEvent | null): Promise<boolean> {

@@ -96,11 +96,12 @@ they answer and you have folded the answer in (`question reply`, as the gate's r
 3. When the reply lists `reviews`: `qualitylayer wait --for review`, say who reviews, read
    `{reviews_dir}/plan.md`, change the Plan for each finding you take and answer every one in one pass:
    `Answer: Taken · <what you changed>`, `Answer: Kept · <why>`, or `Answer: Ask · <the question>` for
-   what is truly the person's, asked as a late batch (`"late": true`, `"settles":
-   ["plan:finding:<n>"]`). A panel's finding marked `Panel: all` you take, or ask the person and keep
+   what is truly the person's. Put `"late": true` and `"settles": ["plan:finding:<n>"]` on each
+   question in the batch. A panel's finding marked `Panel: all` you take, or ask the person and keep
    it only when they pick the keep choice (`"kind": "keep"`); a `Panel: split` one you decide, giving
    both views and your reason. Findings that say the same get the same answer. Then `gate open plan`
-   again.
+   again after you have folded in the answers. While a named finding waits for its answer, follow
+   the gate's move to hear it.
 4. Follow the gate reply. With approvals in the App it carries `presentation.planHandoff`: say that
    once and ask nothing; the person uses **Approve and build here**, or marks what should change in the
    App, which reaches you as an ordinary message with the marked place: answer it like any message. With

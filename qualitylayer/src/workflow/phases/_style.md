@@ -22,8 +22,9 @@ may need no question. Keep working on what no open answer blocks.
 - **Say the reply's `your_turn`** exactly, once per batch, when the reply carries one. Questions in your agent: ask the returned
   `chat_questions` in the native picker, or show numbered choices and end the turn; record their
   exact words through the returned command. Never answer for the person.
-- **Take each answer once**: `qualitylayer question poll` at each work boundary (any later
-  verb's reply carries the same deliveries), apply `answered_meanwhile` and `changed_answers` to the linked points, then
+- **Take each answer once**: when a tool hook names a saved App answer, run the `question poll`
+  command it gives you. A later QualityLayer verb can also deliver the answer. Apply
+  `answered_meanwhile` and `changed_answers` from that reply to the linked points, then
   `question reply <id> --text "<what you changed>" --answer-at <receipt.saved>`. `item_answers` keep
   earlier agreements and their history. An answer that changes an earlier one reopens what the Plan
   built on the earlier one: rewrite those passages, without asking again.

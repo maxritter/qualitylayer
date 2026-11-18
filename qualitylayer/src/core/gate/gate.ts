@@ -963,6 +963,10 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
   // A late answer the planner has not folded yet: the person waits on the planner, whose move it is.
   const folding =
     target === PLAN_TARGET && waitsFor === undefined ? await lateAnswerMove(ctx, task) : null
+  const findingQuestion =
+    plannerWork !== null && plannerWork.pending.length > 0
+      ? await planReviewQuestionMove(ctx, task)
+      : null
   return ok({
     gateId: identity.id,
     wait: "qualitylayer wait",
@@ -970,15 +974,15 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
     message:
       couldNotRunLead(review) +
       planReviewCoverageNote(shownCoverage) +
-      (folding !== null
-        ? folding.message
-        : approvesInAgent(task)
+      (folding?.message ??
+        findingQuestion?.message ??
+        (approvesInAgent(task)
           ? `${TERMINAL_YOUR_TURN} Read the ${target === FINAL ? "change" : "Plan"} with qualitylayer read ${target === FINAL ? NAMES.verify : NAMES.plan} --lead.`
           : review?.state === "running"
             ? `${reviewerOf(review)} is reviewing ${target === FINAL ? "the change" : "the Plan"}; Approve unlocks once its findings are answered and the gate is opened again.`
             : plannerWork !== null && plannerWork.pending.length > 0
               ? `${reviewerOf(plannerWork.run)}'s review needs planner work in ${plannerWork.file}.${unanimousKeptLine(plannerWork.unanimousKept)}`
-              : `${gateSubject(target)} is ready for the person in the App.`),
+              : `${gateSubject(target)} is ready for the person in the App.`)),
     target,
     opened,
     ...(review !== null ? { reviews: [handleOf(task, review)] } : {}),
@@ -1010,7 +1014,7 @@ async function openUnlocked(ctx: Ctx, task: Task, target: string): Promise<Resul
           your_turn: `${TERMINAL_YOUR_TURN} Read the ${target === FINAL ? "change" : "Plan"} with qualitylayer read ${target === FINAL ? NAMES.verify : NAMES.plan} --lead.`,
         }
       : {}),
-    then: folding?.then ?? "qualitylayer wait --for approval",
+    then: folding?.then ?? findingQuestion?.then ?? "qualitylayer wait --for approval",
     wait_background: "qualitylayer wait --for approval --until-decided",
   })
 }
@@ -1205,6 +1209,24 @@ export async function lateAnswerAt(ctx: Ctx, task: Task): Promise<number | null>
 
 /** The command that hands the planner a batch's saved answers, as the answer notice names it. */
 const batchPollCommand = (batch: string) => `qualitylayer question poll --batch ${batch} --json`
+
+/** An open question already linked to the Plan review, for the agent's next move. */
+export async function planReviewQuestionMove(
+  ctx: Ctx,
+  task: Task,
+): Promise<{ message: string; then: string } | null> {
+  const batch = await readBatch(ctx, task)
+  const single = await openQuestion(ctx, task)
+  for (const question of [...(batch?.questions ?? []), single]) {
+    const finding = question?.settles?.find((item) => /^plan:finding:\d+$/.test(item))
+    if (question && finding)
+      return {
+        message: `Plan review finding ${finding.slice("plan:finding:".length)} waits for the answer to question ${question.id}.`,
+        then: "qualitylayer wait --for answer",
+      }
+  }
+  return null
+}
 
 /**
  * The planner's side of that lock: the person waits on it, not the other way round. The sentence

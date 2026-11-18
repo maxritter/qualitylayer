@@ -389,6 +389,14 @@ test("title and ahead round-trip with the batch; unknown batch fields stay refus
   expect(wrong.ok).toBe(false)
   const unknown = await askBatch(w.ctx, w.task, { id: "b3", subtitle: "x", questions: members(3) })
   expect(unknown.ok).toBe(false)
+  expect(
+    await askBatch(w.ctx, w.task, { id: "b3", late: true, questions: members(3) }),
+  ).toMatchObject({
+    ok: false,
+    error: {
+      message: "unknown batch fields: late. Put late and settles on each question in the batch.",
+    },
+  })
 })
 
 test("the strip lists every member in order, answered ones with their answer, and is gone when all are answered", async () => {

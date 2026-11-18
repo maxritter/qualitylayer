@@ -19,7 +19,11 @@ import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE =
-  "usage: qualitylayer wait [--for answer|approval|review|helper] [--until-decided] [--until-event] [--batch <batch-id>] [--quiet <seconds>] [--seconds 1..1800] [--home] [--task <task>]; default 55 seconds, or 1800 (30 minutes) with --until-event or --until-decided, the background wait. --for approval waits for the person's decision on the open gate and applies it once; --for answer for their answer; --for review for the other agent's review; --for helper for a helper to finish. --batch holds a batch's answers back until it is complete or no new answer came for --quiet seconds (default 45). Add --json for one JSON object."
+  "usage: qualitylayer wait [--for answer|approval|review|helper] [--until-decided] [--until-event] [--batch <batch-id>] [--quiet <seconds>] [--seconds 1..1800] [--home] [--task <task>]. " +
+  "The default wait is 55 seconds. Use --until-event or --until-decided for a background wait of up to 30 minutes. " +
+  "--for approval --until-decided returns on approval, requested changes, new comments, a review to address, a saved answer to fold into the Plan, or timeout. Follow the returned move. A decision is applied once. " +
+  "--for answer waits for the person's answer, --for review for the other agent's review, and --for helper for a helper to finish. " +
+  "--batch holds answers until the batch is complete or no new answer arrives for --quiet seconds (default 45). Add --json for one JSON object."
 
 type For = "answer" | "approval" | "review" | "helper"
 const FORS: readonly For[] = ["answer", "approval", "review", "helper"]

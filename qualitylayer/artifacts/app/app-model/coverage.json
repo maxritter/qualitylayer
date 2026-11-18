@@ -669,7 +669,7 @@
         "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.tsx"
       ],
       "demo": null,
-      "note": "Drawn inside Claude Code by the QualityLayer mod, not by the App, so the App demo cannot show it. 2026-11-11: band, second line, no-task band, pane All tasks, folds (click and keyboard), ⧉ resume copy and the background pull request read checked in real Claude Code 2.1.322 (tmux, isolated home). 2026-11-15: label-only native controls passed all 68 SDK cases on 2.1.292, 2.1.322 and 2.1.325; real 2.1.325 terminal passed open, fold, unfold and close at 130 and 60 columns in an isolated fixture."
+      "note": "Drawn inside Claude Code by the QualityLayer mod, not by the App, so the App demo cannot show it. 2026-11-11: band, second line, no-task band, pane All tasks, folds (click and keyboard), ⧉ resume copy and the background pull request read checked in real Claude Code 2.1.322 (tmux, isolated home). 2026-11-15: label-only native controls passed all 68 SDK cases on 2.1.292, 2.1.322 and 2.1.325; real 2.1.325 terminal passed open, fold, unfold and close at 130 and 60 columns in an isolated fixture. 2026-11-18: two native Claude Code 2.1.327 terminals in the same fixture checkout and branch at 132 columns verified the bound task’s band, the unbound prompt, and All tasks opening with /task-pane and closing back to the plain prompt."
     },
     "conversation-commands.html": {
       "status": "planned",

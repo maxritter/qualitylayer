@@ -333,10 +333,13 @@ export async function askBatch(
       return bad("a batch needs an id and questions")
     const given = input as Record<string, unknown>
     const unknown = Object.keys(given).filter((key) => !BATCH_FIELDS.includes(key))
-    if (unknown.length)
-      return bad(
-        `unknown batch fields: ${unknown.join(", ")}. Put facts, diagram and evidence on each question's choices.`,
-      )
+    if (unknown.length) {
+      const guidance =
+        unknown.includes("late") || unknown.includes("settles")
+          ? "Put late and settles on each question in the batch."
+          : "Put facts, diagram and evidence on each question's choices."
+      return bad(`unknown batch fields: ${unknown.join(", ")}. ${guidance}`)
+    }
     if (
       typeof given.id !== "string" ||
       !/^[a-zA-Z0-9_-]{1,120}$/.test(given.id) ||
@@ -1279,16 +1282,13 @@ export async function replyBatch(
       return bad(
         (await askedAloneNote(ctx, task, id, "reply")) ?? `no batch question has the id ${id}`,
       )
-    // The reply names the one move that hands the answer over, so it is never only repeated.
-    const read = "run `qualitylayer wait --for answer`, which hands it to you, then reply"
-    if (!answer) return bad(`${id} has no answer yet: ${read}`)
-    if (
-      answer.reopened ||
-      (!answer.delivered && !(answer.delivered === undefined && answer.via === "chat"))
-    )
-      return bad(`${id}'s current answer has not reached you yet: ${read}`)
+    if (!answer || answer.reopened)
+      return bad(`${id} has no current answer. Run \`qualitylayer wait --for answer\`.`)
+    const read = `Run \`qualitylayer question poll --batch ${batch.id} --json\`, then reply.`
+    if (!answer.delivered && !(answer.delivered === undefined && answer.via === "chat"))
+      return bad(`${id}'s current answer is saved. ${read}`)
     if (answerAt !== undefined && answerAt !== answer.at)
-      return bad(`${id}'s answer was changed since you read it: ${read}`)
+      return bad(`${id}'s answer changed since you read it. ${read}`)
     batch.replies = {
       ...batch.replies,
       [`${id}:${answer.at}`]: { text: text.trim(), at: ctx.clock.now(), answerAt: answer.at },

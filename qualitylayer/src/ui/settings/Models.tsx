@@ -4,9 +4,9 @@
 // model in use and says so under the row. A launch can still choose another model.
 
 import {
+  ChevronRightIcon,
   CircleAlertIcon,
   CodeXmlIcon,
-  FileCogIcon,
   FilePenIcon,
   NetworkIcon,
   PackageIcon,
@@ -27,8 +27,6 @@ import { Input } from "@/components/ui/input"
 import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
 import { modelMaker } from "../../core/agents/model-maker.ts"
 import {
-  AGENT_OWN,
-  AGENT_OWN_NAME,
   builderModels,
   buildingOn,
   canSetBuildWorkers,
@@ -54,13 +52,7 @@ import { useOptionalRuns } from "../run-context.tsx"
 import { Segmented } from "../Segmented.tsx"
 import { useAgentHealth } from "./AgentHealth.tsx"
 import type { SaveResult } from "./CommitField.tsx"
-import {
-  fromPick,
-  launchModelOptions,
-  modelOptions,
-  recommendedModel,
-  toPick,
-} from "./Defaults.tsx"
+import { fromPick, launchModelOptions, modelOptions, toPick } from "./Defaults.tsx"
 import { ListPages, PAGE_SIZE } from "./ListPages.tsx"
 import { type ModelRole, modelRolesOf, modelRolesPatch } from "./model-roles.ts"
 import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
@@ -142,35 +134,22 @@ function roleOptions(agent: NativeAgent, role: ModelRole, value: string) {
 
 /**
  * Every model an agent's list shows (those the person's plan offers, and any other one still in use,
- * marked), and Agent’s settings: first for an agent that starts on its own model, else last.
+ * marked). The native settings option belongs to launch preferences.
  */
 function listRows(
   agent: NativeAgent,
   inUse: (id: string) => boolean,
 ): { id: string; name: string }[] {
-  const own = { id: AGENT_OWN, name: AGENT_OWN_NAME }
   const catalog = planModels(agent)
   const kept = catalog.filter((model) => inUse(model.id)).map((model) => model.id)
-  const models = offeredModels(
+  return offeredModels(
     agent,
     catalog.map((model) => ({ id: model.id, name: modelName(agent, model.id) })),
     kept,
   )
-  return recommendedModel(agent) === AGENT_OWN ? [own, ...models] : [...models, own]
 }
 
 function KindMark({ agent, id }: { agent: NativeAgent; id: string }) {
-  if (id === AGENT_OWN)
-    return (
-      <span
-        className="q-am-kind"
-        role="img"
-        aria-label="The agent’s own setting"
-        title="The agent’s own setting"
-      >
-        <FileCogIcon className="size-3.5" aria-hidden="true" />
-      </span>
-    )
   const kind = modelKind(agent, id)
   const Icon =
     kind === "catalog" ? PackageIcon : kind === "reported" ? SatelliteDishIcon : UserRoundIcon
@@ -212,25 +191,42 @@ function ModelList({
   const [page, setPage] = useState(0)
   const [query, setQuery] = useState("")
   const [adding, setAdding] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [all, setAll] = useState(false)
+  const listId = useId()
   const findId = useId()
   const rows = listRows(agent, (id) => uses(id).length > 0)
   const words = query.trim().toLowerCase()
+  const assigned = rows.filter((row) => uses(row.id).length > 0)
   const matches = words
     ? rows.filter((row) => `${row.name} ${row.id}`.toLowerCase().includes(words))
-    : rows
+    : all
+      ? rows
+      : assigned
   const last = Math.max(0, Math.ceil(matches.length / PAGE_SIZE) - 1)
   const at = Math.min(page, last)
   const shown = matches.slice(at * PAGE_SIZE, at * PAGE_SIZE + PAGE_SIZE)
   const name = AGENT_NAMES[agent]
-  const models = rows.filter((row) => row.id !== AGENT_OWN).length
   return (
     <SettingsGroup
-      title="Model list"
-      end={`${models} ${models === 1 ? "model" : "models"}`}
+      title={
+        <button
+          type="button"
+          className="q-model-disclosure"
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronRightIcon aria-hidden="true" />
+          {name} models{" "}
+          <span>
+            {rows.length} {rows.length === 1 ? "model" : "models"}
+          </span>
+        </button>
+      }
       testId="models-list"
     >
-      {/* A list that fits one page shows no search or pager (DESIGN.md › Settings lists). */}
-      {rows.length > PAGE_SIZE ? (
+      <div id={listId} hidden={!expanded}>
         <label className="q-md-find q-mdl-find" htmlFor={findId}>
           <SearchIcon size={14} aria-hidden="true" />
           <Input
@@ -245,80 +241,100 @@ function ModelList({
             }}
           />
         </label>
-      ) : null}
-      {shown.length === 0 ? <p className="q-sg-foot">No model matches “{query.trim()}”.</p> : null}
-      <ul className="q-mdl-list" aria-label={`${name} models`}>
-        {shown.map((row) => {
-          const used = uses(row.id)
-          return (
-            <li className="q-mdl-row" key={row.id || "agent-settings"}>
-              <KindMark agent={agent} id={row.id} />
-              <span className="q-am-name" title={row.id || undefined}>
-                {row.name}
-              </span>
-              <span className="q-mdl-uses">{used.join(" · ")}</span>
-              {row.id !== AGENT_OWN && modelKind(agent, row.id) === "added" ? (
-                <button
-                  type="button"
-                  className="q-am-remove"
-                  aria-label={`Remove ${row.id}`}
-                  disabled={disabled}
-                  onClick={() => onRemoved(row.id)}
-                >
-                  <Trash2Icon className="size-3.5" aria-hidden="true" />
-                </button>
-              ) : (
-                <span className="q-am-gap" aria-hidden="true" />
-              )}
-            </li>
-          )
-        })}
-      </ul>
-      {matches.length > PAGE_SIZE ? (
-        <ListPages
-          page={at}
-          total={rows.length}
-          matched={matches.length}
-          change={setPage}
-          noun="model"
-        />
-      ) : null}
-      {takesAddedModels(agent) ? (
-        <div className="q-mdl-add">
-          {adding ? (
-            <AddModelForm
-              agent={agent}
-              onUse={() => setAdding(false)}
-              onCancel={() => setAdding(false)}
-            />
-          ) : (
-            <Button variant="outline" size="sm" disabled={disabled} onClick={() => setAdding(true)}>
-              <PlusIcon aria-hidden="true" />
-              {ADD_MODEL_LABEL}
-            </Button>
-          )}
-        </div>
-      ) : null}
-      <SettingsMore summary="Where models come from">
-        <p className="q-sg-foot q-am-legend">
-          <span>
-            <PackageIcon className="size-[13px]" aria-hidden="true" />
-            Built in
-          </span>
-          <span>
-            <SatelliteDishIcon className="size-[13px]" aria-hidden="true" />
-            Reported by {name}
-          </span>
-          <span>
-            <UserRoundIcon className="size-[13px]" aria-hidden="true" />
-            Added by you
-          </span>
-          <span>
-            <FileCogIcon className="size-[13px]" aria-hidden="true" />
-            The agent’s own setting
-          </span>
-        </p>
-      </SettingsMore>
+        {words && shown.length === 0 ? (
+          <p className="q-sg-foot">No model matches “{query.trim()}”.</p>
+        ) : null}
+        <ul className="q-mdl-list" aria-label={`${name} models`}>
+          {shown.map((row) => {
+            const used = uses(row.id)
+            return (
+              <li className="q-mdl-row" key={row.id || "agent-settings"}>
+                <KindMark agent={agent} id={row.id} />
+                <span className="q-am-name" title={row.id || undefined}>
+                  {row.name}
+                </span>
+                <span className="q-mdl-uses">{used.join(" · ")}</span>
+                {modelKind(agent, row.id) === "added" ? (
+                  <button
+                    type="button"
+                    className="q-am-remove"
+                    aria-label={`Remove ${row.id}`}
+                    disabled={disabled}
+                    onClick={() => onRemoved(row.id)}
+                  >
+                    <Trash2Icon className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : (
+                  <span className="q-am-gap" aria-hidden="true" />
+                )}
+              </li>
+            )
+          })}
+        </ul>
+        {!words && assigned.length < rows.length ? (
+          <button
+            type="button"
+            className="q-link q-model-list-more"
+            onClick={() => {
+              setAll(!all)
+              setPage(0)
+            }}
+          >
+            {all ? "Show assigned models" : `Show all ${rows.length} models`}
+          </button>
+        ) : null}
+        {matches.length > PAGE_SIZE ? (
+          <ListPages
+            page={at}
+            total={rows.length}
+            matched={matches.length}
+            change={setPage}
+            noun="model"
+          />
+        ) : null}
+        {takesAddedModels(agent) ? (
+          <div className="q-mdl-add">
+            {adding ? (
+              <AddModelForm
+                agent={agent}
+                onUse={() => {
+                  setAdding(false)
+                  setAll(true)
+                  setQuery("")
+                  setPage(Math.floor(rows.length / PAGE_SIZE))
+                }}
+                onCancel={() => setAdding(false)}
+              />
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disabled}
+                onClick={() => setAdding(true)}
+              >
+                <PlusIcon aria-hidden="true" />
+                {ADD_MODEL_LABEL}
+              </Button>
+            )}
+          </div>
+        ) : null}
+        <SettingsMore summary="Where models come from">
+          <p className="q-sg-foot q-am-legend">
+            <span>
+              <PackageIcon className="size-[13px]" aria-hidden="true" />
+              Built in
+            </span>
+            <span>
+              <SatelliteDishIcon className="size-[13px]" aria-hidden="true" />
+              Reported by {name}
+            </span>
+            <span>
+              <UserRoundIcon className="size-[13px]" aria-hidden="true" />
+              Added by you
+            </span>
+          </p>
+        </SettingsMore>
+      </div>
     </SettingsGroup>
   )
 }

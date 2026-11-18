@@ -32,7 +32,7 @@
       "show": "lead",
       "writer": "agent",
       "when": "whenever the change crosses parts of the system",
-      "hint": "one to three Mermaid diagrams of what changed (flowchart LR by default), each a ```mermaid fence after one sentence that says what it shows; never a file-by-file list"
+      "hint": "Give each Mermaid diagram of the built change a descriptive ### heading. Choose the orientation for readability and caption the detail to notice."
     },
     {
       "heading": "Interface",

@@ -13,8 +13,7 @@ other agent's review is answered and the reply's `gaps` are closed. Then follow 
    them. Push nothing but a verification redeploy the approved Plan grants.
 2. **Write `{verify_doc}`**, the pull request description, from the change itself (the reply's `diff`;
    where Plan and diff disagree, describe the diff): **Why** in one sentence, then one release-note line
-   per change the user sees, and one to three diagrams of what changed, each with a sentence on why it
-   matters; never a file changelog. QualityLayer fills the sections between its `ql:` markers.
+   per change the user sees, and named diagrams where they help the person understand what changed. QualityLayer fills the sections between its `ql:` markers.
    `agents/{verify_doc}` holds the ship steps, the fixes made during the review, follow-ups (what
    reviewers noticed outside this task, the reply's `judge_notes` too, one line and an owner each),
    lessons to save and drafts to delete.

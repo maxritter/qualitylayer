@@ -214,6 +214,53 @@ export function labelValue(markdown: string, label: string): string | null {
   return parts.join(" ")
 }
 
+export type PlanIndicator = {
+  kind: "Risk" | "Complexity"
+  value: string
+  evidence: string
+  section: "Done means" | "Approach"
+}
+
+export function planIndicators(
+  summary: string,
+  acceptance: string,
+  approach: string,
+): PlanIndicator[] {
+  const indicators: PlanIndicator[] = []
+  const exposure = labelValue(summary, "Risk")?.match(/^(.+?)\s+—\s+(.+)$/)
+  if (exposure?.[1] && exposure[2] && acceptance.trim()) {
+    indicators.push({
+      kind: "Risk",
+      value: exposure[1],
+      evidence: exposure[2],
+      section: "Done means",
+    })
+  }
+  const named =
+    labelValue(summary, "Integrations")
+      ?.split(",")
+      .map((name) => name.trim())
+      .filter(Boolean) ?? []
+  const systems = new Map<string, string>()
+  for (const name of named) {
+    const key = name.toLowerCase()
+    if (!systems.has(key)) systems.set(key, name)
+  }
+  const approachText = approach.toLowerCase()
+  if (
+    systems.size &&
+    [...systems.keys()].every((name) => name !== "none" && approachText.includes(name))
+  ) {
+    indicators.push({
+      kind: "Complexity",
+      value: `${systems.size} integration${systems.size === 1 ? "" : "s"}`,
+      evidence: [...systems.values()].join(" · "),
+      section: "Approach",
+    })
+  }
+  return indicators
+}
+
 export type PlanSize = { slices: number; tasks: number | null; about: boolean }
 
 const countBefore = (text: string, word: RegExp): number | null => {
@@ -342,7 +389,7 @@ export type DiagramKind = "before-after" | "flow" | "sequence" | "state"
 
 export type DiagramItem = {
   id: string
-  /** The tab: the `###` above the diagram, else its kind in words. */
+  /** The choice's heading or a title derived from its caption. */
   title: string
   kind: DiagramKind
   /** The Mermaid source. */
@@ -363,6 +410,28 @@ const KIND_WORDS: Record<DiagramKind, string> = {
   flow: "Flow",
   sequence: "Sequence",
   state: "States",
+}
+
+const GENERIC_DIAGRAM_TITLE = /^(?:diagram|flow(?:chart)?|sequence(?: diagram)?|states?)(?: \d+)?$/i
+
+/** Use a complete short caption as a title, or finish at a word when it has more detail. */
+function titleFromCaption(caption: string): string {
+  const title = caption.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").split(/(?<=[.!?])\s+/, 1)[0] ?? ""
+  if (title.length <= 72) return title.replace(/[.!?]$/, "")
+  const short = title
+    .slice(0, 73)
+    .replace(/\s+\S*$/, "")
+    .trimEnd()
+  return `${short}…`
+}
+
+/** Every choice has a distinct accessible name, even for identical legacy headings and captions. */
+function distinctTitle(title: string, used: Set<string>): string {
+  let chosen = title
+  let occurrence = 1
+  while (used.has(chosen.toLowerCase())) chosen = `${title} (${++occurrence})`
+  used.add(chosen.toLowerCase())
+  return chosen
 }
 
 /** The tab items made of a section's `###` titles, fences, `ql:artifact` markers and caption lines. */
@@ -414,13 +483,21 @@ function itemsOf(markdown: string) {
 /** The Diagrams section's pictures, in the order written: one tab each. */
 export function diagramsOf(markdown: string): DiagramItem[] {
   const out: DiagramItem[] = []
+  const used = new Set<string>()
+  const counts = new Map<DiagramKind, number>()
   for (const item of itemsOf(markdown)) {
     if (item.fence?.lang !== "mermaid") continue
     const code = item.fence.text
     const kind = diagramKind(code, item.title ?? "")
+    const ordinal = (counts.get(kind) ?? 0) + 1
+    counts.set(kind, ordinal)
+    const heading = item.title?.trim() ?? ""
+    const captionTitle = titleFromCaption(item.caption)
+    const written = heading && !GENERIC_DIAGRAM_TITLE.test(heading) ? heading : ""
+    const title = written && !used.has(written.toLowerCase()) ? written : captionTitle || written
     out.push({
       id: `d${out.length + 1}`,
-      title: item.title ?? KIND_WORDS[kind],
+      title: distinctTitle(title || `${KIND_WORDS[kind]} ${ordinal}`, used),
       kind,
       code,
       caption: item.caption,
@@ -453,7 +530,7 @@ export function interfaceOf(markdown: string, titleOf: (reference: string) => st
     out.push({
       id: `i${out.length + 1}`,
       title:
-        item.title ??
+        (item.title?.trim() || undefined) ??
         item.named ??
         (item.artifact !== undefined
           ? (titleOf(item.artifact) ?? referenceName(item.artifact))

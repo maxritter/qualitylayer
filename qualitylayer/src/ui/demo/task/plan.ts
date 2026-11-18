@@ -204,6 +204,8 @@ The gateway counts each billable request once, even when it is retried; seat inv
 
 **Size:** about 11 slices and 28 tasks, up to four side by side.
 **Trust boundary:** gateway requests and the Finance-only billing-mode switch.
+**Risk:** Duplicate charges — Replaying the same usage event could charge a customer twice.
+**Integrations:** Gateway, Ledger
 
 ## Success measure
 

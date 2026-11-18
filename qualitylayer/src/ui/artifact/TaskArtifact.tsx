@@ -20,6 +20,7 @@ import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import type { TaskCost } from "../../core/cost/labels.ts"
 import { flowStepOf } from "../../core/flow.ts"
 import type { Api, ArtifactWhere, TaskArtifacts, TaskDetail } from "../api.ts"
+import { thumbSrc } from "../artifacts/thumb-src.ts"
 import { PLAN_TURN_READY } from "../docs/PlanTurn.tsx"
 import { type Query, useQuery } from "../hooks.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
@@ -92,6 +93,15 @@ export function useTaskArtifacts(
     cache,
     theme,
     version,
+    galleryThumbnails: async () => {
+      const pictures = new Map<string, string>()
+      for (const saved of (await api.taskArtifacts(task.id)).task) {
+        for (const page of saved.pages ?? [saved]) {
+          if (page.thumb) pictures.set(page.file, thumbSrc(where, page.file, page.thumb))
+        }
+      }
+      return pictures
+    },
     load: (file) =>
       cache.load(file, () =>
         api.artifactPage(

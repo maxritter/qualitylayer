@@ -20,7 +20,7 @@ import { createPortal } from "react-dom"
 import { type Artifact, artifactMeta } from "../../core/artifact/format.ts"
 import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import type { Api } from "../api.ts"
-import { agoPhrase } from "../hooks.ts"
+import { agoPhrase, useQuery } from "../hooks.ts"
 import { useActionSlot } from "../kit/action-slot.ts"
 import { DEFAULT_WIDTH } from "./ArtifactPage.tsx"
 import { type ArtifactLayout, ArtifactPageFrame } from "./ArtifactPageFrame.tsx"
@@ -40,6 +40,8 @@ export type ArtifactHostValue = {
   identity?: string
   cache?: PreviewCache
   theme?: "light" | "dark"
+  /** The visible Plan gallery can ask for its choice images through the existing thumbnail reader. */
+  galleryThumbnails?: () => Promise<ReadonlyMap<string, string>>
 }
 
 const ArtifactHost = createContext<ArtifactHostValue | null>(null)
@@ -141,6 +143,16 @@ function useNearViewport(ref: RefObject<HTMLElement | null>): boolean {
     return () => observer.disconnect()
   }, [ref])
   return near
+}
+
+export function useGalleryThumbnails(ref: RefObject<HTMLElement | null>, enabled: boolean) {
+  const host = useContext(ArtifactHost)
+  const near = useNearViewport(ref)
+  return useQuery(
+    () =>
+      enabled && near && host?.galleryThumbnails ? host.galleryThumbnails() : Promise.resolve(null),
+    [enabled, near, host?.identity, host?.version],
+  ).data
 }
 
 export type ArtifactPreviewProps = {

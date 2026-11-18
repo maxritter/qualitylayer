@@ -3,15 +3,13 @@
 Draw only when a reader learns more from a picture than from a paragraph or a table, and draw what you
 read in the code, never from names alone.
 
-- The default is a Mermaid `flowchart LR`: about six nodes named with nouns, a short verb on every arrow.
-  A rule and its outcomes: each decision one question with at most three labelled exits; places and
-  services outside the code: a `subgraph` each. Past about 9 nodes draw an overview and a detail.
-- Top to bottom, or a `sequenceDiagram` (about 5 participants, 12 messages), only when the order down the
-  page is the point. A lifecycle: `stateDiagram-v2`; stored data: `erDiagram`. Layers, matrices and
-  comparisons: a table. A screen: an artifact.
+- Give each diagram or artifact its own descriptive heading, such as `### When an order lookup is allowed`.
+  A short caption can point out what matters in that view.
+- Choose the direction and size that make the mechanism readable. Show decisions and label their outcomes.
+  Use an overview and a detail when they answer different questions.
+- Trace a single interaction with a sequence diagram, a lifecycle with `stateDiagram-v2`, and stored
+  relationships with `erDiagram`. Use a table for comparisons and an artifact for a screen.
 - Mark the one or two parts the reader must notice with `:::focal`; a before-and-after picture marks
   `:::new`, `:::changed` and `:::removed`. A second line after `<br/>` is a detail, drawn quieter.
 - Set no colours or styles: QualityLayer draws every picture in one style, light and dark. `end`, `style`,
   `class` and `default` cannot be node ids.
-
-Follow each diagram and artifact with one plain line saying what it shows.

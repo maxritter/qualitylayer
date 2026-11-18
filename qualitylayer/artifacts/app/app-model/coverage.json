@@ -2267,6 +2267,18 @@
       "note": "4 Nov2026 parity: Actual open Sections outline/popover and current document headings. Real-App/model light/dark1024/1440 capture and affected-path reuse: private12.10 model-parity/PARITY.json. This comparison sheet or controlled state has no single standalone public demo route.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
+    "plan-indicators-preview.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/step-page/bands/Gist.tsx",
+        "qualitylayer/src/ui/steps/plan/views.tsx",
+        "qualitylayer/src/ui/steps/plan/plan-model.ts",
+        "qualitylayer/src/ui/steps/plan/plan.css",
+        "qualitylayer/src/workflow/schemas/plan.json"
+      ],
+      "demo": null,
+      "note": "Approved 18 November. The current App reads optional Risk and Integrations from the Plan. The two controls open an explanation and link to Done means or Approach. The model runs the production header against an order-status Plan."
+    },
     "plan-status.html": {
       "status": "planned",
       "files": [
@@ -2518,6 +2530,33 @@
       ],
       "demo": null,
       "note": "Portable draft on the live Plan and Verify. The repository remote supplies the provider mark, host and project. Edit and copy the title and description. Opening the remote is explicit, and the local state offers Copy draft. The GitHub.com route and both approvals keep their existing authority."
+    },
+    "plan-diagram-gallery-preview.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/step-page/kit/GalleryTabs.tsx",
+        "qualitylayer/src/ui/step-page/kit/parts.css",
+        "qualitylayer/src/ui/steps/plan/Pictures.tsx",
+        "qualitylayer/src/ui/steps/plan/plan-model.ts",
+        "qualitylayer/src/ui/reader/MermaidBlock.tsx"
+      ],
+      "demo": null,
+      "note": "Approved Plan diagram collection. Desktop shows a named list with diagram-type marks and compact widths show the named picker. A titled selected figure holds an optional caption and its existing full-size viewer. Vertical flows use native height, and wide figures scroll at a readable label size. This page mounts current App and gallery source using synthetic request routing.",
+      "verification": "18 November 2026. Source-backed gallery in current App shell. Measured compiled browser interactions and exact viewer destination. Packed artifact renders at 1280 and 390 in both themes with zero blocked requests or runtime errors. Evidence is in the private Plan gallery production qualification."
+    },
+    "plan-artifact-gallery-preview.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/step-page/kit/GalleryTabs.tsx",
+        "qualitylayer/src/ui/step-page/kit/parts.css",
+        "qualitylayer/src/ui/steps/plan/Pictures.tsx",
+        "qualitylayer/src/ui/steps/plan/plan-model.ts",
+        "qualitylayer/src/ui/artifact/ArtifactPreview.tsx",
+        "qualitylayer/src/ui/artifact/TaskArtifact.tsx"
+      ],
+      "demo": null,
+      "note": "Approved Plan Interface collection. Chooser thumbnails use the normal artifact picture source and a glyph while a picture is unavailable. The selected preview uses the current focused artifact and keeps Open in card and the exact full-size destination. This page mounts current App and gallery source with synthetic Chat screens.",
+      "verification": "18 November 2026. Source-backed gallery in current App shell. Measured compiled browser interactions and exact viewer destination. Packed artifact renders at 1280 and 390 in both themes with zero blocked requests or runtime errors. Evidence is in the private Plan gallery production qualification."
     }
   }
 }

@@ -30,6 +30,7 @@ export type GistProps = {
   summaryAfter?: ReactNode
   /** At most two; see `FactRow`. */
   facts?: readonly Fact[] | undefined
+  factsView?: ReactNode
   /** The task the agent is working on; left out when nothing runs. */
   now?: NowChip | undefined
   /**
@@ -95,6 +96,7 @@ export function Gist({
   summary,
   bullets,
   facts,
+  factsView,
   now,
   body,
   required,
@@ -117,7 +119,7 @@ export function Gist({
       ) : null}
       {asOf !== undefined && asOf !== null ? <div className="bd-asof">{asOf}</div> : null}
       {/* The facts stand above the summary, as every step page of the Workflow model draws them. */}
-      {body === undefined ? <FactRow facts={facts} now={now} /> : null}
+      {body === undefined ? (factsView ?? <FactRow facts={facts} now={now} />) : null}
       {body !== undefined && body !== null ? body : null}
       {body === undefined &&
       ((summary !== undefined && summary !== null && summary !== "") ||

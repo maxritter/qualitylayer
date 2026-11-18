@@ -21,7 +21,11 @@ export type GalleryTab = {
   icon: ReactNode
   label: string
   panel: ReactNode
+  caption?: ReactNode
+  thumbnail?: ReactNode
 }
+
+type Collection = "diagrams" | "artifacts"
 
 /**
  * One screen under its name, outside a gallery (the Plan's wireframe, a screen in the reader, an
@@ -66,13 +70,20 @@ type GalleryProps = {
    * item keeps a row with its icon and name. Without it, panels keep their own headers.
    */
   named?: boolean
+  /** Plan collections use an illustrated chooser and titled figure. Other galleries keep tabs. */
+  collection?: Collection
 }
 
 export function GalleryTabs(props: GalleryProps) {
   const only = props.tabs.length === 1 ? props.tabs[0] : undefined
   if (props.tabs.length === 0) return null
   return only !== undefined ? (
-    <OneItem only={only} label={props.label} named={props.named === true} />
+    <OneItem
+      only={only}
+      label={props.label}
+      named={props.named === true}
+      collection={props.collection}
+    />
   ) : (
     <ManyTabs {...props} />
   )
@@ -83,17 +94,32 @@ export function GalleryTabs(props: GalleryProps) {
  * and name top left, its actions top right (the preview's age, Designed or Built, and the square
  * button that opens it in its card), the picture under them; a caption stands under the card.
  */
-function FigureCard({ tab, shown }: { tab: GalleryTab; shown: boolean }) {
+function FigureCard({
+  tab,
+  shown,
+  collection,
+}: {
+  tab: GalleryTab
+  shown: boolean
+  collection: Collection | undefined
+}) {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   const [below, setBelow] = useState<HTMLElement | null>(null)
   return (
     <>
       <div className="gal-fig" data-testid="figure-card">
         <div className="gal-fig-head">
-          <span className="gal-solo">
-            {tab.icon}
-            <span className="gal-tab-label">{tab.label}</span>
-          </span>
+          {collection === undefined ? (
+            <span className="gal-solo">
+              {tab.icon}
+              <span className="gal-tab-label">{tab.label}</span>
+            </span>
+          ) : (
+            <div className="gal-figure-name">
+              <h3>{tab.label}</h3>
+              {tab.caption}
+            </div>
+          )}
           <span className="gal-act" ref={setSlot} />
         </div>
         <FigureBelow.Provider value={below}>
@@ -109,23 +135,77 @@ function FigureCard({ tab, shown }: { tab: GalleryTab; shown: boolean }) {
 export const FigureBelow = createContext<HTMLElement | null>(null)
 
 /** One item needs no tabs: its panel stands alone, in its figure card when `named`. */
-function OneItem({ only, label, named }: { only: GalleryTab; label: string; named: boolean }) {
+const galleryClass = (collection: Collection | undefined) =>
+  collection === undefined ? "gal" : `gal gal-collection gal-collection-${collection}`
+
+function OneItem({
+  only,
+  label,
+  named,
+  collection,
+}: {
+  only: GalleryTab
+  label: string
+  named: boolean
+  collection: Collection | undefined
+}) {
   return (
-    <div className="gal" data-testid="gallery-tabs">
+    <div className={galleryClass(collection)} data-testid="gallery-tabs">
       <section className="gal-p" aria-label={`${label}: ${only.label}`}>
-        {named ? <FigureCard tab={only} shown /> : only.panel}
+        {named ? <FigureCard tab={only} shown collection={collection} /> : only.panel}
       </section>
     </div>
   )
 }
 
-function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
+function nextTab(key: string, from: number, count: number, vertical: boolean): number | undefined {
+  if (key === "Home") return 0
+  if (key === "End") return count - 1
+  const steps: Readonly<Record<string, number>> = {
+    ArrowRight: 1,
+    ArrowLeft: -1,
+    ArrowDown: Number(vertical),
+    ArrowUp: -Number(vertical),
+  }
+  const step = steps[key]
+  return step ? (from + step + count) % count : undefined
+}
+
+function DiagramPicker({
+  tabs,
+  active,
+  choose,
+}: {
+  tabs: readonly GalleryTab[]
+  active: string | undefined
+  choose: (id: string) => void
+}) {
+  return (
+    <select
+      className="gal-picker"
+      aria-label="Choose a diagram"
+      value={active}
+      onChange={(event) => choose(event.currentTarget.value)}
+    >
+      {tabs.map((tab) => (
+        <option key={tab.id} value={tab.id}>
+          {tab.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function ManyTabs({ tabs, label, initial, named = false, collection }: GalleryProps) {
   const base = useId()
   const first = tabs.find((tab) => tab.id === initial)?.id ?? tabs[0]?.id
   const [active, setActive] = useState(first)
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set(first ? [first] : []))
   const refs = useRef(new Map<string, HTMLButtonElement>())
-  const rowed = tabs.length > GALLERY_TABS_SHOWN + 1 ? tabs.slice(0, GALLERY_TABS_SHOWN) : tabs
+  const rowed =
+    collection === undefined && tabs.length > GALLERY_TABS_SHOWN + 1
+      ? tabs.slice(0, GALLERY_TABS_SHOWN)
+      : tabs
   const rest = tabs.slice(rowed.length)
   const current = tabs.find((tab) => tab.id === active) ?? tabs[0]
   const inRest = rest.some((tab) => tab.id === current?.id)
@@ -140,13 +220,8 @@ function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
   const order = [...rowed.map((tab) => tab.id), ...(rest.length > 0 ? ["more"] : [])]
   const focusStop = order.includes(current?.id ?? "") ? (current?.id ?? "") : "more"
   const move = (event: KeyboardEvent, from: string) => {
-    const at = order.indexOf(from)
-    let next = at
-    if (event.key === "ArrowRight") next = (at + 1) % order.length
-    else if (event.key === "ArrowLeft") next = (at - 1 + order.length) % order.length
-    else if (event.key === "Home") next = 0
-    else if (event.key === "End") next = order.length - 1
-    else return
+    const next = nextTab(event.key, order.indexOf(from), order.length, collection === "diagrams")
+    if (next === undefined) return
     event.preventDefault()
     const id = order[next] ?? ""
     refs.current.get(id)?.focus()
@@ -158,9 +233,17 @@ function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
   }
 
   return (
-    <div className="gal" data-testid="gallery-tabs">
+    <div className={galleryClass(collection)} data-testid="gallery-tabs" data-many="true">
       <div className="gal-head">
-        <div className="gal-tabs" role="tablist" aria-label={label}>
+        {collection === "diagrams" ? (
+          <DiagramPicker tabs={tabs} active={current?.id} choose={choose} />
+        ) : null}
+        <div
+          className="gal-tabs"
+          role="tablist"
+          aria-label={label}
+          aria-orientation={collection === "diagrams" ? "vertical" : undefined}
+        >
           {rowed.map((tab) => (
             <button
               key={tab.id}
@@ -176,7 +259,13 @@ function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
               onClick={() => choose(tab.id)}
               onKeyDown={(event) => move(event, tab.id)}
             >
-              {tab.icon}
+              {collection === undefined ? (
+                tab.icon
+              ) : (
+                <span className="gal-thumb" aria-hidden="true">
+                  {tab.thumbnail ?? tab.icon}
+                </span>
+              )}
               <span className="gal-tab-label">{tab.label}</span>
             </button>
           ))}
@@ -189,10 +278,7 @@ function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
                 id={tabId("more")}
                 aria-selected={inRest}
                 tabIndex={focusStop === "more" ? 0 : -1}
-                onKeyDown={(event: KeyboardEvent) => {
-                  if (event.key === "ArrowRight" || event.key === "ArrowLeft") move(event, "more")
-                  else if (event.key === "Home" || event.key === "End") move(event, "more")
-                }}
+                onKeyDown={(event: KeyboardEvent) => move(event, "more")}
               >
                 <MoreHorizontalIcon className="size-[13px]" aria-hidden="true" />
                 <span className="gal-tab-label">
@@ -221,7 +307,11 @@ function ManyTabs({ tabs, label, initial, named = false }: GalleryProps) {
             aria-labelledby={tab.id === current?.id && inRest ? tabId("more") : tabId(tab.id)}
             hidden={tab.id !== current?.id}
           >
-            {named ? <FigureCard tab={tab} shown={tab.id === current?.id} /> : tab.panel}
+            {named ? (
+              <FigureCard tab={tab} shown={tab.id === current?.id} collection={collection} />
+            ) : (
+              tab.panel
+            )}
           </div>
         ) : null,
       )}

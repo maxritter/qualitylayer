@@ -135,7 +135,7 @@ Three steps, two approvals. You plan and you verify; agents do everything betwee
 
 ### 1 · Plan, approved by you
 
-Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, diagrams and clickable screens. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
+Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, named diagrams of how the change works and clickable screen previews. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">

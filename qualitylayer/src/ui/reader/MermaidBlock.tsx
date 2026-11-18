@@ -241,6 +241,10 @@ type Props = {
    * thumbnail itself takes no focus.
    */
   enlarge?: boolean
+  /** A Plan figure preserves label size, expanding vertically and scrolling on its own x-axis. */
+  gallery?: "natural" | "fit"
+  /** The name to show to assistive technology in the full-size viewer. */
+  title?: string
 }
 
 type Placed = { target: string; left: number; top: number }
@@ -323,38 +327,57 @@ function updateDiagramOverflow(body: HTMLDivElement | null) {
   body.dataset.more = remaining > 4 ? "right" : ""
 }
 
+/** The figure can fit a wide drawing, down to 12.1 CSS pixels for its smallest label. */
+function galleryWidth(svg: SVGSVGElement, width: number, room: number): number {
+  const smallest = Array.from(svg.querySelectorAll("text")).reduce((size, label) => {
+    const font = Number.parseFloat(getComputedStyle(label).fontSize)
+    return label.textContent?.trim() && font > 0 ? Math.min(size, font) : size
+  }, Number.POSITIVE_INFINITY)
+  const readable = width * Math.min(1, 12.1 / smallest)
+  return Math.min(width, Math.ceil(Math.max(room, readable)))
+}
+
+function fitReaderDrawing(body: HTMLDivElement, svg: SVGSVGElement, width: number): void {
+  const gallery = body.closest<HTMLElement>("[data-diagram-gallery]")?.dataset.diagramGallery
+  const room = body.clientWidth - (gallery ? 24 : 36)
+  if (gallery === "natural" || room <= 0 || width <= room) return
+  const drawn =
+    gallery === "fit"
+      ? galleryWidth(svg, width, room)
+      : Math.max(room, Math.ceil(width * MIN_SCALE))
+  svg.setAttribute("width", String(drawn))
+  svg.removeAttribute("height")
+}
+
 function fitDiagram(body: HTMLDivElement | null, onLayout?: () => void): () => void {
-  const svg = body?.querySelector("svg")
-  if (svg === null || svg === undefined || typeof svg.getBBox !== "function") return () => {}
+  if (!body) return () => {}
+  const svg = body.querySelector("svg")
+  if (svg === null || typeof svg.getBBox !== "function") return () => {}
   const fit = () => {
     const width = fitToDrawing(svg)
     if (width === null) return
     // A thumbnail fits its frame whole, by width and height; the frame grows with it up to 240 px.
     // Enlarge shows the drawing full size.
-    if (body?.closest('[data-enlarge="true"]')) {
+    if (body.closest('[data-enlarge="true"]')) {
       sizeThumbnail(body, svg, width)
       onLayout?.()
       return
     }
     // Too wide: scale it to the column, down to 72 %, so a label stays at 11 px or more; wider still, keep that
     // size and scroll (the fullscreen view has the natural size and zoom).
-    const room = (body?.clientWidth ?? 0) - 36
-    if (room > 0 && width > room) {
-      svg.setAttribute("width", String(Math.max(room, Math.ceil(width * MIN_SCALE))))
-      svg.removeAttribute("height")
-    }
+    fitReaderDrawing(body, svg, width)
     more()
     onLayout?.()
   }
   // A drawing that runs past the column's right edge fades there until the reader scrolls to its
   // end: an overlay scrollbar (macOS) is hidden until someone scrolls, so the cut looked like the end.
   const more = () => updateDiagramOverflow(body)
-  body?.addEventListener("scroll", more, { passive: true })
+  body.addEventListener("scroll", more, { passive: true })
   fit()
   // Web fonts can arrive after the first paint and change the text's width.
   void document.fonts?.ready.then(fit)
   // The column widens and narrows with the panels beside it.
-  if (body !== null && typeof ResizeObserver !== "undefined") {
+  if (typeof ResizeObserver !== "undefined") {
     let last = body.clientWidth
     const watch = new ResizeObserver(() => {
       if (body.clientWidth === last) return
@@ -367,7 +390,7 @@ function fitDiagram(body: HTMLDivElement | null, onLayout?: () => void): () => v
       body.removeEventListener("scroll", more)
     }
   }
-  return () => body?.removeEventListener("scroll", more)
+  return () => body.removeEventListener("scroll", more)
 }
 
 /** A ref that fits the diagram it is given and stops refitting the one it had before. */
@@ -395,6 +418,8 @@ export function MermaidBlock({
   kind,
   caption,
   enlarge = false,
+  gallery,
+  title,
 }: Props) {
   const [svg, setSvg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -492,19 +517,28 @@ export function MermaidBlock({
       className="visual"
       data-testid="mermaid"
       data-enlarge={enlarge ? "true" : undefined}
+      data-diagram-gallery={gallery}
       role="group"
-      aria-label={enlarge ? `${named.word} diagram` : "Diagram: + and − zoom, 0 fits"}
+      aria-label={
+        gallery ? title : enlarge ? `${named.word} diagram` : "Diagram: + and − zoom, 0 fits"
+      }
       // Focus is what lets + − 0 zoom a diagram; a thumbnail has no zoom, so its Enlarge button is the one stop.
-      tabIndex={enlarge ? undefined : 0}
+      tabIndex={enlarge || gallery ? undefined : 0}
       onKeyDown={(e) => {
         // A thumbnail has no zoom bar; Enlarge opens the view that does.
-        if (enlarge) return
+        if (enlarge || gallery) return
         // The fullscreen dialog is portalled out of this block but its events still bubble to it.
         if (e.currentTarget.contains(e.target as Node)) view.onKeyDown(e)
       }}
     >
       {/* A thumbnail has no bar: its kind and Enlarge stand in the drawing's corners. */}
-      {enlarge ? null : (
+      {gallery && drawn ? (
+        <button type="button" className="q-btn sm gal-full-figure" onClick={() => setFull(true)}>
+          <Maximize2Icon aria-hidden="true" />
+          Open full size
+        </button>
+      ) : null}
+      {gallery || enlarge ? null : (
         <div className="visual-bar">
           {caption !== undefined ? (
             <span className="visual-kind visual-caption">{caption}</span>
@@ -565,11 +599,13 @@ export function MermaidBlock({
       {error !== null ? <div className="visual-error">{error}</div> : null}
       {drawn ? (
         <div className="q-diagram" ref={wrap} data-testid="diagram">
-          {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: a click on a node pins a comment; the keyboard has "Give feedback on this diagram" in the bar above */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/useSemanticElements: the diagram is an interactive scrolling group without fieldset chrome; the keyboard has "Give feedback on this diagram" in the bar above */}
           <div
             // A diagram wider than its column scrolls, and a scrolling region takes the keyboard's focus;
             // a thumbnail never scrolls (it holds the whole drawing), so it takes none.
             tabIndex={enlarge ? undefined : 0}
+            role="group"
+            aria-label={gallery ? "Diagram drawing" : undefined}
             className={view.zoom > 1 ? "mermaid-body zoomed" : "mermaid-body"}
             ref={place}
             onClick={(e) => {
@@ -666,7 +702,13 @@ export function MermaidBlock({
         </pre>
       ) : null}
       {svg !== null ? (
-        <DiagramFullscreen svg={svg} open={full} onClose={() => setFull(false)} caption={named} />
+        <DiagramFullscreen
+          svg={svg}
+          open={full}
+          onClose={() => setFull(false)}
+          caption={named}
+          title={title}
+        />
       ) : null}
     </div>
   )
@@ -698,11 +740,13 @@ function DiagramFullscreen({
   open,
   onClose,
   caption,
+  title = "Diagram",
 }: {
   svg: string
   open: boolean
   onClose: () => void
   caption: { word: string; icon: typeof SplineIcon; tip: string }
+  title: string | undefined
 }) {
   const pan = usePanZoom()
   const { zoomIn, zoomOut, fit } = pan
@@ -710,7 +754,7 @@ function DiagramFullscreen({
     <FullscreenDialog
       open={open}
       onClose={onClose}
-      title="Diagram"
+      title={title}
       testId="diagram-fullscreen"
       onKeyDown={pan.onKeyDown}
       bar={

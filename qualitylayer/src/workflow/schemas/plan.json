@@ -13,7 +13,7 @@
       "required": true,
       "show": "lead",
       "writer": "agent",
-      "hint": "one or two plain lines on what the user gets; commands and flags in backticks; source-file paths belong in the working sections, not Summary; then two labelled lines: `**Size:** about N slices and M tasks`, and `**Trust boundary:** none` or what crosses it (network input, auth, files from users, secrets, other processes); it decides whether a security review runs"
+      "hint": "one or two plain lines on what the user gets; commands and flags in backticks; source-file paths belong in the working sections, not Summary; then two labelled lines: `**Size:** about N slices and M tasks`, and `**Trust boundary:** none` or what crosses it (network input, auth, files from users, secrets, other processes); it decides whether a security review runs; optional **Risk:** short exposure — possible consequence backed by Done means, and **Integrations:** comma-separated distinct systems named in Approach"
     },
     {
       "heading": "Success measure",
@@ -63,7 +63,7 @@
       "show": "lead",
       "writer": "agent",
       "when": "whenever the change crosses parts of the system, such as data, server and screen; skip it only for a change inside one part",
-      "hint": "1 to 3 Mermaid diagrams, one kind each (before and after, flow, sequence, architecture), left to right by default and about six nodes, one caption line each; where order, a lifecycle or stored data changes, that picture"
+      "hint": "Give each Mermaid diagram a descriptive ### heading. Show the route, decisions and tool calls when the change affects control flow. Choose the orientation for readability and add a caption when it helps."
     },
     {
       "heading": "Interface",
@@ -184,7 +184,7 @@
       "required": false,
       "show": "lead-folded",
       "writer": "agent",
-      "hint": "one diagram of the code the request touches, today, each box naming its repository file (```mermaid, left to right, with the path on a second label line); then one caption line"
+      "hint": "one diagram of the code the request touches, today, each box naming its repository file (```mermaid, with the path on a second label line); then one caption line"
     },
     {
       "heading": "Data and interfaces",

@@ -32,9 +32,9 @@ Research is evidence for decisions others make later, so it holds no recommendat
 Tell it as a concise explainer a reader understands from this document alone, about 250 words a
 question; cite a line instead of quoting code. It is saved as written and read once: the planner
 links your findings, it never copies them. Show the shape where it beats prose: a call tree, a file tree, a data shape at each
-boundary, or a picture of today only (no `diff`, no change marks): a `flowchart LR` of how parts connect,
+boundary, or a picture of today only (no `diff`, no change marks): a flowchart of how parts connect,
 a `sequenceDiagram`, `stateDiagram-v2` or `erDiagram` where order, a lifecycle or stored data is the
-point. About six nodes named with nouns, a short verb on every arrow, stable ids (never `end`, `style`,
+point. Name each diagram for the question it answers. Use stable ids (never `end`, `style`,
 `class` or `default`), no colours.
 
 Every claim carries a `file:line` that resolves, written from the repository root (`git rev-parse

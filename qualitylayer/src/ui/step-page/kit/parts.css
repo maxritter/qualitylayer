@@ -320,3 +320,190 @@
       center / contain no-repeat;
   }
 }
+
+@layer components {
+  .pl-part:has(.gal-collection) {
+    container: plan-gallery / inline-size;
+  }
+  .gal-collection {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+  }
+  .gal-collection > .gal-p {
+    min-width: 0;
+    margin: 0;
+  }
+  .gal-collection .gal-head,
+  .gal-collection .gal-tabs {
+    min-width: 0;
+  }
+  .gal-collection .gal-tabs {
+    display: grid;
+    gap: 7px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .gal-collection .gal-tabs > [role="tab"] {
+    height: auto;
+    min-height: 54px;
+    min-width: 0;
+    padding: 6px;
+    gap: 8px;
+    white-space: normal;
+    text-align: start;
+    color: var(--ql-text);
+  }
+  .gal-collection .gal-tabs > [role="tab"]:hover {
+    background: var(--ql-surface-2);
+  }
+  .gal-collection .gal-tabs > [role="tab"][aria-selected="true"] {
+    border-color: var(--ql-accent-line);
+    background: var(--ql-accent-soft);
+  }
+  .gal-collection .gal-tab-label {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .gal-collection .gal-thumb {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    overflow: hidden;
+    border: 1px solid var(--ql-line);
+    border-radius: 4px;
+    background: var(--ql-bg);
+    color: var(--ql-text-muted);
+  }
+  .gal-collection .gal-thumb > svg {
+    width: 19px;
+    height: 19px;
+  }
+  .gal-picker {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding-inline: 11px;
+    border: 1px solid var(--ql-border);
+    border-radius: 7px;
+    background: var(--ql-bg);
+    color: var(--ql-text);
+    font: inherit;
+  }
+  .gal-picker:focus-visible {
+    outline: 2px solid var(--ql-accent);
+    outline-offset: 1px;
+  }
+  .gal-collection .gal-fig-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: 12px 13px;
+  }
+  .gal-figure-name {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+  .gal-figure-name h3 {
+    margin: 0;
+    color: var(--ql-text);
+    font: 600 14px / 1.32 var(--font-sans);
+    overflow-wrap: anywhere;
+  }
+  .gal-figure-name .pl-cap {
+    max-width: 68ch;
+    margin: 4px 0 0;
+    font-size: 12px;
+  }
+  .gal-collection-diagrams .gal-fig > :not(.gal-fig-head) {
+    margin: 0;
+  }
+  .gal-collection-diagrams .gal-tabs {
+    display: none;
+  }
+  [data-diagram-gallery] {
+    position: relative;
+    margin: 0;
+    border-width: 1px 0 0;
+    border-radius: 0;
+  }
+  [data-diagram-gallery] .mermaid-body {
+    max-height: none;
+    padding: 50px 12px 14px;
+  }
+  .gal-full-figure {
+    position: absolute;
+    z-index: 1;
+    top: 6px;
+    right: 6px;
+    min-height: 44px;
+    padding-inline: 10px;
+    background: var(--ql-bg);
+  }
+  .gal-collection-artifacts .gal-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .gal-collection-artifacts .gal-tabs > [role="tab"] {
+    border: 1px solid var(--ql-border);
+    border-radius: 8px;
+  }
+  .gal-collection-artifacts .gal-thumb {
+    width: 78px;
+    height: 44px;
+  }
+  .gal-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .gal-collection .gal-fig-head .preview-actions-row .q-btn {
+    display: inline-flex;
+    width: auto;
+    min-width: max-content;
+    min-height: 32px;
+    padding: 6px 9px;
+    gap: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  @container plan-gallery (max-width: 520px) {
+    .gal-collection-artifacts .gal-tabs > [role="tab"] {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 5px;
+    }
+    .gal-collection-artifacts .gal-thumb {
+      width: 100%;
+    }
+  }
+  @container plan-gallery (min-width: 600px) {
+    .gal-collection-diagrams[data-many="true"] {
+      grid-template-columns: minmax(130px, 27%) minmax(0, 1fr);
+      align-items: start;
+    }
+    .gal-collection-diagrams[data-many="true"] > .gal-head {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    .gal-collection-diagrams[data-many="true"] > .gal-p {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .gal-collection-diagrams .gal-tabs {
+      display: grid;
+    }
+    .gal-collection-diagrams .gal-picker {
+      display: none;
+    }
+    [data-diagram-gallery] .mermaid-body {
+      padding-block-start: 42px;
+    }
+    .gal-full-figure {
+      min-height: 32px;
+    }
+  }
+}

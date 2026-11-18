@@ -5,15 +5,19 @@
 import {
   BadgeCheckIcon,
   BugIcon,
+  ChevronDownIcon,
   FlagIcon,
   ImageIcon,
   type LucideIcon,
+  NetworkIcon,
+  ShieldCheckIcon,
   TargetIcon,
   WorkflowIcon,
 } from "lucide-react"
-import type { ReactNode } from "react"
+import { type ReactNode, useId, useState } from "react"
 import type { DocSection } from "../../api.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
+import { type Fact, FactRow } from "../../step-page/bands/FactRow.tsx"
 import { FoldedGroup } from "../../step-page/bands/FoldedGroup.tsx"
 import type { GistProps } from "../../step-page/bands/Gist.tsx"
 import { DocMarkdown } from "../../step-page/DocMarkdown.tsx"
@@ -30,6 +34,8 @@ import {
   acceptanceOf,
   diagramsOf,
   type interfaceOf,
+  type PlanIndicator,
+  planIndicators,
   sizeFact,
   sizeOf,
   summaryBullets,
@@ -63,6 +69,66 @@ function MeasureLine({ text }: { text: string }) {
   )
 }
 
+function PlanIndicators({ size, indicators }: { size: Fact | null; indicators: PlanIndicator[] }) {
+  const [selected, setSelected] = useState<PlanIndicator["kind"] | null>(null)
+  const detailId = useId()
+  const active = indicators.find((item) => item.kind === selected)
+  return (
+    <div className="pl-indicators">
+      <FactRow facts={size ? [size] : []} />
+      {indicators.map((item) => {
+        const Icon = item.kind === "Risk" ? ShieldCheckIcon : NetworkIcon
+        return (
+          <button
+            type="button"
+            key={item.kind}
+            className="pl-indicator"
+            aria-expanded={item.kind === selected}
+            aria-controls={detailId}
+            id={detailId + item.kind}
+            onClick={() => setSelected(item.kind === selected ? null : item.kind)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setSelected(null)
+            }}
+          >
+            <Icon size={14} aria-hidden="true" />
+            {item.kind}
+            <strong>{item.value}</strong>
+            <ChevronDownIcon size={12} aria-hidden="true" />
+          </button>
+        )
+      })}
+      <section
+        id={detailId}
+        hidden={!active}
+        className="pl-indicator-detail"
+        aria-labelledby={active ? detailId + active.kind : undefined}
+      >
+        {active && (
+          <>
+            <InlineMarkdown text={active.evidence} />{" "}
+            <button
+              type="button"
+              className="q-link"
+              onClick={(event) => {
+                const section = event.currentTarget
+                  .closest(".sp-page")
+                  ?.querySelector<HTMLElement>(
+                    `[data-testid="step-part"][aria-label="${active.section}"] h2`,
+                  )
+                section?.focus({ preventScroll: true })
+                section?.scrollIntoView({ block: "center" })
+              }}
+            >
+              {active.kind === "Risk" ? "See acceptance test" : "See approach"} ↓
+            </button>
+          </>
+        )}
+      </section>
+    </div>
+  )
+}
+
 /** The header: the meta line, the size chip, the Summary's bullets, Required and the Success measure. */
 export function planGist(
   meta: string,
@@ -74,11 +140,17 @@ export function planGist(
     .replace(/\s+/g, " ")
     .trim()
   const fact = sizeFact(sizeOf(summary?.markdown ?? ""))
+  const signals = planIndicators(
+    summary?.markdown ?? "",
+    bodyOf(sectionOf("Done means")?.markdown ?? ""),
+    bodyOf(sectionOf("Approach")?.markdown ?? ""),
+  )
   const bullets = summary !== undefined ? summaryBullets(summary.markdown) : []
   return {
     meta,
     // The size chip stands in the header; the Summary is the page's first section (summaryIcon).
     facts: fact !== null ? [fact] : [],
+    ...(signals.length ? { factsView: <PlanIndicators size={fact} indicators={signals} /> } : {}),
     bullets: bullets.map((bullet) => <InlineMarkdown key={bullet} text={bullet} />),
     ...(required !== undefined && required.lines.length > 0
       ? { required: <PlanRequired view={required} /> }

@@ -384,6 +384,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
             <span><svg class="ic s14"><use href="#i-layers"/></svg><b>≈7 slices</b>· ≈39 tasks</span>
           </div>
         </header>
+        <p class="note2">When a Plan names a specific exposure, Risk opens its consequence and links to Done means. Complexity counts distinct integrations named in Approach. A Plan without those details shows its size alone.</p>
 
         <section class="sp-part" id="summary" aria-label="Summary" data-screen-label="Summary">
           <h2><svg class="ic s14"><use href="#x-list"/></svg>Summary</h2>
@@ -441,46 +442,60 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
           </div>
         </section>
 
-        <section class="sp-part" aria-label="Diagrams">
+        <section class="sp-part pl-part" aria-label="Diagrams">
           <h2><svg class="ic s14"><use href="#x-flow"/></svg>Diagrams</h2>
-          <div class="gal-tabs" role="tablist" aria-label="Diagrams">
-            <button type="button" role="tab" aria-selected="true" aria-controls="d-ba" id="td-ba"><svg class="ic s13"><use href="#i-blocks"/></svg>Before and after</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="d-flow" id="td-flow" tabindex="-1"><svg class="ic s13"><use href="#i-flow"/></svg>Placement flow</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="d-seq" id="td-seq" tabindex="-1"><svg class="ic s13"><use href="#i-seq"/></svg>Approval sequence</button>
-          </div>
-          <div class="gal-p" role="tabpanel" id="d-ba" aria-labelledby="td-ba">
-            <div class="app-part" data-ql-mermaid="before-after"></div>
-            <p class="cap">One place question fills two values; the screen guess stays only where no picker exists. The approval checks read the new one.</p>
-          </div>
-          <div class="gal-p" role="tabpanel" id="d-flow" aria-labelledby="td-flow" hidden>
-            <div class="app-part" data-ql-mermaid="placement"></div>
-            <p class="cap">How a new task picks where it asks and approves.</p>
-          </div>
-          <div class="gal-p" role="tabpanel" id="d-seq" aria-labelledby="td-seq" hidden>
-            <div class="app-part" data-ql-mermaid="approval"></div>
-            <p class="cap">Only your own pick, read from the agent's record, approves. With Approve in the App, the App's button does.</p>
+          <div class="wf-plan-gallery wf-plan-diagrams">
+            <div class="wf-plan-picks">
+              <select class="gal-picker" aria-label="Choose a diagram">
+                <option value="d-ba">Before and after</option>
+                <option value="d-flow">Placement flow</option>
+                <option value="d-seq">Approval sequence</option>
+              </select>
+              <div class="gal-tabs" role="tablist" aria-label="Diagrams" aria-orientation="vertical">
+                <button type="button" role="tab" aria-selected="true" aria-controls="d-ba" id="td-ba" tabindex="0"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s14"><use href="#i-blocks"/></svg></span>Before and after</button>
+                <button type="button" role="tab" aria-selected="false" aria-controls="d-flow" id="td-flow" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s14"><use href="#i-flow"/></svg></span>Placement flow</button>
+                <button type="button" role="tab" aria-selected="false" aria-controls="d-seq" id="td-seq" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s14"><use href="#i-seq"/></svg></span>Approval sequence</button>
+              </div>
+            </div>
+            <div class="gal-p wf-plan-figure" role="tabpanel" id="d-ba" aria-labelledby="td-ba">
+              <div class="wf-plan-figure-name"><h3>Before and after</h3><p>One place question fills two values. The approval checks read the new one.</p></div>
+              <div class="app-part" data-ql-mermaid="before-after" data-ql-figure="fit" data-title="Before and after"></div>
+            </div>
+            <div class="gal-p wf-plan-figure" role="tabpanel" id="d-flow" aria-labelledby="td-flow" hidden>
+              <div class="wf-plan-figure-name"><h3>Placement flow</h3><p>How a new task picks where it asks and approves.</p></div>
+              <div class="app-part" data-ql-mermaid="placement" data-ql-figure="natural" data-title="Placement flow"></div>
+            </div>
+            <div class="gal-p wf-plan-figure" role="tabpanel" id="d-seq" aria-labelledby="td-seq" hidden>
+              <div class="wf-plan-figure-name"><h3>Approval sequence</h3><p>Only the person’s recorded choice submits an approval.</p></div>
+              <div class="app-part" data-ql-mermaid="approval" data-ql-figure="fit" data-title="Approval sequence"></div>
+            </div>
           </div>
         </section>
 
-        <section class="sp-part" aria-label="Interface">
+        <section class="sp-part pl-part" aria-label="Interface">
           <h2><svg class="ic s14"><use href="#x-image"/></svg>Interface</h2>
-          <div class="gal-tabs" role="tablist" aria-label="Screens">
-            <button type="button" role="tab" aria-selected="true" aria-controls="g-settings" id="t-settings"><svg class="ic s13"><use href="#i-gear"/></svg>Settings</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="g-first" id="t-first" tabindex="-1"><svg class="ic s13"><use href="#i-home"/></svg>First start</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="g-guide" id="t-guide" tabindex="-1"><svg class="ic s13"><use href="#i-book"/></svg>Docs guide</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="g-agent" id="t-agent" tabindex="-1"><svg class="ic s13"><use href="#i-term"/></svg>Agent picker</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="g-readme" id="t-readme" tabindex="-1"><svg class="ic s13"><use href="#i-text"/></svg>README</button>
+          <div class="wf-plan-gallery wf-plan-artifacts">
+          <div class="gal-tabs" role="tablist" aria-label="Interface">
+            <button type="button" role="tab" aria-selected="true" aria-controls="g-settings" id="t-settings"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s13"><use href="#i-gear"/></svg></span>Settings</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="g-first" id="t-first" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s13"><use href="#i-home"/></svg></span>First start</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="g-guide" id="t-guide" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s13"><use href="#i-book"/></svg></span>Docs guide</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="g-agent" id="t-agent" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s13"><use href="#i-term"/></svg></span>Agent picker</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="g-readme" id="t-readme" tabindex="-1"><span class="wf-plan-thumb" aria-hidden="true"><svg class="ic s13"><use href="#i-text"/></svg></span>README</button>
           </div>
-          <div class="gal-p" role="tabpanel" id="g-settings" aria-labelledby="t-settings">
+          <div class="gal-p wf-plan-figure" role="tabpanel" id="g-settings" aria-labelledby="t-settings">
+            <div class="wf-plan-figure-name"><h3>Settings</h3><p>Choose where QualityLayer asks questions and asks for approval.</p></div>
             <div class="app-part" data-ql-artifact="artifacts/answer-place-settings/settings-workflow.html#in-your-agent" data-title="Settings · Workflow"></div>
           </div>
-          <div class="gal-p" role="tabpanel" id="g-first" aria-labelledby="t-first" hidden>
+          <div class="gal-p wf-plan-figure" role="tabpanel" id="g-first" aria-labelledby="t-first" hidden>
+            <div class="wf-plan-figure-name"><h3>First start</h3><p>Choose whether to stay in the agent on the first task.</p></div>
             <div class="app-part" data-ql-artifact="artifacts/first-start-agent/first-run-home.html#stay-in-agent" data-title="First-run Home"></div>
           </div>
-          <div class="gal-p" role="tabpanel" id="g-guide" aria-labelledby="t-guide" hidden>
+          <div class="gal-p wf-plan-figure" role="tabpanel" id="g-guide" aria-labelledby="t-guide" hidden>
+            <div class="wf-plan-figure-name"><h3>Docs guide</h3><p>Follow the workflow in the agent from planning through approval.</p></div>
             <div class="app-part" data-ql-artifact="artifacts/work-in-agent-guide/work-in-your-agent.html#work-in-your-agent" data-title="Work only in your agent · Documentation model"></div>
           </div>
-          <div class="gal-p" role="tabpanel" id="g-agent" aria-labelledby="t-agent" hidden>
+          <div class="gal-p wf-plan-figure" role="tabpanel" id="g-agent" aria-labelledby="t-agent" hidden>
+            <div class="wf-plan-figure-name"><h3>Agent picker</h3><p>The agent shows where questions will appear.</p></div>
 <pre class="term">Where do you want to answer and approve?
   1. Here in Claude Code <span class="dim">(Recommended)</span>
   2. In the App
@@ -492,9 +507,11 @@ Plan this with QualityLayer?
   2. No, just answer</pre>
             <p class="cap">Two new questions in Claude Code's picker. Codex shows the three place choices without Tell me more.</p>
           </div>
-          <div class="gal-p" role="tabpanel" id="g-readme" aria-labelledby="t-readme" hidden>
+          <div class="gal-p wf-plan-figure" role="tabpanel" id="g-readme" aria-labelledby="t-readme" hidden>
+            <div class="wf-plan-figure-name"><h3>README</h3><p>The project guide describes both places to work.</p></div>
             <div class="diffl"><div class="del">− Work side by side in the App or browser, or use your favourite terminal or IDE.</div><div class="add">+ Work side by side in the App or browser, or stay in your terminal or IDE: questions and approvals can happen right in your agent's chat.</div></div>
             <p class="cap">One sentence in the README and the website lede.</p>
+          </div>
           </div>
         </section>
 
@@ -1006,6 +1023,7 @@ POST /api/tasks                                   <span class="c"># { "from": ["
 **Size:** about 7 slices and 21 tasks
 **Trust boundary:** none
 
+
 ## Problem
 - Many people work only in their agent's chat …
 
@@ -1029,8 +1047,9 @@ Out: Slack, tracker or webhook connections ·
 Turning either approval off · …
 
 ## Diagrams
+### Where the approval request goes
 ```mermaid
-flowchart LR … (one to three, a caption each)
+flowchart TD …
 ```
 
 ## Interface

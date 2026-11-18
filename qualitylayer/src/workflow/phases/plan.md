@@ -52,7 +52,10 @@ written once.
 
 - `{plan_doc}` is for people, colleagues on GitHub too: plain words, no `file:line` in the lead
   sections, each list item opening with a **bold headline sentence**. *Summary*: one plain sentence on
-  what the user gets, the outcome in 2 to 4 one-line bullets, then `**Size:**` and `**Trust boundary:**`.
+  what the user gets, the outcome in 2 to 4 one-line bullets, then `**Size:**` and `**Trust boundary:**`. When it helps the reader, add
+  `**Risk:** short exposure — possible consequence` backed by a Done means test, or
+  `**Integrations:** service A, service B` for distinct systems that Approach actually connects.
+  Omit unsupported indicators.
   *Approach*: Chosen, Gives, Costs, then at most five bullets of what changes.
 - `agents/{plan_doc}` is the build's: the request as given, findings, contracts, code to imitate,
   how to start and test, the project checks, rejected approaches, risks with the test that guards
@@ -73,8 +76,8 @@ another device is either a granted prerequisite or the person's own step, said u
 `<!-- ql:artifact <name> -->` markers, drawn after updating the lasting artifact that covers it
 (`qualitylayer artifact guide`, once). Each finished artifact gets one fresh check: save its report
 with `qualitylayer helper result <id> --file <path>` and answer every finding `Answer: Taken · <what
-you changed>` or `Answer: Kept · <why>`. When the change crosses parts of the system, draw one to three
-diagrams, a caption line each.
+you changed>` or `Answer: Kept · <why>`. When a change adds or replaces a router, agent or pipeline, show how a request moves through it,
+where it branches and which tools each path can call. Add a detail view when it answers another question.
 
 **Clear the way for the build now.** Every human step (a secret, an account, a permission, a deploy)
 and every piece of state the agents cannot create is settled now: every row under *Prerequisites* is

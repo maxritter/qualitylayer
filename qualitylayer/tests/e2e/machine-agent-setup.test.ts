@@ -139,9 +139,35 @@ printf 'Fixture installer completed on %s\\n' "$HOME"
       )
       expect(await startDisabled()).toBe(true)
       expect(await Bun.file(join(repo.home, "fixture-authenticated")).exists()).toBe(false)
+      // Hold only this explicit refresh's responses. An earlier signed-out row remains visible
+      // until the version check returns, then the Sign in action waits for the new account check.
+      await page.evaluate(`(() => {
+        const fetch = window.fetch.bind(window)
+        let rechecking = false
+        const version = new Promise(resolve => { window.releaseAgentVersions = resolve })
+        const signIn = new Promise(resolve => { window.releaseAgentSignIn = resolve })
+        window.fetch = async (input, init) => {
+          const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname
+          const isRefresh = path === "/api/agents/check" && init?.body === "{}"
+          if (isRefresh) rechecking = true
+          const response = await fetch(input, init)
+          if (isRefresh) await version
+          if (rechecking && path === "/api/agents/sign-in") {
+            await signIn
+            window.fetch = fetch
+          }
+          return response
+        }
+      })()`)
       await page.click('[data-testid="agents-step"] .r .q-link')
+      const row = `document.querySelector(${JSON.stringify(agent)})`
+      await page.waitFor(`${row}?.textContent.includes('Not signed in')`)
+      await page.evaluate("window.releaseAgentVersions()")
+      await page.waitFor(`${row}?.textContent.includes('Checking sign-in…')`)
+      expect(await page.evaluate<boolean>(`!!${row}?.querySelector('.q-btn')`)).toBe(false)
+      await page.evaluate("window.releaseAgentSignIn()")
       await page.waitFor(
-        `document.querySelector(${JSON.stringify(agent)})?.textContent.includes('Not signed in')`,
+        `[...${row}.querySelectorAll('button')].some(button => button.textContent.trim() === 'Sign in' && !button.disabled)`,
       )
       await page.click(`${agent} .q-btn`)
       await page.waitFor("document.activeElement?.classList.contains('xterm-helper-textarea')")

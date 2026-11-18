@@ -140,7 +140,7 @@
     "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-dark.png": "0e9cdb95f7d3fbdf887adbec3c62f3be8c8ae2df4f4cde1580a9eb2f3c2c0cd8",
     "qualitylayer/artifacts/app/app-model/calm-working-assets/implement-before-light.png": "1e1d3cfeb790b74dfbcf687b7cde0800bcfd28c14386065fb492319edad7f2ad",
     "qualitylayer/artifacts/app/app-model/conversation-markdown.html": "5944894e816b1e5aadd078d33c56daedb50a4c18f69562e300d932d82756a67e",
-    "qualitylayer/artifacts/app/app-model/coverage.json": "fb0448acd8c66ccb243ee9488733fd2dbf8940838641b14810d9b56e53a35b15",
+    "qualitylayer/artifacts/app/app-model/coverage.json": "45eb8143b402eb0d8188f682c6872c34e03c3c256e290d60496564028d62a07b",
     "qualitylayer/artifacts/app/app-model/data.jsx": "f5c7661dfb1d66d1910dac8db788ef3a00b2f09092f2447bdff991230d3db897",
     "qualitylayer/artifacts/app/app-model/local-first-contract.md": "8f99ce7ec29dbf99de94e8f960a697f18b76998c09e498cf8b1a48f9b191de8c",
     "qualitylayer/artifacts/app/app-model/machine-first-task.html": "9fb9ab9d951b09687ac8596f02a83ea47439502464265a5951df8eb33809ee12",
@@ -2169,7 +2169,7 @@
     "qualitylayer/tests/e2e/calm-step-transitions.test.ts": "630b5f8fa7f5cd625fdb0ec0dd1ef7b19a1969502aa8cb58d18e6d9ed5a1c46f",
     "qualitylayer/tests/e2e/export-complete-document.test.ts": "f685ecd3836adc8af8d00d808f09e385645ac74f00052baecef6f0a7dddc0242",
     "qualitylayer/tests/e2e/large-cost-popover.test.ts": "e4877e952dd8678003d77f8e1476df8530a68f7794f9dcd0b5705099ba003c4f",
-    "qualitylayer/tests/e2e/machine-agent-setup.test.ts": "003623ff80b3bfae20c2ff623b3ec8abdbadbe266a13d9581fbe22f8a018e10f",
+    "qualitylayer/tests/e2e/machine-agent-setup.test.ts": "fac6abf5d9aad578433e3aa89e97a600a9cfed8088dbb9feeb1febdcf23740b1",
     "qualitylayer/tests/e2e/right-sidebar-layout.test.ts": "ad1d42423eaaf55b6312496b9b41ce92bf6da556429dc2fa2124e5bcd8d87535",
     "qualitylayer/tests/helpers/lastingWorld.ts": "251723dcdf0dc731cda1d5545558b8f379a966c8635b728972b12bb5578cd7ae",
     "qualitylayer/tests/licensing-client/identity.test.ts": "17f62fcb566b4ee95a44433f05557d80480b46ed5a4388c2dec83174f522625f",
@@ -2193,7 +2193,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "8fba1ba45cdfe30bf8184146290cb482ed353509a5aa35e6c59dd881cd6879b3",
+  "reviewManifestSha256": "a99823165623e5f3204f8d591afb70826a808a2a15a71c1db035872c93197a95",
   "schema": 1,
-  "sourceHead": "0e8e83e91fb2682089a3f3e36415cdf62856f78a"
+  "sourceHead": "45788e48b4166ed25e67ed2bd0042980a44ecc51"
 }

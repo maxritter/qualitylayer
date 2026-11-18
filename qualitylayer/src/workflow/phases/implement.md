@@ -36,7 +36,7 @@ without a report, until the page turns to the person.
    for gaps in the steps (blockers, cancel
    paths, boundary inputs, two at once): a missing step is added to the Plan with `qualitylayer plan
    amend --by agent --note "<the step, and why>"`, where the person sees it.
-   After writing the cards, run `qualitylayer validate agents/02-implement.md`.
+   After writing the cards, run `qualitylayer validate agents/{implement_doc}`.
 4. **Keep commands safe to run alone**: from the repository root, unattended, and pushing, deploying or
    calling another machine only where the Plan's *Prerequisites* grant it. A paid or real-agent
    command gets one card that holds the proof; cite its recorded result elsewhere. Before a check that

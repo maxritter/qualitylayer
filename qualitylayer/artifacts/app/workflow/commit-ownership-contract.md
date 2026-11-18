@@ -14,4 +14,4 @@ Qualification uses isolated repositories and real Git. It preserves a failing wi
 
 After a rebase, the builder can inspect receipt and lease changes with `qualitylayer doctor --json` before finishing Implement. Doctor reports on all open tasks in the repository. If its proposed repairs are all intended, `qualitylayer doctor --repair` can remove a stale duplicate whose changed paths, resulting blobs and modes match a registered successor. Once all remaining receipts are on HEAD, the builder can canonicalize the current task’s receipts and retry Verify. A shared patch ID alone does not prove the same resulting files.
 
-The Verify refusal points to this recovery when a rebase leaves stale receipts. The Implement brief names the existing whole-record validator after the builder writes `## Proof order` at the same level as `## Task cards`.
+The Verify refusal points to this recovery when a rebase leaves stale receipts. The Implement brief fills in the task document name for the existing whole-record validator after the builder writes `## Proof order` at the same level as `## Task cards`.

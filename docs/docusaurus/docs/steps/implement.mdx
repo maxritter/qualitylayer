@@ -16,12 +16,12 @@ Your agent cuts the approved Plan into slices and builds each one test first. Yo
 <Tabs groupId="where">
   <Tab value="app" label="In the App">
 
-**Approve and build here** continues the planning session after its turn. Otherwise **Start the build** on Plan opens the build card:
+**Approve and build here** continues the planning session after its turn, keeping its model and effort. **Start the build** on Plan opens the build card for a new session:
 
 <CardGroup cols={2}>
   <Card title="Agent" icon="square-terminal">The coding agent for this build, with **What's different** for that agent.</Card>
-  <Card title="Build model and Effort" icon="code-xml">For the session that writes and tests the code, with the recommended model and why.</Card>
-  <Card title="Subagent model" icon="network">Claude Code only: the model for slices it hands to subagents.</Card>
+  <Card title="Build model and Effort" icon="code-xml">For Codex and Claude Code, the saved full-task or small-change model is selected. You can change the model or effort for this build.</Card>
+  <Card title="Subagent model" icon="network">For Codex and Claude Code, the model any subagents use. The lead usually builds small changes itself.</Card>
   <Card title="Files and Workspace" icon="file-text">Attachments, where it runs, and the [branch or worktree](#where-it-lands).</Card>
 </CardGroup>
 

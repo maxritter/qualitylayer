@@ -44,10 +44,19 @@ type Entry = {
   modelOrder?: string[]
   modelCost?: Record<string, number>
   plan?: { model: string; models: Model[] }
-  build?: { models: Model[]; orchestrator: Model; orchestrators: Model[]; small?: string }
+  build?: {
+    models: Model[]
+    orchestrator: Model
+    orchestrators: Model[]
+    small?: string
+    subagentModel?: boolean
+  }
 }
 
 const table = agentsJson as unknown as Record<string, Entry>
+export const canSetBuildWorkers = (agent: string): boolean =>
+  table[agent]?.build?.subagentModel === true
+
 const capabilities = (agent: StepAgent) => table[agent]?.capabilities
 
 /**

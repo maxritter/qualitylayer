@@ -18,6 +18,7 @@ import {
   AGENT_OWN,
   addModelRule,
   builderModels,
+  canSetBuildWorkers,
   customModelProblem,
   hasCustomModel,
   type KnownModels,
@@ -183,7 +184,7 @@ const buildChecks = (
   orchestrator: (agent, v) => modelOk(agent, v, orchestratorModels(agent), added),
   builder: (agent, v) => modelOk(agent, v, builderModels(agent), added),
   subagents: (agent, v) =>
-    v === AGENT_OWN || (agent === "claude-code" && modelOk(agent, v, stepModels(agent), added)),
+    v === AGENT_OWN || (canSetBuildWorkers(agent) && modelOk(agent, v, stepModels(agent), added)),
   effort: effortOk,
   goal: (_, v) => typeof v === "boolean",
   terminalSession: (_, v) => TERMINAL_SESSIONS.includes(v as never),

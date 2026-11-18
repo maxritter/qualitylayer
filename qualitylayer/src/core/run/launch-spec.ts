@@ -539,6 +539,8 @@ function nativeArguments(
   if (agent === "claude-code") env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY = "1"
   if (agent === "claude-code" && input.subagentModel)
     env.CLAUDE_CODE_SUBAGENT_MODEL = input.subagentModel
+  if (agent === "codex" && input.subagentModel)
+    args.push("-c", `agents.default_subagent_model=${JSON.stringify(input.subagentModel)}`)
   sessionArguments(input, agent, capabilities, args, env)
   if (agent === "opencode") opencodePermission(input, perm, mode, args, env)
   else if (!nativeAssisted) args.push(...(mode?.args ?? []))

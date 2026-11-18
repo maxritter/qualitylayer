@@ -16,10 +16,10 @@ import {
 import { marked } from "marked"
 import { useContext, useEffect, useId, useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import agentsJson from "../core/agents/agents.json" with { type: "json" }
 import { AGENT_NAMES, isNativeAgent, type NativeAgent } from "../core/agents/ids.ts"
 import {
   AGENT_OWN,
+  canSetBuildWorkers,
   modelName,
   offeredModels,
   orchestratorModel,
@@ -329,18 +329,13 @@ function updateBuildPicks(
     },
   }
 }
-/** Whether the card can set the model an agent's subagents run on (`build.subagentModel` in agents.json). */
-const hasSubagentModel = (agent: NativeAgent): boolean =>
-  (agentsJson as unknown as Record<string, { build?: { subagentModel?: boolean } }>)[agent]?.build
-    ?.subagentModel === true
-
 /** What the card says differs for an agent, from its row in agents.json: question picker, effort, subagent model. */
 export function buildDifferences(agent: NativeAgent): string[] {
   const capabilities = AGENT_CAPABILITIES[agent]
   return [
     ...(capabilities.effort === "in-model" ? ["Effort is part of the model"] : []),
     ...(capabilities.picker ? [] : ["Questions as numbered choices"]),
-    ...(hasSubagentModel(agent) ? [] : ["No subagent model to pick here"]),
+    ...(canSetBuildWorkers(agent) ? [] : ["No subagent model to pick here"]),
   ]
 }
 
@@ -356,8 +351,7 @@ function BuildExplain({
 }) {
   const recommended = small ? smallChangeModel(agent) : orchestratorModel(agent)
   const different = buildDifferences(agent)
-  const helpers =
-    workers === AGENT_OWN ? "the model in Claude Code’s own settings" : modelName(agent, workers)
+  const helpers = workers === AGENT_OWN ? "the agent’s settings" : modelName(agent, workers)
   return (
     <div className="q-start-explain">
       {recommended !== "" ? (
@@ -374,8 +368,10 @@ function BuildExplain({
       <p data-testid="build-who">
         <SplitIcon size={13} aria-hidden="true" />
         <span>
-          {hasSubagentModel(agent)
-            ? `Writes the code itself. Slices that touch separate files may go to subagents on ${helpers}.`
+          {canSetBuildWorkers(agent)
+            ? small
+              ? `Usually writes the change itself. Any subagents use ${helpers}.`
+              : `Independent slices may go to subagents on ${helpers}.`
             : `Writes the code itself; ${AGENT_NAMES[agent]} decides whether to start helpers.`}
         </span>
       </p>
@@ -416,7 +412,7 @@ function BuildRoleLine({
   const name = options.find((option) => option.id === toPick(workers))?.name ?? workers
   return (
     <div className="q-start-role-line">
-      {hasSubagentModel(agent) ? (
+      {canSetBuildWorkers(agent) ? (
         <details className="q-start-subagents" data-testid="subagent-fold">
           <summary>
             <ChevronRightIcon size={13} aria-hidden="true" />
@@ -575,11 +571,12 @@ export function ImplementStart({
   const small = flow?.light === true
   const inherited = planning?.agent === agent ? planning : undefined
   const permission = defaultPermissionChoice(saved, agent, inherited)
+  const buildWorkers = canSetBuildWorkers(agent)
   const mine = {
     ...startDefaults(saved, agent, small, planned),
-    ...(inherited ? { model: inherited.model } : {}),
+    ...(!buildWorkers && inherited ? { model: inherited.model } : {}),
   }
-  const workers = agent === "claude-code" ? (picked.workers ?? mine.workers) : AGENT_OWN
+  const workers = buildWorkers ? (picked.workers ?? mine.workers) : AGENT_OWN
   // The models the person's plan offers; a default or a choice it does not offer stays, marked.
   const listedModels =
     agent === "other"

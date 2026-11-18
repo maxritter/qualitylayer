@@ -6,6 +6,7 @@
 import type { NativeAgent } from "../agents/ids.ts"
 import {
   AGENT_OWN,
+  canSetBuildWorkers,
   customModelProblem,
   hasCustomModel,
   orchestratorModels,
@@ -105,7 +106,7 @@ export function startDefaults(
     return { agent, model: "", workers: "", effort: "high", goal: false, where: "new" }
   const defaults = config.implement.defaults[agent]
   const picked = workers ?? defaults.subagents
-  const crew = agent === "claude-code" && picked !== SESSION_MODEL ? picked : AGENT_OWN
+  const crew = canSetBuildWorkers(agent) && picked !== SESSION_MODEL ? picked : AGENT_OWN
   const where = startWhereOf(defaults.terminalSession)
   return {
     agent,

@@ -283,13 +283,15 @@
         }
       ],
       "orchestrator": {
-        "id": "gpt-6.2-sol",
-        "name": "GPT-6.2 Sol",
-        "why": "Leads a full build from a finished Plan."
+        "id": "gpt-6.2-astra",
+        "name": "GPT-6.2 Astra",
+        "why": "Coordinates a full build and checks that the slices work together."
       },
+      "small": "gpt-6.2-sol",
+      "subagentModel": true,
       "orchestrators": [
-        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "gpt-6.1-terra", "name": "GPT-6.1 Terra" },

@@ -430,7 +430,7 @@ export function recommendedBuild(agent: ReviewerAgent): BuildDefaults {
   return {
     orchestrator: own ? AGENT_OWN : orchestratorModel(agent),
     builder: own ? AGENT_OWN : smallChangeModel(agent),
-    subagents: agent === "claude-code" ? "sonnet" : AGENT_OWN,
+    subagents: agent === "claude-code" ? "sonnet" : agent === "codex" ? "gpt-6.2-sol" : AGENT_OWN,
     effort: "high",
     goal: agents[agent].goal !== null,
     terminalSession: "this",
@@ -494,7 +494,7 @@ export const DEFAULT_CONFIG: Config = {
   // A design is looked at on the model the change is judged on, unless the person picks another.
   models: {
     "claude-code": { helpers: "sonnet", judge: "opus", design: "opus" },
-    codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-sol", design: "gpt-6.2-sol" },
+    codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-astra", design: "gpt-6.2-sol" },
     pi: {
       helpers: PI_SOL_MODEL,
       judge: PI_SOL_MODEL,

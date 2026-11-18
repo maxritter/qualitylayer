@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { runnableFile } from "../core/agents/binary.ts"
 import { AGENT_NAMES } from "../core/agents/ids.ts"
 import { knownFrom, storedModelLists } from "../core/agents/model-list-store.ts"
-import { AGENT_OWN, renamedProvider } from "../core/agents/model-values.ts"
+import { AGENT_OWN, canSetBuildWorkers, renamedProvider } from "../core/agents/model-values.ts"
 import {
   type Config,
   defaultAgentView,
@@ -18,7 +18,9 @@ import {
   permissionChoice,
   permissionFor,
 } from "../core/run/launch-spec.ts"
+import { resumedPlanningModels } from "../core/run/planning-start.ts"
 import type { Task } from "../core/task/store.ts"
+import { taskFlow } from "../core/task-flow.ts"
 import type { Ctx } from "../ctx.ts"
 
 /** A new run's native session id when the agent takes one QualityLayer chooses; none for an agent that picks or creates its own. */
@@ -52,11 +54,13 @@ export function settingsOf(
   config: Config,
   request: StartRequest,
   planned?: PlanningLaunch | null,
+  small = false,
+  native?: Pick<RunSettings, "model" | "effort">,
 ): RunSettings {
   const building = request.purpose.kind === "task" && request.purpose.phase !== "planning"
   // New terminal opens the agent as the person would in their own terminal: its own settings.
   const plain = request.purpose.kind === "terminal"
-  const models = configuredModels(config, request, building, plain)
+  const models = configuredModels(config, request, building, plain, small)
   const inherited = rememberedLaunch(config, request, planned, building)
   return {
     perm: plain || request.agent === "other" ? "own" : defaultPermission(request.agent, config),
@@ -67,6 +71,10 @@ export function settingsOf(
     ...(["new-task", "task"].includes(request.purpose.kind) ? { answers: "app" as const } : {}),
     ...models,
     ...inheritedSettings(request.agent, inherited),
+    ...(building && !request.resumeNative && canSetBuildWorkers(request.agent)
+      ? { model: models.model }
+      : {}),
+    ...native,
     ...request.settings,
     ...permissionChoice(request.agent, request.settings ?? {}),
     ...(inherited ? {} : agentPermission(request, config)),
@@ -79,16 +87,17 @@ function configuredModels(
   request: StartRequest,
   building: boolean,
   plain: boolean,
+  small: boolean,
 ): Partial<RunSettings> {
   const agent = request.agent === "other" ? "codex" : request.agent
   const defaults = building ? config.implement.defaults[agent] : config.planning.defaults[agent]
   const model = building
-    ? config.implement.defaults[agent].orchestrator
+    ? config.implement.defaults[agent][small ? "builder" : "orchestrator"]
     : config.planning.defaults[agent].model
   const subagentModel = request.workers ?? config.implement.defaults[agent].subagents
   return {
     ...(request.agent === "other" || plain ? {} : { model, effort: defaults.effort }),
-    ...(building && request.agent === "claude-code"
+    ...(building && canSetBuildWorkers(request.agent)
       ? { subagentModel: subagentModel === SESSION_MODEL ? AGENT_OWN : subagentModel }
       : {}),
   }
@@ -160,14 +169,23 @@ export function terminalShell(ctx: Ctx, config: Config): { program: string; args
   return { program: program || loginShell(ctx), args: args.length > 0 ? args : [...LOGIN_ARGS] }
 }
 
+async function smallBuild(ctx: Ctx, task: Task | undefined, input: StartRequest): Promise<boolean> {
+  if (!task || input.resumeNative || input.settings?.model !== undefined) return false
+  if (!canSetBuildWorkers(input.agent) || input.purpose.kind !== "task") return false
+  if (input.purpose.phase === "planning") return false
+  return (await taskFlow(ctx, task)).flow.light === true
+}
+
 export async function prepareStartSettings(
   ctx: Ctx,
   config: Config,
   input: StartRequest,
-  source: { planned: PlanningLaunch | null; task?: Pick<Task, "answers">; existing?: RunRecord },
+  source: { planned: PlanningLaunch | null; task?: Task; existing?: RunRecord },
 ): Promise<RunSettings> {
   const { planned, task, existing } = source
-  const settings = settingsOf(config, input, planned)
+  const small = existing ? false : await smallBuild(ctx, task, input)
+  const native = !existing && task ? resumedPlanningModels(ctx, task, input) : undefined
+  const settings = settingsOf(config, input, planned, small, native)
   if (!existing && input.agent === "pi" && settings.model) {
     const lists = await storedModelLists(ctx)
     settings.model = renamedProvider("pi", settings.model, knownFrom(lists.pi)) ?? settings.model

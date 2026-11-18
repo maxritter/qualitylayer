@@ -1466,7 +1466,10 @@ async function readTaskDetail(
             summary.helpers.map((h) => h.id),
           )
         : [],
-    flow: flowed !== null && outline !== null ? flowed.flow : null,
+    flow:
+      outline !== null || task.stage === "implement" || gate?.target === folderDoc("plan")
+        ? flowed.flow
+        : null,
     intake: await intakeOf(ctx, task),
     implementStart,
     ...(await startCheckoutBusy(ctx, task)),

@@ -31,6 +31,7 @@ import {
   AGENT_OWN_NAME,
   builderModels,
   buildingOn,
+  canSetBuildWorkers,
   knownModels,
   modelKind,
   modelName,
@@ -87,13 +88,13 @@ const BUILD_ROWS: { id: ModelRole; label: string; icon: ReactNode; hint: string 
     id: "small",
     label: "Implement · small change",
     icon: <FilePenIcon className={ICON} />,
-    hint: "Writes a small change by itself.",
+    hint: "Usually writes a small change directly.",
   },
   {
     id: "subagents",
     label: "Implement subagents",
     icon: <SplitIcon className={ICON} />,
-    hint: "Builds the parts of a full task that the lead splits off.",
+    hint: "Model for the subagents a build starts.",
   },
   {
     id: "helpers",
@@ -115,9 +116,6 @@ const USE_WORDS: [Use, string][] = [
   ["design", "Design review"],
   ["second", "Second opinion"],
 ]
-
-/** Only Claude Code takes a model for its build subagents; every other agent picks its own. */
-const takesSubagentModel = (agent: NativeAgent) => agent === "claude-code"
 
 /** A role's choices: the models the person's plan offers, and the one it holds, marked if not offered. */
 function roleOptions(agent: NativeAgent, role: ModelRole, value: string) {
@@ -372,7 +370,7 @@ type AgentModels = ReturnType<typeof agentModels>
 
 /** Whether a role is the agent's to set: build subagents only for an agent that takes their model. */
 const counts = (agent: NativeAgent, role: ModelRole) =>
-  role !== "subagents" || takesSubagentModel(agent)
+  role !== "subagents" || canSetBuildWorkers(agent)
 
 /** The Agent group's status: the account, or that the agent is not installed. */
 const accountOf = (health: { status?: string; account?: string | null } | undefined) =>
@@ -442,7 +440,7 @@ function BuildRow({
   problem: ReactNode
   onPick: (value: string) => void
 }) {
-  const own = row.id === "subagents" && !takesSubagentModel(agent)
+  const own = row.id === "subagents" && !canSetBuildWorkers(agent)
   const helpers = row.id === "helpers"
   return (
     <SettingRow

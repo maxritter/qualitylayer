@@ -1,5 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react"
 import { toast } from "sonner"
+import { AGENT_OWN, canSetBuildWorkers } from "../../core/agents/model-values.ts"
+import { START_EFFORTS } from "../../core/handoff/start-values.ts"
 import { type ItemAnswer, mainAction } from "../../core/items.ts"
 import { agentName } from "../../core/live/liveness.ts"
 import { retainedDrafts } from "../agent-window/conversation/draft-handoff.ts"
@@ -132,12 +134,20 @@ export function useBuildHandoff({
     const deps = intentDeps()
     if (deps === null) throw new Error("This window cannot start an agent yet.")
     const agent = run.agent as StartAgent
-    const config = await api.config()
-    const effort = agent === "other" ? "high" : config.implement.defaults[agent].effort
+    const keepsNativeChoice = canSetBuildWorkers(agent)
+    const effort = keepsNativeChoice
+      ? (START_EFFORTS.find((level) => level === run.settings?.effort) ?? AGENT_OWN)
+      : agent === "other"
+        ? "high"
+        : (await api.config()).implement.defaults[agent].effort
     const selection: BuildLaunchSelection = {
       answers: "app",
       agent,
-      model: task.planningStart?.agent === agent ? task.planningStart.model : "",
+      model: keepsNativeChoice
+        ? (run.settings?.model ?? AGENT_OWN)
+        : task.planningStart?.agent === agent
+          ? task.planningStart.model
+          : AGENT_OWN,
       effort,
       runWhere: "app",
       works: "checkout",
@@ -159,7 +169,7 @@ export function useBuildHandoff({
         mode: "plain",
         settings: {
           answers: "app",
-          effort,
+          ...(!keepsNativeChoice ? { effort } : {}),
           ...(run.settings?.perm ? { perm: run.settings.perm } : {}),
           ...(run.settings?.permMode ? { permMode: run.settings.permMode } : {}),
         },

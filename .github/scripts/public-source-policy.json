@@ -2242,7 +2242,7 @@
     "qualitylayer/src/core/check-receipts.ts": "117842ee0e13f88290d37ebc6e6cf5e07d3553faf7a83954e093d9669deca463",
     "qualitylayer/src/ui/reader/check-record.ts": "afbd23d23fab601f692ea9719e6d17ae08311b4e99c743e3218fd98e1acd43d6"
   },
-  "reviewManifestSha256": "2b1f1ea23a464c10c4b176e2c3b4b67ce32381df0b6e097753172aa37f829ac8",
+  "reviewManifestSha256": "68cfedf3774e684451b01229632099778d16ccadd958e50277ac92157b371ee7",
   "schema": 1,
-  "sourceHead": "c332591bf6d5072b5676a06db56fa59741bc596e"
+  "sourceHead": "d67a6820cac9511153b83c91c8aa50c046a4fac0"
 }

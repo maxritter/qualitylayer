@@ -38,7 +38,7 @@ on:
         type: boolean
         default: false
       diagnostic:
-        description: Diagnose only Ubuntu shards 2 and 8, and Mac shards 5, 6 and 9 (requires full_regression; not release qualification)
+        description: Diagnose only Ubuntu shard 2 (both parts) and shard 8, and Mac shards 5, 6 and 9 (requires full_regression; not release qualification)
         type: boolean
         default: false
 permissions:
@@ -141,14 +141,14 @@ jobs:
     if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
   test:
     if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && ((github.event_name == 'workflow_dispatch' && inputs.full_regression) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
+    name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }}${{ matrix.companion && ' companion' || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: plaintext-guard
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.full_regression && inputs.diagnostic && '[{"os":"ubuntu-latest","shard":2,"shards":8},{"os":"ubuntu-latest","shard":8,"shards":8}]' || '[{"os":"ubuntu-latest","shard":1,"shards":8},{"os":"ubuntu-latest","shard":2,"shards":8},{"os":"ubuntu-latest","shard":3,"shards":8},{"os":"ubuntu-latest","shard":4,"shards":8},{"os":"ubuntu-latest","shard":5,"shards":8},{"os":"ubuntu-latest","shard":6,"shards":8},{"os":"ubuntu-latest","shard":7,"shards":8},{"os":"ubuntu-latest","shard":8,"shards":8}]') }}
+        include: ${{ fromJSON(inputs.full_regression && inputs.diagnostic && '[{"os":"ubuntu-latest","shard":2,"shards":8,"part":"1/2"},{"os":"ubuntu-latest","shard":2,"shards":8,"part":"2/2","companion":true},{"os":"ubuntu-latest","shard":8,"shards":8}]' || '[{"os":"ubuntu-latest","shard":1,"shards":8},{"os":"ubuntu-latest","shard":2,"shards":8,"part":"1/2"},{"os":"ubuntu-latest","shard":2,"shards":8,"part":"2/2","companion":true},{"os":"ubuntu-latest","shard":3,"shards":8},{"os":"ubuntu-latest","shard":4,"shards":8},{"os":"ubuntu-latest","shard":5,"shards":8},{"os":"ubuntu-latest","shard":6,"shards":8},{"os":"ubuntu-latest","shard":7,"shards":8},{"os":"ubuntu-latest","shard":8,"shards":8}]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -231,7 +231,8 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
           QL_CI_INPUT_1: ${{ matrix.shard }}
           QL_CI_INPUT_2: ${{ matrix.shards }}
-        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/e3edfd1a940d93a8a05987e0bf97a1571dee275c50eb2693f1b1961f687b72d7.sh"
+          QL_CI_INPUT_3: ${{ matrix.part }}
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/ae6703e9abebde47fe8e0d1391710b944740e273e3fba0ba243ae92400688967.sh"
         shell: bash
   test-macos:
     if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name == 'workflow_dispatch' && inputs.full_regression && (inputs.macos || inputs.diagnostic))

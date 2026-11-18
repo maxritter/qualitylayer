@@ -483,25 +483,15 @@ jobs:
       env:
         QL_RELEASE_EXPORTS: "{}"
       shell: bash
-    - name: The full regression passed on this commit
-      if: inputs.operation != 'promote' && steps.check.outputs.should_release == 'true'
-        && needs.check-trigger.outputs.reduced != 'true'
-      env:
-        GH_TOKEN: "${{ github.token }}"
-        QL_RELEASE_EXPORTS: "{}"
-        QL_RELEASE_METADATA_CONTROL: 'true'
-      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/62a884d70d92e9f2dbad28fab8f3a8e4c02f560c67c1f3d5d38739530caced0e.sh"
-      shell: bash
-  macos-regression-gate:
-    name: Exact macOS regression gate
+  regression-shard-gate:
+    name: Exact Linux and macOS regression shards
     permissions:
       contents: read
       actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: check-trigger
-    if: inputs.operation != 'promote' && needs.check-trigger.outputs.should_run == 'true'
+    if: needs.check-trigger.outputs.should_run == 'true'
       && needs.check-trigger.outputs.reduced != 'true'
     steps:
     - name: Checkout
@@ -520,22 +510,22 @@ jobs:
     - env:
         GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
       run: bash .github/workflows/scripts/setup-git-crypt.sh
-    - name: The macOS regression passed on this commit
+    - name: The Linux and macOS regression shards passed together
       env:
         GH_TOKEN: "${{ github.token }}"
         QL_RELEASE_EXPORTS: "{}"
         QL_RELEASE_METADATA_CONTROL: 'true'
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/e0113e1674547663cd9ac63b8cb390fbaeacbe8f93eb87bc293c8e38a447d15a.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/97f40c959bb6990c8d785db660d35062f9888f235aa649c2aa854ead862e7ff0.sh"
       shell: bash
   candidate:
     name: Stage the exact candidate without publication
     permissions:
       contents: write
       id-token: write
-    needs: [check-trigger, prepare-release, macos-regression-gate]
+    needs: [check-trigger, prepare-release, regression-shard-gate]
     if: "${{ always() && inputs.operation != 'promote' && needs.prepare-release.outputs.should_release
-      == 'true' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' || needs.macos-regression-gate.result == 'success') }}"
+      == 'true' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' || needs.regression-shard-gate.result == 'success') }}"
     uses: "./.github/workflows/qualitylayer-candidate.yml"
     with:
       version: "${{ needs.prepare-release.outputs.version }}"
@@ -556,9 +546,10 @@ jobs:
     - test
     - security-scan
     - source-ui-gate
+    - regression-shard-gate
     if: |-
       ${{ always() && github.event_name == 'workflow_dispatch' && inputs.operation == 'promote' && needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' ||
-       (needs.test.result == 'success' && needs.security-scan.result == 'success' && needs.source-ui-gate.result == 'success')) }}
+       (needs.test.result == 'success' && needs.security-scan.result == 'success' && needs.source-ui-gate.result == 'success' && needs.regression-shard-gate.result == 'success')) }}
     outputs:
       assets_id: "${{ steps.identity.outputs.assets_id }}"
       catalog_id: "${{ steps.identity.outputs.catalog_id }}"
@@ -647,10 +638,11 @@ jobs:
     - test
     - security-scan
     - source-ui-gate
+    - regression-shard-gate
     - verify-candidate
     if: |-
       ${{ always() && github.event_name == 'workflow_dispatch' && inputs.operation == 'promote' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' ||
-       (needs.test.result == 'success' && needs.security-scan.result == 'success' && needs.source-ui-gate.result == 'success')) &&
+       (needs.test.result == 'success' && needs.security-scan.result == 'success' && needs.source-ui-gate.result == 'success' && needs.regression-shard-gate.result == 'success')) &&
       needs.verify-candidate.result == 'success' }}
     environment: "${{ github.ref_name == 'main' && 'production' || 'beta' }}"
     steps:

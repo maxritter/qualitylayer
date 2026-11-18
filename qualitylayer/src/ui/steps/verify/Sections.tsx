@@ -360,12 +360,14 @@ function slotsOf(acceptance: AcceptanceAsRun, bug: boolean): Slot[] {
 /** The Plan's acceptance test as it ran, a numbered row per step with its picture or terminal output. */
 export function AcceptanceTabs({
   acceptance,
+  pointsProven,
   bug,
   loadEvidence,
   api,
   taskId,
 }: {
   acceptance: AcceptanceAsRun
+  pointsProven: boolean
   bug: boolean
   loadEvidence: LoadEvidence | undefined
   api: Api | undefined
@@ -510,8 +512,7 @@ export function AcceptanceTabs({
           }
         })}
       />
-      {/* A passed test says so on its rows, and the heading names how it ran: no sentence under it. */}
-      {passed ? null : (
+      {passed || pointsProven ? null : (
         <p className="rvw-how" data-testid="acceptance-how">
           No run has passed yet.
         </p>

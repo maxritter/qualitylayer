@@ -195,7 +195,26 @@ def cockpit_declarations(source):
         raise ValueError()
     return declarations
 
-def cockpit_report_locations(text, paths, declarations, failed_count):
+def cockpit_private_points(source, declarations):
+    """Accept one committed case with a bounded ordered set of opaque source markers."""
+    lines = source.split("\n")
+    titles = sorted(declarations)
+    pattern = re.compile(r'(let )?point = ([1-9]|1[0-6]) // ql:private-test-point')
+    found = {}
+    for title, end in zip(titles, titles[1:] + [len(lines) + 1]):
+        points = [(line, pattern.fullmatch(text.strip()))
+                  for line, text in enumerate(lines[title:end - 1], title + 1)
+                  if "// ql:private-test-point" in text]
+        if not points:
+            continue
+        if found or any(match is None or int(match[2]) != index or bool(match[1]) != (index == 1)
+                        for index, (_, match) in enumerate(points, 1)):
+            return {}
+        found = {(title, f"QLPrivateTestPoint{index}"): line
+                 for index, (line, _) in enumerate(points, 1)}
+    return found
+
+def cockpit_report_locations(text, paths, declarations, failed_count, private_points):
     if "<!" in text:
         raise ValueError()
     tree = ET.fromstring(text)
@@ -216,14 +235,15 @@ def cockpit_report_locations(text, paths, declarations, failed_count):
         if len(failures) > 1:
             raise ValueError()
         if failures:
-            kind = {"TimeoutError": "timeout", "AssertionError": "assertion"}.get(failures[0].get("type"), "unknown")
-            found.add((declaration[0], kind))
+            failure_type = failures[0].get("type")
+            kind = {"TimeoutError": "timeout", "AssertionError": "assertion"}.get(failure_type, "unknown")
+            found.add((private_points.get((line, failure_type), declaration[0]), kind))
     if len(found) != failed_count:
         raise ValueError()
     return found
 
 def cockpit_failure_locations(scope, reports, directory, window):
-    """Read Bun's private case records, with static declarations as the sole source of lines."""
+    """Read Bun's private case records, with lines drawn only from committed source."""
     if not reports or directory is None:
         return []
     try:
@@ -233,7 +253,9 @@ def cockpit_failure_locations(scope, reports, directory, window):
         body = committed_test_body(scope, COCKPIT_TEST)
         if body is None:
             return []
-        declarations = cockpit_declarations(body.decode("utf-8", errors="strict"))
+        source = body.decode("utf-8", errors="strict")
+        declarations = cockpit_declarations(source)
+        private_points = cockpit_private_points(source, declarations)
         relative = COCKPIT_TEST.removeprefix("qualitylayer/")
         paths = (str(workspace / COCKPIT_TEST), relative, "./" + relative)
         found = set()
@@ -241,7 +263,7 @@ def cockpit_failure_locations(scope, reports, directory, window):
             path = directory / (identifier + ".xml")
             if path.exists():
                 text = read_bounded_regular(path, 256 * 1024, window).decode("utf-8", errors="strict")
-                found.update(cockpit_report_locations(text, paths, declarations, failed_count))
+                found.update(cockpit_report_locations(text, paths, declarations, failed_count, private_points))
         current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
         return [{"file": COCKPIT_TEST, "line": line, "kind": kind} for line, kind in sorted(found)] if current == head else []
     except Exception:

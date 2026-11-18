@@ -389,6 +389,41 @@ export function planMeta(input: {
 const body = (markdown: string): Token[] =>
   marked.lexer(markdown.replace(/^## .*\n?/, "")).filter((token) => token.type !== "space")
 
+function isReproductionOutput(token: Token): boolean {
+  if (token.type !== "code") return false
+  const { lang = "", text } = token as Tokens.Code
+  if (/^(?:console|terminal|shell-session)$/i.test(lang)) return true
+  return /^(?:text|plaintext)?$/i.test(lang) && /^\s*\$\s+\S[^\n]*\n\s*\S/.test(text)
+}
+
+function endsReproduction(token: Token, depth: number): boolean {
+  if (token.type === "heading") return (token as Tokens.Heading).depth <= depth
+  return token.type === "code" && (token as Tokens.Code).lang === "mermaid"
+}
+
+/** Keep the diagnosis visible and tuck away a named reproduction or its terminal transcript. */
+export function reproductionOf(
+  markdown: string,
+): { diagnosis: string; reproduction: string } | null {
+  const tokens = marked.lexer(markdown)
+  const heading = tokens.findIndex(
+    (token) => token.type === "heading" && /^reproduction:?$/i.test((token as Tokens.Heading).text),
+  )
+  const start = heading < 0 ? tokens.findIndex(isReproductionOutput) : heading
+  if (start < 0) return null
+  const depth = heading < 0 ? 0 : (tokens[heading] as Tokens.Heading).depth
+  const next = tokens.findIndex((token, index) => index > start && endsReproduction(token, depth))
+  const end = heading < 0 ? start + 1 : next < 0 ? tokens.length : next
+  const join = (part: readonly Token[]) =>
+    part
+      .map((token) => token.raw)
+      .join("")
+      .trim()
+  const reproduction = join(tokens.slice(heading < 0 ? start : start + 1, end))
+  if (reproduction === "") return null
+  return { diagnosis: join([...tokens.slice(0, start), ...tokens.slice(end)]), reproduction }
+}
+
 const plainText = (text: string): string =>
   text
     .replace(/\*\*([^*]+)\*\*/g, "$1")

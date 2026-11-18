@@ -256,6 +256,7 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
               >
                 <AcceptanceTabs
                   acceptance={acceptance}
+                  pointsProven={points.length > 0 && passed === points.length}
                   bug={task.type === "bugfix"}
                   loadEvidence={loadEvidence}
                   api={api}

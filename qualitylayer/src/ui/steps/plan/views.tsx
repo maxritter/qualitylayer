@@ -12,12 +12,14 @@ import {
   NetworkIcon,
   ShieldCheckIcon,
   TargetIcon,
+  TerminalIcon,
   WorkflowIcon,
 } from "lucide-react"
 import { type ReactNode, useId, useState } from "react"
 import type { DocSection } from "../../api.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { type Fact, FactRow } from "../../step-page/bands/FactRow.tsx"
+import { Fold } from "../../step-page/bands/Fold.tsx"
 import { FoldedGroup } from "../../step-page/bands/FoldedGroup.tsx"
 import type { GistProps } from "../../step-page/bands/Gist.tsx"
 import { DocMarkdown } from "../../step-page/DocMarkdown.tsx"
@@ -36,6 +38,7 @@ import {
   type interfaceOf,
   type PlanIndicator,
   planIndicators,
+  reproductionOf,
   sizeFact,
   sizeOf,
   summaryBullets,
@@ -272,6 +275,42 @@ function whatBreaksView(ctx: SectionCtx, input: ViewsInput): ReactNode {
   return asPart(ctx, node, input.commenting)
 }
 
+function whyView(ctx: SectionCtx, input: ViewsInput): ReactNode {
+  const split = input.bug ? reproductionOf(bodyOf(ctx.section.markdown)) : null
+  if (split === null) return asPart(ctx, null, input.commenting)
+
+  return (
+    <PlanPart title="Why" icon={WorkflowIcon}>
+      <div className="pl-plain">
+        <DocMarkdown
+          markdown={split.diagnosis}
+          state={ctx.state}
+          first={false}
+          live={input.commenting}
+          bare
+        />
+        <FoldedGroup>
+          <Fold
+            id="bd-sec-reproduction"
+            title="Reproduction"
+            sectionTitle="Why"
+            icon={TerminalIcon}
+            testId="plan-reproduction"
+          >
+            <DocMarkdown
+              markdown={split.reproduction}
+              state={ctx.state}
+              first={false}
+              live={input.commenting}
+              bare
+            />
+          </Fold>
+        </FoldedGroup>
+      </div>
+    </PlanPart>
+  )
+}
+
 function scopeView(ctx: SectionCtx, input: ViewsInput): ReactNode {
   const scope = scopeOf(ctx.section.markdown)
   const columns =
@@ -308,7 +347,7 @@ export function planViews(input: ViewsInput): Record<string, SectionRenderer> {
     Interface: (ctx) => interfaceView(ctx, input),
     "Done means": (ctx) => doneMeansView(ctx, input),
     "What breaks": (ctx) => whatBreaksView(ctx, input),
-    Why: (ctx) => asPart(ctx, null, input.commenting),
+    Why: (ctx) => whyView(ctx, input),
     Approach: (ctx) => approachView(ctx, input),
     Scope: (ctx) => scopeView(ctx, input),
     // One line under the Summary; a fold beside Scope (or on its own without one).

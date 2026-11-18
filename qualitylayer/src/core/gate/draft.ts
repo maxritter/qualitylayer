@@ -48,7 +48,6 @@ const draftedPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "p
 export const wasDrafted = (ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<boolean> =>
   ctx.fs.exists(draftedPath(task))
 
-/** Why no review reads this Plan, in the words the agent passes on. */
 function draftReviewNote(coverage: PlanReviewCoverage | undefined): string {
   const note = planReviewCoverageNote(coverage)
   return coverage === "earlier"
@@ -56,6 +55,7 @@ function draftReviewNote(coverage: PlanReviewCoverage | undefined): string {
     : note
 }
 
+/** Why no review reads this Plan, in the words the agent passes on. */
 async function noReviewReason(ctx: Ctx, task: Task): Promise<string> {
   const words = task.overrides
   if (words.includes("-second-opinion") || words.includes("-second-opinion:plan"))

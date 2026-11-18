@@ -1,7 +1,4 @@
-// The Implement page's slices: every slice open while the build is small (10 tasks or fewer), only
-// the one in work once it is larger, and past five done slices those fold into one counted row. A
-// slice opens to its tasks, each task to a sentence and the agents' card behind three toggles. The
-// person never answers anything here; what the agents decided is under Decided while building.
+// Implement opens every populated slice, including the group of completed slices.
 
 import { ChevronRightIcon } from "lucide-react"
 import { useState } from "react"
@@ -12,27 +9,7 @@ import { TitleWithState } from "../../step-page/kit/StateMark.tsx"
 import { TaskCards } from "../../step-page/RecordDrawer.tsx"
 import type { BoardSlice } from "../../step-page/state.ts"
 
-/** A build of this many tasks or fewer shows every slice open. */
-export const OPEN_ALL_UP_TO = 10
-/** More done slices than this fold into one row (Workflow model: Implement, In short). */
-export const FOLD_DONE_PAST = 5
-
-/** The slice in work: the one with a task running, else one started, else the first not done. */
-export function sliceInWork(slices: readonly BoardSlice[]): number | null {
-  const found =
-    slices.find((s) => s.status === "run") ??
-    slices.find((s) => s.status === "progress") ??
-    slices.find((s) => s.status !== "done")
-  return found?.n ?? null
-}
-
-/** Which slices open by themselves: all of a small build, else the one in work. */
-export function openByDefault(slices: readonly BoardSlice[]): ReadonlySet<number> {
-  const tasks = slices.reduce((sum, s) => sum + s.tasks, 0)
-  if (tasks <= OPEN_ALL_UP_TO) return new Set(slices.map((s) => s.n))
-  const work = sliceInWork(slices)
-  return new Set(work === null ? [] : [work])
-}
+const FOLD_DONE_PAST = 5
 
 function Segments({ slice }: { slice: BoardSlice }) {
   const done = slice.segs.filter((g) => g === "d").length
@@ -108,15 +85,17 @@ function SliceRow({
 }
 
 export function Board({ slices }: { slices: readonly BoardSlice[] }) {
-  const [picked, setPicked] = useState<Record<number, boolean>>({})
-  const byDefault = openByDefault(slices)
-  const isOpen = (n: number) => picked[n] ?? byDefault.has(n)
-  const flip = (n: number) => setPicked((old) => ({ ...old, [n]: !isOpen(n) }))
+  const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
   const done = slices.filter((s) => s.status === "done")
   const folded = done.length > FOLD_DONE_PAST ? done : []
   const shown = slices.filter((s) => !folded.includes(s))
   const row = (slice: BoardSlice) => (
-    <SliceRow key={slice.n} slice={slice} open={isOpen(slice.n)} onToggle={() => flip(slice.n)} />
+    <SliceRow
+      key={slice.n}
+      slice={slice}
+      open={Boolean(slice.cards?.length) && !collapsed[slice.n]}
+      onToggle={() => setCollapsed((old) => ({ ...old, [slice.n]: !old[slice.n] }))}
+    />
   )
   return (
     <div className="ib-board" data-testid="board">
@@ -124,6 +103,7 @@ export function Board({ slices }: { slices: readonly BoardSlice[] }) {
         <Disclosure
           className="sp-done-fold ib-slice"
           data-testid="done-slices"
+          open
           chevronClassName="bd-chev size-3.5"
           head={
             <>

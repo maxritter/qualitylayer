@@ -187,7 +187,7 @@
     "qualitylayer/artifacts/app/workflow/artifact-feedback-contract.md": "cd01d42a437e6575ffafee06963b288943960f5202eb69ee51d6f5b7829bc135",
     "qualitylayer/artifacts/app/workflow/commit-ownership-contract.md": "5de347f907dfef488e4b4d9df8a171b54ce5049261109982f4c5933925add761",
     "qualitylayer/artifacts/app/workflow/export-contract.md": "34e465b14297d77e7a72cf1ff37c77b62d28d153dbaf47d65cd47d5aa7476b6c",
-    "qualitylayer/artifacts/app/workflow/implement.html": "ef250100413ae32a9e2e83886d196f4201c8bafa1688fcbb167838c8c5f33d3b",
+    "qualitylayer/artifacts/app/workflow/implement.html": "568ac99918e7fe3d573f5b2f3d355a0e41985b6e4e0ecd3a6c2661785c26bef6",
     "qualitylayer/artifacts/app/workflow/index.html": "34a51d107863d831974e9efe47089bbd7294b6f5f81d4aa194406718c2f79f87",
     "qualitylayer/artifacts/app/workflow/plan-approval-handoff-contract.md": "855089f35338a4c51fc2a1911f873e0dfb97ecec6cc450a0e1ca7106ed5f99d3",
     "qualitylayer/artifacts/app/workflow/plan.html": "19726dced5a4b1623cc1c86d31f5f4470278e86514d276ed71aeb77b83a93bd0",
@@ -1948,9 +1948,9 @@
     "qualitylayer/src/ui/steps/context.ts": "ff8db9259b902bc9eb4816d2924a6e530dad5bd5514cbc0e656dc5e08afc0162",
     "qualitylayer/src/ui/steps/evidence-pictures.ts": "224248d21e20513a840d2adbd32bc90291f545a16b3b44c999954e9a37a6e98d",
     "qualitylayer/src/ui/steps/fold.ts": "7de2588237a7de3da4b0e96ef25154f10b5925a2eed6c9c677b4618ef399e798",
-    "qualitylayer/src/ui/steps/implement/Board.tsx": "a1dc8fc2b0d5dfd402cc546b6dbc22a1fa6ce0d341777a17f890c1316dc6ae88",
+    "qualitylayer/src/ui/steps/implement/Board.tsx": "1e6f36dc4d99ef5d4651d1d47501afeb4ed538f76d455daa85de8d57b1e27753",
     "qualitylayer/src/ui/steps/implement/Changes.tsx": "c0aae375ff688f151e312567a2bb4af1e687472b638be59a725120754501d2d9",
-    "qualitylayer/src/ui/steps/implement/Page.tsx": "f9d3a424466865990d6e1f06e8137064c8d8da874c4905c0c6302ccf37a3176b",
+    "qualitylayer/src/ui/steps/implement/Page.tsx": "ac6c40f4ab103448003e7f83088986a221a9975866e7332825aeaf5c87be70be",
     "qualitylayer/src/ui/steps/implement/agent-card.ts": "9dc376c239b27b38d85421e525724f2e330f07d6144d35f0ed92dc171347d2da",
     "qualitylayer/src/ui/steps/implement/board.css": "4b0eadb3c597bd9123d4e1daa73c2f202dc3abf8597b463277cfe7162b9e29d1",
     "qualitylayer/src/ui/steps/implement/heads.tsx": "b6b1f154a7fb6759c9ecc5f5716a885a99539eebb56369b69fe0bfa5bede90d7",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "e010d4b0fac184b9dfd7af9f14c60247e355c1e279d5a15610e1e69b17df385a",
+  "reviewManifestSha256": "cec0fefe8fce714838bafb7e65285c91e6911f06c72caa2d795c05a80b1f71cb",
   "schema": 1,
-  "sourceHead": "c3154663e8615b6cf3411c29524ef710e36a77a3"
+  "sourceHead": "e17e090f0ebe4466b4351e314e0d500b26c29eb0"
 }

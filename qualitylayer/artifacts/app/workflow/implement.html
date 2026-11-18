@@ -241,7 +241,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
   <p class="lead">One board from the first card to the last; what the agents need stays in their file.</p>
   <ul class="changes">
     <li><span class="ico"><svg class="ic s14"><use href="#i-split"/></svg></span><span class="now"><b>Cutting the Plan comes first.</b> The slices appear on the board as they are written, and the first slice starts building as soon as its cards exist</span></li>
-    <li><span class="ico"><svg class="ic s14"><use href="#i-layers"/></svg></span><span class="now"><b>One board.</b> A task opens to its card: one sentence, then Files, Test first and Done when. Finished slices stay listed; past five they fold into one row, "6 slices done"</span></li>
+    <li><span class="ico"><svg class="ic s14"><use href="#i-layers"/></svg></span><span class="now"><b>One board.</b> Slices with task cards open each time you enter Implement, and you can collapse them while you read. Past five finished slices, their counted group also opens by default. A task opens to one sentence, then Files, Test first and Done when</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-ccheck"/></svg></span><span class="now"><b>Proof order stays with the agents.</b> They run each Done means step as soon as its slice is in; you see the points proven on Verify</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#i-check"/></svg></span><span class="now"><b>Decided while building,</b> one closed fold. A row's tag says its kind: Build order or Plan amended. Only a change to the Plan you approved is an amendment; a task card that changes is the agents' business</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-wrench"/></svg></span><span class="now"><b>Program design,</b> a closed fold at the bottom</span></li>
@@ -281,8 +281,11 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
           <h2><svg class="ic s14"><use href="#i-layers"/></svg>Slices</h2>
           <div class="board">
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>1</span><span class="btitle">Two saved sides and the one-time place question<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <details class="fold" open>
+              <summary><svg class="ic s13 chev" aria-hidden="true"><use href="#i-chev"/></svg><svg class="ic s14 fi" aria-hidden="true"><use href="#i-check"/></svg><b>6 slices done</b><span class="n">16 tasks</span></summary>
+              <div class="fold-b">
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>1</span><span class="btitle">Two saved sides and the one-time place question<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow" aria-expanded="false"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T1</code><span class="tt2">Config holds approvals, the chosen flag and the offer switch</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow" aria-expanded="false"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T2</code><span class="tt2">Each task stores its approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
@@ -304,8 +307,8 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
               </ul>
             </div>
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>2</span><span class="btitle">Approvals follow their own side<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>2</span><span class="btitle">Approvals follow their own side<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T5</code><span class="tt2">Gates, typed approvals and the build choice read the approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T6</code><span class="tt2">Questions tied to a gate follow the approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
@@ -314,37 +317,40 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
               </ul>
             </div>
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>3</span><span class="btitle">The App mirrors each side quietly<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>3</span><span class="btitle">The App mirrors each side quietly<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T9</code><span class="tt2">Approval surfaces read the approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T10</code><span class="tt2">Notices and attention follow each side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
               </ul>
             </div>
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>4</span><span class="btitle">The skill offers QualityLayer once<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>4</span><span class="btitle">The skill offers QualityLayer once<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T11</code><span class="tt2">Skill and phase words for the offer and the agent-side approval</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T12</code><span class="tt2">Activation probes prove the offer</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
               </ul>
             </div>
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>5</span><span class="btitle">Setup readies every question tool; doctor says so<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>5</span><span class="btitle">Setup readies every question tool; doctor says so<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T13</code><span class="tt2">Setup sets Grok's questions to wait for the person</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T14</code><span class="tt2">Doctor reports each agent's question picker</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
               </ul>
             </div>
 
-            <div class="bsl closed">
-              <button type="button" class="bhead" aria-expanded="false"><span class="bnum"><span class="sr-only">Slice </span>6</span><span class="btitle">Antigravity, Grok and Copilot answer in their own picker<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>6</span><span class="btitle">Antigravity, Grok and Copilot answer in their own picker<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="2 of 2 tasks done"><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T15</code><span class="tt2">Capture one answered pick per agent</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T16</code><span class="tt2">Proof readers and native calls for the three agents</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
               </ul>
             </div>
+
+              </div>
+            </details>
 
             <div class="bsl live">
               <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>7</span><span class="btitle">Settings rows, the first start, docs and models<span class="stm work" role="img" aria-label="in work"></span></span><span class="segs" role="img" aria-label="1 of 5 tasks done"><i class="d"></i><i class="w"></i><i></i><i></i><i></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>

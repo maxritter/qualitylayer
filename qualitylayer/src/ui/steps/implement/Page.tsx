@@ -117,7 +117,7 @@ export function ImplementStepPage(props: StepPageProps) {
           <>
             {view !== undefined && view.slices.length > 0 ? (
               <IconPart id={`${sectionId("Slices")}-h`} title="Slices" icon={LayersIcon}>
-                <Board slices={view.slices} />
+                <Board key={task.id} slices={view.slices} />
               </IconPart>
             ) : null}
             {limitsRecorded &&

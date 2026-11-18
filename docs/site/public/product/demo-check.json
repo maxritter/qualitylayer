@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "6ea75ad8500cddf0aa1f30702e189d62c86b4729",
-  "sourceTree": "dc17cf252199a6b29078671aa77e3c44e441d640",
+  "sourceCommit": "eadaaa67fbce5d56c9acc2abea99d80eccb399f8",
+  "sourceTree": "51231350f5a0e42992b02487d75e8760a0dc5868",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "821daf4de59fc8bc16cc052623f32e4202f2071c8c624506fb4b6fa1485687bf",
@@ -568,7 +568,7 @@
     "qualitylayer/src/ui/settings/LaunchSheet.tsx": "1c9feb96a8afe4cc0205a9aefb10ee93f3feaf65fb392b68147e20aae2a9268a",
     "qualitylayer/src/ui/settings/Licence.tsx": "f4e4a8257a7df64934dcd3302f23518a82b58855f6e6e02cbcbc36628c0b1024",
     "qualitylayer/src/ui/settings/ListPages.tsx": "cd8fd1e9238288c474dd9d95e29862f24db6e0c48780ffd01587e3cfe8cb22da",
-    "qualitylayer/src/ui/settings/Memory.tsx": "4f03ca7de646a217cf4d32370e34bd4463aaacee2df164f8ae2dde03648de1cb",
+    "qualitylayer/src/ui/settings/Memory.tsx": "52fef45cbab7f4c84c85609b117c6e9e9d5dc24c6051692af396da96600fd640",
     "qualitylayer/src/ui/settings/Models.tsx": "a7ba5bf3a4f526d389fdf04dced8b3b3c6da859c01fa66c75a2208c61ab5622a",
     "qualitylayer/src/ui/settings/Notifications.tsx": "07aa05933fd4f50c451a4f44dde8e29cfdaecc7f61b9a2c96b64e18a4f2db384",
     "qualitylayer/src/ui/settings/Reviews.tsx": "e2a1bdf2151591ff2c71b3a2485b9c3234b35c4677d41b4bca9ee0c10353dbf5",
@@ -1510,7 +1510,7 @@
     "qualitylayer/src/ui/settings/LaunchSheet.tsx": "1c9feb96a8afe4cc0205a9aefb10ee93f3feaf65fb392b68147e20aae2a9268a",
     "qualitylayer/src/ui/settings/Licence.tsx": "f4e4a8257a7df64934dcd3302f23518a82b58855f6e6e02cbcbc36628c0b1024",
     "qualitylayer/src/ui/settings/ListPages.tsx": "cd8fd1e9238288c474dd9d95e29862f24db6e0c48780ffd01587e3cfe8cb22da",
-    "qualitylayer/src/ui/settings/Memory.tsx": "4f03ca7de646a217cf4d32370e34bd4463aaacee2df164f8ae2dde03648de1cb",
+    "qualitylayer/src/ui/settings/Memory.tsx": "52fef45cbab7f4c84c85609b117c6e9e9d5dc24c6051692af396da96600fd640",
     "qualitylayer/src/ui/settings/Models.tsx": "a7ba5bf3a4f526d389fdf04dced8b3b3c6da859c01fa66c75a2208c61ab5622a",
     "qualitylayer/src/ui/settings/Notifications.tsx": "07aa05933fd4f50c451a4f44dde8e29cfdaecc7f61b9a2c96b64e18a4f2db384",
     "qualitylayer/src/ui/settings/Reviews.tsx": "e2a1bdf2151591ff2c71b3a2485b9c3234b35c4677d41b4bca9ee0c10353dbf5",
@@ -1888,7 +1888,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-18T08:45:07.020Z",
+  "checkedAt": "2026-11-18T13:26:50.395Z",
   "chapters": [
     "setup",
     "welcome",

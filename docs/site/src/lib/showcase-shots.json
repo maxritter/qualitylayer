@@ -1,10 +1,10 @@
 {
-  "public/product/plan-light.webp": "c37871a46634e1430eb1f4646dda26a53d6f5a188e60d7f657a91b2f5a357f1d",
-  "public/product/plan-dark.webp": "7e1571663c0bf83c2c07fe76646d578c8be4f975e36f057576ee7b154e05e8b2",
+  "public/product/plan-light.webp": "dd6e0d7ecf8018f36c5287e55f160a5ea3c689b9c03dc5203fca4fa8014722af",
+  "public/product/plan-dark.webp": "8f497ef1cf47ca04a475ffe0b9731b68b7c0bdaff723dae241e5938ef1e6a134",
   "public/product/implement-light.webp": "5b5befd577288b2b3f06e37e8ea7796f4f41bb11a098eb6d6351f6a1ad17c86e",
   "public/product/implement-dark.webp": "39fd6276f5402f68dd98c47947e097dd6d9d46795fcaa78fd993582c2fe0e119",
-  "public/product/verify-light.webp": "128f2ce2db1a223e43343528d8662332f63482873df713618c2cf5a2c3dae835",
-  "public/product/verify-dark.webp": "6c53490b6ca865afc3d47413657062a04a91fcec4476a23638190684dc900084",
-  "public/product/pull-request-light.webp": "cc937364f29fb58eb60fabe3ff841f3951341a2dc387a3c776141d42c60df40b",
-  "public/product/pull-request-dark.webp": "cab45f8cf2cd4ffbe833a8f3f745eb0d57754f03cb4c0b6ab884f8cef54e0614"
+  "public/product/verify-light.webp": "849fe57b559d2a8dd988a56bb010fcc195803e8ea633445022cfdb98d0fe85b9",
+  "public/product/verify-dark.webp": "420851060ee3eadf7a23428f1648dc1bf69033709b7527db4ee512c6219ec3ca",
+  "public/product/pull-request-light.webp": "82af12ecf718dd25e97d6ed052b4059d748a6571d97ffe3a3ac4e92cf61520ce",
+  "public/product/pull-request-dark.webp": "93e87b5e7400f062501f2727d375af60099bc1c0164e16419fe757c91bc8a63b"
 }

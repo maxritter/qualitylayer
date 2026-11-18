@@ -2165,7 +2165,7 @@
     "qualitylayer/tests/core/token-warning.test.ts": "f8fa7a2604ab3b5612479eb5c8666402072fd5d75f1dbafa288a4c958cf14ae1",
     "qualitylayer/tests/core/verify-progress.test.ts": "ea283d961c2bfe92516f8ffa42cd5e3860d672d55b24734c2d70e4d98e6b0d24",
     "qualitylayer/tests/core/workflow-changes.test.ts": "39fe00ef06dca669b800476f56807e9adf1ce3d7ad5bc5af51c6500345b5b087",
-    "qualitylayer/tests/e2e/artifact-export-feedback.test.ts": "a7dabce26b76d7a51128944aca602087ba86469c59aa3ba26dabf2317064a285",
+    "qualitylayer/tests/e2e/artifact-export-feedback.test.ts": "50572388d53ed108cdd16747ee111f4f04b96331814f5f4d75045fe437b4ed21",
     "qualitylayer/tests/e2e/calm-step-transitions.test.ts": "630b5f8fa7f5cd625fdb0ec0dd1ef7b19a1969502aa8cb58d18e6d9ed5a1c46f",
     "qualitylayer/tests/e2e/export-complete-document.test.ts": "f685ecd3836adc8af8d00d808f09e385645ac74f00052baecef6f0a7dddc0242",
     "qualitylayer/tests/e2e/large-cost-popover.test.ts": "e4877e952dd8678003d77f8e1476df8530a68f7794f9dcd0b5705099ba003c4f",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "494c85ec0ad3325fe4670b0aa8138e08931380d298154572c3015afcc9e8a27c",
+  "reviewManifestSha256": "419af9bfc14e2e5e7e0ad945a4952390db89881c02120684f42348a3c4bf1969",
   "schema": 1,
-  "sourceHead": "93f0222f3c144d0b425284d4803e9f1e09f4feba"
+  "sourceHead": "513c0449779d55d6dbfaa6d080d8f73c72341362"
 }

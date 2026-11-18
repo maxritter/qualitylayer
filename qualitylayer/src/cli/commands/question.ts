@@ -190,6 +190,23 @@ const CHAT_THEN: Record<ChatAsk, string> = {
   "build-again": BUILD_ALREADY_IN_CHAT,
 }
 
+function appAnswerPickup(slug: string | undefined): string {
+  const task = slug ? ` --task ${slug}` : ""
+  return `If the person answered in the App, run \`qualitylayer question poll${task} --json\` and match the question ID in \`answered_meanwhile\`. Poll picks up all unread answers for the task once. Use the saved answer without asking for it again.`
+}
+
+function isStandaloneImplementQuestion(task: Host, id: string | undefined): boolean {
+  return task.stage === "implement" && task.answers === "terminal" && !/^need-T\d+-/.test(id ?? "")
+}
+
+function closedQuestionMessage(task: Host, id: string | undefined, batchMember: boolean): string {
+  const closed = id
+    ? "that question id is not open; nothing changed"
+    : "no question is open; nothing changed"
+  if (!isStandaloneImplementQuestion(task, id) || batchMember) return closed
+  return `${closed}. ${appAnswerPickup(task.slug)}`
+}
+
 async function terminalQuestions(ctx: Ctx, questions: Question[], how: ChatAsk = "waits") {
   return {
     your_turn: TERMINAL_YOUR_TURN,
@@ -321,17 +338,22 @@ async function askParsed(
         ...(question.gate !== undefined ? { gate: question.gate } : {}),
         ...(question.item !== undefined ? { item: question.item } : {}),
       })
+    const guidance = await terminalQuestions(
+      ctx,
+      [question],
+      chatAsk(task, [question], !asked.data.fresh && !asked.data.replaced),
+    )
     return ok({
       status: "asked_in_chat",
       id: question.id,
       number: question.number,
       question: question.question,
-      // In the build the question is shown once and the build goes on; asked again, the reply says so.
-      ...(await terminalQuestions(
-        ctx,
-        [question],
-        chatAsk(task, [question], !asked.data.fresh && !asked.data.replaced),
-      )),
+      ...guidance,
+      ...(isStandaloneImplementQuestion(task, question.id) &&
+      question.gate === undefined &&
+      question.item === undefined
+        ? { then: `${guidance.then} ${appAnswerPickup(task.slug)}` }
+        : {}),
     })
   }
   const app = await questionUrl(ctx, task)
@@ -787,9 +809,11 @@ export async function questionCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
       ])
     return err({
       code: "bad_args",
-      message: id
-        ? "that question id is not open; nothing changed"
-        : "no question is open; nothing changed",
+      message: closedQuestionMessage(
+        task.data,
+        id,
+        batch?.questions.some((q) => q.id === id) ?? false,
+      ),
     })
   }
   if (askedInAgent(task.data, [pending])) {

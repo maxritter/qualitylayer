@@ -1,5 +1,11 @@
 # Retained answer authority
 
+## Picking up a standalone Implement answer
+
+When an Implement question is asked in the terminal, the person can answer in the agent's chat or choose **Answer here instead** in the App. For an App answer, use `qualitylayer question poll --task <task> --json` and match the question ID in `answered_meanwhile`. Poll picks up all unread answers for that task once. Use the saved answer without asking for it again.
+
+The terminal ask and re-ask replies name this move. A closed `question answered` refusal points to the same command when the answer came through the App. Record new human words given in the agent's chat with `question answered --id <question-id>`. A saved App answer keeps the authority of the person's original choice.
+
 ## Bounded native session proof
 
 Plain and compressed Codex histories use the same proof window: at most 1 MiB of identity/header bytes and 7 MiB of recent bytes once the history exceeds 8 MiB. Incomplete boundary rows are discarded; omitted middle records cannot establish a missing picker call or approval. Session, checkout, call, answer and completion checks retain their existing authority. Compressed histories are read as a stream while retaining only those windows, without materializing the whole decompressed history.

@@ -27,7 +27,7 @@ import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { jumpToItem } from "../jump.ts"
 import { useMainShortcut } from "../kit/StepLine.tsx"
 import { WhoMark } from "../kit/WhoMark.tsx"
-import { approvalLockReason, pendingGate } from "../model.ts"
+import { approvalLockReason, fileOf, pendingGate } from "../model.ts"
 import { approvesOutside } from "../outside.ts"
 import { jumpId } from "../step-page/state.ts"
 import { GetApproval } from "./GetApproval.tsx"
@@ -257,7 +257,9 @@ export function ApproveCard({
           task={surface.task.id}
           detail={surface.task}
           readPlan={() =>
-            surface.api.doc(surface.task.id, "01-plan.md").then((value) => value.markdown)
+            surface.api
+              .doc(surface.task.id, fileOf(surface.task, "plan"))
+              .then((value) => value.markdown)
           }
           disabled={disabled || saving}
           onSettled={surface.reload}

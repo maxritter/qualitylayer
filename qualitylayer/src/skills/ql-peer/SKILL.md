@@ -23,8 +23,8 @@ transports and inboxes for every client.
 2. Never block your own work on a peer. A peer is often busy and answers
    when its turn allows. Pick by what you do next:
    - Information only: `send --no-reply`.
-   - A question you want answered: `dispatch` with a 15–30 minute timeout,
-     go on with your work, and collect the reply with `await --request <id>`
+   - A question you want answered: `dispatch` takes a timeout in seconds. Use
+     `--timeout 1200` for 20 minutes. Go on with your work, and collect the reply with `await --request <id>`
      (or `await --any`) when you reach the point that needs it.
    - `ask` holds your turn until the reply or its timeout. Use it only when
      nothing else can be done before the answer, with a short timeout.

@@ -1219,7 +1219,7 @@
     "qualitylayer/src/skills/ql-artifact/SKILL.md": "aaf4c306e7be0f2618e6f4f8c010ecbba8ea27c398f158556e3a230de09b222a",
     "qualitylayer/src/skills/ql-chat/SKILL.md": "e45a676eb76dae8fb49a28fec0b149e52ac2154aee6c63aea60e987e85e5d0e1",
     "qualitylayer/src/skills/ql-manage/SKILL.md": "9372e25407db0ab341d8b0019a9a1654e76c9ec03ba54723c36210dba808d6d0",
-    "qualitylayer/src/skills/ql-peer/SKILL.md": "75728dcc71175df3d1a1360fcb5ad60ef4c4230c5abe23aee7963e6c831cbc79",
+    "qualitylayer/src/skills/ql-peer/SKILL.md": "0db715b6a4b6514ff2d709c962e5453983883d4260f5cfefae11be7877453c31",
     "qualitylayer/src/skills/ql-quality/SKILL.md": "e630c851a2cdeb42afee21703551e8a2c1eab5e103fd5efdab8ab88c4c262b75",
     "qualitylayer/src/skills/ql-workflow/SKILL.md": "5f56fc94dd369fb41f9cc5220daf16b34302cca1c08e76161e64c69a5c310377",
     "qualitylayer/src/task-capture.ts": "d933eb9e5a1b625b1018a77074627e2d53eee6b6b54e7bbed62f7a5ff70ded3c",
@@ -1804,7 +1804,7 @@
     "qualitylayer/src/ui/settings/models.css": "c4afafb678144ea104f00cda227070a7ceec3e6ffbe1e9857efae2eebcc81d0d",
     "qualitylayer/src/ui/settings/reveal.ts": "20de0f0601cebf85575510d7661d42dece6d5c9fea11643617a12da155b7ff2f",
     "qualitylayer/src/ui/settings/second-opinion.ts": "864d0f841660f8f705da4fe0a44d06dff811ebb40c0d51017012e7d28ad50d8d",
-    "qualitylayer/src/ui/settings/sections.ts": "1fca979909da1e82b85fecb75bc068c6e9b23e5b1d7ff6ddbaf1d122b1871019",
+    "qualitylayer/src/ui/settings/sections.ts": "bf6f24221c65c8643b4b506f0302f137d10d7ac1cd5ae92484653fb4a644a95e",
     "qualitylayer/src/ui/settings/server-port.css": "b0081c9ad9cd48e7485556a8e65aad527379f3233422233c8fb4659650ee6839",
     "qualitylayer/src/ui/settings/settings.css": "8fb5784243bd3375949b917d82cc9788961316c2be113676b718624e30838c1f",
     "qualitylayer/src/ui/settings/source.css": "d605cefb23fa8e4bdcc8f2e49eda09ed054ac34c9fc37ffb76ee5d02bca999a7",
@@ -2044,7 +2044,7 @@
     "qualitylayer/src/ui/tour/session.ts": "649568cb1c8cd854c35e254b2e0f4b3b4a78a260ebcded72a0227c24cf030f26",
     "qualitylayer/src/ui/tour/stops.ts": "a67a2dd58515565fa8e5df5dbd4c8acb25fc88363d0a80639dff62172ecb1e25",
     "qualitylayer/src/ui/turn/AnswerFiles.tsx": "d2b3b30a4238ea5d2cebbc15364ea5009c87c2cba3009da6117282433f5dd9b3",
-    "qualitylayer/src/ui/turn/ApproveCard.tsx": "a131e13d89136ae94b085eafb4ec68f63c99abd3364231f37d159bfeebe3f6b7",
+    "qualitylayer/src/ui/turn/ApproveCard.tsx": "ceb43381a59448fd351c4fca3ce7bd6d61cc4f1e1ebcb09bec5a294c265987ce",
     "qualitylayer/src/ui/turn/AskedOutside.tsx": "547cae87559b05941f119d4feb4d9dd8fbd36382c782d2beebb82c5f27b22e11",
     "qualitylayer/src/ui/turn/BatchReceipt.tsx": "d3170ff7d9b9c8369d7571e9e5b112672e3b1ae3d2a4be4a72d5d834ad8a0cf6",
     "qualitylayer/src/ui/turn/BatchStrip.tsx": "eb2b81b8aba8246bda0c3527401927bf33328ef3ed3d9ef1116b78252b14f33a",
@@ -2111,7 +2111,7 @@
     "qualitylayer/src/workflow/notice.ts": "17412c8100d65a79bfe4edcff316129c414923debe787ed0aaf8fce04490ff58",
     "qualitylayer/src/workflow/phases/_pictures.md": "199820c99c14966ef672550251b85b55426d744eceec16ba846afed4b125d6c1",
     "qualitylayer/src/workflow/phases/_product.md": "f197dd8ed9cf57e1a2309f9adba4939bbb9902a8a4eb2ab4f2bcf21550b2b550",
-    "qualitylayer/src/workflow/phases/_style.md": "4076dfb295bd1e26432a362cd6f2c4ded6bf424675f948d15225ee0ba172eb64",
+    "qualitylayer/src/workflow/phases/_style.md": "b3d9efb090e6448072804318755d7ac2ef30419dfa72213414e29491f52cf172",
     "qualitylayer/src/workflow/phases/another-review.md": "c14c8e03fbde4b7e549349b8764d9545090495893529470d7bcd34eddbc110af",
     "qualitylayer/src/workflow/phases/artifact-authoring.md": "1cbda4d53992a0f6b3ff2acd8fa976a62ae51ee077dfbb10de62b062cca54667",
     "qualitylayer/src/workflow/phases/artifact-check.md": "152bfd4804319c430f23ee8e610014ae5c69f10304da69cc9583884ea7de19a1",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "32cb1d30a6f68810cd213126548c5f7babd95ae3e7844fc87de3b51c39791408",
+  "reviewManifestSha256": "e6d80d48aabe430bfe1fb270cae6a0724c485fde523adea71ceaff7343375726",
   "schema": 1,
-  "sourceHead": "10a1047b067004423eb7353b75d7f9e038277b82"
+  "sourceHead": "f79afae29c819f0c150d72cf41506e58a34ab238"
 }

@@ -18,6 +18,7 @@ import {
   ServerIcon,
   WebhookIcon,
 } from "lucide-react"
+import { AGENT_NAMES, NATIVE_AGENTS } from "../../core/agents/ids.ts"
 import { machineFrame } from "../machines/framed.ts"
 import { LEAVES_LABELS, PLAN_LABELS } from "./Licence.tsx"
 
@@ -236,6 +237,7 @@ const offered = (): readonly SettingsSection[] =>
 
 /** What a row is also called: a browser's notifications, a licence by its tier, updates. */
 export const ROW_ALIASES: Record<string, readonly string[]> = {
+  "Model list": NATIVE_AGENTS.map((agent) => `${AGENT_NAMES[agent]} models`),
   "Tell me when a task needs me": ["Browser notifications"],
   "Check for updates": ["Updates"],
   "Your licence": PLAN_LABELS,

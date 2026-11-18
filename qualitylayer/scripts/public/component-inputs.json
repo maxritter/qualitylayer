@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "27f9073a084edd6f744c7b423d4d9657cd36864c",
-  "catalogSha256": "2e6d09a0bdc0c1d2f92139b55fc794a782d7ce03198166e9352ca745eff7575d",
+  "sourceHead": "e6ca85c666513ebcaf497dea22294b02dc824a90",
+  "catalogSha256": "6e9b3a86dd224080dc804f509107335ac3c35c76f43b8900689776394e85af54",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -2535,7 +2535,7 @@
     },
     {
       "path": "qualitylayer/src/core/gate/draft.ts",
-      "sha256": "2f653ec3f9912b2e8386c817ee30d4daeccbc939dd9a791573ca8f900a17e4c5",
+      "sha256": "d5e3f95ee816aceea0bb1df4175bb8e57e88a1180e27d82b4e8d1bda7ea58a6d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

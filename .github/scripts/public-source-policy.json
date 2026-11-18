@@ -25,7 +25,7 @@
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
-    ".github/workflows/qualitylayer-ci.yml": "3f620a85ecf935fa30d2c8c1d58d671b1f93c4c08160c3e2e693cb0e2f8391e1",
+    ".github/workflows/qualitylayer-ci.yml": "e3115d35fa089f5ddde6236f2566b1ffaa7531fbc8f65d6d357258479a12ea62",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
@@ -77,7 +77,7 @@
     "qualitylayer/app/launcher/tests/closed_output.rs": "85af2c6f9d03d5a1f6d20f16d93a9a38b634a1a62af8132c3b09ad8eb3df9ae1",
     "qualitylayer/app/launcher/tests/forward.rs": "063aa6c7d62ce8c529a60897e2686263eb56424a9a3bc898639960da04be826e",
     "qualitylayer/app/launcher/tests/private_files.rs": "53a0aab6468b53e295b0df3714ab4c77b062e2a4cedaf20378be77054feea582",
-    "qualitylayer/app/native-contract.md": "13176bf1fcb8317b430f0ce6b707a6d5a277e6bc1181919e6a8182ad4615018f",
+    "qualitylayer/app/native-contract.md": "95bf7e88322c3eabc9492d6aa3f28abdadf51cf45f817a665b3525923793f33d",
     "qualitylayer/app/scripts/self-test-closed-stdout.sh": "61e57bff644c9c0039e65063be9e0d6c3be2bc6ab6165a6f8e5edd4dc52aad50",
     "qualitylayer/app/src-tauri/.gitignore": "6a446f84f24f410f34c590fe454dc65c39ce01c936b9bf1c0183fc156f451553",
     "qualitylayer/app/src-tauri/Cargo.lock": "5562d6971a13ce72667e379e2ef5b55bcff74e3881e9934d7598ec8c328a54a2",
@@ -2193,7 +2193,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "45d63f03d0f4a916c82a6a3f572ebab86c494f5a5999349605822c0b9364f6f0",
+  "reviewManifestSha256": "8fba1ba45cdfe30bf8184146290cb482ed353509a5aa35e6c59dd881cd6879b3",
   "schema": 1,
-  "sourceHead": "abace31a03d76cc1bf9a3e04867533430f694cfc"
+  "sourceHead": "0e8e83e91fb2682089a3f3e36415cdf62856f78a"
 }

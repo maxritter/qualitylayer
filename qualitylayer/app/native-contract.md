@@ -114,6 +114,7 @@ has no dependencies.
 | `serde_json` | `1` | | App | Reads the CLI's JSON answers and the settings file |
 | `tauri-plugin-notification` | `2` | | App | Notifications and their permission on Windows and Linux |
 | `tauri-plugin-updater` | `2.14.1` | | App | Signed App updates from the feed above |
+| `rfd` | `0.17.2` | | App | Opens the native Save dialog for exports |
 | `notify-rust` | `4.11` | | App | Windows and Linux notifications that report a click |
 | `qualitylayer-launcher` | `12.0.0-beta.11` | | App | The QualityLayer home and the update lock, shared with the launcher |
 | `tauri-plugin-single-instance` | `2.5.2` | `deep-link` | App | One running App; a second start hands over its link |

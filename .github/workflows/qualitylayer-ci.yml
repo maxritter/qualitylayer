@@ -176,12 +176,21 @@ jobs:
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - name: Install shellcheck
+      - name: Install macOS test tools
         if: runner.os == 'macOS'
         run: |
-          brew install shellcheck bash coreutils
+          brew install shellcheck bash coreutils poppler
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Install Poppler for PDF verification
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v pdftotext; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends poppler-utils
+          fi
+          command -v pdftotext
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
@@ -261,12 +270,21 @@ jobs:
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
         run: bash .github/workflows/scripts/setup-git-crypt.sh
-      - name: Install shellcheck
+      - name: Install macOS test tools
         if: runner.os == 'macOS'
         run: |
-          brew install shellcheck bash coreutils
+          brew install shellcheck bash coreutils poppler
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Install Poppler for PDF verification
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v pdftotext; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends poppler-utils
+          fi
+          command -v pdftotext
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:

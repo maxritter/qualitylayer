@@ -421,7 +421,8 @@ function TaskViewContent({
     isDoc &&
     fileInView !== undefined &&
     (fullDocument || at !== undefined || pageStep === null || view !== stepView(task, pageStep))
-  const readsFile = fileReader
+  const readsPlanReview = view === "reviews/plan.md"
+  const readsFile = fileReader || readsPlanReview
   // A step's own page is its document with the live parts drawn over it.
   const stepDoc =
     pageStep !== null && view === stepView(task, pageStep) && !fileReader
@@ -1213,15 +1214,19 @@ function TaskViewContent({
   // A file opened by a link that is not a step's own page reads under a slim bar.
   const backTab =
     tabs.find((t) => t.step === viewedStep(view)) ?? tabs.find((t) => t.key === defaultDoc(task))
+  const showStepActions =
+    !turnLayoutReady && !headerPlanApproval && (!readsFile || gateHere) && stepDoc === null
+  const backToPlan = () => open(fileOf(task, "plan"))
   const readerBar =
-    unopened === undefined && readsFile ? (
+    unopened === undefined && readsFile && !(readsPlanReview && showStepActions) ? (
       <ReaderBar
         detail={task}
         name={view}
         {...(fileInView !== undefined ? { file: fileInView } : {})}
         back={{
-          label: backTab?.label ?? "the task",
-          onClick: () => open(backTab?.key ?? defaultDoc(task)),
+          label: readsPlanReview ? "Plan" : (backTab?.label ?? "the task"),
+          onClick: () =>
+            open(readsPlanReview ? fileOf(task, "plan") : (backTab?.key ?? defaultDoc(task))),
         }}
         api={api}
         onCopy={onCopy}
@@ -1838,11 +1843,9 @@ function TaskViewContent({
                         </div>
                       ) : null}
                       {/* The shared Plan header owns approval while its whole document is read too. */}
-                      {!turnLayoutReady &&
-                      !headerPlanApproval &&
-                      (!readsFile || gateHere) &&
-                      stepDoc === null ? (
+                      {showStepActions ? (
                         <StepActions
+                          {...(readsPlanReview ? { backToPlan } : {})}
                           step={step}
                           busy={busy}
                           items={elsewhere !== undefined ? undefined : stepItems}

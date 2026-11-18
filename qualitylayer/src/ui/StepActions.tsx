@@ -4,7 +4,7 @@
 // it stands, Open Review; the one short fact beside them ("Codex read the Plan"); what teammates
 // advised; and a decision made in the agent's window. A step with none of these draws nothing.
 
-import { CheckIcon, CircleDashedIcon } from "lucide-react"
+import { ArrowLeftIcon, CheckIcon, CircleDashedIcon } from "lucide-react"
 import { type DecidedElsewhere, type Item, type ItemAnswer, mainAction } from "../core/items.ts"
 import type { ApproveChoices } from "../core/review/summary.ts"
 import { useNow } from "./hooks.ts"
@@ -74,6 +74,7 @@ function RunCard({ run, now }: { run: RunningRow; now: number }) {
 }
 
 type Props = {
+  backToPlan?: () => void
   step: NextStep
   busy: boolean
   /** What needs you in this step, and the answers picked and not sent: the main button follows them. */
@@ -116,6 +117,7 @@ export function StepActions({
   onDiff,
   ship,
   onCopy,
+  backToPlan,
 }: Props) {
   const asked = items !== undefined && items.length > 0 ? mainAction(items, answers) : null
   const act = (a: NextAction): StepAction => ({
@@ -210,7 +212,7 @@ export function StepActions({
   // run is the pill's panel's.
   const runs = primary?.kind === "approve" ? (step.runs ?? []) : []
   const now = useNow(runs.length > 0)
-  const hasButtons = main !== undefined || secondary !== null
+  const hasButtons = main !== undefined || secondary !== null || backToPlan !== undefined
   // The Plan's gate keeps its one short fact beside Approve: what came back, who Approve waits for.
   // Anything else the old line said is the pill's now.
   const note =
@@ -224,7 +226,16 @@ export function StepActions({
     <div className="q-body pb-0" data-testid="step-actions">
       {hasButtons ? (
         <div className="q-acts">
-          {note !== "" ? (
+          {backToPlan ? (
+            <button
+              type="button"
+              className="mr-auto inline-flex items-center gap-2 rounded px-2 py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline"
+              onClick={backToPlan}
+            >
+              <ArrowLeftIcon aria-hidden="true" className="size-4" />
+              Back to Plan
+            </button>
+          ) : note !== "" ? (
             <span className="note" data-testid="step-note">
               {note}
             </span>

@@ -92,7 +92,7 @@ export function ReaderBar({
         aria-label={`Back to ${back.label}`}
       >
         <ArrowLeftIcon aria-hidden="true" />
-        {back.label}
+        {name === "reviews/plan.md" ? `Back to ${back.label}` : back.label}
       </button>
       <span className="fname" title={name}>
         {name}

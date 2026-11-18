@@ -1597,8 +1597,9 @@
     const copyItem = (l, n, fn, icon = "copy") => <button type="button" className="mi" onClick={() => { closePop(); fn(); }}><Icon name={icon} size={14} /><span>{l}</span><span className="n">{n}</span></button>;
     return (
       <div className="main" style={{ minHeight: 0 }}>
-        <div className="rbar">
+        <div className="rbar" id={window.QL_REVIEW_RETURN_PREVIEW && review ? "review-return" : undefined}>
           {page ? null : <Btn sm quiet className="back" icon="arrow-left" aria-label={back.label} onClick={() => app.unread()}><span className="bl">{back.label}</span> <kbd>Esc</kbd></Btn>}
+          {window.QL_REVIEW_RETURN_PREVIEW && review ? <span className="dim">Reviewed by Codex</span> : null}
           <Icon name="file-text" size={14} />
           <code className="rpath" title={path}>{file}</code>
           {review ? <span className="dim rabout" style={{ fontSize: 12.5 }}>about <button type="button" className="lnk" onClick={() => app.openFile(f.docs[review.step][0])}>{f.docs[review.step][0]}</button></span> : null}

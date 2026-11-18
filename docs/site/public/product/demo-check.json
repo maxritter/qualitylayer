@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "c0dd8b8366b1144e17ed6daee3b1129dee594116",
-  "sourceTree": "f99be716f2a38df9af7a63ab68d637454bbcdf7f",
+  "sourceCommit": "93f0222f3c144d0b425284d4803e9f1e09f4feba",
+  "sourceTree": "ada54556b53a8ea2f87c1252830da91286ee28c8",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "821daf4de59fc8bc16cc052623f32e4202f2071c8c624506fb4b6fa1485687bf",
@@ -919,7 +919,7 @@
     "qualitylayer/src/workflow/phases/final.md": "e3ad35ebc6a932156897e7628676e41c66d274375336a0fe057776bc57b7b343",
     "qualitylayer/src/workflow/phases/handback.md": "f4fee96b5804b6d4f3a7a1f5ffff989f7ecae6ff816ea66a88e7da2bd2382b4b",
     "qualitylayer/src/workflow/phases/implement-bugfix.md": "9c629b1f2ec9d04465f73f9ec76b179c038d6d090ed9b870abdea975a0316e90",
-    "qualitylayer/src/workflow/phases/implement.md": "b4c6cb0bad81fc5c5a4c76b9bbf70deec5664663d9c9e1f7751d1c6857b8df42",
+    "qualitylayer/src/workflow/phases/implement.md": "fc922fa77a3c7135cf353969d25b653c2ad63e03eb49a2d4937fafdbe8b43324",
     "qualitylayer/src/workflow/phases/judge-bugfix.md": "65c8fe376f1d53a4d7e4bf7a01f35d509b1c4c4089a7202987f58cdde2f8998f",
     "qualitylayer/src/workflow/phases/judge-rerun.md": "16b5da93d5d4e9aa2778745b1a91c1fe5ed66255abde62f729a8855250d0e81b",
     "qualitylayer/src/workflow/phases/judge.md": "de62fe467d07cf85e580caa50cb7122f77d2baf0adbec48992049c7861a1d679",
@@ -1861,7 +1861,7 @@
     "qualitylayer/src/workflow/phases/final.md": "e3ad35ebc6a932156897e7628676e41c66d274375336a0fe057776bc57b7b343",
     "qualitylayer/src/workflow/phases/handback.md": "f4fee96b5804b6d4f3a7a1f5ffff989f7ecae6ff816ea66a88e7da2bd2382b4b",
     "qualitylayer/src/workflow/phases/implement-bugfix.md": "9c629b1f2ec9d04465f73f9ec76b179c038d6d090ed9b870abdea975a0316e90",
-    "qualitylayer/src/workflow/phases/implement.md": "b4c6cb0bad81fc5c5a4c76b9bbf70deec5664663d9c9e1f7751d1c6857b8df42",
+    "qualitylayer/src/workflow/phases/implement.md": "fc922fa77a3c7135cf353969d25b653c2ad63e03eb49a2d4937fafdbe8b43324",
     "qualitylayer/src/workflow/phases/judge-bugfix.md": "65c8fe376f1d53a4d7e4bf7a01f35d509b1c4c4089a7202987f58cdde2f8998f",
     "qualitylayer/src/workflow/phases/judge-rerun.md": "16b5da93d5d4e9aa2778745b1a91c1fe5ed66255abde62f729a8855250d0e81b",
     "qualitylayer/src/workflow/phases/judge.md": "de62fe467d07cf85e580caa50cb7122f77d2baf0adbec48992049c7861a1d679",
@@ -1888,7 +1888,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-18T21:00:20.194Z",
+  "checkedAt": "2026-11-18T21:18:23.269Z",
   "chapters": [
     "setup",
     "welcome",

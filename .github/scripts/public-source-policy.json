@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "1fc68240bedf98e81465a6a7bdaf6ac9a63db06b549f9f4adecc8c4fdbda832f",
+  "reviewManifestSha256": "b41405b4c2c708866c35627ca33c42c03f41ed00fe9374b6c7c2b07c1a012db7",
   "schema": 1,
-  "sourceHead": "bdc4a7d92954663a74ef6bed169b7f1adefd1037"
+  "sourceHead": "57b495154a9f450dcdd84100541c8507d1936bb7"
 }

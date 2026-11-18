@@ -20,12 +20,9 @@ import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
 import { installedBinary } from "./binary.ts"
 import { fastModeModels } from "./fast-mode.ts"
 import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent, validModelId } from "./ids.ts"
-import { readModelListWithin } from "./model-list.ts"
+import { MODEL_LIST_WAIT_MS, readModelListWithin } from "./model-list.ts"
 import { knownFrom } from "./model-list-store.ts"
 import { nativeModelIds, stepModels, usableDefault } from "./model-values.ts"
-
-/** The longest a picker waits for an agent to print its own models; a slower read ends on its own. */
-export const MODEL_LIST_WAIT_MS = 3000
 
 export type SubagentAgent = NativeAgent
 

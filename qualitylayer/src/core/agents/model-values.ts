@@ -14,6 +14,8 @@ export type StepAgent = NativeAgent
  */
 export const AGENT_OWN = ""
 export const AGENT_OWN_NAME = "Agent’s settings"
+export const PI_SOL_MODEL = "openai/gpt-6.2-sol"
+const PI_LEGACY_SOL_MODEL = "openai-codex/gpt-6.1-sol"
 
 type Model = { id: string; name: string }
 type ModelList = {
@@ -61,7 +63,8 @@ export function nativeModelIds(agent: StepAgent): boolean {
  * an agent that takes any model id of its own, whose catalog is a short list beside what it holds.
  * Claude Code and Codex start on the catalog's best.
  */
-export const startsOnOwnModel = (agent: StepAgent): boolean => nativeModelIds(agent)
+export const startsOnOwnModel = (agent: StepAgent): boolean =>
+  nativeModelIds(agent) && agent !== "pi"
 
 /** Whether the agent takes model ids the catalog does not name, added by the person (`customModel`). */
 export const hasCustomModel = (agent: StepAgent): boolean =>
@@ -223,8 +226,9 @@ function withListed(agent: StepAgent, catalog: Model[]): Model[] {
  */
 export function notOffered(agent: StepAgent, id: string): boolean {
   const from = known.get(agent)
+  const requiresListing = agent === "pi" && /^openai\/gpt-6\.2-(sol|astra)$/.test(id)
   return (
-    capabilities(agent)?.modelList?.complete === true &&
+    (requiresListing || capabilities(agent)?.modelList?.complete === true) &&
     from !== undefined &&
     from.listed.length > 0 &&
     catalogIds(agent).includes(id) &&
@@ -257,10 +261,22 @@ export function offeredModels<T extends Model>(
  * to `openai/…`). The listed id takes its place, so the default runs instead of failing for a login
  * it no longer has. Null when nothing applies.
  */
-function renamedProvider(agent: StepAgent, value: string, from: KnownModels | null): string | null {
+export function renamedProvider(
+  agent: StepAgent,
+  value: string,
+  from: KnownModels | null,
+): string | null {
   const slash = value.indexOf("/")
   if (from === null || slash < 0 || capabilities(agent)?.modelList?.complete === true) return null
-  if (from.listed.includes(value) || !catalogIds(agent).includes(value)) return null
+  if (from.listed.includes(value)) return null
+  if (agent === "pi") {
+    const provider = value.slice(0, slash)
+    if (provider !== "openai" && provider !== "openai-codex") return null
+    const other = provider === "openai" ? "openai-codex" : "openai"
+    const renamed = other + value.slice(slash)
+    return from.listed.includes(renamed) ? renamed : null
+  }
+  if (!catalogIds(agent).includes(value)) return null
   const same = from.listed.filter((id) => id.slice(id.indexOf("/") + 1) === value.slice(slash + 1))
   return same.length === 1 ? (same[0] as string) : null
 }
@@ -271,14 +287,28 @@ function renamedProvider(agent: StepAgent, value: string, from: KnownModels | nu
  * other value, a custom id included, is the person's and stays. Only a list that holds every model
  * the agent can run says so (`complete`).
  */
-export function usableDefault(agent: StepAgent, value: string, from: KnownModels | null): string {
+export function usableDefault(
+  agent: StepAgent,
+  value: string,
+  from: KnownModels | null,
+  piFallback = PI_LEGACY_SOL_MODEL,
+): string {
   const moved = renamedProvider(agent, value, from)
   if (moved !== null) return moved
+  if (agent === "pi" && value === PI_SOL_MODEL && !from?.listed.includes(value))
+    return renamedProvider(agent, piFallback, from) ?? piFallback
   if (capabilities(agent)?.modelList?.complete !== true || from === null || from.own === null)
     return value
   if (from.listed.includes(value)) return value
   return catalogIds(agent).includes(value) ? from.own : value
 }
+
+/** Pi launches inherit its native model where the new recommendation is unavailable. */
+export const usableLaunchModel = (
+  agent: StepAgent,
+  value: string,
+  from: KnownModels | null,
+): string => usableDefault(agent, value, from, AGENT_OWN)
 
 /** The models a helper or a review may run on for one agent, the first the default. */
 export function stepModels(agent: StepAgent): Model[] {

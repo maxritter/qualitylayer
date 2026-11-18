@@ -31,15 +31,17 @@ import {
   AGENT_OWN_NAME,
   builderModels,
   buildingOn,
+  knownModels,
   modelKind,
   modelName,
   offeredModels,
   orchestratorModels,
   planModels,
   removeAddedModel,
-  startsOnOwnModel,
   stepModels,
   takesAddedModels,
+  usableDefault,
+  usableLaunchModel,
 } from "../../core/agents/model-values.ts"
 import { type Config, DEFAULT_CONFIG, SESSION_MODEL } from "../../core/config-values.ts"
 import { ADD_MODEL_LABEL, AddModelForm } from "../AddModelField.tsx"
@@ -51,7 +53,13 @@ import { useOptionalRuns } from "../run-context.tsx"
 import { Segmented } from "../Segmented.tsx"
 import { useAgentHealth } from "./AgentHealth.tsx"
 import type { SaveResult } from "./CommitField.tsx"
-import { fromPick, launchModelOptions, modelOptions, toPick } from "./Defaults.tsx"
+import {
+  fromPick,
+  launchModelOptions,
+  modelOptions,
+  recommendedModel,
+  toPick,
+} from "./Defaults.tsx"
 import { ListPages, PAGE_SIZE } from "./ListPages.tsx"
 import { type ModelRole, modelRolesOf, modelRolesPatch } from "./model-roles.ts"
 import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
@@ -150,7 +158,7 @@ function listRows(
     catalog.map((model) => ({ id: model.id, name: modelName(agent, model.id) })),
     kept,
   )
-  return startsOnOwnModel(agent) ? [own, ...models] : [...models, own]
+  return recommendedModel(agent) === AGENT_OWN ? [own, ...models] : [...models, own]
 }
 
 function KindMark({ agent, id }: { agent: NativeAgent; id: string }) {
@@ -328,6 +336,7 @@ function agentModels(config: Config, agent: NativeAgent, here: readonly NativeAg
   const design = config.models[agent].design
   const judgeDefault = DEFAULT_CONFIG.models[agent].judge
   const designDefault = DEFAULT_CONFIG.models[agent].design
+  const listed = agent === "pi" ? knownModels(agent) : null
   // Who reads this agent's work, and the models this agent reads the others' work on.
   const second = secondOpinionOf(config, agent, here)
   const reads = here
@@ -335,11 +344,17 @@ function agentModels(config: Config, agent: NativeAgent, here: readonly NativeAg
     .map((other) => secondOpinionOf(config, other, here))
     .filter((pick) => pick?.agent === agent)
     .map((pick) => pick?.model)
-  const buildChanged = BUILD_ROWS.filter(
-    (row) => counts(agent, row.id) && roles[row.id] !== recommended[row.id],
-  ).length
+  const buildChanged = BUILD_ROWS.filter(({ id }) => {
+    const model =
+      id === "helpers"
+        ? usableDefault(agent, recommended[id], listed)
+        : usableLaunchModel(agent, recommended[id], listed)
+    return counts(agent, id) && roles[id] !== model
+  }).length
   const reviewChanged =
-    Number(judge !== judgeDefault) + Number(design !== designDefault) + Number(!!second?.changed)
+    Number(judge !== usableDefault(agent, judgeDefault, listed)) +
+    Number(design !== usableDefault(agent, designDefault, listed)) +
+    Number(!!second?.changed)
   return {
     roles,
     recommended,

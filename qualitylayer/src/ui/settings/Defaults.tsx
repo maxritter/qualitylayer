@@ -13,6 +13,7 @@ import {
   type StepAgent,
   startsOnOwnModel,
   usableDefault,
+  usableLaunchModel,
 } from "../../core/agents/model-values.ts"
 import type { DefaultsAgent, EffortChoice } from "../../core/config-values.ts"
 import { AGENT_CAPABILITIES } from "../../core/run/launch-spec.ts"
@@ -37,8 +38,11 @@ export const toPick = (value: string): string => (value === AGENT_OWN ? OWN_PICK
 export const fromPick = (id: string): string => (id === OWN_PICK ? AGENT_OWN : id)
 
 /** The model a menu marks Default when nobody chose one: the catalog's best, or the agent's own where it takes any id. */
-export const recommendedModel = (agent: StepAgent): string =>
-  startsOnOwnModel(agent) ? AGENT_OWN : planModel(agent)
+export function recommendedModel(agent: StepAgent): string {
+  if (startsOnOwnModel(agent)) return AGENT_OWN
+  const model = planModel(agent)
+  return agent === "pi" ? usableLaunchModel(agent, model, knownModels(agent)) : model
+}
 
 /** The mark a model carries in every menu, as in Settings › Agents › Models: what the agent reports, what you added. */
 function kindMark(agent: StepAgent, id: string): Pick<PickOption, "icon" | "iconLabel"> {
@@ -81,15 +85,15 @@ export function launchModelOptions(
   models: { id: string; name: string }[],
   recommended: string,
 ): PickOption[] {
-  const list = modelOptions(agent, models, recommended)
+  const starts = usableLaunchModel(agent, recommended, knownModels(agent))
+  const list = modelOptions(agent, models, starts)
   const own: PickOption = {
     id: OWN_PICK,
     name: AGENT_OWN_NAME,
-    ...(usableDefault(agent, recommended, knownModels(agent)) === AGENT_OWN
-      ? { note: DEFAULT_NOTE }
-      : {}),
+    ...(starts === AGENT_OWN ? { note: DEFAULT_NOTE } : {}),
   }
-  return startsOnOwnModel(agent) ? [own, ...list] : [...list, own]
+  const ownFirst = agent === "pi" ? starts === AGENT_OWN : startsOnOwnModel(agent)
+  return ownFirst ? [own, ...list] : [...list, own]
 }
 
 const EFFORT_NAMES: Record<string, string> = {

@@ -1042,10 +1042,12 @@ function AppPage({
     route.view === "artifacts" ||
     newTask ||
     firstRun
-  const subagents = useQuery(
-    () => (wantsAgents ? api.subagents() : Promise.resolve(null)),
-    [wantsAgents],
-  )
+  const subagents = useQuery(async () => {
+    if (!wantsAgents) return null
+    const agents = await api.subagents()
+    if (agents.some((entry) => entry.agent === "pi" && entry.listed !== undefined)) config.reload()
+    return agents
+  }, [wantsAgents])
   // The choice lives in the config (it survives a restart); the browser keeps a
   // copy so the first paint before the config arrives is already right.
   // A machine's page inside this computer's App shows that App's theme, not the machine's setting.

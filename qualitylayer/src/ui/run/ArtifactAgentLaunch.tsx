@@ -12,6 +12,7 @@ import {
   artifactSourceContext,
 } from "../artifacts/artifact-context.ts"
 import { useOptionalRuns } from "../run-context.tsx"
+import { recommendedModel } from "../settings/Defaults.tsx"
 import {
   AgentLaunchFields,
   type AgentLaunchValue,
@@ -117,6 +118,7 @@ function ArtifactAgentLaunchForm({
   address,
   title,
   installed,
+  config,
   onStarted,
   contextApi = artifactSourceContext,
   outside = false,
@@ -131,10 +133,12 @@ function ArtifactAgentLaunchForm({
     () => drafts.get(scope)?.choice ?? null,
   )
   const agent = preferredLaunchAgent(installed)
+  const model =
+    agent === "pi" ? (config?.planning.defaults.pi.model ?? recommendedModel(agent)) : null
   const choice: AgentLaunchValue = {
     ...(selected ?? {
       agent,
-      model: agent === "other" ? "session" : planModel(agent),
+      model: model ?? (agent === "other" ? "session" : planModel(agent)),
       effort: "high",
       runWhere: "app",
     }),

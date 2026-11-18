@@ -27,6 +27,7 @@ import {
   type StepAgent,
   stepModels,
   usableDefault,
+  usableLaunchModel,
 } from "./agents/model-values.ts"
 import { planningAfterSettings } from "./config-planning.ts"
 import {
@@ -811,10 +812,12 @@ async function readStoredConfig(ctx: Ctx): Promise<Config> {
 }
 
 /** One agent's model choices, each catalog model its own list says cannot run swapped for its own model. */
-function usableModels(config: Config, agent: StepAgent, from: KnownModels): Config {
+function usableModels(config: Config, agent: StepAgent, from: KnownModels | null): Config {
   const use = (model: string) => usableDefault(agent, model, from)
+  const launch = (model: string) => usableLaunchModel(agent, model, from)
   const { helpers, judge, design } = config.models[agent]
   const planning = config.planning.defaults[agent]
+  const lastStart = config.planning.lastStart
   const build = config.implement.defaults[agent]
   return {
     ...config,
@@ -831,9 +834,12 @@ function usableModels(config: Config, agent: StepAgent, from: KnownModels): Conf
     },
     planning: {
       ...config.planning,
+      ...(agent === "pi" && lastStart?.agent === agent
+        ? { lastStart: { ...lastStart, model: launch(lastStart.model) } }
+        : {}),
       defaults: {
         ...config.planning.defaults,
-        [agent]: { ...planning, model: use(planning.model) },
+        [agent]: { ...planning, model: launch(planning.model) },
       },
     },
     implement: {
@@ -842,9 +848,9 @@ function usableModels(config: Config, agent: StepAgent, from: KnownModels): Conf
         ...config.implement.defaults,
         [agent]: {
           ...build,
-          orchestrator: use(build.orchestrator),
-          builder: use(build.builder),
-          subagents: use(build.subagents),
+          orchestrator: launch(build.orchestrator),
+          builder: launch(build.builder),
+          subagents: launch(build.subagents),
         },
       },
     },
@@ -876,7 +882,7 @@ export async function readConfig(ctx: Ctx): Promise<Config> {
   }
   return AGENTS.reduce((held, agent) => {
     const from = (agent === "codex" ? nativeCodex : null) ?? knownFrom(lists[agent])
-    return from === null ? held : usableModels(held, agent, from)
+    return from === null && agent !== "pi" ? held : usableModels(held, agent, from)
   }, config)
 }
 

@@ -25,6 +25,8 @@ export const MODEL_LIST_LIFETIME_MS = 10 * 60_000
 export const MODEL_LIST_RETRY_MS = 2 * 60_000
 /** The longest the command may take. */
 export const MODEL_LIST_TIMEOUT_MS = 10_000
+/** The time a picker or launch waits while the agent lists its models. */
+export const MODEL_LIST_WAIT_MS = 3000
 /** More output than this is not a model list. */
 const MAX_OUTPUT = 512 * 1024
 /** How long the output of a command that has exited may still drain. */

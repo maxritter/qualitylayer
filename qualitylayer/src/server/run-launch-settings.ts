@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
 import { runnableFile } from "../core/agents/binary.ts"
 import { AGENT_NAMES } from "../core/agents/ids.ts"
-import { AGENT_OWN } from "../core/agents/model-values.ts"
+import { knownFrom, storedModelLists } from "../core/agents/model-list-store.ts"
+import { AGENT_OWN, renamedProvider } from "../core/agents/model-values.ts"
 import {
   type Config,
   defaultAgentView,
@@ -167,6 +168,10 @@ export async function prepareStartSettings(
 ): Promise<RunSettings> {
   const { planned, task, existing } = source
   const settings = settingsOf(config, input, planned)
+  if (!existing && input.agent === "pi" && settings.model) {
+    const lists = await storedModelLists(ctx)
+    settings.model = renamedProvider("pi", settings.model, knownFrom(lists.pi)) ?? settings.model
+  }
   if (task && input.settings?.answers === undefined) settings.answers = task.answers
   if (input.agent === "other" && !ownPermissionOnly(settings))
     throw new Error("This run uses the agent's own settings")

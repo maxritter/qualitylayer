@@ -180,7 +180,10 @@ async function startPlanning(
         cwd: task.repoRoot,
         works: "checkout",
         mode: "plain",
-        settings: { answers: "app", model: defaults.model, effort: defaults.effort },
+        settings: {
+          answers: "app",
+          ...(chosen === "pi" ? {} : { model: defaults.model, effort: defaults.effort }),
+        },
         idempotencyKey: `task-start:${id}`,
       }),
       signal: AbortSignal.timeout(60_000),

@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import type { ServerWebSocket } from "bun"
 import { checkedAgentBinary } from "../core/agents/binary.ts"
 import { AGENT_NAMES, isNativeAgent } from "../core/agents/ids.ts"
+import { MODEL_LIST_WAIT_MS, readModelListWithin } from "../core/agents/model-list.ts"
 import { AGENT_OWN } from "../core/agents/model-values.ts"
 import { readConfig } from "../core/config.ts"
 import {
@@ -1568,7 +1569,6 @@ export class RunAttachments {
     recorded?: (run: RunRecord) => void,
     files: Incoming[] = [],
   ): Promise<RunRecord> {
-    const config = await readConfig(this.ctx)
     const existing = listRuns(this.ctx.home).find(
       (run) => run.idempotencyKey === input.idempotencyKey,
     )
@@ -1578,8 +1578,14 @@ export class RunAttachments {
         JSON.stringify(existing.purpose) !== JSON.stringify(input.purpose))
     )
       throw new Error("This idempotency key belongs to different start choices")
-    const initialContext = existing ? undefined : await purposeContext(this.ctx, input, config)
+    let config = await readConfig(this.ctx)
     assertEnabled(input.agent, config)
+    if (!existing && input.agent === "pi" && input.purpose.kind !== "terminal") {
+      await readModelListWithin(this.ctx, "pi", MODEL_LIST_WAIT_MS)
+      config = await readConfig(this.ctx)
+      assertEnabled(input.agent, config)
+    }
+    const initialContext = existing ? undefined : await purposeContext(this.ctx, input, config)
     if (!existing && input.planners !== undefined)
       await assertPlannersRun(this.ctx, input.planners, initialContext?.task)
     const planned = initialContext?.task

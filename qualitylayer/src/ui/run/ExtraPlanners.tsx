@@ -9,7 +9,7 @@
 import { ChevronRightIcon, PlusIcon, UsersIcon, WalletIcon, XIcon } from "lucide-react"
 import { useId, useState } from "react"
 import { AGENT_NAMES, type NativeAgent } from "../../core/agents/ids.ts"
-import { planModel } from "../../core/agents/model-values.ts"
+import { knownModels, planModel, usableDefault } from "../../core/agents/model-values.ts"
 import type { EffortChoice } from "../../core/config-values.ts"
 import { AgentMark } from "../kit/marks/index.ts"
 import { ModelPick } from "../ModelPick.tsx"
@@ -36,7 +36,12 @@ export const plannerSpec = (p: PlannerPick): string =>
 
 /** A planner on an agent starts on its catalog's planning model at high effort, where it has one. */
 export function plannerOn(agent: NativeAgent): PlannerPick {
-  return { agent, model: planModel(agent), effort: agentEfforts(agent).length ? "high" : "" }
+  const model = planModel(agent)
+  return {
+    agent,
+    model: agent === "pi" ? usableDefault(agent, model, knownModels(agent)) : model,
+    effort: agentEfforts(agent).length ? "high" : "",
+  }
 }
 
 const familyOf = (agent: NativeAgent) => {

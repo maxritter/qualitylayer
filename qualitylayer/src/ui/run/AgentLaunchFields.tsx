@@ -389,7 +389,10 @@ export function AgentLaunchFields({
               const agent = next as DefaultsAgent
               onChange({
                 agent,
-                model: agent === "other" ? "" : recommendedModel(agent),
+                model:
+                  agent === "other"
+                    ? ""
+                    : ((agent === "pi" ? startModel(agent) : undefined) ?? recommendedModel(agent)),
                 effort: "high",
                 ...(agent === "other" ? { runWhere: "terminal" } : {}),
               })

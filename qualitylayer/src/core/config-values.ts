@@ -7,6 +7,7 @@ import { isNativeAgent, NATIVE_AGENTS, type NativeAgent, validModelId } from "./
 import {
   AGENT_OWN,
   orchestratorModel,
+  PI_SOL_MODEL,
   planModel,
   smallChangeModel,
   startsOnOwnModel,
@@ -412,7 +413,7 @@ export const SESSION_MODEL = "session"
 
 /**
  * The planning setup QualityLayer recommends for one agent: the model agents.json names, or the
- * agent's own for one that takes any model id (Pi, OpenCode), High, this session.
+ * agent's own where it has no catalog recommendation, High, this session.
  */
 export function recommendedPlanning(agent: ReviewerAgent): PlanningDefaults {
   return {
@@ -495,9 +496,9 @@ export const DEFAULT_CONFIG: Config = {
     "claude-code": { helpers: "sonnet", judge: "opus", design: "opus" },
     codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-sol", design: "gpt-6.2-sol" },
     pi: {
-      helpers: "openai-codex/gpt-6.1-sol",
-      judge: "openai-codex/gpt-6.1-sol",
-      design: "openai-codex/gpt-6.1-sol",
+      helpers: PI_SOL_MODEL,
+      judge: PI_SOL_MODEL,
+      design: PI_SOL_MODEL,
     },
     opencode: {
       helpers: "openai/gpt-6.2-sol",
@@ -523,7 +524,7 @@ export const DEFAULT_CONFIG: Config = {
     models: {
       "claude-code": "sonnet",
       codex: "gpt-6.2-sol",
-      pi: "openai-codex/gpt-6.1-sol",
+      pi: PI_SOL_MODEL,
       opencode: "openai/gpt-6.2-sol",
       cursor: "auto",
       grok: "grok-4.7",

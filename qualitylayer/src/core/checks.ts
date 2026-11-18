@@ -58,7 +58,7 @@ export const CHECK_LOCK_WAIT_MS = 20 * 60_000
 
 /** What to do with a red project check: the moves in the order to think of them, for every reply that reports one. */
 export const RED_CHECK_MOVES =
-  "A project check is red. Fix it. If you believe it was red before this task, run `qualitylayer check all --base`: it runs the same checks on a copy of the task's base commit and matches failing tests by name: only a test that also fails there is excused. A lint, type or build check names no test, so it is never excused; when the base run is red too, `qualitylayer next` asks the person at once and spends no fix round. If it cannot be fixed here, the exit question to the person comes after the fix rounds."
+  "A project check is red. Fix what the task caused within the approved scope. If you believe it was red before this task, run `qualitylayer check all --base`: it runs the same checks on a copy of the task's base commit and matches failing tests by name. Only a test that also fails there is excused. A lint, type or build check names no test, so a red base run requires the person's decision. Ask when only the person can decide how to proceed."
 
 /** An explicit budget for a slow approved check; invalid values keep the default. */
 export function checkTimeoutMs(ctx: Ctx): number {

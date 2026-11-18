@@ -36,11 +36,7 @@ export type JudgeShare = {
   steps: string[]
   /** The minutes its judge is told it has. */
   minutes: number
-  /**
-   * Its points need the judge's model: a scenario run live, a security point, a task not proved by
-   * a test, or the whole-diff review. A share without any re-reads recorded results and runs on
-   * the helpers' model.
-   */
+  /** The share needs live evidence, as for a scenario, security point or whole-diff review. */
   live: boolean
 }
 const TEST_COMMAND =

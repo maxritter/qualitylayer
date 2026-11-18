@@ -46,7 +46,7 @@ export type BoardStage = {
   name: string
   /** Who runs a stage that has no check rows of its own (the fix round, the recheck). */
   who?: string
-  /** The condition under a stage that may not run ("up to 2, if something fails"). */
+  /** The condition under a stage that may not run ("if a check fails"). */
   condition?: string
   state: StageState
   checks: BoardCheck[]
@@ -273,7 +273,7 @@ export function verifyView(
     const unneeded = phase === "verified" && !fixRan
     if (index === 2) {
       who = "the build session"
-      condition = unneeded ? "not needed" : "up to 2, if something fails"
+      condition = unneeded ? "not needed" : "if a check fails"
       state =
         fixLane?.state === "running" || phase === "fixing"
           ? "running"

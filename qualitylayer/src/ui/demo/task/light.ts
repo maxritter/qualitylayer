@@ -136,7 +136,7 @@ function lightChecklist(base: Checklist | null | undefined): Checklist | null | 
     minutes: { checks: 3, checking: 2 },
     agents: 1,
     // A small change's rounds: two judge runs, the first under way.
-    budget: { rounds: { used: 1, limit: 2 }, since: Date.now() - 9 * 60_000 },
+    budget: { rounds: { used: 1, limit: null }, since: Date.now() - 9 * 60_000 },
   }
 }
 

@@ -424,7 +424,7 @@ const exitQuestion = (now: number): NonNullable<TaskDetail["question"]> => ({
   id: "verify-exit-2-1",
   number: 9,
   asked: now - 5 * MINUTE,
-  question: "Point 3 is still open after two fix rounds. How should Verify go on?",
+  question: "Point 3 needs a decision about what Done means. How should Verify go on?",
   choices: [
     {
       label: "Change what Done means",
@@ -464,7 +464,7 @@ function verifyEvents(task: TaskDetail, mode: Mode): Record<string, unknown>[] {
   if (mode === "asked")
     events.push(failed(100), failed(60), failed(20), {
       event: "verify_exit",
-      reason: "fix_cap",
+      reason: "person_needed",
       ts: at(5),
     })
   if (mode === "yours" || mode === "rechecking")

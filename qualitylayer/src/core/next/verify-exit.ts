@@ -49,7 +49,7 @@ export const EXIT_STOP = "Stop the task"
 export const EXIT_KEEP = "Keep it red and review it"
 
 const SAYS: Record<ExitReason, string> = {
-  fix_cap: "The fix rounds are used up and points still fail.",
+  fix_cap: "This earlier Verify exit still has open findings.",
   environment: "What still fails is blocked by the environment, not by the code.",
   check_budget: "A project check ran out of its time budget, so it proves nothing yet.",
   person_needed: "Something only the person can do is still open.",
@@ -70,7 +70,7 @@ export type VerifyExit = {
   iteration: number
   /** How many events the task had when the exit was written: only later ones answer it. */
   seen: number
-  rounds: { done: number; allowed: number }
+  rounds: { done: number; allowed?: number }
   /** Whether a fix round has anything to fix: the last judgement failed. */
   fixable: boolean
   /**
@@ -269,7 +269,7 @@ export async function exitQuestionNow(
 export async function openExit(
   ctx: Ctx,
   task: Task,
-  reason: ExitReason,
+  reason: Exclude<ExitReason, "fix_cap">,
   options: { fixable: boolean },
 ): Promise<NextPayload> {
   const known = await pendingExit(ctx, task)
@@ -292,7 +292,7 @@ export async function openExit(
     at: ctx.clock.now(),
     iteration: task.iterations,
     seen: events.length + 1,
-    rounds: { done: rounds.done, allowed: rounds.allowed },
+    rounds: { done: rounds.done },
     fixable: options.fixable,
     ...(facts === null ? {} : { red: facts }),
     ...(reason === "environment"
@@ -406,7 +406,7 @@ export async function exitReply(
   })
 }
 
-async function openExitQuestion(ctx: Ctx, task: Task, id: string) {
+export async function openExitQuestion(ctx: Ctx, task: Task, id: string) {
   const open = await openQuestion(ctx, task)
   return open?.id === id
     ? open

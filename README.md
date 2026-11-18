@@ -153,7 +153,7 @@ Your agent cuts the Plan into slices and task cards, writes a failing test befor
 
 ### 3 · Verify, then approved by you
 
-Agents that did not write the code check every point and fix what fails, up to two rounds. Then the same page is your review: the code, the screens and each point as it ran. [Verify guide](https://qualitylayer.dev/docs/steps/verify)
+Agents that did not write the code check every point and fix what fails. Then the same page is your review: the code, the screens and each point as it ran. [Verify guide](https://qualitylayer.dev/docs/steps/verify)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/verify-dark.webp">

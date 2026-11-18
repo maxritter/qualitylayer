@@ -1,4 +1,4 @@
-// Shared helper staffing: a scoped judge uses the same model, effort and session settings as a full judge.
+// Split acceptance shares use the helpers' model. The whole-diff review uses the judge's model.
 import type { Ctx } from "../ctx.ts"
 import { detectAgent } from "./agents/detect.ts"
 import { isNativeAgent } from "./agents/ids.ts"
@@ -10,19 +10,25 @@ import { type HelperRole, helperRoleName } from "./scaling.ts"
 
 /**
  * The model a helper of this role runs on (`session` when the working session does the helper work); null
- * for an agent without a model table. The judge and the design review (the artifact check) have
- * their own models; every other helper the helpers'.
+ * for an agent without a model table. Plan, security, and whole-change reviews use the judge.
+ * Artifact checks use the design model. Research, building, and acceptance use the helpers' model.
  */
 export async function subagentModel(
   ctx: Ctx,
   agent: string,
   role: HelperRole,
+  share?: Helper["share"],
 ): Promise<string | null> {
   if (!isNativeAgent(agent)) return null
   if (Object.keys(agentEntry(agent).helperModels ?? {}).length === 0) return null
   const models = (await readConfig(ctx)).models[agent]
   if (models.helpers === SESSION_MODEL) return SESSION_MODEL
-  if (role === "judge") return models.judge
+  if (
+    role === "plan-review" ||
+    role === "security" ||
+    (role === "judge" && share?.kind !== "slices")
+  )
+    return models.judge
   return role === "artifact-check" ? models.design : models.helpers
 }
 
@@ -48,9 +54,9 @@ export async function staff(
   const on: Helper[] = []
   const off: Helper[] = []
   for (const helper of helpers) {
-    const model = await subagentModel(ctx, agent, helper.role)
+    const model = await subagentModel(ctx, agent, helper.role, helper.share)
     // A recheck after a pass reviews a small diff: its brief names a lower effort of its own.
-    const effort = helper.effort ?? helperEffort(helper.role)
+    const effort = helper.effort ?? helperEffort(helper.role, helper.share?.kind === "slices")
     if (model === SESSION_MODEL) off.push(helper)
     else on.push({ ...helper, ...(model !== null ? { model } : {}), effort })
   }

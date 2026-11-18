@@ -416,7 +416,7 @@ export async function fixReply(
     phase: "verify",
     mode: "fixing",
     message:
-      "The judgement failed: fix the gaps test first, commit with qualitylayer commit fix, then qualitylayer verify recheck.",
+      "The judgement failed. Fix what you can within the approved scope, commit the fix, and recheck. If you need a decision only the person can make, ask for it.",
     then: "qualitylayer verify recheck",
   }
 }

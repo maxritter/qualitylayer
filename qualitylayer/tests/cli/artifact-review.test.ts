@@ -75,7 +75,35 @@ test("the brief is the fresh-check text with the four pictures and the artifact'
   expect(brief).toContain(repo.dir)
   const runtime = projectArtifactsRuntime(repo.ctx, repo.ref.id)
   expect(handed.report.startsWith(runtime)).toBe(true)
-  expect(handed.message).toContain("about a minute")
+  expect(handed.effort).toBe("high")
+  expect(handed.message).toContain("at high effort")
+})
+
+test("standalone design review uses the configured model and keeps the This session choice", async () => {
+  const repo = await withLanding("review-staffing")
+  const previousEnv = repo.ctx.env
+  repo.ctx.env = {
+    ...previousEnv,
+    get: (name) =>
+      name === "CLAUDE_CODE_SESSION_ID" ? "artifact-review-test" : previousEnv.get(name),
+  }
+  try {
+    await writeConfig(repo.ctx, { models: { "claude-code": { design: "sonnet" } } })
+    const handed = await run(repo, "review", "landing")
+    expect(handed).toMatchObject({ status: "handed", model: "sonnet", effort: "high" })
+
+    await run(repo, "new", "solo", "--purpose", "A summary reader")
+    await writeConfig(repo.ctx, { models: { "claude-code": { helpers: "session" } } })
+    const own = await run(repo, "review", "solo")
+    expect(own.status).toBe("handed")
+    expect(own.model).toBeUndefined()
+    expect(own.effort).toBeUndefined()
+    expect(own.message).toContain("Review solo in this session")
+  } finally {
+    await writeConfig(repo.ctx, {
+      models: { "claude-code": { helpers: "sonnet", design: "opus" } },
+    })
+  }
 })
 
 test("the person's request replaces the purpose as the acceptance points", async () => {

@@ -1,4 +1,4 @@
-# Verify: checks, one fresh reviewer, your fixes, then the person's review
+# Verify: checks, independent review, your fixes, then the person's review
 
 The build is delivered. Verify proves it with records and fixes what fails, so the person's review
 opens with everything finished. Implement's limits stand. QualityLayer writes the person's page
@@ -19,18 +19,20 @@ and every Done means point passes as approved or as amended. The page then turns
    before this task: `qualitylayer check all --base` records that (a test that also fails on the base
    commit is excused by name; a lint, type or build check never is, and when it is red on the base too
    the person is asked at once with `qualitylayer question ask`).
-3. **`qualitylayer verify judge`** hands out the fresh reviewer's brief. It adds the missing tests,
-   runs the Done means steps on the running program, reviews the whole diff and records a verdict for
-   each step and one for the diff. Leave the checkout alone until it has finished. QualityLayer
-   commits its tests with its pass; one that fails is a gap.
+3. **`qualitylayer verify judge`** hands out the independent review. A single judge adds the missing
+   tests, runs the Done means steps and reviews the whole diff. If the first round is split, each
+   acceptance helper runs the steps in its brief on the assigned source and records its own evidence.
+   The fresh judge checks the recorded results and reviews the integrated diff independently. Leave
+   the checkout alone while they work. QualityLayer commits the judge's tests with its pass.
 4. **Second opinion** (when on) runs beside the reviewer: answer each finding `Answer: Taken · <what
    you changed>` or `Answer: Kept · <why>`. With Independent review off in Settings, check the change
    against Done means yourself.
 5. **Fix the gaps** (`qualitylayer verify fix`), running the focused checks you choose, then
    `qualitylayer verify recheck`: a fresh reviewer rechecks what failed and the lines the fix changed.
+   Keep a genuine regression case in the suite when fixing a finding, verify it fails before the fix and passes after, and keep running it in later rounds.
    A commit of tests or docs only needs no recheck, just `qualitylayer check all`.
-6. **`qualitylayer check all` once more**, on the final source. A red result is another fix round, or
-   the exit below once the rounds are used.
+6. **`qualitylayer check all` once more**, on the final source. Fix a red result when you can make
+   progress within the approved scope; otherwise follow the exit below for a real blocker.
 
 ## What fails a judgement
 
@@ -58,11 +60,12 @@ task, name it as a follow-up with its owner. A step that passes on a retry is pa
 
 ## When it does not pass
 
-At most two fix rounds. Whether a round made progress is your judgement, written under *Fix rounds*;
-a round that fixed nothing ends them. A second failure in the same place says the approach is wrong,
-not the case: rebuild that part another way, or narrow what it promises with `qualitylayer plan amend
---by agent`, before any question to the person. When points still fail after the rounds, or only the
-environment, a budget, a release or the person blocks the rest, `qualitylayer next` names the exit and the move:
+Choose the next move from the evidence, within the approved scope. Keep fixing and
+rechecking while you can make meaningful progress. If the result is unchanged, change the approach
+or investigate the cause before another recheck. Record what you tried under *Fix rounds*.
+If you cannot make progress without a decision only the person can make, ask that specific question
+with `qualitylayer question ask`. When the environment, a timed-out check, a release or a person-only
+need blocks the rest, `qualitylayer next` names the exit and the move:
 
 - **Outside the task** (another session's work, a failure already on the base): a follow-up with its
   owner, under *Fix rounds* in the agents' file.

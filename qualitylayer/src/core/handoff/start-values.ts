@@ -164,5 +164,13 @@ export function startTerminalLine(_choice: Pick<StartChoice, "where">, newBranch
   return startBranchLine("checkout", newBranch)
 }
 
-/** The effort a helper of this role runs at: the independent review high, every other medium. */
-export const helperEffort = (role: HelperRole): string => (role === "judge" ? "high" : "medium")
+/** High for a review, Medium for bounded work including acceptance shares. */
+export function helperEffort(role: HelperRole, acceptanceShare = false): "high" | "medium" {
+  if (acceptanceShare) return "medium"
+  return role === "judge" ||
+    role === "plan-review" ||
+    role === "security" ||
+    role === "artifact-check"
+    ? "high"
+    : "medium"
+}

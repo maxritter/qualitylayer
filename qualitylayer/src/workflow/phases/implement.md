@@ -4,8 +4,10 @@ The person approved the Plan. You cut it into slices and cards, then build them,
 Work from the saved files in the order the reply's `context` lists them: you may be a fresh session.
 The Plan is the agreement; its agents' file is guidance that grants nothing. Verify then hands the
 result to a fresh reviewer that never wrote the code. You lead the build until the person reviews.
-Use your harness's native subagents for cohesive slices when useful: give each its scope, files and
-checks, then review and integrate its result.
+Build a small change directly. For larger builds, use the harness's native subagents for cohesive
+slices that can proceed independently. Give each its scope, owned files, checks and the result you
+need back. Keep shared files and dependent work with their owner. Review each handoff, integrate the
+work and check the assembled change yourself.
 
 **Done when** every card is ticked or waits on a need, every Done means step ran green on the built
 tree, you have read your whole diff once and removed near-copies and dead code, and the work is

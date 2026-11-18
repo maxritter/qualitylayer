@@ -18,7 +18,6 @@ import {
 } from "./store.ts"
 
 export {
-  FIX_ROUNDS,
   STAGE_ORDER,
   type Stage,
   type TaskEvent,

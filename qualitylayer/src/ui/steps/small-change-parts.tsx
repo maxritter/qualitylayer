@@ -75,7 +75,7 @@ export function IntakeRow({
       <p className="ssc-note" role={error !== null ? "alert" : undefined}>
         {error ??
           (small
-            ? "A one-page Plan, one build step, one fresh reviewer who also adds the missing tests, two rounds. It becomes the full workflow when the Plan or the build needs more."
+            ? "A one-page Plan, one build step, one fresh reviewer who also adds the missing tests. It becomes the full workflow when the Plan or the build needs more."
             : "You can switch until the Plan is approved.")}
       </p>
     </section>

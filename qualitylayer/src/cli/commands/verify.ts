@@ -15,7 +15,8 @@ export async function verifyCmd(ctx: Ctx, args: string[]): Promise<Result<NextPa
   if (rest.length > 0 || !VERBS.includes(verb as VerifyVerb))
     return err({
       code: "bad_args",
-      message: "usage: qualitylayer verify judge | recheck | fix | keep-red",
+      message:
+        "usage: qualitylayer verify judge | recheck | fix | keep-red. Use fix for actionable failures and recheck after a change. Record a service blocker with qualitylayer need --kind service; continue independent work and ask the person only for a decision they own. Keep-red requires the person's recorded choice.",
     })
   return withManagedRunNext(ctx, [], async (bound) =>
     withTaskExtras(bound, await verifyVerbCmd(bound, verb as VerifyVerb)),

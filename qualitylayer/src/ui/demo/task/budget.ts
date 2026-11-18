@@ -1,5 +1,4 @@
-// The demo's verification runs: one quiet meter while Verify checks (run 1 of 2), and the spent meter
-// once the fix rounds ran.
+// The demo's recorded verification runs while Verify checks and fixes.
 // A small change's own rounds are `light.ts`'s.
 
 import type { TaskDetail } from "../../api.ts"
@@ -14,7 +13,7 @@ export const budget: Area = {
         ...task,
         checklist: {
           ...task.checklist,
-          budget: { rounds: { used: 1, limit: 2 }, since: now - 38 * 60_000 },
+          budget: { rounds: { used: 1, limit: null }, since: now - 38 * 60_000 },
         },
       }
     if ((moment === "verify-fixing" || moment === "verify-asked") && task.checklist != null)
@@ -22,7 +21,7 @@ export const budget: Area = {
         ...task,
         checklist: {
           ...task.checklist,
-          budget: { rounds: { used: 2, limit: 2 }, since: now - 70 * 60_000 },
+          budget: { rounds: { used: 2, limit: null }, since: now - 70 * 60_000 },
         },
       }
     if (moment === "verify-rechecking")
@@ -32,7 +31,7 @@ export const budget: Area = {
           ? {
               checklist: {
                 ...task.checklist,
-                budget: { rounds: { used: 2, limit: 2 }, since: now - 61 * 60_000 },
+                budget: { rounds: { used: 2, limit: null }, since: now - 61 * 60_000 },
               },
             }
           : {}),

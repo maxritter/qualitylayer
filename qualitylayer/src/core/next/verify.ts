@@ -70,7 +70,6 @@ import { commitReviewerTests, reviewerTestsWord } from "../reviewer-tests.ts"
 import { shellQuote } from "../shell.ts"
 import { descriptionPath, ensureDraftDescription } from "../ship/closing-record.ts"
 import { ensureVerifyLog } from "../task/reconcile.ts"
-import { fixRoundsOf } from "../task/stages.ts"
 import {
   appendEvent,
   loadTask,
@@ -197,11 +196,28 @@ export async function verifyPayload(
       : null
   // The judge also reads what the build session recorded for Verify's required lines.
   const required = await requiredJudgeSection(ctx, task)
+  const serviceNeeds =
+    judging?.after === undefined
+      ? []
+      : openNeeds(await readNeeds(ctx, task)).filter(
+          (need) => need.kind === "service" && /^T[0-9]+$/.test(need.for),
+        )
+  const services = serviceNeeds.length
+    ? `## Outstanding service needs\n\n${serviceNeeds
+        .map((need) =>
+          need.state === "set"
+            ? `- ${need.for}: reported restored; verify availability before rerunning its step.`
+            : `- ${need.for}: open service need; compare it with the previous verdict and evidence.`,
+        )
+        .join("\n")}`
+    : null
   // And which checks' results are a clean copy's, so files that were left out fail no point.
   const cleanCopy = await cleanCopyNote(ctx, task)
   const withRequired = (helper: Helper): Helper => ({
     ...helper,
-    brief: [helper.brief, required, cleanCopy].filter((part) => part !== null).join("\n\n"),
+    brief: [helper.brief, required, cleanCopy, services]
+      .filter((part) => part !== null)
+      .join("\n\n"),
   })
   const withCombined = (helper: Helper): Helper =>
     withRequired(
@@ -223,8 +239,8 @@ export async function verifyPayload(
           })
           return share.kind === "diff" ? withCombined(helper) : withRequired(helper)
         })
-  // Every fresh judge runs on the judge model, a light task's too: its cheaper judge was never
-  // measured. A recheck of a change made after a pass reviews only that diff: medium effort.
+  // The whole change still gets the configured judge, including a light task. Staffing uses the
+  // helpers' model only for split acceptance shares. A recheck after a pass uses medium effort.
   const after = judging?.after
   const afterPass =
     after !== undefined &&
@@ -731,7 +747,7 @@ async function judgeAtWork(
 
 /**
  * The checks first, then the judge: a red check is its evidence. `verify judge` assigns it; the
- * brief says what comes. The run limit and a release wait come before both.
+ * brief says what comes. A release wait comes before both.
  */
 async function assignJudge(
   ctx: Ctx,
@@ -746,9 +762,6 @@ async function assignJudge(
     return ok(await openExit(ctx, task, "release_wait", { fixable: false }))
   }
   if (release !== null) return ok(base(task, { phase: "verify", ...releaseReply(release) }))
-  // The fix rounds are used up: another judgement waits for the person's answer.
-  if (fixRoundsOf(await readEvents(ctx, task)).exhausted)
-    return ok(await openExit(ctx, task, "fix_cap", { fixable: true }))
   let admission: Awaited<ReturnType<typeof prepareJudgeAdmission>>
   try {
     admission = await prepareJudgeAdmission(ctx, task)
@@ -833,13 +846,13 @@ async function recordResult(
 
 /**
  * Why a counted round ends Verify with a question instead of going on, or null when it goes on:
- * a failing environment, a timed-out check, something only the person can do, the fix rounds.
+ * a failing environment, a timed-out check, or something only the person can do.
  */
 async function exitOf(
   ctx: Ctx,
   counted: Task,
   round: { passed: boolean; blocked: boolean; iteration: Iteration },
-): Promise<ExitReason | null> {
+): Promise<Exclude<ExitReason, "fix_cap"> | null> {
   if (round.blocked) return "environment"
   const failed = round.iteration.verdicts.filter(
     (v) => v.verdict === "FAIL" || v.verdict === "MISSING",
@@ -850,7 +863,6 @@ async function exitOf(
       return "check_budget"
   }
   if (round.passed && openNeeds(await readNeeds(ctx, counted)).length > 0) return "person_needed"
-  if (!round.passed && fixRoundsOf(await readEvents(ctx, counted)).exhausted) return "fix_cap"
   return null
 }
 
@@ -1197,6 +1209,7 @@ export async function verifyVerb(
             move: mode === "checking" ? "qualitylayer verify judge" : "qualitylayer verify recheck",
           },
         ])
+      await pendingExit(ctx, task)
       const started = (await readEvents(ctx, task)).some(
         (e) => e.event === "round_started" && e.n === task.iterations,
       )

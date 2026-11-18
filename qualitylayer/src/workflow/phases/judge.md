@@ -33,8 +33,7 @@ file says. Never deploy, touch real user data or use a production service. A blo
 `[FAIL]` or `[MISSING]` with text starting `environment:`, the steps you could not run and captured proof
 of the blocker, never for broken code. Every verdict that fails only for that blocker (each acceptance
 step, and any scenario, point or card line this brief lists, resting on it) starts `environment:` and
-cites the same proof; one failing verdict without it makes the round a code failure that spends a fix
-round.
+cites the same proof; a failure caused by the code remains a gap to fix.
 
 1. **The Done means steps**, step by step on the running program, as `acceptance A1`, `acceptance A2`
    ...: run each step as written. For a paid or real-agent step, inspect its recorded run first. Reuse

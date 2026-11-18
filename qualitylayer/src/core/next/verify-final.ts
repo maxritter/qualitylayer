@@ -2,7 +2,7 @@
 // `qualitylayer check all`: the agent runs the focused checks it chooses for the code it changed,
 // and the reviewer rechecks only the points the fix touched. The person's review opens once the full project
 // checks have passed on the source that would ship. A red result withdraws the standing pass and
-// sends Verify to a fix round within the cap, or to the exit question past it.
+// sends Verify back to the failing check.
 
 import { type Ctx, ok, type Result } from "../../ctx.ts"
 import { failureWords } from "../check-failures.ts"
@@ -77,7 +77,7 @@ async function withdraw(
   standing: RedStanding | undefined,
 ): Promise<Result<NextPayload>> {
   // Red on the base too, with no test name to match: a fix round cannot tell whether the task broke
-  // it, so the person decides now (Keep is among the answers), without the rounds being spent.
+  // it, so the person decides whether to keep it red.
   if (red.timedOut !== true && standing?.state === "unmatched")
     return ok(await openExit(ctx, task, "red_base", { fixable: true }))
   const fresh = standing?.state === "new_failures" ? standing : null
@@ -94,8 +94,6 @@ async function withdraw(
     })
   if (red.timedOut === true)
     return ok(await openExit(ctx, task, "check_budget", { fixable: false }))
-  if (fixRoundsOf(await readEvents(ctx, task)).exhausted)
-    return ok(await openExit(ctx, task, "fix_cap", { fixable: true }))
   // The withdrawn pass is a failed judgement: the task stays in Verify, in a fix round.
   const build = await fixReply(
     ctx,

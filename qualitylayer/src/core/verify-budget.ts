@@ -1,6 +1,4 @@
-// Verification's rounds, read from the task's own events: judge runs used and allowed, and when the
-// build was delivered. Recorded use only: no forecast, no heartbeat, no clock. When the rounds are
-// spent with work open, `next` ends Verify with one question (core/verify-exit.ts).
+// Verification's recorded judge runs and when the build was delivered.
 //
 // A build is delivered when its last task is ticked (`tasks_complete`, or `work_deferred` when only
 // human needs remain). A fix the person asks for in Review starts its own delivery.
@@ -10,8 +8,8 @@ import { fixRoundsOf } from "./task/stages.ts"
 import { readEvents, type Task } from "./task/store.ts"
 
 export type VerifyBudget = {
-  /** Judge runs used and allowed. */
-  rounds: { used: number; limit: number }
+  /** Recorded runs. A null limit means there is no fixed count. */
+  rounds: { used: number; limit: null }
   /** When the build was delivered; null before its last task is ticked. */
   since: number | null
 }
@@ -36,9 +34,8 @@ export function deliveryOf(events: readonly Record<string, unknown>[]): number |
 export async function verifyBudget(ctx: Ctx, task: Task): Promise<VerifyBudget> {
   const events = await readEvents(ctx, task)
   const rounds = fixRoundsOf(events)
-  // The first judgement and each allowed fix round's re-judgement.
   return {
-    rounds: { used: rounds.judgeRuns, limit: rounds.allowed + 1 },
+    rounds: { used: rounds.judgeRuns, limit: null },
     since: deliveryOf(events),
   }
 }

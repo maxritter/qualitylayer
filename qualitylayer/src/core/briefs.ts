@@ -645,7 +645,7 @@ function shareSection(share: JudgeShare, iteration: number, byStep: boolean): st
   if (byStep && share.kind === "diff") {
     return [
       intro,
-      "You judge the whole change at once; the other judges run the steps of the Plan's Acceptance test.",
+      "Review the integrated change on its assigned source and check the recorded evidence yourself. The acceptance helpers run their assigned steps and record their own verdicts.",
       "- **Review of the whole diff:** the `review` line and its findings, including files changed outside every Files block (Verify's own lanes and the fix helpers are in scope), and each card's done lines against the code.",
       "Record no `acceptance`, `done`, `dod`, `scenario` or `check` line.",
       record,
@@ -664,8 +664,7 @@ function shareSection(share: JudgeShare, iteration: number, byStep: boolean): st
   if (share.kind === "diff") {
     return [
       intro,
-      "You judge the whole change at once; the other judges check each task's definition of done " +
-        "and the scenarios.",
+      "Review the integrated change on its assigned source and check the recorded evidence yourself. The acceptance helpers check each task's definition of done and the scenarios.",
       `- **The checks:** cite the CLI's \`${CHECKS_RECORD}\`, or \`## Checks\` in \`${agentFileOf("implement")}\` for earlier runs. Record one \`check\` line per command.\n` +
         "- **The acceptance test:** one `acceptance A<n>` line per step of the Plan's Acceptance test, run as it says.\n" +
         "- **Done means:** one `done <n>` line per item of *Done means*.\n" +

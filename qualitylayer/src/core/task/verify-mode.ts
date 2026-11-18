@@ -9,9 +9,10 @@ import { buildOwnPaths } from "../gate/revision.ts"
 import { revisionPaths } from "../git/revision-paths.ts"
 import { releaseWaiting } from "../judge-environment.ts"
 import { openNeeds, readNeeds } from "../need/need.ts"
-import { readVerifyExit, type VerifyExit } from "../next/verify-exit.ts"
+import { openExitQuestion, readVerifyExit, type VerifyExit } from "../next/verify-exit.ts"
 import { projectRedState, redProjectChecks } from "../red-checks.ts"
 import { passStanding, readAssignment } from "../verification.ts"
+import { answeredQuestions } from "./question.ts"
 import { type VerifyMode, verifyModeOf } from "./stages.ts"
 import { readEvents, type Task } from "./store.ts"
 
@@ -34,6 +35,14 @@ async function checksWorkSince(ctx: Ctx, task: Task, at: number): Promise<boolea
  */
 export async function exitCauseGone(ctx: Ctx, task: Task, exit: VerifyExit): Promise<boolean> {
   switch (exit.reason) {
+    case "fix_cap":
+      // Old automatic stops lift unless this exact question already reached the person.
+      return (
+        (await openExitQuestion(ctx, task, exit.id)) === null &&
+        !(await answeredQuestions(ctx, task)).some(
+          (answer) => answer.id?.replace(/-r\d+$/, "") === exit.id.replace(/-r\d+$/, ""),
+        )
+      )
     case "person_needed":
       return openNeeds(await readNeeds(ctx, task)).length === 0
     case "release_wait":

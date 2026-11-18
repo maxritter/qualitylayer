@@ -1745,7 +1745,7 @@
         "qualitylayer/src/ui/steps/small-change-parts.tsx"
       ],
       "demo": "/app-demo/?moment=verify-outside#/task/demo",
-      "note": "the demo opens Review with its open point: Fix open items, Approve with it open, Request changes; Plan calls and other open items use the same control UI review, 31 October 2026: the Review open-point card is retired; the page keeps the Plan decision and the item with answers.",
+      "note": "the demo opens Review with its open point: Fix open items, Approve with it open, Request changes; Plan calls and other open items use the same control UI review, 31 October 2026: the Review open-point card is retired; the page keeps the Plan decision and the item with answers. Current Small change intake describes one fresh reviewer, and Verify can continue through further fix and recheck rounds.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "review-file-missing.html": {

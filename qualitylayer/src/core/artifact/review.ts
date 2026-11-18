@@ -47,6 +47,7 @@ type ReviewReply = {
   brief_file?: string
   /** The model the fresh agent runs on: Settings › Models › Design review for the calling agent. */
   model?: string
+  effort?: "high"
   reported?: boolean
   findings?: number
   result?: string
@@ -155,17 +156,22 @@ export async function reviewArtifact(
     report: reportPath(target),
   })
   const model = await subagentModel(ctx, detectAgent(ctx.env), "artifact-check")
+  const check =
+    model === SESSION_MODEL
+      ? `Review ${target.artifact} in this session using the brief in ${briefPath(target)}.`
+      : `Start a fresh reviewer${model === null ? "" : ` on ${model}`} at high effort using the brief in ${briefPath(target)}.`
   return ok({
     status: "handed",
     ...shown(target),
     revision: target.revision,
     report: reportPath(target),
     brief_file: briefPath(target),
+    ...(model === SESSION_MODEL ? {} : { effort: "high" as const }),
     ...(model !== null && model !== SESSION_MODEL ? { model } : {}),
     fallback:
       "If you cannot start a subagent, take the four pictures yourself with no memory of how the page was drawn, hold them against the acceptance points, and tell the person the check was yours.",
     message:
-      `Before you tell the person ${target.artifact} is ready, a fresh agent looks at it (about a minute): start a fresh subagent${model !== null && model !== SESSION_MODEL ? ` on ${model}` : ""} with exactly the brief in ${briefPath(target)} and nothing else, and go on meanwhile. ` +
+      `${check} ` +
       `When its report returns, save it to a file and run \`${callFor(target)} --done --report <file>\`. ${ONE_ROUND}`,
   })
 }

@@ -6,6 +6,12 @@ A scoped recheck may carry an earlier acceptance pass only through the existing 
 
 The existing Verify lanes, sections and layout stay. No acknowledgment, new lookup command, extra review round or duplicate execution is required to make the projection complete.
 
+## Fix rounds and rechecks
+
+Agents choose the next move within the approved scope. They can continue fixing and rechecking while the evidence supports meaningful progress. If the result is unchanged, they investigate or change approach before another recheck. A real blocker that requires the person uses the existing question path. Historical cap questions already asked or answered keep their authority, and the final review still needs the person's approval.
+
+A recheck names each outstanding service need by its card and recorded state. The judge pairs a matching open need with the previous blocker evidence. Reported restoration calls for a bounded availability check. Other steps retain their own verdicts and evidence. A genuine regression case fails before the fix, passes after it and stays in the suite for later rounds.
+
 ## Task attribution and branch context
 
 The task's walkthrough and fix facts use the existing positive ownership records. Its scoped file inventory also bounds the outside-card and dependency facts. A commit made after feedback is a fix only when this task's recorded commit set contains it; a date, branch range, Plan path or note cannot supply ownership. Mixed-file parts and pending or unavailable proof retain their existing meaning. Pending attribution cannot support “As planned” merely because no attributed deviation remains; positively known facts still show, and the existing pending details stay available.

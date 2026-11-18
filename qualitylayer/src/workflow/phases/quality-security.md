@@ -34,5 +34,5 @@ file you change is `{verify_doc}`: append exactly one block at the end of `## Se
 A clean block is `**Result:** done · nothing severe in the change`. A **critical** or **high** finding is
 an unticked box `- [ ] S<n>` with severity, `path:line`, what is wrong, who can reach it and the fix; the
 session fixes it. A **medium** or **low** finding has no box and blocks nothing. Never record a finding
-you are not sure of, or a clean result for what you did not read; if your budget ran out, add `**Not
-checked:** <what>` (unreached scope reaches the person's review as unverified, never as clean). If the session continues this review, update the block and keep prior findings. Report the result line.
+you are not sure of, or a clean result for what you did not read. For unchecked scope, add `**Not
+checked:** <what>` so the person's review shows it as unverified. If the session continues this review, update the block and keep prior findings. Report the result line.

@@ -221,13 +221,13 @@ function verifyMoves(mode: VerifyMode): Move[] {
       return [
         {
           command: "qualitylayer verify fix",
-          does: "start the fix round for what failed",
+          does: "fix actionable failures within the approved scope",
           by: "agent",
         },
         { command: "qualitylayer commit fix", does: "commit a fix", by: "agent" },
         {
           command: "qualitylayer verify recheck",
-          does: "a fresh reviewer rechecks what failed and the fix",
+          does: "a fresh reviewer rechecks what failed and what the change affected",
           by: "agent",
         },
       ]

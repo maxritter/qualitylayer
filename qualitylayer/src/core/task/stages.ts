@@ -23,9 +23,6 @@ export type TaskEvent =
    */
   | "follow_up"
 
-/** The fix rounds a failed Verify gets: a fix after a failed judgement, ended by the re-judgement. */
-export const FIX_ROUNDS = 2
-
 type Counts = { judgeRuns: number; asked: number }
 /** The counts so far, the counts before the last pass and whether that pass stands. */
 type Rounds = Counts & { before: Counts; passStands: boolean }
@@ -77,20 +74,17 @@ export function fixRoundsOf(events: readonly Record<string, unknown>[]): {
   judgeRuns: number
   done: number
   asked: number
-  allowed: number
-  exhausted: boolean
 } {
   const { judgeRuns, asked } = events.reduce(roundStep, START)
   const done = Math.max(0, judgeRuns - 1)
-  const allowed = FIX_ROUNDS + asked
-  return { judgeRuns, done, asked, allowed, exhausted: done >= allowed }
+  return { judgeRuns, done, asked }
 }
 
 /**
  * What Verify is doing, read from the task's events like the rounds above:
  * - `checking`: no judgement stands and none failed last (the first check, or after the person's amendment);
- * - `fixing`: the last judgement failed and a fix round is left;
- * - `asked`: an exit question is open, or the rounds are spent (the exit is written with the failing result);
+ * - `fixing`: the last judgement failed;
+ * - `asked`: a real blocker has an exit question;
  * - `yours`: the last judgement passed and stands, so the person reviews;
  * - `rechecking`: a pass stood, then the person's comment or a moved base reopened it; their approval still saves.
  */
@@ -108,7 +102,7 @@ export function verifyModeOf(
     else if (event.event === "verify_reopened" && mode === "yours") mode = "rechecking"
     else if (event.event === "plan_amended" && event.by === "user") mode = "checking"
   }
-  return mode === "fixing" && fixRoundsOf(events).exhausted ? "asked" : mode
+  return mode
 }
 
 type Table = Record<Stage, Partial<Record<TaskEvent, Stage>>>

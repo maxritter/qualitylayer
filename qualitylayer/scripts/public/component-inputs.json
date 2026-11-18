@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "b4e0770792657c54d4e2779e8cca45c8c0154dc8",
-  "catalogSha256": "4c472ae732939d6847bbd840c308fb2f7115af894add53844b2857d1dadd320b",
+  "sourceHead": "d4bdc737a7c1b2ed30a27dfe4caefbf3177809e2",
+  "catalogSha256": "971745449735d7071b6648714172bdc82055b59d23e7c4e118cc33f17d2cf0d8",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -4047,7 +4047,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/search/index.ts",
-      "sha256": "07f1d880040ac5c7ebcd13ad9f0f8ca28b824a4c013211aa78ae964acf8b02d3",
+      "sha256": "c77ae41d73eb31e8fdc80e8c90392ebf9096d568fd7d1903d626fdb071543c4f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4071,7 +4071,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/settings.ts",
-      "sha256": "be0969f789382154f7444879e5bd95c845467d6b217b1764b2a0359808c8e7bf",
+      "sha256": "d27f764d361be2d66acc1d1085920d48a376f94739160026735b3867d86ff732",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7007,7 +7007,7 @@
     },
     {
       "path": "qualitylayer/src/memory-contracts.ts",
-      "sha256": "3d4c94fa6a3d5a436feb186bda01e4006df5b38e5368066bceb3fe6d12ac2d38",
+      "sha256": "6e8f5202181b55f06814ef38fe35319c44d284b2f843550ddc052b5b6472d6c4",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7263,7 +7263,7 @@
     },
     {
       "path": "qualitylayer/src/memory-store/catalog.ts",
-      "sha256": "609b00f16471ba618495fe6a6a029b62d7723bbdb17522c485f1b59fcf58398a",
+      "sha256": "d22cd80c232e084f76a73680fb45ba0e9b4b3f4645eb270e152f1bdbf19e3acc",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7879,7 +7879,7 @@
     },
     {
       "path": "qualitylayer/src/server/memory.ts",
-      "sha256": "137b9a7345e5d0677fc5957be69a35b1540c03ba586edddf0d288277902054a9",
+      "sha256": "7bff3fafc7c915b24b7595658a0442c5abb30e2b909a99a6ced87003ec543219",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12711,7 +12711,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Memory.tsx",
-      "sha256": "4f03ca7de646a217cf4d32370e34bd4463aaacee2df164f8ae2dde03648de1cb",
+      "sha256": "52fef45cbab7f4c84c85609b117c6e9e9d5dc24c6051692af396da96600fd640",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

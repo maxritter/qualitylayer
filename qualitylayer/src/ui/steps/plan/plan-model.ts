@@ -430,7 +430,9 @@ function captionLinkLabels(caption: string): string {
   const pieces: string[] = []
   let from = 0
   let open = -1
-  for (let at = 0; at < caption.length; at++) {
+  let cursor = 0
+  while (cursor < caption.length) {
+    const at = cursor++
     if (caption[at] === "[" && open < 0) open = at
     if (caption[at] !== "]" || open < 0) continue
     const label = open
@@ -441,7 +443,7 @@ function captionLinkLabels(caption: string): string {
     if (end === at + 2) continue
     pieces.push(caption.slice(from, label), caption.slice(label + 1, at))
     from = end + 1
-    at = end
+    cursor = from
   }
   pieces.push(caption.slice(from))
   return pieces.join("")

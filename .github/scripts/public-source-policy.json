@@ -763,7 +763,7 @@
     "qualitylayer/src/core/next/refusal.ts": "4db404c8e1b3c52ddcab5399ab247e5735bfec1cd7d5c5ff2ba8a15303f5d8b4",
     "qualitylayer/src/core/next/reply.ts": "c535ef55736a1e408844d200846a004c70686979022acdab05ef5e49d2d50580",
     "qualitylayer/src/core/next/shared.ts": "8a1e6814f757750c6b946f29ae239311cae3c1583f7e963898a43324c60b5934",
-    "qualitylayer/src/core/next/ship.ts": "ae72c01fee2e1c371f7b3a595fc3487733e88de5e9f46c13d7fdcac5a1284770",
+    "qualitylayer/src/core/next/ship.ts": "7eca4780e25bc9b9f3945bee589ad0cb47c221c64576f2d42b3d47f3a007f52b",
     "qualitylayer/src/core/next/start.ts": "2b94bf0f203df3ddbfdb960e92102664c0eaa8477dbf05e3334f361f49a5b5ab",
     "qualitylayer/src/core/next/steps.ts": "bd1ac395ac3dfdcdca2b54c427c6baee9574857534c249a0629d7f1727e9dec0",
     "qualitylayer/src/core/next/verify-exit.ts": "9253a2f09fa2ab6d6e1ae4d1aa9a3348a691779410e92ed72baecd9e18e61d32",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "13f575dd197ec5a6a6e4f0851f609fd4f7f4c6b630a059c23c54f828b05e94d1",
+  "reviewManifestSha256": "59e64df760b1c1809aef8f5fcf95cef1ec965aec8a4e44b8e5fb4a5d20ca37c4",
   "schema": 1,
-  "sourceHead": "804431c45d003d633817d073e395cd04c93256ed"
+  "sourceHead": "fb3d77626b5327db148389c28ea31ecaba4ad38f"
 }

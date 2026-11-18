@@ -201,6 +201,38 @@ async function shipChoiceFields(ctx: Ctx, task: Task): Promise<Record<string, un
   }
 }
 
+async function handoffPlanDir(ctx: Ctx, marker: string): Promise<string | null> {
+  try {
+    const { planDir } = JSON.parse(await ctx.fs.readFile(marker)) as { planDir?: unknown }
+    return typeof planDir === "string" && isAbsolute(planDir) ? planDir : null
+  } catch {
+    return null
+  }
+}
+
+async function planHandoff(ctx: Ctx, repo: RepoRef, tasksDir: string, slug: string) {
+  const marker = join(tasksDir, slug, "handoff.json")
+  const into = taskDir(repo.root, slug)
+  if (
+    !(await ctx.fs.exists(marker)) ||
+    (await ctx.fs.exists(join(tasksDir, slug, "ship.json"))) ||
+    (await ctx.fs.exists(into))
+  )
+    return null
+  const from = await handoffPlanDir(ctx, marker)
+  if (from === null || from === into) return null
+  const checkout = dirname(dirname(dirname(from)))
+  if (
+    taskDir(checkout, slug) !== from ||
+    !(await ctx.fs.exists(join(from, IDENTITY_FILE))) ||
+    (await ctx.git.commonDir(checkout)) !== repo.commonDir
+  )
+    return null
+  const task = await loadTask(ctx, { ...repo, root: checkout }, slug)
+  if (task === null || !isCurrentLayout(task) || (await isArchived(ctx, task))) return null
+  return { slug, from, into }
+}
+
 /**
  * The build starts in a checkout that lacks the Plan: copy the task's folder from the checkout that
  * planned it. Branches are the user's: nothing is merged or switched to bring the Plan here.
@@ -212,29 +244,11 @@ export async function adoptPlan(
 ): Promise<Result<boolean>> {
   const tasksDir = join(projectRuntimeDir(ctx, repo.id), "tasks")
   const slugs = (await ctx.fs.exists(tasksDir)) ? await ctx.fs.readdir(tasksDir) : []
+  const selected = requested === null ? slugs.sort() : slugs.filter((name) => name === requested)
   const candidates: { slug: string; from: string; into: string }[] = []
-  for (const slug of requested === null
-    ? slugs.sort()
-    : slugs.filter((name) => name === requested)) {
-    const marker = join(tasksDir, slug, "handoff.json")
-    if (!(await ctx.fs.exists(marker))) continue
-    if (await ctx.fs.exists(join(tasksDir, slug, "ship.json"))) continue
-    const here = taskDir(repo.root, slug)
-    if (await ctx.fs.exists(here)) continue
-    let planDir: unknown = null
-    try {
-      planDir = (JSON.parse(await ctx.fs.readFile(marker)) as { planDir?: unknown }).planDir
-    } catch {
-      // an unreadable marker has no plan to copy
-    }
-    if (typeof planDir !== "string" || !isAbsolute(planDir) || planDir === here) continue
-    const checkout = dirname(dirname(dirname(planDir)))
-    if (taskDir(checkout, slug) !== planDir || !(await ctx.fs.exists(join(planDir, IDENTITY_FILE))))
-      continue
-    if ((await ctx.git.commonDir(checkout)) !== repo.commonDir) continue
-    const task = await loadTask(ctx, { ...repo, root: checkout }, slug)
-    if (task === null || !isCurrentLayout(task) || (await isArchived(ctx, task))) continue
-    candidates.push({ slug, from: planDir, into: here })
+  for (const slug of selected) {
+    const candidate = await planHandoff(ctx, repo, tasksDir, slug)
+    if (candidate !== null) candidates.push(candidate)
   }
   if (candidates.length > 1)
     return refused(

@@ -82,7 +82,8 @@ const Caption = ({ text }: { text: string }) =>
     </p>
   )
 
-const isVerticalFlow = (code: string) => /^\s*(?:flowchart|graph)\s+(?:TB|TD)\b/m.test(code)
+const isVerticalFlow = (code: string) =>
+  /^[^\S\r\n\u2028\u2029]*(?:flowchart|graph)\s+(?:TB|TD)\b/m.test(code)
 
 /** Named choices and a readable figure; a vertical flow keeps its drawn height. */
 export function DiagramTabs({ items, live }: { items: readonly DiagramItem[] } & Where) {

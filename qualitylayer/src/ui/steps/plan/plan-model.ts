@@ -9,6 +9,7 @@ import { referenceName } from "../../../core/artifact/reference.ts"
 import { proofOfSection, stepsOfPoint } from "../../../core/docs/proof-list.ts"
 import { proseLines } from "../../../core/docs/rules/types.ts"
 import { verdictWords } from "../../../core/pages/sections/plan.ts"
+import { isLineText } from "../../../core/text-boundaries.ts"
 import type { TaskDetail } from "../../api.ts"
 import type { Fact } from "../../step-page/bands/FactRow.tsx"
 import {
@@ -221,18 +222,28 @@ export type PlanIndicator = {
   section: "Done means" | "Approach"
 }
 
+function riskParts(line: string | null): { value: string; evidence: string } | null {
+  if (line === null || !isLineText(line)) return null
+  for (let at = line.indexOf("—"); at >= 0; at = line.indexOf("—", at + 1)) {
+    if (!/\s/.test(line.charAt(at - 1)) || !/\s/.test(line.charAt(at + 1))) continue
+    const value = line.slice(0, at).trimEnd()
+    const evidence = line.slice(at + 1).trimStart()
+    if (value && evidence) return { value, evidence }
+  }
+  return null
+}
+
 export function planIndicators(
   summary: string,
   acceptance: string,
   approach: string,
 ): PlanIndicator[] {
   const indicators: PlanIndicator[] = []
-  const exposure = labelValue(summary, "Risk")?.match(/^(.+?)\s+—\s+(.+)$/)
-  if (exposure?.[1] && exposure[2] && acceptance.trim()) {
+  const exposure = riskParts(labelValue(summary, "Risk"))
+  if (exposure && acceptance.trim()) {
     indicators.push({
       kind: "Risk",
-      value: exposure[1],
-      evidence: exposure[2],
+      ...exposure,
       section: "Done means",
     })
   }
@@ -414,14 +425,37 @@ const KIND_WORDS: Record<DiagramKind, string> = {
 
 const GENERIC_DIAGRAM_TITLE = /^(?:diagram|flow(?:chart)?|sequence(?: diagram)?|states?)(?: \d+)?$/i
 
+/** Read the label of a caption's simple inline link; leave other bracketed text as written. */
+function captionLinkLabels(caption: string): string {
+  const pieces: string[] = []
+  let from = 0
+  let open = -1
+  for (let at = 0; at < caption.length; at++) {
+    if (caption[at] === "[" && open < 0) open = at
+    if (caption[at] !== "]" || open < 0) continue
+    const label = open
+    open = -1
+    if (at === label + 1 || caption[at + 1] !== "(") continue
+    const end = caption.indexOf(")", at + 2)
+    if (end < 0) break
+    if (end === at + 2) continue
+    pieces.push(caption.slice(from, label), caption.slice(label + 1, at))
+    from = end + 1
+    at = end
+  }
+  pieces.push(caption.slice(from))
+  return pieces.join("")
+}
+
 /** Use a complete short caption as a title, or finish at a word when it has more detail. */
 function titleFromCaption(caption: string): string {
-  const title = caption.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").split(/(?<=[.!?])\s+/, 1)[0] ?? ""
+  const words = captionLinkLabels(caption)
+  const sentence = words.search(/[.!?] /)
+  const title = sentence < 0 ? words : words.slice(0, sentence + 1)
   if (title.length <= 72) return title.replace(/[.!?]$/, "")
-  const short = title
-    .slice(0, 73)
-    .replace(/\s+\S*$/, "")
-    .trimEnd()
+  const edge = title.slice(0, 73)
+  const end = edge.lastIndexOf(" ")
+  const short = (end < 0 ? edge : edge.slice(0, end)).trimEnd()
   return `${short}…`
 }
 

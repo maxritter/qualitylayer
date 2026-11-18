@@ -68,6 +68,17 @@ export type TaskArtifactState = {
   open?: (where: ArtifactWhere, artifact: Artifact) => void
 }
 
+/** Use only the picture keys in the authorized task listing, for standalone and folder pages. */
+function galleryThumbnails(artifacts: readonly Artifact[], where: ArtifactWhere) {
+  const pictures = new Map<string, string>()
+  for (const saved of artifacts) {
+    for (const page of saved.pages ?? [saved]) {
+      if (page.thumb) pictures.set(page.file, thumbSrc(where, page.file, page.thumb))
+    }
+  }
+  return pictures
+}
+
 export function useTaskArtifacts(
   api: Api,
   task: TaskDetail,
@@ -93,15 +104,8 @@ export function useTaskArtifacts(
     cache,
     theme,
     version,
-    galleryThumbnails: async () => {
-      const pictures = new Map<string, string>()
-      for (const saved of (await api.taskArtifacts(task.id)).task) {
-        for (const page of saved.pages ?? [saved]) {
-          if (page.thumb) pictures.set(page.file, thumbSrc(where, page.file, page.thumb))
-        }
-      }
-      return pictures
-    },
+    galleryThumbnails: async () =>
+      galleryThumbnails((await api.taskArtifacts(task.id)).task, where),
     load: (file) =>
       cache.load(file, () =>
         api.artifactPage(

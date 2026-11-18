@@ -350,9 +350,8 @@ function fitReaderDrawing(body: HTMLDivElement, svg: SVGSVGElement, width: numbe
 }
 
 function fitDiagram(body: HTMLDivElement | null, onLayout?: () => void): () => void {
-  if (!body) return () => {}
-  const svg = body.querySelector("svg")
-  if (svg === null || typeof svg.getBBox !== "function") return () => {}
+  const svg = body?.querySelector("svg")
+  if (!body || !svg || typeof svg.getBBox !== "function") return () => {}
   const fit = () => {
     const width = fitToDrawing(svg)
     if (width === null) return

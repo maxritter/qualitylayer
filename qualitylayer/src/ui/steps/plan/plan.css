@@ -901,7 +901,7 @@
 }
 .pl-indicator strong {
   color: var(--ql-text);
-  font-weight: 550;
+  font-weight: 600;
 }
 .pl-indicator[aria-expanded="true"],
 .pl-indicator:hover {

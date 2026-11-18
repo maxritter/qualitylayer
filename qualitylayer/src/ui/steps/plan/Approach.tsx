@@ -81,12 +81,20 @@ function approachBlock(token: Token, key: string): ApproachBlock {
 
 /** Recognize the styled blocks without parsing paragraphs, tables or complex lists as rows. */
 export function approachOf(markdown: string): ApproachBlock[] {
-  const body = markdown.replace(/^##[^\S\r\n]+[^\r\n]*(?:\r?\n|$)/, "")
+  const body = withoutOpeningHeading(markdown)
   const seen = new Map<string, number>()
   return marked
     .lexer(body.replace(/<!--\s*fill:[\s\S]*?-->/g, ""))
     .filter((token) => token.type !== "space")
     .map((token) => approachBlock(token, occurrenceKey(seen, token.raw)))
+}
+
+function withoutOpeningHeading(markdown: string): string {
+  if (!markdown.startsWith("##") || !/[^\S\r\n]/.test(markdown.charAt(2))) return markdown
+  const end = markdown.indexOf("\n")
+  const carriage = markdown.indexOf("\r")
+  if (end < 0) return carriage < 0 ? "" : markdown
+  return carriage >= 0 && carriage < end - 1 ? markdown : markdown.slice(end + 1)
 }
 
 function labelledBullet(text: string): { lead: string; detail: string } | null {

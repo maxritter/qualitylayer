@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "353051fd93f8e980e1b392f215e2aa4080c84811",
-  "catalogSha256": "8644d35c838e63cadcb40bfd15d4e82a15c5a264b39f239bebd5ff591a99da30",
+  "sourceHead": "1f754a7eadfb43808841f213c36803970b3bae0b",
+  "catalogSha256": "c78158ba18d4ea55896215fec760dc5392f2068201fc3bb55a601adb56b3d8be",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -407,7 +407,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/question.ts",
-      "sha256": "28d7d81da75591f008a7c27ead948a69774075d272b7d2e8aefe88580024fc8f",
+      "sha256": "185b65ba5840c9aebaee714b87ccff2cf7d3132f132cb17b218f253d42dfe1a8",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

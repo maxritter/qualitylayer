@@ -5,7 +5,7 @@
 
 import { marked } from "marked"
 import { parseArtifactReference } from "../../core/artifact/reference.ts"
-import { agentFileOf } from "../../core/docs/names.ts"
+import { agentFileOf, CHECKS_RECORD } from "../../core/docs/names.ts"
 import { FLOW_STEPS, type FlowStepId } from "../../core/flow.ts"
 import { artifactName } from "./ArtifactFrame.tsx"
 import type { PlainBlock } from "./DocReader.tsx"
@@ -138,6 +138,8 @@ export type StepFile = {
   task?: string
   /** Reads a file of the task folder; Copy for an agent reads the agents' file with it. */
   load?: (name: string) => Promise<string>
+  /** Implement also copies the newer check lines, if the task has a check record. */
+  loadChecks?: (() => Promise<string | null>) | undefined
 }
 
 const labelOf = (step: FlowStepId): string => FLOW_STEPS.find((s) => s.id === step)?.label ?? step
@@ -178,9 +180,20 @@ export function forAgentMarkdown(
   stepMarkdown: string,
   step: FlowStepId,
   agentsFile: string,
+  checks?: string | null,
 ): string {
   const body = agentsFile.replace(/^\s*# [^\n]*\n/, "")
-  return `${stepMarkdown.trimEnd()}\n\n---\n\n# For agents: ${labelOf(step)} (${agentsPathOf(step)})\n\nChanges nothing agreed; where it differs from the step file above, the step file wins.\n\n${toMarkdown(body.replace(/^\s+/, "")).trimEnd()}\n`
+  const newChecks = checks
+    ?.split("\n## Earlier checks\n")[0]
+    ?.replace(/^# Checks\n+/, "")
+    .trimEnd()
+  const heading = `# For agents: ${labelOf(step)} (${agentsPathOf(step)})`
+  const parts = [
+    stepMarkdown.trimEnd(),
+    `---\n\n${heading}\n\nChanges nothing agreed; where it differs from the step file above, the step file wins.\n\n${toMarkdown(body.replace(/^\s+/, "")).trimEnd()}`,
+  ]
+  if (newChecks) parts.push(`---\n\n# Checks (${CHECKS_RECORD})\n\n${newChecks}`)
+  return `${parts.join("\n\n")}\n`
 }
 
 type Host = {

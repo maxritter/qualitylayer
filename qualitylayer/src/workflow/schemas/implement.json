@@ -139,11 +139,10 @@
     {
       "heading": "Checks",
       "file": "agents",
-      "required": true,
-      "allowEmpty": true,
+      "required": false,
       "show": "detail",
       "writer": "ql",
-      "hint": "written by `qualitylayer check` only: one line per command it ran, with the revision, the exit code and the time"
+      "hint": "retained in older tasks; new check results go in records/checks.md"
     }
   ],
   "markers": ["summary", "slices", "decisions", "limits"],

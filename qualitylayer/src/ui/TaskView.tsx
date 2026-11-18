@@ -105,6 +105,7 @@ import { openQuickAsk } from "./quick-ask/store.ts"
 import { artifactMark, codeMark, passageMark, quoteMark } from "./quick-ask/task-marks.ts"
 import { ReportThis } from "./ReportThis.tsx"
 import { Resizer, type StoredWidth } from "./Resizer.tsx"
+import { checksForAgent } from "./reader/check-record.ts"
 import {
   OUTLINE_MIN,
   OutlineButton,
@@ -1267,6 +1268,7 @@ function TaskViewContent({
                 step: fileRole,
                 task: task.slug,
                 load: (name: string) => api.doc(task.id, name).then((read) => read.markdown),
+                loadChecks: checksForAgent(api, task.id, fileRole),
               },
             }
           : {})}

@@ -5,7 +5,8 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../ctx.ts"
-import { agentFileOf, type DocRole } from "./docs/names.ts"
+import { materializeChecksRecord } from "./check-receipts.ts"
+import { agentFileOf, CHECKS_RECORD, type DocRole } from "./docs/names.ts"
 import { artifactPath, extractFences } from "./docs/visuals.ts"
 import { type Task, taskDocPath } from "./task/store.ts"
 
@@ -117,11 +118,15 @@ export async function readerPackage(
       ? await artifactsOf(ctx, task, [pathOf(task, "plan")])
       : []
   const chosen = [...read, ...mockups]
+  const optional = table.onDemand.map((doc) => pathOf(task, doc))
+  const readsBuild = table.read.includes("agents:implement")
+  if (readsBuild || table.onDemand.includes("agents:implement")) {
+    const checks = await materializeChecksRecord(ctx, task).catch(() => null)
+    if (checks !== null) (readsBuild ? chosen : optional).push(join(task.dir, CHECKS_RECORD))
+  }
   return {
     read: await existing(chosen),
-    onDemand: await existing(
-      table.onDemand.map((doc) => pathOf(task, doc)).filter((path) => !chosen.includes(path)),
-    ),
+    onDemand: await existing(optional.filter((path) => !chosen.includes(path))),
   }
 }
 

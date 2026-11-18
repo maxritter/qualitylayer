@@ -17,7 +17,7 @@ import {
   sectionText,
   verifyLogPath,
 } from "./docs/build-log.ts"
-import { agentFileOf, RESEARCH_DIR, RESEARCH_QUESTIONS } from "./docs/names.ts"
+import { agentFileOf, CHECKS_RECORD, RESEARCH_DIR, RESEARCH_QUESTIONS } from "./docs/names.ts"
 import { allTasks, type Outline } from "./docs/outline.ts"
 import { describeShare, type JudgeShare, stepsAreProved } from "./docs/rules/judge-shares.ts"
 import { templateFrom } from "./docs/schema.ts"
@@ -607,7 +607,7 @@ export function qualityHelper(
       `## Your change\n\nThe repository is \`${task.repoRoot}\`. The change under review is \`${diff}\`${base === null ? NO_BASE : ""}. The record you write in is \`${record}\`.${
         implementAgentsPath(task) === record
           ? ""
-          : ` The build's notes and checks, for context: \`${implementAgentsPath(task)}\`.`
+          : ` The build's notes are in \`${implementAgentsPath(task)}\`. Check and scan results are in \`${CHECKS_RECORD}\` when present.`
       }${
         areas.length > 0 && !rechecking
           ? `\n\nThe build's commits changed these areas. Cover each, the backend routes as much as the screens:\n\n${areas.join("\n")}`
@@ -666,7 +666,7 @@ function shareSection(share: JudgeShare, iteration: number, byStep: boolean): st
       intro,
       "You judge the whole change at once; the other judges check each task's definition of done " +
         "and the scenarios.",
-      `- **The checks:** cite the CLI's \`## Checks\` record in \`${agentFileOf("implement")}\`; one \`check\` line per command.\n` +
+      `- **The checks:** cite the CLI's \`${CHECKS_RECORD}\`, or \`## Checks\` in \`${agentFileOf("implement")}\` for earlier runs. Record one \`check\` line per command.\n` +
         "- **The acceptance test:** one `acceptance A<n>` line per step of the Plan's Acceptance test, run as it says.\n" +
         "- **Done means:** one `done <n>` line per item of *Done means*.\n" +
         "- **Review of the whole diff:** the `review` line and its findings, including files changed outside every Files block (Verify's own lanes and the fix helpers are in scope).",

@@ -18,6 +18,9 @@ export const EVIDENCE_DIR = "evidence"
 export const ARTIFACT_DIR = "artifacts"
 /** Raw command output (a probe's output, the final checks note). */
 export const RECORDS_DIR = "records"
+
+/** The Markdown record of the commands and scans run by QualityLayer. */
+export const CHECKS_RECORD = `${RECORDS_DIR}/checks.md`
 /** The other agents' reviews, verbatim. */
 export const REVIEWS_DIR = "reviews"
 /** The research helpers' reports, as written (`research/r1.md`). */

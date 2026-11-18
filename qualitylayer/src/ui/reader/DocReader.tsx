@@ -887,7 +887,13 @@ export function DocReader({
           return load ? toBlocks(await copyPictureBody(copied.body, load)) : copied.blocks
         }}
         {...(stepId !== undefined && loadAgents !== undefined
-          ? { agents: { step: stepId, load: () => loadAgents(agentsPathOf(stepId)) } }
+          ? {
+              agents: {
+                step: stepId,
+                load: () => loadAgents(agentsPathOf(stepId)),
+                ...(stepFile?.loadChecks !== undefined ? { loadChecks: stepFile.loadChecks } : {}),
+              },
+            }
           : {})}
         {...(forAgent !== undefined ? { forAgent } : {})}
         {...(planExport === true ? { planExport: true } : {})}

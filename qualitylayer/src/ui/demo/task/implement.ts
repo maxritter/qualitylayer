@@ -1,6 +1,6 @@
 // The demo's content for the Implement documents of the task ("Usage-based billing"): QualityLayer's
 // summary, the slices and the decisions between markers, the limits and the program design; and the
-// agents' file with the task cards, the build session's notes and the recorded checks. The raw output and the
+// agents' file with the task cards and the build session's notes. The check record, raw output and the
 // pictures the build saved are what the Files tab's Records row counts.
 
 import type { CheckProgress } from "../../../core/check-progress.ts"
@@ -75,8 +75,9 @@ Slices 1 to 4 are done. Slice 5 is at task 2 of 2, slice 6 at task 2 of 3. Next 
 ## For Verify
 
 Open the limits form on the Plan and limits page with an account that has two meters; the alert fires once at 80 %.
+`
 
-## Checks
+export const IMPLEMENT_CHECKS = `# Checks
 
 - T1 · 7d2e9b4 · \`npm test -- tests/gateway/meter.test.ts\` · exit 0 · 1.7s
 - T1 · 7d2e9b4 · \`npm run lint\` · exit 0 · 8.2s
@@ -231,7 +232,7 @@ export const implement: Area = {
     const now = Date.now()
     return {
       ...task,
-      records: ["it1-acceptance.txt", "checks-all.txt"],
+      records: ["it1-acceptance.txt", "checks-all.txt", "checks.md"],
       evidence: ["cp-2-run-2-retries.png"],
       // The agents' own files, Plan to Implement: the same row counts them, never lists them.
       agents: agentFilesThrough("implement"),

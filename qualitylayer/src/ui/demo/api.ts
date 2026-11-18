@@ -7,7 +7,7 @@ import { NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
 import type { Artifact } from "../../core/artifact/format.ts"
 import { helperDoc, threadHandling } from "../../core/comment-handling.ts"
 import { DEFAULT_CONFIG } from "../../core/config-values.ts"
-import { NAMES, taskFiles } from "../../core/docs/names.ts"
+import { CHECKS_RECORD, NAMES, taskFiles } from "../../core/docs/names.ts"
 import { calendarPeriods, homeFacts } from "../../core/interaction-shell/home.ts"
 import { agentIdOf } from "../../core/interaction-shell/status.ts"
 import { ANSWER_KINDS, changeCount, flattenItems, type Item, openCount } from "../../core/items.ts"
@@ -72,6 +72,7 @@ import { advanceBatch, focusMember } from "./task/batch.ts"
 import { demoBranch } from "./task/branch.ts"
 import { demoPullRequestBody } from "./task/description.ts"
 import { TASK_FILES } from "./task/documents.ts"
+import { IMPLEMENT_CHECKS } from "./task/implement.ts"
 import { DEMO_TASK_ID, demoTask, type Moment, taskDocument, taskSections } from "./task/index.ts"
 import { atReview } from "./task/moments.ts"
 import { stepPage } from "./task/page.ts"
@@ -1053,9 +1054,21 @@ export function createDemoApi(
         ? { name, kind: "image", type: "image/svg+xml", base64: btoa(flagshipEvidenceSvg(name)) }
         : { name, kind: "text", text: flagshipEvidenceText(name) }
     },
-    // The demo's tasks keep no agent/ folder: a record reads as its evidence text.
+    taskRecords: async (id) =>
+      get(id).records?.includes("checks.md")
+        ? [
+            {
+              name: CHECKS_RECORD,
+              label: "Checks",
+              exists: true,
+              status: "record",
+              approved: false,
+            },
+          ]
+        : [],
     record: async (id, path) => {
-      get(id)
+      const task = get(id)
+      if (path === CHECKS_RECORD && task.records?.includes("checks.md")) return IMPLEMENT_CHECKS
       // The demo task's pull request body, as GitHub gets it.
       if (id === DEMO_TASK_ID && path === "records/pull-request-body.md")
         return demoPullRequestBody()

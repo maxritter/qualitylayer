@@ -73,7 +73,11 @@ type Props = {
    * A step file with an agents' file: Copy for an agent gives `body` (the step file as Markdown),
    * then that file, read when the item is chosen. `body` is already the document that reads on its own.
    */
-  agents?: { step: FlowStepId; load: () => Promise<string> }
+  agents?: {
+    step: FlowStepId
+    load: () => Promise<string>
+    loadChecks?: () => Promise<string | null>
+  }
   prepareBlocks?: () => Promise<PlainBlock[]>
   prepareFormatted?: () => Promise<Formatted>
 }
@@ -158,9 +162,9 @@ export function CopyMenu({
   // cannot be read is said, never left out: an agent outside QualityLayer would work on half.
   const copyForAgent = async () => {
     if (agents === undefined) return
-    const joined = agents
-      .load()
-      .then((file) => forAgentMarkdown(toMarkdown(body), agents.step, file))
+    const joined = Promise.all([agents.load(), agents.loadChecks?.()]).then(([file, checks]) =>
+      forAgentMarkdown(toMarkdown(body), agents.step, file, checks),
+    )
     void joined.catch(() => {})
     const written = await writeClipboardText(joined).then(
       (ok) => ({ ok }),
@@ -260,7 +264,11 @@ export function CopyMenu({
               testId="copy-for-agent"
               icon={<BotIcon aria-hidden="true" />}
               title="Copy for an agent"
-              hint="The step file, then its agents' file"
+              hint={
+                agents.loadChecks
+                  ? "The step, agent notes and checks"
+                  : "The step file, then its agents' file"
+              }
               onClick={() => void copyForAgent()}
             />
           ) : null}

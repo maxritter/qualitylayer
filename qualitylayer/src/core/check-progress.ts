@@ -1,5 +1,6 @@
 import { join } from "node:path"
 import type { Ctx } from "../ctx.ts"
+import { readCheckRecords, recordsPath } from "./check-receipts.ts"
 import type { CheckRecord } from "./checks.ts"
 import { pidAlive } from "./self.ts"
 import type { Task } from "./task/store.ts"
@@ -77,19 +78,18 @@ export async function writeCheckProgress(
   await ctx.fs.atomicWrite(checkProgressPath(task, progress.check), `${JSON.stringify(progress)}\n`)
 }
 
-async function recordStoppedCommand(
+async function recoverCommands(
   ctx: Ctx,
   task: Pick<Task, "runtimeDir">,
   progress: CheckProgress & { ended: number },
-) {
-  const path = join(task.runtimeDir, "checks.json")
-  await ctx.fs.withLock(`${path}.lock`, async () => {
-    let records: CheckRecord[] = []
-    try {
-      records = JSON.parse(await ctx.fs.readFile(path)) as CheckRecord[]
-    } catch {
-      /* first record */
-    }
+): Promise<CheckRecord[] | null> {
+  const path = recordsPath(task)
+  return ctx.fs.withLock(`${path}.lock`, async () => {
+    const records = await readCheckRecords(ctx, task)
+    const own = records.filter((record) => record.check === progress.check)
+    // The process can stop after the receipt commits and before its last progress write.
+    if (own.some((record) => record.display?.version === 1))
+      return own.filter((record) => record.revision !== "worker-stopped")
     if (
       records.some(
         (record) =>
@@ -98,7 +98,7 @@ async function recordStoppedCommand(
           record.revision === "worker-stopped",
       )
     )
-      return
+      return null
     records.push({
       scope: progress.scope,
       command: progress.command,
@@ -110,7 +110,20 @@ async function recordStoppedCommand(
       check: progress.check,
     })
     await ctx.fs.atomicWrite(path, `${JSON.stringify(records)}\n`)
+    return null
   })
+}
+
+function finishedProgress(progress: CheckProgress, records: CheckRecord[]): CheckProgress {
+  const results = records.map((record) => ({
+    command: record.command,
+    ran: record.ran,
+    passed: record.ran && record.exit === 0 && !record.notRun && !record.timedOut,
+    ...(record.reused ? { reused: true as const } : {}),
+    ...(record.timedOut ? { timedOut: true as const, timeoutMs: record.timeoutMs } : {}),
+  }))
+  const failed = results.findIndex((result) => !result.passed)
+  return { ...progress, exit: failed === -1 ? 0 : (records[failed]?.exit ?? null), results }
 }
 
 /** A worker, rather than its starter, keeps a check alive. Dead and stale workers are terminal. */
@@ -121,33 +134,32 @@ export async function readCheckProgress(
 ): Promise<CheckProgress[]> {
   const dir = join(task.runtimeDir, "checks")
   if (!(await ctx.fs.exists(dir))) return []
+  const stale = (progress: CheckProgress) =>
+    progress.running && (!alive(progress.pid) || ctx.clock.now() - progress.heartbeat > 30_000)
   const rows: CheckProgress[] = []
   for (const file of await ctx.fs.readdir(dir)) {
     if (!file.endsWith(".progress.json")) continue
     try {
       const progress = JSON.parse(await ctx.fs.readFile(join(dir, file))) as CheckProgress
-      if (
-        progress.running &&
-        (!alive(progress.pid) || ctx.clock.now() - progress.heartbeat > 30_000)
-      ) {
+      if (stale(progress)) {
         await ctx.fs.withLock(`${checkProgressPath(task, progress.check)}.lock`, async () => {
           const current = JSON.parse(await ctx.fs.readFile(join(dir, file))) as CheckProgress
-          if (
-            !current.running ||
-            (alive(current.pid) && ctx.clock.now() - current.heartbeat <= 30_000)
-          ) {
+          if (!stale(current)) {
             Object.assign(progress, current)
             return
           }
-          const terminal = {
+          const stopped = {
             ...current,
             running: false,
             exit: null,
             ended: ctx.clock.now(),
-            notRun: "worker stopped",
           }
           // A worker that stopped while it waited for the lock ran no command: nothing to record.
-          if (!current.queued) await recordStoppedCommand(ctx, task, terminal)
+          const receipt = current.queued ? null : await recoverCommands(ctx, task, stopped)
+          const terminal =
+            receipt === null
+              ? { ...stopped, notRun: "worker stopped" }
+              : finishedProgress(stopped, receipt)
           // Terminal progress is visible only after its command record is durable.
           await writeCheckProgress(ctx, task, terminal)
           Object.assign(progress, terminal)

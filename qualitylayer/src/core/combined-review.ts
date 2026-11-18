@@ -6,7 +6,7 @@
 import type { Ctx } from "../ctx.ts"
 import { type CheckRecord, readCheckRecords } from "./checks.ts"
 import type { Verdict } from "./docs/build-log.ts"
-import { agentFileOf } from "./docs/names.ts"
+import { agentFileOf, CHECKS_RECORD } from "./docs/names.ts"
 import { buildRevision } from "./gate/revision.ts"
 import type { Task } from "./task/store.ts"
 
@@ -50,7 +50,7 @@ export function combinedSection(repoRoot: string, receipts: readonly SourceRecei
   const reuse =
     receipts.length === 0
       ? "No final check has a receipt for this source yet: run a command you need once, and cite what QualityLayer recorded."
-      : `QualityLayer already ran these commands on exactly this source and recorded their receipts under \`## Checks\` in \`${agentFileOf("implement")}\`. Cite each receipt and do **not** run it again, not as the acceptance test either:\n\n${receipts.map((r) => `- \`${r.command}\``).join("\n")}\n\nWrite each as \`- [PASS] check: reused receipt — <the line as written>\`. Run the acceptance test's own command only when no receipt above covers it.`
+      : `QualityLayer already ran these commands on exactly this source. Read their receipts in \`${CHECKS_RECORD}\`, or under \`## Checks\` in \`${agentFileOf("implement")}\` for earlier runs. Cite each receipt and do **not** run it again, not as the acceptance test either:\n\n${receipts.map((r) => `- \`${r.command}\``).join("\n")}\n\nWrite each as \`- [PASS] check: reused receipt — <the line as written>\`. Run the acceptance test's own command only when no receipt above covers it.`
   return [
     "## You also add the missing tests",
     "",

@@ -201,6 +201,7 @@ qualitylayer/src/core/chat/slices.ts !filter !diff
 qualitylayer/src/core/chat/task.ts !filter !diff
 qualitylayer/src/core/check-failures.ts !filter !diff
 qualitylayer/src/core/check-progress.ts !filter !diff
+qualitylayer/src/core/check-receipts.ts !filter !diff
 qualitylayer/src/core/checklist.ts !filter !diff
 qualitylayer/src/core/checks-base.ts !filter !diff
 qualitylayer/src/core/checks-runtime.ts !filter !diff
@@ -1437,6 +1438,7 @@ qualitylayer/src/ui/reader/VisualLegend.tsx !filter !diff
 qualitylayer/src/ui/reader/VisualParts.tsx !filter !diff
 qualitylayer/src/ui/reader/WireframeBlock.tsx !filter !diff
 qualitylayer/src/ui/reader/code-scrollbars.css !filter !diff
+qualitylayer/src/ui/reader/check-record.ts !filter !diff
 qualitylayer/src/ui/reader/copy-out.ts !filter !diff
 qualitylayer/src/ui/reader/diagram-pins.ts !filter !diff
 qualitylayer/src/ui/reader/fenced-page.ts !filter !diff

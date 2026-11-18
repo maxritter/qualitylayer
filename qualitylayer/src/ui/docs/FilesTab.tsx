@@ -8,7 +8,7 @@ import {
   LockIcon,
 } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { agentFileOf, NAMES, type TaskFile } from "../../core/docs/names.ts"
+import { agentFileOf, CHECKS_RECORD, NAMES, type TaskFile } from "../../core/docs/names.ts"
 import { FLOW_STEPS, flowStepOf } from "../../core/flow.ts"
 import { type Api, api as liveApi, type TaskDetail } from "../api.ts"
 import { planningOver } from "../artifact/TaskArtifact.tsx"
@@ -440,7 +440,21 @@ export function FilesTab({
             </section>
           ))}
       {typeof artifactList === "function" ? null : supporting}
-      <FilesRecords task={task} {...(api !== undefined ? { api } : {})} />
+      <FilesRecords
+        task={task}
+        {...(api !== undefined ? { api } : {})}
+        {...(records.data?.some((entry) => entry.name === CHECKS_RECORD)
+          ? {
+              checks: {
+                selected: recordPath === CHECKS_RECORD,
+                open: () => {
+                  onOpen(view)
+                  setDocumentRecord({ taskId: task.id, path: CHECKS_RECORD })
+                },
+              },
+            }
+          : {})}
+      />
       <FilesFeedbackHistory task={task} />
       {/* A file with no row here (a record opened from a link): its path under its own heading. */}
       {!selectedDocument && selectedName && full ? (

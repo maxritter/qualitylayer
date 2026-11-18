@@ -25,7 +25,7 @@ import {
   readBuildRecord,
   verifyLogPath,
 } from "../docs/build-log.ts"
-import { agentFileOf, LOGS } from "../docs/names.ts"
+import { agentFileOf, CHECKS_RECORD, LOGS } from "../docs/names.ts"
 import { type JudgeShare, judgeShares } from "../docs/rules/judge-shares.ts"
 import {
   acceptanceBasis,
@@ -287,7 +287,7 @@ async function cleanCopyNote(ctx: Ctx, task: Task): Promise<string | null> {
   return [
     "## Checks that passed on a clean copy",
     "",
-    `${runs.map((run) => `\`${run.command}\``).join(", ")} failed in the checkout and passed on a copy of HEAD plus this task's own files. That run is the check's result; it is recorded under \`## Checks\` in \`${LOGS.implement}\`, and its log keeps both outputs.`,
+    `${runs.map((run) => `\`${run.command}\``).join(", ")} failed in the checkout and passed on a copy of HEAD plus this task's own files. Its log keeps both outputs. Read the result in \`${CHECKS_RECORD}\`, or under \`## Checks\` in \`${agentFileOf("implement")}\` for an earlier run.`,
     "",
     `Left out: ${files.length} file${files.length === 1 ? "" : "s"} that ${files.length === 1 ? "is" : "are"} not this task's (${shown}): another session's uncommitted work, or untracked files no session of this task wrote. They are still in the checkout, and a command run there can fail on them. Such a failure is no finding against this task and no \`environment:\` failure: cite the recorded run for the check, and judge the task's own code.`,
   ].join("\n")

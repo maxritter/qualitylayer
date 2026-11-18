@@ -278,17 +278,18 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
   agents/
     01-plan.md          <span class="dim">read first, constraints, findings
                         (one line each), contracts, checks</span>
-    02-implement.md     <span class="dim">task cards with notes, the record</span>
+    02-implement.md     <span class="dim">task cards and build notes</span>
     03-verify.md        <span class="dim">verdicts, findings, ship steps</span>
   research/r1.md, r2.md <span class="dim">the helpers' reports, read on demand</span>
-  artifacts/  assets/  evidence/  records/  reviews/</pre>
+  records/checks.md     <span class="dim">project checks and scans</span>
+  artifacts/  assets/  evidence/  reviews/</pre>
     </div>
   </div>
 </section>
 
 <section class="part" id="each-fact-once" data-screen-label="Each fact once">
   <h2>Each fact once</h2>
-  <p class="lead">Where each kind of fact lives. QualityLayer copies nothing between files.</p>
+  <p class="lead">Where each kind of fact lives.</p>
   <dl class="kv">
     <dt>What you get</dt><dd>Plan › Summary</dd>
     <dt>Why</dt><dd>Plan › Problem (for a bug: What breaks and Why)</dd>
@@ -302,7 +303,8 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
     <dt>What the helpers found</dt><dd>research/r1.md and r2.md; one line each in agents/01-plan.md › Findings; what a task needs of it on that task's card</dd>
     <dt>Which files change</dt><dd>agents/02-implement.md › Task cards, and nowhere else</dd>
     <dt>What was decided on the way</dt><dd>Implement › Decided while building</dd>
-    <dt>Every check and verdict</dt><dd>The agents' Implement and Verify files, and QualityLayer's own records</dd>
+    <dt>Check results</dt><dd><code>records/checks.md</code>. Older active tasks also show their original Checks lines here.</dd>
+    <dt>Review verdicts</dt><dd>The agents' Verify file</dd>
   </dl>
 </section>
 
@@ -323,7 +325,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
 <section class="part" id="copy-and-share" data-screen-label="Copy and share">
   <h2>Copy and share</h2>
   <ul class="princ">
-    <li><svg class="ic"><use href="#i-copy"/></svg><span><b>Copy.</b> A step page copies as Markdown, or with pictures for Confluence, Docs, Notion and Word.</span></li>
+    <li><svg class="ic"><use href="#i-copy"/></svg><span><b>Copy.</b> A step page copies as Markdown, or with pictures for Confluence, Docs, Notion and Word. Copy for an agent includes the agent notes and the Implement check results.</span></li>
     <li><svg class="ic"><use href="#i-send"/></svg><span><b>Get approval sends the same file</b> and tracks its revision, so an approval or a comment from outside lands on the right version. On the Plan it sends <code>01-plan.md</code>; on Verify, <code>03-verify.md</code> as the pull request description.</span></li>
     <li><svg class="ic"><use href="#i-user1"/></svg><span><b>No sharing with teammates inside QualityLayer.</b> Other people read and approve on the systems they already use.</span></li>
   </ul>

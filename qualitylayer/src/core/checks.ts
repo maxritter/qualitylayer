@@ -4,7 +4,7 @@
 // verify command, `check all` the Plan's project checks. A command an agent
 // changed after the approval is not run: the record says so, and the agent runs
 // it through its own permission prompt. Bounded raw output goes to the runtime folder;
-// one line per command goes under `## Checks` in the Implement agents' file. A red record is evidence
+// one line per command goes in the task's Checks record. A red record is evidence
 // the reviewer rules on; nothing here classifies, reruns or splits a failure.
 
 import { spawn } from "node:child_process"
@@ -20,10 +20,15 @@ import {
   readCheckProgress,
   writeCheckProgress,
 } from "./check-progress.ts"
+import {
+  materializeChecksRecord,
+  REFUSED_CHECK,
+  readCheckRecords,
+  saveCheckReceipt,
+} from "./check-receipts.ts"
 import { commandBun } from "./checks-runtime.ts"
 import { scanLine } from "./code-quality/scanners/scan.ts"
 import { runTaskScans } from "./code-quality/scanners/task-scans.ts"
-import { appendToSection, implementAgentsPath } from "./docs/build-log.ts"
 import {
   type ApprovedCommands,
   projectChecks,
@@ -43,6 +48,8 @@ import { killProcessTree } from "./platform.ts"
 import { skippedRequiredRuns } from "./required-skips.ts"
 import { pidAlive, selfCommand } from "./self.ts"
 import { planDetailsText, type Task } from "./task/store.ts"
+
+export { readCheckRecords, recordsPath } from "./check-receipts.ts"
 
 /** Each command may run this long before it is stopped. */
 export const CHECK_TIMEOUT_MS = 15 * 60_000
@@ -275,9 +282,10 @@ export type CheckRecord = {
   leftOut?: string[]
   /** Of those, the untracked files no card names and no session of the task wrote. */
   strays?: string[]
+  /** Exact display lines for this run, stored once with its final command. */
+  display?: { version: 1; lines: string[] }
 }
 
-export const recordsPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "checks.json")
 export const lockPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "check.lock")
 
 /**
@@ -294,17 +302,6 @@ export function latestRuns(records: readonly CheckRecord[]): CheckRecord[] {
         .map((check) => [`${check.scope}:${check.command}`, check]),
     ).values(),
   ]
-}
-
-export async function readCheckRecords(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<CheckRecord[]> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(recordsPath(task))) as CheckRecord[]
-  } catch {
-    return []
-  }
 }
 
 /** A link's identity and current terminal content, with no directory walk or cycle following. */
@@ -849,10 +846,9 @@ export async function runCheck(
             const approved = commands.approved?.includes(command) === true
             if (!approved) {
               finish({ command, ran: false, exit: null, secs: 0, log: null, passed: false })
-              lines.push(
-                `- ${name} · ${workingTree} · \`${command}\` · not run by QualityLayer: changed after approval`,
-              )
+              lines.push(`- ${name} · ${workingTree} · \`${command}\` · ${REFUSED_CHECK}`)
               records.push({
+                check: checkId,
                 ...(head !== undefined ? { head } : {}),
                 scope: name,
                 command,
@@ -901,8 +897,9 @@ export async function runCheck(
               lines.push(
                 `- ${name} · ${workingTree} · \`${command}\` · reused: nothing changed since it passed at ${clockTime(passedAt)}`,
               )
+              const { display: _display, ...passed } = previous
               records.push({
-                ...previous,
+                ...passed,
                 ...(head !== undefined ? { head } : {}),
                 scope: name,
                 revision,
@@ -1090,39 +1087,27 @@ export async function runCheck(
             check: checkId,
           })
           progress.notRun = notRun
+          lines.push(`- ${name} · ${workingTree} · \`${progress.command}\` · failed: ${notRun}`)
         } finally {
           await writes
         }
-        await ctx.fs.withLock(`${recordsPath(task)}.lock`, async () => {
-          const current = await readCheckRecords(ctx, task)
-          await ctx.fs.atomicWrite(
-            recordsPath(task),
-            `${JSON.stringify([...current, ...records.slice(initialRecords)], null, 2)}\n`,
-          )
-        })
         const scanned = await scans
         if (scanned !== null)
           for (const result of scanned.results)
             lines.push(`- scans · ${scanned.head.slice(0, 7)} · ${scanLine(result)}`)
-        const logPath = implementAgentsPath(task)
-        if (await ctx.fs.exists(logPath)) {
-          let log = await ctx.fs.readFile(logPath)
-          for (const line of lines) {
-            if (
-              line.endsWith(" · not run by QualityLayer: changed after approval") &&
-              log.split("\n").includes(line)
-            )
-              continue
-            log = appendToSection(log, "Checks", line)
-          }
-          await ctx.fs.writeFile(logPath, log)
-        }
+        await saveCheckReceipt(ctx, task, checkId, records.slice(initialRecords), lines)
         Object.assign(progress, {
           running: false,
           ended: ctx.clock.now(),
           exit: results.find((r) => !r.passed)?.exit ?? (results.every((r) => r.passed) ? 0 : null),
         })
         await writeCheckProgress(ctx, task, progress)
+        const projectionProblem = await materializeChecksRecord(ctx, task).then(
+          () => [],
+          (cause: unknown) => [
+            `The check receipt was saved, but records/checks.md could not be written. ${String(cause)}`,
+          ],
+        )
         // A full run that passed with every command run (nothing reused) shows what the checks take.
         if (
           scope.kind === "all" &&
@@ -1157,6 +1142,7 @@ export async function runCheck(
             : []),
         ].join(" and the ")
         const messages = [
+          ...projectionProblem,
           ...(cleanPassed.length > 0
             ? [
                 `Passed on a clean copy: ${cleanPassed.map((command) => `\`${command}\``).join(", ")} failed in this checkout and passed on HEAD plus this ${whose}'s own files, without the ${leftOut}. The pass is recorded and nothing is left to fix for it; the log keeps both outputs.`,

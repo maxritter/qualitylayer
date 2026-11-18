@@ -1505,6 +1505,21 @@
   function Reader({ app, page }) {
     if (!page && app.s.route.file === "records/pull-request-body.md") return <BodyReader app={app} />;
     if (!page && app.s.route.file === "records/memory-activity.md") return <MemoryRecordReader app={app} />;
+    if (!page && app.s.route.file === "records/checks.md") return (
+      <div className="main" style={{ minHeight: 0 }}>
+        <div className="rbar"><Btn sm quiet className="back" onClick={() => app.unread()}>Back to the step</Btn><code className="rpath">records/checks.md</code><span className="dim">Read only</span></div>
+        <div className="reader"><div className="rdr-wrap" ref={app.readerRef}><div className="rdr">
+          <h1>Checks</h1>
+          <BodyMarkdown lines={[
+            "- all · working tree (base 7bd83f4) · `bun run typecheck` · reused: nothing changed since it passed at 14:06",
+            "- all · isolated copy (base 7bd83f4) · `bun run lint` · exit 0 · 1.4s · on a clean copy of HEAD plus this task's own files (in the checkout: exit 1; left out 1 file that is not this task's: src/billing/preview.ts)",
+            "- scans · 7bd83f4 · gitleaks 8.30.0 · secrets · 18 files · none found",
+            "## Earlier checks",
+            "- T1 · 92584c1 · `bun run typecheck` · exit 0 · 3.1s",
+          ]} />
+        </div></div></div>
+      </div>
+    );
     const { s, v } = app;
     const t = D();
     const f = t.files;

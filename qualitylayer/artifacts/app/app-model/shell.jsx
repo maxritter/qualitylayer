@@ -1324,6 +1324,7 @@
                   <span className="k">{f.records.records} · {f.records.evidence} · {f.records.agents} files</span>
                   <span className="freveals">{["records", "evidence", "agents"].map((n) => <button key={n} type="button" className="rs-act" aria-label={"Reveal " + n + "/"} onClick={() => app.toast("Reveals " + n + "/ in your system’s file browser · simulated")}>{n}/</button>)}</span>
                 </div>
+                {f.records.records > 0 ? <FileRow name="Checks" icon="file-text" on={selected === "records/checks.md" && s.reading} onClick={() => app.openFile("records/checks.md")} title="records/checks.md" /> : null}
               </div>
             ) : null}
                       </div>

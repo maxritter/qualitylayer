@@ -5,8 +5,8 @@
 // folder at a time. `agents/` is not listed file by file: people rarely open it, so the row only
 // says it is there. The Files tab renders it for a task.
 
-import { FolderIcon } from "lucide-react"
-import { AGENTS_DIR } from "../../../core/docs/names.ts"
+import { FileTextIcon, FolderIcon } from "lucide-react"
+import { AGENTS_DIR, CHECKS_RECORD } from "../../../core/docs/names.ts"
 import { FLOW_STEPS, flowStepOf } from "../../../core/flow.ts"
 import type { Api, TaskDetail } from "../../api.ts"
 import { offersHostActions } from "../../machines/framed.ts"
@@ -21,9 +21,11 @@ function started(task: Pick<TaskDetail, "stage">): boolean {
 export function FilesRecords({
   task,
   api,
+  checks,
 }: {
   task: Pick<TaskDetail, "id" | "stage" | "evidence" | "records" | "agents">
   api?: Pick<Api, "openFile">
+  checks?: { selected: boolean; open: () => void }
 }) {
   if (!started(task)) return null
   const folders = [
@@ -62,6 +64,19 @@ export function FilesRecords({
           </span>
         ) : null}
       </div>
+      {checks ? (
+        <button
+          type="button"
+          className="ir-file-row"
+          data-record-path={CHECKS_RECORD}
+          aria-current={checks.selected ? "page" : undefined}
+          title={CHECKS_RECORD}
+          onClick={checks.open}
+        >
+          <FileTextIcon size={13} aria-hidden="true" />
+          <span>Checks</span>
+        </button>
+      ) : null}
     </section>
   )
 }

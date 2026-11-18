@@ -84,9 +84,8 @@ what you approved: ...".
 
 ## The record
 
-QualityLayer writes `{implement_doc}` for people and updates *Checks* in `agents/{implement_doc}`
-when a check finishes. Wait for those writes and reread the file before editing the other sections.
-Keep them current for the next agent: where each slice stands and the failing test, the environment
+QualityLayer writes `{implement_doc}` for people and records completed checks in `records/checks.md`.
+Keep `agents/{implement_doc}` current for the next agent: where each slice stands and the failing test, the environment
 the build needs, what you tried and dropped, one note per tactical change, and *For Verify*: what the reviewer should open and in which
 state (it is handed *Environment* and *For Verify* as you wrote them). After a compaction, read the Plan
 and the agents' files again. Give each module one responsibility: when a change adds an unrelated one

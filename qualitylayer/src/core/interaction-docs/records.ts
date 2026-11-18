@@ -1,7 +1,8 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { DocEntry } from "../../server/api.ts"
-import { NAMES, RESEARCH_DIR } from "../docs/names.ts"
+import { hasChecksRecord, materializeChecksRecord } from "../check-receipts.ts"
+import { CHECKS_RECORD, NAMES, RESEARCH_DIR } from "../docs/names.ts"
 import {
   MEMORY_ACTIVITY_RECORD,
   memoryActivityText,
@@ -11,7 +12,8 @@ import { pullRequestBody } from "../ship/pr-body.ts"
 import { currentTaskRecordOwner } from "../task/answer-migration.ts"
 import type { Task } from "../task/store.ts"
 
-type Holder = Pick<Task, "dir" | "repoRoot"> & Partial<Pick<Task, "repoId" | "slug" | "runtimeDir">>
+type Holder = Pick<Task, "dir" | "repoRoot" | "earlier"> &
+  Partial<Pick<Task, "repoId" | "slug" | "runtimeDir">>
 const guarded = (ctx: Ctx, task: Holder) =>
   ctx.fs.forPublication?.(task.repoRoot, task.dir) ?? ctx.fs
 /** A research helper's report as it wrote it (`research/r1.md`). Arbitrary files are not records. */
@@ -22,6 +24,10 @@ const OUTPUT_RECORD = /^(?:records\/output-[0-9a-f]{8,64}|evidence\/[A-Za-z0-9][
 export const PULL_REQUEST_BODY_RECORD = "records/pull-request-body.md"
 
 export async function readRecord(ctx: Ctx, task: Holder, path: string): Promise<string> {
+  if (path === CHECKS_RECORD && task.runtimeDir) {
+    const markdown = await materializeChecksRecord(ctx, { ...task, runtimeDir: task.runtimeDir })
+    if (markdown !== null) return markdown.slice(0, 200000)
+  }
   if (path === MEMORY_ACTIVITY_RECORD && task.repoId && task.slug) {
     return memoryActivityText(await readMemoryActivity(ctx, task.repoId, task.slug))
   }
@@ -40,6 +46,15 @@ export async function readRecord(ctx: Ctx, task: Holder, path: string): Promise<
 export async function recordIndex(ctx: Ctx, task: Holder): Promise<DocEntry[]> {
   const fs = guarded(ctx, task)
   const rows: DocEntry[] = []
+  if (task.runtimeDir && (await hasChecksRecord(ctx, { ...task, runtimeDir: task.runtimeDir }))) {
+    rows.push({
+      name: CHECKS_RECORD,
+      label: "Checks",
+      exists: true,
+      status: "record",
+      approved: false,
+    })
+  }
   if (
     task.runtimeDir &&
     (await currentTaskRecordOwner(ctx, { ...task, runtimeDir: task.runtimeDir }))

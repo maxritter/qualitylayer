@@ -1,14 +1,8 @@
 name: Backup
 
-# Every day, each database is copied, encrypted to the age recipient in
-# docs/site/scripts/backup-recipient.txt and put in the EU bucket, which keeps a copy 30 days.
-# The new copy is always made first; the second step then looks at the copy before it and fails
-# the job when that one is over 2 days old (a missed day), so GitHub mails the repository owner and
-# the next run still works. docs/site/scripts/restore.ts loads a copy into an empty database.
+# Manual recovery tooling. Scheduled database backups were retired in November 2026.
 
 "on":
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:

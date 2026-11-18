@@ -19,7 +19,7 @@
     ".github/scripts/stage-release-artifact.py": "4523a50bfa6dc1cd9fb7cb3698d3ede5912e861d80f31be3a8223e7fbb2df85f",
     ".github/scripts/verify-release14-exception.py": "3fe21df8397365b90f7e60258a4ba3294711f3e677efec1d549464d21bff9991",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
-    ".github/workflows/backup.yml": "ef22a1349081d885e06cdc4725be6fe91190bda21147d44a41dda809591f1ff8",
+    ".github/workflows/backup.yml": "cf49ecea60f093a06fcd3db75f11fb746c07a76abc21af35b69bd82b188d5e25",
     ".github/workflows/beta-install.yml": "74f599e794f04ad0297c7595066aa2259ee5e19d3a9ed42963c4cf303c29cacb",
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
@@ -2242,7 +2242,7 @@
     "qualitylayer/src/core/check-receipts.ts": "117842ee0e13f88290d37ebc6e6cf5e07d3553faf7a83954e093d9669deca463",
     "qualitylayer/src/ui/reader/check-record.ts": "afbd23d23fab601f692ea9719e6d17ae08311b4e99c743e3218fd98e1acd43d6"
   },
-  "reviewManifestSha256": "21c482fc4bceb94efece704d3c2d2f8b80e2d151c41a06d205c0f766ea3b3683",
+  "reviewManifestSha256": "1f4e04d9ec9172317af724c2a6c03551adccfc43bc4415ddc66fbcb813f4d550",
   "schema": 1,
-  "sourceHead": "b501041a6d1694140d3e315c843536697adcadfa"
+  "sourceHead": "44bb316ad139033b9acafa8b4941a573beae64f5"
 }

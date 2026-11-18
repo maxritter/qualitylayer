@@ -778,7 +778,7 @@
     "qualitylayer/src/core/pages/record.ts": "1f99bb0a173d0a616dcfafe82e3377e5d250c96c9b0534ebf769dc7e2730c336",
     "qualitylayer/src/core/pages/records.ts": "0ce108de690adeb120195fe1e7646a29e2f200045385ebf49b5ad6a0c7da6efa",
     "qualitylayer/src/core/pages/refresh.ts": "955fb53a4e19161bc36061771a416938582cf6c94e81b9fd3e5861667430b89e",
-    "qualitylayer/src/core/pages/render.ts": "9248f14dc9d562512e8364aea64ba7fb118e92bd161aec26b0456c4c6696daa3",
+    "qualitylayer/src/core/pages/render.ts": "d9088b67fe9a2bc9562d1006ec4e7cbba9e0946d2d7901110159f356e66926a4",
     "qualitylayer/src/core/pages/review-fix-facts.ts": "eadc9bd49fe428be3bcaad378994213f3658c62b700afd27a0456c936ebb8325",
     "qualitylayer/src/core/pages/sections/implement.ts": "5d39fca0d8948dee9bdb4abb616a0098fcd401844303619b8e965c181bb458dc",
     "qualitylayer/src/core/pages/sections/plan.ts": "42929ac59c7d1a7ddfe5adae3e482d7828986b3e5568550826cad229a2bb6e27",
@@ -804,7 +804,7 @@
     "qualitylayer/src/core/peers/topics.ts": "0c9326de30f48defeb18e2852a1bf134cd96aed44db8ecf08b8247cf6e8c2e20",
     "qualitylayer/src/core/plan-assets.ts": "4987faaed5417a2bf7c13b9793db3a150503416cd8c5f5fc0ece155208c0c3f9",
     "qualitylayer/src/core/plan-export-picture.ts": "5be936e22bdaefe2d5e2d81e06ea99f92930be7bae599d6f2b4edc58983557ea",
-    "qualitylayer/src/core/plan-export.ts": "2c71d3b5dbade01d21a784f4af57ce109a351a5228e81680ad2e1ad517254f5a",
+    "qualitylayer/src/core/plan-export.ts": "0208ae94fc8bcb6cc08d035be92da99e09a353df3f6ead605249dc438360d4f6",
     "qualitylayer/src/core/planning-comments.ts": "70720d3a45cb9290b112c7fa92f6d05603d9e5a74a0b947787924049be7b0260",
     "qualitylayer/src/core/planning-wait.ts": "b961ec2a4aa206420c3798fafef992b084c429deb1d234b334fccc995540d9c3",
     "qualitylayer/src/core/platform.ts": "1d947a7b0a9b5f62a6ae8ad0d7c3dfd9e522b365565bd75fe02189bc12767679",
@@ -1031,7 +1031,7 @@
     "qualitylayer/src/core/team/thread-publication.ts": "b6aca2d6081290d130cfdca154db351dff144733e694baa7867cbefdd3510743",
     "qualitylayer/src/core/terminal/render.ts": "1a347d9c08ef395d546ee66c1db7d1169134d847b4d85d67f8096cfd650023c3",
     "qualitylayer/src/core/terminal/sketch.ts": "6007450c51499d5a99014b4f0729089ad0d96d9aa35531474bd551fba45f5dc0",
-    "qualitylayer/src/core/text-boundaries.ts": "2ca82133dae8c983025bc3db7fa6848fe78671f071e7774435d86cce246993d9",
+    "qualitylayer/src/core/text-boundaries.ts": "28485e0b3da4f3974e800164db2da7550a28fde1cf51b525a3951d05448fc4bd",
     "qualitylayer/src/core/timeline.ts": "c4aa2af66eb1f72886c13618d56a1bd5c0d857f854be3db0512e4ec902a1cdae",
     "qualitylayer/src/core/tools-status.ts": "7c8dcade974dd726d9768627d7d1904f9e1ca61bdaff4572d83afffe96d4c22d",
     "qualitylayer/src/core/update/channel.ts": "1730764d722fab31c468b0bfe79936ffa8db519bcd5e15cb69e258137596e69b",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "cec0fefe8fce714838bafb7e65285c91e6911f06c72caa2d795c05a80b1f71cb",
+  "reviewManifestSha256": "ac80b31a8fc5ce58b08596e7830bbe5af10702f98430e67914cf84f94cda8b79",
   "schema": 1,
-  "sourceHead": "e17e090f0ebe4466b4351e314e0d500b26c29eb0"
+  "sourceHead": "5034f56b872f559622a918b96b0ed7789490cf1a"
 }

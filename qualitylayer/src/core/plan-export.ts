@@ -28,6 +28,7 @@ import {
 } from "./plan-export-picture.ts"
 import { isAdopted, ORIGINAL_FILE, originalPath } from "./task/adoption.ts"
 import type { Task } from "./task/store.ts"
+import { codeEnds } from "./text-boundaries.ts"
 
 export type Approval = "approved-current" | "approved-changed" | "not-approved"
 export type AssetStatus = "captured" | "copied" | "missing" | "failed" | "unsupported"
@@ -96,31 +97,6 @@ function withoutLocalNotice(text: string): string {
   return text.slice(0, start) + text.slice(end)
 }
 type InlineImage = { start: number; end: number; alt: string; target: string; title: string }
-
-/** Exact backtick runs close one another; unmatched runs stay prose. */
-function codeEnds(text: string): Map<number, number> {
-  const runs: { start: number; end: number }[] = []
-  for (let at = 0; at < text.length; ) {
-    if (text[at] !== "`") {
-      at++
-      continue
-    }
-    const start = at
-    while (text[at] === "`") at++
-    runs.push({ start, end: at })
-  }
-  const next = new Map<number, number>()
-  const ends = new Map<number, number>()
-  for (let i = runs.length - 1; i >= 0; i--) {
-    const run = runs[i]
-    if (!run) continue
-    const width = run.end - run.start
-    const close = next.get(width)
-    if (close !== undefined) ends.set(run.start, close)
-    next.set(width, run.end)
-  }
-  return ends
-}
 
 /**
  * The inline image syntax this exporter supports, with exact source titles and offsets. Boundary

@@ -7,6 +7,7 @@ import type { Marker } from "../docs/markers.ts"
 import type { DocRole } from "../docs/names.ts"
 import type { Limit } from "../limits-text.ts"
 import type { Walkthrough } from "../review/walkthrough.ts"
+import { codeEnds } from "../text-boundaries.ts"
 import type { StepRecords } from "./records.ts"
 import { implementSections } from "./sections/implement.ts"
 import { planSections } from "./sections/plan.ts"
@@ -50,7 +51,14 @@ const table = (head: string[], rows: string[][]) =>
 /** A sentence's first sentence, for a table cell. */
 export const firstSentence = (text: string): string => {
   const flat = text.replace(/\s+/g, " ").trim()
-  return flat.match(/^(.+?[.!?])(\s|$)/)?.[1] ?? flat
+  const code = codeEnds(flat)
+  let proseFrom = 0
+  for (const mark of flat.matchAll(/`+|[.!?](?=\s|$)/g)) {
+    if (mark.index < proseFrom) continue
+    if (mark[0].startsWith("`")) proseFrom = code.get(mark.index) ?? mark.index
+    else return flat.slice(0, mark.index + 1)
+  }
+  return flat
 }
 
 export type Answered = { kind: string; at: number; note?: string }

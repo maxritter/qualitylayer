@@ -54,3 +54,28 @@ export function trimmedLineTail(text: string, at: number, minimumSpace: number):
     if (isLineText(text.charAt(end))) return text.charAt(end)
   return null
 }
+
+/** Exact backtick runs close one another; unmatched runs stay prose. */
+export function codeEnds(text: string): Map<number, number> {
+  const runs: { start: number; end: number }[] = []
+  for (let at = 0; at < text.length; ) {
+    if (text[at] !== "`") {
+      at++
+      continue
+    }
+    const start = at
+    while (text[at] === "`") at++
+    runs.push({ start, end: at })
+  }
+  const next = new Map<number, number>()
+  const ends = new Map<number, number>()
+  for (let i = runs.length - 1; i >= 0; i--) {
+    const run = runs[i]
+    if (!run) continue
+    const width = run.end - run.start
+    const close = next.get(width)
+    if (close !== undefined) ends.set(run.start, close)
+    next.set(width, run.end)
+  }
+  return ends
+}

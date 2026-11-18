@@ -111,11 +111,11 @@ function feedGit(proc: GitProcess, limit: Limit, stopped: () => boolean, stop: S
   const stdin = proc.stdin
   if (typeof limit.input !== "object" || !stdin || typeof stdin === "number") return
   void limit.input
-    .then((input) => {
+    .then(async (input) => {
       if (stopped() || proc.exitCode !== null) return
       if (limit.until <= Date.now()) return stop("timeout")
-      stdin.write(input)
-      return stdin.end()
+      await stdin.write(input)
+      if (!stopped() && proc.exitCode === null) await stdin.end()
     })
     .catch(() => stop("aborted"))
 }

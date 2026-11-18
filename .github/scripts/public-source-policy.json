@@ -235,10 +235,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "75109c22a5d51935d3fbdd40fc2525329ca1594a31b6c4786e73f570bb84fedb",
+    "qualitylayer/scripts/public/component-inputs.json": "38a4a52d7255fdd8caf237ce0469cabb7ff7bba816d7722754a08fe8df42da2b",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "6f0f815d07f88cfb2e5546dfe6352ab08588324ee41d891c5b483c40d309febd",
+    "qualitylayer/scripts/public/component-workspace.mjs": "f6991c0496890e8b5dda9e03bf0f474421089ae25a006adafeda62764eb74ef3",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "aab5b50cbfb6fce80247a5f8fd2dc243984dce6c42d9a04ffe46f7d962d15655",
+  "reviewManifestSha256": "e25e71bae7f37a8452cffc607a958204867da508c959555162aeaffba7bc7d34",
   "schema": 1,
-  "sourceHead": "3fe8c0b420494d00dc3a609825a9a659ff8167f8"
+  "sourceHead": "bf42482318a03d70419208b035d9f27af4cd5e35"
 }

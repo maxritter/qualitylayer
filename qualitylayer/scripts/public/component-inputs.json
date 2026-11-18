@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "1f754a7eadfb43808841f213c36803970b3bae0b",
-  "catalogSha256": "c78158ba18d4ea55896215fec760dc5392f2068201fc3bb55a601adb56b3d8be",
+  "sourceHead": "bf42482318a03d70419208b035d9f27af4cd5e35",
+  "catalogSha256": "ed70e4bb67add8945a12532e017898788e3637279edfda28af2f7f43f0a75b23",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -399,7 +399,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/quality.ts",
-      "sha256": "d402ea2fba20909b8b071492a6394109ff9be8cd4fe9faebf81393866abcc91b",
+      "sha256": "c755325a3dd123f9a9d2366386d7536e0adb878d49c2c6d5996265725e6c953b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1343,7 +1343,7 @@
     },
     {
       "path": "qualitylayer/src/core/code-quality/project.ts",
-      "sha256": "91f0bdfdb79362e76fe4b0a39041df1a4b96c8e88d13df747d2cea4fce5648c9",
+      "sha256": "97ce5db79be2cc08e2bb040c22d42e5c369ba6d271822102a71a28875dde2070",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4303,7 +4303,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/verify.ts",
-      "sha256": "b031fc90cae23716d88b1fd23ac085b72df8e8f097b470c2132036881827189e",
+      "sha256": "87018f8c2c7cebc8430003ae344d42df803f347ffad525fe349670be336e6148",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15519,7 +15519,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/implement.md",
-      "sha256": "5bb67e3e568052248ddde7bbe25a827641d397d41eea4986d27af67bbe8b12ad",
+      "sha256": "b4c6cb0bad81fc5c5a4c76b9bbf70deec5664663d9c9e1f7751d1c6857b8df42",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

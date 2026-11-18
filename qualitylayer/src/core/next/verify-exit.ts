@@ -24,6 +24,7 @@ import {
   cancelQuestion,
   openQuestion,
 } from "../task/question.ts"
+import { readBatch } from "../task/question-batch.ts"
 import { fixRoundsOf } from "../task/stages.ts"
 import { appendEvent, readEvents, type Task } from "../task/store.ts"
 import { typedChoice } from "../task/typed-choice.ts"
@@ -356,8 +357,8 @@ export async function exitReply(
     agents_document: join(task.dir, agentFileOf("verify")),
   }
   // The question is with the person already: nothing to ask again, and a move the agent can take.
-  const waiting = pick ? null : await openQuestion(ctx, task)
-  if (!pick && waiting !== null && waiting.id === exit.id) {
+  const waiting = pick ? null : await openExitQuestion(ctx, task, exit.id)
+  if (!pick && waiting !== null) {
     const since = new Date(waiting.asked).toISOString()
     return base(task, {
       ...shared,
@@ -405,6 +406,23 @@ export async function exitReply(
   })
 }
 
+async function openExitQuestion(ctx: Ctx, task: Task, id: string) {
+  const open = await openQuestion(ctx, task)
+  return open?.id === id
+    ? open
+    : ((await readBatch(ctx, task))?.questions.find((q) => q.id === id) ?? null)
+}
+
+async function missingExitAnswer(ctx: Ctx, task: Task, id: string): Promise<Result<never>> {
+  return (await openExitQuestion(ctx, task, id))
+    ? refused(`The person has not answered the exit question (id ${id}) yet.`, [
+        { what: "their answer", move: "qualitylayer wait --for answer" },
+      ])
+    : refused(`Verify's exit question (id ${id}) has not been asked.`, [
+        { what: "the exit question to ask", move: "qualitylayer brief verify" },
+      ])
+}
+
 /**
  * `verify fix` on an exit: the person's answer asks for one more fix round. It is recorded with
  * their answer and raises the cap by one; the task stays in Verify, in its fix round.
@@ -416,10 +434,7 @@ export async function takeAskedRound(ctx: Ctx, task: Task): Promise<Result<Task>
       { what: "Verify going on", move: "qualitylayer verify judge" },
     ])
   const answer = (await answeredQuestions(ctx, task)).findLast((a) => a.id === exit.id)
-  if (answer === undefined)
-    return refused(`The person has not answered the exit question (id ${exit.id}) yet.`, [
-      { what: "their answer", move: "qualitylayer wait --for answer" },
-    ])
+  if (answer === undefined) return missingExitAnswer(ctx, task, exit.id)
   if (exitPick(exit, answer)?.label !== EXIT_ROUND)
     return refused(`The person answered "${answer.choice}", not "${EXIT_ROUND}".`, [
       { what: "act on their answer", move: answerMove(exitPick(exit, answer)?.label) },
@@ -464,10 +479,7 @@ export async function takeKeptRed(ctx: Ctx, task: Task): Promise<Result<Task>> {
       [{ what: "Verify going on", move: "qualitylayer verify judge" }],
     )
   const answer = (await answeredQuestions(ctx, task)).findLast((a) => a.id === exit.id)
-  if (answer === undefined)
-    return refused(`The person has not answered the exit question (id ${exit.id}) yet.`, [
-      { what: "their answer", move: "qualitylayer wait --for answer" },
-    ])
+  if (answer === undefined) return missingExitAnswer(ctx, task, exit.id)
   if (!explicitKeep(exit, answer))
     return refused(
       answer.kind === "unsure"

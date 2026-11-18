@@ -25,7 +25,7 @@ import { PLAN_REVIEW_HANDOFF, planReviewWork } from "./review/cross.ts"
 import { managedPlanningContext } from "./run/bind.ts"
 import { pidAlive } from "./self.ts"
 import { followsOpenPullRequest } from "./ship/pr-open.ts"
-import { isArchived } from "./task/archive.ts"
+import { isArchived, withTaskWaitLock } from "./task/archive.ts"
 import { sessionKey } from "./task/binding.ts"
 import { pickerPending, reconcilePickerCompletions } from "./task/picker-completion.ts"
 import { answeredQuestions, openQuestion, replyOf } from "./task/question.ts"
@@ -134,6 +134,15 @@ async function stoppedTask(ctx: Ctx, task: WaitHost): Promise<WaitEvent | null> 
     }
   return null
 }
+
+async function whileTaskWaits<T>(
+  ctx: Ctx,
+  task: WaitHost,
+  action: () => Promise<T>,
+): Promise<T | WaitEvent> {
+  if (!task.slug || !task.dir || !task.repoRoot) return action()
+  return withTaskWaitLock(ctx, task, async () => (await stoppedTask(ctx, task)) ?? action())
+}
 /** How often an event wait checks whether its stage or open gate was handled meanwhile. */
 const GATE_LOOK_MS = 5_000
 type Cursor = Partial<Record<WaitKind, string[]>>
@@ -188,6 +197,17 @@ export async function rememberWaitReply(ctx: Ctx, result: Result<unknown>): Prom
   if (!repo.ok) return
   const task = await resolveTask(ctx, repo.data)
   if (!task) return
+  await withTaskWaitLock(ctx, task, async () => {
+    if (await ctx.fs.exists(task.runtimeDir)) await rememberTaskReply(ctx, task, key, result)
+  })
+}
+
+async function rememberTaskReply(
+  ctx: Ctx,
+  task: Task,
+  key: string,
+  result: Result<unknown>,
+): Promise<void> {
   const path = waitReplyPath(task, key)
   await ctx.fs.mkdir(join(task.runtimeDir, "wait"))
   await ctx.fs.withLock(`${path}.lock`, async () => {
@@ -385,27 +405,31 @@ export async function waitFor<T>(
     lease
       ? ctx.fs.atomicWrite(lease, JSON.stringify({ pid: process.pid, start, at: ctx.clock.now() }))
       : Promise.resolve()
-  if (lease) {
+  const setup = await whileTaskWaits(ctx, task, async () => {
+    if (!lease) return
     await ctx.fs.mkdir(join(task.runtimeDir, "wait"))
     await writeLease()
-  }
+  })
+  if (setup) return setup
   // The lease says "this wait is alive" for the Stop hook, also where the process cannot be
   // checked from outside: the loop refreshes it a few seconds apart.
   let leased = ctx.clock.now()
   const tick = async () => {
     if (!lease || ctx.clock.now() - leased < LEASE_BEAT_MS) return
     leased = ctx.clock.now()
-    await writeLease().catch(() => {})
+    await whileTaskWaits(ctx, task, () => writeLease().catch(() => {}))
   }
   try {
     const result = await run(tick)
     if (result && typeof result === "object" && "event" in result && result.event === "pending") {
-      const completion = pickerPending(await reconcilePickerCompletions(ctx, task))
-      if ("native_picker_pending" in completion)
-        return { ...result, ...completion, status: completion.native_picker_pending.status }
-      if ("native_picker_unanswered" in completion)
-        return { ...result, ...completion, status: completion.native_picker_unanswered.status }
-      return result
+      return await whileTaskWaits(ctx, task, async () => {
+        const completion = pickerPending(await reconcilePickerCompletions(ctx, task))
+        if ("native_picker_pending" in completion)
+          return { ...result, ...completion, status: completion.native_picker_pending.status }
+        if ("native_picker_unanswered" in completion)
+          return { ...result, ...completion, status: completion.native_picker_unanswered.status }
+        return result
+      })
     }
     return result
   } finally {
@@ -436,7 +460,7 @@ async function waitBody<T>(
     if (stopped) return stopped
     const event = opts.poll
       ? await opts.poll()
-      : await takeEvent(ctx, task, opts.kinds, opts.coalesce)
+      : await whileTaskWaits(ctx, task, () => takeEvent(ctx, task, opts.kinds, opts.coalesce))
     if (event !== null) return event
     if (
       opts.poll === undefined &&
@@ -459,8 +483,8 @@ async function waitBody<T>(
           then: `The ${gate.target} decision (${gate.decision}) was already handled in this session: run qualitylayer next${task.slug ? ` --task ${task.slug}` : ""}.`,
         }
     }
-    await tick()
     const now = ctx.clock.now()
+    await tick()
     if (now - start >= opts.seconds * 1000)
       return opts.pending
         ? opts.pending()
@@ -472,7 +496,10 @@ async function waitBody<T>(
           }
     if (opts.beat !== false && task.slug && (beat === null || now - beat >= 15_000)) {
       beat = now
-      await touchSession(ctx, task as Task, detectAgent(ctx.env), "waiting")
+      const halted = await whileTaskWaits(ctx, task, () =>
+        touchSession(ctx, task as Task, detectAgent(ctx.env), "waiting"),
+      )
+      if (halted) return halted
     }
     await ctx.clock.sleep(Math.min(1000, Math.max(1, opts.seconds * 1000 - (now - start))))
   }

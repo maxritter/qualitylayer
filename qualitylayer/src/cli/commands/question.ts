@@ -9,6 +9,7 @@ import { detectAgent, sessionIdentity } from "../../core/agents/detect.ts"
 import { fillNames } from "../../core/docs/names.ts"
 import { isAutonomousBuildStage } from "../../core/flow.ts"
 import { foreignBuildLead } from "../../core/handoff/outside.ts"
+import { refused } from "../../core/next/refusal.ts"
 import { exitQuestion, exitQuestionNow, readVerifyExit } from "../../core/next/verify-exit.ts"
 import { projectRuntimeDir, resolveBoundRepo, resolveRepo } from "../../core/paths.ts"
 import { chatQuestions, TERMINAL_YOUR_TURN } from "../../core/task/chat-questions.ts"
@@ -778,10 +779,21 @@ export async function questionCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
   const pending = id
     ? (batch?.questions.find((q) => q.id === id) ?? (await openQuestion(ctx, task.data)))
     : await openQuestion(ctx, task.data)
-  if (askedInAgent(task.data, pending ? [pending] : [])) {
+  if (!pending || (id && pending.id !== id)) {
+    const exit = task.data.stage === "verify" ? await readVerifyExit(ctx, task.data) : null
+    if (exit && (id === undefined || exit.id === id))
+      return refused(`Verify's exit question (id ${exit.id}) has not been asked.`, [
+        { what: "the exit question to ask", move: "qualitylayer brief verify" },
+      ])
+    return err({
+      code: "bad_args",
+      message: id
+        ? "that question id is not open; nothing changed"
+        : "no question is open; nothing changed",
+    })
+  }
+  if (askedInAgent(task.data, [pending])) {
     const open = pending
-    if (!open || (id && open.id !== id))
-      return err({ code: "bad_args", message: "that question id is not open; nothing changed" })
     const session = sessionIdentity(ctx.env)
     const messages = session
       ? ((await userMessages(ctx, { agent: session.agent, session: session.id })) ?? [])
@@ -833,12 +845,9 @@ export async function questionCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
       ? ok({ ...saved.data, recorded: true, ...(await takeMeanwhile(ctx, task.data)) })
       : saved
   }
-  const current = id
-    ? (batch?.questions.find((q) => q.id === id) ?? (await openQuestion(ctx, task.data)))
-    : await openQuestion(ctx, task.data)
+  const current = pending
   const session = agentSession(ctx.env)
   if (
-    !current ||
     (current.session && current.session !== session) ||
     !(await answerAsked(ctx, task.data, session, raw, current.asked))
   )

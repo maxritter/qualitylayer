@@ -4,6 +4,7 @@
 // it is for good: the plan folder and the task's state are removed. The task's
 // branch and its commits stay in the repository.
 
+import { createHash } from "node:crypto"
 import { existsSync, realpathSync, rmSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
@@ -15,6 +16,16 @@ import { clearTaskBindings } from "./binding.ts"
 import { appendEvent, type Task } from "./store.ts"
 
 const marker = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "archived.json")
+
+/** Serialize wait-state writes with permanent deletion. The lock lives outside the removed tree. */
+export function withTaskWaitLock<T>(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  action: () => Promise<T>,
+): Promise<T> {
+  const key = createHash("sha256").update(task.runtimeDir).digest("hex")
+  return ctx.fs.withLock(join(ctx.home, "task-wait", `${key}.lock`), action)
+}
 
 export async function isArchived(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<boolean> {
   return ctx.fs.exists(marker(task))
@@ -90,13 +101,15 @@ export async function deleteTask(ctx: Ctx, task: Task): Promise<Result<Deleted>>
   }
   let plan: string | null = null
   await clearViewing(ctx, task)
-  await clearTaskBindings(ctx, task)
   await pruneTaskRuns(ctx, `${task.repoId}~${task.slug}`)
   await deleteWorkingRecords(ctx, task)
-  if (hasPlan) {
-    rmSync(task.dir, { recursive: true, force: true })
-    plan = task.dir
-  }
-  if (existsSync(task.runtimeDir)) rmSync(task.runtimeDir, { recursive: true, force: true })
+  await withTaskWaitLock(ctx, task, async () => {
+    await clearTaskBindings(ctx, task)
+    if (hasPlan) {
+      rmSync(task.dir, { recursive: true, force: true })
+      plan = task.dir
+    }
+    if (existsSync(task.runtimeDir)) rmSync(task.runtimeDir, { recursive: true, force: true })
+  })
   return ok({ plan })
 }

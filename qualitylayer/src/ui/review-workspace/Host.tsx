@@ -97,6 +97,7 @@ function Workspace({
 }: Props & { view: WalkthroughView; file: string | null; onClose: () => void }) {
   const { editor } = useEditor(api)
   const comments = useMemo(() => lineComments(task), [task])
+  const readOnly = walkthrough.changeScope?.history !== undefined
   const deciding =
     task.gate !== null &&
     task.gate.target === "final" &&
@@ -108,8 +109,8 @@ function Workspace({
       title={task.title}
       view={walkthrough}
       comments={comments}
-      deciding={deciding}
-      {...(onMark ? { onMark } : {})}
+      deciding={!readOnly && deciding}
+      {...(!readOnly && onMark ? { onMark } : {})}
       loadDiff={(path, signal, revision) =>
         api.fileDiff(task.id, path, {
           signal,
@@ -117,10 +118,10 @@ function Workspace({
         })
       }
       loadSource={(request) => api.reviewFileSource(task.id, request)}
-      {...(offersHostActions()
+      {...(!readOnly && offersHostActions()
         ? { open: { editor, run: (path) => void openInEditor(api, task.id, editor, path) } }
         : {})}
-      {...(task.findings !== undefined ? { findings: task.findings } : {})}
+      {...(!readOnly && task.findings !== undefined ? { findings: task.findings } : {})}
       onFinding={async (f, kind, reason) => {
         const file = rowsOf(walkthrough)
           .flatMap((row) => row.files)
@@ -150,7 +151,7 @@ function Workspace({
       }}
       file={file}
       onClose={onClose}
-      {...(typeof api.clearTaskChanges === "function"
+      {...(!readOnly && typeof api.clearTaskChanges === "function"
         ? {
             onClearChanges: async () => {
               await api.clearTaskChanges(task.id)

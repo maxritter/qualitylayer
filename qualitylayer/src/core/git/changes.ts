@@ -5,7 +5,7 @@ import { lstat, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { type Ctx, err, type GitResult, ok, type Result } from "../../ctx.ts"
 import { type FileIdentity, fileIdentity } from "../../regular-file.ts"
-import type { ChangePart } from "../review/walkthrough.ts"
+import type { ChangeHistory, ChangePart } from "../review/walkthrough.ts"
 import { BUILD_COMMITS } from "./base.ts"
 import { DIFF_PREFIXES, newFileDiff, untrackedFiles } from "./repo.ts"
 import { beginSourceInventory, rememberSource } from "./source-witness.ts"
@@ -25,6 +25,7 @@ export type ChangedFile = {
 
 export type Changes = {
   changeScope?: {
+    history?: ChangeHistory
     pending: { path: string; reason: string }[]
     workingFiles: string[]
     localOnlyFiles?: string[]

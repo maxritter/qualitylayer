@@ -104,9 +104,12 @@ export type WalkPoint = {
   evidence: string | null
 }
 
+export type ChangeHistory = "registered" | "unavailable"
+
 export type Walkthrough = {
   /** Local diagnostics only; native source records are never exported with shared task material. */
   changeScope?: {
+    history?: ChangeHistory
     pending: { path: string; reason: string }[]
     workingFiles: string[]
     localOnlyFiles?: string[]

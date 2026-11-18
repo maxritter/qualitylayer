@@ -1732,12 +1732,17 @@ export async function taskChanges(
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
-  const scoped = await workflowProjection(ctx, task, { metadata: options.withDiff === false })
+  const scoped = await workflowProjection(ctx, task, {
+    metadata: options.withDiff === false,
+    browse: true,
+  })
   if (!scoped.ok) return scoped
   const diff = workflowChangesView(scoped.data)
   return ok({
     ...diff,
-    ...((task.stage === "shipped" || (await inPersonReview(ctx, task))) && measuredChanges(diff)
+    ...(!scoped.data.history &&
+    (task.stage === "shipped" || (await inPersonReview(ctx, task))) &&
+    measuredChanges(diff)
       ? { review: await reviewChangesOf(ctx, task, diff) }
       : {}),
   })
@@ -1768,7 +1773,10 @@ export async function taskFileDiff(
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
-  const scoped = await workflowProjection(ctx, task, { page: { path, ...continuation } })
+  const scoped = await workflowProjection(ctx, task, {
+    page: { path, ...continuation },
+    browse: true,
+  })
   if (!scoped.ok) return scoped
   const page = scoped.data.page
   return page === undefined
@@ -1781,10 +1789,16 @@ export async function taskWalkthrough(ctx: Ctx, id: string): Promise<Result<Walk
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
+  const scoped = await workflowProjection(ctx, task, { metadata: true, browse: true })
+  if (!scoped.ok) return scoped
   const state = await pageState(ctx, task)
-  const view = state.walkthrough ?? (await readWalkthrough(ctx, task, { sources: state }))
-  const scoped = await workflowProjection(ctx, task, { metadata: true })
-  return scoped.ok ? ok(scopeWalkthrough(view, scoped.data)) : scoped
+  const view =
+    state.walkthrough ??
+    (await readWalkthrough(ctx, task, {
+      sources: state,
+      ...(scoped.data.history ? { byTask: null } : {}),
+    }))
+  return ok(scopeWalkthrough(view, scoped.data))
 }
 
 export async function clearTaskChanges(ctx: Ctx, id: string): Promise<Result<{ cleared: true }>> {

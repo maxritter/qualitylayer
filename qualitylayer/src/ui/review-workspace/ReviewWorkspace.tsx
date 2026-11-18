@@ -762,6 +762,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         }}
       />
       <main className="rw-main" aria-label={mode === "diff" ? "Diff" : "Full file"}>
+        {view.changeScope?.history ? (
+          <p className="rw-note rw-note-changed" role="status">
+            {view.changeScope.history === "registered"
+              ? "Historical registered changes. These patches were recorded before the branch was rewritten."
+              : "Registered patches are unavailable. Open Details for the missing commits."}
+          </p>
+        ) : null}
         {selectedFile?.current === "changed" ? (
           <p className="rw-note rw-note-changed" role="status">
             This file changed. You're viewing an earlier version.

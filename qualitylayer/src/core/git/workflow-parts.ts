@@ -258,35 +258,47 @@ function remember(key: string, parts: OwnedPart[], bytes: number, metadata = fal
 export async function committedParts(
   ctx: Ctx,
   task: Task,
-  options: { metadata?: boolean } = {},
-): Promise<{ parts: OwnedPart[]; commits: string[]; recorded: boolean; staleCommits?: string[] }> {
-  const owned = await taskCommitDiff(ctx, task, { history: "report" })
+  options: { metadata?: boolean; browse?: boolean } = {},
+): Promise<{
+  parts: OwnedPart[]
+  commits: string[]
+  recorded: boolean
+  staleCommits?: string[]
+  unavailableCommits?: string[]
+  historical?: true
+}> {
+  const owned = await taskCommitDiff(ctx, task, { history: options.browse ? "browse" : "report" })
   if (!owned) return { parts: [], commits: [], recorded: false }
-  const history = owned.staleCommits ? { staleCommits: owned.staleCommits } : {}
+  const { staleCommits, unavailableCommits, historical } = owned
+  const history = {
+    ...(staleCommits ? { staleCommits } : {}),
+    ...(unavailableCommits ? { unavailableCommits } : {}),
+    ...(historical ? { historical } : {}),
+  }
+  // Historical browsing inventories first and reads only the selected immutable patch.
+  const metadata = options.metadata === true || historical === true
   const key = JSON.stringify([
     task.repoRoot,
     workingTaskKey(task),
     owned.commits,
-    options.metadata === true,
+    historical === true,
+    metadata,
   ])
   const found = cached.get(key)
   if (found) return { parts: found.parts, commits: found.commits, recorded: true, ...history }
   const parts: OwnedPart[] = []
   let bytes = 0
   for (const commit of owned.commits) {
-    const read = await commitParts(
-      ctx,
-      task,
-      commit,
-      options.metadata === true,
-      MAX_PATCH_BYTES - bytes,
-    )
-    parts.push(...read.parts)
+    const read = await commitParts(ctx, task, commit, metadata, MAX_PATCH_BYTES - bytes)
+    for (const part of read.parts) {
+      if (historical) part.view.label = `Historical · ${part.view.label}`
+      parts.push(part)
+    }
     bytes += read.bytes
   }
   return {
     parts,
-    commits: remember(key, parts, bytes, options.metadata === true),
+    commits: remember(key, parts, bytes, metadata),
     recorded: true,
     ...history,
   }

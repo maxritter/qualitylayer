@@ -1,6 +1,6 @@
 import type { Ctx } from "../../ctx.ts"
 import { lineTotal } from "../review/line-counts.ts"
-import type { WalkFile, Walkthrough } from "../review/walkthrough.ts"
+import type { ChangeHistory, WalkFile, Walkthrough } from "../review/walkthrough.ts"
 import { readSession, type Task } from "../task/store.ts"
 import { readBuildStart } from "./build-start.ts"
 import type { Changes } from "./changes.ts"
@@ -23,6 +23,7 @@ import {
 } from "./working-records.ts"
 
 export type WorkflowProjection = {
+  history?: ChangeHistory
   tracked?: boolean
   files: WalkFile[]
   parts: Map<string, OwnedPart>
@@ -210,7 +211,7 @@ async function addUnattributed(
     )
 }
 
-function groupFiles(parts: OwnedPart[]): WalkFile[] {
+function groupFiles(parts: OwnedPart[], history?: ChangeHistory): WalkFile[] {
   const files = new Map<string, WalkFile>()
   for (const part of parts) {
     const { view } = part
@@ -237,8 +238,10 @@ function groupFiles(parts: OwnedPart[]): WalkFile[] {
     file.parts!.push(view)
     files.set(view.path, file)
   }
-  for (const file of files.values())
-    file.stamp = digest(JSON.stringify(file.parts!.map((part) => part.stamp)))
+  for (const file of files.values()) {
+    const stamps = file.parts!.map((part) => part.stamp)
+    file.stamp = digest(JSON.stringify(history === undefined ? stamps : [history, ...stamps]))
+  }
   return [...files.values()]
 }
 
@@ -269,6 +272,7 @@ export async function workflowChanges(
   task: Task,
   options: {
     metadata?: boolean
+    browse?: boolean
     page?: PageRequest
     current?: boolean
     /** Committed sources an earlier pass of this same request read; set by a page's own recheck. */
@@ -278,20 +282,29 @@ export async function workflowChanges(
   const reads: SourceReads = options.reads ?? new Map()
   const committed = await committedParts(ctx, task, {
     metadata: options.metadata || options.page !== undefined,
+    browse: options.browse === true,
   })
+  const history = committed.historical
+    ? "registered"
+    : committed.commits.length === 0 && committed.unavailableCommits?.length
+      ? "unavailable"
+      : undefined
   const parts = new Map(committed.parts.map((part) => [part.view.stamp, part]))
   const pending = new Map<string, string>()
-  for (const sha of committed.staleCommits ?? [])
+  for (const sha of committed.historical ? [] : (committed.staleCommits ?? []))
     pending.set(
       `Commit ${sha.slice(0, 12)}`,
       "Historical receipt no longer on this branch; only current registered commits are shown. Re-register exclusive slice replacements; retain shared receipts and use qualitylayer verify judge for a proven rewrite's fresh full-working-tree review. Earlier verification is retained.",
     )
+  for (const sha of committed.unavailableCommits ?? [])
+    pending.set(`Commit ${sha.slice(0, 12)}`, "This registered patch is unavailable.")
   const working: OwnedPart[] = []
-  if (!options.metadata && !options.page) await expireWorkingRecords(ctx)
-  const ledger = await readWorkingLedger(ctx)
-  const records = ledger.records
-    .filter((row) => row.task === workingTaskKey(task))
-    .sort((a, b) => a.at - b.at)
+  if (!history && !options.metadata && !options.page) await expireWorkingRecords(ctx)
+  const records = history
+    ? []
+    : (await readWorkingLedger(ctx)).records
+        .filter((row) => row.task === workingTaskKey(task))
+        .sort((a, b) => a.at - b.at)
   for (const record of records)
     for (const op of record.operations) {
       const expired =
@@ -306,11 +319,13 @@ export async function workflowChanges(
       working.push(part)
       if (!part.unavailable) parts.set(part.view.stamp, part)
     }
-  forgetWorkingPatches(
-    task,
-    new Set(working.filter((part) => !part.unavailable).map((part) => part.view.stamp)),
-  )
-  await addUnattributed(ctx, task, working, parts, pending)
+  if (!history) {
+    forgetWorkingPatches(
+      task,
+      new Set(working.filter((part) => !part.unavailable).map((part) => part.view.stamp)),
+    )
+    await addUnattributed(ctx, task, working, parts, pending)
+  }
   const relation = await nativeCoverage(ctx, task, committed.parts, working, {
     left: BYTE_BUDGET,
     reads,
@@ -342,7 +357,7 @@ export async function workflowChanges(
     ...committed.parts.filter((part) => !relation.withheld.has(part.view.stamp)),
     ...native,
   ]
-  const files = groupFiles(active)
+  const files = groupFiles(active, history)
   if (options.current !== false) await markCurrent(ctx, task, files, parts)
   const requested = options.page
     ? files.find((file) => file.path === options.page?.path)
@@ -360,11 +375,17 @@ export async function workflowChanges(
         })
       : undefined
   if (page && options.page) {
-    const current = await workflowChanges(ctx, task, { metadata: true, current: false, reads })
+    const current = await workflowChanges(ctx, task, {
+      metadata: true,
+      current: false,
+      browse: options.browse === true,
+      reads,
+    })
     if (current.files.find((file) => file.path === options.page?.path)?.stamp !== page.revision)
       throw new Error("The file revision changed while reading. Refresh Review.")
   }
   return {
+    ...(history ? { history } : {}),
     files,
     tracked: committed.recorded || records.length > 0,
     parts,
@@ -416,6 +437,7 @@ export function workflowChangesView(
 ): Omit<Changes, "files"> & { files: WalkFile[] } {
   return {
     changeScope: {
+      ...(projection.history ? { history: projection.history } : {}),
       pending: projection.pending,
       workingFiles: projection.workingFiles,
       localOnlyFiles: projection.localOnlyFiles,
@@ -431,7 +453,7 @@ export function workflowChangesView(
           file.parts?.some(
             (part) =>
               part.kind === "commit" &&
-              projection.parts.get(part.stamp)?.view.label === sha.slice(0, 8),
+              (projection.parts.get(part.stamp)?.commit === sha || part.label === sha.slice(0, 8)),
           ),
         )
         .map((file) => file.path),
@@ -447,12 +469,16 @@ export function scopeWalkthrough(view: Walkthrough, projection: WorkflowProjecti
   const left = new Map(projection.files.map((file) => [file.path, file]))
   const ownPaths = new Set(left.keys())
   const replace = (files: WalkFile[]) =>
-    files.flatMap((old) => {
-      const own = left.get(old.path)
-      if (!own || !own.parts?.some((part) => part.kind === "commit")) return []
-      left.delete(old.path)
-      return [{ ...own, tasks: own.parts?.some((part) => part.kind === "commit") ? old.tasks : [] }]
-    })
+    projection.history
+      ? []
+      : files.flatMap((old) => {
+          const own = left.get(old.path)
+          if (!own || !own.parts?.some((part) => part.kind === "commit")) return []
+          left.delete(old.path)
+          return [
+            { ...own, tasks: own.parts?.some((part) => part.kind === "commit") ? old.tasks : [] },
+          ]
+        })
   const slices = view.slices.map((slice) => {
     const files = replace(slice.files)
     return {
@@ -483,6 +509,7 @@ export function scopeWalkthrough(view: Walkthrough, projection: WorkflowProjecti
     documents: [],
     notDoing: { plan: view.notDoing.plan, otherFiles: [], otherCommits: [] },
     changeScope: {
+      ...(projection.history ? { history: projection.history } : {}),
       pending: projection.pending,
       workingFiles: projection.workingFiles,
       localOnlyFiles: projection.localOnlyFiles,

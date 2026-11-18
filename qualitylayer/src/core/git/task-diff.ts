@@ -7,6 +7,8 @@ export type TaskCommitDiff = {
   files: string[]
   command: string
   staleCommits?: string[]
+  unavailableCommits?: string[]
+  historical?: true
 }
 export class TaskReviewHistoryError extends Error {
   constructor(commits: readonly string[]) {
@@ -34,11 +36,94 @@ export const taskDiffArgs = (commits: readonly string[], files?: readonly string
 ]
 const kept = new Map<string, TaskCommitDiff>()
 
+type TaskCommitOptions = { since?: string; until?: string; history?: "report" | "browse" }
+
+async function resolveCommit(ctx: Ctx, root: string, ref: string, fresh: boolean) {
+  const result = await ctx.git.run(
+    root,
+    ["rev-parse", "--verify", `${ref}^{commit}`],
+    fresh ? { fresh: true } : undefined,
+  )
+  const commit = result.stdout.trim()
+  return result.code === 0 && /^[a-f0-9]{40,64}$/.test(commit) ? commit : null
+}
+
+async function classifyCommits(
+  ctx: Ctx,
+  root: string,
+  recorded: string[],
+  head: string,
+  options: TaskCommitOptions,
+) {
+  const browse = options.history === "browse"
+  const commits: string[] = []
+  const stale = new Set<string>()
+  const unavailable = new Set<string>()
+  let hasCurrent = false
+  for (const sha of recorded) {
+    const commit = await resolveCommit(ctx, root, sha, browse)
+    if (commit === null) {
+      if (!browse) throw new Error(`Task review commit ${sha} is unavailable`)
+      unavailable.add(sha)
+      continue
+    }
+    const ancestor = await ctx.git.run(root, ["merge-base", "--is-ancestor", commit, head])
+    if (ancestor.code !== 0) {
+      if (options.until && ancestor.code === 1) continue
+      if (ancestor.code !== 1) throw new Error(`Task review cannot inspect commit ${sha}`)
+      if (options.history === undefined) throw new TaskReviewHistoryError([commit])
+      stale.add(commit)
+      continue
+    }
+    hasCurrent = true
+    if (options.since) {
+      const earlier = await ctx.git.run(root, [
+        "merge-base",
+        "--is-ancestor",
+        commit,
+        options.since,
+      ])
+      if (earlier.code === 0) continue
+      if (earlier.code !== 1) throw new Error("Task review's earlier boundary is unavailable")
+    }
+    commits.push(commit)
+  }
+  return { commits, stale, unavailable, hasCurrent }
+}
+
+async function inventoryCommits(ctx: Ctx, root: string, commits: string[], browse: boolean) {
+  const readable: string[] = []
+  const files = new Set<string>()
+  const unavailable: string[] = []
+  for (const sha of commits) {
+    const listed = await ctx.git.run(root, [
+      "diff-tree",
+      "--root",
+      "--no-commit-id",
+      "--name-only",
+      "--first-parent",
+      "-r",
+      "-z",
+      sha,
+    ])
+    if (listed.code !== 0) {
+      if (!browse) throw new Error(`Task review cannot inventory commit ${sha}`)
+      unavailable.push(sha)
+      continue
+    }
+    readable.push(sha)
+    for (const file of listed.stdout.split("\0"))
+      if (file && !file.startsWith("docs/plans/")) files.add(file)
+    if (files.size > 4096) throw new Error("Task review exceeds its file inventory cap")
+  }
+  return { readable, files, unavailable }
+}
+
 /** Each registered commit contributes its own patch; interleaved changes in the same file stay context. */
 export async function taskCommitDiff(
   ctx: Ctx,
   task: Task,
-  options: { since?: string; until?: string; history?: "report" } = {},
+  options: TaskCommitOptions = {},
 ): Promise<TaskCommitDiff | null> {
   const recorded = [...new Set(await sliceCommits(ctx, task))]
   if (!recorded.length) return null
@@ -50,83 +135,43 @@ export async function taskCommitDiff(
     throw new Error(
       "Task review has invalid commit receipts; reconcile them before reviewing the patch",
     )
-  const head = await ctx.git.run(task.repoRoot, [
-    "rev-parse",
-    "--verify",
-    `${options.until ?? "HEAD"}^{commit}`,
-  ])
-  if (head.code !== 0 || !/^[a-f0-9]{40,64}$/.test(head.stdout.trim()))
-    throw new Error("Task review candidate is unavailable")
-  const key = JSON.stringify([
-    task.repoRoot,
-    head.stdout.trim(),
-    options.since,
-    options.history,
-    recorded,
-  ])
+  const browse = options.history === "browse"
+  const head = await resolveCommit(ctx, task.repoRoot, options.until ?? "HEAD", browse)
+  if (head === null) throw new Error("Task review candidate is unavailable")
+  const key = JSON.stringify([task.repoRoot, head, options.since, options.history, recorded])
   const cached = kept.get(key)
   if (cached) return cached
-  const commits: string[] = []
-  const stale = new Set<string>()
-  let current = 0
-  for (const sha of recorded) {
-    const resolved = await ctx.git.run(task.repoRoot, ["rev-parse", "--verify", `${sha}^{commit}`])
-    const commit = resolved.stdout.trim()
-    if (resolved.code !== 0 || !/^[a-f0-9]{40,64}$/.test(commit))
-      throw new Error(`Task review commit ${sha} is unavailable`)
-    const ancestor = await ctx.git.run(task.repoRoot, [
-      "merge-base",
-      "--is-ancestor",
-      commit,
-      head.stdout.trim(),
-    ])
-    if (ancestor.code !== 0) {
-      if (options.until && ancestor.code === 1) continue
-      if (ancestor.code !== 1) throw new Error(`Task review cannot inspect commit ${sha}`)
-      if (options.history !== "report") throw new TaskReviewHistoryError([commit])
-      stale.add(commit)
-      continue
-    }
-    current++
-    if (options.since) {
-      const earlier = await ctx.git.run(task.repoRoot, [
-        "merge-base",
-        "--is-ancestor",
-        commit,
-        options.since,
-      ])
-      if (earlier.code === 0) continue
-      if (earlier.code !== 1) throw new Error("Task review's earlier boundary is unavailable")
-    }
-    commits.push(commit)
-  }
-  if (current === 0 && stale.size > 0) throw new TaskReviewHistoryError([...stale])
-  const files = new Set<string>()
-  for (const sha of commits) {
-    const listed = await ctx.git.run(task.repoRoot, [
-      "diff-tree",
-      "--root",
-      "--no-commit-id",
-      "--name-only",
-      "--first-parent",
-      "-r",
-      "-z",
-      sha,
-    ])
-    if (listed.code !== 0) throw new Error(`Task review cannot inventory commit ${sha}`)
-    for (const file of listed.stdout.split("\0"))
-      if (file && !file.startsWith("docs/plans/")) files.add(file)
-    if (files.size > 4096) throw new Error("Task review exceeds its file inventory cap")
-  }
+  const { commits, stale, unavailable, hasCurrent } = await classifyCommits(
+    ctx,
+    task.repoRoot,
+    recorded,
+    head,
+    options,
+  )
+  const historical = !hasCurrent && stale.size > 0
+  if (historical && !browse) throw new TaskReviewHistoryError([...stale])
+  const inventory = await inventoryCommits(
+    ctx,
+    task.repoRoot,
+    historical ? [...stale] : commits,
+    browse,
+  )
+  const { readable, files } = inventory
+  for (const sha of inventory.unavailable) unavailable.add(sha)
   const result = {
-    commits,
+    commits: readable,
     ...(stale.size > 0 ? { staleCommits: [...stale] } : {}),
+    ...(unavailable.size > 0 ? { unavailableCommits: [...unavailable] } : {}),
+    ...(historical && readable.length > 0 ? { historical: true as const } : {}),
     files: [...files].sort(),
-    command: commits.length
-      ? `git ${taskDiffArgs(commits).map(quote).join(" ")}`
+    command: readable.length
+      ? `git ${taskDiffArgs(readable).map(quote).join(" ")}`
       : "No registered task patch changed after the recorded review boundary.",
   }
-  if (kept.size >= 16) kept.clear()
-  kept.set(key, result)
+  // A rewritten or missing object may become available, or be pruned, without moving HEAD.
+  if (!browse || (!stale.size && !unavailable.size)) {
+    if (kept.size >= 16) kept.clear()
+    kept.set(key, result)
+  }
   return result
 }

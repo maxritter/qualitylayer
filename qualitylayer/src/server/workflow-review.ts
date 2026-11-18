@@ -40,7 +40,7 @@ export async function workflowReviewSource(
   task: Task,
   request: SourceRequest,
 ): Promise<Result<ReviewFileSource>> {
-  const read = await workflowProjection(ctx, task, { metadata: true })
+  const read = await workflowProjection(ctx, task, { metadata: true, browse: true })
   if (!read.ok) return read
   const part = ownedPartOf(read.data, request.path, request.stamp)
   if (!part)
@@ -59,7 +59,7 @@ export async function workflowReviewSource(
       source.kind === "git"
         ? await committedSource(ctx, task, source)
         : await workingSource(ctx, source.hash)
-    const current = await workflowProjection(ctx, task, { metadata: true })
+    const current = await workflowProjection(ctx, task, { metadata: true, browse: true })
     if (!current.ok) return current
     if (!ownedPartOf(current.data, request.path, request.stamp))
       return err({

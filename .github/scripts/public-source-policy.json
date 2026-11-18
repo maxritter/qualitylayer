@@ -235,10 +235,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "d4a7483d3efea57c134eec742f8dc4cc5adc75fb9698f71405a4926cd319cacd",
+    "qualitylayer/scripts/public/component-inputs.json": "a3740832aa4c5cc8cb72be3244de3e3d0bb37fcd8d428bdb258efa73e1443fd1",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "3e5af4342019a69f05c31543781ac21953c68f18a282612c0a8a7e4ed02bc048",
+    "qualitylayer/scripts/public/component-workspace.mjs": "b0474c40ac6f8122596936b3e0a97f3bf9aab2d958d317859ac10a8ed1c9c6bc",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -2193,7 +2193,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "d5fae6344c93ebd62a047debfd0d896a2ead7caf157cca4159b5be72db62800b",
+  "reviewManifestSha256": "545fc4a355e9c57675d74f3c9c203d71a8131c835f853e6aea2ed3b32e580484",
   "schema": 1,
-  "sourceHead": "2a274f8ed5936a13e07a6b8cdcbf1680c16f4b66"
+  "sourceHead": "f4bbc17e451b0997f6e2083ea0210f5207814c52"
 }

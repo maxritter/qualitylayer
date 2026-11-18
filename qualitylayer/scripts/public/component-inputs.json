@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "a0b77bf7dca046aced6baa69f6f75715604abfa2",
-  "catalogSha256": "287a3d3c8da34de86e9370f29ca4853ce6cbfe24104abe4aed9abd8737a3a140",
+  "sourceHead": "f4bbc17e451b0997f6e2083ea0210f5207814c52",
+  "catalogSha256": "820408bcd29f9d646beb3a5cfdebc5893518ea29fbd0a454b10751ea195837ea",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -487,7 +487,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/task.ts",
-      "sha256": "1b54c5bcca01016d1d0cb166c431dc2479547e6aab0e038513c3ca68c2ad8593",
+      "sha256": "7c64cc99aa486c339c87074396b7748e79d9e27856fcd02192d27e386afe2a84",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -583,7 +583,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/agents.json",
-      "sha256": "6628b5b5ef54c4a4b24ab2359756618b371b6682a86d61c8b53d7ffbba9a27df",
+      "sha256": "88604378b948e2d6c79cce6ce89264e755e7491d5c38ef92b234018129bae292",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -711,7 +711,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/model-list.ts",
-      "sha256": "8e873ade95afb65a2fb086ba0a73cdb57a273bc4dafdffb74a8374f222a099ba",
+      "sha256": "8913d8809675c26c2e50d18047b4fedc23d8c268cbf9f7b55bd7d0a72a46cc7e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -727,7 +727,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/model-values.ts",
-      "sha256": "a06ab9ab8944affbdf3869322eae44c39c02aa26052631a9fb04dc1e24476e82",
+      "sha256": "3bdae172afd93f6200fd0c23185f697f7b87eba968df47822538768bfb0fdca7",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -775,7 +775,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/subagent-model.ts",
-      "sha256": "f34e733af08577a9278326ac259dec872f27c85ca34995fa3cff9869531f392f",
+      "sha256": "c0a983f241d404d5c7512a4b60ebd62e1d5c2cfa3213dec826e967151c5c0dd9",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1487,7 +1487,7 @@
     },
     {
       "path": "qualitylayer/src/core/config-values.ts",
-      "sha256": "4fb6fbf170dce89e0177ee46a65fb69546a4283ada15c5ae6d315ada663f31e6",
+      "sha256": "10b952ef1dbdd74b506a58542ff104a7223f5df9f869ee26234d1ee3d24f74dd",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1495,7 +1495,7 @@
     },
     {
       "path": "qualitylayer/src/core/config.ts",
-      "sha256": "11b37711f574f77ba86af99c4ddc4cea7e2d010f25fbde38aab727514e5c5f51",
+      "sha256": "f47bed5a7e938d1de5ef0da52aa5cbcf57c0c0e1b652758bc61ad28d6b58db0b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7679,7 +7679,7 @@
     },
     {
       "path": "qualitylayer/src/server/run-launch-settings.ts",
-      "sha256": "9f3093526d30bbcb9ac3ff9e8d60633c79754a4095fd241dfe97056e08e91c15",
+      "sha256": "dd4f2a268752d052e43544cd04c9e24bfde449ddc6e5940220180919edfb19af",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7711,7 +7711,7 @@
     },
     {
       "path": "qualitylayer/src/server/runs.ts",
-      "sha256": "c90d5f661bea41b9f56aedf148abf183bc61194e2137af0965fab4ef7cc95efe",
+      "sha256": "5c0c47aedf45740d017f07b3e41c6f9ca52395ff2b6b142d21f6ec5768edda79",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7951,7 +7951,7 @@
     },
     {
       "path": "qualitylayer/src/ui/App.tsx",
-      "sha256": "7a2ff58951d3e4211c3e62a6a2a127312340ffc5f7c2ed590e8be1ddaec900ee",
+      "sha256": "42da9975e50af920d0f0e68e70c931cc8bd259b39859a40293cdce6c189c2893",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11895,7 +11895,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/AgentLaunchFields.tsx",
-      "sha256": "a8d1d26d4a0497336cff3321c5960d1e20e7e56b6aa273b74b937d369d56e9f7",
+      "sha256": "eac09a43bd17242377a510e35bc7bebacc233d96d93f346d382d4cb461e02f60",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11927,7 +11927,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/ArtifactAgentLaunch.tsx",
-      "sha256": "6166e8bf26c1492583ab514d8f9aa8dbcef2ae22a2fb383fe687bdc25eb458ea",
+      "sha256": "3bc8703878bd131c335ebdc8af12bcabc647a3471bd5ab572b5f0653f270f156",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11943,7 +11943,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/ExtraPlanners.tsx",
-      "sha256": "53faf72ca7db845cb18f8c43d4ddcf69fd807505eadc6127c5be841c65555894",
+      "sha256": "7fa7be668381e112a02d4a47e98a4387dd0dee197788f46f3e7822cb26dccae8",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12263,7 +12263,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Defaults.tsx",
-      "sha256": "abf528be89e2516ef9593941070c4238e7a91ca8d59910fe075c73861790fc25",
+      "sha256": "70f21e8baff5f161b4cf4c45b3f8b7f15850f27170600feaf26556a533dcdf5a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12319,7 +12319,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Models.tsx",
-      "sha256": "49d3ff71ba9cafc1fa25a34e58ce3f5e60f23a46f4a415d46266c82bc77a0350",
+      "sha256": "79b142e854a66dc1ff9e6b0a565e4c43af168f0cc46779feca9c3aed0655ea55",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

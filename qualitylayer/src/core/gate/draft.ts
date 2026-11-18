@@ -20,7 +20,11 @@ import {
   reviewerOf,
   startReview,
 } from "../review/cross.ts"
-import { planReviewCoverage, planReviewCoverageNote } from "../review/plan-input.ts"
+import {
+  type PlanReviewCoverage,
+  planReviewCoverage,
+  planReviewCoverageNote,
+} from "../review/plan-input.ts"
 import { appendEvent, type Task } from "../task/store.ts"
 import { taskFlow } from "../task-flow.ts"
 import { lockPath } from "./lock.ts"
@@ -45,6 +49,13 @@ export const wasDrafted = (ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<bo
   ctx.fs.exists(draftedPath(task))
 
 /** Why no review reads this Plan, in the words the agent passes on. */
+function draftReviewNote(coverage: PlanReviewCoverage | undefined): string {
+  const note = planReviewCoverageNote(coverage)
+  return coverage === "earlier"
+    ? `${note}To replace it with a review of the current Plan, run \`qualitylayer review plan\`. `
+    : note
+}
+
 async function noReviewReason(ctx: Ctx, task: Task): Promise<string> {
   const words = task.overrides
   if (words.includes("-second-opinion") || words.includes("-second-opinion:plan"))
@@ -121,12 +132,7 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
       then,
     })
   const handle = handleOf(task, run)
-  const reviewed = await planReviewCoverage(ctx, task, run)
-  const coverage = planReviewCoverageNote(reviewed)
-  const refresh =
-    reviewed === "earlier" && run.state === "done"
-      ? "To replace it with a review of the current Plan, run `qualitylayer review plan`. "
-      : ""
+  const coverage = draftReviewNote(await planReviewCoverage(ctx, task, run))
   const reading =
     run.state === "running"
       ? run.panel !== undefined
@@ -152,7 +158,7 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
           `locked, so the person reads the Plan while ${run.panel !== undefined ? "the panel" : run.name} does. Start \`${handle.wait}\` in the ` +
           `background (or run it after the gate opens); when it returns, ${fold}, and run \`${then}\` ` +
           "again: that unlocks Approve."
-        : `${document} is drafted and valid.${aside} ${reading} ${coverage}${refresh}Reread the Plan as the reviewer will and ${fold}. ` +
+        : `${document} is drafted and valid.${aside} ${reading} ${coverage}Reread the Plan as the reviewer will and ${fold}. ` +
           `Then run \`${then}\`: the person is told once the gate is open and the findings are processed.`,
     then,
     wait_background: handle.wait,

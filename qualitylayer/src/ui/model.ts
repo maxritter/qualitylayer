@@ -1328,7 +1328,6 @@ export function needsYou(task: TaskSummary, now = Date.now()): boolean {
     task.action !== null ||
     // Verify turned to the person (a question, their review, a recheck) or waits on their answer.
     task.stage === "verify" ||
-    decidedGate(task) !== null ||
     askingYou(task, now) ||
     waitsOnItems(task) ||
     agentMissing(task) ||

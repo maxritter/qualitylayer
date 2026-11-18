@@ -33,11 +33,8 @@ export function shellGroups(
       s.openItems > 0 ||
       t.live?.question != null ||
       t.action !== null ||
-      // Verify turned to the person: a question of its exit, their review, a recheck.
-      (t.stage === "verify" &&
-        t.verifyMode != null &&
-        t.verifyMode !== "checking" &&
-        t.verifyMode !== "fixing") ||
+      // The final review stays available during a recheck. An exit question counts only while open.
+      (t.stage === "verify" && (t.verifyMode === "yours" || t.verifyMode === "rechecking")) ||
       s.state === "stopped" ||
       s.state === "waits-for-you" ||
       // The build's lead ended its turn and waits for an answer in its chat.

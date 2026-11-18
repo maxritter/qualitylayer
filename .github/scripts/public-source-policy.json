@@ -1634,7 +1634,7 @@
     "qualitylayer/src/ui/machines/relay.ts": "b15962f85c47e5b7760dd180a9adc30839b0956e1d5631c3f542323747f35dda",
     "qualitylayer/src/ui/machines/useMachineSetup.ts": "4bae61dba84281beed4e48a4b959b1883051ecc54ded3427174eee51768c808e",
     "qualitylayer/src/ui/main.tsx": "e5dd122de830a4cda4b07b098f4f6960c4794726abd7e49f1de278d603fb734d",
-    "qualitylayer/src/ui/model.ts": "56a119d8a8ec1d7841ae74c8511181c755f10c44d22ca3f29f94e381a82c9392",
+    "qualitylayer/src/ui/model.ts": "3b46996b36f7210140a43ba9f2d8a393aafb1b6335c0761ed87da370db36a4ee",
     "qualitylayer/src/ui/motion.ts": "377a998693fa94d94bde6f53bfecb21451b492cccc3e55f5b0adf47343492d1c",
     "qualitylayer/src/ui/native-settings-error.ts": "9a51e0faa9a2a5fe6149ed116623f9239405d92599b7a593541b52b3369a6e57",
     "qualitylayer/src/ui/native-shell.ts": "6315244e6a389b07fa7804dbefa8d8028b5f63f2527f281d7541073d881df5a2",
@@ -1834,7 +1834,7 @@
     "qualitylayer/src/ui/shell/context.ts": "e41202331aa83d50aee6d51b28adf52ba92bf07ad2bd7e752c086ee9a745132d",
     "qualitylayer/src/ui/shell/home.css": "d040ecc1d1e88434afd876ba766ddd51bfbaa6bdecc6e16e3a6c11cd4ba91320",
     "qualitylayer/src/ui/shell/lines.ts": "5c3728f27764c40fdcba6bdad1c56c750fb269323b3a4dbd39093ce4fb6a41e9",
-    "qualitylayer/src/ui/shell/model.ts": "65c92d7e806aae73605c0f7d92296506d2dc68e84598ef43955f21cebf95b18e",
+    "qualitylayer/src/ui/shell/model.ts": "c33e28206fe711af9b16650ed0c5d9296324c9a488ac8f9c312986a2266c4a58",
     "qualitylayer/src/ui/shell/needs-you-count.tsx": "9a05e42212ee43dc68339ab3e42924a9be54ea04452598eaccde32964f025f97",
     "qualitylayer/src/ui/shell/queue.css": "b88a6bae086513e85443efc44c615e4c4a1fe3de0bcc7bc1091cb7f5787e9e7d",
     "qualitylayer/src/ui/shell/shell.css": "7532aa7b2d20e5ecb02dc3784f55ae06d100efaa67433a85107954501a54cc67",
@@ -2242,7 +2242,7 @@
     "qualitylayer/src/core/check-receipts.ts": "117842ee0e13f88290d37ebc6e6cf5e07d3553faf7a83954e093d9669deca463",
     "qualitylayer/src/ui/reader/check-record.ts": "afbd23d23fab601f692ea9719e6d17ae08311b4e99c743e3218fd98e1acd43d6"
   },
-  "reviewManifestSha256": "1f4e04d9ec9172317af724c2a6c03551adccfc43bc4415ddc66fbcb813f4d550",
+  "reviewManifestSha256": "a2fdc884f90d028fb5d769d72cc1f4218770b437cfe33055c2c65e0f42f738f6",
   "schema": 1,
-  "sourceHead": "44bb316ad139033b9acafa8b4941a573beae64f5"
+  "sourceHead": "66174b9d3f94408d61525cc55772285c3cd9c9c2"
 }

@@ -190,7 +190,7 @@
     "qualitylayer/artifacts/app/workflow/implement.html": "568ac99918e7fe3d573f5b2f3d355a0e41985b6e4e0ecd3a6c2661785c26bef6",
     "qualitylayer/artifacts/app/workflow/index.html": "34a51d107863d831974e9efe47089bbd7294b6f5f81d4aa194406718c2f79f87",
     "qualitylayer/artifacts/app/workflow/plan-approval-handoff-contract.md": "855089f35338a4c51fc2a1911f873e0dfb97ecec6cc450a0e1ca7106ed5f99d3",
-    "qualitylayer/artifacts/app/workflow/plan.html": "19726dced5a4b1623cc1c86d31f5f4470278e86514d276ed71aeb77b83a93bd0",
+    "qualitylayer/artifacts/app/workflow/plan.html": "fd1177aaa8b0b335d14b321cbc8ac9e3ae6de64260a7582e40b429b9f3c2c7bd",
     "qualitylayer/artifacts/app/workflow/task-attribution-contract.md": "18fe38d05dc853590e0ff0cca4fa293d03855027055817651ca07d7973f65ed3",
     "qualitylayer/artifacts/app/workflow/verify-proof-contract.md": "646a02d3ae2e9c112cd3a42ace35753d61240318544bbc6ca5d7cc12b12db226",
     "qualitylayer/artifacts/site/website-model/current/billing.html": "30c71aa39274cce8507464a3129ed66bc6f22179a88d7134fd748efbc076f572",
@@ -1957,7 +1957,7 @@
     "qualitylayer/src/ui/steps/implement/parts.css": "87baf72b43dc232d94745aa4bc6016e73217ea57f8e4f65af5154840ae5ca760",
     "qualitylayer/src/ui/steps/implement/progress.ts": "78bdb154013063dc13193ca76f08d844e0471e4b7e7060df782a91c6b167813f",
     "qualitylayer/src/ui/steps/page-props.ts": "51a9d7855fbe96996f60a9fcd88b1680f6580dc3de80d5636c164160d5ee5c03",
-    "qualitylayer/src/ui/steps/plan/Approach.tsx": "b83082316dd34b258d591c9b435a8c7571924bf307da00670137c17e940e6d9e",
+    "qualitylayer/src/ui/steps/plan/Approach.tsx": "81f6e157a5eaf89eac850a6f405f9a709dcb36ecae965f1638a9dcb4323e2a84",
     "qualitylayer/src/ui/steps/plan/BoundaryParts.tsx": "1fed0cffa8a440426be10123756c7cf488c88a96dc1ec95482d3088928fc4665",
     "qualitylayer/src/ui/steps/plan/Decisions.tsx": "01c5af66eb9a91fc9c1829911adb591f481fde0c98acae5304e639a890513283",
     "qualitylayer/src/ui/steps/plan/Page.tsx": "801e298200a569261f7f16ece16bd075d0dc8c73b2c205632bf61752fe982799",
@@ -1971,7 +1971,7 @@
     "qualitylayer/src/ui/steps/plan/plan.css": "20bb31324e44df75e7596d4cb6e155dc046adb5fe895b7d989d6cdc83f6d554e",
     "qualitylayer/src/ui/steps/plan/rows.css": "118c79975b9e2fabdfa0ca356b179c869f2df8418b31b7f5f31ee4597595f198",
     "qualitylayer/src/ui/steps/plan/scope-model.ts": "7b975168a848c8eedbc4a3a6b9f0cb0049fb7636e9e45661d3691e6f8d3098d5",
-    "qualitylayer/src/ui/steps/plan/views.tsx": "8e99b2c5dc95b0df4f2f461eef27152e4ccbc651ee5f296d93fa02712a4c6341",
+    "qualitylayer/src/ui/steps/plan/views.tsx": "0eab6a408e398287ed894f3d736002465bfae1b39a061b0087e96623abcbf455",
     "qualitylayer/src/ui/steps/readiness.ts": "9e6725bf690adced7b33c12a3c7969a04319c836451e54657c8a434e0026b8a6",
     "qualitylayer/src/ui/steps/required/model.ts": "317f4317ece8c87aa7b093776b6c15940fdc581e126678326631e51222fa9b2a",
     "qualitylayer/src/ui/steps/required/parts.tsx": "2ebf8f40580917151f8a1aef3e581d561504398faba3d284a234ac36eb7ba16f",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "a626e69f70dd6302eaae1df4b5a35ea7048c07ca0b7111355045f87d703b5f9f",
+  "reviewManifestSha256": "1a904c1922de81764d74a16574dedebf766d42f2f46bf00db1a34673e342bb44",
   "schema": 1,
-  "sourceHead": "c370c646cc578bbe9786081cdc97c622bd632155"
+  "sourceHead": "4ba76a3184a36c62d145b164e5bb252ec4d2796c"
 }

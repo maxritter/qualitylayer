@@ -221,9 +221,10 @@ function scopeView(ctx: SectionCtx, input: ViewsInput): ReactNode {
   )
 }
 
-function approachView(ctx: SectionCtx): ReactNode {
-  const view = approachOf(ctx.section.markdown)
-  return view === null ? ctx.draw() : <ApproachPart view={view} />
+function approachView(ctx: SectionCtx, input: ViewsInput): ReactNode {
+  return (
+    <ApproachPart blocks={approachOf(ctx.doc.markdown)} state={ctx.state} live={input.commenting} />
+  )
 }
 
 /** The view of each section the Plan page draws itself; the others are the document's own drawing. */
@@ -236,7 +237,7 @@ export function planViews(input: ViewsInput): Record<string, SectionRenderer> {
     "Done means": (ctx) => doneMeansView(ctx, input),
     "What breaks": (ctx) => whatBreaksView(ctx, input),
     Why: (ctx) => asPart(ctx, null, input.commenting),
-    Approach: approachView,
+    Approach: (ctx) => approachView(ctx, input),
     Scope: (ctx) => scopeView(ctx, input),
     // One line under the Summary; a fold beside Scope (or on its own without one).
     "Success measure": () => null,

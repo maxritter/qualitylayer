@@ -346,7 +346,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
     <li><span class="ico"><svg class="ic s14"><use href="#x-alert"/></svg></span><span class="now"><b>Problem</b> is the second section: who has it, what it costs, what is missing</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-ccheck"/></svg></span><span class="now"><b>Done means, with its proof.</b> A row is a point; it opens to how it shows and the steps that prove it. The heading says how it will be proven. Verify shows the same rows as they ran. A point is something a user can observe</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-scope"/></svg></span><span class="now"><b>Scope</b> has two columns, In scope and Out of scope</span></li>
-    <li><span class="ico"><svg class="ic s14"><use href="#i-split"/></svg></span><span class="now"><b>Approach.</b> Show Chosen, Gives and Costs when recorded. Bold headlines open to their explanations, and plain bullets read in full. Details opens or closes the rows</span></li>
+    <li><span class="ico"><svg class="ic s14"><use href="#i-split"/></svg></span><span class="now"><b>Approach.</b> Show Chosen, Gives and Costs when recorded. Bold headlines open to their explanations. Plain bullets, paragraphs and tables stay in the order they were written. Details opens or closes the rows</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-ucheck"/></svg></span><span class="now"><b>Decided with you and Decisions made for you:</b> one list each, in one group of folds, with Change on every answer</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#s-research"/></svg></span><span class="now"><b>The agent reads the code while the page fills in.</b> The Plan's header says so. Current system is a Technical fold; the findings are in the agents' file, one line each. What a finding means for you shows up as a Done means point, a Scope line or a question</span></li>
     <li><span class="ico"><svg class="ic s14"><use href="#x-wrench"/></svg></span><span class="now"><b>Technical: four closed folds,</b> the ones a person has to agree with or live with: Current system, Data and interfaces, Engineering decisions, Assumptions. What only the build needs (internal contracts, the check commands, what to read first, pitfalls) is in the agents' file. A contract a caller meets, such as an API or a command, is an Interface tab</span></li>
@@ -513,6 +513,11 @@ Plan this with QualityLayer?
           <li><details><summary><span class="hl"><b>The docs and the App Model show the two rows.</b></span><svg class="ic s14 chev" aria-hidden="true"><use href="#i-chev"/></svg></summary><div class="how"><p class="dmhow">The settings reference gains them; the model's Settings page draws them.</p></div></details></li>
       </ol>
       <div class="more-row"><button type="button" class="q-btn quiet xs"><svg class="ic s12"><use href="#i-unfold"/></svg><span>Show all 7</span></button></div>
+      <p>The first answer decides where later approvals appear.</p>
+      <table class="rp-words">
+        <thead><tr><th>Choice</th><th>Where it appears</th></tr></thead>
+        <tbody><tr><td>Questions</td><td>In the conversation</td></tr><tr><td>Approvals</td><td>In the App</td></tr></tbody>
+      </table>
     </section>
 
         <div class="foldgroup">
@@ -1120,7 +1125,7 @@ What the planner ran to be sure, with its output.</pre>
     <div><b>Problem</b><span class="now">Two to four one-line bullets, the Plan's second section.</span></div>
     <div><b>Done means</b><span class="now">Per point a heading of at most 10 words, one sentence on how it shows, and its steps as a Step · Action · Expected table. A point is something a user can observe; a point that only restates a step or a task is left out. No cap on the number. First line <code>Runs as:</code> a script, a fixture or a real agent session, with the setup all steps share; a point proven another way says so on its own line. A step that proves two points is named under the second (<code>also A2</code>). A point with no step is refused with its number.</span></div>
     <div><b>Scope</b><span class="now">In and Out, at most 6 words per item. Out names what a reasonable reader might assume is included and is not. Scope is the only list of what stays out.</span></div>
-    <div><b>Approach</b><span class="now">Chosen, Gives and Costs appear when recorded. Bold-led Approach bullets open individually, and Details opens or closes the rows together. Plain bullets and prose read in full. The reasons in full and the rejected approaches go to the agents' file. No file table.</span></div>
+    <div><b>Approach</b><span class="now">Chosen, Gives and Costs appear when recorded. Bold-led Approach bullets open individually, and Details opens or closes the rows together. Plain bullets, prose and tables read in their original order. An Approach written entirely as prose uses the same heading. The reasons in full and the rejected approaches go to the agents' file. No file table.</span></div>
     <div><b>Questions</b><span class="now">Asked when they arise, batched: usually once on the request, once after reading the code, and once more when a picture shows a choice. Allowed, never required. Only about something that changes scope, design or what the user sees. A reversible implementation choice is the agent's.</span></div>
     <div><b>Reading the code</b><span class="now">By size: no helper for a small task, one or two otherwise. Reading stops once each Done means point has a place in the code, an approach and a way to prove it. A report holds about 250 words a question and 1,200 in all. The agents' file gets one line per finding.</span></div>
     <div><b>Constraints</b><span class="now">In the agents' file, one line per value, copied as it is (a key, a format, a limit, an exact string). Every task card and every reviewer is handed this list.</span></div>

@@ -821,20 +821,26 @@
         "qualitylayer/src/ui/turn/ApproveCard.tsx",
         "qualitylayer/src/ui/steps/plan/plan-model.ts",
         "qualitylayer/src/core/integrations/approval-app.ts",
-        "qualitylayer/src/core/integrations/approval.ts"
+        "qualitylayer/src/core/integrations/approval.ts",
+        "qualitylayer/src/ui/turn/PortableReviewDraft.tsx",
+        "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx",
+        "qualitylayer/src/core/integrations/review-destination.ts"
       ],
       "demo": "/app-demo/?moment=plan-approve#/task/demo",
-      "note": "11 November 2026 (Max; folds in the get-approval-preview draft): one Pull request button in the header, GitHub only, no host picker and no in-App preview. A click pushes ql/plan/<task> (01-plan.md without front matter or empty sections) and opens GitHub's compare page, prefilled with the title, two lines and the revision marker; the person creates the request in GitHub's UI. The App finds it by its branch with gh: #7 · waiting, #7 · update once the Plan changed (a click pushes again and the request follows); its menu opens it. A send that cannot go says why in a toast with the fix. The App looks every 30 seconds while the page is open; an approving review by a writer settles the gate and the Plan's meta line reads approved by @login on GitHub. Comments reach the planner as Plan feedback in its wait.",
+      "note": "11 November 2026 (Max; folds in the get-approval-preview draft): the GitHub.com pull request route in the header. A click pushes ql/plan/<task> (01-plan.md without front matter or empty sections) and opens GitHub's compare page, prefilled with the title, two lines and the revision marker; the person creates the request in GitHub's UI. The App finds it by its branch with gh: #7 · waiting, #7 · update once the Plan changed (a click pushes again and the request follows); its menu opens it. A send that cannot go says why in a toast with the fix. The App looks every 30 seconds while the page is open; an approving review by a writer settles the gate and the Plan's meta line reads approved by @login on GitHub. Comments reach the planner as Plan feedback in its wait. 18 November portable draft: on another host, the header opens an editable draft. GitLab uses Merge request. The draft offers separate title and description copies and a repository link when available. See plan-pr-draft-preview.html for the Plan and Verify draft states.",
       "gap": "The demo has no local server, so it does not draw Get approval; the real App does. 11 November 2026 (Max): every comment counts as Plan feedback, a review app's included; a Plan approved in QualityLayer closes its draft with \"Approved in QualityLayer by @login\" and deletes its ql/plan branch, on GitHub only, nothing changes in the App. Proven against a private throwaway GitHub repository."
     },
     "get-approval-final.html": {
       "status": "built",
       "files": [
         "qualitylayer/src/ui/turn/GetApproval.tsx",
-        "qualitylayer/src/ui/steps/verify/ReviewApproval.tsx"
+        "qualitylayer/src/ui/steps/verify/ReviewApproval.tsx",
+        "qualitylayer/src/ui/turn/PortableReviewDraft.tsx",
+        "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx",
+        "qualitylayer/src/core/integrations/review-destination.ts"
       ],
       "demo": null,
-      "note": "11 November 2026 (Max): the Pull request button on Verify, the same control as the Plan's, beside a plain Approve that never pushes (no Approve and create PR). A click pushes the task's branch and opens GitHub's compare page prefilled with the Verify page's body (cut after a whole section when too long for a link) and the commit marker (gate open final --via github for an agent); a change on its own base branch is refused in a toast. #N · open once created, #N · update once the code moved. Comments there go to the fixing agents as review feedback; an approving review by a writer on the pushed commit settles the final review; the person's own Approve still works. The demo has no local server, so it does not draw the button."
+      "note": "11 November 2026 (Max): the Pull request button on Verify, the same control as the Plan's, beside a plain Approve that never pushes (no Approve and create PR). A click pushes the task's branch and opens GitHub's compare page prefilled with the Verify page's body (cut after a whole section when too long for a link) and the commit marker (gate open final --via github for an agent); a change on its own base branch is refused in a toast. #N · open once created, #N · update once the code moved. Comments there go to the fixing agents as review feedback; an approving review by a writer on the pushed commit settles the final review; the person's own Approve still works. The demo has no local server, so it does not draw the button. 18 November portable draft: on another host, the header opens an editable draft. GitLab uses Merge request. The draft offers separate title and description copies and a repository link when available. See plan-pr-draft-preview.html for the Plan and Verify draft states."
     },
     "home-identity.html": {
       "status": "planned",
@@ -2500,6 +2506,18 @@
       ],
       "demo": "/app-demo/?moment=plan-approve#/task/demo/reviews%2Fplan.md",
       "note": "Read review from the Plan and return to that task’s Plan without deciding its gate."
+    },
+    "plan-pr-draft-preview.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/turn/PortableReviewDraft.tsx",
+        "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx",
+        "qualitylayer/src/core/integrations/review-destination.ts",
+        "qualitylayer/src/ui/turn/GetApproval.tsx",
+        "qualitylayer/src/ui/turn/get-approval.css"
+      ],
+      "demo": null,
+      "note": "Portable draft on the live Plan and Verify. The repository remote supplies the provider mark, host and project. Edit and copy the title and description. Opening the remote is explicit, and the local state offers Copy draft. The GitHub.com route and both approvals keep their existing authority."
     }
   }
 }

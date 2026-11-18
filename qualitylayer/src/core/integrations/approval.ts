@@ -256,7 +256,7 @@ export async function originHost(ctx: Ctx, root: string): Promise<string | null>
 }
 
 /** origin's URL as configured: a test or a mirror may route it elsewhere with insteadOf. */
-async function originUrl(ctx: Ctx, root: string): Promise<string> {
+export async function originUrl(ctx: Ctx, root: string): Promise<string> {
   const done = await ctx.git.run(root, ["config", "--get", "remote.origin.url"])
   return done.code === 0 ? done.stdout.trim() : ""
 }

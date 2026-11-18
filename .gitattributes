@@ -2292,3 +2292,6 @@ qualitylayer/src/core/peers/commands/targets.ts !filter !diff
 qualitylayer/src/core/peers/commands/topic-identity.ts !filter !diff
 qualitylayer/src/core/peers/commands/topics.ts !filter !diff
 qualitylayer/src/core/peers/commands/wait.ts !filter !diff
+qualitylayer/src/core/integrations/review-destination.ts !filter !diff
+qualitylayer/src/ui/turn/PortableReviewDraft.tsx !filter !diff
+qualitylayer/src/ui/turn/ReviewProviderIcon.tsx !filter !diff

@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "b501041a6d1694140d3e315c843536697adcadfa",
-  "catalogSha256": "2df6b35bf23b2f6428b89e5157273a4670dbb1f051d1be676c890c92ced7ee6f",
+  "sourceHead": "bdc4a7d92954663a74ef6bed169b7f1adefd1037",
+  "catalogSha256": "5f8ecb6ceafec0d6f56452015e8053fd48c2e80e76dd78b821733812e55e79ff",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -207,7 +207,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/commit.ts",
-      "sha256": "08d8bd2529c50a344c890028a825d4a73b78d5efd2266d19e1b5edadba848293",
+      "sha256": "ecb0a3231fffdc23e9c9206cdb3a9fdca13ab89137d4e2903ccedaf749ee65ed",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -263,7 +263,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/hook.ts",
-      "sha256": "e4e8f6caf5b99a0b95b85f9e6670404012be463ee31e9cc854145dfd7ed11116",
+      "sha256": "b8d0611f16e46d5a614621193a4456be218b8d6efff36299955e9a577904c45c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -519,7 +519,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/verify.ts",
-      "sha256": "5a16add490329703396d4ce1f34f3788f21ce07532e04efbab1015dcf16820ea",
+      "sha256": "7f9a6e2d453226c3ea96a926bef058d50c8de286e92cca9f50dd06d1276a70fd",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -527,7 +527,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/wait.ts",
-      "sha256": "4e721db2040b56e7a9d5527150c2c23543226e37343726ea42ad4a9ac44c3b99",
+      "sha256": "1df373b640123be398df38e4ef3b2ec9f98464544ea76407c40eb49e1d0e051c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -583,7 +583,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/agents.json",
-      "sha256": "88604378b948e2d6c79cce6ce89264e755e7491d5c38ef92b234018129bae292",
+      "sha256": "6d1796536732183dbebd54b4e3721031a604db45f4c3ba60bc16451e02a78961",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -727,7 +727,7 @@
     },
     {
       "path": "qualitylayer/src/core/agents/model-values.ts",
-      "sha256": "3bdae172afd93f6200fd0c23185f697f7b87eba968df47822538768bfb0fdca7",
+      "sha256": "1c28a48d58a27fe85904a2ea3fc35820a197f0b56cf00478e0c21f789689e5da",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -983,7 +983,7 @@
     },
     {
       "path": "qualitylayer/src/core/artifact/review.ts",
-      "sha256": "8c0ff1e6a7d0858c2cd7f8e362921b936cfa8db07a1319d27a3c93ec9027084f",
+      "sha256": "45b27b23318c434d3affe80f5dc9cda0b2ca624213b7406d43fa767476d00961",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1159,7 +1159,7 @@
     },
     {
       "path": "qualitylayer/src/core/briefs.ts",
-      "sha256": "c784f4393619eaf27e6537e4862e4b88a1d87c91a5cea8eb9bd22d2e64f09c6c",
+      "sha256": "fa43b25c4830e6d9e7a00fbef80054654c29f46bdd1ba47dfb8e537e4e48bb2b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1295,7 +1295,7 @@
     },
     {
       "path": "qualitylayer/src/core/checks.ts",
-      "sha256": "5ec1704897ad83574ca7ffcf984521e04076c65bf69fb192185b7e462b0beea9",
+      "sha256": "1f5809a0accd712fa6860433312534a50fa018e46cb098b819c27b02b87ce5a0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1495,7 +1495,7 @@
     },
     {
       "path": "qualitylayer/src/core/config-values.ts",
-      "sha256": "10b952ef1dbdd74b506a58542ff104a7223f5df9f869ee26234d1ee3d24f74dd",
+      "sha256": "a76e0a80981713a457d5741a3c772c3c88779850250d0d59d76164426f17e7ee",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -1503,7 +1503,7 @@
     },
     {
       "path": "qualitylayer/src/core/config.ts",
-      "sha256": "f47bed5a7e938d1de5ef0da52aa5cbcf57c0c0e1b652758bc61ad28d6b58db0b",
+      "sha256": "8d248d470d1b1f7ef752ff48682f71b9eb4f16fe767b8c050f82d5f86ced70a3",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2223,7 +2223,7 @@
     },
     {
       "path": "qualitylayer/src/core/docs/rules/judge-shares.ts",
-      "sha256": "30704c7b85ef60e7b900afad8ccb57b6b8a2f9023db93a6d7577864d0ecdcfed",
+      "sha256": "47107c31f9ef6d22fc9719a284956c34c3d142e34bf2c7f39ffdd91632460523",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2551,7 +2551,7 @@
     },
     {
       "path": "qualitylayer/src/core/gate/gate.ts",
-      "sha256": "8d45f4ef5794a6f95bd2ca18689844f25fc12ad8e71ec3159dedf7593413d3cd",
+      "sha256": "79e5a887b6f2148eb6449b8764ec5161ab0a8dbadd633266ecb09f6d534b3a80",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2935,7 +2935,7 @@
     },
     {
       "path": "qualitylayer/src/core/handoff/start-values.ts",
-      "sha256": "5d566c01a73ade8b8a207859a3b4ffc42d7fe900402206b4a09f0d519f9f6fdb",
+      "sha256": "4c997434e31c3fc010fb13486f3380f04f7cfd0338e3fa45ae7337ee53714317",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2967,7 +2967,7 @@
     },
     {
       "path": "qualitylayer/src/core/helper-staff.ts",
-      "sha256": "f4bbd249a4965e0cbaf16486fca5f98f94c57ef0298b983a7bf38b899ba99e4a",
+      "sha256": "f5825db3a11f3327debf646ea189805ebb730470ad2472645c905030f16cce8c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3167,7 +3167,7 @@
     },
     {
       "path": "qualitylayer/src/core/integrations/approval-app.ts",
-      "sha256": "23edc77b16821f24364dbc773691eb8f91e82626a88a153173242a5ee72842db",
+      "sha256": "8108dd0c79604a3303881e5f4a16b65696b276541adc887ed8888750f9fba287",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3175,7 +3175,7 @@
     },
     {
       "path": "qualitylayer/src/core/integrations/approval.ts",
-      "sha256": "43a677b1ed094d9d8c76616cd79797c70fea9c607299b041ee580a9487582f72",
+      "sha256": "3facb2b402c67c4f2e02ff85d105437fd98c5bb51ae308e29d33a37753777969",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3192,6 +3192,14 @@
     {
       "path": "qualitylayer/src/core/integrations/links.ts",
       "sha256": "e931691858f5c285126aadbbb78ff4e58a883597d281951e6d04f9dec415b3bc",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/core/integrations/review-destination.ts",
+      "sha256": "e25f6ce1136b2c584888c901d1c3bea6a5c6f7db6476f8184ee71c3a864820e6",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4199,7 +4207,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/compass.ts",
-      "sha256": "2f5f99ea2fdc7bfa0ee1747c0aec08b18f9caa62f3a525e3b0842fa9e73dfd2b",
+      "sha256": "5f80eca50258b1c355ae834b77d00b334fc54151eb616913e143a7238b498d4d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4207,7 +4215,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/implement.ts",
-      "sha256": "a8a829187d0fc650c2c281e206b5dbed5f1f3a259b4d4f4bd530b9dac9c927a2",
+      "sha256": "b3169489749a7b7dfb9a2699ca621454cc0a94f91d25f075e698e0d263d494e0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4215,7 +4223,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/moves.ts",
-      "sha256": "60ffac8e124e06e0b05802e3bcc2ab280e214ecf183a7fdfc1fe47dc4c364285",
+      "sha256": "f7d22f82cc51da2a1f2ab5641da57eb5967b94f739d8ef6b3801bdc2a783829c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4279,7 +4287,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/verify-exit.ts",
-      "sha256": "d917b7783546e921f46b1a5983ac8c359b634774fc737baa1fb21146bf851a55",
+      "sha256": "9253a2f09fa2ab6d6e1ae4d1aa9a3348a691779410e92ed72baecd9e18e61d32",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4287,7 +4295,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/verify-final.ts",
-      "sha256": "58b189fa935556b2d173b3de3b887fcefec98265173727f63d567b58fc43c275",
+      "sha256": "ef1b23e2e2b626dabb54cd76426577f0621a5d9c6c9cde6955f558798c996469",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4295,7 +4303,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/verify.ts",
-      "sha256": "91c9d7936b252debf8552213bbc5771d0fb86a10fd0ad6d50ccffd34a461352a",
+      "sha256": "b031fc90cae23716d88b1fd23ac085b72df8e8f097b470c2132036881827189e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5335,7 +5343,7 @@
     },
     {
       "path": "qualitylayer/src/core/review/another.ts",
-      "sha256": "beb900c2ed0b9b8b8be090fa566d5f2187658e86d1551cab21cc9ad5493db903",
+      "sha256": "1f7b08dcdc2887e16e60e214883f60a7a82fd7b3505ce0525f71babd8a02cebf",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5415,7 +5423,7 @@
     },
     {
       "path": "qualitylayer/src/core/review/cross.ts",
-      "sha256": "50183afb22fd082e0010b982a58873650dfc6851f5fe66b2487f4984652f2d30",
+      "sha256": "7d36b03731de1f688cf1bf34f0cdecffc920271cc594c7ede539e1605b35215e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5583,7 +5591,7 @@
     },
     {
       "path": "qualitylayer/src/core/review/planners.ts",
-      "sha256": "049a0948755fcd52d1a7d3bab99c35ff5eeda761da4d673d3a2fb0cd06b8d77b",
+      "sha256": "acbd7d2833ca60c7cab585090c0e536e2e6f245fbf33643d937183fc001bd0df",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5855,7 +5863,7 @@
     },
     {
       "path": "qualitylayer/src/core/run/launch-spec.ts",
-      "sha256": "f067105fe927650436b429874c358e83bd7384d6ea6c5b46df0e44dea19a963a",
+      "sha256": "c3aa84ebc386b54513fe2230c1b4a00d64ca93a992c7ee347e12fa3bdcbef7a5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5903,7 +5911,7 @@
     },
     {
       "path": "qualitylayer/src/core/run/planning-start.ts",
-      "sha256": "bfcaf47ddf88ef312d07a348f67622aaa5f4bd9ac58f6edfa642ba4d87636c48",
+      "sha256": "b9c3e87eeba304229fef5a5f77960bd140ac2dcb39dafb8aa44213861039fe20",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6527,7 +6535,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/machine.ts",
-      "sha256": "7eeef0e2881dce356da72f8c2a4ad3e6b1ee2e534351c7eb71f2391e8bd0f90b",
+      "sha256": "49de246e8f3e470104434bde615003a838ce8ad28f39be499cee1dce399bdc49",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6599,7 +6607,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/question-batch.ts",
-      "sha256": "48968b97f3b3e1f8acb9070e3bf8cfd42da9a44dc746558777808f78e253b068",
+      "sha256": "1bb0879cd8b9d52a63a70d0121725f6f1bcbf57bb951230910dcca429da07d8f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6671,7 +6679,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/stages.ts",
-      "sha256": "0ed2c0b2d13f7e56458915637222fedb48893baa26f19fa439149ed43921b589",
+      "sha256": "135f40e25cdd8020dc62edfc06b3a9b88bb59d3258d3d2e30ecb2c3355fc82ba",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6703,7 +6711,7 @@
     },
     {
       "path": "qualitylayer/src/core/task/verify-mode.ts",
-      "sha256": "f2932ea55df54740e6180061cde9a9453c2c085343a6b61f2caf8ffcefd43c39",
+      "sha256": "2f5da9679ef4e40863bc0726f67b5637a8a033e79c6cd822fc6051aa8780795d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6895,7 +6903,7 @@
     },
     {
       "path": "qualitylayer/src/core/verify-budget.ts",
-      "sha256": "dc21a00f9c6d6760e0b81c311c01ad1673fb0517c3c08094f0a808355cc7057c",
+      "sha256": "05814902b495b8bc4e2d215a8418defd8e02425b72a839330a10cfe9453c9c3b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6983,7 +6991,7 @@
     },
     {
       "path": "qualitylayer/src/main.ts",
-      "sha256": "00fe045fcd4a1a324c54c17cc8243cb5d01d09fd45176f63afefdc6824245920",
+      "sha256": "fa52bad5ff758ffd39d6f53fbac2161c271ee59d0a41e6899ce0b5138398a65a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7335,7 +7343,7 @@
     },
     {
       "path": "qualitylayer/src/server/api.ts",
-      "sha256": "c3a0ae197030456aa9d127e33a297eb4ea80156e9c0328afc4e2962bd4399a9c",
+      "sha256": "a6d4f1094eb387d88f212155a5a7acff09ee3fc26bd752d0ec6ec5586666b42d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8063,7 +8071,7 @@
     },
     {
       "path": "qualitylayer/src/server/run-launch-settings.ts",
-      "sha256": "dd4f2a268752d052e43544cd04c9e24bfde449ddc6e5940220180919edfb19af",
+      "sha256": "06aff30ac0d217274d204349892fee253246ff3550fcd2f40f26f00b08df9b11",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8415,7 +8423,7 @@
     },
     {
       "path": "qualitylayer/src/ui/ImplementStart.tsx",
-      "sha256": "538565500d1d90495fdef525de04c9c16065b62e8c2e1809ebd64c7256bb159d",
+      "sha256": "bead1f3e2cec85d8e7c15d7c5e289e8ac6c931131a4a911d3a87c1e1d23a9545",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8575,7 +8583,7 @@
     },
     {
       "path": "qualitylayer/src/ui/StepActions.tsx",
-      "sha256": "fc23819eb0fa5f55b7eb2185707b00aab618f2c3d3d3eaeb42465bd5b5d294b5",
+      "sha256": "3fc4bdfcfb852d0f111ca84e57830ea798a543e49bb9769558ca277e5e8dbe7f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8607,7 +8615,7 @@
     },
     {
       "path": "qualitylayer/src/ui/TaskView.tsx",
-      "sha256": "00aef345e430a6ca72ac2f936ec2f755c6d9658efd01bdf7cc043d4183e5b38d",
+      "sha256": "e1fb96f7fbee9b2f7de6b6737067ef536b1cfd07bd508979cdd11aa120245db5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10415,7 +10423,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/task/budget.ts",
-      "sha256": "d0d95368262db664b4df066037a73c544821dd6d588e685103bb243f17a11b5a",
+      "sha256": "8b7befe4311b1987ce684b91996b0946c1f16f8a3423ea08c0cc21f61ebf81c6",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10479,7 +10487,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/task/light.ts",
-      "sha256": "f93149d1d836413801dfea431c54c3953e18a9e2bbdfbd9bd11244e2ccd4657b",
+      "sha256": "4ac60a85e7f3ecf3197dceb191aa725398827cb351964d754fbab6031ff64eb1",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10591,7 +10599,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/task/verify.ts",
-      "sha256": "9b326e654c60264d0a043dd388bc4d3b0b815c4afaa366e986c717cd9ee4b9b0",
+      "sha256": "bb94a93df4452e49ab4fbcf0853ca5e48ade18ea55147928ef4903bae259129d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11599,7 +11607,7 @@
     },
     {
       "path": "qualitylayer/src/ui/model.ts",
-      "sha256": "56a119d8a8ec1d7841ae74c8511181c755f10c44d22ca3f29f94e381a82c9392",
+      "sha256": "3b46996b36f7210140a43ba9f2d8a393aafb1b6335c0761ed87da370db36a4ee",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12711,7 +12719,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Models.tsx",
-      "sha256": "79b142e854a66dc1ff9e6b0a565e4c43af168f0cc46779feca9c3aed0655ea55",
+      "sha256": "a7ba5bf3a4f526d389fdf04dced8b3b3c6da859c01fa66c75a2208c61ab5622a",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12943,7 +12951,7 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/models.css",
-      "sha256": "b5f849a5deac18cdfb3ad54663d33bcab1e4f3fe0834e5ee08bff09443b60327",
+      "sha256": "c4afafb678144ea104f00cda227070a7ceec3e6ffbe1e9857efae2eebcc81d0d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13207,7 +13215,7 @@
     },
     {
       "path": "qualitylayer/src/ui/shell/model.ts",
-      "sha256": "65c92d7e806aae73605c0f7d92296506d2dc68e84598ef43955f21cebf95b18e",
+      "sha256": "c33e28206fe711af9b16650ed0c5d9296324c9a488ac8f9c312986a2266c4a58",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13343,7 +13351,7 @@
     },
     {
       "path": "qualitylayer/src/ui/sidebar/ReaderBar.tsx",
-      "sha256": "ac4ce029d10b1eb4fca883d3e7a3092116db107781711f14b4c4763876a01d92",
+      "sha256": "551403c32aa481723e28e7a6c3f8c9e4a7826a2f98429bbff79f2c3f132f3c03",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14343,7 +14351,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/small-change-parts.tsx",
-      "sha256": "e5be4624845687064685fb709b4fd13c8ccb344968157e0262f747442bd2a631",
+      "sha256": "17d9b0a0e5d5b2275a3a0429d9438e2057192fa84ed8eeb606d03b589d7eb1ec",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14471,7 +14479,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/ReviewApproval.tsx",
-      "sha256": "5b2aaca02be300b3d1f4528a44b52e6c0c0b98597345b2ff2b3461d6fe711067",
+      "sha256": "617d22583e6dd7cfcc746ef9236f3a3a5c456d3c5530beb364b926a3dc1047d0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14567,7 +14575,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/progress.ts",
-      "sha256": "aee6e3cd7c82ac5bd49b8b4e5314831399cb357a5a81e0e7cc6dd755b28ce11f",
+      "sha256": "7ec51fd5cc7d5c3da694bd2ae0fb8dd0f05b22f236d21eb9252fb075abad0347",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14671,7 +14679,7 @@
     },
     {
       "path": "qualitylayer/src/ui/task-view/useBuildHandoff.ts",
-      "sha256": "76e3c97880cb7dae3b75ac97e0fa6e670571a44ecb1e079f4aa1cfdf27b05efc",
+      "sha256": "6b14aa79d759b9afddc809ea341260b8ea00272e4e97990d63af9868ff003e55",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14887,7 +14895,7 @@
     },
     {
       "path": "qualitylayer/src/ui/turn/ApproveCard.tsx",
-      "sha256": "0083dec7687ca72351c6696cf69a38db61a012dbef6122143335c0b80f6fce10",
+      "sha256": "a131e13d89136ae94b085eafb4ec68f63c99abd3364231f37d159bfeebe3f6b7",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14967,7 +14975,7 @@
     },
     {
       "path": "qualitylayer/src/ui/turn/GetApproval.tsx",
-      "sha256": "595721b39241cf41fb4b47f645561141befe767ab7d6fd9b54700b99800cf9af",
+      "sha256": "ec7df73e8e17e62afd894cceb33ff10b670a07b0bb0380b87d2e98d782304064",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14992,6 +15000,14 @@
     {
       "path": "qualitylayer/src/ui/turn/OutsideBar.tsx",
       "sha256": "35b4e894657346c1670a39e8c81969ee83ae4f251e0d85f826679a8963963b24",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/turn/PortableReviewDraft.tsx",
+      "sha256": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15024,6 +15040,14 @@
     {
       "path": "qualitylayer/src/ui/turn/QuestionScreen.tsx",
       "sha256": "93c191e9a877b23b32e6be9537a6079b493cadae7204b6316a94d33f1dd34d48",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx",
+      "sha256": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15103,7 +15127,7 @@
     },
     {
       "path": "qualitylayer/src/ui/turn/get-approval.css",
-      "sha256": "113593be5bd556555d5ac4a10e59a29a9c5a66778ae2b3203dc1aa24f43585b1",
+      "sha256": "b2b93ea849c2d961a3b16394c52fd7241a21ba8e570d8a24383c425662971aef",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15351,7 +15375,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.test.tsx",
-      "sha256": "4ec8250b62535dad759e29aa63322c7cc20cef0dc6ab4ecd73cb5ae4804f32d5",
+      "sha256": "05bb7a6d6b4fea7a30e4e8c077932008a5e563f664a5c6f0e4a257a8b42a5816",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15359,7 +15383,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/mod/qualitylayer/hooks/register.tsx",
-      "sha256": "b5af316c0cffe8db6327fd63d7ee7e6e30bdc54cf9b10ba9de552bd6041f77b8",
+      "sha256": "74766ee70e290b129f7dfa224d7b324deb419d94d3afc8733ac9dc54d971e77d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15423,7 +15447,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/_style.md",
-      "sha256": "456423f20baf59de3c99882b0c38bbbf8834d7a3311e24369e40c5a3ffc8c349",
+      "sha256": "4076dfb295bd1e26432a362cd6f2c4ded6bf424675f948d15225ee0ba172eb64",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15495,7 +15519,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/implement.md",
-      "sha256": "45598f2a4882e34eeacbe94d12488bfbcb468aa3689a7c3482579b3fe395491d",
+      "sha256": "5bb67e3e568052248ddde7bbe25a827641d397d41eea4986d27af67bbe8b12ad",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15511,7 +15535,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/judge-rerun.md",
-      "sha256": "c5b32b7d0c2d698be958878d272f77ae1b83c506efbfb03fef145e641248a4bb",
+      "sha256": "16b5da93d5d4e9aa2778745b1a91c1fe5ed66255abde62f729a8855250d0e81b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15519,7 +15543,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/judge.md",
-      "sha256": "6cc8ba3ba6ee3ca1342e2fbb1916ef27cd7e7be1583124cc37beff15c408d32e",
+      "sha256": "de62fe467d07cf85e580caa50cb7122f77d2baf0adbec48992049c7861a1d679",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15551,7 +15575,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/plan.md",
-      "sha256": "df1c4859c54afdf012b7ae08d4d7ca7fe0811597f25298f7d2349d61820d51d0",
+      "sha256": "3e58b0b81cfe2fb1ee4188ef67c9ae6ce5289633c08cf2ba4c0d13ab290a40be",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15567,7 +15591,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/quality-security.md",
-      "sha256": "34681577fb1970bb478fd304cb5dd416a96aa9e0e1852fcd52b5b25ea75e15a3",
+      "sha256": "efc993edd2ca62a151695d213fb5628721083f6eea8c1fa3fbf140f492ddcda4",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15607,7 +15631,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/verify-bugfix.md",
-      "sha256": "039dc3b553d6be2299bd77a6bd69f5a358998ed078e4e20158eff0f5f33b1f10",
+      "sha256": "75d97da1538cf60c6a58ac7ede43e6c5f7b7f4f5b30ce1fea7407ff180a4a052",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -15623,7 +15647,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/verify.md",
-      "sha256": "b537d53841d89e284fb26fd62f07e6da2a9fd56e216064e59880309a44d30ba6",
+      "sha256": "b4d629a3c37e6787a8cd23d69ae438ba93f5ed9fd7c80674abb2996edc1790dc",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

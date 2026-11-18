@@ -13,6 +13,7 @@ import { refused } from "../next/refusal.ts"
 import type { Task } from "../task/store.ts"
 import {
   linkOf,
+  originUrl,
   outsidePoller,
   readSent,
   requestFor,
@@ -22,7 +23,10 @@ import {
   type Target,
 } from "./approval.ts"
 
+import { type ReviewDestination, reviewDestination } from "./review-destination.ts"
+
 export type OutsideState = {
+  destination?: ReviewDestination
   /** What was pushed: its compare page, and the pull request once the person created it there. */
   sent: { url?: string; number?: number; compare?: string; at: number } | null
   /**
@@ -86,7 +90,11 @@ export async function outsideState(
   const settledFirst = decided(open)
   if (settledFirst) return { sent: shown(sent), ...settledFirst }
   if (sent === null || sent.closed === true || task.stage !== step.stage)
-    return { sent: shown(sent), state: "none" }
+    return {
+      sent: shown(sent),
+      state: "none",
+      destination: reviewDestination(await originUrl(ctx, task.repoRoot)),
+    }
   const key = `${task.runtimeDir}:${target}`
   const now = ctx.clock.now()
   if (now - (lastLook.get(key) ?? 0) >= LOOK_MS) {

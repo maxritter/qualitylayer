@@ -253,7 +253,12 @@ export function ApproveCard({
           </span>
         ) : null}
         <GetApproval
+          key={surface.task.id}
           task={surface.task.id}
+          detail={surface.task}
+          readPlan={() =>
+            surface.api.doc(surface.task.id, "01-plan.md").then((value) => value.markdown)
+          }
           disabled={disabled || saving}
           onSettled={surface.reload}
         />

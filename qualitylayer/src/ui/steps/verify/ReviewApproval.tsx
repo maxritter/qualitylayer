@@ -103,7 +103,9 @@ export function ReviewApproval({ surface }: { surface: TaskSurfaceProps }) {
       data-testid="review-approval-actions"
     >
       <GetApproval
+        key={surface.task.id}
         task={surface.task.id}
+        detail={surface.task}
         target="final"
         disabled={disabled}
         onSettled={surface.reload}

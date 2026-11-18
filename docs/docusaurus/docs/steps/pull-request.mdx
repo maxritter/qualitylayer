@@ -1,19 +1,21 @@
 ---
 title: Pull request
-description: Push the change and open GitHub's pull request page from Verify, then follow its checks and reviewers until you merge it.
+description: Open a GitHub pull request or copy a review draft for another repository host.
 mdx:
   format: mdx
 ---
 
 import { Card, CardGroup, Steps, Step, Note, Screenshot, NextSteps } from "@site/src/components/kit";
 
-On [Verify](verify.mdx#approve), **Pull request** in the header pushes the task's branch and opens GitHub's page with the title and description filled in. You create the pull request there; your agent follows its checks and comments, and you merge.
+On [Verify](verify.mdx#approve), **Pull request** opens the prefilled pull request page after pushing the branch to GitHub.com. Create the request there, then your agent follows its checks and comments.
+
+For GitLab, Bitbucket, GitHub Enterprise and other hosts, the header opens an editable title and description. Push the branch you want reviewed, then copy and paste the draft on your host. **Open** opens the repository when it has a web address. A local repository offers **Copy draft**. These drafts leave approval in QualityLayer.
 
 <Screenshot name="pull-request" alt="The merged pull request: its checks, its reviewers and the time from the first question to the approval" caption="An example task in a fictional project." />
 
 ## How Verify follows it {#following}
 
-QualityLayer finds the pull request by its branch, and the button then shows **#N · open**, or **#N · update** once the code moved. While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
+On GitHub.com, QualityLayer finds the pull request by its branch, and the button then shows **#N · open**, or **#N · update** once the code moved. While the App is open, Verify reads checks and reviewers through `gh`. Without it, the task stays open until a pull or fetch brings the merge into local Git, or you mark it merged.
 
 ## Your agent watches the checks {#watch}
 

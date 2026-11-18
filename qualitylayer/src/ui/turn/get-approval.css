@@ -11,3 +11,56 @@
     display: block;
   }
 }
+@layer components {
+  .q-portable-pr {
+    width: min(760px, calc(100vw - 24px));
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+  }
+  .q-pr-origin,
+  .q-pr-field > div,
+  .q-pr-field label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .q-pr-origin {
+    overflow-wrap: anywhere;
+  }
+  .q-pr-fields {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+  }
+  .q-pr-field > div {
+    justify-content: space-between;
+  }
+  .q-pr-field label {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .q-pr-field label svg {
+    width: 16px;
+    height: 16px;
+    color: var(--ql-text-muted);
+  }
+  .q-pr-fields textarea {
+    width: 100%;
+    min-height: 160px;
+    padding: 10px 12px;
+    resize: vertical;
+    border: 1px solid var(--ql-line);
+    border-radius: 7px;
+    font: inherit;
+    font-size: 14px;
+  }
+  .q-pr-fields textarea:focus-visible {
+    outline: 2px solid var(--ql-accent);
+  }
+  .q-pr-notice {
+    margin-right: auto;
+    font-size: 12px;
+    color: var(--ql-text-muted);
+  }
+}

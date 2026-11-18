@@ -6,7 +6,7 @@
 // Its menu opens the request. A push that cannot go says why in a toast with the fix. The App looks every
 // 30 seconds while the page is open: an approving review settles the gate and the page reloads.
 
-import { ChevronDownIcon, ExternalLinkIcon, GitPullRequestIcon, UploadIcon } from "lucide-react"
+import { ChevronDownIcon, ExternalLinkIcon, UploadIcon } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { OutsideState } from "../../core/integrations/approval-app.ts"
+import type { TaskDetail } from "../api.ts"
+import { PortableReviewDraft } from "./PortableReviewDraft.tsx"
+import { ReviewProviderIcon } from "./ReviewProviderIcon.tsx"
 import "./get-approval.css"
 
 const LOOK_MS = 30_000
@@ -83,8 +86,12 @@ export function GetApproval({
   onSettled,
   target = "plan",
   api = outsideApi,
+  detail,
+  readPlan,
 }: {
   task: string
+  detail?: Pick<TaskDetail, "title" | "request" | "prDescription">
+  readPlan?: () => Promise<string>
   /** Not ready to approve (answers left, a review running): nothing is pushed either. */
   disabled: boolean
   /** An approval came back from GitHub: the task page reloads. */
@@ -94,6 +101,7 @@ export function GetApproval({
   api?: typeof outsideApi
 }) {
   const [state, setState] = useState<OutsideState | null>(null)
+  const [draft, setDraft] = useState<{ title: string; body: string } | null>(null)
   const [sending, setSending] = useState(false)
   const look = useCallback(
     () =>
@@ -113,6 +121,25 @@ export function GetApproval({
   }, [look])
   // Approved on GitHub: the page reloads and the Plan's meta line names the reviewer.
   if (state === null || state.state === "approved") return null
+  const isPlan = target === "plan"
+  async function prepare() {
+    if (!detail) return
+    setSending(true)
+    try {
+      const planText = isPlan ? await readPlan?.() : undefined
+      const summary = planText
+        ?.match(/^## Summary[^\S\n]*\r?\n([\s\S]*?)(?=^## |(?![\s\S]))/im)?.[1]
+        ?.trim()
+      const body = isPlan
+        ? summary || detail.request || detail.title
+        : detail.prDescription || detail.request || detail.title
+      setDraft({ title: detail.title, body })
+    } catch {
+      setDraft({ title: detail.title, body: detail.request || detail.title })
+    } finally {
+      setSending(false)
+    }
+  }
   // Before the request exists the push opens GitHub's page in a tab; an update of an open one does not.
   const push = async (withTab: boolean) => {
     const tab = withTab ? pendingTab() : { go: () => undefined, drop: () => undefined }
@@ -142,6 +169,9 @@ export function GetApproval({
       const said = typeof fix === "string" && fix !== "" ? ` Fix: ${fix}` : ""
       toast.error("Not pushed", {
         description: `${cause instanceof Error ? cause.message : String(cause)}${said}`,
+        ...(detail && state.destination && state.sent?.number === undefined
+          ? { action: { label: "Copy a draft", onClick: () => void prepare() } }
+          : {}),
       })
     } finally {
       setSending(false)
@@ -149,6 +179,37 @@ export function GetApproval({
   }
   const sent = state.sent
   const number = sent?.number
+  const destination = state.destination
+  if (
+    destination &&
+    (destination.host !== "github.com" || draft) &&
+    detail &&
+    number === undefined
+  ) {
+    return (
+      <span className="q-ga" data-testid="get-approval">
+        <Button
+          variant="outline"
+          disabled={disabled || sending}
+          onClick={() => void prepare()}
+          data-testid="pull-request"
+        >
+          <ReviewProviderIcon provider={destination.provider} />
+          {destination.provider === "gitlab" ? "Merge request" : "Pull request"}
+        </Button>
+        {draft && (
+          <PortableReviewDraft
+            key={task + target}
+            plan={isPlan}
+            destination={destination}
+            initialTitle={draft.title}
+            initialBody={draft.body}
+            onClose={() => setDraft(null)}
+          />
+        )}
+      </span>
+    )
+  }
   if (number === undefined || sent === null)
     return (
       <span className="q-ga" data-testid="get-approval" data-state={state.state}>
@@ -159,7 +220,7 @@ export function GetApproval({
           onClick={() => void push(true)}
           data-testid="pull-request"
         >
-          <GitPullRequestIcon size={14} aria-hidden="true" />
+          <ReviewProviderIcon provider="github" size={14} />
           {sending ? "Pushing…" : "Pull request"}
         </Button>
       </span>
@@ -182,7 +243,7 @@ export function GetApproval({
             />
           }
         >
-          <GitPullRequestIcon size={14} aria-hidden="true" />
+          <ReviewProviderIcon provider="github" size={14} />
           {label}
           <ChevronDownIcon size={14} aria-hidden="true" />
         </DropdownMenuTrigger>

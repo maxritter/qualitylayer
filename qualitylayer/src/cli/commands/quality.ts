@@ -20,9 +20,12 @@ import { lastSetup, logSetup, setupToolLine } from "../../core/code-quality/setu
 import { recordQualityToolSetup, recordScannerSetups } from "../../core/install/install.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 
+export const qualityScanUsage =
+  "qualitylayer quality scan [paths... | --since <rev>] [--secrets] [--dependencies] [--workflows] [--code] [--local]"
+
 const USAGE = `usage: qualitylayer quality setup | status | on | off
 qualitylayer quality check [paths...] [--all] [--duplication] [--fail-on-new]
-qualitylayer quality scan [paths... | --since <rev>] [--secrets] [--dependencies] [--workflows] [--code] [--local]
+${qualityScanUsage}
 qualitylayer quality metrics | lint [paths...] [--all]
 qualitylayer quality acknowledge <finding-id> --reason "<specific review reason>"
 Checks use the working files. Existing project lint/test commands remain required.`

@@ -282,7 +282,7 @@
     "qualitylayer/src/cli/commands/plan.ts": "bc964abf167888dc49daf9009cc4dbc5516beaaccb2d1cde59cb34bf88bd7ffb",
     "qualitylayer/src/cli/commands/pr.ts": "43815510580f21f2da7354a0a6154a9ff96ee5d335a11fc5ea300eb4f30c7ca4",
     "qualitylayer/src/cli/commands/progress.ts": "3ea7c7c7e1c91315696b623cffacbaf03965a754606907f8b29a6c332ce0fc74",
-    "qualitylayer/src/cli/commands/quality.ts": "8720a376bd47852267b72fcddc6bf116555033fa6ed780fa9709b9bb1b41b341",
+    "qualitylayer/src/cli/commands/quality.ts": "d402ea2fba20909b8b071492a6394109ff9be8cd4fe9faebf81393866abcc91b",
     "qualitylayer/src/cli/commands/question.ts": "7d9f5aedf1818628c54d4e77f35567a34b026342bdb5052a64dfdce6d1ccf601",
     "qualitylayer/src/cli/commands/read.ts": "a4a31c1c0cbb908bfe4ca1102317eaae1ebefa8c38994a472a81ba67cd45469e",
     "qualitylayer/src/cli/commands/reset.ts": "faefc38159b4e41f430b66eebcb98a0759be0f3c08db1a1581af95550553c4ad",
@@ -1057,7 +1057,7 @@
     "qualitylayer/src/files.ts": "8ade85530357438d044f273c8876b7ee2463687c416573447c870a17d4c29b98",
     "qualitylayer/src/interaction/contracts.ts": "63823b067b6ca8daa340781c8051aa6209f5adc910870f5512ad0d9039299192",
     "qualitylayer/src/interaction/question-recommendations.ts": "b11895de79f9163dfeb5b1f12ea7e2a858d584b367811b5d183bdeaa009f891c",
-    "qualitylayer/src/main.ts": "fa52bad5ff758ffd39d6f53fbac2161c271ee59d0a41e6899ce0b5138398a65a",
+    "qualitylayer/src/main.ts": "90818ac77096e475c2ba82ac57fdc0e6599e17c23fed23c16b2a08f401878e97",
     "qualitylayer/src/md.d.ts": "ca7143a1ffb52106deda9bd83ea56a5735f41e985a628207de833637ede28985",
     "qualitylayer/src/memory-contracts.ts": "3d4c94fa6a3d5a436feb186bda01e4006df5b38e5368066bceb3fe6d12ac2d38",
     "qualitylayer/src/memory-embed/assets/NOTICES.txt": "489849a95e6dca76d9d52c4fec8c06b60566508304c6fb4d4fbdfeac60fd9558",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "1a904c1922de81764d74a16574dedebf766d42f2f46bf00db1a34673e342bb44",
+  "reviewManifestSha256": "0928beecd7dc40cdd692e3e6884aa47f0ac5eab052ee49e7cfd3d927278d6619",
   "schema": 1,
-  "sourceHead": "4ba76a3184a36c62d145b164e5bb252ec4d2796c"
+  "sourceHead": "dabde6357092ce1816a73927d59c963ea8212c23"
 }

@@ -37,7 +37,7 @@ import { peersCmd } from "./cli/commands/peers.ts"
 import { planCmd } from "./cli/commands/plan.ts"
 import { prCmd } from "./cli/commands/pr.ts"
 import { progressCmd } from "./cli/commands/progress.ts"
-import { qualityCmd } from "./cli/commands/quality.ts"
+import { qualityCmd, qualityScanUsage } from "./cli/commands/quality.ts"
 import { questionCmd } from "./cli/commands/question.ts"
 import { readCmd } from "./cli/commands/read.ts"
 import { resetCmd } from "./cli/commands/reset.ts"
@@ -163,6 +163,7 @@ agents talking to each other (Claude Code, Codex, Pi, OpenCode, GitHub Copilot, 
 local code health:
   qualitylayer quality setup | status | on | off   (managed Qlty installation and this project's automatic checks)
   qualitylayer quality check [paths...] [--all] [--duplication] [--fail-on-new]   (review structure findings from working source; advisory by default)
+  ${qualityScanUsage}   (scan changed or named files for security findings)
   qualitylayer quality metrics | lint [paths...] [--all]   (function metrics or the project's enabled Qlty linters)
   qualitylayer quality acknowledge <finding-id> --reason "<specific review reason>"   (retain a source-bound reviewed disposition)
 

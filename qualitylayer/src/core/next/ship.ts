@@ -3,7 +3,7 @@
 // "show me" view and the copy of a task folder into the checkout that builds it.
 
 import { cp } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, isAbsolute, join } from "node:path"
 import { phaseText } from "#workflow"
 import { type Ctx, ok, type Result } from "../../ctx.ts"
 import { contextOf } from "../build-package.ts"
@@ -22,8 +22,16 @@ import { landingView } from "../ship/landing.ts"
 import { pullRequestBodyFile } from "../ship/pr-body.ts"
 import { commitsAhead, followPullRequest, type PullRequestRecord } from "../ship/pr-life.ts"
 import { commandsFor, storedUrl } from "../ship/pull-request.ts"
-import { appendEvent, loadTask, planDetailsText, type Task } from "../task/store.ts"
+import { isArchived } from "../task/archive.ts"
+import {
+  appendEvent,
+  isCurrentLayout,
+  loadTask,
+  planDetailsText,
+  type Task,
+} from "../task/store.ts"
 import { codeDiff } from "../verification.ts"
+import { refused } from "./refusal.ts"
 import { base, type NextPayload } from "./shared.ts"
 
 export async function showMePayload(
@@ -197,27 +205,57 @@ async function shipChoiceFields(ctx: Ctx, task: Task): Promise<Record<string, un
  * The build starts in a checkout that lacks the Plan: copy the task's folder from the checkout that
  * planned it. Branches are the user's: nothing is merged or switched to bring the Plan here.
  */
-export async function adoptPlan(ctx: Ctx, repo: RepoRef): Promise<Result<boolean>> {
+export async function adoptPlan(
+  ctx: Ctx,
+  repo: RepoRef,
+  requested: string | null,
+): Promise<Result<boolean>> {
   const tasksDir = join(projectRuntimeDir(ctx, repo.id), "tasks")
-  if (!(await ctx.fs.exists(tasksDir))) return ok(false)
-  for (const slug of (await ctx.fs.readdir(tasksDir)).sort().reverse()) {
+  const slugs = (await ctx.fs.exists(tasksDir)) ? await ctx.fs.readdir(tasksDir) : []
+  const candidates: { slug: string; from: string; into: string }[] = []
+  for (const slug of requested === null
+    ? slugs.sort()
+    : slugs.filter((name) => name === requested)) {
     const marker = join(tasksDir, slug, "handoff.json")
     if (!(await ctx.fs.exists(marker))) continue
     if (await ctx.fs.exists(join(tasksDir, slug, "ship.json"))) continue
     const here = taskDir(repo.root, slug)
-    if (await ctx.fs.exists(join(here, IDENTITY_FILE))) continue
+    if (await ctx.fs.exists(here)) continue
     let planDir: unknown = null
     try {
       planDir = (JSON.parse(await ctx.fs.readFile(marker)) as { planDir?: unknown }).planDir
     } catch {
       // an unreadable marker has no plan to copy
     }
-    if (typeof planDir !== "string" || planDir === here) return ok(false)
-    if (!(await ctx.fs.exists(join(planDir, IDENTITY_FILE)))) return ok(false)
-    await cp(planDir, here, { recursive: true })
-    return ok(true)
+    if (typeof planDir !== "string" || !isAbsolute(planDir) || planDir === here) continue
+    const checkout = dirname(dirname(dirname(planDir)))
+    if (taskDir(checkout, slug) !== planDir || !(await ctx.fs.exists(join(planDir, IDENTITY_FILE))))
+      continue
+    if ((await ctx.git.commonDir(checkout)) !== repo.commonDir) continue
+    const task = await loadTask(ctx, { ...repo, root: checkout }, slug)
+    if (task === null || !isCurrentLayout(task) || (await isArchived(ctx, task))) continue
+    candidates.push({ slug, from: planDir, into: here })
   }
-  return ok(false)
+  if (candidates.length > 1)
+    return refused(
+      `${candidates.length} Plan handoffs are available in this repository. Name the task to build.`,
+      candidates.map(({ slug }) => ({
+        what: slug,
+        move: `qualitylayer build start --task ${slug}`,
+      })),
+    )
+  const [only] = candidates
+  if (only === undefined) {
+    if (requested === null) return ok(false)
+    return refused(`No Plan handoff for ${requested} can be copied into this checkout.`, [
+      {
+        what: "the approved Plan in its planning checkout",
+        move: "open the task in the App and choose a new worktree for the build",
+      },
+    ])
+  }
+  await cp(only.from, only.into, { recursive: true, force: false, errorOnExist: true })
+  return ok(true)
 }
 
 // ------------------------------------------------------------- the pull request's triage

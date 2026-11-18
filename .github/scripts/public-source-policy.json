@@ -754,7 +754,7 @@
     "qualitylayer/src/core/need/key.ts": "a03ad6ca6f7373f8ea65042c278c06ef9ef01c02e555fd3f584fe46275956515",
     "qualitylayer/src/core/need/need.ts": "07b9800c241dce89d86b7053e0cf81e6c7aeef481cb8abe2ec06c4dd0409c446",
     "qualitylayer/src/core/needs.ts": "38187c85ca1d51def3bd6c4e0b72bf11c34cf8339bcd892cd21838cd4956e8c1",
-    "qualitylayer/src/core/next.ts": "0206421f865f5490091d67b32c5ffc21ab0634493be47581e674ea85adc363a0",
+    "qualitylayer/src/core/next.ts": "6df795ffd4c4f143dea464f0558af857d391448c87cadda59bf5a02dfe383e0e",
     "qualitylayer/src/core/next/build-lead.ts": "708b7b18faba85504792377911d1a87249537bf985b8cf7447763048f65ffeaa",
     "qualitylayer/src/core/next/compass.ts": "5f80eca50258b1c355ae834b77d00b334fc54151eb616913e143a7238b498d4d",
     "qualitylayer/src/core/next/implement.ts": "b3169489749a7b7dfb9a2699ca621454cc0a94f91d25f075e698e0d263d494e0",
@@ -763,7 +763,7 @@
     "qualitylayer/src/core/next/refusal.ts": "4db404c8e1b3c52ddcab5399ab247e5735bfec1cd7d5c5ff2ba8a15303f5d8b4",
     "qualitylayer/src/core/next/reply.ts": "c535ef55736a1e408844d200846a004c70686979022acdab05ef5e49d2d50580",
     "qualitylayer/src/core/next/shared.ts": "8a1e6814f757750c6b946f29ae239311cae3c1583f7e963898a43324c60b5934",
-    "qualitylayer/src/core/next/ship.ts": "593640072235d2ce5e53fa6fc6b54a36d952d15ab5f7a9cad314564fa2abecf0",
+    "qualitylayer/src/core/next/ship.ts": "ae72c01fee2e1c371f7b3a595fc3487733e88de5e9f46c13d7fdcac5a1284770",
     "qualitylayer/src/core/next/start.ts": "2b94bf0f203df3ddbfdb960e92102664c0eaa8477dbf05e3334f361f49a5b5ab",
     "qualitylayer/src/core/next/steps.ts": "bd1ac395ac3dfdcdca2b54c427c6baee9574857534c249a0629d7f1727e9dec0",
     "qualitylayer/src/core/next/verify-exit.ts": "9253a2f09fa2ab6d6e1ae4d1aa9a3348a691779410e92ed72baecd9e18e61d32",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "b41405b4c2c708866c35627ca33c42c03f41ed00fe9374b6c7c2b07c1a012db7",
+  "reviewManifestSha256": "13f575dd197ec5a6a6e4f0851f609fd4f7f4c6b630a059c23c54f828b05e94d1",
   "schema": 1,
-  "sourceHead": "57b495154a9f450dcdd84100541c8507d1936bb7"
+  "sourceHead": "804431c45d003d633817d073e395cd04c93256ed"
 }

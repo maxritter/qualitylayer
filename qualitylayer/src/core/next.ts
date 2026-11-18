@@ -42,7 +42,7 @@ import { withTaskComments } from "./planning-comments.ts"
 import { closingReadyPath, shipStatePath } from "./ship/closing-record.ts"
 import { adoptExistingPlan, ORIGINAL_FILE, type OriginalSource } from "./task/adoption.ts"
 import { isArchived } from "./task/archive.ts"
-import { sessionKey } from "./task/binding.ts"
+import { boundSlug, sessionKey } from "./task/binding.ts"
 import { advance } from "./task/machine.ts"
 import { reconcile } from "./task/reconcile.ts"
 import { startTask } from "./task/startup.ts"
@@ -566,7 +566,14 @@ export async function buildStartVerb(ctx: Ctx): Reply {
   if (!repo.ok) return repo
   await registerProject(ctx, repo.data)
   // The checkout that builds holds the Plan: copy it from the one that planned it when it is missing.
-  if ((await resolveTask(ctx, repo.data)) === null) await adoptPlan(ctx, repo.data)
+  if ((await resolveTask(ctx, repo.data)) === null) {
+    const session = sessionKey(ctx.env)
+    const requested =
+      ctx.env.get("QUALITYLAYER_TASK") ||
+      (session === null ? null : boundSlug(ctx, repo.data.id, session))
+    const adopted = await adoptPlan(ctx, repo.data, requested)
+    if (!adopted.ok) return adopted
+  }
   const picked = await approvedPlan(ctx, repo.data)
   if (!picked.ok) return picked
   const applied = await applyDecision(ctx, picked.data)

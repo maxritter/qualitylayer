@@ -9,3 +9,9 @@ The existing HEAD compare-and-swap, native hooks, filter handling, staged-edit o
 An ownership refusal names the affected file and says nothing was committed. Unrecorded edits retain the `git diff` and explicit `--accept-edits` move when all changes belong to this task. Mixed or named-owner edits retain the private-index-on-HEAD move and slice/fix commit registration. Shorter wording changes none of these ownership decisions.
 
 Qualification uses isolated repositories and real Git. It preserves a failing witness from the unchanged source, then checks add/add refusal, foreign deletion, unavailable history or filtered bytes, ordinary new-file success and the existing non-overlapping merge behavior. No production repository, native profile or personal index is used as a fixture.
+
+## Rewritten build history
+
+After a rebase, the builder can inspect receipt and lease changes with `qualitylayer doctor --json` before finishing Implement. Doctor reports on all open tasks in the repository. If its proposed repairs are all intended, `qualitylayer doctor --repair` can remove a stale duplicate whose changed paths, resulting blobs and modes match a registered successor. Once all remaining receipts are on HEAD, the builder can canonicalize the current task’s receipts and retry Verify. A shared patch ID alone does not prove the same resulting files.
+
+The Verify refusal points to this recovery when a rebase leaves stale receipts. The Implement brief names the existing whole-record validator after the builder writes `## Proof order` at the same level as `## Task cards`.

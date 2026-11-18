@@ -40,6 +40,7 @@ export type QualityProjectReport = {
 }
 export type QualityOptions = {
   paths: string[]
+  all?: boolean
   mode?: QualityMode
   timeoutMs?: number
   limitFiles?: number
@@ -408,10 +409,36 @@ async function acknowledgeSaved(
   })
 }
 
+/** Git selects project files. Capture still validates every admitted ancestor before reading it. */
+async function projectInventory(ctx: Ctx, root: string): Promise<Map<string, Set<string>>> {
+  const files = await ctx.git.run(
+    root,
+    ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    { maxOutputBytes: 2 * 1024 * 1024 },
+  )
+  if (files.code !== 0)
+    throw new Error("Could not read the Git source inventory; choose narrower paths")
+  const inventory = new Map<string, Set<string>>()
+  for (let path of files.stdout.split("\0")) {
+    while (path && path !== ".") {
+      const parent = slash(dirname(path))
+      const children = inventory.get(parent) ?? new Set<string>()
+      const child = basename(path)
+      if (children.has(child)) break
+      children.add(child)
+      inventory.set(parent, children)
+      path = parent
+    }
+  }
+  return inventory
+}
+
+type CaptureScope = { paths: string[]; inventory?: Map<string, Set<string>> }
+
 async function capture(
   ctx: Ctx,
   root: string,
-  paths: string[],
+  { paths, inventory }: CaptureScope,
   mode: QualityMode,
   limit: number,
   config: AnalysisConfig,
@@ -447,7 +474,9 @@ async function capture(
     if (!entry) return
     if (entry.kind === "symlink") throw new Error(`Code-quality input is a symbolic link: ${rel}`)
     if (entry.kind === "directory") {
-      for (const name of await ctx.fs.readdir(full)) await visit(join(full, name))
+      // Git keeps the indexed spelling even after a case-only rename on case-insensitive volumes.
+      const children = inventory ? (inventory.get(rel || ".") ?? []) : await ctx.fs.readdir(full)
+      for (const name of children) await visit(join(full, name))
       return
     }
     const extension = extname(rel).toLowerCase()
@@ -600,10 +629,14 @@ export async function checkProjectQuality(
             reason:
               "No Qlty linters are enabled in this project's .qlty/qlty.toml; keep using its existing lint command or enable its chosen Qlty plugins",
           }
+        const scope: CaptureScope = {
+          paths: options.paths,
+          ...(options.all ? { inventory: await projectInventory(ctx, project.root) } : {}),
+        }
         const sources = await capture(
           ctx,
           project.root,
-          options.paths,
+          scope,
           mode,
           Math.min(options.limitFiles ?? MAX_FILES, MAX_FILES),
           config,

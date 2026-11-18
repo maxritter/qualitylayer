@@ -222,11 +222,10 @@ export async function qualityCmd(
           : duplication
             ? "duplication"
             : "structure"
-    const report = await (dependencies.scan ?? checkProjectQuality)(ctx, {
-      paths: all ? ["."] : paths.length ? paths : await changedFiles(ctx),
-      mode,
-      timeoutMs: all ? 120_000 : 15_000,
-    })
+    const scope = all
+      ? { all: true, paths: ["."], timeoutMs: 120_000 }
+      : { paths: paths.length ? paths : await changedFiles(ctx), timeoutMs: 15_000 }
+    const report = await (dependencies.scan ?? checkProjectQuality)(ctx, { ...scope, mode })
     if (failOnNew && report.status === "disabled")
       return err({
         code: "open_failed",

@@ -772,7 +772,7 @@ async function assignJudge(
       message,
       stored: task.stage,
       found: message,
-      fix: "Follow the repair named in the error. Inspect the task's commit receipts and register only its own follow-up commits (a slice's with qualitylayer commit slice <n> --commit <fullsha>, a fix's with qualitylayer commit fix --commit <fullsha>); preserve other sessions' commits.",
+      fix: "Follow the repair named in the error. After a rebase, run qualitylayer doctor --json to preview repairs for all open tasks and checkout leases. If it identifies a duplicate and every proposed repair is intended, run qualitylayer doctor --repair. Once the remaining receipts are on HEAD, run qualitylayer commit receipts --canonicalize for this task and retry verify judge. Register only task-owned follow-ups with commit slice <n> --commit <fullsha> or commit fix --commit <fullsha>.",
     })
   }
   // A fix round's re-judgement, and the recheck of a change made after a pass, do not wait for

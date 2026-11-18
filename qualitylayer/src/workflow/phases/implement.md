@@ -30,12 +30,13 @@ without a report, until the page turns to the person.
    source changes, including evidence-only qualification; put inspected paths in **Read only**.
    When staging by hand, select the intended paths and follow the repository's rule for committing
    task records under `docs/plans/`.
-3. **Order the proof.** *Proof order*: one line per Done means step, `A3 · after slice 2`, so each
+3. **Order the proof.** Add `## Proof order` beside `## Task cards`. Write one line per Done means step, `A3 · after slice 2`, so each
    step can run as soon as its slice is committed. For a step only the person can do, name the
    slice that makes it possible and add `(the person confirms it in Verify)` to the line. Look once
    for gaps in the steps (blockers, cancel
    paths, boundary inputs, two at once): a missing step is added to the Plan with `qualitylayer plan
    amend --by agent --note "<the step, and why>"`, where the person sees it.
+   After writing the cards, run `qualitylayer validate agents/02-implement.md`.
 4. **Keep commands safe to run alone**: from the repository root, unattended, and pushing, deploying or
    calling another machine only where the Plan's *Prerequisites* grant it. A paid or real-agent
    command gets one card that holds the proof; cite its recorded result elsewhere. Before a check that
@@ -58,6 +59,7 @@ what you approved: ...".
    change the mechanism. A failure predates the task only when it fails on the base commit's own
    files. When a check fails only on files another session changed, `check slice` runs it again on a
    copy of HEAD with this slice's files and says so: that run is the record.
+   After a rebase, preview `qualitylayer doctor --json` and inspect the registered commits before finishing the build.
 5. When a slice is done: `qualitylayer check slice <n>`, then `qualitylayer commit slice <n>`
    (`--commit <fullsha>` for a commit you made by hand). The commit takes this task's changes: read its
    `left_out` list and keep other sessions' edits out. A file the person deferred belongs to the

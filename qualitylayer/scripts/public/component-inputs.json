@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "c714c8812bffcce8265ab5899224ed88458ddc62",
-  "catalogSha256": "7b034dc4ec3328b687319197c6fb92c07f1695add6ede7af3c9f50a72b9cb380",
+  "sourceHead": "b4e0770792657c54d4e2779e8cca45c8c0154dc8",
+  "catalogSha256": "4c472ae732939d6847bbd840c308fb2f7115af894add53844b2857d1dadd320b",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -2863,7 +2863,7 @@
     },
     {
       "path": "qualitylayer/src/core/git/working-capture.ts",
-      "sha256": "b37fb34c7ad99a5b14f826a9ff1162c3e4b74eec19c2f8ed27e3d26b9e0576e2",
+      "sha256": "2ea5855af732fde5f5e7746287ceedfefa9d9d25ce65463bf474cf31de383b04",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6055,7 +6055,7 @@
     },
     {
       "path": "qualitylayer/src/core/run/turn-git.ts",
-      "sha256": "329f0a1a344e3fc058266c84d178441a6f378e40116b6d47997249cae8e067a8",
+      "sha256": "86175876323fbfa6177ea53a9e9fb3b02bcac499fcf2664434378b0fa91b3965",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

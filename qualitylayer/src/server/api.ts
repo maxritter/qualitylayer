@@ -1206,7 +1206,7 @@ const EARLIER_DOCS = [
   "agent/01-discuss-research.md",
   "agent/02-plan-details.md",
   "agent/03-implement-details.md",
-].sort()
+].sort((left, right) => left.localeCompare(right, "en"))
 
 async function earlierDocs(ctx: Ctx, task: Task): Promise<DocEntry[]> {
   const safe = publicationContext(ctx, task)

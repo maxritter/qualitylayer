@@ -19,3 +19,15 @@ export async function readCardsText(ctx: Ctx, taskDir: string): Promise<string> 
 export async function readCards(ctx: Ctx, taskDir: string): Promise<Outline> {
   return parseOutline(await readCardsText(ctx, taskDir))
 }
+
+/** Only written card titles count toward the build's shape. The raw parser keeps the template for validation. */
+export async function readWrittenCards(ctx: Ctx, taskDir: string): Promise<Outline | null> {
+  const outline = await readCards(ctx, taskDir)
+  const slices = outline.slices.flatMap((slice) => {
+    const tasks = slice.tasks.filter(
+      ({ title }) => title.replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim() !== "",
+    )
+    return tasks.length === 0 ? [] : [{ ...slice, tasks }]
+  })
+  return slices.length === 0 ? null : { ...outline, slices }
+}

@@ -9,7 +9,7 @@ import { readConfig } from "./config.ts"
 import { sectionText } from "./docs/build-log.ts"
 import { agentFileOf, folderDoc, RESEARCH_QUESTIONS } from "./docs/names.ts"
 import { codeSlices, type Outline } from "./docs/outline.ts"
-import { cardsPath, readCards } from "./docs/outline-files.ts"
+import { cardsPath, readCards, readWrittenCards } from "./docs/outline-files.ts"
 import { proseLines } from "./docs/rules/types.ts"
 import { approvalCurrent } from "./gate/revision.ts"
 import { researchQuestionItems } from "./research-questions.ts"
@@ -142,7 +142,7 @@ async function oneTaskApproved(ctx: Ctx, task: Task, plan: Outline | null): Prom
 }
 
 export async function taskFlow(ctx: Ctx, task: Task): Promise<TaskFlow> {
-  const plan = await readOutline(ctx, task)
+  const plan = await readWrittenCards(ctx, task.dir)
   const signals = await flowSignals(ctx, task)
   signals.oneTaskApproved = await oneTaskApproved(ctx, task, plan)
   const config = await readConfig(ctx)

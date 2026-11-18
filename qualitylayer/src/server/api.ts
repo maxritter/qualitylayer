@@ -26,6 +26,7 @@ import {
   COMMENTABLE_FILES,
   type DocRole,
   folderDoc,
+  NAMES,
   RECORDS_DIR,
   type TaskFile,
   taskFiles,
@@ -855,7 +856,7 @@ async function summarise(
       ...(isTerminal(task.stage) ? {} : { live: await liveReport(ctx, task) }),
     }
   }
-  const gateFile: GateFile | null = await readGate(ctx, task)
+  const gateFile: GateFile | null = await currentTaskGate(ctx, task)
   const reviewGate =
     gateFile !== null
       ? {
@@ -1134,6 +1135,105 @@ function docList(): [string, string][] {
   ]
 }
 
+async function taskDocs(ctx: Ctx, task: Task): Promise<DocEntry[]> {
+  if (!isCurrentLayout(task)) return earlierDocs(ctx, task)
+  const docs: DocEntry[] = []
+  for (const [name, label] of docList()) {
+    const path = join(task.dir, name)
+    const parsed = await cachedDoc(ctx, path)
+    const exists = parsed !== null
+    const fm = parsed?.frontmatter ?? {}
+    const added = parsed !== null ? addedBlocks(parsed.body) : []
+    const approved =
+      fm.approved === true && (isTerminal(task.stage) || (await approvalCurrent(ctx, task, name)))
+    docs.push({
+      name,
+      label,
+      exists,
+      status:
+        fm.approved === true && !approved
+          ? "needs review"
+          : typeof fm.status === "string"
+            ? fm.status
+            : "",
+      approved,
+      ...(added.length > 0 ? { added: added.map(({ stage, reason }) => ({ stage, reason })) } : {}),
+    })
+  }
+  return docs
+}
+
+function currentTaskGate(ctx: Ctx, task: Task) {
+  return isCurrentLayout(task) ? readGate(ctx, task) : null
+}
+
+const NUMBERED_DOC_NAME = /^\d{2}-([a-z-]+)\.md$/
+const EARLIER_AGENT_NAME = /^agents?\/\d{2}-[a-z-]+\.md$/
+
+const SEVEN_STEP_DOCS = [
+  "01-discuss.md",
+  "02-research.md",
+  "03-plan.md",
+  "04-outline.md",
+  "05-implement.md",
+  "06-verify.md",
+  "07-review.md",
+]
+
+// The historical layouts used fixed names. Probe them through the document guard without walking
+// the folder or its optional agent directories.
+const EARLIER_DOCS = [
+  ...SEVEN_STEP_DOCS,
+  ...Object.values(NAMES),
+  ...SEVEN_STEP_DOCS.map((name) => `${AGENTS_DIR}/${name}`),
+  "00-discuss.md",
+  "00-discuss-details.md",
+  "01-diagnosis.md",
+  "01-discuss-details.md",
+  "01-discuss-diagnosis.md",
+  "01-discuss-research.md",
+  "01-research.md",
+  "02-plan.md",
+  "02-plan-details.md",
+  "03-build.md",
+  "03-build-details.md",
+  "03-implement.md",
+  "03-implement-details.md",
+  "04-verify.md",
+  "05-review.md",
+  "agent/01-discuss-details.md",
+  "agent/01-discuss-diagnosis.md",
+  "agent/01-discuss-research.md",
+  "agent/02-plan-details.md",
+  "agent/03-implement-details.md",
+].sort()
+
+async function earlierDocs(ctx: Ctx, task: Task): Promise<DocEntry[]> {
+  const safe = publicationContext(ctx, task)
+  const docs: DocEntry[] = []
+  for (const name of EARLIER_DOCS) {
+    const path = join(task.dir, name)
+    try {
+      if (safe.fs.readRegularFile) await safe.fs.readRegularFile(path, ORIGINAL_MAX_BYTES)
+      else if (!(await safe.fs.exists(path))) continue
+    } catch {
+      continue
+    }
+    const title = basename(name)
+      .slice(3, -3)
+      .replaceAll("-", " ")
+      .replace(/^./, (c) => c.toUpperCase())
+    docs.push({
+      name,
+      label: name.includes("/") ? `${title} · agents` : title,
+      exists: true,
+      status: "",
+      approved: false,
+    })
+  }
+  return docs
+}
+
 /** The task's files, one per role in flow order, so the App takes every name and path from here. */
 async function filesOf(ctx: Ctx, task: Task, projectName: string): Promise<TaskFile[]> {
   const present = new Set<DocRole>()
@@ -1227,29 +1327,7 @@ async function readTaskDetail(
       pages: [],
     })
   }
-  const docs: DocEntry[] = []
-  for (const [name, label] of docList()) {
-    const path = join(task.dir, name)
-    const parsed = await cachedDoc(ctx, path)
-    const exists = parsed !== null
-    const fm = parsed?.frontmatter ?? {}
-    const added = parsed !== null ? addedBlocks(parsed.body) : []
-    const approved =
-      fm.approved === true && (isTerminal(task.stage) || (await approvalCurrent(ctx, task, name)))
-    docs.push({
-      name,
-      label,
-      exists,
-      status:
-        fm.approved === true && !approved
-          ? "needs review"
-          : typeof fm.status === "string"
-            ? fm.status
-            : "",
-      approved,
-      ...(added.length > 0 ? { added: added.map(({ stage, reason }) => ({ stage, reason })) } : {}),
-    })
-  }
+  const docs = await taskDocs(ctx, task)
 
   const record = await readBuildRecord(ctx, task)
   const verification: TaskDetail["verification"] = record.verification.map((i) => ({
@@ -1325,7 +1403,11 @@ async function readTaskDetail(
   // A task's raw command output, for the Files tab's Records row (records/ beside evidence/).
   const records = await filesIn(ctx.fs, join(task.dir, RECORDS_DIR), true)
   // The agents' own files (agents/NN-step.md): the same row counts them, so people know the folder is there.
-  const agents = await filesIn(ctx.fs, join(task.dir, AGENTS_DIR), true)
+  const agents = isCurrentLayout(task)
+    ? await filesIn(ctx.fs, join(task.dir, AGENTS_DIR), true)
+    : docs
+        .filter(({ name }) => name.startsWith(`${AGENTS_DIR}/`))
+        .map(({ name }) => name.slice(AGENTS_DIR.length + 1))
   // The Plan's agents' file, a regular file only: the Files tab folds it under Build context.
   const support = await planSupport(ctx, task)
 
@@ -1334,8 +1416,8 @@ async function readTaskDetail(
   const shippedPr = task.stage === "shipped" ? await cachedPullRequest(ctx, task) : null
   // The parts that do not need each other are read side by side.
   // Verify turned to the person: the final approval is theirs to give.
-  const reviewing = await inPersonReview(ctx, task)
-  const gateFile = reviewing ? await ensureFinalReview(ctx, task) : await readGate(ctx, task)
+  const reviewing = isCurrentLayout(task) && (await inPersonReview(ctx, task))
+  const gateFile = reviewing ? await ensureFinalReview(ctx, task) : await currentTaskGate(ctx, task)
   const checkedSource = gateFile?.finalReview?.code ? await readAssignment(ctx, task) : null
   if (options.shown === true && gateFile?.target === FINAL && gateFile.shown === undefined)
     await markGateShown(ctx, task)
@@ -1519,7 +1601,8 @@ export async function refreshTaskPages(ctx: Ctx, id: string): Promise<void> {
 
 export async function postViewing(ctx: Ctx, id: string, body: unknown) {
   const found = await locate(ctx, id)
-  return found.ok ? writeViewing(ctx, found.data.task, body) : found
+  if (!found.ok) return found
+  return isCurrentLayout(found.data.task) ? writeViewing(ctx, found.data.task, body) : ok({})
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -1596,21 +1679,32 @@ const REVIEW_NAME = /^reviews\/(?:plan|outline|verify)\.md$/
 const AGENT_NAME = /^agents\/\d{2}-[a-z-]+\.md$/
 
 export async function docContent(ctx: Ctx, id: string, name: string) {
-  if (!DOC_NAME.test(name) && !REVIEW_NAME.test(name) && !AGENT_NAME.test(name))
+  const earlierAgent = EARLIER_AGENT_NAME.test(name)
+  if (!DOC_NAME.test(name) && !REVIEW_NAME.test(name) && !earlierAgent)
     return err({ code: "bad_args", message: `"${name}" is not a task document` })
   const found = await locate(ctx, id)
   if (!found.ok) return found
-  if (name === "original-plan.md" && found.data.task.origin !== "existing-plan")
+  const { task } = found.data
+  if (isCurrentLayout(task) && name.startsWith("agent/"))
+    return err({ code: "bad_args", message: `"${name}" is not a task document` })
+  return readDocument(ctx, task, name)
+}
+
+async function readDocument(ctx: Ctx, task: Task, name: string) {
+  if (name === "original-plan.md" && task.origin !== "existing-plan")
     return err({ code: "no_task", message: "This task has no original plan." })
   if (name === "chat-plan.md" || name === "chat-slices.md" || name === "original-plan.md")
-    ctx = publicationContext(ctx, found.data.task)
-  const path = join(found.data.task.dir, name)
+    ctx = publicationContext(ctx, task)
+  const archivedDoc =
+    !isCurrentLayout(task) && (NUMBERED_DOC_NAME.test(name) || EARLIER_AGENT_NAME.test(name))
+  const regular = archivedDoc || name === "original-plan.md" || AGENT_NAME.test(name)
+  const path = join(task.dir, name)
   let markdown: string
   try {
+    if (archivedDoc) ctx = publicationContext(ctx, task)
     if (!(await ctx.fs.exists(path)))
       return err({ code: "no_task", message: `${name} does not exist yet` })
     // The original and the agent-written build context are read as regular files only.
-    const regular = name === "original-plan.md" || AGENT_NAME.test(name)
     markdown =
       regular && ctx.fs.readRegularFile
         ? new TextDecoder("utf-8", { fatal: true }).decode(
@@ -1620,12 +1714,9 @@ export async function docContent(ctx: Ctx, id: string, name: string) {
   } catch {
     return err({ code: "no_task", message: `${name} is missing or outside the task` })
   }
-  const report =
-    name === "original-plan.md" || AGENT_NAME.test(name)
-      ? null
-      : await validateDoc(ctx, found.data.task.dir, name, {
-          runtimeDir: found.data.task.runtimeDir,
-        })
+  const report = regular
+    ? null
+    : await validateDoc(ctx, task.dir, name, { runtimeDir: task.runtimeDir })
   return ok({
     name,
     markdown,

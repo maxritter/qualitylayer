@@ -493,14 +493,49 @@ jobs:
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/62a884d70d92e9f2dbad28fab8f3a8e4c02f560c67c1f3d5d38739530caced0e.sh"
       shell: bash
+  macos-regression-gate:
+    name: Exact macOS regression gate
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: check-trigger
+    if: inputs.operation != 'promote' && needs.check-trigger.outputs.should_run == 'true'
+      && needs.check-trigger.outputs.reduced != 'true'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        persist-credentials: false
+    - name: Qualify private command channels before decryption
+      shell: bash
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+      run: python3 "${{ github.workspace }}/.github/scripts/canary-private-command.py"
+        "${{ github.workspace }}/.github/scripts/release-private-command.py"
+    - run: bash .github/workflows/scripts/install-git-crypt.sh
+    - env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: The macOS regression passed on this commit
+      env:
+        GH_TOKEN: "${{ github.token }}"
+        QL_RELEASE_EXPORTS: "{}"
+        QL_RELEASE_METADATA_CONTROL: 'true'
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/e0113e1674547663cd9ac63b8cb390fbaeacbe8f93eb87bc293c8e38a447d15a.sh"
+      shell: bash
   candidate:
     name: Stage the exact candidate without publication
     permissions:
       contents: write
       id-token: write
-    needs: prepare-release
+    needs: [check-trigger, prepare-release, macos-regression-gate]
     if: "${{ always() && inputs.operation != 'promote' && needs.prepare-release.outputs.should_release
-      == 'true' && needs.prepare-release.result == 'success' }}"
+      == 'true' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' || needs.macos-regression-gate.result == 'success') }}"
     uses: "./.github/workflows/qualitylayer-candidate.yml"
     with:
       version: "${{ needs.prepare-release.outputs.version }}"

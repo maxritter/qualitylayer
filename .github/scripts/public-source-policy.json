@@ -15,7 +15,7 @@
     ".github/scripts/commit-serial.sh": "124268f3e079ca5ea522e9196f893e166544e88cac06d6d465e9363df1d18d94",
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
-    ".github/scripts/release-private-command.py": "ebcaf77ed9834fab4172a63c8427c9170b54563cb2cef34830dc47f02b4af324",
+    ".github/scripts/release-private-command.py": "884b8798d3625303b0cb223ddde7e2d9f9da86dbcb618e06e3cf93da22d68df3",
     ".github/scripts/stage-release-artifact.py": "4523a50bfa6dc1cd9fb7cb3698d3ede5912e861d80f31be3a8223e7fbb2df85f",
     ".github/scripts/verify-release14-exception.py": "3fe21df8397365b90f7e60258a4ba3294711f3e677efec1d549464d21bff9991",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
@@ -25,13 +25,13 @@
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
-    ".github/workflows/qualitylayer-ci.yml": "e3115d35fa089f5ddde6236f2566b1ffaa7531fbc8f65d6d357258479a12ea62",
+    ".github/workflows/qualitylayer-ci.yml": "08b85f15322e69330f9b78187e2ad978e72e328137c12a2b445cd010d8ea7ec3",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
     ".github/workflows/qualitylayer-windows-diagnostic.yml": "775319bd9e17936606b74341253ea5ed751296abade45d9b0c38aebe333ea5a1",
     ".github/workflows/qualitylayer-windows-nightly.yml": "f75a6e450ce7524fb4a8747fd6a643b06c20626c9947bca693700723a92c7e20",
-    ".github/workflows/release.yml": "2bd01ea92b32d4ab1f23572384044c2b6d4adb1f5c4f83a37c43dbecb10175af",
+    ".github/workflows/release.yml": "4a735fbb6fee24a5c6d3def5b1ac6e06e6f7bdd3dc2c510b133d301b7e87551e",
     ".github/workflows/scripts/git-crypt-unlock.ts": "2baf9ae3dee6d1113a128cb1699d091f272ddfb2bab1b0b6d6b0a03c1a162fa4",
     ".github/workflows/scripts/install-git-crypt.sh": "6a57539fe3a34eb06eb43bdff3654c61ce492b5d4fa09a092ff31aed985991cc",
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "7b40112017c04d633626d17f4b976a7fe4276d201dcd6f1b510d06095d3b909d",
+  "reviewManifestSha256": "02bc21892d72498dcd7c823dd490b694a4fbd52cdb7d0d39c2542edff8bd52ce",
   "schema": 1,
-  "sourceHead": "27f9073a084edd6f744c7b423d4d9657cd36864c"
+  "sourceHead": "2c89797fefb27efdc1944317cee30f75aba840c5"
 }

@@ -22,6 +22,9 @@ CHANNELS = ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY"
 CAPABILITIES = ("ACTIONS_RUNTIME_TOKEN", "ACTIONS_RUNTIME_URL", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "GH_TOKEN", "GITHUB_TOKEN")
 COCKPIT_TEST = "qualitylayer/tests/e2e/cockpit-gate.test.ts"
 COCKPIT_REPORT_DIR = "QL_PRIVATE_COCKPIT_REPORT_DIR"
+HISTORY_TESTS = {"qualitylayer/tests/frontend/conversation-history.spec.ts", "qualitylayer/tests/frontend/conversation-turns.spec.ts"}
+HISTORY_COMMAND = ".github/private-workflows/ci-commands/d9861aee63b0ad189debdd660a0499df79a3750884be357e15cce66a7b0bde7a.sh"
+HISTORY_REPORT_DIR = "QL_PRIVATE_HISTORY_REPORT_DIR"
 
 def test_record_directory(workspace):
     directory = workspace
@@ -62,7 +65,7 @@ def failure_scope():
                 metadata, path = row.split(b"\t", 1)
                 mode, kind, _oid = metadata.split()
                 path = path.decode("utf-8")
-                if mode in (b"100644", b"100755") and kind == b"blob" and path.endswith((".test.ts", ".test.tsx")):
+                if mode in (b"100644", b"100755") and kind == b"blob" and (path in HISTORY_TESTS or path.endswith((".test.ts", ".test.tsx"))):
                     tracked.add(path)
         existing = {path.name for path in test_record_directory(workspace).glob("*.json")}
         return (workspace, head, tracked, existing, trusted_git_crypt(workspace)) if len(existing) <= 1024 else None
@@ -109,6 +112,7 @@ def failed_test_paths(scope, window):
         if scope is None:
             return [], {}
         workspace, head, tracked, existing, _crypt = scope
+        tracked = tracked - HISTORY_TESTS
         current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
         if current != head:
             return [], {}
@@ -276,10 +280,60 @@ def failed_test_locations(scope, files, log):
     except Exception:
         return []
 
-def failure_metadata(scope, started, log=None, cockpit_reports=None):
+def history_report_directory(scope, shell, script, directory, environment):
+    environment.pop(HISTORY_REPORT_DIR, None)
+    if scope is None or shell != "bash":
+        return None
+    path = Path(script).resolve()
+    if path != scope[0] / HISTORY_COMMAND or hashlib.sha256(path.read_bytes()).hexdigest() != path.stem:
+        return None
+    report = directory / "history-reports"
+    report.mkdir(mode=0o700)
+    environment[HISTORY_REPORT_DIR] = str(report)
+    return report
+
+def read_history_rows(directory, window):
+    if directory.resolve() != directory:
+        raise ValueError()
+    report = json.loads(read_bounded_regular(directory / "results.json", 8192, window), object_pairs_hook=json_object)
+    if not isinstance(report, dict) or set(report) != {"failures"}:
+        raise ValueError()
+    rows = report["failures"]
+    if not isinstance(rows, list) or len(rows) > 32:
+        raise ValueError()
+    return rows
+
+def allowed_history_location(row, declarations):
+    if not isinstance(row, dict) or set(row) != {"file", "line", "kind"}:
+        return False
+    line = row["line"]
+    valid_line = type(line) is int and line in declarations.get(row["file"], ())
+    return valid_line and row["kind"] in ("assertion", "timeout", "process", "unknown")
+
+def history_failure_locations(scope, directory, window):
+    if scope is None or directory is None:
+        return []
+    try:
+        current = subprocess.check_output(["git", "-C", str(scope[0]), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        if current != scope[1]:
+            return []
+        rows = read_history_rows(directory, window)
+        declarations = {}
+        for file in HISTORY_TESTS:
+            body = committed_test_body(scope, file)
+            if body is not None:
+                declarations[file] = {number for number, line in enumerate(body.decode().splitlines(), 1) if line.lstrip().startswith("test(")}
+        return rows if all(allowed_history_location(row, declarations) for row in rows) else []
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return []
+
+def failure_metadata(scope, started, log=None, cockpit_reports=None, history_reports=None):
     window = (started, time.time())
     files, reports = failed_test_paths(scope, window)
     locations = failed_test_locations(scope, files, log) + cockpit_failure_locations(scope, reports, cockpit_reports, window)
+    history = history_failure_locations(scope, history_reports, window)
+    files = sorted(set(files) | {row["file"] for row in history})
+    locations.extend(history)
     metadata = {"failedTestFiles": files, "failedTestLocations": sorted(locations, key=lambda row: (row["file"], row["line"], row["kind"])) if len(locations) <= 256 else []}
     # Keep exact JSON values without allowing tracked filenames to become Actions commands.
     return json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).replace("::", "\\u003a\\u003a").replace("#", "\\u0023").replace("%", "\\u0025")
@@ -474,6 +528,8 @@ def main():
                     environment[key] = os.environ[key]
     environment.pop("QL_RELEASE_CAPABILITIES", None)
     environment.pop("QL_RELEASE_EXPORTS", None)
+    scope = failure_scope()
+    history_reports = history_report_directory(scope, shell, script, directory, environment)
     template = Path(script).read_text(encoding="utf-8")
     for name in re.findall(r"@@(QL_EXPR_[0-9]+)@@", template):
         if name not in os.environ:
@@ -494,7 +550,6 @@ def main():
     child = None
     job = None
     log = directory / "diagnostics.private"
-    scope = failure_scope()
     report_directory = tempfile.TemporaryDirectory(prefix="cockpit-reports-", dir=directory)
     cockpit_reports = Path(report_directory.name).resolve()
     environment[COCKPIT_REPORT_DIR] = str(cockpit_reports)
@@ -515,7 +570,7 @@ def main():
         child = None
         job = None
         if code != 0:
-            print(failure_metadata(scope, started, log, cockpit_reports))
+            print(failure_metadata(scope, started, log, cockpit_reports, history_reports))
             return code if 0 < code < 126 else 1
         exports = []
         for channel, rules in contract.items():

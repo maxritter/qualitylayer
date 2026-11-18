@@ -235,14 +235,14 @@ jobs:
         shell: bash
   test-macos:
     if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name == 'workflow_dispatch' && inputs.full_regression && (inputs.macos || inputs.diagnostic))
-    name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }})
+    name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }}${{ matrix.companion && ' companion' || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: plaintext-guard
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.full_regression && inputs.diagnostic && '[{"os":"macos-26","shard":5,"shards":12},{"os":"macos-26","shard":6,"shards":12},{"os":"macos-26","shard":9,"shards":12}]' || '[{"os":"macos-26","shard":1,"shards":12},{"os":"macos-26","shard":2,"shards":12},{"os":"macos-26","shard":3,"shards":12},{"os":"macos-26","shard":4,"shards":12},{"os":"macos-26","shard":5,"shards":12},{"os":"macos-26","shard":6,"shards":12},{"os":"macos-26","shard":7,"shards":12},{"os":"macos-26","shard":8,"shards":12},{"os":"macos-26","shard":9,"shards":12},{"os":"macos-26","shard":10,"shards":12},{"os":"macos-26","shard":11,"shards":12},{"os":"macos-26","shard":12,"shards":12}]') }}
+        include: ${{ fromJSON(inputs.full_regression && inputs.diagnostic && '[{"os":"macos-26","shard":5,"shards":12},{"os":"macos-26","shard":6,"shards":12},{"os":"macos-26","shard":9,"shards":12}]' || '[{"os":"macos-26","shard":1,"shards":12},{"os":"macos-26","shard":2,"shards":12},{"os":"macos-26","shard":3,"shards":12},{"os":"macos-26","shard":4,"shards":12,"part":"1/2"},{"os":"macos-26","shard":4,"shards":12,"part":"2/2","companion":true},{"os":"macos-26","shard":5,"shards":12},{"os":"macos-26","shard":6,"shards":12},{"os":"macos-26","shard":7,"shards":12},{"os":"macos-26","shard":8,"shards":12},{"os":"macos-26","shard":9,"shards":12},{"os":"macos-26","shard":10,"shards":12},{"os":"macos-26","shard":11,"shards":12},{"os":"macos-26","shard":12,"shards":12}]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -325,7 +325,8 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
           QL_CI_INPUT_1: ${{ matrix.shard }}
           QL_CI_INPUT_2: ${{ matrix.shards }}
-        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/e3edfd1a940d93a8a05987e0bf97a1571dee275c50eb2693f1b1961f687b72d7.sh"
+          QL_CI_INPUT_3: ${{ matrix.part }}
+        run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/ae6703e9abebde47fe8e0d1391710b944740e273e3fba0ba243ae92400688967.sh"
         shell: bash
   overflow:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}No text overflows a control (${{ matrix.os }}, shard ${{ matrix.shard }}/2)

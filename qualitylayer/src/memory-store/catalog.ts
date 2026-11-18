@@ -15,6 +15,7 @@ import {
   type MemoryConflict,
   type MemoryPage,
   type MemoryProject,
+  type MemoryProjectQuery,
   type MemoryQuery,
   type MemoryRecord,
   PERSONAL_PROJECT,
@@ -194,24 +195,30 @@ export class MemoryCatalog {
       count: this.count({ project: p.id }),
     }
   }
-  projects(q: { query?: string; cursor?: string; limit?: number } = {}): MemoryPage<MemoryProject> {
+  projects(q: MemoryProjectQuery = {}): MemoryPage<MemoryProject> {
     const limit = pageSize(q.limit),
       query = q.query?.trim() ?? "",
-      key = hash(`projects:${query}`),
+      retiredOnly = q.recordState === "retired",
+      key = hash(retiredOnly ? `retired-projects:${query}` : `projects:${query}`),
       offset = cursor(q.cursor, key)
     if (query.length > 200) throw new Error("Project query exceeds 200 characters")
+    const pattern = `%${escapeLike(query)}%`
+    const args = [pattern, pattern, retiredOnly ? 1 : 0] as const
     const total = (
       this.db
         .query(
-          "SELECT count(*) n FROM projects WHERE name LIKE ? ESCAPE '\\' OR root LIKE ? ESCAPE '\\'",
+          `SELECT count(*) n FROM projects WHERE (name LIKE ? ESCAPE '\\' OR root LIKE ? ESCAPE '\\')
+           AND (? = 0 OR EXISTS (SELECT 1 FROM records WHERE project=projects.id AND state='retired'))`,
         )
-        .get(`%${escapeLike(query)}%`, `%${escapeLike(query)}%`) as { n: number }
+        .get(...args) as { n: number }
     ).n
     const rows = this.db
       .query(
-        "SELECT id FROM projects WHERE name LIKE ? ESCAPE '\\' OR root LIKE ? ESCAPE '\\' ORDER BY name,id LIMIT ? OFFSET ?",
+        `SELECT id FROM projects WHERE (name LIKE ? ESCAPE '\\' OR root LIKE ? ESCAPE '\\')
+         AND (? = 0 OR EXISTS (SELECT 1 FROM records WHERE project=projects.id AND state='retired'))
+         ORDER BY name,id LIMIT ? OFFSET ?`,
       )
-      .all(`%${escapeLike(query)}%`, `%${escapeLike(query)}%`, limit, offset) as { id: string }[]
+      .all(...args, limit, offset) as { id: string }[]
     return {
       items: rows.map((r) => this.projectView(this.project(r.id) as ProjectRow)),
       total,
@@ -436,6 +443,13 @@ export class MemoryCatalog {
     return (
       this.db.query(`SELECT count(*) n FROM records WHERE ${where}`).get(...args) as { n: number }
     ).n
+  }
+  hasRecords(project?: string): boolean {
+    const found =
+      project === undefined
+        ? this.db.query("SELECT 1 FROM records LIMIT 1").get()
+        : this.db.query("SELECT 1 FROM records WHERE project=? LIMIT 1").get(project)
+    return found !== null
   }
   fileIds(q: MemoryQuery, paths: readonly string[], activeOnly = true): string[] {
     if (!paths.length) return []

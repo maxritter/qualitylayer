@@ -117,6 +117,12 @@ export type MemoryProject = {
   count: number
   git: boolean
 }
+export type MemoryProjectQuery = {
+  query?: string
+  cursor?: string
+  limit?: number
+  recordState?: "retired"
+}
 /** `sessions` switches the lesson block in every session; a missing value reads as on. */
 export type MemorySettings = { enabled: boolean; sessions?: boolean }
 /**
@@ -166,6 +172,8 @@ export type MemoryOverview = {
   /** The session switch; the service always sets it. */
   sessions?: boolean
   total: number
+  /** Whether this scope has any saved lesson, including retired lessons. */
+  hasRecords?: boolean
   shared: number
   imported: number
   projects: number
@@ -268,11 +276,7 @@ export interface MemoryApi {
   overview(project?: string): Promise<MemoryOverview>
   /** Changes the settings named in `patch`; an empty patch reads them. */
   settings(patch: Partial<MemorySettings>): Promise<MemorySettings>
-  projects(query?: {
-    query?: string
-    cursor?: string
-    limit?: number
-  }): Promise<MemoryPage<MemoryProject>>
+  projects(query?: MemoryProjectQuery): Promise<MemoryPage<MemoryProject>>
   sharing(project: string, enabled: boolean): Promise<MemoryProject>
   list(query?: MemoryQuery): Promise<MemoryPage<MemoryPreview>>
   read(id: string): Promise<MemoryRecordView>

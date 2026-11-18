@@ -192,12 +192,17 @@ function decodePlace(value: string | undefined, key: string): Place {
 async function searchWindow(
   service: Service,
   window: number,
+  retiredOnly: boolean,
 ): Promise<{ projects: string[]; more: boolean }> {
   const first = window * SEARCHED_PROJECTS
   const holders: string[] = []
   for (let cursor: string | undefined; holders.length <= first + SEARCHED_PROJECTS; ) {
-    const page = await service.projects({ cursor, limit: 100 })
-    for (const project of page.items) if (project.count > 0) holders.push(project.id)
+    const page = await service.projects({
+      cursor,
+      limit: 100,
+      ...(retiredOnly ? { recordState: "retired" as const } : {}),
+    })
+    for (const project of page.items) if (retiredOnly || project.count > 0) holders.push(project.id)
     if (page.next === null) break
     cursor = page.next
   }
@@ -223,7 +228,7 @@ async function records(service: Service, input: MemoryQuery): Promise<MemoryPage
     ? place.window === 0
       ? { projects: [input.project], more: false }
       : { projects: [], more: false }
-    : await searchWindow(service, place.window)
+    : await searchWindow(service, place.window, input.state === "retired")
   const options = {
     includeRetired: true,
     ...(input.source && input.source !== "all" ? { source: input.source } : {}),

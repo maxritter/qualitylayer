@@ -46,10 +46,12 @@ export class MemorySettings {
     const db = await this.runtime.catalog()
     if (project) this.authority.get(db, project)
     const issue = db.indexIssue(project) ? MEMORY_INDEX_ISSUE : undefined
+    const total = db.count({ project })
     return {
       enabled: this.authority.enabled(db),
       sessions: this.authority.sessionsOn(db),
-      total: db.count({ project }),
+      total,
+      hasRecords: total > 0 || db.hasRecords(project),
       shared: db.countShared(project),
       imported: db.count({ project, source: "pilot" }),
       projects: db.countProjects(),

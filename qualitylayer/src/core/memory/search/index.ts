@@ -32,7 +32,10 @@ export class MemorySearch {
     if (!this.scope.enabled(db)) return { lessons: [], semantic: "off" }
     if (typeof text !== "string" || text.length > MEMORY_QUERY_MAX)
       throw new Error("Invalid memory context query")
-    if (db.count({ project }) === 0) return { lessons: [], semantic: "off" }
+    const hasCandidates = options.includeRetired
+      ? db.hasRecords(project)
+      : db.count({ project }) > 0
+    if (!hasCandidates) return { lessons: [], semantic: "off" }
     const query = new MemoryQuery(db, { project, text, options })
     const embedQuery = options.embedQuery ?? (() => this.runtime.embedTexts([text]))
     const pool = await new MemoryCandidates(this.runtime, query).collect(embedQuery)

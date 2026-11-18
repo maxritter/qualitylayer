@@ -1170,7 +1170,7 @@ export function MemoryTab({
                   setCursors([undefined])
                 }}
               />
-              {overview?.total || lessonState !== "active" ? (
+              {(overview?.hasRecords ?? (overview?.total ?? 0) > 0) || lessonState !== "active" ? (
                 <ModelPick
                   label="Lesson state"
                   look="setting"

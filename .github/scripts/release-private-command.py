@@ -15,10 +15,13 @@ import sys
 import tempfile
 import time
 import unicodedata
+import xml.etree.ElementTree as ET
 from urllib.parse import urlsplit
 
 CHANNELS = ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STATE", "GITHUB_STEP_SUMMARY", "GITHUB_PATH")
 CAPABILITIES = ("ACTIONS_RUNTIME_TOKEN", "ACTIONS_RUNTIME_URL", "ACTIONS_RESULTS_URL", "ACTIONS_CACHE_URL", "ACTIONS_CACHE_SERVICE_V2", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "GH_TOKEN", "GITHUB_TOKEN")
+COCKPIT_TEST = "qualitylayer/tests/e2e/cockpit-gate.test.ts"
+COCKPIT_REPORT_DIR = "QL_PRIVATE_COCKPIT_REPORT_DIR"
 
 def test_record_directory(workspace):
     directory = workspace
@@ -75,17 +78,24 @@ def json_object(pairs):
 def invalid_json_constant(_value):
     raise ValueError()
 
-def test_run_record(path, started, finished):
+def read_bounded_regular(path, limit, window=None):
     before = path.lstat()
-    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 1024 * 1024 or not started <= before.st_mtime <= finished:
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
+        raise ValueError()
+    if window is not None and not window[0] <= before.st_mtime <= window[1]:
         raise ValueError()
     with os.fdopen(os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
         opened = os.fstat(source.fileno())
-        content = source.read(1024 * 1024 + 1)
+        content = source.read(limit + 1)
         after = os.fstat(source.fileno())
-    identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
-    if len(content) > 1024 * 1024 or any(identity(value) != identity(before) for value in (opened, after, path.lstat())):
+    def identity(value):
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_nlink)
+    if len(content) > limit or any(identity(value) != identity(before) for value in (opened, after, path.lstat())):
         raise ValueError()
+    return content
+
+def test_run_record(path, window):
+    content = read_bounded_regular(path, 1024 * 1024, window)
     record = json.loads(content, object_pairs_hook=json_object, parse_constant=invalid_json_constant)
     if not isinstance(record, dict) or type(record.get("schema")) is not int or record["schema"] != 1 or record.get("state") not in ("passed", "failed", "interrupted", "incomplete") or record.get("sourceDrift") != [] or not isinstance(record.get("results"), list):
         raise ValueError()
@@ -94,82 +104,151 @@ def test_run_record(path, started, finished):
         raise ValueError()
     return record
 
-def failed_test_paths(scope, started):
+def failed_test_paths(scope, window):
     try:
         if scope is None:
-            return []
+            return [], {}
         workspace, head, tracked, existing, _crypt = scope
         current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
         if current != head:
-            return []
+            return [], {}
         records = [path for path in test_record_directory(workspace).glob("*.json") if path.name not in existing]
         if len(records) > 32:
-            return []
+            return [], {}
         failed = set()
-        finished = time.time()
+        cockpit = {}
+        relative = COCKPIT_TEST.removeprefix("qualitylayer/")
         for path in records:
-            record = test_run_record(path, started, finished)
+            record = test_run_record(path, window)
+            last_cockpit = None
             if len(record["results"]) > 2048:
-                return []
+                return [], {}
             for row in record["results"]:
                 file = row.get("file") if isinstance(row, dict) else None
                 if not isinstance(file, str) or not file.startswith(("tests/", "src/")) or len(file) > 1024 or "\\" in file or any(part in ("", ".", "..") for part in file.split("/")) or any(unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") for char in file) or "qualitylayer/" + file not in tracked or any(type(row.get(key)) is not int for key in ("code", "pass", "fail")) or row["pass"] < 0 or row["fail"] < 0 or type(row.get("seconds")) not in (int, float) or not math.isfinite(row["seconds"]) or row["seconds"] < 0 or ("signal" in row and not isinstance(row["signal"], str)):
-                    return []
+                    return [], {}
+                if file == relative:
+                    last_cockpit = row
                 if record["state"] != "passed" and (row["code"] != 0 or row["fail"] > 0 or row.get("signal")):
                     failed.add("qualitylayer/" + file)
-        return sorted(failed) if len(failed) <= 2048 else []
+            # The reporter is replaced on a retry. File-level failures have no case line.
+            if record["state"] == "failed" and last_cockpit and last_cockpit["code"] != 0 and last_cockpit["fail"] > 0 and re.fullmatch(r"[0-9TZ-]{20,64}", path.stem):
+                cockpit[path.stem] = last_cockpit["fail"]
+        return (sorted(failed), cockpit) if len(failed) <= 2048 else ([], {})
+    except Exception:
+        return [], {}
+
+def committed_test_body(scope, file):
+    """Validate one committed source against its current working bytes."""
+    workspace, head, tracked, _existing, crypt = scope
+    environment = {**os.environ, "GIT_ATTR_SOURCE": head}
+    if file not in tracked:
+        return None
+    reference = head + ":" + file
+    size = subprocess.check_output(["git", "-C", str(workspace), "cat-file", "-s", reference], stderr=subprocess.DEVNULL, timeout=5)
+    if int(size) > 2 * 1024 * 1024:
+        return None
+    attribute = subprocess.check_output(["git", "-C", str(workspace), "check-attr", "--source=" + head, "-z", "filter", "--", file], stderr=subprocess.DEVNULL, timeout=5)
+    if attribute not in ((file + "\0filter\0" + name + "\0").encode() for name in ("unspecified", "unset", "git-crypt")):
+        return None
+    encrypted = attribute.endswith(b"git-crypt\0")
+    options = []
+    if encrypted:
+        if crypt is None or trusted_git_crypt(workspace) != crypt:
+            return None
+        # Use only the pre-command admitted existing tool, never a child-supplied filter.
+        options = ["-c", "filter.git-crypt.smudge=" + shlex.quote(crypt[1]) + " smudge", "-c", "filter.git-crypt.required=true"]
+    body = subprocess.check_output(["git", "-C", str(workspace), *options, "cat-file", "--filters" if encrypted else "blob", reference], env=environment, stderr=subprocess.DEVNULL, timeout=5)
+    if len(body) > 2 * 1024 * 1024 or body.startswith(b"\x00GITCRYPT\x00"):
+        return None
+    working = workspace / file
+    if working.resolve() != working or read_bounded_regular(working, 2 * 1024 * 1024) != body:
+        return None
+    return body
+
+def committed_test_line_counts(scope, files):
+    counts = {}
+    for file in files:
+        body = committed_test_body(scope, file)
+        if body is not None:
+            # Preserve the UTF-8 validation without retaining the decoded source.
+            body.decode("utf-8", errors="strict")
+            counts[file] = body.count(b"\n") + int(bool(body) and not body.endswith(b"\n"))
+    return counts
+
+def cockpit_declarations(source):
+    lines = source.split("\n")
+    declarations = {}
+    for line, text in enumerate(lines[:-1], 1):
+        if text != "  test(":
+            continue
+        literal = re.fullmatch(r'    ("[^"\\\r\n]+"),', lines[line])
+        if literal is None:
+            raise ValueError()
+        # Bun reports the title token's line for this multiline call.
+        declarations[line + 1] = (line, json.loads(literal[1]))
+    if not declarations or len(declarations) > 32 or len({name for _, name in declarations.values()}) != len(declarations):
+        raise ValueError()
+    return declarations
+
+def cockpit_report_locations(text, paths, declarations, failed_count):
+    if "<!" in text:
+        raise ValueError()
+    tree = ET.fromstring(text)
+    cases = list(tree.iter("testcase"))
+    if tree.tag != "testsuites" or tree.get("name") != "bun test" or len(cases) != len(declarations):
+        raise ValueError()
+    seen, found = set(), set()
+    for case in cases:
+        title_line = case.get("line", "")
+        if not re.fullmatch(r"[1-9][0-9]{0,5}", title_line):
+            raise ValueError()
+        line = int(title_line)
+        declaration = declarations.get(line)
+        if line in seen or declaration is None or declaration[1] != case.get("name") or case.get("file") not in paths:
+            raise ValueError()
+        seen.add(line)
+        failures = case.findall("failure")
+        if len(failures) > 1:
+            raise ValueError()
+        if failures:
+            kind = {"TimeoutError": "timeout", "AssertionError": "assertion"}.get(failures[0].get("type"), "unknown")
+            found.add((declaration[0], kind))
+    if len(found) != failed_count:
+        raise ValueError()
+    return found
+
+def cockpit_failure_locations(scope, reports, directory, window):
+    """Read Bun's private case records, with static declarations as the sole source of lines."""
+    if not reports or directory is None:
+        return []
+    try:
+        workspace, head, _tracked, _existing, _crypt = scope
+        if directory.is_symlink() or directory.resolve() != directory:
+            return []
+        body = committed_test_body(scope, COCKPIT_TEST)
+        if body is None:
+            return []
+        declarations = cockpit_declarations(body.decode("utf-8", errors="strict"))
+        relative = COCKPIT_TEST.removeprefix("qualitylayer/")
+        paths = (str(workspace / COCKPIT_TEST), relative, "./" + relative)
+        found = set()
+        for identifier, failed_count in reports.items():
+            path = directory / (identifier + ".xml")
+            if path.exists():
+                text = read_bounded_regular(path, 256 * 1024, window).decode("utf-8", errors="strict")
+                found.update(cockpit_report_locations(text, paths, declarations, failed_count))
+        current = subprocess.check_output(["git", "-C", str(workspace), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        return [{"file": COCKPIT_TEST, "line": line, "kind": kind} for line, kind in sorted(found)] if current == head else []
     except Exception:
         return []
-
-def committed_test_lines(scope, files):
-    """Names are public metadata; decrypted test contents never leave this private process."""
-    workspace, head, tracked, _existing, crypt = scope
-    counts = {}
-    environment = {**os.environ, "GIT_ATTR_SOURCE": head}
-    for file in files:
-        if file not in tracked:
-            continue
-        reference = head + ":" + file
-        size = subprocess.check_output(["git", "-C", str(workspace), "cat-file", "-s", reference], stderr=subprocess.DEVNULL, timeout=5)
-        if int(size) > 2 * 1024 * 1024:
-            continue
-        attribute = subprocess.check_output(["git", "-C", str(workspace), "check-attr", "--source=" + head, "-z", "filter", "--", file], stderr=subprocess.DEVNULL, timeout=5)
-        if attribute not in ((file + "\0filter\0" + name + "\0").encode() for name in ("unspecified", "unset", "git-crypt")):
-            continue
-        encrypted = attribute.endswith(b"git-crypt\0")
-        options = []
-        if encrypted:
-            if crypt is None or trusted_git_crypt(workspace) != crypt:
-                continue
-            # Use only the pre-command admitted existing tool, never a child-supplied filter.
-            options = ["-c", "filter.git-crypt.smudge=" + shlex.quote(crypt[1]) + " smudge", "-c", "filter.git-crypt.required=true"]
-        body = subprocess.check_output(["git", "-C", str(workspace), *options, "cat-file", "--filters" if encrypted else "blob", reference], env=environment, stderr=subprocess.DEVNULL, timeout=5)
-        if len(body) > 2 * 1024 * 1024 or body.startswith(b"\x00GITCRYPT\x00"):
-            continue
-        body.decode("utf-8", errors="strict")
-        working = workspace / file
-        if working.resolve() != working or not stat.S_ISREG(working.lstat().st_mode) or working.stat().st_size != len(body):
-            continue
-        with os.fdopen(os.open(working, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
-            if hashlib.sha256(source.read(2 * 1024 * 1024 + 1)).digest() != hashlib.sha256(body).digest():
-                continue
-        counts[file] = body.count(b"\n") + int(bool(body) and not body.endswith(b"\n"))
-    return counts
 
 def failed_test_locations(scope, files, log):
     try:
         if scope is None or not files or len(files) > 64 or log is None:
             return []
-        before = log.lstat()
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 8 * 1024 * 1024:
-            return []
-        with os.fdopen(os.open(log, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)), "rb") as source:
-            content = source.read(8 * 1024 * 1024 + 1)
-            after = os.fstat(source.fileno())
-        identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
-        if len(content) > 8 * 1024 * 1024 or any(identity(value) != identity(before) for value in (after, log.lstat())):
-            return []
-        counts = committed_test_lines(scope, files)
+        content = read_bounded_regular(log, 8 * 1024 * 1024)
+        counts = committed_test_line_counts(scope, [file for file in files if file != COCKPIT_TEST])
         workspace, head, _tracked, _existing, _crypt = scope
         found, context = set(), []
         clean = re.sub(r"\x1b\[[0-9;]*m", "", content.decode("utf-8", errors="strict"))
@@ -197,9 +276,11 @@ def failed_test_locations(scope, files, log):
     except Exception:
         return []
 
-def failure_metadata(scope, started, log=None):
-    files = failed_test_paths(scope, started)
-    metadata = {"failedTestFiles": files, "failedTestLocations": failed_test_locations(scope, files, log)}
+def failure_metadata(scope, started, log=None, cockpit_reports=None):
+    window = (started, time.time())
+    files, reports = failed_test_paths(scope, window)
+    locations = failed_test_locations(scope, files, log) + cockpit_failure_locations(scope, reports, cockpit_reports, window)
+    metadata = {"failedTestFiles": files, "failedTestLocations": sorted(locations, key=lambda row: (row["file"], row["line"], row["kind"])) if len(locations) <= 256 else []}
     # Keep exact JSON values without allowing tracked filenames to become Actions commands.
     return json.dumps(metadata, ensure_ascii=True, separators=(",", ":")).replace("::", "\\u003a\\u003a").replace("#", "\\u0023").replace("%", "\\u0025")
 
@@ -414,6 +495,9 @@ def main():
     job = None
     log = directory / "diagnostics.private"
     scope = failure_scope()
+    report_directory = tempfile.TemporaryDirectory(prefix="cockpit-reports-", dir=directory)
+    cockpit_reports = Path(report_directory.name).resolve()
+    environment[COCKPIT_REPORT_DIR] = str(cockpit_reports)
     started = time.time()
     try:
         with log.open("xb") as output:
@@ -431,7 +515,7 @@ def main():
         child = None
         job = None
         if code != 0:
-            print(failure_metadata(scope, started, log))
+            print(failure_metadata(scope, started, log, cockpit_reports))
             return code if 0 < code < 126 else 1
         exports = []
         for channel, rules in contract.items():
@@ -461,10 +545,13 @@ def main():
         print(json.dumps({"kind": "sealed-release-command", "exitCode": 0, "diagnosticsSha256": digest.hexdigest()}, separators=(",", ":")))
         return 0
     finally:
-        if child is not None:
-            kill_owned(child, job)
-        elif job is not None:
-            job.close()
+        try:
+            if child is not None:
+                kill_owned(child, job)
+            elif job is not None:
+                job.close()
+        finally:
+            report_directory.cleanup()
 
 if __name__ == "__main__":
     try:

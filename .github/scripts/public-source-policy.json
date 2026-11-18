@@ -9,13 +9,13 @@
     ".github/lychee.toml": "1941fd1e980be697004cb8542f70b4a9f9193d9ec35edf924b3758c8241c7007",
     ".github/release-waivers.json": "3bebb10d5d5452eeacd0c936a733249811aa3b532e33c015a8c06fd93b5da473",
     ".github/renovate.json": "619a67bbf12acd34c23e32dcc1cdc12163016892ecd97f796cc98ff546d612cb",
-    ".github/scripts/canary-private-command.py": "a25ae8d548a5d63885702e40c1ba7da61c3b6cef8a57c3fbc50dd512c287dc1d",
+    ".github/scripts/canary-private-command.py": "0b7316b76bb6b3936bdf147ef6d699c41abbac32dcf0ea27c65567baab9547de",
     ".github/scripts/check_qualitylayer_encrypted.sh": "c75539cf011e63587335a79c023b220a5508505d7ce25f58b0db85a2568751c3",
     ".github/scripts/check_source_policy.py": "5f2767ed57e0fce220423b0ead409f170f7dbb510f38723c453ce2c729fc00b6",
     ".github/scripts/commit-serial.sh": "124268f3e079ca5ea522e9196f893e166544e88cac06d6d465e9363df1d18d94",
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
-    ".github/scripts/release-private-command.py": "c7320644c82cb1de22f11199000994b7395098e39cc5ac7ab403a4c257c436c0",
+    ".github/scripts/release-private-command.py": "ebcaf77ed9834fab4172a63c8427c9170b54563cb2cef34830dc47f02b4af324",
     ".github/scripts/stage-release-artifact.py": "4523a50bfa6dc1cd9fb7cb3698d3ede5912e861d80f31be3a8223e7fbb2df85f",
     ".github/scripts/verify-release14-exception.py": "3fe21df8397365b90f7e60258a4ba3294711f3e677efec1d549464d21bff9991",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
@@ -37,7 +37,7 @@
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
     ".github/workflows/scripts/setup-git-crypt.sh": "b78b31c8b49f8030254423e09f73587bf421f16eb748cff2755eaaf0077edb49",
     ".github/workflows/site-health.yml": "370405ce200355b10d5dd73b50d970b348285cfe9109681e984d57b15f68f001",
-    ".github/workflows/supply-chain.yml": "31525964b340923822fc0245204afadffe6e8eae09673dd9c310fa8aed3babd5",
+    ".github/workflows/supply-chain.yml": "6d86908d64ea6b253723e19e9d5b49bffb0f86769a67c2cf9327d99442199b6f",
     ".qlty/qlty.toml": "c06a70783017a321dd2666bb918fc51a238341cbaba46d52b6e8c2a5e785530e",
     ".releaserc.json": "a8e47f31fb2703b31d74c3a318fc1cbfefe43a8cb995928f22f00f2ba10af9fb",
     ".trivyignore": "2f2d84916d8a8c7549fdbd7f9a135c0837362cc6848b2c01c622a589922ee027",
@@ -2193,7 +2193,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "a99823165623e5f3204f8d591afb70826a808a2a15a71c1db035872c93197a95",
+  "reviewManifestSha256": "04a37bb5445f57aac3946cf727a1f91ecfbe780ed5a90c7863b98236619ea72f",
   "schema": 1,
-  "sourceHead": "45788e48b4166ed25e67ed2bd0042980a44ecc51"
+  "sourceHead": "a45bb0ba081744727912dc4c0126af818376669d"
 }

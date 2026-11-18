@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -184,19 +185,165 @@ PY
             (tests / "encrypted.test.ts").write_text(encrypted_body)
         results[-1]["onlyCurrentHeadTrackedFailedTestPaths"] = True
 
+def cockpit_cases(root, encrypted=False, ordinary=False):
+    workspace = root / "cockpit-test-source"
+    git_home = root / "cockpit-canary-git-home"
+    git_home.mkdir()
+    git_environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    git_environment.update(HOME=str(git_home), XDG_CONFIG_HOME=str(git_home))
+    file = "qualitylayer/tests/e2e/cockpit-gate.test.ts"
+    test = workspace / file
+    test.parent.mkdir(parents=True)
+    test.write_text("""import { test, expect, describe } from "bun:test"
+describe("PRIVATE_SUITE", () => {
+  test(
+    "PRIVATE_ASSERTION",
+    () => expect(process.env.QL_CANARY_NONCE).toBe("never equal"),
+  )
+  test(
+    "PRIVATE_TIMEOUT",
+    async () => { await Bun.sleep(500) },
+    20,
+  )
+})
+""")
+    subprocess.run(["git", "init", "--quiet"], cwd=workspace, env=git_environment, check=True, capture_output=True)
+    if encrypted:
+        (workspace / ".gitattributes").write_text(file + " filter=git-crypt diff=git-crypt\n")
+        subprocess.run(["git-crypt", "init"], cwd=workspace, env=git_environment, check=True, capture_output=True)
+    for command in (["add", "."], ["-c", "user.name=Canary", "-c", "user.email=canary@example.invalid", "commit", "--quiet", "-m", "synthetic case declarations"]):
+        subprocess.run(["git", *command], cwd=workspace, env=git_environment, check=True, capture_output=True)
+    if encrypted:
+        blob = subprocess.check_output(["git", "cat-file", "blob", "HEAD:" + file], cwd=workspace)
+        assert blob.startswith(b"\x00GITCRYPT\x00")
+    if ordinary:
+        cockpit_runner_case(root, workspace, file)
+        return
+    code = r'''import json, os, sys, subprocess
+from pathlib import Path
+from xml.etree.ElementTree import Element, SubElement, tostring
+root = Path(os.environ["GITHUB_WORKSPACE"])
+directory = Path(os.environ["QL_PRIVATE_COCKPIT_REPORT_DIR"])
+file = "tests/e2e/cockpit-gate.test.ts"
+nonce = os.environ["QL_CANARY_NONCE"]
+identifier = f"2026-01-01T00-00-00-000Z-{os.getpid()}"
+report = directory / (identifier + ".xml")
+mode = MODE
+if mode == "native":
+    result = subprocess.run(["bun", "test", "./" + file, "--reporter=junit", "--reporter-outfile", str(report)], cwd=root / "qualitylayer")
+    assert result.returncode == 1
+else:
+    suites = Element("testsuites", name="bun test")
+    group = SubElement(suites, "testsuite", name=nonce)
+    for line, name, kind in [("4", "PRIVATE_ASSERTION", "AssertionError"), ("8", "PRIVATE_TIMEOUT", "TimeoutError")]:
+        if mode == "line" and line == "4": line = "5"
+        if mode == "name" and line == "4": name = nonce
+        if mode == "unknown" and line == "4": kind = nonce
+        case = SubElement(group, "testcase", name=name, line=line, file=("./" + file if mode != "file" else nonce))
+        SubElement(case, "failure", type=kind, message=nonce).text = "PRIVATE_FAILURE " + nonce
+    body = tostring(suites)
+    if mode == "entity": body = b'<!DOCTYPE testsuites [<!ENTITY injected "bad">]>' + body
+    if mode == "oversize": body += b" " * (256 * 1024)
+    if mode == "wrong-run": report = directory / "unrelated.xml"
+    if mode in ("symlink", "hardlink"):
+        source = directory.parent / "impostor"
+        source.write_bytes(body)
+        if mode == "symlink": report.symlink_to(source)
+        else: os.link(source, report)
+    elif mode != "raw-only":
+        report.write_bytes(body)
+    if mode == "stale": os.utime(report, (1, 1))
+    if mode == "source-drift": (root / "qualitylayer" / file).write_text(nonce)
+records = root / "qualitylayer/dist/test-runs"
+records.mkdir(parents=True, exist_ok=True)
+row = {"file": file, "code": 1, "pass": 0, "fail": 1 if mode == "count" else 2, "seconds": 0.01}
+rows = [row]
+if mode == "passing-retry": rows.append({**row, "code": 0, "pass": 2, "fail": 0})
+if mode == "process-only": row["fail"] = 0
+(records / (identifier + ".json")).write_text(json.dumps({"schema":1,"state":"failed","sourceDrift":[],"results":rows}))
+print(nonce)
+print(f"    at PRIVATE_FUNCTION ({root / 'qualitylayer' / file}:5:2)")
+sys.exit(1)
+'''
+    modes = ["valid", "unknown", "raw-only", "line", "name", "file", "entity", "oversize", "wrong-run", "symlink", "hardlink", "stale", "count", "passing-retry", "process-only", "source-drift"]
+    if shutil.which("bun") and subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.4":
+        modes.append("native")
+    for mode in modes:
+        command = code.replace("MODE", repr(mode), 1)
+        case = run_case(root, "cockpit-junit-" + mode, '"$QL_CANARY_PYTHON" - <<\'PY\'\n' + command + '\nPY\n', expected=1, workspace=workspace)
+        if case is None:
+            continue
+        output = (case / "public.stdout.private").read_text()
+        locations = []
+        if mode in ("valid", "unknown", "native"):
+            locations = [{"file": file, "line": 3, "kind": "unknown" if mode == "unknown" else "assertion"}, {"file": file, "line": 7, "kind": "timeout"}]
+        assert json.loads(output) == {"failedTestFiles": [file], "failedTestLocations": locations}, (mode, output)
+        assert "PRIVATE_" not in output and output.count("\n") == 1
+        assert not (case / "public.stderr.private").read_bytes()
+        assert not list(case.glob("ql-private-release-*/cockpit-reports-*"))
+        if mode == "source-drift":
+            subprocess.run(["git", "restore", "--", file], cwd=workspace, env=git_environment, check=True, capture_output=True)
+
+def cockpit_runner_case(root, workspace, file):
+    """Exercise the actual sealed runner without building or running product code."""
+    assert subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.4"
+    package = workspace / "qualitylayer"
+    scripts = package / "scripts"
+    scripts.mkdir()
+    actual = Path(__file__).resolve().parents[2] / "qualitylayer/scripts"
+    runner_files = ("test.ts", "smoke-files.ts", "test-output.ts", "test-reaper.ts", "test-run-record.ts",
+                    "test-source-snapshot.ts", "test-tiers.ts", "test-ui-assets.ts", "test-ui-preload.ts")
+    for name in runner_files:
+        shutil.copyfile(actual / name, scripts / name)
+    shutil.copytree(actual / "test-source-snapshot", scripts / "test-source-snapshot")
+    (package / "package.json").write_text(json.dumps({
+        "scripts": {"test": "bun run scripts/test.ts", "build": "bun run scripts/build.ts"},
+    }))
+    (scripts / "build.ts").write_text("""import { writeFileSync } from "node:fs"
+const output = process.argv[process.argv.indexOf("--out") + 1]
+if (!output) throw new Error("Missing fixture binary path")
+writeFileSync(output, "#!/bin/sh\\nexit 0\\n", { mode: 0o700 })
+""")
+    command = """export CI=true QUALITYLAYER_TEST_WORKERS=1 TMPDIR="$RUNNER_TEMP"
+cd "$GITHUB_WORKSPACE/qualitylayer"
+bun run test tests/e2e/cockpit-gate.test.ts
+"""
+    case = run_case(root, "cockpit-ordinary-sealed-runner", command, expected=1, workspace=workspace)
+    if case is None:
+        return
+    output = (case / "public.stdout.private").read_text()
+    assert json.loads(output) == {"failedTestFiles": [file], "failedTestLocations": [
+        {"file": file, "line": 3, "kind": "assertion"},
+        {"file": file, "line": 7, "kind": "timeout"},
+    ]}, output
+    records = list((package / "dist/test-runs").glob("*.json"))
+    assert len(records) == 1
+    record = json.loads(records[0].read_text())
+    assert record["state"] == "failed" and record["sourceDrift"] == []
+    assert record["buildSource"]["mode"] == "private-binary-build-source"
+    assert [(row["code"], row["fail"]) for row in record["results"]] == [(1, 2), (1, 2)]
+    assert "PRIVATE_" not in output and output.count("\n") == 1
+    assert not (case / "public.stderr.private").read_bytes()
+    assert not list(case.glob("ql-private-release-*/cockpit-reports-*"))
+
 folder = tempfile.mkdtemp(prefix="ql-sealer-source-free-canary-retained-")
 print(json.dumps({"retainedPrivateCases": folder}), flush=True)
 with nullcontext(folder) as folder:
     root = Path(folder)
-    if sys.argv[2:] == ["test-paths-encrypted"]:
+    if sys.argv[2:] == ["test-cockpit-runner"]:
+        cockpit_cases(root, encrypted=True, ordinary=True)
+        windows = "unrun: focused sealed Bun runner case"
+    elif sys.argv[2:] == ["test-paths-encrypted"]:
         if os.name == "nt":
             raise RuntimeError("encrypted path canaries require a POSIX runner with git-crypt already installed")
         test_path_cases(root, encrypted=True)
+        cockpit_cases(root, encrypted=True)
         windows = "unrun: selected actual encrypted cases only; requires preinstalled git-crypt"
     elif sys.argv[2:] == ["test-paths"]:
         if os.name == "nt":
             raise RuntimeError("test-paths canaries require a POSIX runner")
         test_path_cases(root)
+        cockpit_cases(root)
         windows = "unrun: focused POSIX test-path privacy cases only"
     elif sys.argv[2:] == ["msys2"]:
         body = 'printf "::error::%s\\n::group::%s\\n" "$QL_CANARY_NONCE" "$QL_CANARY_NONCE"\nprintf "%s\\n" "$QL_CANARY_NONCE" >&2\nfor key in GITHUB_ENV GITHUB_OUTPUT GITHUB_STATE GITHUB_STEP_SUMMARY GITHUB_PATH; do printf "%s\\n" "$QL_CANARY_NONCE" > "${!key}"; done\nfor key in ACTIONS_RUNTIME_TOKEN ACTIONS_RUNTIME_URL ACTIONS_RESULTS_URL ACTIONS_CACHE_URL ACTIONS_CACHE_SERVICE_V2 ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL GH_TOKEN GITHUB_TOKEN; do test -z "${!key-}"; done\n'
@@ -205,6 +352,7 @@ with nullcontext(folder) as folder:
         windows = "executed actual msys2 cases"
     elif os.name != "nt":
         test_path_cases(root)
+        cockpit_cases(root)
         channels_case = """"$QL_CANARY_PYTHON" - <<'PY'
 import os,sys
 from pathlib import Path

@@ -48,15 +48,11 @@ jobs:
         working-directory: qualitylayer
         run: bun audit --production --audit-level=high
 
-      # Retain the existing braces exception (GHSA-vfj7-8cjw-p6xm).
-      # Picomatch GHSA-fc5q-39xc-vjpf has no patched release as of 17 November 2026.
-      # These matchers are development dependencies, outside the shipped App runtime.
-      # Untrusted repository/PR configuration can still cause CI or developer denial of service.
-      # The production audit above has no exceptions. Recheck before the next release
-      # and remove each development exception as soon as its patched version is available.
+      # Picomatch GHSA-fc5q-39xc-vjpf affects development tooling that processes PR input.
+      # Check for a patched release before each release and remove the exception when available.
       - name: Known vulnerabilities in dependencies
         working-directory: qualitylayer
-        run: bun audit --audit-level=high --ignore=GHSA-vfj7-8cjw-p6xm --ignore=GHSA-fc5q-39xc-vjpf
+        run: bun audit --audit-level=high --ignore=GHSA-fc5q-39xc-vjpf
 
       - name: Open issue on nightly failure
         if: failure() && github.event_name == 'schedule'

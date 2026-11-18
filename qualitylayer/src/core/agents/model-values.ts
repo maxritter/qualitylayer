@@ -14,8 +14,8 @@ export type StepAgent = NativeAgent
  */
 export const AGENT_OWN = ""
 export const AGENT_OWN_NAME = "Agent’s settings"
+export const PI_ASTRA_MODEL = "openai/gpt-6.2-astra"
 export const PI_SOL_MODEL = "openai/gpt-6.2-sol"
-const PI_LEGACY_SOL_MODEL = "openai-codex/gpt-6.1-sol"
 
 type Model = { id: string; name: string }
 type ModelList = {
@@ -300,12 +300,16 @@ export function usableDefault(
   agent: StepAgent,
   value: string,
   from: KnownModels | null,
-  piFallback = PI_LEGACY_SOL_MODEL,
+  piFallback = from?.own ?? value,
 ): string {
   const moved = renamedProvider(agent, value, from)
   if (moved !== null) return moved
-  if (agent === "pi" && value === PI_SOL_MODEL && !from?.listed.includes(value))
-    return renamedProvider(agent, piFallback, from) ?? piFallback
+  if (
+    agent === "pi" &&
+    (value === PI_ASTRA_MODEL || value === PI_SOL_MODEL) &&
+    !from?.listed.includes(value)
+  )
+    return piFallback
   if (capabilities(agent)?.modelList?.complete !== true || from === null || from.own === null)
     return value
   if (from.listed.includes(value)) return value

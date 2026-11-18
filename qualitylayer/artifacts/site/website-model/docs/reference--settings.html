@@ -74,7 +74,7 @@
 <summary>How the default reviewer is picked</summary><ul>
 <li>Pi and OpenCode count by the model they run; Cursor&#39;s Auto never counts as another family.</li>
 <li>Agents that enforce read-only come first, then Claude Code, Codex, Grok, Pi, OpenCode, Cursor, Antigravity, GitHub Copilot. Cursor and Antigravity review a disposable copy.</li>
-<li>When every agent here runs the same family, a fresh session of it reviews. <strong>Reviewed by</strong> in the Plan names who read it.</li>
+<li>When every agent here runs the same family, a fresh session reviews on its agent’s second-opinion model. <strong>Reviewed by</strong> in the Plan names who read it.</li>
 </ul>
 </details><h3 id="security-scans">Security scans</h3><p><strong>Scan each change</strong> runs the <a href="reference--code-health.html#security-scans">security scans</a> in Verify and the secrets scan after each agent turn. <strong>Off</strong>: Verify&#39;s Security scans lane says Off; the reviews still run.</p>
 <p><strong>Dependency advisories</strong>: <strong>osv.dev</strong> sends the package names and versions of a changed lockfile to Google&#39;s open vulnerability database; your code stays here. <strong>Local copy</strong> downloads that database (about 250 MB for npm and PyPI) the first time a project needs it, and nothing leaves this computer.</p>
@@ -145,7 +145,7 @@
 <td>Questions wait for your answer instead of expiring after 30 minutes</td>
 </tr>
 </tbody></table>
-<h2 id="models">Models</h2><p>Pick an agent by its mark; every model it uses is on one page. A new task starts with these, and each launch can still pick another model. Each group&#39;s <strong>Reset to recommended</strong> puts back only its own rows.</p>
+<h2 id="models">Models</h2><p>Pick an agent by its mark. A fresh setup recommends Opus in Claude Code and GPT-6.2 Astra in Codex and Pi for planning and reviews. OpenCode starts on its own settings and recommends Astra for reviews. Saved choices still apply, and each launch can pick another model. Each group&#39;s <strong>Reset to recommended</strong> restores its own rows.</p>
 <table>
 <thead>
 <tr>

@@ -30,7 +30,7 @@ export const EXTRA_PLANNERS = 2
 
 const FILE = "extra-planners.json"
 
-export const PLANNERS_USAGE = `--planners takes up to ${EXTRA_PLANNERS} agent:model[:effort] entries separated by commas, each agent once (agents: ${NATIVE_AGENTS.join(", ")}; efforts: ${DEFAULTS_EFFORTS.join(", ")}), e.g. --planners codex:gpt-6.1-sol:medium,claude-code:sonnet`
+export const PLANNERS_USAGE = `--planners takes up to ${EXTRA_PLANNERS} agent:model[:effort] entries separated by commas, each agent once (agents: ${NATIVE_AGENTS.join(", ")}; efforts: ${DEFAULTS_EFFORTS.join(", ")}), e.g. --planners codex:gpt-6.2-astra:high,claude-code:opus:high`
 
 /** The efforts an extra planner on this agent may name; none when it sets its effort in the model. */
 export const plannerEfforts = (agent: NativeAgent): readonly string[] =>

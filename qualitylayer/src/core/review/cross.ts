@@ -30,7 +30,6 @@ import { parseArtifactReference } from "../artifact/reference.ts"
 import { artifactReferenceSource } from "../artifact/reference-source.ts"
 import { contextOf } from "../build-package.ts"
 import { type CrossReviewPoint, readConfig } from "../config.ts"
-import { DEFAULT_CONFIG, SESSION_MODEL } from "../config-values.ts"
 import { type ReviewCost, recordReviewCost } from "../cost/reviews.ts"
 import { parseMarkers } from "../docs/markers.ts"
 import { NAMES as FILE_NAMES, folderDoc, REVIEWS_DIR } from "../docs/names.ts"
@@ -294,9 +293,7 @@ function sameVendorStep(
   installed: Reviewer[],
 ): CrossReviewStep | null {
   if (!isNativeAgent(working) || !installed.includes(working)) return null
-  // "No subagents" is the session's own model: a reviewer needs a model of its own.
-  const configured = config.models[working].helpers
-  const model = configured === SESSION_MODEL ? DEFAULT_CONFIG.models[working].helpers : configured
+  const model = config.secondOpinion.models[working]
   return {
     point: "plan",
     by: working,

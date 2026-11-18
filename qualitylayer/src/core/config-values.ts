@@ -7,6 +7,7 @@ import { isNativeAgent, NATIVE_AGENTS, type NativeAgent, validModelId } from "./
 import {
   AGENT_OWN,
   orchestratorModel,
+  PI_ASTRA_MODEL,
   PI_SOL_MODEL,
   planModel,
   smallChangeModel,
@@ -494,16 +495,16 @@ export const DEFAULT_CONFIG: Config = {
   // A design is looked at on the model the change is judged on, unless the person picks another.
   models: {
     "claude-code": { helpers: "sonnet", judge: "opus", design: "opus" },
-    codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-astra", design: "gpt-6.2-sol" },
+    codex: { helpers: "gpt-6.2-sol", judge: "gpt-6.2-astra", design: "gpt-6.2-astra" },
     pi: {
       helpers: PI_SOL_MODEL,
-      judge: PI_SOL_MODEL,
-      design: PI_SOL_MODEL,
+      judge: PI_ASTRA_MODEL,
+      design: PI_ASTRA_MODEL,
     },
     opencode: {
       helpers: "openai/gpt-6.2-sol",
-      judge: "openai/gpt-6.2-sol",
-      design: "openai/gpt-6.2-sol",
+      judge: "openai/gpt-6.2-astra",
+      design: "openai/gpt-6.2-astra",
     },
     cursor: { helpers: "auto", judge: "claude-opus-5-5-high", design: "claude-opus-5-5-high" },
     grok: { helpers: "grok-4.7", judge: "grok-4.7", design: "grok-4.7" },
@@ -522,10 +523,10 @@ export const DEFAULT_CONFIG: Config = {
     plan: "risky",
     change: "risky",
     models: {
-      "claude-code": "sonnet",
-      codex: "gpt-6.2-sol",
-      pi: PI_SOL_MODEL,
-      opencode: "openai/gpt-6.2-sol",
+      "claude-code": "opus",
+      codex: "gpt-6.2-astra",
+      pi: PI_ASTRA_MODEL,
+      opencode: "openai/gpt-6.2-astra",
       cursor: "auto",
       grok: "grok-4.7",
       antigravity: "gemini-3.8-flash-high",

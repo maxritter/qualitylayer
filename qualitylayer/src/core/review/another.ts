@@ -14,7 +14,6 @@ import { AGENT_NAMES, isNativeAgent } from "../agents/ids.ts"
 import { modelName } from "../agents/model-values.ts"
 import { otherReviewers } from "../agents/reviewer-pick.ts"
 import { readConfig } from "../config.ts"
-import { DEFAULT_CONFIG, SESSION_MODEL } from "../config-values.ts"
 import { recordReviewCost } from "../cost/reviews.ts"
 import { agentFileOf, NAMES } from "../docs/names.ts"
 import { buildBase } from "../git/base.ts"
@@ -82,8 +81,7 @@ export async function anotherReviewer(
   const own =
     working !== undefined && isNativeAgent(working) && installed.includes(working) ? working : null
   if (own === null) return null
-  const configured = config.models[own].helpers
-  const model = configured === SESSION_MODEL ? DEFAULT_CONFIG.models[own].helpers : configured
+  const model = config.secondOpinion.models[own]
   return { by: own, model, name: modelName(own, model) }
 }
 

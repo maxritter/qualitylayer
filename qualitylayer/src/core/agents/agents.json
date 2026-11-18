@@ -239,10 +239,10 @@
       "gpt-6-astra": 5
     },
     "plan": {
-      "model": "gpt-6.2-sol",
+      "model": "gpt-6.2-astra",
       "models": [
-        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -377,10 +377,10 @@
       "gpt-6.2-astra": 5
     },
     "plan": {
-      "model": "openai/gpt-6.2-sol",
+      "model": "openai/gpt-6.2-astra",
       "models": [
-        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai-codex/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai-codex/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai-codex/gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -420,14 +420,15 @@
           "why": "An option for small slices when speed and cost matter."
         }
       ],
+      "small": "openai/gpt-6.2-sol",
       "orchestrator": {
-        "id": "openai/gpt-6.2-sol",
-        "name": "GPT-6.2 Sol",
+        "id": "openai/gpt-6.2-astra",
+        "name": "GPT-6.2 Astra",
         "why": "Cuts the Plan into cards and builds them itself, test first, and may start Pi helpers for independent slices."
       },
       "orchestrators": [
-        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai-codex/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai-codex/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai-codex/gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -535,10 +536,10 @@
       "gpt-6-astra": 5
     },
     "plan": {
-      "model": "openai/gpt-6.2-sol",
+      "model": "openai/gpt-6.2-astra",
       "models": [
-        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai/gpt-6.1-terra", "name": "GPT-6.1 Terra" },
@@ -578,14 +579,15 @@
           "why": "An option for small slices when speed and cost matter."
         }
       ],
+      "small": "openai/gpt-6.2-sol",
       "orchestrator": {
-        "id": "openai/gpt-6.2-sol",
-        "name": "GPT-6.2 Sol",
+        "id": "openai/gpt-6.2-astra",
+        "name": "GPT-6.2 Astra",
         "why": "Leads a full build from a finished Plan."
       },
       "orchestrators": [
-        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.2-astra", "name": "GPT-6.2 Astra" },
+        { "id": "openai/gpt-6.2-sol", "name": "GPT-6.2 Sol" },
         { "id": "openai/gpt-6.1-sol", "name": "GPT-6.1 Sol" },
         { "id": "openai/gpt-6-astra", "name": "GPT-6 Astra" },
         { "id": "openai/gpt-6.1-terra", "name": "GPT-6.1 Terra" },

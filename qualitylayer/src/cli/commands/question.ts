@@ -183,7 +183,7 @@ export const BUILD_ASKED_IN_CHAT =
 export const BUILD_ALREADY_IN_CHAT =
   "This is already open in this chat and is asked once. If you have not shown it yet, ask chat_questions now as given; otherwise do not ask it again. Go on with everything that does not depend on the answer; do not wait for it and do not end your turn on it. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
 
-const CHAT_THEN: Record<ChatAsk, string> = {
+const DEFAULT_CHAT_THEN: Record<ChatAsk, string> = {
   waits:
     "Say your_turn, then ask each native picker call exactly as given. If the native picker is unavailable or closes with no answer (an empty result is never an answer), display chat_questions.fallback.calls as numbered choices. With numbered choices, end your turn and record the person's next answer with qualitylayer question answered --id <question-id>. Never choose for the person.",
   build: BUILD_ASKED_IN_CHAT,
@@ -207,7 +207,26 @@ function closedQuestionMessage(task: Host, id: string | undefined, batchMember: 
   return `${closed}. ${appAnswerPickup(task.slug)}`
 }
 
-async function terminalQuestions(ctx: Ctx, questions: Question[], how: ChatAsk = "waits") {
+function standaloneQuestionCopy(
+  task: Host,
+  question: Question,
+  how: ChatAsk,
+): Record<ChatAsk, string> {
+  if (
+    !isStandaloneImplementQuestion(task, question.id) ||
+    question.gate !== undefined ||
+    question.item !== undefined
+  )
+    return DEFAULT_CHAT_THEN
+  return { ...DEFAULT_CHAT_THEN, [how]: `${DEFAULT_CHAT_THEN[how]} ${appAnswerPickup(task.slug)}` }
+}
+
+async function terminalQuestions(
+  ctx: Ctx,
+  questions: Question[],
+  how: ChatAsk = "waits",
+  CHAT_THEN = DEFAULT_CHAT_THEN,
+) {
   return {
     your_turn: TERMINAL_YOUR_TURN,
     chat_questions: await chatQuestions(ctx, questions),
@@ -338,22 +357,18 @@ async function askParsed(
         ...(question.gate !== undefined ? { gate: question.gate } : {}),
         ...(question.item !== undefined ? { item: question.item } : {}),
       })
-    const guidance = await terminalQuestions(
-      ctx,
-      [question],
-      chatAsk(task, [question], !asked.data.fresh && !asked.data.replaced),
-    )
+    const how = chatAsk(task, [question], !asked.data.fresh && !asked.data.replaced)
     return ok({
       status: "asked_in_chat",
       id: question.id,
       number: question.number,
       question: question.question,
-      ...guidance,
-      ...(isStandaloneImplementQuestion(task, question.id) &&
-      question.gate === undefined &&
-      question.item === undefined
-        ? { then: `${guidance.then} ${appAnswerPickup(task.slug)}` }
-        : {}),
+      ...(await terminalQuestions(
+        ctx,
+        [question],
+        how,
+        standaloneQuestionCopy(task, question, how),
+      )),
     })
   }
   const app = await questionUrl(ctx, task)

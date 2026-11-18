@@ -25,7 +25,7 @@
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
-    ".github/workflows/qualitylayer-ci.yml": "08b85f15322e69330f9b78187e2ad978e72e328137c12a2b445cd010d8ea7ec3",
+    ".github/workflows/qualitylayer-ci.yml": "92988d13176a161c559bf83da4a18e5816c25dea2770cd18c11fb8078a5307ef",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
@@ -35,7 +35,7 @@
     ".github/workflows/scripts/git-crypt-unlock.ts": "2baf9ae3dee6d1113a128cb1699d091f272ddfb2bab1b0b6d6b0a03c1a162fa4",
     ".github/workflows/scripts/install-git-crypt.sh": "6a57539fe3a34eb06eb43bdff3654c61ce492b5d4fa09a092ff31aed985991cc",
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
-    ".github/workflows/scripts/setup-git-crypt.sh": "b78b31c8b49f8030254423e09f73587bf421f16eb748cff2755eaaf0077edb49",
+    ".github/workflows/scripts/setup-git-crypt.sh": "6391a1592b1d671b7a55c33f3286faa3f433b1efe1e38fdb4d070cf88efe5440",
     ".github/workflows/site-health.yml": "370405ce200355b10d5dd73b50d970b348285cfe9109681e984d57b15f68f001",
     ".github/workflows/supply-chain.yml": "6d86908d64ea6b253723e19e9d5b49bffb0f86769a67c2cf9327d99442199b6f",
     ".qlty/qlty.toml": "c06a70783017a321dd2666bb918fc51a238341cbaba46d52b6e8c2a5e785530e",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "92060a9f830c20a2798c394545b0100a0d1f1697d6a18e2ef07eab352fbcf731",
+  "reviewManifestSha256": "91d620cbf75349468d7a4340a153d63622c5b03b09c2787e5736a69781045ba8",
   "schema": 1,
-  "sourceHead": "b9d644a873d4425c7e5e47d2c29e6ccebcb4e442"
+  "sourceHead": "eadaaa67fbce5d56c9acc2abea99d80eccb399f8"
 }

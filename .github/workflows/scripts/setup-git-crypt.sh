@@ -16,6 +16,73 @@ trap 'rm -f "$KEY_FILE"' EXIT
 # Decode base64 key and write to file
 echo "$GIT_CRYPT_KEY" | base64 -d > "$KEY_FILE"
 
+no_process_filter() {
+    if git config --get filter.git-crypt.process >/dev/null 2>&1; then
+        return 1
+    else
+        [ "$?" -eq 1 ]
+    fi
+}
+
+fast_full_checkout() {
+    local head native prefix status
+    prefix=$(git rev-parse --show-prefix)
+    if [ "$(git config --bool core.sparseCheckout)" = "true" ] ||
+       [ -n "$prefix" ]; then
+        echo "Fast unlock requires a full checkout at its repository root" >&2
+        return 1
+    fi
+    head=$(git rev-parse --verify HEAD)
+    if ! no_process_filter; then
+        echo "Fast unlock requires no existing alternate git-crypt filter" >&2
+        return 1
+    fi
+    status=$(git status --porcelain)
+    if [ "$head" != "${GITHUB_SHA:-$head}" ] || [ -n "$status" ]; then
+        echo "Fast unlock requires the expected clean checkout" >&2
+        return 1
+    fi
+    native=$(command -v git-crypt)
+    case "$native" in
+        /*/git-crypt) ;;
+        *) echo "Fast unlock requires installed native git-crypt" >&2; return 1 ;;
+    esac
+    case "$native" in
+        *[!a-zA-Z0-9_./+-]*) echo "Unsafe native git-crypt path" >&2; return 1 ;;
+    esac
+
+    # Never leave the temporary filter configured, even when the checkout fails.
+    trap 'rm -f "$KEY_FILE"; git config --local --unset-all filter.git-crypt.process >/dev/null 2>&1 || true' EXIT
+    if ! bun "$(dirname "$0")/git-crypt-unlock.ts" "$KEY_FILE" >/dev/null 2>&1; then
+        echo "Fast checkout unlock failed" >&2
+        return 1
+    fi
+    # Refresh under the fast filter so the first native command does not clean every path again.
+    git update-index --refresh
+    git config --local filter.git-crypt.clean "\"$native\" clean"
+    git config --local filter.git-crypt.smudge "\"$native\" smudge"
+    git config --local filter.git-crypt.required true
+    git config --local diff.git-crypt.textconv "\"$native\" diff"
+    git config --local --unset-all filter.git-crypt.process
+    if ! no_process_filter; then
+        echo "The alternate git-crypt filter is still configured" >&2
+        return 1
+    fi
+    local unlocked
+    unlocked=$(git rev-parse --verify HEAD)
+    status=$(git status --porcelain)
+    if [ "$unlocked" != "$head" ] || [ -n "$status" ]; then
+        echo "The unlocked checkout changed during handoff" >&2
+        return 1
+    fi
+    echo "Repository unlocked with native git-crypt restored"
+}
+
+if [ "${1:-}" = "--fast-full-checkout" ]; then
+    fast_full_checkout
+    exit 0
+fi
+
 if [ "$(git config --bool core.sparseCheckout)" != "true" ]; then
     git-crypt unlock "$KEY_FILE"
     echo "Repository unlocked successfully"

@@ -40,7 +40,12 @@ export type SnapshotOptions = {
   signal?: AbortSignal
 }
 
-export type Limit = { until: number; signal?: AbortSignal; maxBytes?: number; input?: string }
+export type Limit = {
+  until: number
+  signal?: AbortSignal
+  maxBytes?: number
+  input?: string | Promise<string>
+}
 
 /** A split index would put a shared index file into the person's `.git`; ours is always a whole file. */
 const GIT = [
@@ -94,6 +99,27 @@ export async function openObjectStore(cwd: string, dir: string): Promise<ObjectS
   return objects === "" ? null : { dir, personal: resolve(cwd, objects) }
 }
 
+type GitProcess = Bun.Subprocess<"ignore" | "pipe" | Buffer, "pipe", "ignore">
+type StopGit = (why: "timeout" | "too-large" | "aborted") => void
+
+function gitStdin(input: Limit["input"]) {
+  if (typeof input === "string") return Buffer.from(input)
+  return input === undefined ? "ignore" : "pipe"
+}
+
+function feedGit(proc: GitProcess, limit: Limit, stopped: () => boolean, stop: StopGit) {
+  const stdin = proc.stdin
+  if (typeof limit.input !== "object" || !stdin || typeof stdin === "number") return
+  void limit.input
+    .then((input) => {
+      if (stopped() || proc.exitCode !== null) return
+      if (limit.until <= Date.now()) return stop("timeout")
+      stdin.write(input)
+      return stdin.end()
+    })
+    .catch(() => stop("aborted"))
+}
+
 /**
  * One git call that ends within its limit: killed and reaped at the deadline, when its output passes
  * the byte cap, or when the signal aborts. It never throws; a git that cannot start has exit code 127.
@@ -107,12 +133,12 @@ export async function gitCall(
   const left = limit.until - Date.now()
   if (limit.signal?.aborted) return "aborted"
   if (left <= 0) return "timeout"
-  let proc: Bun.Subprocess<"ignore" | Buffer, "pipe", "ignore">
+  let proc: GitProcess
   try {
     proc = Bun.spawn([...GIT, ...args], {
       cwd,
       env,
-      stdin: limit.input === undefined ? "ignore" : Buffer.from(limit.input),
+      stdin: gitStdin(limit.input),
       stdout: "pipe",
       stderr: "ignore",
     })
@@ -120,13 +146,14 @@ export async function gitCall(
     return { code: 127, stdout: "" }
   }
   let stopped: Out | undefined
-  const stop = (why: "timeout" | "too-large" | "aborted") => {
+  const stop: StopGit = (why) => {
     stopped ??= why
     proc.kill()
   }
   const timer = setTimeout(() => stop("timeout"), left)
   const abort = () => stop("aborted")
   limit.signal?.addEventListener("abort", abort, { once: true })
+  feedGit(proc, limit, () => stopped !== undefined, stop)
   const chunks: Uint8Array[] = []
   let bytes = 0
   try {

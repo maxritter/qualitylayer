@@ -25,7 +25,7 @@
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
-    ".github/workflows/qualitylayer-ci.yml": "1f67222706c79a814c67f602a48adab09f37d09a382e20d285918f73ee843164",
+    ".github/workflows/qualitylayer-ci.yml": "86a910b3b45ec2ba5c5939b629aad6c0b46409678ead1801d1926c6e090cc71b",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
@@ -409,7 +409,7 @@
     "qualitylayer/src/core/code-quality/scanners/rules.yml": "db88de71c6316e0e2d0800b0f21c167d96448d533e6e8da277dc14e3dd99fa6b",
     "qualitylayer/src/core/code-quality/scanners/scan.ts": "c6fa4d7b76a08dbf2d418a25d009e6a24b3fa869123fe75155d5d25fbf193ba0",
     "qualitylayer/src/core/code-quality/scanners/settings.ts": "e805ff0e61e498a0f07d263c21c276a344e51aaeb47230dfb990a9594d1081c6",
-    "qualitylayer/src/core/code-quality/scanners/setup.ts": "4ff4cacb094756ac8671401b35ffdad4cf6d0474ee59e44213f96687c9b24b21",
+    "qualitylayer/src/core/code-quality/scanners/setup.ts": "a04e3564b21183c07d547c34b34575b94ae007ee4c35b451bbd3220fe65059ea",
     "qualitylayer/src/core/code-quality/scanners/task-scans.ts": "0eec3a432156969fbe5f7102e92ac40a943f6d8481b9839c623eb180dd905d19",
     "qualitylayer/src/core/code-quality/scanners/zizmor-LICENSE.txt": "a6fd1bd18da7cec8284639d5b0d351b90934317be1b9f9ea94a077621c6f35af",
     "qualitylayer/src/core/code-quality/setup-log.ts": "16fe03bd62e92153190d10a5c6c3f2212383988f4252ca20c8b6c45e5a94167e",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "4402e766b054a0f9500e4ea1541f2cd438aafbdab96f9c39780a037442836110",
+  "reviewManifestSha256": "ac6569c2c8fe135b42d9790b34c35023508c1b237245ce17e0e4553d2c62f283",
   "schema": 1,
-  "sourceHead": "deae37cad13161eafffa56699565e67d48e29359"
+  "sourceHead": "efa0e92777560bac8b7ff64c87ed407dd58200a5"
 }

@@ -41,6 +41,10 @@ on:
         description: Diagnose only Ubuntu shard 2 (both parts) and shard 8, and Mac shards 5, 6 and 9 (requires full_regression; not release qualification)
         type: boolean
         default: false
+      windows_scanner_proof:
+        description: Include the compiled scanner setup and repeat in Windows shard 2 on dev
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -542,6 +546,7 @@ jobs:
         working-directory: qualitylayer
         env:
           QUALITYLAYER_REQUIRE_RENDER: "1"
+          QL_WINDOWS_SCANNER_PROOF: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev' && inputs.windows_scanner_proof && matrix.shard == 2 }}
           QL_RELEASE_EXPORTS: "{}"
           QL_CI_INPUT_1: ${{ matrix.files }}
         run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/19fe19eca00d95666640c96ebd29ea897d0c4d579133b5851a818da002f81e48.ps1"

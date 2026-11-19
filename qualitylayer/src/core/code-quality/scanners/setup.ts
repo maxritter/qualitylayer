@@ -138,6 +138,9 @@ export async function scannerEnvironment(
     await mkdir(join(state, folder), { recursive: true, mode: 0o700 })
     env[name] = join(state, folder)
   }
+  // OpenGrep's Windows onefile bootstrap resolves Local AppData through the shell.
+  if (windows && id === "opengrep")
+    await mkdir(join(state, "home", "AppData", "Local"), { recursive: true, mode: 0o700 })
   return { ...env, SEMGREP_SEND_METRICS: "off", OPENGREP_SEND_METRICS: "off", NO_COLOR: "1" }
 }
 

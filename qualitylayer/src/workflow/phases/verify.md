@@ -14,8 +14,10 @@ and every Done means point passes as approved or as amended. The page then turns
    or an endpoint that writes state, agent instructions, hooks, install scripts, CI): start it in a
    subagent and go on. Fix its critical and high findings before step 3. Scope it did not reach is
    `**Result:** unverified`, never clean.
-2. **`qualitylayer check all`**, before the reviewer starts. A red check stays red whatever a reviewer
-   rules, and is yours to fix; a scan finding is a record the reviewers rule on. One that was red
+2. **`qualitylayer check all`**, before the reviewer starts. As checks run, save redacted local output
+   from the actual candidate and run for a Done means step with `qualitylayer evidence add --run <id> --mode scripted|real-session --step A<n> <file>`.
+   The reviewer still records the verdict. A red check stays red whatever a reviewer rules, and is
+   yours to fix. The reviewers rule on scan findings. One that was red
    before this task: `qualitylayer check all --base` records that (a test that also fails on the base
    commit is excused by name; a lint, type or build check never is, and when it is red on the base too
    the person is asked at once with `qualitylayer question ask`).

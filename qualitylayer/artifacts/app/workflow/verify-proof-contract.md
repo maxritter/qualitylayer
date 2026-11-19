@@ -1,5 +1,7 @@
 # Verify proof projection
 
+The lead Verify brief points agents to the existing evidence command while checks run. Redacted local output belongs to the checked candidate, its run and the Done means step. The reviewer records the verdict separately.
+
 Verify's generated stages and acceptance description read the existing recorded proof. A normal project-check receipt reused after the producer verifies the same current inputs counts as a successful check; reuse is not an unrun, stale or failed command. The fix summary retains the required-command, candidate, time and recorded-success checks. An unanswered finding or incomplete, failed, stale or mismatched proof never becomes a checked fix. The plural is “fixes”. This changes no check, verdict or approval authority.
 
 A scoped recheck may carry an earlier acceptance pass only through the existing authorized carried set: unchanged step text, a standing verdict and retained evidence. The final acceptance rows keep those original evidence links and their recorded run and mode. A carried pass is not a new execution in the latest run. Missing provenance stays unknown; a missing file or invalidated carry is not replaced by an arbitrary older pass. The generated acceptance description and its evidence viewer read the same standing proof, while the original verdicts and failed histories remain unchanged.

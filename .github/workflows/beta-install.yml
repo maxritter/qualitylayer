@@ -20,12 +20,18 @@ on:
         description: The released version to install and expect, e.g. 12.0.0-beta.9
         required: true
         type: string
+      signed_windows_scanners:
+        description: Qualify published 14.3.0 scanner recovery on dev
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   clean-install:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.signed_windows_scanners != true }}
     name: Clean install (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -64,6 +70,7 @@ jobs:
           test ! -e "$HOME/.agents/skills/ql"
 
   windows-install:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.signed_windows_scanners != true }}
     name: Clean native Windows install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -119,3 +126,261 @@ jobs:
           }
           & $qlBinary uninstall --purge --json
           if ($LASTEXITCODE -ne 0 -or (Test-Path "$qlHome/.qualitylayer")) { throw 'Published Windows uninstall failed' }
+
+  signed-windows-scanners:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true }}
+    name: Published Windows scanner recovery
+    permissions: {}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Hold the Qlty stage open during signed scanner setup
+        shell: pwsh
+        env:
+          WANTED: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $phase = 'version'
+          $root = $null
+          $process = $null
+          $handle = $null
+          $failed = $false
+
+          function Read-SetupResult([Diagnostics.Process] $child, [string] $output, [int] $seconds) {
+            if (-not $child.WaitForExit($seconds * 1000) -or $child.ExitCode -ne 0) {
+              throw 'CLI did not finish successfully'
+            }
+            $data = Get-Content -Raw -LiteralPath $output | ConvertFrom-Json
+            if ($data.ok -ne $true) { throw 'CLI did not report success' }
+            return $data
+          }
+
+          try {
+            if ($env:WANTED -cne '14.3.0') { throw 'This fixture qualifies 14.3.0' }
+            $phase = 'private-home'
+            $root = Join-Path $env:RUNNER_TEMP ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+            $acl = [Security.AccessControl.DirectorySecurity]::new()
+            $acl.SetAccessRuleProtection($true, $false)
+            $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+              $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'
+            )
+            $acl.SetOwner($sid)
+            $acl.SetAccessRule($rule)
+            Set-Acl -Path $root -AclObject $acl
+            $acl = Get-Acl -LiteralPath $root
+            $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+            if (-not $acl.AreAccessRulesProtected -or $rules.Count -ne 1 -or
+                $rules[0].IdentityReference.Value -ne $sid.Value -or $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {
+              throw 'Unexpected fixture ACL'
+            }
+
+            $env:HOME = Join-Path $root 'home'
+            $env:USERPROFILE = $env:HOME
+            $env:QUALITYLAYER_HOME = Join-Path $env:HOME '.qualitylayer'
+            $env:APPDATA = Join-Path $env:HOME 'AppData\Roaming'
+            $env:LOCALAPPDATA = Join-Path $env:HOME 'AppData\Local'
+            $env:XDG_CONFIG_HOME = Join-Path $env:HOME '.config'
+            $env:XDG_DATA_HOME = Join-Path $env:HOME '.local\share'
+            $env:XDG_CACHE_HOME = Join-Path $env:HOME '.cache'
+            $env:TEMP = Join-Path $env:HOME 'tmp'
+            $env:TMP = $env:TEMP
+            $env:TMPDIR = $env:TEMP
+            foreach ($name in @('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR', 'OPENCODE_CONFIG_DIR', 'GROK_HOME', 'COPILOT_HOME')) {
+              Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            $env:QUALITYLAYER_API_BASE = 'http://127.0.0.1:9'
+            $env:POLAR_API_BASE = 'http://127.0.0.1:9'
+            $target = 'x86_64-pc-windows-msvc'
+            $parent = Join-Path $env:QUALITYLAYER_HOME 'tools\qlty\0.657.0'
+            New-Item -ItemType Directory -Path $env:TEMP, $env:APPDATA, $env:LOCALAPPDATA, $parent -Force | Out-Null
+            Set-Location -LiteralPath $root
+
+            $phase = 'signed-cli'
+            $cli = Join-Path $root 'qualitylayer-windows-x64.exe'
+            $digest = '8d15c96946b8c23c49f575c8b22998362971964889630fb5203ec4ccb7fde143'
+            Invoke-WebRequest -Uri 'https://github.com/maxritter/qualitylayer/releases/download/v14.3.0/qualitylayer-windows-x64.exe' -OutFile $cli -TimeoutSec 120
+            $signer = 'B59EA06417CE98E7631BB78F561F8F644BDA0CE2'
+            $signature = Get-AuthenticodeSignature -LiteralPath $cli
+            if ((Get-FileHash -LiteralPath $cli).Hash -ne $digest -or $signature.Status -ne 'Valid' -or
+                $signature.SignerCertificate.Thumbprint -ne $signer -or -not $signature.TimeStamperCertificate) {
+              throw 'Published CLI identity mismatch'
+            }
+            $reported = & $cli --version 2>$null
+            if ($LASTEXITCODE -ne 0 -or $reported -cne '14.3.0') { throw 'Published CLI version mismatch' }
+
+            $phase = 'native-handle'
+            Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          using Microsoft.Win32.SafeHandles;
+          public static class ScannerStageHandle {
+              // Share reading and writing, but withhold DELETE access needed for rename.
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+              public static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
+                  IntPtr security, uint disposition, uint flags, IntPtr template);
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool MoveFileW(string source, string destination);
+          }
+          '@
+
+            $phase = 'cold-setup'
+            $out = Join-Path $root 'setup.json'
+            $err = Join-Path $root 'setup.stderr'
+            $process = Start-Process -FilePath $cli -ArgumentList 'quality', 'setup', '--json' -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err -WorkingDirectory $root
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            $phase = 'stage-lock'
+            $stage = $null
+            while ($timer.Elapsed.TotalSeconds -lt 55 -and -not $process.HasExited) {
+              $stages = @([IO.Directory]::EnumerateDirectories($parent, ".$target-*"))
+              if ($stages.Count -gt 1) { throw 'Unexpected concurrent staging' }
+              if ($stages.Count -eq 1) {
+                $stage = $stages[0]
+                $handle = [ScannerStageHandle]::CreateFileW($stage, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+                if (-not $handle.IsInvalid) { break }
+                $handle.Dispose()
+                $handle = $null
+              }
+              Start-Sleep -Milliseconds 10
+            }
+            if ($null -eq $handle) { throw 'The setup stage was not locked' }
+
+            $phase = 'rename-denied'
+            $control = Join-Path $parent 'rename-control'
+            $renamed = [ScannerStageHandle]::MoveFileW($stage, $control)
+            $renameError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            if ($renamed -or $renameError -notin @(5, 32)) { throw 'Unexpected native rename outcome' }
+
+            $phase = 'stage-readable'
+            $licensePath = Join-Path $stage 'LICENSE.md'
+            while ($timer.Elapsed.TotalSeconds -lt 75 -and -not $process.HasExited -and
+                -not (Test-Path -LiteralPath $licensePath -PathType Leaf)) {
+              Start-Sleep -Milliseconds 20
+            }
+            $license = [IO.File]::Open($licensePath, 'Open', 'Read', 'ReadWrite,Delete')
+            try {
+              if ($license.ReadByte() -lt 0) { throw 'Empty staged licence' }
+            } finally {
+              $license.Dispose()
+            }
+
+            $phase = 'locked-setup-result'
+            $setup = Read-SetupResult $process $out 240
+            $coldSeconds = [Math]::Round($timer.Elapsed.TotalSeconds, 1)
+            if ($setup.status -ne 'ready' -or $setup.reason -notmatch '^Qlty is ready; its temporary setup folder ' -or
+                $handle.IsClosed -or
+                -not (Test-Path -LiteralPath $stage -PathType Container)) { throw 'No live locked-stage recovery' }
+
+            $phase = 'locked-receipts'
+            $expected = @{ qlty = '0.657.0'; betterleaks = '1.9.0'; 'osv-scanner' = '2.7.0'; zizmor = '1.31.1'; opengrep = '1.31.0' }
+            $qBinary = Join-Path $parent "$target\qlty.exe"
+            $version = & $qBinary --version 2>$null
+            if ($LASTEXITCODE -ne 0 -or $version -notmatch '^qlty 0\.657\.0(?:\s|$)') { throw 'Published Qlty is not usable' }
+
+            $receiptFiles = @{}
+            $manifestPath = Join-Path $env:QUALITYLAYER_HOME 'manifest.json'
+            $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+            foreach ($id in $expected.Keys) {
+              $phase = "locked-receipt-$id"
+              $dir = Join-Path $env:QUALITYLAYER_HOME ("tools\$id\" + $expected[$id] + "\$target")
+              $receiptPath = Join-Path $dir 'receipt.json'
+              $receipt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
+              $binary = Join-Path $dir "$id.exe"
+              $name = if ($id -eq 'qlty') { 'LICENSE.md' } else { 'LICENSE.txt' }
+              $licensePath = Join-Path $dir $name
+              $licenseHash = if ($id -eq 'qlty') {
+                if ($receipt.archiveSha256 -ne '071bf94a171230fa70703b26704ea64044cb0aa8dc45e30c2298dbeacd2cd3e1') {
+                  throw 'Unexpected Qlty archive receipt'
+                }
+                $receipt.licenseSha256
+              } else {
+                if ($receipt.id -ne $id) { throw 'Scanner receipt does not match its tool' }
+                $receipt.licenceSha256
+              }
+              if ($receipt.schema -ne 1 -or $receipt.version -ne $expected[$id] -or $receipt.target -ne $target -or
+                  (Get-FileHash -LiteralPath $binary).Hash -ne $receipt.binarySha256 -or
+                  (Get-FileHash -LiteralPath $licensePath).Hash -ne $licenseHash) { throw 'Installed receipt mismatch' }
+              foreach ($path in @($binary, $licensePath, $receiptPath)) {
+                $hash = (Get-FileHash -LiteralPath $path).Hash
+                $owned = @($manifest.entries | Where-Object { $_.kind -eq 'file' -and $_.path -eq $path })
+                if ($owned.Count -ne 1 -or $owned[0].sha256 -ne $hash) { throw 'Installed file not recorded' }
+                $receiptFiles[$path] = $hash
+              }
+            }
+
+            $phase = 'locked-status'
+            $out = Join-Path $root 'status.json'
+            $process = Start-Process -FilePath $cli -ArgumentList 'quality', 'status', '--json' -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err -WorkingDirectory $root
+            $status = Read-SetupResult $process $out 25
+            if (-not $status.installed -or $status.binary -ne $qBinary -or -not $status.setup.at -or
+                $status.setup.error -or $status.scanners.Count -ne 4 -or $setup.scanners.Count -ne 4) {
+              throw 'Incomplete scanner status'
+            }
+            foreach ($id in $expected.Keys | Where-Object { $_ -ne 'qlty' }) {
+              $phase = "locked-status-$id"
+              $ready = @($status.scanners | Where-Object { $_.id -eq $id -and $_.version -eq $expected[$id] -and $_.state -eq 'ready' })
+              $installed = @($setup.scanners | Where-Object { $_.id -eq $id -and $_.version -eq $expected[$id] -and $_.status -eq 'ready' })
+              if ($ready.Count -ne 1 -or $installed.Count -ne 1) { throw 'Pinned scanner is not ready' }
+            }
+
+            $phase = 'released-repeat'
+            $handle.Dispose()
+            $handle = $null
+            $out = Join-Path $root 'repeat.json'
+            $process = Start-Process -FilePath $cli -ArgumentList 'quality', 'setup', '--json' -PassThru `
+              -RedirectStandardOutput $out -RedirectStandardError $err -WorkingDirectory $root
+            $repeat = Read-SetupResult $process $out 75
+            $repeatIds = @($repeat.scanners.id | Sort-Object -Unique)
+            if ($repeat.status -ne 'ready' -or $repeat.version -ne $expected.qlty -or
+                $repeat.scanners.Count -ne 4 -or $repeatIds.Count -ne 4) { throw 'Incomplete repeat readiness' }
+            foreach ($scanner in $repeat.scanners) {
+              if ($scanner.id -eq 'qlty' -or $scanner.status -ne 'ready' -or $scanner.version -ne $expected[$scanner.id]) {
+                throw 'Repeat scanner mismatch'
+              }
+            }
+            foreach ($path in $receiptFiles.Keys) {
+              if ((Get-FileHash -LiteralPath $path).Hash -ne $receiptFiles[$path]) { throw 'Repeat changed installed bytes' }
+            }
+            $runs = @(Get-Content -LiteralPath (Join-Path $env:QUALITYLAYER_HOME 'quality-setup.log') | ForEach-Object { ConvertFrom-Json $_ })
+            if ($runs.Count -ne 2 -or @($runs | Where-Object { -not $_.complete -or $_.tools.Count -ne 5 }).Count -ne 0) {
+              throw 'Missing complete setup records'
+            }
+
+            $result = @{
+              version = '14.3.0'
+              cliSha256 = $digest
+              authenticode = 'valid-timestamped'
+              nativeRenameError = $renameError
+              stageReadableWhileLocked = $true
+              publishedWhileLocked = $true
+              installed = $expected
+              verifiedReceiptFiles = $receiptFiles.Count
+              coldSetupSeconds = $coldSeconds
+              completedSetups = $runs.Count
+            }
+          } catch {
+            Write-Output "WINDOWS_SCANNER_FAILURE phase=$phase"
+            $failed = $true
+          } finally {
+            try {
+              if ($null -ne $process -and -not $process.HasExited) {
+                $process.Kill($true)
+                if (-not $process.WaitForExit(10000)) { throw 'CLI cleanup timed out' }
+              }
+              if ($null -ne $handle) { $handle.Dispose() }
+              if ($null -ne $root -and (Test-Path -LiteralPath $root)) {
+                Set-Location -LiteralPath $env:RUNNER_TEMP
+                Remove-Item -LiteralPath $root -Recurse -Force
+              }
+            } catch {
+              Write-Output 'WINDOWS_SCANNER_FAILURE phase=cleanup'
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          $result.cleanup = $true
+          Write-Output ('WINDOWS_SCANNER_RESULT ' + ($result | ConvertTo-Json -Compress))

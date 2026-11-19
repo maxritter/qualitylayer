@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "588a346d6bd7463c1387c7583c43a5b89b4705bc",
-  "catalogSha256": "d2aff25bf25c9357fc5130bc13e683f8c76905216672e9eff300e2c3946e425f",
+  "sourceHead": "30570f6bc558eacab6243ad7a2e897e1832df576",
+  "catalogSha256": "a3671c91b823e518c8670d4686629ceb7646f7518400dbd2eb8bc3cd4baeaa91",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -487,7 +487,7 @@
     },
     {
       "path": "qualitylayer/src/cli/commands/task.ts",
-      "sha256": "7c64cc99aa486c339c87074396b7748e79d9e27856fcd02192d27e386afe2a84",
+      "sha256": "033de114a79f86971323d2dde845df09ba2ceb0d64b1af4e09ae87dfd0109286",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

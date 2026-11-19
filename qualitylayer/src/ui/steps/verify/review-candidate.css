@@ -122,7 +122,10 @@
   width: fit-content;
   min-height: 28px;
 }
-.rc-details[open] summary > svg:last-child {
+.rc-details .rc-chevron {
+  order: 1;
+}
+.rc-details[open] .rc-chevron {
   transform: rotate(90deg);
 }
 .rc-details dl {

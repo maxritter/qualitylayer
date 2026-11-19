@@ -1,6 +1,5 @@
 import {
   Check,
-  ChevronRight,
   FolderGit2,
   GitBranch,
   GitCommitHorizontal,
@@ -11,6 +10,7 @@ import {
 import { useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import type { ReviewCandidateChoice, ReviewCandidateState } from "../../../core/review-candidate.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 
 type Props = {
   state: ReviewCandidateState
@@ -91,12 +91,16 @@ export function ReviewCandidateDialog({ state, close, focusAfterClose, submit }:
           ))}
         </fieldset>
         {current && (
-          <details className="rc-details">
-            <summary>
-              <History size={14} />
-              Review details
-              <ChevronRight size={14} />
-            </summary>
+          <Disclosure
+            className="rc-details"
+            chevronClassName="rc-chevron size-3.5"
+            head={
+              <>
+                <History size={14} aria-hidden="true" />
+                Review details
+              </>
+            }
+          >
             <dl>
               <dt>Worktree</dt>
               <dd>{current.checkout}</dd>
@@ -119,7 +123,7 @@ export function ReviewCandidateDialog({ state, close, focusAfterClose, submit }:
               Earlier evidence stays with its commit. The reviewer checks this whole candidate
               against the Plan.
             </p>
-          </details>
+          </Disclosure>
         )}
         {current?.shared && (
           <label className="rc-warning">

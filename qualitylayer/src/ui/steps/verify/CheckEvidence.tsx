@@ -1,5 +1,5 @@
-import { ChevronRightIcon } from "lucide-react"
 import type { VerifyActivity, VerifyCheck, VerifyRevision } from "../../../core/verify-activity.ts"
+import { Disclosure } from "../../kit/Fold.tsx"
 
 type CheckReceipt = NonNullable<VerifyActivity["projectChecks"]>
 
@@ -53,11 +53,7 @@ export function CheckEvidence({ receipt }: { receipt: CheckReceipt }) {
           <Revision revision={checkout} branchFirst />.
         </p>
       ) : null}
-      <details>
-        <summary>
-          <ChevronRightIcon className="size-3.5" aria-hidden="true" />
-          Check results and checkout
-        </summary>
+      <Disclosure head="Check results and checkout">
         <ul>
           {commands.map((row) => (
             <li key={row.command} data-outcome={row.outcome}>
@@ -97,7 +93,7 @@ export function CheckEvidence({ receipt }: { receipt: CheckReceipt }) {
             ) : null}
           </dl>
         ) : null}
-      </details>
+      </Disclosure>
     </div>
   )
 }

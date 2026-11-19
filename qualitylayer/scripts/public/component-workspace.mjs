@@ -6,8 +6,8 @@ import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SOURCE_HEAD = "e88a9601f388a1d0937cc4dbdcfe7faf996f902b"
-const SOURCE_CATALOG_SHA256 = "d5ed398886bfbe2465524e52b02e8430a00aee44684592e8f631f551f2626b16"
+const SOURCE_HEAD = "a3aa0c2387eeeb1dc05b97389b94121800f36a28"
+const SOURCE_CATALOG_SHA256 = "99ca634d9d3feb288518e953938d6a0b3c9619c1ac1ce8def7bbb59fe4a7d8bb"
 const OMISSION_POLICY_SHA256 = "eb4ba5f8bbabdbc4a66d66a607f1f208087d98b319f1ab17242f2f8bff0a27de"
 const PRIVATE_RUNTIME = [
   "src/core/licence/",

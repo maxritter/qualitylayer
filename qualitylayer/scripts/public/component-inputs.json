@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "e88a9601f388a1d0937cc4dbdcfe7faf996f902b",
-  "catalogSha256": "d5ed398886bfbe2465524e52b02e8430a00aee44684592e8f631f551f2626b16",
+  "sourceHead": "a3aa0c2387eeeb1dc05b97389b94121800f36a28",
+  "catalogSha256": "99ca634d9d3feb288518e953938d6a0b3c9619c1ac1ce8def7bbb59fe4a7d8bb",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -14527,7 +14527,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/CheckEvidence.tsx",
-      "sha256": "2aa8746a2b3a696c7fa88c62c8c5cc08f88c03be74b29b5e6a0455bd3a649b27",
+      "sha256": "00e191ec9bf120a4c082a843dc507c9aaf1a09758a21d02f54dc2cdf5898cd93",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14623,7 +14623,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/ReviewCandidateDialog.tsx",
-      "sha256": "71bbd1fd8926b62a550e896d434e91aee334b50198c5a9b3a495c224db20e457",
+      "sha256": "43fe74e433035b1c00673738a40c034340faf5ec188df3148ba8b9890f5bf46f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14743,7 +14743,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/review-candidate.css",
-      "sha256": "446634803fab98ad8f444fe31f2a0ea42a13d9cf9bce103e5e533a4bfc25d7f8",
+      "sha256": "c173502ada050d3fc7ca7930f6f991a14b2aa1e6c48b1d9d0c4077bf7a0e6098",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

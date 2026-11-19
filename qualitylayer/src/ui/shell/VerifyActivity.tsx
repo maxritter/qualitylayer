@@ -18,10 +18,11 @@ export function verifyPause(task: TaskDetail, now: number) {
   const life = signals ? livenessOf(signals, now) : null
   const refusal = task.verifyActivity?.judgeRefusal
   const peer = peerAt(task, now)
-  const movedOn = life?.state === "working" && life.last.at > (refusal?.at ?? 0)
-  if (life?.state === "permission" || life?.state === "stopped" || movedOn) return null
-  if (peer) return { title: "Waiting for a peer agent", detail: peer.name }
-  if (refusal) return { title: "Review could not start", detail: refusal.reason }
+  if (life?.state === "permission" || life?.state === "stopped") return null
+  const workingAt = life?.state === "working" ? life.last.at : 0
+  if (peer && workingAt <= peer.at) return { title: "Waiting for a peer agent", detail: peer.name }
+  if (refusal && workingAt <= refusal.at)
+    return { title: "Review could not start", detail: refusal.reason }
   return life?.state === "turn-end"
     ? { title: "No active turn", detail: `The lead ended its turn at ${clock(life.at)}.` }
     : null

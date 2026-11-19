@@ -64,7 +64,8 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
         (task) => task.slug === trace.taskSlug,
       )?.id
       if (!id) throw new Error("Fixture task not read back")
-      const detail = (await server.json(`/api/tasks/${encodeURIComponent(id)}`)).task
+      const taskUrl = `/api/tasks/${encodeURIComponent(id)}`
+      const detail = (await server.json(taskUrl)).task
       expect(detail).toMatchObject({
         verifyActivity: {
           projectChecks: {
@@ -141,6 +142,12 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
           await webExpect(panel).not.toBeVisible()
           if (width === 390 && theme === "dark") {
             const context = realCtx({ env: { ...repo.env, ...env }, cwd: repo.repo })
+            await recordHook(
+              context,
+              { session_id: session, hook_event_name: "UserPromptSubmit" },
+              "",
+              () => process.pid,
+            )
             const requests = join(context.home, "peers", "requests")
             await mkdir(requests, { recursive: true })
             const requestId = randomUUID()
@@ -160,6 +167,11 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
                 expires_at: Date.now() / 1000 + 120,
               }),
             )
+            const correlated = (await server.json(taskUrl)).task
+            expect(correlated).toMatchObject({
+              verifyActivity: { peer: { name: "Riley" } },
+              live: { signals: { hook: { event: "UserPromptSubmit" }, sessionId: session } },
+            })
             await page.reload()
             const peerPanel = await statusPanel(page)
             await webExpect(peerPanel.getByTestId("agent-now")).toContainText(
@@ -174,6 +186,19 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
                 path: join(shotPath, "activity-peer-390.png"),
                 animations: "disabled",
               })
+            await recordHook(
+              context,
+              { session_id: session, hook_event_name: "UserPromptSubmit" },
+              "",
+              () => process.pid,
+            )
+            await page.reload()
+            const activePanel = await statusPanel(page)
+            await webExpect(activePanel.getByTestId("agent-now")).toContainText("you wrote to it")
+            await webExpect(
+              activePanel.getByRole("region", { name: "Recorded activity" }),
+            ).toContainText("Asked peer agent Riley")
+
             await Bun.write(
               join(requests, `${requestId}.reply.json`),
               JSON.stringify({
@@ -183,6 +208,16 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
                 replied_at: new Date().toISOString(),
                 message: "Fixture completed",
               }),
+            )
+            const replied = (await server.json(taskUrl)).task as {
+              verifyActivity?: { peer?: unknown }
+            }
+            expect(replied.verifyActivity?.peer).toBeUndefined()
+            await recordHook(
+              context,
+              { session_id: session, hook_event_name: "Stop" },
+              "",
+              () => process.pid,
             )
             await page.reload()
             await webExpect((await statusPanel(page)).getByTestId("agent-now")).toContainText(

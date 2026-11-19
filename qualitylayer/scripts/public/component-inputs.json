@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "e779a730118fde3baef5282a4bf66e419695bf93",
-  "catalogSha256": "1ed806c2ed25ed892ffd62697952f63b7cabeac3ab85e64dc0a97d0f5d527ecb",
+  "sourceHead": "1fd768a83c37995f8f0f9ade98d7458a6aae20b0",
+  "catalogSha256": "a9ab699e6d8ee9e627e3f84e7bbd1fd45876a0763289cd130a186b5bd8e3bd06",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -13279,7 +13279,7 @@
     },
     {
       "path": "qualitylayer/src/ui/shell/VerifyActivity.tsx",
-      "sha256": "2abb135ce7a55095ec74945b4eaca2841a5968ee4b0af044729d33ad3da461c7",
+      "sha256": "d5d56c5020084ac54dd789a16c8c5ce0d52ca6d922de5dd5a2a1052643a35c82",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

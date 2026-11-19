@@ -2,6 +2,10 @@ import { isDeepStrictEqual } from "node:util"
 import type { Ctx } from "../../ctx.ts"
 import type { Plan } from "./agent-settings.ts"
 
+export const CLAUDE_CODE_MODE_ID = "claude-code:code-mode"
+export const CLAUDE_CODE_MODE_ENV = "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"
+export const CLAUDE_CODE_MODE_MIN_VERSION = "2.1.323"
+
 export async function nativeConfigWritable(
   ctx: Ctx,
   file: string,
@@ -214,6 +218,13 @@ const CLAUDE_PREFERENCES: Preference[] = [
     value: "3",
     label: "Stop hook limit",
     why: "A Stop hook can keep a turn going at most 3 times in a row.",
+  },
+  {
+    id: CLAUDE_CODE_MODE_ID,
+    path: ["env", CLAUDE_CODE_MODE_ENV],
+    value: "1",
+    label: "Experimental Code Mode preference",
+    why: "Claude Code checks whether the session supports Code Mode and asks before first use.",
   },
 ]
 

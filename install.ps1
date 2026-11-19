@@ -434,6 +434,14 @@ function Test-QlNativeBooleanRecord($Record, [string]$ClaudeSettings) {
       "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"
     ],
     "value": "3"
+  },
+  {
+    "id": "claude-code:code-mode",
+    "path": [
+      "env",
+      "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"
+    ],
+    "value": "1"
   }
 ]
 '@ | ConvertFrom-Json

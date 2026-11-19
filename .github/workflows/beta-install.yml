@@ -237,8 +237,17 @@ jobs:
           public static class ScannerStageHandle {
               // Share reading and writing, but withhold DELETE access needed for rename.
               [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
-              public static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
+              private static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
                   IntPtr security, uint disposition, uint flags, IntPtr template);
+
+              public static SafeFileHandle OpenDirectory(string path, bool read) {
+                  const uint listDirectory = 0x0001;
+                  const uint shareReadWrite = 0x0003;
+                  const uint openExisting = 3;
+                  const uint backupSemantics = 0x02000000;
+                  return CreateFileW(path, read ? listDirectory : 0, shareReadWrite,
+                      IntPtr.Zero, openExisting, backupSemantics, IntPtr.Zero);
+              }
               [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
               [return: MarshalAs(UnmanagedType.Bool)]
               public static extern bool MoveFileW(string source, string destination);
@@ -249,22 +258,42 @@ jobs:
           }
           '@
 
-            $phase = 'native-lock-control'
+            $phase = 'control-create'
             $sample = Join-Path $root 'control'
             $moved = Join-Path $root 'control-renamed'
             New-Item -ItemType Directory -Path $sample | Out-Null
             $controlFile = Join-Path $sample 'input.txt'
             Set-Content -LiteralPath $controlFile -Value 'fixture'
-            $handle = [ScannerStageHandle]::CreateFileW($sample, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
-            if ($handle.IsInvalid -or ([ScannerStageHandle]::RenameError($sample, $moved)) -notin @(5, 32) -or
-                (Get-Content -LiteralPath $controlFile) -cne 'fixture') {
-              throw 'Native control did not deny rename while allowing reads'
-            }
+            $phase = 'control-metadata-only'
+            $handle = [ScannerStageHandle]::OpenDirectory($sample, $false)
+            if ($handle.IsInvalid) { throw 'Cannot open metadata-only control' }
+            $metadataOnlyRenameError = [ScannerStageHandle]::RenameError($sample, $moved)
             $handle.Dispose()
             $handle = $null
+            if ($metadataOnlyRenameError -eq 0 -and [ScannerStageHandle]::RenameError($moved, $sample) -ne 0) {
+              throw 'Cannot restore renamed fixture'
+            }
+
+            $phase = 'control-open-read'
+            $handle = [ScannerStageHandle]::OpenDirectory($sample, $true)
+            if ($handle.IsInvalid) { throw 'Cannot open read-sharing control' }
+            $phase = 'control-rename-held'
+            $controlRenameError = [ScannerStageHandle]::RenameError($sample, $moved)
+            if ($controlRenameError -notin @(5, 32)) { throw 'Held directory rename was not denied' }
+            $phase = 'control-read-held'
+            if ((Get-Content -LiteralPath $controlFile) -cne 'fixture') { throw 'Held directory was not readable' }
+            $handle.Dispose()
+            $handle = $null
+            $phase = 'control-rename-released'
             if ([ScannerStageHandle]::RenameError($sample, $moved) -ne 0) {
               throw 'Native control did not allow rename after release'
             }
+
+            $controlDiagnostic = @{
+              metadataOnlyRenameError = $metadataOnlyRenameError
+              controlRenameError = $controlRenameError
+            }
+            Write-Output ('WINDOWS_SCANNER_CONTROL ' + ($controlDiagnostic | ConvertTo-Json -Compress))
 
             $phase = 'cold-setup'
             $out = Join-Path $root 'setup.json'
@@ -280,7 +309,7 @@ jobs:
               if ($stages.Count -eq 1) {
                 $stageSeen = $true
                 $stage = $stages[0]
-                $handle = [ScannerStageHandle]::CreateFileW($stage, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+                $handle = [ScannerStageHandle]::OpenDirectory($stage, $true)
                 $openError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
                 if (-not $handle.IsInvalid) { break }
                 $handle.Dispose()
@@ -396,7 +425,9 @@ jobs:
               version = '14.3.0'
               cliSha256 = $digest
               authenticode = 'valid-timestamped'
+              metadataOnlyRenameError = $metadataOnlyRenameError
               nativeLockControl = $true
+              controlRenameError = $controlRenameError
               nativeRenameError = $renameError
               stageReadableWhileLocked = $true
               publishedWhileLocked = $true
@@ -420,6 +451,13 @@ jobs:
                 try { $diagnostic.setup = Read-SetupFailure } catch { $diagnostic.setup = 'invalid-setup-record' }
               }
               Write-Output ('WINDOWS_SCANNER_DIAGNOSTIC ' + ($diagnostic | ConvertTo-Json -Compress))
+            }
+            if ($phase -like 'control-*') {
+              $controlDiagnostic = @{
+                metadataOnlyRenameError = $metadataOnlyRenameError
+                controlRenameError = $controlRenameError
+              }
+              Write-Output ('WINDOWS_SCANNER_CONTROL ' + ($controlDiagnostic | ConvertTo-Json -Compress))
             }
             $failed = $true
           } finally {

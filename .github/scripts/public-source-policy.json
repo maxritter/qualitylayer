@@ -237,10 +237,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "871aa94fc766286740ebc5a52c0e172c157ac0ab95ae3ff41a16b14635e1d0bb",
+    "qualitylayer/scripts/public/component-inputs.json": "005a934b4a49ada6b7c9d44b97d2c5e94874a2c001075a570528daeacb7e7ad5",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "5d00a0c458a468b77754163dc82f17ffbcafb485e3da21b98fd28027449a7d79",
+    "qualitylayer/scripts/public/component-workspace.mjs": "c59e354f1b65d29616f357ce3c7f88bad5b8be046bf0ddb62db1678585632545",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -2270,7 +2270,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "4ed917a3022981f7771cde1115983979ea755dff678ea0ca70f10f2ceaa7de39",
+  "reviewManifestSha256": "ab1e95f086118bc5ddfaa13220039a94d67bc24c68be4ee3a93b3264671a712f",
   "schema": 1,
-  "sourceHead": "8673062f1a29f0ac5456317d7ebd5b535c031a45"
+  "sourceHead": "e779a730118fde3baef5282a4bf66e419695bf93"
 }

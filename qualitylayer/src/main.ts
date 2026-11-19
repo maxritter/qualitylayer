@@ -176,7 +176,9 @@ lookup and repair:
   qualitylayer usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]   (import Cursor provider usage locally; no sign-in or upload)
   qualitylayer memory overview | projects | list [--sources changed] | search <text> | context <text> | read <id> [--around 1..3]
   qualitylayer memory store --title <text> --content <text> [--file <path>]… [--rests-on <task, decision n>] [--replaces <id>]
-  qualitylayer memory confirm|retire|restore <id> [--reason <text>] | pin|unpin <id> | pause|resume | share on|off | sync|export|import | import-pilot <file>…
+  qualitylayer memory confirm|retire|restore <id> [--reason <text>] | pin|unpin <id> | pause|resume | import-pilot <file>…
+  qualitylayer memory share on|off | export | import | conflicts
+  qualitylayer memory reconcile <id> --revision <n> --candidate local|<fingerprint>
   qualitylayer memory mcp   (the lesson tools memory_search, memory_read, memory_save and memory_keep as an MCP server on stdin and stdout)
   qualitylayer find "<text>" · tasks [--status <s>] [--since 30d] · doctor [--repair]
   qualitylayer tasks --cost [--since <period>]   (each task of the last 30 days, or of the period, newest first, with its step and cost: {usd, active_ms, tokens}, plus token_warning while a task at work runs well above your usual task; usd is null where QualityLayer cannot price the task. It reads for at most 20 seconds: tasks not reached have cost null, the reply says complete false and how many are pending, and asking again continues)

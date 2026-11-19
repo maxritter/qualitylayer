@@ -19,8 +19,11 @@ export class RecordedHistoryRewritten extends Error {
     )
   }
 }
-function requireInput(value: unknown): asserts value {
-  if (!value) throw Error("The judge's task commit/input authority is missing or invalid")
+function requireInput(
+  value: unknown,
+  message = "The judge's task commit/input authority is missing or invalid",
+): asserts value {
+  if (!value) throw Error(message)
 }
 /** The refusal for receipts that history cannot explain, naming a repeated entry when there is one. */
 async function unexplained(ctx: Ctx, task: Task, commits: string[]): Promise<never> {
@@ -105,8 +108,10 @@ export async function judgeInputs(ctx: Ctx, task: Task): Promise<JudgeInputs | n
     const base = await run(ctx, task, ["rev-parse", "--verify", `${fm.base}^{commit}`])
     requireInput(full.test(base) && !commits.includes(base))
     await run(ctx, task, ["check-ref-format", `refs/heads/${fm.branch}`])
+    const branch = await run(ctx, task, ["symbolic-ref", "--quiet", "--short", "HEAD"])
     requireInput(
-      (await run(ctx, task, ["symbolic-ref", "--quiet", "--short", "HEAD"])) === fm.branch,
+      branch === fm.branch,
+      `The task records branch ${JSON.stringify(fm.branch)}. The current checkout is on ${JSON.stringify(branch.slice(0, 256))}. A history rewrite must be proved on the recorded branch.`,
     )
     const text = await run(ctx, task, [
       "reflog",

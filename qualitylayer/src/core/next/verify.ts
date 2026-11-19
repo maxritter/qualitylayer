@@ -746,6 +746,27 @@ async function judgeAtWork(
 }
 
 /**
+ * The same admission rule and recovery reply apply before Security and before assignment.
+ */
+async function judgeAdmission(
+  ctx: Ctx,
+  task: Task,
+): Promise<Result<Awaited<ReturnType<typeof prepareJudgeAdmission>>>> {
+  try {
+    return ok(await prepareJudgeAdmission(ctx, task))
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return err({
+      code: "state_mismatch",
+      message,
+      stored: task.stage,
+      found: message,
+      fix: "Run qualitylayer doctor --json in the task checkout to inspect its recorded branch and receipts. If a receipt belongs to one slice and its exact replacement is on HEAD, register it with qualitylayer commit slice <n> --commit <fullsha>. Keep shared receipts. If the recorded history cannot be reconciled, keep the independent review evidence outside QualityLayer until the task's source authority is recovered.",
+    })
+  }
+}
+
+/**
  * The checks first, then the judge: a red check is its evidence. `verify judge` assigns it; the
  * brief says what comes. A release wait comes before both.
  */
@@ -762,19 +783,8 @@ async function assignJudge(
     return ok(await openExit(ctx, task, "release_wait", { fixable: false }))
   }
   if (release !== null) return ok(base(task, { phase: "verify", ...releaseReply(release) }))
-  let admission: Awaited<ReturnType<typeof prepareJudgeAdmission>>
-  try {
-    admission = await prepareJudgeAdmission(ctx, task)
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return err({
-      code: "state_mismatch",
-      message,
-      stored: task.stage,
-      found: message,
-      fix: "Follow the repair named in the error. After a rebase, run qualitylayer doctor --json to preview repairs for all open tasks and checkout leases. If it identifies a duplicate and every proposed repair is intended, run qualitylayer doctor --repair. Once the remaining receipts are on HEAD, run qualitylayer commit receipts --canonicalize for this task and retry verify judge. Register only task-owned follow-ups with commit slice <n> --commit <fullsha> or commit fix --commit <fullsha>.",
-    })
-  }
+  const admission = await judgeAdmission(ctx, task)
+  if (!admission.ok) return admission
   // A fix round's re-judgement, and the recheck of a change made after a pass, do not wait for
   // `check all`: the agent ran the focused checks for its change, and the project checks run once
   // on the final source (finalCheckGate).
@@ -796,7 +806,7 @@ async function assignJudge(
   // counts as at work: asking again never replaces it.
   const atWork = errors === undefined ? await judgeAtWork(ctx, task, true) : null
   if (atWork !== null) return ok(await verifyPayload(ctx, task, undefined, undefined, atWork))
-  const assignment = await prepareVerification(ctx, task, admission)
+  const assignment = await prepareVerification(ctx, task, admission.data)
   if (!assignment.ok) return assignment
   return ok(await verifyPayload(ctx, task, errors, assignment.data))
 }
@@ -1088,8 +1098,9 @@ async function qualityStop(
       verdictsWaiting(task, inspected)
     )
       throw cause
-    const admission = await prepareJudgeAdmission(ctx, task)
-    if (admission.source !== null || admission.note === undefined) throw cause
+    const admission = await judgeAdmission(ctx, task)
+    if (!admission.ok) return admission
+    if (admission.data.source !== null || admission.data.note === undefined) throw cause
     return await assignJudge(ctx, task, control, inspected.pendingErrors)
   }
 }
@@ -1125,7 +1136,7 @@ async function verifyStep(ctx: Ctx, task: Task, control: string): Promise<Result
       message: cause.message,
       stored: task.stage,
       found: cause.message,
-      fix: "Review current files with qualitylayer quality scan <paths> --local and record Security's fresh scope and results in Verify; record genuinely unavailable coverage as unverified, never clean. Fix known severe findings, run the approved project checks, then qualitylayer verify judge for the existing fresh full-working-tree admission. If a fresh reviewer already has an assignment, let it finish and record its verdicts in that context instead of starting another review.",
+      fix: "Run qualitylayer doctor --json to check whether the recorded branch proves the rewrite. If it reports a fresh full-working-tree review is available, review current files with qualitylayer quality scan <paths> --local and record Security's scope and results in Verify. Record genuinely unavailable coverage as unverified, fix known severe findings, run the approved project checks, then qualitylayer verify judge. If a reviewer already has a fresh assignment, use that assignment.",
     })
   }
 }

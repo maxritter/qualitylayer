@@ -564,7 +564,7 @@
     "qualitylayer/src/core/git/commit-receipts.ts": "74664debf927221b6d182f62a5881fabad93eb6b1269616edb330623557eaf22",
     "qualitylayer/src/core/git/commit-scope.ts": "1476b83b2ae8ace66ce0d28f0cb3e018eab69ffb242f8dcfd4e92a9ef404820c",
     "qualitylayer/src/core/git/foreign-refusal.ts": "a619c0ee241fb2edd3845bb9cbd542d7f01183eef75258a7982cd8bec6a34dfe",
-    "qualitylayer/src/core/git/judge-inputs.ts": "5e3fc4130476c3b4d062dd01e84ad2df24e478a2775d35f2a9c598e61211132d",
+    "qualitylayer/src/core/git/judge-inputs.ts": "107d54b7302de34e1ce61d4b6f3bce4656f046e2af864ff27c0ee0ba868fa9d2",
     "qualitylayer/src/core/git/native-edit.ts": "844a5d7a698588c301fdd0a733ba04b885f441d6931f92ebeacb38cb62bcd4d2",
     "qualitylayer/src/core/git/own-edit-shapes.ts": "d64ef35da3663f90baa08c884e72b08de30f77e1866527708d43a472edaf41f7",
     "qualitylayer/src/core/git/owned-tree.ts": "239aec3868218b032a41c2b7c65cb4b670f256fab32764f9bd38a7a97dca7b42",
@@ -768,7 +768,7 @@
     "qualitylayer/src/core/next/steps.ts": "bd1ac395ac3dfdcdca2b54c427c6baee9574857534c249a0629d7f1727e9dec0",
     "qualitylayer/src/core/next/verify-exit.ts": "9253a2f09fa2ab6d6e1ae4d1aa9a3348a691779410e92ed72baecd9e18e61d32",
     "qualitylayer/src/core/next/verify-final.ts": "ef1b23e2e2b626dabb54cd76426577f0621a5d9c6c9cde6955f558798c996469",
-    "qualitylayer/src/core/next/verify.ts": "87018f8c2c7cebc8430003ae344d42df803f347ffad525fe349670be336e6148",
+    "qualitylayer/src/core/next/verify.ts": "67d8f97626e00dec4a1efcd24bcda2078700453acdf7534b0c0a4b86780d3559",
     "qualitylayer/src/core/open-items.ts": "41a964a89c1c574f8e372283521fca7d5b838c97417dae7486db8081e1aaf0be",
     "qualitylayer/src/core/pages/detail.ts": "3fd1892b954ff09435e1b7fccc31c46267497ef0f72d1407bf2577f1fcadf0b1",
     "qualitylayer/src/core/pages/landing.ts": "0a000590a3bc8976dfa5fb996e7205b14219fd540a8e99c880d2d21aefe92ce7",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "b7bff9cca9088a4d83bcb357b446067f934ca3240bfe777935a8d16f217c90b0",
+  "reviewManifestSha256": "af08cea9144567db336e28bb79bbfe12691ba4eb8b374036a2f618cf45cf019a",
   "schema": 1,
-  "sourceHead": "f5ddda187c7be9fc356acc919edd9feb0ce9765a"
+  "sourceHead": "2211ff75e3dd1e2c9340c783383ea0b550038a9b"
 }

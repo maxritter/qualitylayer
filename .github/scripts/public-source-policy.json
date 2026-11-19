@@ -31,7 +31,7 @@
     ".github/workflows/qualitylayer-ui.yml": "f3b7c388e10ab385623e932740d3f2c4771c83f2d3e3fadb310341b3053a2ac3",
     ".github/workflows/qualitylayer-windows-diagnostic.yml": "775319bd9e17936606b74341253ea5ed751296abade45d9b0c38aebe333ea5a1",
     ".github/workflows/qualitylayer-windows-nightly.yml": "f75a6e450ce7524fb4a8747fd6a643b06c20626c9947bca693700723a92c7e20",
-    ".github/workflows/release.yml": "e182f74c86ec117f65b57deca31fa416c96b0151648e0cfcff8c606130bec33f",
+    ".github/workflows/release.yml": "5edfb3d3c7b422af04f3851b0aa9eb3d2db35ab590aa947df6acd11c5f8eedca",
     ".github/workflows/scripts/git-crypt-unlock.ts": "2baf9ae3dee6d1113a128cb1699d091f272ddfb2bab1b0b6d6b0a03c1a162fa4",
     ".github/workflows/scripts/install-chromium-deps.sh": "d10bc023659cf02524dfb6b76a950bcb121216eaafe97c4a694a4930330d38c2",
     ".github/workflows/scripts/install-git-crypt.sh": "57d7849b9881702881fcfb138eeeaa151f1de6f61defd321dad17a555d71c6dd",
@@ -2272,7 +2272,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "3f4abaef30ce904ee9cbcd8a41a309cba64b93f4ac1ac2de6b7492f09d0a21c4",
+  "reviewManifestSha256": "3381f1fbd773839a1892bb3fa3a0be1ae61c92fd2917a183c9fe431c75c6a895",
   "schema": 1,
-  "sourceHead": "f93deb57793a49667eae7c1a069774b8d39634c9"
+  "sourceHead": "6014c7db6eb9f841fc7d29ef3d00248e0420e714"
 }

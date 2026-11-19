@@ -810,7 +810,7 @@ jobs:
     - name: Verify the exact qualified site before binary publication
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4c43aa3d5d42778eb6b2e72c208c1ea46a48350109f4840cb826eceb3fa9d65f.sh"
       env:
         QL_SITE_PHASE: identity
         SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
@@ -875,14 +875,14 @@ jobs:
     - name: Promote only the exact previously qualified staged site
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/02663a42a188ccb1359b5389569090cfd8ec0dbe22c7d51a6ce7cee015e3daa1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dd92a01c9a9091cf1a12e5fb016a67921c4f9d1dd82285abd0221e86b1b10b28.sh"
       env:
         QL_RELEASE_EXPORTS: "{}"
       if: "${{ !contains(env.VERSION, '-') && github.ref_name == 'main' }}"
     - name: Verify public alias critical bytes and exact release before completion
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4c43aa3d5d42778eb6b2e72c208c1ea46a48350109f4840cb826eceb3fa9d65f.sh"
       env:
         QL_SITE_PHASE: public
         SITE_CANDIDATE: "${{ runner.temp }}/ql-site-candidate/candidate-site.json"
@@ -996,7 +996,7 @@ jobs:
     - name: Qualify the actual staged site and export only immutable public identity
       shell: bash
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        bash "${{ github.workspace }}/.github/private-workflows/release-commands/c7289844678202b7748353766dca0bc1d960ab13bb5cfda49cad69db41c028e1.sh"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/4c43aa3d5d42778eb6b2e72c208c1ea46a48350109f4840cb826eceb3fa9d65f.sh"
       env:
         QL_SITE_PHASE: qualify
         SITE_EXPORT_DIR: "${{ runner.temp }}/ql-site-export"

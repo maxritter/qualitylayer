@@ -748,10 +748,20 @@ jobs:
             }
           }
 
-          function Run-Case([string] $profileMode, [string[]] $keys, [bool] $managed = $true) {
+          function Write-CaseFailure([string] $label, [string] $where, [Management.Automation.ErrorRecord] $issue) {
+            $errorType = $issue.Exception.GetType().Name
+            $line = [int] $issue.InvocationInfo.ScriptLineNumber
+            Write-Host ('WINDOWS_OPENGREP_CASE_FAILURE ' + (@{case = $label; phase = $where; exception = $errorType; line = $line} |
+              ConvertTo-Json -Compress))
+          }
+
+          function Run-Case([string] $label, [string] $profileMode, [string[]] $keys, [bool] $managed = $true) {
             $fixture = Join-Path $tempParent ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
-            New-PrivateDirectory $fixture
+            $casePhase = 'acl'
+            Write-Host "WINDOWS_OPENGREP_CASE_BEGIN case=$label"
             try {
+              New-PrivateDirectory $fixture
+              $casePhase = 'paths'
               $isolatedHome = Join-Path $fixture 'home'
               $managedHome = Join-Path $isolatedHome '.qualitylayer'
               $fixtureTemp = Join-Path $isolatedHome 'tmp'
@@ -761,13 +771,25 @@ jobs:
                 New-Item -ItemType Directory -Path "$isolatedHome\AppData\Roaming", "$isolatedHome\AppData\Local" -Force | Out-Null
               }
               $stagedExe = Join-Path $stage 'opengrep.exe'
+              $casePhase = 'copy-and-hash'
               Copy-Item -LiteralPath $sourceExe -Destination $stagedExe
               if ((Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) { throw 'Stage bytes differ' }
+              $casePhase = 'version'
               $result = Test-OpenGrep $stagedExe $fixtureTemp $managed $profileMode $keys
+              $casePhase = 'post-hash'
               if ((Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) { throw 'Version probe changed the executable' }
+              Write-Host ('WINDOWS_OPENGREP_CASE_RESULT ' + (@{ case = $label; result = $result } | ConvertTo-Json -Depth 5 -Compress))
               return $result
+            } catch {
+              Write-CaseFailure $label $casePhase $_
+              throw
             } finally {
-              if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
+              try {
+                if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
+              } catch {
+                Write-CaseFailure $label 'owned-cleanup' $_
+                throw
+              }
             }
           }
 
@@ -791,21 +813,22 @@ jobs:
             $standard = @('COMSPEC','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','SYSTEMDRIVE','PATHEXT','OS',
               'PROGRAMDATA','USERNAME','NUMBER_OF_PROCESSORS','PROCESSOR_ARCHITECTURE','HOMEDRIVE','HOMEPATH')
             $results = [ordered] @{
-              managed = Run-Case 'existing' @()
-              folders = Run-Case 'folders' @()
-              localCache = Run-Case 'local' @()
-              roaming = Run-Case 'roaming' @()
-              bothAppData = Run-Case 'both' @()
-              osVariables = Run-Case 'existing' $standard
-              driveAndHome = Run-Case 'existing' @('HOMEDRIVE','HOMEPATH')
+              managed = Run-Case 'managed' 'existing' @()
+              folders = Run-Case 'folders' 'folders' @()
+              localCache = Run-Case 'localCache' 'local' @()
+              roaming = Run-Case 'roaming' 'roaming' @()
+              bothAppData = Run-Case 'bothAppData' 'both' @()
+              osVariables = Run-Case 'osVariables' 'existing' $standard
+              driveAndHome = Run-Case 'driveAndHome' 'existing' @('HOMEDRIVE','HOMEPATH')
             }
             if ($results.osVariables.load -eq 'expected-version') {
-              foreach ($key in $standard) { $results["os-$key"] = Run-Case 'existing' @($key) }
+              foreach ($key in $standard) { $results["os-$key"] = Run-Case "os-$key" 'existing' @($key) }
             }
-            $results.ordinary = Run-Case 'existing' $standard $false
+            $results.ordinary = Run-Case 'ordinary' 'existing' $standard $false
             Write-Output ('WINDOWS_OPENGREP_RESULT ' + (@{sha256 = $hash; probes = $results} | ConvertTo-Json -Depth 5 -Compress))
           } catch {
             Write-Output "WINDOWS_OPENGREP_FAILURE phase=$phase"
+            Write-CaseFailure 'matrix' $phase $_
             $failed = $true
           } finally {
             try {

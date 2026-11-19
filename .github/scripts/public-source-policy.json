@@ -24,7 +24,7 @@
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
-    ".github/workflows/qualitylayer-candidate.yml": "4b1b0bb97f320a3dfa3d10f658c12992ad78fbc268e99c072a9033ecac4b298c",
+    ".github/workflows/qualitylayer-candidate.yml": "c1b7faf92fe42d4b5b4f45f79a9fe8c7f81fff6029de8204017af04b825921fb",
     ".github/workflows/qualitylayer-ci.yml": "64e3b073091e41424bc4538737cc215dcbf3389b8e6396c67e261966b7f10178",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",

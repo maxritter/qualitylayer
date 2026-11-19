@@ -739,7 +739,7 @@ jobs:
         QL_VERSION: "${{ inputs.version }}"
         QL_RELEASE_EXPORTS: "{}"
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
-        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/b542f3145a65f63281a9e1df3c17baedbae1c5f82a82922351efc03ef945e829.ps1"
+        pwsh "${{ github.workspace }}/.github/private-workflows/release-commands/4d7c408a0a43da21dcf902365124538393b5efd82ba53484b86fdcfb7c16b78e.ps1"
       shell: pwsh
     - name: 'Stage only reviewed export members: account-acl'
       if: success()

@@ -28,12 +28,12 @@
     ".github/workflows/qualitylayer-ci.yml": "87048bc7c40b2493e7c231d4662707ce9e85aa353984f32f8c88625e3c7c1654",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
-    ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
+    ".github/workflows/qualitylayer-ui.yml": "dacc436572cc0cc5bc40e328ee3dd50e75370091f6fe6f472c2508f22508f2ec",
     ".github/workflows/qualitylayer-windows-diagnostic.yml": "775319bd9e17936606b74341253ea5ed751296abade45d9b0c38aebe333ea5a1",
     ".github/workflows/qualitylayer-windows-nightly.yml": "f75a6e450ce7524fb4a8747fd6a643b06c20626c9947bca693700723a92c7e20",
     ".github/workflows/release.yml": "e182f74c86ec117f65b57deca31fa416c96b0151648e0cfcff8c606130bec33f",
     ".github/workflows/scripts/git-crypt-unlock.ts": "2baf9ae3dee6d1113a128cb1699d091f272ddfb2bab1b0b6d6b0a03c1a162fa4",
-    ".github/workflows/scripts/install-git-crypt.sh": "6a57539fe3a34eb06eb43bdff3654c61ce492b5d4fa09a092ff31aed985991cc",
+    ".github/workflows/scripts/install-git-crypt.sh": "08d0577ac87370129669c07eb8684debb2d4b4aaa1db1ffa7675b1c2a3ddd33a",
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
     ".github/workflows/scripts/setup-git-crypt.sh": "6391a1592b1d671b7a55c33f3286faa3f433b1efe1e38fdb4d070cf88efe5440",
     ".github/workflows/site-health.yml": "370405ce200355b10d5dd73b50d970b348285cfe9109681e984d57b15f68f001",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "90af95c8b2cbc0f3546bb777e41dbef8e066ccacba3bff60980bc37645c7daae",
+  "reviewManifestSha256": "72d91fe2ecd5fe51e100d9c54a5848e376b5cf823ee6a7c20f9db30ea3ee9e95",
   "schema": 1,
-  "sourceHead": "8d3a507dacbee34236dfcfe728ed636255cb8355"
+  "sourceHead": "443b53c77c3ea5e9f9dc71e1dc2cc029742fd576"
 }

@@ -8,13 +8,8 @@
 # apt applies no transfer timeout by default, so the step hangs until the job
 # is killed (2026-08-19: every amd64 release job sat 25+ minutes in this step).
 #
-# Three defenses, in order:
-#   1. Skip entirely when git-crypt is already on PATH.
-#   2. Fetch ONLY the universe index (git-crypt's component) from the public
-#      mirror, over IPv4, with bounded retries and timeouts. One index file
-#      instead of the ~20 a full update pulls, and the broken mirror is never
-#      contacted.
-#   3. Fall back to a full update with the Azure mirror rewritten away.
+# Reuse the runner's authenticated APT lists when possible. If that fails,
+# refresh the signed universe index first, then use a full refresh if needed.
 
 set -e
 
@@ -23,6 +18,8 @@ APT_OPTS=(
   -o Acquire::http::Timeout=15
   -o Acquire::https::Timeout=15
   -o Acquire::ForceIPv4=true
+  -o Acquire::Languages=none
+  -o Acquire::IndexTargets::deb::CNF::DefaultEnabled=false
 )
 
 PUBLIC_MIRROR="http://archive.ubuntu.com/ubuntu"
@@ -47,6 +44,15 @@ fi
 
 CODENAME="$(lsb_release -cs 2>/dev/null || echo "")"
 
+# Bound only the download, before dpkg can start altering package state.
+cached_install=false
+if sudo timeout --kill-after=5s 30s apt-get "${APT_OPTS[@]}" -o Acquire::Retries=0 \
+  --download-only install -y --no-install-recommends git-crypt &&
+  sudo apt-get "${APT_OPTS[@]}" --no-download install -y --no-install-recommends git-crypt &&
+  verify; then
+  cached_install=true
+fi
+
 # Later browser dependencies use these same sources. Normalize them before the
 # targeted install succeeds, so those steps do not return to the slow mirror.
 for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
@@ -55,7 +61,13 @@ for src in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt
   fi
 done
 
-# Defense 2: universe-only index from the public mirror.
+if [ "$cached_install" = true ]; then
+  echo "git-crypt installed using the runner's existing APT package lists"
+  exit 0
+fi
+echo "Existing APT lists did not install git-crypt; refreshing signed indices"
+
+# Universe-only index from the public mirror.
 if [ -n "$CODENAME" ] && [ -f "$KEYRING" ]; then
   echo "Fetching universe index for $CODENAME from $PUBLIC_MIRROR"
   echo "deb [signed-by=$KEYRING] $PUBLIC_MIRROR $CODENAME universe" |
@@ -75,7 +87,7 @@ if [ -n "$CODENAME" ] && [ -f "$KEYRING" ]; then
   sudo rm -f "$TARGETED_LIST"
 fi
 
-# Defense 3: full update through the already-normalized public mirror.
+# Full update through the already-normalized public mirror.
 sudo apt-get "${APT_OPTS[@]}" update
 sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends git-crypt
 

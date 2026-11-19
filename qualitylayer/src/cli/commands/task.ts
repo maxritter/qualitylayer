@@ -82,7 +82,7 @@ export async function commentsCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
         message:
           gate.target === "final"
             ? "Sent comments on the Verify document are included here; draft item answers wait for the decision."
-            : "a review gate is open: the reviewer's own comments reach you with its decision (wait --for approval)",
+            : 'New review feedback arrives with the Plan decision (qualitylayer wait --for approval). If an earlier comment blocks reopening the Plan, run qualitylayer comments list, then qualitylayer comments resolve <id> --answer "<what you did>".',
         ...(comments.length > 0
           ? {
               then: `${COMMENT_PLACEMENT_THEN} Apply each comment like feedback in the chat, then run: qualitylayer comments resolve all`,

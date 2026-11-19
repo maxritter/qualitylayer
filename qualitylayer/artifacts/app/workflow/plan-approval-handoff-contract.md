@@ -9,3 +9,5 @@ Qualification distinguishes unresolved Ask, unanimous Kept without the person's 
 Put `late: true` and `settles: ["plan:finding:<n>"]` on each late question in a batch. When an open question names a review finding, the gate reply and `next` name that finding and question and offer `qualitylayer wait --for answer`.
 
 An App answer is saved before the planner reads it. The tool hook names the batch and the poll command. Poll returns the answer and its receipt, which the planner uses to record the reply. An approval wait in the background also returns when the planner has work to do, including reviewing findings, folding a late answer or responding to comments.
+
+During Plan approval, the reviewer’s pending feedback arrives with the gate decision. If reopening the Plan is blocked by a previously delivered comment, the agent can find it with `qualitylayer comments list` and answer that ID with `qualitylayer comments resolve`. Listing a comment does not change its delivery or approve the Plan.

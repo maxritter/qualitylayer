@@ -145,6 +145,25 @@ jobs:
           $process = $null
           $handle = $null
           $failed = $false
+          $stageSeen = $false
+          $openError = 0
+
+          function Read-SetupFailure {
+            $setupLog = Join-Path $env:QUALITYLAYER_HOME 'quality-setup.log'
+            if (-not (Test-Path -LiteralPath $setupLog)) { return 'no-setup-record' }
+            $last = Get-Content -LiteralPath $setupLog -Tail 1 | ConvertFrom-Json
+            if ($last.complete -eq $true) { return 'setup-complete-before-lock' }
+            $qlty = @($last.tools | Where-Object { $_ -like 'Qlty *' }) | Select-Object -First 1
+            switch -Regex ($qlty) {
+              '^Qlty .* not recorded: ' { return 'manifest-refused' }
+              '(?i)directory (ACL|ownership|entry)|cannot verify native configuration|outside isolated HOME' { return 'directory-policy' }
+              '(?i)download SHA256|download exceeds' { return 'pinned-download-integrity' }
+              '(?i)download answered HTTP|download failed|certificate|fetch|timed out' { return 'pinned-download-transport' }
+              '(?i)archive|staged Qlty executable' { return 'archive-or-version' }
+              '^Qlty .* ready$' { return 'other-scanner-failed' }
+              default { return 'unclassified-setup-failure' }
+            }
+          }
 
           function Read-SetupResult([Diagnostics.Process] $child, [string] $output, [int] $seconds) {
             if (-not $child.WaitForExit($seconds * 1000) -or $child.ExitCode -ne 0) {
@@ -223,8 +242,29 @@ jobs:
               [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
               [return: MarshalAs(UnmanagedType.Bool)]
               public static extern bool MoveFileW(string source, string destination);
+
+              public static int RenameError(string source, string destination) {
+                  return MoveFileW(source, destination) ? 0 : Marshal.GetLastWin32Error();
+              }
           }
           '@
+
+            $phase = 'native-lock-control'
+            $sample = Join-Path $root 'control'
+            $moved = Join-Path $root 'control-renamed'
+            New-Item -ItemType Directory -Path $sample | Out-Null
+            $controlFile = Join-Path $sample 'input.txt'
+            Set-Content -LiteralPath $controlFile -Value 'fixture'
+            $handle = [ScannerStageHandle]::CreateFileW($sample, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+            if ($handle.IsInvalid -or ([ScannerStageHandle]::RenameError($sample, $moved)) -notin @(5, 32) -or
+                (Get-Content -LiteralPath $controlFile) -cne 'fixture') {
+              throw 'Native control did not deny rename while allowing reads'
+            }
+            $handle.Dispose()
+            $handle = $null
+            if ([ScannerStageHandle]::RenameError($sample, $moved) -ne 0) {
+              throw 'Native control did not allow rename after release'
+            }
 
             $phase = 'cold-setup'
             $out = Join-Path $root 'setup.json'
@@ -238,8 +278,10 @@ jobs:
               $stages = @([IO.Directory]::EnumerateDirectories($parent, ".$target-*"))
               if ($stages.Count -gt 1) { throw 'Unexpected concurrent staging' }
               if ($stages.Count -eq 1) {
+                $stageSeen = $true
                 $stage = $stages[0]
                 $handle = [ScannerStageHandle]::CreateFileW($stage, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+                $openError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
                 if (-not $handle.IsInvalid) { break }
                 $handle.Dispose()
                 $handle = $null
@@ -250,14 +292,14 @@ jobs:
 
             $phase = 'rename-denied'
             $control = Join-Path $parent 'rename-control'
-            $renamed = [ScannerStageHandle]::MoveFileW($stage, $control)
-            $renameError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            if ($renamed -or $renameError -notin @(5, 32)) { throw 'Unexpected native rename outcome' }
+            $renameError = [ScannerStageHandle]::RenameError($stage, $control)
+            if ($renameError -notin @(5, 32)) { throw 'Unexpected native rename outcome' }
 
             $phase = 'stage-readable'
             $licensePath = Join-Path $stage 'LICENSE.md'
+            $stagedReceipt = Join-Path $stage 'receipt.json'
             while ($timer.Elapsed.TotalSeconds -lt 75 -and -not $process.HasExited -and
-                -not (Test-Path -LiteralPath $licensePath -PathType Leaf)) {
+                -not (Test-Path -LiteralPath $stagedReceipt -PathType Leaf)) {
               Start-Sleep -Milliseconds 20
             }
             $license = [IO.File]::Open($licensePath, 'Open', 'Read', 'ReadWrite,Delete')
@@ -354,6 +396,7 @@ jobs:
               version = '14.3.0'
               cliSha256 = $digest
               authenticode = 'valid-timestamped'
+              nativeLockControl = $true
               nativeRenameError = $renameError
               stageReadableWhileLocked = $true
               publishedWhileLocked = $true
@@ -364,6 +407,20 @@ jobs:
             }
           } catch {
             Write-Output "WINDOWS_SCANNER_FAILURE phase=$phase"
+            if ($phase -in @('stage-lock', 'locked-setup-result')) {
+              $diagnostic = @{
+                stageSeen = $stageSeen
+                openError = [int] $openError
+                elapsedMs = [int] $timer.ElapsedMilliseconds
+                childExited = $process.HasExited
+                childExit = if ($process.HasExited) { $process.ExitCode } else { $null }
+                setup = 'no-completed-setup'
+              }
+              if ($process.HasExited) {
+                try { $diagnostic.setup = Read-SetupFailure } catch { $diagnostic.setup = 'invalid-setup-record' }
+              }
+              Write-Output ('WINDOWS_SCANNER_DIAGNOSTIC ' + ($diagnostic | ConvertTo-Json -Compress))
+            }
             $failed = $true
           } finally {
             try {

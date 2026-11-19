@@ -32,7 +32,7 @@ function Install() {
 export default function Sections() {
   return (
     <>
-      {/* One change from request to pull request first: the tour, the plan cards, the quotes, the checks, then Also in the App. Compatibility and setup follow. */}
+      {/* One change from request to pull request first: the tour, the plan cards, the checks, then Also in the App. Compatibility and setup follow. */}
       <Editorial between={<><Principles /><Verification /></>} />
       <Intro />
       <Questions faqs={FAQS} />

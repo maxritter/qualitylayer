@@ -10,6 +10,10 @@ const stepRow = (id: string) => document.getElementById(id) as HTMLElement;
 
 it("lists Plan, Implement and Verify with their own screens, then the pull request", () => {
   render(<MemoryRouter><Editorial /></MemoryRouter>);
+  const workflow = screen.getByRole("region", { name: "Three steps, two approvals" });
+  expect(within(workflow).getByRole("list", { name: "Colours" })).toBeTruthy();
+  expect(within(workflow).queryByRole("link", { name: "Add step checks" })).toBeNull();
+  expect(within(workflow).getByRole("link", { name: "Read the workflow docs" }).getAttribute("href")).toBe("/docs/");
   const tour = document.querySelector("ol.ed-tour") as HTMLElement;
   expect([...tour.children].map((row) => row.id)).toEqual(["plan", "implement", "verify", "pull-request"]);
   expect(screen.queryByRole("tablist", { name: "Workflow steps" })).toBeNull();

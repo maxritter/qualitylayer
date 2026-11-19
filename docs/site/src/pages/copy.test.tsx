@@ -7,7 +7,7 @@ import PricingSection from "@/components/PricingSection";
 import { BANNED_WORDS } from "@/lib/banned-words";
 import { FAQS, PRICING_FAQS } from "@/lib/content";
 import { COMPARE, PLANS } from "@/lib/pricing";
-import { CHAT_GUIDANCE, DESCRIPTION, ENGINEER_QUOTE, LEDE_AGENTS, LEDE_LEAD, LEDE_REST } from "@/lib/product";
+import { CHAT_GUIDANCE, DESCRIPTION, ENGINEER_QUOTE, LEDE_AGENTS, LEDE_LEAD, LEDE_REST, USER_QUOTE } from "@/lib/product";
 import { DownloadView } from "./Download";
 import { readFileSync } from "node:fs";
 
@@ -84,10 +84,11 @@ describe("the site's copy", () => {
     expect(pilot).not.toMatch(/updater moves you over|replaces Pilot Shell/i);
   });
 
-  it("quotes the engineer word for word, attributed without a name", async () => {
+  it("keeps the homepage plan cards and checks", async () => {
     const home = await textOf(<Sections />);
-    expect(home).toContain(`“${ENGINEER_QUOTE}”`);
-    expect(home).toContain("An engineer who uses QualityLayer");
+    expect(home).toContain("Plan before you build");
+    expect(home).not.toContain(ENGINEER_QUOTE);
+    expect(home).not.toContain(USER_QUOTE.text);
   });
 
   it("explains local product and Business purchasing in the FAQ", () => {

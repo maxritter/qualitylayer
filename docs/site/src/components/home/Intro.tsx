@@ -1,9 +1,9 @@
-/** After the hero: the agents QualityLayer works with, the models you already pay for, the skills it adds to them, what it adds, people's words, and where it runs. */
+/** After the hero: the agents QualityLayer works with, the models you already pay for, the skills it adds and where it runs. */
 import type { LucideIcon } from "lucide-react";
 import { ArrowLeft, ArrowRight, BadgeCheck, FileText, KeyRound, Laptop, MessageCircle, Palette, ShieldCheck, SquareTerminal, Workflow } from "lucide-react";
 import type { NativeAgent } from "@ql/core/agents/ids";
 import { AGENT_LOGOS } from "@ql/ui/kit/marks/agent-logos";
-import { CHAT_GUIDANCE, ENGINEER_QUOTE, USER_QUOTE } from "@/lib/product";
+import { CHAT_GUIDANCE } from "@/lib/product";
 import { SHOWN_AGENTS } from "@/lib/shown-agents";
 
 type Chip = [label: string, icon: string];
@@ -115,42 +115,28 @@ const Chips = ({ chips, label }: { chips: Chip[]; label: string }) => (
   </ul>
 );
 
-/** Right after the tour: the plan card row and the people's words, before the compatibility sections. */
+/** The plan cards follow the tour. */
 export function Principles() {
   return (
-    <>
-      <section className="mx-sec" aria-labelledby="pr-h">
-        <div className="mx-wrap">
-          <div className="mx-head">
-            <h2 id="pr-h" className="mx-h2">Plan before you build</h2>
-            <p className="mx-lead">Agree on the plan, then review the tested change.</p>
-            <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">Explore Chat</a></p>
-          </div>
-          <div className="mx-pr3">
-            {PRINCIPLES.map(({ who, icon: Glyph, title, lead, text }) => (
-              <div key={title} className="mx-pr" data-who={who}>
-                <span className="mx-tile" aria-hidden="true"><Glyph size={20} strokeWidth={1.75} /></span>
-                <h3>{title}</h3>
-                <b>{lead}</b>
-                <p>{text}</p>
-              </div>
-            ))}
-          </div>
+    <section className="mx-sec" aria-labelledby="pr-h">
+      <div className="mx-wrap">
+        <div className="mx-head">
+          <h2 id="pr-h" className="mx-h2">Plan before you build</h2>
+          <p className="mx-lead">Agree on the plan, then review the tested change.</p>
+          <p className="mx-lead">{CHAT_GUIDANCE} <a href="/docs/chat">Explore Chat</a></p>
         </div>
-      </section>
-
-      {/* Right after the plan card it describes: the user's words as they said them, attributed without a name at their wish. */}
-      <section id="customer-quotes" data-screen-label="Customer quotes" className="mx-wrap mx-sec mx-quotes" aria-label="What people say about QualityLayer">
-        <figure className="mx-quote">
-          <blockquote><p>{`“${ENGINEER_QUOTE}”`}</p></blockquote>
-          <figcaption>An engineer who uses QualityLayer</figcaption>
-        </figure>
-        <figure className="mx-quote">
-          <blockquote><p>{`“${USER_QUOTE.text}”`}</p></blockquote>
-          <figcaption>{USER_QUOTE.context}</figcaption>
-        </figure>
-      </section>
-    </>
+        <div className="mx-pr3">
+          {PRINCIPLES.map(({ who, icon: Glyph, title, lead, text }) => (
+            <div key={title} className="mx-pr" data-who={who}>
+              <span className="mx-tile" aria-hidden="true"><Glyph size={20} strokeWidth={1.75} /></span>
+              <h3>{title}</h3>
+              <b>{lead}</b>
+              <p>{text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

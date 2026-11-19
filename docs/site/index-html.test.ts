@@ -55,7 +55,7 @@ describe("static marketing shell", () => {
 
   it("gives crawlers without JavaScript the promise, the three steps and the install line", () => {
     expect(staticText).toContain(SLOGAN);
-    expect(staticText).toContain(ENGINEER_QUOTE);
+    expect(staticText).not.toContain(ENGINEER_QUOTE);
     for (const step of ["Plan:", "Implement:", "Verify:"]) expect(staticText).toContain(step);
     expect(staticText).toContain("qualitylayer.dev/download");
     expect(staticText).toContain("curl -fsSL https://qualitylayer.dev/install.sh | bash");

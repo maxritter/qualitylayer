@@ -1271,6 +1271,21 @@ export async function planApprovalLock(
     : PLAN_CHANGED
 }
 
+async function candidateApprovalCheckout(
+  ctx: Ctx,
+  task: Task,
+  gate: GateFile,
+  options: RecordOptions,
+): Promise<string | null> {
+  if (options.gateId !== undefined && options.gateId !== gate.id) return null
+  if (options.revision !== undefined && options.revision !== gate.revision) return null
+  const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
+  if (!selected) return null
+  const assignment = await readAssignment(ctx, task)
+  if (assignment?.recovery !== selected.id || assignment.result !== "pass") return null
+  return gate.finalReview?.code === assignment.revision ? selected.choice.checkout : null
+}
+
 async function recordUnlocked(
   ctx: Ctx,
   task: Task,
@@ -1279,21 +1294,13 @@ async function recordUnlocked(
 ): Promise<Result<Recorded>> {
   let gate = await readGate(ctx, task)
   if (gate?.target === FINAL && decision === "approved" && (await hasReviewCandidate(ctx, task))) {
-    const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
-    const assigned = await readAssignment(ctx, task)
-    if (
-      !selected ||
-      assigned?.recovery !== selected.id ||
-      assigned.result !== "pass" ||
-      gate.finalReview?.code !== assigned.revision ||
-      (options.gateId !== undefined && options.gateId !== gate.id) ||
-      (options.revision !== undefined && options.revision !== gate.revision)
-    )
+    const checkout = await candidateApprovalCheckout(ctx, task, gate, options)
+    if (!checkout)
       return err({
         code: "no_gate",
         message: "Open the finished review of the selected candidate before approving.",
       })
-    task = { ...task, repoRoot: selected.choice.checkout }
+    task = { ...task, repoRoot: checkout }
   }
   if (
     gate?.target === FINAL &&

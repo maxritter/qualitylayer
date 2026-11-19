@@ -1041,10 +1041,9 @@ async function changeSection(
   ctx: Ctx,
   task: Task,
   range: string,
-  /** The build review: only these finished slices' files, from the working tree against `range`. */
-  scope?: BuildScope,
-  recoveryHead?: string,
+  options: { scope?: BuildScope; recoveryHead?: string } = {},
 ): Promise<string> {
+  const { scope, recoveryHead } = options
   const name = scope !== undefined ? "build" : "verify"
   const owned = scope === undefined && !recoveryHead ? await taskCommitDiff(ctx, task) : null
   const command =
@@ -1093,9 +1092,9 @@ export async function briefFor(
   task: Task,
   point: ReviewPoint,
   kind?: ReviewKind,
-  input?: PlanReviewInput,
-  recoveryHead?: string,
+  options: { input?: PlanReviewInput; recoveryHead?: string } = {},
 ): Promise<string> {
+  const { input, recoveryHead } = options
   const files: string[] = []
   for (const path of await documentsFor(ctx, task, point, input)) {
     if (await ctx.fs.exists(path)) files.push(path)
@@ -1134,13 +1133,9 @@ export async function briefFor(
         `Review the entire selected commit ${recoveryHead} in ${task.repoRoot}. Check it independently against the approved Plan. Earlier checks and findings are historical.`,
       )
     parts.push(
-      await changeSection(
-        ctx,
-        task,
-        base !== null ? `${base}..HEAD` : "HEAD~1..HEAD",
-        undefined,
+      await changeSection(ctx, task, base !== null ? `${base}..HEAD` : "HEAD~1..HEAD", {
         recoveryHead,
-      ),
+      }),
     )
     // What the build review found, and the answers: not found again.
     const answered = reviewFile(task, "build")
@@ -1162,7 +1157,7 @@ export async function briefFor(
     const scope = await readBuildScope(ctx, task)
     parts.push(
       scope !== null
-        ? await changeSection(ctx, task, base, scope)
+        ? await changeSection(ctx, task, base, { scope })
         : "## The change\n\nNo finished slice is recorded for this review: read the task cards and the build log, and say under *Not checked* that no diff was read.",
     )
   }
@@ -1564,7 +1559,7 @@ async function runPanelReview(
                     member.effort,
                   ),
                   round === 1
-                    ? await briefFor(ctx, task, "plan", undefined, input)
+                    ? await briefFor(ctx, task, "plan", undefined, { input })
                     : await secondRoundBrief(ctx, task, findings ?? "", input),
                   left,
                   () => {},
@@ -1784,7 +1779,7 @@ async function runCrossReviewWithInput(
               point === "plan" ? shotPaths(await mockupShots(ctx, task)) : [],
               step.effort,
             ),
-            await briefFor(ctx, task, point, step.kind, input, step.recoveryHead),
+            await briefFor(ctx, task, point, step.kind, { input, recoveryHead: step.recoveryHead }),
             hardStop,
             seen,
             step.by,

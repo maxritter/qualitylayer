@@ -11,6 +11,7 @@ import {
   withoutStateWord,
 } from "../../../core/pages/lanes.ts"
 import { fixRoundsOf } from "../../../core/task/stages.ts"
+import type { VerifyCheck } from "../../../core/verify-activity.ts"
 import type { TaskDetail } from "../../api.ts"
 import { fixingVerify, personVerify } from "../../model.ts"
 import { environmental } from "../../step-page/checks.ts"
@@ -151,6 +152,36 @@ function exitPending(events: readonly Record<string, unknown>[]): boolean {
     )
 }
 
+const CHECK_SEGMENT: Partial<Record<LaneState, BoardStage["segments"][number]>> = {
+  done: "d",
+  fail: "f",
+  running: "w",
+}
+
+function fixCondition(unneeded: boolean, failures: number): string {
+  if (unneeded) return "not needed"
+  if (failures === 0) return "if a check fails"
+  return `${failures} failed ${failures === 1 ? "check" : "checks"}`
+}
+
+function applyProjectReceipt(
+  lanes: LaneRow[],
+  rows: readonly VerifyCheck[] | undefined,
+  failedResult: string | null,
+): void {
+  if (!rows?.length) return
+  const lane = lanes.find((row) => row.id === "checks")
+  if (lane && lane.state !== "waiting") return
+  const receipt: LaneRow = {
+    id: "checks",
+    who: "QualityLayer",
+    state: rows.every((row) => row.outcome === "passed") ? "done" : "fail",
+    result: failedResult ?? projectCheckWords(rows),
+  }
+  if (lane) Object.assign(lane, receipt)
+  else lanes.push(receipt)
+}
+
 /** Presentation follows recorded work; neither a heartbeat nor a future check invents progress. */
 export function verifyView(
   task: TaskDetail,
@@ -176,19 +207,10 @@ export function verifyView(
     ...row,
     ...(!active && row.state === "running" ? { state: "done" as const } : {}),
   }))
-  const recorded = task.verifyActivity
-  const projectRows = recorded?.projectChecks?.commands
-  const projectLane = lanes.find((row) => row.id === "checks")
-  if (active && projectRows?.length && (!projectLane || projectLane.state === "waiting")) {
-    const latest: LaneRow = {
-      id: "checks",
-      who: "QualityLayer",
-      state: projectRows.every((row) => row.outcome === "passed") ? "done" : "fail",
-      result: projectCheckWords(projectRows),
-    }
-    if (projectLane) Object.assign(projectLane, latest)
-    else lanes.push(latest)
-  }
+  const projectRows = task.verifyActivity?.projectChecks?.commands
+  const failureCount = failedChecks(projectRows ?? [])
+  const failedResult = failureCount > 0 && projectRows ? projectCheckWords(projectRows) : null
+  if (active) applyProjectReceipt(lanes, projectRows, failedResult)
   const activity: Partial<Record<VerifyLaneId, LaneActivity>> = {}
 
   for (const helper of task.helpers) {
@@ -211,7 +233,7 @@ export function verifyView(
     const row = lanes.find((row) => row.id === "checks")
     if (row) row.state = "running"
   }
-  if (active && recorded?.judgeRefusal) {
+  if (active && task.verifyActivity?.judgeRefusal) {
     const judge = lanes.find((row) => row.id === "judge")
     if (judge?.state === "waiting") {
       judge.state = "fail"
@@ -270,11 +292,8 @@ export function verifyView(
           who: whoWords(lane.who),
           state: lane.state,
           result:
-            lane.id === "checks" &&
-            lane.state === "fail" &&
-            projectRows?.length &&
-            failedChecks(projectRows) > 0
-              ? projectCheckWords(projectRows)
+            lane.id === "checks" && lane.state === "fail" && failedResult
+              ? failedResult
               : lane.result === ""
                 ? ""
                 : withoutStateWord(lane.result),
@@ -301,12 +320,7 @@ export function verifyView(
     const unneeded = phase === "verified" && !fixRan
     if (index === 2) {
       who = "the build session"
-      const failed = projectRows ? failedChecks(projectRows) : 0
-      condition = unneeded
-        ? "not needed"
-        : failed > 0
-          ? `${failed} failed ${failed === 1 ? "check" : "checks"}`
-          : "if a check fails"
+      condition = fixCondition(unneeded, failureCount)
       state =
         fixLane?.state === "running" || phase === "fixing"
           ? "running"
@@ -337,9 +351,7 @@ export function verifyView(
       ...(condition !== undefined ? { condition } : {}),
       state,
       checks,
-      segments: checks.map((c) =>
-        c.state === "done" ? "d" : c.state === "fail" ? "f" : c.state === "running" ? "w" : "",
-      ),
+      segments: checks.map((check) => CHECK_SEGMENT[check.state] ?? ""),
     }
   })
 

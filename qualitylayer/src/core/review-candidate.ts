@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto"
-import { realpath } from "node:fs/promises"
 import { isAbsolute, join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { folderDoc } from "./docs/names.ts"
@@ -8,7 +7,14 @@ import { lockPath as gateLock } from "./gate/lock.ts"
 import { approvalCurrent, gateRevision } from "./gate/revision.ts"
 import { sliceCommits } from "./git/build-start.ts"
 import { judgeInputs, RecordedHistoryRewritten } from "./git/judge-inputs.ts"
-import { worktrees } from "./git/repo.ts"
+import {
+  choicesFor,
+  commitId,
+  physical,
+  readReviewWorktree,
+  requireCleanReviewWorktree,
+  staleCount,
+} from "./git/review-worktrees.ts"
 import { readOptionalRecordBytes, writeRecordText } from "./records/files.ts"
 import { currentTaskRecordOwner } from "./task/answer-migration.ts"
 import { isArchived } from "./task/archive.ts"
@@ -35,8 +41,6 @@ type Selection = {
   plan: string
   repo: string
   common: string
-  /** The choice also binds tracked/index and untracked content, even before the judge starts. */
-  work: string
 }
 export type ReviewCandidateState = {
   eligible: boolean
@@ -46,13 +50,11 @@ export type ReviewCandidateState = {
   version: string
   selected?: ReviewCandidateChoice & { selectedAt: number; state: "pending" | "assigned" | "stale" }
 }
-const full = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 const stamp = (task: Task) => join(task.runtimeDir, "review-candidate.json")
 export const hasReviewCandidate = (ctx: Ctx, task: Task) => ctx.fs.exists(stamp(task))
 export const withReviewCandidateLock = <T>(ctx: Ctx, task: Task, run: () => Promise<T>) =>
   ctx.fs.withLock(join(task.runtimeDir, "review-candidate.lock"), run)
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
-const physical = async (path: string | null) => (path ? realpath(path).catch(() => null) : null)
 function equal(
   choice: ReviewCandidateChoice,
   input: Pick<ReviewCandidateInput, "checkout" | "branch" | "head">,
@@ -63,33 +65,24 @@ function equal(
     choice.head === input.head
   )
 }
-async function git(ctx: Ctx, root: string, args: string[]) {
-  const result = await ctx.git.run(root, args, { fresh: true })
-  if (result.code !== 0) throw new Error("The candidate worktree could not be read.")
-  return result.stdout
+function validReceipt(row: Selection): boolean {
+  const { branch, checkout, head, shared, subject } = row.choice ?? {}
+  const validChoice =
+    typeof checkout === "string" &&
+    isAbsolute(checkout) &&
+    (branch === null || typeof branch === "string") &&
+    typeof shared === "boolean" &&
+    typeof subject === "string" &&
+    commitId.test(head)
+  const validIdentity =
+    typeof row.id === "string" &&
+    /^[a-f0-9-]{36}$/.test(row.id) &&
+    Number.isFinite(row.selectedAt) &&
+    typeof row.common === "string" &&
+    typeof row.plan === "string"
+  return validChoice && validIdentity
 }
-async function checkoutHead(ctx: Ctx, root: string) {
-  const data = await git(ctx, root, ["show", "-s", "--format=%H%x00%s", "HEAD"])
-  const [head, subject] = data.trimEnd().split("\0")
-  if (!head || !full.test(head)) throw new Error("This worktree has no reviewable commit.")
-  return { head, subject: subject?.slice(0, 300) ?? "" }
-}
-async function workHead(ctx: Ctx, root: string) {
-  const status = await git(ctx, root, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-    "--",
-    ".",
-    ":(exclude)docs/plans/**",
-  ])
-  // An explicit commit selection may never silently include an unfinished or untracked code edit.
-  // Task records are local evidence and live beside the work; they do not change the chosen commit.
-  if (status.length > 0)
-    throw new Error("Commit or put aside uncommitted changes in this worktree before choosing it.")
-  return hash("committed-candidate")
-}
+
 async function read(ctx: Ctx, task: Task): Promise<Selection | null> {
   const path = stamp(task)
   if (!(await ctx.fs.exists(path))) return null
@@ -105,111 +98,59 @@ async function read(ctx: Ctx, task: Task): Promise<Selection | null> {
     : await ctx.fs.readFile(path)
   if (Buffer.byteLength(raw) > 8192) throw new Error("The review candidate receipt is too large.")
   const row: Selection = JSON.parse(raw)
-  if (
-    !row ||
-    row.repo !== task.repoId ||
-    typeof row.id !== "string" ||
-    !/^[a-f0-9-]{36}$/.test(row.id) ||
-    !Number.isFinite(row.selectedAt) ||
-    !row.choice ||
-    typeof row.choice.checkout !== "string" ||
-    !isAbsolute(row.choice.checkout) ||
-    (row.choice.branch !== null && typeof row.choice.branch !== "string") ||
-    typeof row.choice.shared !== "boolean" ||
-    typeof row.choice.subject !== "string" ||
-    !full.test(row.choice.head) ||
-    typeof row.common !== "string" ||
-    typeof row.work !== "string" ||
-    typeof row.plan !== "string"
-  )
+  if (!row || row.repo !== task.repoId || !validReceipt(row))
     throw new Error("The review candidate receipt does not match this task.")
   return row
 }
 
-async function staleCount(
-  ctx: Ctx,
-  root: string,
-  receipts: readonly string[],
-): Promise<number | undefined> {
-  if (receipts.length === 0) return 0
-  if (receipts.length > 512 || receipts.some((sha) => !/^[a-f0-9]{7,64}$/.test(sha)))
-    return undefined
-  const head = await ctx.git.run(root, ["rev-parse", "--verify", "HEAD"])
-  if (head.code !== 0 || !full.test(head.stdout.trim())) return undefined
-  // One ancestry-only query on the normal path. Enumerate stale receipts only for recovery.
-  const count = await ctx.git.run(root, [
-    "merge-base",
-    "--independent",
-    head.stdout.trim(),
-    ...receipts,
-  ])
-  if (count.code !== 0) return undefined
-  if (count.stdout.trim() === head.stdout.trim()) return 0
-  let stale = 0
-  for (const receipt of new Set(receipts)) {
-    const result = await ctx.git.run(root, [
-      "merge-base",
-      "--is-ancestor",
-      receipt,
-      head.stdout.trim(),
-    ])
-    if (result.code !== 0 && result.code !== 1) return undefined
-    if (result.code === 1) stale++
+async function hasRecordedAuthority(ctx: Ctx, task: Task): Promise<boolean> {
+  try {
+    return (await judgeInputs(ctx, task)) !== null
+  } catch (cause) {
+    // A same-branch rewrite already supports the ordinary full-tree judge.
+    return cause instanceof RecordedHistoryRewritten
   }
-  return stale
-}
-async function choicesFor(ctx: Ctx, task: Task, common: string, branch: string | undefined) {
-  const roots = await worktrees(ctx, task.repoRoot)
-  return (
-    await Promise.all(
-      roots.slice(0, 32).map(async ({ path, branch: named }) => {
-        const checkout = await physical(path)
-        if (!checkout) return null
-        try {
-          const [base, sharedRepo, found, current] = await Promise.all([
-            physical(await ctx.git.topLevel(checkout)),
-            physical(await ctx.git.commonDir(checkout)),
-            checkoutHead(ctx, checkout),
-            git(ctx, checkout, ["branch", "--show-current"]),
-          ])
-          if (base !== checkout || sharedRepo !== common || (current.trim() || null) !== named)
-            return null
-          await workHead(ctx, checkout)
-          return { checkout, branch: named, ...found, shared: named === null || named !== branch }
-        } catch {
-          return null
-        }
-      }),
-    )
-  ).filter((choice): choice is ReviewCandidateChoice => choice !== null)
 }
 
-async function snapshot(ctx: Ctx, task: Task) {
-  const repository = task.repoRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? task.repoId
-  const state: ReviewCandidateState = { eligible: false, repository, choices: [], version: "" }
+async function canOffer(ctx: Ctx, task: Task): Promise<boolean> {
   if (
     task.stage !== "verify" ||
     task.earlier ||
     task.type === "chat" ||
     (await isArchived(ctx, task))
   )
-    return { state, common: null, plan: null }
+    return false
   const gate = await readGate(ctx, task)
-  if (gate?.target === "final" && gate.decision === "approved")
-    return { state, common: null, plan: null }
+  return gate?.target !== "final" || gate.decision !== "approved"
+}
+
+async function visibleSelection(
+  ctx: Ctx,
+  task: Task,
+  selected: Selection,
+  choices: ReviewCandidateChoice[],
+  scope: { common: string; plan: string },
+): Promise<NonNullable<ReviewCandidateState["selected"]>> {
+  const choice = { ...selected.choice, selectedAt: selected.selectedAt }
+  const matchesScope = selected.common === scope.common && selected.plan === scope.plan
+  if (!matchesScope || !choices.some((candidate) => equal(candidate, choice)))
+    return { ...choice, state: "stale" }
+  const assignment = await ctx.fs
+    .readFile(join(task.runtimeDir, "verification.json"))
+    .then((raw) => JSON.parse(raw))
+    .catch(() => null)
+  return { ...choice, state: assignment?.recovery === selected.id ? "assigned" : "pending" }
+}
+
+async function snapshot(ctx: Ctx, task: Task) {
+  const repository = task.repoRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? task.repoId
+  const state: ReviewCandidateState = { eligible: false, repository, choices: [], version: "" }
+  const unavailable = { state, common: null, plan: null }
+  if (!(await canOffer(ctx, task))) return unavailable
   const recorded = await sliceCommits(ctx, task)
   const selected = await read(ctx, task)
   const stale = await staleCount(ctx, task.repoRoot, recorded)
-  if (!stale && !selected) return { state, common: null, plan: null }
-  if (!selected) {
-    try {
-      if (await judgeInputs(ctx, task)) return { state, common: null, plan: null }
-    } catch (cause) {
-      // The existing same-branch proof remains the ordinary recovery. The person only chooses
-      // when the recorded lineage cannot already justify a fresh review.
-      if (cause instanceof RecordedHistoryRewritten) return { state, common: null, plan: null }
-    }
-  }
+  if (!selected && (!stale || (await hasRecordedAuthority(ctx, task)))) return unavailable
   const fm = await readmeFrontmatter(ctx, task)
   const approved =
     typeof fm.review_basis !== "string" || (await approvalCurrent(ctx, task, folderDoc("plan")))
@@ -219,28 +160,11 @@ async function snapshot(ctx: Ctx, task: Task) {
   if (!common) return { state, common, plan }
   const choices = approved ? await choicesFor(ctx, task, common, branch) : []
   const priorHead = recorded.at(-1)
-  const assignment = selected
-    ? await ctx.fs
-        .readFile(join(task.runtimeDir, "verification.json"))
-        .then((raw) => JSON.parse(raw))
-        .catch(() => null)
-    : null
-  let visible: ReviewCandidateState["selected"]
-  let staleReceipts = stale
-  if (selected) {
-    const stands =
-      selected.common === common &&
-      selected.plan === plan &&
-      choices.some((choice) => equal(choice, selected.choice))
-    if (stands && selected.choice.checkout !== task.repoRoot) {
-      staleReceipts = await staleCount(ctx, selected.choice.checkout, recorded)
-    }
-    visible = {
-      ...selected.choice,
-      selectedAt: selected.selectedAt,
-      state: !stands ? "stale" : assignment?.recovery === selected.id ? "assigned" : "pending",
-    }
-  }
+  const visible = selected
+    ? await visibleSelection(ctx, task, selected, choices, { common, plan })
+    : undefined
+  const anotherWorktree = visible && visible.state !== "stale" && visible.checkout !== task.repoRoot
+  const staleReceipts = anotherWorktree ? await staleCount(ctx, visible.checkout, recorded) : stale
   const prior = priorHead
     ? {
         head: priorHead,
@@ -280,9 +204,23 @@ export function isReviewCandidateInput(input: unknown): input is ReviewCandidate
     (branch === null ||
       (typeof branch === "string" && branch.length > 0 && branch.length <= 256)) &&
     typeof head === "string" &&
-    full.test(head) &&
+    commitId.test(head) &&
     typeof acknowledgeShared === "boolean"
   )
+}
+
+async function recordSelection(ctx: Ctx, task: Task, row: Selection) {
+  const history = join(task.runtimeDir, "review-candidates")
+  await ctx.fs.mkdir(history)
+  const receipt = `${JSON.stringify(row)}\n`
+  const owner = await currentTaskRecordOwner(ctx, task)
+  if (owner) {
+    await writeRecordText(ctx, owner, `review-candidates/${row.id}.json`, receipt)
+    await writeRecordText(ctx, owner, "review-candidate.json", receipt)
+  } else {
+    await ctx.fs.atomicWrite(join(history, `${row.id}.json`), receipt, { mode: 0o600 })
+    await ctx.fs.atomicWrite(stamp(task), receipt, { mode: 0o600 })
+  }
 }
 
 export async function selectReviewCandidate(
@@ -301,37 +239,25 @@ export async function selectReviewCandidate(
       ctx.fs.withLock(gateLock(task), async () => {
         await ctx.fs.assertSafeDirectory?.(task.runtimeDir)
         const { state, common, plan } = await snapshot(ctx, task)
+        if (!common || !plan || input.version !== state.version) return stale()
         const choice = state.choices.find((choice) => equal(choice, input))
-        if (!state.eligible || !choice || !common || !plan || input.version !== state.version)
-          return stale()
+        if (!choice) return stale()
         if (choice.shared && !input.acknowledgeShared)
           return err({
             code: "bad_args",
             message: "Confirm reviewing the other changes in this shared checkout.",
           })
-        const work = await workHead(ctx, choice.checkout)
+        await requireCleanReviewWorktree(ctx, choice.checkout)
         const reread = await snapshot(ctx, task)
         if (reread.state.version !== state.version || reread.plan !== plan) return stale()
-        const row: Selection = {
+        await recordSelection(ctx, task, {
           id: randomUUID(),
           choice,
           selectedAt: ctx.clock.now(),
           plan,
           repo: task.repoId,
           common,
-          work,
-        }
-        const history = join(task.runtimeDir, "review-candidates")
-        await ctx.fs.mkdir(history)
-        const receipt = `${JSON.stringify(row)}\n`
-        const owner = await currentTaskRecordOwner(ctx, task)
-        if (owner) {
-          await writeRecordText(ctx, owner, `review-candidates/${row.id}.json`, receipt)
-          await writeRecordText(ctx, owner, "review-candidate.json", receipt)
-        } else {
-          await ctx.fs.atomicWrite(join(history, `${row.id}.json`), receipt, { mode: 0o600 })
-          await ctx.fs.atomicWrite(stamp(task), receipt, { mode: 0o600 })
-        }
+        })
         return ok(await readReviewCandidates(ctx, task))
       }),
     )
@@ -347,22 +273,16 @@ export async function selectReviewCandidate(
 export async function selectedReviewCandidate(ctx: Ctx, task: Task): Promise<Selection | null> {
   const selected = await read(ctx, task)
   if (!selected) return null
-  const { checkout, branch, head } = selected.choice
-  const [current, currentBranch, common, top, plan, work] = await Promise.all([
-    checkoutHead(ctx, checkout),
-    git(ctx, checkout, ["branch", "--show-current"]),
-    physical(await ctx.git.commonDir(checkout)),
-    physical(await ctx.git.topLevel(checkout)),
+  const { checkout } = selected.choice
+  const [current, plan] = await Promise.all([
+    readReviewWorktree(ctx, checkout),
     gateRevision(ctx, task, folderDoc("plan")),
-    workHead(ctx, checkout),
+    requireCleanReviewWorktree(ctx, checkout),
   ])
   if (
-    top !== checkout ||
-    common !== selected.common ||
-    current.head !== head ||
-    (currentBranch.trim() || null) !== branch ||
-    selected.plan !== plan ||
-    selected.work !== work
+    current.common !== selected.common ||
+    plan !== selected.plan ||
+    !equal(selected.choice, current)
   )
     throw new Error(
       "The review commit, checkout or Plan changed. Choose the current candidate again.",

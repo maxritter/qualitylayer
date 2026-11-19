@@ -1,3 +1,7 @@
+import { ApiError, call } from "./http.ts"
+
+export { ApiError } from "./http.ts"
+
 import type { ReviewCandidateInput, ReviewCandidateState } from "../core/review-candidate.ts"
 // The browser side of the localhost API. A browser is signed in by a session cookie (set through a
 // pairing link, see server/sessions.ts) and sends it with every call; the page never holds a key.
@@ -156,50 +160,6 @@ export type FindResult = {
   status: string
   match?: string
   readonly: boolean
-}
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string,
-    readonly url?: string,
-    readonly detail?: unknown,
-  ) {
-    super(message)
-  }
-}
-
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    ...(!init?.method || init.method === "GET"
-      ? { signal: init?.signal ?? AbortSignal.timeout(15_000) }
-      : {}),
-    // A form sets its own content type, with the boundary.
-    headers:
-      init?.body instanceof FormData
-        ? { ...init.headers }
-        : { "content-type": "application/json", ...init?.headers },
-  })
-  const text = await response.text()
-  let payload: Record<string, unknown> = {}
-  try {
-    payload = JSON.parse(text) as Record<string, unknown>
-  } catch {
-    payload = { ok: false, error: { code: "http", message: text || response.statusText } }
-  }
-  if (!response.ok || payload.ok !== true) {
-    const error = (payload.error ?? {}) as { code?: string; message?: string; url?: string }
-    throw new ApiError(
-      error.message ?? "The App did not accept that. Try again.",
-      response.status,
-      error.code ?? "http",
-      error.url,
-      path.includes("/interaction/docs/") || path.endsWith("/public-link") ? error : undefined,
-    )
-  }
-  return payload as T
 }
 
 const enc = encodeURIComponent
@@ -921,10 +881,10 @@ export type InstructionsText = { text: string; updated: number }
 /** What a save answers: it went through, or the text changed elsewhere meanwhile and this is the current one. */
 export type InstructionsOutcome = { saved: InstructionsText } | { conflict: InstructionsText }
 
+type CandidateMethods = Pick<typeof api, "reviewCandidates" | "selectReviewCandidate">
+
 export type Api = Omit<
   typeof api,
-  | "reviewCandidates"
-  | "selectReviewCandidate"
   | "memory"
   | "exportFile"
   | "automations"
@@ -958,52 +918,52 @@ export type Api = Omit<
   | "restartServer"
   | "tools"
   | "checkTools"
-> & {
-  reviewCandidates?: typeof api.reviewCandidates
-  selectReviewCandidate?: typeof api.selectReviewCandidate
-  exportFile?: typeof api.exportFile
-  /** A source demo adapter that implements the current task-turn controls. */
-  currentTurnLayout?: true
-  /** A source demo's batch lets the person jump to another open member from the strip. */
-  focusQuestion?: (id: string, question: string) => Promise<void>
-  agentHealth?: typeof api.agentHealth
-  checkAgents?: typeof api.checkAgents
-  agentSignIns?: typeof api.agentSignIns
-  agentIntegration?: typeof api.agentIntegration
-  repairAgent?: typeof api.repairAgent
-  usage?: typeof api.usage
-  tools?: typeof api.tools
-  checkTools?: typeof api.checkTools
-  agentSessions?: typeof api.agentSessions
-  machines?: typeof api.machines
-  /** Where a machine's page is served: the demo's own page in another world; absent, this computer's port. */
-  machinePage?: (machine: Machine) => string
-  stopIdle?: typeof api.stopIdle
-  diskUse?: typeof api.diskUse
-  revealHome?: typeof api.revealHome
-  serverPort?: typeof api.serverPort
-  restartServer?: typeof api.restartServer
-  memory?: MemoryApi
-  /** Settings › Automations; absent in an App that does not have the page's routes. */
-  automations?: AutomationsApi
-  /** New chat's resume list; absent, the card reads this computer's agent history over HTTP. */
-  agentHistory?: AgentHistoryApi
-  viewing?: typeof api.viewing
-  projectFolder?: typeof api.projectFolder
-  projectFolders?: typeof api.projectFolders
-  pickProjectFolder?: typeof api.pickProjectFolder
-  chooseProjectFolder?: typeof api.chooseProjectFolder
-  foundProjects?: typeof api.foundProjects
-  taskRecords?: typeof api.taskRecords
-  artifactSource?: typeof api.artifactSource
-  artifactAnnotationStatus?: typeof api.artifactAnnotationStatus
-  artifactContext?: typeof api.artifactContext
-  upgradeArtifactAnnotations?: typeof api.upgradeArtifactAnnotations
-  artifactAnnotationUrl?: typeof api.artifactAnnotationUrl
-  artifactHistory?: typeof api.artifactHistory
-  artifactProvenance?: typeof api.artifactProvenance
-  artifactMutate?: typeof api.artifactMutate
-}
+  | keyof CandidateMethods
+> &
+  Partial<CandidateMethods> & {
+    exportFile?: typeof api.exportFile
+    /** A source demo adapter that implements the current task-turn controls. */
+    currentTurnLayout?: true
+    /** A source demo's batch lets the person jump to another open member from the strip. */
+    focusQuestion?: (id: string, question: string) => Promise<void>
+    agentHealth?: typeof api.agentHealth
+    checkAgents?: typeof api.checkAgents
+    agentSignIns?: typeof api.agentSignIns
+    agentIntegration?: typeof api.agentIntegration
+    repairAgent?: typeof api.repairAgent
+    usage?: typeof api.usage
+    tools?: typeof api.tools
+    checkTools?: typeof api.checkTools
+    agentSessions?: typeof api.agentSessions
+    machines?: typeof api.machines
+    /** Where a machine's page is served: the demo's own page in another world; absent, this computer's port. */
+    machinePage?: (machine: Machine) => string
+    stopIdle?: typeof api.stopIdle
+    diskUse?: typeof api.diskUse
+    revealHome?: typeof api.revealHome
+    serverPort?: typeof api.serverPort
+    restartServer?: typeof api.restartServer
+    memory?: MemoryApi
+    /** Settings › Automations; absent in an App that does not have the page's routes. */
+    automations?: AutomationsApi
+    /** New chat's resume list; absent, the card reads this computer's agent history over HTTP. */
+    agentHistory?: AgentHistoryApi
+    viewing?: typeof api.viewing
+    projectFolder?: typeof api.projectFolder
+    projectFolders?: typeof api.projectFolders
+    pickProjectFolder?: typeof api.pickProjectFolder
+    chooseProjectFolder?: typeof api.chooseProjectFolder
+    foundProjects?: typeof api.foundProjects
+    taskRecords?: typeof api.taskRecords
+    artifactSource?: typeof api.artifactSource
+    artifactAnnotationStatus?: typeof api.artifactAnnotationStatus
+    artifactContext?: typeof api.artifactContext
+    upgradeArtifactAnnotations?: typeof api.upgradeArtifactAnnotations
+    artifactAnnotationUrl?: typeof api.artifactAnnotationUrl
+    artifactHistory?: typeof api.artifactHistory
+    artifactProvenance?: typeof api.artifactProvenance
+    artifactMutate?: typeof api.artifactMutate
+  }
 
 const automationsApi: AutomationsApi = {
   list: () => call<AutomationsReply & { ok: true }>("/api/automations"),

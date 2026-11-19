@@ -542,18 +542,7 @@ export async function prepareVerification(
     assignment.acceptance = [...basis.ids]
     if (basis.texts !== undefined) assignment.stepTexts = basis.texts
     await ctx.fs.mkdir(join(task.runtimeDir, "judgements"))
-    if (admission.recovery) {
-      const selected = await selectedReviewCandidate(ctx, task)
-      if (selected?.id !== admission.recovery)
-        throw new Error("The selected review candidate changed.")
-      if (previous && /^[A-Za-z0-9-]{1,128}$/.test(previous.id)) {
-        const earlier = join(task.runtimeDir, "judgements", previous.id)
-        const receipt = `${JSON.stringify(previous)}\n`
-        if (!(await ctx.fs.exists(`${earlier}.json`)))
-          await ctx.fs.atomicWrite(`${earlier}.json`, receipt, { mode: 0o600 })
-        await ctx.fs.atomicWrite(`${earlier}.counted.json`, receipt, { mode: 0o600 })
-      }
-    }
+    if (admission.recovery) await archiveEarlierAssignment(ctx, task, admission.recovery, previous)
     await ctx.fs.atomicWrite(
       join(task.runtimeDir, "judgements", `${assignment.id}.json`),
       `${JSON.stringify(assignment)}\n`,
@@ -567,6 +556,22 @@ export async function prepareVerification(
       message: cause instanceof Error ? cause.message : String(cause),
     })
   }
+}
+
+async function archiveEarlierAssignment(
+  ctx: Ctx,
+  task: Task,
+  candidate: string,
+  previous: Assignment | null,
+) {
+  const selected = await selectedReviewCandidate(ctx, task)
+  if (selected?.id !== candidate) throw new Error("The selected review candidate changed.")
+  if (!previous || !/^[A-Za-z0-9-]{1,128}$/.test(previous.id)) return
+  const earlier = join(task.runtimeDir, "judgements", previous.id)
+  const receipt = `${JSON.stringify(previous)}\n`
+  if (!(await ctx.fs.exists(`${earlier}.json`)))
+    await ctx.fs.atomicWrite(`${earlier}.json`, receipt, { mode: 0o600 })
+  await ctx.fs.atomicWrite(`${earlier}.counted.json`, receipt, { mode: 0o600 })
 }
 
 /** The paths the Plan names that git ignores (generated files, local-only folders): never judged. */

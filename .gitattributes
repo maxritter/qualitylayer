@@ -2317,3 +2317,10 @@ qualitylayer/src/ui/steps/verify/ReviewCandidateDialog.tsx !filter !diff
 qualitylayer/src/ui/steps/verify/review-candidate.css !filter !diff
 qualitylayer/tests/e2e/review-candidate-browser.test.ts !filter !diff
 qualitylayer/tests/ui/review-candidate.test.tsx !filter !diff
+
+# Approved readable Verify recovery refactoring sources.
+qualitylayer/src/core/git/review-worktrees.ts !filter !diff
+qualitylayer/src/server/http-result.ts !filter !diff
+qualitylayer/src/server/task-decision-route.ts !filter !diff
+qualitylayer/src/ui/demo/review-candidate.ts !filter !diff
+qualitylayer/src/ui/http.ts !filter !diff

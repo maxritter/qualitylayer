@@ -1420,6 +1420,7 @@ async function readTaskDetail(
   // Verify turned to the person: the final approval is theirs to give.
   const reviewing = isCurrentLayout(task) && (await inPersonReview(ctx, task))
   const gateFile = reviewing ? await ensureFinalReview(ctx, task) : await currentTaskGate(ctx, task)
+  const hasVerification = ["verify", "shipped"].includes(task.stage)
   const checkedSource =
     task.stage === "verify" || gateFile?.finalReview?.code ? await readAssignment(ctx, task) : null
   if (options.shown === true && gateFile?.target === FINAL && gateFile.shown === undefined)
@@ -1536,11 +1537,9 @@ async function readTaskDetail(
       : {}),
     buildLog,
     // Verify's stages keep their results after the checks: while the person reviews and once shipped.
-    ...(["verify", "shipped"].includes(task.stage)
-      ? { verifyLanes: await servedVerifyLanes(ctx, task) }
-      : {}),
-    ...(["verify", "shipped"].includes(task.stage)
+    ...(hasVerification
       ? {
+          verifyLanes: await servedVerifyLanes(ctx, task),
           verifyActivity: await readVerifyActivity(
             ctx,
             task,
@@ -1550,7 +1549,7 @@ async function readTaskDetail(
           ),
         }
       : {}),
-    checklist: ["verify", "shipped"].includes(task.stage)
+    checklist: hasVerification
       ? await readChecklist(ctx, task, { helpers: summary.helpers })
       : null,
     quality:

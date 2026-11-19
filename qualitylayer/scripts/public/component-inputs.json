@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "741307b3cf28d082c3d62fae2e1cba8cbc1cad63",
-  "catalogSha256": "40667a690fbdf495059581db5a4421761791d464a3c176e35f72fd1dfd7cd169",
+  "sourceHead": "8673062f1a29f0ac5456317d7ebd5b535c031a45",
+  "catalogSha256": "5d6ca7d98770729cbdb80040f2fe3050a877ed70596b3b2aedc34e9ee21f0bca",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -1295,7 +1295,7 @@
     },
     {
       "path": "qualitylayer/src/core/checks.ts",
-      "sha256": "47f8c5ed073a42eb3148515753fde9bba7291761c07a94603efe1e332dc1e9e3",
+      "sha256": "f48a35d345e9521b44cbd92782ca61df6e53b49ef52be522728bd9be153be27c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2551,7 +2551,7 @@
     },
     {
       "path": "qualitylayer/src/core/gate/gate.ts",
-      "sha256": "efd808c8b003c638a127a51f70cf316de338abfa48d421e00bba66c1b84bd4ad",
+      "sha256": "abf8060bf1bd937b18da41ccec5517a6b0499948312b41884e0a2644d07e5010",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -2696,6 +2696,14 @@
     {
       "path": "qualitylayer/src/core/git/repo.ts",
       "sha256": "66eca43a07bff650696fbfd8b4a1c9c01d94be55fcd271b98ac26ef125f36a2f",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/core/git/review-worktrees.ts",
+      "sha256": "206f1ec06413f22c5b7dae01c75cdd7fb8028640aecf9455f8ab70af5f038d16",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3279,7 +3287,7 @@
     },
     {
       "path": "qualitylayer/src/core/interaction-shell/status.ts",
-      "sha256": "052f436b865a4cf6e80dc27a6a60b81fd9ef224410fd3cae55edd7d1972a5f14",
+      "sha256": "15abc98b0b047871fded2fe139a7d7daed7ab1d4c142d3f967fa4a36862a25fc",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4303,7 +4311,7 @@
     },
     {
       "path": "qualitylayer/src/core/next/verify.ts",
-      "sha256": "5ce9035345a260b62981b54a10cba6360510bb575452f34f9620c2654e633c1c",
+      "sha256": "f1a1eba5ff0c1fa04d32201c0debce05fcb7cfedcfed839b1aad0bd01b97312f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5343,7 +5351,7 @@
     },
     {
       "path": "qualitylayer/src/core/review-candidate.ts",
-      "sha256": "00754d6e7bcd95372ee1443f69286d260649f0d4a3e79855be830750929eeb40",
+      "sha256": "8618c86a43a38e840b762489cbb4273f7d7bd16511acf17fad5bae609c69b78f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -5431,7 +5439,7 @@
     },
     {
       "path": "qualitylayer/src/core/review/cross.ts",
-      "sha256": "cec475e9fe1c9a36a3d0c3af42ca744f350ce557c657c4b7ba9a56404e3b6f46",
+      "sha256": "58c7d581323c6d51c7bc8852aedde85ad2be8bdfa0ec26a2c9737b198951f394",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6903,7 +6911,7 @@
     },
     {
       "path": "qualitylayer/src/core/verification.ts",
-      "sha256": "5e87de202263619823bb564070a5312f54e0ca7d29fad306dc56693f2294f944",
+      "sha256": "a20d8abcb4e544887fbf3b0283a69bd7c5dea97c91c06708557d916aa7d4a30e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7359,7 +7367,7 @@
     },
     {
       "path": "qualitylayer/src/server/api.ts",
-      "sha256": "89a7a53ccd28bebfc49e2a22aeb02a7a0617fcf82a23fffe3ea7a16613e96b35",
+      "sha256": "89bedd69e3e37959006b9f36631a1c08e2ad65ba18248c52cf743666043d00d0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7616,6 +7624,14 @@
     {
       "path": "qualitylayer/src/server/handoff-attachments.ts",
       "sha256": "6156f07c3503de4d970d012870c040e7b53f975416573fc8a143ffeb35c2ce0c",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/server/http-result.ts",
+      "sha256": "cbf33ffb6f788a2992db00c5276876039200ecf65afdd533d1704bcff73b7c64",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8143,7 +8159,7 @@
     },
     {
       "path": "qualitylayer/src/server/serve.ts",
-      "sha256": "e115910388a6706a868251ec5f439dc9d7ac61d0b37c56e0ab47df28c8452522",
+      "sha256": "029d1cdfa7d443f2ad6c467691e5e173afe373252364f9168408faae3d42b1c5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -8200,6 +8216,14 @@
     {
       "path": "qualitylayer/src/server/step-pages.ts",
       "sha256": "9dd9ebd9375d381a484ee55a646ba8a25837f7a72d9839ef2735f7d0b6ecabfd",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/server/task-decision-route.ts",
+      "sha256": "f0a79c373758edab30ba605ffd5bb07b2772370a1b7e156dc9a8f0e05e9ad02c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -9287,7 +9311,7 @@
     },
     {
       "path": "qualitylayer/src/ui/api.ts",
-      "sha256": "bdf54a8c6c48779ca000057128ff17c11e95694e77bfa2064e1bb7fbe941f498",
+      "sha256": "dc495ecb740b705a4d47ccf9ed99a3cbfdbf5a9931d59dcdba9bacaf434b4c4d",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10023,7 +10047,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/api.ts",
-      "sha256": "49eef0ba72e05bff5fc0f3dc177c0089c932093ee9a275f2203c450f9cdf00c2",
+      "sha256": "59e018a0502d73f3fde7125213bea77ac39775e7add7921dac3b4248a9c6fac0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10247,7 +10271,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/memory.ts",
-      "sha256": "9be76872a683e0d8f8a93d7b4bf41ef3281a7743c50b0b7374a95b75754521eb",
+      "sha256": "8e0551c9c84f4ffbd617ce8f0686354d7a6de1ecc0d53a1db57d26f1af28a1d9",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10304,6 +10328,14 @@
     {
       "path": "qualitylayer/src/ui/demo/queue-console.ts",
       "sha256": "41b432fbc2e89efbc27f2093bc8b1ad1bb0dbe3c54aa0ac0dc03cc3be94917d8",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/demo/review-candidate.ts",
+      "sha256": "05870376c68ca55e55b90cd4dac63e322cff9a50eea69eb65b3cdf91071377ad",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10623,7 +10655,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/task/verify.ts",
-      "sha256": "5b7ee7a7819ebc223167e68b78acba8f2bf069962e35fe48a58b8abe52f6541f",
+      "sha256": "07095f670b45033419fccbce716f9540810a07f455af6c05bd8999f2e3a4dbc8",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -11128,6 +11160,14 @@
     {
       "path": "qualitylayer/src/ui/hooks.ts",
       "sha256": "96fa0eb063fc02936fa5c749565b577b8be95f8954756faaad4777a3237125a0",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/http.ts",
+      "sha256": "8c4bcadce4f544c121bca74eecb251d9222a6d0b0a0cfdf710468dbe796cedd0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12431,7 +12471,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/OutsideLead.tsx",
-      "sha256": "ab5dbfe295db85c7e48cee9793d13ccf31bd17513b844e5f42a1e0674d963d09",
+      "sha256": "ac09d7c8ee0b38f6d614334f9c19adc9467ca0bc4c273e1697cf621f0c578cc3",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14679,7 +14719,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/progress.ts",
-      "sha256": "5daa7a0f35a3d61a1640609bd65087e5a4fdfe925f4617691486d8c3144bc40f",
+      "sha256": "d898618f27865d85b3261df6ae1da98fb88419c3842a424d70bc892758d2960f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

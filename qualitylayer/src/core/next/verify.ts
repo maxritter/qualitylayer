@@ -1092,69 +1092,7 @@ async function verifySelectedCandidate(
     if (answered !== null) return answered
     const waiting = await pendingExit(ctx, scoped)
     if (waiting !== null) return ok(await exitReply(ctx, scoped, waiting))
-    const current = await readAssignment(ctx, scoped)
-    if (current?.recovery === selected.id) await setAsideReplaced(ctx, scoped)
-    const log = await readBuildRecord(ctx, scoped)
-    const latest = log.verification.findLast((round) => round.assignment === current?.id)
-    if (current?.recovery === selected.id && latest?.assignment === current.id) {
-      if (latest.n > scoped.iterations) return await readVerdicts(ctx, scoped)
-      if (latest.result === "pass" && latest.n === scoped.iterations && current.result === "pass")
-        return (await finalCheckGate(ctx, scoped)) ?? ok(await toThePerson(ctx, scoped, false))
-    }
-    if (!(await checksReadyForReview(ctx, scoped))) return ok(await checksFirst(ctx, scoped))
-    if (current?.recovery === selected.id) {
-      const atWork = await judgeAtWork(ctx, scoped, true)
-      if (atWork) return ok(await verifyPayload(ctx, scoped, undefined, undefined, atWork))
-      if (current.result === undefined && control !== "recovery-recheck")
-        return ok(
-          base(scoped, {
-            phase: "verify",
-            assignment: current.id,
-            then: "qualitylayer verify recheck",
-            message:
-              "The selected commit already has a review assignment. Use it while its judge is active.",
-          }),
-        )
-    }
-    if (control !== "judge" && control !== "recovery-recheck")
-      return ok(
-        base(scoped, {
-          phase: "verify",
-          then: "qualitylayer verify judge",
-          message: `The selected commit ${selected.choice.head} is ready for a fresh whole-candidate review.`,
-        }),
-      )
-    if (!(await readConfig(ctx)).independentReview.enabled)
-      return err({
-        code: "bad_args",
-        message: "Turn on independent review before reviewing the selected commit.",
-      })
-    const scans = await candidateScans(ctx, scoped, { id: selected.id, head: selected.choice.head })
-    const flow = await taskFlow(ctx, scoped)
-    const security = await selectedSecurity(ctx, scoped, selected, flow, scanBrief(scans))
-    if (typeof security !== "string") return ok(security)
-    const opinion = await selectedOpinion(
-      ctx,
-      scoped,
-      selected,
-      flow,
-      control === "recovery-recheck",
-    )
-    if (!opinion.ok) return opinion
-    const admission = await prepareJudgeAdmission(ctx, scoped)
-    if (admission.recovery !== selected.id)
-      return err({
-        code: "bad_args",
-        message: "The selected review commit changed. Open Verify again.",
-      })
-    const picked = await prepareVerification(ctx, scoped, {
-      ...admission,
-      note: [admission.note, scanBrief(scans).slice(0, 3500), security, opinion.data]
-        .filter(Boolean)
-        .join("\n\n")
-        .slice(0, 8000),
-    })
-    return picked.ok ? ok(await verifyPayload(ctx, scoped, undefined, picked.data)) : picked
+    return await runSelectedReview(ctx, scoped, selected, control)
   } catch (cause) {
     return err({
       code: "bad_args",
@@ -1162,6 +1100,92 @@ async function verifySelectedCandidate(
         cause instanceof Error ? cause.message : "Open Verify and choose the current commit again.",
     })
   }
+}
+
+async function resumeCandidateVerdicts(
+  ctx: Ctx,
+  task: Task,
+  current: Assignment,
+): Promise<Result<NextPayload> | null> {
+  await setAsideReplaced(ctx, task)
+  const log = await readBuildRecord(ctx, task)
+  const latest = log.verification.findLast((round) => round.assignment === current.id)
+  if (!latest) return null
+  if (latest.n > task.iterations) return await readVerdicts(ctx, task)
+  const counted = latest.n === task.iterations && current.result === "pass"
+  return latest.result === "pass" && counted
+    ? ((await finalCheckGate(ctx, task)) ?? ok(await toThePerson(ctx, task, false)))
+    : null
+}
+
+async function runSelectedReview(
+  ctx: Ctx,
+  scoped: Task,
+  selected: Selected,
+  control: string,
+): Promise<Result<NextPayload>> {
+  const current = await readAssignment(ctx, scoped)
+  if (current?.recovery === selected.id) {
+    const terminal = await resumeCandidateVerdicts(ctx, scoped, current)
+    if (terminal !== null) return terminal
+  }
+  if (!(await checksReadyForReview(ctx, scoped))) return ok(await checksFirst(ctx, scoped))
+  if (current?.recovery === selected.id) {
+    const atWork = await judgeAtWork(ctx, scoped, true)
+    if (atWork) return ok(await verifyPayload(ctx, scoped, undefined, undefined, atWork))
+    if (current.result === undefined && control !== "recovery-recheck")
+      return ok(
+        base(scoped, {
+          phase: "verify",
+          assignment: current.id,
+          then: "qualitylayer verify recheck",
+          message:
+            "The selected commit already has a review assignment. Use it while its judge is active.",
+        }),
+      )
+  }
+  if (control !== "judge" && control !== "recovery-recheck")
+    return ok(
+      base(scoped, {
+        phase: "verify",
+        then: "qualitylayer verify judge",
+        message: `The selected commit ${selected.choice.head} is ready for a fresh whole-candidate review.`,
+      }),
+    )
+  return await assignSelectedReview(ctx, scoped, selected, control === "recovery-recheck")
+}
+
+async function assignSelectedReview(
+  ctx: Ctx,
+  scoped: Task,
+  selected: Selected,
+  retry: boolean,
+): Promise<Result<NextPayload>> {
+  if (!(await readConfig(ctx)).independentReview.enabled)
+    return err({
+      code: "bad_args",
+      message: "Turn on independent review before reviewing the selected commit.",
+    })
+  const scans = await candidateScans(ctx, scoped, { id: selected.id, head: selected.choice.head })
+  const flow = await taskFlow(ctx, scoped)
+  const security = await selectedSecurity(ctx, scoped, selected, flow, scanBrief(scans))
+  if (typeof security !== "string") return ok(security)
+  const opinion = await selectedOpinion(ctx, scoped, selected, flow, retry)
+  if (!opinion.ok) return opinion
+  const admission = await prepareJudgeAdmission(ctx, scoped)
+  if (admission.recovery !== selected.id)
+    return err({
+      code: "bad_args",
+      message: "The selected review commit changed. Open Verify again.",
+    })
+  const picked = await prepareVerification(ctx, scoped, {
+    ...admission,
+    note: [admission.note, scanBrief(scans).slice(0, 3500), security, opinion.data]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 8000),
+  })
+  return picked.ok ? ok(await verifyPayload(ctx, scoped, undefined, picked.data)) : picked
 }
 
 type Selected = NonNullable<Awaited<ReturnType<typeof selectedReviewCandidate>>>

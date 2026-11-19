@@ -132,26 +132,20 @@ export function shellStatus(
         (task.action !== null && !plannerReview) || question != null ? 1 : 0,
       )
   const ask = signals?.ask?.alive === true && signals.ask.waiting
-  const permission = signals !== null && livenessOf(signals, now).state === "permission"
+  const life = signals === null ? null : livenessOf(signals, now).state
+  const permission = life === "permission"
+  const verifying = task.stage === "verify"
   const helpers = runningHelpers(task, now)
   // A session in the person's own terminal that ended its turn waits for them to answer there.
   const outsideTurn =
-    task.stage !== "verify" &&
-    task.outside !== undefined &&
-    helpers.length === 0 &&
-    signals !== null &&
-    livenessOf(signals, now).state === "turn-end"
+    !verifying && task.outside !== undefined && helpers.length === 0 && life === "turn-end"
   const independent =
     signals?.tool !== null &&
     signals?.tool !== undefined &&
     signals.tool.at > (task.session?.heartbeat ?? 0)
-  const verifyQuestion = task.stage === "verify" && (question != null || task.action === "final")
-  const blocked =
-    permission ||
-    verifyQuestion ||
-    outsideTurn ||
-    ask === true ||
-    (task.session?.state === "waiting" && !independent)
+  const verifyQuestion = verifying && (question != null || task.action === "final")
+  const needsPerson = permission || verifyQuestion || outsideTurn
+  const blocked = needsPerson || ask === true || (task.session?.state === "waiting" && !independent)
   const base = {
     agent: agentIdOf(task),
     since: task.session?.since ?? null,
@@ -194,19 +188,20 @@ export function shellStatus(
         ) ?? "Plan approved · choose how to implement",
       resume: `${invokeOf(base.agent)} implement ${task.slug}`,
     }
-  if (signals !== null && livenessOf(signals, now).state === "stopped")
+  if (life === "stopped")
     return { ...base, state: "stopped", doing: `${agentName(base.agent)} stopped`, resume }
   // Held by the agent's plan limit: nothing runs until it resets, so no spinner. With a resume
   // planned QualityLayer goes on by itself; without one the person continues the session.
-  if (signals?.limit != null && !verifyQuestion && !(task.stage === "verify" && permission))
+  const verifyIntervention = verifying && (verifyQuestion || permission)
+  if (signals?.limit != null && !verifyIntervention)
     return {
       ...base,
-      state: task.stage === "verify" ? "quiet" : "waits-for-you",
-      blocked: task.stage !== "verify",
+      state: verifying ? "quiet" : "waits-for-you",
+      blocked: !verifying,
       doing: limitWords(signals.limit, now).row,
       resume: signals.limit.resumeAt != null ? null : resume,
     }
-  if (blocked && (openItems > 0 || verifyQuestion || permission || outsideTurn))
+  if (needsPerson || (blocked && openItems > 0))
     return {
       ...base,
       state: "waits-for-you",
@@ -214,7 +209,7 @@ export function shellStatus(
     }
   const doing = doingWords(task, now)
   if (helpers.length > 0) return { ...base, state: "working", doing }
-  if (task.stage === "verify" && signals && livenessOf(signals, now).state === "turn-end")
+  if (verifying && life === "turn-end")
     return { ...base, state: "quiet", blocked: false, doing: "No active turn" }
   if (lastActivity !== null && now - lastActivity >= SHELL_QUIET_MS)
     return { ...base, state: "quiet", doing }

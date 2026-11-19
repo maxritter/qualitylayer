@@ -552,11 +552,12 @@ export const verify: Area = {
     const mode = modeOf(moment)
     if (mode === null) return task
     const light = moment === "verify-light"
+    const displayedMode = mode === "red" ? "checking" : mode
     // The checks as the server shows them: the checklist and the quality pass, under way.
     if (reading(mode) || mode === "fixing" || mode === "asked") applyVerifyVariant(task, "live")
     // Your comment reopened the pass: the point is rechecked while the review lists it first.
     if (mode === "rechecking") applyVerifyVariant(task, "unsettled")
-    setVerifyMode(task, mode === "red" ? "checking" : mode)
+    setVerifyMode(task, displayedMode)
     return {
       ...task,
       // The page's own copy of the document is built before this runs: rebuilt for this moment.
@@ -567,7 +568,7 @@ export const verify: Area = {
       verifyLanes: demoLanes(mode, light),
       ...(reading(mode) && !light ? { verifyActivity: demoCheckReceipt(mode) } : {}),
       events: verifyEvents(task, mode),
-      ...verifyModeField(mode === "red" ? "checking" : mode),
+      ...verifyModeField(displayedMode),
       ...(mode === "asked" ? { question: exitQuestion(Date.now()) } : {}),
       // The raw output and the pictures the checks saved: the Files tab's Records row counts them.
       records: [

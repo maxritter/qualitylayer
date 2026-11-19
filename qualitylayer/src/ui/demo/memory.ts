@@ -117,6 +117,79 @@ function previewOf(record: MemoryRecordView): MemoryPreview {
   return { ...metadata, preview: content.slice(0, 180), pinned: record.pinned === true }
 }
 
+function demoRepository(
+  records: readonly MemoryRecordView[],
+  projectById: (id: string) => MemoryProject,
+  recordById: (id: string) => MemoryRecordView,
+  onChange: () => void,
+): MemoryApi["repository"] {
+  const available = (project: string) =>
+    records.filter(
+      (record) =>
+        record.project === project && record.visibility === "project" && record.source !== "pilot",
+    )
+  const restored = new Set<string>()
+  const conflicts = new Map<string, MemoryRecordView>()
+  const totals = (project?: string) => {
+    const pending = [...conflicts.values()].filter(
+      (record) => !project || record.project === project,
+    )
+    const first = pending[0]
+    return {
+      total: pending.length,
+      ...(first
+        ? { next: { project: first.project, name: projectById(first.project).name, id: first.id } }
+        : {}),
+    }
+  }
+  return {
+    preview: async (project, operation) => ({
+      count:
+        operation === "export" ? available(project).length : Math.min(2, available(project).length),
+    }),
+    export: async (project) => ({
+      written: projectById(project).sharing ? available(project).length : 0,
+      imported: 0,
+      skipped: 0,
+      conflicts: 0,
+      issues: [],
+    }),
+    restore: async (project) => {
+      const first = available(project)[0]
+      if (!first || restored.has(project))
+        return { written: 0, imported: 0, skipped: first ? 1 : 0, conflicts: 0, issues: [] }
+      restored.add(project)
+      conflicts.set(first.id, {
+        ...first,
+        revision: first.revision + 1,
+        content: `${first.content} Check the change with a repository test.`,
+      })
+      onChange()
+      return { written: 0, imported: 0, skipped: 0, conflicts: 1, issues: [] }
+    },
+    conflicts: async (project) => totals(project),
+    compare: async (_project, id) => {
+      const repository = conflicts.get(id)
+      if (!repository) throw new Error("This lesson has no retained conflict.")
+      return {
+        local: structuredClone(recordById(id)),
+        candidates: [{ fingerprint: "a".repeat(64), version: structuredClone(repository) }],
+      }
+    },
+    reconcile: async (_project, id, input) => {
+      const local = recordById(id)
+      const variant = conflicts.get(id)
+      if (!variant || input.revision !== local.revision)
+        throw new Error("Refresh the lesson versions.")
+      if (input.candidate !== "local") local.content = variant.content
+      local.revision = variant.revision + 1
+      conflicts.delete(id)
+      onChange()
+      return { revision: local.revision }
+    },
+  }
+}
+
 /** Illustrative local data for source UI checks; each browser gets independent state. */
 export function createDemoMemory(onChange: () => void = () => {}): MemoryApi {
   const mode =
@@ -290,74 +363,8 @@ export function createDemoMemory(onChange: () => void = () => {}): MemoryApi {
     ...record,
     shared: sharedOf(record) === true,
   })
-  const available = (project: string) =>
-    records.filter(
-      (record) =>
-        record.project === project && record.visibility === "project" && record.source !== "pilot",
-    )
-  const restored = new Set<string>()
-  const conflicts = new Map<string, MemoryRecordView>()
-  const totals = (project?: string) => {
-    const pending = [...conflicts.values()].filter(
-      (record) => !project || record.project === project,
-    )
-    const first = pending[0]
-    return {
-      total: pending.length,
-      ...(first
-        ? { next: { project: first.project, name: projectById(first.project).name, id: first.id } }
-        : {}),
-    }
-  }
   return {
-    repository: {
-      preview: async (project, operation) => ({
-        count:
-          operation === "export"
-            ? available(project).length
-            : Math.min(2, available(project).length),
-      }),
-      export: async (project) => ({
-        written: projectById(project).sharing ? available(project).length : 0,
-        imported: 0,
-        skipped: 0,
-        conflicts: 0,
-        issues: [],
-      }),
-      restore: async (project) => {
-        const first = available(project)[0]
-        if (!first || restored.has(project))
-          return { written: 0, imported: 0, skipped: first ? 1 : 0, conflicts: 0, issues: [] }
-        restored.add(project)
-        conflicts.set(first.id, {
-          ...first,
-          revision: first.revision + 1,
-          content: `${first.content} Check the change with a repository test.`,
-        })
-        onChange()
-        return { written: 0, imported: 0, skipped: 0, conflicts: 1, issues: [] }
-      },
-      conflicts: async (project) => totals(project),
-      compare: async (_project, id) => {
-        const repository = conflicts.get(id)
-        if (!repository) throw new Error("This lesson has no retained conflict.")
-        return {
-          local: structuredClone(recordById(id)),
-          candidates: [{ fingerprint: "a".repeat(64), version: structuredClone(repository) }],
-        }
-      },
-      reconcile: async (_project, id, input) => {
-        const local = recordById(id)
-        const variant = conflicts.get(id)
-        if (!variant || input.revision !== local.revision)
-          throw new Error("Refresh the lesson versions.")
-        if (input.candidate !== "local") local.content = variant.content
-        local.revision = variant.revision + 1
-        conflicts.delete(id)
-        onChange()
-        return { revision: local.revision }
-      },
-    },
+    repository: demoRepository(records, projectById, recordById, onChange),
     overview: async (project) => {
       const scoped = records.filter((record) => !project || record.project === project)
       const issue = unavailable

@@ -876,13 +876,15 @@ export async function runCheck(
             }
             const keys = await checkKeys(ctx, task, command, undefined, unavailable)
             const key = keys?.key ?? null
-            const previous = records
-              .filter((r) => r.scope !== "base" && r.command === command)
-              .at(-1)
+            const reusableRecords = candidate
+              ? records.filter((record) => record.revision === revision)
+              : records
+            const previous = reusableRecords.findLast(
+              (record) => record.scope !== "base" && record.command === command,
+            )
             if (
               key !== null &&
               previous?.key === key &&
-              (!candidate || previous.revision === revision) &&
               previous.ran &&
               previous.exit === 0 &&
               !previous.notRun &&
@@ -899,17 +901,15 @@ export async function runCheck(
               })
               // The run it passed in, not a reuse of it.
               const passedAt =
-                records
-                  .filter(
-                    (r) =>
-                      r.command === command &&
-                      r.key === key &&
-                      r.ran &&
-                      !r.reused &&
-                      r.exit === 0 &&
-                      !r.notRun,
-                  )
-                  .at(-1)?.at ?? previous.at
+                reusableRecords.findLast(
+                  (r) =>
+                    r.command === command &&
+                    r.key === key &&
+                    r.ran &&
+                    !r.reused &&
+                    r.exit === 0 &&
+                    !r.notRun,
+                )?.at ?? previous.at
               lines.push(
                 `- ${name} · ${workingTree} · \`${command}\` · reused: nothing changed since it passed at ${clockTime(passedAt)}`,
               )

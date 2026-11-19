@@ -15,7 +15,6 @@ import { stopAllViewing } from "../core/conversation/approvals.ts"
 import { warmDiagnostics } from "../core/feedback/diagnostics.ts"
 import { appPointer, ownApp } from "../core/install/where.ts"
 import { readPersonal, saveInstructions } from "../core/instructions.ts"
-import { outsideState, sendFromApp, targetOf } from "../core/integrations/approval-app.ts"
 import { integrationsRoute } from "../core/integrations/route.ts"
 import { addressOverride } from "../core/licence/address-policy.ts"
 import { accessPath, licencePath } from "../core/licence/cache.ts"
@@ -23,12 +22,11 @@ import { status as licenceStatus, uncheckedMessage } from "../core/licence/verif
 import { installSpawnRecorder, isUnderTempDir, screenOf } from "../core/platform.ts"
 import { personName } from "../core/profile/name.ts"
 import { startRetention } from "../core/retention.ts"
-import { readReviewCandidates, selectReviewCandidate } from "../core/review-candidate.ts"
 import { touchesProtectedSettings } from "../core/run/contracts.ts"
 import { isAgentRunsRoute } from "../core/run/protocol.ts"
 import { PORT_ENV, PORT_TRIES } from "../core/server-port.ts"
 import { VERSION } from "../core/version.ts"
-import { type Ctx, err, type HarnessError, ok, type Result } from "../ctx.ts"
+import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { FAVICON } from "../ui/brand/mark.ts"
 import { agentHistoryRoute } from "./agent-history.ts"
 import { agentSessionsRoute, idleDeadline, startIdleDeadline } from "./agent-sessions.ts"
@@ -67,6 +65,7 @@ import { foundProjectsRoute } from "./found-projects.ts"
 import { cachingGit } from "./git-cache.ts"
 import { type GuardConfig, hasKeyHeader, refuse, sessionAuthority, sessionOf } from "./guard.ts"
 import { HANDOFF_ATTACHMENTS_PATH, handoffAttachmentsRoute } from "./handoff-attachments.ts"
+import { body, json } from "./http-result.ts"
 import { interactionRoute, readInteraction } from "./interaction.ts"
 import { limitResume, startLimitResume } from "./limit-resume.ts"
 import { limitsRoute, startLimitTurns } from "./limits.ts"
@@ -108,6 +107,7 @@ import { type ServerLifecycle, serverPortRoute, viewOf, wantedPort } from "./ser
 import { loadSessions, Sessions, sessionCookie } from "./sessions.ts"
 import { runSetup, type SetupEvent, setupLicence, setupState } from "./setup.ts"
 import { createStaticAssets } from "./static-assets.ts"
+import { taskDecisionRoute } from "./task-decision-route.ts"
 import { taskScreens } from "./task-screens.ts"
 import { Thumbs } from "./thumbs.ts"
 import {
@@ -194,37 +194,6 @@ const indexHtml = (theme: Theme, app: boolean) => `<!doctype html>
 </html>
 `
 
-// Pairs, not an object: the release obfuscator encodes strings but not bare object keys, and
-// its key transform, which did, broke guarded object literals (scripts/build.ts, OBFUSCATION).
-const STATUS = new Map<HarnessError["code"], number>([
-  ["no_task", 404],
-  ["bad_args", 400],
-  ["open_failed", 502],
-  ["group_required", 400],
-  ["no_gate", 409],
-  ["review_pending", 409],
-  ["groups_changed", 409],
-  ["team_email_off", 409],
-  ["not_owner", 403],
-  ["licence_required", 402],
-  ["licence_unchecked", 402],
-  ["validation_failed", 422],
-  ["rate_limited", 429],
-])
-
-function json(result: Result<unknown>): Response {
-  const status = result.ok ? 200 : (STATUS.get(result.error.code) ?? 500)
-  const body = result.ok
-    ? { ok: true, ...(result.data as object) }
-    : {
-        ok: false,
-        error: result.error,
-        // Where to upgrade, at the top of a 402 as the backend's own refusal has it.
-        ...(result.error.code === "licence_required" ? { upgrade_url: result.error.url } : {}),
-      }
-  return Response.json(body, { status, headers: { "cache-control": "no-store" } })
-}
-
 /** A request that threw: one short JSON answer, one crash.log line, and nothing of the failure in the response. */
 export function requestFailed(ctx: Ctx, error: unknown): Response {
   crashLine(ctx.home, "request", error)
@@ -235,15 +204,6 @@ export function requestFailed(ctx: Ctx, error: unknown): Response {
     },
     { status: 500, headers: { "cache-control": "no-store" } },
   )
-}
-
-async function body(request: Request): Promise<Record<string, unknown>> {
-  try {
-    const parsed = (await request.json()) as unknown
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
 }
 
 /** Each asset's tag, by the file's size and time, so a rebuilt bundle gets a new one. */
@@ -969,27 +929,14 @@ export function createHandler(
         if (parts[4] === "change" && parts.length === 5)
           return json(await api.postQuestionChange(ctx, id, await body(request)))
       }
-      if (sub === "review-candidate" && parts.length === 4) {
-        if (
-          !hasKeyHeader(request, checked) &&
-          sessionAuthority(request, checked)?.keyPaired !== true
-        )
-          return new Response("This browser may only watch", { status: 403 })
-        const found = await api.locate(ctx, id)
-        if (!found.ok) return json(found)
-        if (method === "GET") return json(ok(await readReviewCandidates(ctx, found.data.task)))
-        if (method === "POST") {
-          const bytes = await readArtifactBody(request, 16 * 1024)
-          let input: unknown
-          try {
-            input = JSON.parse(new TextDecoder().decode(bytes))
-          } catch {
-            return json(err({ code: "bad_args", message: "The review choice must be valid JSON." }))
-          }
-          return json(await selectReviewCandidate(ctx, found.data.task, input))
-        }
-        return new Response("method not allowed", { status: 405 })
-      }
+      const decision = await taskDecisionRoute(
+        ctx,
+        id,
+        parts,
+        request,
+        keyPaired || hasKeyHeader(request, checked),
+      )
+      if (decision) return decision
       if (sub === "gate" && method === "POST")
         return json(await api.postGate(ctx, id, await body(request)))
       if (sub === "needs" && parts[4] !== undefined && parts[5] === "set" && method === "POST")
@@ -998,31 +945,7 @@ export function createHandler(
         return json(await api.postStart(ctx, id, await body(request)))
       if (sub === "build-here" && method === "POST")
         return json(await api.postBuildHere(ctx, id, await body(request)))
-      if (sub === "outside-approval" && parts.length === 4) {
-        // Get approval: the send pushes, the person's act, so only the key or a key-paired browser.
-        if (
-          method === "POST" &&
-          !hasKeyHeader(request, checked) &&
-          sessionAuthority(request, checked)?.keyPaired !== true
-        )
-          return new Response("This browser may only watch", { status: 403 })
-        const found = await api.locate(ctx, id)
-        if (!found.ok) return json(found)
-        if (method === "GET")
-          return json(
-            ok(
-              await outsideState(
-                ctx,
-                found.data.task,
-                targetOf(new URL(request.url).searchParams.get("target")),
-              ),
-            ),
-          )
-        if (method === "POST") {
-          const sent = await body(request)
-          return json(await sendFromApp(ctx, found.data.task, targetOf(sent.target)))
-        }
-      }
+
       if (sub === "push" && method === "POST") return json(await api.postPush(ctx, id))
       if (sub === "pull-request" && parts[4] === "leave" && method === "POST")
         return json(await api.postLeavePullRequest(ctx, id))

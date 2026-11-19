@@ -88,6 +88,42 @@ function approvedWay(task: TaskDetail, lead: Lead) {
   }
 }
 
+function outsideIdleStatus(
+  task: TaskDetail,
+  name: string,
+  life: ReturnType<typeof livenessOf> | { state: "none" },
+  now: number,
+) {
+  const verifying = task.stage === "verify"
+  if (verifying && life.state === "permission")
+    return {
+      kind: "waiting" as const,
+      word: "Permission needed",
+      line: `Allow or refuse it in ${name}'s own window.`,
+    }
+  const outsideTurn = !verifying && life.state === "turn-end"
+  // The top bar uses the same signals to distinguish a question from a paused Verify run.
+  const waits = shellStatus(task, now).state === "waits-for-you"
+  if (outsideTurn || life.state === "permission" || waits) {
+    const asked = task.live?.question?.text
+    const requestedAt = life.state === "turn-end" || life.state === "permission" ? life.at : null
+    const continuation = "Answer it there, or continue it here."
+    return {
+      kind: "waiting" as const,
+      word: asked ? `${name} asks: ${asked}` : `${name} waits for you outside the App`,
+      line: requestedAt === null ? continuation : `Since ${clock(requestedAt)}. ${continuation}`,
+    }
+  }
+  const pause = verifyPause(task, now)
+  if (pause) return { kind: "quiet" as const, word: pause.title, line: pause.detail }
+  if (life.state !== "quiet") return null
+  return {
+    kind: "quiet" as const,
+    word: `Quiet for ${agoShort(life.quietFor)}`,
+    line: life.last ? `Last: ${life.last.words}` : "",
+  }
+}
+
 /** Where its live signals put the outside session: its mark, its words, one line under them. */
 function statusOf(task: TaskDetail, lead: Lead, now: number) {
   const name = agentWord(lead.agent)
@@ -104,43 +140,14 @@ function statusOf(task: TaskDetail, lead: Lead, now: number) {
   const life = signals !== null ? livenessOf(signals, now) : { state: "none" as const }
   const words = task.live?.progress?.words
   const progress = words?.place || undefined
-  const asked = task.live?.question?.text
   if (life.state === "stopped")
     return {
       kind: "stopped" as const,
       word: `Stopped at ${clock(life.at)}`,
       line: "The work so far is kept.",
     }
-  // The top bar's chip reads the same signals: a session waiting at a question or a gate in its
-  // window is waiting for the person, however fresh its transcript is.
-  const waits = shellStatus(task, now).state === "waits-for-you"
-  if (task.stage === "verify" && life.state === "permission")
-    return {
-      kind: "waiting" as const,
-      word: "Permission needed",
-      line: `Allow or refuse it in ${name}'s own window.`,
-    }
-  if (
-    (task.stage !== "verify" && life.state === "turn-end") ||
-    life.state === "permission" ||
-    waits
-  )
-    return {
-      kind: "waiting" as const,
-      word: asked ? `${name} asks: ${asked}` : `${name} waits for you outside the App`,
-      line:
-        life.state === "turn-end" || life.state === "permission"
-          ? `Since ${clock(life.at)}. Answer it there, or continue it here.`
-          : "Answer it there, or continue it here.",
-    }
-  const pause = verifyPause(task, now)
-  if (pause) return { kind: "quiet" as const, word: pause.title, line: pause.detail }
-  if (life.state === "quiet")
-    return {
-      kind: "quiet" as const,
-      word: `Quiet for ${agoShort(life.quietFor)}`,
-      line: life.last ? `Last: ${life.last.words}` : "",
-    }
+  const idle = outsideIdleStatus(task, name, life, now)
+  if (idle) return idle
   const last = life.state === "working" ? life.last : null
   // What it runs now says more than which file last grew.
   const tool = signals?.tool ?? null
@@ -275,6 +282,9 @@ export function OutsideLead({
         onCancel={() => setContinuing(false)}
       />
     ) : null
+  let action = building ? "Building" : "Planning"
+  if (task.stage === "verify") action = "Verifying"
+  if (task.type === "chat") action = "Chatting"
   return (
     <div className="q-outside-lead" data-testid="outside-lead" data-state={status.kind}>
       <header className="q-outside-head">
@@ -284,7 +294,7 @@ export function OutsideLead({
             ? `${name} outside the App`
             : stopped
               ? `${name} stopped outside the App`
-              : `${task.type === "chat" ? "Chatting" : task.stage === "verify" ? "Verifying" : building ? "Building" : "Planning"} in ${name} outside the App`}
+              : `${action} in ${name} outside the App`}
         </h2>
       </header>
       <p className="q-outside-lead-line">

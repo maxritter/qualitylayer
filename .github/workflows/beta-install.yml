@@ -633,6 +633,7 @@ jobs:
             if ($LASTEXITCODE -ne 0 -or $installedVersion.Trim() -cne $env:QL_VERSION) { throw 'Installed version differs' }
 
             $phase = 'render-reviewed-fixture'
+            $env:QL_REPLAY_ACCOUNT_TEMP = $qlParent
             $env:QL_SCANNER_INSTALLED_CLI = $installed
             $env:QL_SCANNER_INSTALLED_SHA256 = $digest
             $env:QL_SCANNER_INSTALLED_SIGNER = $signature.SignerCertificate.Thumbprint
@@ -653,7 +654,24 @@ jobs:
             )
             .replace("version = '14.3.0'", "version = $reported");
           if (createHash("sha256").update(output).digest("hex") !== "63b77ca529b20388118ffa53633cd6ec1c550671c6ab3147674d3b93d51a1554") throw Error("Exact rendered fixture drift");
-          await Bun.write(join(process.env.RUNNER_TEMP, "ql-retained-scanners.ps1"), output);
+          const transforms = [
+            ["$phase = 'private-home'", "$phase = 'private-home-resolve'"],
+            ["$qaParent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'", "$inheritedLocal = [Environment]::GetFolderPath('LocalApplicationData')\n  $inheritedParent = if ($inheritedLocal) { Join-Path $inheritedLocal 'Temp' } else { $null }\n  $qaParent = $env:QL_REPLAY_ACCOUNT_TEMP\n  if (-not $qaParent -or -not [IO.Path]::IsPathFullyQualified($qaParent) -or\n      -not (Test-Path -LiteralPath $qaParent -PathType Container)) {\n    throw 'Captured account-temp directory is unavailable'\n  }\n  $relation = if (-not $inheritedParent -or -not (Test-Path -LiteralPath $inheritedParent -PathType Container)) {\n    'missing'\n  } elseif ($inheritedParent -eq $qaParent) { 'same' } else { 'different' }\n  $localAppDataPresent = if ($env:LOCALAPPDATA) { 'present' } else { 'missing' }\n  Write-Output ('WINDOWS_REPLAY_ACCOUNT_TEMP relation=' + $relation + ' inherited-local-appdata=' + $localAppDataPresent)"],
+            ["$root = Join-Path $qaParent", "$phase = 'private-home-create'\n  $root = Join-Path $qaParent"],
+            ["$sid = [Security.Principal.WindowsIdentity]", "$phase = 'private-home-acl-build'\n  $sid = [Security.Principal.WindowsIdentity]"],
+            ["Set-Acl -Path $root -AclObject $acl", "$phase = 'private-home-acl-write'\n  Set-Acl -Path $root -AclObject $acl"],
+            ["$acl = Get-Acl -LiteralPath $root", "$phase = 'private-home-acl-read'\n  $acl = Get-Acl -LiteralPath $root"],
+            ["if (-not $acl.AreAccessRulesProtected", "$phase = 'private-home-acl-policy'\n  if (-not $acl.AreAccessRulesProtected"],
+            ["$env:HOME = Join-Path $root 'home'", "$phase = 'private-home-env'\n  $env:HOME = Join-Path $root 'home'"],
+            ["New-Item -ItemType Directory -Path $env:TEMP", "$phase = 'private-home-directories'\n  New-Item -ItemType Directory -Path $env:TEMP"],
+            ["Set-Location -LiteralPath $root", "$phase = 'private-home-cwd'\n  Set-Location -LiteralPath $root"],
+          ];
+          let diagnostic = output;
+          for (const [before, after] of transforms) {
+            if (diagnostic.split(before).length !== 2) throw Error("Diagnostic fixture section differs");
+            diagnostic = diagnostic.replace(before, () => after);
+          }
+          await Bun.write(join(process.env.RUNNER_TEMP, "ql-retained-scanners.ps1"), diagnostic);
           '@
             $renderer = Join-Path $env:RUNNER_TEMP 'ql-retained-scanners.mjs'
             [IO.File]::WriteAllText($renderer, $render)
@@ -662,8 +680,11 @@ jobs:
             $phase = 'scanner-execution'
             $output = & pwsh -NoProfile -NonInteractive -File (Join-Path $env:RUNNER_TEMP 'ql-retained-scanners.ps1') 2>$null
             $scannerExit = $LASTEXITCODE
-            $allowed = '^(?:version|private-home|signed-candidate-cli|native-handle|control-create|control-open-read|control-rename-held|control-read-held|control-rename-released|cold-setup|stage-lock|rename-denied|stage-readable|locked-setup-result|locked-receipts|locked-(?:receipt|status)-(?:qlty|betterleaks|osv-scanner|zizmor|opengrep)|locked-status|released-repeat|cleanup)$'
+            $allowed = '^(?:version|private-home-(?:resolve|create|acl-build|acl-write|acl-read|acl-policy|env|directories|cwd)|signed-candidate-cli|native-handle|control-create|control-open-read|control-rename-held|control-read-held|control-rename-released|cold-setup|stage-lock|rename-denied|stage-readable|locked-setup-result|locked-receipts|locked-(?:receipt|status)-(?:qlty|betterleaks|osv-scanner|zizmor|opengrep)|locked-status|released-repeat|cleanup)$'
             foreach ($line in $output) {
+              if ($line -cmatch '^WINDOWS_REPLAY_ACCOUNT_TEMP relation=(?:same|different|missing) inherited-local-appdata=(?:present|missing)$') {
+                Write-Output $line
+              }
               if ($line -cmatch '^WINDOWS_SCANNER_FAILURE phase=([a-z0-9-]+)$' -and $Matches[1] -cmatch $allowed) {
                 $fixturePhase = $line.Substring('WINDOWS_SCANNER_FAILURE phase='.Length)
                 Write-Output ('WINDOWS_REPLAY_SCANNER_FAILURE phase=' + $fixturePhase)

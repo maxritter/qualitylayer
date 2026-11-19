@@ -2295,3 +2295,17 @@ qualitylayer/src/core/peers/commands/wait.ts !filter !diff
 qualitylayer/src/core/integrations/review-destination.ts !filter !diff
 qualitylayer/src/ui/turn/PortableReviewDraft.tsx !filter !diff
 qualitylayer/src/ui/turn/ReviewProviderIcon.tsx !filter !diff
+
+# Approved readable Verify activity and Project Git sources.
+qualitylayer/src/core/verify-activity.ts !filter !diff
+qualitylayer/src/server/memory-repository.ts !filter !diff
+qualitylayer/src/ui/settings/MemoryRepository.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-repository/CompareVersions.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-repository/ProjectPicker.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-repository/RepositoryOperation.tsx !filter !diff
+qualitylayer/src/ui/settings/memory-repository/receipt.ts !filter !diff
+qualitylayer/src/ui/shell/VerifyActivity.tsx !filter !diff
+qualitylayer/src/ui/shell/verify-activity.css !filter !diff
+qualitylayer/src/ui/steps/verify/CheckEvidence.tsx !filter !diff
+qualitylayer/tests/e2e/memory-repository-settings.test.ts !filter !diff
+qualitylayer/tests/e2e/verify-activity-browser.test.ts !filter !diff

@@ -31,8 +31,13 @@ type ObservedRun = Pick<
   | "waitSince"
 >
 
-function observedStatus(status: AgentStatus, run: ObservedRun | undefined): AgentStatus {
+function observedStatus(
+  status: AgentStatus,
+  run: ObservedRun | undefined,
+  verifying: boolean,
+): AgentStatus {
   if (!run) return status
+  if (verifying && run.status === "running" && !runPermissionWaiting(run)) return status
   const same =
     !!run.nativeSession &&
     status.agent === run.agent &&
@@ -132,6 +137,7 @@ export function AgentChip({
       now,
     ),
     waitingRun ?? observedRun,
+    task.stage === "verify",
   )
   // The build's lead ended its turn in its own chat with nothing running: the person's move, as
   // the sidebar row and Home say ("Open <agent>"), so the chip wears the amber mark, not the spinner.
@@ -146,7 +152,7 @@ export function AgentChip({
       : reported
   const age = status.lastActivity === null ? null : agoShort(now - status.lastActivity)
   const words =
-    status.state === "quiet"
+    status.state === "quiet" && status.doing !== "No active turn" && status.signals?.limit == null
       ? `quiet ${age ?? ""}`
       : status.state === "stopped"
         ? status.signals?.stoppedAt == null

@@ -34,6 +34,7 @@ import { MemoryWriter } from "./store.ts"
 export const MEMORY_RETIRED = "This lesson is retired; restore it explicitly before updating"
 
 export type MemoryService = MemoryApi & {
+  repository: NonNullable<MemoryApi["repository"]>
   reviewPilotRecords(input: MappedPilotRecord[], leftOut: number): Promise<PilotReview>
   importPilotRecords(
     input: MappedPilotRecord[],
@@ -129,6 +130,14 @@ export function createMemoryService(
     withSources: sources.withSources.bind(sources),
   })
   return {
+    repository: {
+      preview: portability.preview.bind(portability),
+      export: portability.exchange.bind(portability),
+      restore: portability.restoreProject.bind(portability),
+      conflicts: portability.conflictQueue.bind(portability),
+      compare: portability.compare.bind(portability),
+      reconcile: portability.chooseVersion.bind(portability),
+    },
     registerPersonal: projects.registerPersonal.bind(projects),
     registerProject: projects.registerProject.bind(projects),
     sharingEnabled: settings.sharingEnabled.bind(settings),

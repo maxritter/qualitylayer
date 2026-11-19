@@ -62,6 +62,71 @@
     background: var(--ql-accent);
     box-shadow: none;
   }
+  .vb-segs i.f {
+    background: var(--ql-danger);
+    box-shadow: none;
+  }
+  .vb .sp-state.fail,
+  .vb-tm.fail,
+  .vb-checks > li[data-state="fail"] .vb-lr {
+    color: var(--ql-danger);
+    border: 0;
+  }
+  .vb-evidence {
+    margin: 0 0 8px 26px;
+    color: var(--ql-text-muted);
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+  .vb-revision {
+    margin: 0 0 6px;
+  }
+  .vb-evidence details {
+    border: 1px solid var(--ql-line);
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+  .vb-evidence summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--ql-text);
+  }
+  .vb-evidence summary > svg {
+    flex: none;
+  }
+  .vb-evidence details[open] summary > svg {
+    transform: rotate(90deg);
+  }
+  .vb-evidence ul {
+    margin: 8px 0;
+    padding: 0;
+    list-style: none;
+  }
+  .vb-evidence li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 2px 12px;
+    border-bottom: 1px solid var(--ql-line);
+    padding: 4px 0;
+  }
+  .vb-evidence li[data-outcome="failed"] > span,
+  .vb-evidence li[data-outcome="timed-out"] > span {
+    color: var(--ql-danger);
+  }
+  .vb-evidence dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 8px 0 2px;
+  }
+  .vb-evidence dd {
+    margin: 0;
+    min-width: 0;
+  }
   .vb-checks {
     list-style: none;
     margin: 0 0 6px;
@@ -142,7 +207,9 @@
     .vb-head {
       grid-template-columns: 22px minmax(0, 1fr);
     }
-    .vb-head .vb-segs,
+    .vb-head .vb-segs {
+      display: none;
+    }
     .vb-head .vb-cond {
       grid-column: 2;
       white-space: normal;
@@ -158,6 +225,12 @@
     .vb-ln .vb-who {
       display: block;
       margin-left: 0;
+    }
+    .vb-evidence dl {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .vb-evidence dd + dt {
+      margin-top: 4px;
     }
   }
 }

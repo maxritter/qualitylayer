@@ -38,8 +38,12 @@ export function VerifyBoardPage(props: StepPageProps) {
     () => verifyView(task, task.verifyLanes ?? [], state.verify?.proof.rows ?? [], now),
     [task, state.verify?.proof.rows, now],
   )
+  const checkedAt = task.verifyActivity?.projectChecks?.at
+  const observedCheck =
+    checkedAt !== undefined && incomingView.started !== null && checkedAt >= incomingView.started
   const ready =
     verificationReady(task) ||
+    observedCheck ||
     (state.verify?.proof.rows.some((row) => row.state !== "waiting") ?? false)
   const whole = (task.pages?.find((page) => page.step === "verify")?.problems.length ?? 0) === 0
   const steady = useSteadyStep(
@@ -83,11 +87,15 @@ export function VerifyBoardPage(props: StepPageProps) {
               title="Checks"
               icon={<ClipboardCheckIcon className="size-3.5" aria-hidden="true" />}
             >
-              <VerifyBoard stages={stages} />
+              <VerifyBoard stages={stages} receipt={task.verifyActivity?.projectChecks} />
             </PageSection>
             {mode === "live" ? (
               <PageSection title="Code" icon={<CodeIcon className="size-3.5" aria-hidden="true" />}>
-                <CodeAccess taskId={task.id} />
+                <CodeAccess
+                  taskId={task.id}
+                  checkout={task.verifyActivity?.projectChecks?.checkout}
+                  changedCount={task.changedFiles?.length}
+                />
               </PageSection>
             ) : null}
             {picturesOf(runs, new Map()).files.length > 0 ? (

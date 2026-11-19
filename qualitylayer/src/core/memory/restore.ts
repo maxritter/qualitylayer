@@ -76,6 +76,26 @@ async function indexRestored(
   }
 }
 
+/** Uses the same tracked-file and identity checks as restore without accepting any lesson. */
+export async function countRepositoryRecords(
+  ctx: Ctx,
+  project: ProjectRow,
+  readObject?: GitObjectReader,
+): Promise<number> {
+  const io = await openMemoryRepository(ctx, project)
+  try {
+    const snapshot = await MemoryRepositorySnapshot.capture(ctx, project.root, io, readObject)
+    try {
+      const { found } = await repositoryRecords(ctx, snapshot, () => {})
+      return new Set(found.map(({ record }) => record.id)).size
+    } finally {
+      await snapshot.close()
+    }
+  } finally {
+    io.close()
+  }
+}
+
 /** Explicitly accept this repository's historical evidence into the local project. */
 export async function restoreRecords(
   ctx: Ctx,

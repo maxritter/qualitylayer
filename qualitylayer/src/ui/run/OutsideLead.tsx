@@ -10,6 +10,7 @@ import { useNow } from "../hooks.ts"
 import { AgentMark } from "../kit/marks/index.ts"
 import { useOptionalRuns } from "../run-context.tsx"
 import { runColors } from "../runs-api.ts"
+import { VerifyActivityTimeline, verifyPause } from "../shell/VerifyActivity.tsx"
 import type { AgentTabTerminal } from "./AgentTab.tsx"
 import { taskApprovalReady } from "./approval-ready.ts"
 import { ExistingPlanContext } from "./ExistingPlanContext.tsx"
@@ -113,7 +114,17 @@ function statusOf(task: TaskDetail, lead: Lead, now: number) {
   // The top bar's chip reads the same signals: a session waiting at a question or a gate in its
   // window is waiting for the person, however fresh its transcript is.
   const waits = shellStatus(task, now).state === "waits-for-you"
-  if (life.state === "turn-end" || life.state === "permission" || waits)
+  if (task.stage === "verify" && life.state === "permission")
+    return {
+      kind: "waiting" as const,
+      word: "Permission needed",
+      line: `Allow or refuse it in ${name}'s own window.`,
+    }
+  if (
+    (task.stage !== "verify" && life.state === "turn-end") ||
+    life.state === "permission" ||
+    waits
+  )
     return {
       kind: "waiting" as const,
       word: asked ? `${name} asks: ${asked}` : `${name} waits for you outside the App`,
@@ -122,6 +133,8 @@ function statusOf(task: TaskDetail, lead: Lead, now: number) {
           ? `Since ${clock(life.at)}. Answer it there, or continue it here.`
           : "Answer it there, or continue it here.",
     }
+  const pause = verifyPause(task, now)
+  if (pause) return { kind: "quiet" as const, word: pause.title, line: pause.detail }
   if (life.state === "quiet")
     return {
       kind: "quiet" as const,
@@ -271,7 +284,7 @@ export function OutsideLead({
             ? `${name} outside the App`
             : stopped
               ? `${name} stopped outside the App`
-              : `${task.type === "chat" ? "Chatting" : building ? "Building" : "Planning"} in ${name} outside the App`}
+              : `${task.type === "chat" ? "Chatting" : task.stage === "verify" ? "Verifying" : building ? "Building" : "Planning"} in ${name} outside the App`}
         </h2>
       </header>
       <p className="q-outside-lead-line">
@@ -316,7 +329,9 @@ export function OutsideLead({
             <code title={lead.folder}>{lead.folder}</code>
           </dd>
         </dl>
-        {lead.events.length > 0 ? (
+        {task.stage === "verify" ? (
+          <VerifyActivityTimeline task={task} now={now} />
+        ) : lead.events.length > 0 ? (
           <ol className="q-outside-events" aria-label="Latest events">
             {lead.events.map((event) => (
               <li key={`${event.at}:${event.what}`}>

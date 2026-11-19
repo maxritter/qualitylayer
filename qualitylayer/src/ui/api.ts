@@ -1029,6 +1029,24 @@ function memoryParams(input: object): string {
 }
 
 export const memoryApi: MemoryApi = {
+  repository: {
+    preview: (project, operation) => call(`/api/memory/repository/${enc(project)}/${operation}`),
+    export: (project) => call(`/api/memory/repository/${enc(project)}/export`, { method: "POST" }),
+    restore: (project) =>
+      call(`/api/memory/repository/${enc(project)}/restore`, { method: "POST" }),
+    conflicts: (project) =>
+      call(
+        project === undefined
+          ? "/api/memory/repository/conflicts"
+          : `/api/memory/repository/${enc(project)}/conflicts`,
+      ),
+    compare: (project, id) => call(`/api/memory/repository/${enc(project)}/conflicts/${enc(id)}`),
+    reconcile: (project, id, input) =>
+      call(`/api/memory/repository/${enc(project)}/conflicts/${enc(id)}`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+  },
   pilotMigration: {
     scan: (input, signal) =>
       call("/api/memory/import/pilot/scan", {

@@ -19,6 +19,7 @@ import type {
 import { PERSONAL_PROJECT } from "../memory-contracts.ts"
 import { memoryService } from "../memory-runtime.ts"
 import { registeredProjects } from "./api.ts"
+import { repositoryReply } from "./memory-repository.ts"
 import { PilotMemoryMigration } from "./pilot-memory.ts"
 
 const MAX_BODY = 3 * 1024 * 1024
@@ -395,6 +396,8 @@ export function createMemoryHandler(ctx: Ctx, make: () => Service = () => memory
       }
       const path = url.pathname.slice("/api/memory/".length).split("/").map(decodeURIComponent)
       const method = request.method
+      if (path[0] === "repository" && service.repository)
+        return await repositoryReply(service.repository, request, path.slice(1), body, reply)
       if (method === "POST" && path[0] === "import" && path[1] === "pilot" && path.length === 3)
         return reply(
           await pilotMigration.handle(path[2]!, await body(request), service, request.signal),

@@ -1,6 +1,5 @@
 import type { Fact } from "../../step-page/bands/FactRow.tsx"
 import { type GistProps, metaLine } from "../../step-page/bands/Gist.tsx"
-import { TICKS_UP_TO } from "../../step-page/proof.ts"
 import { type BoardStage, spanWords, type verifyView, whenWords } from "./progress.ts"
 
 type VerifyView = ReturnType<typeof verifyView>
@@ -45,9 +44,7 @@ function verifyFacts(view: VerifyView): Fact[] {
     {
       value: `${counted} of ${points.total}`,
       label: byPoint ? "Done means proven" : phase === "checking" ? "points judged" : "points pass",
-      ...(byPoint && view.ticks.length <= TICKS_UP_TO
-        ? { ticks: view.ticks }
-        : { bar: { done: counted, total: points.total } }),
+      bar: { done: counted, total: points.total },
       ...(view.roundWords !== "" ? { sub: view.roundWords } : {}),
     },
   ]

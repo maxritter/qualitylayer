@@ -16,7 +16,7 @@ import { fixingVerify, personVerify } from "../../model.ts"
 import { environmental } from "../../step-page/checks.ts"
 import { listsByPoint, planProofOf } from "../../step-page/proof.ts"
 import type { ProofRow } from "../../step-page/state.ts"
-import { executingCheck } from "./checks.ts"
+import { executingCheck, failedChecks, projectCheckWords } from "./checks.ts"
 
 /** What a helper or the build session reports it is doing, and when. */
 export type LaneActivity = { line: string; at: number | null }
@@ -50,8 +50,8 @@ export type BoardStage = {
   condition?: string
   state: StageState
   checks: BoardCheck[]
-  /** One mark per check: done, in work, or still to come. */
-  segments: ("d" | "w" | "")[]
+  /** One mark per check: done, failed, in work, or still to come. */
+  segments: ("d" | "f" | "w" | "")[]
 }
 
 /** The names of the checks as the board draws them. */
@@ -176,6 +176,19 @@ export function verifyView(
     ...row,
     ...(!active && row.state === "running" ? { state: "done" as const } : {}),
   }))
+  const recorded = task.verifyActivity
+  const projectRows = recorded?.projectChecks?.commands
+  const projectLane = lanes.find((row) => row.id === "checks")
+  if (active && projectRows?.length && (!projectLane || projectLane.state === "waiting")) {
+    const latest: LaneRow = {
+      id: "checks",
+      who: "QualityLayer",
+      state: projectRows.every((row) => row.outcome === "passed") ? "done" : "fail",
+      result: projectCheckWords(projectRows),
+    }
+    if (projectLane) Object.assign(projectLane, latest)
+    else lanes.push(latest)
+  }
   const activity: Partial<Record<VerifyLaneId, LaneActivity>> = {}
 
   for (const helper of task.helpers) {
@@ -197,6 +210,13 @@ export function verifyView(
     }
     const row = lanes.find((row) => row.id === "checks")
     if (row) row.state = "running"
+  }
+  if (active && recorded?.judgeRefusal) {
+    const judge = lanes.find((row) => row.id === "judge")
+    if (judge?.state === "waiting") {
+      judge.state = "fail"
+      judge.result = "Could not start"
+    }
   }
   const report = task.taskProgress
   const reportCurrent =
@@ -249,7 +269,15 @@ export function verifyView(
           name: byPoint && lane.id === "judge" ? POINTS_JUDGE : CHECK_NAMES[lane.id],
           who: whoWords(lane.who),
           state: lane.state,
-          result: lane.result === "" ? "" : withoutStateWord(lane.result),
+          result:
+            lane.id === "checks" &&
+            lane.state === "fail" &&
+            projectRows?.length &&
+            failedChecks(projectRows) > 0
+              ? projectCheckWords(projectRows)
+              : lane.result === ""
+                ? ""
+                : withoutStateWord(lane.result),
           ...(activity[lane.id] ? { activity: activity[lane.id]?.line ?? "" } : {}),
         }),
       )
@@ -273,7 +301,12 @@ export function verifyView(
     const unneeded = phase === "verified" && !fixRan
     if (index === 2) {
       who = "the build session"
-      condition = unneeded ? "not needed" : "if a check fails"
+      const failed = projectRows ? failedChecks(projectRows) : 0
+      condition = unneeded
+        ? "not needed"
+        : failed > 0
+          ? `${failed} failed ${failed === 1 ? "check" : "checks"}`
+          : "if a check fails"
       state =
         fixLane?.state === "running" || phase === "fixing"
           ? "running"
@@ -304,7 +337,9 @@ export function verifyView(
       ...(condition !== undefined ? { condition } : {}),
       state,
       checks,
-      segments: checks.map((c) => (c.state === "done" ? "d" : c.state === "running" ? "w" : "")),
+      segments: checks.map((c) =>
+        c.state === "done" ? "d" : c.state === "fail" ? "f" : c.state === "running" ? "w" : "",
+      ),
     }
   })
 

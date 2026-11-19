@@ -39,6 +39,7 @@ import { allTasks } from "./docs/outline.ts"
 import { readCards } from "./docs/outline-files.ts"
 import { readBaseline } from "./gate/baseline.ts"
 import { buildOwnPaths, buildRevision, fileRevision, within } from "./gate/revision.ts"
+import { currentBranch } from "./git/repo.ts"
 import { revisionPaths } from "./git/revision-paths.ts"
 import { foreignLooseEdits, keptOwnChanges, ownEdits } from "./git/session-edits.ts"
 import { notIsolatedWords, onSliceTree, ownFiles } from "./git/slice-tree.ts"
@@ -261,6 +262,8 @@ export type CheckRecord = {
   check?: string
   /** HEAD when this check started, for release readiness and CI comparisons. */
   head?: string
+  /** The checkout's branch when the check started. Detached and older receipts have no branch. */
+  branch?: string
   /** `all`, `slice N`, a task id, or `base`: the project checks run on a copy of the task's base commit (then `revision` is that commit). */
   scope: string
   command: string
@@ -763,6 +766,7 @@ export async function runCheck(
         const revision = await buildRevision(ctx, task).catch(() => rev)
         const commit = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
         const head = commit.code === 0 ? commit.stdout.trim() : undefined
+        const branch = scope.kind === "all" ? await currentBranch(ctx, task.repoRoot) : null
         const logs = join(task.runtimeDir, "checks")
         await ctx.fs.mkdir(logs)
         const results: CheckResult[] = []
@@ -1095,7 +1099,11 @@ export async function runCheck(
         if (scanned !== null)
           for (const result of scanned.results)
             lines.push(`- scans · ${scanned.head.slice(0, 7)} · ${scanLine(result)}`)
-        await saveCheckReceipt(ctx, task, checkId, records.slice(initialRecords), lines)
+        const receipt = records.slice(initialRecords).map(({ branch: _branch, ...row }) => ({
+          ...row,
+          ...(branch === null ? {} : { branch }),
+        }))
+        await saveCheckReceipt(ctx, task, checkId, receipt, lines)
         Object.assign(progress, {
           running: false,
           ended: ctx.clock.now(),

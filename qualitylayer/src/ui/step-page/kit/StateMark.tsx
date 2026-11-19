@@ -2,12 +2,17 @@
 // work, a hollow dot still to come (Workflow model: one number style). The number in front of the title
 // never changes shape; it is the plain `.sp-no` column. The words are for screen readers.
 
-import { CheckIcon } from "lucide-react"
+import { CheckIcon, TriangleAlertIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
-export type MarkState = "done" | "work" | "todo"
+export type MarkState = "done" | "work" | "todo" | "fail"
 
-const WORDS: Record<MarkState, string> = { done: "done", work: "in work", todo: "to come" }
+const WORDS: Record<MarkState, string> = {
+  done: "done",
+  work: "in work",
+  todo: "to come",
+  fail: "failed",
+}
 
 export function StateMark({ state, word }: { state: MarkState; word?: string }) {
   return (
@@ -18,6 +23,7 @@ export function StateMark({ state, word }: { state: MarkState; word?: string }) 
       aria-label={word ?? WORDS[state]}
     >
       {state === "done" ? <CheckIcon className="size-3" aria-hidden="true" /> : null}
+      {state === "fail" ? <TriangleAlertIcon className="size-3" aria-hidden="true" /> : null}
     </span>
   )
 }

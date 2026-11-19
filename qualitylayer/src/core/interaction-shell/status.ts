@@ -136,6 +136,7 @@ export function shellStatus(
   const helpers = runningHelpers(task, now)
   // A session in the person's own terminal that ended its turn waits for them to answer there.
   const outsideTurn =
+    task.stage !== "verify" &&
     task.outside !== undefined &&
     helpers.length === 0 &&
     signals !== null &&
@@ -144,8 +145,13 @@ export function shellStatus(
     signals?.tool !== null &&
     signals?.tool !== undefined &&
     signals.tool.at > (task.session?.heartbeat ?? 0)
+  const verifyQuestion = task.stage === "verify" && (question != null || task.action === "final")
   const blocked =
-    permission || outsideTurn || ask === true || (task.session?.state === "waiting" && !independent)
+    permission ||
+    verifyQuestion ||
+    outsideTurn ||
+    ask === true ||
+    (task.session?.state === "waiting" && !independent)
   const base = {
     agent: agentIdOf(task),
     since: task.session?.since ?? null,
@@ -192,15 +198,15 @@ export function shellStatus(
     return { ...base, state: "stopped", doing: `${agentName(base.agent)} stopped`, resume }
   // Held by the agent's plan limit: nothing runs until it resets, so no spinner. With a resume
   // planned QualityLayer goes on by itself; without one the person continues the session.
-  if (signals?.limit != null)
+  if (signals?.limit != null && !verifyQuestion && !(task.stage === "verify" && permission))
     return {
       ...base,
-      state: "waits-for-you",
-      blocked: true,
+      state: task.stage === "verify" ? "quiet" : "waits-for-you",
+      blocked: task.stage !== "verify",
       doing: limitWords(signals.limit, now).row,
       resume: signals.limit.resumeAt != null ? null : resume,
     }
-  if (blocked && (openItems > 0 || permission || outsideTurn))
+  if (blocked && (openItems > 0 || verifyQuestion || permission || outsideTurn))
     return {
       ...base,
       state: "waits-for-you",
@@ -208,6 +214,8 @@ export function shellStatus(
     }
   const doing = doingWords(task, now)
   if (helpers.length > 0) return { ...base, state: "working", doing }
+  if (task.stage === "verify" && signals && livenessOf(signals, now).state === "turn-end")
+    return { ...base, state: "quiet", blocked: false, doing: "No active turn" }
   if (lastActivity !== null && now - lastActivity >= SHELL_QUIET_MS)
     return { ...base, state: "quiet", doing }
   return { ...base, state: "working", doing }
@@ -289,7 +297,8 @@ export function asksInChat(
   task: Input & { startupPrompt?: StartupPrompt },
   now = Date.now(),
 ): boolean {
-  if (task.type === "chat" || task.archived || !autonomousTask(task)) return false
+  if (task.stage === "verify" || task.type === "chat" || task.archived || !autonomousTask(task))
+    return false
   if (workEnded(task) || task.action !== null || task.startupPrompt !== undefined) return false
   if (task.gate != null && !task.gate.settled) return false
   if (task.session?.state === "waiting") return false

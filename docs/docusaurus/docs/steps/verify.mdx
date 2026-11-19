@@ -16,7 +16,7 @@ Agents that did not write the code check every **Done means** point and fix what
 Project commands and scans produce recorded results:
 
 <CardGroup cols={2}>
-  <Card title="Project checks" icon="square-terminal">Tests, types, lint and build run on the commit. A failure is recorded, and the reviewer rules on it.</Card>
+  <Card title="Project checks" icon="square-terminal">Open **Check results and checkout** to see each command’s outcome, the checked revision and the current checkout.</Card>
   <Card title="Code health" icon="badge-check" href="/docs/reference/code-health">Complexity and duplication in the files your agent changed, fed back to it after each turn.</Card>
   <Card title="Security scans" icon="shield-check" href="/docs/reference/code-health#security-scans">Secrets, dependency advisories, GitHub workflows and risky code. An unavailable scan stays **not checked**.</Card>
   <Card title="Recorded proof" icon="file-text">A point passes only with evidence: a check's output, a captured response, a screenshot or a file.</Card>
@@ -45,7 +45,7 @@ If a check needs access or a decision only you can provide, your agent asks for 
 
 <Screenshot name="verify" alt="Verify ready for you: the code review first, then what changed, the screens and Done means as it ran, with one final approval in the page header" />
 
-<span id="live"></span>The header counts the points proven, one tick each, and each point shows its evidence as it comes in. **Read the record** opens `agents/03-verify.md`, with the findings, commands and every judged round.
+<span id="live"></span>While checks run, the progress bar counts the points proven. Open agent activity for recorded outcomes and any action the agent needs from you. **Read the record** opens `agents/03-verify.md` with findings, commands and every judged round.
 
 <CardGroup cols={2}>
   <Card title="Why" icon="file-text">The request in one sentence, then a release-note line for each change users see.</Card>

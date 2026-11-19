@@ -691,21 +691,47 @@ export class MemoryCatalog {
   clearConflicts(project: string, id: string) {
     this.db.query("DELETE FROM conflicts WHERE project=? AND id=?").run(project, id)
   }
-  /** Old exchange already accepted these records locally; preserve their eligibility on export. */
-  acceptExistingRepository(project: string) {
+  conflictQueue(project?: string): import("../memory-contracts.ts").MemoryRepositoryConflicts {
+    const lessons = this.db
+      .query(
+        `SELECT DISTINCT c.project, p.name, c.id FROM conflicts c
+          JOIN projects p ON p.id=c.project JOIN records r ON r.id=c.id AND r.project=c.project
+          WHERE (? IS NULL OR c.project=?) ORDER BY p.name,c.project,c.id`,
+      )
+      .all(project ?? null, project ?? null) as { project: string; name: string; id: string }[]
+    return { total: lessons.length, ...(lessons[0] ? { next: lessons[0] } : {}) }
+  }
+  exportableCount(project: string): number {
+    return (
+      this.published(project).filter(
+        (record) =>
+          record.visibility === "project" &&
+          record.source !== "pilot" &&
+          this.meta(`eligible:${record.id}`) === eligibilityDigest(record),
+      ).length + this.existingRepositoryPublications(project).length
+    )
+  }
+  private existingRepositoryPublications(project: string): MemoryRecord[] {
     const rows = this.db
       .query(
         "SELECT data FROM records WHERE project=? AND source='repository' AND visibility='project' AND id NOT IN (SELECT id FROM publications)",
       )
       .all(project) as RecordRow[]
+    return rows.flatMap((row) => {
+      const record = JSON.parse(row.data) as MemoryRecord
+      try {
+        publicationText(record)
+        return [record]
+      } catch {
+        return []
+      }
+    })
+  }
+  /** Old exchange already accepted these records locally; preserve their eligibility on export. */
+  acceptExistingRepository(project: string) {
+    const records = this.existingRepositoryPublications(project)
     this.db.transaction(() => {
-      for (const row of rows) {
-        const record = JSON.parse(row.data) as MemoryRecord
-        try {
-          publicationText(record)
-        } catch {
-          continue
-        }
+      for (const record of records) {
         this.publish(record)
         this.setMeta(`eligible:${record.id}`, eligibilityDigest(record))
       }

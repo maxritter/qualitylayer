@@ -5,23 +5,38 @@
 // opens the viewer.
 
 import { FileDiffIcon } from "lucide-react"
+import type { VerifyRevision } from "../../../core/verify-activity.ts"
 import { openReviewWorkspace, useCodeSummary } from "../../review-workspace/open.ts"
 import { plural } from "../../timeline/parts.tsx"
 
-export function CodeAccess({ taskId }: { taskId: string }) {
+export function CodeAccess({
+  taskId,
+  checkout,
+  changedCount,
+}: {
+  taskId: string
+  checkout?: VerifyRevision | undefined
+  changedCount?: number | undefined
+}) {
   const summary = useCodeSummary(taskId)
+  const files = summary?.files ?? changedCount
+  const empty = files === 0 && checkout !== undefined
   return (
     <div className="review-final-code verify-code">
       <div className="review-code-entry" data-testid="verify-code-row">
         <FileDiffIcon className="review-code-icon" aria-hidden="true" />
         <b>
-          {summary !== null && summary.files > 0
-            ? plural(summary.files, "changed file")
-            : "Changed files"}
+          {files !== undefined && files > 0
+            ? plural(files, "changed file")
+            : empty
+              ? `No registered changes${checkout.branch ? ` on ${checkout.branch}` : ""}`
+              : "Changed files"}
         </b>
-        <button type="button" className="q-btn" onClick={() => openReviewWorkspace(taskId)}>
-          View changes
-        </button>
+        {empty ? null : (
+          <button type="button" className="q-btn" onClick={() => openReviewWorkspace(taskId)}>
+            View changes
+          </button>
+        )}
       </div>
     </div>
   )

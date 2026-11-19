@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "8d3a507dacbee34236dfcfe728ed636255cb8355",
-  "catalogSha256": "358195ec0ec28bbf2252a3e27349e426c97bab9ef07c6440d29ae2c02bfb4741",
+  "sourceHead": "5353c2676c309f060a02a45107dfaa23d134a15d",
+  "catalogSha256": "30f772246e294ea7c2be5befeb6708b8193b2670232ce6b38f50b6c1ea2b5c4e",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -1295,7 +1295,7 @@
     },
     {
       "path": "qualitylayer/src/core/checks.ts",
-      "sha256": "1f5809a0accd712fa6860433312534a50fa018e46cb098b819c27b02b87ce5a0",
+      "sha256": "4c85de214bcb16284f8a2f3b7cf9031837fc0d851dbb982c69c2fabbd94e8058",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3279,7 +3279,7 @@
     },
     {
       "path": "qualitylayer/src/core/interaction-shell/status.ts",
-      "sha256": "61b7cbd7bf7c53667b5524604c7880825794439062571aff62fb59dc953bd085",
+      "sha256": "052f436b865a4cf6e80dc27a6a60b81fd9ef224410fd3cae55edd7d1972a5f14",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3727,7 +3727,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/index.ts",
-      "sha256": "edac2098675bccd46dfe40a4ef18d57cf8d3b6ef8c1f90876c5f619f01de8ae8",
+      "sha256": "dc10277df76c2cd04a2844195c9d69c4e7c144a7f9f0601b74c910f948c4cecf",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3895,7 +3895,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/portability.ts",
-      "sha256": "b80acee596662b3c54899ea00d4ac5d9cfb07754b31b2ec45fad5c78cae5d9aa",
+      "sha256": "24a6a92f2de2374fc1c297c889eeab8bb338c077138ebbc59f38ebf4dbc1fc1e",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3951,7 +3951,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/reconcile.ts",
-      "sha256": "aff6da2524ca2830a86cf0712b877de665feb0b7cf8fa3917812455b6e33930d",
+      "sha256": "8d5be534e68d03109f7b400aa4915c2c63a79b5d4abaefe390276c9e03ab43c5",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4015,7 +4015,7 @@
     },
     {
       "path": "qualitylayer/src/core/memory/restore.ts",
-      "sha256": "360d537aefdd4073b7ac001fed6fa19df837e9de2748402dd93c0c66d829a39f",
+      "sha256": "e725aee89e347ba30060359240a467cd1c4b6d84a8f618e0a851116ec35d4312",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -4775,7 +4775,7 @@
     },
     {
       "path": "qualitylayer/src/core/peers/commands/request-send.ts",
-      "sha256": "33bba95e4abd5afca1bce51b3ef1fafebe0187fc55fa93cf76f6661b2c9b2a41",
+      "sha256": "da2b5a85bd79bc657abe2e74df2ff080abf2e6a996428e0b625d4d1f60194615",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -6902,6 +6902,14 @@
       "lifecycle": "retained"
     },
     {
+      "path": "qualitylayer/src/core/verify-activity.ts",
+      "sha256": "270c1bd1e1b0ca581b5ee76f69ef88da4164002ecf54442cb918daaaff9b6d99",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
       "path": "qualitylayer/src/core/verify-budget.ts",
       "sha256": "05814902b495b8bc4e2d215a8418defd8e02425b72a839330a10cfe9453c9c3b",
       "visibility": "public",
@@ -7007,7 +7015,7 @@
     },
     {
       "path": "qualitylayer/src/memory-contracts.ts",
-      "sha256": "6e8f5202181b55f06814ef38fe35319c44d284b2f843550ddc052b5b6472d6c4",
+      "sha256": "81bf529e9a0fea77c3caea08fa1096d693586750c7275ab85d9cfaf600e540ef",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7263,7 +7271,7 @@
     },
     {
       "path": "qualitylayer/src/memory-store/catalog.ts",
-      "sha256": "d22cd80c232e084f76a73680fb45ba0e9b4b3f4645eb270e152f1bdbf19e3acc",
+      "sha256": "c746608d504935a8b3b00eb18a1aba3d714d167576394ed7ca49838705f1cb3f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7343,7 +7351,7 @@
     },
     {
       "path": "qualitylayer/src/server/api.ts",
-      "sha256": "4529ecea20110ed12fc2b0fcb89d736161e7024453f651d0cf1ebcddc21c4e1d",
+      "sha256": "89a7a53ccd28bebfc49e2a22aeb02a7a0617fcf82a23fffe3ea7a16613e96b35",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -7878,8 +7886,16 @@
       "lifecycle": "retained"
     },
     {
+      "path": "qualitylayer/src/server/memory-repository.ts",
+      "sha256": "70d2340685a901677937a1d22e63076e3605ddef65539db976ee09e35639c87a",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
       "path": "qualitylayer/src/server/memory.ts",
-      "sha256": "7bff3fafc7c915b24b7595658a0442c5abb30e2b909a99a6ced87003ec543219",
+      "sha256": "05ede3cb34bb20d23756d1cdc611c2cfd2c31300bf8eaaf0edfb9b47cd4ae29b",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -9263,7 +9279,7 @@
     },
     {
       "path": "qualitylayer/src/ui/api.ts",
-      "sha256": "8d22104ba700d0917a309386ff6619c7c966472b2ebac0ad014800b96a1c0639",
+      "sha256": "2fc07397f1a1968f61095527030984d072b2c32bc4f1218a2e6936503b81eb35",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10223,7 +10239,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/memory.ts",
-      "sha256": "01a7f7346252d502363d09c55d1175324fda65a7552cb9ef3f0afcc0c2317919",
+      "sha256": "9be76872a683e0d8f8a93d7b4bf41ef3281a7743c50b0b7374a95b75754521eb",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -10599,7 +10615,7 @@
     },
     {
       "path": "qualitylayer/src/ui/demo/task/verify.ts",
-      "sha256": "bb94a93df4452e49ab4fbcf0853ca5e48ade18ea55147928ef4903bae259129d",
+      "sha256": "5b7ee7a7819ebc223167e68b78acba8f2bf069962e35fe48a58b8abe52f6541f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12407,7 +12423,7 @@
     },
     {
       "path": "qualitylayer/src/ui/run/OutsideLead.tsx",
-      "sha256": "b23c35fc27d6adaf53eb8fd8caf2a8d0418c484be444378111b8a669bf8408cd",
+      "sha256": "ab5dbfe295db85c7e48cee9793d13ccf31bd17513b844e5f42a1e0674d963d09",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12711,7 +12727,15 @@
     },
     {
       "path": "qualitylayer/src/ui/settings/Memory.tsx",
-      "sha256": "52fef45cbab7f4c84c85609b117c6e9e9d5dc24c6051692af396da96600fd640",
+      "sha256": "9afaadf1f59411e9d134c29a62db0b5b1bd3f78ab8cee6fdb7c95749b8caaf50",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/settings/MemoryRepository.tsx",
+      "sha256": "c953bee650feb72ad4c830db1227ff7d7642ae128ec45ad3b0584aaedfe73f9c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -12934,6 +12958,38 @@
       "lifecycle": "retained"
     },
     {
+      "path": "qualitylayer/src/ui/settings/memory-repository/CompareVersions.tsx",
+      "sha256": "0fcce3931c4afb10846a21dcc0b262b78fe37ce79786989d913178d5d13656c6",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/settings/memory-repository/ProjectPicker.tsx",
+      "sha256": "b3b1cfb41d31b3592810d3d17c3eb83b87444776287a0bb94a291c8983a47b54",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/settings/memory-repository/RepositoryOperation.tsx",
+      "sha256": "acd08b730dd435d99f9117e1235d897e4a1d9635224d92b13f33f8f0f75b3291",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/settings/memory-repository/receipt.ts",
+      "sha256": "731036a897e71db8a4c8bb0b19e8b57eed89ac2c14e781330854f666dd00e1b2",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
       "path": "qualitylayer/src/ui/settings/memory.css",
       "sha256": "5d02ef0a9d9a5247d7d72de1cf170e21c67daec4a3db1162fd659bc440d404a4",
       "visibility": "public",
@@ -13111,7 +13167,7 @@
     },
     {
       "path": "qualitylayer/src/ui/shell/AgentChip.tsx",
-      "sha256": "53e1a0cd5770d6ea0710aec74034ba4e8a1e7674f80d7727eee49660b3e3ee16",
+      "sha256": "8af007763a5837013e7382fd63cc39d01513ccfa751f3e73b988100472721764",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13135,7 +13191,7 @@
     },
     {
       "path": "qualitylayer/src/ui/shell/StatusPanel.tsx",
-      "sha256": "b0fef02070a4febb0eed52ce47bd696155a6492321846a16e0eea5b7ea814695",
+      "sha256": "ce6058f6aad88b7d1c9d24e46721eb23bd08e514408e335233e43a818d1af37f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13168,6 +13224,14 @@
     {
       "path": "qualitylayer/src/ui/shell/TaskTopBar.tsx",
       "sha256": "038d3f6b021938ccf49ba52b1ae057ec3be652fe034fac86e21b122d156360a1",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/shell/VerifyActivity.tsx",
+      "sha256": "2abb135ce7a55095ec74945b4eaca2841a5968ee4b0af044729d33ad3da461c7",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13264,6 +13328,14 @@
     {
       "path": "qualitylayer/src/ui/shell/useActionFold.ts",
       "sha256": "c0d2b0e323747bbc9e6cb928cdd672c334a7ffb8cd484dbd5cb5b0dc1957d001",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/shell/verify-activity.css",
+      "sha256": "ad91947786e397441af367a8df437bca232386043a05586569b1d90438f9c0f0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -13911,7 +13983,7 @@
     },
     {
       "path": "qualitylayer/src/ui/step-page/kit/StateMark.tsx",
-      "sha256": "cc3181dabcc05f2a0f3969ff38b3b61b0ace47cd8858169b4e1c7a9bc2096b76",
+      "sha256": "173f02f9585dc27b58e9a0ca2646909b64b5e3019ff17cc079d2062b25cb3ab0",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14391,7 +14463,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/Board.tsx",
-      "sha256": "e2a91cbe1692f6dcdb2d4e48c06a15292db85c14768d208f7d6e4a878ff88da9",
+      "sha256": "88dd6e3f2e24f2b1c709fb1aaa59fe4382afc25056ce5488df38006c768a819f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14399,7 +14471,15 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/BoardPage.tsx",
-      "sha256": "cccc8b499398113b785e5a7d0fb8bd13488da09a775781e4ef84321aa50e0d2a",
+      "sha256": "0749425e5b6cc603984d8ba0eed289994dcc1790c91228493db6a2671d594f54",
+      "visibility": "public",
+      "responsibility": "nonlicensing",
+      "review": "reviewed",
+      "lifecycle": "retained"
+    },
+    {
+      "path": "qualitylayer/src/ui/steps/verify/CheckEvidence.tsx",
+      "sha256": "2aa8746a2b3a696c7fa88c62c8c5cc08f88c03be74b29b5e6a0455bd3a649b27",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14407,7 +14487,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/CodeAccess.tsx",
-      "sha256": "a4dcb329c392e2ea310cc994072280cc713b0880c6c9c264013acbfbd3b3ac2f",
+      "sha256": "410059bea5ce68056cdc83199684b4245002346ce64182caba99cdb692dc9576",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14487,7 +14567,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/ReviewFolds.tsx",
-      "sha256": "c269a3bded038fce7140f892f95fc882ef88910bf0ef23eb32738c7ee7c788f9",
+      "sha256": "ec33c0adc839398a6e61673ab370bdc5d1bd961314ca95f5926579179ea3d400",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14519,7 +14599,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/board-view.ts",
-      "sha256": "f68b43911cb1c9153a57252b0e64a20c52d7e0d2c90db91ffaa2b7893a7b18f5",
+      "sha256": "22499843ce5eba4579d15eb03b1ccf828f5fc8f7ebcc8d05c5c6a31eb93785c2",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14527,7 +14607,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/board.css",
-      "sha256": "e5e75a2ad35bdfb3a7efbc278dc203a0914d9a409e4977492a312bb655a897f7",
+      "sha256": "1c8bfbf16c6948ceefb55aa4d1297dd3d371801b7d05736a3d6a58cfc22e1aea",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14535,7 +14615,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/checks.ts",
-      "sha256": "d9b139ae64905224948c9a9730e0ebd4402cb8220c518a7d98b951f8535fd784",
+      "sha256": "007045db8d7319dbfbb6015acd4f084cabfdee4ba229d2318fc67a23a215a28c",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -14575,7 +14655,7 @@
     },
     {
       "path": "qualitylayer/src/ui/steps/verify/progress.ts",
-      "sha256": "7ec51fd5cc7d5c3da694bd2ae0fb8dd0f05b22f236d21eb9252fb075abad0347",
+      "sha256": "5daa7a0f35a3d61a1640609bd65087e5a4fdfe925f4617691486d8c3144bc40f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

@@ -209,6 +209,28 @@ export type MemoryExchangeResult = {
   migrated?: string
 }
 export type MemoryConflict = { fingerprint: string; record: MemoryRecord }
+export type MemoryRepositoryOperation = "export" | "restore"
+export type MemoryRepositoryVersion = Pick<MemoryRecord, "title" | "content" | "revision" | "state">
+export type MemoryRepositoryConflicts = {
+  total: number
+  next?: { project: string; name: string; id: string }
+}
+export type MemoryRepositoryComparison = {
+  local: MemoryRepositoryVersion
+  candidates: { fingerprint: string; version: MemoryRepositoryVersion }[]
+}
+export interface MemoryRepositoryApi {
+  preview(project: string, operation: MemoryRepositoryOperation): Promise<{ count: number }>
+  export(project: string): Promise<MemoryExchangeResult>
+  restore(project: string): Promise<MemoryExchangeResult>
+  conflicts(project?: string): Promise<MemoryRepositoryConflicts>
+  compare(project: string, id: string): Promise<MemoryRepositoryComparison>
+  reconcile(
+    project: string,
+    id: string,
+    input: { revision: number; candidate: string; fingerprints: string[] },
+  ): Promise<{ revision: number }>
+}
 export type MemoryStoreInput = {
   /** Update an explicitly restored identity, refusing a changed local revision. */
   id?: string
@@ -271,6 +293,7 @@ export interface MemoryEngine {
 }
 
 export interface MemoryApi {
+  repository?: MemoryRepositoryApi
   pilotMigration?: import("./pilot-memory-contracts.ts").PilotMigrationApi
   activity?(project: string, task: string): Promise<MemoryTaskActivityView>
   overview(project?: string): Promise<MemoryOverview>

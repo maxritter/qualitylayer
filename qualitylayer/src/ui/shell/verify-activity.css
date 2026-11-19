@@ -1,0 +1,29 @@
+@layer components {
+  .verify-activity-events {
+    border-top: 1px solid var(--ql-line);
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .verify-activity-events h3 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .verify-activity-events ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .verify-activity-events li {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    gap: 10px;
+    padding: 3px 0;
+    overflow-wrap: anywhere;
+  }
+  .verify-activity-events time {
+    color: var(--ql-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+}

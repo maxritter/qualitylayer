@@ -222,6 +222,7 @@ import { asComment, isStructured, readTeamComments } from "../core/team/comments
 import type { Person } from "../core/team/people.ts"
 import { type Timeline, timeline } from "../core/timeline.ts"
 import { readAssignment } from "../core/verification.ts"
+import { readVerifyActivity, type VerifyActivity } from "../core/verify-activity.ts"
 import { writeViewing } from "../core/viewing.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { filesIn } from "../files.ts"
@@ -473,6 +474,7 @@ export type TaskDetail = TaskSummary & {
   /** The owning task's explicit progress line, including its recorded workflow step. */
   taskProgress?: BuildLine | null
   reusedChecks?: string[]
+  verifyActivity?: VerifyActivity
   /** The task's required lines and what became of each; absent when its instructions required none. */
   required?: RequiredView
   /** Source identity only, not a pass verdict: do outcome records match the displayed code/basis? */
@@ -1418,7 +1420,8 @@ async function readTaskDetail(
   // Verify turned to the person: the final approval is theirs to give.
   const reviewing = isCurrentLayout(task) && (await inPersonReview(ctx, task))
   const gateFile = reviewing ? await ensureFinalReview(ctx, task) : await currentTaskGate(ctx, task)
-  const checkedSource = gateFile?.finalReview?.code ? await readAssignment(ctx, task) : null
+  const checkedSource =
+    task.stage === "verify" || gateFile?.finalReview?.code ? await readAssignment(ctx, task) : null
   if (options.shown === true && gateFile?.target === FINAL && gateFile.shown === undefined)
     await markGateShown(ctx, task)
   const [
@@ -1535,6 +1538,17 @@ async function readTaskDetail(
     // Verify's stages keep their results after the checks: while the person reviews and once shipped.
     ...(["verify", "shipped"].includes(task.stage)
       ? { verifyLanes: await servedVerifyLanes(ctx, task) }
+      : {}),
+    ...(["verify", "shipped"].includes(task.stage)
+      ? {
+          verifyActivity: await readVerifyActivity(
+            ctx,
+            task,
+            outside?.sessionId ?? summary.live?.signals?.sessionId ?? null,
+            events,
+            checkedSource?.head,
+          ),
+        }
       : {}),
     checklist: ["verify", "shipped"].includes(task.stage)
       ? await readChecklist(ctx, task, { helpers: summary.helpers })

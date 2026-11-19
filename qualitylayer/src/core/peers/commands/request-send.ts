@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto"
+import { realCtx } from "../../../ctx.ts"
+import { keyOf } from "../../task/binding.ts"
+import { observedTarget } from "../../task/bound-target.ts"
 import {
   BUDDY_KINDS,
   nowIso,
@@ -82,6 +85,9 @@ export async function openRequest(args: Args, purpose: "ask" | "dispatch") {
   cleanupExpiredRequests()
   const id = randomUUID()
   const expiresAt = nowSeconds() + timeout
+  const bound = opt(args, "from-thread")
+    ? null
+    : await observedTarget(realCtx(), keyOf(requester.uuid)).catch(() => null)
   const meta = {
     request_id: id,
     requester_thread_id: threadId,
@@ -90,6 +96,7 @@ export async function openRequest(args: Args, purpose: "ask" | "dispatch") {
     target_kind: targetKind,
     target_session_id: sessionId,
     target_session_name: sessionName,
+    ...(bound?.kind === "bound" ? { workflow_repo: bound.repo.id, workflow_task: bound.slug } : {}),
     message,
     created_at: nowIso(),
     expires_at: expiresAt,

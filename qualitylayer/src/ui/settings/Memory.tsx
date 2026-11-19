@@ -39,6 +39,7 @@ import { ModelPick } from "../ModelPick.tsx"
 import { useProjectLooks } from "../sidebar/look-context.tsx"
 import { ProjectTile } from "../sidebar/ProjectTile.tsx"
 import { projectFacts } from "../sidebar/project-model.ts"
+import { MemoryRepository } from "./MemoryRepository.tsx"
 import { pilotFile } from "./memory-import/files.ts"
 import { PilotMigration } from "./memory-import/PilotMigration.tsx"
 import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
@@ -1095,30 +1096,39 @@ export function MemoryTab({
           </p>
         ) : null}
       </SettingsGroup>
-      <SettingsGroup
-        title="Share project lessons"
-        end={
-          overview
-            ? overview.sharedProjects
-              ? `${overview.sharedProjects.shared} of ${overview.sharedProjects.total} projects sharing through Git`
-              : count(overview.projects, "project")
-            : undefined
-        }
-      >
-        <SettingRow
-          icon={<GitBranchIcon className="size-[15px]" />}
-          label="Share through Git"
-          hint="A shared project's lessons go into your next commit. Lessons about you and your answers stay here."
+      {api.repository ? (
+        <MemoryRepository
+          api={api}
+          repository={api.repository}
+          overview={overview}
+          changed={refresh}
+        />
+      ) : (
+        <SettingsGroup
+          title="Share project lessons"
+          end={
+            overview
+              ? overview.sharedProjects
+                ? `${overview.sharedProjects.shared} of ${overview.sharedProjects.total} projects sharing through Git`
+                : count(overview.projects, "project")
+              : undefined
+          }
         >
-          <Button
-            type="button"
-            variant="outline"
-            onClick={(event) => open("projects", event.currentTarget)}
+          <SettingRow
+            icon={<GitBranchIcon className="size-[15px]" />}
+            label="Share through Git"
+            hint="A shared project's lessons go into your next commit. Lessons about you and your answers stay here."
           >
-            Manage projects
-          </Button>
-        </SettingRow>
-      </SettingsGroup>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={(event) => open("projects", event.currentTarget)}
+            >
+              Manage projects
+            </Button>
+          </SettingRow>
+        </SettingsGroup>
+      )}
       <SettingsGroup
         title="Saved memories"
         end={
@@ -1305,14 +1315,16 @@ export function MemoryTab({
           </Button>
         </SettingRow>
         <SettingsMore summary="Where memories go">
-          <p className="q-sg-foot">
-            Lessons stay on this computer until you enable repository sharing; lessons about you and
-            your answers in tasks always stay here. Shared lessons are included in your normal
-            commit and reach teammates after you push. Each person's lessons sit in{" "}
-            <code>docs/memories/&lt;yours&gt;/</code> with a LESSONS.md that QualityLayer rewrites
-            and never reads back. Anyone with access to the repository can read them. You choose
-            sharing per repository, and your choices apply only on this computer.
-          </p>
+          {api.repository ? null : (
+            <p className="q-sg-foot">
+              Lessons stay on this computer until you enable repository sharing; lessons about you
+              and your answers in tasks always stay here. Shared lessons are included in your normal
+              commit and reach teammates after you push. Each person's lessons sit in{" "}
+              <code>docs/memories/&lt;yours&gt;/</code> with a LESSONS.md that QualityLayer rewrites
+              and never reads back. Anyone with access to the repository can read them. You choose
+              sharing per repository, and your choices apply only on this computer.
+            </p>
+          )}
           <p className="q-sg-foot">
             Recalled lessons become part of the agent’s task context and can reach its usual model
             provider. Your Claude Code and Codex memory settings stay as you configured them.

@@ -12,6 +12,7 @@ import { WhoMark } from "../kit/WhoMark.tsx"
 import { ReportThis } from "../ReportThis.tsx"
 import { type RunWindow, useOptionalRuns } from "../run-context.tsx"
 import { cancelLimitResume, runTaskId } from "../runs-api.ts"
+import { VerifyActivityTimeline, verifyPause } from "./VerifyActivity.tsx"
 
 import "./status-panel.css"
 
@@ -129,24 +130,28 @@ export function StatusPanel({
       ? life
       : null
   const waits = permission || s.state === "waits-for-you"
+  const pause = stopped || waits || s.state === "step-done" ? null : verifyPause(task, now)
 
   // The one line of what happens now, and at most one line under it.
   let headline: string
   let detail: string | null = null
   // Held by its plan limit (core/limits): the reason, when it resets, and the way on.
-  const limit = stopped ? null : (s.signals?.limit ?? null)
+  const limit = stopped || (task.stage === "verify" && waits) ? null : (s.signals?.limit ?? null)
   if (limit !== null) {
     headline = `${name} hit its usage limit`
     detail = limitWords(limit, now).line
   } else if (stopped)
     headline = s.signals?.stoppedAt == null ? "Stopped" : `Stopped at ${clock(s.signals.stoppedAt)}`
   else if (permission) {
-    headline = "Asks for your permission"
+    headline = task.stage === "verify" ? "Permission needed" : "Asks for your permission"
     detail = leadTerminal
       ? leadTerminal.terminalPrompt === "permission"
         ? "Allow or refuse it in its terminal."
         : "Allow or deny it in Conversation."
       : `Allow or refuse it in ${name}'s own window.`
+  } else if (pause) {
+    headline = pause.title
+    detail = pause.detail
   } else if (s.state === "waits-for-you" || s.state === "step-done") headline = sentence(s.doing)
   else if (helpersNow.length > 0) {
     headline = `${plural(helpersNow.length, "helper")} working`
@@ -201,7 +206,7 @@ export function StatusPanel({
   const running = task.checkProgress?.filter((row) => row.running && !row.queued) ?? []
   const refusal = task.live?.refusal ?? null
   // A second refusal in a row is the person's (core/live/record.ts); a first is the agent's to fix.
-  const escalated = refusal !== null && refusal.count >= 2
+  const escalated = task.stage !== "verify" && refusal !== null && refusal.count >= 2
   const helpers = [
     ...helpersNow,
     ...shell.agents.filter((a) => ["queued", "quiet", "awaiting-commit"].includes(a.state)),
@@ -222,7 +227,17 @@ export function StatusPanel({
       <div className="ir-status-scroll" data-testid="status-panel-scroll">
         <header className="sc-head">
           <WhoMark
-            who={stopped ? "halt" : waits ? "you" : s.state === "step-done" ? "done" : "agent"}
+            who={
+              stopped
+                ? "halt"
+                : waits
+                  ? "you"
+                  : s.state === "step-done"
+                    ? "done"
+                    : pause
+                      ? "todo"
+                      : "agent"
+            }
             running={
               !stopped &&
               !waits &&
@@ -321,6 +336,7 @@ export function StatusPanel({
             </div>
           ) : null}
         </div>
+        <VerifyActivityTimeline task={task} now={now} />
         <details className="sc-more" id="agent-details" data-testid="agent-details">
           <summary>
             <ChevronRightIcon size={14} aria-hidden="true" className="sc-chev" />

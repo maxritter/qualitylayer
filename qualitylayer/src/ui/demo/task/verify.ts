@@ -419,6 +419,23 @@ const REUSED_CHECKS = [
 
 const MINUTE = 60_000
 
+function demoCheckReceipt(mode: Mode): NonNullable<TaskDetail["verifyActivity"]> {
+  const checked = { head: "a41c9e2", branch: "feat/usage-billing" }
+  return {
+    projectChecks: {
+      at: Date.now() - 25 * MINUTE,
+      checked,
+      checkout: checked,
+      commands: [
+        ...REUSED_CHECKS.map((command) => ({ command, exit: 0, outcome: "passed" as const })),
+        mode === "red"
+          ? { command: "npm run build", exit: 1, outcome: "failed" }
+          : { command: "npm run build", exit: 0, outcome: "passed" },
+      ],
+    },
+  }
+}
+
 /** The question the fix rounds' exit asks at `verify-asked`: how Verify goes on with point 3 open. */
 const exitQuestion = (now: number): NonNullable<TaskDetail["question"]> => ({
   id: "verify-exit-2-1",
@@ -548,6 +565,7 @@ export const verify: Area = {
       ),
       // The lanes the board draws, as the last refresh recorded them.
       verifyLanes: demoLanes(mode, light),
+      ...(reading(mode) && !light ? { verifyActivity: demoCheckReceipt(mode) } : {}),
       events: verifyEvents(task, mode),
       ...verifyModeField(mode === "red" ? "checking" : mode),
       ...(mode === "asked" ? { question: exitQuestion(Date.now()) } : {}),

@@ -43,7 +43,7 @@ export function ReviewFolds({ task, state, mode, live, api }: StepPageProps) {
             .filter((part) => part !== "")
             .join(" · ")}
         >
-          <VerifyBoard stages={view.stages} />
+          <VerifyBoard stages={view.stages} receipt={task.verifyActivity?.projectChecks} />
         </IconFold>
       ) : null}
       {pictures > 0 ? (

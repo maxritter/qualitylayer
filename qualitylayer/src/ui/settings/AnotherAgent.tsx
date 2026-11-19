@@ -1,33 +1,11 @@
 import { BracesIcon, TerminalIcon } from "lucide-react"
-import { type FormEvent, useEffect, useEffectEvent, useId, useRef, useState } from "react"
+import { type FormEvent, useEffect, useEffectEvent, useId, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { validOtherAgentArgs, validOtherAgentProgram } from "../../core/config-values.ts"
 import type { Config } from "../api.ts"
-import { joinArguments, splitArguments } from "./arguments.ts"
-import { MONO_INPUT, type SaveResult } from "./CommitField.tsx"
+import { MONO_INPUT } from "./CommitField.tsx"
 import { SettingRow, SettingsGroup } from "./Rows.tsx"
-
-type Agent = Config["otherAgent"]
-type Draft = { program: string; args: string }
-type Problems = { program: boolean; args: boolean }
-const NO_PROBLEMS: Problems = { program: false, args: false }
-
-function sameAgent(left: Agent, right: Agent): boolean {
-  return (
-    left.program === right.program &&
-    left.args.length === right.args.length &&
-    left.args.every((arg, index) => arg === right.args[index])
-  )
-}
-
-function edit(agent: Agent): Draft {
-  return { program: agent.program, args: joinArguments(agent.args) }
-}
-
-function read(draft: Draft): Agent {
-  return { program: draft.program.trim(), args: splitArguments(draft.args.trim()) }
-}
+import { useAgentSave, type WriteAgentSetting } from "./useAgentSave.ts"
 
 function AgentField({
   name,
@@ -71,6 +49,40 @@ function AgentField({
   )
 }
 
+function useFormExit(save: () => Promise<void>) {
+  const form = useRef<HTMLFormElement>(null)
+  const inside = useRef(false)
+  const leave = useEffectEvent((event: PointerEvent) => {
+    const element = form.current
+    if (
+      element &&
+      event.target instanceof Node &&
+      !element.contains(event.target) &&
+      !element.contains(document.activeElement)
+    )
+      void save()
+  })
+  useEffect(() => {
+    const onPointer = (event: PointerEvent) => leave(event)
+    document.addEventListener("pointerdown", onPointer, true)
+    return () => document.removeEventListener("pointerdown", onPointer, true)
+  }, [])
+  return {
+    ref: form,
+    onPointerDownCapture() {
+      inside.current = true
+      setTimeout(() => {
+        inside.current = false
+      }, 0)
+    },
+    onBlur(event: React.FocusEvent<HTMLFormElement>) {
+      if (event.currentTarget.contains(event.relatedTarget)) return
+      if (event.relatedTarget === null && inside.current) return
+      void save()
+    },
+  }
+}
+
 export function AnotherAgent({
   config,
   permitted,
@@ -78,100 +90,17 @@ export function AnotherAgent({
 }: {
   config: Config
   permitted: boolean
-  onChange: (patch: unknown) => SaveResult
+  onChange: WriteAgentSetting
 }) {
-  const [draft, setDraft] = useState(() => edit(config.otherAgent))
-  const [kept, setKept] = useState(config.otherAgent)
-  const [problems, setProblems] = useState(NO_PROBLEMS)
-  const [refused, setRefused] = useState(false)
-  const [confirmed, setConfirmed] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const inFlight = useRef(false)
-  const requestedAgain = useRef(false)
-  const pointerInside = useRef(false)
-  const form = useRef<HTMLFormElement>(null)
+  const { draft, dirty, update, save, problems, state } = useAgentSave(
+    config.otherAgent,
+    permitted,
+    onChange,
+  )
+  const exit = useFormExit(save)
   const composing = useRef(false)
-  const sawConfig = useRef(config.otherAgent)
-  const currentDraft = useRef(draft)
-  const currentKept = useRef(kept)
-  const canSave = useRef(permitted)
-  canSave.current = permitted
-  const dirty = !sameAgent(read(draft), kept)
-
-  useEffect(() => {
-    const next = config.otherAgent
-    if (sameAgent(sawConfig.current, next)) return
-    sawConfig.current = next
-    if (inFlight.current || sameAgent(currentKept.current, next)) return
-    const clean = sameAgent(read(currentDraft.current), currentKept.current)
-    currentKept.current = next
-    setKept(next)
-    if (clean) {
-      currentDraft.current = edit(next)
-      setDraft(currentDraft.current)
-      setConfirmed(false)
-    }
-  }, [config.otherAgent])
-
-  const update = (field: keyof Draft, value: string) => {
-    currentDraft.current = { ...currentDraft.current, [field]: value }
-    setDraft(currentDraft.current)
-    setProblems((previous) => ({ ...previous, [field]: false }))
-    setRefused(false)
-    setConfirmed(false)
-  }
-
-  const save = async () => {
-    if (!canSave.current) return
-    if (inFlight.current) {
-      requestedAgain.current = true
-      return
-    }
-    const next = read(currentDraft.current)
-    if (sameAgent(next, currentKept.current)) return
-    const invalid = {
-      program: !validOtherAgentProgram(next.program),
-      args: !validOtherAgentArgs(next.args),
-    }
-    setProblems(invalid)
-    if (invalid.program || invalid.args) return
-    inFlight.current = true
-    setSaving(true)
-    setConfirmed(false)
-    setRefused(false)
-    try {
-      const refusal = await onChange({ otherAgent: next })
-      if (typeof refusal === "string") {
-        setRefused(true)
-        return
-      }
-      currentKept.current = next
-      setKept(next)
-      setConfirmed(sameAgent(read(currentDraft.current), next))
-    } catch {
-      setRefused(true)
-    } finally {
-      inFlight.current = false
-      setSaving(false)
-      if (requestedAgain.current) {
-        requestedAgain.current = false
-        if (!sameAgent(read(currentDraft.current), next)) void save()
-      }
-    }
-  }
-
-  const leave = useEffectEvent((event: PointerEvent) => {
-    if (!(event.target instanceof Node)) return
-    if (!form.current?.contains(event.target) && !form.current?.contains(document.activeElement)) {
-      void save()
-    }
-  })
-  useEffect(() => {
-    const outsidePointer = (event: PointerEvent) => leave(event)
-    document.addEventListener("pointerdown", outsidePointer, true)
-    return () => document.removeEventListener("pointerdown", outsidePointer, true)
-  }, [])
-
+  const saving = state === "saving"
+  const confirmed = state === "saved" && !dirty
   const submit = (event: FormEvent) => {
     event.preventDefault()
     void save()
@@ -179,7 +108,7 @@ export function AnotherAgent({
   return (
     <SettingsGroup title="Another agent" testId="another-agent">
       <form
-        ref={form}
+        {...exit}
         className="q-other-agent"
         onSubmit={submit}
         onCompositionStart={() => {
@@ -191,17 +120,6 @@ export function AnotherAgent({
         onKeyDown={(event) => {
           if (event.key === "Enter" && (composing.current || event.nativeEvent.isComposing))
             event.preventDefault()
-        }}
-        onPointerDownCapture={() => {
-          pointerInside.current = true
-          setTimeout(() => {
-            pointerInside.current = false
-          }, 0)
-        }}
-        onBlur={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget)) return
-          if (event.relatedTarget === null && pointerInside.current) return
-          void save()
         }}
       >
         <SettingRow
@@ -242,7 +160,7 @@ export function AnotherAgent({
           <span aria-live="polite" role={saving || confirmed ? "status" : undefined}>
             {saving ? "Saving…" : confirmed ? "Saved" : ""}
           </span>
-          {refused && (
+          {state === "refused" && (
             <span className="q-sr-err" role="alert">
               Could not save. Try again.
             </span>

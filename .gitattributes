@@ -1570,6 +1570,7 @@ qualitylayer/src/ui/settings/usage-page/KindsGroup.tsx !filter !diff
 qualitylayer/src/ui/settings/usage-view.ts !filter !diff
 qualitylayer/src/ui/settings/usage.css !filter !diff
 qualitylayer/src/ui/settings/use-readings.ts !filter !diff
+qualitylayer/src/ui/settings/useAgentSave.ts !filter !diff
 qualitylayer/src/ui/settings/useIntegration.ts !filter !diff
 qualitylayer/src/ui/settings/useSettingsNav.tsx !filter !diff
 qualitylayer/src/ui/shell/AgentChip.tsx !filter !diff

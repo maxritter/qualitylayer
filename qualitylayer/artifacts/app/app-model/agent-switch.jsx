@@ -1,7 +1,7 @@
 (function () {
   const QL = window.QL;
   const { useState } = React;
-  const { Btn, Icon, Select, LaunchCard, LaunchFields } = QL;
+  const { Btn, Icon, IconBtn, Popover, Select, LaunchCard, LaunchFields } = QL;
   const ExistingDialog = QL.AgentDialog;
   const ExistingPanel = QL.AgentPanel;
   const ExistingMenu = QL.AgentMenu;
@@ -11,6 +11,10 @@
   const nameOf = QL.agentNameOf;
   const openSwitch = (app) => app.set({ agentDialog: "switch", switchHistory: false, pop: null });
   const folderOf = (app) => app.s.taskWorkspace?.path || QL.launchDefaults(app).checkout;
+  const showHistory = (app, run) => app.set({ switchHistory: run.id, pop: null });
+  const selectedHistory = (app) => app.s.switchHistory === app.s.run?.id
+    ? app.s.run
+    : app.s.previousAgentRun || app.s.run;
 
   function Folder({ app }) {
     const folder = folderOf(app);
@@ -75,24 +79,36 @@
   QL.AgentPanel = function ProposedAgentPanel({ app }) {
     if (!window.QL_SWITCH_PREVIEW) return <ExistingPanel app={app}/>;
     if (app.s.switchHistory) {
-      const previous = app.s.previousAgentRun || app.s.run;
+      const previous = selectedHistory(app);
       return <div className="switch-panel"><div className="switch-history-bar"><Btn sm icon="arrow-left" onClick={() => app.set({ switchHistory: false })}>Back</Btn><span>{nameOf(previous?.agent)} · prior conversation · read only</span></div><QL.PriorConversationTranscript app={app} agent={previous.agent}/></div>;
     }
-    if (app.s.switchComplete) return <div className="switch-panel"><div className="switch-history-bar"><span><b>{nameOf(app.s.run.agent)}</b> · new conversation</span><button type="button" className="lnk" onClick={() => app.set({ switchHistory: true })}>Previous conversation</button></div><ExistingPanel app={app}/></div>;
     const stopped = app.s.run && ["stopped", "failed"].includes(app.s.run.state);
+    if (app.s.switchComplete && !stopped) return <div className="switch-panel"><div className="switch-history-bar"><span><b>{nameOf(app.s.run.agent)}</b> · new conversation</span><button type="button" className="lnk" onClick={() => showHistory(app, app.s.previousAgentRun)}>Previous conversation</button></div><ExistingPanel app={app}/></div>;
     if (!stopped) return <ExistingPanel app={app}/>;
     return <section className="switch-ended" id="agent-switch-entry" data-screen-label="Continue a stopped task">
       <h2><QL.AgentMark agent={app.s.run.agent} size={18}/>{nameOf(app.s.run.agent)} stopped</h2>
       <p>Your task, draft and current work are kept.</p>
       <Folder app={app}/>
       <Btn pri onClick={() => openSwitch(app)}>Continue in another agent…</Btn>
-      <div className="switch-ended-links"><button type="button" className="lnk" onClick={() => app.set({ run: { ...app.s.run, state: "running" }, cvState: "ready" })}>Resume previous session</button><button type="button" className="lnk" onClick={() => app.set({ switchHistory: true })}>Read previous conversation</button></div>
+      <div className="switch-ended-links"><button type="button" className="lnk" onClick={() => app.set({ run: { ...app.s.run, state: "running" }, cvState: "ready" })}>Resume previous session</button><button type="button" className="lnk" onClick={() => showHistory(app, app.s.run)}>Read previous conversation</button></div>
     </section>;
+  };
+
+  QL.SwitchHistoryMenu = function SwitchHistoryMenu({ app }) {
+      const prior = app.s.previousAgentRun;
+      const open = app.s.pop === "history-controls";
+      return <span className="agent-menu-anchor">
+        <IconBtn icon="ellipsis" label="Agent controls" sm on={open} onClick={() => app.togglePop("history-controls")}/>
+        <Popover open={open} onClose={() => app.set({ pop: null })} className="agent-menu" align="right">
+          <button type="button" role="menuitem" onClick={() => app.set({ switchHistory: false, pop: null })}><Icon name="arrow-right" size={14}/><span>Current agent</span></button>
+          {prior && prior.id !== selectedHistory(app)?.id ? <button type="button" role="menuitem" onClick={() => showHistory(app, prior)}><Icon name="history" size={14}/><span>Earlier conversation · {nameOf(prior.agent)}</span></button> : null}
+        </Popover>
+      </span>;
   };
 
   // The existing menu retains its controls; this adjacent shortcut opens the same chooser.
   QL.AgentMenu = function ProposedAgentMenu({ app }) {
-    if (app.s.switchHistory) return <span className="rs-menu-slot" aria-hidden="true"/>;
+    if (app.s.switchHistory) return <QL.SwitchHistoryMenu app={app}/>;
     return window.QL_SWITCH_PREVIEW ? <span className="switch-menu"><QL.IconBtn icon="arrow-right-left" sm label="Continue in another agent" onClick={() => openSwitch(app)}/><ExistingMenu app={app}/></span> : <ExistingMenu app={app}/>;
   };
 })();

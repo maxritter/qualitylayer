@@ -2486,10 +2486,11 @@
       "status": "built",
       "files": [
         "qualitylayer/src/ui/run/AgentSwitch.tsx",
-        "qualitylayer/src/ui/sidebar/RightSidebar.tsx"
+        "qualitylayer/src/ui/sidebar/RightSidebar.tsx",
+        "qualitylayer/src/ui/agent-window/Dock.tsx"
       ],
       "demo": null,
-      "note": "Approved same-task continuation. Actual App/PTY run qualifies stop-before-start, cancel, retry, selected launch controls and read-only prior conversation. Canonical model matches current shared controls at desktop/phone widths in both themes. The demo starts no native session."
+      "note": "Approved same-task continuation. Read previous conversation opens the latest stopped transcript. Its read-only Agent controls retain the earlier conversations for this task. The selected transcript and its agent are shown without a composer or Switch control. The model starts no native session."
     },
     "machine-installing.html": {
       "status": "built",

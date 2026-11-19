@@ -1377,8 +1377,10 @@ function DockWindow({
               <ArrowRightIcon size={14} aria-hidden="true" />
               Current agent
             </DropdownMenuItem>
-          ) : (
-            history.map((item) => (
+          ) : null}
+          {history
+            .filter((item) => item.id !== run.id)
+            .map((item) => (
               <DropdownMenuItem key={item.id} onClick={() => viewHistory(item.id)}>
                 <HistoryIcon size={14} aria-hidden="true" />
                 {item.purpose.kind === "new-task"
@@ -1386,8 +1388,7 @@ function DockWindow({
                   : "Earlier conversation"}{" "}
                 · {agentName(item)}
               </DropdownMenuItem>
-            ))
-          )}
+            ))}
           {headerOwnsSessionControls ? null : (
             <>
               <DropdownMenuItem onClick={() => toggleSettings("appearance")}>

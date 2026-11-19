@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "5353c2676c309f060a02a45107dfaa23d134a15d",
-  "catalogSha256": "30f772246e294ea7c2be5befeb6708b8193b2670232ce6b38f50b6c1ea2b5c4e",
+  "sourceHead": "252b30ba20fb7756f1f5766445436267925581fe",
+  "catalogSha256": "7caa773f13b94235a725e9f07b77b0668c3e501b84617b9ba208ae37e382b719",
   "files": [
     {
       "path": "CONTRIBUTING.md",

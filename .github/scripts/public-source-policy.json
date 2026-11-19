@@ -235,10 +235,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "fd52477fa5d10c1d70fe92d2550aa021eba98c54f9fa9990b90d5c88c7399719",
+    "qualitylayer/scripts/public/component-inputs.json": "27645c34238d4ba8b2cbe5497120650f97eaadc7857ab84cbfc71dfb422a5e60",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "9a7c80ee60b0aa6e440f2bf68d430ec7d25002135218f138c33df0c0e29a22b4",
+    "qualitylayer/scripts/public/component-workspace.mjs": "1369adafb5a12203c5eae78fe1affdf75fab519a92aaa55467468ebe52e80fae",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -2257,7 +2257,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "33c6dc135254335fd44c164d4f473a6931b1d229c9aa9356cd240a1524cbd367",
+  "reviewManifestSha256": "671e76f33a854cf7ba6c2e1bba8b07182e862b43e377a329c19baa704792e70f",
   "schema": 1,
-  "sourceHead": "5353c2676c309f060a02a45107dfaa23d134a15d"
+  "sourceHead": "252b30ba20fb7756f1f5766445436267925581fe"
 }

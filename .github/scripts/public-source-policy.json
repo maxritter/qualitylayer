@@ -20,7 +20,7 @@
     ".github/scripts/verify-release14-exception.py": "3fe21df8397365b90f7e60258a4ba3294711f3e677efec1d549464d21bff9991",
     ".github/workflows/app-proof.yml": "71a85ef4c42579e5acd7d82ce524945e647c3812825200c899d873aa6181704f",
     ".github/workflows/backup.yml": "cf49ecea60f093a06fcd3db75f11fb746c07a76abc21af35b69bd82b188d5e25",
-    ".github/workflows/beta-install.yml": "a878c494ad3ad834a7594e974a46b00e8517805b51df7fec9a9731dc3ebb0859",
+    ".github/workflows/beta-install.yml": "bc719af9d6a2b93d93ef349098c054e5db925ddb26cc1f03a92071774c6aac38",
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "728bfabe75ad381306c6308da02b5da61e482f3efc0a422caad40f835a548ae0",
+  "reviewManifestSha256": "cff42bdccb50ce62592054092eee542569586f39f8289229096d91910e8bbc4d",
   "schema": 1,
-  "sourceHead": "c607d667ba65ff270c85dd80758731ebfdaf39f4"
+  "sourceHead": "7a3a5441722d465fb9a94b922514ec96d06cd3ec"
 }

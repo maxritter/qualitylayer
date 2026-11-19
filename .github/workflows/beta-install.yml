@@ -25,6 +25,11 @@ on:
         required: false
         type: boolean
         default: false
+      opengrep_launch_only:
+        description: Diagnose the isolated Windows OpenGrep version process
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -128,7 +133,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or (Test-Path "$qlHome/.qualitylayer")) { throw 'Published Windows uninstall failed' }
 
   signed-windows-scanners:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true && inputs.opengrep_launch_only != true }}
     name: Published Windows scanner recovery
     permissions: {}
     runs-on: windows-2025
@@ -161,7 +166,7 @@ jobs:
             $states = [ordered] @{}
             foreach ($id in $toolNames.Keys) {
               $prefix = $toolNames[$id]
-              $rows = @($last.tools | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+              $rows = @($last.tools | Where-Object { $_.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
               $state = 'missing-or-duplicate'
               $category = $null
               if ($rows.Count -eq 1) {
@@ -587,7 +592,7 @@ jobs:
           Write-Output ('WINDOWS_SCANNER_RESULT ' + ($result | ConvertTo-Json -Compress))
   signed-opengrep-diagnosis:
     needs: signed-windows-scanners
-    if: ${{ failure() && needs.signed-windows-scanners.result == 'failure' }}
+    if: ${{ always() && (needs.signed-windows-scanners.result == 'failure' || (github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true && inputs.opengrep_launch_only == true && inputs.version == '14.3.0')) }}
     name: Pinned OpenGrep Windows launch diagnosis
     permissions: {}
     runs-on: windows-2025
@@ -601,7 +606,7 @@ jobs:
           $root = $null
           $failed = $false
 
-          function Test-OpenGrep([string] $binary, [string] $temp, [bool] $managed) {
+          function Test-OpenGrep([string] $binary, [string] $temp, [bool] $managed, [string] $profileMode, [string[]] $extraKeys) {
             $launch = [Diagnostics.ProcessStartInfo]::new($binary)
             $launch.ArgumentList.Add('--version')
             $launch.UseShellExecute = $false
@@ -612,10 +617,7 @@ jobs:
             $launch.RedirectStandardError = $true
             $launch.Environment.Clear()
             $keys = @('PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'LANG', 'LC_ALL')
-            if (-not $managed) {
-              $keys += @('COMSPEC','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','SYSTEMDRIVE','PATHEXT','OS',
-                'PROGRAMDATA','USERNAME','NUMBER_OF_PROCESSORS','PROCESSOR_ARCHITECTURE')
-            }
+            $keys += $extraKeys
             foreach ($key in $keys) {
               $value = [Environment]::GetEnvironmentVariable($key)
               if ($null -ne $value) { $launch.Environment[$key] = $value }
@@ -631,6 +633,14 @@ jobs:
                 New-Item -ItemType Directory -Path $path -Force | Out-Null
                 $launch.Environment[$key] = $path
               }
+              $managedProfile = Join-Path $state 'home'
+              if ($profileMode -ne 'existing') {
+                $local = Join-Path $managedProfile 'AppData\Local'
+                $roaming = Join-Path $managedProfile 'AppData\Roaming'
+                New-Item -ItemType Directory -Path $local, $roaming -Force | Out-Null
+                if ($profileMode -in @('local','both')) { $launch.Environment['LOCALAPPDATA'] = $local }
+                if ($profileMode -in @('roaming','both')) { $launch.Environment['APPDATA'] = $roaming }
+              }
               $launch.Environment['QUALITYLAYER_HOME'] = $managedHome
               $launch.Environment['QLTY_TELEMETRY'] = 'off'
               $launch.Environment['NO_COLOR'] = '1'
@@ -639,10 +649,13 @@ jobs:
               $launch.Environment['USERPROFILE'] = $isolatedHome
               $launch.Environment['APPDATA'] = Join-Path $isolatedHome 'AppData\Roaming'
               $launch.Environment['LOCALAPPDATA'] = Join-Path $isolatedHome 'AppData\Local'
-              $drive = [IO.Path]::GetPathRoot($isolatedHome).TrimEnd('\')
-              $launch.Environment['HOMEDRIVE'] = $drive
-              $launch.Environment['HOMEPATH'] = $isolatedHome.Substring($drive.Length)
             }
+            $selectedHome = $launch.Environment['USERPROFILE']
+            $drive = [IO.Path]::GetPathRoot($selectedHome).TrimEnd('\')
+            if (-not $managed -or 'HOMEDRIVE' -in $extraKeys) { $launch.Environment['HOMEDRIVE'] = $drive }
+            if (-not $managed -or 'HOMEPATH' -in $extraKeys) { $launch.Environment['HOMEPATH'] = $selectedHome.Substring($drive.Length) }
+            $cache = Join-Path $launch.Environment['LOCALAPPDATA'] 'opengrep\v1.31.0'
+            $profileCache = Join-Path $selectedHome 'AppData\Local\opengrep\v1.31.0'
             foreach ($key in @('TEMP','TMP','TMPDIR')) { $launch.Environment[$key] = $temp }
             $launch.Environment['SEMGREP_SEND_METRICS'] = 'off'
             $launch.Environment['OPENGREP_SEND_METRICS'] = 'off'
@@ -650,6 +663,9 @@ jobs:
               binaryPathLength = $binary.Length
               tempPathLength = $temp.Length
               pathLength = $launch.Environment['PATH'].Length
+              userProfileLength = $selectedHome.Length
+              profileCacheBefore = (Test-Path -LiteralPath $profileCache) -or (Test-Path -LiteralPath $cache)
+              profileCacheAfter = $false
               nativeCacheBefore = Test-Path -LiteralPath $nativeCache -PathType Container
               nativeCacheAfter = $false
               exitCode = $null
@@ -671,7 +687,7 @@ jobs:
                   $row.load = 'output-limit'
                   return $row
                 }
-                if ($clock.ElapsedMilliseconds -ge 60000) {
+                if ($clock.ElapsedMilliseconds -ge 10000) {
                   $row.load = 'timed-out'
                   return $row
                 }
@@ -697,6 +713,7 @@ jobs:
                 -1073741515 { 'loader-dll-missing' }
                 -1073741701 { 'loader-image-invalid' }
                 -1073741502 { 'loader-init-failed' }
+                -1073740791 { 'fail-fast' }
                 default {
                   switch -Regex ($errText) {
                     "couldn't runtime expand spec" { 'cache-spec'; break }
@@ -718,6 +735,39 @@ jobs:
               }
               if ($worker) { $worker.Dispose() }
               $row.nativeCacheAfter = Test-Path -LiteralPath $nativeCache -PathType Container
+              $row.profileCacheAfter = (Test-Path -LiteralPath $profileCache) -or (Test-Path -LiteralPath $cache)
+            }
+          }
+
+          function New-PrivateDirectory([string] $where) {
+            New-Item -ItemType Directory -Path $where | Out-Null
+            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            icacls $where /inheritance:r /grant:r "*${sid}:(OI)(CI)F" /q *> $null
+            if ($LASTEXITCODE -ne 0 -or -not (Get-Acl -LiteralPath $where).AreAccessRulesProtected) {
+              throw 'Cannot verify owned fixture ACL'
+            }
+          }
+
+          function Run-Case([string] $profileMode, [string[]] $keys, [bool] $managed = $true) {
+            $fixture = Join-Path $tempParent ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
+            New-PrivateDirectory $fixture
+            try {
+              $isolatedHome = Join-Path $fixture 'home'
+              $managedHome = Join-Path $isolatedHome '.qualitylayer'
+              $fixtureTemp = Join-Path $isolatedHome 'tmp'
+              $stage = Join-Path $managedHome 'tools\opengrep\1.31.0\.x86_64-pc-windows-msvc-probeX'
+              New-Item -ItemType Directory -Path $fixtureTemp, $stage -Force | Out-Null
+              if (-not $managed) {
+                New-Item -ItemType Directory -Path "$isolatedHome\AppData\Roaming", "$isolatedHome\AppData\Local" -Force | Out-Null
+              }
+              $stagedExe = Join-Path $stage 'opengrep.exe'
+              Copy-Item -LiteralPath $sourceExe -Destination $stagedExe
+              if ((Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) { throw 'Stage bytes differ' }
+              $result = Test-OpenGrep $stagedExe $fixtureTemp $managed $profileMode $keys
+              if ((Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) { throw 'Version probe changed the executable' }
+              return $result
+            } finally {
+              if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
             }
           }
 
@@ -725,43 +775,34 @@ jobs:
             $nativeLocal = [Environment]::GetFolderPath('LocalApplicationData')
             $nativeCache = Join-Path $nativeLocal 'opengrep\v1.31.0'
             $tempParent = Join-Path $nativeLocal 'Temp'
-            $root = Join-Path $tempParent ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $root | Out-Null
-            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-            icacls $root /inheritance:r /grant:r "*${sid}:(OI)(CI)F" /q *> $null
-            if ($LASTEXITCODE -ne 0 -or -not (Get-Acl -LiteralPath $root).AreAccessRulesProtected) {
-              throw 'Cannot verify owned fixture ACL'
-            }
-            $isolatedHome = Join-Path $root 'home'
-            $managedHome = Join-Path $isolatedHome '.qualitylayer'
-            $fixtureTemp = Join-Path $isolatedHome 'tmp'
-            $shortTemp = Join-Path $root 't'
-            $stage = Join-Path $managedHome 'tools\opengrep\1.31.0\.x86_64-pc-windows-msvc-probeX'
-            New-Item -ItemType Directory -Path $fixtureTemp, $shortTemp, $stage, "$isolatedHome\AppData\Roaming", "$isolatedHome\AppData\Local" -Force | Out-Null
+            $root = Join-Path $tempParent ('ql-public-asset-' + [Guid]::NewGuid().ToString('N'))
+            New-PrivateDirectory $root
 
             $phase = 'pinned-public-asset'
             $hash = 'fdd2e22549e7000ceb66976a01366db6910760b2aa4e457b6bda62545070d26a'
-            $shortExe = Join-Path $root 'opengrep.exe'
-            $stagedExe = Join-Path $stage 'opengrep.exe'
-            Invoke-WebRequest -Uri 'https://github.com/opengrep/opengrep/releases/download/v1.31.0/opengrep_windows_x86.exe' -OutFile $shortExe -TimeoutSec 40
-            if ((Get-Item -LiteralPath $shortExe).Length -ne 53677568 -or (Get-FileHash -LiteralPath $shortExe).Hash -ne $hash) {
+            $sourceExe = Join-Path $root 'opengrep.exe'
+            Invoke-WebRequest -Uri 'https://github.com/opengrep/opengrep/releases/download/v1.31.0/opengrep_windows_x86.exe' -OutFile $sourceExe -TimeoutSec 40
+            if ((Get-Item -LiteralPath $sourceExe).Length -ne 53677568 -or (Get-FileHash -LiteralPath $sourceExe).Hash -ne $hash) {
               throw 'Published asset hash mismatch'
             }
-            Copy-Item -LiteralPath $shortExe -Destination $stagedExe
-            if ((Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) { throw 'Stage bytes differ' }
 
             $phase = 'native-version-matrix'
             if (Test-Path -LiteralPath $nativeCache) { throw 'Expected a cold native cache' }
-            # The managed case runs first on a fresh VM. Later cases may use the onefile cache.
+            $standard = @('COMSPEC','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','SYSTEMDRIVE','PATHEXT','OS',
+              'PROGRAMDATA','USERNAME','NUMBER_OF_PROCESSORS','PROCESSOR_ARCHITECTURE','HOMEDRIVE','HOMEPATH')
             $results = [ordered] @{
-              managedStaged = Test-OpenGrep $stagedExe $fixtureTemp $true
-              ordinaryStaged = Test-OpenGrep $stagedExe $fixtureTemp $false
-              ordinaryShort = Test-OpenGrep $shortExe $fixtureTemp $false
-              managedShortTemp = Test-OpenGrep $stagedExe $shortTemp $true
+              managed = Run-Case 'existing' @()
+              folders = Run-Case 'folders' @()
+              localCache = Run-Case 'local' @()
+              roaming = Run-Case 'roaming' @()
+              bothAppData = Run-Case 'both' @()
+              osVariables = Run-Case 'existing' $standard
+              driveAndHome = Run-Case 'existing' @('HOMEDRIVE','HOMEPATH')
             }
-            if ((Get-FileHash -LiteralPath $shortExe).Hash -ne $hash -or (Get-FileHash -LiteralPath $stagedExe).Hash -ne $hash) {
-              throw 'Version probe changed the executable'
+            if ($results.osVariables.load -eq 'expected-version') {
+              foreach ($key in $standard) { $results["os-$key"] = Run-Case 'existing' @($key) }
             }
+            $results.ordinary = Run-Case 'existing' $standard $false
             Write-Output ('WINDOWS_OPENGREP_RESULT ' + (@{sha256 = $hash; probes = $results} | ConvertTo-Json -Depth 5 -Compress))
           } catch {
             Write-Output "WINDOWS_OPENGREP_FAILURE phase=$phase"

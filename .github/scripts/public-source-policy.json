@@ -25,7 +25,7 @@
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
     ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
-    ".github/workflows/qualitylayer-ci.yml": "86a910b3b45ec2ba5c5939b629aad6c0b46409678ead1801d1926c6e090cc71b",
+    ".github/workflows/qualitylayer-ci.yml": "87048bc7c40b2493e7c231d4662707ce9e85aa353984f32f8c88625e3c7c1654",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
     ".github/workflows/qualitylayer-ui.yml": "7ba5c2bc39ce2cc0ab87af1e8f675d576213f3f8447ab49ffc6a86138cb11419",
@@ -235,10 +235,10 @@
     "qualitylayer/scripts/public/check-workflow.ts": "6bd08ef2b75c5d4dd4e66e743cffa0485f554e563ede936b3adbdc2c837a30e9",
     "qualitylayer/scripts/public/component-biome.json": "20e881129dd31645c6aa5cc743c1cbe7c306df6b5bf3335836555a7ba7ba9e66",
     "qualitylayer/scripts/public/component-bun.lock": "d87d55db9a02f7924da2a14eb6b2e4a65e76fac9a035d7de8ec455b4c12f14b2",
-    "qualitylayer/scripts/public/component-inputs.json": "a44ce27ce24616e793a5145c7981614f8b46cfe36afdf9f2153657f6ae9a73b9",
+    "qualitylayer/scripts/public/component-inputs.json": "6bee67ce961aedad23a9c38ad551808e0391756e34ee45c5519bcb5ae045ad15",
     "qualitylayer/scripts/public/component-package.json": "1aa71f66e5c0fa69e2ebf6202ce02207a18d496bf692df63fe50afd76591de86",
     "qualitylayer/scripts/public/component-tsconfig.json": "75a22d981c175549b28c6466f381df907b75b4e206ec522999c0aef113715b0d",
-    "qualitylayer/scripts/public/component-workspace.mjs": "d7bdb690b44f92d0eaa1301a4af490ac8791d32139f70fb1b6f67fe9c5951c26",
+    "qualitylayer/scripts/public/component-workspace.mjs": "6161d14d2bb5f7ecc0ef79bfbfd55a515c59f25a712524bae96f94457af8da9e",
     "qualitylayer/scripts/public/workflow-assets.ts": "4c76678a4f4b537585522457843e1084fe9a926a608260639cfb1915e3c24c9a",
     "qualitylayer/src/bounded-stream.ts": "97b04d2f78f4a62fa9a30245c2569224525c0bc09d700e5bfd6113ce1d6ee4e2",
     "qualitylayer/src/cli/brand-art.ts": "545d3cb6def8cf31154758c1ea50e815ea16f2f9503836ca46403c0e4fbcb0db",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "ac6569c2c8fe135b42d9790b34c35023508c1b237245ce17e0e4553d2c62f283",
+  "reviewManifestSha256": "b7bff9cca9088a4d83bcb357b446067f934ca3240bfe777935a8d16f217c90b0",
   "schema": 1,
-  "sourceHead": "efa0e92777560bac8b7ff64c87ed407dd58200a5"
+  "sourceHead": "f5ddda187c7be9fc356acc919edd9feb0ce9765a"
 }

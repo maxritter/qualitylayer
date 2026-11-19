@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "1a690391afc10c04906cb37e059b5b2c52b01f57",
-  "catalogSha256": "93cfe4ecbf1aa892d23b30bd193e87394c90ccd52192204eef6c6b8c76dd33b8",
+  "sourceHead": "f5ddda187c7be9fc356acc919edd9feb0ce9765a",
+  "catalogSha256": "0316a402e965faf00aae0e32dcc50065b65df8f6294b83cdc634b1019778ecc9",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -1423,7 +1423,7 @@
     },
     {
       "path": "qualitylayer/src/core/code-quality/scanners/setup.ts",
-      "sha256": "4ff4cacb094756ac8671401b35ffdad4cf6d0474ee59e44213f96687c9b24b21",
+      "sha256": "a04e3564b21183c07d547c34b34575b94ae007ee4c35b451bbd3220fe65059ea",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

@@ -24,7 +24,7 @@
     ".github/workflows/claude.yml": "9b4917b3d0186960519c0f0f9d018a8e660160c77935ac88e2c070a790e97cf0",
     ".github/workflows/deploy-website.yml": "7f1f1a6583d5055865b74fe0cfdf59cd61d390fb84ebe422bff308307f724def",
     ".github/workflows/old-client-update.yml": "caa5eae000388957ca1bd58f99e52913fabc9502a54b9cae2006c82dab260828",
-    ".github/workflows/qualitylayer-candidate.yml": "974d860ca3949fc92e70e4ad289127fe09f90a02208dcd74f770da9a5276518a",
+    ".github/workflows/qualitylayer-candidate.yml": "4b1b0bb97f320a3dfa3d10f658c12992ad78fbc268e99c072a9033ecac4b298c",
     ".github/workflows/qualitylayer-ci.yml": "64e3b073091e41424bc4538737cc215dcbf3389b8e6396c67e261966b7f10178",
     ".github/workflows/qualitylayer-nightly.yml": "24ec20a3b3383dd408edc3cdc93eac9558bf5d8c2b348d01f6008013563a716d",
     ".github/workflows/qualitylayer-soak.yml": "b1773e7ba16b7ec33b8a7140c5fa5653dc4c5ad9a81e93c74ebdbfbc32e12420",
@@ -2270,7 +2270,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "dfad14808fc4d3c6f64b2ec365db742f5e97b8410838dc6c8a73be8cd50c59e3",
+  "reviewManifestSha256": "70d781edd8ab63972976855074489a7c9ceb20fd12d34d5f596e8f0eb2aeca1e",
   "schema": 1,
-  "sourceHead": "ae7b6e545098f33fc0255e7b2396d044a2d35301"
+  "sourceHead": "228cadfddf94bd68c69484cde037eb4430e1c78c"
 }

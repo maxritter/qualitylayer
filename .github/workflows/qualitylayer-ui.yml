@@ -66,8 +66,18 @@ jobs:
           node-version: 24.20.0
       - run: npm ci --ignore-scripts
         working-directory: docs/site
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium system dependencies
         working-directory: docs/site
+        run: |
+          if checked=$(./node_modules/.bin/playwright install-deps chromium --dry-run) &&
+             [ "$checked" = "All system dependencies are installed." ]; then
+            echo "$checked"
+          else
+            ./node_modules/.bin/playwright install-deps chromium
+          fi
+      - name: Install managed Chromium
+        working-directory: docs/site
+        run: ./node_modules/.bin/playwright install chromium
       - name: Checkout and catalog regressions
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/3d5cefb6e4bf27a813d11ab1f89e5a3b948d2df0726d7ca05ebd9de8da2d65bd.sh"
         working-directory: docs/site

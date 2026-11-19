@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "fa5eaf64e9aa85327b5d05fb754e5c0412c549ae",
-  "catalogSha256": "dd0718e5991ea2253cf19517d933db008d8983852d51588b07117fbb2322f478",
+  "sourceHead": "8c3fa4c0275e616ad6551ef22f07df3051a05b2f",
+  "catalogSha256": "5ab998ba3e275c37c42c9e14c64c85856ceb614b8ca4d77f5dcb2f5e78d77adc",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -3007,7 +3007,7 @@
     },
     {
       "path": "qualitylayer/src/core/install/agent-settings.ts",
-      "sha256": "1a6fa8f60908aec9b2d592a27430f4684e20ba8e7c8895a571d8578f85976ce1",
+      "sha256": "afee1754c3619abe846898a12c50733dfddc8a2f022b75bb5ee2539217e01b0f",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3047,7 +3047,7 @@
     },
     {
       "path": "qualitylayer/src/core/install/install.ts",
-      "sha256": "373eeffa5f0c4a6017c02d8c27638bbc91ed7a563ca7b88399619d28a3f7834e",
+      "sha256": "8ea02f9bb079e06891c7eb0c48ea57f56192ab0a95bda3d057fbb193be1d94ab",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",
@@ -3087,7 +3087,7 @@
     },
     {
       "path": "qualitylayer/src/core/install/native-defaults.ts",
-      "sha256": "8f6bd19bfa799c40898d72c5369010e2eaf1e411000dcf0a275a2bc1f13d8912",
+      "sha256": "d7a40fcc3376e7ccce7529da7f95b6c28ac90f141b34474d14fa8208a153aa94",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

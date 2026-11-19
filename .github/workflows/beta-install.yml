@@ -156,7 +156,10 @@ jobs:
             $qlty = @($last.tools | Where-Object { $_ -like 'Qlty *' }) | Select-Object -First 1
             switch -Regex ($qlty) {
               '^Qlty .* not recorded: ' { return 'manifest-refused' }
-              '(?i)directory (ACL|ownership|entry)|cannot verify native configuration|outside isolated HOME' { return 'directory-policy' }
+              'Unsafe directory ACL' { return 'directory-acl-unsafe' }
+              '(?:Directory ACL evidence unavailable|Malformed directory ACL evidence)' { return 'directory-acl-evidence' }
+              'Unsafe directory (?:entry|ownership)' { return 'directory-entry' }
+              '(?:cannot verify native configuration|outside isolated HOME|outside HOME:|cannot verify path inside HOME)' { return 'isolated-profile-boundary' }
               '(?i)download SHA256|download exceeds' { return 'pinned-download-integrity' }
               '(?i)download answered HTTP|download failed|certificate|fetch|timed out' { return 'pinned-download-transport' }
               '(?i)archive|staged Qlty executable' { return 'archive-or-version' }
@@ -177,7 +180,9 @@ jobs:
           try {
             if ($env:WANTED -cne '14.3.0') { throw 'This fixture qualifies 14.3.0' }
             $phase = 'private-home'
-            $root = Join-Path $env:RUNNER_TEMP ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
+            $qaParent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
+            if (-not (Test-Path -LiteralPath $qaParent -PathType Container)) { throw 'Missing native account temporary folder' }
+            $root = Join-Path $qaParent ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
             $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
             $acl = [Security.AccessControl.DirectorySecurity]::new()
@@ -468,7 +473,7 @@ jobs:
               }
               if ($null -ne $handle) { $handle.Dispose() }
               if ($null -ne $root -and (Test-Path -LiteralPath $root)) {
-                Set-Location -LiteralPath $env:RUNNER_TEMP
+                Set-Location -LiteralPath $qaParent
                 Remove-Item -LiteralPath $root -Recurse -Force
               }
             } catch {

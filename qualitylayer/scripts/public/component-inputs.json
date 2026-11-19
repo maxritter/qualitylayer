@@ -2,8 +2,8 @@
   "schema": 1,
   "scope": "public-workflow-component",
   "globalReady": false,
-  "sourceHead": "fa5eaf64e9aa85327b5d05fb754e5c0412c549ae",
-  "catalogSha256": "dd0718e5991ea2253cf19517d933db008d8983852d51588b07117fbb2322f478",
+  "sourceHead": "8d3a507dacbee34236dfcfe728ed636255cb8355",
+  "catalogSha256": "358195ec0ec28bbf2252a3e27349e426c97bab9ef07c6440d29ae2c02bfb4741",
   "files": [
     {
       "path": "CONTRIBUTING.md",
@@ -15647,7 +15647,7 @@
     },
     {
       "path": "qualitylayer/src/workflow/phases/verify.md",
-      "sha256": "b4d629a3c37e6787a8cd23d69ae438ba93f5ed9fd7c80674abb2996edc1790dc",
+      "sha256": "3dcfd0b67a6c4901a174d2c3b3d52f1666d6efd9cfbabfcc78c4fe608af48492",
       "visibility": "public",
       "responsibility": "nonlicensing",
       "review": "reviewed",

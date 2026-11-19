@@ -1521,6 +1521,7 @@ qualitylayer/src/ui/settings/About.tsx !filter !diff
 qualitylayer/src/ui/settings/AgentHealth.tsx !filter !diff
 qualitylayer/src/ui/settings/AgentTable.tsx !filter !diff
 qualitylayer/src/ui/settings/Agents.tsx !filter !diff
+qualitylayer/src/ui/settings/AnotherAgent.tsx !filter !diff
 qualitylayer/src/ui/settings/Appearance.tsx !filter !diff
 qualitylayer/src/ui/settings/Automations.tsx !filter !diff
 qualitylayer/src/ui/settings/CommitField.tsx !filter !diff

@@ -3,23 +3,18 @@
 // default permission mode) can only be changed from the App or a browser it opened. Model choices live
 // in Settings › Models, how a session opens in Appearance.
 
-import { BracesIcon, SquareTerminalIcon, TerminalIcon } from "lucide-react"
+import { SquareTerminalIcon } from "lucide-react"
 import { useState } from "react"
 import { NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
-import {
-  type AgentSettings,
-  validAbsolutePath,
-  validOtherAgentArgs,
-  validOtherAgentProgram,
-} from "../../core/config-values.ts"
+import { type AgentSettings, validAbsolutePath } from "../../core/config-values.ts"
 import type { Api, Config } from "../api.ts"
 import { routeHash } from "../hooks.ts"
 import { useOptionalRuns } from "../run-context.tsx"
 import { checkedWords } from "./About.tsx"
 import { useAgentHealth } from "./AgentHealth.tsx"
 import { AgentTable } from "./AgentTable.tsx"
+import { AnotherAgent } from "./AnotherAgent.tsx"
 import { integrationState } from "./agent-facts.tsx"
-import { joinArguments, splitArguments } from "./arguments.ts"
 import { CommitField, type SaveResult } from "./CommitField.tsx"
 import { LaunchSheet } from "./LaunchSheet.tsx"
 import { SettingRow, SettingsGroup } from "./Rows.tsx"
@@ -154,62 +149,6 @@ function AgentsGroup({
           onClose={() => setEditing(null)}
         />
       ) : null}
-    </SettingsGroup>
-  )
-}
-
-function AnotherAgent({
-  config,
-  permitted,
-  onChange,
-}: {
-  config: Config
-  permitted: boolean
-  onChange: Change
-}) {
-  const { program, args } = config.otherAgent
-  return (
-    <SettingsGroup title="Another agent" testId="another-agent">
-      <SettingRow
-        label="Program"
-        icon={<TerminalIcon className="size-[15px]" />}
-        hint={
-          permitted
-            ? "Any coding agent that runs shell commands. It gets the request and the CLI instructions in its own terminal."
-            : NOT_PERMITTED
-        }
-      >
-        <CommitField
-          label="Another agent program"
-          value={program}
-          placeholder="/opt/homebrew/bin/aider"
-          disabled={!permitted}
-          problem={(next) =>
-            validOtherAgentProgram(next)
-              ? null
-              : "A program name has no line breaks or control characters."
-          }
-          onCommit={(next) => onChange({ otherAgent: { program: next } })}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Arguments"
-        hint="Added to every start of this agent."
-        icon={<BracesIcon className="size-[15px]" />}
-      >
-        <CommitField
-          label="Another agent arguments"
-          value={joinArguments(args)}
-          placeholder="--model sonnet"
-          disabled={!permitted}
-          problem={(next) =>
-            validOtherAgentArgs(splitArguments(next))
-              ? null
-              : "At most 128 arguments, none with a NUL character."
-          }
-          onCommit={(next) => onChange({ otherAgent: { args: splitArguments(next) } })}
-        />
-      </SettingRow>
     </SettingsGroup>
   )
 }

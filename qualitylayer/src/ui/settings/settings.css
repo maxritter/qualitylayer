@@ -666,6 +666,31 @@
     width: 280px;
     max-width: 100%;
   }
+  .q-other-agent > .q-sr:first-child {
+    border-top: 0;
+  }
+  .q-other-agent-save {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--ql-border);
+    padding: 8px 16px;
+    color: var(--ql-text-dim);
+    font-size: 12px;
+  }
+  .q-other-agent-save .q-btn {
+    min-width: 56px;
+  }
+  @media (max-width: 700px) {
+    .q-other-agent .q-field {
+      width: 100%;
+    }
+    .q-other-agent-save .q-btn {
+      min-height: 36px;
+    }
+  }
   .q-sg-problem {
     color: var(--ql-danger);
   }

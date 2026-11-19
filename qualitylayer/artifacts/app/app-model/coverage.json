@@ -1232,6 +1232,8 @@
       "status": "planned",
       "files": [
         "qualitylayer/src/ui/settings/Agents.tsx",
+        "qualitylayer/src/ui/settings/AnotherAgent.tsx",
+        "qualitylayer/src/ui/settings/settings.css",
         "qualitylayer/src/ui/settings/AgentTable.tsx",
         "qualitylayer/src/ui/settings/AgentHealth.tsx",
         "qualitylayer/src/ui/settings/LaunchSheet.tsx",
@@ -1240,7 +1242,7 @@
         "qualitylayer/src/ui/settings/launch-sheet.css"
       ],
       "demo": "/app-demo/?moment=now#/settings/agents",
-      "note": "12.7 Settings pass built: row icons and hints on Default view, Another agent and Terminal, 13px view icons, the Launch sheet's \"How it starts\" fold, and one card per agent at 520 px. 27 October approved native-defaults contract: Agent settings is inheritance, separately selectable from explicit Claude Auto and Codex On request. Saved defaults exclude explicit Bypass/Full access; per-run confirmation remains. Installer adds supported missing native task and permission defaults, preserving explicit policies, historical removal and conditional undo. Actual Settings and Conversation tests cover mode choices, saved patches and existing escalation guards; native installer and isolated HOME roundtrip checks establish separate source behavior. See native-defaults-contract.md. Final signed/live release qualification remains Root-owned.",
+      "note": "12.7 Settings pass built: row icons and hints on Default view, Another agent and Terminal, 13px view icons, the Launch sheet's \"How it starts\" fold, and one card per agent at 520 px. 27 October approved native-defaults contract: Agent settings is inheritance, separately selectable from explicit Claude Auto and Codex On request. Saved defaults exclude explicit Bypass/Full access; per-run confirmation remains. Installer adds supported missing native task and permission defaults, preserving explicit policies, historical removal and conditional undo. Actual Settings and Conversation tests cover mode choices, saved patches and existing escalation guards; native installer and isolated HOME roundtrip checks establish separate source behavior. See native-defaults-contract.md. Another agent saves Program and Arguments together through Save, Enter or leaving the group. It shows inline validation and successful persistence, keeps a refused draft, and never changes the native agent list. Final signed/live release qualification remains Root-owned.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "settings-appearance.html": {

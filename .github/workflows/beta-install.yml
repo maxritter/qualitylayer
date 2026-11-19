@@ -26,21 +26,12 @@ on:
         type: boolean
         default: false
 
-      signed_windows_candidate_diagnostic:
-        description: Diagnose the retained signed Windows candidate in Stage run 44575826133
-        type: boolean
-        default: false
-      diagnostic_source:
-        description: Exact dev commit for the retained-candidate diagnostic
-        type: string
-        required: false
-
 permissions:
   contents: read
 
 jobs:
   clean-install:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.signed_windows_scanners != true && inputs.signed_windows_candidate_diagnostic != true) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.signed_windows_scanners != true }}
     name: Clean install (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -79,7 +70,7 @@ jobs:
           test ! -e "$HOME/.agents/skills/ql"
 
   windows-install:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.signed_windows_scanners != true && inputs.signed_windows_candidate_diagnostic != true) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.signed_windows_scanners != true }}
     name: Clean native Windows install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -137,7 +128,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or (Test-Path "$qlHome/.qualitylayer")) { throw 'Published Windows uninstall failed' }
 
   signed-windows-scanners:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true && inputs.signed_windows_candidate_diagnostic != true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_scanners == true }}
     name: Published Windows scanner recovery
     permissions: {}
     runs-on: windows-2025
@@ -491,240 +482,3 @@ jobs:
           if ($failed) { exit 1 }
           $result.cleanup = $true
           Write-Output ('WINDOWS_SCANNER_RESULT ' + ($result | ConvertTo-Json -Compress))
-
-  retained-windows-candidate-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'maxritter/qualitylayer' && github.ref == 'refs/heads/dev' && inputs.signed_windows_candidate_diagnostic == true && inputs.signed_windows_scanners != true }}
-    name: Diagnose retained signed Windows candidate
-    permissions:
-      actions: read
-      contents: read
-    runs-on: windows-2025
-    timeout-minutes: 15
-    steps:
-      - name: Confirm exact diagnostic revision
-        shell: pwsh
-        env:
-          EXPECTED_SOURCE: ${{ inputs.diagnostic_source }}
-          WANTED: ${{ inputs.version }}
-        run: |
-          if ($env:EXPECTED_SOURCE -cnotmatch '^[0-9a-f]{40}$' -or $env:GITHUB_SHA -cne $env:EXPECTED_SOURCE -or $env:WANTED -cne '14.3.1') {
-            throw 'Retained candidate diagnostic requires the exact dev SHA and 14.3.1'
-          }
-          Write-Output ('WINDOWS_REPLAY_SOURCE ' + $env:GITHUB_SHA)
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        with:
-          ref: ${{ github.sha }}
-          sparse-checkout: .github/workflows
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        with:
-          bun-version: 1.4.4
-          no-cache: true
-      - name: Read the one retained Stage artifact
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          artifact='repos/maxritter/qualitylayer/actions/artifacts/14558272915'
-          gh api "$artifact" | python3 -c '
-          import json,sys
-          a=json.load(sys.stdin)
-          r=a["workflow_run"]
-          if (a["id"],a["name"],a["digest"],a["size_in_bytes"],a["expired"],r["id"],r["head_branch"],r["head_sha"]) != (
-              14558272915,"app-windows-x64-1","sha256:c8372a9116efa6aba21fa8b1c1dddaa8b4fe24ab7452bb3c2928c7ec8d415d77",
-              188287457,False,44575826133,"main","2656a7806fa08808c3622bf190ba177e7d422605"):
-              raise SystemExit("Retained artifact metadata mismatch")
-          '
-          gh api --allow-escape-sequences "$artifact/zip" > "${RUNNER_TEMP:?}/ql-retained-windows.zip"
-      - name: Check signatures and run the installed held-file fixture
-        shell: pwsh
-        env:
-          QL_VERSION: '14.3.1'
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $phase = 'archive'
-          $root = $null
-          $qlHome = $null
-          $installed = $null
-          $failure = $null
-          try {
-            $zip = Join-Path $env:RUNNER_TEMP 'ql-retained-windows.zip'
-            if ((Get-Item -LiteralPath $zip).Length -ne 188287457 -or
-                (Get-FileHash -LiteralPath $zip).Hash -ne 'c8372a9116efa6aba21fa8b1c1dddaa8b4fe24ab7452bb3c2928c7ec8d415d77') {
-              throw 'Retained archive digest or size differs'
-            }
-            $expected = @('qualitylayer-windows-x64.exe','qualitylayer-windows-x64.exe.sha256',
-              'QualityLayer-14.3.1-x64-setup.exe','QualityLayer-14.3.1-x64-setup.exe.sig')
-            $contents = [IO.Compression.ZipFile]::OpenRead($zip)
-            try {
-              if ($contents.Entries.Count -ne $expected.Count -or
-                  (Compare-Object ($contents.Entries.FullName | Sort-Object) ($expected | Sort-Object) -CaseSensitive)) {
-                throw 'Retained archive members differ'
-              }
-            } finally { $contents.Dispose() }
-            $root = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('Temp\ql-signed-replay-' + [Guid]::NewGuid().ToString('N'))
-            Expand-Archive -LiteralPath $zip -DestinationPath $root
-            $staged = Join-Path $root $expected[0]
-            $installer = Join-Path $root $expected[2]
-            $digest = '0801662644885ab4e5758e1d743971a2fbfce2a79770542a97ae369702ac3846'
-            $phase = 'standalone-checksum'
-            $sidecar = ((Get-Content -LiteralPath "$staged.sha256" -Raw).Trim() -split '\s+')[0]
-            if ((Get-FileHash -LiteralPath $staged).Hash -ne $digest -or $sidecar -cne $digest -or
-                (Get-FileHash -LiteralPath $installer).Hash -ne '9d8a669fe85c416e35afc4489470125db60c11a2bd3fb6cd9331ae77ee7444ac') {
-              throw 'Retained executable bytes differ'
-            }
-            $phase = 'standalone-signer'
-            $signature = Get-AuthenticodeSignature -LiteralPath $staged
-            $installerSignature = Get-AuthenticodeSignature -LiteralPath $installer
-            if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate -or
-                $installerSignature.Status -ne 'Valid' -or -not $installerSignature.TimeStamperCertificate -or
-                $signature.SignerCertificate.Thumbprint -cne $installerSignature.SignerCertificate.Thumbprint) {
-              throw 'Retained executable signer or timestamp differs'
-            }
-            $phase = 'standalone-version'
-            $reported = & $staged --version 2>$null
-            if ($LASTEXITCODE -ne 0 -or $reported.Trim() -cne $env:QL_VERSION) { throw 'Retained executable version differs' }
-
-            $phase = 'install-profile'
-            $qlParent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
-            $qlHome = Join-Path $qlParent ("ql-native-release-" + [Guid]::NewGuid().ToString('N'))
-            New-Item -ItemType Directory -Path $qlHome -ErrorAction Stop | Out-Null
-            $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-            icacls $qlHome /inheritance:r /grant:r "*${sid}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' /q *> $null
-            if ($LASTEXITCODE -ne 0) { throw 'Private profile ACL failed' }
-            New-Item -ItemType Directory -Path "$qlHome/.claude", "$qlHome/.codex" | Out-Null
-            $env:HOME = $qlHome
-            $env:USERPROFILE = $qlHome
-            $env:QUALITYLAYER_HOME = Join-Path $qlHome '.qualitylayer'
-            $env:QUALITYLAYER_API_BASE = 'http://127.0.0.1:9'
-            $env:POLAR_API_BASE = 'http://127.0.0.1:9'
-            $phase = 'install-profile-acl-readback'
-            $qlDirectory = [IO.DirectoryInfo]::new($qlHome)
-            while ($null -ne $qlDirectory) {
-              if ($qlDirectory.Exists) {
-                $qlAcl = Get-Acl -LiteralPath $qlDirectory.FullName
-                $null = $qlAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
-                $null = $qlAcl.GetOwner([Security.Principal.SecurityIdentifier])
-              }
-              $qlDirectory = $qlDirectory.Parent
-            }
-            $phase = 'install'
-            & $staged install --non-interactive *> $null
-            if ($LASTEXITCODE -ne 0) { throw 'Retained signed CLI install failed' }
-            $phase = 'installed-executable-path'
-            $installed = (Get-Item -LiteralPath (Join-Path $qlHome '.qualitylayer/bin/qualitylayer.exe') -ErrorAction Stop).FullName
-            if (-not [IO.Path]::IsPathFullyQualified($installed) -or [IO.Path]::GetFileName($installed) -cne 'qualitylayer.exe') {
-              throw 'Installed executable path changed'
-            }
-            $phase = 'installed-help'
-            & $installed --help *> $null
-            if ($LASTEXITCODE -ne 0) { throw 'Installed help failed' }
-            $phase = 'installed-checksum'
-            if ((Get-FileHash -LiteralPath $installed).Hash -ne $digest) { throw 'Installed checksum differs' }
-            $phase = 'installed-signer'
-            $actual = Get-AuthenticodeSignature -LiteralPath $installed
-            if ($actual.Status -ne 'Valid' -or -not $actual.TimeStamperCertificate -or
-                $actual.SignerCertificate.Thumbprint -cne $signature.SignerCertificate.Thumbprint) {
-              throw 'Installed signer differs'
-            }
-            $phase = 'installed-version'
-            $installedVersion = & $installed --version 2>$null
-            if ($LASTEXITCODE -ne 0 -or $installedVersion.Trim() -cne $env:QL_VERSION) { throw 'Installed version differs' }
-
-            $phase = 'render-reviewed-fixture'
-            $env:QL_REPLAY_ACCOUNT_TEMP = $qlParent
-            $env:QL_SCANNER_INSTALLED_CLI = $installed
-            $env:QL_SCANNER_INSTALLED_SHA256 = $digest
-            $env:QL_SCANNER_INSTALLED_SIGNER = $signature.SignerCertificate.Thumbprint
-            $render = @'
-          import { createHash } from "node:crypto";
-          import { join } from "node:path";
-          const workflow = Bun.YAML.parse(await Bun.file(join(process.env.GITHUB_WORKSPACE, ".github/workflows/beta-install.yml")).text());
-          const script = workflow.jobs["signed-windows-scanners"].steps[0].run;
-          if (createHash("sha256").update(script).digest("hex") !== "7cca0a50b6d1ed0750b62ba5b23f970f3a9cd89a2a4a2a87880f3ca95a7d28d0") throw Error("Reviewed fixture drift");
-          const start = script.indexOf("$phase = 'signed-cli'");
-          const end = script.indexOf("$phase = 'native-handle'", start);
-          if (start < 0 || end <= start) throw Error("Reviewed fixture sections missing");
-          const admission = "$phase = 'signed-candidate-cli'\n$cli = $env:QL_SCANNER_INSTALLED_CLI\n$digest = $env:QL_SCANNER_INSTALLED_SHA256\nif (-not [IO.Path]::IsPathFullyQualified($cli) -or\n    [IO.Path]::GetFileName($cli) -cne 'qualitylayer.exe' -or\n    $digest -cnotmatch '^[0-9a-f]{64}$' -or\n    $env:QL_SCANNER_INSTALLED_SIGNER -cnotmatch '^[0-9A-F]{40}$') {\n  throw 'Installed candidate identity missing'\n}\n$signature = Get-AuthenticodeSignature -LiteralPath $cli\nif ((Get-FileHash -LiteralPath $cli -Algorithm SHA256).Hash.ToLowerInvariant() -cne $digest -or\n    $signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate -or\n    $signature.SignerCertificate.Thumbprint -cne $env:QL_SCANNER_INSTALLED_SIGNER) {\n  throw 'Installed signed candidate identity mismatch'\n}\n$reported = & $cli --version 2>$null\nif ($LASTEXITCODE -ne 0 -or $reported -cne $env:QL_VERSION) { throw 'Installed candidate version mismatch' }\n\n";
-          const output = (script.slice(0,start) + admission + script.slice(end))
-            .replace(
-              "if ($env:WANTED -cne '14.3.0') { throw 'Expected 14.3.0' }",
-              () => "if ($env:QL_VERSION -cnotmatch '^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'Invalid candidate version' }",
-            )
-            .replace("version = '14.3.0'", "version = $reported");
-          if (createHash("sha256").update(output).digest("hex") !== "63b77ca529b20388118ffa53633cd6ec1c550671c6ab3147674d3b93d51a1554") throw Error("Exact rendered fixture drift");
-          const transforms = [
-            ["$phase = 'private-home'", "$phase = 'private-home-resolve'"],
-            ["$qaParent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'", "$inheritedLocal = [Environment]::GetFolderPath('LocalApplicationData')\n  $inheritedParent = if ($inheritedLocal) { Join-Path $inheritedLocal 'Temp' } else { $null }\n  $qaParent = $env:QL_REPLAY_ACCOUNT_TEMP\n  if (-not $qaParent -or -not [IO.Path]::IsPathFullyQualified($qaParent) -or\n      -not (Test-Path -LiteralPath $qaParent -PathType Container)) {\n    throw 'Captured account-temp directory is unavailable'\n  }\n  $relation = if (-not $inheritedParent -or -not (Test-Path -LiteralPath $inheritedParent -PathType Container)) {\n    'missing'\n  } elseif ($inheritedParent -eq $qaParent) { 'same' } else { 'different' }\n  $localAppDataPresent = if ($env:LOCALAPPDATA) { 'present' } else { 'missing' }\n  Write-Output ('WINDOWS_REPLAY_ACCOUNT_TEMP relation=' + $relation + ' inherited-local-appdata=' + $localAppDataPresent)"],
-            ["$root = Join-Path $qaParent", "$phase = 'private-home-create'\n  $root = Join-Path $qaParent"],
-            ["$sid = [Security.Principal.WindowsIdentity]", "$phase = 'private-home-acl-build'\n  $sid = [Security.Principal.WindowsIdentity]"],
-            ["Set-Acl -Path $root -AclObject $acl", "$phase = 'private-home-acl-write'\n  Set-Acl -Path $root -AclObject $acl"],
-            ["$acl = Get-Acl -LiteralPath $root", "$phase = 'private-home-acl-read'\n  $acl = Get-Acl -LiteralPath $root"],
-            ["if (-not $acl.AreAccessRulesProtected", "$phase = 'private-home-acl-policy'\n  if (-not $acl.AreAccessRulesProtected"],
-            ["$env:HOME = Join-Path $root 'home'", "$phase = 'private-home-env'\n  $env:HOME = Join-Path $root 'home'"],
-            ["New-Item -ItemType Directory -Path $env:TEMP", "$phase = 'private-home-directories'\n  New-Item -ItemType Directory -Path $env:TEMP"],
-            ["Set-Location -LiteralPath $root", "$phase = 'private-home-cwd'\n  Set-Location -LiteralPath $root"],
-          ];
-          let diagnostic = output;
-          for (const [before, after] of transforms) {
-            if (diagnostic.split(before).length !== 2) throw Error("Diagnostic fixture section differs");
-            diagnostic = diagnostic.replace(before, () => after);
-          }
-          await Bun.write(join(process.env.RUNNER_TEMP, "ql-retained-scanners.ps1"), diagnostic);
-          '@
-            $renderer = Join-Path $env:RUNNER_TEMP 'ql-retained-scanners.mjs'
-            [IO.File]::WriteAllText($renderer, $render)
-            & bun run $renderer *> $null
-            if ($LASTEXITCODE -ne 0) { throw 'Reviewed fixture render failed' }
-            $phase = 'scanner-execution'
-            $output = & pwsh -NoProfile -NonInteractive -File (Join-Path $env:RUNNER_TEMP 'ql-retained-scanners.ps1') 2>$null
-            $scannerExit = $LASTEXITCODE
-            $allowed = '^(?:version|private-home-(?:resolve|create|acl-build|acl-write|acl-read|acl-policy|env|directories|cwd)|signed-candidate-cli|native-handle|control-create|control-open-read|control-rename-held|control-read-held|control-rename-released|cold-setup|stage-lock|rename-denied|stage-readable|locked-setup-result|locked-receipts|locked-(?:receipt|status)-(?:qlty|betterleaks|osv-scanner|zizmor|opengrep)|locked-status|released-repeat|cleanup)$'
-            foreach ($line in $output) {
-              if ($line -cmatch '^WINDOWS_REPLAY_ACCOUNT_TEMP relation=(?:same|different|missing) inherited-local-appdata=(?:present|missing)$') {
-                Write-Output $line
-              }
-              if ($line -cmatch '^WINDOWS_SCANNER_FAILURE phase=([a-z0-9-]+)$' -and $Matches[1] -cmatch $allowed) {
-                $fixturePhase = $line.Substring('WINDOWS_SCANNER_FAILURE phase='.Length)
-                Write-Output ('WINDOWS_REPLAY_SCANNER_FAILURE phase=' + $fixturePhase)
-              }
-            }
-            if ($scannerExit -ne 0) { throw 'Installed scanner fixture failed' }
-            $phase = 'scanner-receipt'
-            $summary = @($output | Where-Object { $_.StartsWith('WINDOWS_SCANNER_RESULT ') })
-            if ($summary.Count -ne 1) { throw 'Installed scanner receipt missing' }
-            $proof = $summary[0].Substring('WINDOWS_SCANNER_RESULT '.Length) | ConvertFrom-Json
-            if ($proof.version -cne $env:QL_VERSION -or $proof.cliSha256 -cne $digest -or
-                $proof.authenticode -cne 'valid-timestamped' -or $proof.stageReadableWhileLocked -ne $true -or
-                $proof.publishedWhileLocked -ne $true -or $proof.verifiedReceiptFiles -ne 15 -or
-                $proof.completedSetups -ne 2 -or $proof.cleanup -ne $true) { throw 'Installed scanner receipt differs' }
-          } catch {
-            $failure = $phase
-          } finally {
-            try {
-              if ($null -ne $installed) {
-                & $installed uninstall --purge --json *> $null
-                if ($LASTEXITCODE -ne 0 -or (Test-Path "$qlHome/.qualitylayer")) { throw 'Retained CLI uninstall failed' }
-              }
-            } catch {
-              Write-Output 'WINDOWS_REPLAY_FAILURE phase=uninstall'
-              if ($null -eq $failure) { $failure = 'uninstall' }
-            }
-            try {
-              foreach ($folder in @($qlHome, $root)) {
-                if ($null -ne $folder -and (Test-Path -LiteralPath $folder)) { Remove-Item -LiteralPath $folder -Recurse -Force }
-              }
-              foreach ($name in @('ql-retained-scanners.mjs', 'ql-retained-scanners.ps1')) {
-                Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP $name) -Force -ErrorAction SilentlyContinue
-              }
-            } catch {
-              Write-Output 'WINDOWS_REPLAY_FAILURE phase=cleanup'
-              if ($null -eq $failure) { $failure = 'cleanup' }
-            }
-          }
-          if ($null -ne $failure) {
-            Write-Output ('WINDOWS_REPLAY_FAILURE phase=' + $failure)
-            exit 1
-          }
-          Write-Output 'WINDOWS_REPLAY_RESULT installed-signer=true locked-publication=true receipts=15 setups=2 cleanup=true'

@@ -148,24 +148,120 @@ jobs:
           $stageSeen = $false
           $openError = 0
 
-          function Read-SetupFailure {
-            $setupLog = Join-Path $env:QUALITYLAYER_HOME 'quality-setup.log'
-            if (-not (Test-Path -LiteralPath $setupLog)) { return 'no-setup-record' }
-            $last = Get-Content -LiteralPath $setupLog -Tail 1 | ConvertFrom-Json
-            if ($last.complete -eq $true) { return 'setup-complete-before-lock' }
-            $qlty = @($last.tools | Where-Object { $_ -like 'Qlty *' }) | Select-Object -First 1
-            switch -Regex ($qlty) {
-              '^Qlty .* not recorded: ' { return 'manifest-refused' }
-              'Unsafe directory ACL' { return 'directory-acl-unsafe' }
-              '(?:Directory ACL evidence unavailable|Malformed directory ACL evidence)' { return 'directory-acl-evidence' }
-              'Unsafe directory (?:entry|ownership)' { return 'directory-entry' }
-              '(?:cannot verify native configuration|outside isolated HOME|outside HOME:|cannot verify path inside HOME)' { return 'isolated-profile-boundary' }
-              '(?i)download SHA256|download exceeds' { return 'pinned-download-integrity' }
-              '(?i)download answered HTTP|download failed|certificate|fetch|timed out' { return 'pinned-download-transport' }
-              '(?i)archive|staged Qlty executable' { return 'archive-or-version' }
-              '^Qlty .* ready$' { return 'other-scanner-failed' }
-              default { return 'unclassified-setup-failure' }
+          function Read-ScannerStates {
+            $logPath = Join-Path $env:QUALITYLAYER_HOME 'quality-setup.log'
+            $last = Get-Content -LiteralPath $logPath -Tail 1 | ConvertFrom-Json
+            $toolNames = [ordered] @{
+              qlty = 'Qlty 0.657.0 '
+              betterleaks = 'Betterleaks 1.9.0 '
+              'osv-scanner' = 'OSV-Scanner 2.7.0 '
+              zizmor = 'Zizmor 1.31.1 '
+              opengrep = 'OpenGrep 1.31.0 '
             }
+            $states = [ordered] @{}
+            foreach ($id in $toolNames.Keys) {
+              $prefix = $toolNames[$id]
+              $rows = @($last.tools | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) })
+              $state = 'missing-or-duplicate'
+              $category = $null
+              if ($rows.Count -eq 1) {
+                $detail = $rows[0].Substring($prefix.Length)
+                if ($detail -match '^(ready|unsupported|failed|not recorded)(?:$|:)') { $state = $Matches[1] }
+                if ($state -eq 'failed') {
+                  $category = switch -Regex ($detail) {
+                    'Unsafe directory ACL' { 'directory-acl-unsafe'; break }
+                    'Directory ACL evidence' { 'directory-acl-evidence'; break }
+                    'Unsafe directory entry' { 'directory-entry'; break }
+                    'outside (?:isolated )?HOME|cannot verify native configuration' { 'isolated-profile-boundary'; break }
+                    'download (?:SHA256|exceeds its byte)' { 'download-integrity'; break }
+                    '(?:download answered HTTP|download exceeded its time|network|certificate)' { 'download-transport'; break }
+                    '(?:archive layout|member|archive extraction)' { 'archive-layout'; break }
+                    '(?:failed integrity or version verification|executable is missing or oversized)' { 'executable-verification'; break }
+                    '(?:EPERM|EACCES|EBUSY)' { 'filesystem-refusal'; break }
+                    default { 'unclassified' }
+                  }
+                }
+              }
+              $states[$id] = @{ state = $state; category = $category }
+            }
+            return @{
+              complete = [bool] $last.complete
+              tools = $states
+              scannerManifestRefused = [bool] ($last.tools -like 'scanners not recorded: *')
+            }
+          }
+
+          function Test-InstalledVersion([string] $binary, [string] $argument, [string] $wanted) {
+            $versionOut = Join-Path $root 'managed-version.log'
+            $versionErr = Join-Path $root 'managed-version.stderr'
+            $worker = $null
+            try {
+              $worker = Start-Process -FilePath $binary -ArgumentList $argument -PassThru `
+                -RedirectStandardOutput $versionOut -RedirectStandardError $versionErr -WorkingDirectory $root
+              if (-not $worker.WaitForExit(10000)) { return 'timed-out' }
+              if ($worker.ExitCode -ne 0) { return 'nonzero' }
+              if ((Get-Content -Raw -LiteralPath $versionOut).Contains($wanted)) { return 'verified' }
+              return 'unexpected-version'
+            } catch {
+              return 'unavailable'
+            } finally {
+              if ($null -ne $worker -and -not $worker.HasExited) {
+                $worker.Kill($true)
+                if (-not $worker.WaitForExit(10000)) { throw 'Version process did not stop' }
+              }
+            }
+          }
+
+          function Get-InstalledFacts {
+            $pins = [ordered] @{
+              qlty = @('0.657.0', '071bf94a171230fa70703b26704ea64044cb0aa8dc45e30c2298dbeacd2cd3e1',
+                '482131b13bc5d4fefb08dba6a69467b82071b869312e5b7f3b0373caf5938e29', '--version', 'qlty 0.657.0')
+              betterleaks = @('1.9.0', 'b765daec9fda475b031b5a5159798cbe4294a3f2a50683cbc0471226e376d3da',
+                '41a3dc5e75712d52d25aa7203b0b6bc2fa9c796fe5109d3835c60226a9a69352', 'version', '1.9.0')
+              'osv-scanner' = @('2.7.0', '9964ed64ec9a387391eb4cc006ad5c531154821aef29b793e02c448de4686438',
+                $null, '--version', 'osv-scanner version: 2.7.0')
+              zizmor = @('1.31.1', '4de30371c8a3b483aecbcf0dec1fd6a2b6aae65051ca226b4f6527baac6a8c7a',
+                '320dbd80365cce71200f31d7b2e6148c7ea0ea950ef2661d74d18f308d6f4148', '--version', 'zizmor 1.31.1')
+              opengrep = @('1.31.0', 'fdd2e22549e7000ceb66976a01366db6910760b2aa4e457b6bda62545070d26a',
+                $null, '--version', '1.31.0')
+            }
+            $results = [ordered] @{}
+            $manifest = Get-Content -Raw -LiteralPath (Join-Path $env:QUALITYLAYER_HOME 'manifest.json') -ErrorAction SilentlyContinue
+            $entries = if ($manifest) { ($manifest | ConvertFrom-Json).entries } else { @() }
+            foreach ($id in $pins.Keys) {
+              $pin = $pins[$id]
+              $binaryHash = $pin[2] ?? $pin[1]
+              $dir = Join-Path $env:QUALITYLAYER_HOME ("tools\$id\" + $pin[0] + "\$target")
+              $binary = Join-Path $dir "$id.exe"
+              $found = [ordered] @{
+                expectedVersion = $pin[0]; expectedBinarySha256 = $binaryHash; expectedAssetSha256 = $pin[1]
+                present = $false; binaryHashMatched = $false; receiptPinMatched = $false
+                manifestBinaryRecorded = $false; version = 'missing'
+              }
+              if (Test-Path -LiteralPath $binary -PathType Leaf) {
+                $found.present = $true
+                $entry = Get-Item -LiteralPath $binary
+                if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+                  $found.binaryHashMatched = (Get-FileHash -LiteralPath $binary).Hash -eq $binaryHash
+                }
+                $found.version = 'unverified-file'
+                if ($found.binaryHashMatched) {
+                  $found.manifestBinaryRecorded = @($entries | Where-Object { $_.kind -eq 'file' -and $_.path -eq $binary -and $_.sha256 -eq $binaryHash }).Count -eq 1
+                  $receiptPath = Join-Path $dir 'receipt.json'
+                  if (Test-Path -LiteralPath $receiptPath -PathType Leaf) {
+                    try {
+                      $receipt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
+                      $asset = if ($id -eq 'qlty') { $receipt.archiveSha256 } else { $receipt.assetSha256 }
+                      $found.receiptPinMatched = $receipt.schema -eq 1 -and $receipt.target -eq $target -and
+                        $receipt.version -eq $pin[0] -and $asset -eq $pin[1] -and $receipt.binarySha256 -eq $binaryHash
+                    } catch { }
+                  }
+                  $found.version = Test-InstalledVersion $binary $pin[3] $pin[4]
+                }
+              }
+              $results[$id] = $found
+            }
+            return $results
           }
 
           function Read-SetupResult([Diagnostics.Process] $child, [string] $output, [int] $seconds) {
@@ -178,10 +274,10 @@ jobs:
           }
 
           try {
-            if ($env:WANTED -cne '14.3.0') { throw 'This fixture qualifies 14.3.0' }
+            if ($env:WANTED -cne '14.3.0') { throw 'Expected 14.3.0' }
             $phase = 'private-home'
             $qaParent = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Temp'
-            if (-not (Test-Path -LiteralPath $qaParent -PathType Container)) { throw 'Missing native account temporary folder' }
+            if (-not (Test-Path -LiteralPath $qaParent -PathType Container)) { throw 'Missing account temp root' }
             $root = Join-Path $qaParent ('ql-scanners-' + [Guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
             $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
@@ -197,7 +293,7 @@ jobs:
             $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
             if (-not $acl.AreAccessRulesProtected -or $rules.Count -ne 1 -or
                 $rules[0].IdentityReference.Value -ne $sid.Value -or $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {
-              throw 'Unexpected fixture ACL'
+              throw 'Unexpected ACL'
             }
 
             $env:HOME = Join-Path $root 'home'
@@ -229,10 +325,10 @@ jobs:
             $signature = Get-AuthenticodeSignature -LiteralPath $cli
             if ((Get-FileHash -LiteralPath $cli).Hash -ne $digest -or $signature.Status -ne 'Valid' -or
                 $signature.SignerCertificate.Thumbprint -ne $signer -or -not $signature.TimeStamperCertificate) {
-              throw 'Published CLI identity mismatch'
+              throw 'CLI identity mismatch'
             }
             $reported = & $cli --version 2>$null
-            if ($LASTEXITCODE -ne 0 -or $reported -cne '14.3.0') { throw 'Published CLI version mismatch' }
+            if ($LASTEXITCODE -ne 0 -or $reported -cne '14.3.0') { throw 'CLI version mismatch' }
 
             $phase = 'native-handle'
             Add-Type -TypeDefinition @'
@@ -271,27 +367,27 @@ jobs:
             Set-Content -LiteralPath $controlFile -Value 'fixture'
             $phase = 'control-metadata-only'
             $handle = [ScannerStageHandle]::OpenDirectory($sample, $false)
-            if ($handle.IsInvalid) { throw 'Cannot open metadata-only control' }
+            if ($handle.IsInvalid) { throw 'Metadata-only open failed' }
             $metadataOnlyRenameError = [ScannerStageHandle]::RenameError($sample, $moved)
             $handle.Dispose()
             $handle = $null
             if ($metadataOnlyRenameError -eq 0 -and [ScannerStageHandle]::RenameError($moved, $sample) -ne 0) {
-              throw 'Cannot restore renamed fixture'
+              throw 'Control restore failed'
             }
 
             $phase = 'control-open-read'
             $handle = [ScannerStageHandle]::OpenDirectory($sample, $true)
-            if ($handle.IsInvalid) { throw 'Cannot open read-sharing control' }
+            if ($handle.IsInvalid) { throw 'Read-sharing open failed' }
             $phase = 'control-rename-held'
             $controlRenameError = [ScannerStageHandle]::RenameError($sample, $moved)
-            if ($controlRenameError -notin @(5, 32)) { throw 'Held directory rename was not denied' }
+            if ($controlRenameError -notin @(5, 32)) { throw 'Held rename permitted' }
             $phase = 'control-read-held'
-            if ((Get-Content -LiteralPath $controlFile) -cne 'fixture') { throw 'Held directory was not readable' }
+            if ((Get-Content -LiteralPath $controlFile) -cne 'fixture') { throw 'Held read failed' }
             $handle.Dispose()
             $handle = $null
             $phase = 'control-rename-released'
             if ([ScannerStageHandle]::RenameError($sample, $moved) -ne 0) {
-              throw 'Native control did not allow rename after release'
+              throw 'Released rename failed'
             }
 
             $controlDiagnostic = @{
@@ -322,7 +418,7 @@ jobs:
               }
               Start-Sleep -Milliseconds 10
             }
-            if ($null -eq $handle) { throw 'The setup stage was not locked' }
+            if ($null -eq $handle) { throw 'Stage not locked' }
 
             $phase = 'rename-denied'
             $control = Join-Path $parent 'rename-control'
@@ -354,7 +450,7 @@ jobs:
             $expected = @{ qlty = '0.657.0'; betterleaks = '1.9.0'; 'osv-scanner' = '2.7.0'; zizmor = '1.31.1'; opengrep = '1.31.0' }
             $qBinary = Join-Path $parent "$target\qlty.exe"
             $version = & $qBinary --version 2>$null
-            if ($LASTEXITCODE -ne 0 -or $version -notmatch '^qlty 0\.657\.0(?:\s|$)') { throw 'Published Qlty is not usable' }
+            if ($LASTEXITCODE -ne 0 -or $version -notmatch '^qlty 0\.657\.0(?:\s|$)') { throw 'Qlty unusable' }
 
             $receiptFiles = @{}
             $manifestPath = Join-Path $env:QUALITYLAYER_HOME 'manifest.json'
@@ -373,7 +469,7 @@ jobs:
                 }
                 $receipt.licenseSha256
               } else {
-                if ($receipt.id -ne $id) { throw 'Scanner receipt does not match its tool' }
+                if ($receipt.id -ne $id) { throw 'Scanner receipt mismatch' }
                 $receipt.licenceSha256
               }
               if ($receipt.schema -ne 1 -or $receipt.version -ne $expected[$id] -or $receipt.target -ne $target -or
@@ -382,7 +478,7 @@ jobs:
               foreach ($path in @($binary, $licensePath, $receiptPath)) {
                 $hash = (Get-FileHash -LiteralPath $path).Hash
                 $owned = @($manifest.entries | Where-Object { $_.kind -eq 'file' -and $_.path -eq $path })
-                if ($owned.Count -ne 1 -or $owned[0].sha256 -ne $hash) { throw 'Installed file not recorded' }
+                if ($owned.Count -ne 1 -or $owned[0].sha256 -ne $hash) { throw 'Manifest mismatch' }
                 $receiptFiles[$path] = $hash
               }
             }
@@ -419,11 +515,11 @@ jobs:
               }
             }
             foreach ($path in $receiptFiles.Keys) {
-              if ((Get-FileHash -LiteralPath $path).Hash -ne $receiptFiles[$path]) { throw 'Repeat changed installed bytes' }
+              if ((Get-FileHash -LiteralPath $path).Hash -ne $receiptFiles[$path]) { throw 'Repeat changed bytes' }
             }
             $runs = @(Get-Content -LiteralPath (Join-Path $env:QUALITYLAYER_HOME 'quality-setup.log') | ForEach-Object { ConvertFrom-Json $_ })
             if ($runs.Count -ne 2 -or @($runs | Where-Object { -not $_.complete -or $_.tools.Count -ne 5 }).Count -ne 0) {
-              throw 'Missing complete setup records'
+              throw 'Missing setup records'
             }
 
             $result = @{
@@ -450,10 +546,15 @@ jobs:
                 elapsedMs = [int] $timer.ElapsedMilliseconds
                 childExited = $process.HasExited
                 childExit = if ($process.HasExited) { $process.ExitCode } else { $null }
-                setup = 'no-completed-setup'
               }
               if ($process.HasExited) {
-                try { $diagnostic.setup = Read-SetupFailure } catch { $diagnostic.setup = 'invalid-setup-record' }
+                try { $diagnostic.scanners = Read-ScannerStates } catch { $diagnostic.scanners = $null }
+                if ($phase -eq 'locked-setup-result') {
+                  $diagnostic.stageStillPresent = -not $handle.IsClosed -and (Test-Path -LiteralPath $stage -PathType Container)
+                  $diagnostic.actualRenameError = $renameError
+                  $env:SEMGREP_SEND_METRICS = $env:OPENGREP_SEND_METRICS = 'off'
+                  try { $diagnostic.installedFacts = Get-InstalledFacts } catch { $diagnostic.installedFacts = $null }
+                }
               }
               Write-Output ('WINDOWS_SCANNER_DIAGNOSTIC ' + ($diagnostic | ConvertTo-Json -Compress))
             }

@@ -8,7 +8,7 @@
 // that already happened.
 
 import "../../scripts/demo/overlay.js"
-import { CHAPTERS } from "../../scripts/demo/story.mjs"
+import { CHAPTERS, scrollSpotlight } from "../../scripts/demo/story.mjs"
 import "./guide.css"
 import { type Locator, centerOf, page, replay, sleep } from "./locator.ts"
 
@@ -150,13 +150,12 @@ function director(fast: boolean) {
       if ((await locator.inputValue()) !== text) await locator.fill(text)
       await pause(300)
     },
-    async focus(locator: Locator) {
+    async focus(locator: Locator, { taskPane = false } = {}) {
       if (replay.skipping) return
       const element = await locator.element()
       if (fast) return
       showPage()
-      const tall = element.getBoundingClientRect().height > window.innerHeight * 0.8
-      element.scrollIntoView({ block: tall ? "start" : "center", behavior: "smooth" })
+      scrollSpotlight(element, { behavior: "smooth", taskPane })
       await sleep(350)
       overlay()?.spot(element)
       panel.avoid(element)

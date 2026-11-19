@@ -14,7 +14,7 @@ import { agentControlPaths, installScriptsChanged } from "./agent-controls.ts"
 import { type ScanResult, scanChanges } from "./scan.ts"
 import { scanSettings } from "./settings.ts"
 
-export type TaskScans = { at: number; head: string; results: ScanResult[] }
+export type TaskScans = { at: number; head: string; results: ScanResult[]; candidate?: string }
 
 const recordPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "scans.json")
 
@@ -202,4 +202,40 @@ export async function readTaskScans(
   } catch {
     return null
   }
+}
+
+/** A selected commit is reviewed in full and never replaces the previous task-slice scans. */
+export async function candidateScans(
+  ctx: Ctx,
+  task: Task,
+  candidate: { id: string; head: string },
+): Promise<TaskScans> {
+  const path = join(task.runtimeDir, `review-candidate-${candidate.id}-scans.json`)
+  if (await ctx.fs.exists(path)) {
+    const previous = JSON.parse(await ctx.fs.readFile(path)) as TaskScans
+    if (previous.candidate === candidate.id && previous.head === candidate.head) return previous
+    throw new Error("The saved candidate security receipt is invalid.")
+  }
+  const listed = await ctx.git.run(task.repoRoot, [
+    "ls-files",
+    "-z",
+    "--",
+    ".",
+    ":(exclude)docs/plans/**",
+  ])
+  if (listed.code !== 0)
+    throw new Error("Could not inventory the selected commit for security review.")
+  const settings = await scanSettings(ctx)
+  const results = await scanChanges(ctx, task.repoRoot, listed.stdout.split("\0").filter(Boolean), {
+    advisories: settings.advisories,
+    off: !settings.enabled,
+  })
+  const head = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"], { fresh: true })
+  if (head.code !== 0 || head.stdout.trim() !== candidate.head)
+    throw new Error(
+      "The selected commit moved during security checks. Choose the current candidate again.",
+    )
+  const record = { at: ctx.clock.now(), head: candidate.head, candidate: candidate.id, results }
+  await ctx.fs.atomicWrite(path, `${JSON.stringify(record)}\n`, { mode: 0o600 })
+  return record
 }

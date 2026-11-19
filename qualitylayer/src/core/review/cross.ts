@@ -199,6 +199,8 @@ export type CrossReviewStep = {
   /** The effort it reads at: an extra planner's own choice; every other review's is `REVIEW_EFFORT`. */
   effort?: string
   file: string
+  /** An explicitly chosen whole commit whose existing slice ownership may be historical. */
+  recoveryHead?: string
   kind?: ReviewKind
   /** Why this reviewer: "Codex (GPT) checks Claude's work." */
   why?: string
@@ -1041,9 +1043,10 @@ async function changeSection(
   range: string,
   /** The build review: only these finished slices' files, from the working tree against `range`. */
   scope?: BuildScope,
+  recoveryHead?: string,
 ): Promise<string> {
   const name = scope !== undefined ? "build" : "verify"
-  const owned = scope === undefined ? await taskCommitDiff(ctx, task) : null
+  const owned = scope === undefined && !recoveryHead ? await taskCommitDiff(ctx, task) : null
   const command =
     scope !== undefined
       ? `Run \`git diff ${range} -- ${scope.files.map((f) => shellQuote(f)).join(" ")}\` in \`${task.repoRoot}\` to see it.`
@@ -1077,7 +1080,10 @@ async function changeSection(
   await ctx.fs.mkdir(folder)
   const text = await diffOf(ctx, task.repoRoot, range, paths, untracked, owned)
   if (text === null) return `## The change\n\n${command}`
-  const file = join(folder, `${name}-change.diff`)
+  const file = join(
+    folder,
+    recoveryHead ? `candidate-${recoveryHead}-change.diff` : `${name}-change.diff`,
+  )
   await ctx.fs.writeFile(file, text)
   return `## The change\n\nThe change is written to \`${file}\` (${paths.length} file${paths.length === 1 ? "" : "s"}).`
 }
@@ -1088,6 +1094,7 @@ export async function briefFor(
   point: ReviewPoint,
   kind?: ReviewKind,
   input?: PlanReviewInput,
+  recoveryHead?: string,
 ): Promise<string> {
   const files: string[] = []
   for (const path of await documentsFor(ctx, task, point, input)) {
@@ -1122,10 +1129,22 @@ export async function briefFor(
       "## What this review is for\n\nThe independent review proves each Done means point on the running program, and the security review has its own record: do not repeat either. Hunt what would break: bugs, regressions, claims in the build's or the checks' record that the diff does not support, and tests that would pass without the change.",
     )
     const base = await buildBase(ctx, task)
-    parts.push(await changeSection(ctx, task, base !== null ? `${base}..HEAD` : "HEAD~1..HEAD"))
+    if (recoveryHead)
+      parts.push(
+        `Review the entire selected commit ${recoveryHead} in ${task.repoRoot}. Check it independently against the approved Plan. Earlier checks and findings are historical.`,
+      )
+    parts.push(
+      await changeSection(
+        ctx,
+        task,
+        base !== null ? `${base}..HEAD` : "HEAD~1..HEAD",
+        undefined,
+        recoveryHead,
+      ),
+    )
     // What the build review found, and the answers: not found again.
     const answered = reviewFile(task, "build")
-    if (await ctx.fs.exists(answered))
+    if (!recoveryHead && (await ctx.fs.exists(answered)))
       parts.push(
         `## Already reviewed during the build\n\n\`${answered}\` holds the findings of an earlier review of the first finished slices, and the build's answer under each (Answer: Taken · … or Answer: Kept · …). ` +
           "A finding answered there is settled: do not repeat it. One with no answer is still open; report it again only if the code still has the fault. " +
@@ -1765,7 +1784,7 @@ async function runCrossReviewWithInput(
               point === "plan" ? shotPaths(await mockupShots(ctx, task)) : [],
               step.effort,
             ),
-            await briefFor(ctx, task, point, step.kind, input),
+            await briefFor(ctx, task, point, step.kind, input, step.recoveryHead),
             hardStop,
             seen,
             step.by,
@@ -1804,7 +1823,9 @@ async function runCrossReviewWithInput(
   const tried = attempts[0] as Attempt
   const again = await secondStep(ctx, task, first, tried)
   if (again !== null) {
-    const step = again
+    const step = first.recoveryHead
+      ? { ...again, file: first.file, recoveryHead: first.recoveryHead }
+      : again
     run = runOf(step, run.started)
     await writeRun(ctx, task, run)
     attempts.push(await attempt(step, await reviewerBinary(ctx, step.by), ctx.clock.now()))

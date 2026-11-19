@@ -1,3 +1,4 @@
+import type { ReviewCandidateInput, ReviewCandidateState } from "../core/review-candidate.ts"
 // The browser side of the localhost API. A browser is signed in by a session cookie (set through a
 // pairing link, see server/sessions.ts) and sends it with every call; the page never holds a key.
 
@@ -346,6 +347,13 @@ export type AutomationsApi = {
 }
 
 export const api = {
+  reviewCandidates: (id: string) =>
+    call<ReviewCandidateState>(`/api/tasks/${enc(id)}/review-candidate`),
+  selectReviewCandidate: (id: string, input: ReviewCandidateInput) =>
+    call<ReviewCandidateState>(`/api/tasks/${enc(id)}/review-candidate`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   exportFile: (input: ExportInput, signal?: AbortSignal) =>
     call<ExportFile>("/api/export", { method: "POST", body: JSON.stringify(input), signal }),
   get memory(): MemoryApi {
@@ -915,6 +923,8 @@ export type InstructionsOutcome = { saved: InstructionsText } | { conflict: Inst
 
 export type Api = Omit<
   typeof api,
+  | "reviewCandidates"
+  | "selectReviewCandidate"
   | "memory"
   | "exportFile"
   | "automations"
@@ -949,6 +959,8 @@ export type Api = Omit<
   | "tools"
   | "checkTools"
 > & {
+  reviewCandidates?: typeof api.reviewCandidates
+  selectReviewCandidate?: typeof api.selectReviewCandidate
   exportFile?: typeof api.exportFile
   /** A source demo adapter that implements the current task-turn controls. */
   currentTurnLayout?: true

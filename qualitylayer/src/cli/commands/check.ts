@@ -8,6 +8,7 @@ import { type CheckScope, runCheck, startCheck } from "../../core/checks.ts"
 import { runBaseCheck } from "../../core/checks-base.ts"
 import { ciParityWarning } from "../../core/ci-parity.ts"
 import { runStep } from "../../core/next/steps.ts"
+import { selectedReviewCandidate } from "../../core/review-candidate.ts"
 import { type Ctx, err, type Result } from "../../ctx.ts"
 import { requireTask } from "./shared.ts"
 
@@ -70,7 +71,10 @@ async function stepCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
       code: "bad_args",
       message: `a Done means step runs on the built tree; ${task.data.slug} is in ${task.data.stage}`,
     })
-  return runStep(ctx, task.data, id.toUpperCase(), command)
+  const candidate =
+    task.data.stage === "verify" ? await selectedReviewCandidate(ctx, task.data) : null
+  const scoped = candidate ? { ...task.data, repoRoot: candidate.choice.checkout } : task.data
+  return runStep(ctx, scoped, id.toUpperCase(), command)
 }
 
 export async function checkCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
@@ -97,10 +101,13 @@ export async function checkCmd(ctx: Ctx, args: string[]): Promise<Result<unknown
     })
   }
   if (onBase) return runBaseCheck(ctx, task.data)
+  const candidate = stage === "verify" ? await selectedReviewCandidate(ctx, task.data) : null
+  const checkedTask = candidate ? { ...task.data, repoRoot: candidate.choice.checkout } : task.data
+  // The worker loads the task in its recorded checkout, then applies the same candidate binding.
   if (background) return startCheck(ctx, task.data, scope)
-  const result = await runCheck(ctx, task.data, scope, undefined, worker)
+  const result = await runCheck(ctx, checkedTask, scope, undefined, worker)
   if (result.ok && scope.kind === "all" && result.data.passed) {
-    const warning = await ciParityWarning(ctx, task.data, undefined, true)
+    const warning = await ciParityWarning(ctx, checkedTask, undefined, true)
     if (warning !== null) return { ...result, data: { ...result.data, warnings: [warning] } }
   }
   return result

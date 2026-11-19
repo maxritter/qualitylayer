@@ -11,6 +11,7 @@ import { sectionText } from "../docs/build-log.ts"
 import { backticked } from "../docs/commands.ts"
 import { agentFileOf, RECORDS_DIR } from "../docs/names.ts"
 import { buildRevision } from "../gate/revision.ts"
+import { selectedReviewCandidate } from "../review-candidate.ts"
 import { shellQuote } from "../shell.ts"
 import { appendEvent, type Task } from "../task/store.ts"
 
@@ -100,6 +101,8 @@ export async function runStep(
   given: string | readonly string[] | null,
   runner: CommandRunner = shellRunner,
 ): Promise<Result<StepReply>> {
+  const candidate = task.stage === "verify" ? await selectedReviewCandidate(ctx, task) : null
+  if (candidate) task = { ...task, repoRoot: candidate.choice.checkout }
   const step = (await proofOf(ctx, task)).steps.find((s) => s.id.toUpperCase() === id.toUpperCase())
   if (step === undefined)
     return err({
@@ -113,14 +116,17 @@ export async function runStep(
       message: `The Plan's Action for ${step.id} is prose, not a command. Run the command that proves it: qualitylayer check step ${step.id} -- <program> <args…> (each argument reaches it as given).`,
     })
   const command = commands.join(" && ")
+  const revisionBefore = candidate ? await buildRevision(ctx, task) : null
   const ran = await runner(command, task.repoRoot, checkTimeoutMs(ctx))
-  const log = `${RECORDS_DIR}/step-${step.id}.txt`
+  const log = candidate
+    ? `${RECORDS_DIR}/step-${step.id}-candidate-${candidate.id.slice(0, 12)}.txt`
+    : `${RECORDS_DIR}/step-${step.id}.txt`
   await ctx.fs.mkdir(join(task.dir, RECORDS_DIR))
   await ctx.fs.writeFile(
     join(task.dir, log),
     `$ ${command}\n${ran.output}${ran.output.endsWith("\n") ? "" : "\n"}exit ${ran.exit ?? "at the time limit"}\n`,
   )
-  const revision = await buildRevision(ctx, task).catch(() => null)
+  const revision = revisionBefore ?? (await buildRevision(ctx, task).catch(() => null))
   const run: StepRun = {
     step: step.id,
     command,

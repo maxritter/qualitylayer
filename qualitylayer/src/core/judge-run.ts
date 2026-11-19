@@ -10,6 +10,7 @@ import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { commandsFor, notRunReason, shellRunner } from "./checks.ts"
 import { EVIDENCE_DIR } from "./docs/names.ts"
 import { killProcessTree } from "./platform.ts"
+import { hasReviewCandidate, selectedReviewCandidate } from "./review-candidate.ts"
 import type { Task } from "./task/store.ts"
 import { readAssignment } from "./verification.ts"
 
@@ -139,10 +140,20 @@ export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<R
       message:
         "that assignment was replaced by a later one (or the id is mistyped), so nothing runs under it. Stop: you were replaced, and the current assignment belongs to another reviewer.",
     })
+  let scoped = task
+  if (current.recovery || (await hasReviewCandidate(ctx, task))) {
+    const candidate = await selectedReviewCandidate(ctx, task).catch(() => null)
+    if (!candidate || current.recovery !== candidate.id || current.head !== candidate.choice.head)
+      return err({
+        code: "bad_args",
+        message: "This assignment no longer matches the selected review candidate.",
+      })
+    scoped = { ...task, repoRoot: candidate.choice.checkout }
+  }
   // One of the task's checks is run as the check runner runs it: its whole command (the folder it
   // changes into, a shell for `cd x && y`), from the repository. QualityLayer runs that shell, not
   // the judge: the judge's own call stays one program with its arguments.
-  const found = await commandsFor(ctx, task, { kind: "all" }).catch(() => null)
+  const found = await commandsFor(ctx, scoped, { kind: "all" }).catch(() => null)
   const checks = found?.ok ? found.data.now : []
   const check = checkCommandFor(input.argv, checks)
   const refused = check === null ? refusedArgv(input.argv) : null
@@ -154,7 +165,7 @@ export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<R
   if (!Number.isFinite(seconds) || seconds < 1)
     return err({ code: "bad_args", message: "--timeout takes a number of seconds, at least 1" })
   const where = {
-    cwd: task.repoRoot,
+    cwd: scoped.repoRoot,
     env: Object.fromEntries(
       Object.entries(process.env).filter(
         (entry): entry is [string, string] => entry[1] !== undefined,

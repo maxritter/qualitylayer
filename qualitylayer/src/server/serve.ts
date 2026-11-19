@@ -23,6 +23,7 @@ import { status as licenceStatus, uncheckedMessage } from "../core/licence/verif
 import { installSpawnRecorder, isUnderTempDir, screenOf } from "../core/platform.ts"
 import { personName } from "../core/profile/name.ts"
 import { startRetention } from "../core/retention.ts"
+import { readReviewCandidates, selectReviewCandidate } from "../core/review-candidate.ts"
 import { touchesProtectedSettings } from "../core/run/contracts.ts"
 import { isAgentRunsRoute } from "../core/run/protocol.ts"
 import { PORT_ENV, PORT_TRIES } from "../core/server-port.ts"
@@ -967,6 +968,27 @@ export function createHandler(
           return json(await api.postQuestionCancel(ctx, id))
         if (parts[4] === "change" && parts.length === 5)
           return json(await api.postQuestionChange(ctx, id, await body(request)))
+      }
+      if (sub === "review-candidate" && parts.length === 4) {
+        if (
+          !hasKeyHeader(request, checked) &&
+          sessionAuthority(request, checked)?.keyPaired !== true
+        )
+          return new Response("This browser may only watch", { status: 403 })
+        const found = await api.locate(ctx, id)
+        if (!found.ok) return json(found)
+        if (method === "GET") return json(ok(await readReviewCandidates(ctx, found.data.task)))
+        if (method === "POST") {
+          const bytes = await readArtifactBody(request, 16 * 1024)
+          let input: unknown
+          try {
+            input = JSON.parse(new TextDecoder().decode(bytes))
+          } catch {
+            return json(err({ code: "bad_args", message: "The review choice must be valid JSON." }))
+          }
+          return json(await selectReviewCandidate(ctx, found.data.task, input))
+        }
+        return new Response("method not allowed", { status: 405 })
       }
       if (sub === "gate" && method === "POST")
         return json(await api.postGate(ctx, id, await body(request)))

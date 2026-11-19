@@ -18,6 +18,7 @@ import { type OwnedTree, ownedTree } from "../git/owned-tree.ts"
 import { untrackedFiles } from "../git/repo.ts"
 import { revisionPaths } from "../git/revision-paths.ts"
 import { planPictureDigest, planPictureRefs } from "../plan-assets.ts"
+import { hasReviewCandidate, selectedReviewCandidate } from "../review-candidate.ts"
 import {
   isAdopted,
   ORIGINAL_FILE,
@@ -160,6 +161,22 @@ export async function buildOwnPaths(ctx: Ctx, task: Task): Promise<string[] | nu
  * the plan's files may be another session's, and must not expire a run.
  */
 export async function buildRevision(ctx: Ctx, task: Task): Promise<string> {
+  if (task.stage === "verify" && (await hasReviewCandidate(ctx, task))) {
+    const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
+    return digest(
+      JSON.stringify(
+        selected
+          ? {
+              candidate: selected.id,
+              repository: selected.repo,
+              checkout: selected.choice.checkout,
+              head: selected.choice.head,
+              plan: selected.plan,
+            }
+          : { staleReviewCandidate: task.repoId, task: task.slug },
+      ),
+    )
+  }
   const fm = await readmeFrontmatter(ctx, task)
   if (typeof fm.base !== "string" || fm.base === "")
     throw new Error("No recorded build base; establish the task branch before verification")

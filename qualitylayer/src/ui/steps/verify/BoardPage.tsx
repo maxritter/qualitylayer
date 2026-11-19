@@ -25,6 +25,7 @@ import { verifyBoardHeader, verifyBoardStages } from "./board-view.ts"
 import { CodeAccess } from "./CodeAccess.tsx"
 import { picturesOf, VerifyPictures } from "./Pictures.tsx"
 import { verifyView } from "./progress.ts"
+import { ReviewCandidate } from "./ReviewCandidate.tsx"
 import { useRecordedScreens } from "./use-recorded-screens.ts"
 
 export function VerifyBoardPage(props: StepPageProps) {
@@ -63,10 +64,22 @@ export function VerifyBoardPage(props: StepPageProps) {
     ...verifyBoardHeader(view),
   }
 
+  const candidate =
+    verifying && props.api?.reviewCandidates && props.api.selectReviewCandidate ? (
+      <ReviewCandidate
+        key={`${task.id}:${task.verifyActivity?.judgeRefusal?.at ?? ""}:${task.verifyActivity?.projectChecks?.checkout?.head ?? ""}`}
+        id={task.id}
+        reviewCandidates={props.api.reviewCandidates}
+        selectReviewCandidate={props.api.selectReviewCandidate}
+        reload={props.reload}
+      />
+    ) : null
+
   if (!ready && !steady.held && mode !== "plain")
     return (
       <>
         <YourMove>{supporting}</YourMove>
+        {candidate}
         <StepQuiet step="verify" kind={stepIsWorking(task) ? "writing" : "draft"} back={null} />
       </>
     )
@@ -87,6 +100,7 @@ export function VerifyBoardPage(props: StepPageProps) {
               title="Checks"
               icon={<ClipboardCheckIcon className="size-3.5" aria-hidden="true" />}
             >
+              {candidate}
               <VerifyBoard stages={stages} receipt={task.verifyActivity?.projectChecks} />
             </PageSection>
             {mode === "live" ? (

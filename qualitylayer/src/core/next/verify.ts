@@ -15,7 +15,7 @@ import {
 } from "../checks.ts"
 import { redactTaskRecords } from "../code-quality/scanners/redact.ts"
 import { scanBrief } from "../code-quality/scanners/scan.ts"
-import { readTaskScans, runTaskScans } from "../code-quality/scanners/task-scans.ts"
+import { candidateScans, readTaskScans, runTaskScans } from "../code-quality/scanners/task-scans.ts"
 import { combinedSection, sourceReceipts } from "../combined-review.ts"
 import { readConfig } from "../config.ts"
 import {
@@ -58,14 +58,21 @@ import {
   blockHeading,
   ensureQualitySection,
   nextQuality,
+  nextQualityOf,
   passRoles,
   qualityRecordSlot,
   readQualityLog,
 } from "../polish.ts"
 import { commitOwnedRecords } from "../records-commit.ts"
 import { requiredJudgeSection } from "../required-lines.ts"
-import { crossReviewStep, handleOf, readRun, startReview } from "../review/cross.ts"
+import { crossReviewStep, handleOf, readRun, runCrossReview, startReview } from "../review/cross.ts"
 import { settleDecisions } from "../review/triage.ts"
+import {
+  hasReviewCandidate,
+  readReviewCandidates,
+  selectedReviewCandidate,
+  withReviewCandidateLock,
+} from "../review-candidate.ts"
 import { commitReviewerTests, reviewerTestsWord } from "../reviewer-tests.ts"
 import { shellQuote } from "../shell.ts"
 import { descriptionPath, ensureDraftDescription } from "../ship/closing-record.ts"
@@ -125,7 +132,8 @@ export async function verifyPayload(
   const since = await buildBase(ctx, task)
   // The other agent's review of the built change starts with the quality pass; one not started yet
   // starts beside the judge, and the final gate waits for it. One that is in was settled before.
-  const step = assignment ? await crossReviewStep(ctx, task, "verify") : null
+  const step =
+    assignment && !assignment.recovery ? await crossReviewStep(ctx, task, "verify") : null
   const started = step !== null ? await startReview(ctx, task, step) : null
   const review = started !== null && started.state !== "done" ? started : null
   const flow = await taskFlow(ctx, task)
@@ -175,7 +183,7 @@ export async function verifyPayload(
           : since !== null
             ? shellQuote(since)
             : "HEAD",
-      await otherWork(ctx, task),
+      visibleAssignment?.recovery ? [] : await otherWork(ctx, task),
     )
   const instructions = judging
     ? phaseText("verify-judge")
@@ -191,7 +199,7 @@ export async function verifyPayload(
   // The independent reviewer also adds the missing tests: its brief adds that half and the receipts
   // to reuse. Split into shares, the diff-wide share carries it, as it reads the whole change.
   const combinedBrief =
-    flow.flow.combinedReview === true
+    flow.flow.combinedReview === true && !judging?.recovery
       ? combinedSection(task.repoRoot, await sourceReceipts(ctx, task))
       : null
   // The judge also reads what the build session recorded for Verify's required lines.
@@ -1002,8 +1010,9 @@ async function readVerdicts(ctx: Ctx, task: Task): Promise<Result<NextPayload>> 
   const { counted, passed, blocked } = await countRound(ctx, task, iteration)
   // The reviewer's added tests are part of its pass: committed with it, so the commit it judged is
   // the one the person reviews.
+  const recovery = await hasReviewCandidate(ctx, task)
   const tests =
-    passed && iteration.assignment !== undefined
+    passed && iteration.assignment !== undefined && !recovery
       ? await commitReviewerTests(ctx, counted, iteration.assignment)
       : null
   // The project checks run again on the source with them before the page turns.
@@ -1021,7 +1030,7 @@ async function readVerdicts(ctx: Ctx, task: Task): Promise<Result<NextPayload>> 
     const final = await finalCheckGate(ctx, counted)
     if (final !== null) return final.ok ? ok(said(final.data)) : final
     await recordResult(ctx, counted, iteration, true, !blocked)
-    const review = await toThePerson(ctx, counted, flow.flow.light === true)
+    const review = await toThePerson(ctx, counted, flow.flow.light === true && !recovery)
     return ok(said(await withMoved(ctx, task, movedBefore, review)))
   }
   const build = await fixReply(ctx, counted, flow, log)
@@ -1044,7 +1053,22 @@ async function readVerdicts(ctx: Ctx, task: Task): Promise<Result<NextPayload>> 
  * No record is committed here: the check receipts the judge needs are bound to HEAD's tree.
  */
 async function runVerify(ctx: Ctx, task: Task, control: string): Promise<Result<NextPayload>> {
-  const result = await verifyStep(ctx, task, control)
+  const step = async () => {
+    if (await hasReviewCandidate(ctx, task)) return verifySelectedCandidate(ctx, task, control)
+    const reply = await verifyStep(ctx, task, control)
+    if (
+      reply.ok ||
+      reply.error.code !== "state_mismatch" ||
+      (control !== "" && control !== "judge") ||
+      !(await readReviewCandidates(ctx, task)).eligible
+    )
+      return reply
+    const move = "Open Verify in the App and select Choose review commit."
+    if (control === "") return ok(base(task, { phase: "verify", message: move }))
+    return err({ ...reply.error, fix: move })
+  }
+  const result =
+    task.stage === "verify" ? await withReviewCandidateLock(ctx, task, step) : await step()
   if (!result.ok || result.data.phase !== "verify") return result
   // Counted rounds whose cited files are gone: said with the reply, the same words `validate` uses.
   const gone = await lostEvidenceWarnings(
@@ -1055,6 +1079,189 @@ async function runVerify(ctx: Ctx, task: Task, control: string): Promise<Result<
   return ok(gone.reduce((payload, e) => warned(payload, `${e.message} ${e.fix_hint}`), result.data))
 }
 
+async function verifySelectedCandidate(
+  ctx: Ctx,
+  task: Task,
+  control: string,
+): Promise<Result<NextPayload>> {
+  try {
+    const selected = await selectedReviewCandidate(ctx, task)
+    if (!selected) return err({ code: "bad_args", message: "Choose the review commit in Verify." })
+    const scoped = { ...task, repoRoot: selected.choice.checkout }
+    const answered = await actOnExitAnswer(ctx, scoped, control, verifySelectedCandidate)
+    if (answered !== null) return answered
+    const waiting = await pendingExit(ctx, scoped)
+    if (waiting !== null) return ok(await exitReply(ctx, scoped, waiting))
+    const current = await readAssignment(ctx, scoped)
+    if (current?.recovery === selected.id) await setAsideReplaced(ctx, scoped)
+    const log = await readBuildRecord(ctx, scoped)
+    const latest = log.verification.findLast((round) => round.assignment === current?.id)
+    if (current?.recovery === selected.id && latest?.assignment === current.id) {
+      if (latest.n > scoped.iterations) return await readVerdicts(ctx, scoped)
+      if (latest.result === "pass" && latest.n === scoped.iterations && current.result === "pass")
+        return (await finalCheckGate(ctx, scoped)) ?? ok(await toThePerson(ctx, scoped, false))
+    }
+    if (!(await checksReadyForReview(ctx, scoped))) return ok(await checksFirst(ctx, scoped))
+    if (current?.recovery === selected.id) {
+      const atWork = await judgeAtWork(ctx, scoped, true)
+      if (atWork) return ok(await verifyPayload(ctx, scoped, undefined, undefined, atWork))
+      if (current.result === undefined && control !== "recovery-recheck")
+        return ok(
+          base(scoped, {
+            phase: "verify",
+            assignment: current.id,
+            then: "qualitylayer verify recheck",
+            message:
+              "The selected commit already has a review assignment. Use it while its judge is active.",
+          }),
+        )
+    }
+    if (control !== "judge" && control !== "recovery-recheck")
+      return ok(
+        base(scoped, {
+          phase: "verify",
+          then: "qualitylayer verify judge",
+          message: `The selected commit ${selected.choice.head} is ready for a fresh whole-candidate review.`,
+        }),
+      )
+    if (!(await readConfig(ctx)).independentReview.enabled)
+      return err({
+        code: "bad_args",
+        message: "Turn on independent review before reviewing the selected commit.",
+      })
+    const scans = await candidateScans(ctx, scoped, { id: selected.id, head: selected.choice.head })
+    const flow = await taskFlow(ctx, scoped)
+    const security = await selectedSecurity(ctx, scoped, selected, flow, scanBrief(scans))
+    if (typeof security !== "string") return ok(security)
+    const opinion = await selectedOpinion(
+      ctx,
+      scoped,
+      selected,
+      flow,
+      control === "recovery-recheck",
+    )
+    if (!opinion.ok) return opinion
+    const admission = await prepareJudgeAdmission(ctx, scoped)
+    if (admission.recovery !== selected.id)
+      return err({
+        code: "bad_args",
+        message: "The selected review commit changed. Open Verify again.",
+      })
+    const picked = await prepareVerification(ctx, scoped, {
+      ...admission,
+      note: [admission.note, scanBrief(scans).slice(0, 3500), security, opinion.data]
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(0, 8000),
+    })
+    return picked.ok ? ok(await verifyPayload(ctx, scoped, undefined, picked.data)) : picked
+  } catch (cause) {
+    return err({
+      code: "bad_args",
+      message:
+        cause instanceof Error ? cause.message : "Open Verify and choose the current commit again.",
+    })
+  }
+}
+
+type Selected = NonNullable<Awaited<ReturnType<typeof selectedReviewCandidate>>>
+
+async function selectedSecurity(
+  ctx: Ctx,
+  task: Task,
+  selected: Selected,
+  flow: TaskFlow,
+  scans: string,
+): Promise<string | NextPayload> {
+  if (!flow.flow.security) return ""
+  const slot = `candidate-${selected.id}`
+  const start = `<!-- quality-record:${slot} -->`
+  const end = `<!-- /quality-record:${slot} -->`
+  const existing = await readQualityLog(ctx, task)
+  const text = existing.split(start)[1]?.split(end)[0] ?? ""
+  const pending = nextQualityOf(["security"], text)
+  if (pending.kind === "judge")
+    return `## Selected candidate security review\n\n${text.trim().slice(0, 2800)}`
+  if (pending.kind === "fix")
+    return base(task, {
+      phase: "verify",
+      quality_step: "fix",
+      open_items: pending.items,
+      message: "Fix the security findings, then choose the corrected commit for a fresh review.",
+    })
+  await ensureVerifyLog(ctx, task)
+  if (!existing.includes(start)) await ctx.fs.append(verifyLogPath(task), `\n${start}\n${end}\n`)
+  const id = `q-security-${selected.id.slice(0, 12)}`
+  const active = (await helperLines(ctx, task)).some((item) => item.id === id && !item.done)
+  const helper = qualityHelper(
+    task,
+    {
+      base: await buildBase(ctx, task),
+      diff: "the whole selected commit; inspect tracked code with git ls-files",
+      pkg: await readerPackage(ctx, "security", task),
+      id,
+    },
+    {
+      recordSlot: slot,
+      inline: `Selected commit: ${selected.choice.head}. Review only its exact checkout. Earlier security reviews are historical.\n\n${scans}`,
+    },
+  )
+  const staffed = await staff(ctx, [helper])
+  const filed = await withBriefFiles(ctx, task, staffed.on)
+  if (!active) await startHelpers(ctx, task, filed)
+  return base(task, {
+    phase: "verify",
+    quality_step: ["security"],
+    instructions: staffed.off,
+    ...(filed[0] ? { helper: filed[0] } : {}),
+    record_as: "### Security",
+    record_in: verifyLogPath(task),
+    then: "qualitylayer verify judge",
+  })
+}
+
+async function selectedOpinion(
+  ctx: Ctx,
+  task: Task,
+  selected: Selected,
+  flow: TaskFlow,
+  retry: boolean,
+): Promise<Result<string>> {
+  if (!flow.flow.changeSecondOpinion) return ok("")
+  const runtimeDir = join(task.runtimeDir, "review-candidates", selected.id)
+  const scoped = { ...task, runtimeDir }
+  const file = join(task.dir, "reviews", `verify-candidate-${selected.id}.md`)
+  const known = await readRun(ctx, scoped, "verify")
+  if (known?.state === "done" && (await ctx.fs.exists(file)))
+    return ok(`Read the fresh second opinion in ${file}.`)
+  if (known && !retry)
+    return err({
+      code: "bad_args",
+      message:
+        "The selected candidate still needs its second opinion. Run qualitylayer verify recheck.",
+    })
+  const step = await crossReviewStep(ctx, task, "verify")
+  if (!step)
+    return err({
+      code: "bad_args",
+      message:
+        "The selected candidate needs its configured second opinion. Enable an available reviewer and run qualitylayer verify recheck.",
+    })
+  const reviewed = await runCrossReview(ctx, scoped, "verify", {
+    ...step,
+    file,
+    recoveryHead: selected.choice.head,
+  })
+  if (!reviewed.ok) return reviewed
+  if (!reviewed.data.completed)
+    return err({
+      code: "bad_args",
+      message:
+        "The selected candidate's second opinion could not complete. Run qualitylayer verify recheck after fixing reviewer availability.",
+    })
+  return ok(`Read the fresh second opinion in ${file}.`)
+}
+
 /**
  * `verify fix` and `verify keep-red` on an exit: the person's answer is what moves Verify, never
  * another judgement. Null for any other word.
@@ -1063,6 +1270,7 @@ async function actOnExitAnswer(
   ctx: Ctx,
   task: Task,
   control: string,
+  resume = verifyStep,
 ): Promise<Result<NextPayload> | null> {
   if (control === "round") {
     const moved = await takeAskedRound(ctx, task)
@@ -1073,7 +1281,7 @@ async function actOnExitAnswer(
   if (control !== "keep") return null
   // The red check is recorded as kept, then Verify goes on as its brief would.
   const kept = await takeKeptRed(ctx, task)
-  return kept.ok ? verifyStep(ctx, task, "") : kept
+  return kept.ok ? resume(ctx, task, "") : kept
 }
 
 /**
@@ -1174,6 +1382,10 @@ export async function verifyVerb(
   verb: VerifyVerb,
 ): Promise<Result<NextPayload>> {
   const mode = (await readVerifyMode(ctx, task)) ?? "checking"
+  if ((verb === "judge" || verb === "recheck") && mode === "asked")
+    return refused("Verify waits for the person's answer to its exit question.", [ANSWER_FIRST])
+  if ((verb === "judge" || verb === "recheck") && (await hasReviewCandidate(ctx, task)))
+    return runVerify(ctx, task, verb === "recheck" ? "recovery-recheck" : "judge")
   switch (verb) {
     case "judge":
       // A standing pass is not judged twice: the reply is the brief's (the person's review, or what

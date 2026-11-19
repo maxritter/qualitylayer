@@ -15,6 +15,7 @@ import { needsOf } from "../../core/needs.ts"
 import type { ProjectLooks } from "../../core/project-look.ts"
 import { reviewComments } from "../../core/review/comments.ts"
 import type { PullRequestView } from "../../core/review/summary.ts"
+import type { ReviewCandidateInput, ReviewCandidateState } from "../../core/review-candidate.ts"
 import type { CommentThread } from "../../interaction/contracts.ts"
 import { recommendedIndices, recommendedLabel } from "../../interaction/question-recommendations.ts"
 import { withBridge } from "../../server/artifact-bridge.ts"
@@ -647,7 +648,60 @@ export function createDemoApi(
       patchComment(task, id, { answer: helperAnswerFor(task, c.remark), answered: Date.now() })
     }, after)
   }
+  const recoveryExample =
+    typeof location !== "undefined" &&
+    new URLSearchParams(location.search).get("review-candidate") === "rebased"
+  const candidateExample: ReviewCandidateState = {
+    eligible: true,
+    repository: "acme/platform",
+    version: "example",
+    prior: {
+      branch: "feature/address-import",
+      head: "83e12c79b2e32d57cd041d53e2f1c40ef26028ae",
+      commits: 16,
+      slices: 4,
+      stale: 13,
+    },
+    choices: [
+      {
+        checkout: "worktrees/address-import",
+        branch: "feature/address-import",
+        head: "fbd70e2fa8012074b89b35393aad1ac8fa429f08",
+        subject: "Validate addresses before import",
+        shared: false,
+      },
+      {
+        checkout: "platform",
+        branch: "develop",
+        head: "4ab67d2ef1ab900e5a2711d4931618359bad42cb",
+        subject: "Merge address import with the batch update",
+        shared: true,
+      },
+    ],
+  }
   const api: WalkthroughApi & ScreenEvidenceApi & { docsRoute: typeof interactionApi.taskRoute } = {
+    ...(recoveryExample
+      ? {
+          reviewCandidates: async (id: string) =>
+            id === DEMO_TASK_ID
+              ? { ...candidateExample }
+              : { eligible: false, repository: "", version: "", choices: [] },
+          selectReviewCandidate: async (id: string, input: ReviewCandidateInput) => {
+            const choice = candidateExample.choices.find(
+              (c) => c.checkout === input.checkout && c.head === input.head,
+            )
+            if (
+              id !== DEMO_TASK_ID ||
+              !choice ||
+              input.version !== candidateExample.version ||
+              (choice.shared && !input.acknowledgeShared)
+            )
+              throw Error("Choose the checkout and current commit again.")
+            candidateExample.selected = { ...choice, selectedAt: Date.now(), state: "pending" }
+            return { ...candidateExample }
+          },
+        }
+      : {}),
     currentTurnLayout: true,
     docsRoute: async <T>(id: string, lane: string, action: string, init?: RequestInit) => {
       if (lane !== "docs") throw new Error("This action is unavailable in the source demo.")

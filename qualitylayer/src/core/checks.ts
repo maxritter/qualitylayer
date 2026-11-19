@@ -47,6 +47,7 @@ import { CHECKS_ALL_KIND, recordDuration } from "./helper-history.ts"
 import { mergedPath, processLoginPath, toolchainFolders } from "./login-path.ts"
 import { killProcessTree } from "./platform.ts"
 import { skippedRequiredRuns } from "./required-skips.ts"
+import { hasReviewCandidate, selectedReviewCandidate } from "./review-candidate.ts"
 import { pidAlive, selfCommand } from "./self.ts"
 import { planDetailsText, type Task } from "./task/store.ts"
 
@@ -721,6 +722,8 @@ export async function runCheck(
   runner: CommandRunner = shellRunner,
   checkId: string = randomUUID(),
 ): Promise<Result<CheckReply>> {
+  const candidate = task.stage === "verify" ? await selectedReviewCandidate(ctx, task) : null
+  if (candidate) task = { ...task, repoRoot: candidate.choice.checkout }
   const found = await commandsFor(ctx, task, scope)
   if (!found.ok) return found
   const noCommands = () =>
@@ -753,6 +756,12 @@ export async function runCheck(
     return await ctx.fs.withLock(
       lockPath(task),
       async () => {
+        const selected = task.stage === "verify" ? await selectedReviewCandidate(ctx, task) : null
+        if (selected?.id !== candidate?.id)
+          return err({
+            code: "bad_args",
+            message: "The selected review commit changed. Run the check on the current candidate.",
+          })
         // Reconcile previous attempts before this run can publish newer evidence.
         await readCheckProgress(ctx, task)
         // The Plan or its approval may have changed while this run waited: run what they say now.
@@ -784,7 +793,8 @@ export async function runCheck(
         // When the commands began: the forecast's "checks-all" time leaves out any wait for the lock.
         const commandsBegan = ctx.clock.now()
         // The security scans run beside the project's commands; their record never decides a check.
-        const scans = scope.kind === "all" ? runTaskScans(ctx, task) : Promise.resolve(null)
+        const scans =
+          scope.kind === "all" && !candidate ? runTaskScans(ctx, task) : Promise.resolve(null)
         const lines: string[] = []
         // A command fails in a shared checkout for others' unfinished edits too: such a failure is run
         // again on HEAD plus the slice's (or, for `all`, the whole task's) own files, and that run is
@@ -792,8 +802,9 @@ export async function runCheck(
         // own sessions edited stays in the copy, on a card or not. Left out are others' files: those
         // another session's record claims, and untracked files no session of this task wrote.
         const whose = scope.kind === "all" ? "task" : "slice"
-        const named =
-          scope.kind === "all"
+        const named = candidate
+          ? null
+          : scope.kind === "all"
             ? await buildOwnPaths(ctx, task).catch(() => null)
             : await ownFiles(ctx, task, scope)
         const repoIds = { id: task.repoId, root: task.repoRoot }
@@ -871,6 +882,7 @@ export async function runCheck(
             if (
               key !== null &&
               previous?.key === key &&
+              (!candidate || previous.revision === revision) &&
               previous.ran &&
               previous.exit === 0 &&
               !previous.notRun &&
@@ -1219,12 +1231,22 @@ export async function runCheck(
  * the judge reads it as recorded, bound to the build's code. Without it only keyed passes count.
  */
 async function checksGapOf(ctx: Ctx, task: Task, readyForReview: boolean): Promise<string | null> {
+  let recoveryRevision: string | undefined
+  if (task.stage === "verify" && (await hasReviewCandidate(ctx, task))) {
+    const candidate = await selectedReviewCandidate(ctx, task).catch(() => null)
+    if (!candidate) return "the selected review commit changed. Choose its current worktree commit."
+    task = { ...task, repoRoot: candidate.choice.checkout }
+    recoveryRevision = await buildRevision(ctx, task)
+  }
   const found = await commandsFor(ctx, task, { kind: "all" })
   if (!found.ok) return found.error.message
   if (found.data.now.length === 0) return "the Plan names no project check to run."
-  const runs = (await readCheckRecords(ctx, task)).filter((r) => r.scope === "all")
+  const runs = (await readCheckRecords(ctx, task)).filter(
+    (r) => r.scope === "all" && (recoveryRevision === undefined || r.revision === recoveryRevision),
+  )
   // A required line's command that could not run here and was skipped with a reason is review evidence.
-  const skipped = readyForReview ? await skippedRequiredRuns(ctx, task) : []
+  const skipped =
+    readyForReview && recoveryRevision === undefined ? await skippedRequiredRuns(ctx, task) : []
   for (const command of found.data.now) {
     const name = `\`${command}\``
     if (!found.data.approved?.includes(command))

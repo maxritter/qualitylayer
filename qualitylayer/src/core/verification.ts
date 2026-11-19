@@ -54,6 +54,7 @@ import { assignedPlan } from "./judge-records.ts"
 import { movedSince, recordMoved, saveSnapshot } from "./moved.ts"
 import { passRoles, refuseWhileOpen } from "./polish.ts"
 import { recheckOf, roundAssignment } from "./recheck.ts"
+import { hasReviewCandidate, selectedReviewCandidate } from "./review-candidate.ts"
 import { shellQuote } from "./shell.ts"
 import { readEvents, type Task } from "./task/store.ts"
 import { taskFlow } from "./task-flow.ts"
@@ -69,6 +70,8 @@ export type Assignment = {
   /** The commit the judge was assigned at, so a later round can name the fix. */
   head?: string
   source?: JudgeInputs | null
+  /** Explicitly selected whole-commit review. Earlier verdicts belong to their original inputs. */
+  recovery?: string
   /** Why the judge reads current HEAD in full, when the recorded history was rewritten. */
   note?: string
   /** The task list and scenarios as they stood when this assignment was handed out. */
@@ -327,6 +330,13 @@ export async function verificationContextRevision(ctx: Ctx, task: Task): Promise
  */
 export async function staleInputs(ctx: Ctx, task: Task, assignment: Assignment): Promise<string[]> {
   const out = await staleContext(ctx, task, assignment)
+  if (assignment.recovery) {
+    const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
+    if (selected?.id !== assignment.recovery || selected.choice.head !== assignment.head) {
+      out.push("The selected review candidate changed")
+      return out
+    }
+  }
   try {
     if (assignment.revision !== (await buildRevision(ctx, task))) out.push("The code changed")
   } catch {
@@ -345,6 +355,7 @@ export async function assignmentCurrent(
   assignment: Assignment,
 ): Promise<boolean> {
   if ((await staleInputs(ctx, task, assignment)).length > 0) return false
+  if (assignment.recovery) return true
   const loose = await looseOwn(ctx, task, assignment.combined === true)
   return loose !== null && loose.digest === assignment.loose
 }
@@ -406,9 +417,22 @@ export type JudgeAdmission = {
   head?: string
   /** Why the judge reads current HEAD in full, when the recorded history was rewritten. */
   note?: string
+  recovery?: string
 }
 /** The judge reads and runs the working tree; `source` records the task's own commits when known. */
 export async function prepareJudgeAdmission(ctx: Ctx, task: Task): Promise<JudgeAdmission> {
+  const selected = await selectedReviewCandidate(ctx, task)
+  if (selected) {
+    const { checkout, head } = selected.choice
+    if (task.repoRoot !== checkout)
+      throw new Error("Start the review in the selected candidate's checkout.")
+    return {
+      source: null,
+      head,
+      recovery: selected.id,
+      note: `The person chose commit ${head} in ${checkout} for a fresh whole-candidate review. Check the entire candidate against the approved Plan. Earlier checks, security results and verdicts belong to their original revisions. No task-slice ownership is claimed.`,
+    }
+  }
   const rev = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
   const currentHead = rev.code === 0 ? rev.stdout.trim() : undefined
   let source: JudgeInputs | null = null
@@ -484,24 +508,27 @@ export async function prepareVerification(
       iteration: task.iterations + 1,
       ...(head !== undefined ? { head } : {}),
       ...(source !== null ? { source } : admission.note !== undefined ? { source: null } : {}),
-      ...(judgedBefore && sameRequirements && previous?.head !== undefined
-        ? { after: { iteration: previous.iteration, head: previous.head } }
-        : // Handed out again for the same round (its judge died or was replaced before it
-          // ruled): it is still the run after that judged round, so its brief keeps "the next
-          // run" and that round's lines that did not pass.
-          previous !== null &&
-            previous.result === undefined &&
-            previous.iteration === task.iterations + 1 &&
-            previous.after !== undefined &&
-            sameRequirements
-          ? { after: previous.after }
-          : {}),
+      ...(admission.recovery ? { recovery: admission.recovery } : {}),
+      ...(admission.recovery
+        ? {}
+        : judgedBefore && sameRequirements && previous?.head !== undefined
+          ? { after: { iteration: previous.iteration, head: previous.head } }
+          : // Handed out again for the same round (its judge died or was replaced before it
+            // ruled): it is still the run after that judged round, so its brief keeps "the next
+            // run" and that round's lines that did not pass.
+            previous !== null &&
+              previous.result === undefined &&
+              previous.iteration === task.iterations + 1 &&
+              previous.after !== undefined &&
+              sameRequirements
+            ? { after: previous.after }
+            : {}),
     }
     if (ignored.length > 0) assignment.ignored = ignored
-    if (flowed.flow.combinedReview === true) assignment.combined = true
+    if (flowed.flow.combinedReview === true && !admission.recovery) assignment.combined = true
     await ctx.fs.mkdir(task.runtimeDir)
     // This judge reads the code as it is now: what the task changed before it needs no record.
-    await clearOwnChanges(ctx, task.runtimeDir, assignment.id)
+    if (!admission.recovery) await clearOwnChanges(ctx, task.runtimeDir, assignment.id)
     const loose = await looseOwn(ctx, task, assignment.combined === true)
     if (loose?.digest !== undefined) {
       assignment.loose = loose.digest
@@ -515,6 +542,18 @@ export async function prepareVerification(
     assignment.acceptance = [...basis.ids]
     if (basis.texts !== undefined) assignment.stepTexts = basis.texts
     await ctx.fs.mkdir(join(task.runtimeDir, "judgements"))
+    if (admission.recovery) {
+      const selected = await selectedReviewCandidate(ctx, task)
+      if (selected?.id !== admission.recovery)
+        throw new Error("The selected review candidate changed.")
+      if (previous && /^[A-Za-z0-9-]{1,128}$/.test(previous.id)) {
+        const earlier = join(task.runtimeDir, "judgements", previous.id)
+        const receipt = `${JSON.stringify(previous)}\n`
+        if (!(await ctx.fs.exists(`${earlier}.json`)))
+          await ctx.fs.atomicWrite(`${earlier}.json`, receipt, { mode: 0o600 })
+        await ctx.fs.atomicWrite(`${earlier}.counted.json`, receipt, { mode: 0o600 })
+      }
+    }
     await ctx.fs.atomicWrite(
       join(task.runtimeDir, "judgements", `${assignment.id}.json`),
       `${JSON.stringify(assignment)}\n`,
@@ -670,6 +709,18 @@ export async function verificationErrors(
     ...(recheck !== null ? { recheck } : {}),
   })
   const assignment = await readAssignment(ctx, task)
+  if (
+    (await hasReviewCandidate(ctx, task)) &&
+    (!assignment?.recovery || !(await assignmentCurrent(ctx, task, assignment)))
+  )
+    errors.push(
+      verr(
+        iteration.line,
+        "verification-current",
+        "This judgement no longer matches the selected review candidate",
+        "Open Verify and choose the current commit again. Earlier verdicts stay in their original records.",
+      ),
+    )
   if (
     assignment !== null &&
     assignment.id === iteration.assignment &&
@@ -1469,6 +1520,22 @@ async function ownMoves(
  * and Review both ask this, so they cannot disagree; `moved` says what changed.
  */
 export async function passStanding(ctx: Ctx, task: Task): Promise<PassStanding> {
+  if (await hasReviewCandidate(ctx, task)) {
+    const receipt = await readAssignment(ctx, task)
+    if (
+      !receipt?.recovery ||
+      receipt.result !== "pass" ||
+      receipt.withdrawn ||
+      !(await verificationCurrent(ctx, task))
+    )
+      return {
+        stands: false,
+        moved: ["No fresh judge's pass is counted for the selected candidate"],
+      }
+    return (await assignmentCurrent(ctx, task, receipt))
+      ? { stands: true }
+      : { stands: false, moved: ["The selected review candidate changed"] }
+  }
   if (await checkedWithoutIndependentJudge(ctx, task)) return { stands: true }
   if (!(await verificationCurrent(ctx, task)))
     return { stands: false, moved: ["No judge's pass is counted for this round"] }
@@ -1489,6 +1556,14 @@ export async function passStanding(ctx: Ctx, task: Task): Promise<PassStanding> 
 /** The build is verified: the round's judge passed it. Later edits do not undo that. */
 export async function verificationCurrent(ctx: Ctx, task: Task): Promise<boolean> {
   const receipt = await readAssignment(ctx, task)
+  if (await hasReviewCandidate(ctx, task)) {
+    if (!receipt?.recovery || receipt.result !== "pass" || receipt.iteration > task.iterations)
+      return false
+    const collected = (await readBuildRecord(ctx, task)).verification.findLast(
+      (round) => round.assignment === receipt.id,
+    )
+    return collected?.result === "pass"
+  }
   if (await checkedWithoutIndependentJudge(ctx, task)) return true
   // A round counter that moved on without a new judge being handed out (Review sent the task back
   // and nothing of the task changed) does not void the last judged round: the same pass is read

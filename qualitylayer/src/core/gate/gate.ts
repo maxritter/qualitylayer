@@ -55,6 +55,7 @@ import {
   planReviewCoverageNote,
 } from "../review/plan-input.ts"
 import { fixesBuilt } from "../review/triage.ts"
+import { hasReviewCandidate, selectedReviewCandidate } from "../review-candidate.ts"
 import { listRuns } from "../run/registry.ts"
 import { applyOverrides } from "../scaling.ts"
 import {
@@ -1277,6 +1278,23 @@ async function recordUnlocked(
   options: RecordOptions,
 ): Promise<Result<Recorded>> {
   let gate = await readGate(ctx, task)
+  if (gate?.target === FINAL && decision === "approved" && (await hasReviewCandidate(ctx, task))) {
+    const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
+    const assigned = await readAssignment(ctx, task)
+    if (
+      !selected ||
+      assigned?.recovery !== selected.id ||
+      assigned.result !== "pass" ||
+      gate.finalReview?.code !== assigned.revision ||
+      (options.gateId !== undefined && options.gateId !== gate.id) ||
+      (options.revision !== undefined && options.revision !== gate.revision)
+    )
+      return err({
+        code: "no_gate",
+        message: "Open the finished review of the selected candidate before approving.",
+      })
+    task = { ...task, repoRoot: selected.choice.checkout }
+  }
   if (
     gate?.target === FINAL &&
     gate.decision === "approved" &&
@@ -2162,6 +2180,7 @@ export async function settle(
   gate: GateFile,
   options: { app?: boolean } = {},
 ): Promise<Result<GateOutcome>> {
+  let shipping = task
   const settled = await ctx.fs.withLock(
     lockPath(task),
     async () => {
@@ -2170,7 +2189,20 @@ export async function settle(
       const saved = await loadTask(ctx, { root: task.repoRoot, id: task.repoId }, task.slug)
       if (saved === null)
         return err({ code: "no_gate", message: "The task is no longer available" })
-      return settleUnlocked(ctx, saved, current, options.app === true)
+      if (
+        current.target === FINAL &&
+        current.decision === "approved" &&
+        (await hasReviewCandidate(ctx, saved))
+      ) {
+        const selected = await selectedReviewCandidate(ctx, saved).catch(() => null)
+        if (!selected || current.approvedHead !== selected.choice.head)
+          return err({
+            code: "no_gate",
+            message: "The approved candidate moved. Its approval remains in the record.",
+          })
+        shipping = { ...saved, repoRoot: selected.choice.checkout }
+      } else shipping = saved
+      return settleUnlocked(ctx, shipping, current, options.app === true)
     },
     { waitMs: SETTLE_WAIT_MS },
   )
@@ -2179,7 +2211,7 @@ export async function settle(
   // through the same opener, for its reply carries the result.
   if (settled.ok && gate.target === FINAL && options.app !== true) {
     const { openChosenPullRequest } = await import("../../server/api.ts")
-    await openChosenPullRequest(ctx, task).catch(() => null)
+    await openChosenPullRequest(ctx, shipping).catch(() => null)
   }
   return settled
 }

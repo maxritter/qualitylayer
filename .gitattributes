@@ -2309,3 +2309,11 @@ qualitylayer/src/ui/shell/verify-activity.css !filter !diff
 qualitylayer/src/ui/steps/verify/CheckEvidence.tsx !filter !diff
 qualitylayer/tests/e2e/memory-repository-settings.test.ts !filter !diff
 qualitylayer/tests/e2e/verify-activity-browser.test.ts !filter !diff
+
+# Approved readable Verify review-candidate sources.
+qualitylayer/src/core/review-candidate.ts !filter !diff
+qualitylayer/src/ui/steps/verify/ReviewCandidate.tsx !filter !diff
+qualitylayer/src/ui/steps/verify/ReviewCandidateDialog.tsx !filter !diff
+qualitylayer/src/ui/steps/verify/review-candidate.css !filter !diff
+qualitylayer/tests/e2e/review-candidate-browser.test.ts !filter !diff
+qualitylayer/tests/ui/review-candidate.test.tsx !filter !diff

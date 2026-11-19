@@ -68,13 +68,7 @@ jobs:
         working-directory: docs/site
       - name: Install Chromium system dependencies
         working-directory: docs/site
-        run: |
-          if checked=$(./node_modules/.bin/playwright install-deps chromium --dry-run) &&
-             [ "$checked" = "All system dependencies are installed." ]; then
-            echo "$checked"
-          else
-            ./node_modules/.bin/playwright install-deps chromium
-          fi
+        run: bash "$GITHUB_WORKSPACE/.github/workflows/scripts/install-chromium-deps.sh" ./node_modules/.bin/playwright
       - name: Install managed Chromium
         working-directory: docs/site
         run: ./node_modules/.bin/playwright install chromium
@@ -146,7 +140,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install Chromium system dependencies
         working-directory: qualitylayer
-        run: ./node_modules/.bin/playwright install-deps chromium
+        run: bash "$GITHUB_WORKSPACE/.github/workflows/scripts/install-chromium-deps.sh" ./node_modules/.bin/playwright
       - name: Install managed Chromium
         working-directory: qualitylayer
         run: ./node_modules/.bin/playwright install chromium
@@ -200,8 +194,12 @@ jobs:
         working-directory: qualitylayer
       - run: npm ci --ignore-scripts
         working-directory: docs/site
-      - run: ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Install Chromium system dependencies
         working-directory: qualitylayer
+        run: bash "$GITHUB_WORKSPACE/.github/workflows/scripts/install-chromium-deps.sh" ./node_modules/.bin/playwright
+      - name: Install managed Chromium
+        working-directory: qualitylayer
+        run: ./node_modules/.bin/playwright install chromium
       - name: Every history pair and explicit navigation
         working-directory: qualitylayer
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/d9861aee63b0ad189debdd660a0499df79a3750884be357e15cce66a7b0bde7a.sh"

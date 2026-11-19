@@ -190,8 +190,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           if ! command -v pdftotext; then
-            sudo apt-get update
-            sudo apt-get install --yes --no-install-recommends poppler-utils
+            bash .github/workflows/scripts/install-ubuntu-packages.sh poppler-utils
           fi
           command -v pdftotext
 
@@ -285,8 +284,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           if ! command -v pdftotext; then
-            sudo apt-get update
-            sudo apt-get install --yes --no-install-recommends poppler-utils
+            bash .github/workflows/scripts/install-ubuntu-packages.sh poppler-utils
           fi
           command -v pdftotext
 
@@ -440,7 +438,9 @@ jobs:
           bun-version: 1.4.4
       - name: Install the billing test browser
         working-directory: docs/site
-        run: npx playwright install --with-deps chromium
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/workflows/scripts/install-chromium-deps.sh" ./node_modules/.bin/playwright
+          ./node_modules/.bin/playwright install chromium
       - name: Test
         working-directory: docs/site
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/360d1e597726e4c2c20e907360649892014679ad150efefafdb3a6256d8049fa.sh"

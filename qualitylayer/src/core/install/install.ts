@@ -556,19 +556,20 @@ const MOD_MIN_VERSION = "2.1.287"
  */
 export const KEY_FOLLOWS = "QUALITYLAYER_KEY_FOLLOWS"
 
-/** The version of the native Claude command when its config folder exists. */
-function installedClaudeVersion(ctx: Ctx, claude: string | null): string | null {
+/** Whether Claude Code (the command at `claude`) is set up here and is new enough to load the QualityLayer mod. */
+function claudeLoadsMods(ctx: Ctx, claude: string | null): boolean {
   const root = roots(ctx)?.claude
-  if (claude === null || root === undefined || !existsSync(root)) return null
+  if (claude === null || root === undefined || !existsSync(root)) return false
   let command: string[]
   try {
     command = nativeCommand(claude, ["--version"])
   } catch {
-    // A Windows shim that cannot be run directly leaves the version unknown.
-    return null
+    // A Windows shim that cannot be run directly: the version is unknown, so no mod.
+    return false
   }
   const text = versionTextOfSync(claude, command, { timeoutMs: 5_000 })
-  return versionFromOutput(text)
+  const version = versionFromOutput(text)
+  return version !== null && compareVersions(version, MOD_MIN_VERSION) >= 0
 }
 
 function onPath(ctx: Ctx, dir: string): boolean {
@@ -724,8 +725,7 @@ async function installLocked(
   const claude =
     (options.app === undefined ? await agentBinary(ctx, "claude-code") : null) ??
     (await findAgentBinary(ctx, "claude-code"))
-  const claudeVersion = installedClaudeVersion(ctx, claude)
-  const modPlaced = claudeVersion !== null && compareVersions(claudeVersion, MOD_MIN_VERSION) >= 0
+  const modPlaced = claudeLoadsMods(ctx, claude)
   if (modPlaced || existsSync(modFolder(ctx))) {
     for (const file of renderModFiles(binary)) {
       await place(plan, join(modFolder(ctx), file.path), file.text, undefined, true)
@@ -891,7 +891,7 @@ async function installLocked(
 
   // The agent settings the workflow relies on: only what is missing, and said.
   options.progress?.("Setting up your agents")
-  const results = await configureAgents(ctx, { mod: modPlaced, claudeVersion })
+  const results = await configureAgents(ctx, { mod: modPlaced })
   const configured = results.filter((r) => r.done)
   const declined = results.filter((r) => !r.done)
 

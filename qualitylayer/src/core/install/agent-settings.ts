@@ -15,7 +15,6 @@ import { isDeepStrictEqual } from "node:util"
 import type { Ctx } from "../../ctx.ts"
 import { AGENT_NAMES, type NativeAgent } from "../agents/ids.ts"
 import { windows, windowsHookCommand } from "../platform.ts"
-import { compareVersions } from "../update/versions.ts"
 import {
   type FileHook,
   fileHooks,
@@ -28,9 +27,6 @@ import { codexHookTrust } from "./codex-hook-trust.ts"
 import { realDir, userHome } from "./manifest.ts"
 import { MEMORY_MCP_NAME } from "./memory-mcp.ts"
 import {
-  CLAUDE_CODE_MODE_ENV,
-  CLAUDE_CODE_MODE_ID,
-  CLAUDE_CODE_MODE_MIN_VERSION,
   CLAUDE_NATIVE_IDS,
   CODEX_PERMISSION_IDS,
   claudeNativeDefaults,
@@ -770,7 +766,7 @@ async function hookFileAgentPlans(
 }
 
 /** Every recommendation for the agents installed on this machine, with its current state. */
-async function plans(ctx: Ctx, claudeVersion: string | null = null): Promise<Plan[]> {
+async function plans(ctx: Ctx): Promise<Plan[]> {
   const dirs = roots(ctx)
   if (dirs === null) return []
   const out: Plan[] = []
@@ -778,12 +774,7 @@ async function plans(ctx: Ctx, claudeVersion: string | null = null): Promise<Pla
 
   if (await ctx.fs.exists(dirs.claude)) {
     const file = join(dirs.claude, "settings.json")
-    const codeMode =
-      claudeVersion !== null &&
-      compareVersions(claudeVersion, CLAUDE_CODE_MODE_MIN_VERSION) >= 0 &&
-      ctx.env.get(CLAUDE_CODE_MODE_ENV) === undefined
-    const defaults = claudeNativeDefaults(file, (await readText(ctx, file)) ?? "")
-    out.push(...defaults.filter((item) => item.id !== CLAUDE_CODE_MODE_ID || codeMode))
+    out.push(...claudeNativeDefaults(file, (await readText(ctx, file)) ?? ""))
     // Effort: high unless the user chose. Subagents inherit the session's level; a
     // top-level effortLevel in user settings does not reach Opus 5.5, so it gets its own.
     for (const [id, path, label] of [
@@ -1382,7 +1373,7 @@ async function applyCodexPermissions(
 
 export async function configureAgents(
   ctx: Ctx,
-  options: { mod?: boolean; repair?: NativeAgent; claudeVersion?: string | null } = {},
+  options: { mod?: boolean; repair?: NativeAgent } = {},
 ): Promise<SettingResult[]> {
   const results: SettingResult[] = []
   const records = await readRecords(ctx)
@@ -1402,7 +1393,7 @@ export async function configureAgents(
     changed = true
   }
   changed = (await migrateCodexCompactReturn(ctx, records, kept)) || changed
-  const items = (await plans(ctx, options.claudeVersion)).filter(
+  const items = (await plans(ctx)).filter(
     (item) => options.repair === undefined || item.agent === options.repair,
   )
   const permissions = await applyCodexPermissions(ctx, items, records, kept)

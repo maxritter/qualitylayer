@@ -6,6 +6,10 @@ A scoped recheck may carry an earlier acceptance pass only through the existing 
 
 The existing Verify lanes, sections and layout stay. No acknowledgment, new lookup command, extra review round or duplicate execution is required to make the projection complete.
 
+## Section navigation
+
+Choosing a section from On this page scrolls to and focuses its heading. Done means uses the same section anchor with or without a run-type mark. The next Tab continues from that heading to the next control. Pointer and keyboard selection share this behavior.
+
 ## Fix rounds and rechecks
 
 Agents choose the next move within the approved scope. They can continue fixing and rechecking while the evidence supports meaningful progress. If the result is unchanged, they investigate or change approach before another recheck. A real blocker that requires the person uses the existing question path. Historical cap questions already asked or answered keep their authority, and the final review still needs the person's approval.

@@ -56,6 +56,4 @@ Terminal build approval saves pending feedback first and starts only after an
 approved response. A changed or turned approval keeps the existing refusal
 message and does not report a build start. Late artifact metadata establishes
 the tracked revision so later dependency revisions still refresh the preview.
-Sections navigation uses the current document's actual section or heading;
-when neither exists it returns to that document's top. Existing reveal and
-focus behavior stays intact.
+Sections navigation scrolls to and focuses the current document's section heading, including headings with a status mark. When the document has no matching section or heading, navigation returns to its top.

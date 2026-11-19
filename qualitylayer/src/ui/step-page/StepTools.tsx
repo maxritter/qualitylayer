@@ -148,13 +148,13 @@ export function StepTools({
             const entry = entries.find((each) => each.slug === slug)
             const page = tools.current?.closest<HTMLElement>(".sp-page")
             if (entry === undefined || !page) return
-            const exact = [...page.querySelectorAll<HTMLElement>("[id]")].find(
-              (element) => element.id === sectionId(entry.text),
-            )
-            const heading = [...page.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].find(
-              (element) => element.textContent?.trim().replace(/\s+/g, " ") === entry.text,
-            )
-            jumpTo(exact ?? heading ?? page.querySelector<HTMLElement>("h1") ?? page)
+            const target =
+              page.querySelector<HTMLElement>(`[data-passage-section="${entry.slug}"]`) ??
+              page.querySelector<HTMLElement>(`#${sectionId(entry.text)}`) ??
+              [...page.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].find(
+                (element) => element.textContent?.trim().replace(/\s+/g, " ") === entry.text,
+              )
+            jumpTo(target ?? page.querySelector<HTMLElement>("h1") ?? page)
           }}
         />
       ) : null}

@@ -48,11 +48,9 @@ jobs:
         working-directory: qualitylayer
         run: bun audit --production --audit-level=high
 
-      # Picomatch GHSA-fc5q-39xc-vjpf affects development tooling that processes PR input.
-      # Check for a patched release before each release and remove the exception when available.
       - name: Known vulnerabilities in dependencies
         working-directory: qualitylayer
-        run: bun audit --audit-level=high --ignore=GHSA-fc5q-39xc-vjpf
+        run: bun audit --audit-level=high
 
       - name: Open issue on nightly failure
         if: failure() && github.event_name == 'schedule'

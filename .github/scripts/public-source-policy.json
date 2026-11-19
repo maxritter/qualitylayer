@@ -37,7 +37,7 @@
     ".github/workflows/scripts/setup-claude-code.sh": "c5631b0a5122de4347d9ecee9af341e9732199323e9fe1aa1df4d58af687ab25",
     ".github/workflows/scripts/setup-git-crypt.sh": "6391a1592b1d671b7a55c33f3286faa3f433b1efe1e38fdb4d070cf88efe5440",
     ".github/workflows/site-health.yml": "370405ce200355b10d5dd73b50d970b348285cfe9109681e984d57b15f68f001",
-    ".github/workflows/supply-chain.yml": "6d86908d64ea6b253723e19e9d5b49bffb0f86769a67c2cf9327d99442199b6f",
+    ".github/workflows/supply-chain.yml": "088ea378b55cbc083b8356f9f2e63a9cff1dfbd044b7aa09a55e82f5ece05e6f",
     ".qlty/qlty.toml": "c06a70783017a321dd2666bb918fc51a238341cbaba46d52b6e8c2a5e785530e",
     ".releaserc.json": "a8e47f31fb2703b31d74c3a318fc1cbfefe43a8cb995928f22f00f2ba10af9fb",
     ".trivyignore": "2f2d84916d8a8c7549fdbd7f9a135c0837362cc6848b2c01c622a589922ee027",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "4d7a0e81dc23ccb31a95313e28828bc3cf1b659e3084fb7e308c8c6bf8d34b1b",
+  "reviewManifestSha256": "4aa83fd0f8adcc39e675a855fa99fa9d89b0b16d931831545ddc2a98178ce168",
   "schema": 1,
-  "sourceHead": "2c5259e09d48c53725bb68919130d7bc4092ed2a"
+  "sourceHead": "4462ade22c750dc0938366c346aa1fa25d4ca0de"
 }

@@ -80,7 +80,7 @@
     "qualitylayer/app/native-contract.md": "95bf7e88322c3eabc9492d6aa3f28abdadf51cf45f817a665b3525923793f33d",
     "qualitylayer/app/scripts/self-test-closed-stdout.sh": "61e57bff644c9c0039e65063be9e0d6c3be2bc6ab6165a6f8e5edd4dc52aad50",
     "qualitylayer/app/src-tauri/.gitignore": "6a446f84f24f410f34c590fe454dc65c39ce01c936b9bf1c0183fc156f451553",
-    "qualitylayer/app/src-tauri/Cargo.lock": "5562d6971a13ce72667e379e2ef5b55bcff74e3881e9934d7598ec8c328a54a2",
+    "qualitylayer/app/src-tauri/Cargo.lock": "49a6fddb0780fe7c54f6060282173a140af8effded0180b61eed4c05dd2b55aa",
     "qualitylayer/app/src-tauri/capabilities/default.json": "d64e9144963fb287c0c96dad523d5b50759e0edc704629ebc38bd1506b7f8ecd",
     "qualitylayer/app/src-tauri/entitlements.plist": "c03b8efcf44da6e345f8ef8acec073925180269cb3f42b21b88ea77d66468cea",
     "qualitylayer/app/src-tauri/icons/128x128.png": "1f911c3c57bf2f22d069033e4f1bc6d50efe92427536d261ae49f59b14ef61b7",
@@ -2245,7 +2245,7 @@
     "qualitylayer/src/ui/turn/PortableReviewDraft.tsx": "eeb0d0014023398b7a769f2f6bbf0a64f157e53ef4ffe44c79c30b4dadc90430",
     "qualitylayer/src/ui/turn/ReviewProviderIcon.tsx": "4aff97c9b7913f7ac50eccb41355add3371e401a72d7a7deefacd106396be394"
   },
-  "reviewManifestSha256": "99eb8529aa596d2da7668ae43bccd479afb9fb42850f143cac61203d5512b037",
+  "reviewManifestSha256": "4d7a0e81dc23ccb31a95313e28828bc3cf1b659e3084fb7e308c8c6bf8d34b1b",
   "schema": 1,
-  "sourceHead": "84d6983de6649e68bb9135658f19913bb4d581ab"
+  "sourceHead": "2c5259e09d48c53725bb68919130d7bc4092ed2a"
 }

@@ -189,10 +189,10 @@
     "qualitylayer/artifacts/app/workflow/artifact-feedback-contract.md": "cd01d42a437e6575ffafee06963b288943960f5202eb69ee51d6f5b7829bc135",
     "qualitylayer/artifacts/app/workflow/commit-ownership-contract.md": "11bdcbc3d432478c085d4c7ea61c615d7ecef6d97b7975a877ece267a13cbaf1",
     "qualitylayer/artifacts/app/workflow/export-contract.md": "34e465b14297d77e7a72cf1ff37c77b62d28d153dbaf47d65cd47d5aa7476b6c",
-    "qualitylayer/artifacts/app/workflow/implement.html": "ff9bf9ed9fd6d8f0a084f8adf46d4cfff963224020063db1cc33491435a55995",
+    "qualitylayer/artifacts/app/workflow/implement.html": "ebbbc24170fd36791dbed66e60fe689a776fa087fbd40d2924fda12f810f6a1d",
     "qualitylayer/artifacts/app/workflow/index.html": "34a51d107863d831974e9efe47089bbd7294b6f5f81d4aa194406718c2f79f87",
     "qualitylayer/artifacts/app/workflow/plan-approval-handoff-contract.md": "253d195788a0227b014fe2e0c8350b3a33b979589658a4e7228a43a8bd952d8e",
-    "qualitylayer/artifacts/app/workflow/plan.html": "15e9ef34981aec4ecb3fc1d9324d86291ef9d07f3a48b81e3c805677ab18351c",
+    "qualitylayer/artifacts/app/workflow/plan.html": "12f1f62f75234a75d796000c79ebb8b81a94b3d176581c643fcb82eeb5aaf26c",
     "qualitylayer/artifacts/app/workflow/task-attribution-contract.md": "18fe38d05dc853590e0ff0cca4fa293d03855027055817651ca07d7973f65ed3",
     "qualitylayer/artifacts/app/workflow/verify-proof-contract.md": "0790af719bc182e24a639576c91c456f24d2a29d5ca5b95569a8c4d1b7de8114",
     "qualitylayer/artifacts/site/website-model/current/billing.html": "cd9583cd00372fa7727f28c5ffb510a7544d6996075950c11ae4bcc34a206981",
@@ -2272,7 +2272,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "3381f1fbd773839a1892bb3fa3a0be1ae61c92fd2917a183c9fe431c75c6a895",
+  "reviewManifestSha256": "9f7fffead601ffdac7e3c06ce54835f2e8d859c25b67d806d59edd25c678669a",
   "schema": 1,
-  "sourceHead": "6014c7db6eb9f841fc7d29ef3d00248e0420e714"
+  "sourceHead": "19a59443807773aac791cde02cf63c9753ab09be"
 }

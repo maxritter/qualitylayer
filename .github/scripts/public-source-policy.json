@@ -184,7 +184,7 @@
     "qualitylayer/artifacts/app/session-settings-source/session-settings-source.json": "a383e71ef5f7b728fd180d8b619158228652657786253daa47a6ad718505f2c1",
     "qualitylayer/artifacts/app/session-settings-source/session-settings.tsx": "b1e5bb4527a58b13e619a31a49b8c237b28b8b8f79e85a02dcaa36c0597880b8",
     "qualitylayer/artifacts/app/usage-display-source/usage-display-source.json": "aeb4a37bc9af7a6ac359bef43db7f7cee8b7e795bbd8ecf319f2db9dcce7e2ac",
-    "qualitylayer/artifacts/app/workflow/agent-files.html": "f4c8c190d1199330473588c7c9e930b17064fb46091988cd4b1e4492e987b5be",
+    "qualitylayer/artifacts/app/workflow/agent-files.html": "49094b8bea4188bbd7ed6a6256b73804970b64dfa6ba8f870a9ba49f1ad91a6a",
     "qualitylayer/artifacts/app/workflow/answer-authority-contract.md": "9db3cd2de7df0a41f7f49028b4078f10a15b0313379dbd5307a08f793ebfba56",
     "qualitylayer/artifacts/app/workflow/artifact-feedback-contract.md": "cd01d42a437e6575ffafee06963b288943960f5202eb69ee51d6f5b7829bc135",
     "qualitylayer/artifacts/app/workflow/commit-ownership-contract.md": "11bdcbc3d432478c085d4c7ea61c615d7ecef6d97b7975a877ece267a13cbaf1",
@@ -2272,7 +2272,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "9f7fffead601ffdac7e3c06ce54835f2e8d859c25b67d806d59edd25c678669a",
+  "reviewManifestSha256": "4c39e5b08a88811d5458f61b63b02bab93a6889d78d5f9f38a4f56765d74d227",
   "schema": 1,
-  "sourceHead": "19a59443807773aac791cde02cf63c9753ab09be"
+  "sourceHead": "39d7e54e0f1ed8c65739ce5df41f9f319689dcee"
 }

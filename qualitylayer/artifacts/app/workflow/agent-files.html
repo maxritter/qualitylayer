@@ -265,6 +265,25 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
   </dl>
 </section>
 
+<section class="part" id="released-reader" data-screen-label="Released Reader and Files">
+  <h2>Released Reader and Files</h2>
+  <p class="lead">In Files, choose Plan, Implement or Verify. The Reader opens the selected step. Show opens For agents at the end, and Copy for an agent includes both files.</p>
+  <p class="cap2">These are captures of the 14.3.1 App compiled from the released source with a disposable task. Controls below select captured states.</p>
+  <div class="reader-capture-controls">
+    <label>Step <select id="captured-step"><option value="plan">Plan</option><option value="implement">Implement</option><option value="verify">Verify</option></select></label>
+    <label>View <select id="captured-view"><option value="reader">For agents open</option><option value="files">Files</option><option value="copy">Copy menu</option></select></label>
+  </div>
+  <figure class="reader-capture"><img id="released-reader-image" alt="The complete QualityLayer task shell and Plan Reader with For agents open."></figure>
+</section>
+<style>
+.reader-capture-controls {display:flex;flex-wrap:wrap;gap:12px 18px;margin:0 0 14px;}
+.reader-capture-controls label {display:flex;align-items:center;gap:8px;font-size:13px;}
+.reader-capture-controls select {border:1px solid var(--ql-border);color:var(--ql-text);background:var(--ql-bg);font:inherit;border-radius:6px;padding:6px 9px;}
+.reader-capture {margin:0;max-width:1440px;border:1px solid var(--ql-border);border-radius:8px;overflow:hidden;}
+.reader-capture img {display:block;width:100%;height:auto;}
+</style>
+<script src="released-agent-files-captures.js"></script>
+
 <section class="part" id="folder" data-screen-label="A task's folder">
   <h2>A task's folder</h2>
   <div class="pair">

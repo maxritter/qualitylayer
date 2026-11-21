@@ -33,6 +33,14 @@ export type Repo = {
 }
 
 const roots: string[] = []
+let workingCaptureTime = 0
+
+/** Receipt tests use real Git with a logical clock. The native-hook E2E keeps the wall-clock cap. */
+export function withWorkingCaptureClock(ctx: Ctx): Ctx {
+  // Git's subprocess deadline uses wall time. Reserve fixture headroom once, then advance logical time.
+  workingCaptureTime = Math.max(workingCaptureTime, Date.now() + 60_000)
+  return { ...ctx, clock: { ...ctx.clock, now: () => ++workingCaptureTime } }
+}
 
 export function denyArtifactFixtureHttp(ctx: Ctx): void {
   ctx.http.fetch = async () => {

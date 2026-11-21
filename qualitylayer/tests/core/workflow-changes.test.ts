@@ -22,11 +22,11 @@ import {
 import { bindSession } from "../../src/core/task/binding.ts"
 import type { Ctx } from "../../src/ctx.ts"
 import { cachingGit } from "../../src/server/git-cache.ts"
-import { world } from "../helpers/lastingWorld.ts"
+import { withWorkingCaptureClock, world } from "../helpers/lastingWorld.ts"
 import { walkthroughView } from "../helpers/walkthroughView.ts"
 
 const boundContext = (ctx: Ctx, agent: string, session: string): Ctx => ({
-  ...ctx,
+  ...withWorkingCaptureClock(ctx),
   env: {
     cwd: ctx.env.cwd,
     get: (name) =>

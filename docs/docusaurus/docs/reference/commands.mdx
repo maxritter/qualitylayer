@@ -82,6 +82,8 @@ Prefix each command with `qualitylayer`, for example `qualitylayer gate open pla
 | Checking | `verify judge\|recheck\|fix\|keep-red` · `verdict` · `verdict run` · `attest` · `evidence shot` · `validate` |
 | Shipping | `ship` · `pr watch` |
 
+For a second checkout, add a line such as `` - **Repository:** `/work/evaluation` `` under **Scope → In scope** before Plan approval. Use that exact checkout with `check task T<n> --repo /work/evaluation` and `commit slice <n> --repo /work/evaluation --commit <hash>`.
+
 </details>
 
 ## Artifacts {#artifacts}

@@ -13,7 +13,7 @@ import { type Ctx, err, type Result } from "../../ctx.ts"
 import { requireTask } from "./shared.ts"
 
 const USAGE =
-  "usage: qualitylayer check slice <n> | task T<n> | step A<n> [-- <program> <args…>] | all [--background] | all --base\n" +
+  "usage: qualitylayer check slice <n> | task T<n> [--repo <approved checkout>] | step A<n> [-- <program> <args…>] | all [--background] | all --base\n" +
   "`step A<n> -- <program> <args…>` runs that command on the built tree and records its exit code and output under records/: each argument reaches the program as given (`-- bun test tests/cli.test.ts`, `-- bash -c '<script>'`); one argument alone runs as a shell line (`-- 'bun test && bun run lint'`). Without `--` it runs the backticked command on the step's *Proof order* line; the Plan's Action is prose and never runs.\n" +
   "`all --base` runs the same project checks on a copy of the task's base commit and excuses only the failing tests that also fail there.\n" +
   "Checks have a 15-minute limit. Set QUALITYLAYER_CHECK_TIMEOUT_MS to an explicit budget in milliseconds (up to 2 hours) for a slower approved command."
@@ -28,7 +28,13 @@ function scopeOf(args: string[]): CheckScope | null {
   return null
 }
 
-type CheckArgs = { scope: CheckScope; background: boolean; onBase: boolean; worker?: string }
+type CheckArgs = {
+  scope: CheckScope
+  background: boolean
+  onBase: boolean
+  worker?: string
+  repository?: string
+}
 
 /** The scope and flags of `qualitylayer check`, or null when the arguments are none of its forms. */
 function parseCheckArgs(args: string[]): CheckArgs | null {
@@ -36,11 +42,16 @@ function parseCheckArgs(args: string[]): CheckArgs | null {
   let background = false
   let onBase = false
   let worker: string | undefined
+  let repository: string | undefined
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string
     if (arg === "--background") background = true
     else if (arg === "--base") onBase = true
-    else if (arg !== "--worker") positional.push(arg)
+    else if (arg === "--repo") {
+      if (repository !== undefined) return null
+      repository = args[++i]
+      if (!repository || repository.startsWith("--")) return null
+    } else if (arg !== "--worker") positional.push(arg)
     else {
       worker = args[++i]
       if (worker === undefined || !/^[a-f0-9-]{36}$/.test(worker)) return null
@@ -48,7 +59,9 @@ function parseCheckArgs(args: string[]): CheckArgs | null {
   }
   const scope = scopeOf(positional)
   if (scope === null || (onBase && (scope.kind !== "all" || worker !== undefined))) return null
-  return { scope, background, onBase, worker }
+  if (repository !== undefined && (scope.kind !== "task" || background || worker !== undefined))
+    return null
+  return { scope, background, onBase, worker, repository }
 }
 
 /** `check step A<n> [-- <command>]`: the step's run on the built tree, recorded. */
@@ -81,7 +94,7 @@ export async function checkCmd(ctx: Ctx, args: string[]): Promise<Result<unknown
   if (args[0] === "step") return stepCmd(ctx, args.slice(1))
   const parsed = parseCheckArgs(args)
   if (parsed === null) return err({ code: "bad_args", message: USAGE })
-  const { scope, background, onBase, worker } = parsed
+  const { scope, background, onBase, worker, repository } = parsed
   // The base run has no background worker: it waits for the check lock and runs in the foreground.
   if (onBase && background)
     return err({
@@ -105,7 +118,7 @@ export async function checkCmd(ctx: Ctx, args: string[]): Promise<Result<unknown
   const checkedTask = candidate ? { ...task.data, repoRoot: candidate.choice.checkout } : task.data
   // The worker loads the task in its recorded checkout, then applies the same candidate binding.
   if (background) return startCheck(ctx, task.data, scope)
-  const result = await runCheck(ctx, checkedTask, scope, undefined, worker)
+  const result = await runCheck(ctx, checkedTask, scope, undefined, { checkId: worker, repository })
   if (result.ok && scope.kind === "all" && result.data.passed) {
     const warning = await ciParityWarning(ctx, checkedTask, undefined, true)
     if (warning !== null) return { ...result, data: { ...result.data, warnings: [warning] } }

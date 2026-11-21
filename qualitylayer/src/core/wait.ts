@@ -449,7 +449,9 @@ async function waitBody<T>(
   // (the session's own `next`) delivered the decision first: a bench run's planner otherwise held its
   // session for the full half hour after the Plan's approval, then woke to "nothing new".
   const openGate =
-    opts.poll === undefined && task.slug !== undefined ? await readGate(ctx, task as Task) : null
+    opts.poll === undefined && task.slug !== undefined && (opts.kinds?.includes("gate") ?? true)
+      ? await readGate(ctx, task as Task)
+      : null
   const watched = openGate !== null && openGate.decision === "pending" ? openGate : null
   let looked = start
   // A wait names its task (bound or not), so it is that task's sign of life from its first idle

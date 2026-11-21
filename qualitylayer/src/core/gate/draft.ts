@@ -51,7 +51,7 @@ export const wasDrafted = (ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<bo
 function draftReviewNote(coverage: PlanReviewCoverage | undefined): string {
   const note = planReviewCoverageNote(coverage)
   return coverage === "earlier"
-    ? `${note}To replace it with a review of the current Plan, run \`qualitylayer review plan\`. `
+    ? `${note}If your edits warrant another review, run \`qualitylayer review plan\`. `
     : note
 }
 

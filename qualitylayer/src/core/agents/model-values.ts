@@ -133,9 +133,11 @@ export function addModelField(agent: StepAgent): { placeholder: string; hint: st
 
 /** What an added model id must look like, as the field says it. */
 export const addModelRule = (agent: StepAgent): string =>
-  capabilities(agent)?.customModel?.shape === "provider/model"
-    ? "Use provider/model, with no spaces or shell characters."
-    : "Use the model id only, with no spaces or shell characters."
+  agent === "copilot"
+    ? "Use the model id or provider/model, with no spaces or shell characters."
+    : capabilities(agent)?.customModel?.shape === "provider/model"
+      ? "Use provider/model, with no spaces or shell characters."
+      : "Use the model id only, with no spaces or shell characters."
 
 /**
  * Why a typed model id cannot be added, or null: the agent takes ids of its own, and the id has the

@@ -486,9 +486,15 @@ function endOf(event: string, payload: HookPayload): EndKind | undefined {
   if (event === "PermissionRequest") return "permission"
   if (event === "Notification") {
     const kind = str(payload.notification_type)
-    if (kind === "permission_prompt" || /permission/i.test(str(payload.message)))
+    if (
+      kind === "permission_prompt" ||
+      (kind === "" && /needs your permission to use/i.test(str(payload.message)))
+    )
       return "permission"
-    if (kind === "idle_prompt" || /waiting for your input/i.test(str(payload.message)))
+    if (
+      kind === "idle_prompt" ||
+      (kind === "" && /waiting for your input/i.test(str(payload.message)))
+    )
       return "turn-end"
   }
   return undefined
@@ -509,6 +515,8 @@ export async function recordHook(
   try {
     if (!runRecorded) await recordRunHook(ctx, payload, fallbackEvent)
     const event = str(payload.hook_event_name) || fallbackEvent
+    const end = endOf(event, payload)
+    if (event === "Notification" && end === undefined) return
     const id = str(payload.session_id)
     const runId = ctx.env.get("QUALITYLAYER_RUN")
     const run = runId ? readRun(ctx.home, runId) : null
@@ -534,7 +542,6 @@ export async function recordHook(
       await recordNativePlan(ctx, payload, fallbackEvent)
     const tool = str(payload.tool_name)
     const call = safeName(str(payload.tool_use_id))
-    const end = endOf(event, payload)
     let words = ""
     if (event === "PreToolUse" && tool !== "") {
       const said = toolWords(tool, payload.tool_input, "start")

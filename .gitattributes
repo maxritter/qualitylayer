@@ -386,6 +386,7 @@ qualitylayer/src/core/git/session-edits/records.ts !filter !diff
 qualitylayer/src/core/git/session-edits/shell.ts !filter !diff
 qualitylayer/src/core/git/session-edits/task-changes.ts !filter !diff
 qualitylayer/src/core/git/shell-write-policy.ts !filter !diff
+qualitylayer/src/core/git/implement-repository.ts !filter !diff
 qualitylayer/src/core/git/slice-commit.ts !filter !diff
 qualitylayer/src/core/git/slice-git.ts !filter !diff
 qualitylayer/src/core/git/slice-input-file.ts !filter !diff
@@ -393,6 +394,7 @@ qualitylayer/src/core/git/slice-land.ts !filter !diff
 qualitylayer/src/core/git/slice-tree.ts !filter !diff
 qualitylayer/src/core/git/source-witness.ts !filter !diff
 qualitylayer/src/core/git/task-diff.ts !filter !diff
+qualitylayer/src/core/git/verify-range.ts !filter !diff
 qualitylayer/src/core/git/workflow-changes.ts !filter !diff
 qualitylayer/src/core/git/workflow-coverage.ts !filter !diff
 qualitylayer/src/core/git/workflow-pages.ts !filter !diff
@@ -1526,6 +1528,7 @@ qualitylayer/src/ui/settings/Appearance.tsx !filter !diff
 qualitylayer/src/ui/settings/Automations.tsx !filter !diff
 qualitylayer/src/ui/settings/CommitField.tsx !filter !diff
 qualitylayer/src/ui/settings/Defaults.tsx !filter !diff
+qualitylayer/src/ui/settings/CustomEditorFields.tsx !filter !diff
 qualitylayer/src/ui/settings/Git.tsx !filter !diff
 qualitylayer/src/ui/settings/Instructions.tsx !filter !diff
 qualitylayer/src/ui/settings/LaunchSheet.tsx !filter !diff
@@ -1699,6 +1702,7 @@ qualitylayer/src/ui/steps/StepsAgentTurn.tsx !filter !diff
 qualitylayer/src/ui/steps/context.ts !filter !diff
 qualitylayer/src/ui/steps/evidence-pictures.ts !filter !diff
 qualitylayer/src/ui/steps/fold.ts !filter !diff
+qualitylayer/src/ui/steps/implement/ApprovedOutside.tsx !filter !diff
 qualitylayer/src/ui/steps/implement/Board.tsx !filter !diff
 qualitylayer/src/ui/steps/implement/Changes.tsx !filter !diff
 qualitylayer/src/ui/steps/implement/Page.tsx !filter !diff

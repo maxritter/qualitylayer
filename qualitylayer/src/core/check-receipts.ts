@@ -3,6 +3,7 @@ import type { Ctx } from "../ctx.ts"
 import type { CheckRecord } from "./checks.ts"
 import { agentFileOf, CHECKS_RECORD } from "./docs/names.ts"
 import { sectionRanges } from "./docs/rules/types.ts"
+import { externalSlices } from "./git/implement-repository.ts"
 import type { Task } from "./task/store.ts"
 
 type CheckTask = Pick<Task, "runtimeDir">
@@ -55,7 +56,11 @@ function displayLines(records: readonly CheckRecord[]): string[] {
 }
 
 export async function hasChecksRecord(ctx: Ctx, task: Pick<RecordTask, "runtimeDir" | "earlier">) {
-  return !task.earlier && (await readCheckRecords(ctx, task)).some((r) => r.display?.version === 1)
+  return (
+    !task.earlier &&
+    ((await readCheckRecords(ctx, task)).some((r) => r.display?.version === 1) ||
+      (await externalSlices(ctx, task)).length > 0)
+  )
 }
 
 /** Only the legacy section is displayed. Its original file and the receipt's verdicts are untouched. */
@@ -77,9 +82,18 @@ async function earlierChecks(ctx: Ctx, task: RecordTask): Promise<string> {
 export async function checksMarkdown(ctx: Ctx, task: RecordTask): Promise<string | null> {
   if (task.earlier) return null
   const lines = displayLines(await readCheckRecords(ctx, task))
-  if (lines.length === 0) return null
+  const external = await externalSlices(ctx, task)
+  if (lines.length === 0 && external.length === 0) return null
   const earlier = await earlierChecks(ctx, task)
-  return `# Checks\n\n${lines.join("\n")}\n${earlier.trim() === "" ? "" : `\n## Earlier checks\n\n${earlier}`}`
+  const otherCommits = external.map(
+    (row) => `- Slice ${row.slice} · \`${row.commit}\` · \`${row.repository}\``,
+  )
+  const checks = lines.length === 0 ? "" : `${lines.join("\n")}\n`
+  const commits =
+    otherCommits.length === 0
+      ? ""
+      : `${checks === "" ? "" : "\n"}## Commits in other repositories\n\n${otherCommits.join("\n")}\n`
+  return `# Checks\n\n${checks}${commits}${earlier.trim() === "" ? "" : `\n## Earlier checks\n\n${earlier}`}`
 }
 
 /** Rebuild the external file from the latest committed receipt, with no new check execution. */

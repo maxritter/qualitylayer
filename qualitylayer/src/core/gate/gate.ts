@@ -76,7 +76,12 @@ import { pullRequestPossible } from "../ship/pull-request.ts"
 import { isAdopted, ORIGINAL_CHANGED, originalIntact } from "../task/adoption.ts"
 import { currentTaskRecordOwner } from "../task/answer-migration.ts"
 import { isArchived } from "../task/archive.ts"
-import { matchesChatQuestion, TERMINAL_YOUR_TURN, terminalTaskFor } from "../task/chat-questions.ts"
+import {
+  matchesChatQuestion,
+  PLAN_APPROVAL_QUESTION_ID,
+  TERMINAL_YOUR_TURN,
+  terminalTaskFor,
+} from "../task/chat-questions.ts"
 import { settleProfile } from "../task/intake-profile.ts"
 import { taskItems } from "../task/items.ts"
 import { advance } from "../task/machine.ts"
@@ -124,6 +129,7 @@ import {
   buildRevision,
   documentRevision,
   gateRevision,
+  planApprovalMatches,
   reviewTargets,
 } from "./revision.ts"
 
@@ -544,15 +550,15 @@ async function chatReview(ctx: Ctx, task: Task, target: string): Promise<ChatQue
     return [
       ...asked,
       {
-        id: "review-approve-plan",
+        id: PLAN_APPROVAL_QUESTION_ID,
         gate: target,
         gateId,
         points: [],
         question: "Approve the Plan?",
         choices: [
-          { label: "Approve Plan" },
-          { label: "Give feedback" },
-          { label: "Show the Plan" },
+          { label: "Approve Plan", detail: "Clears this revision for building." },
+          { label: "Give feedback", detail: "Say what should change first." },
+          { label: "Show the Plan", detail: "Print the Plan’s opening here." },
         ],
       },
     ]
@@ -1264,11 +1270,7 @@ export async function planApprovalLock(
   const revision = await validatedPlanRevision(ctx, task)
   if (revision === null) return PLAN_INVALID
   if (gate.decision !== "approved") return null
-  return gate.revision === revision ||
-    (gate.revision !== undefined &&
-      gate.revision === (await gateRevision(ctx, task, PLAN_TARGET, true)))
-    ? null
-    : PLAN_CHANGED
+  return (await planApprovalMatches(ctx, task, gate.revision, revision)) ? null : PLAN_CHANGED
 }
 
 async function candidateApprovalCheckout(

@@ -13,14 +13,16 @@ export function CodeAccess({
   taskId,
   checkout,
   changedCount,
+  checked,
 }: {
   taskId: string
   checkout?: VerifyRevision | undefined
   changedCount?: number | undefined
+  checked?: { head: string; files: number } | undefined
 }) {
   const summary = useCodeSummary(taskId)
-  const files = summary?.files ?? changedCount
-  const empty = files === 0 && checkout !== undefined
+  const files = checked?.files ?? summary?.files ?? changedCount
+  const empty = files === 0 && (checked !== undefined || checkout !== undefined)
   return (
     <div className="review-final-code verify-code">
       <div className="review-code-entry" data-testid="verify-code-row">
@@ -29,11 +31,17 @@ export function CodeAccess({
           {files !== undefined && files > 0
             ? plural(files, "changed file")
             : empty
-              ? `No registered changes${checkout.branch ? ` on ${checkout.branch}` : ""}`
+              ? checked
+                ? "No changes in the reviewed commit"
+                : `No registered changes${checkout?.branch ? ` on ${checkout.branch}` : ""}`
               : "Changed files"}
         </b>
         {empty ? null : (
-          <button type="button" className="q-btn" onClick={() => openReviewWorkspace(taskId)}>
+          <button
+            type="button"
+            className="q-btn"
+            onClick={() => openReviewWorkspace(taskId, null, checked?.head)}
+          >
             View changes
           </button>
         )}

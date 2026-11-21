@@ -250,13 +250,14 @@ export const artifactThumbUrl = (where: ArtifactWhere, file: string, key: string
 async function readFileDiff(
   id: string,
   path: string,
-  options: DiffReadOptions = {},
+  options: DiffReadOptions & { checked?: string } = {},
 ): Promise<string> {
   return readDiffPages(({ after, revision }, signal) => {
     const query = new URLSearchParams({
       path,
       ...(after ? { after } : {}),
       ...(revision ? { revision } : {}),
+      ...(options.checked ? { checked: options.checked } : {}),
     })
     return call<DiffPage>(`/api/tasks/${enc(id)}/changes/file?${query}`, { signal })
   }, options)
@@ -519,8 +520,10 @@ export const api = {
       { signal: options.signal },
     ).then((r) => r.changes),
   fileDiff: readFileDiff,
-  reviewFileSource: (id: string, request: SourceRequest) =>
-    call<ReviewFileSource>(`/api/tasks/${enc(id)}/changes/source?${new URLSearchParams(request)}`),
+  reviewFileSource: (id: string, request: SourceRequest, checked?: string) =>
+    call<ReviewFileSource>(
+      `/api/tasks/${enc(id)}/changes/source?${new URLSearchParams({ ...request, ...(checked ? { checked } : {}) })}`,
+    ),
   clearTaskChanges: (id: string) =>
     call<{ cleared: true }>(`/api/tasks/${enc(id)}/changes`, { method: "DELETE" }),
   putComments: (

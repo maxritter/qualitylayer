@@ -83,7 +83,9 @@
       "show": "lead-folded",
       "writer": "agent",
       "skeleton": [
-        "When this section is needed, replace this comment with the table below and only the prerequisites the build truly needs.",
+        "When the Plan needs prerequisites, replace this comment with the heading and table below.",
+        "## Prerequisites",
+        "",
         "| # | Prerequisite | Met by | Status |",
         "|---|---|---|---|",
         "| P1 | Permission to run the agreed build | the user, at approval | at approval |",

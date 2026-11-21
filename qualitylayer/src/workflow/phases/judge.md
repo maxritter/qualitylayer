@@ -18,7 +18,7 @@ and test/doc proposals instead of writing them. The session records them verbati
 and evidence, without supplying its own judgement.
 
 Otherwise, finish the assignment: write its iteration and every verdict under *Verification* in
-`agents/{verify_doc}`, validate it, and report progress `done` when the brief names an id. Use its exact invocation and read *Your
+`agents/{verify_doc}`, run `qualitylayer validate agents/{verify_doc}`, and report progress `done` when the brief names an id. Use its exact invocation and read *Your
 documents* in full; this brief already holds what the build left for you and, on a later round, the
 lines that failed. Open a file under *Read on demand* when a verdict needs it. Keep each verdict on the
 pinned commit even if HEAD moves (report the move).

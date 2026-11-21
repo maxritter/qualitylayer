@@ -109,6 +109,7 @@ export function VerifyBoardPage(props: StepPageProps) {
                   taskId={task.id}
                   checkout={task.verifyActivity?.projectChecks?.checkout}
                   changedCount={task.changedFiles?.length}
+                  checked={task.checkedChange}
                 />
               </PageSection>
             ) : null}

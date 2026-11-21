@@ -6,6 +6,7 @@
 // hand the helper its brief file; without helpers, follow `fallback`.
 
 import { randomUUID } from "node:crypto"
+import { realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { phaseText } from "#workflow"
 import type { Ctx } from "../ctx.ts"
@@ -22,6 +23,7 @@ import { allTasks, type Outline } from "./docs/outline.ts"
 import { describeShare, type JudgeShare, stepsAreProved } from "./docs/rules/judge-shares.ts"
 import { templateFrom } from "./docs/schema.ts"
 import type { FlowStepId } from "./flow.ts"
+import { agentEntry, appPointer } from "./install/where.ts"
 import { instructionsSection } from "./instructions.ts"
 import { recheckOf } from "./recheck.ts"
 import {
@@ -84,6 +86,7 @@ export async function withBriefFiles(
   helpers: Helper[],
 ): Promise<FiledHelper[]> {
   const dir = ctx.managedBriefsDir ?? join(task.runtimeDir, "briefs")
+  const command = commandSection(await briefInvocation(ctx))
   return Promise.all(
     helpers.map(async (helper) => {
       await ctx.fs.mkdir(dir)
@@ -100,7 +103,7 @@ export async function withBriefFiles(
       await writeGeneratedBrief(
         ctx,
         file,
-        `${commandSection()}\n\n${[helper.brief, ...parts, ...(instructions === null ? [] : [instructions])].join("\n\n")}`,
+        `${command}\n\n${[helper.brief, ...parts, ...(instructions === null ? [] : [instructions])].join("\n\n")}`,
       )
       const { brief: _brief, gaps: _gaps, rechecks: _rechecks, ...reply } = helper
       return {
@@ -183,13 +186,28 @@ async function recordedSteps(
 
 const text = (key: string) => phaseText(key) ?? ""
 
-/** The invocation every `qualitylayer` command of a brief uses, so a helper never resolves another version from PATH. */
-const commandSection = (): string =>
-  "## QualityLayer command\n\n" +
-  "Every `qualitylayer` command below uses this exact invocation, adding the stated arguments. " +
-  "Keep this executable instead of resolving another version from PATH. " +
-  "The JSON array preserves argument boundaries; use your shell's executable syntax.\n\n" +
-  `\`\`\`json\n${JSON.stringify(selfCommand([]))}\n\`\`\``
+async function briefInvocation(ctx: Ctx): Promise<string[]> {
+  const self = selfCommand([])
+  const launcher = agentEntry(ctx)
+  if (self.length !== 1 || !(await ctx.fs.exists(launcher))) return self
+  try {
+    const pointer = JSON.parse(await ctx.fs.readFile(appPointer(ctx))) as { cli?: unknown }
+    if (typeof pointer.cli !== "string") return self
+    return (await realpath(pointer.cli)) === (await realpath(process.execPath)) ? [launcher] : self
+  } catch {
+    return self
+  }
+}
+
+function commandSection(invocation = selfCommand([])): string {
+  return (
+    "## QualityLayer command\n\n" +
+    "Every `qualitylayer` command below uses this exact invocation, adding the stated arguments. " +
+    "Keep this executable instead of resolving another version from PATH. " +
+    "The JSON array preserves argument boundaries; use your shell's executable syntax.\n\n" +
+    `\`\`\`json\n${JSON.stringify(invocation)}\n\`\`\``
+  )
+}
 
 /** Said of the diff a helper reviews when the task recorded no base commit. */
 const NO_BASE = " (no recorded base: diff the task branch against where it started)"
@@ -752,6 +770,7 @@ export function judgeHelper(
   options: {
     progress?: string
     share?: JudgeShare
+    committedDiff?: boolean
   } = {},
 ): Helper {
   const label = "build session, no helpers available"
@@ -759,6 +778,12 @@ export function judgeHelper(
   const { share } = options
   const record = verifyLogPath(task)
   const minutes = share?.minutes ?? judgeMinutes(assignment?.outline)
+  const treeNote = options.committedDiff
+    ? assignment?.note?.replace(
+        "The diff against the effective base includes tracked working edits with the normal exclusions; inspect untracked files directly.",
+        "The diff above shows committed changes. Inspect local inputs recorded for your assignment separately.",
+      )
+    : assignment?.note
   return {
     role: "judge",
     when: "start",
@@ -785,7 +810,7 @@ export function judgeHelper(
             ),
           ]
         : [recordMustValidate()]),
-      ...(assignment?.note !== undefined ? [`## The tree you judge\n\n${assignment.note}`] : []),
+      ...(treeNote !== undefined ? [`## The tree you judge\n\n${treeNote}`] : []),
       ...(assignment
         ? [
             ...(assignment.head !== undefined

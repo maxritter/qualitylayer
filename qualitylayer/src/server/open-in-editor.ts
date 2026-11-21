@@ -56,7 +56,7 @@ const opensInFinder = (path: string, root: boolean) => root && !BUNDLE.test(path
  * path is one argv element, never a shell string.
  */
 export function editorArgv(
-  editor: Editor,
+  editor: Exclude<Editor, "custom">,
   path: string,
   isFolder: boolean,
   platform: string,
@@ -107,18 +107,28 @@ export async function openInEditor(
   editor: unknown,
   file: unknown,
   opener: Opener,
+  custom?: { program: string; args: string[] },
 ): Promise<Result<Record<string, never>>> {
   if (typeof editor !== "string" || !EDITORS.includes(editor as Editor))
     return refuse(`"${String(editor)}" is not a place to open in`)
   const place = await openablePlace(task, file)
   if (!place.ok) return place
-  const { argv, cwd } = editorArgv(
-    editor as Editor,
-    place.data.path,
-    place.data.isFolder,
-    opener.platform,
-    file === ".",
-  )
+  const selected = editor as Editor
+  let launch: Launch
+  if (selected === "custom") {
+    if (!custom?.program.trim())
+      return refuse("Save a custom editor in Settings → Git and editor first.")
+    launch = { argv: [custom.program, ...custom.args, place.data.path] }
+  } else {
+    launch = editorArgv(
+      selected,
+      place.data.path,
+      place.data.isFolder,
+      opener.platform,
+      file === ".",
+    )
+  }
+  const { argv, cwd } = launch
   let code: number
   try {
     code = await opener.run(argv, cwd)

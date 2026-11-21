@@ -12,6 +12,7 @@ export const PROTECTED_SETTINGS = [
   "perm",
   "permMode",
   "otherAgent",
+  "customEditor",
   "onQuit",
   "terminal",
 ] as const
@@ -49,7 +50,14 @@ export function touchesProtectedSettings(patch: Record<string, unknown>): boolea
  * the App, an agent's folder, the update channel, pull-request watching) the person may also set with
  * `qualitylayer settings set`; a browser that may only watch still cannot.
  */
-const COMMAND_REFUSED = ["typeFrom", "perm", "permMode", "otherAgent", "terminal"] as const
+const COMMAND_REFUSED = [
+  "typeFrom",
+  "perm",
+  "permMode",
+  "otherAgent",
+  "customEditor",
+  "terminal",
+] as const
 const COMMAND_REFUSED_AGENT = ["command", "args", "permMode"] as const
 
 export function onlyInApp(patch: Record<string, unknown>): boolean {

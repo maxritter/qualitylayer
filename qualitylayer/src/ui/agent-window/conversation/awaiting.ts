@@ -9,14 +9,21 @@ import type { ConversationEvent } from "../../../core/conversation/types.ts"
 import type { RunWindow } from "../../run-context.tsx"
 import { sameWords } from "./model.ts"
 
-/** A sent message that never shows up in the record (a slash command, say) stops being listed. */
+/** How long a sent message waits before its delivery is uncertain. */
 export const SENT_MS = 120_000
 /** Messages kept per run, and runs kept: the oldest goes first. */
 const KEPT_MESSAGES = 8
 const KEPT_RUNS = 16
 
 /** `seen` holds the person's messages the record already had when this one was sent. */
-export type Pending = { key: number; text: string; at: number; seen: ReadonlySet<string> }
+export type Pending = {
+  key: number
+  text: string
+  at: number
+  seen: ReadonlySet<string>
+  transmitted?: string
+  unconfirmed?: true
+}
 type Owner = Pick<RunWindow, "id" | "generation" | "nativeSession">
 type Entry = { generation: number; nativeSession: string | undefined; list: readonly Pending[] }
 
@@ -62,10 +69,21 @@ export const useAwaiting = (run: Owner): readonly Pending[] =>
     () => none,
   )
 
-export function addAwaiting(run: Owner, text: string, seen: ReadonlySet<string>, at: number): void {
+export function addAwaiting(
+  run: Owner,
+  text: string,
+  seen: ReadonlySet<string>,
+  at: number,
+  transmitted = text,
+): void {
   const list = read(run)
   const key = (list.at(-1)?.key ?? 0) + 1
-  write(run, [...list, { key, text, at, seen }].slice(-KEPT_MESSAGES))
+  write(
+    run,
+    [...list, { key, text, at, seen, ...(text === transmitted ? {} : { transmitted }) }].slice(
+      -KEPT_MESSAGES,
+    ),
+  )
 }
 
 /** The record shows a message the person sent, new since it was sent: it stops waiting. */
@@ -75,17 +93,33 @@ export function settleAwaiting(run: Owner, events: readonly ConversationEvent[])
     (item) =>
       !events.some(
         (event) =>
-          event.kind === "user" && !item.seen.has(event.id) && sameWords(event.text, item.text),
+          event.kind === "user" &&
+          !item.seen.has(event.id) &&
+          (sameWords(event.text, item.text) ||
+            (item.transmitted !== undefined && sameWords(event.text, item.transmitted))),
       ),
   )
   if (left.length < list.length) write(run, left)
 }
 
-/** A message that never showed up ends its wait. */
+/** Native commands may have no transcript row. Keep ordinary text available for recovery. */
 export function expireAwaiting(run: Owner, now: number): void {
   const list = read(run)
-  const left = list.filter((item) => now - item.at < SENT_MS)
-  if (left.length < list.length) write(run, left)
+  if (!list.some((item) => !item.unconfirmed && now - item.at >= SENT_MS)) return
+  write(
+    run,
+    list.flatMap((item): Pending[] => {
+      if (item.unconfirmed || now - item.at < SENT_MS) return [item]
+      if (/^\/[\w-]+(?:\s|$)/.test(item.text.trimStart())) return []
+      return [{ ...item, unconfirmed: true }]
+    }),
+  )
+}
+
+export function dismissAwaiting(run: Owner, key: number): void {
+  const list = read(run)
+  const kept = list.filter((item) => item.key !== key || !item.unconfirmed)
+  if (kept.length !== list.length) write(run, kept)
 }
 
 /** Runs the App no longer lists keep nothing. */

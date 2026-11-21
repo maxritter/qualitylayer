@@ -13,10 +13,12 @@ export type WalkthroughApi = Api & { walkthrough?: (id: string) => Promise<Walkt
 export async function loadWalkthrough(
   api: WalkthroughApi,
   id: string,
+  checked?: string,
 ): Promise<Walkthrough | null> {
   if (api.walkthrough !== undefined) return api.walkthrough(id)
   if (api !== liveApi) return null
-  const response = await fetch(`/api/tasks/${encodeURIComponent(id)}/walkthrough`)
+  const scope = checked ? `?${new URLSearchParams({ checked })}` : ""
+  const response = await fetch(`/api/tasks/${encodeURIComponent(id)}/walkthrough${scope}`)
   let payload: {
     ok?: boolean
     walkthrough?: Walkthrough

@@ -77,12 +77,17 @@ function ReadFailure({
   )
 }
 
-function Opened({ file, onClose, ...page }: Props & { file: string | null; onClose: () => void }) {
-  const view = useWalkthrough(page.api, page.task.id, "workspace")
+function Opened({
+  file,
+  checked,
+  onClose,
+  ...page
+}: Props & { file: string | null; checked?: string | undefined; onClose: () => void }) {
+  const view = useWalkthrough(page.api, page.task.id, "workspace", checked)
   if (view.error !== null)
     return <ReadFailure reason={view.error.message} retry={view.reload} close={onClose} />
   return view.data === null ? null : (
-    <Workspace {...page} view={view.data} file={file} onClose={onClose} />
+    <Workspace {...page} view={view.data} file={file} checked={checked} onClose={onClose} />
   )
 }
 
@@ -93,11 +98,17 @@ function Workspace({
   onMark,
   view: walkthrough,
   file,
+  checked,
   onClose,
-}: Props & { view: WalkthroughView; file: string | null; onClose: () => void }) {
+}: Props & {
+  view: WalkthroughView
+  file: string | null
+  checked?: string | undefined
+  onClose: () => void
+}) {
   const { editor } = useEditor(api)
   const comments = useMemo(() => lineComments(task), [task])
-  const readOnly = walkthrough.changeScope?.history !== undefined
+  const readOnly = walkthrough.changeScope?.history !== undefined || checked !== undefined
   const deciding =
     task.gate !== null &&
     task.gate.target === "final" &&
@@ -115,9 +126,10 @@ function Workspace({
         api.fileDiff(task.id, path, {
           signal,
           ...(walkthrough.changeScope && revision ? { revision } : {}),
+          ...(checked ? { checked } : {}),
         })
       }
-      loadSource={(request) => api.reviewFileSource(task.id, request)}
+      loadSource={(request) => api.reviewFileSource(task.id, request, checked)}
       {...(!readOnly && offersHostActions()
         ? { open: { editor, run: (path) => void openInEditor(api, task.id, editor, path) } }
         : {})}
@@ -165,10 +177,16 @@ function Workspace({
 }
 
 export function ReviewWorkspaceHost(props: Props) {
-  const [asked, setAsked] = useState<{ file: string | null; n: number } | null>(null)
+  const [asked, setAsked] = useState<{ file: string | null; n: number; checked?: string } | null>(
+    null,
+  )
   useReviewWorkspaceOpener(
     props.task.id,
-    useCallback((file: string | null) => setAsked((was) => ({ file, n: (was?.n ?? 0) + 1 })), []),
+    useCallback(
+      (file: string | null, checked?: string) =>
+        setAsked((was) => ({ file, n: (was?.n ?? 0) + 1, ...(checked ? { checked } : {}) })),
+      [],
+    ),
   )
   const onClose = useCallback(() => setAsked(null), [])
   useEffect(() => {
@@ -176,6 +194,6 @@ export function ReviewWorkspaceHost(props: Props) {
     return () => publishWorkspaceShown(null)
   }, [asked, props.task.id])
   return asked === null ? null : (
-    <Opened key={asked.n} {...props} file={asked.file} onClose={onClose} />
+    <Opened key={asked.n} {...props} file={asked.file} checked={asked.checked} onClose={onClose} />
   )
 }

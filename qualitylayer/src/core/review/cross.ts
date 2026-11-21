@@ -38,6 +38,13 @@ import { readComments } from "../gate/comments.ts"
 import { buildBase } from "../git/base.ts"
 import { readBuildStart } from "../git/build-start.ts"
 import { type TaskCommitDiff, taskCommitDiff, taskDiffArgs } from "../git/task-diff.ts"
+import {
+  type VerifyRange,
+  verifyChangedPaths,
+  verifyDiffArgs,
+  verifyDiffCommand,
+  verifyRange,
+} from "../git/verify-range.ts"
 import { PANEL_REVIEW_KIND, recordDuration, reviewKind } from "../helper-history.ts"
 import { instructionsSection } from "../instructions.ts"
 import { nativeCommand, windows } from "../platform.ts"
@@ -46,7 +53,7 @@ import { shellQuote } from "../shell.ts"
 import { reviewFindings } from "../task/items.ts"
 import { readSession, type Task } from "../task/store.ts"
 import { taskFlow } from "../task-flow.ts"
-import { codeDiff } from "../verification.ts"
+import { codeDiff, prepareJudgeAdmission, readAssignment } from "../verification.ts"
 import { type Checkout, disposableCheckout, needsCheckout } from "./checkout.ts"
 import { copyMs } from "./copy-limits.ts"
 import { answerOf, progressOf } from "./events.ts"
@@ -944,19 +951,24 @@ async function diffOf(
   repo: string,
   range: string,
   paths: string[],
-  /** Files git does not track yet (a build's new files): shown whole, as added. */
-  untracked: ReadonlySet<string> = new Set(),
-  owned?: TaskCommitDiff | null,
+  source: {
+    /** Files git does not track yet (a build's new files): shown whole, as added. */
+    untracked: ReadonlySet<string>
+    owned: TaskCommitDiff | null
+    candidate?: VerifyRange | null
+  },
 ): Promise<string | null> {
+  const { untracked, owned, candidate } = source
   let text = ""
   const tracked = paths.filter((p) => !untracked.has(p))
   for (let i = 0; i < tracked.length; i += PATHS_PER_CALL) {
-    const result = await ctx.git.run(
-      repo,
-      owned
-        ? taskDiffArgs(owned.commits, tracked.slice(i, i + PATHS_PER_CALL))
-        : ["diff", range, "--", ...tracked.slice(i, i + PATHS_PER_CALL)],
-    )
+    const batch = tracked.slice(i, i + PATHS_PER_CALL)
+    const args = candidate
+      ? verifyDiffArgs(candidate, batch)
+      : owned
+        ? taskDiffArgs(owned.commits, batch)
+        : ["diff", range, "--", ...batch]
+    const result = await ctx.git.run(repo, args)
     if (result.code !== 0) return null
     text += result.stdout
   }
@@ -1041,15 +1053,19 @@ async function changeSection(
   ctx: Ctx,
   task: Task,
   range: string,
-  options: { scope?: BuildScope; recoveryHead?: string } = {},
+  options: { scope?: BuildScope; recoveryHead?: string; candidate?: VerifyRange | null } = {},
 ): Promise<string> {
-  const { scope, recoveryHead } = options
+  const { scope, recoveryHead, candidate } = options
   const name = scope !== undefined ? "build" : "verify"
-  const owned = scope === undefined && !recoveryHead ? await taskCommitDiff(ctx, task) : null
-  const command =
+  const owned =
+    scope === undefined && !recoveryHead && !candidate ? await taskCommitDiff(ctx, task) : null
+  const diffCommand =
     scope !== undefined
-      ? `Run \`git diff ${range} -- ${scope.files.map((f) => shellQuote(f)).join(" ")}\` in \`${task.repoRoot}\` to see it.`
-      : `Run \`${owned?.command ?? codeDiff(range)}\` in \`${task.repoRoot}\` to see it.`
+      ? `git diff ${range} -- ${scope.files.map((f) => shellQuote(f)).join(" ")}`
+      : candidate
+        ? verifyDiffCommand(candidate)
+        : (owned?.command ?? codeDiff(range))
+  const command = `Run \`${diffCommand}\` in \`${task.repoRoot}\` to see it.`
   let untracked: ReadonlySet<string> = new Set()
   let inRange: string[]
   if (scope !== undefined) {
@@ -1057,6 +1073,8 @@ async function changeSection(
     if (found === null) return `## The change\n\n${command}`
     inRange = found.changed
     untracked = found.untracked
+  } else if (candidate) {
+    inRange = await verifyChangedPaths(ctx, task, candidate)
   } else if (owned) {
     inRange = owned.files
   } else {
@@ -1077,7 +1095,7 @@ async function changeSection(
     return "## The change\n\nThe files of the finished slices show no change against the build's base."
   const folder = join(task.dir, REVIEWS_DIR)
   await ctx.fs.mkdir(folder)
-  const text = await diffOf(ctx, task.repoRoot, range, paths, untracked, owned)
+  const text = await diffOf(ctx, task.repoRoot, range, paths, { untracked, owned, candidate })
   if (text === null) return `## The change\n\n${command}`
   const file = join(
     folder,
@@ -1128,6 +1146,15 @@ export async function briefFor(
       "## What this review is for\n\nThe independent review proves each Done means point on the running program, and the security review has its own record: do not repeat either. Hunt what would break: bugs, regressions, claims in the build's or the checks' record that the diff does not support, and tests that would pass without the change.",
     )
     const base = await buildBase(ctx, task)
+    const admission = recoveryHead
+      ? null
+      : ((await readAssignment(ctx, task)) ??
+        (await prepareJudgeAdmission(ctx, task).catch(() => null)))
+    const candidate = recoveryHead
+      ? await verifyRange(ctx, task, recoveryHead, true)
+      : admission?.source === null && admission.note
+        ? await verifyRange(ctx, task, admission.head)
+        : null
     if (recoveryHead)
       parts.push(
         `Review the entire selected commit ${recoveryHead} in ${task.repoRoot}. Check it independently against the approved Plan. Earlier checks and findings are historical.`,
@@ -1135,6 +1162,7 @@ export async function briefFor(
     parts.push(
       await changeSection(ctx, task, base !== null ? `${base}..HEAD` : "HEAD~1..HEAD", {
         recoveryHead,
+        candidate,
       }),
     )
     // What the build review found, and the answers: not found again.
@@ -1231,7 +1259,7 @@ function builtInReviewCommand(
       "--agent",
       "plan",
       "--model",
-      `${model.replace(/#[^#]*$/, "")}#${effort}`,
+      model.replace(/#[^#]*$/, ""),
       "--format",
       "json",
       ...images.flatMap((path) => ["--file", path]),
@@ -1361,6 +1389,7 @@ export async function runReviewer(
   seen: (line: string) => void,
   agent?: Reviewer,
   folders: Record<string, string> = {},
+  effort: string = REVIEW_EFFORT,
 ): Promise<Outcome> {
   let copy: Checkout | null = null
   let delivery: Delivery | null = null
@@ -1373,8 +1402,14 @@ export async function runReviewer(
     const cwd = copy?.dir ?? task.repoRoot
     const baseEnv = { ...folders, ...reviewerEnv(agent), PWD: cwd }
     delivery = deliverBrief(agent, task.runtimeDir, copy?.remap(brief) ?? brief)
-    if (agent === "opencode")
+    if (agent === "opencode") {
       native = opencodeReviewEnvironment(baseEnv, task.runtimeDir, process.execPath)
+      const modelFlag = cmd.indexOf("--model")
+      if (modelFlag >= 0) {
+        native.env.QUALITYLAYER_OPENCODE_MODEL = cmd[modelFlag + 1]
+        native.env.QUALITYLAYER_OPENCODE_EFFORT = effort
+      }
+    }
     const [command, ...args] = [...cmd, ...delivery.args]
     const [program, ...parameters] = nativeCommand(command as string, args)
     const done = await runProcess({
@@ -1565,6 +1600,7 @@ async function runPanelReview(
                   () => {},
                   member.by,
                   folders,
+                  member.effort,
                 )
         await recordReviewCost(
           ctx,
@@ -1784,6 +1820,7 @@ async function runCrossReviewWithInput(
             seen,
             step.by,
             await agentFolders(ctx),
+            step.effort,
           )
     await recordReviewCost(
       ctx,

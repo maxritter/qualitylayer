@@ -62,7 +62,10 @@ const MODEL_ID: Record<NativeAgent, (value: string) => boolean> = {
   cursor: (value) => CURSOR_MODEL.test(value),
   grok: (value) => PLAIN_MODEL.test(value),
   antigravity: (value) => PLAIN_MODEL.test(value),
-  copilot: (value) => PLAIN_MODEL.test(value),
+  copilot: (value) => {
+    const parts = value.split("/")
+    return parts.length <= 2 && parts.every((part) => PLAIN_MODEL.test(part))
+  },
 }
 
 /**

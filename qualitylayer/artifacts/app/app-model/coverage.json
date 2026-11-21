@@ -188,10 +188,11 @@
       "files": [
         "qualitylayer/src/ui/run/OutsideLead.tsx",
         "qualitylayer/src/ui/run/OutsideConversation.tsx",
+        "qualitylayer/src/core/interaction-shell/status.ts",
         "qualitylayer/src/ui/run/outside-lead.css"
       ],
       "demo": null,
-      "note": "Bound native records and task progress remain read-only outside the App; Claude hook questions use the shared composer, Codex names its answer destination. Continue waits for stop and verifies native ownership before resuming the same session; refused takeovers remain retryable. Source browser fixtures cover both agents at1360/760; HTTP tests prove records, picker delivery and unsafe/safe takeover. The visible outside conversation refreshes from only its server-verified task/session/cwd record through the existing single event stream. Hiding, closing or changing that view releases its exact non-recursive file watch; background notices retain the ordinary unscoped stream. Events contain no native path or transcript, grant no input authority and use the existing pacing and session revocation boundaries. Sync 2, 31 October 2026: the heading has the agent mark, the lead line, the working status card, Continue it here with the app-window icon and Answer in Codex follow OutsideLead.tsx and OutsideConversation.tsx; the demo has no Chat task whose agent runs outside the App.",
+      "note": "Bound native records and task progress remain read-only outside the App. Claude hook questions use the shared composer. Codex names its answer destination when a native question is pending. An ordinary finished outside Chat turn is neutral and offers Continue it here. A current native question or permission retains its action. Continue waits for stop and verifies native ownership before resuming the same session; refused takeovers remain retryable. Source browser fixtures cover both agents at1360/760; HTTP tests prove records, picker delivery and unsafe/safe takeover. The visible outside conversation refreshes from only its server-verified task/session/cwd record through the existing single event stream. Hiding, closing or changing that view releases its exact non-recursive file watch. A verified database-backed session keeps its regular task events, including later native turns. Background notices retain the ordinary unscoped stream. Events contain no native path or transcript, grant no input authority and use the existing pacing and session revocation boundaries. Sync 2, 31 October 2026: the heading has the agent mark, the lead line, the working status card, Continue it here with the app-window icon and Answer in Codex follow OutsideLead.tsx and OutsideConversation.tsx; the demo has no Chat task whose agent runs outside the App.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "chat-task.html": {
@@ -277,7 +278,7 @@
         "qualitylayer/src/core/conversation/codex-picker.ts"
       ],
       "demo": "/app-demo/?chat=question&native-agent=codex#/task/demo",
-      "note": "Codex submits each native question id with the current view's socket proof. Non-submitting navigation timeouts remain retryable. Late native output keeps the final answer submitted until authoritative confirmation; Enter and paste never retry. Expiry preserves picks and text for Send as a message. Conversation answering uses the live controller, generation, canType and replay-issued proof even when terminal painting is deferred; visual terminal readiness grants no authority and is not a prerequisite. The hidden-terminal Dock regression keeps watcher, missing-proof and stale-generation inputs disabled. The known qualified client is identified by one exact canonical version line while raw launch warnings remain available for diagnostics. Missing, conflicting, repeated or prerelease/custom versions remain unsupported; diagnostics do not grant new client-version authority. Native answer inspection uses the existing terminal decoder for normal JSON replay journals and trimmed ANSI rebuilds. Both retain bounded payloads, epoch and sequence validation and completed replay before inspecting the current question; decoding grants no typing authority. Files in answers preserves selected labels and uses exact native selected-option user_note acknowledgement, never queued text. The source supports exact 0.164.0 and 0.165.0 protocol records after official pinned-source comparison; actual installed 0.165.0 qualification remains pending the joined-candidate witness. File references are supporting context, never approval. See native-question-attachments-contract.md.",
+      "note": "Codex submits each native question id with the current view's socket proof. Non-submitting navigation timeouts remain retryable. Late native output keeps the final answer submitted until authoritative confirmation; Enter and paste never retry. Expiry preserves picks and text for Send as a message. Conversation answering uses the live controller, generation, canType and replay-issued proof even when terminal painting is deferred; visual terminal readiness grants no authority and is not a prerequisite. The hidden-terminal Dock regression keeps watcher, missing-proof and stale-generation inputs disabled. The known qualified client is identified by one exact canonical version line while raw launch warnings remain available for diagnostics. Missing, conflicting, repeated or prerelease/custom versions remain unsupported; diagnostics do not grant new client-version authority. Native answer inspection uses the existing terminal decoder for normal JSON replay journals and trimmed ANSI rebuilds. Both retain bounded payloads, epoch and sequence validation and completed replay before inspecting the current question; decoding grants no typing authority. Files in answers preserves selected labels and uses exact native selected-option user_note acknowledgement, never queued text. The picker admits exact 0.164.0, 0.165.0 and 0.171.0 version records. The pinned 0.171.0 question schema, renderer, layout and multi-question and notes snapshots match 0.165.0. The installed 0.171.0 App run accepted two guarded picker submissions and preserved both exact native tool answers. File references are supporting context, never approval. See native-question-attachments-contract.md.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "chat-start-workflow.html": {
@@ -288,7 +289,7 @@
         "qualitylayer/src/ui/agent-window/Dock.tsx"
       ],
       "demo": "/app-demo/?chat=helpers#/task/demo",
-      "note": "Start the workflow initially selects Feature and shows ListChecks. Existing managed controller/native session receives the Plan instruction through its guarded input bridge, with pending/sent/uncertain handoff and retry; saved Chat history remains. UI delivery does not itself claim the agent completed the Plan. Outside CLI conversion retains its existing next-step instruction. Final native App qualification is recorded separately. Managed handoff replies expose only their delivery state; the unused next-command string is omitted. The CLI promotion reply retains its existing next-step contract.",
+      "note": "Start the workflow initially selects Feature and shows ListChecks. Existing managed controller/native session receives the Plan instruction through its guarded input bridge, with pending/sent/uncertain handoff and retry; saved Chat history remains. UI delivery does not itself claim the agent completed the Plan. Outside CLI conversion retains its existing next-step instruction. Final native App qualification is recorded separately. Managed handoff replies expose only their delivery state; the unused next-command string is omitted. The CLI promotion reply retains its existing next-step contract. The Convert to task dialog fits long original requests to the dialog column and keeps the complete text in the carry preview and promoted task.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "conversation-tasks.html": {
@@ -899,7 +900,7 @@
         "qualitylayer/src/ui/run/AgentLaunchFields.tsx"
       ],
       "demo": "/app-demo/?moment=now&open=new-task-button,text*:Feature or bug fix,label:New task: agent,text:OpenCode,label:New task: planner,text*:Add a model#/home",
-      "note": "New task › OpenCode › Add a model…; Agent's settings built in da14eba82 Sync 31 October 2026: the Add a model field opens on OpenCode with Agent's settings as the planner model.",
+      "note": "New task › OpenCode › Add a model…; Agent's settings built in da14eba82 Sync 31 October 2026: the Add a model field opens on OpenCode with Agent's settings as the planner model. Antigravity also accepts a configured model ID through Add a model when its native catalogue only prints the display label. The saved ID is offered alongside native entries and Agent’s settings remains the default.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "new-task-add-model.html": {
@@ -1288,6 +1289,17 @@
       "note": "The same form for a command limited to chosen projects: no signing secret, the project boxes by name. The demo opens it with Add, Command and Chosen on #/settings/automations; no address opens the form.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
+    "settings-custom-editor.html": {
+      "status": "planned",
+      "files": [
+        "qualitylayer/src/ui/settings/CustomEditorFields.tsx",
+        "qualitylayer/src/ui/settings/Git.tsx",
+        "qualitylayer/src/ui/settings/source.css"
+      ],
+      "demo": null,
+      "gap": "The public demo has no populated custom editor state.",
+      "verification": "14.3.3 joined App: approved matching Program and Arguments widths, Save below the fields, 44 px phone controls and visible Program text at 390 and 1280 px in both themes. Verified keyboard Save, rejection and recovery, persisted values after reload and real literal argv for file and folder."
+    },
     "settings-git.html": {
       "status": "planned",
       "files": [
@@ -1659,10 +1671,12 @@
       "files": [
         "qualitylayer/src/ui/run/StartupPromptCard.tsx",
         "qualitylayer/src/ui/run/startup-prompt.css",
-        "qualitylayer/src/ui/shell/AgentChip.tsx"
+        "qualitylayer/src/ui/shell/AgentChip.tsx",
+        "qualitylayer/src/ui/agent-window/Dock.tsx",
+        "qualitylayer/src/ui/agent-window/conversation/Conversation.tsx"
       ],
       "demo": "/app-demo/?moment=plan-approve&run=asking#/task/demo",
-      "note": "the card ends in its own line above the conversation, and the conversation's state reads Waiting for you in its terminal. built 6 Nov 2026, approved by Max (no amber frames).",
+      "note": "The same card answers a native startup question in Terminal. Antigravity setup and folder trust hold Conversation sends until the terminal can receive a message, including after the first recorded message.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "task-loading.html": {
@@ -2502,7 +2516,7 @@
         "qualitylayer/src/ui/agent-window/Dock.tsx"
       ],
       "demo": null,
-      "note": "Approved same-task continuation. Read previous conversation opens the latest stopped transcript. Its read-only Agent controls retain the earlier conversations for this task. The selected transcript and its agent are shown without a composer or Switch control. The model starts no native session."
+      "note": "Approved same-task continuation. Read previous conversation opens the latest stopped transcript. Its read-only Agent controls retain the earlier conversations for this task. The selected transcript and its agent are shown without a composer or Switch control. When the current planner stops, its row in the task list shows the existing stopped state and a still Plan ring, even while the last task signal is quiet. A continued session can show work again. The model starts no native session."
     },
     "machine-installing.html": {
       "status": "built",

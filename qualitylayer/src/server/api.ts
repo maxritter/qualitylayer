@@ -78,6 +78,7 @@ import {
 import { readBuildStart } from "../core/git/build-start.ts"
 import { type Changes, changedPaths } from "../core/git/changes.ts"
 import { currentBranch } from "../core/git/repo.ts"
+import { verifyChangedPaths } from "../core/git/verify-range.ts"
 import { scopeWalkthrough, workflowChangesView } from "../core/git/workflow-changes.ts"
 import { forgetWorkingPatches } from "../core/git/working-patch-cache.ts"
 import { clearWorkingRecords } from "../core/git/working-records.ts"
@@ -235,7 +236,12 @@ import { openInEditor } from "./open-in-editor.ts"
 import { cachedPullRequest } from "./pull-request-poll.ts"
 import { stepPages } from "./step-pages.ts"
 import { recheckAfterChannelChange } from "./update.ts"
-import { ownsWorkflowAnchor, workflowProjection, workflowReviewSource } from "./workflow-review.ts"
+import {
+  checkedReviewRange,
+  ownsWorkflowAnchor,
+  workflowProjection,
+  workflowReviewSource,
+} from "./workflow-review.ts"
 
 export type Project = {
   id: string
@@ -485,6 +491,7 @@ export type TaskDetail = TaskSummary & {
   timeline: Timeline | null
   /** Net changed paths against the build's base; null when git could not determine them. */
   changedFiles?: string[] | null
+  checkedChange?: { head: string; files: number }
   /** At Review: what the agents found on lines of the change, with what the person did with each. */
   findings?: LineFinding[]
   /** At Review: the reviewers asked from the workspace, newest last, without their findings. */
@@ -1435,6 +1442,7 @@ async function readTaskDetail(
     decidedElsewhere,
     planDiff,
     changedFiles,
+    checkedChange,
   ] = await Promise.all([
     taskPage(ctx, task, gateFile).then(async (found) => ({
       items: found.items,
@@ -1471,6 +1479,15 @@ async function readTaskDetail(
         since: await buildBegan(ctx, task),
       })
     })(),
+    checkedReviewRange(ctx, task, checkedSource)
+      .then(
+        async (review) =>
+          review && {
+            head: review.range.head,
+            files: (await verifyChangedPaths(ctx, review.task, review.range)).length,
+          },
+      )
+      .catch(() => null),
   ])
   const gate = summary.gate
   const outside = isTerminal(task.stage) ? null : await outsideLead(ctx, task)
@@ -1526,6 +1543,7 @@ async function readTaskDetail(
     // From the outline on: the plan view reads it before the build, the build views after.
     timeline: timelineView,
     changedFiles,
+    ...(checkedChange ? { checkedChange } : {}),
     // What the agents found on lines of the change, and the reviewer asked from the workspace.
     ...(reviewing || task.stage === "shipped"
       ? await (async () => ({
@@ -1781,7 +1799,13 @@ export async function openTaskFile(
   const found = await locate(ctx, id)
   if (!found.ok) return found
   return input.how === "editor"
-    ? openInEditor(found.data.task, input.editor, input.file, opener)
+    ? openInEditor(
+        found.data.task,
+        input.editor,
+        input.file,
+        opener,
+        input.editor === "custom" ? (await readConfig(ctx)).customEditor : undefined,
+      )
     : openTaskDocument(found.data.task, input, opener)
 }
 
@@ -1872,14 +1896,18 @@ export async function taskFileDiff(
   ctx: Ctx,
   id: string,
   path: string,
-  continuation: { after?: string; revision?: string } = {},
+  continuation: { after?: string; revision?: string; checked?: string } = {},
 ): Promise<Result<{ diff: string; revision?: string; next?: string }>> {
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
-  const scoped = await workflowProjection(ctx, task, {
-    page: { path, ...continuation },
+  const { checked, ...pageRequest } = continuation
+  const review = checked ? await checkedReviewRange(ctx, task) : null
+  if (checked !== undefined && review?.range.head !== checked) return checkedChangeUnavailable()
+  const scoped = await workflowProjection(ctx, review?.task ?? task, {
+    page: { path, ...pageRequest },
     browse: true,
+    ...(review ? { range: review.range } : {}),
   })
   if (!scoped.ok) return scoped
   const page = scoped.data.page
@@ -1889,11 +1917,24 @@ export async function taskFileDiff(
 }
 
 /** A task's change top to bottom, as the Review page draws it; each file's diff loads as above. */
-export async function taskWalkthrough(ctx: Ctx, id: string): Promise<Result<Walkthrough>> {
+const checkedChangeUnavailable = () =>
+  err({ code: "bad_args", message: "The reviewed commit changed. Refresh Verify to read it." })
+
+export async function taskWalkthrough(
+  ctx: Ctx,
+  id: string,
+  checked?: string,
+): Promise<Result<Walkthrough>> {
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
-  const scoped = await workflowProjection(ctx, task, { metadata: true, browse: true })
+  const review = checked ? await checkedReviewRange(ctx, task) : null
+  if (checked !== undefined && review?.range.head !== checked) return checkedChangeUnavailable()
+  const scoped = await workflowProjection(ctx, review?.task ?? task, {
+    metadata: true,
+    browse: true,
+    ...(review ? { range: review.range } : {}),
+  })
   if (!scoped.ok) return scoped
   const state = await pageState(ctx, task)
   const view =
@@ -1924,6 +1965,7 @@ export async function taskReviewFileSource(
   ctx: Ctx,
   id: string,
   request: SourceRequest,
+  checked?: string,
 ): Promise<Result<ReviewFileSource>> {
   const git = ctx.git
   ctx = {
@@ -1937,7 +1979,10 @@ export async function taskReviewFileSource(
     })
   const found = await locate(ctx, id)
   if (!found.ok) return found
-  return workflowReviewSource(ctx, found.data.task, request)
+  const task = found.data.task
+  const review = checked ? await checkedReviewRange(ctx, task) : null
+  if (checked !== undefined && review?.range.head !== checked) return checkedChangeUnavailable()
+  return workflowReviewSource(ctx, review?.task ?? task, request, review?.range)
 }
 
 /** The documents a comment can be on: the files that take comments, the final review and the build view. */

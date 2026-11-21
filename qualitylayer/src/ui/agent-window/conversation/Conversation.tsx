@@ -3,6 +3,7 @@
 // terminal stays the engine; messages typed here go into it as a person would type them.
 import { ArrowUpIcon, PaperclipIcon, PauseIcon, SquareTerminalIcon, XIcon } from "lucide-react"
 import { type KeyboardEvent, useContext, useEffect, useId, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { isNativeAgent } from "../../../core/agents/ids.ts"
 import type { PickerResult } from "../../../core/conversation/codex-picker.ts"
 import type { CommandCatalog } from "../../../core/conversation/commands/types.ts"
@@ -19,7 +20,9 @@ import type { Attachment } from "../../../core/interaction-docs/attachments.ts"
 import type { AgentLimits } from "../../../core/limits/index.ts"
 import type { RunSettings } from "../../../core/run/contracts.ts"
 import type { ViewerState } from "../../../core/run/protocol.ts"
+import { holdsAntigravityStartup } from "../../../core/run/startup-prompt.ts"
 import type { TurnChanges } from "../../../core/run/turn-snapshots.ts"
+import { writeClipboardText } from "../../clipboard.ts"
 import { Attachments, usePendingFiles } from "../../docs/Attachments.tsx"
 import { useNow } from "../../hooks.ts"
 import { Disclosure } from "../../kit/Fold.tsx"
@@ -31,9 +34,9 @@ import { Approval, answerLine } from "./Approval.tsx"
 import { ConversationActionsContext } from "./actions.ts"
 import {
   addAwaiting,
+  dismissAwaiting,
   expireAwaiting,
   type Pending,
-  SENT_MS,
   settleAwaiting,
   useAwaiting,
 } from "./awaiting.ts"
@@ -305,11 +308,10 @@ export function Conversation(props: ConversationProps) {
         (waiting && active && Number.isFinite(waitStarted)) ||
         workers.length > 0 ||
         incomplete ||
-        waits.length > 0 ||
+        waits.some((item) => !item.unconfirmed) ||
         (waiting && answers.length > 0)),
   )
   const settling = answers.some((done) => now - done.at < SETTLE_MS)
-  const pending = waits.filter((item) => now - item.at < SENT_MS)
   useEffect(() => expireAwaiting(run, now), [run, now])
 
   const blocks = useMemo(() => buildBlocks(events, working), [events, working])
@@ -569,6 +571,16 @@ export function Conversation(props: ConversationProps) {
           onShowTerminal={onShowTerminal}
         />
         {showQuestion ? null : <TaskList checklist={loaded?.checklist} />}
+        {waits
+          .filter((item) => item.unconfirmed)
+          .map((item) => (
+            <DeliveryNotice
+              key={item.key}
+              text={item.text}
+              onTerminal={onShowTerminal}
+              onDismiss={() => dismissAwaiting(run, item.key)}
+            />
+          ))}
         <Composer
           {...props}
           waiting={waiting}
@@ -598,8 +610,8 @@ export function Conversation(props: ConversationProps) {
           working={working}
           recordLoaded={loaded !== undefined}
           activity={activity}
-          pending={pending}
-          onSent={(text) => {
+          pending={waits.filter((item) => !item.unconfirmed)}
+          onSent={(text, transmitted) => {
             // The agent saves the message in its record: read it as soon as it can be there.
             refresh()
             addAwaiting(
@@ -607,6 +619,7 @@ export function Conversation(props: ConversationProps) {
               text,
               new Set(events.filter((event) => event.kind === "user").map((event) => event.id)),
               Date.now(),
+              transmitted,
             )
           }}
         />
@@ -631,6 +644,45 @@ export function Conversation(props: ConversationProps) {
         />
       ) : null}
     </div>
+  )
+}
+
+function DeliveryNotice({
+  text,
+  onTerminal,
+  onDismiss,
+}: {
+  text: string
+  onTerminal: () => void
+  onDismiss: () => void
+}) {
+  async function copyText() {
+    if (await writeClipboardText(text)) toast.success("Message copied")
+    else toast.error("Select the message text to copy it.")
+  }
+  return (
+    <section className="cv-delivery-notice" aria-label="Message delivery">
+      <div className="cv-delivery-heading">
+        <strong role="status">Delivery unconfirmed</strong>
+        <button
+          type="button"
+          className="cv-queue-x"
+          aria-label="Dismiss delivery notice"
+          onClick={onDismiss}
+        >
+          <XIcon size={14} />
+        </button>
+      </div>
+      <p>{text}</p>
+      <div className="cv-delivery-actions">
+        <button type="button" className="q-link" onClick={onTerminal}>
+          Open Terminal
+        </button>
+        <button type="button" className="q-link" onClick={() => void copyText()}>
+          Copy text
+        </button>
+      </div>
+    </section>
   )
 }
 
@@ -680,7 +732,7 @@ function Composer({
   recordLoaded: boolean
   activity?: ComposerActivity | undefined
   pending: readonly Pending[]
-  onSent(text: string): void
+  onSent(text: string, transmitted: string): void
   onShowUsage?(): void
   nativeQuestion?: ConversationQuestion
   onQuestionDone?(): void
@@ -770,11 +822,12 @@ function Composer({
   }, [])
   // What a person types now would answer the agent's question, so it waits for the terminal.
   const asking = active && (run.terminalPrompt === "permission" || (waiting && !nativeQuestion))
+  const setup = active && holdsAntigravityStartup(run.agent, run.startupPrompt)
   const messageBlocked = useRef(false)
-  messageBlocked.current = Boolean(nativeQuestion || asking)
+  messageBlocked.current = Boolean(nativeQuestion || asking || setup)
   const showMessageInterrupt =
     !messageBlocked.current && showInterruptControl && going && interruptible
-  const locked = asking || viewer?.canType !== true || uploading || busy
+  const locked = setup || asking || viewer?.canType !== true || uploading || busy
   const [commandClosed, closeCommands] = useState(false)
   const [commandSelected, selectCommand] = useState(0)
   const [commandConfirm, confirmCommand] = useState<"compact" | "fresh">()
@@ -892,7 +945,7 @@ function Composer({
     if (!mounted.current || messageBlocked.current || !matches()) return false
     if (!pasted || !send(words))
       throw new Error(`${agentName} didn’t get the message. Your draft is kept; try again.`)
-    onSent(message)
+    onSent(message, words)
     return true
   }
   const queueFailure = (cause: unknown) => {

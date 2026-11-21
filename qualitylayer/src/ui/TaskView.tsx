@@ -143,6 +143,7 @@ import { jumpTo as jumpToPart } from "./step-page/StepPage.tsx"
 import { forAgentOf } from "./step-page/StepTools.tsx"
 import { jumpId, planPreparation, stepState } from "./step-page/state.ts"
 import { useSteadyStep } from "./step-page/steady.ts"
+import { ApprovedOutside } from "./steps/implement/ApprovedOutside.tsx"
 import { stepIsWorking } from "./steps/readiness.ts"
 import { StepPage } from "./steps/StepPage.tsx"
 import { StepQuiet, stepBefore } from "./steps/StepQuiet.tsx"
@@ -1948,10 +1949,11 @@ function TaskViewContent({
                       !managedRun &&
                       buildsNext !== null &&
                       (steady.doc === null || steady.doc.markdown.trim() === "") ? (
-                        // Approved for its own outside session: no start card while it gets going.
-                        <p className="q-body q-dim m-0" data-testid="implement-builds-next">
-                          {buildsNext}
-                        </p>
+                        <ApprovedOutside
+                          task={task}
+                          onRead={() => open(stepView(task, "plan"))}
+                          onCopy={onCopy}
+                        />
                       ) : steady.doc !== null ? (
                         <ArtifactHostProvider value={artifacts.host}>
                           {/* A step renders from its own folder (steps/<step>/Page.tsx). */}

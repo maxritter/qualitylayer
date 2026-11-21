@@ -905,10 +905,15 @@
       "modelList": {
         "command": ["models"],
         "format": "id-rows",
-        "complete": true,
+        "complete": false,
         "own": null
       },
-      "customModel": null,
+      "customModel": {
+        "shape": "id",
+        "placeholder": "model-id",
+        "hint": "The configured Antigravity model ID used with agy --model.",
+        "unlessListed": false
+      },
       "configDirEnv": null,
       "picker": true,
       "modelFlag": "--model",
@@ -1046,8 +1051,8 @@
       "customModel": {
         "shape": "id",
         "placeholder": "model-id",
-        "hint": "A model id Copilot accepts, such as claude-opus-5.5 or auto.",
-        "unlessListed": true
+        "hint": "A Copilot model ID or a configured provider/model.",
+        "unlessListed": false
       },
       "configDirEnv": "COPILOT_HOME",
       "picker": true,

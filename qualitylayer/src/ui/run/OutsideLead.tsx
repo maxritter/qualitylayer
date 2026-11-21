@@ -1,5 +1,5 @@
 import { AppWindowIcon, HistoryIcon, SquareTerminalIcon } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { AGENT_NAMES, isNativeAgent } from "../../core/agents/ids.ts"
 import { NAMES } from "../../core/docs/names.ts"
 import { FLOW_STEPS, flowStepOf } from "../../core/flow.ts"
@@ -14,7 +14,7 @@ import { VerifyActivityTimeline, verifyPause } from "../shell/VerifyActivity.tsx
 import type { AgentTabTerminal } from "./AgentTab.tsx"
 import { taskApprovalReady } from "./approval-ready.ts"
 import { ExistingPlanContext } from "./ExistingPlanContext.tsx"
-import { OutsideConversation } from "./OutsideConversation.tsx"
+import { OutsideConversation, type OutsideQuestionStatus } from "./OutsideConversation.tsx"
 import "./outside-lead.css"
 
 /** A stage's step name: a shipped task stands on Verify, a stage outside the three keeps its own word. */
@@ -46,7 +46,10 @@ function sliceOf(task: TaskDetail): { at: number; of: number } | null {
 
 /** Whether the outside session waits at a question or a gate in its window (the card reads "Answer here instead"). */
 export function outsideAsks(task: TaskDetail): boolean {
-  return task.outside !== undefined && shellStatus(task).state === "waits-for-you"
+  if (task.outside === undefined) return false
+  if (task.stage !== "chat") return shellStatus(task).state === "waits-for-you"
+  const ask = task.live?.signals?.ask
+  return task.question != null || (ask?.alive === true && ask.waiting)
 }
 
 /**
@@ -93,17 +96,21 @@ function outsideIdleStatus(
   name: string,
   life: ReturnType<typeof livenessOf> | { state: "none" },
   now: number,
+  nativeQuestion: boolean,
 ) {
   const verifying = task.stage === "verify"
-  if (verifying && life.state === "permission")
+  const chat = task.stage === "chat"
+  if ((verifying || chat) && life.state === "permission")
     return {
       kind: "waiting" as const,
       word: "Permission needed",
       line: `Allow or refuse it in ${name}'s own window.`,
     }
-  const outsideTurn = !verifying && life.state === "turn-end"
+  const outsideTurn = !verifying && !chat && life.state === "turn-end"
   // The top bar uses the same signals to distinguish a question from a paused Verify run.
-  const waits = shellStatus(task, now).state === "waits-for-you"
+  const waits = chat
+    ? nativeQuestion || outsideAsks(task)
+    : shellStatus(task, now).state === "waits-for-you"
   if (outsideTurn || life.state === "permission" || waits) {
     const asked = task.live?.question?.text
     const requestedAt = life.state === "turn-end" || life.state === "permission" ? life.at : null
@@ -114,6 +121,8 @@ function outsideIdleStatus(
       line: requestedAt === null ? continuation : `Since ${clock(requestedAt)}. ${continuation}`,
     }
   }
+  if (chat && life.state === "turn-end")
+    return { kind: "quiet" as const, word: "No active turn", line: "" }
   const pause = verifyPause(task, now)
   if (pause) return { kind: "quiet" as const, word: pause.title, line: pause.detail }
   if (life.state !== "quiet") return null
@@ -125,7 +134,7 @@ function outsideIdleStatus(
 }
 
 /** Where its live signals put the outside session: its mark, its words, one line under them. */
-function statusOf(task: TaskDetail, lead: Lead, now: number) {
+function statusOf(task: TaskDetail, lead: Lead, now: number, nativeQuestion: boolean) {
   const name = agentWord(lead.agent)
   const approval = outsideApprovalReady(task)
   if (approval)
@@ -146,7 +155,7 @@ function statusOf(task: TaskDetail, lead: Lead, now: number) {
       word: `Stopped at ${clock(life.at)}`,
       line: "The work so far is kept.",
     }
-  const idle = outsideIdleStatus(task, name, life, now)
+  const idle = outsideIdleStatus(task, name, life, now, nativeQuestion)
   if (idle) return idle
   const last = life.state === "working" ? life.last : null
   // What it runs now says more than which file last grew.
@@ -197,7 +206,15 @@ export function OutsideLead({
     }
   }, [task.id])
   const name = agentWord(lead.agent)
-  const status = statusOf(task, lead, now)
+  const [questionStatus, setQuestionStatus] = useState<OutsideQuestionStatus>()
+  const noteQuestion = useCallback((current: OutsideQuestionStatus) => {
+    setQuestionStatus((prior) =>
+      prior?.session === current.session && prior.pending === current.pending ? prior : current,
+    )
+  }, [])
+  const nativeQuestion =
+    questionStatus?.pending === true && questionStatus.session === lead.sessionId
+  const status = statusOf(task, lead, now, nativeQuestion)
   // A question waits in the terminal: the page's own card holds Answer here instead, so this card
   // is the session's status and events only (DESIGN.md › One fact, one place).
   const pageAsks = status.kind === "waiting" && task.question != null
@@ -272,7 +289,11 @@ export function OutsideLead({
       <ContinueButton
         name={name}
         stopped={stopped}
-        asked={status.kind === "waiting" && !chosen}
+        asked={
+          status.kind === "waiting" &&
+          !chosen &&
+          (task.stage !== "chat" || nativeQuestion || outsideAsks(task))
+        }
         continuing={continuing}
         busy={resuming === "busy"}
         onContinue={() => {
@@ -379,6 +400,7 @@ export function OutsideLead({
           task={task}
           lead={{ ...lead, agent: lead.agent }}
           name={name}
+          onQuestion={noteQuestion}
         />
       ) : null}
       {planning ? (

@@ -5,9 +5,16 @@ import { readSession, type Task } from "../task/store.ts"
 import { readBuildStart } from "./build-start.ts"
 import type { Changes } from "./changes.ts"
 import { ownEdits } from "./session-edits.ts"
+import type { VerifyRange } from "./verify-range.ts"
 import { nativeCoverage, type SourceReads } from "./workflow-coverage.ts"
 import { type PageRequest, type WorkflowPage, workflowPage } from "./workflow-pages.ts"
-import { committedParts, type OwnedPart, patchCounts, readCommittedPart } from "./workflow-parts.ts"
+import {
+  candidateParts,
+  committedParts,
+  type OwnedPart,
+  patchCounts,
+  readCommittedPart,
+} from "./workflow-parts.ts"
 import { currentWorkingText, workingPath } from "./working-capture.ts"
 import { WORKING_CLOSED_KEEP_MS, WORKING_VIEW_DIFFS_MAX } from "./working-limits.ts"
 import { forgetWorkingPatches, rememberWorkingPatch, workingPatch } from "./working-patch-cache.ts"
@@ -24,6 +31,7 @@ import {
 
 export type WorkflowProjection = {
   history?: ChangeHistory
+  candidate?: true
   tracked?: boolean
   files: WalkFile[]
   parts: Map<string, OwnedPart>
@@ -277,8 +285,10 @@ export async function workflowChanges(
     current?: boolean
     /** Committed sources an earlier pass of this same request read; set by a page's own recheck. */
     reads?: SourceReads
+    range?: VerifyRange
   } = {},
 ): Promise<WorkflowProjection> {
+  if (options.range) return candidateChanges(ctx, task, options.range, options.page)
   const reads: SourceReads = options.reads ?? new Map()
   const committed = await committedParts(ctx, task, {
     metadata: options.metadata || options.page !== undefined,
@@ -406,6 +416,33 @@ export async function workflowChanges(
   }
 }
 
+async function candidateChanges(
+  ctx: Ctx,
+  task: Task,
+  range: VerifyRange,
+  request?: PageRequest,
+): Promise<WorkflowProjection> {
+  const original = await candidateParts(ctx, task, range)
+  const files = groupFiles(original)
+  const parts = new Map(original.map((part) => [part.view.stamp, part]))
+  const file = request ? files.find((file) => file.path === request.path) : undefined
+  if (request && !file) throw new Error("This path is not part of the reviewed commit.")
+  const page =
+    request && file
+      ? await workflowPage(ctx, file, parts, request, (part) => readCommittedPart(ctx, task, part))
+      : undefined
+  return {
+    candidate: true,
+    files,
+    parts,
+    commits: range.commits,
+    pending: [],
+    workingFiles: [],
+    localOnlyFiles: [],
+    ...(page ? { page } : {}),
+  }
+}
+
 export function workflowPatch(projection: WorkflowProjection, path: string): string | null {
   const file = projection.files.find((file) => file.path === path)
   return file
@@ -466,6 +503,24 @@ export function workflowChangesView(
 
 /** Keep build evidence and approvals intact; replace only the App's file inventory and totals. */
 export function scopeWalkthrough(view: Walkthrough, projection: WorkflowProjection): Walkthrough {
+  if (projection.candidate) {
+    return {
+      ...view,
+      counted: true,
+      slices: [],
+      fixes: [],
+      decided: projection.files,
+      planDecisions: [],
+      changeScope: { candidate: true, pending: [], workingFiles: [] },
+      totals: {
+        ...view.totals,
+        commits: projection.commits.length,
+        files: projection.files.length,
+        additions: null,
+        deletions: null,
+      },
+    }
+  }
   const left = new Map(projection.files.map((file) => [file.path, file]))
   const ownPaths = new Set(left.keys())
   const replace = (files: WalkFile[]) =>

@@ -45,7 +45,7 @@ export type PlanReviewCoverage = "current" | "earlier" | "unknown"
 
 export const planReviewCoverageNote = (coverage: PlanReviewCoverage | undefined): string =>
   coverage === "earlier"
-    ? "The second opinion reviewed an earlier Plan. "
+    ? "The second opinion reviewed an earlier Plan. See reviews/plan.md for the review. "
     : coverage === "unknown"
       ? "The second opinion has no saved Plan revision. "
       : ""

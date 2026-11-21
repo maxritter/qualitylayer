@@ -13,7 +13,7 @@ const ASK_FRESH_MS = 3000
 
 let summary: CodeSummary | null = null
 let shown: string | null = null
-let asked: { taskId: string; file: string | null; at: number } | null = null
+let asked: { taskId: string; file: string | null; at: number; checked?: string } | null = null
 const listeners = new Set<() => void>()
 const changed = () => {
   for (const listener of listeners) listener()
@@ -45,22 +45,26 @@ export function useCodeSummary(taskId: string): CodeSummary | null {
  * Ask the task's page to open the workspace, at a file or at the first. A page that is still
  * opening takes the ask when it mounts; one that never does lets it go stale.
  */
-export function openReviewWorkspace(taskId: string, file: string | null = null): void {
-  asked = { taskId, file, at: Date.now() }
+export function openReviewWorkspace(
+  taskId: string,
+  file: string | null = null,
+  checked?: string,
+): void {
+  asked = { taskId, file, at: Date.now(), ...(checked ? { checked } : {}) }
   window.dispatchEvent(new CustomEvent(OPEN, { detail: { taskId } }))
 }
 
 /** The task page's side: `open` runs for every ask for this task, and for one made just before it mounted. */
 export function useReviewWorkspaceOpener(
   taskId: string,
-  open: (file: string | null) => void,
+  open: (file: string | null, checked?: string) => void,
 ): void {
   useEffect(() => {
     const take = () => {
       const ask = asked
       if (ask === null || ask.taskId !== taskId) return
       asked = null
-      if (Date.now() - ask.at <= ASK_FRESH_MS) open(ask.file)
+      if (Date.now() - ask.at <= ASK_FRESH_MS) open(ask.file, ask.checked)
     }
     window.addEventListener(OPEN, take)
     take()

@@ -25,16 +25,16 @@ export function outsideStreamInterest(url: URL) {
     : false
 }
 
-/** One visible reader's exact record watch. No session discovery, native writes or idle work. */
+/** Resolve the exact outside binding. Null means it changed. Undefined keeps task events without a file watch. */
 export async function prepareOutsideConversationWatch(
   ctx: Ctx,
   interest: { task: string; session: string },
   pace: Pick<Pace, "factor">,
-): Promise<OutsideConversationWatch | null> {
+): Promise<OutsideConversationWatch | null | undefined> {
   const binding = await outsideConversationBinding(ctx, interest.task)
   if (binding instanceof Response || binding.run.nativeSession !== interest.session) return null
   const location = locateRecord(ctx, binding.run)
-  if (location?.kind !== "jsonl") return null
+  if (location?.kind !== "jsonl") return undefined
   const stamp = () => {
     try {
       const entry = lstatSync(location.path)

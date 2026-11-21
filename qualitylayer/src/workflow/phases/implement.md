@@ -81,10 +81,14 @@ what you approved: ...".
   decide it and say why in the record. Only when nothing but the person can decide and it cannot wait
   for their review, ask once with `qualitylayer question ask` and keep building: the answer comes with a
   later reply. When they gave or answered it: `qualitylayer need resolved T<n>`.
-- When the person writes during the build, act on it at once. An addition to what they approved is
-  amended with `qualitylayer plan amend --by user`; a visible one is drawn first and built once they
-  approve the picture, recorded as a need meanwhile.
+- When the person adds to the approved Plan during the build, put their addition in `{plan_doc}` as
+  an `> [!ADDED] build · <why>` block, then run `qualitylayer plan amend --by user --note "<their words>"`.
+  Draw a visible addition first and build it once they approve the picture. Record it as a need meanwhile.
 - A limit you could not remove: `qualitylayer limit add`.
+
+Card checks use the task’s checkout. If the approved Plan names an additional checkout under Scope › In scope as
+`` - **Repository:** `/absolute/path` ``, use `qualitylayer check task T<n> --repo <checkout>`. Register a manual commit
+with `qualitylayer commit slice <n> --commit <hash> --repo <checkout>` when its files belong to the slice.
 
 ## The record
 

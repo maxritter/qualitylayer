@@ -66,14 +66,16 @@ Choose the next move from the evidence, within the approved scope. Keep fixing a
 rechecking while you can make meaningful progress. If the result is unchanged, change the approach
 or investigate the cause before another recheck. Record what you tried under *Fix rounds*.
 If you cannot make progress without a decision only the person can make, ask that specific question
-with `qualitylayer question ask`. When the environment, a timed-out check, a release or a person-only
+with `qualitylayer question ask`. Keep working while an App question is open. For terminal answers,
+finish independent work before opening the returned picker, which waits for the person. When the
+environment, a timed-out check, a release or a person-only
 need blocks the rest, `qualitylayer next` names the exit and the move:
 
 - **Outside the task** (another session's work, a failure already on the base): a follow-up with its
   owner, under *Fix rounds* in the agents' file.
 - **Inside the task**: one question to the person, sent with `qualitylayer question ask` (the exit's
-  `question`, `recommended` your choice, `why` a line of evidence). It is asked once and holds nothing:
-  go on with what does not depend on the answer. Their answer is **Change what Done means** (their
+  `question`, `recommended` your choice, `why` a line of evidence). Ask once and keep going with
+  what does not depend on the answer. Their answer is **Change what Done means** (their
   words into the Plan, then `qualitylayer plan amend --by user`, which resets the rounds), **One more
   fix round** (`qualitylayer verify fix`), **Stop the task** (`qualitylayer task abandon`) or, when red
   project checks are all that is open, **Keep it red and review it** (`qualitylayer verify keep-red`),

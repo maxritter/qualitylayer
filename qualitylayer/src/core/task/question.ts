@@ -581,7 +581,7 @@ export function parseQuestion(
         `unknown question fields: ${unknown.join(", ")}. facts, diagram and evidence belong on each choice: ` +
         `"choices": [{"label": "<six words>", "facts": ["<fact>", "<fact>"]}, …], one object per choice instead of a plain string.`,
     })
-  const question = text(given.question, 300)
+  const question = typeof given.question === "string" ? given.question.trim() : ""
   const grade = given.grade
   if (grade !== undefined && grade !== 1 && grade !== 2 && grade !== 3) {
     return err({ code: "bad_args", message: '"grade" is 1, 2 or 3' })
@@ -613,7 +613,7 @@ export function parseQuestion(
       if (unknownChoice.length)
         return err({
           code: "bad_args",
-          message: `unknown choice fields: ${unknownChoice.join(", ")}`,
+          message: `unknown choice fields: ${unknownChoice.join(", ")}. Use ${[...allowedChoice].join(", ")}. In a batch, give each choice up to 3 facts of at most 200 characters each.`,
         })
     }
     const label = text(choice?.label, 200)
@@ -631,7 +631,7 @@ export function parseQuestion(
       ...context.data,
     })
   }
-  if (question === undefined || choices.length < 2) {
+  if (question === "" || choices.length < 2) {
     return err({
       code: "bad_args",
       message: "a question needs its text and at least two choices",

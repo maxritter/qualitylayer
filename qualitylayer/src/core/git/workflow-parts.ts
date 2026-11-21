@@ -3,6 +3,7 @@ import type { ChangePart } from "../review/walkthrough.ts"
 import type { Task } from "../task/store.ts"
 import { GIT_AT_ONCE, mapBounded } from "./bounded.ts"
 import { taskCommitDiff, taskDiffArgs } from "./task-diff.ts"
+import { type VerifyRange, verifyDiffArgs, verifyPaths } from "./verify-range.ts"
 import type { WorkingOperation } from "./working-records.ts"
 import { digest, workingTaskKey } from "./working-records.ts"
 
@@ -11,6 +12,7 @@ export type PartSource =
   | { kind: "working"; hash: string }
 export type OwnedPart = {
   commit?: string
+  base?: string
   head?: string
   unavailable?: true
   native?: { id: string; operation: WorkingOperation }
@@ -82,6 +84,14 @@ const PATCH_LIMIT = "The workflow patch exceeds the reading limit"
 const PATCH_INVENTORY = "The workflow patch inventory changed"
 const PATCH_UNREADABLE = "The workflow's registered patches could not be read"
 
+function splitPatch(text: string) {
+  const starts = [...text.matchAll(/^diff --git /gm)].map((match) => match.index)
+  return {
+    header: text.slice(0, starts[0]),
+    patches: starts.map((start, index) => text.slice(start, starts[index + 1] ?? text.length)),
+  }
+}
+
 /**
  * The most pathspec bytes one run names: well inside Windows' 32,767-character command line once
  * git's own arguments and quoting are added, and as safe on POSIX.
@@ -147,18 +157,15 @@ async function filePatches(
       { maxOutputBytes: limit },
     )
     if (read.code !== 0) throw new Error(PATCH_UNREADABLE)
-    const starts = [...read.stdout.matchAll(/^diff --git /gm)].map((match) => match.index!)
-    if (starts.length !== run.length) throw new Error(PATCH_INVENTORY)
-    const texts = starts.map((start, index) =>
-      read.stdout.slice(start, starts[index + 1] ?? read.stdout.length),
-    )
-    for (const text of texts) bytes += Buffer.byteLength(text)
+    const parsed = splitPatch(read.stdout)
+    if (parsed.patches.length !== run.length) throw new Error(PATCH_INVENTORY)
+    for (const text of parsed.patches) bytes += Buffer.byteLength(text)
     if (!header) {
       header = true
-      bytes += Buffer.byteLength(read.stdout.slice(0, starts[0]))
+      bytes += Buffer.byteLength(parsed.header)
     }
     if (bytes >= limit) throw new Error(PATCH_LIMIT)
-    return texts
+    return parsed.patches
   })
   return { texts: runs.flat(), bytes }
 }
@@ -167,49 +174,56 @@ async function commitParts(
   ctx: Ctx,
   task: Task,
   commit: string,
-  metadata: boolean,
-  limit: number,
-  paths?: string[],
+  options: { metadata: boolean; limit: number; paths?: string[]; base?: string },
 ): Promise<{ parts: OwnedPart[]; bytes: number }> {
-  const raw = await ctx.git.run(
-    task.repoRoot,
-    [
-      "diff-tree",
-      "--root",
-      "--first-parent",
-      "--diff-merges=first-parent",
-      "--no-commit-id",
-      "--raw",
-      "--abbrev=64",
-      "-M",
-      "-r",
-      "-z",
-      commit,
-      ...(paths ? ["--", ...paths.map((path) => `:(literal)${path}`)] : []),
-    ],
-    { maxOutputBytes: 1024 * 1024 },
-  )
+  const { metadata, limit, paths, base } = options
+  const targets = paths?.map((path) => `:(literal)${path}`)
+  const rawArgs = base
+    ? [
+        "diff",
+        "--raw",
+        "--abbrev=64",
+        "--no-renames",
+        "-z",
+        base,
+        commit,
+        "--",
+        ...(targets ?? verifyPaths),
+      ]
+    : [
+        "diff-tree",
+        "--root",
+        "--first-parent",
+        "--diff-merges=first-parent",
+        "--no-commit-id",
+        "--raw",
+        "--abbrev=64",
+        "-M",
+        "-r",
+        "-z",
+        commit,
+        ...(targets ? ["--", ...targets] : []),
+      ]
+  const raw = await ctx.git.run(task.repoRoot, rawArgs, { maxOutputBytes: 1024 * 1024 })
   if (raw.code !== 0) throw new Error(PATCH_UNREADABLE)
   const files = rawFiles(raw.stdout)
   const visible = files.filter((file) => file.path && !file.path.startsWith("docs/plans/"))
   let patches: string[] = []
   let bytes = 0
-  if (!metadata && paths === undefined && visible.length > 1) {
+  if (!base && !metadata && paths === undefined && visible.length > 1) {
     // A whole commit's files: at most GIT_AT_ONCE processes side by side.
     const read = await filePatches(ctx, task, commit, visible, limit)
     patches = read.texts
     bytes = read.bytes
   } else if (!metadata) {
-    const patch = await ctx.git.run(task.repoRoot, showArgs(commit, paths), {
+    const args = base ? verifyDiffArgs({ base, head: commit }, paths) : showArgs(commit, paths)
+    const patch = await ctx.git.run(task.repoRoot, args, {
       maxOutputBytes: limit,
     })
     if (patch.code !== 0) throw new Error(PATCH_UNREADABLE)
     bytes = Buffer.byteLength(patch.stdout)
     if (bytes >= limit) throw new Error(PATCH_LIMIT)
-    const starts = [...patch.stdout.matchAll(/^diff --git /gm)].map((match) => match.index!)
-    patches = starts.map((start, index) =>
-      patch.stdout.slice(start, starts[index + 1] ?? patch.stdout.length),
-    )
+    patches = splitPatch(patch.stdout).patches
   }
   if (!metadata && patches.length !== visible.length) throw new Error(PATCH_INVENTORY)
   const parts: OwnedPart[] = []
@@ -217,10 +231,19 @@ async function commitParts(
     let text = metadata ? "" : patches[index]!
     if (text.includes("\0")) text = `${text.split("\n")[0]}\nBinary files differ\n`
     const stamp = digest(
-      JSON.stringify([workingTaskKey(task), commit, file.path, file.from, file.before, file.after]),
+      JSON.stringify([
+        workingTaskKey(task),
+        ...(base ? [base] : []),
+        commit,
+        file.path,
+        file.from,
+        file.before,
+        file.after,
+      ]),
     )
     parts.push({
       commit,
+      ...(base ? { base } : {}),
       view: {
         id: stamp,
         stamp,
@@ -289,7 +312,7 @@ export async function committedParts(
   const parts: OwnedPart[] = []
   let bytes = 0
   for (const commit of owned.commits) {
-    const read = await commitParts(ctx, task, commit, metadata, MAX_PATCH_BYTES - bytes)
+    const read = await commitParts(ctx, task, commit, { metadata, limit: MAX_PATCH_BYTES - bytes })
     for (const part of read.parts) {
       if (historical) part.view.label = `Historical · ${part.view.label}`
       parts.push(part)
@@ -307,13 +330,43 @@ export async function committedParts(
 export async function readCommittedPart(ctx: Ctx, task: Task, part: OwnedPart): Promise<OwnedPart> {
   if (!part.commit) throw new Error("The requested committed file version is unavailable")
   const paths = part.view.from ? [part.view.path, part.view.from] : [part.view.path]
-  const key = JSON.stringify([task.repoRoot, workingTaskKey(task), part.commit, paths])
+  const key = JSON.stringify([task.repoRoot, workingTaskKey(task), part.commit, paths, part.base])
   const found = cached.get(key)
-  const read = found ?? (await commitParts(ctx, task, part.commit, false, MAX_PATCH_BYTES, paths))
+  const read =
+    found ??
+    (await commitParts(ctx, task, part.commit, {
+      metadata: false,
+      limit: MAX_PATCH_BYTES,
+      paths,
+      base: part.base,
+    }))
   if (!found) remember(key, read.parts, read.bytes)
   const exact = read.parts.find((row) => row.view.stamp === part.view.stamp)
   if (!exact) throw new Error("The committed file inventory changed")
   return exact
+}
+
+export async function candidateParts(
+  ctx: Ctx,
+  task: Task,
+  range: VerifyRange,
+): Promise<OwnedPart[]> {
+  const key = JSON.stringify([
+    task.repoRoot,
+    workingTaskKey(task),
+    range.base,
+    range.head,
+    "candidate",
+  ])
+  const known = cached.get(key)
+  if (known) return known.parts
+  const read = await commitParts(ctx, task, range.head, {
+    metadata: true,
+    limit: MAX_PATCH_BYTES,
+    base: range.base,
+  })
+  remember(key, read.parts, read.bytes, true)
+  return read.parts
 }
 
 /** Immutable Git source, with both size and regular-file mode checked before textconv. */

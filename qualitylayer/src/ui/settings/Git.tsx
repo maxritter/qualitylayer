@@ -17,6 +17,8 @@ import { Switch } from "@/components/ui/switch"
 import { EDITOR_NAMES, EDITORS } from "../../core/config-values.ts"
 import type { GhStatus, GitStatus, ToolsStatus } from "../../core/tools-status.ts"
 import type { Api, Config } from "../api.ts"
+import { useOptionalRuns } from "../run-context.tsx"
+import { CustomEditorFields } from "./CustomEditorFields.tsx"
 import { Pick, SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
 import "./source.css"
 import { agoText } from "./usage-model.ts"
@@ -27,6 +29,7 @@ type ToolsApi = Pick<Api, "tools" | "checkTools">
 const OPEN_ICON = "size-3.5"
 const EDITOR_ICONS: Record<(typeof EDITORS)[number], ReactNode> = {
   vscode: <FileCodeIcon className={OPEN_ICON} />,
+  custom: <FileCodeIcon className={OPEN_ICON} />,
   cursor: <FileCodeIcon className={OPEN_ICON} />,
   zed: <FileCodeIcon className={OPEN_ICON} />,
   finder: <FolderOpenIcon className={OPEN_ICON} />,
@@ -220,8 +223,11 @@ export function GitTab({
 }: {
   config: Config
   api?: ToolsApi | undefined
-  onChange: (patch: unknown) => void
+  onChange: (patch: unknown) => unknown
 }) {
+  const [editingCustom, setEditingCustom] = useState(false)
+  const permitted = useOptionalRuns()?.support?.canConfigure === true
+  const custom = editingCustom || config.editor === "custom"
   return (
     <div className="q-sgs">
       <Tools api={api} />
@@ -233,15 +239,21 @@ export function GitTab({
         >
           <Pick
             label="Open files and folders in"
-            value={config.editor}
+            value={custom ? "custom" : config.editor}
             options={EDITORS.map((id) => ({
               id,
               name: EDITOR_NAMES[id],
               icon: EDITOR_ICONS[id],
             }))}
-            onChange={(editor) => onChange({ editor })}
+            onChange={(editor) => {
+              setEditingCustom(editor === "custom")
+              if (editor !== "custom") onChange({ editor })
+            }}
           />
         </SettingRow>
+        {custom && (
+          <CustomEditorFields initial={config.customEditor} permitted={permitted} save={onChange} />
+        )}
         <SettingRow
           label="Watch pull requests"
           hint="Checked every 2 minutes. A failing check, requested changes or a conflict goes to Needs you; these and reviewers' new comments wake the agent."

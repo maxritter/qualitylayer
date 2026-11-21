@@ -26,14 +26,19 @@ function requireInput(
   if (!value) throw Error(message)
 }
 /** The refusal for receipts that history cannot explain, naming a repeated entry when there is one. */
-async function unexplained(ctx: Ctx, task: Task, commits: string[]): Promise<never> {
+async function unexplained(
+  ctx: Ctx,
+  task: Task,
+  commits: string[],
+  affected = commits,
+): Promise<never> {
   const { duplicates } = await duplicateReceipts(ctx, task, commits)
   if (duplicates.length > 0)
     throw new Error(
       `The judge's task commit/input authority is invalid. ${duplicateReceiptsText(duplicates, false)}`,
     )
   throw new Error(
-    `The judge's task commit/input authority cannot reconcile recorded commits ${commits
+    `The judge's task commit/input authority cannot reconcile recorded commits ${affected
       .slice(0, 8)
       .map((sha) => sha.slice(0, 12))
       .join(", ")} with the recorded branch's rewrite history. No receipt or commit was changed.`,
@@ -43,6 +48,19 @@ async function run(ctx: Ctx, task: Task, args: string[]) {
   const result = await ctx.git.run(task.repoRoot, args)
   requireInput(result.code === 0 && Buffer.byteLength(result.stdout) <= 2 * 1024 * 1024)
   return result.stdout.trimEnd()
+}
+/** A replacement series can already contain the new receipt when the recorded branch moves to its tip. */
+async function sameSingleParent(ctx: Ctx, task: Task, before: string, after: string) {
+  const rows = await run(ctx, task, [
+    "show",
+    "--no-patch",
+    "--no-walk=unsorted",
+    "--format=%P",
+    before,
+    after,
+  ])
+  const [oldParent, newParent] = rows.split("\n")
+  return oldParent !== undefined && full.test(oldParent) && oldParent === newParent
 }
 export async function judgeInputs(ctx: Ctx, task: Task): Promise<JudgeInputs | null> {
   const path = join(task.runtimeDir, "slice-commits.json")
@@ -174,6 +192,13 @@ export async function judgeInputs(ctx: Ctx, task: Task): Promise<JudgeInputs | n
         )
           continue
         if (
+          stale.includes(crossing.before) &&
+          (await ancestor(crossing.after, current)) &&
+          !(await ancestor(crossing.after, previous.commit)) &&
+          (await sameSingleParent(ctx, task, crossing.before, crossing.after))
+        )
+          continue
+        if (
           !(await ancestor(crossing.before, previous.commit)) ||
           (await ancestor(crossing.before, current)) ||
           !(await ancestor(current, crossing.after))
@@ -184,7 +209,9 @@ export async function judgeInputs(ctx: Ctx, task: Task): Promise<JudgeInputs | n
       }
       if (proven) throw new RecordedHistoryRewritten(head, fm.branch, previous.commit, current)
     }
-    await unexplained(ctx, task, commits)
+    await unexplained(ctx, task, commits, [
+      ...new Set([...stale, ...crossings.flatMap(({ before, after }) => [before, after])]),
+    ])
   }
   const commit = head
   await requireOwnedTreeCurrent(ctx, task, commits)

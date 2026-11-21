@@ -26,6 +26,10 @@ export function EditorMark({ editor, size = 14 }: { editor: Editor; size?: numbe
     )
   if (editor === "cursor") return <AgentMark agent="cursor" size={size} />
   const Glyph =
-    editor === "zed" ? FileCodeIcon : editor === "finder" ? FolderOpenIcon : SquareTerminalIcon
+    editor === "zed" || editor === "custom"
+      ? FileCodeIcon
+      : editor === "finder"
+        ? FolderOpenIcon
+        : SquareTerminalIcon
   return <Glyph className="q-edm" data-editor-mark={editor} size={size} aria-hidden="true" />
 }

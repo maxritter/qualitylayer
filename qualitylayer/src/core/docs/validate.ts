@@ -1,7 +1,7 @@
 // Schema walk: frontmatter -> required sections (present, not empty) -> remaining guidance
 // comments. Named engine rules (schema.rules) guard the records and limits of each document.
 
-import { basename, join, resolve, sep } from "node:path"
+import { join, relative, resolve, sep } from "node:path"
 import { type Ctx, err, ok, type Result, type ValidationError } from "../../ctx.ts"
 import { committedSlices } from "../git/build-start.ts"
 import { withPagesLock } from "../pages/record.ts"
@@ -182,12 +182,12 @@ async function validateSnapshot(
   docName: string,
   options: { runtimeDir?: string },
 ): Promise<Result<ValidationReport>> {
-  // A path inside the task folder names the agents' file by its place there.
-  const inside = docName.startsWith(`${taskDir}${sep}`)
-    ? docName.slice(taskDir.length + 1).replaceAll(sep, "/")
-    : docName
-  const forAgents = agentRoleOf(inside) !== null
-  const name = forAgents ? inside : basename(docName)
+  // The directory distinguishes the person's step from the agents' record with the same basename.
+  const name =
+    [taskDir, ctx.env.cwd(), repoRootOf(taskDir) ?? taskDir]
+      .map((base) => relative(taskDir, resolve(base, docName)).split(sep).join("/"))
+      .find((candidate) => roleOf(candidate) !== null || agentRoleOf(candidate) !== null) ?? docName
+  const forAgents = agentRoleOf(name) !== null
   const task = await taskFacts(ctx, taskDir)
   if (task.type === "chat")
     return err({ code: "bad_args", message: "this is a Chat; Convert to task first" })

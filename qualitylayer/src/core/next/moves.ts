@@ -16,7 +16,14 @@ export type Move = {
  * Where the Plan's gate stands: none yet, open, its reviewers at work, their review in and waiting
  * for the agent's answers, answered by the person with changes, or approved.
  */
-export type PlanGate = "none" | "open" | "reviewing" | "reviewed" | "changes" | "approved"
+export type PlanGate =
+  | "none"
+  | "open"
+  | "reviewing"
+  | "reviewed"
+  | "changes"
+  | "approved"
+  | "earlier-approval"
 
 export type MoveState =
   | { stage: "none" }
@@ -137,6 +144,7 @@ function planMoves(gate: PlanGate): Move[] {
           by: "agent",
         },
       ]
+    case "earlier-approval":
     case "none":
       return [
         brief("plan"),

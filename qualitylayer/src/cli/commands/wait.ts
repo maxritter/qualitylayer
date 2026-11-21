@@ -14,7 +14,7 @@ import { agentSession } from "../../core/task/question.ts"
 import { homeQuestionDir } from "../../core/task/question-app.ts"
 import { readBatch } from "../../core/task/question-batch.ts"
 import type { Task } from "../../core/task/store.ts"
-import { BATCH_QUIET_MS, type WaitKind, waitFor } from "../../core/wait.ts"
+import { BATCH_QUIET_MS, type WaitEvent, type WaitKind, waitFor } from "../../core/wait.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
@@ -154,12 +154,26 @@ export async function waitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
   const batch = typeof flags.batch === "string" ? flags.batch : undefined
   // A wait that is not told to coalesce wakes for every answer, as it always did.
   const coalesce = long ? { quietMs: quiet, ...(batch !== undefined ? { batch } : {}) } : undefined
-  // A wait for a batch or an answer is for the person's answer: a check a builder finishes
-  // meanwhile is not what it waits for (it stays unheard for the next plain wait).
-  const kinds =
-    batch !== undefined || asked === "answer"
-      ? { kinds: ["answer", "comment", "gate", "need"] as WaitKind[] }
-      : {}
+  const kinds: WaitKind[] | undefined =
+    asked === "answer"
+      ? ["answer"]
+      : batch !== undefined
+        ? ["answer", "comment", "gate", "need"]
+        : undefined
+  const options = { seconds, kinds, coalesce }
+  function reply(event: WaitEvent) {
+    if (asked !== "answer" || event.event !== "pending") return ok(event)
+    return ok(
+      Object.fromEntries(
+        Object.entries(event).map(([key, value]) => [
+          key,
+          key === "then" && typeof value === "string"
+            ? value.replace(/^qualitylayer wait\b/, "qualitylayer wait --for answer")
+            : value,
+        ]),
+      ),
+    )
+  }
   if (flags.home === true) {
     const repo = await resolveRepo(ctx)
     if (!repo.ok) return repo
@@ -176,7 +190,7 @@ export async function waitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
           message: "Only the native session that asked this batch may wait for its answers.",
         })
     }
-    return ok(await waitFor(ctx, host, { seconds, ...kinds, ...(coalesce ? { coalesce } : {}) }))
+    return reply(await waitFor(ctx, host, options))
   }
   const task = await requireTask(ctx)
   if (!task.ok) return task
@@ -194,5 +208,5 @@ export async function waitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
   if (what === "approval") return forApproval(ctx, task.data, untilDecided)
   if (what === "review") return forReview(ctx, task.data)
   if (what === "helper") return forHelper(ctx, task.data, seconds)
-  return ok(await waitFor(ctx, task.data, { seconds, ...kinds, ...(coalesce ? { coalesce } : {}) }))
+  return reply(await waitFor(ctx, task.data, options))
 }

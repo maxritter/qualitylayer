@@ -388,7 +388,7 @@ export async function askBatch(
     const longFacts = overlongFacts(given.questions)
     if (longFacts.length > 0)
       return bad(
-        `each fact must be at most ${MAX_FACT_CHARS} characters; shorten these before asking: ${longFacts.join("; ")}`,
+        `each fact must be at most ${MAX_FACT_CHARS} characters. Use up to 3 facts per choice. Shorten these before asking: ${longFacts.join("; ")}`,
       )
     const questions: Question[] = []
     const links: QuestionBatch["links"] = []

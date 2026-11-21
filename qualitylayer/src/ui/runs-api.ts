@@ -48,6 +48,21 @@ export function runTaskId(run: RunWindow): string | undefined {
         : undefined)
   )
 }
+export function taskAgentRuns(runs: readonly RunWindow[], task: string): RunWindow[] {
+  return runs
+    .filter(
+      (run) =>
+        runTaskId(run) === task &&
+        (run.purpose.kind === "new-task" ||
+          (run.purpose.kind === "task" && run.purpose.task === task)),
+    )
+    .sort(
+      (a, b) =>
+        (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) ||
+        b.generation - a.generation ||
+        b.id.localeCompare(a.id),
+    )
+}
 /**
  * The task's live agent that waits on its own start-up question (trust this folder, …). The task
  * page, the Agent tab and the top bar's agent chip read the same one.

@@ -40,7 +40,9 @@ export function rowsOf(view: WalkthroughView, owner?: string): Row[] {
     rows.push({
       key: "plan",
       n: null,
-      title: "Decided on the way, outside any slice",
+      title: view.changeScope?.candidate
+        ? "Changed files"
+        : "Decided on the way, outside any slice",
       summary: "",
       tasks: [],
       decisions: view.planDecisions,

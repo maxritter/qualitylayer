@@ -770,6 +770,7 @@ export async function existingSliceCommit(
   root: string,
   hash: string,
   listed: string[],
+  onlyOwned = false,
 ): Promise<Result<{ commit: string; subject: string; files: string[] }>> {
   const scopeError = await commitScopeError(root, listed)
   if (scopeError) return err({ code: "bad_args", message: scopeError })
@@ -797,6 +798,11 @@ export async function existingSliceCommit(
   ])
   const files = [...new Set(touched.text.split("\0").filter((path) => path !== ""))]
   const own = files.filter((path) => listed.some((entry) => covers(entry, path)))
+  if (onlyOwned && own.length < files.length)
+    return err({
+      code: "bad_args",
+      message: `Commit ${commit.slice(0, 9)} touches files outside this slice’s cards. Record a commit confined to the slice.`,
+    })
   if (own.length === 0)
     return err({
       code: "bad_args",

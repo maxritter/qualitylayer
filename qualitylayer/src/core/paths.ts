@@ -30,7 +30,10 @@ export async function resolveRepo(ctx: Ctx): Promise<Result<RepoRef>> {
   const cwd = ctx.env.cwd()
   const [root, commonDir] = await Promise.all([ctx.git.topLevel(cwd), ctx.git.commonDir(cwd)])
   if (root === null || commonDir === null) {
-    return err({ code: "not_a_repo", message: `${cwd} is not inside a git repository` })
+    return err({
+      code: "not_a_repo",
+      message: `${cwd} is not inside a git repository. Run this command from the Git checkout you are working on.`,
+    })
   }
   return ok({ root, id: repoIdFrom(commonDir), commonDir })
 }

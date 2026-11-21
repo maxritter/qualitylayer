@@ -152,9 +152,9 @@ for (const mode of ["batch", "single", "other"] as const)
         tool_input: input,
         tool_response: answer,
       })
-      expect((await hook(repo, payload)).stdout).toContain(
-        "Run qualitylayer question poll for batch receipts",
-      )
+      const pending = (await hook(repo, payload)).stdout
+      expect(pending).toContain("Run qualitylayer question poll for batch receipts")
+      expect(pending).toContain("question answered --id <question-id> with the exact words")
       expect(await answeredQuestions(ctx, task)).toHaveLength(0)
       const records = [
         {

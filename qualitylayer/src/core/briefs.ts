@@ -815,7 +815,11 @@ export function judgeHelper(
       ...(assignment
         ? [
             ...(assignment.head !== undefined
-              ? [`Judged commit: \`${assignment.head}\`. Report the actual tree you execute.`]
+              ? [
+                  assignment.recovery !== undefined
+                    ? `Selected review commit: \`${assignment.head}\`. Review it in the selected checkout.`
+                    : `Working-tree HEAD at assignment: \`${assignment.head}\`. Follow the assigned working-tree scope, including its local inputs, and report what you execute.`,
+                ]
               : []),
             `Record this field verbatim in ${share === undefined ? "this iteration" : "your part"}:\n\n**Assignment:** ${assignment.id}\n\nWrite no revision or commit hash: QualityLayer records it.`,
           ]

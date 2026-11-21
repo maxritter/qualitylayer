@@ -20,8 +20,9 @@ and evidence, without supplying its own judgement.
 Otherwise, finish the assignment: write its iteration and every verdict under *Verification* in
 `agents/{verify_doc}`, run `qualitylayer validate agents/{verify_doc}`, and report progress `done` when the brief names an id. Use its exact invocation and read *Your
 documents* in full; this brief already holds what the build left for you and, on a later round, the
-lines that failed. Open a file under *Read on demand* when a verdict needs it. Keep each verdict on the
-pinned commit even if HEAD moves (report the move).
+lines that failed. Open a file under *Read on demand* when a verdict needs it. Keep each verdict tied
+to the target stated in your assignment. Report any change to that target before claiming the
+affected behavior was verified.
 
 **Tests alone never verify.** Run the program, capture its output, response or screenshot, and exercise
 one behaviour only the new code has. When the change scores, parses or transforms another system's

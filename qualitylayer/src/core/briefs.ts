@@ -712,6 +712,7 @@ function itemSections(assignment: Assignment, share: JudgeShare | undefined): st
       "After each item run " +
       `\`qualitylayer verdict ${assignment.id} "<item>" pass|fail|missing|user|note "<one line of evidence>" [--evidence <returned file>]\`, ` +
       "the item named as its record line names it (`check`, `dod T4`, `acceptance A1`). " +
+      "This command saves a receipt. Also write the corresponding verdict line in your assigned Verify iteration or share. " +
       "Use `check` for each recorded command, not `check all`. A `pass` of an " +
       "acceptance step needs `--evidence` with the exact `file` returned by the capture command; do not change its folder or name.",
   )

@@ -22,6 +22,8 @@ Agents choose the next move within the approved scope. They can continue fixing 
 
 During the agents’ checks, a question in the App stays open while independent work continues. For terminal answers, finish the independent work before opening the picker supplied by QualityLayer, which waits for the person. A terminal without a picker shows the numbered choices in the question reply. The task’s answer and approval settings still determine where decisions happen.
 
+The generated fix-round summary omits evidence citations and their enclosing parentheses. The original verdict keeps the paths for the next judge.
+
 A recheck names each outstanding service need by its card and recorded state. The judge pairs a matching open need with the previous blocker evidence. Reported restoration calls for a bounded availability check. Other steps retain their own verdicts and evidence. A genuine regression case fails before the fix, passes after it and stays in the suite for later rounds.
 
 ## Task attribution and branch context

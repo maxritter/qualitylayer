@@ -462,43 +462,6 @@
   }
 
   /**
-   * The task's agent runs outside the App, so it asks there. The header says so first: answer in Codex, with Codex's mark,
-   * where it waits, and the one action, Answer here instead. The choices are inert dashed rows, a quiet preview of what
-   * Codex shows in the terminal, never buttons. Answer here instead turns this into the App's own question card; the waiting
-   * session gets the answer through QualityLayer's message path and goes on.
-   */
-  function AskedOutside({ app, cur, asked, batch, step }) {
-    const i = asked.indexOf(cur);
-    const agentKey = app.s.externalAgent || (/codex/i.test(app.v.agent.name) ? "codex" : "claude");
-    const agentName = QL.agentNameOf(agentKey);
-    return (
-      <section className="qx qx-outside" id="your-turn" aria-label={"Answer in " + agentName + ": question " + cur.n + ", " + cur.text} ref={app.turnRef} data-screen-label="Asked in your own agent">
-        <div className="qx-top">
-          <span className="qx-agent"><QL.AgentMark agent={agentKey} size={16} /><b>Answer in {agentName}</b></span>
-          <span className="qx-bt"><Icon name={QL.ICON["run.terminal"]} size={13} />Waiting in your own agent</span>
-          <span className="sp" />
-          <Btn sm icon={QL.ICON["run.app"]} onClick={() => app.set({ askHere: true })}>Answer here instead</Btn>
-        </div>
-        <h2 className="qx-title">{cur.text}</h2>
-        {cur.why ? <p className="qx-why">{cur.why}</p> : null}
-        <div className="qx-meta">
-          <span className="qx-settles"><Icon name="list-checks" size={14} /><span>Settles</span><span>{cur.settles}</span></span>
-          {asked.length > 1 ? <span>Question {i + 1} of {asked.length} · {batch.title}</span> : <span>{batch.title}</span>}
-        </div>
-        <ol className="qx-inert" aria-label={"Choices " + agentName + " shows outside the App"}>
-          {cur.choices.map((c, k) => <li key={c}><span className="qx-key">{k + 1}</span><span className="qx-copy">{cur.rec === k ? <span className="qx-rec">Recommended</span> : null}<span className="qx-lb">{c}</span></span></li>)}
-        </ol>
-        <p className="qx-why qx-eye"><Icon name="eye" size={13} />{agentName} shows these choices outside the App. Answer there, or here instead.</p>
-      </section>
-    );
-  }
-  /** Answering here instead of in the agent's own window: one line on the App's own card, then the answer's receipt. */
-  function AnswerHereNote({ app, answered }) {
-    const name = QL.agentNameOf(app.s.externalAgent || (/codex/i.test(app.v.agent.name) ? "codex" : "claude"));
-    return <p className={"qx-here" + (answered ? " sent" : "")} role="status"><Icon name={answered ? "check" : QL.ICON["run.app"]} size={14} /><span>{answered ? "“" + answered + "” went to " + name + ". It picked the answer up and goes on. The next question is here too." : "Answering here instead of in " + name + ". It gets each answer at once and goes on."}</span>{answered ? null : <button type="button" className="lnk" onClick={() => app.set({ askHere: false })}>Answer in {name}</button>}</p>;
-  }
-
-  /**
    * A batch of questions from one step: 3 to 6 at once, so the person answers in one sitting. One question is in focus, the
    * strip shows the whole batch, answers reach the agent as they are given and stay changeable. `done` keeps the card on
    * screen after the last answer (the Plan's questions), as the Answered view with the list and Change.
@@ -522,10 +485,10 @@
     const [pickedKey, setPickedKey] = useState("");
     useEffect(() => {
       setPickedKey("");
-      if (!lastKey) return undefined;
+      if (!lastKey || s.taskWhere === "terminal") return undefined;
       const timer = setTimeout(() => setPickedKey(lastKey), 3000);
       return () => clearTimeout(timer);
-    }, [lastKey]);
+    }, [lastKey, s.taskWhere]);
     const takeRemaining = () => {
       if (takingAll.current || open.length < 2) return;
       takingAll.current = true;
@@ -551,8 +514,9 @@
         </section>
       );
     }
-    const here = s.taskWhere === "terminal" && s.askHere;
-    if (s.taskWhere === "terminal" && !s.askHere) return <AskedOutside app={app} cur={cur} asked={asked} batch={batch} step={step} />;
+    const outside = s.taskWhere === "terminal";
+    const outsideAgent = QL.agentNameOf(s.externalAgent || (/codex/i.test(agent) ? "codex" : "claude"));
+    const shownOutside = outside && s.nativeQuestion === cur.id;
     // The answer just given, newest last in the answers (a Change deletes and re-adds it).
     const last = asked.filter((q) => s.answers[q.id]).pop();
     // Tell me more and multi-select: the same question, asked again in plainer words, or with toggles.
@@ -561,19 +525,19 @@
     const multi = s.multiOn === cur.id && cur.multi;
     const shown = plain ? Object.assign({}, cur, cur.plain) : multi ? Object.assign({}, cur, { text: multi.text, why: cur.why, choices: multi.choices, facts: multi.facts }) : cur;
     const grade = cur.grade || 1;
-    const pick = (k) => { app.answerQuestion(cur.id, shown.choices[k]); if (here) app.set({ answeredHere: shown.choices[k] }); };
+    const pick = (k) => app.answerQuestion(cur.id, shown.choices[k]);
     const on = multi ? s.multiPick[cur.id] || [] : null;
     const looking = more && more.phase !== "choose" && more.phase !== "updated";
     const stopped = app.v.agent.state === "stopped";
-    const who = looking ? agent + " is looking into it" : stopped ? agent + " stopped waiting" : agent + " waits";
+    const who = looking ? agent + " is looking into it" : stopped ? agent + " stopped waiting" : outside ? null : agent + " waits";
     const choosing = !!(more && more.phase === "choose");
     // Where the answer lands: what the question settles, opened in the Plan.
     const goSettles = () => app.openFile(t.files.docs.discuss[0]);
     return (
       <section className={"qx" + (s.flash ? " flash" : "")} id="your-turn" aria-label={"Question " + cur.n + ": " + shown.text} ref={app.turnRef}>
-        {last ? <QxReceipt n={asked.indexOf(last) + 1} text={s.answers[last.id]} onChange={() => app.changeAnswer(last.id)} pickedUp={pickedKey === lastKey ? "picked up by " + agent : null} /> : null}
+        {last ? <QxReceipt n={asked.indexOf(last) + 1} text={s.answers[last.id]} onChange={() => app.changeAnswer(last.id)} pickedUp={(outside ? s.nativeReceivedQuestion === last.id : pickedKey === lastKey) ? "picked up by " + agent : null} /> : null}
         <QxTop app={app} asked={asked} cur={cur} title={batch.title} />
-        {here ? <AnswerHereNote app={app} answered={s.answeredHere || null} /> : null}
+        {shownOutside ? <p className="qx-why">Shown in {outsideAgent}</p> : null}
         <QxHead id={"qt-" + cur.id} title={plain && more && more.fresh ? <span className="changed">{shown.text}</span> : shown.text} why={shown.why} settles={cur.settles} onSettles={goSettles} who={who} off={stopped} />
         {plain ? (
           <details className="earlier">
@@ -1179,17 +1143,16 @@
     // Only the point nobody but you can confirm blocks the final Approve; "Fine" is not blocking, so Approve accepts it while it is open.
     const blocked = !s.confirmed;
     const agent = app.v.agent.name;
-    // The build ran outside the App and its agent asks for the approval in the terminal: the code stays one click
-    // away above the Answer in Codex card, which never takes its place.
+    // The code remains available when the final approval is routed to the terminal.
     if (s.taskWhere === "terminal") {
-      const ask = { id: "review-approve", n: 1, text: "Approve the change?", why: "Every Done means point the agents can check passed; one only you can confirm is listed in the walkthrough.", choices: ["Approve", "Request changes"], rec: 0, settles: "the change" };
+      const outsideAgent = QL.agentNameOf(s.externalAgent || "codex");
       return (
         <>
           <div className="rw-entry rw-entry-alone">
             <div><b>The code · 18 of {QL.data.pr.files} files read</b><span>Every changed file, split or unified, with a comment on any line</span></div>
             <Btn sm pri icon="file-code" onClick={() => (QL.openWorkspace ? QL.openWorkspace(app) : app.toast("Opens the Review workspace."))}>Review the code</Btn>
           </div>
-          <AskedOutside app={app} cur={ask} asked={[ask]} batch={{ title: "Review the finished change" }} step="review" />
+          <p className="qx-why" role="status">Final approval in {outsideAgent}</p>
         </>
       );
     }
@@ -1885,5 +1848,5 @@
   }
 
   // The interaction cards and shared pieces the page frame and the other pages draw with.
-  Object.assign(QL, { FoldedDoc, QxTop, AskedOutside, LoadingState, LoadingRail, HomeLoading, NavLoading, Stage, Reader, ArtifactViewer, ArtifactExportModel, ArtifactManage, BuildView, StepDoc, docPage, PlanDoc, YourTurn, Choices, OwnWords, ImplementStart, BatchCard, YourCall, StoppedCard, ReviewMove, FoldCard, ArtifactInCard, ArtifactFrame, Diagram, Blk, MoreIn });
+  Object.assign(QL, { FoldedDoc, QxTop, LoadingState, LoadingRail, HomeLoading, NavLoading, Stage, Reader, ArtifactViewer, ArtifactExportModel, ArtifactManage, BuildView, StepDoc, docPage, PlanDoc, YourTurn, Choices, OwnWords, ImplementStart, BatchCard, YourCall, StoppedCard, ReviewMove, FoldCard, ArtifactInCard, ArtifactFrame, Diagram, Blk, MoreIn });
 })();

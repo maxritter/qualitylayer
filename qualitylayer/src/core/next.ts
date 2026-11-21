@@ -235,9 +235,18 @@ export async function taskHandback(
       ctx,
       task.data,
       "task handback",
-      refused(`A task is handed back from its Plan; ${task.data.slug} is in ${task.data.stage}.`, [
-        { what: "the task stopped instead", move: "qualitylayer task abandon" },
-      ]),
+      refused(
+        `Task handback is available during Plan. ${task.data.slug} is in ${task.data.stage}.`,
+        task.data.stage === "verify"
+          ? [
+              { what: "the current Verify move", move: "qualitylayer next" },
+              {
+                what: "a prerequisite only the person can provide",
+                move: 'qualitylayer need "<what. why>" --for T<n>',
+              },
+            ]
+          : [{ what: "the task stopped instead", move: "qualitylayer task abandon" }],
+      ),
     )
   return finish(
     ctx,

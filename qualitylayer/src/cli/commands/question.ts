@@ -179,11 +179,11 @@ type ChatAsk = "waits" | "build" | "build-again"
  * these picker calls through (`buildRefuses` in hook.ts).
  */
 export const BUILD_ASKED_IN_CHAT =
-  "Go on with everything that does not depend on the answer. Then say your_turn and show chat_questions.calls once, using the named picker tool or the numbered choices supplied. If the picker cannot open or closes without an answer, show chat_questions.fallback.calls as numbered choices once. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
+  "Go on with everything that does not depend on the answer. Then say your_turn and pass chat_questions.calls unchanged to the named picker once, or show the numbered choices when no picker tool is named. If you only see a summary, read the full question ask reply with --json. If the picker cannot open or closes without an answer, show chat_questions.fallback.calls as numbered choices once. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
 
 /** The same question asked a second time in the build: it is open already, and asked once. */
 export const BUILD_ALREADY_IN_CHAT =
-  "This question is already open. Go on with everything that does not depend on the answer. If you have yet to show it, then say your_turn and show chat_questions.calls as given. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
+  "This question is already open. Go on with everything that does not depend on the answer. If you have yet to show it, say your_turn and pass chat_questions.calls unchanged from the full reply to the named picker, or show the numbered choices when no picker tool is named. Use --json to read the full reply. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
 
 const DEFAULT_CHAT_THEN: Record<ChatAsk, string> = {
   waits:

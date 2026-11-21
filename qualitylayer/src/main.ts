@@ -102,7 +102,8 @@ workflow (ask your agent to plan or implement using QualityLayer or QL); \`next\
   qualitylayer build done [--defer "<why>"]   (the build is ready: Verify starts; refused with each missing card or Done means step and its move; --defer takes what is open to Verify)
   qualitylayer verify judge | recheck | fix | keep-red   (hand out the fresh reviewer and read its verdicts · a fresh reviewer rechecks what failed and the lines the fix changed · start a fix round · keep red checks red on the person's answer)
   qualitylayer ship   (after the final approval: the landing steps; asked again while the pull request is open, its triage)
-  qualitylayer task handback "<reason>" --prompt "<prompt>" · task abandon
+  qualitylayer task handback "<reason>" --prompt "<prompt>"   (for an active task, available during Plan)
+  qualitylayer task abandon
   qualitylayer show <topic>   (a page drawn for the person about a topic, at any stage)
   qualitylayer chat plan save --file <markdown> | --text <markdown>
   qualitylayer chat build [--file <outline-markdown> | --stop <slice>]

@@ -8,6 +8,8 @@ The terminal ask and re-ask replies name this move. A closed `question answered`
 
 ## Bounded native session proof
 
+Antigravity can write its picker display and completion times twice before the answer in a saved session. An identical second pair describes the same interaction. Conflicting times, overlapping tool calls, skipped choices and automatic answers cannot establish a person's choice. After Antigravity records a server restart, which stops its running tasks, a new isolated picker can establish its own answer. The restart does not complete an interrupted picker.
+
 Plain and compressed Codex histories use the same proof window: at most 1 MiB of identity/header bytes and 7 MiB of recent bytes once the history exceeds 8 MiB. Incomplete boundary rows are discarded; omitted middle records cannot establish a missing picker call or approval. Session, checkout, call, answer and completion checks retain their existing authority. Compressed histories are read as a stream while retaining only those windows, without materializing the whole decompressed history.
 
 ## Idle planning answer delivery

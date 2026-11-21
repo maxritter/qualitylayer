@@ -273,15 +273,25 @@ export function assertNativePermissionChange(
   )
 }
 
-/** Explicit controls win. Historical launch model/effort never fill a missing native selection. */
+/** A plain Resume can keep its last model choice when the native record has no newer verified selection. */
 export function effectiveNativeSettings(
   ctx: Ctx,
   run: RunRecord,
   explicit?: ControlRequest["settings"],
+  action?: "resume",
 ): Partial<RunSettings> {
-  const { model: _model, effort: _effort, ...remaining } = run.settings ?? {}
+  const { model, effort: _effort, ...remaining } = run.settings ?? {}
   const observed = observedNativeSettings(ctx, run)
   const selected = { ...remaining, ...observed, ...explicit }
+  if (
+    action === "resume" &&
+    explicit === undefined &&
+    selected.model === undefined &&
+    model !== undefined &&
+    !unverifiedNativeFields(run).includes("model")
+  ) {
+    selected.model = model
+  }
   if (explicit !== undefined) {
     // An agent with no separate effort control (Cursor keeps it in the model id) has none to confirm.
     const asked = (["model", "effort"] as const).filter(

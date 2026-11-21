@@ -2513,10 +2513,12 @@
       "files": [
         "qualitylayer/src/ui/run/AgentSwitch.tsx",
         "qualitylayer/src/ui/sidebar/RightSidebar.tsx",
-        "qualitylayer/src/ui/agent-window/Dock.tsx"
+        "qualitylayer/src/ui/agent-window/Dock.tsx",
+        "qualitylayer/src/core/run/control.ts",
+        "qualitylayer/src/core/run/effective-native-settings.ts"
       ],
       "demo": null,
-      "note": "Approved same-task continuation. Read previous conversation opens the latest stopped transcript. Its read-only Agent controls retain the earlier conversations for this task. The selected transcript and its agent are shown without a composer or Switch control. When the current planner stops, its row in the task list shows the existing stopped state and a still Plan ring, even while the last task signal is quiet. A continued session can show work again. The model starts no native session."
+      "note": "Approved same-task continuation. Read previous conversation opens the latest stopped transcript. Its read-only Agent controls retain the earlier conversations for this task. The selected transcript and its agent are shown without a composer or Switch control. When the current planner stops, its row in the task list shows the existing stopped state and a still Plan ring, even while the last task signal is quiet. A continued session can show work again. Plain Resume carries the saved model into the same native session when no verified newer selection is available. The model starts no native session."
     },
     "machine-installing.html": {
       "status": "built",

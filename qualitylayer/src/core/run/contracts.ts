@@ -8,6 +8,7 @@ import type { StartupPrompt } from "./startup-prompt.ts"
 
 export const PROTOCOL_VERSION = 1
 export const PROTECTED_SETTINGS = [
+  "commitTiming",
   "typeFrom",
   "perm",
   "permMode",

@@ -20,6 +20,8 @@ export const DEFAULT_NOTE = "Default"
 export type PickOption = {
   id: string
   name: string
+  /** Exact native model ID when its display name differs. */
+  technicalId?: string
   /** A short note beside the name: "Default", "costs more". */
   note?: string
   /** Set apart from the options above it by a line. */
@@ -52,6 +54,7 @@ function PickItem({ option, lead }: { option: PickOption; lead: boolean }) {
     <Select.Item
       value={option.id}
       className="q-start-mi"
+      title={option.technicalId}
       aria-labelledby={text}
       aria-describedby={option.hint !== undefined ? hint : undefined}
       data-hinted={option.hint !== undefined || undefined}
@@ -172,7 +175,10 @@ function PlainPick({
         data-changed={changed || undefined}
         aria-label={changed ? `${label} (changed from default)` : label}
         // A pill, and a row whose long model name is cut, name their whole value on hover.
-        title={look === "pill" || look === "row" ? `${label}: ${picked?.name ?? value}` : undefined}
+        title={
+          picked?.technicalId ??
+          (look === "pill" || look === "row" ? `${label}: ${picked?.name ?? value}` : undefined)
+        }
       >
         {picked?.icon !== undefined ? (
           <span className="q-pick-icon" aria-hidden="true">

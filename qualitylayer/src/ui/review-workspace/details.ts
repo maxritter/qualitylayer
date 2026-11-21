@@ -2,7 +2,8 @@
 // wrote it, or in words when no card did) and its tags (new, risky with its slice). Read from the
 // walkthrough the App already has; nothing here is written by an agent.
 
-import type { WalkFile, Walkthrough } from "../../core/review/walkthrough.ts"
+import type { WalkFile } from "../../core/review/walkthrough.ts"
+import type { ReviewFileGroups } from "../timeline/Walkthrough.tsx"
 
 /** Where a file stands in the change. */
 export type FileRole = "slice" | "decided" | "fix" | "document"
@@ -14,7 +15,7 @@ export type FileFacts = {
 }
 
 /** How each file of the change stands: its role, its slice and its slice. */
-export function factsOf(view: Walkthrough): Map<string, FileFacts> {
+export function factsOf(view: ReviewFileGroups): Map<string, FileFacts> {
   const facts = new Map<string, FileFacts>()
   for (const s of view.slices)
     for (const f of s.files) facts.set(f.path, { role: "slice", slice: s.n })
@@ -39,7 +40,7 @@ export function kindWord(file: WalkFile): string {
 }
 
 /** The task ids and titles of every card of the build. */
-export function titlesOf(view: Walkthrough): Map<string, string> {
+export function titlesOf(view: ReviewFileGroups): Map<string, string> {
   return new Map(view.slices.flatMap((s) => s.tasks.map((t): [string, string] => [t.id, t.title])))
 }
 

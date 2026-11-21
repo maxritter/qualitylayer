@@ -1,3 +1,4 @@
+import type { AppPrecommitAction, PrecommitView } from "../core/task/precommit.ts"
 import { ApiError, call } from "./http.ts"
 
 export { ApiError } from "./http.ts"
@@ -29,7 +30,7 @@ import type {
   ArtifactRevision,
   ArtifactSource,
 } from "../core/artifact/workspace.ts"
-import type { Config, Editor } from "../core/config-values.ts"
+import type { CommitTiming, Config, Editor } from "../core/config-values.ts"
 import type { TaskCost } from "../core/cost/index.ts"
 import type { Usage, UsagePeriod } from "../core/cost/usage.ts"
 import type { ExportFile, ExportInput } from "../core/export/types.ts"
@@ -308,6 +309,27 @@ export type AutomationsApi = {
 }
 
 export const api = {
+  changeCommitTiming: (id: string, timing: CommitTiming) =>
+    call<Record<string, never>>(`/api/tasks/${enc(id)}/precommit`, {
+      method: "POST",
+      body: JSON.stringify({ action: "timing", timing }),
+    }),
+  precommit: (id: string, signal?: AbortSignal) =>
+    call<{ review: PrecommitView | null }>(`/api/tasks/${enc(id)}/precommit`, { signal }),
+  precommitDiff: (id: string, review: string, path: string, signal?: AbortSignal) =>
+    call<{ patch: string }>(
+      `/api/tasks/${enc(id)}/precommit?review=${enc(review)}&path=${enc(path)}`,
+      { signal },
+    ),
+  precommitSource: (id: string, request: SourceRequest) =>
+    call<ReviewFileSource>(
+      `/api/tasks/${enc(id)}/precommit?review=${enc(request.stamp)}&path=${enc(request.path)}&side=${request.side}`,
+    ),
+  decidePrecommit: (task: string, id: string, action: AppPrecommitAction, text?: string) =>
+    call<{ commit?: string; next?: string }>(`/api/tasks/${enc(task)}/precommit`, {
+      method: "POST",
+      body: JSON.stringify({ id, action, text }),
+    }),
   reviewCandidates: (id: string) =>
     call<ReviewCandidateState>(`/api/tasks/${enc(id)}/review-candidate`),
   selectReviewCandidate: (id: string, input: ReviewCandidateInput) =>
@@ -618,12 +640,13 @@ export const api = {
   /** Answer the question card: a choice (its index), own words, Tell me more, or Not sure. Sent at once. */
   answerQuestion: (
     id: string,
-    body:
+    body: { revision?: string } & (
       | { id: string; choice: number }
       | { id: string; choices: number[] }
       | { id: string; text: string }
       | { id: string; more: { request: string } }
-      | { id: string; unsure: true },
+      | { id: string; unsure: true }
+    ),
     files: readonly File[] = [],
   ) =>
     call<{ answered?: unknown; more?: unknown }>(`/api/tasks/${enc(id)}/question/answer`, {
@@ -884,7 +907,16 @@ export type InstructionsText = { text: string; updated: number }
 /** What a save answers: it went through, or the text changed elsewhere meanwhile and this is the current one. */
 export type InstructionsOutcome = { saved: InstructionsText } | { conflict: InstructionsText }
 
-type CandidateMethods = Pick<typeof api, "reviewCandidates" | "selectReviewCandidate">
+type CandidateMethods = Pick<
+  typeof api,
+  | "reviewCandidates"
+  | "selectReviewCandidate"
+  | "precommit"
+  | "precommitDiff"
+  | "precommitSource"
+  | "decidePrecommit"
+  | "changeCommitTiming"
+>
 
 export type Api = Omit<
   typeof api,

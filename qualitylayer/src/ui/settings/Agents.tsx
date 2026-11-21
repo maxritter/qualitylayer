@@ -5,7 +5,7 @@
 
 import { SquareTerminalIcon } from "lucide-react"
 import { useState } from "react"
-import { NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
+import { AGENT_DISPLAY_ORDER, type NativeAgent } from "../../core/agents/ids.ts"
 import { type AgentSettings, validAbsolutePath } from "../../core/config-values.ts"
 import type { Api, Config } from "../api.ts"
 import { routeHash } from "../hooks.ts"
@@ -79,7 +79,7 @@ function AgentsGroup({
     await check()
     await integration.reload()
   }
-  const rows = NATIVE_AGENTS.map((agent) => ({
+  const rows = AGENT_DISPLAY_ORDER.map((agent) => ({
     agent,
     health: agents.find((row) => row.agent === agent),
     integration: integration.rows.find((row) => row.agent === agent),

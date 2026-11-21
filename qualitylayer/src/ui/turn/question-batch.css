@@ -455,3 +455,10 @@
     height: 32px;
   }
 }
+
+.qbc-native-presentation {
+  order: 2;
+  margin-inline-start: auto;
+  color: var(--ql-muted);
+  font-size: 13px;
+}

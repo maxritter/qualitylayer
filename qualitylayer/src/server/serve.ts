@@ -1,3 +1,4 @@
+import { precommitRoute } from "./precommit.ts"
 // `qualitylayer serve`: the human's window onto the files. One instance per
 // machine on 127.0.0.1, guarded by Host, Origin and a per-launch token. It
 // exits by itself after an idle period with no open gates. Server → agent is
@@ -796,6 +797,8 @@ export function createHandler(
         return json(ok({ tasks: await lists(project ?? "", () => api.listAllTasks(ctx, project)) }))
       }
       const sub = parts[3]
+      if (sub === "precommit" && parts.length === 4)
+        return precommitRoute(ctx, id, request, url, keyPaired || hasKeyHeader(request, checked))
       if (sub === "records")
         return runtimeRecordRoute(ctx, { scope: "task", id }, parts.slice(4), method)
       if (sub === "chat" && parts[4] === "promote" && parts.length === 5) {

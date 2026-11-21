@@ -1,3 +1,4 @@
+import { commitReviewUpdate } from "./task/precommit.ts"
 // One bounded file watcher for every agent. Cursors are per session and committed under a lock.
 
 import { randomUUID } from "node:crypto"
@@ -644,7 +645,12 @@ export async function takeEvent(
         )
           arrivals.push({ kind, at: c.created })
       }
+      const commitEdit =
+        !kinds || kinds.includes("gate") ? await commitReviewUpdate(ctx, task) : null
+      const commitEditId = commitEdit ? `commit-edits:${commitEdit.id}` : null
+      const commitEditDue = commitEdit && commitEditId && unread("gate", commitEditId)
       if (task.slug) {
+        if (commitEditDue) arrivals.push({ kind: "gate", at: commitEdit.at })
         if (gateDue) arrivals.push({ kind: "gate", at: gateDue.decided ?? gateDue.opened })
       }
       for (const n of needsNow)
@@ -790,6 +796,13 @@ export async function takeEvent(
         }
       }
       if (enabled("gate") && task.slug) {
+        if (commitEditDue)
+          return deliver("gate", [commitEditId], {
+            event: "gate",
+            target: "commit",
+            decision: "changes",
+            outcome: { requestChanges: commitEdit.feedback, next: "qualitylayer next" },
+          })
         if (reviewWork && reviewId && unread("gate", reviewId))
           return deliver("gate", [reviewId], {
             event: "gate",

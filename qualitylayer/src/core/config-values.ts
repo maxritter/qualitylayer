@@ -273,7 +273,13 @@ export type BuildDefaults = {
   buildingWorks: BuildingWorks
 }
 
+export const COMMIT_TIMINGS = ["slice", "before-verify", "review"] as const
+export type CommitTiming = (typeof COMMIT_TIMINGS)[number]
+export const commitTimingOf = (value: unknown): CommitTiming =>
+  value === "before-verify" || value === "review" ? value : "slice"
+
 export type Config = {
+  commitTiming: CommitTiming
   /** Where a task started in an agent asks its questions. */
   answers: Answers
   /** Where such a task asks for its approvals; left unset it follows `answers`. */
@@ -450,6 +456,7 @@ const unsetAgent = (): AgentSettings => ({
 })
 
 export const DEFAULT_CONFIG: Config = {
+  commitTiming: "slice",
   answers: "app",
   approvals: undefined,
   answerPlaceChosen: false,

@@ -181,7 +181,7 @@ async function followHead(
     ...landed.filter((m) => m.entry !== null),
   ]
   if (lines.length > 0) {
-    const put = await git(root, ["update-index", "--replace", "--index-info"], {
+    const put = await git(root, ["update-index", "--replace", "-z", "--index-info"], {
       env: { GIT_INDEX_FILE: o.index },
       input: lines.map((m) => infoLine(m.path, m.entry)).join(""),
     })
@@ -329,11 +329,19 @@ async function commitTree(
   message: string,
   sign: string[],
   author: Record<string, string> = {},
+  expectedTree?: string,
 ): Promise<Result<string>> {
   const written = await git(root, ["write-tree"], { env: { GIT_INDEX_FILE: index } })
   if (written.code !== 0)
     return err({ code: "bad_args", message: `git write-tree failed: ${written.stderr.trim()}` })
-  const made = await git(root, ["commit-tree", written.text.trim(), "-p", parent, ...sign], {
+  const tree = written.text.trim()
+  if (expectedTree !== undefined && tree !== expectedTree)
+    return err({
+      code: "bad_args",
+      message:
+        "The commit hook changed the reviewed tree. Refresh the diff and run the checks again.",
+    })
+  const made = await git(root, ["commit-tree", tree, "-p", parent, ...sign], {
     input: message,
     env: author,
   })
@@ -361,6 +369,7 @@ export async function placeOnHead(
     ref: string | null
     index: string
     tree?: string
+    reviewed?: { tree: string; ref: string | null }
     message: string
     /** The author as the commit's hooks were told it (`GIT_AUTHOR_*`), so the commit carries the same. */
     author?: Record<string, string>
@@ -389,10 +398,17 @@ export async function placeOnHead(
     current = head
     const admitted = await o.ready?.(head)
     if (admitted && !admitted.ok) return admitted
-    const made = await commitTree(root, o.index, head, message, sign, o.author)
+    const made = await commitTree(root, o.index, head, message, sign, o.author, o.reviewed?.tree)
     if (!made.ok) return made
     const sha = made.data
-    const swapped = await git(root, ["update-ref", "-m", `commit: ${subject}`, "HEAD", sha, head])
+    const swapped = await git(root, [
+      "update-ref",
+      "-m",
+      `commit: ${subject}`,
+      o.reviewed?.ref ?? "HEAD",
+      sha,
+      head,
+    ])
     if (swapped.code === 0) return ok({ sha, parent: head })
     why = swapped.stderr.trim()
     // Another commit landing is no reason to wait; a ref that another writer holds for a moment is.

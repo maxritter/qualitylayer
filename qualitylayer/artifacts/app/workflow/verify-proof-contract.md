@@ -2,6 +2,8 @@
 
 The lead Verify brief points agents to the existing evidence command while checks run. Redacted local output belongs to the checked candidate, its run and the Done means step. The reviewer records the verdict separately.
 
+Each evidence run has one mode. The judge can link several steps from the same run and uses a different run ID for scripted checks and real sessions. The capture command returns the path to cite. Text added with `evidence add` goes under `records/`; `verdict run` captures one project program's output under `evidence/` using the invoking process environment.
+
 Helper briefs use the installed agent command when its launcher points at the App CLI that generated the brief. A standalone or development run uses its own invocation.
 
 Verify's generated stages and acceptance description read the existing recorded proof. A normal project-check receipt reused after the producer verifies the same current inputs counts as a successful check; reuse is not an unrun, stale or failed command. The fix summary retains the required-command, candidate, time and recorded-success checks. An unanswered finding or incomplete, failed, stale or mismatched proof never becomes a checked fix. The plural is “fixes”. This changes no check, verdict or approval authority.

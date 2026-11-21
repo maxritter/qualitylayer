@@ -1100,13 +1100,16 @@
     "question-screen.html": {
       "status": "planned",
       "files": [
+        "qualitylayer/src/ui/turn/YourTurn.tsx",
+        "qualitylayer/src/ui/turn/FocusTurn.tsx",
+        "qualitylayer/src/core/task/question-presentation.ts",
         "qualitylayer/src/ui/turn/QuestionScreen.tsx",
         "qualitylayer/src/ui/turn/QuestionBatch.tsx",
         "qualitylayer/src/ui/FocusQuestion.tsx",
         "qualitylayer/src/ui/artifact/PreviewControls.tsx"
       ],
       "demo": "/app-demo/?moment=plan-q#/task/demo",
-      "note": "Built 10 November 2026, approved by Max (variant C of the same draft): a question that names its artifact shows that screen above the choices, from the section it names, in one row with its name, the age and Open in card. The old icon-only Artifact full size button on a question's preview is gone: full size is one step further, in the card. The demo's second Discuss question names the task's Plan and limits page.",
+      "note": "Built 10 November 2026, approved by Max (variant C of the same draft): a question that names its artifact shows that screen above the choices, from the section it names, in one row with its name, the age and Open in card. The old icon-only Artifact full size button on a question's preview is gone: full size is one step further, in the card. The demo's second Discuss question names the task's Plan and limits page. Max approved direct App answers and observation-based native picker status across Plan, Implement and Verify on 21 November. See question-screen-contract.md.",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "question-choices.html": {
@@ -1304,7 +1307,8 @@
       "status": "planned",
       "files": [
         "qualitylayer/src/ui/settings/Git.tsx",
-        "qualitylayer/src/ui/settings/source.css"
+        "qualitylayer/src/ui/settings/source.css",
+        "qualitylayer/src/ui/settings/CommitTimingPick.tsx"
       ],
       "demo": "/app-demo/#/settings/source",
       "note": "12.7 Settings pass built: row icons, an icon on each editor choice and on each tool's state, a two-line watch hint with the wake limits folded, default-size buttons.",
@@ -2062,7 +2066,9 @@
         "qualitylayer/src/ui/review-workspace/useDiffFiles.ts",
         "qualitylayer/src/ui/review-workspace/line-drafts.ts",
         "qualitylayer/src/ui/review-workspace/load.ts",
-        "qualitylayer/src/ui/review-workspace/ChangeDetails.tsx"
+        "qualitylayer/src/ui/review-workspace/ChangeDetails.tsx",
+        "qualitylayer/src/ui/review-workspace/Precommit.tsx",
+        "qualitylayer/src/ui/review-workspace/precommit.css"
       ],
       "demo": "/app-demo/?moment=verify-outside&review-limits=write#/task/demo",
       "note": "7 November 2026: Fix open items and the Not verified part are retired (Review opens finished): code changed after the passing review holds Approve until the agents recheck it, and a point only the person can check is an optional question. Stop checking and its accept panel are removed (Max, 7 November 2026). Max approved all designs25Oct2026, including final removal of redundant bulk scope/count row. Actual source has reversible all/filtered/slice Viewed, separate Finish, Previous/Next and scoped arrows, real CodeView Diff/Full file and generic safe Markdown; exact task-owned stamp API is connected, deleted old-side anchors preserved, source media omitted. Bounded selected-first loads expose/retry failures; real-parser140-file/cache tests and actual CodeView width/theme captures recorded. The review-files-contract.md specifies that a matching final transport question stays represented by the main Review action after approval, changes or settlement; stale snapshots do not recreate a duplicate actionable form. Actual YourTurn consumers passed 79 focused checks including different-gate and genuine item questions. Owner App approval survives matching native transport questions while the terminal agent stays outside; current uncertainty is accepted only on explicit final approval, mandatory human confirmations still require actual person action. Actual App four-case person-confirmation+final-approval proof is in review-ux/source-implementation-handoff.md. Read-only artifact status derives current previews/history; no third fold approval or fake agent receipt. Demo patch snippets deliberately have no complete exact source; the dedicated source fixture qualifies full-file rendering. Existing six-band YourMove-before-Gist composition is retained per DESIGN.md and independent Opus judgment; focused model context does not reorder it. Final native/live/candidate release qualification remains coordinator-owned. 26 October12.4 restoration: ready owner actions remain visible while an optional Review item or overview is selected, in App and terminal modes; required human confirmations, disclosure/gate identity and save guards remain. Screenshot enlargement hints no longer obscure screenshot pixels or captions. Companion: artifact-viewer-contract.md. Proof: private qualification record and private qualification record 12.4: all own patch parts, aggregate Viewed, exact part source/comment identity and local-only history; Details stays closed. Source API real-Git tests and actual CodeView width/theme/hit-test evidence under12.4-workflow-change-ownership-20261026. Keeps same-revision loads across selection and refresh; cancels obsolete/unmounted loads, four at a time. After a branch rewrite, the existing earlier-version note identifies readable registered historical patches. Historical versions open in the same Diff and Full file workspace; current line feedback and checkout actions follow current registered history. Viewed remains manual progress. An explicit file selection stays revealed as preceding versions finish loading; manual scrolling stops reanchoring. UI review, 31 October 2026: Files and View labels are gone, Open is an icon button, the bulk pair is All viewed and Clear; the gutter \"+\" is the viewer's own hover control (no name, no keyboard path, and the library refuses a custom gutter beside its click handler), so Line and Comment stay. 6 Nov 2026: no amber band/fill (approved by Max): the changed-file note and the Review-changed notice take a 2px amber left bar on the normal surface, and the Your turn step line (.q-step.you) wears no fill. Viewer header, 9 November 2026 (Max): no back link; Exit, the filled button with the x mark, follows the viewed count (Finish code review is the exit while a decision waits; beside Send your review a teammate's Exit is the plain button) and Esc reads \"exit\".",

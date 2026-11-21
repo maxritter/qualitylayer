@@ -44,6 +44,7 @@ import {
   animationsOf,
   BUILDING_WORKS,
   type BuildDefaults,
+  COMMIT_TIMINGS,
   type Config,
   DEFAULT_CONFIG,
   DEFAULTS_AGENTS,
@@ -139,6 +140,7 @@ const inList = (list: { id: string }[], model: unknown): boolean =>
   typeof model === "string" && list.some((m) => m.id === model)
 
 const RUN_CHECKS = {
+  commitTiming: COMMIT_TIMINGS,
   answers: ANSWERS,
   runWhere: RUN_WHERE,
   perm: RUN_PERMISSIONS,

@@ -199,7 +199,7 @@
                     ? <div className="st-r" data-testid="instructions-row"><div className="st-l"><b><RowIcon m="instructions" />Your instructions</b><span>None yet. Your coding standards, tools and rules, like an AGENTS.md. The agent follows them in every task.</span></div><Btn onClick={() => set({ insOpen: true })}>Edit</Btn></div>
                     : <div className="st-r" id="your-instructions" data-testid="instructions-row" data-screen-label="Your instructions row"><div className="st-l"><b><RowIcon m="instructions" />Your instructions</b><span>{instructionText.trimEnd().split("\n").length} lines · <span className="ins-req">{instructionRequired.length} step check{instructionRequired.length === 1 ? "" : "s"}</span> · saved locally</span></div><Btn onClick={() => set({ insOpen: true })}>Edit</Btn></div>}
                   <div className="st-r">
-                    <div className="st-l"><b><RowIcon m="answer.where" />Answer questions in</b><span>For tasks you start in Claude Code, Codex or another agent. Tasks started in the App use the App.</span></div>
+                    <div className="st-l"><b><RowIcon m="answer.where" />Answer questions in</b><span>For tasks you start in your own agent. You can always answer in the App.</span></div>
                     <Seg label="Answer questions in" value={answerIn} options={PLACES} onChange={(v) => set({ answerIn: v })} />
                   </div>
                   <div className="st-r">

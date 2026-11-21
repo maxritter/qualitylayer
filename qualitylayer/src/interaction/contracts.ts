@@ -73,7 +73,7 @@ export type AskedBatch = QuestionBatch & {
   /** A republish of answered members: their answers are kept as they were. */
   kept?: { id: string; answer: string }[]
 }
-export type BatchAnswer = { id: string; batch: string } & (
+export type BatchAnswer = { id: string; batch: string; revision?: string } & (
   | { choice: number }
   /** A `multi` question: indices of the choices picked (at least one, each once). */
   | { choices: number[] }
@@ -139,6 +139,8 @@ export type AgentTurnStep = {
 export type TurnSnapshot = {
   batch: QuestionBatch | null
   questions: Question[]
+  /** Native transcript presentation of the exact current question, by its id. */
+  nativeQuestions?: Record<string, string>
   answered: AnsweredQuestion[]
   links: QuestionPointLink[]
   items: Item[]

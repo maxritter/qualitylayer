@@ -24,7 +24,7 @@ import {
 import { type ReactNode, useEffect, useId, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
+import { AGENT_DISPLAY_ORDER, AGENT_NAMES, type NativeAgent } from "../../core/agents/ids.ts"
 import { modelMaker } from "../../core/agents/model-maker.ts"
 import {
   builderModels,
@@ -730,7 +730,7 @@ export function ModelsTab({
       "All recommended"
     ) : (
       <>
-        {count} changed ·{" "}
+        <span className="whitespace-nowrap">{count} changed</span>
         <button type="button" className="q-link" disabled={disabled} onClick={onReset}>
           Reset to recommended
         </button>
@@ -747,7 +747,7 @@ export function ModelsTab({
             iconOnly
             label="Agent whose models you set"
             value={agent}
-            options={NATIVE_AGENTS.map((id) => ({
+            options={AGENT_DISPLAY_ORDER.map((id) => ({
               id,
               label: AGENT_NAMES[id],
               icon: <AgentMark agent={id} size={14} />,

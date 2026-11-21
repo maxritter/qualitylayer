@@ -23,9 +23,11 @@ import { type GateFile, readGate } from "../gate/gate.ts"
 import type { Attachment } from "../interaction-docs/attachments.ts"
 import type { AnswerKind, Item } from "../items.ts"
 import type { RepoRef } from "../paths.ts"
+import { recordHash } from "../records/contract.ts"
 import { waitFor } from "../wait.ts"
 import { ANSWER_FILES_HINT } from "./answer-files.ts"
 import { findingHeading } from "./finding-heading.ts"
+import { currentOwnerRequest, type OwnerRequest, parseOwnerQuestion } from "./owner-request.ts"
 import { applyPlacePick, PLACE_QUESTION_ID } from "./place.ts"
 import { questionsAhead } from "./question-ahead.ts"
 import { readBatch } from "./question-batch.ts"
@@ -45,6 +47,8 @@ export type QuestionChoice = {
   kind?: AnswerKind
   /** The choice asks for the person's words: the card moves to the field instead of sending (Change…). */
   words?: true
+  /** This option needs an explicit named confirmation in the App. */
+  confirm?: string
   /** Grade 2 and 3: up to three facts, each at most 200 characters. */
   facts?: string[]
   /** Grade 3: one small mermaid diagram of what the choice changes. */
@@ -102,6 +106,10 @@ export type Found = {
 export type Question = {
   /** Stable across a Tell me more and every re-run of `ask`: `q<number>` unless the agent names one. */
   id: string
+  /** App projection of the currently actionable wording. */
+  revision?: string
+  /** Verify decision or evidence request bound to the recorded prerequisite. */
+  ownerRequest?: OwnerRequest
   /** The decision, short: the App's card uses it as its title. */
   question: string
   choices: QuestionChoice[]
@@ -152,7 +160,37 @@ export type Question = {
   front?: true
 }
 
+/** Same id can carry new options after Tell me more or a replaced request. */
+export const questionRevision = (question: Question): string =>
+  recordHash(
+    JSON.stringify([
+      question.id,
+      question.asked,
+      question.question,
+      question.choices,
+      question.recommended,
+      question.recommendedChoices,
+      question.multi,
+      question.why,
+      question.about,
+      question.settles,
+      question.artifact,
+      question.gate,
+      question.gateId,
+      question.item,
+      question.found,
+      question.ownerRequest,
+    ]),
+  )
+
+export const projectedQuestion = (question: Question): Question => ({
+  ...question,
+  revision: questionRevision(question),
+})
+
 export type AnsweredQuestion = {
+  revision?: string
+  ownerRequest?: OwnerRequest
   files?: Attachment[]
   originReceipt?: string
   /** Undo reopens a batch member while retaining its answer in the audit trail. */
@@ -541,6 +579,7 @@ export function parseQuestion(
   ctx: Ctx,
   input: unknown,
   history: AnsweredQuestion[],
+  allowOwnerRequest = false,
 ): Result<Omit<Question, "asked">> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return err({
@@ -572,6 +611,7 @@ export function parseQuestion(
     "finding",
     "multi",
     "artifact",
+    ...(allowOwnerRequest ? ["ownerRequest"] : []),
   ])
   const unknown = Object.keys(given).filter((key) => !allowed.has(key))
   if (unknown.length)
@@ -608,6 +648,7 @@ export function parseQuestion(
         "evidence",
         "artifact",
         "recommended",
+        "confirm",
       ])
       const unknownChoice = Object.keys(choice).filter((key) => !allowedChoice.has(key))
       if (unknownChoice.length)
@@ -619,6 +660,12 @@ export function parseQuestion(
     const label = text(choice?.label, 200)
     if (label === undefined) continue
     const detail = text(choice.detail, 400)
+    const confirm = text(choice.confirm, 100)
+    if (choice.confirm !== undefined && (confirm === undefined || choice.words === true))
+      return err({
+        code: "bad_args",
+        message: 'Use a named "confirm" label for a choice that needs confirmation.',
+      })
     const kind = answerKind(choice.kind)
     const context = choiceContext(choice, label)
     if (!context.ok) return context
@@ -628,6 +675,7 @@ export function parseQuestion(
       ...(detail !== undefined ? { detail } : {}),
       ...(kind !== undefined ? { kind } : {}),
       ...(choice.words === true ? { words: true as const } : {}),
+      ...(confirm ? { confirm } : {}),
       ...context.data,
     })
   }
@@ -637,6 +685,9 @@ export function parseQuestion(
       message: "a question needs its text and at least two choices",
     })
   }
+  const owner = parseOwnerQuestion(given, choices)
+  if (!owner.ok) return owner
+  const ownerRequest = owner.data
   const settles = (Array.isArray(given.settles) ? given.settles : [])
     .map((id) => text(id, 120))
     .filter((id): id is string => id !== undefined)
@@ -723,6 +774,7 @@ export function parseQuestion(
     id,
     question,
     choices,
+    ...(ownerRequest ? { ownerRequest } : {}),
     recommended: index >= 0 && index < choices.length ? index : 0,
     ...(recommendedChoices ? { recommendedChoices } : {}),
     ...(grade !== undefined ? { grade } : {}),
@@ -945,6 +997,8 @@ export async function answerQuestion(
       ...(options.originReceipt ? { originReceipt: options.originReceipt } : {}),
       id: open.id,
       question: open.question,
+      revision: questionRevision(open),
+      ...(open.ownerRequest ? { ownerRequest: open.ownerRequest } : {}),
       number: open.number,
       choice,
       at,
@@ -1064,8 +1118,17 @@ export async function askQuestion(
 ): Promise<Result<Asked>> {
   return ctx.fs.withLock(lockOf(task), async () => {
     const history = await answeredQuestions(ctx, task)
-    const parsed = parseQuestion(ctx, input, history)
+    const parsed = parseQuestion(ctx, input, history, true)
     if (!parsed.ok) return parsed
+    if (
+      parsed.data.ownerRequest &&
+      !(await currentOwnerRequest(ctx, task, parsed.data.ownerRequest))
+    )
+      return err({
+        code: "bad_args",
+        message:
+          "That owner request is no longer open. Read its current Verify record before asking.",
+      })
     if (parsed.data.late)
       return err({
         code: "batch_step_closed",

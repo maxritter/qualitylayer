@@ -39,6 +39,13 @@ export default Plugin.define({
   id: "qualitylayer",
   async setup(ctx: any) {
     if (!LAUNCH && process.env.QUALITYLAYER_SESSION_HOOKS === "opencode") return
+    await ctx.provider?.transform?.((editor: any) => {
+      if (!editor.get("ollama")) return
+      editor.update("ollama", (provider: any) => {
+        if (Object.hasOwn(provider.settings ?? {}, "headerTimeout")) return
+        provider.settings = { ...provider.settings, headerTimeout: 900_000 }
+      })
+    })
     async function sessionModel(selected: string, effort?: string) {
       const [providerID, ...parts] = selected.split("/")
       const [id, explicit] = parts.join("/").split("#")

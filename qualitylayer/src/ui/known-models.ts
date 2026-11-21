@@ -39,6 +39,7 @@ export function useFeedKnownModels(
         setKnownModels(entry.agent as StepAgent, {
           listed: entry.listed.models,
           own: entry.listed.own,
+          ...(entry.listed.labels ? { labels: entry.listed.labels } : {}),
         })
   }, [agents])
   useEffect(() => {

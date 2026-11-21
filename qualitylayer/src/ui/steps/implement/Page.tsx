@@ -68,10 +68,19 @@ export function ImplementStepPage(props: StepPageProps) {
     [view?.decisions],
   )
   // The agent's own card (stopped, or the build to start) where no Now column draws it.
-  const card =
+  const agentCard =
     mode === "live" && !inNow && live !== undefined && agentCardShows(task) ? (
       <AgentTurn task={task} onCopy={live.copy} view="implement" />
     ) : null
+  const commitReview = mode === "live" ? live?.commitReview : null
+  const card = commitReview ? (
+    <>
+      {commitReview}
+      {agentCard}
+    </>
+  ) : (
+    agentCard
+  )
   const stageTitle = stepTitleOf(task.stage)
   const built = view?.slices.every((s) => s.status === "done") === true
 

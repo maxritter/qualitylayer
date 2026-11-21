@@ -26,6 +26,7 @@ export type StepLive = {
    * The approved Plan's planning session can still take the build (12.9): the waiting line
    * while it finishes its turn, or the action that continues it (also after a reload).
    */
+  commitReview?: React.ReactNode
   buildHere?: { waiting?: string; offer?: { lead: string; start: () => Promise<unknown> } }
   /** Pick an answer for an item (or Undo with null): saved as a draft, sent with the step's decision. */
   answer: (id: string, answer: ItemAnswer | null) => void

@@ -26,7 +26,12 @@ export type Row = {
 }
 
 /** The change's groups as Built reads them: the slices, then the rows of their own kind. */
-export function rowsOf(view: WalkthroughView, owner?: string): Row[] {
+export type ReviewFileGroups = Pick<
+  WalkthroughView,
+  "slices" | "planDecisions" | "decided" | "fixes" | "changeScope" | "documents"
+>
+
+export function rowsOf(view: ReviewFileGroups, owner?: string): Row[] {
   const rows: Row[] = view.slices.map((s) => ({
     key: String(s.n),
     n: s.n,

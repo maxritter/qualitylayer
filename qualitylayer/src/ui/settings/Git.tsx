@@ -8,20 +8,33 @@ import {
   FileCodeIcon,
   FolderOpenIcon,
   GitBranchIcon,
+  GitCommitHorizontalIcon,
   GitPullRequestIcon,
   SquareTerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { Switch } from "@/components/ui/switch"
-import { EDITOR_NAMES, EDITORS } from "../../core/config-values.ts"
+import {
+  type CommitTiming,
+  commitTimingOf,
+  EDITOR_NAMES,
+  EDITORS,
+} from "../../core/config-values.ts"
 import type { GhStatus, GitStatus, ToolsStatus } from "../../core/tools-status.ts"
 import type { Api, Config } from "../api.ts"
 import { useOptionalRuns } from "../run-context.tsx"
+import { CommitTimingPick } from "./CommitTimingPick.tsx"
 import { CustomEditorFields } from "./CustomEditorFields.tsx"
 import { Pick, SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
 import "./source.css"
 import { agoText } from "./usage-model.ts"
+
+const commitTimingHint: Record<CommitTiming, string> = {
+  slice: "The agent commits passing slices during Implement. This is the default.",
+  "before-verify": "The agent keeps passing slices in the worktree, then makes one commit.",
+  review: "Review the uncommitted task diff before deciding what to commit.",
+}
 
 type ToolsApi = Pick<Api, "tools" | "checkTools">
 
@@ -228,9 +241,27 @@ export function GitTab({
   const [editingCustom, setEditingCustom] = useState(false)
   const permitted = useOptionalRuns()?.support?.canConfigure === true
   const custom = editingCustom || config.editor === "custom"
+  const timing = commitTimingOf(config.commitTiming)
   return (
     <div className="q-sgs">
       <Tools api={api} />
+      <SettingsGroup title="Commits" testId="commit-timing">
+        <SettingRow
+          label="Commit timing"
+          hint={commitTimingHint[timing]}
+          icon={<GitCommitHorizontalIcon className="size-[15px]" />}
+        >
+          <CommitTimingPick
+            label="Commit timing"
+            value={timing}
+            onChange={(commitTiming) => onChange({ commitTiming })}
+          />
+        </SettingRow>
+        <p className="q-sg-foot">
+          Existing tasks keep their timing. Verify checks the committed revision. Push is a separate
+          decision.
+        </p>
+      </SettingsGroup>
       <SettingsGroup title="Files and pull requests" testId="git-files">
         <SettingRow
           label="Open files and folders in"

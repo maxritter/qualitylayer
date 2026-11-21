@@ -73,13 +73,15 @@ one short plain sentence without paths or commands. When writes are allowed, rec
 verdict <assignment> <item> pass|fail|missing|user|note "<text>" [--evidence <returned file>] [--run <run
 id> --mode scripted|real-session]`; items are `acceptance A<n>` and `review`, and the ones this brief
 lists (`scenario <n>`, `done <n>`, `dod T<n>`, `check`). A runtime pass cites the capture command's
-exact returned `file` in backticks: text lives under `records/`, pictures under `evidence/`. Take
+exact returned path in backticks. `evidence add` keeps text in `records/` and pictures in `evidence/`.
+`verdict run` keeps command output in `evidence/`. Pass it one program and its arguments. It inherits
+the environment of the invoking process. Set any required project variables before calling it. Take
 secrets, and anything the repository's commit hooks refuse, out of an output before you add it; a
 recorded file is never edited, and a counted round's file is replaced only by a new round. Keep
 each acceptance step's picture or output with `qualitylayer evidence shot <key> --url <loopback-url>
 --run <run id> --mode ... --step A<n>` (a built screen) or `qualitylayer evidence add --run <run id>
---mode ... --step A<n> <file>`: one run id for all the Done means steps, `real-session` only when an
-agent session ran it. For `artifacts/page.html#section`, the shot key is `page#section`. Use the returned
+--mode ... --step A<n> <file>`: reuse the run ID for steps proved in that run. Each ID
+has one mode. Give scripted checks and real agent sessions separate run IDs. For `artifacts/page.html#section`, the shot key is `page#section`. Use the returned
 path unchanged; do not invent or move it to another folder. When writes are allowed, append one block
 to *Verification*:
 

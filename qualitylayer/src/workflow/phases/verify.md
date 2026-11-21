@@ -80,3 +80,5 @@ need blocks the rest, `qualitylayer next` names the exit and the move:
   fix round** (`qualitylayer verify fix`), **Stop the task** (`qualitylayer task abandon`) or, when red
   project checks are all that is open, **Keep it red and review it** (`qualitylayer verify keep-red`),
   which the review shows red with their choice. A failing point becomes a pass only by passing.
+
+When a decision or evidence only the person can provide is needed, use the existing question flow. For a recorded Verify need, `question ask` can bind the question to its current `ownerRequest` (`need`, its opened or reopened time as `since`, and `kind`). Use `budget` with explicit USD `amountCents` only for a spending decision, or `evidence` for a result or link. A need or saved answer is no verdict. Ask for redacted evidence, never credentials. Use the answer from the existing poll or wait.

@@ -33,6 +33,7 @@ import type {
   QuestionChoice,
 } from "../core/task/question.ts"
 import { questionsAhead } from "../core/task/question-ahead.ts"
+import { askedInAgent } from "../core/task/sides.ts"
 import { recommendedIndices, recommendedLabel } from "../interaction/question-recommendations.ts"
 import { findPlace } from "./AnsweredMarkers.ts"
 import type { TaskDetail } from "./api.ts"
@@ -210,7 +211,7 @@ export type ChangedAnswer =
 
 /** What the card sends. Each resolves true when the App took it. */
 export type QuestionActions = {
-  answer: (answer: QuestionAnswer, files?: File[]) => Promise<boolean>
+  answer: (answer: QuestionAnswer, files?: File[]) => Promise<boolean | AnsweredQuestion>
   /** Cancel on Tell me more. */
   cancel: () => Promise<boolean>
   /** Change on a receipt: the corrected answer to question `number`. */
@@ -278,6 +279,7 @@ type Props = {
   focus: Focus
   /** The Plan document the card sits on. */
   doc: string
+  nativePresentation?: string | undefined
   theme: string
   /** The card's element, for the way back to it. */
   cardRef?: (el: HTMLElement | null) => void
@@ -361,12 +363,14 @@ function Asking({
   onOpenArtifact,
   onReadDocument,
   documentName,
+  nativePresentation,
 }: Props & { question: Asked }) {
   const now = useNow(true)
   const resume = continueCommand ?? resumeCommand(task)
   const grade = question.grade ?? 1
   const review = question.gate !== undefined
   const who = agentName(task, question.agent)
+  const terminalPreferred = askedInAgent(task, [question])
   const phase = phaseOf(question, task.questionWait, now, task.live?.signals ?? null)
   const live = actions !== undefined
   const draftKey = `${task.id}:question:${question.id}`
@@ -380,7 +384,13 @@ function Asking({
   const sendingAll = useRef(false)
   const batch = task.batch?.members.some((m) => m.id === question.id) ? (task.batch ?? null) : null
   // The choice just sent, drawn as sent until the page reloads with the answer.
-  const [sent, setSent] = useState<{ id: string; label: string; index?: number } | null>(null)
+  const [sent, setSent] = useState<{
+    id: string
+    label: string
+    index?: number
+    revision?: string
+    answer?: AnsweredQuestion
+  } | null>(null)
   const field = useRef<HTMLTextAreaElement | null>(null)
   const self = useRef<HTMLElement | null>(null)
   const heading = useRef<HTMLHeadingElement | null>(null)
@@ -407,6 +417,12 @@ function Asking({
   const [asked, setAsked] = useState<MoreRequest | null>(null)
   // The toggles of a multi-select question.
   const [picks, setPicks] = useState<number[]>([])
+  const [confirmation, setConfirmation] = useState<{ revision: string; index: number } | null>(null)
+  const revision =
+    question.revision ?? `${question.id}:${question.asked}:${question.found?.at ?? ""}`
+  const confirmed = confirmation?.revision === revision ? confirmation.index : undefined
+  const confirm = confirmed === undefined ? undefined : question.choices[confirmed]?.confirm
+  const budget = question.ownerRequest?.kind === "budget"
   const { updates, dismiss } = useMoreUpdates([question])
   const update = updates[question.id]
   const updateAt = update?.at
@@ -435,12 +451,20 @@ function Asking({
     sending.current = true
     setBusy(true)
     const submitted = draftFor(draftKey)
-    if (label !== undefined && submitted.files.length === 0)
+    if (question.revision === undefined && label !== undefined && submitted.files.length === 0)
       setSent({ id: question.id, label, ...(index !== undefined ? { index } : {}) })
     try {
       const files = "more" in answer ? [] : submitted.files
       const took = await (files.length ? actions.answer(answer, files) : actions.answer(answer))
       if (!took) throw new Error("The answer was refused. Your words are kept.")
+      if (label !== undefined)
+        setSent({
+          id: question.id,
+          ...(question.revision ? { revision: question.revision } : {}),
+          label: typeof took === "object" ? took.choice : label,
+          ...(index !== undefined ? { index } : {}),
+          ...(typeof took === "object" ? { answer: took } : {}),
+        })
       if (!("more" in answer)) clearDraft(draftKey, submitted)
       return true
     } catch (cause) {
@@ -462,6 +486,11 @@ function Asking({
       field.current?.focus()
       return
     }
+    if (item.choice.confirm) {
+      setConfirmation({ revision, index: item.index })
+      return
+    }
+    setConfirmation(null)
     void send({ choice: item.index }, item.choice.label, item.index)
   }
   /** A row or its Choose this button: the index is the choice's place in `question.choices`. */
@@ -470,6 +499,7 @@ function Asking({
     if (item !== undefined) pick(item)
   }
   const ownAnswer = () => {
+    if (budget) return
     const words = text.trim()
     if (words !== "" || draft.files.length)
       void send({ text: words || "See attached files." }, words || "See attached files.")
@@ -480,7 +510,7 @@ function Asking({
   const running = phase.kind === "waiting" || looking
   const more = question.more ?? asked ?? undefined
   const requestOpen = moreOpen(more)
-  const canMore = live && running && !requestOpen
+  const canMore = live && running && !requestOpen && !budget
   // The agent has stopped: a request waits for the next session, not for seconds.
   const gone: Gone | null =
     requestOpen && (phase.kind === "ended" || phase.kind === "interrupted")
@@ -509,6 +539,7 @@ function Asking({
 
   const openMembers = batch?.members.filter((m) => m.answer === undefined) ?? []
   const takeRecommendation = () => {
+    if (budget) return
     if (question.multi && question.recommendedChoices)
       void send({ choices: recommendedIndices(question) }, recommendedLabel(question))
     else if (recommended !== undefined) pick(recommended)
@@ -623,7 +654,7 @@ function Asking({
       void takeAllRecommendations()
     } else if ((key === "n" || key === "N") && !review) {
       event.preventDefault()
-      void send({ unsure: true }, recommendedLabel(question))
+      if (!budget) void send({ unsure: true }, recommendedLabel(question))
     }
   }
 
@@ -634,12 +665,13 @@ function Asking({
       </div>
     )
   // Sent: the card is the receipt of the click, until the page has the answer.
-  if (sent !== null && sent.id === question.id)
+  if (sent !== null && sent.id === question.id && sent.revision === question.revision)
     return (
       <SentReceipt
         number={question.number}
         who={who}
         chosen={sent.label}
+        {...(sent.answer ? { answer: sent.answer } : {})}
         {...(cardRef !== undefined ? { cardRef } : {})}
       />
     )
@@ -784,6 +816,11 @@ function Asking({
           </ReceiptLine>
         ) : null}
         <header className="qbc-top">
+          {nativePresentation ? (
+            <span className="qbc-native-presentation">
+              Shown in {agentInfo(nativePresentation).name}
+            </span>
+          ) : null}
           <span className="qbc-yt">
             <i aria-hidden="true" />
             Your turn
@@ -847,13 +884,15 @@ function Asking({
                 </button>
               </span>
             ) : null}
-            <span
-              className={looking ? "qbc-live busy" : running ? "qbc-live" : "qbc-live off"}
-              data-testid="focus-waiting"
-            >
-              <i aria-hidden="true" />
-              {whoLine}
-            </span>
+            {terminalPreferred && phase.kind === "waiting" ? null : (
+              <span
+                className={looking ? "qbc-live busy" : running ? "qbc-live" : "qbc-live off"}
+                data-testid="focus-waiting"
+              >
+                <i aria-hidden="true" />
+                {whoLine}
+              </span>
+            )}
           </div>
           {questionScreens(question).map((reference) => (
             <QuestionScreen
@@ -870,8 +909,14 @@ function Asking({
                 {who}'s session ended at {hhmm(phase.at)}
               </div>
               <p>
-                You can still answer. Your answer is kept, and {who} reads it first when you
-                continue the task in any session:
+                {terminalPreferred ? (
+                  "You can still answer here. The answer stays with this task."
+                ) : (
+                  <>
+                    You can still answer. Your answer is kept, and {who} reads it first when you
+                    continue the task in any session:
+                  </>
+                )}
               </p>
               <ContinueCommand command={resume} />
             </div>
@@ -883,7 +928,14 @@ function Asking({
                 You stopped {who} while it waited
               </div>
               <p>
-                Answer here. {who} takes it with your next message in its window, whatever you type.
+                {terminalPreferred ? (
+                  "You can still answer here. The answer stays with this task."
+                ) : (
+                  <>
+                    Answer here. {who} takes it with your next message in its window, whatever you
+                    type.
+                  </>
+                )}
               </p>
             </div>
           ) : null}
@@ -902,10 +954,11 @@ function Asking({
           <ChoiceList
             key={question.id}
             choices={question.choices}
-            recommended={recommendedIndices(question)}
+            recommended={budget ? [] : recommendedIndices(question)}
             grade={grade}
             theme={theme}
             idPrefix={`focus-${question.id}`}
+            chosen={confirmed}
             onChoose={choose}
             multi={isMulti ? { on: picks, toggle } : undefined}
             disabled={!live || busy}
@@ -920,6 +973,22 @@ function Asking({
             testId="focus-choice"
             listTestId="focus-choices"
           />
+          {confirm && confirmed !== undefined ? (
+            <div className="qbc-multi">
+              <button
+                type="button"
+                className="q-btn primary sm"
+                disabled={!live || busy}
+                onClick={() => {
+                  const selected = question.choices[confirmed]
+                  if (selected !== undefined)
+                    void send({ choice: confirmed }, selected.label, confirmed)
+                }}
+              >
+                {confirm}
+              </button>
+            </div>
+          ) : null}
           {isMulti ? (
             <div className="qbc-multi">
               <span data-testid="focus-multi-count">
@@ -939,21 +1008,23 @@ function Asking({
               </button>
             </div>
           ) : null}
-          <QuestionComposer
-            id={`own-${question.id}`}
-            words={text}
-            files={draft.files}
-            field={field}
-            placeholder={placeholder}
-            disabled={!live}
-            busy={busy}
-            error={draft.error}
-            sendLabel={sendWord}
-            testId="focus"
-            onWords={setText}
-            onFiles={(files) => writeDraft(draftKey, { files, error: null })}
-            submit={ownAnswer}
-          />
+          {budget ? null : (
+            <QuestionComposer
+              id={`own-${question.id}`}
+              words={text}
+              files={draft.files}
+              field={field}
+              placeholder={placeholder}
+              disabled={!live}
+              busy={busy}
+              error={draft.error}
+              sendLabel={sendWord}
+              testId="focus"
+              onWords={setText}
+              onFiles={(files) => writeDraft(draftKey, { files, error: null })}
+              submit={ownAnswer}
+            />
+          )}
           <div className="qbc-help">
             <button
               type="button"
@@ -1055,10 +1126,22 @@ function SentReceipt({
         lineTestId="focus-answered"
         chosenTestId="focus-chosen"
         {...(cardRef !== undefined ? { lineRef: cardRef } : {})}
-        label={`Question ${number} sent`}
+        label={
+          answer?.via === "chat"
+            ? `Already answered in ${who}`
+            : answer?.revision
+              ? "Answer saved"
+              : `Question ${number} sent`
+        }
         title={chosen}
         chosen={chosen}
-        state={pickedUp ? `picked up by ${who}` : undefined}
+        state={
+          answer?.via === "app" && !pickedUp
+            ? `Delivery to ${who} is unconfirmed.`
+            : pickedUp
+              ? `picked up by ${who}`
+              : undefined
+        }
         action={
           onChange !== undefined ? (
             <button type="button" className="q-link" onClick={onChange}>
@@ -1266,7 +1349,13 @@ function Answered({
               <CheckIcon aria-hidden="true" />
               <span>{last.choice}</span>
             </p>
-            <p className="qbc-why">Kept for {who}. It reads it when the task continues.</p>
+            <p className="qbc-why">
+              {last.revision && task.answers === "terminal" ? (
+                `Delivery to ${who} is unconfirmed.`
+              ) : (
+                <>Kept for {who}. It reads it when the task continues.</>
+              )}
+            </p>
             <AnswerFiles taskId={task.id} answer={last} />
             <ContinueCommand command={continueCommand ?? resumeCommand(task)} />
           </div>

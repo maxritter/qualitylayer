@@ -1,6 +1,11 @@
 import { type ReactNode, useId } from "react"
 import { Input } from "@/components/ui/input"
-import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
+import {
+  AGENT_DISPLAY_ORDER,
+  AGENT_NAMES,
+  NATIVE_AGENTS,
+  type NativeAgent,
+} from "../../core/agents/ids.ts"
 import {
   offeredModels,
   planModels,
@@ -331,7 +336,11 @@ export function AgentLaunchFields({
   const unavailable = !loading && !launchAgentAvailable(value.agent, installed)
   const mark = (agent: string) => <AgentMark agent={agent} size={14} />
   const options: PickOption[] = [
-    ...available.map((agent) => ({ id: agent, name: AGENT_NAMES[agent], icon: mark(agent) })),
+    ...AGENT_DISPLAY_ORDER.filter((agent) => available.includes(agent)).map((agent) => ({
+      id: agent,
+      name: AGENT_NAMES[agent],
+      icon: mark(agent),
+    })),
     ...(unavailable && value.agent !== "other"
       ? [
           {

@@ -20,7 +20,7 @@ import {
 import { useRef, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { AGENT_NAMES, isNativeAgent, NATIVE_AGENTS } from "../../core/agents/ids.ts"
+import { AGENT_DISPLAY_ORDER, AGENT_NAMES, isNativeAgent } from "../../core/agents/ids.ts"
 import { Disclosure } from "../kit/Fold.tsx"
 import { InfoHint } from "../kit/InfoHint.tsx"
 import { ModelPick } from "../ModelPick.tsx"
@@ -178,7 +178,7 @@ export function ViewMenu(props: ViewMenuProps) {
           onChange={(next) => props.onAgent(next === "any" ? "" : next)}
           options={[
             { id: "any", name: "Any" },
-            ...NATIVE_AGENTS.map((agent) => ({ id: agent, name: AGENT_NAMES[agent] })),
+            ...AGENT_DISPLAY_ORDER.map((agent) => ({ id: agent, name: AGENT_NAMES[agent] })),
           ]}
         />
         <p className="vm-sh vm-sh-info">

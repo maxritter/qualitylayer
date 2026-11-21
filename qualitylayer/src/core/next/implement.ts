@@ -42,6 +42,7 @@ import { sessionKey } from "../task/binding.ts"
 import { chatQuestions } from "../task/chat-questions.ts"
 import { openedChecks, reviewFindings } from "../task/items.ts"
 import { advance } from "../task/machine.ts"
+import { advanceWithTaskCommit, requestedCommitEdits } from "../task/precommit.ts"
 import type { Question } from "../task/question.ts"
 import { countLeftRound, ensureBuildLog, ensureVerifyLog } from "../task/reconcile.ts"
 import { approvesInAgent } from "../task/sides.ts"
@@ -353,9 +354,12 @@ export async function implementPayload(
       ? outline.slices.find((s) => s.tasks.some((t) => t.id === next.id))
       : undefined
   const patterns = slice !== undefined ? await patternsOf(ctx, task) : {}
+  const commitEdits = await requestedCommitEdits(ctx, task)
   return base(task, {
     phase: "implement",
     instructions: phaseText(task.type === "bugfix" ? "implement-bugfix" : "implement"),
+    commit_timing: task.commitTiming ?? "slice",
+    ...(commitEdits ? { commit_edits_requested: commitEdits } : {}),
     progress: { total, checked },
     next_task:
       card !== null && next !== null
@@ -576,6 +580,7 @@ export async function buildDone(
   ctx: Ctx,
   task: Task,
   defer: string | null,
+  pairedCommitReview = false,
 ): Promise<Result<NextPayload>> {
   const cardsFile = agentFileOf("implement")
   const outline = (await taskFlow(ctx, task)).plan
@@ -617,15 +622,25 @@ export async function buildDone(
         },
       ],
     )
-  const log = await readBuildRecord(ctx, task)
   const { total, checked } = progress(outline)
-  // A failed round the session fixed without a verb counting it is counted before it leaves.
-  const building =
-    checked === total && !gapsResolved(log, outline, task) ? await countLeftRound(ctx, task) : task
-  const advanced = await advance(
+  const advanced = await advanceWithTaskCommit(
     ctx,
-    building,
-    checked === total && unproven.length === 0 ? "tasks_complete" : "work_deferred",
+    task,
+    outline,
+    pairedCommitReview,
+    async (current) => {
+      const log = await readBuildRecord(ctx, current)
+      // A failed round the session fixed without a verb counting it is counted before it leaves.
+      const building =
+        checked === total && !gapsResolved(log, outline, current)
+          ? await countLeftRound(ctx, current)
+          : current
+      return advance(
+        ctx,
+        building,
+        checked === total && unproven.length === 0 ? "tasks_complete" : "work_deferred",
+      )
+    },
   )
   if (!advanced.ok) return advanced
   if (defer !== null && open.length + unproven.length > 0)

@@ -20,6 +20,7 @@ function Choice({
   choices,
   value,
   onChange,
+  className,
 }: {
   label: string
   /** The group's tooltip: what it chooses, in place of a label before it. */
@@ -27,9 +28,10 @@ function Choice({
   choices: readonly { value: string; label: string; icon: LucideIcon; disabled?: boolean }[]
   value: string
   onChange: (value: string) => void
+  className?: string
 }) {
   return (
-    <fieldset className="rw-seg" title={hint ?? label}>
+    <fieldset className={className ? `rw-seg ${className}` : "rw-seg"} title={hint ?? label}>
       <legend className="sr-only">{label}</legend>
       {choices.map(({ value: id, label: text, icon: Icon, disabled }) => (
         <button
@@ -61,6 +63,7 @@ export function ReadingControls({
   format,
   onFormat,
   modified,
+  mobileFileTree,
 }: {
   index: number
   count: number
@@ -75,9 +78,20 @@ export function ReadingControls({
   format: MarkdownMode
   onFormat: (format: MarkdownMode) => void
   modified: boolean
+  mobileFileTree?: { open: boolean; toggle: () => void }
 }) {
   return (
     <div className="rw-reading-controls">
+      {mobileFileTree && (
+        <button
+          type="button"
+          className="rw-btn rw-mobile-file-toggle"
+          aria-expanded={mobileFileTree.open}
+          onClick={mobileFileTree.toggle}
+        >
+          <ListTreeIcon size={13} aria-hidden="true" /> Files ({count})
+        </button>
+      )}
       <div className="rw-navigation">
         <button
           type="button"
@@ -126,6 +140,7 @@ export function ReadingControls({
       {mode === "diff" && (!only || modified) ? (
         <Choice
           label="Diff layout"
+          className="rw-split-choice"
           value={split ? "split" : "unified"}
           onChange={(value) => onSplit(value === "split")}
           choices={[

@@ -631,17 +631,29 @@ export async function pickerCalls(
   ctx: Ctx,
   request: SessionRequest,
 ): Promise<{ callId: string; recordedAt: number }[]> {
+  return (await observedPickerCalls(ctx, request)).map(({ callId, recordedAt }) => ({
+    callId,
+    recordedAt,
+  }))
+}
+
+export async function observedPickerCalls(
+  ctx: Ctx,
+  request: SessionRequest,
+): Promise<{ callId: string; recordedAt: number; input: unknown }[]> {
   try {
     const rows = await records(ctx, request)
     if (rows === null) return []
     const calls = RECORDED_PICKERS.has(request.agent)
       ? nativeCalls(rows, request.agent)
-      : hookedCallIds(rows, request.agent).map((id) => ({
-          id,
-          recordedAt: callIn(rows, request.agent, id)?.recordedAt ?? null,
-        }))
+      : hookedCallIds(rows, request.agent).flatMap((id) => {
+          const call = callIn(rows, request.agent, id)
+          return call === null ? [] : [{ id, ...call }]
+        })
     return calls.flatMap((call) =>
-      call.recordedAt === null ? [] : [{ callId: call.id, recordedAt: call.recordedAt }],
+      call.recordedAt === null
+        ? []
+        : [{ callId: call.id, recordedAt: call.recordedAt, input: call.input }],
     )
   } catch {
     return []

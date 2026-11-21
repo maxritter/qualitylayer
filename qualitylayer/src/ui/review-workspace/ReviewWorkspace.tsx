@@ -22,11 +22,11 @@ import { createPortal } from "react-dom"
 import { EDITOR_NAMES, type Editor } from "../../core/config-values.ts"
 import type { LineFinding } from "../../core/review/findings.ts"
 import { isGeneratedPath } from "../../core/review/generated.ts"
-import type { WalkFile, Walkthrough as WalkthroughView } from "../../core/review/walkthrough.ts"
+import type { WalkFile } from "../../core/review/walkthrough.ts"
 import type { Comment } from "../api.ts"
 import { EditorMark } from "../files/EditorMark.tsx"
 import { type Anchor, lineKey } from "../timeline/FilesChanged.tsx"
-import { rowsOf } from "../timeline/Walkthrough.tsx"
+import { type ReviewFileGroups, rowsOf } from "../timeline/Walkthrough.tsx"
 import { ChangeDetails } from "./ChangeDetails.tsx"
 import { factsOf, titlesOf, whyOf } from "./details.ts"
 import { FileHeader, HEADER_PX } from "./FileHeader.tsx"
@@ -45,7 +45,7 @@ import "./workspace.css"
 export type ReviewWorkspaceProps = {
   taskId: string
   title: string
-  view: WalkthroughView
+  view: ReviewFileGroups
   /** The review decision's change requests on lines: counted on the files and the Finish button. */
   comments: readonly Comment[]
   /** The final review waits for the person: the header's button finishes the code review. */
@@ -66,6 +66,7 @@ export type ReviewWorkspaceProps = {
   file: string | null
   onClose: () => void
   onClearChanges?: () => Promise<void>
+  commitReview?: React.ReactNode
 }
 
 /** Lines of a file marked in the viewer, with their text and where on screen the marking ended. */
@@ -100,12 +101,12 @@ function readViewed(taskId: string): Record<string, string> {
 }
 
 /** The files the person reads by default: the code, without generated files and the task's documents. */
-export function readableFiles(view: WalkthroughView): number {
+export function readableFiles(view: ReviewFileGroups): number {
   return filesOf(view).order.length
 }
 
 /** How many generated files the tree folds, and how many documents stand apart from the code. */
-function foldCounts(view: WalkthroughView) {
+function foldCounts(view: ReviewFileGroups) {
   const generated = new Set<string>()
   for (const row of rowsOf(view))
     for (const f of row.files) if (isGeneratedPath(f.path)) generated.add(f.path)
@@ -113,7 +114,7 @@ function foldCounts(view: WalkthroughView) {
 }
 
 /** How many of the change's files this person marked viewed, unchanged since: the Review page's count. */
-export function viewedCount(taskId: string, view: WalkthroughView): number {
+export function viewedCount(taskId: string, view: ReviewFileGroups): number {
   const marks = readViewed(taskId)
   return filesOf(view).order.filter((f) => marks[f.path] === stampOf(f)).length
 }
@@ -144,7 +145,7 @@ type Folds = { generated: boolean; documents: boolean }
 const FOLDED: Folds = { generated: false, documents: false }
 
 /** Every file once, in the order the tree lists them; the folds say what is drawn besides the code. */
-function filesOf(view: WalkthroughView, folds: Folds = FOLDED) {
+function filesOf(view: ReviewFileGroups, folds: Folds = FOLDED) {
   const groups = rowsOf(view)
     .map((row) => ({
       ...row,
@@ -218,14 +219,16 @@ function LineOpener({
 export function ExitButton({
   onClick,
   primary = false,
+  label = "Exit",
 }: {
   onClick: () => void
   primary?: boolean
+  label?: string
 }) {
   return (
     <button type="button" className={cn("rw-btn", primary && "primary")} onClick={onClick}>
       <XIcon className="size-3.5" aria-hidden="true" />
-      Exit
+      {label}
     </button>
   )
 }
@@ -242,12 +245,17 @@ function typingOrChord(e: KeyboardEvent): boolean {
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const { view, comments, deciding, taskId } = props
+  const [fileTreeOpen, setFileTreeOpen] = useState(false)
   const [folds, setFolds] = useState<Folds>(FOLDED)
   const { groups, order } = useMemo(() => filesOf(view, folds), [view, folds])
   const folded = useMemo(() => foldCounts(view), [view])
   const facts = useMemo(() => factsOf(view), [view])
   const titles = useMemo(() => titlesOf(view), [view])
-  const [split, setSplit] = useState(() => localStorage.getItem(SPLIT_KEY) !== "unified")
+  const [split, setSplit] = useState(
+    () =>
+      (!props.commitReview || window.innerWidth > 760) &&
+      localStorage.getItem(SPLIT_KEY) !== "unified",
+  )
   const [viewed, setViewed] = useState(() => readViewed(taskId))
   const [mode, setMode] = useState<ReadingMode>("diff")
   const [format, setFormat] = useState<MarkdownMode>("source")
@@ -677,17 +685,22 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     <div
       ref={root}
       tabIndex={-1}
-      className={cn("rw", (missing !== null || only) && "rw-file-choice")}
+      className={cn(
+        "rw",
+        (missing !== null || only) && "rw-file-choice",
+        props.commitReview && "rw-precommit",
+        props.commitReview && fileTreeOpen && "rw-precommit-tree",
+      )}
       style={{ "--rw-tree": `${treeWidth(filesByPath.keys())}px` } as CSSProperties}
       role="dialog"
       aria-modal="true"
-      aria-label="Review the code"
+      aria-label={props.commitReview ? "Review before committing" : "Review the code"}
       data-testid="review-workspace"
     >
       <header className="rw-top">
         <span className="rw-crumb">
           <span className="dim">{props.title}</span>
-          <b>Code</b>
+          <b>{props.commitReview ? "Worktree diff" : "Code"}</b>
         </span>
         <span className="rw-sp" />
         <span className="rw-prog" data-testid="review-progress">
@@ -705,10 +718,19 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             Finish code review{mine > 0 ? ` · ${mine}` : ""}
           </button>
         ) : (
-          <ExitButton onClick={close} primary />
+          <ExitButton
+            onClick={close}
+            primary={!props.commitReview}
+            label={props.commitReview ? "Close diff" : "Exit"}
+          />
         )}
       </header>
       <ReadingControls
+        mobileFileTree={
+          props.commitReview
+            ? { open: fileTreeOpen, toggle: () => setFileTreeOpen((open) => !open) }
+            : undefined
+        }
         index={order.findIndex((file) => file.path === current)}
         count={order.length}
         onGo={(offset) => {
@@ -835,23 +857,27 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         ) : null}
         <div ref={host} className="rw-host" hidden={missing !== null || rendered} />
       </main>
-      <footer className="rw-foot">
-        <span className="rw-keys">
-          <span>
-            In the file tree: <kbd>↑</kbd>
-            <kbd>↓</kbd> files
+      {props.commitReview ? (
+        <footer className="rw-foot">{props.commitReview}</footer>
+      ) : (
+        <footer className="rw-foot">
+          <span className="rw-keys">
+            <span>
+              In the file tree: <kbd>↑</kbd>
+              <kbd>↓</kbd> files
+            </span>
+            <span>
+              <kbd>Esc</kbd> exit
+            </span>
           </span>
+          <span className="rw-sp" />
           <span>
-            <kbd>Esc</kbd> exit
+            {mine > 0
+              ? `${mine === 1 ? "1 change request goes" : `${mine} change requests go`} with your decision`
+              : ""}
           </span>
-        </span>
-        <span className="rw-sp" />
-        <span>
-          {mine > 0
-            ? `${mine === 1 ? "1 change request goes" : `${mine} change requests go`} with your decision`
-            : ""}
-        </span>
-      </footer>
+        </footer>
+      )}
       {slots.map(({ key, el }) => {
         if (key.startsWith("hdr|")) {
           const item = partsById.get(key.slice(4))

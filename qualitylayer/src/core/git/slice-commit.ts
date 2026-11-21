@@ -223,6 +223,14 @@ type Change = {
   rebasedFrom?: Entry
 }
 
+export type SliceAuthority =
+  | ((candidateDirectory: string) => Promise<Result<true>>)
+  | {
+      tree: string
+      ref: string | null
+      reviewedIndex: (parent: string, privateIndex: string) => Promise<Result<true>>
+    }
+
 export type SliceCommit = {
   parentRetries?: number
   /** HEAD moved while the slice was checked; the commit went on this one without running the hooks again. */
@@ -502,7 +510,7 @@ async function bringIndexOn(
         )
           settled.push(c)
       }
-      const put = await git(root, ["update-index", "--index-info"], {
+      const put = await git(root, ["update-index", "-z", "--index-info"], {
         env,
         input: settled.map((c) => infoLine(c.path, c.index)).join(""),
       })
@@ -630,7 +638,7 @@ async function leftBehind(
     if (taken.includes(path) || known.some((entry) => covers(entry, path))) continue
     if (letters[1] === " " && letters[0] !== " " && letters[0] !== "?") continue
     const before = check.start?.[path]
-    if (before !== undefined && before === (await fileState(root, path))) continue
+    if (before !== undefined && before === (await workFileState(root, path))) continue
     left.push(path)
   }
   return left.sort()
@@ -703,7 +711,7 @@ export async function commitSlice(
   /** Exact files whose captured unstaged pre-build content the caller explicitly claims. */
   take: string[] = [],
   /** A closing approval's authority must still hold on every parent replan and hook retry. */
-  authority?: (candidate: string) => Promise<Result<true>>,
+  authority?: SliceAuthority,
 ): Promise<Result<SliceCommit>> {
   // A merge or another operation under way is refused before anything is read or written.
   const pending = await operationInProgress(root)
@@ -988,7 +996,7 @@ async function capturedHunksInHead(
 const HASH_LIMIT = 64 * 1024 * 1024
 
 /** What one path holds in the work tree, in a word that changes when its content does. */
-async function fileState(root: string, path: string): Promise<string> {
+export async function workFileState(root: string, path: string): Promise<string> {
   const info = await lstat(join(root, path)).catch(() => null)
   return info === null
     ? "gone"
@@ -1008,7 +1016,7 @@ export async function workState(
   const changed = await changedPaths(root, env)
   if (changed === null) return null
   const seen = new Map<string, string>()
-  for (const path of changed) seen.set(path, await fileState(root, path))
+  for (const path of changed) seen.set(path, await workFileState(root, path))
   return seen
 }
 
@@ -1080,7 +1088,7 @@ async function restageReformatted(
       index: { mode: change.index?.mode ?? change.committed.mode, sha: indexSha },
     })
   }
-  const put = await git(root, ["update-index", "--index-info"], {
+  const put = await git(root, ["update-index", "-z", "--index-info"], {
     env,
     input: replanned.map((c) => infoLine(c.path, c.committed)).join(""),
   })
@@ -1166,7 +1174,7 @@ type HookRun = {
   changes: Change[]
   /** The checkout's changed paths before the hooks ran; null when git could not say. */
   before: Map<string, string> | null
-  authority: ((candidate: string) => Promise<Result<true>>) | undefined
+  authority: SliceAuthority | undefined
   ref: string | null
   /** The HEAD the snapshot stands on. */
   from: string
@@ -1240,7 +1248,10 @@ async function commitThroughHooks(
   o: HookRun,
 ): Promise<Result<{ sha: string; reformatted: string[] | null; placedOn?: string }> | Moved> {
   const { root, tree, hookEnv, message, authority, from } = o
-  const admit = async (): Promise<Result<true>> => (authority ? authority(tree) : ok(true))
+  const admit = async (): Promise<Result<true>> => {
+    if (typeof authority === "function") return authority(tree)
+    return authority ? authority.reviewedIndex(from, o.index) : ok(true)
+  }
   const admitted = await admit()
   if (!admitted.ok) return admitted
   const said = (run: Run) => `${run.text}${run.stderr}`.trim()
@@ -1283,11 +1294,13 @@ async function commitThroughHooks(
     ref: o.ref,
     index: o.index,
     tree: authority ? tree : undefined,
+    reviewed: typeof authority === "object" ? authority : undefined,
     message: hooked.message,
     author: hooked.author,
     rebase: o.rebase,
     // The last checks on a HEAD that moved, on the snapshot as it will be committed there.
     ready: async (head) => {
+      if (typeof authority === "object") return authority.reviewedIndex(head, o.index)
       if (head === from) return ok(true)
       return o.inputs !== null && !(await o.inputs())
         ? err({ code: "bad_args", message: INPUTS_CHANGED })
@@ -1396,7 +1409,7 @@ async function commitOnce(
   takeStaged: string[],
   selectedSlices: number[] | undefined,
   take: string[],
-  authority: ((candidate: string) => Promise<Result<true>>) | undefined,
+  authority: SliceAuthority | undefined,
 ): Promise<Result<SliceCommit> | Moved> {
   const headRun = await git(root, ["rev-parse", "--verify", "HEAD"])
   if (headRun.code !== 0)
@@ -1576,7 +1589,7 @@ async function commitOnce(
     }
     if (built.code !== 0)
       return err({ code: "bad_args", message: `git read-tree failed: ${built.stderr.trim()}` })
-    const put = await git(root, ["update-index", "--index-info"], {
+    const put = await git(root, ["update-index", "-z", "--index-info"], {
       env,
       input: changes.map((c) => infoLine(c.path, c.committed)).join(""),
     })
@@ -1708,6 +1721,12 @@ async function commitOnce(
 
     // The index goes on from the new commit with the earlier staged edits on top of it, for the
     // paths nobody staged anew meanwhile: an edit staged since the plan is theirs and stays.
+    if (typeof authority === "object" && (await currentRef(root)) !== authority.ref) {
+      return err({
+        code: "bad_args",
+        message: `The reviewed commit ${sha} was created, but the checkout changed branch. Its current index was left untouched. Return to the reviewed checkout to register the commit.`,
+      })
+    }
     const updated = await bringIndexOn(root, changes)
     if (!updated.ok)
       return err({

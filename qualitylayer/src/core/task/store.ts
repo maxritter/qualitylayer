@@ -8,7 +8,7 @@ import { filesIn } from "../../files.ts"
 import { detectAgent } from "../agents/detect.ts"
 import { queueTaskEvent } from "../automations/queue.ts"
 import { readConfig } from "../config.ts"
-import type { Answers } from "../config-values.ts"
+import { type Answers, type CommitTiming, commitTimingOf } from "../config-values.ts"
 import { noteCostSession } from "../cost/index.ts"
 import {
   type Frontmatter,
@@ -52,6 +52,7 @@ export type TaskType = "feature" | "bugfix" | "chat"
 export type Profile = "small" | "full"
 
 export type Task = {
+  commitTiming?: CommitTiming
   answers: Answers
   /** Where the task's approvals happen; unset, they follow `answers` (`approvalsOf`). */
   approvals?: Answers
@@ -348,7 +349,9 @@ export async function createTask(
   const approvals = options.approvals ?? place.approvals
   const split = approvals !== answers
   const type = options.type ?? "feature"
+  const commitTiming = type === "chat" ? "slice" : config.commitTiming
   const task: Task = {
+    ...(commitTiming !== "slice" ? { commitTiming } : {}),
     answers,
     ...(split ? { approvals } : {}),
     slug,
@@ -369,6 +372,7 @@ export async function createTask(
   await ctx.fs.mkdir(runtimeDir)
   await registerProject(ctx, repo)
   const frontmatter: Frontmatter = {
+    ...(commitTiming !== "slice" ? { commit_timing: commitTiming } : {}),
     answers,
     ...answerModeStamp(ctx, null, answers, "initial"),
     ...(split ? { approvals, ...approvalModeStamp(ctx, null, approvals, "initial") } : {}),
@@ -564,6 +568,9 @@ async function taskFromReadme(
   return {
     slug,
     answers: frontmatter.answers === "terminal" ? "terminal" : "app",
+    ...(commitTimingOf(frontmatter.commit_timing) !== "slice"
+      ? { commitTiming: commitTimingOf(frontmatter.commit_timing) }
+      : {}),
     ...(frontmatter.approvals === "terminal" || frontmatter.approvals === "app"
       ? { approvals: frontmatter.approvals }
       : {}),

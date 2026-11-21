@@ -15,7 +15,13 @@ import agentsJson from "./agents.json" with { type: "json" }
 import { agentBinary } from "./binary.ts"
 import { configDirEnvironment } from "./config-dir.ts"
 import type { NativeAgent } from "./ids.ts"
-import { codexCacheChanged, listFile, ownModel, readIds } from "./model-list-readers.ts"
+import {
+  codexCacheChanged,
+  listFile,
+  modelRowLabels,
+  ownModel,
+  readIds,
+} from "./model-list-readers.ts"
 import { type StoredModelList, storedModelLists, storeModelList } from "./model-list-store.ts"
 import { listsModels } from "./model-values.ts"
 
@@ -107,7 +113,13 @@ async function ask(
   // An agent whose settings name no model of their own (`own` null: Copilot) has none to show.
   const own =
     list.own === null ? null : ((await ownModel(ctx, agent, list.own, env)) ?? models[0] ?? null)
-  const entry: StoredModelList = { models, own, checkedAt: now, binary }
+  const entry: StoredModelList = {
+    models,
+    own,
+    checkedAt: now,
+    binary,
+    ...(agent === "antigravity" ? { labels: modelRowLabels(models, text) } : {}),
+  }
   failed.get(ctx.env)?.delete(agent)
   await storeModelList(ctx, agent, entry)
   return entry
@@ -130,7 +142,8 @@ function settled(
   }
   return (
     held.binary === binary &&
-    (now - held.checkedAt < MODEL_LIST_LIFETIME_MS ||
+    (((agent !== "antigravity" || held.labels !== undefined) &&
+      now - held.checkedAt < MODEL_LIST_LIFETIME_MS) ||
       (held.failedAt !== undefined && now - held.failedAt < MODEL_LIST_RETRY_MS))
   )
 }

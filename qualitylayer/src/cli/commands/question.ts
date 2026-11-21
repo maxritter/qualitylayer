@@ -68,10 +68,12 @@ import { parseArgs, requireTask } from "./shared.ts"
 const USAGE_TEXT =
   'usage: qualitylayer question ask \'<json: {"id":"q7","question","choices":[{"label","kind","words":true,"facts":["at most 3"],"diagram":"mermaid, at most 4 KB","evidence":[{"label","href"}],"artifact":"artifacts/<name>.html, the screen this choice leads to"}],"artifact":"artifacts/<name>.html[#section], the screen the question is about","recommended","grade":1|2|3,"why":"one line, grade 1","ahead":"questions still to come","about":{"doc":"{plan_doc}","section":"Done means","quote":"the words asked about"} or {"item":"plan:decision:…"},"settles":["plan:asked:1"],"gate":"{plan_doc}","item":"plan:decision:1","found":{"text","evidence"}}>\' [--wait-seconds 1..510] · question ask --batch \'<json: {"id":"b1","title":"Scope and what done means","ahead":"Probably the only batch","questions":[…questions as above, "late":true for a Plan Your call, "finding":"a finding of agents/{plan_doc} › Findings" on grade 3]}>\' (or --batch --file <json file, - for stdin>) · question show \'<json>\' · question progress "<line>" · question answered "<what the person said in this chat>"' +
   " · Give each batch question 2 to 6 choices. Each choice allows up to 3 facts, each at most 200 characters. Use detail for a choice description. With multi:true, recommended accepts an array of zero-based indices or labels."
+const OWNER_REQUESTS =
+  " · Verify question ask may bind a single ownerRequest { kind: budget | evidence, need: T-number, since: current need opened or reopened timestamp, amountCents: positive USD cents for budget only }. Use a choice’s confirm label for a consequential non-gate decision."
 
 /** The usage line with the task's file names. */
 const usage = () =>
-  `${fillNames(USAGE_TEXT)} · answered "<person's answer>" [--id <question-id>] · cancel (--id <question-id> | --batch <batch-id>) [--home]`
+  `${fillNames(USAGE_TEXT)}${OWNER_REQUESTS} · answered "<person's answer>" [--id <question-id>] · cancel (--id <question-id> | --batch <batch-id>) [--home]`
 
 /** Never answer for the person: said with every reply of `ask`. */
 const NEVER = "Never answer for the person, and never ask this question in your own chat or picker."

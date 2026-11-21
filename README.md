@@ -144,7 +144,7 @@ Your agent reads the code, asks what only you can answer and writes one Plan: **
 
 ### 2 · Implement, by your agents
 
-Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. It builds without a stop. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
+Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. By default it commits after each checked slice. You can choose one commit before Verify or review the checked worktree diff first. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/implement-dark.webp">

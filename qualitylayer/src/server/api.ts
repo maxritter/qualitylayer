@@ -1,3 +1,4 @@
+import type { CommitTiming } from "../core/config-values.ts"
 // The App's API, as plain functions over a Ctx: thin wrappers around the
 // same core modules the CLI commands call, so "the App shows what the CLI
 // knows" holds by construction. serve.ts only maps HTTP onto these.
@@ -83,13 +84,11 @@ import { scopeWalkthrough, workflowChangesView } from "../core/git/workflow-chan
 import { forgetWorkingPatches } from "../core/git/working-patch-cache.ts"
 import { clearWorkingRecords } from "../core/git/working-records.ts"
 import {
-  answeredHereMessage,
   builtPlace,
   type OutsideLead,
   outsideLead,
   plannedPlace,
   type StepPlace,
-  wakeOutsideSession,
 } from "../core/handoff/outside.ts"
 import { agentEntry, implementPrompt } from "../core/handoff/prompt.ts"
 import {
@@ -189,6 +188,7 @@ import {
   changeAnswer,
   type Heartbeat,
   openQuestion,
+  projectedQuestion,
   type Question,
   questionsAhead,
   readHeartbeat,
@@ -291,6 +291,7 @@ export type TaskSummary = {
   /** The user's words recorded as switches of the scaling rules. */
   overrides: string[]
   stage: Stage
+  commitTiming?: CommitTiming
   iterations: number
   created: number
   dir: string
@@ -964,6 +965,7 @@ async function summarise(
     title: task.title,
     request: typeof readme.request === "string" ? readme.request : task.title,
     type: task.type,
+    ...(task.commitTiming ? { commitTiming: task.commitTiming } : {}),
     ...(await adoptionSummary(ctx, task)),
     ...(isCurrentLayout(task) ? {} : { earlier: true as const }),
     files: await filesOf(ctx, task, project.name),
@@ -1524,7 +1526,9 @@ async function readTaskDetail(
     items,
     parts,
     checked,
-    question: gateFile?.finalReview ? null : await openQuestion(ctx, task),
+    question: gateFile?.finalReview
+      ? null
+      : await openQuestion(ctx, task).then((question) => question && projectedQuestion(question)),
     answeredQuestions: await answeredQuestions(ctx, task),
     questionWait: await readHeartbeat(ctx, task),
     ...(planDiff !== null ? { planDiff } : {}),
@@ -2656,13 +2660,6 @@ export async function postQuestionAnswer(
   const refused = await refuseArchived(ctx, found.data.task, "answering")
   if (!refused.ok) return refused
   const answered = await answerFromApp(ctx, found.data.task, answer, { files })
-  // A question asked in the terminal, answered here: the waiting session outside the App is woken with it.
-  if (answered.ok && "answered" in answered.data && found.data.task.answers === "terminal")
-    await wakeOutsideSession(
-      ctx,
-      found.data.task,
-      answeredHereMessage(answered.data.answered.number, answered.data.answered.choice),
-    )
   // *Approve and open a pull request* in the approval question's card: the gate recorded the
   // approval with the choice `opening`, and the pull request opens now, as from the Review card.
   if (answered.ok && "answered" in answered.data) await openChosenPullRequest(ctx, found.data.task)

@@ -32,6 +32,7 @@ import {
   parseQuestion,
   picksProblem,
   type Question,
+  questionRevision,
   reopenAnswer,
   takeMeanwhile,
 } from "./question.ts"
@@ -899,7 +900,9 @@ export async function answerBatch(
     /** The words the person wrote beside the choice they picked. */
     note?: string
   } = {},
-): Promise<Result<{ answer: AnsweredQuestion; receipt: DeliveryReceipt } | { more: Question }>> {
+): Promise<
+  Result<{ answer: AnsweredQuestion; receipt: DeliveryReceipt; reused?: true } | { more: Question }>
+> {
   return locked(ctx, task, async () => {
     if (
       options.via === "chat" &&
@@ -913,7 +916,22 @@ export async function answerBatch(
     if (!batch || !batches.some((b) => b.id === answer.batch))
       return bad("that batch is no longer current")
     const q = (await current(ctx, task, batch)).questions.find((q) => q.id === answer.id)
-    if (!q) return bad("that question is not waiting any more")
+    if (!q || (answer.revision !== undefined && questionRevision(q) !== answer.revision)) {
+      const saved =
+        answer.revision === undefined
+          ? undefined
+          : (await answeredQuestions(ctx, task)).findLast(
+              (entry) =>
+                entry.id === answer.id && entry.revision === answer.revision && !entry.reopened,
+            )
+      if (saved) {
+        const receipt = (await batchReceipts(ctx, task)).find(
+          (row) => row.id === `${batch.id}:${answer.id}:${saved.at}`,
+        )
+        if (receipt) return ok({ answer: saved, receipt, reused: true })
+      }
+      return bad("The question changed. Read the current question before answering.")
+    }
     if (
       options.expected &&
       (q.asked !== options.expected.asked ||

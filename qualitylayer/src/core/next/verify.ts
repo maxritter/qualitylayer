@@ -1478,7 +1478,19 @@ export async function verifyVerb(
           ])
         if (!reopened.ok) return reopened
       }
-      return runVerify(ctx, task, "judge")
+      const reply = await runVerify(ctx, task, "judge")
+      if (
+        reply.ok &&
+        reply.data.mode === "fixing" &&
+        Array.isArray(reply.data.moved) &&
+        reply.data.moved.length > 0
+      )
+        return ok({
+          ...reply.data,
+          message:
+            "Recorded the earlier failed review after the worktree changed. If you’ve fixed what it found, run qualitylayer verify recheck again to request a fresh judge for the current code.",
+        })
+      return reply
     }
     case "fix": {
       if (mode === "asked") return runVerify(ctx, task, "round")

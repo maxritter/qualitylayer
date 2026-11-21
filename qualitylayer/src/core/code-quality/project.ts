@@ -221,7 +221,7 @@ const inside = (root: string, path: string) => {
 
 export async function qualityProject(
   ctx: Ctx,
-  options: { existingHook?: string } = {},
+  options: { existingHook?: string; inspect?: boolean } = {},
 ): Promise<{ root: string; id: string; folder: string } | null> {
   const cwd = ctx.env.cwd()
   // A hook resolves the repository next (the task its session joined hangs on the common directory):
@@ -242,11 +242,11 @@ export async function qualityProject(
     if (!(await ctx.fs.exists(join(folder, "hooks", `${options.existingHook}.json`)))) return null
   }
   await ctx.fs.assertSafeDirectory?.(folder)
-  if (!(await ctx.fs.exists(folder))) {
+  if (!options.inspect && !(await ctx.fs.exists(folder))) {
     const entries = (await ctx.fs.exists(base)) ? await ctx.fs.readdir(base) : []
     if (entries.filter((name) => /^[a-f0-9]{24}$/.test(name)).length >= QUALITY_PROJECTS_MAX)
       throw new Error(
-        "Code-quality project storage has reached its limit; archive old project reports before adding another",
+        `QualityLayer already stores quality data for ${QUALITY_PROJECTS_MAX} checkouts. Run qualitylayer quality status --json in an inactive checkout to find its reportDirectory. Move that whole folder outside ${JSON.stringify(base)}, then retry. If the checkout is gone, its saved structure.json identifies it in report.root.`,
       )
   }
   return { root, id, folder }
@@ -294,13 +294,14 @@ export async function setQualityEnabled(ctx: Ctx, enabled: boolean): Promise<voi
 }
 
 export async function qualityStatus(ctx: Ctx) {
-  const project = await qualityProject(ctx)
+  const project = await qualityProject(ctx, { inspect: true })
   const binary = qualityToolPath(ctx)
   return {
     engine: "qlty",
     binary,
     installed: binary !== null && (await ctx.fs.exists(binary)),
     project: project?.root ?? null,
+    reportDirectory: project && (await ctx.fs.exists(project.folder)) ? project.folder : null,
     enabled: project ? (await controls(ctx, project.folder)).enabled : null,
     automatic: "Edited files at turn completion: structure checks and the secrets scan",
     scanners: await scannerStatus(ctx),

@@ -21,7 +21,15 @@ import {
   type Verdict,
 } from "../docs/build-log.ts"
 import { parseDoc } from "../docs/frontmatter.ts"
-import { allTasks, emptyOutline, type Outline } from "../docs/outline.ts"
+import {
+  allTasks,
+  dependenciesOf,
+  emptyOutline,
+  type Outline,
+  type SliceColumn,
+  sliceColumns,
+  type TreeFile,
+} from "../docs/outline.ts"
 import { recordLineTail } from "../docs/record-lines.ts"
 import { buildBase, mainLine } from "../git/base.ts"
 import { changes, isPlanPath } from "../git/changes.ts"
@@ -72,6 +80,8 @@ export type WalkFile = {
   tasks: string[]
   /** Written on the agent's own decision (a recorded deviation names it), not named by a card. */
   decided?: true
+  /** One-line purpose from the slice's file tree, when recorded. */
+  note?: string
 }
 
 export type WalkTask = { id: string; title: string; done: boolean }
@@ -82,6 +92,12 @@ export type WalkSlice = {
   title: string
   /** What works afterwards that did not before, in the slice's own words. */
   summary: string
+  /** Earlier slices this slice depends on, from `Depends on` or shared files/contracts. */
+  dependsOn?: number[]
+  /** Optional explanation from the slice's `Depends on` line. */
+  dependsReason?: string
+  /** Done means points whose acceptance steps complete on this slice (from `Proof order`). */
+  points?: number[]
   tasks: WalkTask[]
   /** The decisions the build recorded for this slice's tasks, each one sentence. */
   decisions: string[]
@@ -90,6 +106,13 @@ export type WalkSlice = {
   deletions: number | null
   /** The build's commits that ticked this slice's tasks. */
   commits: number
+}
+
+/** One recorded verification round commit and the files touched since it. */
+export type WalkRound = {
+  n: number
+  revision: string
+  files: string[]
 }
 
 /** A Done means point as the walkthrough says it: its verdict, what proved it and where it was built. */
@@ -135,6 +158,10 @@ export type Walkthrough = {
   changed: string
   points: WalkPoint[]
   slices: WalkSlice[]
+  /** The slices grouped into left-to-right build waves (deterministic from `sliceColumns`). */
+  columns?: SliceColumn[][]
+  /** Recorded verification round commits when >=2 distinct revisions exist, for round-delta review. */
+  rounds?: WalkRound[]
   /** The decisions the build recorded for the Plan as a whole, not for one slice. */
   planDecisions: string[]
   /** Files the agent decided to change that belong to no slice's task. */
@@ -293,16 +320,47 @@ const agentText = (review: string, heading: string) =>
     .replace(/<!--[\s\S]*?-->/g, "")
     .trim()
 
-const fileOf = (f: ChangedFileView): WalkFile => ({
-  path: f.path,
-  ...(f.from !== undefined ? { from: f.from } : {}),
-  status: f.status,
-  additions: f.additions,
-  deletions: f.deletions,
-  ...(f.stamp !== undefined ? { stamp: f.stamp } : {}),
-  tasks: f.tag.kind === "task" || f.tag.kind === "decided" ? f.tag.tasks : [],
-  ...(f.tag.kind === "decided" ? { decided: true as const } : {}),
-})
+const treeNoteFor = (path: string, tree: readonly TreeFile[]): string | undefined => {
+  const hit =
+    tree.find((f) => f.path === path) ??
+    tree.find((f) => f.path.endsWith(`/${path}`) || path.endsWith(`/${f.path}`))
+  const note = hit?.note.trim()
+  return note ? note : undefined
+}
+
+const fileOf = (f: ChangedFileView, tree: readonly TreeFile[] = []): WalkFile => {
+  const note = tree.length > 0 ? treeNoteFor(f.path, tree) : undefined
+  return {
+    path: f.path,
+    ...(f.from !== undefined ? { from: f.from } : {}),
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+    ...(f.stamp !== undefined ? { stamp: f.stamp } : {}),
+    tasks: f.tag.kind === "task" || f.tag.kind === "decided" ? f.tag.tasks : [],
+    ...(f.tag.kind === "decided" ? { decided: true as const } : {}),
+    ...(note !== undefined ? { note } : {}),
+  }
+}
+
+/** Map each slice number to the Done means points whose acceptance steps finish on that slice. */
+function slicePointsOf(
+  outline: Outline | null,
+  acceptance: AcceptanceAsRun,
+): Map<number, number[]> {
+  const out = new Map<number, number[]>()
+  if (outline === null || outline.proofOrder.length === 0 || !acceptance.points?.length) return out
+  const stepSlice = new Map(outline.proofOrder.map((p) => [p.id.toUpperCase(), p.slice]))
+  for (const point of acceptance.points) {
+    const slices = point.steps
+      .map((s) => stepSlice.get(s.id.toUpperCase()))
+      .filter((n): n is number => n !== undefined)
+    if (slices.length === 0) continue
+    const completesAt = Math.max(...slices)
+    out.set(completesAt, [...(out.get(completesAt) ?? []), point.n])
+  }
+  return out
+}
 
 const sum = lineTotal
 
@@ -338,6 +396,7 @@ export type WalkInput = {
   plan: string
   review: string
   lanes: readonly LaneRow[]
+  rounds?: WalkRound[]
   ship: { branch: string | null; base: string | null; url: string | null; shipped: boolean }
 }
 
@@ -345,12 +404,20 @@ export type WalkInput = {
 export function buildWalkthrough(input: WalkInput): Walkthrough {
   const { outline, byTask } = input
   const groups = new Map((byTask?.groups ?? []).map((g) => [g.n, g]))
+  const pointMap = slicePointsOf(outline, input.acceptance)
   const slices: WalkSlice[] = (outline?.slices ?? []).map((slice) => {
-    const files = (groups.get(slice.n)?.files ?? []).map(fileOf)
+    const files = (groups.get(slice.n)?.files ?? []).map((f) => fileOf(f, slice.tree))
+    const deps = outline !== null ? dependenciesOf(outline, slice) : []
+    const pts = pointMap.get(slice.n)
     return {
       n: slice.n,
       title: slice.title,
       summary: plain(slice.summary),
+      ...(deps.length > 0 ? { dependsOn: deps } : {}),
+      ...(slice.dependsReason !== null && slice.dependsReason !== ""
+        ? { dependsReason: plain(slice.dependsReason) }
+        : {}),
+      ...(pts !== undefined && pts.length > 0 ? { points: pts } : {}),
       tasks: slice.tasks.map((t) => ({ id: t.id, title: t.title, done: t.checked })),
       decisions: decisionsOf(outline, input.notes, slice.n),
       files,
@@ -359,11 +426,12 @@ export function buildWalkthrough(input: WalkInput): Walkthrough {
       commits: input.commits.filter((c) => c.slice === slice.n).length,
     }
   })
+  const columns = outline !== null && outline.slices.length > 0 ? sliceColumns(outline) : undefined
   // A group no slice of the cards holds (the agent's own decisions, n 0) stands apart.
   const known = new Set(slices.map((s) => s.n))
   const decided = (byTask?.groups ?? [])
     .filter((g) => !known.has(g.n))
-    .flatMap((g) => g.files.map(fileOf))
+    .flatMap((g) => g.files.map((f) => fileOf(f)))
 
   const points: WalkPoint[] = input.done.map((point) => {
     const row = input.proof.find((p) => p.n === point.n)
@@ -378,7 +446,7 @@ export function buildWalkthrough(input: WalkInput): Walkthrough {
   })
 
   const prNumber = input.ship.url?.match(/\/pull\/(\d+)/)?.[1]
-  const fixes = (byTask?.fixes ?? []).map(fileOf)
+  const fixes = (byTask?.fixes ?? []).map((f) => fileOf(f))
   return {
     ...(byTask !== null && outline !== null
       ? {
@@ -403,10 +471,14 @@ export function buildWalkthrough(input: WalkInput): Walkthrough {
     changed: agentText(input.review, "What changed"),
     points,
     slices,
+    ...(columns !== undefined ? { columns } : {}),
+    ...(input.rounds !== undefined && input.rounds.length >= 2 ? { rounds: input.rounds } : {}),
     planDecisions: decisionsOf(outline, input.notes, null),
     decided,
     fixes,
-    ...(byTask?.documents !== undefined ? { documents: byTask.documents.map(fileOf) } : {}),
+    ...(byTask?.documents !== undefined
+      ? { documents: byTask.documents.map((f) => fileOf(f)) }
+      : {}),
     notDoing: {
       plan: notDoingOf(input.plan),
       otherFiles: (byTask?.other ?? []).filter((f) => !isUncommitted(f)).map((f) => f.path),
@@ -437,6 +509,72 @@ export function buildWalkthrough(input: WalkInput): Walkthrough {
 const read = async (ctx: Ctx, path: string) =>
   (await ctx.fs.exists(path)) ? await ctx.fs.readFile(path) : ""
 
+/** Valid distinct verification round commits and the non-plan files changed since each commit. */
+const GIT_SHA = /^[0-9a-f]{7,40}$/i
+
+/** Map `checks.json` tree-revision hashes to the git HEAD commit recorded when each check ran. */
+async function checkHeadsByRevision(ctx: Ctx, task: Task): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  try {
+    const raw = await ctx.fs.readFile(`${task.runtimeDir}/checks.json`)
+    const entries = JSON.parse(raw) as unknown
+    if (!Array.isArray(entries)) return map
+    for (const entry of entries) {
+      if (typeof entry !== "object" || entry === null) continue
+      const { revision, head } = entry as { revision?: unknown; head?: unknown }
+      if (typeof revision === "string" && typeof head === "string" && GIT_SHA.test(head))
+        map.set(revision, head)
+    }
+  } catch {
+    // Missing or unreadable checks.json leaves only direct commit revisions.
+  }
+  return map
+}
+
+/** Distinct recorded git commit SHAs for a task's verification rounds. */
+export async function roundCommitsOf(
+  ctx: Ctx,
+  task: Task,
+  iterations: readonly Iteration[],
+): Promise<{ n: number; revision: string }[]> {
+  const byTree = await checkHeadsByRevision(ctx, task)
+  const seen = new Set<string>()
+  const unique: { n: number; revision: string }[] = []
+  for (const item of iterations) {
+    const raw = item.revision?.trim()
+    if (!raw) continue
+    const rev = GIT_SHA.test(raw) ? raw : byTree.get(raw)
+    if (!rev || seen.has(rev)) continue
+    const check = await ctx.git.run(task.repoRoot, ["cat-file", "-e", `${rev}^{commit}`])
+    if (check.code !== 0) continue
+    seen.add(rev)
+    unique.push({ n: item.n, revision: rev })
+  }
+  return unique
+}
+
+async function readRounds(
+  ctx: Ctx,
+  task: Task,
+  iterations: readonly Iteration[],
+): Promise<WalkRound[]> {
+  const unique = await roundCommitsOf(ctx, task, iterations)
+  if (unique.length < 2) return []
+  const rounds: WalkRound[] = []
+  for (const entry of unique) {
+    const diff = await ctx.git.run(task.repoRoot, ["diff", "--name-only", entry.revision])
+    const files =
+      diff.code === 0
+        ? diff.stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line !== "" && !isPlanPath(line))
+        : []
+    rounds.push({ n: entry.n, revision: entry.revision, files })
+  }
+  return rounds
+}
+
 /**
  * The walkthrough of a task's change, read from its records and git. `sources` is the page state
  * (pages/state.ts) the documents are written from; `byTask` the diff already split by task, when
@@ -461,6 +599,7 @@ export async function readWalkthrough(
         )
   const commits = await buildCommits(ctx, task, outline ?? emptyOutline())
   const record = await readBuildRecord(ctx, task)
+  const rounds = await readRounds(ctx, task, record.verification)
   const fm = await readmeFrontmatter(ctx, task)
   const base =
     typeof fm.base_ref === "string" && fm.base_ref !== ""
@@ -483,6 +622,7 @@ export async function readWalkthrough(
     plan: parseDoc(await read(ctx, taskDocPath(task, "plan"))).body,
     review: parseDoc(await read(ctx, taskDocPath(task, "verify"))).body,
     lanes: sources.records?.lanes ?? [],
+    ...(rounds.length >= 2 ? { rounds } : {}),
     ship: {
       branch: sources.ship.branch,
       base,

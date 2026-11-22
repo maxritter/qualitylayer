@@ -10,7 +10,34 @@ export type StorySlice = {
   state: "done" | "running" | "next" | "after"
   /** How many of its tasks are done. */
   done: number
+  /** Upstream slices this slice depends on. */
+  dependsOn?: number[]
+  /** Why this slice depends on its upstream slices. */
+  dependsReason?: string
+  /** Done means points this slice proves. */
+  points?: number[]
 }
+
+/** Five dependency waves across the eleven usage-billing slices. */
+export const DEMO_SLICE_COLUMNS: { n: number; after: number | null }[][] = [
+  [{ n: 1, after: null }],
+  [
+    { n: 2, after: 1 },
+    { n: 3, after: 1 },
+    { n: 9, after: 1 },
+  ],
+  [
+    { n: 4, after: 2 },
+    { n: 5, after: 2 },
+    { n: 6, after: 3 },
+  ],
+  [
+    { n: 7, after: 6 },
+    { n: 8, after: 4 },
+    { n: 10, after: 4 },
+  ],
+  [{ n: 11, after: 8 }],
+]
 export type StoryDecision = { where: string; what: string; note: string }
 
 export const DONE_MEANS: StoryPoint[] = [
@@ -42,6 +69,7 @@ export const SLICES: StorySlice[] = [
     ],
     state: "done",
     done: 3,
+    points: [1, 2],
   },
   {
     n: 2,
@@ -56,6 +84,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "done",
     done: 4,
+    dependsOn: [1],
+    dependsReason: "hardens the gateway meter and five-minute window",
+    points: [1, 9],
   },
   {
     n: 3,
@@ -65,6 +96,9 @@ export const SLICES: StorySlice[] = [
     tasks: ["T8 Cache the plan at the gateway for 60 s", "T9 Benchmark metering at p99"],
     state: "done",
     done: 2,
+    dependsOn: [1],
+    dependsReason: "caches plans on the gateway metering path",
+    points: [6],
   },
   {
     n: 4,
@@ -78,6 +112,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "done",
     done: 3,
+    dependsOn: [2],
+    dependsReason: "prices deduplicated ledger windows",
+    points: [3],
   },
   {
     n: 5,
@@ -90,6 +127,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "running",
     done: 1,
+    dependsOn: [2],
+    dependsReason: "keeps seat billing isolated from the usage ledger",
+    points: [4],
   },
   {
     n: 6,
@@ -103,6 +143,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "running",
     done: 1,
+    dependsOn: [3],
+    dependsReason: "reads the 60-second gateway plan cache",
+    points: [10],
   },
   {
     n: 7,
@@ -115,6 +158,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "next",
     done: 0,
+    dependsOn: [6],
+    dependsReason: "evaluates limits saved on the Plan and limits page",
+    points: [11],
   },
   {
     n: 8,
@@ -128,6 +174,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "running",
     done: 0,
+    dependsOn: [4, 5],
+    dependsReason: "previews both usage and seat invoices side by side",
+    points: [7, 12],
   },
   {
     n: 9,
@@ -141,6 +190,9 @@ export const SLICES: StorySlice[] = [
     ],
     state: "next",
     done: 0,
+    dependsOn: [1],
+    dependsReason: "replays access logs through the same window schema",
+    points: [5],
   },
   {
     n: 10,
@@ -149,6 +201,9 @@ export const SLICES: StorySlice[] = [
     tasks: ["T26 Link each invoice line to its windows", "T27 Show the windows behind a line"],
     state: "after",
     done: 0,
+    dependsOn: [4, 9],
+    dependsReason: "links live and backfilled windows to invoice lines",
+    points: [8],
   },
   {
     n: 11,
@@ -157,6 +212,8 @@ export const SLICES: StorySlice[] = [
     tasks: ["T28 Simplify the whole change"],
     state: "after",
     done: 0,
+    dependsOn: [7, 8, 10],
+    dependsReason: "runs once every functional slice is green",
   },
 ]
 

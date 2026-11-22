@@ -197,6 +197,12 @@ export type BoardSlice = {
   /** One segment per task: done, in work, or waiting. */
   segs: ("d" | "r" | "")[]
   tasks: number
+  /** Earlier slices this slice depends on. */
+  dependsOn?: number[]
+  /** Optional reason from `Depends on`. */
+  dependsReason?: string
+  /** Unique non-plan files changed by this slice's commits. */
+  filesChanged?: number
   /** The agent's task cards for this slice: in the App only, never on the share link. */
   cards?: TaskCard[]
 }
@@ -240,6 +246,8 @@ export type FailingTask = { id: string; command: string }
 
 export type ImplementView = {
   slices: BoardSlice[]
+  /** Left-to-right build wave columns from `sliceColumns`. */
+  columns?: { n: number; after: number | null }[][]
   /** The task the build session reports on now. */
   now?: { id: string; title: string }
   /** The checks that fail now, one chip. */
@@ -608,6 +616,9 @@ function implementView(task: TaskDetail, mode: Mode, now: number): ImplementView
       status,
       segs: s.tasks.map((t) => (t.checked ? "d" : t.id === runningTask && !halted ? "r" : "")),
       tasks: s.tasks.length,
+      ...(s.dependsOn?.length ? { dependsOn: s.dependsOn } : {}),
+      ...(s.dependsReason ? { dependsReason: s.dependsReason } : {}),
+      ...(s.filesChanged ? { filesChanged: s.filesChanged } : {}),
       ...(live ? { cards: cardsOf(s, runningTask, halted, timeline.builder?.line) } : {}),
     }
   })
@@ -626,6 +637,7 @@ function implementView(task: TaskDetail, mode: Mode, now: number): ImplementView
 
   return {
     slices,
+    ...(timeline.columns.length > 0 ? { columns: timeline.columns } : {}),
     ...(card !== undefined ? { now: { id: card.id, title: card.title } } : {}),
     failing,
     // The amendments, each once, and the ones the person agreed to, in the order they were made.

@@ -912,6 +912,19 @@ export function createDemoApi(
       if (found === undefined) throw new Error(`${name} does not exist yet`)
       return found
     },
+    planRevisions: async (id) => {
+      if (id !== DEMO_TASK_ID) return { current: 1, count: 1, previous: null }
+      const currentMd = pageText(get(id), TASK_FILES.plan, true) ?? ""
+      const prevMd = currentMd
+        .split("\n")
+        .filter((line) => !line.includes("prorate") && !line.includes("80 %"))
+        .join("\n")
+      return {
+        current: 2,
+        count: 2,
+        previous: { n: 1, at: Date.now() - 25 * 60_000, label: "plan", markdown: prevMd },
+      }
+    },
     doc: async (id, name) => {
       const known = get(id)
       if (chatFixture && id === DEMO_TASK_ID && ["chat-plan.md", "chat-slices.md"].includes(name))

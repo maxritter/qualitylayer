@@ -5,11 +5,12 @@
 // the agents' file, which the Reader lists. The person's move is never here except the agent's own
 // card (the build to start, or a stopped session).
 
-import { BanIcon, LayersIcon, SplitIcon } from "lucide-react"
-import { useMemo } from "react"
+import { BanIcon, LayersIcon, ListIcon, SplitIcon, WorkflowIcon } from "lucide-react"
+import { useMemo, useState } from "react"
 import { shellStatus } from "../../../core/interaction-shell/status.ts"
 import { agentName } from "../../../core/live/liveness.ts"
 import { buildsNextLine } from "../../outside.ts"
+import { Segmented } from "../../Segmented.tsx"
 import { AgentTurn } from "../../shell/AgentTurn.tsx"
 import { Bands } from "../../step-page/bands/Bands.tsx"
 import { FoldedGroup } from "../../step-page/bands/FoldedGroup.tsx"
@@ -30,6 +31,7 @@ import { Board } from "./Board.tsx"
 import { DecisionRows, decisionRowOf, LimitRows, limitsOf } from "./Changes.tsx"
 import { IconFold, IconPart, ReadRow } from "./heads.tsx"
 import { headerOf } from "./progress.ts"
+import { StackGraph } from "./StackGraph.tsx"
 
 /** An agent's name in the page's words; one the App does not know is the person's own agent. */
 const nameOf = (agent: string) =>
@@ -83,6 +85,10 @@ export function ImplementStepPage(props: StepPageProps) {
   )
   const stageTitle = stepTitleOf(task.stage)
   const built = view?.slices.every((s) => s.status === "done") === true
+  const hasGraph = (view?.slices.length ?? 0) >= 2
+  const [sliceView, setSliceView] = useState<"board" | "graph">("board")
+  const showGraph = hasGraph && sliceView === "graph"
+  const [focusSlice, setFocusSlice] = useState<{ n: number; seq: number } | null>(null)
 
   if ((view?.slices.length ?? 0) === 0 && decisions.length === 0 && mode !== "plain")
     return (
@@ -125,8 +131,52 @@ export function ImplementStepPage(props: StepPageProps) {
         core={
           <>
             {view !== undefined && view.slices.length > 0 ? (
-              <IconPart id={`${sectionId("Slices")}-h`} title="Slices" icon={LayersIcon}>
-                <Board key={task.id} slices={view.slices} />
+              <IconPart
+                id={`${sectionId("Slices")}-h`}
+                title="Slices"
+                icon={LayersIcon}
+                action={
+                  hasGraph ? (
+                    <Segmented
+                      value={showGraph ? "graph" : "board"}
+                      options={[
+                        {
+                          id: "board" as const,
+                          label: "Board",
+                          icon: <ListIcon className="size-3.5" aria-hidden="true" />,
+                        },
+                        {
+                          id: "graph" as const,
+                          label: "Stack graph",
+                          icon: <WorkflowIcon className="size-3.5" aria-hidden="true" />,
+                        },
+                      ]}
+                      onChange={setSliceView}
+                      label="Slices view"
+                      size="sm"
+                    />
+                  ) : undefined
+                }
+              >
+                {showGraph ? (
+                  <StackGraph
+                    slices={view.slices}
+                    columns={view.columns}
+                    taskId={mode === "live" ? task.id : undefined}
+                    onSelect={(n) => setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))}
+                    onOpenBoard={(n) => {
+                      setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))
+                      setSliceView("board")
+                    }}
+                  />
+                ) : (
+                  <Board
+                    key={task.id}
+                    slices={view.slices}
+                    taskId={mode === "live" ? task.id : undefined}
+                    focusSlice={focusSlice}
+                  />
+                )}
               </IconPart>
             ) : null}
             {limitsRecorded &&

@@ -59,8 +59,14 @@ export function whyOf(
 ): Why {
   const tasks = file.tasks.map((id) => ({ id, title: titles.get(id) ?? "" }))
   const role = facts?.role ?? "slice"
+  const treeNote = file.note?.trim() ?? ""
   if (role === "document") return { tasks: [], note: "The task's own document" }
   if (role === "fix") return { tasks: [], note: "Changed after your review, as you asked" }
-  if (role === "decided") return { tasks, note: "the agent's choice" }
+  if (role === "decided")
+    return {
+      tasks,
+      note: treeNote !== "" ? `${treeNote} · the agent's choice` : "the agent's choice",
+    }
+  if (treeNote !== "") return { tasks, note: treeNote }
   return { tasks, note: tasks.length === 0 ? "No card names it" : "" }
 }

@@ -872,6 +872,62 @@
   .pl-take-body > :first-child {
     margin-top: 0;
   }
+
+  /* Quiet Plan revision diff panel (full-border pass tint, no side-tab bar) */
+  .pl-rev-btn[aria-pressed="true"] {
+    border-color: var(--ql-pass-line);
+    color: var(--ql-pass);
+  }
+  .pl-revdiff {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--ql-pass-line);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ql-pass) 6%, var(--ql-bg));
+    display: grid;
+    gap: 10px;
+  }
+  .pl-revdiff-h {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .pl-revdiff-h > b {
+    font-weight: 600;
+  }
+  .pl-revdiff-h > span {
+    font-size: 12px;
+    color: var(--ql-text-dim);
+  }
+  .pl-revdiff-groups {
+    display: grid;
+    gap: 8px;
+  }
+  .pl-revdiff-group > h3 {
+    margin: 0 0 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ql-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .pl-revdiff-group > ul {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 3px;
+    font-size: 13px;
+    color: var(--ql-text);
+  }
+  .pl-revdiff-more {
+    color: var(--ql-text-dim);
+    list-style: none;
+    margin-left: -18px;
+    font-size: 12px;
+  }
 }
 
 .pl-indicators {

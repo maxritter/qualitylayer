@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Implement</title>
-<meta name="ql:changed" content="11 Nov draft: the Outline is the first part of Implement. One board, one Decided while building list, Program design folded; task cards and the order of proof live in the agents' file; no stop between the approved Plan and the code">
+<meta name="ql:changed" content="22 Nov: Implement adds a monochrome-plus-blue left-to-right Stack graph toggle in Slices (derived from slice dependency waves), Done means tags and committed diff counts on slice rows, and a quiet View diff button on completed slices opening ReviewWorkspace">
 <meta name="description" content="Step 2 of 3: the Implement page as the build board from the approved Plan to the last task, with today's Outline folded in.">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="review.css">
@@ -319,7 +319,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
         </header>
 
         <section class="sp-part" aria-label="Slices" id="slices">
-          <h2><svg class="ic s14"><use href="#i-layers"/></svg>Slices</h2>
+          <h2><svg class="ic s14"><use href="#i-layers"/></svg>Slices<span class="grow"></span><span class="chip note">Stack graph · Board · View diff on completed slices</span></h2>
           <div class="board">
 
             <details class="fold" open>

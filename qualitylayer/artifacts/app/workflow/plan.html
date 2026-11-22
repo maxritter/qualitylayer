@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plan</title>
-<meta name="ql:changed" content="11 Nov: the Plan step of the three-step workflow. One page and two files; Done means carries its proof; one Scope; one Decided with you list; four Technical folds on the page, the rest in the agents' file; the Pull request button pushes the page and opens GitHub's prefilled compare page">
+<meta name="ql:changed" content="22 Nov: Plan adds a quiet Compare rev toggle in StepTools when two or more saved Plan snapshots exist, highlighting lines added or changed since the prior revision without changing Plan's section structure or zero-file-path boundary">
 <meta name="description" content="Step 1 of 3: the Plan page, the one thing a person reads, answers and approves before the build.">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="review.css">
@@ -374,6 +374,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
           <div class="sp-titlerow">
             <h1 class="hi"><svg class="ic"><use href="#s-plan"/></svg>Plan</h1>
             <span class="sp-tools">
+              <button type="button" class="q-btn sm" aria-pressed="false" title="Highlight lines changed since the prior saved Plan revision (shown when >=2 revisions exist)"><svg class="ic s14"><use href="#i-clock"/></svg>Compare rev</button>
               <button type="button" class="q-btn sm"><svg class="ic s14"><use href="#i-copy"/></svg>Copy</button>
               <span data-ql-export="plan" data-title="Use QualityLayer from your agent · Plan"></span>
               <button type="button" class="q-btn sm icon" aria-label="Sections" title="Sections"><svg class="ic s14"><use href="#i-tree"/></svg></button>

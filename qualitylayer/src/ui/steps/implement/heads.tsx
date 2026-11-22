@@ -16,12 +16,14 @@ export function IconPart({
   title,
   icon: Icon,
   count,
+  action,
   children,
 }: {
   id: string
   title: string
   icon: LucideIcon
   count?: ReactNode
+  action?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -32,6 +34,7 @@ export function IconPart({
         {count !== undefined && count !== null && count !== "" ? (
           <span className="bd-n">{count}</span>
         ) : null}
+        {action !== undefined ? <span className="ib-part-action">{action}</span> : null}
       </h2>
       {children}
     </section>

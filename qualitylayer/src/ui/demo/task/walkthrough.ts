@@ -24,7 +24,7 @@ import { demoCodeDiff, demoSliceFiles, METER_PATH } from "./diffs.ts"
 import { TASK_BASE_DOCUMENTS, TASK_FILES } from "./documents.ts"
 import { DEMO_PLAN } from "./plan.ts"
 import { FINANCE_CONFIRMATION } from "./story.ts"
-import { BUILD_DECISIONS, DONE_MEANS, SLICES } from "./story-data.ts"
+import { BUILD_DECISIONS, DEMO_SLICE_COLUMNS, DONE_MEANS, SLICES } from "./story-data.ts"
 import { demoLanes } from "./verify.ts"
 
 /**
@@ -155,6 +155,9 @@ const slicesOf = (): WalkSlice[] =>
       additions: sum(files, "additions"),
       deletions: sum(files, "deletions"),
       commits: 1,
+      ...(s.dependsOn?.length ? { dependsOn: s.dependsOn } : {}),
+      ...(s.dependsReason ? { dependsReason: s.dependsReason } : {}),
+      ...(s.points?.length ? { points: s.points } : {}),
       ...(SLICE_RISKS[s.n] !== undefined ? { risky: SLICE_RISKS[s.n] as string } : {}),
     }
   })
@@ -405,6 +408,20 @@ export function demoWalkthrough(): Walkthrough {
       pr: null,
       shipped: false,
     },
+    columns: DEMO_SLICE_COLUMNS,
+    rounds: [
+      {
+        n: 1,
+        revision: "demo-r1",
+        files: [
+          METER_PATH,
+          "services/invoicing/src/proration.ts",
+          "tests/invoicing/proration.test.ts",
+          "services/billing/src/pricing.ts",
+        ],
+      },
+      { n: 2, revision: "demo-r2", files: [] },
+    ],
   }
   return cached
 }

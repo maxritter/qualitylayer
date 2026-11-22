@@ -8,8 +8,9 @@ import type { Note, TimelineSlice, TimelineTask } from "../../../core/timeline.t
 import type { TaskDetail } from "../../api.ts"
 import { verifyChecklist } from "../verify.ts"
 import type { Area } from "./area.ts"
+import { demoSliceFiles } from "./diffs.ts"
 import { atReview, type Moment } from "./moments.ts"
-import { BUILD_DECISIONS, DONE_MEANS, SLICES } from "./story-data.ts"
+import { BUILD_DECISIONS, DEMO_SLICE_COLUMNS, DONE_MEANS, SLICES } from "./story-data.ts"
 
 /** The live-admin point is settled by a simulated answer before Verify turns to the person. */
 const FINANCE_POINT = 7
@@ -34,6 +35,9 @@ function storySlices(finished: boolean): TimelineSlice[] {
     validation: "",
     risky: null,
     commit: null,
+    ...(s.dependsOn?.length ? { dependsOn: s.dependsOn } : {}),
+    ...(s.dependsReason ? { dependsReason: s.dependsReason } : {}),
+    ...(finished || s.state === "done" ? { filesChanged: demoSliceFiles(s.n).length } : {}),
     tasks: s.tasks.map((line, index): TimelineTask => {
       const [id = "", ...title] = line.split(" ")
       const checked = finished || s.state === "done" || index < s.done
@@ -200,7 +204,7 @@ export const story: Area = {
       timeline: {
         ...task.timeline,
         slices,
-        columns: slices.map((s) => [{ n: s.n, after: null }]),
+        columns: DEMO_SLICE_COLUMNS,
         builder: building
           ? moment === "impl-fix"
             ? {

@@ -79,15 +79,28 @@ function ReadFailure({
 
 function Opened({
   file,
+  slice,
   checked,
   onClose,
   ...page
-}: Props & { file: string | null; checked?: string | undefined; onClose: () => void }) {
+}: Props & {
+  file: string | null
+  slice: number | null
+  checked?: string | undefined
+  onClose: () => void
+}) {
   const view = useWalkthrough(page.api, page.task.id, "workspace", checked)
   if (view.error !== null)
     return <ReadFailure reason={view.error.message} retry={view.reload} close={onClose} />
   return view.data === null ? null : (
-    <Workspace {...page} view={view.data} file={file} checked={checked} onClose={onClose} />
+    <Workspace
+      {...page}
+      view={view.data}
+      file={file}
+      slice={slice}
+      checked={checked}
+      onClose={onClose}
+    />
   )
 }
 
@@ -98,11 +111,13 @@ function Workspace({
   onMark,
   view: walkthrough,
   file,
+  slice,
   checked,
   onClose,
 }: Props & {
   view: WalkthroughView
   file: string | null
+  slice: number | null
   checked?: string | undefined
   onClose: () => void
 }) {
@@ -122,11 +137,12 @@ function Workspace({
       comments={comments}
       deciding={!readOnly && deciding}
       {...(!readOnly && onMark ? { onMark } : {})}
-      loadDiff={(path, signal, revision) =>
+      loadDiff={(path, signal, revision, since) =>
         api.fileDiff(task.id, path, {
           signal,
-          ...(walkthrough.changeScope && revision ? { revision } : {}),
+          ...(walkthrough.changeScope && revision && !since ? { revision } : {}),
           ...(checked ? { checked } : {}),
+          ...(since ? { since } : {}),
         })
       }
       loadSource={(request) => api.reviewFileSource(task.id, request, checked)}
@@ -162,6 +178,7 @@ function Workspace({
         reload?.()
       }}
       file={file}
+      initialSlice={slice}
       onClose={onClose}
       {...(!readOnly && typeof api.clearTaskChanges === "function"
         ? {
@@ -177,14 +194,22 @@ function Workspace({
 }
 
 export function ReviewWorkspaceHost(props: Props) {
-  const [asked, setAsked] = useState<{ file: string | null; n: number; checked?: string } | null>(
-    null,
-  )
+  const [asked, setAsked] = useState<{
+    file: string | null
+    slice: number | null
+    n: number
+    checked?: string
+  } | null>(null)
   useReviewWorkspaceOpener(
     props.task.id,
     useCallback(
-      (file: string | null, checked?: string) =>
-        setAsked((was) => ({ file, n: (was?.n ?? 0) + 1, ...(checked ? { checked } : {}) })),
+      (file: string | null, checked?: string, slice?: number | null) =>
+        setAsked((was) => ({
+          file,
+          slice: slice ?? null,
+          n: (was?.n ?? 0) + 1,
+          ...(checked ? { checked } : {}),
+        })),
       [],
     ),
   )
@@ -194,6 +219,13 @@ export function ReviewWorkspaceHost(props: Props) {
     return () => publishWorkspaceShown(null)
   }, [asked, props.task.id])
   return asked === null ? null : (
-    <Opened key={asked.n} {...props} file={asked.file} checked={asked.checked} onClose={onClose} />
+    <Opened
+      key={asked.n}
+      {...props}
+      file={asked.file}
+      slice={asked.slice}
+      checked={asked.checked}
+      onClose={onClose}
+    />
   )
 }

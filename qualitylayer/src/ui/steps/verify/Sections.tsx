@@ -9,8 +9,10 @@ import {
   BugIcon,
   CheckIcon,
   CircleCheckIcon,
+  Columns2Icon,
   HammerIcon,
   HomeIcon,
+  LayersIcon,
   ListOrderedIcon,
   type LucideIcon,
   MonitorIcon,
@@ -18,16 +20,18 @@ import {
   SettingsIcon,
   WorkflowIcon,
 } from "lucide-react"
-import { type ReactNode, useContext, useState } from "react"
+import { type CSSProperties, type ReactNode, useContext, useState } from "react"
 import { createPortal } from "react-dom"
 import { beforeAfterParts, boldParts } from "../../../core/docs/prose-parts.ts"
 import type { AcceptanceAsRun, AcceptanceRow } from "../../../core/review/screen-evidence.ts"
 import type { WalkScreen } from "../../../core/review/screen-pairs.ts"
+import type { Walkthrough } from "../../../core/review/walkthrough.ts"
 import type { Api } from "../../api.ts"
 import { PreviewActions } from "../../artifact/PreviewControls.tsx"
 import { useQuery } from "../../hooks.ts"
 import { useActionSlot } from "../../kit/action-slot.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
+import { openReviewWorkspace } from "../../review-workspace/open.ts"
 import { Segmented } from "../../Segmented.tsx"
 import { DocMarkdown } from "../../step-page/DocMarkdown.tsx"
 import { FigureBelow, GalleryTabs } from "../../step-page/kit/GalleryTabs.tsx"
@@ -44,6 +48,7 @@ import {
 } from "../../timeline/Walkthrough.tsx"
 import { BLANK, type LoadEvidence, useEvidenceSources } from "../evidence-pictures.ts"
 import type { ChangedDiagram } from "./record.ts"
+import { SliceFlowGraph } from "./SliceFlowGraph.tsx"
 
 type Where = { state: StepState; mode: Mode; live: StepLive | undefined }
 
@@ -58,36 +63,57 @@ const DIAGRAM_ICONS: Record<ChangedDiagram["kind"], LucideIcon> = {
 const Caption = ({ children, hidden }: { children: ReactNode; hidden?: boolean }) =>
   children === "" || hidden === true ? null : <p className="rvw-cap">{children}</p>
 
-/** Up to three diagrams in tabs, each in the App's diagram view with its one sentence. */
+/** Up to three diagrams in tabs, plus the deterministic Slice flow architecture graph when >=2 slices exist. */
 export function ChangedTabs({
   diagrams,
+  walk,
+  taskId,
   state,
+  mode,
   live,
-}: { diagrams: readonly ChangedDiagram[] } & Where) {
-  if (diagrams.length === 0) return null
-  return (
-    <GalleryTabs
-      label="Diagrams"
-      tabs={diagrams.map((item) => ({
-        id: item.id,
-        icon: icon(DIAGRAM_ICONS[item.kind]),
-        label: item.title,
-        panel: (
-          <>
-            <DocMarkdown
-              markdown={`\`\`\`mermaid\n${item.code}\n\`\`\``}
-              state={state}
-              first={false}
-              live={live}
-            />
-            <Caption>
-              <InlineMarkdown text={item.caption} />
-            </Caption>
-          </>
-        ),
-      }))}
-    />
-  )
+}: {
+  diagrams: readonly ChangedDiagram[]
+  walk?: Walkthrough | null
+  taskId?: string
+} & Where) {
+  const tabs = diagrams.map((item) => ({
+    id: item.id,
+    icon: icon(DIAGRAM_ICONS[item.kind]),
+    label: item.title,
+    panel: (
+      <>
+        <DocMarkdown
+          markdown={`\`\`\`mermaid\n${item.code}\n\`\`\``}
+          state={state}
+          first={false}
+          live={live}
+        />
+        <Caption>
+          <InlineMarkdown text={item.caption} />
+        </Caption>
+      </>
+    ),
+  }))
+  if (walk && walk.slices.length >= 2) {
+    tabs.push({
+      id: "slice-flow",
+      icon: icon(LayersIcon),
+      label: "Slice flow",
+      panel: (
+        <SliceFlowGraph
+          walk={walk}
+          {...(mode === "live" && taskId !== undefined
+            ? {
+                onOpenSlice: (slice, file) =>
+                  openReviewWorkspace(taskId, { slice, file: file ?? null }),
+              }
+            : {})}
+        />
+      ),
+    })
+  }
+  if (tabs.length === 0) return null
+  return <GalleryTabs label="Diagrams" tabs={tabs} />
 }
 
 /** "approve-menu" → "Approve menu": the screen's name as a tab. */
@@ -109,12 +135,53 @@ const screenIcon = (name: string): LucideIcon => {
   return MonitorIcon
 }
 
-type Side = "built" | "designed"
+type Side = "built" | "designed" | "compare"
 
 const SIDES: { id: Side; label: string; icon: ReactNode }[] = [
   { id: "designed", label: "Designed", icon: <PencilRulerIcon aria-hidden="true" /> },
   { id: "built", label: "Built", icon: <HammerIcon aria-hidden="true" /> },
 ]
+
+const SIDES_COMPARE: { id: Side; label: string; icon: ReactNode }[] = [
+  ...SIDES,
+  { id: "compare", label: "Compare", icon: <Columns2Icon aria-hidden="true" /> },
+]
+
+function SwipeCompare({
+  designedSrc,
+  builtSrc,
+  name,
+}: {
+  designedSrc: string
+  builtSrc: string
+  name: string
+}) {
+  const [pos, setPos] = useState(50)
+  return (
+    <div className="rvw-swipe" data-testid="screen-swipe">
+      <div className="rvw-swipe-stage" style={{ "--swipe-pos": `${pos}%` } as CSSProperties}>
+        {/* biome-ignore lint/performance/noImgElement: raster built screen capture */}
+        <img src={builtSrc} alt={`Built ${name}`} className="rvw-swipe-img" />
+        <div className="rvw-swipe-overlay">
+          {/* biome-ignore lint/performance/noImgElement: raster designed screen capture */}
+          <img src={designedSrc} alt={`Designed ${name}`} className="rvw-swipe-img" />
+        </div>
+        <span className="rvw-swipe-badge left">Designed</span>
+        <span className="rvw-swipe-badge right">Built</span>
+        <div className="rvw-swipe-line" aria-hidden="true" />
+      </div>
+      <input
+        type="range"
+        className="rvw-swipe-range"
+        min={5}
+        max={95}
+        value={pos}
+        aria-label={`Swipe between Designed and Built for ${name}`}
+        onChange={(e) => setPos(Number(e.target.value))}
+      />
+    </div>
+  )
+}
 
 /**
  * One screen: one picture at full width. With a built picture, a Designed / Built switch stands in
@@ -142,7 +209,14 @@ function ScreenPanel({
   const hasBuilt =
     screen.outcome === "captured" &&
     (Boolean(screen.built) || (Boolean(screen.file) && loadEvidence !== undefined))
-  const built = hasBuilt && side === "built"
+  const canCompare = hasBuilt && Boolean(screen.image) && Boolean(screen.built)
+  const effectiveSide: Side = !hasBuilt
+    ? "designed"
+    : side === "compare" && !canCompare
+      ? "built"
+      : side
+  const built = effectiveSide === "built"
+  const comparing = effectiveSide === "compare" && canCompare
   const verdict = screen.verdict.trim() === "No comparison recorded." ? "" : screen.verdict.trim()
   const refresh = screen.stale ? `needs refresh · ${screen.staleReason ?? "the build changed"}` : ""
   // The design is an artifact the live page can open (a shared copy holds a still, and no host).
@@ -157,8 +231,8 @@ function ScreenPanel({
     <>
       <span className="rvw-side" data-testid="screen-side">
         <Segmented
-          value={side}
-          options={SIDES}
+          value={effectiveSide}
+          options={canCompare ? SIDES_COMPARE : SIDES}
           onChange={setSide}
           label={`${name}: picture`}
           size="sm"
@@ -168,7 +242,7 @@ function ScreenPanel({
     </>
   ) : null
   return (
-    <div className="rvw-shot" data-testid="screen-compare" data-side={built ? "built" : "designed"}>
+    <div className="rvw-shot" data-testid="screen-compare" data-side={effectiveSide}>
       {actions === null
         ? null
         : slot === null
@@ -176,7 +250,9 @@ function ScreenPanel({
           : slot.shown && slot.element !== null
             ? createPortal(actions, slot.element)
             : null}
-      {!built ? (
+      {comparing && screen.image && screen.built ? (
+        <SwipeCompare designedSrc={screen.image} builtSrc={screen.built} name={name} />
+      ) : !built ? (
         <DesignedScreen
           screen={screen}
           title={hasBuilt ? `Designed ${name}` : name}

@@ -8,10 +8,11 @@ type Input = {
   files: readonly WalkFile[]
   current: string | null
   parse: DiffsModule["parsePatchFiles"] | null
-  load: (path: string, signal?: AbortSignal, revision?: string) => Promise<string>
+  load: (path: string, signal?: AbortSignal, revision?: string, since?: string) => Promise<string>
+  since?: string | null
 }
-const identity = (file: WalkFile) =>
-  JSON.stringify([file.path, file.stamp ?? [file.additions, file.deletions]])
+const identity = (file: WalkFile, since?: string | null) =>
+  JSON.stringify([file.path, file.stamp ?? [file.additions, file.deletions], since ?? ""])
 
 class DiffReads {
   private cache = new Map<string, ReviewDiff[]>()
@@ -24,7 +25,7 @@ class DiffReads {
   start(input: Input) {
     this.input = input
     this.active = true
-    const current = new Set(input.files.map(identity))
+    const current = new Set(input.files.map((file) => identity(file, input.since)))
     for (const [key, controller] of this.controllers) if (!current.has(key)) controller.abort()
     this.pump()
   }
@@ -32,17 +33,17 @@ class DiffReads {
     this.active = false
     for (const controller of this.controllers.values()) controller.abort()
   }
-  snapshot(files: readonly WalkFile[]) {
+  snapshot(files: readonly WalkFile[], since?: string | null) {
     return {
       loaded: new Map(
         files.flatMap((file) => {
-          const diff = this.cache.get(identity(file))
+          const diff = this.cache.get(identity(file, since))
           return diff === undefined ? [] : [[file.path, diff] as const]
         }),
       ),
       errors: new Map(
         files.flatMap((file) => {
-          const error = this.failures.get(identity(file))
+          const error = this.failures.get(identity(file, since))
           return error === undefined ? [] : [[file.path, error] as const]
         }),
       ),
@@ -50,7 +51,7 @@ class DiffReads {
   }
   retry(paths: readonly string[]) {
     for (const file of this.input?.files ?? [])
-      if (paths.includes(file.path)) this.failures.delete(identity(file))
+      if (paths.includes(file.path)) this.failures.delete(identity(file, this.input?.since))
     this.changed()
     this.pump()
   }
@@ -63,21 +64,26 @@ class DiffReads {
       : input.files
     for (const file of queue) {
       if (this.pending.size >= 4) break
-      const key = identity(file)
+      const key = identity(file, input.since)
       if (this.cache.has(key) || this.failures.has(key) || this.pending.has(key)) continue
       this.pending.add(key)
-      void this.read(file, input.parse, input.load)
+      void this.read(file, input.parse, input.load, input.since)
     }
   }
-  private async read(file: WalkFile, parse: NonNullable<Input["parse"]>, load: Input["load"]) {
-    const key = identity(file)
+  private async read(
+    file: WalkFile,
+    parse: NonNullable<Input["parse"]>,
+    load: Input["load"],
+    since?: string | null,
+  ) {
+    const key = identity(file, since)
     const controller = new AbortController()
     this.controllers.set(key, controller)
     try {
-      const patch = await load(file.path, controller.signal, file.stamp)
+      const patch = await load(file.path, controller.signal, file.stamp, since ?? undefined)
       if (controller.signal.aborted) return
       const parsed = parseReviewPatch(parse, patch).flatMap((entry) => entry.files)
-      const parts = file.parts
+      const parts = since ? undefined : file.parts
       const matches = (entry: ReviewDiff | undefined, path: string, from?: string) =>
         entry !== undefined &&
         (entry.name === path ||
@@ -114,13 +120,16 @@ class DiffReads {
 }
 
 /** Four bounded requests, with the selected file next; failures wait for an explicit retry. */
-export function useDiffFiles({ files, current, parse, load }: Input) {
+export function useDiffFiles({ files, current, parse, load, since }: Input) {
   const [version, changed] = useState(0)
   const [reads] = useState(() => new DiffReads(() => changed((value) => value + 1)))
   useEffect(() => () => reads.stop(), [reads])
   useEffect(() => {
-    reads.start({ files, current, parse, load })
-  }, [reads, files, current, parse, load])
-  const snapshot = useMemo(() => ({ version, ...reads.snapshot(files) }), [version, reads, files])
+    reads.start({ files, current, parse, load, since })
+  }, [reads, files, current, parse, load, since])
+  const snapshot = useMemo(
+    () => ({ version, ...reads.snapshot(files, since) }),
+    [version, reads, files, since],
+  )
   return { ...snapshot, retry: (paths: readonly string[]) => reads.retry(paths) }
 }

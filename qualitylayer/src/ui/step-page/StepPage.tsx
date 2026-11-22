@@ -202,6 +202,8 @@ type Props = {
    * header beside a label. The counts its first line carries stay in the header.
    */
   summaryIcon?: LucideIcon | undefined
+  /** Optional notice or comparison band rendered immediately below the header and above Summary. */
+  beforeCore?: ReactNode
   /** Band 5: the working sections' strip. */
   more?: ReactNode
   parts?: PartMap | undefined
@@ -343,6 +345,7 @@ export function StepPage({
   taskId,
   yourMove,
   gist,
+  beforeCore,
   summaryIcon,
   more,
   parts,
@@ -662,11 +665,15 @@ export function StepPage({
 
   /** The gist the Summary gives: the title, its two sentences and the counts its first line carries. */
   function gistOf(): GistProps | undefined {
-    // Copy and Sections stand beside the title on every step.
-    const actions = <StepTools doc={doc} cut={cut} live={acts} />
+    // Copy and Sections stand beside the title on every step; a step may prepend a quiet tool.
+    const actions = (
+      <>
+        {gist?.actions}
+        <StepTools doc={doc} cut={cut} live={acts} />
+      </>
+    )
     if (cut === undefined || cut === null || bands === null)
       return {
-        actions,
         title: (
           <InlineMarkdown
             text={
@@ -679,6 +686,7 @@ export function StepPage({
         ),
         ...(mode === "snapshot" ? { asOf: <AsOf>As of {asOf(state.at)}</AsOf> } : {}),
         ...gist,
+        actions,
       }
     const summary = bands.summary
     const title =
@@ -719,7 +727,7 @@ export function StepPage({
           }
         : {}),
     }
-    return { ...base, ...gist }
+    return { ...base, ...gist, actions }
   }
 
   // With a `summaryIcon` the Summary's words leave the header and stand as the core's first section.
@@ -765,7 +773,7 @@ export function StepPage({
             <Bands
               yourMove={yourMove}
               gist={gistShown}
-              core={[prefaceNode, summarySection, ...bands.core.map(coreSection)]}
+              core={[beforeCore, prefaceNode, summarySection, ...bands.core.map(coreSection)]}
               folds={foldGroupOf(bands.folded.map(foldedSection))}
               more={more}
             />

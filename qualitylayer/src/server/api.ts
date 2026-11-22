@@ -148,7 +148,12 @@ import { inPersonReview } from "../core/review/in-review.ts"
 import { type ChangesRequested, changesRequested } from "../core/review/notes.ts"
 import { type ApproveChoices, type ReviewDetail, shipBlockers } from "../core/review/summary.ts"
 import { type ReviewAction, readReview, sayInReview } from "../core/review/threads.ts"
-import { readWalkthrough, type WalkFile, type Walkthrough } from "../core/review/walkthrough.ts"
+import {
+  readWalkthrough,
+  roundCommitsOf,
+  type WalkFile,
+  type Walkthrough,
+} from "../core/review/walkthrough.ts"
 import { type CheckoutBusy, checkoutBusy } from "../core/run/checkout-busy.ts"
 import { readPlanningStart } from "../core/run/planning-start.ts"
 import { listRuns } from "../core/run/registry.ts"
@@ -180,6 +185,7 @@ import { boundSlug, claimedByOthers, keyOf } from "../core/task/binding.ts"
 import { handbackTask, listHandbacks, readHandback } from "../core/task/handback.ts"
 import { taskItems, taskPage } from "../core/task/items.ts"
 import { STAGE_ORDER, type Stage } from "../core/task/machine.ts"
+import { type PlanRevisionHistory, readPlanRevisions } from "../core/task/plan-revisions.ts"
 import {
   type AnswerChange,
   type AnsweredQuestion,
@@ -1896,16 +1902,33 @@ async function buildBegan(ctx: Ctx, task: Task): Promise<number | undefined> {
   }
 }
 
+async function roundDeltaDiff(
+  ctx: Ctx,
+  task: Task,
+  path: string,
+  since: string,
+): Promise<Result<{ diff: string }>> {
+  const record = await readBuildRecord(ctx, task)
+  const commits = await roundCommitsOf(ctx, task, record.verification)
+  if (!commits.some((entry) => entry.revision === since))
+    return err({ code: "bad_args", message: "Unknown verification round revision." })
+  const diff = await ctx.git.run(task.repoRoot, ["diff", "--unified=3", since, "--", path])
+  return diff.code === 0
+    ? ok({ diff: diff.stdout })
+    : err({ code: "bad_args", message: "Could not read diff since that verification round." })
+}
+
 export async function taskFileDiff(
   ctx: Ctx,
   id: string,
   path: string,
-  continuation: { after?: string; revision?: string; checked?: string } = {},
+  continuation: { after?: string; revision?: string; checked?: string; since?: string } = {},
 ): Promise<Result<{ diff: string; revision?: string; next?: string }>> {
   const found = await locate(ctx, id)
   if (!found.ok) return found
   const { task } = found.data
-  const { checked, ...pageRequest } = continuation
+  const { checked, since, ...pageRequest } = continuation
+  if (since !== undefined && since !== "") return roundDeltaDiff(ctx, task, path, since)
   const review = checked ? await checkedReviewRange(ctx, task) : null
   if (checked !== undefined && review?.range.head !== checked) return checkedChangeUnavailable()
   const scoped = await workflowProjection(ctx, review?.task ?? task, {
@@ -1918,6 +1941,18 @@ export async function taskFileDiff(
   return page === undefined
     ? err({ code: "bad_args", message: "This path is not part of this task’s change." })
     : ok(page)
+}
+
+export async function taskPlanRevisions(
+  ctx: Ctx,
+  id: string,
+): Promise<Result<PlanRevisionHistory>> {
+  const found = await locate(ctx, id)
+  if (!found.ok) return found
+  const { task } = found.data
+  const planPath = taskDocPath(task, "plan")
+  const raw = (await ctx.fs.exists(planPath)) ? await ctx.fs.readFile(planPath) : ""
+  return ok(await readPlanRevisions(ctx, task, raw))
 }
 
 /** A task's change top to bottom, as the Review page draws it; each file's diff loads as above. */

@@ -9,6 +9,7 @@
 // the shared header. The parts themselves are in views.tsx.
 
 import { ListIcon } from "lucide-react"
+import { useState } from "react"
 import type { TaskDetail } from "../../api.ts"
 import { approvesOutside } from "../../outside.ts"
 import { metaLine } from "../../step-page/bands/Gist.tsx"
@@ -17,6 +18,7 @@ import { bodyOf } from "../../step-page/sections.ts"
 import type { ItemCard } from "../../step-page/state.ts"
 import type { StepPageProps } from "../page-props.ts"
 import { IntakeRow } from "../small-change-parts.tsx"
+import { PlanRevisionPanel, PlanRevisionToggle, usePlanRevisions } from "./PlanRevisionDiff.tsx"
 import { interfaceOf, planMeta, reviewMeta, reviewOf } from "./plan-model.ts"
 import { PlanBelow, planGist, planViews } from "./views.tsx"
 
@@ -73,11 +75,35 @@ export function PlanStepPage({
   const where = { state, mode, live: acts }
   const open = mode === "live" && !state.closed
 
-  const gist = planGist(
+  const [comparingRev, setComparingRev] = useState(false)
+  const revisions = usePlanRevisions(api, task.id, document.markdown, mode === "live")
+
+  const baseGist = planGist(
     planMetaLine(task, state, sectionOf("Reviews")?.markdown),
     sectionOf,
     task.required,
   )
+  const revAction =
+    revisions?.previous != null ? (
+      <PlanRevisionToggle
+        history={revisions}
+        comparing={comparingRev}
+        onToggle={() => setComparingRev((on) => !on)}
+      />
+    ) : undefined
+  const gist = {
+    ...baseGist,
+    ...(revAction !== undefined ? { actions: revAction } : {}),
+  }
+  const revPanel =
+    comparingRev && revisions?.previous != null ? (
+      <PlanRevisionPanel
+        key="plan-revision-panel"
+        history={revisions}
+        currentMarkdown={document.markdown}
+        comparing={comparingRev}
+      />
+    ) : null
 
   // The one quiet row that says how the task runs stands before Done means, while the choice is real.
   const intakeRow =
@@ -122,6 +148,7 @@ export function PlanStepPage({
       mode={mode}
       live={live}
       gist={gist}
+      beforeCore={revPanel}
       summaryIcon={ListIcon}
       sections={sections === null ? undefined : views}
       more={

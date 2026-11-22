@@ -22,9 +22,10 @@ import { createPortal } from "react-dom"
 import { EDITOR_NAMES, type Editor } from "../../core/config-values.ts"
 import type { LineFinding } from "../../core/review/findings.ts"
 import { isGeneratedPath } from "../../core/review/generated.ts"
-import type { WalkFile } from "../../core/review/walkthrough.ts"
+import { type WalkFile, type Walkthrough } from "../../core/review/walkthrough.ts"
 import type { Comment } from "../api.ts"
 import { EditorMark } from "../files/EditorMark.tsx"
+import { SliceFlowGraph } from "../steps/verify/SliceFlowGraph.tsx"
 import { type Anchor, lineKey } from "../timeline/FilesChanged.tsx"
 import { type ReviewFileGroups, rowsOf } from "../timeline/Walkthrough.tsx"
 import { ChangeDetails } from "./ChangeDetails.tsx"
@@ -36,6 +37,7 @@ import { type DiffsModule, diffsViewer } from "./load.ts"
 import { belongsToPart, type FilePart, fileParts, partAnchor, partFile } from "./parts.ts"
 import { type MarkdownMode, ReadingControls, type ReadingMode } from "./ReadingControls.tsx"
 import { ReadStatus } from "./ReadStatus.tsx"
+import { SliceBanner } from "./SliceBanner.tsx"
 import { type SourceLoader, SourceMarkdown, useReviewSource } from "./source.tsx"
 import { Tree, treeWidth } from "./Tree.tsx"
 import { changedFileOf } from "./target.ts"
@@ -45,12 +47,17 @@ import "./workspace.css"
 export type ReviewWorkspaceProps = {
   taskId: string
   title: string
-  view: ReviewFileGroups
+  view: ReviewFileGroups & Pick<Partial<Walkthrough>, "columns" | "rounds">
   /** The review decision's change requests on lines: counted on the files and the Finish button. */
   comments: readonly Comment[]
   /** The final review waits for the person: the header's button finishes the code review. */
   deciding: boolean
-  loadDiff: (path: string, signal?: AbortSignal, revision?: string) => Promise<string>
+  loadDiff: (
+    path: string,
+    signal?: AbortSignal,
+    revision?: string,
+    since?: string,
+  ) => Promise<string>
   loadSource?: SourceLoader
   /**
    * Open on each file's header, in the place files open in (Settings › Git and editor). A workspace
@@ -64,6 +71,8 @@ export type ReviewWorkspaceProps = {
   onFinding?: (f: LineFinding, kind: "adopted" | "dismissed", reason?: string) => Promise<void>
   /** The file to open at; null opens at the first file. */
   file: string | null
+  /** Optional slice to scope on open. */
+  initialSlice?: number | null
   onClose: () => void
   onClearChanges?: () => Promise<void>
   commitReview?: React.ReactNode
@@ -246,8 +255,42 @@ function typingOrChord(e: KeyboardEvent): boolean {
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const { view, comments, deciding, taskId } = props
   const [fileTreeOpen, setFileTreeOpen] = useState(false)
+  const [focus, setFocus] = useState(false)
+  const [showDiagrams, setShowDiagrams] = useState(false)
+  const [activeSlice, setActiveSlice] = useState<number | null>(() => props.initialSlice ?? null)
+  const [sinceRound, setSinceRound] = useState<string | null>(null)
   const [folds, setFolds] = useState<Folds>(FOLDED)
-  const { groups, order } = useMemo(() => filesOf(view, folds), [view, folds])
+  const { groups: rawGroups, order: rawOrder } = useMemo(() => filesOf(view, folds), [view, folds])
+  const roundFilter = useMemo(() => {
+    if (!sinceRound || !view.rounds) return null
+    const hit = view.rounds.find((r) => r.revision === sinceRound)
+    return hit ? new Set(hit.files) : null
+  }, [sinceRound, view.rounds])
+  const groups = useMemo(() => {
+    const filtered = rawGroups
+      .map((g) => ({
+        ...g,
+        files: roundFilter ? g.files.filter((f) => roundFilter.has(f.path)) : g.files,
+      }))
+      .filter((g) => g.files.length > 0)
+    return filtered
+  }, [rawGroups, roundFilter])
+  const order = useMemo(() => {
+    const scopedGroups = activeSlice === null ? groups : groups.filter((g) => g.n === activeSlice)
+    const seen = new Set<string>()
+    const out: WalkFile[] = []
+    for (const g of scopedGroups)
+      for (const f of g.files)
+        if (!seen.has(f.path)) {
+          seen.add(f.path)
+          out.push(f)
+        }
+    return out
+  }, [groups, activeSlice])
+  const allReadableOrder = useMemo(
+    () => (roundFilter ? rawOrder.filter((f) => roundFilter.has(f.path)) : rawOrder),
+    [rawOrder, roundFilter],
+  )
   const folded = useMemo(() => foldCounts(view), [view])
   const facts = useMemo(() => factsOf(view), [view])
   const titles = useMemo(() => titlesOf(view), [view])
@@ -273,14 +316,20 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   )
   const explicit = choice?.request === request ? choice : null
   const selected = explicit?.path ?? (props.file === null ? (order[0]?.path ?? null) : target)
+  const filtered = sinceRound !== null || activeSlice !== null
   const current =
-    selected !== null && order.some((file) => file.path === selected) ? selected : null
-  const missing = current === null ? (explicit?.path ?? props.file) : null
+    selected !== null && order.some((file) => file.path === selected)
+      ? selected
+      : filtered
+        ? (order[0]?.path ?? null)
+        : null
+  const missing = current === null && !filtered ? (explicit?.path ?? props.file) : null
   const only = mode === "file" || explicit?.only === true
-  const activeOrder = useMemo(
-    () => (missing !== null ? [] : only ? order.filter((file) => file.path === current) : order),
-    [order, current, missing, only],
-  )
+  const activeOrder = useMemo(() => {
+    const base =
+      missing !== null ? [] : only ? order.filter((file) => file.path === current) : order
+    return sinceRound !== null ? base.map((file) => ({ ...file, parts: undefined })) : base
+  }, [order, current, missing, only, sinceRound])
   const selectedFile = order.find((file) => file.path === current)
   const allParts = useMemo(() => order.flatMap(fileParts), [order])
   const partsById = useMemo(() => new Map(allParts.map((item) => [item.id, item])), [allParts])
@@ -421,6 +470,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     current,
     parse: state === "ready" ? parseRef.current : null,
     load: props.loadDiff,
+    since: sinceRound,
   })
   const { loaded, errors } = diffs
 
@@ -660,7 +710,33 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Focus moves into the workspace when it opens and back to what opened it when it closes.
   const root = useFocusLayer<HTMLDivElement>()
 
-  const read = order.filter(isViewed).length
+  const read = allReadableOrder.filter(isViewed).length
+  const activeSliceObj = useMemo(() => {
+    const n = activeSlice ?? (current !== null ? (facts.get(current)?.slice ?? null) : null)
+    return n === null ? null : (view.slices.find((s) => s.n === n) ?? null)
+  }, [activeSlice, current, facts, view.slices])
+  const activeSliceFiles = useMemo(
+    () =>
+      activeSliceObj === null
+        ? []
+        : activeSliceObj.files.filter((f) => folds.generated || !isGeneratedPath(f.path)),
+    [activeSliceObj, folds.generated],
+  )
+  const selectSlice = useCallback(
+    (slice: number | null, file?: string | null) => {
+      setActiveSlice(slice)
+      setShowDiagrams(false)
+      if (file) {
+        setChoice({ request, path: file, only: only || missing !== null })
+        return
+      }
+      if (slice !== null) {
+        const firstFile = groups.find((g) => g.n === slice)?.files[0]?.path
+        if (firstFile) setChoice({ request, path: firstFile, only: only || missing !== null })
+      }
+    },
+    [groups, missing, only, request],
+  )
   const unassigned = comments.filter((comment) => {
     const anchor = comment.anchor
     return anchor !== undefined && !allParts.some((item) => belongsToPart(anchor, item))
@@ -670,15 +746,18 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     (c) => c.source === undefined && c.delivered !== true && c.ask !== "question",
   )
   const mine = requests.length
-  const filesByPath = useMemo(() => new Map(order.map((f) => [f.path, f])), [order])
+  const filesByPath = useMemo(
+    () => new Map(allReadableOrder.map((f) => [f.path, f])),
+    [allReadableOrder],
+  )
   // Disagreements and open findings come first: the files that hold them, in tree order.
   const lookFirst = useMemo(
     () =>
-      order.flatMap((f): [string, number][] => {
+      allReadableOrder.flatMap((f): [string, number][] => {
         const count = (findingsByFile.get(f.path) ?? []).filter(needsYou).length
         return count > 0 ? [[f.path, count]] : []
       }),
-    [order, findingsByFile],
+    [allReadableOrder, findingsByFile],
   )
 
   return createPortal(
@@ -687,6 +766,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       tabIndex={-1}
       className={cn(
         "rw",
+        focus && "rw-focused",
         (missing !== null || only) && "rw-file-choice",
         props.commitReview && "rw-precommit",
         props.commitReview && fileTreeOpen && "rw-precommit-tree",
@@ -704,11 +784,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         </span>
         <span className="rw-sp" />
         <span className="rw-prog" data-testid="review-progress">
-          {read} of {order.length} viewed
+          {read} of {allReadableOrder.length} viewed
           <i aria-hidden="true">
             <b
               style={{
-                width: `${order.length === 0 ? 0 : Math.round((read / order.length) * 100)}%`,
+                width: `${allReadableOrder.length === 0 ? 0 : Math.round((read / allReadableOrder.length) * 100)}%`,
               }}
             />
           </i>
@@ -731,6 +811,17 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             ? { open: fileTreeOpen, toggle: () => setFileTreeOpen((open) => !open) }
             : undefined
         }
+        focus={focus}
+        onFocus={() => setFocus((on) => !on)}
+        rounds={view.rounds}
+        sinceRound={sinceRound}
+        onSinceRound={(rev) => {
+          setSinceRound(rev)
+          setShowDiagrams(false)
+        }}
+        hasDiagrams={view.slices.length >= 2}
+        showDiagrams={showDiagrams}
+        onToggleDiagrams={() => setShowDiagrams((on) => !on)}
         index={order.findIndex((file) => file.path === current)}
         count={order.length}
         onGo={(offset) => {
@@ -759,6 +850,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         files={filesByPath}
         comments={commentCounts}
         unreadable={[...errors.keys()]}
+        activeSlice={activeSlice}
+        onSelectSlice={(slice) => selectSlice(slice)}
         details={
           <ChangeDetails
             scope={view.changeScope}
@@ -768,7 +861,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         }
         current={current}
         isViewed={isViewed}
-        onGo={go}
+        onGo={(path) => {
+          setShowDiagrams(false)
+          if (activeSlice !== null && facts.get(path)?.slice !== activeSlice) setActiveSlice(null)
+          go(path)
+        }}
         onViewed={setFilesViewed}
         folds={{
           generated: {
@@ -783,7 +880,30 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           },
         }}
       />
-      <main className="rw-main" aria-label={mode === "diff" ? "Diff" : "Full file"}>
+      <main
+        className="rw-main"
+        aria-label={showDiagrams ? "Slice flow" : mode === "diff" ? "Diff" : "Full file"}
+      >
+        {showDiagrams ? (
+          <div className="rw-diagrams-pane" data-testid="review-diagrams-pane">
+            <SliceFlowGraph
+              walk={{ slices: view.slices, columns: view.columns }}
+              isViewed={isViewed}
+              initialSlice={activeSliceObj?.n ?? null}
+              onOpenSlice={(slice, file) => selectSlice(slice, file)}
+            />
+          </div>
+        ) : null}
+        {!showDiagrams && activeSliceObj !== null ? (
+          <SliceBanner
+            slice={activeSliceObj}
+            viewed={activeSliceFiles.filter(isViewed).length}
+            total={activeSliceFiles.length}
+            scoped={activeSlice !== null}
+            onMarkViewed={(on) => setFilesViewed(activeSliceFiles, on)}
+            onClearScope={() => setActiveSlice(null)}
+          />
+        ) : null}
         {view.changeScope?.history ? (
           <p className="rw-note rw-note-changed" role="status">
             {view.changeScope.history === "registered"
@@ -814,20 +934,27 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             </select>
           </label>
         ) : null}
-        <ReadStatus
-          missing={missing}
-          empty={order.length === 0}
-          state={state}
-          mode={mode}
-          source={{ ready: source.source !== undefined, error: source.error, retry: source.retry }}
-          current={current}
-          count={activeOrder.length}
-          loaded={loaded.size}
-          errors={errors}
-          retry={diffs.retry}
-          onDiff={() => setMode("diff")}
-        />
-        {mode === "diff" &&
+        {!showDiagrams ? (
+          <ReadStatus
+            missing={missing}
+            empty={order.length === 0}
+            state={state}
+            mode={mode}
+            source={{
+              ready: source.source !== undefined,
+              error: source.error,
+              retry: source.retry,
+            }}
+            current={current}
+            count={activeOrder.length}
+            loaded={loaded.size}
+            errors={errors}
+            retry={diffs.retry}
+            onDiff={() => setMode("diff")}
+          />
+        ) : null}
+        {!showDiagrams &&
+        mode === "diff" &&
         current !== null &&
         !errors.has(current) &&
         !loaded.has(current) &&
@@ -836,7 +963,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             Reading {current}…
           </p>
         ) : null}
-        {rendered && source.source && selectedFile ? (
+        {!showDiagrams && rendered && source.source && selectedFile ? (
           <>
             <FileHeader
               file={selectedFile}
@@ -855,7 +982,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             <SourceMarkdown content={source.source.content} onSource={() => setFormat("source")} />
           </>
         ) : null}
-        <div ref={host} className="rw-host" hidden={missing !== null || rendered} />
+        <div ref={host} className="rw-host" hidden={showDiagrams || missing !== null || rendered} />
       </main>
       {props.commitReview ? (
         <footer className="rw-foot">{props.commitReview}</footer>

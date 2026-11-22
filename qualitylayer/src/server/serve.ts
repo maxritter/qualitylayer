@@ -900,6 +900,9 @@ export function createHandler(
               ...(url.searchParams.has("checked")
                 ? { checked: url.searchParams.get("checked") ?? "" }
                 : {}),
+              ...(url.searchParams.has("since")
+                ? { since: url.searchParams.get("since") ?? "" }
+                : {}),
             }),
           )
         const withDiff = url.searchParams.get("preview") !== "0"
@@ -915,6 +918,10 @@ export function createHandler(
           url.searchParams.get("checked") ?? undefined,
         )
         return json(view.ok ? ok({ walkthrough: view.data }) : view)
+      }
+      if (sub === "plan-revisions" && method === "GET") {
+        const history = await api.taskPlanRevisions(ctx, id)
+        return json(history.ok ? ok({ revisions: history.data }) : history)
       }
       if (sub === "comments" && parts[4] === "build" && method === "POST")
         return json(await api.postBuildComment(ctx, id, await body(request)))

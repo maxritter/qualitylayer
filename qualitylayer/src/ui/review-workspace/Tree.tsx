@@ -245,6 +245,9 @@ export type TreeProps = {
   /** The generated files and the task's documents, folded until the person asks. */
   folds?: { generated: Fold; documents: Fold }
   details?: ReactNode
+  /** When scoped to one slice, highlights its group header and offers clearing back to all slices. */
+  activeSlice?: number | null
+  onSelectSlice?: (slice: number | null) => void
 } & Row
 
 export function Tree({
@@ -255,6 +258,8 @@ export function Tree({
   unreadable,
   folds,
   details,
+  activeSlice,
+  onSelectSlice,
   ...row
 }: TreeProps) {
   const [filter, setFilter] = useState("")
@@ -325,11 +330,20 @@ export function Tree({
           Clear
         </button>
       </fieldset>
+      {activeSlice !== null && activeSlice !== undefined && onSelectSlice ? (
+        <div className="rw-slice-scope" data-testid="review-slice-scope">
+          <span>Scoped to Slice {activeSlice}</span>
+          <button type="button" className="rw-lnk" onClick={() => onSelectSlice(null)}>
+            All slices
+          </button>
+        </div>
+      ) : null}
       {look.length > 0 ? <LookFirst rows={look} files={files} {...row} /> : null}
       {groups.map((group) => {
         const shown = group.files.filter((file) => matches(file.path))
+        const scopedSlice = group.n !== null && activeSlice === group.n
         return shown.length === 0 ? null : (
-          <div key={group.key} className="rw-group">
+          <div key={group.key} className={cn("rw-group", scopedSlice && "scoped")}>
             <div className="rw-gh">
               <ProgressBox
                 files={shown}
@@ -337,7 +351,19 @@ export function Tree({
                 onViewed={row.onViewed}
                 label={`Mark ${groupName(group)} viewed`}
               />
-              <span title={groupName(group)}>{groupName(group)}</span>
+              {group.n !== null && onSelectSlice ? (
+                <button
+                  type="button"
+                  className={cn("rw-gh-btn", scopedSlice && "on")}
+                  title={`${groupName(group)} — click to scope this slice`}
+                  aria-pressed={scopedSlice}
+                  onClick={() => onSelectSlice(scopedSlice ? null : group.n)}
+                >
+                  {groupName(group)}
+                </button>
+              ) : (
+                <span title={groupName(group)}>{groupName(group)}</span>
+              )}
               <span className="rw-n">
                 {shown.filter(row.isViewed).length} of {shown.length}
               </span>

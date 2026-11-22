@@ -2,15 +2,21 @@ import {
   BookOpenIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ClockIcon,
   CodeXmlIcon,
   Columns2Icon,
   FileIcon,
   FileTextIcon,
+  LayersIcon,
   ListFilterIcon,
   ListTreeIcon,
   type LucideIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   Rows2Icon,
+  WorkflowIcon,
 } from "lucide-react"
+import type { WalkRound } from "../../core/review/walkthrough.ts"
 export type ReadingMode = "diff" | "file"
 export type MarkdownMode = "source" | "rendered"
 
@@ -64,6 +70,14 @@ export function ReadingControls({
   onFormat,
   modified,
   mobileFileTree,
+  focus,
+  onFocus,
+  rounds,
+  sinceRound,
+  onSinceRound,
+  hasDiagrams,
+  showDiagrams,
+  onToggleDiagrams,
 }: {
   index: number
   count: number
@@ -79,7 +93,17 @@ export function ReadingControls({
   onFormat: (format: MarkdownMode) => void
   modified: boolean
   mobileFileTree?: { open: boolean; toggle: () => void }
+  focus?: boolean
+  onFocus?: () => void
+  rounds?: readonly WalkRound[]
+  sinceRound?: string | null
+  onSinceRound?: (revision: string | null) => void
+  hasDiagrams?: boolean
+  showDiagrams?: boolean
+  onToggleDiagrams?: () => void
 }) {
+  const prevRound = rounds && rounds.length >= 2 ? rounds.at(-2) : undefined
+  const latestRound = rounds && rounds.length >= 2 ? rounds.at(-1) : undefined
   return (
     <div className="rw-reading-controls">
       {mobileFileTree && (
@@ -92,6 +116,22 @@ export function ReadingControls({
           <ListTreeIcon size={13} aria-hidden="true" /> Files ({count})
         </button>
       )}
+      {onFocus ? (
+        <button
+          type="button"
+          className="rw-btn quiet rw-focus-toggle"
+          aria-pressed={focus === true}
+          title={focus ? "Show file tree" : "Focus mode: hide file tree"}
+          onClick={onFocus}
+        >
+          {focus ? (
+            <PanelLeftOpenIcon size={13} aria-hidden="true" />
+          ) : (
+            <PanelLeftCloseIcon size={13} aria-hidden="true" />
+          )}
+          {focus ? "Show tree" : "Focus"}
+        </button>
+      ) : null}
       <div className="rw-navigation">
         <button
           type="button"
@@ -158,6 +198,35 @@ export function ReadingControls({
             { value: "rendered", label: "Rendered", icon: BookOpenIcon },
           ]}
         />
+      ) : null}
+      {prevRound && latestRound && onSinceRound ? (
+        <div className="rw-mode">
+          <Choice
+            label="Review round scope"
+            hint="Review the whole change or only files changed since the previous round"
+            value={sinceRound === prevRound.revision ? "since" : "all"}
+            onChange={(value) => onSinceRound(value === "since" ? prevRound.revision : null)}
+            choices={[
+              { value: "all", label: `Round ${latestRound.n}`, icon: LayersIcon },
+              {
+                value: "since",
+                label: `Since R${prevRound.n} (${prevRound.files.length})`,
+                icon: ClockIcon,
+              },
+            ]}
+          />
+        </div>
+      ) : null}
+      {hasDiagrams && onToggleDiagrams ? (
+        <button
+          type="button"
+          className="rw-btn quiet rw-diagrams-toggle"
+          aria-pressed={showDiagrams === true}
+          onClick={onToggleDiagrams}
+        >
+          <WorkflowIcon size={13} aria-hidden="true" />
+          {showDiagrams ? "Back to diff" : "Slice flow"}
+        </button>
       ) : null}
     </div>
   )

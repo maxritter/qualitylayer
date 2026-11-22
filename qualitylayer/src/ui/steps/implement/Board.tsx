@@ -1,10 +1,11 @@
 // Implement opens every populated slice, including the group of completed slices.
 
-import { ChevronRightIcon } from "lucide-react"
-import { useState } from "react"
+import { ChevronRightIcon, FileDiffIcon } from "lucide-react"
+import { useEffect, useState } from "react"
 import { Disclosure } from "../../kit/Fold.tsx"
 import { WhoMark } from "../../kit/WhoMark.tsx"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
+import { openReviewWorkspace } from "../../review-workspace/open.ts"
 import { TitleWithState } from "../../step-page/kit/StateMark.tsx"
 import { TaskCards } from "../../step-page/RecordDrawer.tsx"
 import type { BoardSlice } from "../../step-page/state.ts"
@@ -27,17 +28,28 @@ function Segments({ slice }: { slice: BoardSlice }) {
   )
 }
 
+function nonLinearDeps(slice: BoardSlice): number[] {
+  const deps = slice.dependsOn ?? []
+  if (deps.length === 0) return []
+  if (deps.length === 1 && deps[0] === slice.n - 1 && !slice.dependsReason) return []
+  return deps
+}
+
 function SliceRow({
   slice,
   open,
   onToggle,
+  taskId,
 }: {
   slice: BoardSlice
   open: boolean
   onToggle: () => void
+  taskId?: string
 }) {
   const expandable = slice.cards !== undefined && slice.cards.length > 0
   const state = slice.status === "done" ? "done" : slice.status === "run" ? "work" : "todo"
+  const deps = nonLinearDeps(slice)
+  const canDiff = taskId !== undefined && slice.status === "done"
   const head = (
     <>
       <span className="sp-no">
@@ -48,6 +60,16 @@ function SliceRow({
         <TitleWithState state={state}>
           <InlineMarkdown text={slice.title} />
         </TitleWithState>
+        {deps.length > 0 ? (
+          <span className="ib-dep-chip" title={slice.dependsReason ?? undefined}>
+            Depends on {deps.map((n) => `S${n}`).join(", ")}
+          </span>
+        ) : null}
+        {slice.filesChanged ? (
+          <span className="ib-files-n">
+            {slice.filesChanged === 1 ? "1 file" : `${slice.filesChanged} files`}
+          </span>
+        ) : null}
       </span>
       <Segments slice={slice} />
       {expandable ? (
@@ -58,20 +80,39 @@ function SliceRow({
     </>
   )
   return (
-    <div className="ib-slice" data-testid="slice" data-status={slice.status} data-open={open}>
-      {expandable ? (
-        <button
-          type="button"
-          className="ib-head"
-          aria-expanded={open}
-          aria-label={`Slice ${slice.n}: ${slice.title}`}
-          onClick={onToggle}
-        >
-          {head}
-        </button>
-      ) : (
-        <div className="ib-head plain">{head}</div>
-      )}
+    <div
+      id={`ib-slice-${slice.n}`}
+      className="ib-slice"
+      data-testid="slice"
+      data-status={slice.status}
+      data-open={open}
+    >
+      <div className="ib-head-wrap">
+        {expandable ? (
+          <button
+            type="button"
+            className="ib-head"
+            aria-expanded={open}
+            aria-label={`Slice ${slice.n}: ${slice.title}`}
+            onClick={onToggle}
+          >
+            {head}
+          </button>
+        ) : (
+          <div className="ib-head plain">{head}</div>
+        )}
+        {canDiff ? (
+          <button
+            type="button"
+            className="q-btn xs ib-diff-btn"
+            data-testid={`implement-view-diff-${slice.n}`}
+            onClick={() => openReviewWorkspace(taskId, { slice: slice.n })}
+          >
+            <FileDiffIcon className="size-3" aria-hidden="true" />
+            View diff
+          </button>
+        ) : null}
+      </div>
       {open && expandable ? (
         <div className="ib-tasks" data-testid="slice-open">
           <TaskCards
@@ -84,8 +125,23 @@ function SliceRow({
   )
 }
 
-export function Board({ slices }: { slices: readonly BoardSlice[] }) {
+export function Board({
+  slices,
+  taskId,
+  focusSlice,
+}: {
+  slices: readonly BoardSlice[]
+  taskId?: string
+  focusSlice?: { n: number; seq: number } | null
+}) {
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({})
+  useEffect(() => {
+    if (!focusSlice) return
+    setCollapsed((old) => ({ ...old, [focusSlice.n]: false }))
+    document
+      .getElementById(`ib-slice-${focusSlice.n}`)
+      ?.scrollIntoView?.({ behavior: "smooth", block: "nearest" })
+  }, [focusSlice])
   const done = slices.filter((s) => s.status === "done")
   const folded = done.length > FOLD_DONE_PAST ? done : []
   const shown = slices.filter((s) => !folded.includes(s))
@@ -93,6 +149,7 @@ export function Board({ slices }: { slices: readonly BoardSlice[] }) {
     <SliceRow
       key={slice.n}
       slice={slice}
+      taskId={taskId}
       open={Boolean(slice.cards?.length) && !collapsed[slice.n]}
       onToggle={() => setCollapsed((old) => ({ ...old, [slice.n]: !old[slice.n] }))}
     />

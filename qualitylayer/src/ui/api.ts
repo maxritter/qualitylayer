@@ -251,7 +251,7 @@ export const artifactThumbUrl = (where: ArtifactWhere, file: string, key: string
 async function readFileDiff(
   id: string,
   path: string,
-  options: DiffReadOptions & { checked?: string } = {},
+  options: DiffReadOptions & { checked?: string; since?: string } = {},
 ): Promise<string> {
   return readDiffPages(({ after, revision }, signal) => {
     const query = new URLSearchParams({
@@ -259,6 +259,7 @@ async function readFileDiff(
       ...(after ? { after } : {}),
       ...(revision ? { revision } : {}),
       ...(options.checked ? { checked: options.checked } : {}),
+      ...(options.since ? { since: options.since } : {}),
     })
     return call<DiffPage>(`/api/tasks/${enc(id)}/changes/file?${query}`, { signal })
   }, options)
@@ -369,6 +370,11 @@ export const api = {
     call<{ task: TaskDetail }>(`/api/tasks/${enc(id)}`, { signal }).then((r) => r.task),
   doc: (id: string, name: string, signal?: AbortSignal) =>
     call<DocPayload>(`/api/tasks/${enc(id)}/doc/${enc(name)}`, { signal }),
+  planRevisions: (id: string, signal?: AbortSignal) =>
+    call<{ revisions: import("../core/task/plan-revisions.ts").PlanRevisionHistory }>(
+      `/api/tasks/${enc(id)}/plan-revisions`,
+      { signal },
+    ).then((r) => r.revisions),
   chatPromotion: (id: string) =>
     call<{ allowed: boolean; running: string[] }>(`/api/tasks/${enc(id)}/chat/promote`),
   promoteChat: (id: string, type: "feature" | "bugfix", fromSavedPlan = false) =>

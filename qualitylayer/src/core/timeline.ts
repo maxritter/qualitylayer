@@ -11,6 +11,7 @@ import { contractKey, readContracts } from "./docs/contracts.ts"
 import { agentFileOf } from "./docs/names.ts"
 import {
   allTasks,
+  dependenciesOf,
   evidenceIn,
   type Outline,
   parsePrerequisites,
@@ -61,6 +62,12 @@ export type TimelineSlice = {
   title: string
   summary: string
   validation: string
+  /** Earlier slices this slice depends on. */
+  dependsOn?: number[]
+  /** Optional reason from `Depends on`. */
+  dependsReason?: string
+  /** Unique non-plan files touched by commits for this slice. */
+  filesChanged?: number
   /** The commit that ticked the slice's last box, once there is one. */
   commit: string | null
   tasks: TimelineTask[]
@@ -390,13 +397,23 @@ export async function timeline(
 
   const slices: TimelineSlice[] = outline.slices.map((s) => {
     const ids = s.tasks.map((t) => t.id)
-    const last = [...commits].reverse().find((c) => c.tasks.some((id) => ids.includes(id)))
+    const sliceCommits = commits.filter(
+      (c) => c.slice === s.n || c.tasks.some((id) => ids.includes(id)),
+    )
+    const last = sliceCommits.at(-1)
     const done = s.tasks.length > 0 && s.tasks.every((t) => t.checked)
+    const deps = dependenciesOf(outline, s)
+    const touched = new Set(sliceCommits.flatMap((c) => c.paths))
     return {
       n: s.n,
       title: s.title,
       summary: s.summary,
       validation: s.validation,
+      ...(deps.length > 0 ? { dependsOn: deps } : {}),
+      ...(s.dependsReason !== null && s.dependsReason !== ""
+        ? { dependsReason: s.dependsReason }
+        : {}),
+      ...(touched.size > 0 ? { filesChanged: touched.size } : {}),
       commit: done && last !== undefined ? last.short : null,
       tasks: s.tasks.map((t) => cardOf(t, s.tree, stateOf(t))),
     }

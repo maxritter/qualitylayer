@@ -192,7 +192,7 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
   const shown = {
     // Once merged the code stays in the pull request: no row to open it.
     code: mode === "live" && !merged && (walked || view.error !== null),
-    changed: record.diagrams.length > 0,
+    changed: record.diagrams.length > 0 || (walk !== null && walk.slices.length >= 2),
     screens: screens.length > 0,
     acceptance: (acceptance?.steps.length ?? 0) > 0,
   }
@@ -227,7 +227,14 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
                 title="Diagrams"
                 icon={<WorkflowIcon className="size-3.5" aria-hidden="true" />}
               >
-                <ChangedTabs diagrams={record.diagrams} state={state} mode={mode} live={live} />
+                <ChangedTabs
+                  diagrams={record.diagrams}
+                  walk={walk}
+                  taskId={task.id}
+                  state={state}
+                  mode={mode}
+                  live={live}
+                />
               </PageSection>
             ) : null}
             {shown.screens ? (

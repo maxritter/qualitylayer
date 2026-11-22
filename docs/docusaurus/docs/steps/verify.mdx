@@ -51,8 +51,8 @@ When Git proves that task commits were replaced, Verify checks the working tree 
 
 <CardGroup cols={2}>
   <Card title="Why" icon="file-text">The request in one sentence, then a release-note line for each change users see.</Card>
-  <Card title="Code" icon="code-xml">The complete change and where to start reading.</Card>
-  <Card title="Diagrams and screens" icon="shapes">The change in diagrams, and each screen switched between **Designed** and **Built**.</Card>
+  <Card title="Code" icon="code-xml">An ordered stack of slices with viewed progress and Done means links. Click any slice to open its files first.</Card>
+  <Card title="Diagrams and screens" icon="shapes">Named diagrams beside an interactive **Slice flow** dependency graph, and each screen switched between **Designed**, **Built**, or **Compare** when both are images.</Card>
   <Card title="Done means" icon="badge-check">Each point as it ran, with its picture or output, and whether it ran as a script or in a real agent session.</Card>
 </CardGroup>
 
@@ -62,9 +62,9 @@ Anything only you can check, such as your account or a device the agents cannot 
 
 ## Read the code {#code}
 
-<Screenshot name="verify-review" alt="Review the code: the file tree and the diff of the example task" />
+<Screenshot name="verify-review" alt="Review the code: the slice-grouped file tree, slice context banner, Focus and round-delta controls, and a split diff of the example task" />
 
-**Review the code** opens the file tree and a **Unified / Split** diff. **Viewed** saves your reading progress; **All viewed** and **Clear** apply to every file.
+**Review the code** opens the file tree and a **Unified / Split** diff. Click any slice in the tree to focus on its files, use **Focus** to hide the tree for wide split diffs, switch to **Since R1** after fix rounds to read only what changed since an earlier round, or open **Slice flow** to jump between slices. **Viewed** and **Mark slice viewed** save your reading progress; **All viewed** and **Clear** apply to every file.
 
 ### Ask about any line {#line-comments}
 

@@ -135,7 +135,7 @@ Three steps, two approvals. You plan and you verify; agents do everything betwee
 
 ### 1 · Plan, approved by you
 
-Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, named diagrams of how the change works and clickable screen previews. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
+Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, named diagrams and clickable screen previews. Compare Plan revisions after feedback. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">
@@ -144,20 +144,20 @@ Your agent reads the code, asks what only you can answer and writes one Plan: **
 
 ### 2 · Implement, by your agents
 
-Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. By default it commits after each checked slice. You can choose one commit before Verify or review the checked worktree diff first. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
+Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. Follow progress on the slice board or dependency graph, and open any finished slice's diff. By default it commits after each checked slice; you can choose one commit before Verify or review the checked worktree diff first. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/implement-dark.webp">
-  <img src="docs/site/public/product/implement-light.webp" alt="The build board in the App: slices with their task cards, finished slices done, beside the session writing the next failing test. Fictional project." width="1000">
+  <img src="docs/site/public/product/implement-light.webp" alt="The build board in the App: slices with dependencies and task cards, finished slices done, beside the session writing the next failing test. Fictional project." width="1000">
 </picture>
 
 ### 3 · Verify, then approved by you
 
-Agents that did not write the code check every point and fix what fails. Then the same page is your review: the code, the screens and each point as it ran. [Verify guide](https://qualitylayer.dev/docs/steps/verify)
+Agents that did not write the code check every point and fix what fails. Then the same page is your review: an ordered stack of slices, a slice dependency graph, built screens and each point as it ran. [Verify guide](https://qualitylayer.dev/docs/steps/verify)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/verify-dark.webp">
-  <img src="docs/site/public/product/verify-light.webp" alt="Verify in the App: project checks, independent reviews, security scans and fix rounds for the billing change. Fictional project." width="1000">
+  <img src="docs/site/public/product/verify-light.webp" alt="Verify in the App: the summary, ordered slice stack with viewed progress, and final approval for the billing change. Fictional project." width="1000">
 </picture>
 
 **Then the pull request.** Your agent fixes failing checks and routine review threads; the task stays open until you merge. [Pull request guide](https://qualitylayer.dev/docs/steps/pull-request)
@@ -183,7 +183,7 @@ Your project's checks, [code health](https://qualitylayer.dev/docs/reference/cod
 | **Chat or a planned task** | Talk directly with your agent or follow the workflow. See agent activity and get notified when one needs you. |
 | **Conversation and terminal** | Read the agent's conversation or its terminal beside the task. Answer questions and send quick feedback on marked text, code or artifact spots. |
 | **Artifacts** | Try clickable designs, keep them in your repository, and export designs, Plans and Reviews for teammates. [Artifacts guide](https://qualitylayer.dev/docs/artifacts). |
-| **Checks and code review** | Read the evidence and file diffs, and ask your agent about any line. |
+| **Checks and code review** | Read the evidence, review diffs slice by slice or since the last check round, and ask your agent about any line. |
 | **Agent controls and usage** | Switch agents, choose model, effort and permissions; track limits and daily costs, including in the macOS menu bar. [Settings](https://qualitylayer.dev/docs/reference/settings). |
 | **Local memory** | Reuse [project lessons](https://qualitylayer.dev/docs/memory), with optional project Git export and explicit repository import. |
 

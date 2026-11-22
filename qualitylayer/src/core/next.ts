@@ -685,13 +685,14 @@ async function verifyHandoff(
   const verified = await verifyBrief(ctx, now)
   if (!verified.ok) return done
   const said = typeof verified.data.instructions === "string" ? verified.data.instructions : ""
-  const payload =
+  const payload: NextPayload =
     verified.data.phase === "verify" && said === "" && verified.data.exit === undefined
       ? {
+          ...done.data,
           ...verified.data,
           instructions: phaseText(now.type === "bugfix" ? "verify-bugfix" : "verify") ?? "",
         }
-      : verified.data
+      : { ...done.data, ...verified.data }
   return ok(
     await onceText(ctx, now, String(payload.phase ?? "verify"), payload, { setAlready: false }),
   )

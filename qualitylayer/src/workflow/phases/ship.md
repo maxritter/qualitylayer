@@ -24,7 +24,7 @@ request it also edited the body: do not edit it again.
      <task>` and ask the author in the App before changing anything a remark asks for. `pending`: again.
    - `failing`: read each check's `log`, fix the cause in the task's code, never by weakening or skipping
      a check, run the task's checks, commit, push the task's branch, watch again.
-   - `conflict`: note a short plan in `{verify_doc}`, merge or rebase as the repository does, resolve the
+   - `conflict`: note a short plan in `agents/{verify_doc}`, merge or rebase as the repository does, resolve the
      `files`, run the checks, push, watch again. Note the remote head first, read `git range-diff`, and
      push with `--force-with-lease=<branch>:<that head>`.
    - `gave-up`: report `still_failing` and stop for the person. `no-checks`, `timed-out`, `merged`,

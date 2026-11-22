@@ -377,7 +377,7 @@ export async function exitReply(
     return base(task, {
       ...shared,
       question: await exitQuestionNow(ctx, task, exit),
-      instructions: `${note}${SAYS[exit.reason]} Verify ends here: follow "How Verify ends" in the Verify text (follow-ups for what lies outside the task, the one \`question\` for what lies inside it).`,
+      instructions: `${note}${SAYS[exit.reason]} Verify ends here: follow "When it does not pass" in the Verify text (follow-ups for what lies outside the task, the one \`question\` for what lies inside it).`,
       then: "qualitylayer question ask '<question as JSON>'",
     })
   // Not sure answers with the recommended choice, which is what `choice` holds.

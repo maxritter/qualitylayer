@@ -37,7 +37,7 @@ diagnostics before you finish. If the diagnosis shows nothing is broken, say so 
   chosen), then the folds that have something to say.
 
 `agents/{plan_doc}` adds **Root cause in code** (`file:line`, the confidence, the offending code as it
-is today, never a `diff`), **Investigation** (each hypothesis and what killed it), **Edges probed**
-(boundary inputs, cancellation, concurrent callers) and the full reproduction output. Ask only what is
+is today, never a `diff`), **Investigation** (each hypothesis and what killed it, plus boundary inputs,
+cancellation paths and concurrent callers checked) and **Full reproduction output**. Ask only what is
 hard to reverse or changes scope (whether a neighbouring behaviour should change too, what correct
 output is when the code cannot tell).

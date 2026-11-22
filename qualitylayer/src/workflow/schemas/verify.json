@@ -148,7 +148,7 @@
       "allowEmpty": true,
       "show": "detail",
       "writer": "helpers",
-      "hint": "the judge appends one '### Iteration N' block per run: what did not pass, with its verdict lines, and `Passed: N` for the rest"
+      "hint": "the judge appends one '### Iteration N' block per run (or runs `qualitylayer verdict finish <assignment>`): Assignment, Judge, every verdict line and **Result:** pass|fail"
     },
     {
       "heading": "Ship steps",

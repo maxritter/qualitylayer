@@ -20,7 +20,7 @@ only what an attacker could use: a short, honest record in minutes, no audit of 
    condition), **medium** (limited impact or hard to reach), **low**.
 
 Never build the project, run its code or tests, fetch from the network or write a proof of concept. The one
-file you change is `{verify_doc}`: append exactly one block at the end of `## Security`:
+file you change is `agents/{verify_doc}`: append exactly one block at the end of `## Security`:
 
 ```markdown
 ### Security

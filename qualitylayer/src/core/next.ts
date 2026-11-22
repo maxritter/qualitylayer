@@ -29,7 +29,7 @@ import { otherBuildLead, readBuildLead } from "./next/build-lead.ts"
 import { moveStateOf } from "./next/compass.ts"
 import { buildDone, buildStart, implementPayload, implementStop } from "./next/implement.ts"
 import { movesOf } from "./next/moves.ts"
-import { planPayload } from "./next/plan.ts"
+import { planPayload, planText } from "./next/plan.ts"
 import { actionable, refused } from "./next/refusal.ts"
 import { served, stepTextAsServed } from "./next/reply.ts"
 import { BUILD_STAGES, base, type NextPayload } from "./next/shared.ts"
@@ -117,7 +117,10 @@ async function finish(ctx: Ctx, task: Task, _verb: string, result: Replied): Rep
   }
   // The calling session's line in `peers list` names this task and the step it is on now.
   await noteTaskStatus(ctx, now.slug)
-  return served(ctx, data)
+  const wasOnce = data.instructions_once === true
+  const out = await served(ctx, data)
+  if (out.ok && !wasOnce) await commitBriefMarker(ctx, now, out.data)
+  return out
 }
 
 /** The verb run on the open task; its refusals and replies finished alike. */
@@ -169,11 +172,15 @@ export async function taskStart(ctx: Ctx, request: string, options: StartOptions
     task: slug,
     command: `qualitylayer ship --task ${slug}`,
   }))
+  const deduped =
+    task.type === "chat"
+      ? payload
+      : await onceText(ctx, task, "plan", payload, { setAlready: false, baseText: planText(task) })
   return finish(
     ctx,
     task,
     "task start",
-    ok(waiting.length ? { ...payload, ship_waiting: waiting } : payload),
+    ok(waiting.length ? { ...deduped, ship_waiting: waiting } : deduped),
   )
 }
 
@@ -197,17 +204,17 @@ async function startFromPlan(
   const { task, created } = adopted.data
   const payload = await planPayload(ctx, task)
   const message = `${created ? "Started a new task" : "Continuing the task"} from your existing plan: ${task.slug}. The plan is kept exactly as given in ${ORIGINAL_FILE}; the Plan maps it.`
-  return finish(
-    ctx,
-    task,
-    "task start",
-    ok({
-      ...payload,
-      ...(created ? { created: true } : { already: true }),
-      message,
-      ...(await askPlaceFirst(ctx, task, String(payload.instructions ?? ""), message)),
-    }),
-  )
+  const raw = {
+    ...payload,
+    ...(created ? { created: true } : { already: true }),
+    message,
+    ...(await askPlaceFirst(ctx, task, String(payload.instructions ?? ""), message)),
+  }
+  const deduped = await onceText(ctx, task, "plan", raw, {
+    setAlready: false,
+    baseText: planText(task),
+  })
+  return finish(ctx, task, "task start", ok(deduped))
 }
 
 /** `task handback "<reason>" --prompt "<prompt>"`: close the Plan task and keep a plain prompt. */
@@ -293,45 +300,85 @@ export async function showTopic(ctx: Ctx, topic: string): Reply {
 /** Which session read a step's text: QualityLayer's own record, outside the briefs folder the agent is granted. */
 const briefMarker = (task: Task, step: string) => join(task.runtimeDir, `brief-served-${step}.json`)
 
+type BriefSeen = {
+  session?: string
+  /** Legacy single-digest fields, still read for continuity. */
+  digest?: string
+  ref?: string
+  /** Map of served text digests -> ref file or "inline". */
+  entries?: Record<string, string>
+  /** Digests staged during this call, committed after `served()` chooses inline vs file. */
+  pending?: { digest: string; file: string; base?: true }[]
+}
+
+function seenEntries(seen: BriefSeen): Record<string, string> {
+  const entries = { ...(seen.entries ?? {}) }
+  if (typeof seen.digest === "string" && typeof seen.ref === "string")
+    entries[seen.digest] = seen.ref
+  return entries
+}
+
+/** Commit any staged step-text digest after `served()` finishes (recording inline vs spilled file). */
+async function commitBriefMarker(ctx: Ctx, task: Task, data: NextPayload): Promise<void> {
+  const step = typeof data.phase === "string" ? data.phase : null
+  if (step === null) return
+  const marker = briefMarker(task, step)
+  let seen: BriefSeen
+  try {
+    seen = JSON.parse(await ctx.fs.readFile(marker)) as BriefSeen
+  } catch {
+    return
+  }
+  if (!Array.isArray(seen.pending) || seen.pending.length === 0) return
+  const entries = seenEntries(seen)
+  const servedRef = typeof data.instructions_ref === "string" ? data.instructions_ref : "inline"
+  for (const item of seen.pending) entries[item.digest] = item.base === true ? item.file : servedRef
+  await ctx.fs.atomicWrite(marker, `${JSON.stringify({ session: seen.session, entries })}\n`)
+}
+
 /**
- * The step's text, paid once per session: served again to the same session with the same text, the
- * reply is `already` and names the file that holds it instead of repeating it.
+ * The step's text, paid once per session across all verbs (`task start`, `build start`, `build done`,
+ * `verify`, `brief`): served again to the same session with the same text, the reply names the file
+ * holding it instead of repeating it.
  */
 async function onceText(
   ctx: Ctx,
   task: Task,
   step: string,
   payload: NextPayload,
+  options: { setAlready?: boolean; baseText?: string } = {},
 ): Promise<NextPayload> {
+  const { setAlready = true, baseText } = options
   const said = typeof payload.instructions === "string" ? payload.instructions : ""
-  if (said === "") return payload
+  // Only full step briefs (carrying a `# ` phase heading) are paid once per session; short
+  // dynamic recovery or status messages (e.g. judgeAtWork) must stay visible on every call.
+  if (said === "" || !/(?:^|\n)# /.test(said)) return payload
   // The file holds the text as the session got it, the person's block for the step included, so an
   // edit of their instructions is a new text and reaches the next brief.
-  const text = await stepTextAsServed(ctx, task, String(payload.phase ?? step), fillNames(said))
+  const phase = String(payload.phase ?? step)
+  const text = await stepTextAsServed(ctx, task, phase, fillNames(said))
   const { createHash } = await import("node:crypto")
-  const digest = createHash("sha256").update(text).digest("hex").slice(0, 24)
+  const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 24)
+  const digest = hash(text)
   const session = sessionKey(ctx.env) ?? "unbound"
   // In the briefs folder the session reads from (a managed run's grant, else the task's own); a
   // text too long for a reply was filed there as served, under the same digest.
   const dir = ctx.managedBriefsDir ?? join(task.runtimeDir, "briefs")
   const file = join(dir, `${step}-${digest}.md`)
-  let seen: { session?: string; digest?: string; ref?: string } = {}
+  let seen: BriefSeen = {}
   try {
-    seen = JSON.parse(await ctx.fs.readFile(briefMarker(task, step)))
+    seen = JSON.parse(await ctx.fs.readFile(briefMarker(task, step))) as BriefSeen
   } catch {
     seen = {}
   }
-  // Paid once only after the text reached the session (`brief` records where it went).
-  if (
-    seen.session === session &&
-    seen.digest === digest &&
-    typeof seen.ref === "string" &&
-    (await ctx.fs.exists(file))
-  ) {
-    const ref = seen.ref !== "inline" && (await ctx.fs.exists(seen.ref)) ? seen.ref : file
+  const entries = seen.session === session ? seenEntries(seen) : {}
+  const recorded = entries[digest]
+  // Paid once only after the text reached the session (`commitBriefMarker` records where it went).
+  if (typeof recorded === "string" && (await ctx.fs.exists(file))) {
+    const ref = recorded !== "inline" && (await ctx.fs.exists(recorded)) ? recorded : file
     return {
       ...payload,
-      already: true,
+      ...(setAlready ? { already: true } : {}),
       instructions: `The ${step} text is unchanged since this session read it; read \`${ref}\` again only if it is no longer in your context.`,
       instructions_ref: ref,
       instructions_once: true,
@@ -339,7 +386,20 @@ async function onceText(
   }
   await ctx.fs.mkdir(dir)
   await ctx.fs.atomicWrite(file, text)
-  await ctx.fs.atomicWrite(briefMarker(task, step), `${JSON.stringify({ session, digest })}\n`)
+  const pending: { digest: string; file: string; base?: true }[] = [{ digest, file }]
+  if (typeof baseText === "string" && baseText !== "" && baseText !== said) {
+    const baseServed = await stepTextAsServed(ctx, task, phase, fillNames(baseText))
+    const baseDigest = hash(baseServed)
+    if (baseDigest !== digest) {
+      const baseFile = join(dir, `${step}-${baseDigest}.md`)
+      await ctx.fs.atomicWrite(baseFile, baseServed)
+      pending.push({ digest: baseDigest, file: baseFile, base: true })
+    }
+  }
+  await ctx.fs.atomicWrite(
+    briefMarker(task, step),
+    `${JSON.stringify({ session, entries, pending })}\n`,
+  )
   return payload
 }
 
@@ -373,23 +433,6 @@ export type BriefStep = "plan" | "implement" | "verify"
  */
 export async function brief(ctx: Ctx, asked?: BriefStep): Reply {
   const reply = await briefReply(ctx, asked)
-  // The file the served text went to is the one a repeated brief names (onceText).
-  if (reply.ok && reply.data.already !== true) {
-    const repo = await resolveRepo(ctx)
-    const task = repo.ok ? await resolveTask(ctx, repo.data) : null
-    const step = typeof reply.data.phase === "string" ? reply.data.phase : null
-    if (task !== null && step !== null)
-      try {
-        const marker = briefMarker(task, step)
-        const seen = JSON.parse(await ctx.fs.readFile(marker)) as Record<string, unknown>
-        await ctx.fs.atomicWrite(
-          marker,
-          `${JSON.stringify({ ...seen, ref: typeof reply.data.instructions_ref === "string" ? reply.data.instructions_ref : "inline" })}\n`,
-        )
-      } catch {
-        // No marker: the text was not served once (an exit's words, another step's text).
-      }
-  }
   // The person's comments on the planning documents come with the Plan's brief, once each, ahead
   // of the step's text.
   if (reply.ok && reply.data.phase === "plan") {
@@ -619,12 +662,53 @@ export async function buildStartVerb(ctx: Ctx): Reply {
         },
       ]),
     )
-  return finish(ctx, task, "build start", await buildStart(ctx, task))
+  const started = await buildStart(ctx, task)
+  return finish(
+    ctx,
+    task,
+    "build start",
+    started.ok
+      ? ok(await onceText(ctx, task, "implement", started.data, { setAlready: false }))
+      : started,
+  )
 }
 
-/** `build done [--defer "<why>"]`: the build is ready, Implement → Verify. */
+/** Attach Verify's initial brief and step text right after `buildDone` moves Implement → Verify. */
+async function verifyHandoff(
+  ctx: Ctx,
+  repo: RepoRef,
+  task: Task,
+  done: Result<NextPayload>,
+): Reply {
+  if (!done.ok) return done
+  const now = (await loadTask(ctx, repo, task.slug)) ?? task
+  const verified = await verifyBrief(ctx, now)
+  if (!verified.ok) return done
+  const said = typeof verified.data.instructions === "string" ? verified.data.instructions : ""
+  const payload =
+    verified.data.phase === "verify" && said === "" && verified.data.exit === undefined
+      ? {
+          ...verified.data,
+          instructions: phaseText(now.type === "bugfix" ? "verify-bugfix" : "verify") ?? "",
+        }
+      : verified.data
+  return ok(
+    await onceText(ctx, now, String(payload.phase ?? "verify"), payload, { setAlready: false }),
+  )
+}
+
+/** Deduplicate Verify/Final step text when a verify verb returns a full step brief. */
+async function dedupeVerifyReply(ctx: Ctx, task: Task, out: Result<NextPayload>): Reply {
+  if (!out.ok) return out
+  const phase = typeof out.data.phase === "string" ? out.data.phase : null
+  if (phase === "verify" || phase === "final")
+    return ok(await onceText(ctx, task, phase, out.data, { setAlready: false }))
+  return out
+}
+
+/** `build done [--defer "<why>"]`: the build is ready, Implement → Verify, returning Verify's first move directly. */
 export async function buildDoneVerb(ctx: Ctx, defer: string | null): Reply {
-  return onTask(ctx, "build done", async (task) => {
+  return onTask(ctx, "build done", async (task, repo) => {
     if (task.stage === "plan") return approvalFirst(ctx, task)
     if (task.stage === "verify" || task.stage === "shipped")
       return ok(base(task, { already: true, message: `${task.slug} is in ${task.stage}.` }))
@@ -635,7 +719,7 @@ export async function buildDoneVerb(ctx: Ctx, defer: string | null): Reply {
       ])
     const ready = await buildReady(ctx, task)
     if (!ready.ok) return ready
-    return buildDone(ctx, task, defer)
+    return verifyHandoff(ctx, repo, task, await buildDone(ctx, task, defer))
   })
 }
 
@@ -663,7 +747,7 @@ export async function verifyVerbCmd(ctx: Ctx, verb: VerifyVerb): Reply {
       ])
     const ready = await buildReady(ctx, task)
     if (!ready.ok) return ready
-    return verifyVerb(ctx, task, verb)
+    return dedupeVerifyReply(ctx, task, await verifyVerb(ctx, task, verb))
   })
 }
 

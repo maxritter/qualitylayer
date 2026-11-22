@@ -652,13 +652,11 @@ function shareSection(share: JudgeShare, iteration: number, byStep: boolean): st
     "judges work at the same time, each on its own share. Do not wait for them. " +
     "Where the rules above say to judge everything, they mean your share."
   const record =
-    "The other judges append their parts to the same `## Verification` section at the same time: " +
-    "read its end just before you insert, add only your block with an exact-text edit, never " +
-    "rewrite the file. " +
-    `Name your evidence files \`${evidence}\`. Your block starts with \`${part}\` and holds the ` +
-    "Assignment and Judge lines (no Revision line: QualityLayer stamps it), your verdict lines and " +
-    "your own `**Result:**`, `pass` only when every line of your part is `[PASS]` or `[NOTE]`. " +
-    "If a part for your share exists, replace it and leave the others."
+    `Name your evidence files \`${evidence}\`. When all your verdicts are recorded with \`qualitylayer verdict\`, ` +
+    `run \`qualitylayer verdict finish <assignment> --share ${share.n}\` to write and validate \`${part}\` safely ` +
+    "without racing the other shares (it appends or replaces only your share block). " +
+    "If you write it by hand, read the end of `## Verification` first, add or replace only your block with an exact-text edit, " +
+    "include Assignment, Judge (no Revision line: QualityLayer stamps it), your verdicts and `**Result:**` (`pass` only when every line is `[PASS]`, `[NOTE]` or `[USER]`)."
   // A points Plan's build splits its steps: a share runs its steps, the diff-wide share the diff.
   if (byStep && share.kind === "diff") {
     return [
@@ -707,14 +705,13 @@ function shareSection(share: JudgeShare, iteration: number, byStep: boolean): st
 /** What a reviewer of a Plan with numbered steps (a bug's Plan too) records besides the Acceptance test and the diff. */
 function itemSections(assignment: Assignment, share: JudgeShare | undefined): string[] {
   const out: string[] = []
+  const finishFlags = share !== undefined ? ` --share ${share.n}` : ""
   out.push(
-    "## Record each check as you finish it\n\n" +
-      "After each item run " +
-      `\`qualitylayer verdict ${assignment.id} "<item>" pass|fail|missing|user|note "<one line of evidence>" [--evidence <returned file>]\`, ` +
-      "the item named as its record line names it (`check`, `dod T4`, `acceptance A1`). " +
-      "This command saves a receipt. Also write the corresponding verdict line in your assigned Verify iteration or share. " +
-      "Use `check` for each recorded command, not `check all`. A `pass` of an " +
-      "acceptance step needs `--evidence` with the exact `file` returned by the capture command; do not change its folder or name.",
+    "## Record and finish\n\n" +
+      `Record each item as you finish it with \`qualitylayer verdict ${assignment.id} "<item>" pass|fail|missing|user|note "<evidence>" [--evidence <returned file>]${finishFlags}\` ` +
+      "(use `check` for each recorded command, not `check all`; acceptance passes require `--evidence` with the exact returned `file`). " +
+      "This command saves a receipt. " +
+      `When done, run \`qualitylayer verdict finish ${assignment.id}${finishFlags}\` to write and validate your assigned Verify iteration or share block in one step.`,
   )
   if (assignment.ignored !== undefined && assignment.ignored.length > 0) {
     out.push(
@@ -753,10 +750,8 @@ export function judgeMinutes(outline: Outline | undefined): number {
 /** What a lone judge's record needs to be accepted, and the step that proves it before the report. */
 function recordMustValidate(): string {
   return (
-    "## Your record must validate\n\nEvery runtime pass (a scenario or an acceptance step) cites its proof file by " +
-    "path in backticks, as in the example lines. " +
-    `Before you report, run \`qualitylayer validate ${agentFileOf("verify")}\` and fix every ` +
-    "error."
+    "## Your record must validate\n\n`qualitylayer verdict finish` writes and validates your block automatically. " +
+    `If you edit \`${agentFileOf("verify")}\` directly, cite each proof file in backticks and run \`qualitylayer validate ${agentFileOf("verify")}\` before reporting.`
   )
 }
 

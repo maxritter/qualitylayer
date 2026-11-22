@@ -21,7 +21,7 @@
       "required": true,
       "show": "lead",
       "writer": "agent",
-      "hint": "a two-column table with the rows When, Today and Expected, each one short sentence in the user's terms; if nothing is broken, the task becomes a feature"
+      "hint": "a two-column table with the rows When, Today, Expected and Must keep working (named tests or flows, never \"the existing tests\"), each one short sentence in the user's terms; if nothing is broken, the task becomes a feature"
     },
     {
       "heading": "Why",

@@ -12,7 +12,7 @@ code and the approved Plan yourself.
 - **A bug or an in-scope request you confirmed**: fix it test first with the smallest change, commit the
   named files, and record it with `qualitylayer review decide <thread> --as fix --note "<what you
   changed>"`. When the fix corrects a rule of this codebase a later task could break again, save it with
-  `memory_save` on the files the fix touched (search first, `replaces` when a lesson says otherwise).
+  `memory_save` (or `qualitylayer memory store`) on the files the fix touched (search first, `replaces` when a lesson says otherwise).
 - **A change of scope or design** (bigger than a fix, or against what the person approved): ask the author
   in the App (`qualitylayer question ask`) whether to replan; a replan goes through `qualitylayer plan
   amend --by user --note "<their words>"` before anything is built.

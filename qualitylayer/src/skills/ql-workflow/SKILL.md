@@ -97,27 +97,23 @@ review; QualityLayer stores no commit hash.
 
 ## Asking and approving
 
-A task asks its questions where its `answers` side says and its approvals (the Plan, its Your calls,
-the build choice, the change) where its `approvals` side says: the App or your chat. Settings ›
-Workflow and `settings set answers|approvals` choose them; `--terminal` puts both in your chat and
-`--app` in the App. Follow each reply's mode. `your_turn` is the line you say when a reply carries it; with approvals in the App a gate reply carries `presentation.planHandoff` instead. `chat_questions`
-are asked in the picker their `tool` names, exactly as returned. Each `chat_review` entry is sent with
-`qualitylayer question ask '<entry>'` first, and its reply's `chat_questions` are what you ask; a
-pick in a picker QualityLayer did not hand you records nothing. The native hook records verified
-picks; for Antigravity, Grok and Copilot, `question poll` reads them from the session's own
-record. With no picker, show the numbered choices, end your turn and record their words with
-`qualitylayer question answered "<their words>"`; an empty picker result is no answer. Everything else
-is asked in the App with `qualitylayer question ask`, and you keep working on what no open answer
-blocks. In Implement and while Verify checks, never use a question tool or picker of your own: send
-`qualitylayer question ask` and go on; the answer shows in `qualitylayer next`. Only Verify's exit
-question waits.
+Questions follow `answers`, approvals follow `approvals` (App or chat; `settings set answers|approvals`,
+`--terminal` puts both in chat, `--app` in the App). Follow each reply's mode: say `your_turn` when
+present (`presentation.planHandoff` for App Plan gates). Ask `chat_questions` in the named `tool`
+picker exactly as returned; for each `chat_review` entry, send `qualitylayer question ask '<entry>'`
+first and ask its returned `chat_questions` (a pick outside QualityLayer's picker records nothing; the
+native hook records verified picks, and for Antigravity, Grok and Copilot, `question poll` reads them
+from the session's own record). Without a picker, show numbered choices, end your turn and record with
+`qualitylayer question answered "<their words>"`; an empty picker result is no answer. Everything else is asked in the App with
+`qualitylayer question ask` while you keep working on unblocked work. In Implement and while Verify
+checks, never use a picker of your own: use `qualitylayer question ask` and go on (only Verify's exit
+question waits).
 
-The person may decide in the App whatever the task's approvals side says. When your turn starts
-while a gate is open, read `qualitylayer next` before you answer: it shows a decision they made there
-meanwhile, and `qualitylayer wait --for approval` applies it. A typed approval the hook answered with "QualityLayer recorded your approval of" is already saved;
-record a decision yourself only on an explicit request, with `qualitylayer gate decide ...
---asked "<their exact words>"`, and honor a refusal. A running reviewer is agent work, not a request
-for an answer.
+The person may decide in the App whatever the task's approvals side says: while a gate is open, read
+`qualitylayer next` before you answer, and `qualitylayer wait --for approval` applies it. A typed
+approval answered with "QualityLayer recorded your approval of" is already saved; record one yourself
+only on explicit request with `qualitylayer gate decide ... --asked "<their exact words>"`, and honor a
+refusal. A running reviewer is agent work, not a request for an answer.
 
 ## When a reply does not move you on
 

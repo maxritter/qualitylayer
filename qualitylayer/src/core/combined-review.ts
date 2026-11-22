@@ -57,14 +57,14 @@ export function combinedSection(repoRoot: string, receipts: readonly SourceRecei
     "You are this change's **Independent review**, and you did not write any of the code. Add the missing tests first, subject to the judge brief's no-file-change rule: propose tests/docs instead of editing them when it applies.",
     "",
     `1. **The missing tests, in the checkout at \`${repoRoot}\`.** Read the diff once and add the tests nobody wrote: for each function, command or screen the change adds or alters, the empty or malformed input, the boundary, the error path a person sees. Name the plausible wrong implementation each test would reject; leave out a test none could fail. Expected values come from the contract, never from what the code prints. Make a doc the change made wrong true. Do not refactor, rename or restructure. Leave every file you write unstaged (tests and docs only, never production code), run each new test once, and list the files in your report: the session commits them after your report.`,
-    "2. **A new test that fails has found a defect.** Keep it out of the checkout, and record it in your iteration as `[FAIL] review: D<n> · <the test and what it showed>`. The fix round writes the test and fixes the code.",
+    "2. **A new test that fails has found a defect.** Keep it out of the checkout, and record it in your iteration as `[FAIL] review: bug: <the test and what it showed>`. The fix round writes the test and fixes the code.",
     "3. **Then the Independent review**, as the judge brief above says, on the source you were handed: a verdict for every Done means point, the scenarios, the acceptance test and the diff. Your own new tests are not evidence for a point until you ran them and cite their output.",
     "",
     "### Receipts",
     "",
     reuse,
     "",
-    "Say in the review line what you added: `tests: <n> tests added · docs: <paths or no doc impact>`. Label proposals as proposals.",
+    "End your review line with `tests: <n> tests added · docs: updated <paths>` (or `docs: no doc impact`), replacing the shorter `docs:` tail above. Label proposals as proposals.",
   ].join("\n")
 }
 

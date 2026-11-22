@@ -10,7 +10,6 @@ import skill from "../skills/ql-workflow/SKILL.md" with { type: "text" }
 import artifactTemplate from "./artifacts/artifact.html.tmpl" with { type: "text" }
 import wireframeTemplate from "./artifacts/wireframe.html.tmpl" with { type: "text" }
 import pictures from "./phases/_pictures.md" with { type: "text" }
-import product from "./phases/_product.md" with { type: "text" }
 import style from "./phases/_style.md" with { type: "text" }
 import anotherReview from "./phases/another-review.md" with { type: "text" }
 import artifactAuthoring from "./phases/artifact-authoring.md" with { type: "text" }
@@ -68,14 +67,14 @@ const phases: Record<string, string> = {
   plan: join(plan, style, pictures),
   "plan-bugfix": join(plan, planBugfix, style, pictures),
   // A task started from an existing plan: the Plan maps the person's original.
-  "plan-adopted": join(planAdopted, style, pictures),
+  "plan-adopted": join(planAdopted, style),
   "research-helper": join(researchHelper),
   "cross-review": join(crossReview),
   "cross-review-round": join(crossReviewRound),
-  // Implement cuts the Plan into slices and cards, then builds them; it asks the person nothing,
-  // so it does not get "Asking the person" (_style.md).
-  implement: join(implement, pictures),
-  "implement-bugfix": join(implement, implementBugfix, pictures),
+  // Implement cuts the Plan into slices and cards, then builds them; it asks the person nothing
+  // and has no Diagrams section, so it omits _style.md and _pictures.md.
+  implement: join(implement),
+  "implement-bugfix": join(implement, implementBugfix),
   handback: join(handback),
   "quality-security": join(qualitySecurity),
   "quality-security-recheck": join(qualitySecurityRecheck),
@@ -85,7 +84,7 @@ const phases: Record<string, string> = {
   "judge-rerun": join(judgeRerun),
   "verify-judge": join(verifyJudge),
   "judge-bugfix": join(judgeBugfix),
-  final: join(final, style),
+  final: join(final),
   "review-triage": join(reviewTriage),
   ship: join(ship),
   "show-me": join(showMe),
@@ -94,8 +93,6 @@ const phases: Record<string, string> = {
   // One more review asked from the Review workspace (review/another.ts).
   "another-review": join(anotherReview),
   style: join(style),
-  // Appended to a product task's step texts: the words its documents are written in.
-  product: join(product),
 }
 
 const schemas: Record<string, unknown> = {

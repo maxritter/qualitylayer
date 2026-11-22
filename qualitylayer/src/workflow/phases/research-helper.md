@@ -13,9 +13,9 @@ Research is evidence for decisions others make later, so it holds no recommendat
   happens, a test only the cases it runs, an installed artefact may differ from its source, a library's
   behaviour is its locked version's (cite its documentation). Conflicting sources are a finding: say
   which wins at runtime.
-- Work in roles, one at a time: **locate**, **analyse** the active path, **find the patterns**, and for a
-  library or service **read its documentation**. Helpers of your own get one role and one group of
-  questions each; reopen their citations.
+- Work through each question in order: **locate** the files, **analyse** the active path, **find the
+  patterns**, and for a library or service **read its documentation**. Do this yourself in one pass
+  without spawning nested helpers.
 - Reopen load-bearing evidence yourself and challenge each load-bearing finding once: what observation
   would make it false? Claim "ran", "confirmed" and "verified" only with a command and its result. Point a
   server you start by hand at a local or fake service, never a production one (a trial, licence or
@@ -39,8 +39,8 @@ point. Name each diagram for the question it answers. Use stable ids (never `end
 
 Every claim carries a `file:line` that resolves, written from the repository root (`git rev-parse
 --show-toplevel`): `qualitylayer/src/ui/kit/kit.css:7-46`. Findings sit under headers that state the
-takeaway, each with an `**Answers:** 1, 2` line; every question is answered by a finding or listed under
-*Open questions* as `Question N:` for the planner to close. *Code references* groups paths by area.
+takeaway, each with an `**Answers:** 1, 2` line; a question the code could not answer gets a finding
+saying what the code did not show. *Code references* groups paths by area.
 
 Your report is the complete research document and nothing else. Write no file but your report, and save
 it with `qualitylayer helper result <your id> --file <report>` (or the document on standard input) as

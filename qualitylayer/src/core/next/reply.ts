@@ -137,8 +137,8 @@ export async function stepTextAsServed(
 
 async function withStepText({ ctx, task }: About, payload: NextPayload): Promise<NextPayload> {
   if (task === null || typeof payload.phase !== "string") return payload
-  // A brief served once already points at the file that holds its whole text (`brief`'s onceText).
-  if (payload.already === true && payload.instructions_once === true) {
+  // A step text already served to this session points at the file holding it (`onceText`).
+  if (payload.instructions_once === true) {
     const { instructions_once: _, ...rest } = payload
     return rest
   }

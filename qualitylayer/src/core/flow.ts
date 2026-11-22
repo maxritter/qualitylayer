@@ -107,6 +107,6 @@ export const VERIFY_LANES: readonly VerifyLane[] = [
     name: "Fix rounds",
     short: "The build session fixes the gaps · one more fresh reviewer rechecks",
     description:
-      "The build session fixes the gaps and commits. One more fresh reviewer rechecks what failed and the lines the fix changed. Two fix rounds is the limit; what is still open comes to you as one question.",
+      "The build session fixes the gaps and commits. One more fresh reviewer rechecks what failed and the lines the fix changed. Keep fixing while evidence supports progress; a real blocker that only you can settle comes to you as one question.",
   },
 ]

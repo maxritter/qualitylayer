@@ -3,11 +3,14 @@
 // latest line of an item stands. `03-verify.md` is still written at the end, for the record.
 
 import { join } from "node:path"
-import { type Ctx, err, ok, type Result } from "../ctx.ts"
+import { type Ctx, err, ok, type Result, type ValidationError } from "../ctx.ts"
 import { proofOf } from "./acceptance.ts"
-import { isProofPath } from "./docs/names.ts"
+import { appendToSection, verifyLogPath } from "./docs/build-log.ts"
+import { agentFileOf, isProofPath } from "./docs/names.ts"
 import { evidenceIn } from "./docs/outline.ts"
+import { validateDoc } from "./docs/validate.ts"
 import { type EvidenceMode, isEvidenceMode, isRunId } from "./review/screen-evidence.ts"
+import { ensureVerifyLog } from "./task/reconcile.ts"
 import type { Task } from "./task/store.ts"
 import { readAssignment } from "./verification.ts"
 
@@ -29,6 +32,8 @@ export type VerdictEntry = {
   /** The run of the acceptance test this verdict judged, and how that run happened. */
   run?: string
   mode?: EvidenceMode
+  /** The parallel judge share that recorded this verdict, when a round is split into shares. */
+  share?: number
 }
 
 /** What the call answers: the entry as kept, and a warning that is not stored. */
@@ -81,6 +86,7 @@ export type VerdictInput = {
   evidence?: string
   run?: string
   mode?: string
+  share?: number
 }
 
 /** Append one verdict to the current assignment's file; refuses what the build log would refuse. */
@@ -168,6 +174,9 @@ export async function recordVerdict(
       message: `a pass of ${item.replace(":", " ")} needs --evidence <file under ${PROOF_FOLDER}>`,
     })
   }
+  if (input.share !== undefined && (!Number.isSafeInteger(input.share) || input.share < 1)) {
+    return err({ code: "bad_args", message: "--share must be a positive integer" })
+  }
   const entry: VerdictEntry = {
     at: ctx.clock.now(),
     item,
@@ -177,6 +186,7 @@ export async function recordVerdict(
     ...(input.run !== undefined && isEvidenceMode(input.mode)
       ? { run: input.run, mode: input.mode }
       : {}),
+    ...(input.share !== undefined ? { share: input.share } : {}),
   }
   await ctx.fs.mkdir(verdictsDir(task))
   await ctx.fs.append(verdictsPath(task, input.assignment), `${JSON.stringify(entry)}\n`)
@@ -187,7 +197,7 @@ export async function recordVerdict(
     unnamed
       ? {
           ...entry,
-          warning: `Remember to cite \`${evidence ?? "<returned file>"}\` in backticks when writing the ${item.replace(":", " ")} line in the verify document. Use the capture command's returned path unchanged. A runtime pass whose line names no file under ${PROOF_FOLDER} is refused when the record is validated`,
+          warning: `\`verdict finish\` cites \`${evidence ?? "<returned file>"}\` automatically; cite it in backticks if writing ${item.replace(":", " ")} by hand.`,
         }
       : entry,
   )
@@ -268,4 +278,171 @@ export async function passedRun(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promi
     if (found === null || latest >= found.latest) found = { run, latest }
   }
   return found?.run ?? null
+}
+
+/** Read every recorded verdict entry of an assignment in order, skipping torn lines. */
+async function readAllVerdictEntries(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  assignment: string,
+): Promise<VerdictEntry[]> {
+  const path = verdictsPath(task, assignment)
+  if (!(await ctx.fs.exists(path))) return []
+  const entries: VerdictEntry[] = []
+  for (const line of (await ctx.fs.readFile(path)).split("\n")) {
+    if (line.trim() === "") continue
+    try {
+      const entry = JSON.parse(line) as VerdictEntry
+      if (typeof entry.item === "string" && typeof entry.verdict === "string") entries.push(entry)
+    } catch {
+      // Skip torn lines.
+    }
+  }
+  return entries
+}
+
+/**
+ * Collapse raw verdict entries into the final list for one iteration block:
+ * - Singleton items (`acceptance:A1`, `dod:T1`, `scenario:1`, `done:1`): latest entry wins.
+ * - Multi-entry items (`check`, `review`): keep each distinct `(item, verdict, text, evidence)` line.
+ */
+function collapseVerdicts(entries: readonly VerdictEntry[]): VerdictEntry[] {
+  const singletons = new Map<string, number>()
+  const out: VerdictEntry[] = []
+  const seen = new Set<string>()
+  for (const entry of entries) {
+    if (entry.item !== "check" && entry.item !== "review") {
+      const prev = singletons.get(entry.item)
+      if (prev !== undefined) out[prev] = entry
+      else {
+        singletons.set(entry.item, out.length)
+        out.push(entry)
+      }
+      continue
+    }
+    const key = `${entry.item}\0${entry.verdict}\0${entry.text}\0${entry.evidence ?? ""}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(entry)
+  }
+  return out
+}
+
+function formatVerdictLine(entry: VerdictEntry): string {
+  const word = entry.verdict.toUpperCase()
+  const label = entry.item.includes(":") ? entry.item.replace(":", " ") : entry.item
+  const needsCite =
+    entry.evidence !== undefined && entry.evidence !== "" && evidenceIn(entry.text).length === 0
+  const body = needsCite ? `${entry.text} — \`${entry.evidence}\`` : entry.text
+  return `- [${word}] ${label}: ${body}`
+}
+
+/** Replace an existing `### <heading>` block inside `## Verification`, or append it to the section. */
+function upsertIterationBlock(markdown: string, heading: string, block: string): string {
+  const lines = markdown.split(/\r?\n/)
+  const target = `### ${heading}`
+  const start = lines.findIndex((line) => line.trim() === target)
+  if (start < 0) return appendToSection(markdown, "Verification", block)
+  let end = start + 1
+  while (end < lines.length && !/^#{2,3}\s/.test(lines[end] ?? "")) end++
+  while (end > start + 1 && (lines[end - 1] ?? "").trim() === "") end--
+  const updated = [...lines.slice(0, start), ...block.split("\n"), ...lines.slice(end)]
+  return `${updated.join("\n").trimEnd()}\n`
+}
+
+export type FinishVerdictsInput = {
+  assignment: string
+  judge?: string
+  share?: number
+}
+
+export type FinishedVerdicts = {
+  file: string
+  heading: string
+  result: "pass" | "fail"
+  verdicts: number
+  errors: ValidationError[]
+}
+
+/**
+ * Render the recorded JSONL verdicts for `assignment` into a canonical `### Iteration N` (or
+ * `### Iteration N · share K`) block in `agents/03-verify.md`, safely under a lock, and validate.
+ */
+export async function finishVerdicts(
+  ctx: Ctx,
+  task: Task,
+  input: FinishVerdictsInput,
+): Promise<Result<FinishedVerdicts>> {
+  const current = await readAssignment(ctx, task)
+  if (current === null || current.id !== input.assignment) {
+    return err({
+      code: "bad_args",
+      message:
+        "that assignment was replaced by a later one (or the id is mistyped), so nothing was written under it.",
+    })
+  }
+  if (current.result !== undefined) {
+    return err({
+      code: "bad_args",
+      message:
+        "this round is already recorded in the build log; run `qualitylayer next` for the next one",
+    })
+  }
+  if (input.share !== undefined && (!Number.isSafeInteger(input.share) || input.share < 1)) {
+    return err({ code: "bad_args", message: "--share must be a positive integer" })
+  }
+  const raw = await readAllVerdictEntries(ctx, task, input.assignment)
+  const hasShareTags = raw.some((entry) => entry.share !== undefined)
+  const scoped =
+    input.share !== undefined && hasShareTags
+      ? raw.filter((entry) => entry.share === input.share)
+      : raw
+  const collapsed = collapseVerdicts(scoped)
+  if (collapsed.length === 0) {
+    const shareNote = input.share !== undefined ? ` (share ${input.share})` : ""
+    return err({
+      code: "bad_args",
+      message: `no verdicts recorded for assignment ${input.assignment}${shareNote}; record each item with \`qualitylayer verdict ${input.assignment} ...\` first`,
+    })
+  }
+  const heading =
+    input.share !== undefined
+      ? `Iteration ${current.iteration} · share ${input.share}`
+      : `Iteration ${current.iteration}`
+  const judge = (input.judge ?? "fresh helper").replace(/\s+/g, " ").trim() || "fresh helper"
+  const result: "pass" | "fail" = collapsed.some(
+    (entry) => entry.verdict === "fail" || entry.verdict === "missing",
+  )
+    ? "fail"
+    : "pass"
+  const block = [
+    `### ${heading}`,
+    "",
+    `**Assignment:** ${input.assignment}`,
+    `**Judge:** ${judge}`,
+    "",
+    ...collapsed.map(formatVerdictLine),
+    "",
+    `**Result:** ${result}`,
+  ].join("\n")
+
+  await ctx.fs.mkdir(task.runtimeDir)
+  const recordPath = verifyLogPath(task)
+  await ctx.fs.withLock(join(task.runtimeDir, "verify-record.lock"), async () => {
+    await ensureVerifyLog(ctx, task)
+    const before = await ctx.fs.readFile(recordPath)
+    const after = upsertIterationBlock(before, heading, block)
+    await ctx.fs.atomicWrite(recordPath, after)
+  })
+  const report = await validateDoc(ctx, task.dir, agentFileOf("verify"), {
+    runtimeDir: task.runtimeDir,
+  })
+  const errors = report.ok ? report.data.errors.filter((e) => e.severity === "error") : []
+  return ok({
+    file: agentFileOf("verify"),
+    heading,
+    result,
+    verdicts: collapsed.length,
+    errors,
+  })
 }

@@ -1864,7 +1864,6 @@ qualitylayer/src/workflow/native/peers.js.tmpl !filter !diff
 qualitylayer/src/workflow/native/pi.ts.tmpl !filter !diff
 qualitylayer/src/workflow/notice.ts !filter !diff
 qualitylayer/src/workflow/phases/_pictures.md !filter !diff
-qualitylayer/src/workflow/phases/_product.md !filter !diff
 qualitylayer/src/workflow/phases/_style.md !filter !diff
 qualitylayer/src/workflow/phases/another-review.md !filter !diff
 qualitylayer/src/workflow/phases/artifact-authoring.md !filter !diff

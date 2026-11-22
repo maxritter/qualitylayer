@@ -5,15 +5,32 @@
 
 import { recordAttestation } from "../../core/attestations.ts"
 import { judgeRun } from "../../core/judge-run.ts"
-import { recordVerdict, VERDICT_WORDS } from "../../core/verdicts.ts"
+import { finishVerdicts, recordVerdict, VERDICT_WORDS } from "../../core/verdicts.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE =
-  'usage: qualitylayer verdict <assignment> <item> pass|fail|missing|user|note "<text>" [--evidence <file>] [--run <id> --mode scripted|real-session]'
+  'usage: qualitylayer verdict <assignment> <item> pass|fail|missing|user|note "<text>" [--evidence <file>] [--run <id> --mode scripted|real-session] [--share <n>] | qualitylayer verdict finish <assignment> [--judge "<label>"] [--share <n>]'
 
 const RUN_USAGE =
   "usage: qualitylayer verdict run <assignment> [--name <file>] [--timeout <seconds>] -- <program> [args…]"
+
+const FINISH_USAGE =
+  'usage: qualitylayer verdict finish <assignment> [--judge "<label>"] [--share <n>]'
+
+async function finishCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const { positional, flags } = parseArgs(args.slice(1), ["judge", "share"])
+  const [assignment] = positional
+  if (assignment === undefined || positional.length > 1)
+    return err({ code: "bad_args", message: FINISH_USAGE })
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  return finishVerdicts(ctx, task.data, {
+    assignment,
+    ...(typeof flags.judge === "string" ? { judge: flags.judge } : {}),
+    ...(typeof flags.share === "string" ? { share: Number(flags.share) } : {}),
+  })
+}
 
 /**
  * `verdict run <assignment> -- <program> [args…]`: run one project command in the judge's tree with
@@ -38,7 +55,8 @@ async function runCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
 
 export async function verdictCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   if (args[0] === "run") return runCmd(ctx, args)
-  const { positional, flags } = parseArgs(args, ["evidence", "run", "mode"])
+  if (args[0] === "finish") return finishCmd(ctx, args)
+  const { positional, flags } = parseArgs(args, ["evidence", "run", "mode", "share"])
   const [assignment, ...rest] = positional
   // The item may be one word (`scenario:2`, `review`) or two (`scenario 2`); the verdict word ends it.
   const at = rest.findIndex(
@@ -59,6 +77,7 @@ export async function verdictCmd(ctx: Ctx, args: string[]): Promise<Result<unkno
     ...(typeof flags.evidence === "string" ? { evidence: flags.evidence } : {}),
     ...(flags.run === undefined ? {} : { run: String(flags.run) }),
     ...(flags.mode === undefined ? {} : { mode: String(flags.mode) }),
+    ...(typeof flags.share === "string" ? { share: Number(flags.share) } : {}),
   })
   return recorded.ok ? ok({ recorded: true, ...recorded.data }) : recorded
 }

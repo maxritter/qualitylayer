@@ -214,10 +214,11 @@ export async function verifyPayload(
           : (phaseText(`verify-${task.type}`) ?? phaseText("verify"))
   const pkg = await readerPackage(ctx, "judge", task)
   const tag = salt(ctx)
-  // The independent reviewer also adds the missing tests: its brief adds that half and the receipts
-  // to reuse. Split into shares, the diff-wide share carries it, as it reads the whole change.
+  // The independent reviewer also adds the missing tests on the first round: its brief adds that
+  // half and the receipts to reuse. On a recheck (`judging?.after !== undefined`), skip whole-diff
+  // test authorship so the recheck stays focused on what failed and what the fix changed.
   const combinedBrief =
-    flow.flow.combinedReview === true && !judging?.recovery
+    flow.flow.combinedReview === true && !judging?.recovery && judging?.after === undefined
       ? combinedSection(task.repoRoot, await sourceReceipts(ctx, task))
       : null
   // The judge also reads what the build session recorded for Verify's required lines.
@@ -450,7 +451,7 @@ async function qualityStepWithin(ctx: Ctx, task: Task): Promise<NextPayload | nu
       quality_step: "fix",
       open_items: cursor.items.map(({ id, severity, text }) => ({ id, severity, text })),
       record_in: verifyLogPath(task),
-      instructions: phaseText("verify"),
+      instructions: phaseText(`verify-${task.type}`) ?? phaseText("verify"),
       ...flowFields(flow),
       then: "qualitylayer verify judge",
     })
@@ -532,7 +533,7 @@ async function qualityStepWithin(ctx: Ctx, task: Task): Promise<NextPayload | nu
   return base(task, {
     phase: "verify",
     quality_step: cursor.roles,
-    instructions: [staffed.off, phaseText("verify")]
+    instructions: [staffed.off, phaseText(`verify-${task.type}`) ?? phaseText("verify")]
       .filter((part) => part !== "" && part !== undefined)
       .join("\n\n"),
     ...(filed.length === 1 ? { helper: filed[0] } : {}),
@@ -543,14 +544,24 @@ async function qualityStepWithin(ctx: Ctx, task: Task): Promise<NextPayload | nu
   })
 }
 
-/** The project checks are not recorded for the current source: the command that records them. */
+/**
+ * The project checks are not recorded for the current source: the command that records them.
+ * When Second opinion is enabled and not started yet, launch it in the background beside `check all`
+ * so its wall-clock time overlaps with the project checks even when no Security review runs.
+ */
 export async function checksFirst(ctx: Ctx, task: Task): Promise<NextPayload> {
   const why = await checksGap(ctx, task)
   await noteChecksAsked(ctx, task)
+  let reviewHandle: ReturnType<typeof handleOf> | null = null
+  if (!(await hasReviewCandidate(ctx, task)) && (await readRun(ctx, task, "verify")) === null) {
+    const step = await crossReviewStep(ctx, task, "verify")
+    if (step !== null) reviewHandle = handleOf(task, await startReview(ctx, task, step))
+  }
   return base(task, {
     phase: "verify",
     command: "qualitylayer check all",
     message: `No project check is recorded for the current source${why === null ? "." : `: ${why}`}`,
+    ...(reviewHandle !== null ? { reviews: [reviewHandle] } : {}),
     ...flowFields(await taskFlow(ctx, task)),
     then: "qualitylayer verify judge",
   })
@@ -947,9 +958,9 @@ export async function finalPayload(ctx: Ctx, task: Task): Promise<NextPayload> {
   })
   return base(task, {
     phase: "final",
+    then: "qualitylayer wait --for approval",
     instructions: phaseText("final") ?? "",
     ...((await checkedWithoutIndependentJudge(ctx, task)) ? { independent_review: "off" } : {}),
-    description,
     description_file: descriptionPath(task),
     ...(await agentsFields(ctx, task, "verify", task.title)),
     ...(since !== null ? { diff: codeDiff(`${since}..HEAD`, await otherWork(ctx, task)) } : {}),
@@ -957,7 +968,7 @@ export async function finalPayload(ctx: Ctx, task: Task): Promise<NextPayload> {
     context: await contextOf(ctx, "review", task),
     // With approvals in the agent, the step's text asks the reply's one approval question.
     ...((await finalChatReview(ctx, task)) ?? {}),
-    then: "qualitylayer wait --for approval",
+    description,
   })
 }
 

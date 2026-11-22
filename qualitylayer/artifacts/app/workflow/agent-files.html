@@ -336,7 +336,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
     <div><b>The planner</b><span class="now">Nothing to read back: it writes the Plan in the session that read the code</span></div>
     <div><b>The Plan's reviewer</b><span class="now">The two Plan files. Native Plan and security reviews use the configured judge model at high effort. Artifact checks use the configured design model at high effort.</span></div>
     <div><b>The build</b><span class="now">The two Plan files; it writes the cards itself</span></div>
-    <div><b>The judge, each round</b><span class="now">The people's Plan, the Constraints and the task cards, and on a later round the lines that failed. When the person requires no file changes, it keeps normal access and returns its review/verdicts and test/doc proposals for verbatim recording.</span></div>
+    <div><b>The judge, each round</b><span class="now">The people's Plan, the Constraints and the task cards, and on a later round the lines that failed (rechecks skip whole-diff test authorship). It records verdicts live with <code>qualitylayer verdict</code> and renders/validates its iteration block with <code>qualitylayer verdict finish</code>. When the person requires no file changes, it keeps normal access and returns its review/verdicts and test/doc proposals for verbatim recording.</span></div>
     <div><b>The build's reviewer</b><span class="now">The same, and the diff without generated files</span></div>
   </div>
 </section>

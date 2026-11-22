@@ -61,8 +61,13 @@ export async function mainLine(ctx: Ctx, cwd: string): Promise<string | null> {
  * behind what was fetched), the newest meeting point. A branch that already holds HEAD (the build
  * runs on it, or it was merged there) says nothing about where the build began, and is skipped.
  */
-async function meetingPoint(ctx: Ctx, cwd: string, ref: string): Promise<string | null> {
-  const head = await sourceAnchor(ctx, cwd, "HEAD")
+async function meetingPoint(
+  ctx: Ctx,
+  cwd: string,
+  ref: string,
+  target: string,
+): Promise<string | null> {
+  const head = await sourceAnchor(ctx, cwd, target)
   if (head === null) return null
   const candidates = ref.includes("/") ? [ref] : [ref, `origin/${ref}`]
   const points: string[] = []
@@ -94,6 +99,7 @@ export async function effectiveBase(
   ctx: Ctx,
   cwd: string,
   recorded: { base?: unknown; base_ref?: unknown },
+  target = "HEAD",
 ): Promise<string | null> {
   const sha =
     typeof recorded.base === "string" &&
@@ -105,7 +111,7 @@ export async function effectiveBase(
     typeof recorded.base_ref === "string" && recorded.base_ref !== ""
       ? recorded.base_ref
       : await mainLine(ctx, cwd)
-  const point = ref !== null ? await meetingPoint(ctx, cwd, ref) : null
+  const point = ref !== null ? await meetingPoint(ctx, cwd, ref, target) : null
   if (sha === null) return point
   if (point === null) return sha
   // The main line moved and was brought in (a rebase or a merge) only when its meeting point is

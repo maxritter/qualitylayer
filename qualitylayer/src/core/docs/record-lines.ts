@@ -21,7 +21,8 @@ export function recordLineTail(
 export function findingAnswerLine(
   line: string,
 ): { stance?: "taken" | "kept" | "ask"; text: string } | null {
-  const prefix = /^\s*(?:[-*>]\s*)?\*{0,2}Answer:?\*{0,2}/i.exec(line)
+  const prefix =
+    /^\s*(?:[-*>]\s*)?\*{0,2}Answer(?::\*{0,2}|\*{0,2}(?=:|\s+(?:Taken|Kept|Ask)\b))/i.exec(line)
   if (prefix === null) return null
   let at = skipWhitespace(line, prefix[0].length)
   const state = /^(Taken|Kept|Ask)\b/i.exec(line.slice(at))?.[0]

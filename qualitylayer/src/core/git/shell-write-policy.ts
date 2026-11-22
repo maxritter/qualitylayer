@@ -296,5 +296,5 @@ export async function shellWriteDenial(
   const labels = denied
     .slice(0, 6)
     .map((path) => relative(root, path).split(sep).join("/").slice(0, 240))
-  return `QualityLayer: this shell command would write ${labels.join(", ")}${denied.length > labels.length ? " and other task source files" : ""}. Use your native Edit or Write file tool (apply_patch in Codex) for source and authored task documents. Keep shell commands for reads, checks, builds and generated evidence.`
+  return `QualityLayer: this shell command names a literal write path: ${labels.join(", ")}${denied.length > labels.length ? " and other task source files" : ""}. Use your native Edit or Write file tool (apply_patch in Codex) for source and authored task documents. Keep shell commands for reads, checks, builds and generated evidence.`
 }

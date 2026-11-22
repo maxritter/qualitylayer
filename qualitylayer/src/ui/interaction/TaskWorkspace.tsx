@@ -10,11 +10,19 @@ import {
   useDocumentRecord,
   useDocumentReturn,
 } from "../docs/mode.ts"
-import { autonomous as agentsWork, inReview, pendingGate, stepPhase, viewedStep } from "../model.ts"
+import {
+  agentInfo,
+  autonomous as agentsWork,
+  inReview,
+  pendingGate,
+  stepPhase,
+  viewedStep,
+} from "../model.ts"
 import { useOptionalRuns } from "../run-context.tsx"
 import { runTaskId } from "../runs-api.ts"
 import { AgentTurn } from "../shell/AgentTurn.tsx"
 import { DeferredNeeds } from "../status/DeferredNeeds.tsx"
+import { OwnerRequests } from "../status/OwnerRequests.tsx"
 import { NeedsAboveContext, StepSupportingContext } from "../steps/context.ts"
 import { humanQuestions, isFinalApprovalQuestion } from "../turn/ApproveCard.tsx"
 import { useTurnSnapshot } from "../turn/projection.ts"
@@ -55,7 +63,15 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
   // Implement's queued needs stand on the slice that owns them; the disclosure stays where the page
   // does not draw them.
   const supporting =
-    autonomous && surface && !(step === "implement" && surface.task.stage === "implement") ? (
+    autonomous && surface && step === "verify" && surface.task.stage === "verify" ? (
+      <OwnerRequests
+        needs={surface.task.live?.needs ?? []}
+        question={surface.task.question ?? null}
+        answered={surface.task.answeredQuestions ?? []}
+        agent={agentInfo(surface.task.session?.agent).name}
+        onSet={surface.live.setNeed}
+      />
+    ) : autonomous && surface && !(step === "implement" && surface.task.stage === "implement") ? (
       <DeferredNeeds needs={surface.task.live?.needs ?? []} />
     ) : null
   const items = flattenItems(turn?.items ?? surface?.task.items ?? []).filter(
@@ -147,8 +163,16 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
       surface.task.stage === "shipped" ||
       surface.task.stage === "abandoned"
     const asking = current && !closed && questions.length > 0
+    const receipt = surface.task.answeredQuestions?.at(-1)
+    const recentReceipt =
+      current &&
+      !closed &&
+      !questions.length &&
+      receipt?.revision &&
+      (receipt.delivered === false || Date.now() - receipt.at < 20_000)
     const waiting =
       asking ||
+      recentReceipt ||
       (!reviewing &&
         !autonomous &&
         ((step === "plan" && surface.task.handedBack !== undefined) ||
@@ -167,6 +191,9 @@ export function TaskWorkspace({ now, children }: { now: ReactNode; children: Rea
               }}
               hidden={reading || readingRecord || !waiting}
               className="ir-stage-decision"
+              data-verify-question={
+                step === "verify" && !reviewing && (asking || recentReceipt) ? true : undefined
+              }
               data-testid="interaction-now"
             >
               {waiting ? now : null}

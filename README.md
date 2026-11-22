@@ -34,8 +34,8 @@ Work side by side in the App or browser, or in your own agent: terminal, IDE or 
 <a href="https://qualitylayer-media.max-ritter.workers.dev/overview.mp4"><img src="docs/img/watch-the-film.svg" alt="Watch the film, 4:47" width="208" height="44"></a>&nbsp;<a href="https://qualitylayer.dev/inside"><img src="docs/img/inside-qualitylayer-deep-dive.svg" alt="Inside QualityLayer, a 26-minute deep dive" width="258" height="44"></a>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026111809.webp">
-  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026111809.webp" alt="The QualityLayer App walking through a fictional usage-based billing change: you answer its questions and choose in the Plan, agents build and check it, and you approve the change and open its pull request" width="804">
+  <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026112101.webp">
+  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026112101.webp" alt="The QualityLayer App walking through a fictional usage-based billing change: you answer its questions and choose in the Plan, agents build and check it, and you approve the change and open its pull request" width="804">
 </picture>
 
 <sub>Watch the [full-resolution video](https://qualitylayer-media.max-ritter.workers.dev/hero-walkthrough-v2026111301.mp4) or [try the demo](https://qualitylayer.dev/app-demo/?story&guide) in your browser. Fictional project.</sub>
@@ -144,7 +144,7 @@ Your agent reads the code, asks what only you can answer and writes one Plan: **
 
 ### 2 · Implement, by your agents
 
-Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. It builds without a stop. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
+Your agent cuts the Plan into slices and task cards, writes a failing test before each change and hands independent slices to other agents. By default it commits after each checked slice. You can choose one commit before Verify or review the checked worktree diff first. [Implement guide](https://qualitylayer.dev/docs/steps/implement)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/implement-dark.webp">

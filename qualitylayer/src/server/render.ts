@@ -113,7 +113,12 @@ export type ShotSpec = {
  * Runtime errors the page raised and URLs the no-network policy refused, as one shot saw them;
  * `unresponsive` when the page's scripts no longer let it answer after the picture.
  */
-export type ShotDiagnostics = { errors: string[]; blocked: string[]; unresponsive?: true }
+export type ShotDiagnostics = {
+  errors: string[]
+  blocked: string[]
+  unresponsive?: true
+  clipped?: { pageHeight: number; capturedHeight: number }
+}
 
 /** The tallest picture drawn; a longer page is cut there. */
 const MAX_HEIGHT = 16_000
@@ -424,6 +429,7 @@ async function shootOne(
     sessionId: string
   }
   const collector = spec.onDiagnostics ? diagnosticsCollector() : null
+  let clipped: ShotDiagnostics["clipped"]
   const stopListening = collector ? send.onEvent(sessionId, collector.handle) : null
   try {
     await send("Page.enable", {}, sessionId)
@@ -642,6 +648,8 @@ async function shootOne(
       1,
       Math.min(spec.height ?? Math.ceil(box.h), MAX_HEIGHT, Math.ceil(box.h) || 1),
     )
+    if (spec.height === undefined && height < Math.ceil(box.h))
+      clipped = { pageHeight: Math.ceil(box.h), capturedHeight: height }
     const shot = (await send(
       "Page.captureScreenshot",
       {
@@ -679,7 +687,8 @@ async function shootOne(
   } finally {
     stopListening?.()
     try {
-      if (collector) spec.onDiagnostics?.(collector.result())
+      if (collector)
+        spec.onDiagnostics?.({ ...collector.result(), ...(clipped ? { clipped } : {}) })
     } catch {}
     await send("Target.closeTarget", { targetId }).catch(() => {})
   }

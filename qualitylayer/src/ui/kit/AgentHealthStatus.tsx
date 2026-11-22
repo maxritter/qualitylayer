@@ -5,7 +5,7 @@
 import { TriangleAlertIcon } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { AGENT_SETUP, type AgentHealth, SIGNING_IN } from "../../core/agents/health-types.ts"
-import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
+import { AGENT_DISPLAY_ORDER, AGENT_NAMES, type NativeAgent } from "../../core/agents/ids.ts"
 import type { IntegrationHealth } from "../../core/install/integration.ts"
 import { integrationState } from "../settings/agent-facts.tsx"
 import type { Reading } from "../settings/useIntegration.ts"
@@ -220,7 +220,7 @@ function AgentRow({
 export function AgentHealthStatuses(props: AgentRowsProps) {
   return (
     <div className="q-onb-agents">
-      {NATIVE_AGENTS.map((agent) => (
+      {AGENT_DISPLAY_ORDER.map((agent) => (
         <AgentRow
           key={agent}
           {...props}

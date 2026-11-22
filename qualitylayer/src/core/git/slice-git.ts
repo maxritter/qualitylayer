@@ -37,6 +37,6 @@ export async function git(
 
 export type Entry = { mode: string; sha: string }
 
-/** One `update-index --index-info` line: the entry a path gets, or none to remove it. */
+/** One NUL-delimited `update-index -z --index-info` entry: the entry a path gets, or none to remove it. */
 export const infoLine = (path: string, entry: Entry | null) =>
-  entry === null ? `0 ${"0".repeat(40)}\t${path}\n` : `${entry.mode} ${entry.sha}\t${path}\n`
+  entry === null ? `0 ${"0".repeat(40)}\t${path}\0` : `${entry.mode} ${entry.sha}\t${path}\0`

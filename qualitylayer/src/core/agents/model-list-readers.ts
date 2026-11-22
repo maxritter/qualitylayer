@@ -99,6 +99,16 @@ function codexCache(agent: NativeAgent, text: string): string[] {
   }
 }
 
+function modelRow(line: string): { id: string; label: string } | null {
+  const row = line.trim()
+  const split = row.search(/[ \t]/)
+  if (split < 1) return null
+  const separator = row[split] === "\t" ? 1 : 3
+  if (separator === 3 && !row.startsWith(" - ", split)) return null
+  const label = row.slice(split + separator).trim()
+  return label ? { id: row.slice(0, split), label } : null
+}
+
 /**
  * An id then its name on each row: `id<TAB>name` (Antigravity's `agy models`) or `id - name`
  * (Cursor's `cursor-agent models`). Headings and notes around the rows are dropped.
@@ -106,12 +116,32 @@ function codexCache(agent: NativeAgent, text: string): string[] {
 function idRows(agent: NativeAgent, text: string): string[] {
   const ids = new Set<string>()
   for (const line of plain(text).split(/\r?\n/)) {
-    const id = /^(\S+)(?:\t+| - )\S/.exec(line.trim())?.[1]
+    const id = modelRow(line)?.id
     if (id !== undefined && validModelId(agent, id)) ids.add(id)
     if (ids.size >= MODEL_LIST_IDS_MAX) break
   }
   return [...ids]
 }
+
+/** Only labels attached to valid, actually offered IDs are cached. The ID remains the launch argument. */
+export function modelRowLabels(models: readonly string[], text: string): Record<string, string> {
+  const known = new Set(models)
+  const labels: [string, string][] = []
+  let bytes = 0
+  for (const line of plain(text).split(/\r?\n/)) {
+    const row = modelRow(line)
+    if (!row) continue
+    const { id, label } = row
+    if (!known.has(id) || !validModelLabel(label) || label === id) continue
+    bytes += Buffer.byteLength(id) + Buffer.byteLength(label) + 8
+    if (bytes > 24 * 1024) break
+    labels.push([id, label])
+  }
+  return Object.fromEntries(labels)
+}
+
+export const validModelLabel = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 120 && !/\p{C}/u.test(value)
 
 const FORMATS: Record<string, (agent: NativeAgent, text: string) => string[]> = {
   "id-rows": idRows,

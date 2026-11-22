@@ -18,7 +18,7 @@ import { type StatusRow, statusOf } from "../live-status.ts"
 import { runsOutside } from "../outside.ts"
 import { blockedBuildRun, blockedRunReason, startingPlanningRun } from "../run-attention.ts"
 import type { RunWindow } from "../run-context.tsx"
-import { preferredBuildRun, runStatusText, runTaskId } from "../runs-api.ts"
+import { preferredBuildRun, runStatusText, runTaskId, taskAgentRuns } from "../runs-api.ts"
 import { openLine, statusWords, unlanded } from "../shell/lines.ts"
 import type { RowGroup } from "./project-model.ts"
 
@@ -196,6 +196,20 @@ function liveSession(input: {
   return group === "you" && task.type !== "chat" && !OVER_WORKFLOW.includes(row.state) ? null : row
 }
 
+/** A managed planner's recorded exit outweighs its last heartbeat. */
+function stoppedPlanner(task: TaskSummary, runs: readonly RunWindow[]): RunWindow | undefined {
+  if (task.stage !== "plan" || task.type === "chat" || runsOutside(task)) return undefined
+  const signals = task.live?.signals
+  const run = taskAgentRuns(runs, task.id).find((candidate) => !candidate.pendingFresh)
+  if (run?.status !== "stopped" || run.handedOff !== undefined || !run.nativeSession)
+    return undefined
+  if (run.purpose.kind === "task" && run.purpose.phase !== "planning") return undefined
+  if (run.fresh?.generation === run.generation && run.fresh.state !== "started") return undefined
+  const session = signals?.sessionId ?? run.nativeSession
+  const agent = signals?.agent ?? task.session?.agent ?? run.agent
+  return session === run.nativeSession && agent === run.agent ? run : undefined
+}
+
 export function rowLook(input: {
   task: TaskSummary
   group: RowGroup
@@ -230,6 +244,26 @@ export function rowLook(input: {
   const status = statusOf(task, now)
   const shell = shellStatus(task, now)
   const session = liveSession({ task, group, interaction, blocked, prWords, now })
+  const planner =
+    interaction &&
+    prWords === null &&
+    takesBuild(task) &&
+    (shell.state === "working" || shell.state === "quiet")
+      ? stoppedPlanner(task, runs)
+      : undefined
+  if (planner) {
+    const line = `${agentName(planner.agent)} stopped · Continue`
+    return {
+      build: undefined,
+      mark: "stop",
+      title: line,
+      sub: line,
+      state: "stopped",
+      tone: "red",
+      live: null,
+      session: null,
+    }
+  }
   const context: Context = {
     task,
     group,

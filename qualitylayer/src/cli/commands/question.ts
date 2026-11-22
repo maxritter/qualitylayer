@@ -67,11 +67,13 @@ import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE_TEXT =
   'usage: qualitylayer question ask \'<json: {"id":"q7","question","choices":[{"label","kind","words":true,"facts":["at most 3"],"diagram":"mermaid, at most 4 KB","evidence":[{"label","href"}],"artifact":"artifacts/<name>.html, the screen this choice leads to"}],"artifact":"artifacts/<name>.html[#section], the screen the question is about","recommended","grade":1|2|3,"why":"one line, grade 1","ahead":"questions still to come","about":{"doc":"{plan_doc}","section":"Done means","quote":"the words asked about"} or {"item":"plan:decision:…"},"settles":["plan:asked:1"],"gate":"{plan_doc}","item":"plan:decision:1","found":{"text","evidence"}}>\' [--wait-seconds 1..510] · question ask --batch \'<json: {"id":"b1","title":"Scope and what done means","ahead":"Probably the only batch","questions":[…questions as above, "late":true for a Plan Your call, "finding":"a finding of agents/{plan_doc} › Findings" on grade 3]}>\' (or --batch --file <json file, - for stdin>) · question show \'<json>\' · question progress "<line>" · question answered "<what the person said in this chat>"' +
-  " · With multi:true, recommended accepts an array of zero-based indices or labels."
+  " · Give each batch question 2 to 6 choices. Each choice allows up to 3 facts, each at most 200 characters. Use detail for a choice description. With multi:true, recommended accepts an array of zero-based indices or labels."
+const OWNER_REQUESTS =
+  " · Verify question ask may bind a single ownerRequest { kind: budget | evidence, need: T-number, since: current need opened or reopened timestamp, amountCents: positive USD cents for budget only }. Use a choice’s confirm label for a consequential non-gate decision."
 
 /** The usage line with the task's file names. */
 const usage = () =>
-  `${fillNames(USAGE_TEXT)} · answered "<person's answer>" [--id <question-id>] · cancel (--id <question-id> | --batch <batch-id>) [--home]`
+  `${fillNames(USAGE_TEXT)}${OWNER_REQUESTS} · answered "<person's answer>" [--id <question-id>] · cancel (--id <question-id> | --batch <batch-id>) [--home]`
 
 /** Never answer for the person: said with every reply of `ask`. */
 const NEVER = "Never answer for the person, and never ask this question in your own chat or picker."
@@ -177,11 +179,11 @@ type ChatAsk = "waits" | "build" | "build-again"
  * these picker calls through (`buildRefuses` in hook.ts).
  */
 export const BUILD_ASKED_IN_CHAT =
-  "Say your_turn, then ask each native picker call once, exactly as given; the build's guard lets these calls through. If the native picker is unavailable or closes with no answer (an empty result is never an answer), display chat_questions.fallback.calls as numbered choices once. Go on with everything that does not depend on the answer; do not wait for it, do not end your turn on it and do not ask it again. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
+  "Go on with everything that does not depend on the answer. Then say your_turn and pass chat_questions.calls unchanged to the named picker once, or show the numbered choices when no picker tool is named. If you only see a summary, read the full question ask reply with --json. If the picker cannot open or closes without an answer, show chat_questions.fallback.calls as numbered choices once. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
 
 /** The same question asked a second time in the build: it is open already, and asked once. */
 export const BUILD_ALREADY_IN_CHAT =
-  "This is already open in this chat and is asked once. If you have not shown it yet, ask chat_questions now as given; otherwise do not ask it again. Go on with everything that does not depend on the answer; do not wait for it and do not end your turn on it. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
+  "This question is already open. Go on with everything that does not depend on the answer. If you have yet to show it, say your_turn and pass chat_questions.calls unchanged from the full reply to the named picker, or show the numbered choices when no picker tool is named. Use --json to read the full reply. When the person answers in this chat, record their words with qualitylayer question answered --id <question-id>. Never choose for the person."
 
 const DEFAULT_CHAT_THEN: Record<ChatAsk, string> = {
   waits:
@@ -203,8 +205,9 @@ function closedQuestionMessage(task: Host, id: string | undefined, batchMember: 
   const closed = id
     ? "that question id is not open; nothing changed"
     : "no question is open; nothing changed"
-  if (!isStandaloneImplementQuestion(task, id) || batchMember) return closed
-  return `${closed}. ${appAnswerPickup(task.slug)}`
+  if (isStandaloneImplementQuestion(task, id) && !batchMember)
+    return `${closed}. ${appAnswerPickup(task.slug)}`
+  return `${closed}. Run qualitylayer question poll for batch receipts. For a single question, repeat the same qualitylayer question ask to read its saved answer.`
 }
 
 function standaloneQuestionCopy(
@@ -896,7 +899,7 @@ export async function questionCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
     !batch?.questions.some((q) => q.id === id) &&
     (await openQuestion(ctx, task.data))?.id !== id
   )
-    return err({ code: "bad_args", message: "that question id is not open; nothing changed" })
+    return err({ code: "bad_args", message: closedQuestionMessage(task.data, id, false) })
   const closed =
     id && batch?.questions.some((q) => q.id === id)
       ? await answerBatchInChat(ctx, task.data, id, raw)

@@ -56,6 +56,8 @@ written once.
   `**Risk:** short exposure — possible consequence` backed by a Done means test, or
   `**Integrations:** service A, service B` for distinct systems that Approach actually connects.
   Omit unsupported indicators.
+  *Scope*: when the build needs another Git checkout, put `` - **Repository:** `/absolute/path` `` under `### In scope`.
+  Use the checkout's exact local root.
   *Approach*: Chosen, Gives, Costs, then at most five bullets of what changes.
 - `agents/{plan_doc}` is the build's: the request as given, findings, contracts, code to imitate,
   how to start and test, the project checks, rejected approaches, risks with the test that guards
@@ -110,8 +112,9 @@ they answer and you have folded the answer in (`question reply`, as the gate's r
    App, which reaches you as an ordinary message with the marked place: answer it like any message. With
    approvals in your agent it carries `your_turn`: say it, show `qualitylayer read {plan_doc} --lead`,
    then send each `chat_review` entry in order (each open Your call, then the approval) with
-   `qualitylayer question ask '<entry>'` and ask the `chat_questions` it returns, and `qualitylayer
-   wait --for approval`. A pick in a picker QualityLayer did not hand you records nothing. A comment
+   `qualitylayer question ask '<entry>'` and ask the `chat_questions` it returns. On **Give feedback**,
+   ask what should change. On **Show the Plan**, print `qualitylayer read {plan_doc} --lead` in chat.
+   Wait for approval after responding. A pick in a picker QualityLayer did not hand you records nothing. A comment
    reopens the gate when the Plan changed. Either way, while the gate is open your move is `qualitylayer
    wait --for approval` (again while it says pending; in the background where your harness has one):
    reading a Plan takes the person minutes, and it returns when they approve or comment, in the App or

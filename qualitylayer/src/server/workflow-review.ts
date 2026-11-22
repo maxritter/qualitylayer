@@ -1,5 +1,6 @@
 import type { DiffAnchor } from "../core/gate/comments.ts"
 import { TaskReviewHistoryError } from "../core/git/task-diff.ts"
+import { type VerifyRange, verifyRange } from "../core/git/verify-range.ts"
 import {
   ownedPartOf,
   type WorkflowProjection,
@@ -8,11 +9,28 @@ import {
 import { committedSource } from "../core/git/workflow-parts.ts"
 import { workingSource } from "../core/git/working-records.ts"
 import type { ReviewFileSource, SourceRequest } from "../core/review/file-source.ts"
+import { selectedReviewCandidate } from "../core/review-candidate.ts"
 import type { Task } from "../core/task/store.ts"
+import { type Assignment, readAssignment } from "../core/verification.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 
 const unavailable = () =>
   err({ code: "bad_args", message: "This workflow’s changes could not be read. Try again." })
+
+export async function checkedReviewRange(ctx: Ctx, task: Task, saved?: Assignment | null) {
+  if (task.stage !== "verify") return null
+  const assignment = saved === undefined ? await readAssignment(ctx, task) : saved
+  if (assignment?.source !== null || !assignment.note) return null
+  let scoped = task
+  if (assignment.recovery) {
+    const selected = await selectedReviewCandidate(ctx, task).catch(() => null)
+    if (selected?.id !== assignment.recovery || selected.choice.head !== assignment.head)
+      return null
+    scoped = { ...task, repoRoot: selected.choice.checkout }
+  }
+  const range = await verifyRange(ctx, scoped, assignment.head, assignment.recovery !== undefined)
+  return range ? { task: scoped, range } : null
+}
 
 export async function workflowProjection(
   ctx: Ctx,
@@ -39,8 +57,10 @@ export async function workflowReviewSource(
   ctx: Ctx,
   task: Task,
   request: SourceRequest,
+  range?: VerifyRange,
 ): Promise<Result<ReviewFileSource>> {
-  const read = await workflowProjection(ctx, task, { metadata: true, browse: true })
+  const options = { metadata: true, browse: true, ...(range ? { range } : {}) }
+  const read = await workflowProjection(ctx, task, options)
   if (!read.ok) return read
   const part = ownedPartOf(read.data, request.path, request.stamp)
   if (!part)
@@ -59,7 +79,7 @@ export async function workflowReviewSource(
       source.kind === "git"
         ? await committedSource(ctx, task, source)
         : await workingSource(ctx, source.hash)
-    const current = await workflowProjection(ctx, task, { metadata: true, browse: true })
+    const current = await workflowProjection(ctx, task, options)
     if (!current.ok) return current
     if (!ownedPartOf(current.data, request.path, request.stamp))
       return err({

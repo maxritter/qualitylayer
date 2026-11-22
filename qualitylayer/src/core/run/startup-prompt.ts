@@ -1,15 +1,17 @@
 // An agent that waits on its own start-up question: trust this folder, choose a text style, its first-run
 // notes, the Bypass Permissions warning, a sign-in. The question shows only on the agent's terminal screen,
-// so the run's host reads that screen while the run has not taken its first prompt, and the App says who
-// asks, what, and where to answer (the terminal). QualityLayer never answers it: trusting a folder, or
-// accepting bypass, is the person's decision.
+// so the run's host reads that screen and the App says who asks and where to answer. Antigravity can
+// record the first prompt before its setup or folder trust screen releases the terminal.
 
-export type StartupPrompt = "trust" | "theme" | "notes" | "bypass" | "login"
+import type { NativeAgent } from "../agents/ids.ts"
+
+export type StartupPrompt = "trust" | "theme" | "setup" | "notes" | "bypass" | "login"
 
 /** How the card's title finishes: "<Agent> <asks you to trust this folder>". */
 export const STARTUP_PROMPT_LINES: Record<StartupPrompt, string> = {
   trust: "asks you to trust this folder",
   theme: "asks you to choose a text style",
+  setup: "asks you to finish setup",
   notes: "shows its first-run notes and waits for Enter",
   bypass: "asks you to accept Bypass Permissions mode",
   login: "asks you to sign in",
@@ -19,6 +21,7 @@ export const STARTUP_PROMPT_LINES: Record<StartupPrompt, string> = {
 export const STARTUP_PROMPT_STATUS: Record<StartupPrompt, string> = {
   trust: "Asks you to trust this folder · answer in its terminal",
   theme: "Asks for a text style · answer in its terminal",
+  setup: "Asks you to finish setup · answer in its terminal",
   notes: "Shows its first-run notes · press Enter in its terminal",
   bypass: "Asks you to accept Bypass Permissions · answer in its terminal",
   login: "Asks you to sign in · answer in its terminal",
@@ -46,11 +49,40 @@ const PATTERNS: readonly (readonly [StartupPrompt, RegExp])[] = [
   ["notes", /security notes:[\s\S]{0,600}press enter to continue/],
 ]
 
-/** The question the agent's screen shows, or null when it shows none. */
-export function detectStartupPrompt(screen: string): StartupPrompt | null {
-  const text = screen.replace(/\s+/g, " ").toLowerCase()
+const ANTIGRAVITY_PROMPTS = [
+  ["setup", "welcome to antigravity cli!", "choose your color scheme", "next"],
+  ["setup", "terms of service & data use", "help improve antigravity cli", "previous", "done"],
+  [
+    "trust",
+    "accessing workspace:",
+    "do you trust the contents of this project?",
+    "antigravity cli requires permission",
+    "yes, i trust this folder",
+    "no, exit",
+  ],
+] as const
+
+export function holdsAntigravityStartup(
+  agent: NativeAgent | "other",
+  prompt: StartupPrompt | undefined,
+): boolean {
+  return agent === "antigravity" && (prompt === "setup" || prompt === "trust")
+}
+
+const screenWords = (screen: string) => screen.replace(/\s+/g, " ").trim().toLowerCase()
+
+function detect(text: string, agent: NativeAgent | undefined, tookPrompt: boolean) {
+  if (agent === "antigravity")
+    for (const [kind, ...parts] of ANTIGRAVITY_PROMPTS)
+      if (parts.every((part) => text.includes(part))) return kind
+  if (tookPrompt) return null
   for (const [kind, pattern] of PATTERNS) if (pattern.test(text)) return kind
   return null
+}
+
+/** The question the agent's screen shows, or null when it shows none. */
+export function detectStartupPrompt(screen: string, agent?: NativeAgent): StartupPrompt | null {
+  return detect(screenWords(screen), agent, false)
 }
 
 /** How long after the start a screen with no question stops being read. */
@@ -58,9 +90,10 @@ export const STARTUP_WATCH_MS = 10 * 60_000
 const DEBOUNCE_MS = 700
 
 type Watch = {
+  agent?: NativeAgent
   /** The screen as text, read only when a question may be showing. */
   screen: () => string
-  /** The run took its first prompt (or never takes one): the question cannot be waiting any more. */
+  /** The run took its first prompt. Antigravity's own setup and trust may still have the input. */
   done: () => boolean
   /** The question changed: what shows now, or null once it is gone. */
   set: (kind: StartupPrompt | null) => void
@@ -72,8 +105,8 @@ type Watch = {
 /**
  * Watches one run's screen for its start-up question. `changed` is called when the agent printed
  * something; at most one read follows it, 700 ms later, so a stream of output costs one screen read per
- * pause. There is no polling: a quiet terminal reads nothing. The watch ends at the first prompt, and
- * stops reading a screen that never held a question after {@link STARTUP_WATCH_MS}.
+ * pause. A quiet terminal reads nothing. The first prompt ends the watch unless an Antigravity startup
+ * screen is still visible. A screen that never held a question stops being read after {@link STARTUP_WATCH_MS}.
  */
 export function watchStartupPrompt(watch: Watch) {
   const now = watch.now ?? Date.now
@@ -93,8 +126,18 @@ export function watchStartupPrompt(watch: Watch) {
   const read = () => {
     timer = undefined
     if (ended) return
-    if (watch.done()) return end()
-    const next = detectStartupPrompt(watch.screen())
+    const tookPrompt = watch.done()
+    if (tookPrompt && watch.agent !== "antigravity") return end()
+    const screen = screenWords(watch.screen())
+    const next = detect(screen, watch.agent, tookPrompt)
+    if (tookPrompt && next === null) {
+      if (
+        holdsAntigravityStartup(watch.agent ?? "other", current ?? undefined) &&
+        (!screen || ANTIGRAVITY_PROMPTS.some(([, title]) => screen.includes(title)))
+      )
+        return
+      return end()
+    }
     if (next === null && current === null && now() - started > STARTUP_WATCH_MS) return end()
     if (next === current) return
     current = next

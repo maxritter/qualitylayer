@@ -10,15 +10,14 @@ need back. Keep shared files and dependent work with their owner. Review each ha
 work and check the assembled change yourself.
 
 **Done when** every card is ticked or waits on a need, every Done means step ran green on the built
-tree, you have read your whole diff once and removed near-copies and dead code, and the work is
-committed. Then `qualitylayer build done` moves the task to Verify; what it lists as `missing` comes
+tree, and you have read your whole diff once and removed near-copies and dead code. Then `qualitylayer build done` moves the task to Verify; what it lists as `missing` comes
 with the move that settles it. Verify is yours too: go straight on with its reply in the same turn,
 without a report, until the page turns to the person.
 
 ## Cut the slices
 
 1. **Slices as the Plan's `**Size:**` suggests.** A slice is a story someone can use when it is done:
-   the thinnest path through every layer first, then the biggest unknown. It commits on its own (a
+   the thinnest path through every layer first, then the biggest unknown. It stands on its own (a
    changed export's callers in the same slice). A card is one cohesive change finished in one sitting
    with its tests. A small task is one slice.
 2. **Write the cards** under *Task cards* in `agents/{implement_doc}` from its template, numbered `T1`,
@@ -31,7 +30,7 @@ without a report, until the page turns to the person.
    When staging by hand, select the intended paths and follow the repository's rule for committing
    task records under `docs/plans/`.
 3. **Order the proof.** Add `## Proof order` beside `## Task cards`. Write one line per Done means step, `A3 · after slice 2`, so each
-   step can run as soon as its slice is committed. For a step only the person can do, name the
+   step can run as soon as its slice passes. For a step only the person can do, name the
    slice that makes it possible and add `(the person confirms it in Verify)` to the line. Look once
    for gaps in the steps (blockers, cancel
    paths, boundary inputs, two at once): a missing step is added to the Plan with `qualitylayer plan
@@ -60,8 +59,15 @@ what you approved: ...".
    files. When a check fails only on files another session changed, `check slice` runs it again on a
    copy of HEAD with this slice's files and says so: that run is the record.
    After a rebase, preview `qualitylayer doctor --json` and inspect the registered commits before finishing the build.
-5. When a slice is done: `qualitylayer check slice <n>`, then `qualitylayer commit slice <n>`
-   (`--commit <fullsha>` for a commit you made by hand). The commit takes this task's changes: read its
+5. When a slice is done: `qualitylayer check slice <n>`. When `commit_timing` is `slice` (the
+   default), then run `qualitylayer commit slice <n>` (`--commit <fullsha>` for a commit you made by
+   hand). With `before-verify` or `review`, leave checked slices in the worktree and run
+   `qualitylayer check all` before `qualitylayer build done`. Once before Verify commits at that
+   point. After I review the diff opens a decision for the person. Show the exact current actions
+   from `qualitylayer commit task` if they are in the terminal. Apply their requested edits and run
+   the checks again. Their approval is only for the shown task diff. Verify reviews the resulting
+   commit. Timing applies to this checkout. Register commits in another approved checkout using
+   the repository-specific command below. Follow the existing push authorization. The commit takes this task's changes: read its
    `left_out` list and keep other sessions' edits out. A file the person deferred belongs to the
    later slice that owns its commit. Record later work that needs separate approval in Notes and
    wait for that approval. A tick never waits for a commit.
@@ -81,10 +87,14 @@ what you approved: ...".
   decide it and say why in the record. Only when nothing but the person can decide and it cannot wait
   for their review, ask once with `qualitylayer question ask` and keep building: the answer comes with a
   later reply. When they gave or answered it: `qualitylayer need resolved T<n>`.
-- When the person writes during the build, act on it at once. An addition to what they approved is
-  amended with `qualitylayer plan amend --by user`; a visible one is drawn first and built once they
-  approve the picture, recorded as a need meanwhile.
+- When the person adds to the approved Plan during the build, put their addition in `{plan_doc}` as
+  an `> [!ADDED] build · <why>` block, then run `qualitylayer plan amend --by user --note "<their words>"`.
+  Draw a visible addition first and build it once they approve the picture. Record it as a need meanwhile.
 - A limit you could not remove: `qualitylayer limit add`.
+
+Card checks use the task’s checkout. If the approved Plan names an additional checkout under Scope › In scope as
+`` - **Repository:** `/absolute/path` ``, use `qualitylayer check task T<n> --repo <checkout>`. Register a manual commit
+with `qualitylayer commit slice <n> --commit <hash> --repo <checkout>` when its files belong to the slice.
 
 ## The record
 

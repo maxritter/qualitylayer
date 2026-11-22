@@ -284,7 +284,12 @@ export async function controlRun(
         if (input.action !== "restart") assertNativeAvailable(ctx, current)
         if (!options.prepareResume) throw new Error("Resume launch preparation is unavailable")
         assertNativePermissionChange(ctx, current, requested)
-        const settings = effectiveNativeSettings(ctx, current, requested)
+        const settings = effectiveNativeSettings(
+          ctx,
+          current,
+          requested,
+          input.action === "resume" ? input.action : undefined,
+        )
         const acceptedPermission =
           observedNativeSettings(ctx, current).perm ?? current.settings?.perm
         if (

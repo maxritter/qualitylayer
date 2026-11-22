@@ -454,18 +454,16 @@ function modelArguments(
   args: string[],
   env: Record<string, string>,
 ) {
-  if (agent === "opencode" && input.managed) {
-    if (input.model) env.QUALITYLAYER_OPENCODE_MODEL = input.model
+  if (agent === "opencode") {
+    if (input.model) {
+      env.QUALITYLAYER_OPENCODE_MODEL = input.model
+      if (!input.managed && capabilities.modelFlag)
+        args.push(capabilities.modelFlag, input.model.replace(/#[^#]*$/, ""))
+    }
     if (input.effort) env.QUALITYLAYER_OPENCODE_EFFORT = input.effort
     return
   }
-  if (input.model && capabilities.modelFlag)
-    args.push(
-      capabilities.modelFlag,
-      agent === "opencode" && input.effort
-        ? `${input.model.replace(/#[^#]*$/, "")}#${input.effort}`
-        : input.model,
-    )
+  if (input.model && capabilities.modelFlag) args.push(capabilities.modelFlag, input.model)
   if (input.effort && capabilities.effortArgs)
     args.push(...capabilities.effortArgs.map((arg) => arg.replace("{effort}", input.effort ?? "")))
 }

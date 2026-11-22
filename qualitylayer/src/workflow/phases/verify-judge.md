@@ -8,8 +8,9 @@ for all and judge on none alone; together they are one run. When `then` names a 
 start only those reviewers again.
 
 - **While it works, leave the checkout and project checks alone**. Queue known fixes in your task
-  list and inspect their evidence while you wait. Each brief pins the judged commit, so a moved
-  HEAD means the changed code is judged again. Apply the fixes after collecting the verdicts.
+  list and inspect their evidence while you wait. Each brief names an assigned working tree or a
+  selected commit. If the assigned code changes, report the move and recheck the affected code.
+  Apply the fixes after collecting the verdicts.
 - **When it has finished**, record a review returned under that rule and its verdicts verbatim.
   **Read the verdicts and run `then`**, which validates them and their freshness. When it returns a
   fix move, follow it. Ask for a new judgement after the fixes and their focused checks. Verdicts and evidence

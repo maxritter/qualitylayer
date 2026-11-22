@@ -127,6 +127,11 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
       expect(checked.json).toMatchObject({ ok: true, passed: true })
       const fresh = await repo.run(["verify", "judge", ...flags])
       if (!fresh.json.ok) throw Error(fresh.stdout)
+      const judge = fresh.json.helper as { brief_file?: string } | undefined
+      expect(judge?.brief_file).toBeTruthy()
+      const brief = await Bun.file(judge?.brief_file ?? "").text()
+      expect(brief).toContain(`Selected review commit: \`${head}\``)
+      expect(brief).not.toContain("Working-tree HEAD at assignment:")
       const assigned = (await app.json(route)) as unknown as ReviewCandidateState
       expect(assigned.selected).toMatchObject({
         head,

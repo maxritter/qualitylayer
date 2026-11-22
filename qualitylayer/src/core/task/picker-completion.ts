@@ -366,7 +366,7 @@ export function pickerPending(
         ? "Native picker completion could not be retained or read; no answer was recorded. Retry the picker or inspect the local runtime."
         : state.expired
           ? "Native picker evidence exceeded its 24-hour retry window; ask the pending question again. No answer was inferred."
-          : "Waiting for the native client to persist its picker result. Poll or wait again; hook payload claims are not answers.",
+          : "Waiting for the native client to save its picker result. Run qualitylayer question poll to collect the saved result. Show the picker only once. If the person's answer appears as a message in this chat, record their exact words with qualitylayer question answered --id <question-id>.",
     },
   }
 }

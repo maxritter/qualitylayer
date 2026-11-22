@@ -8,6 +8,8 @@ The terminal ask and re-ask replies name this move. A closed `question answered`
 
 ## Bounded native session proof
 
+Antigravity can write its picker display and completion times twice before the answer in a saved session. An identical second pair describes the same interaction. Conflicting times, overlapping tool calls, skipped choices and automatic answers cannot establish a person's choice. After Antigravity records a server restart, which stops its running tasks, a new isolated picker can establish its own answer. The restart does not complete an interrupted picker.
+
 Plain and compressed Codex histories use the same proof window: at most 1 MiB of identity/header bytes and 7 MiB of recent bytes once the history exceeds 8 MiB. Incomplete boundary rows are discarded; omitted middle records cannot establish a missing picker call or approval. Session, checkout, call, answer and completion checks retain their existing authority. Compressed histories are read as a stream while retaining only those windows, without materializing the whole decompressed history.
 
 ## Idle planning answer delivery
@@ -47,3 +49,29 @@ Runtime-only history references resolve through the port's fixed 64 KiB project-
 The current answer projection carries its independently bound digest explicitly. A later item revision cannot inherit an old chat agreement merely because the old record was delivered. Superseded drafts remain historical records; a withdrawal after a reserved or delivered handoff remains a new revisit correction. New attachment bytes belong to the dedicated answer record owner and its bounded attachment manifest. Migrated attachments refer to the immutable annotation archive entry. Both transports expose opaque record/answer/asset references with available/missing/unsafe state; legacy absolute paths remain only inside inert original evidence.
 
 Current-format App mutations carry one stable action identity per person's action, reused for its transport retries. It identifies the saved record and never proves approval or native consumption. A retry of an earlier action after a later withdrawal returns its historical result without reactivating authority. Even an unsent withdrawal retains an inert action record so its own later retry cannot withdraw a newer answer. Answer and word-agreement updates share the existing answer transaction; retry reconciles an incomplete word update only while that action remains current. Current-format activation requires the matching App request transport.
+
+## Questions in the App when the terminal is preferred
+
+A terminal-configured question returns its existing single native picker request to the
+lead. Presenting it is still the lead's job. The App offers the same actionable question
+at once, bound to its stable identity and specific revision. Choosing the App for one
+answer leaves the terminal preference for the next question. Question placement and the
+two existing approval places remain distinct.
+
+A native presentation state requires a matching native record for the bound question,
+session, exact text and choices, and current asked time. Saving an open question, printing
+picker instructions or receiving hook arguments is not presentation evidence. A matched
+native picker result and a signed-in owner answer compete for the same current question.
+The first valid saved answer wins. A late answer reads its exact receipt or refreshes
+the changed question. A terminal-preferred App answer goes through the existing
+authenticated poll or wait pickup, keeping its identity across retries without repeating
+the native ask. Saved, native presentation, picked up and acted remain distinct.
+An absent terminal action neither closes the question nor creates a result.
+
+In Verify the producer's need remains a prerequisite until the agent records the needed
+decision or evidence request. An open permission need cannot grant spending. A structured
+budget request binds the exact item, amount and current revision and records the owner's
+explicit choice. An evidence request can carry the owner's redacted error or link without
+requesting credentials. Neither action changes a checklist verdict, marks a need resolved,
+or approves the final change. The actual judge still verifies the evidence and records
+its result.

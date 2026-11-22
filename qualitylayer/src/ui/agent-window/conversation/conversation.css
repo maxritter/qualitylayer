@@ -1206,3 +1206,40 @@ button.cv-tool:focus-visible,
 .cv-usage-over-child {
   z-index: calc(var(--ql-z-cover) + 10);
 }
+
+.cv-delivery-notice {
+  min-width: 0;
+  margin: 4px 12px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--ql-border);
+  border-radius: 8px;
+}
+.cv-delivery-heading,
+.cv-delivery-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cv-delivery-heading {
+  justify-content: space-between;
+}
+.cv-delivery-heading strong {
+  font-weight: 550;
+}
+.cv-delivery-notice p {
+  margin: 3px 0;
+  max-height: 4.5em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cv-delivery-actions button {
+  min-height: 28px;
+}
+@container (max-width: 420px) {
+  .cv-delivery-notice button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

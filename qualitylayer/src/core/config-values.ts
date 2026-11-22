@@ -149,13 +149,14 @@ export type AgentSettings = {
 /** The shell a plain Terminal opens: an empty program is the login shell, started with `-l` unless `args` say otherwise. */
 export type TerminalShell = { program: string; args: string[] }
 /** Where Open in puts a file or folder; Finder shows it in the file manager, Terminal opens a shell in its folder. */
-export type Editor = "vscode" | "cursor" | "zed" | "finder" | "terminal"
-export const EDITORS: Editor[] = ["vscode", "cursor", "zed", "finder", "terminal"]
+export type Editor = "vscode" | "cursor" | "zed" | "finder" | "terminal" | "custom"
+export const EDITORS: Editor[] = ["vscode", "cursor", "zed", "finder", "terminal", "custom"]
 /** The one list of places a file or folder opens, by name: Settings › Git and editor and the Files tab's Open in. */
 export const EDITOR_NAMES: Record<Editor, string> = {
   vscode: "VS Code",
   cursor: "Cursor",
   zed: "Zed",
+  custom: "Custom editor",
   finder: "Finder",
   terminal: "Terminal",
 }
@@ -272,7 +273,13 @@ export type BuildDefaults = {
   buildingWorks: BuildingWorks
 }
 
+export const COMMIT_TIMINGS = ["slice", "before-verify", "review"] as const
+export type CommitTiming = (typeof COMMIT_TIMINGS)[number]
+export const commitTimingOf = (value: unknown): CommitTiming =>
+  value === "before-verify" || value === "review" ? value : "slice"
+
 export type Config = {
+  commitTiming: CommitTiming
   /** Where a task started in an agent asks its questions. */
   answers: Answers
   /** Where such a task asks for its approvals; left unset it follows `answers`. */
@@ -304,6 +311,7 @@ export type Config = {
     sound: boolean
   }
   editor: Editor
+  customEditor: { program: string; args: string[] }
   sessions: { idleStop: IdleStop }
   /** `channel`: the person's choice, only theirs to make; left unset an installed prerelease follows Beta, any other install Stable. */
   updates: { channel?: UpdateChannel | undefined }
@@ -448,6 +456,7 @@ const unsetAgent = (): AgentSettings => ({
 })
 
 export const DEFAULT_CONFIG: Config = {
+  commitTiming: "slice",
   answers: "app",
   approvals: undefined,
   answerPlaceChosen: false,
@@ -473,6 +482,7 @@ export const DEFAULT_CONFIG: Config = {
   cockpit: { port: 41888, idleMinutes: 30 },
   notifications: { gateOpened: true, taskFinished: true, sound: true },
   editor: "vscode",
+  customEditor: { program: "", args: [] },
   sessions: { idleStop: "8h" },
   updates: { channel: undefined },
   limits: { resumeAfterReset: true, tokenWarning: true },

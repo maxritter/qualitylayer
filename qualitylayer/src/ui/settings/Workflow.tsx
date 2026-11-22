@@ -157,7 +157,7 @@ function YourAgentGroup({
       <SettingRow
         icon={<MessageCircleQuestionMarkIcon className="size-[15px]" />}
         label="Answer questions in"
-        hint="For tasks you start in Claude Code, Codex or another agent. Tasks started in the App use the App."
+        hint="For tasks you start in your own agent. You can always answer in the App."
       >
         <Choice
           label="Answer questions in"

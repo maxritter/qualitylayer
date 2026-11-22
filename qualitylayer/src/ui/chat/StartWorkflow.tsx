@@ -93,7 +93,7 @@ export function StartWorkflow({
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="grid-cols-1 sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>Convert to task</DialogTitle>
           <DialogDescription>

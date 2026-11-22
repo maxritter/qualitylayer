@@ -1,3 +1,4 @@
+import { commitReviewUpdate } from "./task/precommit.ts"
 // One bounded file watcher for every agent. Cursors are per session and committed under a lock.
 
 import { randomUUID } from "node:crypto"
@@ -449,7 +450,9 @@ async function waitBody<T>(
   // (the session's own `next`) delivered the decision first: a bench run's planner otherwise held its
   // session for the full half hour after the Plan's approval, then woke to "nothing new".
   const openGate =
-    opts.poll === undefined && task.slug !== undefined ? await readGate(ctx, task as Task) : null
+    opts.poll === undefined && task.slug !== undefined && (opts.kinds?.includes("gate") ?? true)
+      ? await readGate(ctx, task as Task)
+      : null
   const watched = openGate !== null && openGate.decision === "pending" ? openGate : null
   let looked = start
   // A wait names its task (bound or not), so it is that task's sign of life from its first idle
@@ -642,7 +645,12 @@ export async function takeEvent(
         )
           arrivals.push({ kind, at: c.created })
       }
+      const commitEdit =
+        !kinds || kinds.includes("gate") ? await commitReviewUpdate(ctx, task) : null
+      const commitEditId = commitEdit ? `commit-edits:${commitEdit.id}` : null
+      const commitEditDue = commitEdit && commitEditId && unread("gate", commitEditId)
       if (task.slug) {
+        if (commitEditDue) arrivals.push({ kind: "gate", at: commitEdit.at })
         if (gateDue) arrivals.push({ kind: "gate", at: gateDue.decided ?? gateDue.opened })
       }
       for (const n of needsNow)
@@ -788,6 +796,13 @@ export async function takeEvent(
         }
       }
       if (enabled("gate") && task.slug) {
+        if (commitEditDue)
+          return deliver("gate", [commitEditId], {
+            event: "gate",
+            target: "commit",
+            decision: "changes",
+            outcome: { requestChanges: commitEdit.feedback, next: "qualitylayer next" },
+          })
         if (reviewWork && reviewId && unread("gate", reviewId))
           return deliver("gate", [reviewId], {
             event: "gate",

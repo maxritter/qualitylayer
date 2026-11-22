@@ -39,6 +39,23 @@ export default Plugin.define({
   id: "qualitylayer",
   async setup(ctx: any) {
     if (!LAUNCH && process.env.QUALITYLAYER_SESSION_HOOKS === "opencode") return
+    await ctx.provider?.transform?.((editor: any) => {
+      if (!editor.get("ollama")) return
+      editor.update("ollama", (provider: any) => {
+        if (Object.hasOwn(provider.settings ?? {}, "headerTimeout")) return
+        provider.settings = { ...provider.settings, headerTimeout: 900_000 }
+      })
+    })
+    async function sessionModel(selected: string, effort?: string) {
+      const [providerID, ...parts] = selected.split("/")
+      const [id, explicit] = parts.join("/").split("#")
+      if (!providerID || !id) throw new Error("QualityLayer needs a provider/model for OpenCode")
+      const variant = effort || explicit
+      if (!variant) return { providerID, id }
+      const catalog = await ctx.model.list({ location: { directory: ctx.location.directory } })
+      const model = catalog.data.find((item: any) => item.providerID === providerID && item.id === id)
+      return model?.variants.some((item: any) => item.id === variant) ? { providerID, id, variant } : { providerID, id }
+    }
     const controller = new AbortController()
     const pending = new Map<string, string>()
     const pickerCompletions = new Set<Promise<void>>()
@@ -69,12 +86,8 @@ export default Plugin.define({
           const brief = briefText(input)
           const parent = await ctx.session.get({ sessionID: tool.sessionID })
           let model = parent.model
-          if (input.model) {
-            const [providerID, ...parts] = input.model.split("/")
-            const [id, variant] = parts.join("/").split("#")
-            if (!providerID || !id) throw new Error("A helper needs a provider/model")
-            model = { providerID, id, variant: input.effort || variant }
-          } else if (model && input.effort) model = { ...model, variant: input.effort }
+          if (input.model) model = await sessionModel(input.model, input.effort)
+          else if (model && input.effort) model = await sessionModel(`${model.providerID}/${model.id}`, input.effort)
           const session = await ctx.session.create({ parentID: tool.sessionID, title: "QualityLayer helper", agent: "build", metadata: { qualitylayerHelper: true }, ...(model ? { model } : {}) })
           remember(helperSessions, session.id)
           remember(childSessions, session.id)
@@ -94,7 +107,7 @@ export default Plugin.define({
             const answer = [...messages].reverse().find((message: any) => message.type === "assistant" && message.content?.some((part: any) => part.type === "text" && part.text))
             const text = answer?.content.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n")
             if (!text) throw new Error("The helper returned no final text")
-            return { content: text.slice(-65536), metadata: { sessionID: session.id, model, effort: input.effort || model?.variant } }
+            return { content: text.slice(-65536), metadata: { sessionID: session.id, model, effort: model?.variant } }
           } finally {
             clearTimeout(timer)
             signal.removeEventListener("abort", interrupt)
@@ -219,10 +232,8 @@ export default Plugin.define({
         const agent = process.env.QUALITYLAYER_OPENCODE_AGENT
         if (agent) await ctx.session.switchAgent({ sessionID: event.sessionID, agent })
         if (selected) {
-          const [providerID, ...parts] = selected.split("/")
-          const [id, variant] = parts.join("/").split("#")
-          if (!providerID || !id) throw new Error("QualityLayer needs a provider/model for OpenCode")
-          await ctx.session.switchModel({ sessionID: event.sessionID, model: { providerID, id, variant: process.env.QUALITYLAYER_OPENCODE_EFFORT || variant } })
+          const model = await sessionModel(selected, process.env.QUALITYLAYER_OPENCODE_EFFORT)
+          await ctx.session.switchModel({ sessionID: event.sessionID, model })
         }
         if (selected || agent) remember(configured, event.sessionID)
       }

@@ -8,7 +8,7 @@ import { continueAnsweredBatch } from "../core/run/answer-continuation.ts"
 import { currentTaskRecordOwner } from "../core/task/answer-migration.ts"
 import { taskItems } from "../core/task/items.ts"
 import { applyPointAgreements, pointAgreements } from "../core/task/point-confirmations.ts"
-import { answeredQuestions, openQuestion } from "../core/task/question.ts"
+import { answeredQuestions, openQuestion, projectedQuestion } from "../core/task/question.ts"
 import { appAnswerOf, homeQuestionDir } from "../core/task/question-app.ts"
 import {
   answerBatch,
@@ -18,6 +18,7 @@ import {
   readBatch,
   undoBatch,
 } from "../core/task/question-batch.ts"
+import { nativeQuestionPresentation } from "../core/task/question-presentation.ts"
 import type { Task } from "../core/task/store.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import type { DeliveryReceipt, TurnSnapshot } from "../interaction/contracts.ts"
@@ -84,16 +85,21 @@ async function snapshot(
   ctx: Ctx,
   host: { runtimeDir: string },
   items: TurnSnapshot["items"],
+  task?: Task,
 ): Promise<TurnSnapshot> {
   const batch = await readBatch(ctx, host)
   const singleton = await openQuestion(ctx, host)
   items = await actionableItems(ctx, host, items)
+  const questions = [
+    ...(batch?.questions ?? []),
+    ...(singleton && !batch?.questions.some((q) => q.id === singleton.id) ? [singleton] : []),
+  ]
   return {
     batch,
-    questions: [
-      ...(batch?.questions ?? []),
-      ...(singleton && !batch?.questions.some((q) => q.id === singleton.id) ? [singleton] : []),
-    ],
+    questions: questions.map(projectedQuestion),
+    ...(task && questions.length
+      ? { nativeQuestions: await nativeQuestionPresentation(ctx, task, questions) }
+      : {}),
     answered: (await answeredQuestions(ctx, host)).filter((a) => !a.reopened),
     links: batch?.links ?? [],
     items,
@@ -115,7 +121,7 @@ async function snapshot(
 export async function turnSnapshot(task: TaskDetail, ctx: Ctx): Promise<TurnSnapshot> {
   const found = await locate(ctx, task.id)
   return found.ok
-    ? snapshot(ctx, found.data.task, task.items ?? [])
+    ? snapshot(ctx, found.data.task, task.items ?? [], found.data.task)
     : {
         batch: null,
         questions: task.question ? [task.question] : [],
@@ -146,7 +152,9 @@ export const turnRoute: InteractionRoute = async (ctx, id, path, request) => {
   if (request.method === "GET" && action === "attachment")
     return answerFileResponse(ctx, host, await answeredQuestions(ctx, host), request)
   if (request.method === "GET" && action === "snapshot")
-    return response(ok({ turn: await snapshot(ctx, host, []) }))
+    return response(
+      ok({ turn: await snapshot(ctx, host, [], found?.ok ? found.data.task : undefined) }),
+    )
   if (request.method === "GET" && action === "receipts")
     return response(
       ok({
@@ -175,7 +183,13 @@ export const turnRoute: InteractionRoute = async (ctx, id, path, request) => {
     )
       return response(bad("expected {batch, id, choice | choices | text | unsure | more}"))
     const answered = await answerBatch(ctx, host, { ...answer, batch: body.batch }, { files })
-    if (answered.ok && "answer" in answered.data && answered.data.answer.id && found?.ok)
+    if (
+      answered.ok &&
+      "answer" in answered.data &&
+      !answered.data.reused &&
+      answered.data.answer.id &&
+      found?.ok
+    )
       await continueAnsweredBatch(ctx, found.data.task, answered.data.answer.id)
     return response(answered)
   }

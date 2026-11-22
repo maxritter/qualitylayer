@@ -5,7 +5,7 @@ out *Program design* and *Modules*. The cards carry **Role** labels:
 
 - **T1 Reproduce the defect** (`**Role:** reproduce`): a test through a public entry point, in the
   test file that already covers it, failing for the reason the root cause names. It is done on an
-  observed expected failure: tick it and commit the test **before the fix**, without making it green;
+  observed expected failure: tick it **before the fix**, without making it green; commit it then under the checked-slice timing;
   the page shows it red as expected. A reproduction that passes first time does not encode the bug, or
   the bug is gone: trace again and record it under *Investigation* in `agents/{plan_doc}`.
 - **T2 Fix at the root cause** (`**Role:** fix`): touches the root-cause file the Plan names; T1's

@@ -137,7 +137,9 @@ export function KeyRows({ rows }: { rows: readonly { label: string; text: string
     <dl className="pl-keyrows" data-testid="plan-key-rows">
       {rows.map((row) => (
         <div key={row.label}>
-          <dt>{row.label}</dt>
+          <dt>
+            <InlineMarkdown text={row.label} />
+          </dt>
           <dd>
             <InlineMarkdown text={row.text} />
           </dd>

@@ -85,7 +85,11 @@ export function listsModels(agent: StepAgent): boolean {
 }
 
 /** What an agent's own list says: the ids it prints, and the model it would start with itself. */
-export type KnownModels = { listed: readonly string[]; own: string | null }
+export type KnownModels = {
+  listed: readonly string[]
+  own: string | null
+  labels?: Readonly<Record<string, string>>
+}
 
 const known = new Map<StepAgent, KnownModels>()
 const added = new Map<StepAgent, readonly string[]>()
@@ -98,7 +102,10 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((id, at) => id === b[at])
 
 const sameModels = (held: KnownModels | undefined, next: KnownModels): boolean =>
-  held !== undefined && held.own === next.own && sameIds(held.listed, next.listed)
+  held !== undefined &&
+  held.own === next.own &&
+  sameIds(held.listed, next.listed) &&
+  next.listed.every((id) => held.labels?.[id] === next.labels?.[id])
 
 const changed = () => {
   version += 1
@@ -133,9 +140,11 @@ export function addModelField(agent: StepAgent): { placeholder: string; hint: st
 
 /** What an added model id must look like, as the field says it. */
 export const addModelRule = (agent: StepAgent): string =>
-  capabilities(agent)?.customModel?.shape === "provider/model"
-    ? "Use provider/model, with no spaces or shell characters."
-    : "Use the model id only, with no spaces or shell characters."
+  agent === "copilot"
+    ? "Use the model id or provider/model, with no spaces or shell characters."
+    : capabilities(agent)?.customModel?.shape === "provider/model"
+      ? "Use provider/model, with no spaces or shell characters."
+      : "Use the model id only, with no spaces or shell characters."
 
 /**
  * Why a typed model id cannot be added, or null: the agent takes ids of its own, and the id has the
@@ -223,9 +232,16 @@ function withListed(agent: StepAgent, catalog: Model[]): Model[] {
   const named = new Set(catalog.map((model) => model.id))
   const listed = capabilities(agent)?.modelList?.adds === false ? [] : known.get(agent)?.listed
   const extra = [...(listed ?? []), ...addedModels(agent)]
+  const labels = known.get(agent)?.labels
+  const label = (id: string, fallback: string) =>
+    labels && Object.hasOwn(labels, id) ? (labels[id] ?? fallback) : fallback
   return [
-    ...catalog,
-    ...extra.filter((id) => !named.has(id) && named.add(id)).map((id) => ({ id, name: id })),
+    ...(labels
+      ? catalog.map((model) => ({ ...model, name: label(model.id, model.name) }))
+      : catalog),
+    ...extra
+      .filter((id) => !named.has(id) && named.add(id))
+      .map((id) => ({ id, name: label(id, id) })),
   ]
 }
 

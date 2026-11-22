@@ -135,16 +135,22 @@ export function shellStatus(
   const life = signals === null ? null : livenessOf(signals, now).state
   const permission = life === "permission"
   const verifying = task.stage === "verify"
+  const outsideChat = task.stage === "chat" && task.outside !== undefined
   const helpers = runningHelpers(task, now)
-  // A session in the person's own terminal that ended its turn waits for them to answer there.
+  // Outside workflow steps can wait after a turn. An ordinary Chat needs an actual question.
   const outsideTurn =
-    !verifying && task.outside !== undefined && helpers.length === 0 && life === "turn-end"
+    !verifying &&
+    !outsideChat &&
+    task.outside !== undefined &&
+    helpers.length === 0 &&
+    life === "turn-end"
   const independent =
     signals?.tool !== null &&
     signals?.tool !== undefined &&
     signals.tool.at > (task.session?.heartbeat ?? 0)
   const verifyQuestion = verifying && (question != null || task.action === "final")
-  const needsPerson = permission || verifyQuestion || outsideTurn
+  const needsPerson =
+    permission || verifyQuestion || outsideTurn || (outsideChat && (question != null || ask))
   const blocked = needsPerson || ask === true || (task.session?.state === "waiting" && !independent)
   const base = {
     agent: agentIdOf(task),
@@ -209,7 +215,7 @@ export function shellStatus(
     }
   const doing = doingWords(task, now)
   if (helpers.length > 0) return { ...base, state: "working", doing }
-  if (verifying && life === "turn-end")
+  if ((verifying || outsideChat) && life === "turn-end")
     return { ...base, state: "quiet", blocked: false, doing: "No active turn" }
   if (lastActivity !== null && now - lastActivity >= SHELL_QUIET_MS)
     return { ...base, state: "quiet", doing }
@@ -328,6 +334,7 @@ export type LiveRow = {
 const STARTUP_ASK: Record<StartupPrompt, string> = {
   trust: "trust this folder",
   theme: "choose a text style",
+  setup: "finish setup",
   notes: "press Enter",
   bypass: "accept Bypass Permissions",
   login: "sign in",

@@ -265,11 +265,12 @@ export async function runAgentHost(
     const cursorState = new CursorStateTracker()
     const attentionSignals = new AttentionSignals()
     let wantsAttention = false
-    // The agent's own start-up question (trust this folder, …) shows only on this screen: while the run
-    // has not taken its first prompt, a pause in the output reads the screen once for it.
+    // The agent's own start-up question shows only on this screen. Antigravity's wizard can stay
+    // open after the native record has a user prompt.
     const startupPrompts =
       run.agent !== "other" && run.purpose.kind !== "terminal"
         ? watchStartupPrompt({
+            agent: run.agent,
             screen: () => screenText(terminal),
             done: () => finished || Boolean(readRun(home, id)?.firstPromptAt),
             set: (kind) => {

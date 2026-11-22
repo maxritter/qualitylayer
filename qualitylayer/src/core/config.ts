@@ -44,6 +44,7 @@ import {
   animationsOf,
   BUILDING_WORKS,
   type BuildDefaults,
+  COMMIT_TIMINGS,
   type Config,
   DEFAULT_CONFIG,
   DEFAULTS_AGENTS,
@@ -139,6 +140,7 @@ const inList = (list: { id: string }[], model: unknown): boolean =>
   typeof model === "string" && list.some((m) => m.id === model)
 
 const RUN_CHECKS = {
+  commitTiming: COMMIT_TIMINGS,
   answers: ANSWERS,
   runWhere: RUN_WHERE,
   perm: RUN_PERMISSIONS,
@@ -370,6 +372,13 @@ function addedRule(agent: NativeAgent): Rule {
   }
 }
 
+function settleLaunch(next: Config["otherAgent"], base: Config["otherAgent"]) {
+  return {
+    program: validProgram(next.program) ? next.program : base.program,
+    args: validArgs(next.args) ? next.args : base.args,
+  }
+}
+
 /** Merge a patch into a config, keeping only values the config knows. */
 function settle(base: Config, patch: unknown): Config {
   const next = merge(base, patch)
@@ -405,12 +414,8 @@ function settle(base: Config, patch: unknown): Config {
     agents: Object.fromEntries(
       AGENTS.map((agent) => [agent, settleAgent(agent, base.agents[agent], next.agents[agent])]),
     ) as Config["agents"],
-    otherAgent: {
-      program: validProgram(next.otherAgent.program)
-        ? next.otherAgent.program
-        : base.otherAgent.program,
-      args: validArgs(next.otherAgent.args) ? next.otherAgent.args : base.otherAgent.args,
-    },
+    customEditor: settleLaunch(next.customEditor, base.customEditor),
+    otherAgent: settleLaunch(next.otherAgent, base.otherAgent),
     terminal: {
       shell: {
         program: validPath(next.terminal.shell.program)
@@ -560,24 +565,37 @@ function refuseAgents(value: unknown): string | null {
   return null
 }
 
-/** Why a patch to `otherAgent` must be refused, or null. */
-function refuseOtherAgent(value: unknown): string | null {
-  if (!isRecord(value)) return "otherAgent must name a program and arguments"
+const launchFields = { program: validProgram, args: validArgs }
+const launchProblems = {
+  customEditor: {
+    program: "Enter a program name or path without control characters.",
+    args: "Use up to 128 arguments, one per line. Each argument can be up to 32,768 characters and must not contain NUL characters.",
+  },
+  otherAgent: {
+    program: "otherAgent.program must be a program name or path without control characters",
+    args: `otherAgent.args ${ARGUMENTS}`,
+  },
+}
+
+/** Why a patch to a configured program and its arguments must be refused, or null. */
+function refuseLaunchSetting(
+  keyName: "otherAgent" | "customEditor",
+  value: unknown,
+): string | null {
+  if (!isRecord(value)) return `${keyName} must name a program and arguments`
   for (const [key, held] of Object.entries(value)) {
-    if (key === "program") {
-      if (!validProgram(held))
-        return "otherAgent.program must be a program name or path without control characters"
-    } else if (key === "args") {
-      if (!validArgs(held)) return `otherAgent.args ${ARGUMENTS}`
-    } else return `${key} is not another agent setting: use program and args`
+    if (key !== "program" && key !== "args")
+      return `${key} is not a ${keyName} setting: use program and args`
+    if (!launchFields[key](held)) return launchProblems[keyName][key]
   }
   return null
 }
 
 /** Why a patch to the agents, the shell, the editor or the idle stop must be refused, or null. */
 function refuseTools(patch: Record<string, unknown>): string | null {
-  if ("otherAgent" in patch) {
-    const why = refuseOtherAgent(patch.otherAgent)
+  for (const key of ["otherAgent", "customEditor"] as const) {
+    if (!(key in patch)) continue
+    const why = refuseLaunchSetting(key, patch[key])
     if (why !== null) return why
   }
   if ("agents" in patch) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react"
 import { toast } from "sonner"
 import type { Item, ItemAnswer } from "../../core/items.ts"
 import type { AnsweredQuestion, Question } from "../../core/task/question.ts"
+import { askedInAgent } from "../../core/task/sides.ts"
 import type { BatchAnswer, DeliveryReceipt, TurnSnapshot } from "../../interaction/contracts.ts"
 import { recommendedIndices, recommendedLabel } from "../../interaction/question-recommendations.ts"
 import { type Api, interactionApi, api as liveApi, type TaskDetail } from "../api.ts"
@@ -58,9 +59,31 @@ export async function mutateTurn<T>(
 export function useBatchActions(task: TaskDetail, reload: () => void) {
   return useCallback(
     (answer: BatchAnswer, files: File[] = []) => {
+      const post = () =>
+        interactionApi.taskRoute<{ answer?: AnsweredQuestion; receipt?: DeliveryReceipt }>(
+          task.id,
+          "turn",
+          "answer",
+          {
+            method: "POST",
+            body: answerBody(answer, files),
+          },
+        )
       const turn = turnFor(task.id)
       const q = turn?.questions.find((q) => q.id === answer.id)
-      if (!q) return Promise.resolve(false)
+      if (!q) {
+        if (!answer.revision) return Promise.resolve(false)
+        return mutateTurn<{ answer?: AnsweredQuestion; receipt?: DeliveryReceipt }>(
+          task.id,
+          "answer",
+          answer,
+          (was) => was,
+          post,
+        ).then((result) => {
+          reload()
+          return result.answer !== undefined
+        })
+      }
       const at = Date.now()
       const entry: AnsweredQuestion = {
         id: q.id,
@@ -95,7 +118,7 @@ export function useBatchActions(task: TaskDetail, reload: () => void) {
         "answer",
         answer,
         (was) =>
-          files.length
+          files.length || askedInAgent({ answers: task.answers, approvals: task.approvals }, [q])
             ? was
             : "more" in answer
               ? {
@@ -109,11 +132,7 @@ export function useBatchActions(task: TaskDetail, reload: () => void) {
                   questions: was.questions.filter((it) => it.id !== q.id),
                   answered: [...was.answered.filter((a) => a.id !== entry.id), entry],
                 },
-        () =>
-          interactionApi.taskRoute(task.id, "turn", "answer", {
-            method: "POST",
-            body: answerBody(answer, files),
-          }),
+        post,
       ).then(
         (result) => {
           reload()
@@ -135,7 +154,7 @@ export function useBatchActions(task: TaskDetail, reload: () => void) {
         // A refusal rejects: the card shows it on its own line and keeps the answer, with no second toast.
       )
     },
-    [task.id, reload],
+    [task.id, task.answers, task.approvals, reload],
   )
 }
 /**

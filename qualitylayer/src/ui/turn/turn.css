@@ -74,7 +74,7 @@
 }
 /* A question page above the document spans the band, so its card centres on the document column's
    axis at any width (with the side panel closed too). The document below starts after a gap at a
-   hairline, so its own scroll never runs into the card. Review keeps one left edge (asked-outside.css). */
+   hairline, so its own scroll never runs into the card. Review uses the inset of its own band. */
 .ir-stage:not([data-step="verify"]) > .ir-stage-decision > [data-testid="focus-page"] {
   max-width: none;
   padding-inline: 28px;
@@ -260,4 +260,32 @@ body:has(.ir-stage) .ir-phone-tabs {
   to {
     transform: translateY(0);
   }
+}
+
+.ir-stage[data-step="verify"] > .ir-stage-decision > .qbc {
+  width: auto;
+  margin: 16px 0;
+}
+.ir-stage[data-step="verify"] > .ir-stage-decision > [data-testid="focus-page"] {
+  padding-inline: 0;
+}
+
+/* The checking page and its question use the same step-content gutters and measure. */
+.ir-stage > .ir-stage-decision[data-verify-question] {
+  box-sizing: border-box;
+  padding-inline: 28px;
+}
+@container (max-width: 820px) {
+  .ir-stage > .ir-stage-decision[data-verify-question] {
+    padding-inline: 28px 18px;
+  }
+}
+.ir-stage[data-step="verify"]
+  > .ir-stage-decision[data-verify-question]
+  > [data-testid="focus-page"],
+.ir-stage[data-step="verify"] > .ir-stage-decision[data-verify-question] > .qbc,
+.ir-stage[data-step="verify"] > .ir-stage-decision[data-verify-question] > .qbc-doc {
+  width: min(var(--sp-measure, 728px), 100%);
+  margin-inline: 0;
+  padding-inline: 0;
 }

@@ -1,7 +1,7 @@
 // Shared agent labels and model choices for launch, onboarding and review settings.
 
-import { FileCogIcon, SatelliteDishIcon, UserRoundIcon } from "lucide-react"
-import { AGENT_NAMES, NATIVE_AGENTS } from "../../core/agents/ids.ts"
+import { FileCogIcon, SatelliteDishIcon, SparklesIcon, UserRoundIcon } from "lucide-react"
+import { AGENT_DISPLAY_ORDER, AGENT_NAMES } from "../../core/agents/ids.ts"
 import {
   AGENT_OWN,
   AGENT_OWN_NAME,
@@ -23,7 +23,7 @@ import { DEFAULT_NOTE, type PickOption } from "../ModelPick.tsx"
 
 /** The tabs: the agents installed on this computer, then Another agent. Both while it is not known yet. */
 export function agentTabs(installed: SubagentModels[] | null | undefined): DefaultsAgent[] {
-  const own: readonly StepAgent[] = NATIVE_AGENTS
+  const own: readonly StepAgent[] = AGENT_DISPLAY_ORDER
   if (installed == null) return [...own, "other"]
   return [...own.filter((a) => installed.some((i) => i.agent === a)), "other"]
 }
@@ -46,6 +46,9 @@ export function recommendedModel(agent: StepAgent): string {
 
 /** The mark a model carries in every menu, as in Settings › Agents › Models: what the agent reports, what you added. */
 function kindMark(agent: StepAgent, id: string): Pick<PickOption, "icon" | "iconLabel"> {
+  if (agent === "antigravity" && /(?:^|[/-])gemini(?:-|$)/i.test(id)) {
+    return { icon: <SparklesIcon className="size-3.5" />, iconLabel: "Gemini model" }
+  }
   const kind = modelKind(agent, id)
   if (kind === "catalog") return {}
   const name = AGENT_NAMES[agent]
@@ -71,6 +74,7 @@ export function modelOptions(
       id: m.id,
       name: m.name,
       ...kindMark(agent, m.id),
+      ...(agent === "antigravity" && m.name !== m.id ? { technicalId: m.id } : {}),
       ...(note !== undefined ? { note } : {}),
     }
   })

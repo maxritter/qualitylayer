@@ -12,6 +12,13 @@ export const NATIVE_AGENTS = [
 ] as const
 export type NativeAgent = (typeof NATIVE_AGENTS)[number]
 
+/** Human-facing order. Agent discovery and automatic reviewer selection keep their own priorities. */
+const firstInPickers: readonly NativeAgent[] = ["claude-code", "codex", "antigravity"]
+export const AGENT_DISPLAY_ORDER: readonly NativeAgent[] = [
+  ...firstInPickers,
+  ...NATIVE_AGENTS.filter((agent) => !firstInPickers.includes(agent)),
+]
+
 /**
  * Whether the agent's review runs where it cannot edit: `review.readOnly` in `agents.json` is
  * `enforced` (the agent refuses the edit) or `detected` (QualityLayer only sees it afterwards, in the
@@ -62,7 +69,10 @@ const MODEL_ID: Record<NativeAgent, (value: string) => boolean> = {
   cursor: (value) => CURSOR_MODEL.test(value),
   grok: (value) => PLAIN_MODEL.test(value),
   antigravity: (value) => PLAIN_MODEL.test(value),
-  copilot: (value) => PLAIN_MODEL.test(value),
+  copilot: (value) => {
+    const parts = value.split("/")
+    return parts.length <= 2 && parts.every((part) => PLAIN_MODEL.test(part))
+  },
 }
 
 /**

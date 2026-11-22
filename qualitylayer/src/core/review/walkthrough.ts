@@ -110,6 +110,7 @@ export type Walkthrough = {
   /** Local diagnostics only; native source records are never exported with shared task material. */
   changeScope?: {
     history?: ChangeHistory
+    candidate?: true
     pending: { path: string; reason: string }[]
     workingFiles: string[]
     localOnlyFiles?: string[]

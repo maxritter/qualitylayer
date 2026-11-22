@@ -50,7 +50,7 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 <Steps>
   <Step title="Slices">Your agent cuts the Plan into slices that each work end to end, thinnest first, and each slice into task cards. For a bug, the reproduction comes before the repair.</Step>
-  <Step title="Test first">For each card it writes a failing test, builds the change, fixes failures and commits. It may hand independent slices to subagents.</Step>
+  <Step title="Test first">For each card it writes a failing test, builds the change and fixes failures. It may hand independent slices to subagents.</Step>
   <Step title="Done means">Test runs are recorded with their commit and exit code, so [Verify](verify.mdx) can cite them. Each **Done means** step runs on the built tree before Verify starts.</Step>
 </Steps>
 
@@ -64,7 +64,7 @@ A new branch or worktree starts at this checkout's HEAD. A worktree's name sets 
 
 ## When the build is done {#when-done}
 
-The session decides when the build is ready, and Verify starts on what it committed. Unticked cards and open needs stay open in Verify, never passed.
+The session decides when the build is ready for its commit step. Verify starts on the committed revision. The default is a commit after each checked slice. In [Git and editor](../reference/settings.mdx#git-and-editor), you can choose one commit before Verify or review the checked worktree diff first. In that review, you can request edits, commit manually or approve the commit. Changed files need fresh checks and a fresh decision. Push has its own approval. Unticked cards and open needs stay open in Verify.
 
 <NextSteps items={[
   { title: "Verify", href: "/docs/steps/verify", text: "Checks and a review by another agent, then yours." },

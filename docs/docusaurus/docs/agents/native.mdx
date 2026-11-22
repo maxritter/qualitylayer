@@ -46,7 +46,7 @@ Ask in plain words; your agent picks the skill. An ordinary coding request does 
 
 ## Models and reviews
 
-Pick the agent, model and effort for each task; the default effort is High.
+Pick the agent, model and effort for each task. High is the default. OpenCode models without effort levels use their own defaults.
 
 | Agent | Model choices |
 | --- | --- |
@@ -55,7 +55,7 @@ Pick the agent, model and effort for each task; the default effort is High.
 | Cursor / Antigravity | Effort is part of the model name, such as Opus 5.5 (High) |
 | GitHub Copilot | Auto works on every plan; paid plans can choose Claude Opus 5.5 |
 
-Where the agent says which models your account has (Codex, OpenCode, Cursor and Antigravity), model menus show only those; a model already in use that your plan lacks shows as **· not offered**. Claude Code, Pi, Grok and GitHub Copilot list every model QualityLayer knows.
+Codex, OpenCode and Cursor model menus follow the models their native clients report. A selected model missing from that list stays visible with **· not offered**. When Antigravity reports models, its menus show their names and launch each selection with its exact model ID. The remaining menus include the models QualityLayer knows. For a custom Antigravity model, choose **Add a model…** and enter the configured ID you pass to `agy --model`. OpenCode’s Ollama provider gets up to 15 minutes to send response headers by default, in the App and in your terminal. Set `providers.ollama.settings.headerTimeout` in OpenCode to override the default for that provider.
 
 Reviewers work in a separate context and edit nothing. Cursor and Antigravity review disposable copies and stop at the first tool that is not read-only ([choosing reviewers](../reference/settings.mdx#second-opinion)).
 

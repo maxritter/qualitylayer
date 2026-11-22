@@ -13,6 +13,8 @@ export function SafeHtml({ html }: { html: string }) {
         dangerouslySetInnerHTML={{ __html: html }}
       />
     )
+  // Mark an author's opening bold phrase without splitting emphasis later in the sentence.
+  const labelled = html.replace(/(<li>\s*(?:<p>\s*)?)<strong>/g, '$1<strong class="sp-item-lead">')
   // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in toBlocks
-  return <div className="sp-html" dangerouslySetInnerHTML={{ __html: html }} />
+  return <div className="sp-html" dangerouslySetInnerHTML={{ __html: labelled }} />
 }

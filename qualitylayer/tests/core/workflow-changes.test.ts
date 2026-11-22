@@ -22,11 +22,11 @@ import {
 import { bindSession } from "../../src/core/task/binding.ts"
 import type { Ctx } from "../../src/ctx.ts"
 import { cachingGit } from "../../src/server/git-cache.ts"
-import { world } from "../helpers/lastingWorld.ts"
+import { withWorkingCaptureClock, world } from "../helpers/lastingWorld.ts"
 import { walkthroughView } from "../helpers/walkthroughView.ts"
 
 const boundContext = (ctx: Ctx, agent: string, session: string): Ctx => ({
-  ...ctx,
+  ...withWorkingCaptureClock(ctx),
   env: {
     cwd: ctx.env.cwd,
     get: (name) =>
@@ -45,6 +45,45 @@ const boundContext = (ctx: Ctx, agent: string, session: string): Ctx => ({
           ? session
           : ctx.env.get(name),
   },
+})
+
+test("a Verify range keeps its exact committed file inventory, diff and source after later work", async () => {
+  const w = await world()
+  try {
+    const repo = await w.repo("checked-range-source")
+    await repo.write({ "src/held.ts": "export const held = 1\n" })
+    const base = await repo.commit("base")
+    const task = await repo.task("review the assigned commit")
+    await repo.write({ "src/held.ts": "export const held = 2\n" })
+    const head = await repo.commit("approved candidate")
+    await repo.write({ "src/held.ts": "export const held = 3\n", "later.txt": "later\n" })
+    await repo.commit("another task advanced HEAD")
+    await repo.write({ "src/held.ts": "export const held = 4\n" })
+
+    const range = { base, head, commits: [head] }
+    const projection = await workflowChanges(repo.ctx, task, { range })
+    expect(projection.candidate).toBe(true)
+    expect(projection.localOnlyFiles).toEqual([])
+    expect(projection.files.map((file) => file.path)).toEqual(["src/held.ts"])
+    const file = projection.files[0]
+    const stamp = file?.parts?.[0]?.stamp
+    if (!file || !stamp) throw new Error("Missing committed file identity")
+    const page = await workflowChanges(repo.ctx, task, {
+      range,
+      page: { path: file.path, revision: file.stamp },
+    })
+    expect(page.page?.diff).toContain("+export const held = 2")
+    expect(page.page?.diff).not.toMatch(/held = [34]/)
+    const source = ownedPartOf(projection, file.path, stamp)?.after
+    if (source?.kind !== "git") throw new Error("Missing committed source blob")
+    expect(await committedSource(repo.ctx, task, source)).toBe("export const held = 2\n")
+    expect(scopeWalkthrough(walkthroughView(), projection).changeScope?.candidate).toBe(true)
+    await expect(
+      workflowChanges(repo.ctx, task, { range, page: { path: "later.txt" } }),
+    ).rejects.toThrow("This path is not part of the reviewed commit")
+  } finally {
+    await w.cleanup()
+  }
 })
 
 test("task risk facts keep owned source and exclude foreign branch dependencies", async () => {

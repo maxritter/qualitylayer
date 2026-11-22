@@ -59,6 +59,7 @@ export function QuestionBatch({
   live,
   resume,
   onCancelMore,
+  terminalPreferred = false,
 }: {
   turn: TurnSnapshot
   send: (answer: BatchAnswer, files?: File[]) => boolean | Promise<boolean>
@@ -82,6 +83,7 @@ export function QuestionBatch({
   resume?: string
   /** Cancel on a Tell me more request of a member of this batch. */
   onCancelMore?: (batch: string, id: string) => unknown
+  terminalPreferred?: boolean
 }) {
   const batch = turn.batch as Batch
   const [selected, select] = useState<string | null>(null)
@@ -153,6 +155,9 @@ export function QuestionBatch({
   const question = turn.questions.find((q) => q.id === selected) ?? turn.questions[0]
   const draftKey = `${taskId}:${batch.id}:${question?.id ?? ""}`
   const draft = useQuestionDraft(draftKey)
+  const [confirmation, setConfirmation] = useState<{ question: Question; index: number } | null>(
+    null,
+  )
   const { words, writing } = draft
   // biome-ignore lint/correctness/useExhaustiveDependencies: a restored draft belongs to this question's own field
   useEffect(() => {
@@ -184,9 +189,19 @@ export function QuestionBatch({
   if (!question) return null
   const more = question.more ?? asked[question.id]
   const requestOpen = moreOpen(more)
+  const presented = turn.nativeQuestions?.[question.id]
   const gone = goneOf(live, now)
   const isMulti = question.multi === true && question.gate === undefined
   const picked = picks[question.id] ?? []
+  const confirmedIndex =
+    confirmation?.question.id === question.id &&
+    confirmation.question.asked === question.asked &&
+    confirmation.question.question === question.question &&
+    confirmation.question.found?.at === question.found?.at
+      ? confirmation.index
+      : undefined
+  const confirm =
+    confirmedIndex === undefined ? undefined : question.choices[confirmedIndex]?.confirm
   const toggle = (index: number) =>
     setPicks((was) => {
       const have = was[question.id] ?? []
@@ -200,7 +215,10 @@ export function QuestionBatch({
   const points = (q: Question) => turn.links.find((l) => l.questionId === q.id)?.points ?? []
   const pointWords = (q: Question) =>
     points(q).length ? `Done means ${points(q).join(", ")}` : "your request"
-  const answer = (value: Omit<BatchAnswer, "id" | "batch">, after?: { failed?: () => void }) => {
+  const answer = (
+    value: Omit<BatchAnswer, "id" | "batch" | "revision">,
+    after?: { failed?: () => void },
+  ) => {
     if (sendingAll.current || pending.current.has(question.id)) return
     pending.current.add(question.id)
     setBusy(question.id)
@@ -219,7 +237,12 @@ export function QuestionBatch({
         : writeDraft(draftKey, { error: sendError(cause) })
     }
     try {
-      const payload = { ...value, id: question.id, batch: batch.id } as BatchAnswer
+      const payload = {
+        ...value,
+        id: question.id,
+        batch: batch.id,
+        ...(question.revision ? { revision: question.revision } : {}),
+      } as BatchAnswer
       const files = "more" in value ? [] : submitted.files
       const result = files.length ? send(payload, files) : send(payload)
       if (typeof result === "boolean") finish(result)
@@ -237,6 +260,11 @@ export function QuestionBatch({
       setWriting(true)
       return
     }
+    if (question.choices[index]?.confirm) {
+      setConfirmation({ question, index })
+      return
+    }
+    setConfirmation(null)
     answer({ choice: index })
   }
   // Tell me more: the request is drawn at once as sent; a refusal takes it back.
@@ -271,7 +299,9 @@ export function QuestionBatch({
     if (picked.length > 0) answer({ choices: picked })
   }
   // Every open question takes its recommendation, one after the other; a review question has none to take.
-  const everyRecommendation = turn.questions.filter((q) => !q.gate)
+  const everyRecommendation = turn.questions.filter(
+    (q) => !q.gate && !q.choices.some((c) => c.confirm),
+  )
   const takeAllRecommendations = async () => {
     if (sendingAll.current || pending.current.size || everyRecommendation.length < 2) return
     sendingAll.current = true
@@ -286,7 +316,12 @@ export function QuestionBatch({
               : { choice: q.recommended }
         const key = `${taskId}:${batch.id}:${q.id}`
         const submitted = draftFor(key)
-        const payload = { ...value, id: q.id, batch: batch.id } as BatchAnswer
+        const payload = {
+          ...value,
+          id: q.id,
+          batch: batch.id,
+          ...(q.revision ? { revision: q.revision } : {}),
+        } as BatchAnswer
         const failed = (cause?: unknown) => {
           writeDraft(key, { error: sendError(cause) })
           select(q.id)
@@ -409,6 +444,7 @@ export function QuestionBatch({
       theme={theme}
       idPrefix={`batch-${question.id}`}
       onChoose={choose}
+      chosen={confirmedIndex}
       multi={isMulti ? { on: picked, toggle } : undefined}
       disabled={busy === question.id || allBusy}
       screen={(reference) => (
@@ -461,6 +497,9 @@ export function QuestionBatch({
             <i aria-hidden="true" />
             Your turn
           </span>
+          {typeof presented === "string" ? (
+            <span className="qbc-native-presentation">Shown in {agentInfo(presented).name}</span>
+          ) : null}
           <BatchStrip
             title={batch.title}
             members={members}
@@ -516,10 +555,12 @@ export function QuestionBatch({
                 <span>{pointWords(question)}</span>
               )}
             </span>
-            <span className={requestOpen ? "qbc-live busy" : "qbc-live"} data-testid="batch-live">
-              <i aria-hidden="true" />
-              {liveWords}
-            </span>
+            {terminalPreferred && !requestOpen && gone === null ? null : (
+              <span className={requestOpen ? "qbc-live busy" : "qbc-live"} data-testid="batch-live">
+                <i aria-hidden="true" />
+                {liveWords}
+              </span>
+            )}
           </div>
           {questionScreens(question).map((reference) => (
             <QuestionScreen
@@ -536,6 +577,18 @@ export function QuestionBatch({
             </div>
           ) : null}
           {choiceList}
+          {confirm && confirmedIndex !== undefined ? (
+            <div className="qbc-multi">
+              <button
+                type="button"
+                className="q-btn primary sm"
+                disabled={busy === question.id}
+                onClick={() => answer({ choice: confirmedIndex })}
+              >
+                {confirm}
+              </button>
+            </div>
+          ) : null}
           {isMulti ? (
             <div className="qbc-multi">
               <span data-testid="batch-multi-count">

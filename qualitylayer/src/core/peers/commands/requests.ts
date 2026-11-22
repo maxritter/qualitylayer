@@ -96,7 +96,6 @@ export async function cmdDispatch(args: Args): Promise<number> {
     }
     return fail(`could not send request to ${r.to}: ${(cause as Error).message}`)
   }
-  log(`dispatched request ${r.id} to ${r.sessionName ?? r.sessionId}; expires in ${r.timeout}s`)
   printResult(
     args,
     {

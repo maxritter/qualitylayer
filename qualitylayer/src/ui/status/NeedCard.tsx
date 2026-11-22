@@ -37,6 +37,7 @@ type Props = {
   compact?: boolean
   /** Deferred external work is addressed in the person's review; saving a note is not check evidence. */
   review?: boolean
+  evidence?: boolean
 }
 
 export function NeedCard({
@@ -47,6 +48,7 @@ export function NeedCard({
   onSet,
   compact = false,
   review = false,
+  evidence = false,
 }: Props) {
   const [note, setNote] = useState("")
   const [sending, setSending] = useState(false)
@@ -58,7 +60,7 @@ export function NeedCard({
   const waiting = need.waiting !== null
   const sent = need.state === "set"
   const send = async () => {
-    if (keyLike || sending) return
+    if (keyLike || sending || (evidence && note.trim() === "")) return
     setSending(true)
     const done = await onSet(note)
     setSending(false)
@@ -201,8 +203,12 @@ export function NeedCard({
                   void send()
                 }
               }}
-              placeholder={`A note for ${inline}, not the key (optional)`}
-              aria-label={`A note for ${inline}, not the key`}
+              placeholder={
+                evidence
+                  ? "Paste relevant error lines or an evidence link"
+                  : `A note for ${inline}, not the key (optional)`
+              }
+              aria-label={evidence ? "Evidence or link" : `A note for ${inline}, not the key`}
               aria-invalid={keyLike}
               aria-describedby={keyLike ? `need-key-${need.for}` : undefined}
               autoComplete="off"
@@ -212,10 +218,10 @@ export function NeedCard({
             <button
               type="submit"
               className="q-btn primary"
-              disabled={keyLike || sending}
+              disabled={keyLike || sending || (evidence && note.trim() === "")}
               data-testid="need-done"
             >
-              It's set
+              {evidence ? "Save evidence" : "It's set"}
               {compact ? null : <span className="q-need-kbd">⌘↵</span>}
             </button>
             {need.reopened === null ? (

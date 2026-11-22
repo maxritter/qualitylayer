@@ -1,3 +1,4 @@
+import { withoutRecommendationMarker } from "../../interaction/question-recommendations.ts"
 // The choices of a question, as one compact column (layout "A" of the question redesign), shared by
 // every card that asks. Grade 1 and a choice without details: the row is the answer itself. Grade 2
 // and 3: the row is a disclosure with its key, the recommended mark, the label and the first fact
@@ -133,12 +134,13 @@ function rowsOf(
 
 function Copy({ row, gist, markdown }: { row: Row; gist: boolean; markdown: boolean }) {
   const first = row.choice.facts?.[0]
+  const label = row.recommended
+    ? choiceLabel({ ...row.choice, label: withoutRecommendationMarker(row.choice.label) })
+    : choiceLabel(row.choice)
   return (
     <span className="cl-copy">
       {row.recommended ? <span className="cl-rec">Recommended</span> : null}
-      <span className="cl-label">
-        {markdown ? <InlineMarkdown text={choiceLabel(row.choice)} /> : choiceLabel(row.choice)}
-      </span>
+      <span className="cl-label">{markdown ? <InlineMarkdown text={label} /> : label}</span>
       {gist && first !== undefined ? (
         <span className="cl-gist">
           <InlineMarkdown text={first} />

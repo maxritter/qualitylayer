@@ -3,7 +3,14 @@ import { join } from "node:path"
 import { phaseText } from "#workflow"
 import { type Ctx, err, ok, type Result, type ValidationError } from "../../ctx.ts"
 import { leadInstructions } from "../../workflow/notice.ts"
-import { type Helper, judgeHelper, qualityHelper, salt, withBriefFiles } from "../briefs.ts"
+import {
+  changedAreas,
+  type Helper,
+  judgeHelper,
+  qualityHelper,
+  salt,
+  withBriefFiles,
+} from "../briefs.ts"
 import { contextOf, readerPackage } from "../build-package.ts"
 import {
   checksGap,
@@ -43,6 +50,7 @@ import {
 import { buildRevision, fileRevision } from "../gate/revision.ts"
 import { buildBase } from "../git/base.ts"
 import { TaskReviewHistoryError, taskCommitDiff } from "../git/task-diff.ts"
+import { verifyChangedPaths, verifyDiffCommand, verifyRange } from "../git/verify-range.ts"
 import { staff } from "../helper-staff.ts"
 import {
   helperLines,
@@ -166,15 +174,25 @@ export async function verifyPayload(
   const waitingAssignment =
     atWork?.assignment ?? (judging === undefined && wholeTree ? currentAssignment : undefined)
   const visibleAssignment = judging ?? waitingAssignment
-  const ownedDiff = wholeTree
-    ? null
-    : await taskCommitDiff(
-        ctx,
-        task,
-        judging?.source && judging.head ? { until: judging.head } : {},
-      )
+  const range =
+    currentAssignment?.source === null && currentAssignment.note
+      ? await verifyRange(
+          ctx,
+          task,
+          currentAssignment.head,
+          currentAssignment.recovery !== undefined,
+        )
+      : null
+  const ownedDiff =
+    wholeTree || range
+      ? null
+      : await taskCommitDiff(
+          ctx,
+          task,
+          judging?.source && judging.head ? { until: judging.head } : {},
+        )
   const diff =
-    ownedDiff?.command ??
+    (range ? verifyDiffCommand(range) : ownedDiff?.command) ??
     codeDiff(
       wholeTree
         ? shellQuote(since ?? "HEAD")
@@ -237,6 +255,7 @@ export async function verifyPayload(
           withCombined(
             judgeHelper(task, n, since, diff, pkg, given, {
               progress: `j${n}-${tag}`,
+              committedDiff: range !== null,
             }),
           ),
         ]
@@ -244,6 +263,7 @@ export async function verifyPayload(
           const helper = judgeHelper(task, n, since, diff, pkg, given, {
             progress: `j${n}-s${share.n}-${tag}`,
             share,
+            committedDiff: range !== null,
           })
           return share.kind === "diff" ? withCombined(helper) : withRequired(helper)
         })
@@ -452,10 +472,20 @@ async function qualityStepWithin(ctx: Ctx, task: Task): Promise<NextPayload | nu
   const since = await buildBase(ctx, task)
   // The build's commits, not the working copy: another session's unsaved files are not this change.
   const leaveOut = await otherWork(ctx, task)
-  const owned = await taskCommitDiff(ctx, task)
+  const admission = await prepareJudgeAdmission(ctx, task).catch(() => null)
+  const range =
+    admission?.source === null && admission.note
+      ? await verifyRange(ctx, task, admission.head)
+      : null
+  const owned = range ? null : await taskCommitDiff(ctx, task)
   const diff =
-    owned?.command ?? codeDiff(since !== null ? `${shellQuote(since)}..HEAD` : "HEAD", leaveOut)
-  const areas = since !== null ? await committedAreas(ctx, task, since, leaveOut) : []
+    (range ? verifyDiffCommand(range) : owned?.command) ??
+    codeDiff(since !== null ? `${shellQuote(since)}..HEAD` : "HEAD", leaveOut)
+  const areas = range
+    ? changedAreas(await verifyChangedPaths(ctx, task, range))
+    : since !== null
+      ? await committedAreas(ctx, task, since, leaveOut)
+      : []
   const recheck = cursor.recheck !== undefined
   // The scans' findings are the review's first candidates; scans of this HEAD are reused, else run now (seconds).
   const head = (await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])).stdout.trim()
@@ -1217,11 +1247,14 @@ async function selectedSecurity(
   if (!existing.includes(start)) await ctx.fs.append(verifyLogPath(task), `\n${start}\n${end}\n`)
   const id = `q-security-${selected.id.slice(0, 12)}`
   const active = (await helperLines(ctx, task)).some((item) => item.id === id && !item.done)
+  const range = await verifyRange(ctx, task, selected.choice.head, true)
   const helper = qualityHelper(
     task,
     {
       base: await buildBase(ctx, task),
-      diff: "the whole selected commit; inspect tracked code with git ls-files",
+      diff: range
+        ? verifyDiffCommand(range)
+        : "the whole selected commit; inspect tracked code with git ls-files",
       pkg: await readerPackage(ctx, "security", task),
       id,
     },
@@ -1445,7 +1478,19 @@ export async function verifyVerb(
           ])
         if (!reopened.ok) return reopened
       }
-      return runVerify(ctx, task, "judge")
+      const reply = await runVerify(ctx, task, "judge")
+      if (
+        reply.ok &&
+        reply.data.mode === "fixing" &&
+        Array.isArray(reply.data.moved) &&
+        reply.data.moved.length > 0
+      )
+        return ok({
+          ...reply.data,
+          message:
+            "Recorded the earlier failed review after the worktree changed. If you’ve fixed what it found, run qualitylayer verify recheck again to request a fresh judge for the current code.",
+        })
+      return reply
     }
     case "fix": {
       if (mode === "asked") return runVerify(ctx, task, "round")

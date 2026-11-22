@@ -216,6 +216,7 @@ async function workspaceCmd(
       if (stamp && !stamp.ok) return stamp
       return ok({
         ...read.data,
+        ...(home.scope === "task" ? { path: resolve(home.dir, file) } : {}),
         authoring: AUTHORING_GUIDE.trim(),
         ...(found.ok
           ? await inspectTokens(ctx, home.root ?? at.repo.root, found.data.entry, name, false)
@@ -1572,6 +1573,7 @@ async function shotCmd(
       theme: each.theme,
       errors: each.errors,
       blocked: each.blocked,
+      ...(each.clipped ? { clipped: each.clipped } : {}),
     })
   }
   const [first] = drawn

@@ -6,11 +6,13 @@ import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { MODEL_LIST_IDS_MAX, MODEL_LISTS_MAX_BYTES } from "../home-caps.ts"
 import { isNativeAgent, type NativeAgent, validModelId } from "./ids.ts"
+import { validModelLabel } from "./model-list-readers.ts"
 import { type KnownModels, listsModels } from "./model-values.ts"
 
 export type StoredModelList = {
   /** The ids the agent printed, in its order. */
   models: string[]
+  labels?: Record<string, string>
   /** The model the agent would start with itself: its configured one, else the first it printed. */
   own: string | null
   /** When a read last gave these ids. */
@@ -35,8 +37,20 @@ function stored(agent: NativeAgent, value: unknown): StoredModelList | null {
     .filter((id): id is string => typeof id === "string" && validModelId(agent, id))
     .slice(0, MODEL_LIST_IDS_MAX)
   const own = typeof entry.own === "string" && validModelId(agent, entry.own) ? entry.own : null
+  const raw = entry.labels
+  const labels =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Object.fromEntries(
+          models.flatMap((id) => {
+            if (!Object.hasOwn(raw, id)) return []
+            const name = (raw as Record<string, unknown>)[id]
+            return validModelLabel(name) ? [[id, name]] : []
+          }),
+        )
+      : undefined
   return {
     models,
+    ...(labels ? { labels } : {}),
     own,
     checkedAt: entry.checkedAt,
     ...(isTime(entry.failedAt) ? { failedAt: entry.failedAt } : {}),
@@ -82,4 +96,6 @@ export async function storeModelList(
 
 /** What the pickers and the config need from a stored list. */
 export const knownFrom = (entry: StoredModelList | undefined): KnownModels | null =>
-  entry === undefined ? null : { listed: entry.models, own: entry.own }
+  entry === undefined
+    ? null
+    : { listed: entry.models, own: entry.own, ...(entry.labels ? { labels: entry.labels } : {}) }

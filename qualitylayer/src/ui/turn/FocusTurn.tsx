@@ -1,10 +1,11 @@
 import { toast } from "sonner"
+import type { AnsweredQuestion } from "../../core/task/question.ts"
 import { FocusQuestion, type QuestionActions, useFocus } from "../FocusQuestion.tsx"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 
-export function FocusTurn(props: TaskSurfaceProps) {
+export function FocusTurn(props: TaskSurfaceProps & { presentation?: string | undefined }) {
   const focus = useFocus(props.task, props.view)
-  if (focus?.kind !== "asking") return null
+  if (focus === null || focus.kind === "approved") return null
   const asking = focus.kind === "asking" ? focus : null
   // `inline`: the question card shows a refusal on its own line (and keeps the answer), so no toast says it twice.
   const safely = async (work: () => Promise<unknown>, propagate = false, inline = propagate) => {
@@ -20,19 +21,32 @@ export function FocusTurn(props: TaskSurfaceProps) {
     }
   }
   const actions: QuestionActions = {
-    answer: (answer, files) =>
-      safely(
-        () =>
-          props.api.answerQuestion(
-            props.task.id,
-            {
-              id: asking?.question.id ?? "",
-              ...("more" in answer ? { more: { request: answer.request ?? "" } } : answer),
-            },
-            files,
-          ),
-        true,
-      ),
+    answer: async (answer, files) => {
+      try {
+        const result = await props.api.answerQuestion(
+          props.task.id,
+          {
+            id: asking?.question.id ?? "",
+            ...(asking?.question.revision ? { revision: asking.question.revision } : {}),
+            ...("more" in answer ? { more: { request: answer.request ?? "" } } : answer),
+          },
+          files,
+        )
+        props.reload()
+        const saved = result.answered
+        return saved &&
+          typeof saved === "object" &&
+          "choice" in saved &&
+          typeof saved.choice === "string" &&
+          "at" in saved &&
+          typeof saved.at === "number"
+          ? (saved as AnsweredQuestion)
+          : true
+      } catch (error) {
+        props.reload()
+        throw error
+      }
+    },
     answerRest: (members) =>
       safely(
         async () => {
@@ -62,6 +76,7 @@ export function FocusTurn(props: TaskSurfaceProps) {
       actions={actions}
       artifactTask={{ id: props.task.id, api: props.api }}
       onOpenArtifact={props.onOpen}
+      nativePresentation={props.presentation}
     />
   )
 }

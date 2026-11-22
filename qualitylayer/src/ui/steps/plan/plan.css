@@ -919,3 +919,46 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+.sp-page[data-step="plan"] :is(.sp-html, .sp-comment-block) {
+  min-width: 0;
+}
+
+.sp-page[data-step="plan"]
+  :is(.sp-html, .sp-comment-block):has(.sp-html, p, table, pre, ul, ol)
+  + :is(.sp-html, .sp-comment-block, .sp-diagram) {
+  margin-block-start: 0.875rem;
+}
+
+.sp-page[data-step="plan"] .sp-html :is(p, ul, ol) {
+  max-inline-size: 68ch;
+  overflow-wrap: anywhere;
+}
+
+.sp-page[data-step="plan"] .sp-html :is(ul, ol) {
+  gap: 0.45rem;
+}
+
+.sp-page[data-step="plan"] .sp-html li:has(> .sp-item-lead, > p:first-child > .sp-item-lead) + li {
+  margin-block-start: 0.55rem;
+}
+
+.sp-page[data-step="plan"] .sp-html .sp-item-lead {
+  display: block;
+  margin-block-end: 0.15rem;
+}
+
+.sp-page[data-step="plan"] .table-scroll,
+.sp-page[data-step="plan"] .sp-html pre {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.sp-page[data-step="plan"] .sp-html :is(td, th) {
+  padding: 0.45rem 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sp-page[data-step="plan"] .sp-html th {
+  background: var(--ql-bg-sunken);
+}

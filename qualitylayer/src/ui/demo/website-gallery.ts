@@ -323,7 +323,7 @@ ${SLICE_TASKS.map(
   (tasks, index) =>
     `### Slice ${index + 1}: ${SLICE_NAMES[index]}
 
-${index === 0 ? "Start with a failing end-to-end test, then connect the gateway, aggregator and ledger." : "Build against the recorded contract and prove the slice before committing."}
+${index === 0 ? "Start with a failing end-to-end test, then connect the gateway, aggregator and ledger." : "Build against the recorded contract. This task commits after each checked slice."}
 
 **Validation:** ${index === 0 ? "send one request and see one ledger entry" : "the slice's tests pass and the earlier steps still hold"}.
 

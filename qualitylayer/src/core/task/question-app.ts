@@ -11,14 +11,17 @@ import { answerableGate, applyGatePick, questionIsOf } from "../gate/gate.ts"
 import { markSet, needQuestionText, readNeeds } from "../need/need.ts"
 import { type AnswerUpload, withAnswerFiles } from "./answer-files.ts"
 import { matchesChatQuestion, terminalTaskFor } from "./chat-questions.ts"
+import { currentOwnerRequest } from "./owner-request.ts"
 import { consumePickedCall } from "./picked-calls.ts"
 import { placeQuestion } from "./place.ts"
 import {
   type AnsweredQuestion,
+  answeredQuestions,
   answerQuestion,
   openQuestion,
   picksProblem,
   type Question,
+  questionRevision,
   requestMore,
   showQuestion,
   withQuestionLock,
@@ -32,34 +35,41 @@ import type { Task } from "./store.ts"
 export const askPlace = (ctx: Ctx, task: Task, agent: string): Promise<Result<Question>> =>
   showQuestion(ctx, task, placeQuestion(agent), { agent })
 
-export type AppAnswer =
+export type AppAnswer = { revision?: string } & (
   | { id: string; choice: number }
   | { id: string; choices: number[] }
   | { id: string; text: string }
   | { id: string; more: { request: string } }
   | { id: string; unsure: true }
+)
 
 /** The body of `POST …/question/answer`, checked. */
 export function appAnswerOf(body: Record<string, unknown>): AppAnswer | null {
   const id = typeof body.id === "string" && body.id !== "" ? body.id : null
   if (id === null) return null
+  if (
+    body.revision !== undefined &&
+    (typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision))
+  )
+    return null
+  const identity = { id, ...(typeof body.revision === "string" ? { revision: body.revision } : {}) }
   if (typeof body.choice === "number" && Number.isInteger(body.choice) && body.choice >= 0)
-    return { id, choice: body.choice }
+    return { ...identity, choice: body.choice }
   if (
     Array.isArray(body.choices) &&
     body.choices.length > 0 &&
     body.choices.length <= 6 &&
     body.choices.every((n) => typeof n === "number" && Number.isInteger(n) && n >= 0)
   )
-    return { id, choices: body.choices as number[] }
+    return { ...identity, choices: body.choices as number[] }
   if (typeof body.text === "string" && body.text.trim() !== "")
-    return { id, text: body.text.trim().slice(0, 4000) }
-  if (body.unsure === true) return { id, unsure: true }
+    return { ...identity, text: body.text.trim().slice(0, 4000) }
+  if (body.unsure === true) return { ...identity, unsure: true }
   if (typeof body.more === "object" && body.more !== null) {
     const request = (body.more as Record<string, unknown>).request
-    return { id, more: { request: typeof request === "string" ? request : "" } }
+    return { ...identity, more: { request: typeof request === "string" ? request : "" } }
   }
-  if (body.more === true) return { id, more: { request: "" } }
+  if (body.more === true) return { ...identity, more: { request: "" } }
   return null
 }
 
@@ -78,9 +88,31 @@ export async function answerFromApp(
   answer: AppAnswer,
   options: AnswerUpload & { expected?: Question; note?: string } = {},
 ): Promise<Result<AppAnswered>> {
+  const recordedAnswer = async (): Promise<Result<AppAnswered>> => {
+    const saved =
+      answer.revision === undefined
+        ? undefined
+        : (await answeredQuestions(ctx, task)).findLast(
+            (entry) =>
+              entry.id === answer.id && entry.revision === answer.revision && !entry.reopened,
+          )
+    return saved
+      ? ok({ answered: saved })
+      : err({
+          code: "bad_args",
+          message:
+            answer.revision === undefined
+              ? "that question is not the one waiting any more"
+              : "The question changed. Read the current question before answering.",
+        })
+  }
   const open = await openQuestion(ctx, task)
-  if (open === null || open.id !== answer.id)
-    return err({ code: "bad_args", message: "that question is not the one waiting any more" })
+  if (
+    open === null ||
+    open.id !== answer.id ||
+    (answer.revision !== undefined && answer.revision !== questionRevision(open))
+  )
+    return recordedAnswer()
   if ("more" in answer) {
     if (options.files?.length)
       return err({
@@ -129,16 +161,24 @@ export async function answerFromApp(
       current.asked !== open.asked ||
       current.question !== open.question ||
       current.gateId !== open.gateId ||
+      (answer.revision !== undefined && questionRevision(current) !== answer.revision) ||
       (options.expected &&
         (current.asked !== options.expected.asked ||
           current.question !== options.expected.question ||
           current.gateId !== options.expected.gateId ||
           current.found?.at !== options.expected.found?.at))
     )
+      return recordedAnswer()
+    if (
+      current.ownerRequest &&
+      (!("stage" in task) || !(await currentOwnerRequest(ctx, task, current.ownerRequest)))
+    )
       return err({
         code: "bad_args",
-        message: "that question changed before the answer was recorded",
+        message: "That owner request changed. Read the current Verify request.",
       })
+    if (current.ownerRequest?.kind === "budget" && !("choice" in answer))
+      return err({ code: "bad_args", message: "Confirm one of the budget choices." })
     return withAnswerFiles(ctx, task, options, async (files) => {
       const originReceipt = open.gate ? randomUUID() : undefined
       if (/^need-T\d+-/.test(open.id)) {

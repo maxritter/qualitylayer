@@ -1,7 +1,9 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import { withoutRecommendationMarker } from "../../interaction/question-recommendations.ts"
 import { detectAgent } from "../agents/detect.ts"
 import { isNativeAgent, type NativeAgent } from "../agents/ids.ts"
+import { folderDoc } from "../docs/names.ts"
 import { resolveRepo } from "../paths.ts"
 import { homeVariable } from "../platform.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
@@ -31,6 +33,8 @@ const PICKER_TOOLS: Partial<Record<NativeAgent, string>> = {
   grok: "ask_user_question",
   copilot: "ask_user",
 }
+
+export const PLAN_APPROVAL_QUESTION_ID = "review-approve-plan"
 
 export const TERMINAL_YOUR_TURN = "🔔 Your turn: answer in your agent's chat."
 
@@ -126,17 +130,21 @@ async function formattedQuestions(
       ? ["Tell me more", "Not sure"]
       : [
           ...(largestChoiceCount < maximum ? ["Tell me more"] : []),
-          ...(largestChoiceCount + 1 < maximum && questions.every((question) => !question.gate)
+          ...(largestChoiceCount + 1 < maximum &&
+          questions.every((question) => !question.gate && question.ownerRequest?.kind !== "budget")
             ? ["Not sure"]
             : []),
         ]
   const native: Record<string, unknown>[] = []
   const numbered: string[] = []
   for (const q of questions) {
-    const recommended = q.recommendedChoices ?? [q.recommended]
+    const recommended =
+      q.ownerRequest?.kind === "budget" ? [] : (q.recommendedChoices ?? [q.recommended])
     const choices = await Promise.all(
       q.choices.map(async (choice, index) => ({
-        label: `${choice.label}${recommended.includes(index) ? " (Recommended)" : ""}`,
+        label: recommended.includes(index)
+          ? `${withoutRecommendationMarker(choice.label)} (Recommended)`
+          : choice.label,
         description:
           [choice.detail, ...(choice.facts ?? []), ...(format === "v7" ? [q.why] : [])]
             .filter(Boolean)
@@ -178,7 +186,7 @@ async function formattedQuestions(
         ? offered.some((choice) => choice.label === "Not sure")
           ? ""
           : "Type more or not sure in Other"
-        : q.gate
+        : q.gate || q.ownerRequest?.kind === "budget"
           ? "Type more in Other"
           : "Type more or not sure in Other"
     // Claude Code's and Grok's options carry a description and preview; the others show the list.
@@ -218,6 +226,9 @@ async function formattedQuestions(
     )
     const labels = nativeOptions.map((choice) => choice.label)
     const several = q.multi === true
+    const planApproval =
+      q.gate === folderDoc("plan") &&
+      (q.id === PLAN_APPROVAL_QUESTION_ID || q.id === `${PLAN_APPROVAL_QUESTION_ID}-${q.gateId}`)
     native.push(
       agent === "antigravity"
         ? { question, options: labels, is_multi_select: several }
@@ -232,7 +243,7 @@ async function formattedQuestions(
               }
             : {
                 ...(agent === "codex" || agent === "pi" ? { id: q.id } : {}),
-                header: q.id.slice(0, 12),
+                header: planApproval ? "Plan" : q.id.slice(0, 12),
                 question,
                 options: nativeOptions,
                 ...(agent === "claude-code" ? { multiSelect: several } : {}),

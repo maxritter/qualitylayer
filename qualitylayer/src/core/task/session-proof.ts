@@ -403,6 +403,24 @@ const RECORDED_PICKERS = new Set<NativeAgent>(["antigravity", "grok", "copilot"]
 type NativeCall = Call & { id: string }
 const NO_ANSWER = { answers: {} }
 
+/** A native server restart ends outstanding tools. A user message by itself can arrive while a tool is still running. */
+function antigravityRestart(row: Row, previous: Row | undefined): boolean {
+  if (
+    row.type !== "SYSTEM_MESSAGE" ||
+    row.source !== "SYSTEM" ||
+    row.status !== "DONE" ||
+    previous?.type !== "USER_INPUT" ||
+    previous.source !== "USER_EXPLICIT" ||
+    typeof previous.step_index !== "number" ||
+    row.step_index !== previous.step_index + 1 ||
+    typeof row.content !== "string" ||
+    stamp(row.created_at) === null
+  )
+    return false
+  const message = `The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.\n\n<SYSTEM_MESSAGE>\n[Message] timestamp=${row.created_at} sender=system priority=MESSAGE_PRIORITY_LOW content=[Notice] All your subagents and background tasks have been stopped due to server restart.`
+  return row.content.startsWith(message) && row.content.trimEnd().endsWith("</SYSTEM_MESSAGE>")
+}
+
 /**
  * Antigravity's `ask_question` calls: a planner step's `tool_calls`, answered by the next GENERIC
  * row (`Created At`, `Completed At`, one `A<n>: <answer>` line per question). A skipped question
@@ -415,7 +433,11 @@ function antigravityCalls(rows: Row[]): NativeCall[] {
   // Output rows have no call IDs. Only an isolated picker can prove a choice; overlapping
   // calls stay unattributed until all their outputs arrive, regardless of output order.
   const waiting: (NativeCall | null)[] = []
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
+    if (waiting.length && antigravityRestart(row, rows[index - 1])) {
+      waiting.length = 0
+      continue
+    }
     if (row.type === "PLANNER_RESPONSE") {
       const tools = Array.isArray(row.tool_calls) ? row.tool_calls : []
       const isolated = waiting.length === 0 && tools.length === 1
@@ -448,8 +470,10 @@ function antigravityCalls(rows: Row[]): NativeCall[] {
     if (row.type !== "GENERIC") continue
     const call = waiting.shift()
     const content = typeof row.content === "string" ? row.content : ""
-    // A picker's result holds the two times and one answer line per question, nothing else.
-    const result = /^Created At: .+\nCompleted At: .+(?:\nA\d+: .*)+$/.test(content.trim())
+    // The full transcript can repeat the same two timestamps before its answer lines.
+    const result = /^(Created At: .+\nCompleted At: .+)\n(?:\1\n)?A\d+: .*(?:\nA\d+: .*)*$/.test(
+      content.trim(),
+    )
     if (!call || !result) continue
     const lines = [...content.matchAll(/^A(\d+): (.*)$/gm)]
     const shown = stamp(/^Created At: (.+)$/m.exec(content)?.[1])
@@ -607,17 +631,29 @@ export async function pickerCalls(
   ctx: Ctx,
   request: SessionRequest,
 ): Promise<{ callId: string; recordedAt: number }[]> {
+  return (await observedPickerCalls(ctx, request)).map(({ callId, recordedAt }) => ({
+    callId,
+    recordedAt,
+  }))
+}
+
+export async function observedPickerCalls(
+  ctx: Ctx,
+  request: SessionRequest,
+): Promise<{ callId: string; recordedAt: number; input: unknown }[]> {
   try {
     const rows = await records(ctx, request)
     if (rows === null) return []
     const calls = RECORDED_PICKERS.has(request.agent)
       ? nativeCalls(rows, request.agent)
-      : hookedCallIds(rows, request.agent).map((id) => ({
-          id,
-          recordedAt: callIn(rows, request.agent, id)?.recordedAt ?? null,
-        }))
+      : hookedCallIds(rows, request.agent).flatMap((id) => {
+          const call = callIn(rows, request.agent, id)
+          return call === null ? [] : [{ id, ...call }]
+        })
     return calls.flatMap((call) =>
-      call.recordedAt === null ? [] : [{ callId: call.id, recordedAt: call.recordedAt }],
+      call.recordedAt === null
+        ? []
+        : [{ callId: call.id, recordedAt: call.recordedAt, input: call.input }],
     )
   } catch {
     return []

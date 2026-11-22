@@ -45,7 +45,7 @@ export type SubagentModels = {
   /** QualityLayer's recommendation, the first of `models` unless the agent's own list says it cannot run. */
   recommended: string
   /** What an agent that lists its own models printed, and the model it would start with itself. */
-  listed?: { models: string[]; own: string | null }
+  listed?: { models: string[]; own: string | null; labels?: Record<string, string> }
   /** The effort the session and its subagents run at; null when the agent's default applies. */
   effort: string | null
   efforts: string[]
@@ -99,7 +99,15 @@ async function configAgentModels(
     ),
     current: config.models[agent].helpers,
     recommended: usableDefault(agent, catalog[0]?.id ?? "", knownFrom(own ?? undefined)),
-    ...(own === null ? {} : { listed: { models: own.models, own: own.own } }),
+    ...(own === null
+      ? {}
+      : {
+          listed: {
+            models: own.models,
+            own: own.own,
+            ...(own.labels ? { labels: own.labels } : {}),
+          },
+        }),
     effort: config.implement.defaults[agent].effort,
     efforts: [...AGENT_CAPABILITIES[agent].efforts],
     runnable: (await installedBinary(ctx, agent)) !== null,
@@ -160,7 +168,15 @@ async function installedSubagentModels(
       label: "Codex",
       file,
       models,
-      ...(own === null ? {} : { listed: { models: own.models, own: own.own } }),
+      ...(own === null
+        ? {}
+        : {
+            listed: {
+              models: own.models,
+              own: own.own,
+              ...(own.labels ? { labels: own.labels } : {}),
+            },
+          }),
       current: unquote(tomlGet(text, "agents", "default_subagent_model")),
       recommended: models[0]?.id ?? "gpt-6.2-sol",
       effort:

@@ -1,3 +1,4 @@
+import { precommitRoute } from "./precommit.ts"
 // `qualitylayer serve`: the human's window onto the files. One instance per
 // machine on 127.0.0.1, guarded by Host, Origin and a per-launch token. It
 // exits by itself after an idle period with no open gates. Server → agent is
@@ -796,6 +797,8 @@ export function createHandler(
         return json(ok({ tasks: await lists(project ?? "", () => api.listAllTasks(ctx, project)) }))
       }
       const sub = parts[3]
+      if (sub === "precommit" && parts.length === 4)
+        return precommitRoute(ctx, id, request, url, keyPaired || hasKeyHeader(request, checked))
       if (sub === "records")
         return runtimeRecordRoute(ctx, { scope: "task", id }, parts.slice(4), method)
       if (sub === "chat" && parts[4] === "promote" && parts.length === 5) {
@@ -874,11 +877,16 @@ export function createHandler(
       if (sub === "changes" && method === "GET") {
         if (parts[4] === "source")
           return json(
-            await api.taskReviewFileSource(ctx, id, {
-              path: url.searchParams.get("path") ?? "",
-              stamp: url.searchParams.get("stamp") ?? "",
-              side: url.searchParams.get("side") as "old" | "new",
-            }),
+            await api.taskReviewFileSource(
+              ctx,
+              id,
+              {
+                path: url.searchParams.get("path") ?? "",
+                stamp: url.searchParams.get("stamp") ?? "",
+                side: url.searchParams.get("side") as "old" | "new",
+              },
+              url.searchParams.get("checked") ?? undefined,
+            ),
           )
         if (parts[4] === "file")
           return json(
@@ -889,6 +897,9 @@ export function createHandler(
               ...(url.searchParams.has("revision")
                 ? { revision: url.searchParams.get("revision") ?? "" }
                 : {}),
+              ...(url.searchParams.has("checked")
+                ? { checked: url.searchParams.get("checked") ?? "" }
+                : {}),
             }),
           )
         const withDiff = url.searchParams.get("preview") !== "0"
@@ -898,7 +909,11 @@ export function createHandler(
         return json(changed.ok ? ok({ changes: changed.data }) : changed)
       }
       if (sub === "walkthrough" && method === "GET") {
-        const view = await api.taskWalkthrough(ctx, id)
+        const view = await api.taskWalkthrough(
+          ctx,
+          id,
+          url.searchParams.get("checked") ?? undefined,
+        )
         return json(view.ok ? ok({ walkthrough: view.data }) : view)
       }
       if (sub === "comments" && parts[4] === "build" && method === "POST")
@@ -1270,7 +1285,7 @@ export async function serve(
             const interest = outsideStreamInterest(new URL(request.url))
             const outside = interest
               ? await prepareOutsideConversationWatch(ctx, interest, pace)
-              : null
+              : undefined
             if (interest && outside === null)
               return new Response("outside conversation binding changed", { status: 409 })
             if (

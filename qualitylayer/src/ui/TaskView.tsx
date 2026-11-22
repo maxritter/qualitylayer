@@ -1,3 +1,4 @@
+import { Precommit } from "./review-workspace/Precommit.tsx"
 // One task: the header (title, the file chip, Cost, Archive and Delete), the three step tabs, the
 // step line of the step in view, the Needs you card, the document or view, and the right sidebar
 // (Conversation, Terminal and Files) as a column beside it. Marking text, an artifact or code lines
@@ -143,6 +144,7 @@ import { jumpTo as jumpToPart } from "./step-page/StepPage.tsx"
 import { forAgentOf } from "./step-page/StepTools.tsx"
 import { jumpId, planPreparation, stepState } from "./step-page/state.ts"
 import { useSteadyStep } from "./step-page/steady.ts"
+import { ApprovedOutside } from "./steps/implement/ApprovedOutside.tsx"
 import { stepIsWorking } from "./steps/readiness.ts"
 import { StepPage } from "./steps/StepPage.tsx"
 import { StepQuiet, stepBefore } from "./steps/StepQuiet.tsx"
@@ -942,7 +944,11 @@ function TaskViewContent({
   const setNeed = async (forTask: string, note: string): Promise<boolean> => {
     try {
       await api.needSet(task.id, forTask, note)
-      toast.success(`Sent. ${agentName(task.session?.agent ?? null)} checks for it now`)
+      toast.success(
+        task.stage === "verify"
+          ? "Saved. The check remains unverified."
+          : `Sent. ${agentName(task.session?.agent ?? null)} checks for it now`,
+      )
       reload()
       return true
     } catch (cause) {
@@ -953,6 +959,9 @@ function TaskViewContent({
   // What a step page can do: the actions this page already has, by the ids the page knows.
   const forAgent = forAgentOf(task)
   const stepLive: StepLive = {
+    ...(task.stage === "implement" && !task.earlier
+      ? { commitReview: <Precommit task={task} api={api} reload={reload} /> }
+      : {}),
     exportFile: api.exportFile,
     exportContext: {
       title: task.title,
@@ -1948,10 +1957,11 @@ function TaskViewContent({
                       !managedRun &&
                       buildsNext !== null &&
                       (steady.doc === null || steady.doc.markdown.trim() === "") ? (
-                        // Approved for its own outside session: no start card while it gets going.
-                        <p className="q-body q-dim m-0" data-testid="implement-builds-next">
-                          {buildsNext}
-                        </p>
+                        <ApprovedOutside
+                          task={task}
+                          onRead={() => open(stepView(task, "plan"))}
+                          onCopy={onCopy}
+                        />
                       ) : steady.doc !== null ? (
                         <ArtifactHostProvider value={artifacts.host}>
                           {/* A step renders from its own folder (steps/<step>/Page.tsx). */}

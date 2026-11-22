@@ -102,7 +102,7 @@ test("all four picker hook payloads retain exact native selections", () => {
   }
 })
 
-for (const mode of ["batch", "single"] as const)
+for (const mode of ["batch", "single", "other"] as const)
   test(`Terminal ${mode} picker activity records every native label through the real hook`, async () => {
     const repo = await tmpRepo()
     try {
@@ -115,8 +115,13 @@ for (const mode of ["batch", "single"] as const)
       await bindSession(ctx, task)
       const q = {
         id: "channels",
-        question: "Which destinations?",
-        multi: true,
+        question:
+          mode === "other"
+            ? "Which destinations should get the repaired exports? " +
+              "Existing subscriber files use the same checkout. ".repeat(7) +
+              "The preview costs €24 and takes 8 minutes. Sending email costs €65 and takes 30 minutes."
+            : "Which destinations?",
+        multi: mode !== "other",
         choices: ["Slack, team", "Email", "Rückfragen 日本語"],
         recommended: 0,
         points: [],
@@ -131,7 +136,13 @@ for (const mode of ["batch", "single"] as const)
       const ready = result.json.chat_questions as { calls: { questions: { question: string }[] }[] }
       const input = ready.calls[0] as { questions: { question: string }[] }
       const text = input.questions[0]?.question as string
-      const answer = { answers: { [text]: ["Slack, team (Recommended)", "Rückfragen 日本語"] } }
+      expect(text).toContain(q.question)
+      const freeText = "Save a CSV for the support team."
+      const answer = {
+        answers: {
+          [text]: mode === "other" ? freeText : ["Slack, team (Recommended)", "Rückfragen 日本語"],
+        },
+      }
       const payload = JSON.stringify({
         hook_event_name: "PostToolUse",
         session_id: session,
@@ -141,7 +152,10 @@ for (const mode of ["batch", "single"] as const)
         tool_input: input,
         tool_response: answer,
       })
-      await hook(repo, payload)
+      const pending = (await hook(repo, payload)).stdout
+      expect(pending).toContain("Run qualitylayer question poll to collect the saved result")
+      expect(pending).toContain("If the person's answer appears as a message in this chat")
+      expect(pending).toContain("question answered --id <question-id>")
       expect(await answeredQuestions(ctx, task)).toHaveLength(0)
       const records = [
         {
@@ -165,9 +179,21 @@ for (const mode of ["batch", "single"] as const)
       const file = join(repo.home, ".claude", "projects", "fixture", `${session}.jsonl`)
       await Bun.write(file, records.map((record) => JSON.stringify(record)).join("\n"))
       expect((await hook(repo, payload)).code).toBe(0)
-      expect(await answeredQuestions(ctx, task)).toMatchObject([
-        { via: "chat", pickedLabels: ["Slack, team", "Rückfragen 日本語"] },
-      ])
+      if (mode === "other") {
+        expect(await answeredQuestions(ctx, task)).toMatchObject([
+          { choice: freeText, question: q.question },
+        ])
+        const repeated = await repo.run(["question", "answered", "--id", q.id, freeText])
+        expect(repeated.json.ok).toBe(false)
+        expect(repeated.stdout).toContain("Run qualitylayer question poll")
+        const reread = await repo.run(["question", "ask", JSON.stringify(q)])
+        expect(reread.json).toMatchObject({ ok: true, choice: freeText })
+        expect(reread.json.chat_questions).toBeUndefined()
+      } else {
+        expect(await answeredQuestions(ctx, task)).toMatchObject([
+          { via: "chat", pickedLabels: ["Slack, team", "Rückfragen 日本語"] },
+        ])
+      }
       await hook(repo, payload)
       expect(await answeredQuestions(ctx, task)).toHaveLength(1)
     } finally {

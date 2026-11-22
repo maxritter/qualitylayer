@@ -898,10 +898,11 @@ export function reviewFindings(markdown: string): Finding[] {
     else if (open && !/^#/.test(raw)) blocks[blocks.length - 1]?.push(raw)
   }
   return blocks.map((lines) => {
-    const asked: string[] = []
+    const [title, ...details] = lines
+    const asked = title === undefined ? [] : [title]
     let answer: { stance?: "taken" | "kept" | "ask"; text: string } | undefined
     let panel: Finding["panel"]
-    for (const line of lines) {
+    for (const line of details) {
       const backed = backingLine(line)
       if (backed !== null) {
         panel = {

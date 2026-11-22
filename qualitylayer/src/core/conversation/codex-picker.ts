@@ -51,7 +51,8 @@ export function qualifiedCodexPickerVersion(version: string | undefined): boolea
       (line) => line.toLowerCase().includes("codex-cli") || /^\s*(?:codex\s+)?v?\d+\./i.test(line),
     )
   return (
-    versions.length === 1 && ["codex-cli 0.164.0", "codex-cli 0.165.0"].includes(versions[0] ?? "")
+    versions.length === 1 &&
+    ["codex-cli 0.164.0", "codex-cli 0.165.0", "codex-cli 0.171.0"].includes(versions[0] ?? "")
   )
 }
 

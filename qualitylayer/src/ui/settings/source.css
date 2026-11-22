@@ -69,3 +69,52 @@
     white-space: normal;
   }
 }
+
+.q-editor-fields .q-sr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 42%);
+  align-items: start;
+}
+.q-editor-fields .q-sr-c {
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+.q-editor-fields :is(input, textarea) {
+  width: 100%;
+  color: var(--ql-text);
+  background: var(--ql-bg-sunken);
+}
+.q-editor-fields textarea {
+  display: block;
+  min-height: 5rem;
+  padding: 0.5rem 0.625rem;
+  resize: vertical;
+  border: 1px solid var(--ql-border);
+  border-radius: 6px;
+}
+.q-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.q-editor-actions [role="status"] {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ql-text-muted);
+  overflow-wrap: anywhere;
+}
+.q-editor-actions button {
+  flex: none;
+}
+@container sbody (max-width: 520px) {
+  .q-editor-fields .q-sr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .q-editor-fields input,
+  .q-editor-actions button {
+    min-height: 44px;
+  }
+}

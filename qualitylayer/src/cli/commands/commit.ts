@@ -1,7 +1,14 @@
+import {
+  decideTaskCommit,
+  precommitDiff,
+  precommitSource,
+  readPrecommit,
+} from "../../core/task/precommit.ts"
 // `commit slice <n> [--message "<text>"] [--leave <path>]...`: commit the slice's files without
 // touching what anyone else staged; `commit fix` does the same for the files the latest fix helper
 // changed. Thin parsing over core/git/slice-commit.ts.
 
+import { materializeChecksRecord } from "../../core/check-receipts.ts"
 import { readCheckRecords } from "../../core/checks.ts"
 import { backticked } from "../../core/docs/commands.ts"
 import { commitGroup } from "../../core/docs/outline.ts"
@@ -18,6 +25,7 @@ import {
 } from "../../core/git/build-start.ts"
 import { commitScopeError } from "../../core/git/commit-scope.ts"
 import { foreignOwners } from "../../core/git/foreign-refusal.ts"
+import { registerExternalSlice } from "../../core/git/implement-repository.ts"
 import { ownEdits, ownEditTimes, ownRecordSpan } from "../../core/git/session-edits.ts"
 import {
   commitSlice,
@@ -37,7 +45,7 @@ import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE =
-  'usage: qualitylayer commit slice <n> [--message "<text>"] [--take <file>]... [--accept-edits <file>]... [--commit <hash of a commit you made by hand>] | slices <n> <m> ... [--message "<text>"] [--take <file>]... | receipts --canonicalize | fix [--message "<text>"] [--leave <path>]... [--take-staged <file>]... | fix --commit <hash of a fix you committed by hand>; one finished slice uses commit slice <n>, not commit slices; --take explicitly claims a captured unstaged pre-build file approved for this slice; --accept-edits says every change in a file belongs to this task, after the commit refused it as changed since the last edit of the task; --leave names a changed path outside the selected slice, relative to the repository root even from a subfolder; with commit fix, --leave may also name a file of the fix itself, which then stays uncommitted'
+  'usage: qualitylayer commit slice <n> [--message "<text>"] [--take <file>]... [--accept-edits <file>]... [--commit <hash of a commit you made by hand> [--repo <approved checkout>]] | slices <n> <m> ... [--message "<text>"] [--take <file>]... | task | receipts --canonicalize | fix [--message "<text>"] [--leave <path>]... [--take-staged <file>]... | fix --commit <hash of a fix you committed by hand>; one finished slice uses commit slice <n>, not commit slices; --take explicitly claims a captured unstaged pre-build file approved for this slice; --accept-edits says every change in a file belongs to this task, after the commit refused it as changed since the last edit of the task; --leave names a changed path outside the selected slice, relative to the repository root even from a subfolder; with commit fix, --leave may also name a file of the fix itself, which then stays uncommitted'
 
 /** Every value of a repeated flag, in the order given. */
 function valuesOf(args: string[], flag: string): string[] {
@@ -166,6 +174,7 @@ async function committedSinceEdit(
 async function commitFix(ctx: Ctx, args: string[], message: unknown): Promise<Result<unknown>> {
   const task = await requireTask(ctx)
   if (!task.ok) return task
+  if (deferredTaskCommit(task.data)) return deferredCommitReply()
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return repo
   const folder = planFolder(task.data)
@@ -453,7 +462,96 @@ async function releaseByHand(
   })
 }
 
+async function taskCommit(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  const review = await readPrecommit(ctx, task.data)
+  if (!review)
+    return err({
+      code: "bad_args",
+      message: "No commit review is open. Run qualitylayer build done when the task is ready.",
+    })
+  const [option, value, ...rest] = args.filter((arg) => arg !== "--json")
+  if (option === undefined)
+    return ok({
+      ...review,
+      ...(review.decision === "pending"
+        ? {
+            owner_replies: {
+              approve: `Approve commit ${review.id}`,
+              request_edits: `Request edits ${review.id} <what to change>`,
+              manual: `Commit manually ${review.id}`,
+            },
+            view: "qualitylayer commit task --diff <file>",
+          }
+        : {}),
+    })
+  if (!value || (option === "--edits" ? rest.length !== 1 : rest.length > 0))
+    return err({
+      code: "bad_args",
+      message:
+        'usage: qualitylayer commit task [--diff <file> | --file <file> | --approve <review id> | --manual <review id> | --edits <review id> "<exact edits>" | --commit <hash>]',
+    })
+  if (option === "--diff") return precommitDiff(ctx, task.data, value, review.id)
+  if (option === "--file")
+    return precommitSource(
+      ctx,
+      task.data,
+      value,
+      review.id,
+      review.files.find((file) => file.path === value)?.status === "D" ? "old" : "new",
+    )
+  const action =
+    option === "--approve"
+      ? "approve"
+      : option === "--manual"
+        ? "manual"
+        : option === "--edits"
+          ? "edits"
+          : option === "--commit"
+            ? "register"
+            : null
+  if (!action)
+    return err({
+      code: "bad_args",
+      message: "Use qualitylayer commit task to inspect the active review.",
+    })
+  const result = await decideTaskCommit(
+    ctx,
+    task.data,
+    action,
+    action === "register" ? review.id : value,
+    action === "register" ? value : (rest[0] ?? ""),
+    "terminal",
+  )
+  return result.ok
+    ? ok({
+        ...result.data,
+        next: {
+          manual: "qualitylayer commit task --commit <hash>",
+          edits: "qualitylayer next",
+          approve: "qualitylayer build done",
+          register: "qualitylayer build done",
+        }[action],
+      })
+    : result
+}
+
+function deferredTaskCommit(task: Task): boolean {
+  return (
+    task.stage === "implement" && task.commitTiming !== undefined && task.commitTiming !== "slice"
+  )
+}
+
+const deferredCommitReply = () =>
+  err({
+    code: "bad_args",
+    message:
+      "This task commits at the end of Implement. Run qualitylayer build done when the cards are ready.",
+  })
+
 export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  if (args[0] === "task") return taskCommit(ctx, args.slice(1))
   const { positional, flags } = parseArgs(args, [
     "message",
     "leave",
@@ -461,6 +559,7 @@ export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
     "take",
     "accept-edits",
     "commit",
+    "repo",
   ])
   if (
     args.some((arg) => arg.startsWith("--take=")) ||
@@ -487,6 +586,20 @@ export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
       message: `--leave needs a separate repository-relative path: --leave <path>. Nothing was committed. ${USAGE}`,
     })
   const [what, ...numbers] = positional
+  if (
+    args.some((arg) => arg.startsWith("--repo=")) ||
+    (flags.repo !== undefined &&
+      (typeof flags.repo !== "string" ||
+        !flags.repo ||
+        typeof flags.commit !== "string" ||
+        what !== "slice" ||
+        valuesOf(args, "--repo").length !== 1 ||
+        Object.keys(flags).some((flag) => !["repo", "commit", "json"].includes(flag))))
+  )
+    return err({
+      code: "bad_args",
+      message: "usage: qualitylayer commit slice <n> --commit <hash> --repo <approved checkout>",
+    })
   if (what === "receipts" && numbers.length === 0) {
     if (
       flags.canonicalize !== true ||
@@ -529,6 +642,7 @@ export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
         })
       const task = await requireTask(ctx)
       if (!task.ok) return task
+      if (deferredTaskCommit(task.data)) return deferredCommitReply()
       return registerFix(ctx, task.data, flags.commit)
     }
     return commitFix(ctx, args, flags.message)
@@ -552,6 +666,7 @@ export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
     return err({ code: "bad_args", message: USAGE })
   const task = await requireTask(ctx)
   if (!task.ok) return task
+  if (deferredTaskCommit(task.data) && flags.repo === undefined) return deferredCommitReply()
   const plan = await readOutline(ctx, task.data)
   if (plan === null) return err({ code: "bad_args", message: "there is no approved Plan" })
   const selected = plan.slices.filter((s) => numbers.map(Number).includes(s.n))
@@ -600,10 +715,28 @@ export async function commitCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
         code: "bad_args",
         message: "usage: qualitylayer commit slice <n> --commit <hash> (one slice, one commit)",
       })
+    const slice = selected[0] as (typeof selected)[number]
+    if (typeof flags.repo === "string") {
+      const released = await registerExternalSlice(ctx, task.data, {
+        slice: slice.n,
+        files: slice.tasks.flatMap((card) => card.files),
+        path: flags.repo,
+        hash: flags.commit,
+      })
+      if (!released.ok) return released
+      const projectionWarning = await materializeChecksRecord(ctx, task.data).then(
+        () => "",
+        () => " The receipt was saved. Open Records › Checks to retry its display.",
+      )
+      return ok({
+        ...released.data,
+        message: `Slice ${slice.n} is recorded as ${released.data.commit.slice(0, 9)} in ${released.data.repository}.${projectionWarning}`,
+      })
+    }
     return releaseByHand(
       ctx,
       task.data,
-      selected[0] as (typeof selected)[number],
+      slice,
       flags.commit,
       plan.slices
         .filter((slice) => !selected.some((chosen) => chosen.n === slice.n))

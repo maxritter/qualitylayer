@@ -36,7 +36,7 @@ after a batch of changes, loads every page the draft changed (`--page <page>` fo
 390, light and dark; `runtime-error`,
 `blocked-request`, `render-failed` and `unresponsive-page` are defects. `artifact shot <name> --matrix`
 takes the four pictures (`--page`, `--width`, `--theme`, `--section`); open them and reject a blank, stale
-or clipped render.
+or clipped render. If a picture reaches the 16,000 px height limit, capture the remaining sections with `--section`.
 
 ## Format and embedding
 

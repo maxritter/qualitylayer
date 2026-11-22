@@ -1,8 +1,6 @@
-import { useState } from "react"
 import { toast } from "sonner"
 import { FLOW_STEPS, flowStepOf } from "../../core/flow.ts"
 import { askedInAgent } from "../../core/task/sides.ts"
-import type { TurnSnapshot } from "../../interaction/contracts.ts"
 import { type Api, api as liveApi } from "../api.ts"
 import { setDocumentFullSize, setDocumentReturn } from "../docs/mode.ts"
 import { PLAN_TURN_READY } from "../docs/PlanTurn.tsx"
@@ -21,7 +19,6 @@ import { StepQuiet } from "../steps/StepQuiet.tsx"
 import { StepsAgentTurn } from "../steps/StepsAgentTurn.tsx"
 import { STEPS_TURN_READY, StepTurn } from "../steps/StepTurn.tsx"
 import { isFinalApprovalQuestion, isPlanApprovalQuestion } from "./ApproveCard.tsx"
-import { AnswerHereNote, AskedOutside, outsideAsker } from "./AskedOutside.tsx"
 import { cancelBatchMore, reopenQuestion, useBatchActions, useTurnData } from "./actions.ts"
 import { FocusTurn } from "./FocusTurn.tsx"
 import { GateTrack } from "./GateTrack.tsx"
@@ -46,8 +43,6 @@ export function YourTurn(props: TaskSurfaceProps) {
 function CurrentTurn(props: TaskSurfaceProps) {
   const turn = useTurnData(props.task, props.api, props.version + (props.activity ?? 0))
   const send = useBatchActions(props.task, props.reload)
-  // Answer here instead, for a question asked in the terminal: this task's answers until the person goes back.
-  const [here, setHere] = useState<{ task: string; seen: number } | null>(null)
   const future = stepPhase(props.task, props.view) === "future"
   if (!future && !turnLayoutFor(props.view, props.api, props.task.id)) return null
   // The page holds only the waiting card: the Reader is one click away, and the "Your turn" pill (or
@@ -99,6 +94,15 @@ function CurrentTurn(props: TaskSurfaceProps) {
       />
     )
   }
+  const receipt = props.task.answeredQuestions?.at(-1)
+  if (
+    props.task.question == null &&
+    !turn?.questions.length &&
+    receipt?.revision &&
+    (receipt.delivered === false || Date.now() - receipt.at < 20_000) &&
+    step === flowStepOf(props.task.stage)
+  )
+    return <FocusTurn {...props} />
   if (
     autonomous(props.task) &&
     (step !== flowStepOf(props.task.stage) ||
@@ -117,76 +121,36 @@ function CurrentTurn(props: TaskSurfaceProps) {
     !isFinalApprovalQuestion(props.task, props.task.question)
       ? props.task.question
       : null
-  // The agent runs in the terminal: it asks there, and the App says so, with Answer here instead.
-  const outsideAsks =
-    (batched || single !== null) &&
-    askedInAgent(props.task, batched ? questions : single ? [single] : [])
-  const answered = turn?.answered.length ?? 0
-  const answeringHere = outsideAsks && here?.task === props.task.id
-  if (outsideAsks && !answeringHere) {
-    const shown: TurnSnapshot | null =
-      batched && turn
-        ? { ...turn, questions }
-        : single !== null
-          ? {
-              batch: null,
-              questions: [single],
-              answered: turn?.answered ?? [],
-              links: turn?.links ?? [],
-              items: [],
-              agreements: [],
-              receipts: [],
-            }
-          : null
-    if (shown)
-      return (
-        <AskedOutside
-          task={props.task}
-          turn={shown}
-          onAnswerHere={() => setHere({ task: props.task.id, seen: answered })}
-        />
-      )
-  }
-  const hereNote = answeringHere ? (
-    <AnswerHereNote
-      name={outsideAsker(props.task, turn).name}
-      sent={answered > (here?.seen ?? answered) ? (turn?.answered.at(-1)?.choice ?? null) : null}
-      onBack={() => setHere(null)}
-    />
-  ) : null
   if (batched && turn)
     return (
-      <>
-        {hereNote}
-        <QuestionBatch
-          turn={{ ...turn, questions }}
-          send={send}
-          theme={props.theme}
-          taskId={props.task.id}
-          artifactTask={{ id: props.task.id, api: props.api }}
-          onOpenDoc={props.onOpen}
-          onOpenAt={props.onOpenDoc}
-          planDoc={fileOf(props.task, "plan")}
-          documentName={fileOf(props.task, "plan")}
-          live={props.task.live?.signals ?? null}
-          resume={resumeCommand(props.task)}
-          onCancelMore={(batch, id) => cancelBatchMore(props.task.id, batch, id)}
-          onReadDocument={readDocument}
-          onChangeAnswer={(batch, answer) =>
-            reopenQuestion(props.task.id, batch, answer, true).then(props.reload, (error) =>
-              toast.error(error instanceof Error ? error.message : "Could not reopen the answer"),
-            )
-          }
-        />
-      </>
+      <QuestionBatch
+        turn={{ ...turn, questions }}
+        terminalPreferred={askedInAgent(props.task, questions)}
+        send={send}
+        theme={props.theme}
+        taskId={props.task.id}
+        artifactTask={{ id: props.task.id, api: props.api }}
+        onOpenDoc={props.onOpen}
+        onOpenAt={props.onOpenDoc}
+        planDoc={fileOf(props.task, "plan")}
+        documentName={fileOf(props.task, "plan")}
+        live={props.task.live?.signals ?? null}
+        resume={resumeCommand(props.task)}
+        onCancelMore={(batch, id) => cancelBatchMore(props.task.id, batch, id)}
+        onReadDocument={readDocument}
+        onChangeAnswer={(batch, answer) =>
+          reopenQuestion(props.task.id, batch, answer, true).then(props.reload, (error) =>
+            toast.error(error instanceof Error ? error.message : "Could not reopen the answer"),
+          )
+        }
+      />
     )
-  if (single !== null)
+  if (single !== null) {
+    const presented = turn?.nativeQuestions?.[single.id]
     return (
-      <>
-        {hereNote}
-        <FocusTurn {...props} />
-      </>
+      <FocusTurn {...props} presentation={typeof presented === "string" ? presented : undefined} />
     )
+  }
   if (step === "plan") {
     if (turn && foldingTurn(turn))
       return (

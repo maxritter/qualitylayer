@@ -36,7 +36,7 @@ import { AGENT_NAMES } from "../../core/agents/ids.ts"
 import type { AgentView } from "../../core/config-values.ts"
 import type { RunSettings } from "../../core/run/contracts.ts"
 import type { HostFrame, ViewerState } from "../../core/run/protocol.ts"
-import { STARTUP_PROMPT_STATUS } from "../../core/run/startup-prompt.ts"
+import { holdsAntigravityStartup, STARTUP_PROMPT_STATUS } from "../../core/run/startup-prompt.ts"
 import { useViewportWidth } from "../hooks.ts"
 import { type ScopedTerminalReceipt, TerminalReceipt } from "../quick-ask/TerminalReceipt.tsx"
 import { useQuickAskTerminal } from "../quick-ask/terminal.ts"
@@ -49,7 +49,7 @@ import {
   useRuns,
   type WorkflowController,
 } from "../run-context.tsx"
-import { runStatusText, runTaskId } from "../runs-api.ts"
+import { runStatusText, runTaskId, taskAgentRuns } from "../runs-api.ts"
 import { Appearance } from "./Appearance.tsx"
 import { ContextDraftHandoff } from "./conversation/ContextDraftAttachment.tsx"
 import {
@@ -424,21 +424,7 @@ function DockRuns({
     return () => layout?.setTaskAgent(undefined)
   }, [scope, layout?.setTaskAgent])
   const [history, setHistory] = useState<{ task: string; id: string }>()
-  const taskRuns = runs
-    .filter(
-      (run) =>
-        currentTask != null &&
-        runTaskId(run) === currentTask &&
-        (run.purpose.kind === "task"
-          ? run.purpose.task === currentTask
-          : run.purpose.kind === "new-task"),
-    )
-    .sort(
-      (a, b) =>
-        (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) ||
-        b.generation - a.generation ||
-        b.id.localeCompare(a.id),
-    )
+  const taskRuns = currentTask == null ? [] : taskAgentRuns(runs, currentTask)
   const leadTaskRuns = taskRuns.filter((run) => !run.pendingFresh)
   const lead =
     agentRunId !== undefined
@@ -1190,7 +1176,7 @@ function DockWindow({
       !!draftRef.current.text.trim() ||
       draftRef.current.files.length > 0,
     load: () => adapter.conversation?.(currentRun.current) ?? Promise.resolve(undefined),
-    send: (text) => terminal.current?.sendInput?.(typedMessage(text)) ?? false,
+    send: (text) => type(text),
     resume: () => act("resume", { mode: "continue" }),
   }
   const updatePlan = useCallback(() => updatePlanFromFeedback(() => planFeedbackActor.current), [])
@@ -1270,13 +1256,14 @@ function DockWindow({
       if (!watching && active) terminal.current?.focus()
     })
   }
-  // The agent's own start-up prompt (trust, login, setup) is answered in Terminal before the first
-  // prompt, so it opens Terminal once. A permission seen on the screen later does not say that
-  // Conversation cannot answer it: Conversation keeps its callback cards and its explicit
-  // Answer in the terminal fallback, and the view stays the person's.
+  // A native startup question opens Terminal once. Antigravity's setup can remain after the
+  // first recorded prompt. Later permissions keep Conversation's own answer controls.
   const startupEpisode = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (run.startupPrompt === undefined || run.firstPromptAt) {
+    if (
+      run.startupPrompt === undefined ||
+      (run.firstPromptAt && !holdsAntigravityStartup(run.agent, run.startupPrompt))
+    ) {
       startupEpisode.current = undefined
       return
     }
@@ -1288,6 +1275,7 @@ function DockWindow({
   }, [
     run.id,
     run.generation,
+    run.agent,
     run.startupPrompt,
     run.firstPromptAt,
     visible,
@@ -1296,7 +1284,9 @@ function DockWindow({
     chooseView,
   ])
   const canContinue = run.agent !== "other" && !!run.nativeSession && !!run.canResume
-  const type = (text: string) => terminal.current?.sendInput?.(typedMessage(text)) ?? false
+  const type = (text: string) =>
+    !holdsAntigravityStartup(currentRun.current.agent, currentRun.current.startupPrompt) &&
+    (terminal.current?.sendInput?.(typedMessage(text)) ?? false)
   // A Chat's agent chip is the session's one menu (the controls' `session` rows): this window's own
   // menu stays only to reach earlier conversations, and is not drawn when there are none.
   const earlierConversations = readOnly || history.length > 0

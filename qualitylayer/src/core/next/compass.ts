@@ -8,6 +8,7 @@ import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { allTasks } from "../docs/outline.ts"
 import { flowStepOf } from "../flow.ts"
 import { FINAL, planReviewQuestionMove, readGate } from "../gate/gate.ts"
+import { planApprovalMatches } from "../gate/revision.ts"
 import { matchingStartRoute, readStart } from "../handoff/start.ts"
 import { humanNeedBlockedTasks } from "../open-items.ts"
 import { resolveRepo } from "../paths.ts"
@@ -79,7 +80,8 @@ const STEPS_SHOWN = 8
 async function planGateOf(ctx: Ctx, task: Task): Promise<PlanGate> {
   const gate = await readGate(ctx, task)
   if (gate === null || gate.target === FINAL) return "none"
-  if (gate.decision === "approved" && gate.settled !== true) return "approved"
+  if (gate.decision === "approved" && gate.settled !== true)
+    return (await planApprovalMatches(ctx, task, gate.revision)) ? "approved" : "earlier-approval"
   if (gate.decision === "changes" && gate.settled !== true) return "changes"
   if (gate.settled === true || gate.decision !== "pending") return "none"
   if (gate.waitsFor === "plan") {
@@ -185,6 +187,8 @@ function messageOf(task: Task, state: MoveState): string {
         changes:
           "Plan: the person asked for changes; hear them with wait, apply them, then ask again.",
         approved: "Plan: approved; the build starts with build start.",
+        "earlier-approval":
+          "The person approved an earlier Plan. Draft the current Plan, then reopen its gate.",
       }[state.gate]
     case "implement":
       return !state.started

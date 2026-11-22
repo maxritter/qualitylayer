@@ -637,6 +637,21 @@ export async function revisionMatches(
   return recorded !== undefined && recorded === (await gateRevision(ctx, task, target))
 }
 
+/** Whether an existing Plan approval still binds the current Plan, including a legacy digest. */
+export async function planApprovalMatches(
+  ctx: Ctx,
+  task: Task,
+  recorded: string | undefined,
+  revision?: string,
+): Promise<boolean> {
+  if (recorded === undefined) return false
+  const target = folderDoc("plan")
+  return (
+    recorded === (revision ?? (await gateRevision(ctx, task, target))) ||
+    recorded === (await gateRevision(ctx, task, target, true))
+  )
+}
+
 /** What an approval records: the revision it binds. */
 export async function approvalFields(
   ctx: Ctx,

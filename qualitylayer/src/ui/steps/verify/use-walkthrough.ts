@@ -15,10 +15,11 @@ export function useWalkthrough(
   api: WalkthroughApi | undefined,
   taskId: string,
   stamp: string,
+  checked?: string,
 ): Query<WalkthroughView | null> {
   return useQuery(
-    () => (api === undefined ? Promise.resolve(null) : loadWalkthrough(api, taskId)),
-    [api, taskId, stamp],
+    () => (api === undefined ? Promise.resolve(null) : loadWalkthrough(api, taskId, checked)),
+    [api, taskId, stamp, checked],
     false,
     WALKTHROUGH_READ_MS,
   )

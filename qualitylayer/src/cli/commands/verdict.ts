@@ -6,7 +6,7 @@
 import { recordAttestation } from "../../core/attestations.ts"
 import { judgeRun } from "../../core/judge-run.ts"
 import { recordVerdict, VERDICT_WORDS } from "../../core/verdicts.ts"
-import { type Ctx, err, type Result } from "../../ctx.ts"
+import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE =
@@ -51,7 +51,7 @@ export async function verdictCmd(ctx: Ctx, args: string[]): Promise<Result<unkno
     .trim()
   const task = await requireTask(ctx)
   if (!task.ok) return task
-  return recordVerdict(ctx, task.data, {
+  const recorded = await recordVerdict(ctx, task.data, {
     assignment,
     item: rest.slice(0, at).join(" "),
     verdict: rest[at] ?? "",
@@ -60,6 +60,7 @@ export async function verdictCmd(ctx: Ctx, args: string[]): Promise<Result<unkno
     ...(flags.run === undefined ? {} : { run: String(flags.run) }),
     ...(flags.mode === undefined ? {} : { mode: String(flags.mode) }),
   })
+  return recorded.ok ? ok({ recorded: true, ...recorded.data }) : recorded
 }
 
 export async function attestCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {

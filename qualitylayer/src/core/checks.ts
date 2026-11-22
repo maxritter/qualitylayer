@@ -39,6 +39,7 @@ import { allTasks } from "./docs/outline.ts"
 import { readCards } from "./docs/outline-files.ts"
 import { readBaseline } from "./gate/baseline.ts"
 import { buildOwnPaths, buildRevision, fileRevision, within } from "./gate/revision.ts"
+import { implementRepository } from "./git/implement-repository.ts"
 import { currentBranch } from "./git/repo.ts"
 import { revisionPaths } from "./git/revision-paths.ts"
 import { foreignLooseEdits, keptOwnChanges, ownEdits } from "./git/session-edits.ts"
@@ -241,6 +242,7 @@ export type CheckReply = {
   scope: string
   revision: string
   passed: boolean
+  repository?: string
   results: CheckResult[]
   /** The commands the agent must run itself: they changed after the approval. */
   run_yourself?: string[]
@@ -267,6 +269,7 @@ export type CheckRecord = {
   branch?: string
   /** `all`, `slice N`, a task id, or `base`: the project checks run on a copy of the task's base commit (then `revision` is that commit). */
   scope: string
+  repository?: string
   command: string
   exit: number | null
   revision: string
@@ -298,12 +301,15 @@ export const lockPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir
  */
 export function latestRuns(records: readonly CheckRecord[]): CheckRecord[] {
   const lastRun = new Map<string, string | undefined>()
-  for (const check of records) lastRun.set(check.scope, check.check)
+  const scopeKey = (check: CheckRecord) => JSON.stringify([check.scope, check.repository])
+  for (const check of records) lastRun.set(scopeKey(check), check.check)
   return [
     ...new Map(
       records
-        .filter((check) => check.check === undefined || check.check === lastRun.get(check.scope))
-        .map((check) => [`${check.scope}:${check.command}`, check]),
+        .filter(
+          (check) => check.check === undefined || check.check === lastRun.get(scopeKey(check)),
+        )
+        .map((check) => [JSON.stringify([scopeKey(check), check.command]), check]),
     ).values(),
   ]
 }
@@ -410,7 +416,7 @@ export async function checkKey(
   bunVersion?: string,
   unavailable?: (reason: string) => void,
 ): Promise<string | null> {
-  return (await checkKeys(ctx, task, command, bunVersion, unavailable))?.key ?? null
+  return (await checkKeys(ctx, task, command, { bunVersion, unavailable }))?.key ?? null
 }
 
 /**
@@ -422,10 +428,10 @@ export async function checkKeys(
   ctx: Ctx,
   task: Task,
   command: string,
-  bunVersion?: string,
-  unavailable?: (reason: string) => void,
+  options: { bunVersion?: string; unavailable?: (reason: string) => void; external?: boolean } = {},
 ): Promise<{ key: string; inputs: string; parts?: CheckParts } | null> {
-  let bun = bunVersion
+  const { external, unavailable } = options
+  let bun = options.bunVersion
   if (bun === undefined) {
     // Only a command that uses Bun is bound by its version; a project without Bun is proven by
     // its own inputs, as on a customer's machine that has none.
@@ -445,7 +451,7 @@ export async function checkKeys(
   let program: string | null = null
   let own: string[] | null = null
   try {
-    own = await buildOwnPaths(ctx, task)
+    own = external ? null : await buildOwnPaths(ctx, task)
     contents = await repositoryInputs(ctx, task.repoRoot, own)
     for (const path of [
       "bun.lock",
@@ -467,6 +473,7 @@ export async function checkKeys(
   }
   const inputs = {
     inputFormat: 4,
+    ...(external ? { repository: task.repoId, checkout: task.repoRoot } : {}),
     contents,
     locks,
     program,
@@ -711,6 +718,38 @@ function failedLine(
   return `\`${command}\`: ${runOutcome(ran.first, firstNotRun, " in this checkout")}; run again on a copy of HEAD plus this ${whose ?? "slice"}'s own files: ${runOutcome(ran, notRun)}, so it failed.`
 }
 
+async function checkCheckout(
+  ctx: Ctx,
+  task: Task,
+  repository?: string,
+): Promise<Result<{ checkout: Task; additionalRoot?: string }>> {
+  if (repository === undefined) return ok({ checkout: task })
+  const allowed = await implementRepository(ctx, task, repository)
+  if (!allowed.ok) return allowed
+  const { id, root } = allowed.data
+  return ok({ checkout: { ...task, repoRoot: root, repoId: id }, additionalRoot: root })
+}
+
+async function checkRevision(ctx: Ctx, task: Task, checkout: Task, additionalRoot?: string) {
+  const rev = await shortRev(ctx, checkout)
+  const base = rev === "no-commit" ? "no commit" : `base ${rev}`
+  const commit = await ctx.git.run(checkout.repoRoot, ["rev-parse", "HEAD"])
+  const head = commit.code === 0 ? commit.stdout.trim() : undefined
+  if (additionalRoot !== undefined) {
+    if (head === undefined)
+      return err({ code: "bad_args", message: "The additional checkout has no readable HEAD." })
+    return ok({
+      rev,
+      base,
+      head,
+      revision: head,
+      workingTree: `working tree in ${additionalRoot} (${base})`,
+    })
+  }
+  const revision = await buildRevision(ctx, task).catch(() => rev)
+  return ok({ rev, base, head, revision, workingTree: `working tree (${base})` })
+}
+
 /**
  * Run a scope's approved commands, one after another, and record each. Two checks of one task
  * never run at the same time.
@@ -720,10 +759,16 @@ export async function runCheck(
   task: Task,
   scope: CheckScope,
   runner: CommandRunner = shellRunner,
-  checkId: string = randomUUID(),
+  options: string | { checkId?: string; repository?: string } = {},
 ): Promise<Result<CheckReply>> {
+  const { checkId = randomUUID(), repository } =
+    typeof options === "string" ? { checkId: options } : options
   const candidate = task.stage === "verify" ? await selectedReviewCandidate(ctx, task) : null
   if (candidate) task = { ...task, repoRoot: candidate.choice.checkout }
+  if (repository !== undefined) {
+    const allowed = await implementRepository(ctx, task, repository)
+    if (!allowed.ok) return allowed
+  }
   const found = await commandsFor(ctx, task, scope)
   if (!found.ok) return found
   const noCommands = () =>
@@ -762,6 +807,10 @@ export async function runCheck(
             code: "bad_args",
             message: "The selected review commit changed. Run the check on the current candidate.",
           })
+        const resolved = await checkCheckout(ctx, task, repository)
+        if (!resolved.ok) return resolved
+        const { checkout, additionalRoot } = resolved.data
+        const external = additionalRoot !== undefined
         // Reconcile previous attempts before this run can publish newer evidence.
         await readCheckProgress(ctx, task)
         // The Plan or its approval may have changed while this run waited: run what they say now.
@@ -769,12 +818,9 @@ export async function runCheck(
         if (!current.ok) return current
         if (current.data.now.length === 0) return noCommands()
         const commands = current.data
-        const rev = await shortRev(ctx, task)
-        const base = rev === "no-commit" ? "no commit" : `base ${rev}`
-        const workingTree = `working tree (${base})`
-        const revision = await buildRevision(ctx, task).catch(() => rev)
-        const commit = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
-        const head = commit.code === 0 ? commit.stdout.trim() : undefined
+        const checkedRevision = await checkRevision(ctx, task, checkout, additionalRoot)
+        if (!checkedRevision.ok) return checkedRevision
+        const { rev, base, head, revision, workingTree } = checkedRevision.data
         const branch = scope.kind === "all" ? await currentBranch(ctx, task.repoRoot) : null
         const logs = join(task.runtimeDir, "checks")
         await ctx.fs.mkdir(logs)
@@ -802,18 +848,27 @@ export async function runCheck(
         // own sessions edited stays in the copy, on a card or not. Left out are others' files: those
         // another session's record claims, and untracked files no session of this task wrote.
         const whose = scope.kind === "all" ? "task" : "slice"
-        const named = candidate
-          ? null
-          : scope.kind === "all"
-            ? await buildOwnPaths(ctx, task).catch(() => null)
-            : await ownFiles(ctx, task, scope)
+        const named =
+          candidate || external
+            ? null
+            : scope.kind === "all"
+              ? await buildOwnPaths(ctx, task).catch(() => null)
+              : await ownFiles(ctx, task, scope)
         const repoIds = { id: task.repoId, root: task.repoRoot }
         // What the task's sessions recorded writing: their edit records (three days), and the
         // record kept with the task's judge, which does not expire.
-        const edited = await ownEdits(ctx, repoIds, task.slug)
-        const kept = await keptOwnChanges(ctx, task.runtimeDir).catch(() => null)
         const own =
-          named === null ? null : [...new Set([...named, ...edited, ...(kept?.files.keys() ?? [])])]
+          named === null
+            ? null
+            : [
+                ...new Set([
+                  ...named,
+                  ...(await ownEdits(ctx, repoIds, task.slug)),
+                  ...((
+                    await keptOwnChanges(ctx, task.runtimeDir).catch(() => null)
+                  )?.files.keys() ?? []),
+                ]),
+              ]
         const notRunIn = (ran: Ran, command: string, cwd: string) =>
           notRunReason(ctx, command, cwd, ran)
         // Another task's file by the bytes its record holds, where it holds them: a file written
@@ -838,6 +893,8 @@ export async function runCheck(
         const initialRecords = records.length
         const unavailableInputs = new Set<string>()
         const unavailable = (reason: string) => unavailableInputs.add(reason)
+        const keysOf = (command: string) =>
+          checkKeys(ctx, checkout, command, { unavailable, external })
         /** True when a command's inputs changed while it ran: the record keeps no key. */
         let changedWhileRunning = false
         /** The command being run: its log once written, its result once it ended. */
@@ -874,11 +931,13 @@ export async function runCheck(
               })
               continue
             }
-            const keys = await checkKeys(ctx, task, command, undefined, unavailable)
+            const keys = await keysOf(command)
             const key = keys?.key ?? null
-            const reusableRecords = candidate
-              ? records.filter((record) => record.revision === revision)
-              : records
+            const reusableRecords = records.filter(
+              (record) =>
+                record.repository === additionalRoot &&
+                (!candidate || record.revision === revision),
+            )
             const previous = reusableRecords.findLast(
               (record) => record.scope !== "base" && record.command === command,
             )
@@ -935,7 +994,7 @@ export async function runCheck(
             const timeoutMs = checkTimeoutMs(ctx)
             /** One run of the command by the check's own path, with what it returned and whether its inputs held still. */
             const runOnce = async (before: typeof keys, earlier: string) => {
-              const ran = await judge(command, task.repoRoot, timeoutMs, {
+              const ran = await judge(command, checkout.repoRoot, timeoutMs, {
                 output: async (chunk: string) => {
                   await append(chunk)
                   parse(chunk)
@@ -954,7 +1013,7 @@ export async function runCheck(
               // The rerun said, in its copy, whether it did its work; one that did not say is no pass.
               const notRun =
                 ran.first === undefined
-                  ? await notRunReason(ctx, command, task.repoRoot, verdict)
+                  ? await notRunReason(ctx, command, checkout.repoRoot, verdict)
                   : ran.notRun === undefined
                     ? "the run on the clean copy did not say whether it did its work"
                     : ran.notRun
@@ -964,8 +1023,7 @@ export async function runCheck(
                 : notRun !== null && ran.exit === 0
                   ? 1
                   : ran.exit
-              const afterKey =
-                (await checkKeys(ctx, task, command, undefined, unavailable))?.key ?? null
+              const afterKey = (await keysOf(command))?.key ?? null
               const startKey = before?.key ?? null
               return {
                 ran,
@@ -989,10 +1047,7 @@ export async function runCheck(
               const header = `\n--- run again: this task's files were saved while the run above was going (${firstMoved.outcome}) ---\n`
               const earlier = `${run.ran.output}${header}`
               await ctx.fs.writeFile(log, earlier)
-              run = await runOnce(
-                await checkKeys(ctx, task, command, undefined, unavailable),
-                earlier,
-              )
+              run = await runOnce(await keysOf(command), earlier)
             }
             const { ran } = run
             // Saved under both runs, and neither passed: no result is established, which is not a failure.
@@ -1113,6 +1168,7 @@ export async function runCheck(
             lines.push(`- scans · ${scanned.head.slice(0, 7)} · ${scanLine(result)}`)
         const receipt = records.slice(initialRecords).map(({ branch: _branch, ...row }) => ({
           ...row,
+          ...(external ? { repository: additionalRoot } : {}),
           ...(branch === null ? {} : { branch }),
         }))
         await saveCheckReceipt(ctx, task, checkId, receipt, lines)
@@ -1199,7 +1255,8 @@ export async function runCheck(
         ]
         return ok({
           scope: name,
-          revision: rev,
+          ...(external ? { repository: additionalRoot } : {}),
+          revision: external ? revision : rev,
           passed: results.every((r) => r.passed),
           results,
           ...(yourself.length > 0 ? { run_yourself: yourself } : {}),

@@ -98,18 +98,19 @@ workflow (ask your agent to plan or implement using QualityLayer or QL); \`next\
   qualitylayer plan export --out <folder>   (writes the Plan, its agents' file and assets/ with relative links for reading outside QualityLayer; lists every asset it could not capture)
   qualitylayer build start [--task <task>]   (this session takes the approved Plan's build and gets Implement's text and the cards' template; without a task it builds the one approved Plan, or lists those that wait)
   qualitylayer progress "<line>" [--for T<n>] [--agent <id>]   (one line on what is being done; progress done --agent <id> says a helper is over)
-  qualitylayer check slice <n> | task T<n> | step A<n> [-- <command>] | all [--background] | all --base   (runs the commands the Plan approved and records them; step A<n> runs a Done means step on the built tree; --base runs the project checks on the task's base commit, to show a red check was red before the task)
+  qualitylayer check slice <n> | task T<n> [--repo <approved checkout>] | step A<n> [-- <command>] | all [--background] | all --base   (runs the commands the Plan approved and records them; step A<n> runs a Done means step on the built tree; --base runs the project checks on the task's base commit, to show a red check was red before the task)
   qualitylayer build done [--defer "<why>"]   (the build is ready: Verify starts; refused with each missing card or Done means step and its move; --defer takes what is open to Verify)
   qualitylayer verify judge | recheck | fix | keep-red   (hand out the fresh reviewer and read its verdicts · a fresh reviewer rechecks what failed and the lines the fix changed · start a fix round · keep red checks red on the person's answer)
   qualitylayer ship   (after the final approval: the landing steps; asked again while the pull request is open, its triage)
-  qualitylayer task handback "<reason>" --prompt "<prompt>" · task abandon
+  qualitylayer task handback "<reason>" --prompt "<prompt>"   (for an active task, available during Plan)
+  qualitylayer task abandon
   qualitylayer show <topic>   (a page drawn for the person about a topic, at any stage)
   qualitylayer chat plan save --file <markdown> | --text <markdown>
   qualitylayer chat build [--file <outline-markdown> | --stop <slice>]
   qualitylayer chat check [--slice <n>] | review | promote --type feature|bugfix
   qualitylayer chat rename "<title>"   (gives the Chat a short title after the first reply)
   qualitylayer commit slice <n> [--message "<text>"] [--leave <path>]... [--take <file>]... [--take-staged <file>]...   (commits the slice's files; --take explicitly claims captured unstaged pre-build content of an approved card file; unrelated staging stays staged)
-  qualitylayer commit slice <n> --commit <hash>   (records an existing checked manual commit and releases the slice; creates no new commit; a reworded commit registered again replaces that slice's earlier entry)
+  qualitylayer commit slice <n> --commit <hash> [--repo <approved checkout>]   (records an existing checked manual commit; creates no new commit; a reworded commit registered again replaces that slice's earlier entry)
   qualitylayer commit fix --commit <hash>   (records a fix you committed by hand, beside the slice receipts and replacing none; creates no new commit)
   qualitylayer commit fix [--message "<text>"] [--take-staged <file>]...   (commits the files this task's sessions edited and nothing else, the way commit slice does)
   qualitylayer commit slices <n> <m> ... [--message "<text>"] [--take <file>]... [--take-staged <file>]...   (commits explicitly grouped completed and checked slices as one tree, with their checks and repository hooks; --take claims captured unstaged pre-build content of an approved card file)
@@ -121,7 +122,7 @@ workflow (ask your agent to plan or implement using QualityLayer or QL); \`next\
   qualitylayer card T<n>   (one task card and the contracts it names, read-only)
   qualitylayer helper result <helper-id> [--file <path>]   (keep a helper's report under the task, at once: a research helper's in research/; without --file it is read from standard input)
   qualitylayer question ask '<json>'   (ask the person in the App: in the Plan it waits for the answer (answered, unsure, more, cancelled or waiting); in Implement and Verify it is asked once and holds nothing)
-  qualitylayer question ask --batch --file <json file, - for stdin>   (several questions at once, e.g. {"id":"b1","questions":[{"id":"q1","question":"Which?","choices":[{"label":"A"},{"label":"B"}],"points":[]}]}; choices are objects with a label, 2 to 6 each)
+  qualitylayer question ask --batch --file <json file, - for stdin>   (several questions at once, e.g. {"id":"b1","questions":[{"id":"q1","question":"Which?","choices":[{"label":"A"},{"label":"B"}],"points":[]}]}; give each question 2 to 6 choices. Each choice has a label, optional detail, and up to 3 facts, each at most 200 characters)
   qualitylayer question link <id> --points 1,3   (set the Done means points an answer settles, once Done means are written)
   qualitylayer question progress "<line>" | question show '<json>' | question show <id> (the open question as stored: recommended, why, since) | question answered "<what the person said in this chat>"
   qualitylayer need "<what. why>" --for T<n> [--kind secret|login|account|service|permission] [--check <ENV_VAR or file>] [--step "<text>"]   (the build needs something only the person can do; nothing stops)
@@ -456,8 +457,11 @@ export async function run(argv: string[], baseCtx: Ctx): Promise<number> {
     const entitled = await verify(ctx)
     if (!entitled.ok) return emit(entitled, json)
   }
-  // Exporting a Plan only reads the task: no sign of life, no refresh of its documents.
-  let workflowEffects = !(command === "plan" && rest[0] === "export")
+  // Passive reads never stand in for agent activity, including the mod's background PR refresh.
+  let workflowEffects = !(
+    (command === "plan" && rest[0] === "export") ||
+    (command === "pr" && rest[0] === "read" && rest.includes("--stale"))
+  )
   if (command === "artifact") {
     const task = await artifactWorkflowTask(ctx, rest)
     workflowEffects = task !== null

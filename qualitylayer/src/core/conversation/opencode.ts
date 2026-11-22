@@ -262,6 +262,17 @@ function seconds(created: unknown, completed: unknown): number | undefined {
   return Math.round((completed - created) / 100) / 10
 }
 
+const OPENCODE_PROVIDER_AUTH_ERROR =
+  "OpenCode could not authenticate with this provider. Run `opencode auth login` or choose a signed-in provider and model."
+
+/** Format an OpenCode error object: prefer actionable recovery for `provider.auth` over generic provider text. */
+function opencodeErrorText(error: Json | undefined, fallback: string): string {
+  if (!error) return fallback
+  const type = text(error.type)
+  if (type === "provider.auth") return OPENCODE_PROVIDER_AUTH_ERROR
+  return text(error.message) || type || fallback
+}
+
 function assistant(
   events: ConversationEvent[],
   row: OpencodeRow,
@@ -308,7 +319,7 @@ function assistant(
       at: iso(object(data.time)?.completed) ?? iso(object(data.time)?.created),
       parent,
       kind: "error",
-      text: bounded(text(error.message) || text(error.type) || "The request failed", 2000),
+      text: bounded(opencodeErrorText(error, "The request failed"), 2000),
     })
 }
 
@@ -475,7 +486,7 @@ export function mapOpencodeRows(
             at,
             parent,
             kind: "error",
-            text: bounded(text(object(data.error)?.message) || "Compaction failed", 2000),
+            text: bounded(opencodeErrorText(object(data.error), "Compaction failed"), 2000),
           })
         else events.push({ id: row.id, at, parent, kind: "compaction" })
         break
@@ -488,7 +499,7 @@ export function mapOpencodeRows(
             at: iso(object(data.time)?.created),
             parent,
             kind: "error",
-            text: bounded(text(error?.message) || "The run failed", 2000),
+            text: bounded(opencodeErrorText(error, "The run failed"), 2000),
           })
         break
       }

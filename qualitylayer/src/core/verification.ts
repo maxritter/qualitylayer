@@ -446,7 +446,10 @@ export async function prepareJudgeAdmission(ctx: Ctx, task: Task): Promise<Judge
       // would leave the agent only moves its instructions forbid, such as registering a commit
       // that is not its own.
       if (cause instanceof RecordedHistoryRewritten)
-        unowned = { message: cause.message, head: cause.head }
+        unowned = {
+          message: `${cause.message}. Because an earlier recorded slice receipt lies outside current branch ancestry, this full-tree check applies to every judgement on this rewritten history (including consecutive judgements at the same HEAD)`,
+          head: cause.head,
+        }
       else if (cause instanceof OwnedTreeMoved)
         unowned = {
           message:

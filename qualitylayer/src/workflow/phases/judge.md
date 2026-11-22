@@ -47,7 +47,10 @@ cites the same proof; a failure caused by the code remains a gap to fix.
    record `environment:` with the captured output and continue with the other steps. The suite
    passing is not the walkthrough, and a stub fails. A step the Plan gave to the person, or one
    that needs their own account, device or an app you cannot run, is `[USER]`, opened with the
-   question they are asked. QualityLayer marks a Done means point proven when every step under it
+   question they are asked. If a visible user-approved Plan amendment explicitly leaves an
+   acceptance step open, cite that amendment, record `[NOTE] acceptance A<n>: ...` stating what
+   remains unverified, and never mark an unproved step `[PASS]` (unamended missing or failing checks
+   stay `[FAIL]` or `[MISSING]`). QualityLayer marks a Done means point proven when every step under it
    passes.
 2. **The whole diff**, as `review`: bugs, swallowed errors, **files changed outside every Files block**,
    stack drift (a dependency, version or public signature the Plan does not name), test quality both

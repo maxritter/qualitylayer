@@ -15,7 +15,7 @@ export class RecordedHistoryRewritten extends Error {
     readonly after: string,
   ) {
     super(
-      "Recorded task history was rewritten on its recorded branch; a fresh full working-tree judgement is required",
+      `Recorded task history was rewritten on branch ${branch} (${before.slice(0, 12)} -> ${after.slice(0, 12)}); a fresh full working-tree judgement is required`,
     )
   }
 }

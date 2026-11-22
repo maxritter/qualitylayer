@@ -160,6 +160,35 @@ function source(flags: Record<string, string | true>): EvidenceSource | string {
 
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
 
+/** Read a local regular evidence file within `SCREEN_MAX_BYTES`, naming the failure clearly. */
+async function readEvidenceFile(ctx: Ctx, file: string): Promise<Result<Uint8Array>> {
+  const bad = (message: string) => err({ code: "bad_args" as const, message })
+  if (!ctx.fs.readRegularFile) return bad("Reading a file is not available here")
+  const fullPath = resolve(ctx.env.cwd(), file)
+  const limitMb = SCREEN_MAX_BYTES / 1024 / 1024
+  const entry = await ctx.fs.lstat?.(fullPath)
+  if (entry === null) return bad(`${file} does not exist`)
+  if (entry !== undefined && entry.kind !== "file")
+    return bad(`${file} is not a regular file (links and folders are not accepted as evidence)`)
+  const meta = await ctx.fs.stat?.(fullPath)
+  if (meta && meta.size > SCREEN_MAX_BYTES) {
+    const actualMb = (meta.size / (1024 * 1024)).toFixed(1)
+    return bad(
+      `${file} is ${actualMb} MB, over the ${limitMb} MB evidence limit. Crop or lower the screenshot scale, or save a shorter command-output excerpt, then run qualitylayer evidence add again.`,
+    )
+  }
+  try {
+    return ok(await ctx.fs.readRegularFile(fullPath, SCREEN_MAX_BYTES))
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : ""
+    return bad(
+      /too large|exceed|limit|size/i.test(detail)
+        ? `${file} exceeds the ${limitMb} MB evidence limit. Crop or lower the screenshot scale, or save a shorter command-output excerpt, then run qualitylayer evidence add again.`
+        : `${file} could not be read (check the file path and permissions)`,
+    )
+  }
+}
+
 /** `evidence add`: copy a picture or an output into the task and record whose run it is. */
 async function addCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const { positional, flags } = parseArgs(args, ["run", "step", "mode"])
@@ -174,13 +203,9 @@ async function addCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const found = await requireTask(ctx)
   if (!found.ok) return found
   const task = found.data
-  if (!ctx.fs.readRegularFile) return bad("Reading a file is not available here")
-  let bytes: Uint8Array
-  try {
-    bytes = await ctx.fs.readRegularFile(resolve(ctx.env.cwd(), file), SCREEN_MAX_BYTES)
-  } catch {
-    return bad(`${file} is not a readable file of at most ${SCREEN_MAX_BYTES / 1024 / 1024} MB`)
-  }
+  const read = await readEvidenceFile(ctx, file)
+  if (!read.ok) return read
+  const bytes = read.data
   const kind = PNG_MAGIC.every((byte, i) => bytes[i] === byte) ? "picture" : "output"
   try {
     return ok(

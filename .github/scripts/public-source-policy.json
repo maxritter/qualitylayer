@@ -1,6 +1,6 @@
 {
   "publicFiles": {
-    ".gitattributes": "a57f6a24e2f1c3fb9e716e6e0f1ceb646e4becc807bca9125561a499f4826a75",
+    ".gitattributes": "f083021cfe73467c64314f04484e8ecdae0c44fe6a3068207ef425b2f78c839b",
     ".github/ISSUE_TEMPLATE/bug_report.md": "e5cf52ae0c128b0a993d5a486302cc452f559fef2d27fb7c3d5f4b58cb47e5be",
     ".github/ISSUE_TEMPLATE/config.yml": "1f103c6a9dd07cd13a9a6f17ace6b813f47747eb9cb7e00488cb2073caaf91bb",
     ".github/ISSUE_TEMPLATE/feature_request.md": "439282284ccc5dfead99aa040a6490cd92710afa6d45f065c75f6ff23e3465e9",
@@ -2273,7 +2273,7 @@
     "qualitylayer/tests/workflow/composition.test.ts": "a7631c96fb7c06568a36576044c741ca1a1ae441dd13cbf06286f87614488ff9",
     "qualitylayer/tsconfig.json": "ef062b959350920de92b00c90a50a1ce8745c1670f8fda6c27246d8dbc500a88"
   },
-  "reviewManifestSha256": "2ee0aaf8cb9bbcf32e382d24b66c627a124d5479e7bbb35fba924f58b9fdd256",
+  "reviewManifestSha256": "5bc2e9b30ecd6b8fe6201c9300ca26e0a82d3b505e94718be7e8fb8f73d12b60",
   "schema": 1,
   "sourceHead": "6a6591546ea8c9bbee4ed58875e467187277ceac"
 }

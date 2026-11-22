@@ -4,6 +4,7 @@ docs/site/scripts/backup-schema.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/db-role.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/purge-redis-team-files.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/rehash-trials.ts filter=git-crypt diff=git-crypt
+docs/site/scripts/migrate-trials-to-redis.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/team-data.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/restore.ts filter=git-crypt diff=git-crypt
 docs/site/scripts/db-migrate.ts filter=git-crypt diff=git-crypt

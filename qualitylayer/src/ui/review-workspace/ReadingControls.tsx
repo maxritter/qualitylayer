@@ -55,6 +55,82 @@ function Choice({
   )
 }
 
+function FocusToggle({ focus, onFocus }: { focus?: boolean; onFocus?: () => void }) {
+  if (!onFocus) return null
+  return (
+    <button
+      type="button"
+      className="rw-btn quiet rw-focus-toggle"
+      aria-pressed={focus === true}
+      title={focus ? "Show file tree" : "Focus mode: hide file tree"}
+      onClick={onFocus}
+    >
+      {focus ? (
+        <PanelLeftOpenIcon size={13} aria-hidden="true" />
+      ) : (
+        <PanelLeftCloseIcon size={13} aria-hidden="true" />
+      )}
+      {focus ? "Show tree" : "Focus"}
+    </button>
+  )
+}
+
+function RoundScopeChoice({
+  rounds,
+  sinceRound,
+  onSinceRound,
+}: {
+  rounds?: readonly WalkRound[]
+  sinceRound?: string | null
+  onSinceRound?: (revision: string | null) => void
+}) {
+  if (!rounds || rounds.length < 2 || !onSinceRound) return null
+  const prevRound = rounds.at(-2)
+  const latestRound = rounds.at(-1)
+  if (!prevRound || !latestRound) return null
+  return (
+    <div className="rw-mode">
+      <Choice
+        label="Review round scope"
+        hint="Review the whole change or only files changed since the previous round"
+        value={sinceRound === prevRound.revision ? "since" : "all"}
+        onChange={(value) => onSinceRound(value === "since" ? prevRound.revision : null)}
+        choices={[
+          { value: "all", label: `Round ${latestRound.n}`, icon: LayersIcon },
+          {
+            value: "since",
+            label: `Since R${prevRound.n} (${prevRound.files.length})`,
+            icon: ClockIcon,
+          },
+        ]}
+      />
+    </div>
+  )
+}
+
+function SliceFlowToggle({
+  hasDiagrams,
+  showDiagrams,
+  onToggleDiagrams,
+}: {
+  hasDiagrams?: boolean
+  showDiagrams?: boolean
+  onToggleDiagrams?: () => void
+}) {
+  if (!hasDiagrams || !onToggleDiagrams) return null
+  return (
+    <button
+      type="button"
+      className="rw-btn quiet rw-diagrams-toggle"
+      aria-pressed={showDiagrams === true}
+      onClick={onToggleDiagrams}
+    >
+      <WorkflowIcon size={13} aria-hidden="true" />
+      {showDiagrams ? "Back to diff" : "Slice flow"}
+    </button>
+  )
+}
+
 export function ReadingControls({
   index,
   count,
@@ -102,8 +178,6 @@ export function ReadingControls({
   showDiagrams?: boolean
   onToggleDiagrams?: () => void
 }) {
-  const prevRound = rounds && rounds.length >= 2 ? rounds.at(-2) : undefined
-  const latestRound = rounds && rounds.length >= 2 ? rounds.at(-1) : undefined
   return (
     <div className="rw-reading-controls">
       {mobileFileTree && (
@@ -116,22 +190,7 @@ export function ReadingControls({
           <ListTreeIcon size={13} aria-hidden="true" /> Files ({count})
         </button>
       )}
-      {onFocus ? (
-        <button
-          type="button"
-          className="rw-btn quiet rw-focus-toggle"
-          aria-pressed={focus === true}
-          title={focus ? "Show file tree" : "Focus mode: hide file tree"}
-          onClick={onFocus}
-        >
-          {focus ? (
-            <PanelLeftOpenIcon size={13} aria-hidden="true" />
-          ) : (
-            <PanelLeftCloseIcon size={13} aria-hidden="true" />
-          )}
-          {focus ? "Show tree" : "Focus"}
-        </button>
-      ) : null}
+      <FocusToggle focus={focus} onFocus={onFocus} />
       <div className="rw-navigation">
         <button
           type="button"
@@ -199,35 +258,12 @@ export function ReadingControls({
           ]}
         />
       ) : null}
-      {prevRound && latestRound && onSinceRound ? (
-        <div className="rw-mode">
-          <Choice
-            label="Review round scope"
-            hint="Review the whole change or only files changed since the previous round"
-            value={sinceRound === prevRound.revision ? "since" : "all"}
-            onChange={(value) => onSinceRound(value === "since" ? prevRound.revision : null)}
-            choices={[
-              { value: "all", label: `Round ${latestRound.n}`, icon: LayersIcon },
-              {
-                value: "since",
-                label: `Since R${prevRound.n} (${prevRound.files.length})`,
-                icon: ClockIcon,
-              },
-            ]}
-          />
-        </div>
-      ) : null}
-      {hasDiagrams && onToggleDiagrams ? (
-        <button
-          type="button"
-          className="rw-btn quiet rw-diagrams-toggle"
-          aria-pressed={showDiagrams === true}
-          onClick={onToggleDiagrams}
-        >
-          <WorkflowIcon size={13} aria-hidden="true" />
-          {showDiagrams ? "Back to diff" : "Slice flow"}
-        </button>
-      ) : null}
+      <RoundScopeChoice rounds={rounds} sinceRound={sinceRound} onSinceRound={onSinceRound} />
+      <SliceFlowToggle
+        hasDiagrams={hasDiagrams}
+        showDiagrams={showDiagrams}
+        onToggleDiagrams={onToggleDiagrams}
+      />
     </div>
   )
 }

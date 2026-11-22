@@ -40,6 +40,65 @@ const nameOf = (agent: string) =>
 /** Implement's Technical part: how the build shaped the code, one closed fold (Workflow model: Implement). */
 const PROGRAM_DESIGN = [{ title: "Program design", icon: SplitIcon }] as const
 
+function SlicesSection({
+  slices,
+  columns,
+  taskId,
+}: {
+  slices: NonNullable<ReturnType<typeof readableBuild>["view"]>["slices"]
+  columns?: NonNullable<ReturnType<typeof readableBuild>["view"]>["columns"]
+  taskId?: string
+}) {
+  const hasGraph = slices.length >= 2
+  const [sliceView, setSliceView] = useState<"board" | "graph">("board")
+  const [focusSlice, setFocusSlice] = useState<{ n: number; seq: number } | null>(null)
+  const showGraph = hasGraph && sliceView === "graph"
+  return (
+    <IconPart
+      id={`${sectionId("Slices")}-h`}
+      title="Slices"
+      icon={LayersIcon}
+      action={
+        hasGraph ? (
+          <Segmented
+            value={showGraph ? "graph" : "board"}
+            options={[
+              {
+                id: "board" as const,
+                label: "Board",
+                icon: <ListIcon className="size-3.5" aria-hidden="true" />,
+              },
+              {
+                id: "graph" as const,
+                label: "Stack graph",
+                icon: <WorkflowIcon className="size-3.5" aria-hidden="true" />,
+              },
+            ]}
+            onChange={setSliceView}
+            label="Slices view"
+            size="sm"
+          />
+        ) : undefined
+      }
+    >
+      {showGraph ? (
+        <StackGraph
+          slices={slices}
+          columns={columns}
+          taskId={taskId}
+          onSelect={(n) => setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))}
+          onOpenBoard={(n) => {
+            setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))
+            setSliceView("board")
+          }}
+        />
+      ) : (
+        <Board key={taskId ?? "static"} slices={slices} taskId={taskId} focusSlice={focusSlice} />
+      )}
+    </IconPart>
+  )
+}
+
 export function ImplementStepPage(props: StepPageProps) {
   const { task, document: incoming, sections: incomingSections, state, mode, live } = props
   const inNow = useStepsNow()
@@ -85,10 +144,6 @@ export function ImplementStepPage(props: StepPageProps) {
   )
   const stageTitle = stepTitleOf(task.stage)
   const built = view?.slices.every((s) => s.status === "done") === true
-  const hasGraph = (view?.slices.length ?? 0) >= 2
-  const [sliceView, setSliceView] = useState<"board" | "graph">("board")
-  const showGraph = hasGraph && sliceView === "graph"
-  const [focusSlice, setFocusSlice] = useState<{ n: number; seq: number } | null>(null)
 
   if ((view?.slices.length ?? 0) === 0 && decisions.length === 0 && mode !== "plain")
     return (
@@ -131,53 +186,11 @@ export function ImplementStepPage(props: StepPageProps) {
         core={
           <>
             {view !== undefined && view.slices.length > 0 ? (
-              <IconPart
-                id={`${sectionId("Slices")}-h`}
-                title="Slices"
-                icon={LayersIcon}
-                action={
-                  hasGraph ? (
-                    <Segmented
-                      value={showGraph ? "graph" : "board"}
-                      options={[
-                        {
-                          id: "board" as const,
-                          label: "Board",
-                          icon: <ListIcon className="size-3.5" aria-hidden="true" />,
-                        },
-                        {
-                          id: "graph" as const,
-                          label: "Stack graph",
-                          icon: <WorkflowIcon className="size-3.5" aria-hidden="true" />,
-                        },
-                      ]}
-                      onChange={setSliceView}
-                      label="Slices view"
-                      size="sm"
-                    />
-                  ) : undefined
-                }
-              >
-                {showGraph ? (
-                  <StackGraph
-                    slices={view.slices}
-                    columns={view.columns}
-                    taskId={mode === "live" ? task.id : undefined}
-                    onSelect={(n) => setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))}
-                    onOpenBoard={(n) => {
-                      setFocusSlice((old) => ({ n, seq: (old?.seq ?? 0) + 1 }))
-                      setSliceView("board")
-                    }}
-                  />
-                ) : (
-                  <Board
-                    key={task.id}
-                    slices={view.slices}
-                    taskId={mode === "live" ? task.id : undefined}
-                    focusSlice={focusSlice}
-                  />
-                )}
-              </IconPart>
+              <SlicesSection
+                slices={view.slices}
+                columns={view.columns}
+                taskId={mode === "live" ? task.id : undefined}
+              />
             ) : null}
             {limitsRecorded &&
               (limits.length > 0 ? (

@@ -14,6 +14,35 @@ type Input = {
 const identity = (file: WalkFile, since?: string | null) =>
   JSON.stringify([file.path, file.stamp ?? [file.additions, file.deletions], since ?? ""])
 
+function matchesEntry(entry: ReviewDiff | undefined, path: string, from?: string): boolean {
+  if (entry === undefined) return false
+  if (entry.name === path || entry.prevName === path) return true
+  if (from === undefined) return false
+  return entry.name === from || entry.prevName === from
+}
+
+function selectMatchedDiffs(
+  parsed: readonly ReviewDiff[],
+  file: WalkFile,
+  since?: string | null,
+): ReviewDiff[] {
+  const parts = since ? undefined : file.parts
+  const diffs = parsed.filter((entry) =>
+    parts?.length
+      ? parts.some((part) => matchesEntry(entry, part.path, part.from))
+      : matchesEntry(entry, file.path, file.from),
+  )
+  if (diffs.length === 0) throw new Error("The patch contains no matching file.")
+  const matched = parts?.length
+    ? diffs.length === parts.length &&
+      parts.every((part, index) => matchesEntry(diffs[index], part.path, part.from))
+    : diffs.length === 1
+  if (!matched) {
+    throw new Error("The task's file versions could not be matched. Refresh Review and try again.")
+  }
+  return diffs
+}
+
 class DiffReads {
   private cache = new Map<string, ReviewDiff[]>()
   private failures = new Map<string, string>()
@@ -83,28 +112,7 @@ class DiffReads {
       const patch = await load(file.path, controller.signal, file.stamp, since ?? undefined)
       if (controller.signal.aborted) return
       const parsed = parseReviewPatch(parse, patch).flatMap((entry) => entry.files)
-      const parts = since ? undefined : file.parts
-      const matches = (entry: ReviewDiff | undefined, path: string, from?: string) =>
-        entry !== undefined &&
-        (entry.name === path ||
-          entry.prevName === path ||
-          (from !== undefined && (entry.name === from || entry.prevName === from)))
-      const diffs = parsed.filter((entry) =>
-        parts?.length
-          ? parts.some((part) => matches(entry, part.path, part.from))
-          : matches(entry, file.path, file.from),
-      )
-      if (diffs.length === 0) throw new Error("The patch contains no matching file.")
-      if (
-        parts?.length
-          ? diffs.length !== parts.length ||
-            parts.some((part, index) => !matches(diffs[index], part.path, part.from))
-          : diffs.length !== 1
-      )
-        throw new Error(
-          "The task's file versions could not be matched. Refresh Review and try again.",
-        )
-      this.cache.set(key, diffs)
+      this.cache.set(key, selectMatchedDiffs(parsed, file, since))
     } catch (cause) {
       if (!controller.signal.aborted)
         this.failures.set(key, cause instanceof Error ? cause.message : String(cause))

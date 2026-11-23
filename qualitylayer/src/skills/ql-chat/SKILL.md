@@ -1,6 +1,6 @@
 ---
 name: ql-chat
-description: 'Start or continue a QualityLayer Chat when explicitly asked (e.g. "Using QualityLayer, chat about …"). Not for ordinary requests, product discussion, or workflows.'
+description: 'Start or continue a QualityLayer Chat when explicitly asked ("Using QualityLayer, chat about …"). Product discussion, ordinary software requests, and workflows do not activate Chat.'
 ---
 
 The binary: `{{QUALITYLAYER_BIN}}`

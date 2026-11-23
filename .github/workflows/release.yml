@@ -679,7 +679,7 @@ jobs:
     name: Build Pilot Darwin arm64
     permissions:
       contents: read
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 30
     needs: prepare-release
     if: needs.prepare-release.outputs.should_release == 'true'

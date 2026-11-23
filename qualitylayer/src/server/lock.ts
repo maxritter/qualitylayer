@@ -219,6 +219,37 @@ export async function waitForLock(ctx: Ctx, waitMs: number): Promise<Lock | null
   return null
 }
 
+/** Ephemeral Claude Code session vars that must not leak from a caller session into the long-lived Cockpit daemon. */
+const CLAUDE_SESSION_VARS = new Set([
+  "CLAUDECODE",
+  "CLAUDE_PID",
+  "CLAUDE_EFFORT",
+  "CLAUDE_PLUGIN_DATA",
+])
+const CLAUDE_PROXY_SESSION_VARS = new Set([
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+])
+
+/** Build the detached server's environment without ephemeral Claude Code child-session overrides. */
+export function serverEnv(ctx: Ctx, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const fromClaudeSession = (base.CLAUDECODE ?? "") !== ""
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(base)) {
+    if (value === undefined) continue
+    if (CLAUDE_SESSION_VARS.has(key) || key.startsWith("CLAUDE_CODE_")) continue
+    if (fromClaudeSession && CLAUDE_PROXY_SESSION_VARS.has(key)) continue
+    env[key] = value
+  }
+  env.HOME = ctx.env.get("HOME") ?? base.HOME ?? ""
+  env.QUALITYLAYER_HOME = ctx.home
+  return env
+}
+
 /**
  * Spawn the server and wait for its lock, `waitMs` at most; null when it never wrote one. Without a
  * `port` it takes the one the setting or QUALITYLAYER_PORT names.
@@ -239,11 +270,7 @@ export async function startServer(
       detached: true,
       windowsHide: true,
       stdio: "ignore",
-      env: {
-        ...process.env,
-        HOME: ctx.env.get("HOME") ?? process.env.HOME ?? "",
-        QUALITYLAYER_HOME: ctx.home,
-      },
+      env: serverEnv(ctx),
     })
     child.unref()
   } catch {

@@ -151,7 +151,11 @@ export async function askClaude(
   const cwd = join(ctx.home, "limits", "claude-usage")
   if (executable === null) return unanswered()
   // An API key in the environment is the sign-in: it has no plan, so there is nothing to run.
-  if (KEY_VARIABLES.some((name) => (ctx.env.get(name) ?? "") !== "")) return noPlan(CLAUDE_NO_PLAN)
+  // Ignore session-scoped proxy tokens inherited from a running Claude Code child session.
+  const inheritedProxySession =
+    (ctx.env.get("CLAUDECODE") ?? "") !== "" && (ctx.env.get("ANTHROPIC_BASE_URL") ?? "") !== ""
+  if (!inheritedProxySession && KEY_VARIABLES.some((name) => (ctx.env.get(name) ?? "") !== ""))
+    return noPlan(CLAUDE_NO_PLAN)
   await ctx.fs.mkdir(cwd)
   const configDir = ctx.env.get("CLAUDE_CONFIG_DIR")
   const env = {

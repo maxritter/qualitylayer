@@ -1,6 +1,6 @@
 ---
 name: ql-workflow
-description: 'Use when the person asks QualityLayer or QL to plan, implement, verify, review or continue their software task, address workflow feedback, or recover after an agent stops. Also use once when they ask you to plan or design a feature or fix without naming it, to offer it (see Offer). Understand natural wording, any language and clear spelling variants. Product discussion, quoted examples and ordinary coding requests do not start a workflow. Artifacts use ql-artifact; peer sessions use ql-peer; administration uses ql-manage.'
+description: 'Plan, implement, verify, review, or continue a software task with QualityLayer or QL, address workflow feedback, or recover a stopped agent; also offer once on unnamed plan/design requests. Not for artifacts, peers, or admin.'
 ---
 
 QualityLayer is commercial software. These workflow instructions are covered by the QualityLayer licence. Source inspection and contributions do not grant complete product build or standalone distribution rights.

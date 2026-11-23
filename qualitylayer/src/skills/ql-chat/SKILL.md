@@ -1,6 +1,6 @@
 ---
 name: ql-chat
-description: 'Start or continue a QualityLayer Chat in Claude Code or Codex when the person explicitly asks for it, for example "Using QualityLayer, chat about …". Product discussion, quoted examples and ordinary software requests do not activate Chat. Use ql-workflow for the three-step workflow (Plan, Implement, Verify).'
+description: 'Start or continue a QualityLayer Chat when explicitly asked (e.g. "Using QualityLayer, chat about …"). Not for ordinary requests, product discussion, or workflows.'
 ---
 
 The binary: `{{QUALITYLAYER_BIN}}`

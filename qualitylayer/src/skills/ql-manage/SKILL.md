@@ -1,6 +1,6 @@
 ---
 name: ql-manage
-description: 'Operate QualityLayer or QL without starting a coding workflow: find, inspect or oversee tasks, saved lessons, settings, installation, updates and diagnostics. Use for natural-language requests in any language about these operations. Workflow execution uses ql-workflow, artifacts use ql-artifact, and contact with another agent session uses ql-peer.'
+description: 'Operate QualityLayer without starting a workflow: find or inspect tasks, saved lessons, settings, installation, updates, and diagnostics. Not for artifacts or peers.'
 ---
 
 QualityLayer is commercial software. These workflow instructions are covered by the QualityLayer licence. Source inspection and contributions do not grant complete product build or standalone distribution rights.

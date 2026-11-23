@@ -1,6 +1,6 @@
 ---
 name: ql-artifact
-description: 'QualityLayer artifacts: use when asked to create, open, edit, review, rename, copy, archive or delete an artifact in QualityLayer or QL, or address feedback on one. Includes showing the current artifact or a specific page/section in the app or browser. Handles standalone artifacts and workflow drafts, in any language. An artifact operation does not start a planning/build workflow.'
+description: 'Create, open, edit, review, rename, copy, archive, or delete QualityLayer artifacts and address artifact feedback (standalone or workflow drafts). Does not start a coding workflow.'
 ---
 
 QualityLayer is commercial software. These workflow instructions are covered by the QualityLayer licence. Source inspection and contributions do not grant complete product build or standalone distribution rights.

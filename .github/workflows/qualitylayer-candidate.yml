@@ -83,8 +83,8 @@ jobs:
           qualitylayer/tests/helpers
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
-        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip'
+        bun-version: 1.4.5
+        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-windows-x64.zip'
           || '' }}"
         no-cache: true
     - name: Install git-crypt
@@ -199,7 +199,7 @@ jobs:
       run: bash .github/workflows/scripts/setup-git-crypt.sh
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"
@@ -321,7 +321,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Install dependencies
       working-directory: qualitylayer
@@ -468,7 +468,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Toolchain for the App (Rust, Tauri, the system libraries)
       uses: "./.github/actions/app-toolchain"
@@ -617,7 +617,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Download the compiled command lines
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -720,7 +720,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Download exact release artifacts
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -899,8 +899,8 @@ jobs:
           qualitylayer/tests/helpers
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
-        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-windows-x64.zip'
+        bun-version: 1.4.5
+        bun-download-url: "${{ runner.os == 'Windows' && 'https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-windows-x64.zip'
           || '' }}"
         no-cache: true
     - if: runner.os != 'Windows'
@@ -997,7 +997,7 @@ jobs:
       run: bash .github/workflows/scripts/setup-git-crypt.sh
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/51e9c97aeb5bc217cf374406fbfdcc8d8bc7bdb703e9d245c3759db25be6381c.sh"

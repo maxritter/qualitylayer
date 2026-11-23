@@ -1,6 +1,6 @@
 ---
 name: ql-quality
-description: Review code health (complexity, duplication, maintainability) and run security scans (secrets, vulnerable or malicious dependencies, unsafe GitHub workflows, risky code) with QualityLayer's local tools; inspect findings, diagnose missing checks or configure automatic feedback. This does not start a planning/build workflow.
+description: "Review code health and run local security scans (secrets, dependencies, workflows, risky code) with QualityLayer's local tools. This does not start a planning/build workflow."
 ---
 
 QualityLayer is commercial software. These workflow instructions are covered by the QualityLayer licence. Source inspection and contributions do not grant complete product build or standalone distribution rights.

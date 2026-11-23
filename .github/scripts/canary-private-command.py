@@ -341,7 +341,7 @@ print(f"    at PRIVATE_FUNCTION ({root / 'qualitylayer' / file}:5:2)")
 sys.exit(1)
 '''
     modes = ["valid", "unknown", "raw-only", "line", "name", "file", "entity", "oversize", "wrong-run", "symlink", "hardlink", "stale", "count", "passing-retry", "process-only", "source-drift"]
-    if shutil.which("bun") and subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.4":
+    if shutil.which("bun") and subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.5":
         modes.append("native")
     expected_locations = {
         "valid": [{"file": file, "line": 3, "kind": "assertion"}, {"file": file, "line": 7, "kind": "timeout"}],
@@ -363,7 +363,7 @@ sys.exit(1)
 
 def cockpit_runner_case(root, workspace, file):
     """Exercise the actual sealed runner without building or running product code."""
-    assert subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.4"
+    assert subprocess.check_output(["bun", "--version"], text=True).strip() == "1.4.5"
     package = workspace / "qualitylayer"
     scripts = package / "scripts"
     scripts.mkdir()

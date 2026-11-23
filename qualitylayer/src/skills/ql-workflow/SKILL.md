@@ -1,6 +1,6 @@
 ---
 name: ql-workflow
-description: 'Plan, implement, verify, review, or continue a task with QualityLayer or QL in any language, handle feedback, or recover a stopped agent; offer once on unnamed plan requests. Ordinary requests do not start a workflow; not for artifacts, peers, or admin.'
+description: 'Plan, implement, verify, review, or continue a task with QualityLayer or QL in any language, handle feedback, or recover a stopped agent; offer once when asked to plan without naming it. Ordinary requests do not start a workflow; not for artifacts, peers, or admin.'
 ---
 
 QualityLayer is commercial software. These workflow instructions are covered by the QualityLayer licence. Source inspection and contributions do not grant complete product build or standalone distribution rights.

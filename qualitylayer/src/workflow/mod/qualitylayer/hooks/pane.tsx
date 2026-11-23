@@ -1,27 +1,20 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import { atom, read } from 'claude-code'
+import type { Board, BoardPartKey, Snapshot } from '../types'
 import { bandLine, building } from './band-line'
 import { gateReady, gateWords, planReviewWords, stageLabel } from './band-model'
-import { drawAllTasks, type Kit } from './board'
-import { drawRow, paletteOf, toneOf } from './palette'
+import { type BoardActions, drawAllTasks, type Kit } from './board'
+import { drawRow, toneOf } from './palette'
 import { drawQualitySection, drawReviewAndHelpers, drawSlicesSection, drawTrackSection } from './pane-sections'
 
-const snapshot = atom({ plugin: 'qualitylayer', key: 'snapshot' } as const, null)
-const board = atom({ plugin: 'qualitylayer', key: 'board' } as const, null)
-const folds = atom({ plugin: 'qualitylayer', key: 'folds' } as const, [])
-const error = atom({ plugin: 'qualitylayer', key: 'error' } as const, null)
-const theme = atom({ plugin: 'qualitylayer', key: 'theme' } as const, null)
-
-export async function renderPane($: any, e: any) {
-  const ui = $.ui.resolve(e) as any
+export function drawPaneContent(
+  kit: Kit,
+  state: { now: Snapshot | null; failed: string | null; others: Board | null; folded: BoardPartKey[] },
+  actions: BoardActions,
+) {
+  const { ui, palette, columns } = kit
   const { Box, Text, Markdown } = ui
-  const now = await read($, snapshot)
-  const failed = await read($, error)
-  const palette = paletteOf(await read($, theme))
-  const others = await read($, board)
-  const columns = typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : 80
-  const kit: Kit = { ui, palette, clock: await $.clock.now(), surface: e.surface, columns }
-  const allTasks = others === null ? null : drawAllTasks($, kit, others, await read($, folds))
+  const { now, failed, others, folded } = state
+  const allTasks = others === null ? null : drawAllTasks(actions, kit, others, folded)
   if (failed !== null) {
     return allTasks === null ? drawRow(ui, palette.failed, failed) : <Box flexDirection="column">{drawRow(ui, palette.failed, failed)}{allTasks}</Box>
   }

@@ -1,16 +1,7 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import { atom, read } from 'claude-code'
-import type { Snapshot } from '../types'
-import { openPane, sessionId } from './atoms'
 import { computeBandLayout, isBarShown, type BandArgs } from './band-layout'
-import { bandLine } from './band-line'
 import { buildCount } from './band-model'
-import { cellsOf, drawBar, paletteOf, toneOf, type Palette, type Tone } from './palette'
-
-const snapshot = atom({ plugin: 'qualitylayer', key: 'snapshot' } as const, null)
-const error = atom({ plugin: 'qualitylayer', key: 'error' } as const, null)
-const theme = atom({ plugin: 'qualitylayer', key: 'theme' } as const, null)
-const progressCue = atom({ plugin: 'qualitylayer', key: 'progressCue' } as const, null)
+import { cellsOf, drawBar, toneOf, type Palette, type Tone } from './palette'
 
 const renderFailedBand = (ui: any, palette: Palette, width: number, controlWidth: number, button: unknown) => {
   const { Box, Text } = ui
@@ -48,7 +39,7 @@ const renderBandLineText = (
 }
 
 /** The band owns its explicit spaces, so the kit can inspect its complete single row. */
-function drawBand($: any, args: BandArgs) {
+export function drawBand(onOpen: () => void, args: BandArgs) {
   const { ui, palette, line, snap, width, cue, isWorking, failed = false } = args
   const { Box, Text, Button } = ui
   const turn = line.turn ?? (snap?.task.stage === 'plan' && isWorking ? 'agents' : null)
@@ -56,7 +47,7 @@ function drawBand($: any, args: BandArgs) {
   const details = snap !== null || failed
   const control = details ? 'd: Details' : '/ql answer'
   const controlWidth = cellsOf(control)
-  const button = <Button key="ql-details" label="Details" plain dimColor hotkey="d" onPress={() => openPane($)} />
+  const button = <Button key="ql-details" label="Details" plain dimColor hotkey="d" onPress={onOpen} />
   if (failed) return renderFailedBand(ui, palette, width, controlWidth, button)
   const count = snap === null ? { done: 0, total: 0 } : buildCount(snap)
   const bar = isBarShown(snap, turn, count)
@@ -70,28 +61,4 @@ function drawBand($: any, args: BandArgs) {
       </Box>
     </Box>
   )
-}
-
-export async function renderAbovePrompt($: any, e: any, next: any) {
-  if (e.props.hasSurvey) return next(e)
-  const now = await read($, snapshot)
-  const failed = await read($, error)
-  const cue = await read($, progressCue)
-  const ui = $.ui.resolve(e) as any
-  const palette = paletteOf(await read($, theme))
-  const width = typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : 80
-  const withBelow = async (mine: unknown) => {
-    const below = await next(e)
-    return below === null || below === undefined ? mine : (
-      <ui.Box flexDirection="column">
-        {mine}
-        {below}
-      </ui.Box>
-    )
-  }
-  if (failed !== null) {
-    return withBelow(drawBand($, { ui, palette, line: { text: 'Status unavailable', extras: [], turn: 'failed' }, snap: null, width, cue: false, isWorking: false, failed: true }))
-  }
-  if (now === null || (now as Snapshot & { boundSession?: string }).boundSession !== await sessionId($)) return next(e)
-  return withBelow(drawBand($, { ui, palette, line: bandLine(now), snap: now, width, cue: cue?.task === now.task.id, isWorking: e.props.isWorking }))
 }

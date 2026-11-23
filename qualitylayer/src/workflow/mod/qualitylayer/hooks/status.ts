@@ -1,16 +1,7 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import { atom, read, update } from 'claude-code'
 import type { Timer } from 'claude-code'
 import type { Snapshot } from '../types'
-import { sessionId, themeSetting } from './atoms'
 import { buildCount, gateReady, QUALITY, waitingWords } from './band-model'
-
-const snapshot = atom({ plugin: 'qualitylayer', key: 'snapshot' } as const, null)
-const error = atom({ plugin: 'qualitylayer', key: 'error' } as const, null)
-const theme = atom({ plugin: 'qualitylayer', key: 'theme' } as const, null)
-const progressCue = atom({ plugin: 'qualitylayer', key: 'progressCue' } as const, null)
-
-const STATUS_TIMEOUT_MS = 2000
 
 export type CueControl = {
   enabled: boolean
@@ -40,34 +31,7 @@ const validReport = (report: any): boolean => {
   return [validTaskShape(report.task), validReportCollections(report), validReportOptionals(report)].every(Boolean)
 }
 
-async function clearCue($: any, cues: CueControl): Promise<void> {
-  cues.timer?.cancel()
-  cues.timer = null
-  await update($, progressCue, () => null)
-}
-
-async function runStatusCommand($: any, bin: string, id: string, cues: CueControl): Promise<any | null> {
-  let deadline: Timer | null = null
-  const timedOut = Symbol()
-  const timeout = new Promise<typeof timedOut>(resolve => {
-    deadline = $.clock.after(STATUS_TIMEOUT_MS, () => resolve(timedOut))
-  })
-  let run: any
-  try {
-    run = await Promise.race([$.process.run([bin, 'status', '--json', '--session', id]), timeout])
-  } finally {
-    deadline?.cancel()
-  }
-  if (run === timedOut) {
-    if (cues.lastGoodSession !== id || await sessionId($) !== id) throw new Error('status timed out')
-    cues.lastGoodSession = null
-    return null
-  }
-  if (run.exitCode !== 0) throw new Error(`exit ${run.exitCode}`)
-  return run
-}
-
-function parseStatusReport(stdout: string): Snapshot | null {
+export function parseStatusReport(stdout: string): Snapshot | null {
   let report: (Snapshot & { task: Snapshot['task'] | null }) | null
   try {
     report = JSON.parse(stdout)
@@ -89,73 +53,27 @@ const isSameImplementBuild = (
   return priorCount?.total === nextCount?.total && (nextCount?.total ?? 0) > 0
 }
 
-async function syncProgressCue(
-  $: any,
+export function progressCueAction(
   cues: CueControl,
   state: { before: Snapshot | null; next: Snapshot | null; wasFailed: boolean },
-): Promise<void> {
+): 'clear' | 'keep' | 'bump' {
   const priorCount = state.before === null ? null : buildCount(state.before)
   const nextCount = state.next === null ? null : buildCount(state.next)
   const canCue = cues.enabled && cues.ready && !state.wasFailed
   const sameBuild = isSameImplementBuild(state.before, state.next, priorCount, nextCount)
-  if (!canCue || !sameBuild || (nextCount?.done ?? 0) < (priorCount?.done ?? 0)) {
-    await clearCue($, cues)
-    return
-  }
-  if ((nextCount?.done ?? 0) <= (priorCount?.done ?? 0)) return
-  cues.timer?.cancel()
-  const version = ++cues.version
-  await update($, progressCue, () => ({ task: state.next!.task.id, version }))
-  cues.timer = $.clock.after(900, () => {
-    void update($, progressCue, current => (current?.version === version ? null : current))
-  })
+  if (!canCue || !sameBuild || (nextCount?.done ?? 0) < (priorCount?.done ?? 0)) return 'clear'
+  return (nextCount?.done ?? 0) > (priorCount?.done ?? 0) ? 'bump' : 'keep'
 }
 
-function emitStatusToasts($: any, before: Snapshot | null, next: Snapshot): void {
+export function statusToastMessages(before: Snapshot | null, next: Snapshot): string[] {
+  const messages: string[] = []
   const gateChanged = before === null || !gateReady(before) || next.gate?.target !== before.gate?.target
   if (gateReady(next) && gateChanged) {
-    $.ui.toast(`QualityLayer: ${waitingWords(next)} in the App`)
+    messages.push(`QualityLayer: ${waitingWords(next)} in the App`)
   }
   const fixing = next.quality.find(row => row.state === 'fixing')
   if (fixing !== undefined && fixing.open !== before?.quality.find(row => row.step === fixing.step)?.open) {
-    $.ui.toast(`QualityLayer: ${(QUALITY[fixing.step] ?? fixing.step).toLowerCase()} found ${fixing.open ?? 0} to fix`)
+    messages.push(`QualityLayer: ${(QUALITY[fixing.step] ?? fixing.step).toLowerCase()} found ${fixing.open ?? 0} to fix`)
   }
-}
-
-async function refreshFromCli($: any, bin: string, cues: CueControl): Promise<void> {
-  const id = await sessionId($)
-  if (id === '') throw new Error('session id unavailable')
-  const run = await runStatusCommand($, bin, id, cues)
-  if (run === null) return
-  const next = parseStatusReport(run.stdout)
-  const before = await read($, snapshot)
-  const wasFailed = (await read($, error)) !== null
-  await syncProgressCue($, cues, { before, next, wasFailed })
-  const setting = await themeSetting($)
-  if (setting !== (await read($, theme))) await update($, theme, () => setting)
-  await update($, snapshot, () => (next === null ? null : { ...next, boundSession: id }))
-  await update($, error, () => null)
-  cues.ready = true
-  cues.lastGoodSession = id
-  if (next !== null) emitStatusToasts($, before, next)
-}
-
-/** Ask the CLI and draw the answer; whatever goes wrong draws "qualitylayer status failed", never a rejection. */
-export async function refresh($: any, bin: string, cues: CueControl): Promise<void> {
-  if (cues.refreshing) return
-  cues.refreshing = true
-  try {
-    await refreshFromCli($, bin, cues)
-  } catch (failure) {
-    cues.lastGoodSession = null
-    try {
-      await clearCue($, cues)
-      await update($, snapshot, () => null)
-      await update($, error, () => `qualitylayer status failed (${String((failure as Error)?.message ?? failure)})`)
-    } catch {
-      // nothing left to draw it with
-    }
-  } finally {
-    cues.refreshing = false
-  }
+  return messages
 }

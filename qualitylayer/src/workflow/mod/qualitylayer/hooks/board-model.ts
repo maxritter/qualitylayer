@@ -1,16 +1,7 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import { atom, read, update } from 'claude-code'
 import type { Board, BoardPart, BoardPartKey, BoardRow } from '../types'
-import { runFor } from './atoms'
+import { PR_STALE_MS } from './atoms'
 import { oneLine } from './palette'
-
-const snapshot = atom({ plugin: 'qualitylayer', key: 'snapshot' } as const, null)
-const board = atom({ plugin: 'qualitylayer', key: 'board' } as const, null)
-
-const BOARD_TIMEOUT_MS = 10_000
-/** A pull request record older than the server's poll is read again in the background, at most this often. */
-const PR_STALE_MS = 120_000
-const PR_READ_TIMEOUT_MS = 60_000
 
 /** The board's reads: one at a time, and the last background pull request read. */
 export type BoardControl = { reading: boolean; prReading: boolean; prReadAt: number }
@@ -61,35 +52,8 @@ export function boardFrom(raw: any): Board | null {
 const PARTS: BoardPartKey[] = ['needs', 'running', 'prs']
 const boardRows = (now: Board): BoardRow[] => PARTS.flatMap(key => now[key].rows)
 
-/** Read every other task on its own clock; a slow or failed read leaves the last board as it was. */
-export async function refreshBoard($: any, bin: string, control: BoardControl): Promise<void> {
-  if (control.reading) return
-  control.reading = true
-  try {
-    const own = (await read($, snapshot))?.task.id
-    const argv = [bin, 'status', '--json', '--board', ...(own ? ['--except', own] : [])]
-    const run = await runFor($, argv, BOARD_TIMEOUT_MS)
-    if (run.exitCode !== 0) return
-    const next = boardFrom(JSON.parse(run.stdout))
-    if (next === null) return
-    await update($, board, () => next)
-    const now = await $.clock.now()
-    const stale = boardRows(next).some(row => row.pr !== null && now - row.pr.readAt >= PR_STALE_MS)
-    if (stale && !control.prReading && now - control.prReadAt >= PR_STALE_MS) {
-      control.prReading = true
-      control.prReadAt = now
-      void runFor($, [bin, 'pr', 'read', '--stale'], PR_READ_TIMEOUT_MS)
-        .catch(() => undefined)
-        .finally(() => {
-          control.prReading = false
-        })
-    }
-  } catch {
-    // The board keeps what it last showed; the next read tries again.
-  } finally {
-    control.reading = false
-  }
-}
+export const hasStalePr = (next: Board, now: number): boolean =>
+  boardRows(next).some(row => row.pr !== null && now - row.pr.readAt >= PR_STALE_MS)
 
 /** How long ago, in a few cells: "now", "12m", "3h", "2d". */
 export const age = (ms: number): string => {

@@ -1,40 +1,7 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import type { Timer } from 'claude-code'
-
 export const PANE = 'ql-progress'
-
-export async function openPane($: any): Promise<void> {
-  await $.ui.open({ id: PANE, title: 'QualityLayer' })
-}
-
-/** This session's id, read each time: it changes after /clear, /resume and /branch. Empty when Claude Code cannot say. */
-export async function sessionId($: any): Promise<string> {
-  try {
-    return String((await $.session.id()) ?? '')
-  } catch {
-    return ''
-  }
-}
-
-/** The setting, read each refresh: the person may switch the theme while a task runs. */
-export async function themeSetting($: any): Promise<string | null> {
-  try {
-    const row = (await $.config.list()).find((one: any) => one.key === 'theme')
-    return typeof row?.value === 'string' ? row.value : null
-  } catch {
-    return null
-  }
-}
-
-/** A run of the CLI that gives up after `ms`; its late answer is dropped. */
-export async function runFor($: any, argv: string[], ms: number): Promise<any> {
-  let deadline: Timer | null = null
-  const timeout = new Promise<never>((_resolve, reject) => {
-    deadline = $.clock.after(ms, () => reject(new Error('timed out')))
-  })
-  try {
-    return await Promise.race([$.process.run(argv), timeout])
-  } finally {
-    deadline?.cancel()
-  }
-}
+export const STATUS_TIMEOUT_MS = 2000
+export const BOARD_TIMEOUT_MS = 10_000
+/** A pull request record older than the server's poll is read again in the background, at most this often. */
+export const PR_STALE_MS = 120_000
+export const PR_READ_TIMEOUT_MS = 60_000

@@ -1,13 +1,14 @@
 // @ts-nocheck: typed by Claude Code's own declarations; `claude plugin validate` and `claude plugin test` check it.
-import { atom, update } from 'claude-code'
 import type { Board, BoardPartKey, BoardRow } from '../types'
 import { age } from './board-model'
 import { drawBar, type Palette } from './palette'
 
-const folds = atom({ plugin: 'qualitylayer', key: 'folds' } as const, [])
-
-/** What every row of All tasks draws with. `$` is passed beside it: the engine keeps it out of objects. */
+/** What every row of All tasks draws with. */
 export type Kit = { ui: any; palette: Palette; clock: number; surface: unknown; columns: number }
+export type BoardActions = {
+  onToggleFold: (key: BoardPartKey) => void
+  onCopy: (command: string) => void
+}
 
 const ago = (kit: Kit, at: number | null): string => (at === null ? '' : age(kit.clock - at))
 
@@ -49,16 +50,7 @@ const rowLines = (kit: Kit, spec: RowSpec) => {
 
 const dimRight = ({ ui }: Kit, words: string) => <ui.Box flexShrink={0} paddingLeft={2}><ui.Text dimColor>{words}</ui.Text></ui.Box>
 
-async function copyCommand($: any, { surface }: Kit, command: string): Promise<void> {
-  try {
-    const copied = await $.ui.copy({ text: command, surface })
-    $.ui.toast(copied?.isCopied === false ? `Could not copy ${command}` : `Copied ${command}`)
-  } catch {
-    $.ui.toast(`Could not copy ${command}`)
-  }
-}
-
-function needRow($: any, kit: Kit, row: BoardRow) {
+function needRow(actions: BoardActions, kit: Kit, row: BoardRow) {
   const { Box, Text, Button } = kit.ui
   const ink = kit.palette.you.ink
   const words = (
@@ -69,7 +61,7 @@ function needRow($: any, kit: Kit, row: BoardRow) {
   )
   const resume = row.command === null ? null : (
     <Box flexShrink={0} paddingLeft={2}>
-      <Button key={`ql-copy-${row.id}`} label="⧉ resume" plain dimColor onPress={() => copyCommand($, kit, row.command as string)} />
+      <Button key={`ql-copy-${row.id}`} label="⧉ resume" plain dimColor onPress={() => actions.onCopy(row.command as string)} />
     </Box>
   )
   return rowLines(kit, {
@@ -129,27 +121,26 @@ const PARTS_DRAWN: { key: BoardPartKey; title: string; ink: (palette: Palette) =
   { key: 'prs', title: 'Pull requests', ink: () => undefined },
 ]
 
-function drawBoardRow($: any, kit: Kit, key: BoardPartKey, row: BoardRow) {
-  if (key === 'needs') return needRow($, kit, row)
+function drawBoardRow(actions: BoardActions, kit: Kit, key: BoardPartKey, row: BoardRow) {
+  if (key === 'needs') return needRow(actions, kit, row)
   return key === 'running' ? runRow(kit, row) : prRow(kit, row)
 }
 
 /** One part: its heading (which folds it), its rows and how many more there are. */
-function drawPart($: any, kit: Kit, now: Board, part: (typeof PARTS_DRAWN)[number], isFolded: boolean) {
+function drawPart(actions: BoardActions, kit: Kit, now: Board, part: (typeof PARTS_DRAWN)[number], isFolded: boolean) {
   const { Box, Text, Button } = kit.ui
   const { rows, count } = now[part.key]
-  const toggle = () => update($, folds, list => (list.includes(part.key) ? list.filter(k => k !== part.key) : [...list, part.key]))
   return (
     <Box key={`ql-part-${part.key}`} flexDirection="column" marginTop={1}>
-      <Button key={`ql-fold-${part.key}`} label={`${isFolded ? '▸' : '▾'} ${part.title} · ${count}`} plain onPress={toggle} />
-      {isFolded ? null : rows.map(row => drawBoardRow($, kit, part.key, row))}
+      <Button key={`ql-fold-${part.key}`} label={`${isFolded ? '▸' : '▾'} ${part.title} · ${count}`} plain onPress={() => actions.onToggleFold(part.key)} />
+      {isFolded ? null : rows.map(row => drawBoardRow(actions, kit, part.key, row))}
       {!isFolded && count > rows.length ? <Text dimColor>{`  +${count - rows.length} more`}</Text> : null}
     </Box>
   )
 }
 
 /** The pane's All tasks: Needs you, Running and Pull requests, three rows each, every heading folds. */
-export function drawAllTasks($: any, kit: Kit, now: Board, folded: BoardPartKey[]) {
+export function drawAllTasks(actions: BoardActions, kit: Kit, now: Board, folded: BoardPartKey[]) {
   const { Box, Text, Link } = kit.ui
   const shown = PARTS_DRAWN.filter(part => now[part.key].count > 0)
   return (
@@ -159,7 +150,7 @@ export function drawAllTasks($: any, kit: Kit, now: Board, folded: BoardPartKey[
         {now.home !== null && Link !== undefined ? <Link href={now.home} label="Home ↗" /> : null}
       </Box>
       {shown.length === 0 ? <Text dimColor>Nothing needs you</Text> : null}
-      {shown.map(part => drawPart($, kit, now, part, folded.includes(part.key)))}
+      {shown.map(part => drawPart(actions, kit, now, part, folded.includes(part.key)))}
     </Box>
   )
 }

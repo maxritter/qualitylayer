@@ -15,7 +15,7 @@
     ".github/scripts/commit-serial.sh": "124268f3e079ca5ea522e9196f893e166544e88cac06d6d465e9363df1d18d94",
     ".github/scripts/refresh-shared-index.sh": "e9205d0488520979f2efb7241c04c8aff9b4d89e7fd661b06b0e0473271af0c8",
     ".github/scripts/release-notes.sh": "bb98c5eb8dc84f5b0df27c5a8c82c5b224b44cc76a11495b8e6d5df8973158ee",
-    ".github/scripts/release-private-command.py": "d33f3d81b3a2f63a427fee2f1f95226203deed50a1da83013789108e8a4444be",
+    ".github/scripts/release-private-command.py": "c32fd73d6a56ff014c2fffe4df865dccfe6ebec604a8d3d951eb0c5c46b79a87",
     ".github/scripts/release_private_cockpit.py": "682c653e5e3e3a7c530a26e0584690ec94545eb93adee0f9ddd63c264a5c51de",
     ".github/scripts/release_private_metadata.py": "73b3933e07e23f50cfed991efe85019f8910a2e1a7b104dbc0957fa63c053580",
     ".github/scripts/release_private_process.py": "2245b7a14d014089d1177eaa003bca586059a1685f1892f866d0f777b57c8fbe",

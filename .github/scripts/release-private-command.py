@@ -55,7 +55,7 @@ SIGNING_STAGES = {
     "setup.ps1": (
         "43b3e8db1fcc5b6a9d93036054ffd1038a35faa7febd2734ecee9df728e52990",
         "",
-        {"GITHUB_ENV": {"QUALITYLAYER_WINDOWS_SIGNING_COMMAND": "windows-sign-command"}},
+        {"GITHUB_ENV": {"QUALITYLAYER_WINDOWS_SIGN_COMMAND": "windows-sign-command"}},
     ),
 }
 TRUSTED_SIGNING_WORKFLOWS = (

@@ -1,6 +1,6 @@
 {
   "publicFiles": {
-    ".gitattributes": "f0c58aca25fe2d051562ca66f28390ba8761cdfcf07b02cafbe71811743ad162",
+    ".gitattributes": "b1b18488bf39bbd75f5ea89c01fef75e62bfbb876f6e1cfc26a7ff52ec950a3d",
     ".github/ISSUE_TEMPLATE/bug_report.md": "e5cf52ae0c128b0a993d5a486302cc452f559fef2d27fb7c3d5f4b58cb47e5be",
     ".github/ISSUE_TEMPLATE/config.yml": "1f103c6a9dd07cd13a9a6f17ace6b813f47747eb9cb7e00488cb2073caaf91bb",
     ".github/ISSUE_TEMPLATE/feature_request.md": "439282284ccc5dfead99aa040a6490cd92710afa6d45f065c75f6ff23e3465e9",
@@ -865,6 +865,9 @@
     "qualitylayer/src/core/plan-export.ts": "3729ca4ca231e1b99a871d2d283c799ce46621adbb180073355b4437c68f7714",
     "qualitylayer/src/core/planning-comments.ts": "70720d3a45cb9290b112c7fa92f6d05603d9e5a74a0b947787924049be7b0260",
     "qualitylayer/src/core/planning-wait.ts": "b961ec2a4aa206420c3798fafef992b084c429deb1d234b334fccc995540d9c3",
+    "qualitylayer/src/core/platform-process.ts": "403473a1457901b3e708e5b0c31106e25b50ef25f419b4788e0f678ba437db48",
+    "qualitylayer/src/core/platform-security.ts": "c631cf7d4a3a6273a5d41bd73e58688cb4cba3e2ed0960b9849ab219654fdbe0",
+    "qualitylayer/src/core/platform-spawn.ts": "4eb532722391d0f7a662f653416d880dd91f21c130316352dd1af3f5aecfe46d",
     "qualitylayer/src/core/platform-windows.ts": "0fd04b00634d40908e3acd50b4220e5178de45189ed6c76118ad4004f9076e45",
     "qualitylayer/src/core/platform.ts": "f47a5d9ff110e68ddc6c01026e3c57b1d08fc6fd368165302df2a48caaf922d2",
     "qualitylayer/src/core/platform/environment.ts": "38895806325dde46c9dd7253dc7713ee90880f1ba4d2c6c20a5a72f15cdb6ae6",

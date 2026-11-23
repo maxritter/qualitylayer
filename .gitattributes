@@ -614,6 +614,9 @@ qualitylayer/src/core/plan-export-picture.ts !filter !diff
 qualitylayer/src/core/plan-export.ts !filter !diff
 qualitylayer/src/core/planning-comments.ts !filter !diff
 qualitylayer/src/core/planning-wait.ts !filter !diff
+qualitylayer/src/core/platform-process.ts !filter !diff
+qualitylayer/src/core/platform-security.ts !filter !diff
+qualitylayer/src/core/platform-spawn.ts !filter !diff
 qualitylayer/src/core/platform-windows.ts !filter !diff
 qualitylayer/src/core/platform.ts !filter !diff
 qualitylayer/src/core/platform/environment.ts !filter !diff

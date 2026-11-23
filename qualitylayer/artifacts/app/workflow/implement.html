@@ -123,6 +123,41 @@ details.tfold > summary { display: inline-flex; align-items: center; gap: 6px; m
 details.tfold > summary::-webkit-details-marker { display: none; }
 details.tfold[open] > summary { margin-bottom: 12px; }
 details.tfold[open] > summary .chev { transform: rotate(90deg); }
+/* 22 Nov: Board | Stack graph segmented control and interactive left-to-right Stack graph. */
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--ql-border); border-radius: 8px; background: var(--ql-bg); }
+.seg button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--ql-text-muted); font: 500 12.5px var(--font-sans); cursor: pointer; }
+.seg button:hover { color: var(--ql-text); }
+.seg button[aria-checked="true"] { background: var(--ql-surface-2, var(--ql-surface)); box-shadow: inset 0 0 0 1px var(--ql-border); color: var(--ql-text); }
+.bmeta { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; font-size: 11.5px; color: var(--ql-text-dim); font-weight: 400; }
+.bmeta .dep { padding: 1px 7px; border: 1px solid var(--ql-border); border-radius: 999px; color: var(--ql-text-muted); }
+.bdiff { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; margin-left: 6px; border: 1px solid var(--ql-border); border-radius: 6px; background: transparent; color: var(--ql-text-muted); font: 500 11.5px var(--font-sans); cursor: pointer; }
+.bdiff:hover { color: var(--ql-text); border-color: var(--ql-border-strong); }
+.sg-wrap { border: 1px solid var(--ql-border); border-radius: 10px; background: var(--ql-bg-sunken); overflow: hidden; }
+.sg-scroll { overflow-x: auto; padding: 14px; }
+.sg-canvas { position: relative; display: grid; grid-template-columns: repeat(3, 210px); gap: 28px; align-items: start; min-width: 686px; }
+.sg-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.sg-edges path { fill: none; stroke: var(--ql-border-strong); stroke-width: 1.5; opacity: 0.55; transition: stroke 0.14s, opacity 0.14s; }
+.sg-edges path.hi { stroke: var(--ql-accent); stroke-width: 2; opacity: 1; }
+.sg-wave { display: grid; gap: 10px; align-content: start; position: relative; z-index: 1; }
+.sg-wh { font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ql-text-dim); margin: 0 0 2px; }
+.sg-node { display: grid; gap: 5px; text-align: left; padding: 10px 12px; border: 1px solid var(--ql-border); border-radius: 8px; background: var(--ql-surface); color: var(--ql-text); cursor: pointer; font: inherit; transition: border-color 0.14s, opacity 0.14s; }
+.sg-node:hover { border-color: var(--ql-border-strong); }
+.sg-node.on { border-color: var(--ql-accent); box-shadow: 0 0 0 1px var(--ql-accent); }
+.sg-node.lin { border-color: color-mix(in srgb, var(--ql-accent) 60%, var(--ql-border)); }
+.sg-node.dim { opacity: 0.45; }
+.sg-nt { display: flex; align-items: start; gap: 7px; font-size: 12.5px; font-weight: 500; line-height: 1.35; }
+.sg-nt .n { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--ql-border); font: 600 11px var(--font-mono); color: var(--ql-text-muted); }
+.sg-nt .n.done { border-color: color-mix(in srgb, var(--ql-check) 50%, var(--ql-border)); color: var(--ql-check); }
+.sg-nt .n.live { border-color: var(--ql-accent); color: var(--ql-accent); }
+.sg-sub { font-size: 11.5px; color: var(--ql-text-dim); }
+.sg-det { display: grid; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--ql-line); background: var(--ql-surface); }
+.sg-det-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sg-det-h b { font-size: 13.5px; font-weight: 600; }
+.sg-det-h .grow { flex: 1; }
+.sg-det p { margin: 0; font-size: 13px; color: var(--ql-muted); }
+.sg-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.sg-pill { display: inline-flex; align-items: center; padding: 2px 9px; border: 1px solid var(--ql-border); border-radius: 999px; background: transparent; color: var(--ql-text-muted); font: 500 11.5px var(--font-sans); cursor: pointer; }
+.sg-pill:hover { border-color: var(--ql-accent); color: var(--ql-text); }
 
 </style>
 </head>
@@ -319,14 +354,43 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
         </header>
 
         <section class="sp-part" aria-label="Slices" id="slices">
-          <h2><svg class="ic s14"><use href="#i-layers"/></svg>Slices<span class="grow"></span><span class="chip note">Stack graph · Board · View diff on completed slices</span></h2>
-          <div class="board">
+          <h2><svg class="ic s14"><use href="#i-layers"/></svg>Slices<span class="grow"></span>
+            <span class="seg" role="radiogroup" aria-label="Slices view" id="impl-slice-view">
+              <button type="button" role="radio" aria-checked="true" data-view="board"><svg class="ic s13"><use href="#i-list"/></svg>Board</button>
+              <button type="button" role="radio" aria-checked="false" data-view="graph" tabindex="-1"><svg class="ic s13"><use href="#i-flow"/></svg>Stack graph</button>
+            </span>
+          </h2>
+          <div class="sg-wrap" id="impl-stack-graph" hidden>
+            <div class="sg-scroll">
+              <div class="sg-canvas" id="impl-sg-canvas">
+                <svg class="sg-edges" id="impl-sg-edges" aria-hidden="true"></svg>
+                <div class="sg-wave">
+                  <div class="sg-wh">Wave 1 · 1</div>
+                  <button type="button" class="sg-node" data-slice="1"><span class="sg-nt"><span class="n done">✓</span><span>Two saved sides and the one-time place question</span></span><span class="sg-sub">4 of 4 done · 13 files</span></button>
+                </div>
+                <div class="sg-wave">
+                  <div class="sg-wh">Wave 2 · 3</div>
+                  <button type="button" class="sg-node" data-slice="2"><span class="sg-nt"><span class="n done">✓</span><span>Approvals follow their own side</span></span><span class="sg-sub">4 of 4 done · 9 files · After S1</span></button>
+                  <button type="button" class="sg-node" data-slice="4"><span class="sg-nt"><span class="n done">✓</span><span>The skill offers QualityLayer once</span></span><span class="sg-sub">2 of 2 done · 4 files · After S1</span></button>
+                  <button type="button" class="sg-node" data-slice="5"><span class="sg-nt"><span class="n done">✓</span><span>Setup readies every question tool; doctor says so</span></span><span class="sg-sub">2 of 2 done · 6 files · After S1</span></button>
+                </div>
+                <div class="sg-wave">
+                  <div class="sg-wh">Wave 3 · 3</div>
+                  <button type="button" class="sg-node" data-slice="3"><span class="sg-nt"><span class="n done">✓</span><span>The App mirrors each side quietly</span></span><span class="sg-sub">2 of 2 done · 5 files · After S2</span></button>
+                  <button type="button" class="sg-node" data-slice="6"><span class="sg-nt"><span class="n done">✓</span><span>Antigravity, Grok and Copilot answer in their own picker</span></span><span class="sg-sub">2 of 2 done · 7 files · After S5</span></button>
+                  <button type="button" class="sg-node on" data-slice="7"><span class="sg-nt"><span class="n live">7</span><span>Settings rows, the first start, docs and models</span></span><span class="sg-sub">Building · 1 of 5 · After S3, S6</span></button>
+                </div>
+              </div>
+            </div>
+            <div class="sg-det" id="impl-sg-det"></div>
+          </div>
+          <div class="board" id="impl-board">
 
             <details class="fold" open>
               <summary><svg class="ic s13 chev" aria-hidden="true"><use href="#i-chev"/></svg><svg class="ic s14 fi" aria-hidden="true"><use href="#i-check"/></svg><b>6 slices done</b><span class="n">16 tasks</span></summary>
               <div class="fold-b">
-            <div class="bsl">
-              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>1</span><span class="btitle">Two saved sides and the one-time place question<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl" data-board-slice="1">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>1</span><span class="btitle">Two saved sides and the one-time place question<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span><span class="bmeta"><span>13 files</span></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><span class="bdiff" role="button" tabindex="0">View diff</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow" aria-expanded="false"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T1</code><span class="tt2">Config holds approvals, the chosen flag and the offer switch</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow" aria-expanded="false"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T2</code><span class="tt2">Each task stores its approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
@@ -348,8 +412,8 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
               </ul>
             </div>
 
-            <div class="bsl">
-              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>2</span><span class="btitle">Approvals follow their own side<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
+            <div class="bsl" data-board-slice="2">
+              <button type="button" class="bhead" aria-expanded="true"><span class="bnum"><span class="sr-only">Slice </span>2</span><span class="btitle">Approvals follow their own side<span class="stm done" role="img" aria-label="done"><svg class="ic s12"><use href="#i-check"/></svg></span><span class="bmeta"><span class="dep">Depends on S1</span><span>9 files</span></span></span><span class="segs" role="img" aria-label="4 of 4 tasks done"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i></span><span class="bdiff" role="button" tabindex="0">View diff</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button>
               <ul class="btasks">
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T5</code><span class="tt2">Gates, typed approvals and the build choice read the approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
                 <li><button type="button" class="trow"><span class="tm done"><svg class="ic s12"><use href="#i-check"/></svg></span><code>T6</code><span class="tt2">Questions tied to a gate follow the approval side</span><svg class="ic s14 chev"><use href="#i-chev"/></svg></button></li>
@@ -607,7 +671,7 @@ What to open, and in which state.
     <div><b>Cutting the Plan</b><span class="now">The agent, first: slices and cards, then the build. A small task's single slice is written and built in one pass.</span></div>
     <div><b>Task cards</b><span class="now">The agent, in <code>agents/02-implement.md</code>: Objective, Files, Notes, Test first, Done when. Notes hold what this task needs from the reading, in one or two lines, with its link. Files list changed repository source (tests, fixtures, docs and lasting models), never task records, evidence or drafts. Use <code>none</code> for evidence-only qualification without source changes; put inspected paths in <b>Read only</b>. The Plan's Constraints apply to every card without being repeated on it. Parallel builders get separate Files. A deferred file belongs to the slice that will commit it. The repository’s rules govern whether task records are committed.</span></div>
     <div><b>Proof order</b><span class="now">The agent puts each step after the slice that makes it possible and records a command that proves the whole expectation. Focused checks show narrower results in <code>records/checks.md</code>, under Files › Records › Checks. If only you can do a step, the agent names it when handing the build to Verify and asks you there.</span></div>
-    <div><b>Summary and Slices</b><span class="now">QualityLayer: one line of counts and the slice table.</span></div>
+    <div><b>Summary and Slices</b><span class="now">QualityLayer: one line of counts, the slice board with <code>Depends on</code> chips, changed-file counts and quiet <b>View diff</b> on completed slices, and a <b>Stack graph</b> switch showing parallel dependency waves left to right.</span></div>
     <div><b>Decided while building</b><span class="now">QualityLayer, from the record: one line per decision that touches what you approved or the order of the build, with its kind. A card that turns out to need another file is the agent's own change, written on the card; it is no amendment.</span></div>
     <div><b>Program design</b><span class="now">The agent: a headline per decision about how the code is shaped. Where each module lives stays in the agents' file.</span></div>
     <div><b>Status</b><span class="now">QualityLayer: a card ticks when its check passes, from the first slice, and "N under way" shows while helpers work. A commit never holds the status back.</span></div>
@@ -668,6 +732,71 @@ What to open, and in which state.
   // T17, done, starts open as the done example in the open slice; its card's toggles stay closed.
   const t17 = [...document.querySelectorAll(".trow")].find((r) => r.querySelector("code")?.textContent === "T17")
   if (t17) t17.click()
+  // 22 Nov: Board | Stack graph toggle and live SVG Bezier dependency graph.
+  const SLICES = {
+    1: { title: "Two saved sides and the one-time place question", status: "Done · 4 of 4", files: 13, deps: [], unlocks: [2, 4, 5], summary: "Stores Answer and Approve sides separately in config and asks once on the first agent task." },
+    2: { title: "Approvals follow their own side", status: "Done · 4 of 4", files: 9, deps: [1], unlocks: [3], summary: "Gates, typed approvals and picker proofs read the saved approval side." },
+    3: { title: "The App mirrors each side quietly", status: "Done · 2 of 2", files: 5, deps: [2], unlocks: [7], summary: "Approval surfaces and attention marks reflect whichever side owns the current gate." },
+    4: { title: "The skill offers QualityLayer once", status: "Done · 2 of 2", files: 4, deps: [1], unlocks: [], summary: "Phase texts offer QualityLayer once on planning requests without hijacking ordinary coding prompts." },
+    5: { title: "Setup readies every question tool; doctor says so", status: "Done · 2 of 2", files: 6, deps: [1], unlocks: [6], summary: "Enables native pickers across agents during setup and reports picker readiness in doctor." },
+    6: { title: "Antigravity, Grok and Copilot answer in their own picker", status: "Done · 2 of 2", files: 7, deps: [5], unlocks: [7], summary: "Captures answered picks and adds native proof readers for all three agents." },
+    7: { title: "Settings rows, the first start, docs and models", status: "Building · 1 of 5", files: 0, deps: [3, 6], unlocks: [], summary: "Adds Settings › Workflow rows, first-run agent block, docs guide and canonical model updates." },
+  }
+  const EDGES = [[1,2],[1,4],[1,5],[2,3],[5,6],[3,7],[6,7]]
+  const viewSwitch = document.getElementById("impl-slice-view")
+  const boardEl = document.getElementById("impl-board")
+  const graphEl = document.getElementById("impl-stack-graph")
+  const canvasEl = document.getElementById("impl-sg-canvas")
+  const edgesSvg = document.getElementById("impl-sg-edges")
+  const detEl = document.getElementById("impl-sg-det")
+  let selected = 7
+  const lineageOf = (id) => {
+    const set = new Set([id])
+    const walk = (n, dir) => { for (const [a, b] of EDGES) { if (dir < 0 && b === n && !set.has(a)) { set.add(a); walk(a, -1) } if (dir > 0 && a === n && !set.has(b)) { set.add(b); walk(b, 1) } } }
+    walk(id, -1); walk(id, 1); return set
+  }
+  const drawEdges = () => {
+    if (!canvasEl || !edgesSvg || graphEl.hidden) return
+    const cr = canvasEl.getBoundingClientRect()
+    const lin = lineageOf(selected)
+    edgesSvg.setAttribute("width", String(canvasEl.scrollWidth))
+    edgesSvg.setAttribute("height", String(canvasEl.scrollHeight))
+    edgesSvg.innerHTML = EDGES.map(([a, b]) => {
+      const na = canvasEl.querySelector(`[data-slice="${a}"]`), nb = canvasEl.querySelector(`[data-slice="${b}"]`)
+      if (!na || !nb) return ""
+      const ra = na.getBoundingClientRect(), rb = nb.getBoundingClientRect()
+      const x1 = ra.right - cr.left, y1 = ra.top + ra.height / 2 - cr.top
+      const x2 = rb.left - cr.left, y2 = rb.top + rb.height / 2 - cr.top
+      const dx = Math.max(24, (x2 - x1) * 0.5)
+      const hi = lin.has(a) && lin.has(b)
+      return `<path class="${hi ? "hi" : ""}" d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}"/>`
+    }).join("")
+  }
+  const renderSel = (id) => {
+    selected = id
+    const lin = lineageOf(id)
+    canvasEl.querySelectorAll("[data-slice]").forEach((btn) => {
+      const n = Number(btn.dataset.slice)
+      btn.classList.toggle("on", n === id)
+      btn.classList.toggle("lin", n !== id && lin.has(n))
+      btn.classList.toggle("dim", !lin.has(n))
+    })
+    const s = SLICES[id]
+    detEl.innerHTML = `<div class="sg-det-h"><b>Slice ${id} · ${s.title}</b><span class="chip note">${s.status}</span><span class="grow"></span>${s.files ? `<button type="button" class="q-btn sm" data-sg-diff="${id}">View diff (${s.files})</button>` : ""}<button type="button" class="q-btn sm" data-sg-board="${id}">Show in board</button></div><p>${s.summary}</p><div class="sg-pills">${s.deps.map((d) => `<button type="button" class="sg-pill" data-sg-jump="${d}">After S${d}</button>`).join("")}${s.unlocks.map((u) => `<button type="button" class="sg-pill" data-sg-jump="${u}">Unlocks S${u}</button>`).join("")}</div>`
+    requestAnimationFrame(drawEdges)
+  }
+  canvasEl?.addEventListener("click", (e) => { const n = e.target.closest("[data-slice]"); if (n) renderSel(Number(n.dataset.slice)) })
+  detEl?.addEventListener("click", (e) => {
+    const j = e.target.closest("[data-sg-jump]"); if (j) return renderSel(Number(j.dataset.sgJump))
+    const b = e.target.closest("[data-sg-board]"); if (b) { viewSwitch.querySelector('[data-view="board"]')?.click(); return }
+  })
+  viewSwitch?.querySelectorAll('[role="radio"]').forEach((r) => r.addEventListener("click", () => {
+    const isGraph = r.dataset.view === "graph"
+    viewSwitch.querySelectorAll('[role="radio"]').forEach((x) => { x.setAttribute("aria-checked", String(x === r)); x.tabIndex = x === r ? 0 : -1 })
+    boardEl.hidden = isGraph; graphEl.hidden = !isGraph
+    if (isGraph) renderSel(selected)
+  }))
+  window.addEventListener("resize", drawEdges)
 </script>
 
 </body>

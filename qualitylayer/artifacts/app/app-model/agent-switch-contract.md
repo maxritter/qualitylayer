@@ -1,6 +1,6 @@
 # Continue in another agent
 
-Status: Max approved the displayed `app-ui-14-2` design on16November2026, revision75445da8a5ad7345e3ce5563032658adc48ddfbd38f0ba2355b12af811607ee4. Implementation and actual App parity remain pending.
+Status: Max approved the displayed `app-ui-14-2` design on 16 November 2026, revision `75445da8a5ad7345e3ce5563032658adc48ddfbd38f0ba2355b12af811607ee4`. Implemented in `AgentSwitch.tsx` and shipped in v14.2+.
 
 The current task's agent controls offer deliberate continuation in another installed native agent. A stopped task also offers its previous session and read-only history. The chooser reuses the launch agent, model and effort controls and the agent's native permission choices. Bypass requires explicit confirmation for this new conversation. The checkout stays visible and unchanged.
 

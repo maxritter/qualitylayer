@@ -206,6 +206,19 @@ details.tfold > summary { display: inline-flex; align-items: center; gap: 6px; m
 details.tfold > summary::-webkit-details-marker { display: none; }
 details.tfold[open] > summary { margin-bottom: 12px; }
 details.tfold[open] > summary .chev { transform: rotate(90deg); }
+/* 22 Nov: Plan revision comparison panel (deterministic snapshots under runtimeDir/plan-revisions). */
+.pl-rev-panel { margin: 12px 0 4px; border: 1px solid var(--ql-border); border-radius: 10px; background: var(--ql-surface); overflow: hidden; }
+.pl-rev-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--ql-line); background: var(--ql-bg-sunken); font-size: 12.5px; }
+.pl-rev-head b { font-weight: 600; color: var(--ql-text); }
+.pl-rev-head .dim { color: var(--ql-text-muted); }
+.pl-rev-list { list-style: none; margin: 0; padding: 6px 0; font-size: 13px; }
+.pl-rev-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 6px 14px; align-items: baseline; }
+.pl-rev-list li.add { background: color-mix(in srgb, var(--ql-check) 10%, transparent); }
+.pl-rev-list li.del { background: color-mix(in srgb, #e05d5d 10%, transparent); color: var(--ql-muted); text-decoration: line-through; }
+.pl-rev-list .sig { font: 600 12px var(--font-mono); text-align: center; }
+.pl-rev-list li.add .sig { color: var(--ql-check); }
+.pl-rev-list li.del .sig { color: #e05d5d; }
+.pl-rev-sec { font: 600 11px var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ql-text-dim); padding: 8px 14px 2px; }
 
 </style>
 <style>.sp-part .dm.approach-leads>li>details>summary{grid-template-columns:minmax(0,1fr) 14px}.sp-part .dm.approach-leads .how{padding-left:0}</style>
@@ -374,7 +387,7 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
           <div class="sp-titlerow">
             <h1 class="hi"><svg class="ic"><use href="#s-plan"/></svg>Plan</h1>
             <span class="sp-tools">
-              <button type="button" class="q-btn sm" aria-pressed="false" title="Highlight lines changed since the prior saved Plan revision (shown when >=2 revisions exist)"><svg class="ic s14"><use href="#i-clock"/></svg>Compare rev</button>
+              <button type="button" class="q-btn sm" id="plan-compare-rev" aria-pressed="false" aria-controls="plan-rev-panel" title="Highlight lines changed since the prior saved Plan revision (shown when >=2 revisions exist)"><svg class="ic s14"><use href="#i-clock"/></svg>Compare rev</button>
               <button type="button" class="q-btn sm"><svg class="ic s14"><use href="#i-copy"/></svg>Copy</button>
               <span data-ql-export="plan" data-title="Use QualityLayer from your agent · Plan"></span>
               <button type="button" class="q-btn sm icon" aria-label="Sections" title="Sections"><svg class="ic s14"><use href="#i-tree"/></svg></button>
@@ -385,6 +398,18 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
             <span><svg class="ic s14"><use href="#i-layers"/></svg><b>≈7 slices</b>· ≈39 tasks</span>
           </div>
         </header>
+        <section class="pl-rev-panel" id="plan-rev-panel" aria-label="Changes since revision 1" hidden>
+          <div class="pl-rev-head">
+            <b>Rev 2 vs Rev 1</b>
+            <span class="dim">2 added · 1 replaced · saved automatically when the Plan changes</span>
+          </div>
+          <div class="pl-rev-sec">Done means</div>
+          <ul class="pl-rev-list">
+            <li class="del"><span class="sig">−</span><span>Closing the first-task picker defaults to App mode.</span></li>
+            <li class="add"><span class="sig">+</span><span>Close the picker without choosing → nothing saved; the next task asks again.</span></li>
+            <li class="add"><span class="sig">+</span><span>Each supported agent's picker works after setup, and doctor reports its state.</span></li>
+          </ul>
+        </section>
         <p class="note2">When a Plan names a specific exposure, Risk opens its consequence and links to Done means. Complexity counts distinct integrations named in Approach. A Plan without those details shows its size alone.</p>
 
         <section class="sp-part" id="summary" aria-label="Summary" data-screen-label="Summary">
@@ -1204,6 +1229,6 @@ What the planner ran to be sure, with its output.</pre>
 <script src="ask-agent.js"></script>
 <script src="app-parts-01.js"></script><script src="app-parts-02.js"></script>
 <script src="app-parts.js"></script>
-<script>(function(){function fix(){document.querySelectorAll(".dg-prv .bar .q-btn:not([data-fig])").forEach(function(b){b.setAttribute("data-fig","");var n=(b.textContent||"").trim()||"Open in card";b.setAttribute("aria-label",n);b.title=n;var s=document.createElementNS("http://www.w3.org/2000/svg","svg");s.setAttribute("class","ic s14 fig");s.setAttribute("aria-hidden","true");var u=document.createElementNS("http://www.w3.org/2000/svg","use");u.setAttribute("href","#i-max2");s.appendChild(u);b.appendChild(s);});}fix();new MutationObserver(fix).observe(document.documentElement,{childList:true,subtree:true});})();</script>
+<script>(function(){function fix(){document.querySelectorAll(".dg-prv .bar .q-btn:not([data-fig])").forEach(function(b){b.setAttribute("data-fig","");var n=(b.textContent||"").trim()||"Open in card";b.setAttribute("aria-label",n);b.title=n;var s=document.createElementNS("http://www.w3.org/2000/svg","svg");s.setAttribute("class","ic s14 fig");s.setAttribute("aria-hidden","true");var u=document.createElementNS("http://www.w3.org/2000/svg","use");u.setAttribute("href","#i-max2");s.appendChild(u);b.appendChild(s);});}fix();new MutationObserver(fix).observe(document.documentElement,{childList:true,subtree:true});var btn=document.getElementById("plan-compare-rev"),panel=document.getElementById("plan-rev-panel");if(btn&&panel){btn.addEventListener("click",function(){var on=btn.getAttribute("aria-pressed")!=="true";btn.setAttribute("aria-pressed",String(on));panel.hidden=!on;});}})();</script>
 </body>
 </html>

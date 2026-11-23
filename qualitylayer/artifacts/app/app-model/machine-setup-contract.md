@@ -1,6 +1,6 @@
 # Guided setup on the selected machine
 
-Approved 16 November 2026 in the Machine Center design, source revision `75445da8a5ad7345e3ce5563032658adc48ddfbd38f0ba2355b12af811607ee4`. Implementation and qualification are pending. Existing machine pairing remains unchanged.
+Approved 16 November 2026 in the Machine Center design, source revision `75445da8a5ad7345e3ce5563032658adc48ddfbd38f0ba2355b12af811607ee4`. Implemented in `MachineSetupTerminal.tsx` and shipped in v14.2+; existing machine pairing remains unchanged.
 
 The paired machine's Setup page offers its supported native agents. A documented direct installer runs only after the person chooses Install. Sign in opens the agent's own authentication flow in that machine's terminal. Unavailable direct operations retain official setup guidance; no guessed authentication argument becomes a model prompt.
 

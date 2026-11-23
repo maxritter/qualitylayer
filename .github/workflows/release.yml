@@ -348,7 +348,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Install dependencies
       working-directory: qualitylayer
@@ -453,7 +453,7 @@ jobs:
       run: bash .github/workflows/scripts/setup-git-crypt.sh
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Select an unpublished stage or exact promotion version
       id: check
@@ -579,7 +579,7 @@ jobs:
       run: bash .github/workflows/scripts/setup-git-crypt.sh
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Read the bounded exact run and artifact identities
       env:
@@ -723,7 +723,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Install dependencies
       working-directory: qualitylayer
@@ -959,7 +959,7 @@ jobs:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
         no-cache: true
     - name: Install dependencies
       working-directory: qualitylayer

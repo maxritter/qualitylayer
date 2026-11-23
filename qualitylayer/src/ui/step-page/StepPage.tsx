@@ -4,7 +4,7 @@
 // controls, no artifacts: a still picture instead), plain as GitHub reads the file.
 
 import type { LucideIcon } from "lucide-react"
-import { type ReactNode, useMemo, useRef, useState } from "react"
+import { Fragment, type ReactNode, useMemo, useRef, useState } from "react"
 import type { DocSections } from "../api.ts"
 import { usePlanNow } from "../docs/context.ts"
 import { parseRoute } from "../hooks.ts"
@@ -177,14 +177,15 @@ function StepPageBands({
       />
     )
   }
+  const preface = resolvePrefaceNode(doc, cut, drawEnv)
   return (
     <Bands
       yourMove={yourMove}
       gist={gistShown}
       core={[
-        beforeCore,
-        resolvePrefaceNode(doc, cut, drawEnv),
-        summarySection,
+        beforeCore ? <Fragment key="before-core">{beforeCore}</Fragment> : null,
+        preface ? <Fragment key="preface">{preface}</Fragment> : null,
+        summarySection ? <Fragment key="summary-section">{summarySection}</Fragment> : null,
         ...bands.core.map((section) => renderCoreSection(sectionEnv, section)),
       ]}
       folds={foldGroupOf(bands.folded.map((section) => renderFoldedSection(sectionEnv, section)))}

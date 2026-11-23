@@ -383,7 +383,7 @@ jobs:
       - name: Install lint dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install . ruff vulture deadcode import-linter
+          python3 -m pip install . ruff vulture "deadcode==2.4.1" import-linter
 
       - name: Ruff
         run: ruff check launcher installer pilot/hooks

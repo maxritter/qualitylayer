@@ -1,6 +1,6 @@
 {
   "name": "pilot-console",
-  "version": "11.0.11",
+  "version": "11.0.12",
   "description": "Memory system for Pilot Shell - persistent context and observations",
   "type": "module",
   "private": true,
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.12",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dompurify": "^3.3.3",
@@ -63,6 +63,9 @@
     "vite": "6.4.2"
   },
   "overrides": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "body-parser": "1.20.9",
+    "proxy-addr": "2.0.8",
     "zod": "4.6.5",
     "fast-uri": "^3.1.2",
     "protobufjs": "^8.3.0",

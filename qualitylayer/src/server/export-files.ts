@@ -286,7 +286,11 @@ export async function exportFile(ctx: Ctx, value: unknown): Promise<Result<Expor
             const size = pngSize(picture),
               page = input.pages[index]
             css += `.art${index}{width:${size.width}px;break-after:page}.art${index} img{display:block;width:100%}`
-            return `<section class="art${index}" data-export-image-page><h2>${text(page?.title ?? `Page ${index + 1}`)}</h2><p>Static page image. Interactive controls are not included.</p><img alt="Static image of ${text(page?.title ?? "page")}" src="data:image/png;base64,${Buffer.from(picture).toString("base64")}"></section>`
+            const header =
+              input.format === "pdf"
+                ? ""
+                : `<h2>${text(page?.title ?? `Page ${index + 1}`)}</h2><p>Static page image. Interactive controls are not included.</p>`
+            return `<section class="art${index}" data-export-image-page>${header}<img alt="Static image of ${text(page?.title ?? "page")}" src="data:image/png;base64,${Buffer.from(picture).toString("base64")}"></section>`
           })
           .join("")
         html = htmlDocument(

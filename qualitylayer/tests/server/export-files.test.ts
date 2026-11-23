@@ -121,6 +121,23 @@ test("artifact HTML contains labelled static pictures and no authored active HTM
   expect(html).not.toContain("steal()")
 })
 
+test("artifact PDF starts directly at the rendered page without a title or static-image subtitle", async () => {
+  const result = await exportFile(ctx, {
+    format: "pdf",
+    title: "OMA AI Deepagents",
+    name: "oma-ai-deepagents",
+    pages: [{ ...page, title: "OMA AI Deepagents" }],
+  })
+  expect(result.ok).toBe(true)
+  const pdfCall = calls.flat().find((call) => call.spec.format === "pdf")
+  expect(pdfCall).toBeDefined()
+  expect(pdfCall?.html).toContain(
+    'data-export-image-page><img alt="Static image of OMA AI Deepagents"',
+  )
+  expect(pdfCall?.html).not.toContain("<h2>")
+  expect(pdfCall?.html).not.toContain("Static page image. Interactive controls are not included.")
+})
+
 test("document HTML keeps readable text and web links while scripts and external loading are removed", async () => {
   const result = await exportFile(ctx, {
     format: "html",

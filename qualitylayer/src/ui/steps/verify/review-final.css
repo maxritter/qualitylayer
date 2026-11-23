@@ -274,7 +274,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    font-size: 13.5px;
+    font-size: 14px;
   }
   .rvw-stack-title > b {
     font-weight: 500;
@@ -310,7 +310,7 @@
     border: 1px solid var(--ql-border);
     border-radius: 999px;
     background: var(--ql-bg-sunken);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--ql-text-muted);
     white-space: nowrap;
@@ -395,7 +395,7 @@
     flex: 0 0 220px;
   }
   .rvw-flow-col-h {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -454,7 +454,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 5px;
-    font: 400 11.5px var(--font-mono);
+    font: 400 12px var(--font-mono);
     color: var(--ql-text-dim);
   }
   .rvw-flow-detail {
@@ -477,7 +477,10 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
-    font-size: 13.5px;
+    font-size: 14px;
+  }
+  .rvw-flow-detail-title > b {
+    font-weight: 600;
   }
   .rvw-flow-detail-h > button {
     flex: none;
@@ -494,7 +497,7 @@
     border-radius: 999px;
     background: var(--ql-bg-sunken);
     color: var(--ql-text-muted);
-    font: 500 11.5px var(--font-mono);
+    font: 500 12px var(--font-mono);
     cursor: pointer;
   }
   .rvw-jump:hover {

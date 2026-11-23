@@ -81,7 +81,10 @@ export function useReviewWorkspaceOpener(
       const ask = asked
       if (ask === null || ask.taskId !== taskId) return
       asked = null
-      if (Date.now() - ask.at <= ASK_FRESH_MS) open(ask.file, ask.checked, ask.slice)
+      if (Date.now() - ask.at <= ASK_FRESH_MS) {
+        if (ask.slice !== null) open(ask.file, ask.checked, ask.slice)
+        else open(ask.file, ask.checked)
+      }
     }
     window.addEventListener(OPEN, take)
     take()

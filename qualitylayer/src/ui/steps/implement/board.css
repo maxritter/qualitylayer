@@ -179,7 +179,7 @@
     border: 1px solid var(--ql-border);
     border-radius: 999px;
     background: var(--ql-bg-sunken);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--ql-text-muted);
     vertical-align: middle;
@@ -220,7 +220,7 @@
     flex: 0 0 220px;
   }
   .ib-gcol-h {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -292,7 +292,7 @@
     border-radius: 5px;
     background: var(--ql-bg-sunken);
     border: 1px solid var(--ql-border);
-    font: 600 10.5px var(--font-mono);
+    font: 600 12px var(--font-mono);
     color: var(--ql-text-dim);
   }
   .ib-gnode-h > b {
@@ -305,7 +305,7 @@
     word-break: break-word;
   }
   .ib-gnode-sub {
-    font-size: 11.5px;
+    font-size: 12px;
     color: var(--ql-text-dim);
     font-variant-numeric: tabular-nums;
   }
@@ -329,7 +329,10 @@
     align-items: baseline;
     gap: 4px 10px;
     min-width: 0;
-    font-size: 13.5px;
+    font-size: 14px;
+  }
+  .ib-gdetail-title > b {
+    font-weight: 600;
   }
   .ib-gdetail-acts {
     display: inline-flex;

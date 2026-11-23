@@ -518,14 +518,57 @@ jobs:
       run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
         bash "${{ github.workspace }}/.github/private-workflows/release-commands/97f40c959bb6990c8d785db660d35062f9888f235aa649c2aa854ead862e7ff0.sh"
       shell: bash
+  backend-compat-preflight:
+    name: Verify backend compatibility record before building
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+    - check-trigger
+    - prepare-release
+    if: "${{ always() && inputs.operation != 'promote' && github.ref_name == 'main' && needs.prepare-release.outputs.should_release == 'true' && needs.prepare-release.result == 'success' && !contains(needs.prepare-release.outputs.version, '-') }}"
+    environment: production
+    env:
+      VERSION: "${{ needs.prepare-release.outputs.version }}"
+      BACKEND_SOURCE_SHA: "${{ inputs.backend_source_sha }}"
+      BACKEND_COMPATIBILITY: "${{ inputs.backend_compatibility }}"
+      QUALIFIED_BACKEND_COMPATIBILITY_SHA256: "${{ vars.QUALIFIED_BACKEND_COMPATIBILITY_SHA256 }}"
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      with:
+        ref: "${{ env.RELEASE_SOURCE_SHA }}"
+        persist-credentials: false
+        sparse-checkout: |
+          .github
+    - name: Qualify private command channels before decryption
+      shell: bash
+      env:
+        QL_CANARY_ONLY: ''
+        PYTHONPATH: ''
+        QL_CANARY_TRACE_PATH: ''
+      run: python3 "${{ github.workspace }}/.github/scripts/canary-private-command.py"
+        "${{ github.workspace }}/.github/scripts/release-private-command.py"
+    - name: Install git-crypt
+      run: bash .github/workflows/scripts/install-git-crypt.sh
+    - name: Unlock repository
+      env:
+        GIT_CRYPT_KEY: "${{ secrets.GIT_CRYPT_KEY }}"
+      run: bash .github/workflows/scripts/setup-git-crypt.sh
+    - name: Require the complete protected backend compatibility record
+      shell: bash
+      run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py"
+        bash "${{ github.workspace }}/.github/private-workflows/release-commands/dd4d9b1c6d3c3711e9fd3b5d1ec5579b7cb6c82e28ec11b7ceebf2c027ad16b7.sh"
+      env:
+        QL_RELEASE_EXPORTS: '{"GITHUB_ENV":{"COMPATIBILITY_FILE":"temp-path","COMPATIBILITY_SHA256":"sha256"}}'
   candidate:
     name: Stage the exact candidate without publication
     permissions:
       contents: write
       id-token: write
-    needs: [check-trigger, prepare-release, regression-shard-gate]
+    needs: [check-trigger, prepare-release, regression-shard-gate, backend-compat-preflight]
     if: "${{ always() && inputs.operation != 'promote' && needs.prepare-release.outputs.should_release
-      == 'true' && needs.prepare-release.result == 'success' && (needs.check-trigger.outputs.reduced == 'true' || needs.regression-shard-gate.result == 'success') }}"
+      == 'true' && needs.prepare-release.result == 'success' && (needs.backend-compat-preflight.result == 'success' || needs.backend-compat-preflight.result == 'skipped') && (needs.check-trigger.outputs.reduced == 'true' || needs.regression-shard-gate.result == 'success') }}"
     uses: "./.github/workflows/qualitylayer-candidate.yml"
     with:
       version: "${{ needs.prepare-release.outputs.version }}"

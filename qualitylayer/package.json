@@ -37,6 +37,7 @@
     "test:beta": "bun run scripts/test-beta.ts",
     "test:smoke": "bun run scripts/test.ts",
     "preflight": "bun run scripts/preflight.ts",
+    "release:preflight": "bun run scripts/release-preflight.ts",
     "build": "bun run scripts/build.ts",
     "app:build": "bun run scripts/app.ts",
     "app:install": "bun run scripts/app-install.ts",

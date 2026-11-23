@@ -48,7 +48,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: qualitylayer-ci-${{ github.ref }}${{ inputs.full_regression && '-full' || '' }}${{ inputs.full_regression && inputs.diagnostic && '-diagnostic' || '' }}${{ inputs.windows_scanner_proof && '-windows-scanner-proof' || '' }}
+  group: qualitylayer-ci-${{ github.ref }}${{ inputs.full_regression && inputs.diagnostic && '-diagnostic' || '' }}${{ inputs.windows_scanner_proof && '-windows-scanner-proof' || '' }}
   cancel-in-progress: true
 jobs:
   plaintext-guard:

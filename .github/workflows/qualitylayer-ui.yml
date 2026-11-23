@@ -28,13 +28,48 @@ on:
         default: false
 permissions:
   contents: read
+  checks: read
 concurrency:
   group: qualitylayer-ui-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  reuse-check:
+    name: Reuse passing Source UI checks on main push
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      reuse: ${{ steps.decide.outputs.reuse }}
+    steps:
+      - name: Check exact-SHA passing Source UI browser checks
+        id: decide
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            if (context.eventName !== 'push' || context.ref !== 'refs/heads/main') {
+              core.setOutput('reuse', 'false');
+              return;
+            }
+            const runs = await github.paginate(github.rest.checks.listForRef, {
+              ...context.repo,
+              ref: context.sha,
+              filter: 'all',
+              per_page: 100,
+            });
+            const passed = runs.some(
+              (r) =>
+                r.name === 'Source UI browser checks' &&
+                r.head_sha === context.sha &&
+                r.app?.slug === 'github-actions' &&
+                r.status === 'completed' &&
+                r.conclusion === 'success',
+            );
+            core.setOutput('reuse', passed ? 'true' : 'false');
+            core.info(passed ? `Reusing passing Source UI browser checks for ${context.sha}.` : `No prior passing Source UI browser checks for ${context.sha}; running full matrix.`);
   checkout:
     name: Subscription checkout browser check
-    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [reuse-check]
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && needs.reuse-check.outputs.reuse != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -86,7 +121,8 @@ jobs:
         shell: bash
   frontend:
     name: Source UI browser checks (shard ${{ matrix.shard }}/8)
-    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [reuse-check]
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && needs.reuse-check.outputs.reuse != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -154,7 +190,8 @@ jobs:
         shell: bash
   history:
     name: Conversation history browser checks (${{ matrix.layout }})
-    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    needs: [reuse-check]
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && needs.reuse-check.outputs.reuse != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     strategy:
       fail-fast: false
       matrix:
@@ -211,6 +248,7 @@ jobs:
     name: Source UI browser checks
     if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && (always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
     needs:
+      - reuse-check
       - frontend
       - checkout
       - history
@@ -219,10 +257,15 @@ jobs:
     steps:
       - name: Every shard passed
         env:
+          REUSE: ${{ needs.reuse-check.outputs.reuse }}
           RESULT: ${{ needs.frontend.result }}
           CHECKOUT: ${{ needs.checkout.result }}
           HISTORY: ${{ needs.history.result }}
         run: |
+          if [ "$REUSE" = true ]; then
+            echo "Reused passing Source UI browser checks for $GITHUB_SHA"
+            exit 0
+          fi
           if [ "$RESULT" != success ] || [ "$CHECKOUT" != success ] || [ "$HISTORY" != success ]; then
             echo "::error::source UI: $RESULT; subscription checkout: $CHECKOUT; conversation history: $HISTORY"
             exit 1

@@ -1,397 +1,142 @@
-import { basename, dirname, relative, resolve, sep } from "node:path"
-import { hash, MEMORY_KINDS, relativeFile } from "../../core/memory/validation.ts"
-import { recordKept, recordMemoryActivity } from "../../core/memory-activity.ts"
+import { basename } from "node:path"
 import { resolveRepo } from "../../core/paths.ts"
-import { inPersonReview } from "../../core/review/in-review.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import {
-  type MemoryKind,
-  type MemoryQuery,
-  type MemorySource,
-  PERSONAL_PROJECT,
-} from "../../memory-contracts.ts"
 import { memoryService } from "../../memory-runtime.ts"
+import { REVIEWERS_READ_ONLY, runMemoryTool } from "../../memory-tools.ts"
+import { type MemoryService, runRecordAction, runSearchOrContext } from "./memory-actions.ts"
 import {
-  type MemorySearchScope,
-  REVIEWERS_READ_ONLY,
-  runMemoryTool,
-  searchLessons,
-  withRestsOn,
-} from "../../memory-tools.ts"
-import { memorySearchPreviews } from "../../task-memory.ts"
-import { requireTask } from "./shared.ts"
+  buildMemoryQuery,
+  MEMORY_USAGE,
+  type ParsedMemoryArgs,
+  parseMemoryArgs,
+  readToolInput,
+} from "./memory-parse.ts"
+import { runImportPilotAction, runStoreAction } from "./memory-write.ts"
 
-const USAGE =
-  "usage: qualitylayer memory overview | projects | list [--scope all|repo|you] [--sources changed] | search <text> [--scope all|repo|you] | context <text> | read <id> [--around 1..3] | pin|unpin <id> | reindex | store --title <text> --content <text> [--id <id> --revision <n>] [--kind decision|architecture|bugfix|pattern|discovery|preference] [--file <path>]… [--rests-on <task, decision n>] [--replaces <id>] [--about you] | confirm|retire|restore <id> [--reason <text>] | pause|resume | sessions on|off | tool <memory_search|memory_read|memory_save|memory_keep> [<json>] | mcp | share on|off | export | import | conflicts | reconcile <id> --revision <n> --candidate local|<fingerprint> | import-pilot <file>… [--query <text>] [--limit 1..100] [--cursor <token>]"
-type Service = ReturnType<typeof memoryService>
-const VALUED = new Set([
-  "title",
-  "content",
-  "kind",
-  "query",
-  "limit",
-  "cursor",
-  "source",
-  "scope",
-  "sources",
-  "around",
-  "replaces",
-  "reason",
-  "rests-on",
-  "about",
-  "id",
-  "revision",
-  "candidate",
-])
-/** Flags that may repeat; each value is kept. */
-const REPEATED = new Set(["file"])
-const FILES_MAX = 32
+const RECORD_ACTIONS = new Set(["read", "confirm", "retire", "restore", "pin", "unpin"])
 
-function parse(args: string[]) {
-  const positional: string[] = []
-  const flags: Record<string, string> = {}
-  const lists: Record<string, string[]> = {}
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index] as string
-    if (!arg.startsWith("--")) {
-      positional.push(arg)
-      continue
-    }
-    const name = arg.slice(2)
-    const value = args[++index]
-    if (value === undefined || value.startsWith("--")) throw new Error(USAGE)
-    if (REPEATED.has(name)) {
-      lists[name] = [...(lists[name] ?? []), value]
-      continue
-    }
-    if (!VALUED.has(name) || flags[name] !== undefined) throw new Error(USAGE)
-    flags[name] = value
+async function runToolAction(
+  ctx: Ctx,
+  rest: string[],
+  make: () => MemoryService,
+  readInput: () => Promise<string>,
+): Promise<Result<unknown>> {
+  const [name, given] = rest
+  if (!name || rest.length > 2) throw new Error(MEMORY_USAGE)
+  const raw = given ?? (await readInput())
+  let parsed: unknown
+  try {
+    parsed = raw.trim() ? JSON.parse(raw) : {}
+  } catch {
+    throw new Error("Tool arguments must be one JSON object.")
   }
-  return { positional, flags, lists }
+  return runMemoryTool(ctx, name, parsed, make)
 }
 
-function query(flags: Record<string, string>, project: string): MemoryQuery {
-  const limit = flags.limit === undefined ? undefined : Number(flags.limit)
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100))
-    throw new Error("Memory page size must be 1–100.")
-  if (
-    flags.source !== undefined &&
-    !["all", "task", "session", "pilot", "repository", "manual"].includes(flags.source)
-  )
-    throw new Error("Unknown memory source.")
-  if (
-    flags.scope !== undefined &&
-    !["all", "repo", "you", "private", "project"].includes(flags.scope)
-  )
-    throw new Error("Unknown memory scope.")
-  if (flags.sources !== undefined && flags.sources !== "changed")
-    throw new Error("Use --sources changed.")
-  // `you` lists the lessons about the person; `private` and `project` filter this repository's.
-  const visibility =
-    flags.scope === "private" || flags.scope === "project" ? flags.scope : undefined
-  return {
-    ...(flags.sources ? { sources: "changed" as const } : {}),
-    project: flags.scope === "you" ? PERSONAL_PROJECT : project,
-    query: flags.query,
-    cursor: flags.cursor,
-    limit,
-    source: flags.source as MemorySource | "all" | undefined,
-    scope: visibility,
+async function runGlobalAction(
+  service: MemoryService,
+  parsed: ParsedMemoryArgs,
+): Promise<Result<unknown> | null> {
+  const { action, rest, flags } = parsed
+  if (action === "pause" || action === "resume")
+    return ok(await service.settings({ enabled: action === "resume" }))
+  if (action === "sessions") {
+    if (rest.length !== 1 || !["on", "off"].includes(rest[0] ?? "")) throw new Error(MEMORY_USAGE)
+    return ok(await service.settings({ sessions: rest[0] === "on" }))
   }
+  // Every project's lessons, so it needs no repository: install runs it from anywhere.
+  if (action === "reindex") return ok(await service.reindex())
+  if (action === "projects")
+    return ok(
+      await service.projects({
+        query: flags.query,
+        cursor: flags.cursor,
+        limit: buildMemoryQuery(flags, "").limit,
+      }),
+    )
+  return null
 }
 
-const TOOL_INPUT_MAX = 1024 * 1024
+function reconcileAction(
+  service: MemoryService,
+  project: string,
+  rest: string[],
+  flags: Record<string, string>,
+): Promise<Result<unknown>> {
+  const revision = Number(flags.revision)
+  if (rest.length !== 1 || !Number.isSafeInteger(revision) || revision < 1 || !flags.candidate)
+    throw new Error(MEMORY_USAGE)
+  return service.reconcile(project, rest[0] as string, revision, flags.candidate).then(ok)
+}
 
-/** The tool arguments a plugin sends on standard input; a terminal has none to give. */
-async function readToolInput(): Promise<string> {
-  if (process.stdin.isTTY) return ""
-  const parts: Buffer[] = []
-  let size = 0
-  for await (const chunk of process.stdin) {
-    size += chunk.length
-    if (size > TOOL_INPUT_MAX) throw new Error("Tool arguments are too large.")
-    parts.push(Buffer.from(chunk))
+function shareAction(
+  service: MemoryService,
+  project: string,
+  rest: string[],
+): Promise<Result<unknown>> {
+  if (rest.length !== 1 || !["on", "off"].includes(rest[0] ?? "")) throw new Error(MEMORY_USAGE)
+  return service.sharing(project, rest[0] === "on").then(ok)
+}
+
+async function runProjectAction(
+  ctx: Ctx,
+  service: MemoryService,
+  project: string,
+  parsed: ParsedMemoryArgs,
+): Promise<Result<unknown>> {
+  const { action, rest, flags } = parsed
+  const handlers: Record<string, () => Promise<Result<unknown>>> = {
+    overview: () => service.overview(project).then(ok),
+    list: () => service.list(buildMemoryQuery(flags, project)).then(ok),
+    search: () => runSearchOrContext(ctx, service, project, parsed),
+    context: () => runSearchOrContext(ctx, service, project, parsed),
+    share: () => shareAction(service, project, rest),
+    sync: () => {
+      throw new Error(
+        "Memory sync is retired. Use export to write project lessons, or import to explicitly restore tracked repository lessons.",
+      )
+    },
+    export: () => service.exchange(project).then(ok),
+    import: () => service.restoreProject(project).then(ok),
+    conflicts: () => service.conflicts(project).then((conflicts) => ok({ conflicts })),
+    reconcile: () => reconcileAction(service, project, rest, flags),
+    store: () => runStoreAction(ctx, service, project, parsed),
+    "import-pilot": () => runImportPilotAction(ctx, service, project, rest),
   }
-  return Buffer.concat(parts).toString("utf8")
+  const handler = handlers[action]
+  if (handler) return handler()
+  if (RECORD_ACTIONS.has(action)) return runRecordAction(ctx, service, project, parsed)
+  throw new Error(MEMORY_USAGE)
 }
 
 export async function memoryCmd(
   ctx: Ctx,
   args: string[],
-  make: () => Service = () => memoryService(ctx),
+  make: () => MemoryService = () => memoryService(ctx),
   readInput: () => Promise<string> = readToolInput,
 ): Promise<Result<unknown>> {
-  let service: Service | null = null
+  let service: MemoryService | null = null
   try {
-    const { positional, flags, lists } = parse(args)
-    const [action, ...rest] = positional
-    if (!action) throw new Error(USAGE)
-    const allowed: Record<string, string[]> = {
-      overview: [],
-      projects: ["query", "cursor", "limit"],
-      list: ["query", "cursor", "limit", "source", "scope", "sources"],
-      search: ["query", "scope"],
-      context: ["query"],
-      reindex: [],
-      read: ["around"],
-      pin: [],
-      unpin: [],
-      confirm: ["reason"],
-      retire: ["reason"],
-      restore: ["reason"],
-      store: [
-        "title",
-        "content",
-        "kind",
-        "replaces",
-        "file",
-        "rests-on",
-        "about",
-        "id",
-        "revision",
-      ],
-      share: [],
-      sync: [],
-      export: [],
-      import: [],
-      conflicts: [],
-      reconcile: ["revision", "candidate"],
-      "import-pilot": [],
-      pause: [],
-      resume: [],
-      sessions: [],
-      tool: [],
-    }
-    if (
-      !allowed[action] ||
-      [...Object.keys(flags), ...Object.keys(lists)].some(
-        (flag) => !allowed[action]?.includes(flag),
-      )
-    )
-      throw new Error(USAGE)
-    if (
-      [
-        "overview",
-        "projects",
-        "list",
-        "pause",
-        "resume",
-        "sync",
-        "export",
-        "import",
-        "reindex",
-        "conflicts",
-      ].includes(action) &&
-      rest.length > 0
-    )
-      throw new Error(USAGE)
-    if (["search", "context"].includes(action) && flags.query !== undefined && rest.length > 0)
-      throw new Error("Use query words or --query, once.")
+    const parsed = parseMemoryArgs(args)
     // The agents' tools: the plugins send the arguments as JSON on standard input.
     if (
-      ["import", "reconcile"].includes(action) &&
+      ["import", "reconcile"].includes(parsed.action) &&
       ctx.env.get("QUALITYLAYER_REVIEW_READ_ONLY") === "1"
     )
       throw new Error(REVIEWERS_READ_ONLY)
-    if (action === "tool") {
-      const [name, given] = rest
-      if (!name || rest.length > 2) throw new Error(USAGE)
-      const raw = given ?? (await readInput())
-      let parsed: unknown
-      try {
-        parsed = raw.trim() ? JSON.parse(raw) : {}
-      } catch {
-        throw new Error("Tool arguments must be one JSON object.")
-      }
-      return await runMemoryTool(ctx, name, parsed, make)
-    }
+    if (parsed.action === "tool") return await runToolAction(ctx, parsed.rest, make, readInput)
     service = make()
-    if (action === "pause" || action === "resume") {
-      if (rest.length > 0) throw new Error(USAGE)
-      return ok(await service.settings({ enabled: action === "resume" }))
-    }
-    if (action === "sessions") {
-      if (rest.length !== 1 || !["on", "off"].includes(rest[0] ?? "")) throw new Error(USAGE)
-      return ok(await service.settings({ sessions: rest[0] === "on" }))
-    }
-    // Every project's lessons, so it needs no repository: install runs it from anywhere.
-    if (action === "reindex") return ok(await service.reindex())
-    if (action === "projects")
-      return ok(
-        await service.projects({
-          query: flags.query,
-          cursor: flags.cursor,
-          limit: query(flags, "").limit,
-        }),
-      )
+    const globalResult = await runGlobalAction(service, parsed)
+    if (globalResult !== null) return globalResult
     const repo = await resolveRepo(ctx)
     if (!repo.ok) return repo
-    const project = repo.data.id
     await service.registerProject({
-      id: project,
+      id: repo.data.id,
       name: basename(repo.data.root),
       root: repo.data.root,
     })
     await service.registerPersonal()
-    const input = query(flags, project)
-    if (action === "overview") return ok(await service.overview(project))
-    if (action === "list") return ok(await service.list(input))
-    if (action === "search" || action === "context") {
-      const words = rest.join(" ").trim() || flags.query
-      if (!words || words.length > 500) throw new Error("Give a memory query of 1–500 characters.")
-      // `search` looks in this repository and among the lessons about the person; `context` in the repository.
-      const scope = flags.scope ?? "all"
-      if (action === "search" && !["all", "repo", "you"].includes(scope))
-        throw new Error("Use --scope all, repo or you.")
-      if (action === "context" && flags.scope !== undefined) throw new Error(USAGE)
-      const found =
-        action === "search"
-          ? await searchLessons(service, project, words, 8, scope as MemorySearchScope)
-          : await service.search(project, words)
-      const task = await requireTask(ctx)
-      if (task.ok)
-        await recordMemoryActivity(
-          ctx,
-          task.data,
-          "reads",
-          found.lessons.length,
-          found.lessons.map(({ id }) => id),
-        )
-      return ok({
-        memories: memorySearchPreviews(found.lessons),
-        semantic: found.semantic,
-        ...(found.issue ? { memory_issue: found.issue } : {}),
-      })
-    }
-    if (action === "share") {
-      if (rest.length !== 1 || !["on", "off"].includes(rest[0] ?? "")) throw new Error(USAGE)
-      return ok(await service.sharing(project, rest[0] === "on"))
-    }
-    if (action === "sync")
-      throw new Error(
-        "Memory sync is retired. Use export to write project lessons, or import to explicitly restore tracked repository lessons.",
-      )
-    if (action === "export") return ok(await service.exchange(project))
-    if (action === "import") return ok(await service.restoreProject(project))
-    if (action === "conflicts") return ok({ conflicts: await service.conflicts(project) })
-    if (action === "reconcile") {
-      const revision = Number(flags.revision)
-      if (rest.length !== 1 || !Number.isSafeInteger(revision) || revision < 1 || !flags.candidate)
-        throw new Error(USAGE)
-      return ok(await service.reconcile(project, rest[0] as string, revision, flags.candidate))
-    }
-    if (["read", "confirm", "retire", "restore", "pin", "unpin"].includes(action)) {
-      if (rest.length !== 1) throw new Error(USAGE)
-      const around = flags.around === undefined ? undefined : Number(flags.around)
-      if (around !== undefined && (!Number.isInteger(around) || around < 1 || around > 3))
-        throw new Error("Choose 1 to 3 neighbours with --around.")
-      const record = await service.read(rest[0] as string)
-      if (record.project !== project && record.project !== PERSONAL_PROJECT)
-        throw new Error("This memory belongs to another project.")
-      if (action === "read") {
-        const task = await requireTask(ctx)
-        if (task.ok) await recordMemoryActivity(ctx, task.data, "reads", 1, [record.id])
-        if (around === undefined) return ok(record)
-        const neighbours = await service.neighbours(record.id, around)
-        return ok({ ...record, neighbours: neighbours.map(({ id, title }) => ({ id, title })) })
-      }
-      if (action === "pin" || action === "unpin")
-        return ok(await service.pin(record.id, action === "pin"))
-      // The CLI is an agent's way to keep lessons; a person retires in the App.
-      if (action !== "restore" && ctx.env.get("QUALITYLAYER_REVIEW_READ_ONLY") === "1")
-        throw new Error(REVIEWERS_READ_ONLY)
-      const task = await requireTask(ctx)
-      const kept =
-        action === "confirm"
-          ? await service.confirm(record.id, flags.reason)
-          : await service.retire(
-              record.id,
-              action === "restore",
-              action === "retire"
-                ? {
-                    reason: flags.reason ?? "",
-                    by: task.ok && (await inPersonReview(ctx, task.data)) ? "review" : "agent",
-                  }
-                : undefined,
-            )
-      if (task.ok && action !== "restore")
-        await recordKept(ctx, task.data, action === "confirm" ? "confirmed" : "retired", record.id)
-      // A retirement or restore reaches the shared file and LESSONS.md in the same command.
-      if (action === "confirm") return ok(kept)
-      // Nothing about the person is shared, so there is no exchange to run.
-      if (record.project === PERSONAL_PROJECT) return ok(kept)
-      return ok({ ...kept, exchange: await service.exchange(project) })
-    }
-    if (action === "store") {
-      if (!flags.title || !flags.content || rest.length > 0) throw new Error(USAGE)
-      const kind = flags.kind
-      if (kind !== undefined && !MEMORY_KINDS.has(kind))
-        throw new Error(
-          `Unknown memory kind: ${kind}. Use one of: ${[...MEMORY_KINDS].join(", ")}.`,
-        )
-      const files = lists.file ?? []
-      if (files.length > FILES_MAX || files.some((file) => !relativeFile(file)))
-        throw new Error(
-          `Give at most ${FILES_MAX} --file paths, each relative to the repository root.`,
-        )
-      if (flags["rests-on"] !== undefined && flags["rests-on"].length > 200)
-        throw new Error("--rests-on must be at most 200 characters.")
-      if (flags.about !== undefined && flags.about !== "you" && flags.about !== "repo")
-        throw new Error("Use --about you for a lesson about the person.")
-      const personal = flags.about === "you"
-      if (personal && files.length > 0) throw new Error("A lesson about the person takes no files.")
-      const task = await requireTask(ctx)
-      const record = await service.store({
-        project: personal ? PERSONAL_PROJECT : project,
-        ...(flags.id === undefined ? {} : { id: flags.id }),
-        ...(flags.revision === undefined ? {} : { expectedRevision: Number(flags.revision) }),
-        title: flags.title,
-        content: withRestsOn(flags.content, flags["rests-on"]),
-        kind: kind as MemoryKind | undefined,
-        ...(files.length ? { files } : {}),
-        ...(flags.replaces === undefined
-          ? {}
-          : {
-              replaces: flags.replaces,
-              retiredBy:
-                task.ok && (await inPersonReview(ctx, task.data))
-                  ? ("review" as const)
-                  : ("agent" as const),
-            }),
-        ...(task.ok && !personal ? { task: task.data.slug } : {}),
-      })
-      if (task.ok) await recordMemoryActivity(ctx, task.data, "saves", 1, [record.id])
-      if (task.ok && flags.replaces !== undefined)
-        await recordKept(ctx, task.data, "revised", flags.replaces)
-      // Nothing about the person is shared, so there is no exchange to run.
-      if (personal) return ok({ record })
-      return ok({ record, exchange: await service.exchange(project) })
-    }
-    if (action === "import-pilot") {
-      if (rest.length < 1 || rest.length > 32) throw new Error("Choose 1–32 Pilot files.")
-      const files: { name: string; content: string }[] = []
-      let total = 0
-      for (const path of rest) {
-        if (!/\.(md|jsonl)$/i.test(path))
-          throw new Error("Pilot import accepts .md and .jsonl files.")
-        const size = (await ctx.fs.stat?.(path))?.size
-        if (size !== undefined && size > 1024 * 1024)
-          throw new Error("Each Pilot file must be at most 1 MB.")
-        const content = await ctx.fs.readFile(path)
-        const bytes = Buffer.byteLength(content)
-        total += bytes
-        if (bytes > 1024 * 1024 || total > 2 * 1024 * 1024)
-          throw new Error("Pilot files exceed the 2 MB import limit.")
-        const absolute = resolve(ctx.env.cwd(), path)
-        const concept = relative(ctx.env.cwd(), absolute).split(sep).join("/")
-        const name = relativeFile(concept)
-          ? `files/${concept}`
-          : `imports/${hash(dirname(absolute))}/${basename(absolute)}`
-        files.push({ name, content })
-      }
-      return ok(await service.importPilot({ project, files }))
-    }
-    throw new Error(USAGE)
+    return await runProjectAction(ctx, service, repo.data.id, parsed)
   } catch (cause) {
     return err({
       code: "bad_args",

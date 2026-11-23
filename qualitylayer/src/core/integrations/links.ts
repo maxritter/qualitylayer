@@ -34,6 +34,52 @@ export const KIND_LABEL: Record<LinkKind, string> = {
 
 const JIRA_KEY = /^[A-Z][A-Z0-9_]{0,30}-\d{1,9}$/
 
+type LinkBase = { url: string; host: string }
+
+function parseGitHubLink(base: LinkBase, parts: string[]): TicketLink | null {
+  const [owner, repo, what, number] = parts
+  if (!owner || !repo || !/^\d+$/.test(number ?? "")) return null
+  if (what !== "issues" && what !== "pull") return null
+  return {
+    ...base,
+    kind: what === "issues" ? "github-issue" : "github-pr",
+    repo: `${owner}/${repo}`,
+    ref: number as string,
+  }
+}
+
+// GitLab, on gitlab.com or the person's own server: …/<group>/<project>/-/issues/<n>.
+function parseGitLabLink(base: LinkBase, parts: string[]): TicketLink | null {
+  const dash = parts.indexOf("-")
+  if (dash < 2) return null
+  const what = parts[dash + 1]
+  const number = parts[dash + 2] ?? ""
+  if ((what !== "issues" && what !== "merge_requests") || !/^\d+$/.test(number)) return null
+  return {
+    ...base,
+    kind: what === "issues" ? "gitlab-issue" : "gitlab-mr",
+    repo: parts.slice(0, dash).join("/"),
+    ref: number,
+  }
+}
+
+// Jira: …/browse/<KEY-1>, or a board with ?selectedIssue=<KEY-1>.
+function parseJiraLink(base: LinkBase, parts: string[], url: URL): TicketLink | null {
+  const browse = parts.indexOf("browse")
+  const key = browse >= 0 ? parts[browse + 1] : (url.searchParams.get("selectedIssue") ?? undefined)
+  if (key === undefined || !JIRA_KEY.test(key)) return null
+  return { ...base, kind: "jira", ref: key }
+}
+
+// Confluence: …/wiki/spaces/<space>/pages/<id>/<title>, or viewpage.action?pageId=<id>.
+function parseConfluenceLink(base: LinkBase, parts: string[], url: URL): TicketLink | null {
+  if (parts[0] !== "wiki") return null
+  const pages = parts.indexOf("pages")
+  const id = pages >= 0 ? parts[pages + 1] : (url.searchParams.get("pageId") ?? undefined)
+  if (id === undefined || !/^\d{1,20}$/.test(id)) return null
+  return { ...base, kind: "confluence", ref: id }
+}
+
 /** The ticket a link names, or null when it is not one QualityLayer reads. */
 export function parseTicketLink(text: string): TicketLink | null {
   let url: URL
@@ -46,42 +92,13 @@ export function parseTicketLink(text: string): TicketLink | null {
   url.hash = ""
   const host = url.hostname.toLowerCase()
   const parts = url.pathname.split("/").filter((part) => part !== "")
-  const base = { url: url.toString(), host }
-  if (host === "github.com" || host === "www.github.com") {
-    const [owner, repo, what, number] = parts
-    if (owner && repo && /^\d+$/.test(number ?? "") && (what === "issues" || what === "pull"))
-      return {
-        ...base,
-        kind: what === "issues" ? "github-issue" : "github-pr",
-        repo: `${owner}/${repo}`,
-        ref: number as string,
-      }
-    return null
-  }
-  // GitLab, on gitlab.com or the person's own server: …/<group>/<project>/-/issues/<n>.
-  const dash = parts.indexOf("-")
-  if (dash >= 2) {
-    const what = parts[dash + 1]
-    const number = parts[dash + 2] ?? ""
-    if ((what === "issues" || what === "merge_requests") && /^\d+$/.test(number))
-      return {
-        ...base,
-        kind: what === "issues" ? "gitlab-issue" : "gitlab-mr",
-        repo: parts.slice(0, dash).join("/"),
-        ref: number,
-      }
-  }
-  // Jira: …/browse/<KEY-1>, or a board with ?selectedIssue=<KEY-1>.
-  const browse = parts.indexOf("browse")
-  const key = browse >= 0 ? parts[browse + 1] : (url.searchParams.get("selectedIssue") ?? undefined)
-  if (key !== undefined && JIRA_KEY.test(key)) return { ...base, kind: "jira", ref: key }
-  // Confluence: …/wiki/spaces/<space>/pages/<id>/<title>, or viewpage.action?pageId=<id>.
-  if (parts[0] === "wiki") {
-    const pages = parts.indexOf("pages")
-    const id = pages >= 0 ? parts[pages + 1] : (url.searchParams.get("pageId") ?? undefined)
-    if (id !== undefined && /^\d{1,20}$/.test(id)) return { ...base, kind: "confluence", ref: id }
-  }
-  return null
+  const base: LinkBase = { url: url.toString(), host }
+  if (host === "github.com" || host === "www.github.com") return parseGitHubLink(base, parts)
+  return (
+    parseGitLabLink(base, parts) ??
+    parseJiraLink(base, parts, url) ??
+    parseConfluenceLink(base, parts, url)
+  )
 }
 
 /** The short name of the ticket: `#241`, `!12`, `INFRA-11292`, `page 98765`. */

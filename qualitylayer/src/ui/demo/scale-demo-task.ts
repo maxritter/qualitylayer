@@ -1,426 +1,31 @@
 // The demo task of `?scale=large` (scale.ts), at every App Model moment: a Plan of 30 slices
 // and 120 tasks, 25 Done means points, 40 decisions, 8 questions in a batch, a change of 120
 // files, a Verify with long finding lists, and a pull request with 20 checks.
-//
-// The demo's own task is the base: its lists are cloned until they are long, and every clone
-// keeps the shape of the record it came from. The step documents are cut and grown as Markdown
-// (scale-markdown.ts) and the task's pages are cut again from them, so the step pages, the
-// Reader and the Files tab agree.
 
-import type { Checklist, CheckRow } from "../../core/checklist.ts"
-import type { Item } from "../../core/items.ts"
-import type { WalkFile, WalkPoint, WalkSlice, Walkthrough } from "../../core/review/walkthrough.ts"
-import type { CommitView, Timeline, TimelineSlice, TimelineTask } from "../../core/timeline.ts"
-import type { DocEntry } from "../../server/api.ts"
 import type { DocSections } from "../../server/doc-sections-split.ts"
-import type { Api, Changes, TaskDetail, TaskSummary } from "../api.ts"
+import type { Api, TaskDetail, TaskSummary } from "../api.ts"
 import type { WalkthroughApi } from "../timeline/walkthrough-api.ts"
 import { LARGE } from "./scale-counts.ts"
+import { scaleDocument } from "./scale-demo-documents.ts"
+import { growBatch, growChecklist, growItems, grown, growParts } from "./scale-demo-fields.ts"
 import {
-  growBlocks,
-  growBullets,
-  growNumbered,
-  growTable,
-  mapSections,
-  vary,
-} from "./scale-markdown.ts"
-import { DEMO_TASK_ID, TASK_AGENT_FILES, TASK_FILES, taskSections } from "./task/index.ts"
+  growSlices,
+  LARGE_RECORDS,
+  ORIGIN,
+  scaleArtifacts,
+  scaleChanges,
+  scaleWalkthrough,
+  times,
+} from "./scale-demo-slices.ts"
+import { DEMO_TASK_ID, taskSections } from "./task/index.ts"
 import { stepPage } from "./task/page.ts"
 
-const SLICES = LARGE.slices
-const PER_SLICE = LARGE.planTasks / LARGE.slices
-
-/** Which of the slices that follow one template of the demo this is: 0 for the first of them. */
-const partOf = (j: number, templates: number): number =>
-  j - Math.ceil((Math.floor((j * templates) / SLICES) * SLICES) / templates)
-
-// ---------------------------------------------------------------- documents
-
-/** Apply `edit` to every `### ` block of a section. */
-function perBlock(text: string, edit: (block: string) => string): string {
-  const [head = "", ...blocks] = text.split(/\n(?=### )/)
-  return [head, ...blocks.map(edit)].join("\n")
-}
-
-/** The task cards with `SLICES` slices of `PER_SLICE` cards each, numbered on from the demo's eleven. */
-function growCards(text: string): string {
-  const [head = "", ...templates] = text.split(/\n(?=### Slice \d+: )/)
-  if (templates.length === 0) return text
-  const cuts = templates.map((block) => {
-    const [top = "", ...cards] = block.split(/\n(?=#### T\d+ )/)
-    return { top, cards }
-  })
-  let next = 1
-  const made = Array.from({ length: SLICES }, (_, j) => {
-    const source = cuts[Math.floor((j * cuts.length) / SLICES)] as (typeof cuts)[number]
-    const part = partOf(j, cuts.length)
-    const top = source.top
-      .replace(
-        /^### Slice \d+: (.*)$/m,
-        (_, title: string) =>
-          `### Slice ${j + 1}: ${title}${part > 0 ? ` · part ${part + 1}` : ""}`,
-      )
-      .replace(/^\*\*Depends on:\*\* Slice \d+/m, `**Depends on:** Slice ${Math.max(1, j)}`)
-      .replace(/s\d+\.test/g, `s${j + 1}.test`)
-    const cards = Array.from({ length: PER_SLICE }, (_, i) => {
-      const card = source.cards[i % Math.max(1, source.cards.length)] ?? ""
-      const id = next++
-      return card
-        .replace(
-          /^#### T\d+ (.*)$/m,
-          (_, title: string) =>
-            `#### T${id} ${i >= source.cards.length ? vary(title, i + 1) : title}`,
-        )
-        .replace(/s\d+\.test/g, `s${j + 1}.test`)
-    })
-    return [top, ...cards].join("\n")
-  })
-  return [head, ...made].join("\n")
-}
-
-/** The Plan's Done means grown to `LARGE.doneMeans` points, each with its own step; `Runs as` stays last. */
-function growPoints(text: string): string {
-  const runsAs = /\n(Runs as:.*)\s*$/.exec(text)
-  const body = runsAs === null ? text : text.slice(0, runsAs.index)
-  const grown = growBlocks(body.trimEnd(), LARGE.doneMeans, (block, k) =>
-    block
-      .replace(/^### \d+\. (.*?) \(\d+\)$/m, (_, title: string) => `### ${k}. ${vary(title, k)}`)
-      .replace(/\| A\d+ \|/g, `| A${k} |`)
-      .replace(/\nalso A\d+\n?/, "\n"),
-  )
-  return runsAs === null ? grown : `${grown}\n\n${runsAs[1]}\n`
-}
-
-/** The Plan's Engineering decisions grown to `LARGE.decisions` blocks, each with its own marker. */
-function growDecisions(text: string): string {
-  const [head = "", ...blocks] = text.split(/\n(?=### )/)
-  const plain = blocks.filter((block) => !/late: true/.test(block))
-  if (plain.length === 0) return text
-  const made: string[] = []
-  for (let k = blocks.length + 1; k <= LARGE.decisions; k++) {
-    const source = plain[(k - blocks.length - 1) % plain.length] as string
-    made.push(
-      source
-        .replace(/^### (.*)$/m, (_, title: string) => `### ${title} (${k})`)
-        .replace(/ql:decide d\d+/, `ql:decide d${k}`),
-    )
-  }
-  return [head, ...blocks, ...made].join("\n")
-}
-
-const stateOf = (cell: string) => cell.trim()
-
-/** The Verify proof table grown to 25 points: a clone waits as the points after the first dozen do. */
-function growProof(text: string): string {
-  const lines = text.split("\n")
-  const rows = lines.filter((line) => /^\| \d+\. /.test(line))
-  const last = lines.lastIndexOf(rows.at(-1) ?? "")
-  if (rows.length === 0 || last < 0) return text
-  const made = Array.from({ length: LARGE.doneMeans - rows.length }, (_, at) => {
-    const source = rows[at % rows.length] as string
-    const cells = source.split("|").map((cell) => cell.trim())
-    const n = rows.length + at + 1
-    const label = (cells[1] ?? "").replace(/^\d+\. /, "")
-    const done = /passed|checking/.test(stateOf(cells[3] ?? ""))
-    return `| ${n}. ${vary(label, n)} | ${done ? "the Independent review is reading it" : ""} | ${done ? "checking" : "waiting"} |`
-  })
-  lines.splice(last + 1, 0, ...made)
-  return lines.join("\n")
-}
-
-/** A step document of the demo task, or its agents' file, with the lists of the large demo. */
-export function scaleDocument(name: string, text: string): string {
-  switch (name) {
-    case TASK_FILES.plan:
-      return mapSections(
-        text.replace(
-          "**Size:** about 11 slices and 28 tasks",
-          `**Size:** about ${SLICES} slices and ${LARGE.planTasks} tasks`,
-        ),
-        {
-          "Done means": growPoints,
-          Scope: (t) => perBlock(t, (block) => growBullets(block, 6)),
-          "Engineering decisions": growDecisions,
-          "Decisions made for you": (t) => growBullets(t, 8),
-          Assumptions: (t) => growBullets(t, 8),
-          "Decided with you": (t) => growBullets(t, 12),
-        },
-      )
-    case TASK_AGENT_FILES.plan:
-      return mapSections(text, {
-        Findings: (t) => growBullets(t, 20),
-        Contracts: (t) => growBlocks(t, 12),
-        Checks: (t) => growBullets(t, 8),
-        Risks: (t) => growBullets(t, 8),
-        "Proven before the gate": (t) => growTable(t, 8),
-      })
-    case TASK_FILES.implement:
-      return mapSections(text, {
-        "Decided while building": (t) => growBullets(t, 10),
-        "Known limits": (t) => growBullets(t, 6),
-      })
-    case TASK_AGENT_FILES.implement:
-      return mapSections(text, {
-        "Task cards": growCards,
-        Notes: (t) => growBullets(t, 8),
-        Checks: (t) => growBullets(t, 40),
-      })
-    case TASK_FILES.verify:
-      return mapSections(text, {
-        "Done means": (t) => growNumbered(t, LARGE.doneMeans),
-      })
-    case TASK_AGENT_FILES.verify:
-      return mapSections(text, {
-        "Done means, checked": growProof,
-        Commands: (t) => growBullets(t, 30, (line) => !/^- scans ·/.test(line)),
-        Security: (t) => perBlock(t, (block) => growBullets(block, 14)),
-        "Second opinion": (t) => growBullets(t, 12),
-      })
-    default:
-      return text
-  }
-}
-
-// ---------------------------------------------------------------- the task
-
-const times = <T>(count: number, make: (at: number) => T): T[] =>
-  Array.from({ length: count }, (_, at) => make(at))
-
-/** The slices of the Plan as the build reads them: 30 slices, 4 tasks each, ticked in the demo's order. */
-function growSlices(task: TaskDetail): void {
-  const tl = task.timeline
-  if (tl === null || tl.slices.length === 0) return
-  const base = tl.slices
-  let next = 1
-  const tickedOf = (j: number): number => {
-    const source = base[Math.floor((j * base.length) / SLICES)] as TimelineSlice
-    return source.tasks.filter((t) => t.checked).length / Math.max(1, source.tasks.length)
-  }
-  // A build goes slice by slice: the slices before the first one the demo has not finished are done,
-  // that one is under way, and the rest wait.
-  const first = times(SLICES, (j) => j).find((j) => tickedOf(j) < 1) ?? SLICES
-  const slices = times(SLICES, (j): TimelineSlice => {
-    const at = Math.floor((j * base.length) / SLICES)
-    const source = base[at] as TimelineSlice
-    const done =
-      j < first
-        ? PER_SLICE
-        : j === first
-          ? Math.min(PER_SLICE - 1, Math.round(tickedOf(j) * PER_SLICE))
-          : 0
-    const round = partOf(j, base.length)
-    return {
-      ...structuredClone(source),
-      n: j + 1,
-      title: round > 0 ? `${source.title} · part ${round + 1}` : source.title,
-      commit:
-        source.commit === null ? null : `${source.commit.slice(0, 5)}${String(j).padStart(2, "0")}`,
-      tasks: times(PER_SLICE, (i): TimelineTask => {
-        const from = source.tasks[i % Math.max(1, source.tasks.length)] as TimelineTask
-        const id = next++
-        const checked = i < done
-        return {
-          ...structuredClone(from),
-          id: `T${id}`,
-          title: i >= source.tasks.length ? vary(from.title, i + 1) : from.title,
-          checked,
-          state: checked ? "done" : "open",
-        }
-      }),
-    }
-  })
-  const commits = times(SLICES, (j): CommitView => {
-    const from = tl.commits[j % Math.max(1, tl.commits.length)] as CommitView | undefined
-    const slice = slices[j] as TimelineSlice
-    return {
-      ...(from === undefined
-        ? { sha: "", short: "", subject: "", files: 0, paths: [] }
-        : structuredClone(from)),
-      sha: `${String(j + 1).padStart(3, "0")}${(from?.sha ?? "c81f2a0cc").slice(3)}`,
-      short: `${String(j + 1).padStart(3, "0")}${(from?.short ?? "c81f2a0").slice(3)}`,
-      subject: `${slice.title}: ${from?.subject ?? "build the slice"}`.slice(0, 96),
-      slice: slice.n,
-      tasks: slice.tasks.filter((t) => t.checked).map((t) => t.id),
-    }
-  }).filter((commit) => commit.tasks.length > 0)
-  const total = slices.reduce((n, s) => n + s.tasks.length, 0)
-  const checked = slices.reduce((n, s) => n + s.tasks.filter((t) => t.checked).length, 0)
-  const here = slices.find((s) => s.tasks.some((t) => !t.checked))
-  task.timeline = {
-    ...tl,
-    slices,
-    columns: slices.map((s) => [{ n: s.n, after: s.n > 1 && s.n % 4 === 0 ? s.n - 1 : null }]),
-    commits,
-  } satisfies Timeline
-  task.slices = slices.map((s) => ({
-    n: s.n,
-    title: s.title,
-    validation: s.validation,
-    tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, checked: t.checked })),
-    checkpoint: false,
-    approved: true,
-  }))
-  task.progress = { total, checked, slices: SLICES }
-  const live = task.live
-  if (live?.progress != null && typeof live.progress.total === "number") {
-    const place = here === undefined ? slices.length : here.n
-    const index = here?.tasks.findIndex((t) => !t.checked) ?? 0
-    live.progress = {
-      ...live.progress,
-      slices: SLICES,
-      slice: { n: place, at: place },
-      task: {
-        id: here?.tasks[Math.max(0, index)]?.id ?? "T1",
-        at: Math.max(0, index) + 1,
-        of: PER_SLICE,
-      },
-      done: checked,
-      total,
-      words: {
-        place: `slice ${place} of ${SLICES} · task ${Math.max(0, index) + 1} of ${PER_SLICE}`,
-      },
-    }
-  }
-  if (task.timeline.builder !== null)
-    task.timeline.builder = {
-      ...task.timeline.builder,
-      task: here?.tasks.find((t) => !t.checked)?.id ?? null,
-      line: `building slice ${here?.n ?? SLICES} · ${checked} of ${total} tasks`,
-    }
-  if (task.implementStart !== null)
-    task.implementStart = {
-      ...task.implementStart,
-      slices: SLICES,
-      tasks: total,
-      flowLine: `Flow: ${SLICES} slices built in this session.`,
-    }
-}
-
-/** Decisions and questions: the lists a step shows as items. */
-export function growItems(task: TaskDetail): void {
-  const items = task.items
-  if (items === undefined || items.length === 0) return
-  const decisions = items.filter((item) => /^plan:decision:d\d+$/.test(item.id))
-  if (decisions.length > 0) {
-    const plain = decisions.filter((item) => item.call === undefined)
-    const made = times(LARGE.decisions - decisions.length, (at): Item => {
-      const k = decisions.length + at + 1
-      const source = plain[at % plain.length] as Item
-      return {
-        ...structuredClone(source),
-        id: `plan:decision:d${k}`,
-        what: `${source.what} (${k})`,
-        digest: `demo-d${k}`,
-      }
-    })
-    task.items = [...items, ...made]
-    task.openItems = task.items.filter((i) => i.state === "open" && i.uncounted !== true).length
-    return
-  }
-  const questions = items.filter((item) => /:ask:\d+$/.test(item.id))
-  if (questions.length > 0) {
-    const step = questions[0]?.step ?? "plan"
-    const made = times(LARGE.questions - questions.length, (at): Item => {
-      const n = questions.length + at + 1
-      return {
-        ...structuredClone(questions[0] as Item),
-        id: `${step}:ask:${n}`,
-        what: `Question ${n}`,
-      }
-    })
-    task.items = [...items, ...made]
-    task.openItems = task.items.length
-  }
-}
-
-/** The batch of questions: 8 members, the first 4 the demo's own. */
-export function growBatch(task: TaskDetail): void {
-  const strip = task.batch
-  if (strip == null || strip.members.length >= LARGE.questions) return
-  const more = times(LARGE.questions - strip.members.length, (at) => {
-    const source = strip.members[at % strip.members.length] as (typeof strip.members)[number]
-    const n = strip.members.length + at + 1
-    const { answer: _answer, ...open } = source
-    return {
-      ...structuredClone(open),
-      id: `${source.id}-${n}`,
-      number: n,
-      text: vary(source.text, n),
-    }
-  })
-  task.batch = { ...strip, members: [...strip.members, ...more] }
-}
-
-const grown = <T>(list: T[], target: number, make: (source: T, k: number) => T): T[] =>
-  list.length === 0 || list.length >= target
-    ? list
-    : [
-        ...list,
-        ...times(target - list.length, (at) =>
-          make(list[at % list.length] as T, list.length + at + 1),
-        ),
-      ]
-
-function growParts(task: TaskDetail): void {
-  const parts = task.parts
-  if (parts === undefined) return
-  const { plan } = parts
-  if (plan !== undefined)
-    task.parts = {
-      ...task.parts,
-      plan: {
-        ...plan,
-        outOfScope: grown(plan.outOfScope, 8, vary),
-        assumptions: grown(plan.assumptions, 8, (a, k) => ({ ...a, text: vary(a.text, k) })),
-      },
-    }
-}
-
-/** Verify: more checks, scenarios and Done means rows, and long lists of findings. */
-function growChecklist(task: TaskDetail): void {
-  const list = task.checklist
-  if (list == null) return
-  const groups = list.groups.map((group) => {
-    const target = group.id === "project" ? 14 : group.id === "done" ? LARGE.doneMeans : 0
-    if (target === 0) return group
-    const rows = grown(group.rows, target, (row, k): CheckRow => {
-      const state = row.state === "running" || row.state === "user" ? "waiting" : row.state
-      const { evidence: _e, who: _w, text: _t, ...bare } = row
-      return {
-        ...bare,
-        id: `${row.id.split(":")[0]}:${k}`,
-        label: vary(row.label, k),
-        state,
-        ...(state === "passed" ? { text: row.text ?? "every step as expected" } : {}),
-      }
-    })
-    return { ...group, rows }
-  })
-  const rows = groups.flatMap((g) => g.rows)
-  const counted = rows.filter((r) => r.off !== true && r.state !== "user" && r.extra !== true)
-  task.checklist = {
-    ...list,
-    groups,
-    total: counted.length,
-    passed: counted.filter((r) => r.state === "passed").length,
-    failed: rows.filter((r) => r.state === "failed").length,
-    user: rows.filter((r) => r.state === "user"),
-  } satisfies Checklist
-  task.quality = task.quality.map((row) => ({
-    ...row,
-    findings: grown(row.findings ?? [], 14, (finding, k) => ({
-      ...finding,
-      severity: k % 5 === 0 ? "high" : k % 2 === 0 ? "medium" : "low",
-      text: vary(finding.text, k),
-    })),
-  }))
-}
+export { growBatch, growItems, scaleDocument, scaleWalkthrough }
 
 /** The pull request: 20 checks, as many as a big change draws. */
 export function growPullRequest(task: TaskDetail): void {
   const pr = task.pullRequest
   if (pr === undefined) return
-  // Local-first: nobody else reviews, so a big change grows its checks, not its threads.
   const threads = pr.threads
   const checks = grown(pr.checks, LARGE.checks, (check, k) => ({
     ...structuredClone(check),
@@ -459,13 +64,11 @@ function growRecords(task: TaskDetail): void {
     )
 }
 
-/** The task's pages, cut again from the documents grown for them. */
 function growPages(task: TaskDetail): void {
   if (task.pages === undefined) return
-  task.pages = task.pages.map((page) => {
-    if (!page.exists) return page
-    return stepPage(page.step, scaleDocument(page.name, page.body))
-  })
+  task.pages = task.pages.map((page) =>
+    page.exists ? stepPage(page.step, scaleDocument(page.name, page.body)) : page,
+  )
 }
 
 /** The demo task with the lists of the large demo. */
@@ -482,133 +85,34 @@ export function scaleDemoTask(task: TaskDetail): TaskDetail {
   return copy
 }
 
-// ---------------------------------------------------------------- what the task has changed
-
-/** Where each file of the large change began: a clone's diff is its original's. */
-const ORIGIN = new Map<string, string>()
-
-function variantPath(path: string, round: number): string {
-  if (round === 0) return path
-  const at = path.lastIndexOf("/")
-  return at < 0 ? `v${round + 1}-${path}` : `${path.slice(0, at)}/v${round + 1}${path.slice(at)}`
-}
-
-/** The walkthrough with 30 slices of 4 files and 25 points. */
-export function scaleWalkthrough(walk: Walkthrough): Walkthrough {
-  let next = 1
-  const base = walk.slices
-  const slices = times(SLICES, (j): WalkSlice => {
-    const source = base[Math.floor((j * base.length) / SLICES)] as WalkSlice
-    const round = partOf(j, base.length)
-    const files = times(4, (i): WalkFile => {
-      const from = source.files[i % source.files.length] as WalkFile
-      const path = variantPath(from.path, round * 3 + Math.floor(i / source.files.length))
-      ORIGIN.set(path, from.path)
-      return { ...structuredClone(from), path }
-    })
-    return {
-      ...structuredClone(source),
-      n: j + 1,
-      title: round > 0 ? `${source.title} · part ${round + 1}` : source.title,
-      tasks: times(PER_SLICE, (i) => {
-        const from = source.tasks[i % Math.max(1, source.tasks.length)] ?? {
-          id: "T0",
-          title: "A task",
-          done: true,
-        }
-        const id = next++
-        return {
-          ...from,
-          id: `T${id}`,
-          title: i >= source.tasks.length ? vary(from.title, i + 1) : from.title,
-        }
-      }),
-      files,
-      additions: files.reduce((n, f) => n + (f.additions ?? 0), 0),
-      deletions: files.reduce((n, f) => n + (f.deletions ?? 0), 0),
-      commits: 1,
-    }
-  })
-  const points = times(LARGE.doneMeans, (at): WalkPoint => {
-    const source = walk.points[at % walk.points.length] as WalkPoint
-    const own = at < walk.points.length
-    return {
-      ...structuredClone(source),
-      n: at + 1,
-      outcome: own ? source.outcome : vary(source.outcome, at + 1),
-      ...(own ? {} : { onlyYou: undefined }),
-    }
-  })
-  const files = new Set(slices.flatMap((s) => s.files.map((f) => f.path)))
+function buildScaledTaskCalls(
+  api: Api,
+  baseWalk: WalkthroughApi["walkthrough"] | undefined,
+): Partial<Api> & Pick<WalkthroughApi, "walkthrough"> {
   return {
-    ...walk,
-    totals: {
-      ...walk.totals,
-      files: files.size,
-      slices: SLICES,
-      tasks: LARGE.planTasks,
-      commits: SLICES,
-      additions: slices.reduce((n, s) => n + (s.additions ?? 0), 0),
-      deletions: slices.reduce((n, s) => n + (s.deletions ?? 0), 0),
+    ...(baseWalk === undefined
+      ? {}
+      : {
+          walkthrough: async (id: string) => {
+            const walk = await baseWalk(id)
+            return id === DEMO_TASK_ID ? scaleWalkthrough(walk) : walk
+          },
+        }),
+    changes: async (id, options) => {
+      const base = await api.changes(id, options)
+      if (id !== DEMO_TASK_ID || baseWalk === undefined) return base
+      return scaleChanges(base, scaleWalkthrough(await baseWalk(id)))
     },
-    slices,
-    points,
+    fileDiff: async (id, path, options) => {
+      const origin = ORIGIN.get(path)
+      const diff = await api.fileDiff(id, origin ?? path, options)
+      return origin === undefined ? diff : diff.replaceAll(origin, path)
+    },
+    taskRecords: async (id) => (id === DEMO_TASK_ID ? structuredClone(LARGE_RECORDS) : []),
+    taskArtifacts: async (id) =>
+      id === DEMO_TASK_ID ? scaleArtifacts(api.taskArtifacts(id)) : api.taskArtifacts(id),
   }
 }
-
-/** The change of the large task: the files of its walkthrough, 4 to a slice, and a commit for each. */
-function scaleChanges(base: Changes, walk: Walkthrough): Changes {
-  const seen = new Set<string>()
-  const files = walk.slices
-    .flatMap((s) => s.files)
-    .filter((f) => !seen.has(f.path) && seen.add(f.path))
-    .map((f) => ({
-      path: f.path,
-      status: f.status,
-      additions: f.additions,
-      deletions: f.deletions,
-    }))
-  return {
-    ...base,
-    files,
-    commits: walk.slices.map((s) => ({
-      sha: `demo${String(s.n).padStart(3, "0")}`,
-      subject: s.title,
-      files: s.files.map((f) => f.path),
-    })),
-  }
-}
-
-/** The big list of the Files tab's drafts: the demo's own, then more of the same kind. */
-async function scaleArtifacts(base: ReturnType<Api["taskArtifacts"]>) {
-  const found = await base
-  const last = found.task.at(-1)
-  if (last === undefined || found.task.length >= 12) return found
-  return {
-    ...found,
-    task: [
-      ...found.task,
-      ...times(12 - found.task.length, (at) => ({
-        ...structuredClone(last),
-        name: `${last.name}-${at + 2}`,
-        file: last.file.replace(/(\.html)?$/, `-${at + 2}$1`),
-        title: `${last.title} · version ${at + 2}`,
-        pages: undefined,
-      })),
-    ],
-  }
-}
-
-const RECORDS: DocEntry[] = times(
-  40,
-  (at): DocEntry => ({
-    name: `records/${at % 2 === 0 ? "it" : "checks"}-${Math.floor(at / 2) + 1}-run-${at + 1}.txt`,
-    label: `Run ${at + 1}`,
-    exists: true,
-    status: "",
-    approved: false,
-  }),
-)
 
 export function largeDemoTask(api: Api) {
   const baseWalk = (api as WalkthroughApi).walkthrough
@@ -637,28 +141,6 @@ export function largeDemoTask(api: Api) {
       const seen = await api.doc(id, name)
       return taskSections(name, scaleDocument(name, seen.markdown)) ?? (await fallback())
     },
-    calls: (): Partial<Api> & Pick<WalkthroughApi, "walkthrough"> => ({
-      ...(baseWalk === undefined
-        ? {}
-        : {
-            walkthrough: async (id: string) => {
-              const walk = await baseWalk(id)
-              return id === DEMO_TASK_ID ? scaleWalkthrough(walk) : walk
-            },
-          }),
-      changes: async (id, options) => {
-        const base = await api.changes(id, options)
-        if (id !== DEMO_TASK_ID || baseWalk === undefined) return base
-        return scaleChanges(base, scaleWalkthrough(await baseWalk(id)))
-      },
-      fileDiff: async (id, path, options) => {
-        const origin = ORIGIN.get(path)
-        const diff = await api.fileDiff(id, origin ?? path, options)
-        return origin === undefined ? diff : diff.replaceAll(origin, path)
-      },
-      taskRecords: async (id) => (id === DEMO_TASK_ID ? structuredClone(RECORDS) : []),
-      taskArtifacts: async (id) =>
-        id === DEMO_TASK_ID ? scaleArtifacts(api.taskArtifacts(id)) : api.taskArtifacts(id),
-    }),
+    calls: () => buildScaledTaskCalls(api, baseWalk),
   }
 }

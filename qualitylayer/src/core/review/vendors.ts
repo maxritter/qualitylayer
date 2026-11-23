@@ -122,16 +122,18 @@ export async function selectedReviewer(
   const context = await reviewerContext(ctx, working, task)
   const { secondOpinion } = await readConfig(ctx)
   const chosen = isNativeAgent(working) ? secondOpinion.reviewers[working] : undefined
-  if (
-    chosen !== undefined &&
-    chosen.agent !== "auto" &&
-    chosen.agent !== working &&
-    installed.includes(chosen.agent) &&
-    !(context.signedOut ?? []).includes(chosen.agent)
-  ) {
-    const model = chosen.model || secondOpinion.models[chosen.agent]
-    const models = { ...context.models, [chosen.agent]: model }
-    const pick = pickReviewer(working, chosen.agent, installed, { ...context, models })
+  const chosenAgent =
+    chosen !== undefined && chosen.agent !== "auto" && chosen.agent !== working
+      ? chosen.agent
+      : null
+  const canUseChosen =
+    chosenAgent !== null &&
+    installed.includes(chosenAgent) &&
+    !(context.signedOut ?? []).includes(chosenAgent)
+  if (canUseChosen && chosen !== undefined) {
+    const model = chosen.model || secondOpinion.models[chosenAgent]
+    const models = { ...context.models, [chosenAgent]: model }
+    const pick = pickReviewer(working, chosenAgent, installed, { ...context, models })
     if (pick !== null) return { ...pick, model }
   }
   const pick = pickReviewer(working, "auto", installed, context)

@@ -1,7 +1,13 @@
+#[path = "usage_tray_render.rs"]
+mod tray_render;
+
 use crate::poll;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
+#[cfg(target_os = "macos")]
+use tray_render::icon;
+use tray_render::render;
 
 #[derive(Default)]
 struct State {
@@ -311,81 +317,6 @@ pub fn paint_menu(app: &AppHandle) {
             }
         });
     }
-}
-
-#[cfg(target_os = "macos")]
-fn icon(name: &str) -> &'static [u8] {
-    match name {
-        "ql" => include_bytes!("../icons/usage/ql.png"),
-        "coins" => include_bytes!("../icons/usage/coins.png"),
-        "claude-code" => include_bytes!("../icons/usage/claude-code.png"),
-        "codex" => include_bytes!("../icons/usage/codex.png"),
-        "pi" => include_bytes!("../icons/usage/pi.png"),
-        "opencode" => include_bytes!("../icons/usage/opencode.png"),
-        "grok" => include_bytes!("../icons/usage/grok.png"),
-        "antigravity" => include_bytes!("../icons/usage/antigravity.png"),
-        "copilot" => include_bytes!("../icons/usage/copilot.png"),
-        "cursor" => include_bytes!("../icons/usage/cursor.png"),
-        _ => &[],
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn render(parts: &[(String, String)]) -> Option<tauri::image::Image<'static>> {
-    use std::ffi::{c_char, CString};
-    #[repr(C)]
-    struct Part {
-        icon: *const u8,
-        icon_length: usize,
-        text: *const c_char,
-    }
-    unsafe extern "C" {
-        fn ql_usage_icon(
-            parts: *const Part,
-            count: usize,
-            width: *mut u32,
-            height: *mut u32,
-        ) -> *mut u8;
-        fn ql_usage_icon_free(bytes: *mut u8);
-    }
-    let texts: Vec<CString> = parts
-        .iter()
-        .map(|(_, text)| CString::new(text.as_str()))
-        .collect::<Result<_, _>>()
-        .ok()?;
-    let native: Vec<Part> = parts
-        .iter()
-        .zip(&texts)
-        .map(|((name, _), text)| {
-            let bytes = icon(name);
-            Part {
-                icon: bytes.as_ptr(),
-                icon_length: bytes.len(),
-                text: text.as_ptr(),
-            }
-        })
-        .collect();
-    let (mut width, mut height) = (0, 0);
-    // All pointers stay owned until the synchronous AppKit call returns; the returned allocation is copied then freed.
-    unsafe {
-        let bytes = ql_usage_icon(native.as_ptr(), native.len(), &mut width, &mut height);
-        if bytes.is_null() {
-            return None;
-        }
-        let size = width as usize * height as usize * 4;
-        if width > 800 || height != 36 {
-            ql_usage_icon_free(bytes);
-            return None;
-        }
-        let rgba = std::slice::from_raw_parts(bytes, size).to_vec();
-        ql_usage_icon_free(bytes);
-        Some(tauri::image::Image::new_owned(rgba, width, height))
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn render(_parts: &[(String, String)]) -> Option<tauri::image::Image<'static>> {
-    None
 }
 
 #[cfg(all(test, target_os = "macos"))]

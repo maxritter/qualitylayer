@@ -4,6 +4,13 @@ import { loadIdentity as loadState } from "../licence/identity-access.ts"
 import { machineFingerprint } from "../licence/trial.ts"
 import { HTTP_TIMEOUT_MS, siteUrl } from "../licensing-client/endpoints.ts"
 import {
+  isValidPrepareReceipt,
+  isValidPublicPreview,
+  isValidScreenshotPart,
+  type PrepareReceipt,
+  parseSubmitReceipt,
+} from "./public-client-validate.ts"
+import {
   PUBLIC_DESTINATION,
   type PublicDraft,
   type PublicImage,
@@ -148,21 +155,8 @@ export async function preparePublicImages(
       "refused",
       "The screenshot preview was incomplete. Please try again.",
     )
-  const receipt = JSON.parse(raw) as Omit<PublicPreparation, "images"> & {
-    version: unknown
-    destination: unknown
-    id: unknown
-  }
-  if (
-    receipt.version !== 1 ||
-    receipt.destination !== PUBLIC_DESTINATION ||
-    receipt.id !== id ||
-    typeof receipt.preparationId !== "string" ||
-    !Number.isFinite(receipt.expiresAt) ||
-    receipt.expiresAt <= ctx.clock.now() ||
-    !Array.isArray(receipt.screenshots) ||
-    receipt.screenshots.length !== images.length
-  )
+  const receipt = JSON.parse(raw) as PrepareReceipt
+  if (!isValidPrepareReceipt(receipt, id, images.length, ctx.clock.now()))
     throw new PublicFeedbackFailure(
       "refused",
       "The screenshot preview was incomplete. Please try again.",
@@ -171,13 +165,7 @@ export async function preparePublicImages(
   for (let index = 0; index < receipt.screenshots.length; index++) {
     const descriptor = receipt.screenshots[index]
     const part = parts.get(`image-${index + 1}`)
-    if (
-      descriptor?.mime !== "image/png" ||
-      typeof descriptor.id !== "string" ||
-      !/^[a-f0-9]{64}$/.test(descriptor.sha256) ||
-      !(part instanceof Blob) ||
-      part.size > 4 * 1024 * 1024
-    )
+    if (!descriptor || !isValidScreenshotPart(descriptor, part))
       throw new PublicFeedbackFailure("refused", "The sanitized screenshot preview is missing.")
     const bytes = new Uint8Array(await part.arrayBuffer())
     if (sha256(bytes) !== descriptor.sha256)
@@ -209,15 +197,7 @@ export async function previewPublicReport(
     }),
   )
   const preview = body.preview as PublicPreview | undefined
-  if (
-    !preview ||
-    preview.id !== draft.id ||
-    preview.issue?.repository !== PUBLIC_DESTINATION ||
-    typeof preview.issue.title !== "string" ||
-    typeof preview.issue.body !== "string" ||
-    preview.review?.version !== 1 ||
-    !/^[a-f0-9]{64}$/.test(preview.review.contentSha256)
-  )
+  if (!isValidPublicPreview(preview, draft.id))
     throw new PublicFeedbackFailure(
       "refused",
       "The public preview was incomplete. Nothing was sent.",
@@ -245,16 +225,11 @@ export async function submitPublicReport(
       }),
     }),
   )
-  if (
-    (body.status !== "submitted" && body.status !== "already_submitted") ||
-    typeof body.reference !== "string" ||
-    !/^maxritter\/qualitylayer#[1-9]\d*$/.test(body.reference) ||
-    body.issueUrl !==
-      `https://github.com/maxritter/qualitylayer/issues/${body.reference.split("#")[1]}`
-  )
+  const receipt = parseSubmitReceipt(body)
+  if (!receipt)
     throw new PublicFeedbackFailure(
       "uncertain",
       "The service answered without a valid issue receipt. Your report is kept and automatic retry is paused.",
     )
-  return { status: body.status, reference: body.reference, issueUrl: body.issueUrl as string }
+  return receipt
 }

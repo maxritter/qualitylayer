@@ -4,107 +4,25 @@ import {
   type HostFrame,
   LIMITS,
   type ServerFrame,
-  VIEWER_STATE_BYTES,
   type ViewerState,
-  validateViewerState,
   validSize,
 } from "../../core/run/protocol.ts"
+import { TerminalReceiver } from "./terminal-receiver.ts"
+import {
+  buildTerminalSocketUrl,
+  clearPendingFresh,
+  createPendingFresh,
+  FRESH_REJECT_CODES,
+  isControlAllowed,
+  type PendingFresh,
+  parseViewerStateMessage,
+  publishedViewerState,
+  revokedViewerState,
+  type TerminalCallbacks,
+} from "./transport-helpers.ts"
 import type { FreshResult, TerminalControl, TerminalControlSender } from "./view.ts"
 
-type Replay = Extract<HostFrame, { type: "replay-begin" }>
-type TerminalCallbacks = {
-  onData?: (text: string) => void
-  onConnect?: () => void
-  onDisconnect?: () => void
-  onError?: (message: string) => void
-  onExit?: (code: number) => void
-}
-type Display = { write(text: string): void; resize(cols: number, rows: number): void }
-export class TerminalReceiver {
-  private decoder = new TextDecoder("utf-8", { fatal: true })
-  private replay: Replay | undefined
-  private chunks = ""
-  private replayBytes = 0
-  private upTo = 0
-  private completed = false
-  constructor(
-    private display: Display,
-    private event?: (frame: HostFrame) => void,
-  ) {}
-  receive(frame: HostFrame) {
-    switch (frame.type) {
-      case "replay-begin":
-        this.decoder = new TextDecoder("utf-8", { fatal: true })
-        this.replay = frame
-        this.chunks = ""
-        this.replayBytes = 0
-        this.completed = false
-        this.upTo = frame.upTo
-        this.display.write("\x1bc")
-        this.display.resize(frame.cols, frame.rows)
-        break
-      case "replay-chunk":
-        if (!this.replay || frame.epoch !== this.replay.epoch)
-          throw new Error("replay epoch mismatch")
-        this.replayBytes += frame.data.length
-        // Hosts now send at most replayBytes; older hosts still running send a JSON journal of
-        // up to about eight times that.
-        if (this.replayBytes > LIMITS.replayBytes * 16) throw new Error("replay exceeds cap")
-        if (this.replay.kind === "rebuild")
-          this.display.write(this.decoder.decode(frame.data, { stream: true }))
-        else this.chunks += this.decoder.decode(frame.data, { stream: true })
-        break
-      case "replay-end": {
-        if (!this.replay || frame.epoch !== this.replay.epoch)
-          throw new Error("replay epoch mismatch")
-        const tail = this.decoder.decode()
-        if (this.replay.kind === "rebuild") this.display.write(tail)
-        else {
-          const replay = JSON.parse(this.chunks + tail)
-          if (
-            replay.kind !== "restty-headless-replay" ||
-            replay.version !== 1 ||
-            !validSize(replay.initialCols, replay.initialRows) ||
-            !validSize(replay.cols, replay.rows) ||
-            !Array.isArray(replay.events)
-          )
-            throw new Error("invalid replay")
-          if (replay.initialCols !== this.replay.cols || replay.initialRows !== this.replay.rows)
-            throw new Error("replay initial size mismatch")
-          let cols = replay.initialCols,
-            rows = replay.initialRows
-          for (const event of replay.events) {
-            if (event.type === "resize" && validSize(event.cols, event.rows)) {
-              cols = event.cols
-              rows = event.rows
-              this.display.resize(event.cols, event.rows)
-            } else if (event.type === "write" && typeof event.data === "string")
-              this.display.write(event.data)
-            else throw new Error("invalid replay event")
-          }
-          if (cols !== replay.cols || rows !== replay.rows)
-            throw new Error("replay final size mismatch")
-        }
-        this.chunks = ""
-        this.replay = undefined
-        this.completed = true
-        this.decoder = new TextDecoder("utf-8", { fatal: true })
-        break
-      }
-      case "output":
-        if (!this.completed) throw new Error("live output before replay end")
-        if (frame.seq <= this.upTo) break
-        if (frame.seq !== this.upTo + 1) throw new Error("terminal output sequence gap")
-        this.upTo = frame.seq
-        this.display.write(this.decoder.decode(frame.data, { stream: true }))
-        break
-      case "status":
-        this.display.resize(frame.cols, frame.rows)
-        break
-    }
-    this.event?.(frame)
-  }
-}
+export { TerminalReceiver }
 
 export type TransportOptions = {
   watching: boolean
@@ -116,6 +34,7 @@ export type TransportOptions = {
   onViewer?: (state: ViewerState) => void
   onControl?: (sender: TerminalControlSender | undefined) => void
 }
+
 export class AgentTransport {
   private socket: WebSocket | undefined
   private callbacks: TerminalCallbacks = {}
@@ -127,42 +46,116 @@ export class AgentTransport {
   private replayComplete = false
   private ended = false
   private reportedError = false
-  private pendingFresh?: {
-    request: string
-    resolve: (result: FreshResult) => void
-    reject: (cause: Error) => void
-    timer: ReturnType<typeof setTimeout>
-  }
+  private pendingFresh?: PendingFresh
+
   constructor(private options: TransportOptions) {}
+
   private publishViewer() {
     if (!this.viewer) return
-    const state = { ...this.viewer }
-    if (!this.replayComplete) {
-      delete state.pickerProof
-      state.canType = false
-      state.canResize = false
-    }
-    this.options.onViewer?.(state)
+    this.options.onViewer?.(publishedViewerState(this.viewer, this.replayComplete))
   }
+
   private revokeViewer() {
     if (!this.viewer) return
-    this.viewer = {
-      ...this.viewer,
-      controller: false,
-      canType: false,
-      canResize: false,
-      canStop: false,
-      canTakeControl: false,
-    }
-    delete this.viewer.pickerProof
+    this.viewer = revokedViewerState(this.viewer)
     this.options.onViewer?.(this.viewer)
   }
+
   private reportError(code: string, message: string) {
     if (this.reportedError || this.ended) return
     this.reportedError = true
     this.options.onEvent?.({ type: "error", code, message })
     this.callbacks.onError?.(message)
   }
+
+  private rejectPendingFresh(message: string) {
+    const pending = this.pendingFresh
+    this.pendingFresh = undefined
+    clearPendingFresh(pending, message)
+  }
+
+  private resolvePendingFresh(frame: Extract<HostFrame, { type: "fresh-result" }>) {
+    const pending = this.pendingFresh
+    if (
+      !pending ||
+      frame.generation !== this.options.generation ||
+      frame.request !== pending.request
+    )
+      return
+    clearTimeout(pending.timer)
+    this.pendingFresh = undefined
+    pending.resolve(frame)
+  }
+
+  private handleHostFrame(frame: HostFrame, callbacks: TerminalCallbacks) {
+    if (frame.type === "fresh-result") this.resolvePendingFresh(frame)
+    else if (frame.type === "replay-begin") {
+      this.replayComplete = false
+      if (this.viewer) delete this.viewer.pickerProof
+      this.publishViewer()
+    } else if (frame.type === "replay-end") {
+      this.replayComplete = true
+      this.publishViewer()
+    } else if (frame.type === "exit") {
+      this.ended = true
+    } else if (
+      frame.type === "status" &&
+      (frame.status === "stopped" || frame.status === "failed")
+    ) {
+      this.ended = true
+      this.replayComplete = false
+      this.revokeViewer()
+    } else if (frame.type === "error") {
+      this.reportedError = true
+      if (FRESH_REJECT_CODES.has(frame.code)) this.rejectPendingFresh(frame.message)
+    }
+    this.options.onEvent?.(frame)
+    if (frame.type === "replay-end") callbacks.onConnect?.()
+    if (frame.type === "error") callbacks.onError?.(frame.message)
+    if (frame.type === "exit") callbacks.onExit?.(frame.code)
+  }
+
+  private handleSocketMessage(socket: WebSocket, message: MessageEvent) {
+    if (this.socket !== socket) return
+    try {
+      if (typeof message.data === "string") {
+        this.viewer = parseViewerStateMessage(
+          message.data,
+          this.replayComplete,
+          this.options.generation,
+        )
+        this.publishViewer()
+        return
+      }
+      if (!(message.data instanceof ArrayBuffer)) throw new Error("terminal frame must be binary")
+      for (const frame of this.decoder.push(new Uint8Array(message.data)))
+        this.receiver?.receive(frame as HostFrame)
+    } catch (error) {
+      this.reportError("protocol_error", String(error))
+      socket.close(1002, "terminal protocol error")
+    }
+  }
+
+  private handleSocketDisconnect(
+    socket: WebSocket,
+    closeEvent: boolean,
+    callbacks: TerminalCallbacks,
+  ) {
+    if (this.socket !== socket) return
+    if (closeEvent) {
+      this.socket = undefined
+      this.rejectPendingFresh(
+        "The connection closed before fresh was confirmed. Your draft is kept; inspect the session before retrying.",
+      )
+    }
+    this.replayComplete = false
+    this.options.onControl?.(undefined)
+    this.revokeViewer()
+    this.reportError("disconnected", "The agent's window disconnected. Reconnect to continue.")
+    if (closeEvent) callbacks.onDisconnect?.()
+    else socket.close()
+  }
+
   connect({ url, callbacks }: { url: string; callbacks: TerminalCallbacks }) {
     this.disconnect()
     this.retired = false
@@ -184,58 +177,9 @@ export class AgentTransport {
           }
         },
       },
-      (frame) => {
-        if (frame.type === "fresh-result") {
-          const pending = this.pendingFresh
-          if (
-            pending &&
-            frame.generation === this.options.generation &&
-            frame.request === pending.request
-          ) {
-            clearTimeout(pending.timer)
-            this.pendingFresh = undefined
-            pending.resolve(frame)
-          }
-        }
-        if (frame.type === "replay-begin") {
-          this.replayComplete = false
-          if (this.viewer) delete this.viewer.pickerProof
-          this.publishViewer()
-        }
-        if (frame.type === "replay-end") {
-          this.replayComplete = true
-          this.publishViewer()
-        }
-        if (frame.type === "exit") this.ended = true
-        if (frame.type === "status" && (frame.status === "stopped" || frame.status === "failed")) {
-          this.ended = true
-          this.replayComplete = false
-          this.revokeViewer()
-        }
-        if (frame.type === "error") {
-          this.reportedError = true
-          if (
-            this.pendingFresh &&
-            ["stale_generation", "watch_only", "watch_and_stop", "session_ended"].includes(
-              frame.code,
-            )
-          ) {
-            const pending = this.pendingFresh
-            clearTimeout(pending.timer)
-            this.pendingFresh = undefined
-            pending.reject(new Error(frame.message))
-          }
-        }
-        this.options.onEvent?.(frame)
-        if (frame.type === "replay-end") callbacks.onConnect?.()
-        if (frame.type === "error") callbacks.onError?.(frame.message)
-        if (frame.type === "exit") callbacks.onExit?.(frame.code)
-      },
+      (frame) => this.handleHostFrame(frame, callbacks),
     )
-    const target = new URL(url, location.href)
-    if (target.origin.replace(/^ws/, "http") !== location.origin || target.search || target.hash)
-      throw new Error("terminal attach must be same-origin without credentials in URL")
-    target.protocol = location.protocol === "https:" ? "wss:" : "ws:"
+    const target = buildTerminalSocketUrl(url)
     const protocols = [this.options.watching ? "qualitylayer-watch-v1" : "qualitylayer-control-v1"]
     if (this.options.phone) protocols.push("qualitylayer-phone-v1")
     const socket = new WebSocket(target, protocols)
@@ -245,56 +189,11 @@ export class AgentTransport {
       if (this.socket === socket)
         this.options.onControl?.((action) => this.socket === socket && this.control(action))
     }
-    socket.onmessage = (message) => {
-      if (this.socket !== socket) return
-      try {
-        if (typeof message.data === "string") {
-          if (new TextEncoder().encode(message.data).length > VIEWER_STATE_BYTES)
-            throw new Error("viewer state exceeds cap")
-          this.viewer = validateViewerState(JSON.parse(message.data))
-          if (!this.replayComplete || this.viewer.generation !== this.options.generation)
-            delete this.viewer.pickerProof
-          this.publishViewer()
-          return
-        }
-        if (!(message.data instanceof ArrayBuffer)) throw new Error("terminal frame must be binary")
-        for (const frame of this.decoder.push(new Uint8Array(message.data)))
-          this.receiver?.receive(frame as HostFrame)
-      } catch (error) {
-        this.reportError("protocol_error", String(error))
-        socket.close(1002, "terminal protocol error")
-      }
-    }
-    socket.onclose = () => {
-      if (this.socket === socket) {
-        this.socket = undefined
-        const pending = this.pendingFresh
-        if (pending) {
-          clearTimeout(pending.timer)
-          this.pendingFresh = undefined
-          pending.reject(
-            new Error(
-              "The connection closed before fresh was confirmed. Your draft is kept; inspect the session before retrying.",
-            ),
-          )
-        }
-        this.replayComplete = false
-        this.options.onControl?.(undefined)
-        this.revokeViewer()
-        this.reportError("disconnected", "The agent's window disconnected. Reconnect to continue.")
-        callbacks.onDisconnect?.()
-      }
-    }
-    socket.onerror = () => {
-      if (this.socket === socket) {
-        this.replayComplete = false
-        this.options.onControl?.(undefined)
-        this.revokeViewer()
-        this.reportError("disconnected", "The agent's window disconnected. Reconnect to continue.")
-        socket.close()
-      }
-    }
+    socket.onmessage = (message) => this.handleSocketMessage(socket, message)
+    socket.onclose = () => this.handleSocketDisconnect(socket, true, callbacks)
+    socket.onerror = () => this.handleSocketDisconnect(socket, false, callbacks)
   }
+
   private send(frame: ServerFrame) {
     if (!this.isConnected()) return false
     const bytes = encodeFrame(frame)
@@ -302,37 +201,31 @@ export class AgentTransport {
     this.socket?.send(new Uint8Array(bytes).buffer)
     return true
   }
+
+  private canStartFresh(): boolean {
+    const controlled = Boolean(this.viewer?.controller && this.viewer.canTakeControl)
+    return !this.pendingFresh && controlled && this.isConnected()
+  }
+
   fresh(sequence: number): Promise<FreshResult> {
     if (!Number.isSafeInteger(sequence) || sequence < 1)
       return Promise.reject(new Error("This conversation has no verified fresh-session boundary."))
-    if (
-      this.pendingFresh ||
-      !this.viewer?.controller ||
-      !this.viewer.canTakeControl ||
-      !this.isConnected()
-    )
+    if (!this.canStartFresh())
       return Promise.reject(
         new Error("This window must control the session before starting fresh."),
       )
     const request = crypto.randomUUID().replaceAll("-", "")
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (this.pendingFresh?.request !== request) return
-        this.pendingFresh = undefined
-        reject(
-          new Error(
-            "The fresh request has not confirmed its new session. Your previous conversation and draft are kept; inspect before retrying.",
-          ),
-        )
-      }, 45_000)
-      this.pendingFresh = { request, resolve, reject, timer }
-      if (!this.send({ type: "fresh", generation: this.options.generation, sequence, request })) {
-        clearTimeout(timer)
-        this.pendingFresh = undefined
-        reject(new Error("The fresh request could not be sent. Your draft is kept."))
-      }
+    return createPendingFresh({
+      request,
+      send: () =>
+        this.send({ type: "fresh", generation: this.options.generation, sequence, request }),
+      getPending: () => this.pendingFresh,
+      setPending: (next) => {
+        this.pendingFresh = next
+      },
     })
   }
+
   sendInput(text: string) {
     if (!this.viewer?.canType || !this.replayComplete || !this.isConnected()) return false
     const bytes = new TextEncoder().encode(text)
@@ -344,46 +237,36 @@ export class AgentTransport {
     this.options.onInput?.(text)
     return true
   }
-  resize(cols: number, rows: number) {
-    return (
-      !this.displayResize &&
-      this.replayComplete &&
-      !this.options.phone &&
-      this.viewer?.canResize === true &&
-      validSize(cols, rows) &&
-      this.send({ type: "resize", cols, rows })
-    )
+
+  private canResizeNow(): boolean {
+    const activeControl = !this.displayResize && this.replayComplete && !this.options.phone
+    return activeControl && this.viewer?.canResize === true
   }
+
+  resize(cols: number, rows: number) {
+    return this.canResizeNow() && validSize(cols, rows) && this.send({ type: "resize", cols, rows })
+  }
+
   setPhone(phone: boolean) {
     this.options.phone = phone
   }
+
   control(action: TerminalControl) {
-    const allowed =
-      action === "stop"
-        ? this.viewer?.canStop
-        : action === "take-control"
-          ? this.viewer?.canTakeControl
-          : this.viewer?.canType
     return (
-      allowed === true &&
+      isControlAllowed(this.viewer, action) &&
       this.send({ type: "control", action, generation: this.options.generation })
     )
   }
+
   isConnected() {
     return !this.retired && this.socket?.readyState === WebSocket.OPEN
   }
+
   disconnect() {
     this.retired = true
-    const pending = this.pendingFresh
-    if (pending) {
-      clearTimeout(pending.timer)
-      this.pendingFresh = undefined
-      pending.reject(
-        new Error(
-          "The session disconnected before fresh was confirmed. No automatic retry was started.",
-        ),
-      )
-    }
+    this.rejectPendingFresh(
+      "The session disconnected before fresh was confirmed. No automatic retry was started.",
+    )
     this.replayComplete = false
     this.options.onControl?.(undefined)
     this.revokeViewer()
@@ -391,6 +274,7 @@ export class AgentTransport {
     this.socket = undefined
     socket?.close()
   }
+
   destroy() {
     this.disconnect()
     this.callbacks = {}

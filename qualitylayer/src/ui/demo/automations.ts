@@ -62,27 +62,48 @@ function sampleRows(projectId: string): AutomationView[] {
 
 /** The five recent deliveries of the draft, newest first. */
 function sampleDeliveries(): DeliveryView[] {
-  const line = (at: number, event: string, to: string, text: string, ok: boolean, id: string) => ({
-    at,
-    event,
-    to,
-    ok,
-    text,
-    automation: id,
-  })
+  const line = (entry: DeliveryView): DeliveryView => entry
   return [
-    line(AT(2), "task.step_changed", "hooks.acme.test", "200", true, "au_7k2m0001"),
-    line(AT(2), "task.step_changed", "move-ticket.sh", "exit 0", true, "au_p41x0002"),
-    line(AT(5), "approval.requested", "n8n.acme.test", "503 · try 3 of 6", false, "au_d9wq0003"),
-    line(AT(5), "approval.requested", "hooks.acme.test", "200", true, "au_7k2m0001"),
-    line(
-      AT(30),
-      "question.asked",
-      "n8n.acme.test",
-      "503 · try 6 of 6, given up",
-      false,
-      "au_d9wq0003",
-    ),
+    line({
+      at: AT(2),
+      event: "task.step_changed",
+      to: "hooks.acme.test",
+      text: "200",
+      ok: true,
+      automation: "au_7k2m0001",
+    }),
+    line({
+      at: AT(2),
+      event: "task.step_changed",
+      to: "move-ticket.sh",
+      text: "exit 0",
+      ok: true,
+      automation: "au_p41x0002",
+    }),
+    line({
+      at: AT(5),
+      event: "approval.requested",
+      to: "n8n.acme.test",
+      text: "503 · try 3 of 6",
+      ok: false,
+      automation: "au_d9wq0003",
+    }),
+    line({
+      at: AT(5),
+      event: "approval.requested",
+      to: "hooks.acme.test",
+      text: "200",
+      ok: true,
+      automation: "au_7k2m0001",
+    }),
+    line({
+      at: AT(30),
+      event: "question.asked",
+      to: "n8n.acme.test",
+      text: "503 · try 6 of 6, given up",
+      ok: false,
+      automation: "au_d9wq0003",
+    }),
   ]
 }
 

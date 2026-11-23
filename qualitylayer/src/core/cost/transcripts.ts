@@ -3,82 +3,23 @@
 // and repeats a resumed session's messages: usage counts once per `message.id`. Codex writes
 // cumulative `token_count` totals: a call is the step between two of them.
 
-import { type PricingContext, recordedPricing, type Tokens, zeroTokens } from "./prices.ts"
-import { providerBillingKind, type UsageBilling } from "./usage-billing.ts"
+import type { Tokens } from "./prices.ts"
+import { type CodexParserState, codexCalls } from "./transcript-codex.ts"
+import { piCalls } from "./transcript-pi.ts"
+import {
+  type Brief,
+  type Call,
+  helperIdOf,
+  mergeNativeCredits,
+  NAMES_HELPER,
+  scanBrief,
+  textOf,
+  timeOf,
+  transcriptRows,
+} from "./transcript-shared.ts"
 
-export type Call = {
-  id?: string
-  /** Native accounting identity shared by durable receipts replayed in different sessions. */
-  accountingId?: string
-  /** Exact native event IDs written by earlier ledger adapters. */
-  legacyIds?: string[]
-  at: number | null
-  model: string
-  tokens: Tokens
-  pricing?: PricingContext
-  /** Present only when the native record explicitly reports dollars, never credits or request units. */
-  reportedUsd?: number
-  /** Copilot credit usage valued at $0.01 per credit; never money billed. */
-  reportedCreditValueUsd?: number
-  nativeCredits?: { amount?: number; status: "complete" | "partial" | "unavailable" }
-  billing?: UsageBilling
-  missingTokens?: boolean
-}
-
-/** Combine availability without turning an unknown zero into a reported amount. */
-export function mergeNativeCredits(
-  a: Call["nativeCredits"],
-  b: Call["nativeCredits"],
-): Call["nativeCredits"] {
-  if (!a) return b
-  if (!b) return a
-  return {
-    ...(a.amount !== undefined || b.amount !== undefined
-      ? { amount: (a.amount ?? 0) + (b.amount ?? 0) }
-      : {}),
-    status: a.status === b.status ? a.status : "partial",
-  }
-}
-
-/** One parsed row at a time: a transcript's rows are never all held at once. */
-function* rows(text: string): Generator<Record<string, unknown>> {
-  let start = 0
-  while (start < text.length) {
-    let end = text.indexOf("\n", start)
-    if (end < 0) end = text.length
-    const line = text.slice(start, end)
-    start = end + 1
-    if (line.trim() === "") continue
-    try {
-      yield JSON.parse(line) as Record<string, unknown>
-    } catch {
-      // a torn last line of a transcript still being written
-    }
-  }
-}
-
-/** Only commands that name a progress id can name a helper: the rest are not kept. */
-const NAMES_HELPER = "qualitylayer progress "
-
-const timeOf = (row: Record<string, unknown>): number | null => {
-  const at = typeof row.timestamp === "string" ? Date.parse(row.timestamp) : Number.NaN
-  return Number.isNaN(at) ? null : at
-}
-
-/** The text of a message's content, whether a string or a list of parts. */
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .map((part) =>
-      typeof part === "object" &&
-      part !== null &&
-      typeof (part as { text?: unknown }).text === "string"
-        ? (part as { text: string }).text
-        : "",
-    )
-    .join("\n")
-}
+export type { Brief, Call, CodexParserState }
+export { codexCalls, helperIdOf, mergeNativeCredits, piCalls, scanBrief }
 
 export type ClaudeUsage = {
   input_tokens?: number
@@ -100,6 +41,48 @@ export function claudeTokens(u: ClaudeUsage): Tokens {
   }
 }
 
+/** The shell commands an assistant message ran (its own `tool_use` inputs, never what a tool printed). */
+function commandsOf(content: unknown): string[] {
+  if (!Array.isArray(content)) return []
+  const out: string[] = []
+  for (const part of content) {
+    const p = part as { type?: unknown; input?: { command?: unknown } } | null
+    if (p?.type === "tool_use" && typeof p.input?.command === "string") out.push(p.input.command)
+  }
+  return out
+}
+
+type ClaudeAcc = {
+  messages: Map<string, Call>
+  commands: string[]
+  cwd: string | null
+  prompt: string | null
+}
+
+function applyClaudeRow(row: Record<string, unknown>, acc: ClaudeAcc): void {
+  if (acc.cwd === null && typeof row.cwd === "string" && row.cwd !== "") acc.cwd = row.cwd
+  if (row.type === "user" && acc.prompt === null) {
+    const said = textOf((row.message as { content?: unknown } | undefined)?.content)
+    if (said.trim() !== "") acc.prompt = said
+  }
+  if (row.type !== "assistant") return
+  const message = row.message as
+    | { id?: string; model?: string; usage?: ClaudeUsage; content?: unknown }
+    | undefined
+  for (const command of commandsOf(message?.content))
+    if (command.includes(NAMES_HELPER)) acc.commands.push(command)
+  if (message?.id === undefined || message.usage === undefined || message.model === "<synthetic>")
+    return
+  // A message's lines share its id; the last one holds the final output count.
+  const earlier = acc.messages.get(message.id)
+  acc.messages.set(message.id, {
+    id: message.id,
+    at: earlier?.at ?? timeOf(row),
+    model: message.model ?? "unknown",
+    tokens: claudeTokens(message.usage),
+  })
+}
+
 /**
  * One Claude Code transcript: its calls, the folder it started in, and the first thing it was told
  * (a helper's brief names its `qualitylayer progress <id>`). `seen` holds message ids counted
@@ -115,286 +98,19 @@ export function claudeCalls(
   brief: Brief
   ownHelper: string | null
 } {
-  const messages = new Map<string, Call>()
-  const commands: string[] = []
-  let cwd: string | null = null
-  let prompt: string | null = null
-  for (const row of rows(text)) {
-    if (cwd === null && typeof row.cwd === "string" && row.cwd !== "") cwd = row.cwd
-    if (row.type === "user" && prompt === null) {
-      const said = textOf((row.message as { content?: unknown } | undefined)?.content)
-      if (said.trim() !== "") prompt = said
-    }
-    if (row.type !== "assistant") continue
-    const message = row.message as
-      | { id?: string; model?: string; usage?: ClaudeUsage; content?: unknown }
-      | undefined
-    for (const command of commandsOf(message?.content))
-      if (command.includes(NAMES_HELPER)) commands.push(command)
-    if (message?.id === undefined || message.usage === undefined) continue
-    if (message.model === "<synthetic>") continue
-    // A message's lines share its id; the last one holds the final output count.
-    const earlier = messages.get(message.id)
-    messages.set(message.id, {
-      id: message.id,
-      at: earlier?.at ?? timeOf(row),
-      model: message.model ?? "unknown",
-      tokens: claudeTokens(message.usage),
-    })
-  }
+  const acc: ClaudeAcc = { messages: new Map(), commands: [], cwd: null, prompt: null }
+  for (const row of transcriptRows(text)) applyClaudeRow(row, acc)
   const calls: Call[] = []
-  for (const [id, call] of messages) {
+  for (const [id, call] of acc.messages) {
     if (seen.has(id)) continue
     seen.add(id)
     calls.push(call)
   }
   return {
     calls,
-    cwd,
-    prompt,
-    brief: scanBrief(text, { prompt, commands }),
-    ownHelper: helperIdOf(prompt) ?? helperIdOf(commands.join("\n")),
-  }
-}
-
-/** The shell commands an assistant message ran (its own `tool_use` inputs, never what a tool printed). */
-function commandsOf(content: unknown): string[] {
-  if (!Array.isArray(content)) return []
-  const out: string[] = []
-  for (const part of content) {
-    const p = part as { type?: unknown; input?: { command?: unknown } } | null
-    if (p?.type === "tool_use" && typeof p.input?.command === "string") out.push(p.input.command)
-  }
-  return out
-}
-
-type CodexTotals = {
-  input_tokens?: number
-  cached_input_tokens?: number
-  cache_write_input_tokens?: number
-  output_tokens?: number
-}
-
-function codexTokens(total: CodexTotals): Tokens {
-  const cached = total.cached_input_tokens ?? 0
-  return {
-    // Codex counts cached input inside input_tokens.
-    input: Math.max(0, (total.input_tokens ?? 0) - cached),
-    output: total.output_tokens ?? 0,
-    cacheRead: cached,
-    cacheWrite5m: total.cache_write_input_tokens ?? 0,
-    cacheWrite1h: 0,
-  }
-}
-
-const minus = (a: Tokens, b: Tokens): Tokens => ({
-  input: Math.max(0, a.input - b.input),
-  output: Math.max(0, a.output - b.output),
-  cacheRead: Math.max(0, a.cacheRead - b.cacheRead),
-  cacheWrite5m: Math.max(0, a.cacheWrite5m - b.cacheWrite5m),
-  cacheWrite1h: Math.max(0, a.cacheWrite1h - b.cacheWrite1h),
-})
-
-/** One Codex rollout: its thread, the thread that spawned it, its folder, first prompt and calls. */
-export type CodexParserState = {
-  model: string
-  before: Tokens
-  turn: number
-  pricing?: PricingContext
-}
-export function codexCalls(
-  text: string,
-  state?: CodexParserState,
-): {
-  id: string | null
-  parent: string | null
-  cwd: string | null
-  prompt: string | null
-  calls: Call[]
-  brief: Brief
-  ownHelper: string | null
-} {
-  let id: string | null = null
-  let parent: string | null = null
-  let cwd: string | null = null
-  let prompt: string | null = null
-  let model = state?.model ?? "unknown"
-  let before = state?.before ?? zeroTokens()
-  let turn = state?.turn ?? 0
-  let pricing = state?.pricing ?? {}
-  const calls: Call[] = []
-  const commands: string[] = []
-  for (const row of rows(text)) {
-    const payload = (row.payload ?? {}) as Record<string, unknown>
-    if (
-      row.type === "response_item" &&
-      (payload.type === "function_call" || payload.type === "local_shell_call")
-    ) {
-      const command = JSON.stringify(payload.arguments ?? payload.action ?? "")
-      if (command.includes(NAMES_HELPER)) commands.push(command)
-    }
-    if (row.type === "session_meta") {
-      id = typeof payload.id === "string" ? payload.id : id
-      if (cwd === null && typeof payload.cwd === "string" && payload.cwd !== "") cwd = payload.cwd
-      const spawn = (payload.source as { subagent?: { thread_spawn?: Record<string, unknown> } })
-        ?.subagent?.thread_spawn
-      if (spawn !== undefined && typeof spawn.parent_thread_id === "string")
-        parent = spawn.parent_thread_id
-    } else if (row.type === "turn_context" && typeof payload.model === "string") {
-      model = payload.model
-      pricing = recordedPricing(payload)
-    } else if (
-      row.type === "response_item" &&
-      payload.type === "message" &&
-      payload.role === "user" &&
-      prompt === null
-    ) {
-      const said = textOf(payload.content)
-      if (said.trim() !== "") prompt = said
-    } else if (row.type === "event_msg" && payload.type === "token_count") {
-      const info = payload.info as
-        | ({ total_token_usage?: CodexTotals; last_token_usage?: CodexTotals } & Record<
-            string,
-            unknown
-          >)
-        | null
-      if (info?.total_token_usage === undefined) continue
-      const now = codexTokens(info.total_token_usage)
-      const tokens = minus(now, before)
-      if (Object.values(tokens).some((n) => n > 0))
-        calls.push({
-          id: String(turn++),
-          at: timeOf(row),
-          model,
-          tokens,
-          pricing: {
-            ...pricing,
-            ...recordedPricing(payload),
-            ...recordedPricing(info),
-            ...(typeof info.last_token_usage?.input_tokens === "number"
-              ? { promptTokens: info.last_token_usage.input_tokens }
-              : {}),
-          },
-        })
-      before = now
-    }
-  }
-  if (state) Object.assign(state, { model, before, turn, pricing })
-  return {
-    id,
-    parent,
-    cwd,
-    prompt,
-    calls,
-    brief: scanBrief(text, { prompt, commands }),
-    ownHelper: helperIdOf(prompt) ?? helperIdOf(commands.join("\n")),
-  }
-}
-
-/** Pi's native session entries and JSON stream carry complete per-message usage. */
-export function piCalls(text: string): ReturnType<typeof codexCalls> {
-  let id: string | null = null,
-    parent: string | null = null,
-    cwd: string | null = null,
-    prompt: string | null = null
-  const calls = new Map<string, Call>()
-  const commands: string[] = []
-  for (const row of rows(text)) {
-    if (row.type === "session") {
-      id = typeof row.id === "string" ? row.id : id
-      cwd = typeof row.cwd === "string" ? row.cwd : cwd
-    }
-    if (row.type === "custom" && row.customType === "qualitylayer-helper") {
-      const data = row.data as { parentSession?: unknown } | undefined
-      if (typeof data?.parentSession === "string") parent = data.parentSession
-    }
-    if (row.type !== "message" && row.type !== "message_end") continue
-    const message = row.message as
-      | (Record<string, unknown> & {
-          usage?: { input: number; output: number; cacheRead?: number; cacheWrite?: number }
-          content?: { type?: string; name?: string; arguments?: { command?: string } }[]
-        })
-      | undefined
-    if (!message) continue
-    if (message.role === "user" && prompt === null) prompt = textOf(message.content)
-    if (message.role !== "assistant") continue
-    for (const part of Array.isArray(message.content) ? message.content : [])
-      if (
-        part.type === "toolCall" &&
-        typeof part.name === "string" &&
-        ["bash", "powershell"].includes(part.name) &&
-        typeof part.arguments?.command === "string"
-      )
-        commands.push(part.arguments.command)
-    const usage = message.usage
-    if (
-      !usage ||
-      ![usage.input, usage.output, usage.cacheRead ?? 0, usage.cacheWrite ?? 0].every(
-        (n) => typeof n === "number" && Number.isFinite(n) && n >= 0,
-      )
-    )
-      continue
-    const key =
-      typeof message.responseId === "string"
-        ? message.responseId
-        : typeof row.id === "string"
-          ? row.id
-          : String(message.timestamp ?? row.timestamp)
-    const at = typeof message.timestamp === "number" ? message.timestamp : timeOf(row)
-    calls.set(key, {
-      id: key,
-      at,
-      model: typeof message.model === "string" ? message.model : "unknown",
-      billing: providerBillingKind(
-        message.provider,
-        typeof message.model === "string" ? message.model : "unknown",
-      ),
-      pricing: recordedPricing(message),
-      tokens: {
-        input: usage.input,
-        output: usage.output,
-        cacheRead: usage.cacheRead ?? 0,
-        cacheWrite5m: usage.cacheWrite ?? 0,
-        cacheWrite1h: 0,
-      },
-    })
-  }
-  return {
-    id,
-    parent,
-    cwd,
-    prompt,
-    calls: [...calls.values()],
-    brief: scanBrief(text, { prompt, commands }),
-    ownHelper: helperIdOf(prompt) ?? helperIdOf(commands.join("\n")),
-  }
-}
-
-/** The helper a brief started, from the progress command every brief carries; null for none. */
-export function helperIdOf(prompt: string | null): string | null {
-  if (prompt === null) return null
-  for (const m of prompt.matchAll(/qualitylayer progress ([A-Za-z0-9][\w.-]*)/g)) {
-    if (m[1] !== undefined && m[1] !== "build") return m[1]
-  }
-  return null
-}
-
-/** The id a helper's brief names, found anywhere in its transcript: a brief is often a file it reads. */
-export type Brief = { helper: string | null }
-
-/**
- * What a transcript's brief names. The helper's id comes from its own first prompt, else from the
- * commands it ran itself, and only then from anywhere in the text (a brief it merely read): a log
- * or report that quotes another helper's progress command must not become this helper's id.
- */
-export function scanBrief(
-  text: string,
-  own?: { prompt: string | null; commands: string[] },
-): Brief {
-  return {
-    helper:
-      own === undefined
-        ? helperIdOf(text)
-        : (helperIdOf(own.prompt) ?? helperIdOf(own.commands.join("\n")) ?? helperIdOf(text)),
+    cwd: acc.cwd,
+    prompt: acc.prompt,
+    brief: scanBrief(text, { prompt: acc.prompt, commands: acc.commands }),
+    ownHelper: helperIdOf(acc.prompt) ?? helperIdOf(acc.commands.join("\n")),
   }
 }

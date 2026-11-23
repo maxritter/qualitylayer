@@ -8,55 +8,9 @@ import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import { agentFileOf, CHECKS_RECORD } from "../../core/docs/names.ts"
 import { FLOW_STEPS, type FlowStepId } from "../../core/flow.ts"
 import { artifactName } from "./ArtifactFrame.tsx"
-import type { PlainBlock } from "./DocReader.tsx"
-import { escapeHtml } from "./html-escape.ts"
-import type { Renderer } from "./MermaidBlock.tsx"
 
+export { copyPictureBody, type Formatted, type Rasterise, toFormatted } from "./copy-out-html.ts"
 export { escapeHtml } from "./html-escape.ts"
-
-/** What draws the pictures: a canvas, which a test DOM does not have. Each returns a PNG data URI. */
-export type Rasterise = {
-  diagram(svg: string): Promise<string>
-  mockup(html: string): Promise<string>
-}
-
-export type Formatted = {
-  html: string
-  /** What went as an image, and the mockups that went as their line instead. */
-  diagrams: number
-  mockups: number
-  lines: number
-}
-
-/** Resolve local pictures through the task's existing read capability; copy never publishes them. */
-export async function copyPictureBody(
-  body: string,
-  load: (name: string) => Promise<{ kind: string; type?: string; base64?: string }>,
-): Promise<string> {
-  const images: { raw: string; name: string; title: string }[] = []
-  void marked.walkTokens(marked.lexer(body), (token) => {
-    if (token.type === "image" && !/^(https?:|data:)/i.test(token.href))
-      images.push({ raw: token.raw, name: token.href, title: token.text || "Picture" })
-  })
-  let result = body
-  for (const image of images) {
-    let replacement = `Picture: ${image.title} (not included in this copy)`
-    try {
-      const found = await load(image.name.replace(/^evidence\//, ""))
-      if (
-        found.kind === "image" &&
-        /^image\/(?:png|jpeg|webp|gif)$/.test(found.type ?? "") &&
-        found.base64 &&
-        /^[A-Za-z0-9+/=]+$/.test(found.base64)
-      )
-        replacement = `![${image.title.replace(/[\\[\]]/g, "\\$&")}](data:${found.type};base64,${found.base64})`
-    } catch {
-      /* The copied document names the omitted picture. */
-    }
-    result = result.replace(image.raw, replacement)
-  }
-  return result
-}
 
 export const mockupLine = (name: string) => `Mockup: ${name} (open it in QualityLayer)`
 
@@ -103,6 +57,13 @@ export function toMarkdown(body: string, namePictures = false): string {
 const ARTIFACT_OPEN = /^<!--\s*ql:artifact\s+(\S+?)\s*-->$/
 const ARTIFACT_CLOSE = /^<!--\s*\/ql:artifact\s*-->$/
 
+function artifactFenceFor(html: string): string | null {
+  const reference = ARTIFACT_OPEN.exec(html)?.[1]
+  const found = reference === undefined ? null : parseArtifactReference(reference)
+  if (found === null) return null
+  return `\`\`\`artifact\n${found.file}${found.section ? `#${found.section}` : ""}\n\`\`\`\n\n`
+}
+
 /**
  * A step file's `ql:artifact <name>` markers, each with the generated description between it and
  * its closing marker, as the artifact fence the copy draws or names: the mockup is what the page
@@ -119,14 +80,9 @@ function withArtifactFences(body: string): string {
       if (token.type !== "heading") continue
       skipping = false
     }
-    const reference = ARTIFACT_OPEN.exec(html)?.[1]
-    const found = reference === undefined ? null : parseArtifactReference(reference)
-    if (found === null) {
-      out.push(token.raw)
-      continue
-    }
-    out.push(`\`\`\`artifact\n${found.file}${found.section ? `#${found.section}` : ""}\n\`\`\`\n\n`)
-    skipping = true
+    const fence = artifactFenceFor(html)
+    out.push(fence ?? token.raw)
+    if (fence !== null) skipping = true
   }
   return out.join("")
 }
@@ -147,6 +103,11 @@ const labelOf = (step: FlowStepId): string => FLOW_STEPS.find((s) => s.id === st
 /** The agents' file of a step file, `agents/NN-step.md`. */
 export const agentsPathOf = (step: FlowStepId): string => agentFileOf(step)
 
+const LINE_SEP = String.fromCharCode(0x2028)
+const PARA_SEP = String.fromCharCode(0x2029)
+const hasExtraLineBreak = (line: string): boolean =>
+  line.includes("\r") || line.includes(LINE_SEP) || line.includes(PARA_SEP)
+
 /**
  * A step file (frontmatter already off) as a document that reads on its own: the page title
  * `# Step · Title`, a one-line subtitle, then its sections in page order. A mockup marker becomes
@@ -159,7 +120,7 @@ export function stepCopy(body: string, { step, task }: Pick<StepFile, "step" | "
   const newline = rest.indexOf("\n")
   const firstLine = newline < 0 ? rest : rest.slice(0, newline)
   const heading =
-    firstLine.startsWith("# ") && firstLine.length > 2 && !/[\r\u2028\u2029]/.test(firstLine)
+    firstLine.startsWith("# ") && firstLine.length > 2 && !hasExtraLineBreak(firstLine)
   const title = heading ? firstLine.slice(2).trim() : ""
   const page =
     title === ""
@@ -194,65 +155,4 @@ export function forAgentMarkdown(
   ]
   if (newChecks) parts.push(`---\n\n# Checks (${CHECKS_RECORD})\n\n${newChecks}`)
   return `${parts.join("\n\n")}\n`
-}
-
-type Host = {
-  artifactPicture?: (path: string) => Promise<string>
-  theme: string
-  renderMermaid: Renderer
-  loadArtifact: (name: string) => Promise<string>
-  rasterise: Rasterise
-}
-
-type Piece = { html: string; made?: "diagram" | "mockup" | "line" }
-
-async function piece(block: PlainBlock, host: Host): Promise<Piece> {
-  if (block.kind === "mermaid") {
-    try {
-      // A document leaves the App drawn light, whatever the App's theme: it lands on a white page.
-      const svg = await host.renderMermaid(`copy-${block.key}`, block.source, "light")
-      const png = await host.rasterise.diagram(svg)
-      return {
-        html: `<p><img src="${png}" alt="Diagram" data-export-block="${escapeHtml(block.key)}" data-export-scale="2"></p>`,
-        made: "diagram",
-      }
-    } catch {
-      return { html: `<pre><code>${escapeHtml(block.source)}</code></pre>` }
-    }
-  }
-  if (block.kind === "artifact") {
-    const name = artifactName(block.path)
-    try {
-      const png = host.artifactPicture
-        ? await host.artifactPicture(block.path)
-        : await host.rasterise.mockup(await host.loadArtifact(name))
-      return {
-        html: `<p><img src="${png}" alt="Mockup: ${escapeHtml(name)}" data-export-block="${escapeHtml(block.key)}"></p>`,
-        made: "mockup",
-      }
-    } catch {
-      return { html: `<p>${escapeHtml(mockupLine(name))}</p>`, made: "line" }
-    }
-  }
-  if (block.kind === "added") {
-    const why = block.reason !== "" ? `: ${escapeHtml(block.reason)}` : ""
-    const head = `<p><b>Added in ${escapeHtml(block.stage)}${why}</b></p>`
-    return { html: `<blockquote>${head}${block.html}</blockquote>` }
-  }
-  if (block.kind === "wireframe" || block.kind === "panel")
-    return { html: `<pre><code>${escapeHtml(`${block.kind}\n${block.source}`)}</code></pre>` }
-  return { html: block.html }
-}
-
-/** The document as HTML, its pictures drawn at the same time. */
-export async function toFormatted(blocks: PlainBlock[], host: Host): Promise<Formatted> {
-  const pieces: Piece[] = []
-  for (const block of blocks) pieces.push(await piece(block, host))
-  const count = (made: Piece["made"]) => pieces.filter((p) => p.made === made).length
-  return {
-    html: pieces.map((p) => p.html).join("\n"),
-    diagrams: count("diagram"),
-    mockups: count("mockup"),
-    lines: count("line"),
-  }
 }

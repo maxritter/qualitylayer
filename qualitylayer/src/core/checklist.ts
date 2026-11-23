@@ -5,23 +5,29 @@
 
 import type { Ctx } from "../ctx.ts"
 import { proofOf } from "./acceptance.ts"
-import { type Attestation, readAttestations } from "./attestations.ts"
+import { readAttestations } from "./attestations.ts"
+import { assignRunningJudges, fixedGaps, judgesOfLastRound, userPoints } from "./checklist-gaps.ts"
+import {
+  buildBeforeRows,
+  buildProjectRows,
+  buildReviewSection,
+  makeVerdictRow,
+} from "./checklist-rows.ts"
 import { readCheckRecords } from "./checks.ts"
-import { plainAsk, splitAsk } from "./confirm-ask.ts"
-import { type BuildLog, readBuildRecord } from "./docs/build-log.ts"
-import { projectChecks } from "./docs/commands.ts"
+import { readBuildRecord } from "./docs/build-log.ts"
 import type { Outline } from "./docs/outline.ts"
 import { judgeShares } from "./docs/rules/judge-shares.ts"
-import { type DonePoint, doneMeansOf } from "./done-means.ts"
+import { doneMeansOf } from "./done-means.ts"
 import { HELPER_FRESH_MS } from "./estimate.ts"
 import { type Activity, currentSet, readPastSets } from "./helpers.ts"
-import { passRoles, type QualityRow, qualityRowsFor } from "./polish.ts"
+import { passRoles, qualityRowsFor } from "./polish.ts"
 import { said } from "./said.ts"
 import { planDetailsText, type Task } from "./task/store.ts"
 import { taskFlow } from "./task-flow.ts"
-import { reviewCard } from "./verdicts.ts"
 import { readAssignment, staleInputs } from "./verification.ts"
 import { type VerifyBudget, verifyBudget } from "./verify-budget.ts"
+
+export { userPoints }
 
 export type CheckState = "waiting" | "running" | "passed" | "failed" | "user"
 
@@ -70,41 +76,30 @@ export type Checklist = {
   fixed?: { id: string; label: string; text: string; round: number }[]
 }
 
-const clip = (text: string, length: number) =>
-  text.length <= length ? text : `${text.slice(0, length - 1).trimEnd()}…`
-
 const minutesOf = (ms: number) => (ms <= 0 ? 0 : Math.max(1, Math.round(ms / 60_000)))
-
-const qualityState = (row: QualityRow): CheckState =>
-  row.state === "done" || row.state === "off"
-    ? "passed"
-    : row.state === "running" || row.state === "fixing"
-      ? "running"
-      : "waiting"
-
-/** The part a check belongs to when the build is judged in parts. */
-function partOf(
-  shares: ReturnType<typeof judgeShares>,
-  id: string,
-): { n: number; of: number } | null {
-  if (shares.length === 0) return null
-  const [kind, subject] = id.split(":")
-  const share =
-    kind === "scenario"
-      ? shares.find((s) => s.scenarios.includes(Number(subject)))
-      : kind === "dod"
-        ? shares.find((s) => s.tasks.includes(subject ?? ""))
-        : kind === "acceptance"
-          ? (shares.find((s) => s.steps.includes(subject ?? "")) ??
-            shares.find((s) => s.kind === "diff"))
-          : shares.find((s) => s.kind === "diff")
-  return share !== undefined ? { n: share.n, of: share.of } : null
-}
 
 export type ChecklistInput = {
   /** The helpers handed out in the task's stage, as `activity` lists them. */
   helpers: readonly (Pick<Activity, "id"> &
     Partial<Pick<Activity, "line" | "state" | "at" | "started">>)[]
+}
+
+async function checkingMinutes(ctx: Ctx, task: Task): Promise<number> {
+  const past = await readPastSets(ctx, task)
+  const current = await currentSet(ctx, task)
+  const active =
+    current !== null && current.stage === "verify"
+      ? [
+          {
+            ...current,
+            ended: current.running ? Math.max(current.ended, ctx.clock.now()) : current.ended,
+          },
+        ]
+      : []
+  const totalMs = [...past, ...active]
+    .filter((s) => s.stage === "verify" && s.role === "judge")
+    .reduce((t, s) => t + (s.ended - s.started), 0)
+  return minutesOf(totalMs)
 }
 
 /** The checklist of a task at Verify or later; null before there is a Plan to check against. */
@@ -117,177 +112,58 @@ export async function readChecklist(
   const outline: Outline | null = flow.plan
   if (outline === null) return null
   const log = await readBuildRecord(ctx, task)
-  // The project checks are the Plan's in a task.
   const planned = (await planDetailsText(ctx, task)) ?? ""
   const done = await doneMeansOf(ctx, task)
   const attested = new Map((await readAttestations(ctx, task)).map((a) => [a.item, a]))
   const { items: verdicts, open } = await said(ctx, task, log)
-  const userVerdicts = new Set(
-    [...verdicts].filter(([, v]) => v.state === "user").map(([id]) => id),
-  )
   // Points the judge recorded as `user`: the person's own. Never counted among the agents' checks,
   // and the only ones an attestation can settle.
-  const personal = userVerdicts
-  // The parts the running judges were given: the current assignment's cards and, for a
-  // re-check, only its points, never all the cards split as they stand now.
-  const current_ = await readAssignment(ctx, task)
-  const shares = judgeShares(current_?.outline ?? outline, current_?.iteration ?? 1)
-  // A set leaves no mark when it ends: a judge that has said nothing for a while is over.
-  const now_ = ctx.clock.now()
+  const personal = new Set([...verdicts].filter(([, v]) => v.state === "user").map(([id]) => id))
+  const currentAssignment = await readAssignment(ctx, task)
+  const shares = judgeShares(
+    currentAssignment?.outline ?? outline,
+    currentAssignment?.iteration ?? 1,
+  )
+  const nowMs = ctx.clock.now()
   const running = input.helpers.filter(
     (h) =>
       h.state === "running" &&
       /^j(?:\d+-|s\d+-)/.test(h.id) &&
       h.line?.toLowerCase() !== "done" &&
-      now_ - (h.at ?? h.started ?? 0) < HELPER_FRESH_MS,
+      nowMs - (h.at ?? h.started ?? 0) < HELPER_FRESH_MS,
   )
-
   const quality = await qualityRowsFor(
     ctx,
     task,
     passRoles(flow.flow),
     input.helpers.filter((h) => h.state === "running").map((h) => h.id),
   )
-  const before: CheckRow[] = quality.map((q): CheckRow => {
-    const label = "Security review"
-    return {
-      id: q.step,
-      label,
-      state: qualityState(q),
-      ...(q.state === "running" || q.state === "fixing"
-        ? { who: q.state === "fixing" ? "Fixing" : label }
-        : {}),
-      ...(q.result !== undefined ? { text: q.result } : {}),
-      ...(q.state === "off" ? { off: true as const } : {}),
-    }
-  })
-
   const records = await readCheckRecords(ctx, task)
-  const project: CheckRow[] = projectChecks(planned).map((command) => {
-    const last = records.filter((r) => r.scope === "all" && r.command === command).at(-1)
-    return {
-      id: `check:${command}`,
-      label: command,
-      state: last === undefined || !last.ran ? "waiting" : last.exit === 0 ? "passed" : "failed",
-      ...(last?.ran === true
-        ? {
-            text: `exit ${last.exit ?? "at the time limit"}${last.ms !== undefined ? ` · ${Math.round(last.ms / 100) / 10}s` : ""}`,
-          }
-        : {}),
-    }
-  })
-
-  const row = (id: string, label: string): CheckRow => {
-    const v = verdicts.get(id)
-    const own = attested.get(id)
-    if (own !== undefined && personal.has(id)) return { id, label, state: "passed", text: own.text }
-    if (v !== undefined)
-      return {
-        id,
-        label,
-        state: v.state,
-        text: v.text,
-        ...(v.evidence !== undefined ? { evidence: v.evidence } : {}),
-        ...(v.carried === true ? { carried: true as const } : {}),
-      }
-    return { id, label, state: "waiting" }
-  }
-
-  const doneRows = done.map((d) => row(`done:${d.n}`, d.outcome))
-  const taskById = new Map(outline.slices.flatMap((s) => s.tasks).map((t) => [t.id, t]))
-  const proof = await proofOf(ctx, task)
-  // The Plan asks for no card line: a card's row is listed only when a reviewer wrote one.
-  const cards = [...taskById.keys()].filter((id) => verdicts.has(`dod:${id}`))
-  // A step only the person can check is settled by the attestation of the point it proves.
-  const stepRow = (step: (typeof proof.steps)[number]): CheckRow => {
-    const r = row(`acceptance:${step.id}`, clip(step.text, 90))
-    const own = step.points
-      .map((n) => (personal.has(`done:${n}`) ? attested.get(`done:${n}`) : undefined))
-      .find((a) => a !== undefined)
-    return r.state === "user" && own !== undefined ? { ...r, state: "passed", text: own.text } : r
-  }
-  const reviewParts = [
-    row("review", "Code review"),
-    ...cards.map((id) => row(`dod:${id}`, `${id} · ${taskById.get(id)?.title ?? ""}`)),
-    ...proof.steps.map(stepRow),
-  ]
-  const [head, ...rest] = reviewParts
-  const failedRest = rest.filter((r) => r.state === "failed")
-  const reviewRow: CheckRow = {
-    ...(head as CheckRow),
-    label: "Code review",
-    // The review row stands for the whole audit: it passes when the review and every task and
-    // acceptance step pass. A step that is the person's waits for them in Done means, not here.
-    state:
-      (head as CheckRow).state === "failed" || failedRest.length > 0
-        ? "failed"
-        : (head as CheckRow).state === "passed" &&
-            rest.every((r) => r.state === "passed" || r.state === "user")
-          ? "passed"
-          : (head as CheckRow).state === "passed"
-            ? "waiting"
-            : (head as CheckRow).state,
-  }
-  const review: CheckRow[] = [reviewRow, ...failedRest.map((r) => ({ ...r, extra: true as const }))]
-
-  // Which check each running judge works on: the first still waiting in its part.
+  const row = (id: string, label: string) => makeVerdictRow(id, label, verdicts, attested, personal)
+  const { review, head, failedRest, taskById } = buildReviewSection(
+    outline,
+    await proofOf(ctx, task),
+    { row, verdicts, attested, personal },
+  )
   const groups: Checklist["groups"] = [
-    { id: "before", title: "Before checking", rows: before },
-    { id: "project", title: "Project checks", rows: project },
-    { id: "done", title: "Done means", rows: doneRows },
+    { id: "before", title: "Before checking", rows: buildBeforeRows(quality) },
+    { id: "project", title: "Project checks", rows: buildProjectRows(planned, records) },
+    { id: "done", title: "Done means", rows: done.map((d) => row(`done:${d.n}`, d.outcome)) },
     { id: "review", title: "Code review", rows: review },
   ]
-  const now: Checklist["now"] = []
-  if (open || running.length > 0) {
-    for (const helper of running) {
-      const k = Number(helper.id.match(/^j\d+-s(\d+)-/)?.[1])
-      const share = Number.isFinite(k) ? shares.find((s) => s.n === k) : undefined
-      const who = share !== undefined ? `Checking · part ${share.n} of ${share.of}` : "Checking"
-      const mine = groups
-        .flatMap((g) => g.rows)
-        .filter(
-          (r) =>
-            r.state === "waiting" &&
-            r.id !== "security" &&
-            !r.id.startsWith("check:") &&
-            (share === undefined ? true : partOf(shares, r.id)?.n === share.n),
-        )[0]
-      if (mine !== undefined) {
-        mine.state = "running"
-        mine.who = who
-      }
-      if (helper.line !== null && helper.line !== undefined && helper.line !== "")
-        now.push({ who, line: helper.line })
-    }
-  }
-
-  const counted = groups
-    .flatMap((g) => g.rows)
-    .filter((r) => r.extra !== true && r.off !== true && r.state !== "user" && !personal.has(r.id))
-  // Points only the person can confirm, still open or confirmed.
-  const user: CheckRow[] = groups
-    .flatMap((g) => g.rows)
-    .filter((r) => r.state === "user" || (attested.has(r.id) && userVerdicts.has(r.id)))
-
-  // Where the minutes went: finished helper sets, the one running now, and the recorded suite runs.
-  const past = await readPastSets(ctx, task)
-  const current = await currentSet(ctx, task)
-  const sets = [
-    ...past,
-    ...(current !== null && current.stage === "verify"
-      ? [
-          {
-            ...current,
-            ended: current.running ? Math.max(current.ended, ctx.clock.now()) : current.ended,
-          },
-        ]
-      : []),
-  ].filter((s) => s.stage === "verify")
-  const sum = (roles: string[]) =>
-    sets.filter((s) => roles.includes(s.role)).reduce((t, s) => t + (s.ended - s.started), 0)
-  const stale = open && current_ !== null ? await staleInputs(ctx, task, current_) : []
+  const now = open || running.length > 0 ? assignRunningJudges(groups, shares, running) : []
+  const allRows = groups.flatMap((g) => g.rows)
+  const counted = allRows.filter(
+    (r) => r.extra !== true && r.off !== true && r.state !== "user" && !personal.has(r.id),
+  )
+  const user = allRows.filter(
+    (r) => r.state === "user" || (attested.has(r.id) && personal.has(r.id)),
+  )
+  const stale =
+    open && currentAssignment !== null ? await staleInputs(ctx, task, currentAssignment) : []
   const rounds = log?.verification.filter((i) => i.result !== null).length ?? 0
-  const fixed = fixedGaps(log, groups, reviewRow.state === "passed", taskById)
+  const fixed = fixedGaps(log, groups, review[0]?.state === "passed", taskById)
+  const checksMs = records.filter((r) => r.scope === "all").reduce((t, r) => t + (r.ms ?? 0), 0)
   return {
     ...(fixed.length > 0 ? { fixed } : {}),
     groups,
@@ -295,15 +171,10 @@ export async function readChecklist(
     passed: counted.filter((r) => r.state === "passed").length,
     // The review row stands for failing tasks and acceptance steps that are listed under it: counted once.
     failed:
-      groups.flatMap((g) => g.rows).filter((r) => r.state === "failed").length -
-      ((head as CheckRow).state !== "failed" && failedRest.length > 0 ? 1 : 0),
+      allRows.filter((r) => r.state === "failed").length -
+      (head.state !== "failed" && failedRest.length > 0 ? 1 : 0),
     user,
-    minutes: {
-      checks: minutesOf(
-        records.filter((r) => r.scope === "all").reduce((t, r) => t + (r.ms ?? 0), 0),
-      ),
-      checking: minutesOf(sum(["judge"])),
-    },
+    minutes: { checks: minutesOf(checksMs), checking: await checkingMinutes(ctx, task) },
     now,
     budget: await verifyBudget(ctx, task),
     rounds,
@@ -313,102 +184,4 @@ export async function readChecklist(
         : Math.max(judgesOfLastRound(input.helpers), rounds > 0 ? 1 : 0),
     stale,
   }
-}
-
-/**
- * What an earlier round found and the checks now pass: each gap once, with the words of the round
- * that found it. A task's definition of done or an acceptance step has no row of its own while it passes; it
- * stands or falls with the code review.
- */
-function fixedGaps(
-  log: BuildLog | null,
-  groups: Checklist["groups"],
-  reviewPassed: boolean,
-  tasks: Map<string, { title: string }>,
-): NonNullable<Checklist["fixed"]> {
-  const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.id, r]))
-  const out: NonNullable<Checklist["fixed"]> = []
-  const seen = new Set<string>()
-  for (const iteration of log?.verification ?? []) {
-    if (iteration.result !== "fail") continue
-    for (const v of iteration.verdicts) {
-      if (v.verdict !== "FAIL" && v.verdict !== "MISSING") continue
-      const id = v.kind === "review" ? "review" : v.subject === "" ? "" : `${v.kind}:${v.subject}`
-      if (id === "" || seen.has(id)) continue
-      const row = rows.get(id)
-      const passed = row !== undefined ? row.state === "passed" : reviewPassed
-      if (!passed) continue
-      seen.add(id)
-      // A review line that opens with a card is that card's gap.
-      const card = v.kind === "review" ? reviewCard(v.text) : null
-      out.push({
-        id,
-        label:
-          (card !== null ? `${card} · ${tasks.get(card)?.title ?? ""}`.trim() : row?.label) ??
-          (v.kind === "dod"
-            ? `${v.subject} · ${tasks.get(v.subject)?.title ?? ""}`.trim()
-            : v.kind === "acceptance"
-              ? "An acceptance step"
-              : "Code review"),
-        text: v.text,
-        round: iteration.n,
-      })
-    }
-  }
-  return out
-}
-
-/** The judges handed out in the latest checking round: `j<round>-…`. */
-function judgesOfLastRound(helpers: ChecklistInput["helpers"]): number {
-  const byRound = new Map<number, number>()
-  for (const h of helpers) {
-    const round = /^j(\d+)-/.exec(h.id)?.[1]
-    if (round !== undefined) byRound.set(Number(round), (byRound.get(Number(round)) ?? 0) + 1)
-  }
-  const last = Math.max(0, ...byRound.keys())
-  return byRound.get(last) ?? 0
-}
-
-export type UserPoint = {
-  id: string
-  label: string
-  /** The words behind the question: what the checker saw and what the person must do or show. */
-  text: string
-  /**
-   * What the person is asked: the question the judge's line opens with, a short plain line of the
-   * judge's own, or the Plan's own words; empty when none of them can be asked as they are.
-   */
-  ask: string
-  attested?: Attestation
-}
-
-/**
- * The points only the person can confirm, for their review in Verify: still to confirm, or confirmed
- * (with who). A light read of the judges' words, Done means and the attestations: the review's items
- * and the lists
- * ask for it on every read, so it runs no git and builds no checklist.
- */
-export async function userPoints(ctx: Ctx, task: Task): Promise<UserPoint[]> {
-  const done: DonePoint[] = await doneMeansOf(ctx, task)
-  const { items: verdicts } = await said(ctx, task, await readBuildRecord(ctx, task))
-  const attested = new Map((await readAttestations(ctx, task)).map((a) => [a.item, a]))
-  // The person is asked about a Done means point, once; its user steps are the words of the question.
-  const ids = [...verdicts]
-    .filter(([id, v]) => v.state === "user" && id.startsWith("done:"))
-    .map(([id]) => id)
-  return [...new Set(ids)].map((id) => {
-    const point = done.find((d) => `done:${d.n}` === id)
-    const a = attested.get(id)
-    const judged = a !== undefined ? "" : (verdicts.get(id)?.text ?? "")
-    const split = splitAsk(judged)
-    const ask = split.ask ?? (judged !== "" && plainAsk(judged) ? judged : "")
-    return {
-      id,
-      label: point?.outcome ?? id.replace(":", " "),
-      // The judge's words stay behind the question; whole unless the question is their first sentence.
-      text: split.ask !== null ? split.rest : judged,
-      ask,
-      ...(a !== undefined ? { attested: a } : {}),
-    }
-  })
 }

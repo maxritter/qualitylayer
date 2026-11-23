@@ -3,34 +3,19 @@
 // `·` costs one pass, not one pass per character. tests/ui/plan-scan.test.ts runs each against its
 // old pattern.
 
-const isSpace = (char: string | undefined): boolean => char !== undefined && /\s/.test(char)
+import {
+  artifactName,
+  firstBreak,
+  isBreak,
+  isCallLine,
+  isSpace,
+  lastBreak,
+  restOfLine,
+  skipSpace,
+  verdictLength,
+} from "./plan-scan-core.ts"
 
-/** `.` stops at these: the line terminators of JavaScript's regular expressions. */
-const BREAKS = new Set(["\n", "\r", String.fromCharCode(0x2028), String.fromCharCode(0x2029)])
-const isBreak = (char: string | undefined): boolean => char !== undefined && BREAKS.has(char)
-
-/** The first index at or after `from` that is not whitespace (`\s`). */
-function skipSpace(text: string, from: number): number {
-  let at = from
-  while (at < text.length && isSpace(text[at])) at++
-  return at
-}
-
-function lastBreak(text: string): number {
-  for (let at = text.length - 1; at >= 0; at--) if (isBreak(text[at])) return at
-  return -1
-}
-
-function firstBreak(text: string, from = 0): number {
-  for (let at = from; at < text.length; at++) if (isBreak(text[at])) return at
-  return text.length
-}
-
-/** `\s*(.*)$` from `from`: the captured rest, or undefined when a line break follows it. */
-function restOfLine(text: string, from: number, last: number): string | undefined {
-  const start = skipSpace(text, from)
-  return last < start ? text.slice(start) : undefined
-}
+export { artifactName, isCallLine, verdictLength }
 
 const GAP = " gave no readable answer"
 
@@ -91,6 +76,11 @@ export function reviewHead(line: string): [string, string] | null {
   return null
 }
 
+function isMiddleDotSplit(line: string, at: number, last: number): boolean {
+  if (at + 3 >= line.length || last >= at + 3) return false
+  return isSpace(line[at]) && line[at + 1] === "·" && isSpace(line[at + 2])
+}
+
 /** `line.match(/^\s*-\s+(.+?)\s·\s(.+)$/)` as [what, rest], or null. */
 export function reviewItem(line: string): [string, string] | null {
   const dash = skipSpace(line, 0)
@@ -99,73 +89,14 @@ export function reviewItem(line: string): [string, string] | null {
   const text = skipSpace(line, from)
   if (text === from) return null
   const last = lastBreak(line)
-  // `\s·\s` at `at`, with a rest after it that holds no line break.
-  const splits = (at: number) =>
-    isSpace(line[at]) &&
-    line[at + 1] === "·" &&
-    isSpace(line[at + 2]) &&
-    at + 3 < line.length &&
-    last < at + 3
   let next = text + 1
-  while (next < line.length && !splits(next)) next++
+  while (next < line.length && !isMiddleDotSplit(line, next, last)) next++
   let breakFrom = firstBreak(line, text)
   // `\s+` gives back one space at a time; the item then starts inside the spaces.
   for (let start = text; start > from; start--) {
     if (start < text && isBreak(line[start])) breakFrom = start
-    const at = start <= text - 2 && splits(text - 1) ? text - 1 : next
+    const at = start <= text - 2 && isMiddleDotSplit(line, text - 1, last) ? text - 1 : next
     if (at < line.length && at <= breakFrom) return [line.slice(start, at), line.slice(at + 3)]
   }
   return null
-}
-
-const VERDICTS = ["APPROVE", "REVISE", "BLOCK"] as const
-
-/**
- * The length of the verdict word at the start of a review summary, as
- * `/^(APPROVE|REVISE\b[^·]*?|BLOCK\b[^·]*?)(?=\s*·|$)/` matched it; -1 when it matched nothing.
- */
-export function verdictLength(summary: string): number {
-  const word = VERDICTS.find((verdict) => summary.startsWith(verdict))
-  if (word === undefined) return -1
-  const end = word.length
-  if (word === "APPROVE")
-    return end === summary.length || summary[skipSpace(summary, end)] === "·" ? end : -1
-  if (/\w/.test(summary[end] ?? "")) return -1
-  const dot = summary.indexOf("·", end)
-  if (dot < 0) return summary.length
-  let start = dot
-  while (start > end && isSpace(summary[start - 1])) start--
-  return start
-}
-
-const CALL_LINE = /^\s*(?:late:\s*true\s*$|\*\*(?:late|A|B|Recommended|Artifact):\*\*)/i
-
-/** `/^\s*(?:late:\s*true|\*\*(?:late|A|B|Recommended|Artifact):\*\*.*)\s*$/i.test(line)`. */
-export function isCallLine(line: string): boolean {
-  const head = CALL_LINE.exec(line)?.[0]
-  if (head === undefined) return false
-  // `.*\s*$`: the rest holds no line break, or only whitespace from its first one on.
-  const rest = line.slice(head.length)
-  const cut = firstBreak(rest)
-  return skipSpace(rest, cut) === rest.length
-}
-
-const ARTIFACT = "**Artifact:"
-
-// The still's name, or undefined: what this gave (its source would end a block comment):
-//   /^\*\*Artifact:\s*([^*\n]+?)\.?\*\*/.exec(raw)?.[1]
-export function artifactName(raw: string): string | undefined {
-  if (!raw.startsWith(ARTIFACT)) return undefined
-  const text = raw.slice(ARTIFACT.length)
-  const name = skipSpace(text, 0)
-  let close = name
-  while (close < text.length && text[close] !== "*" && text[close] !== "\n") close++
-  if (!text.startsWith("**", close)) return undefined
-  // `\s*` gives back one space at a time; the name then starts inside the spaces.
-  for (let start = name; start >= 0; start--) {
-    if (start < name && text[start] === "\n") return undefined
-    if (text[close - 1] === "." && close - 1 > start) return text.slice(start, close - 1)
-    if (close > start) return text.slice(start, close)
-  }
-  return undefined
 }

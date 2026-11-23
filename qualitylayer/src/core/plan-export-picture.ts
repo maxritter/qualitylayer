@@ -31,6 +31,100 @@ function chunksOf(bytes: Buffer): { type: string; data: Buffer }[] | null {
   return null
 }
 
+type PngHeader = {
+  width: number
+  height: number
+  channels: number
+  stride: number
+  expected: number
+}
+
+function unsupportedLayoutReason(
+  header: Buffer,
+  chunks: { type: string; data: Buffer }[],
+  channels: number | undefined,
+): string | null {
+  if (header[9] === 3) return "the picture's indexed PNG palette is not supported"
+  if (chunks.some((chunk) => chunk.type === "tRNS"))
+    return "the picture's tRNS transparency is not supported"
+  if (header[8] !== 8 || header[12] !== 0 || channels === undefined)
+    return "the picture's PNG layout is not supported (8-bit, non-interlaced only)"
+  return null
+}
+
+function parsePngHeader(chunks: { type: string; data: Buffer }[]): PngHeader | string {
+  const header = chunks[0]
+  if (header?.type !== "IHDR" || header.data.length !== 13) return DAMAGED
+  const width = header.data.readUInt32BE(0)
+  const height = header.data.readUInt32BE(4)
+  if (width === 0 || height === 0) return DAMAGED
+  const channels = CHANNELS[header.data[9] ?? -1]
+  const unsupported = unsupportedLayoutReason(header.data, chunks, channels)
+  if (unsupported !== null) return unsupported
+  const stride = width * (channels as number)
+  const expected = (stride + 1) * height
+  return expected > DECODE_LIMIT
+    ? "the picture is too large to check"
+    : { width, height, channels: channels as number, stride, expected }
+}
+
+function unfilterRow(
+  raw: Buffer,
+  rowOffset: number,
+  above: Buffer,
+  filter: number,
+  channels: number,
+): Buffer {
+  const stride = above.length
+  const row = Buffer.alloc(stride)
+  for (let x = 0; x < stride; x++) {
+    const left = x >= channels ? (row[x - channels] ?? 0) : 0
+    const up = above[x] ?? 0
+    const upLeft = x >= channels ? (above[x - channels] ?? 0) : 0
+    row[x] = ((raw[rowOffset + x] ?? 0) + predicted(filter, left, up, upLeft)) & 255
+  }
+  return row
+}
+
+function rowVariesFrom(row: Buffer, channels: number, first: number): boolean {
+  for (let x = 0; x < row.length; x += channels) {
+    if (visibleColour(row, x, channels) !== first) return true
+  }
+  return false
+}
+
+function scanlineProblem(raw: Buffer, header: PngHeader): string | null {
+  const { height, stride, channels } = header
+  let above: Buffer = Buffer.alloc(stride)
+  let first: number | null = null
+  let varied = false
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)] ?? 0
+    if (filter > 4) return DAMAGED
+    const row = unfilterRow(raw, y * (stride + 1) + 1, above, filter, channels)
+    first ??= visibleColour(row, 0, channels)
+    varied ||= rowVariesFrom(row, channels, first)
+    above = row
+  }
+  return varied ? null : "the picture is blank: every pixel is one colour"
+}
+
+function decodePngBuffer(
+  chunks: { type: string; data: Buffer }[],
+  expected: number,
+): Buffer | null {
+  try {
+    // One byte more than the rows need: a longer stream fails here instead of growing without bound.
+    const raw = inflateSync(
+      Buffer.concat(chunks.filter((c) => c.type === "IDAT").map((c) => c.data)),
+      { maxOutputLength: expected + 1 },
+    )
+    return raw.length === expected ? raw : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Why a picture may not be kept or linked: not a PNG, damaged, a layout this check does not decode,
  * too large to check, or one colour throughout. Null only when it decoded whole and shows something.
@@ -41,74 +135,44 @@ export function pictureProblem(png: Uint8Array): string | null {
   if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE))
     return "the picture is not a PNG"
   const chunks = chunksOf(bytes)
-  const header = chunks?.[0]
-  if (chunks === null || header?.type !== "IHDR" || header.data.length !== 13) return DAMAGED
-  const width = header.data.readUInt32BE(0)
-  const height = header.data.readUInt32BE(4)
-  const channels = CHANNELS[header.data[9] ?? -1]
-  if (width === 0 || height === 0) return DAMAGED
-  if (header.data[9] === 3) return "the picture's indexed PNG palette is not supported"
-  if (chunks.some((chunk) => chunk.type === "tRNS"))
-    return "the picture's tRNS transparency is not supported"
-  if (header.data[8] !== 8 || header.data[12] !== 0 || channels === undefined)
-    return "the picture's PNG layout is not supported (8-bit, non-interlaced only)"
-  const stride = width * channels
-  const expected = (stride + 1) * height
-  if (expected > DECODE_LIMIT) return "the picture is too large to check"
-  let raw: Buffer
-  try {
-    // One byte more than the rows need: a longer stream fails here instead of growing without bound.
-    raw = inflateSync(Buffer.concat(chunks.filter((c) => c.type === "IDAT").map((c) => c.data)), {
-      maxOutputLength: expected + 1,
-    })
-  } catch {
-    return DAMAGED
-  }
-  if (raw.length !== expected) return DAMAGED
-  let above = Buffer.alloc(stride)
-  let first: number | null = null
-  let varied = false
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)] ?? 0
-    if (filter > 4) return DAMAGED
-    const row = Buffer.alloc(stride)
-    for (let x = 0; x < stride; x++) {
-      const left = x >= channels ? (row[x - channels] ?? 0) : 0
-      const up = above[x] ?? 0
-      const upLeft = x >= channels ? (above[x - channels] ?? 0) : 0
-      row[x] = ((raw[y * (stride + 1) + 1 + x] ?? 0) + predicted(filter, left, up, upLeft)) & 255
-    }
-    if (!varied)
-      for (let x = 0; x < stride && !varied; x += channels) {
-        const pixel = visibleColour(row, x, channels)
-        first ??= pixel
-        varied = pixel !== first
-      }
-    above = row
-  }
-  return varied ? null : "the picture is blank: every pixel is one colour"
+  const header = chunks === null ? DAMAGED : parsePngHeader(chunks)
+  if (typeof header === "string") return header
+  const raw = decodePngBuffer(chunks as { type: string; data: Buffer }[], header.expected)
+  return raw === null ? DAMAGED : scanlineProblem(raw, header)
 }
 
 /** Capture/export uses light mode: compare visible RGB on white, not hidden colour or alpha bytes. */
 function visibleColour(row: Buffer, at: number, channels: number): number {
-  const grey = channels < 3
-  const alpha = channels === 2 ? (row[at + 1] ?? 0) : channels === 4 ? (row[at + 3] ?? 0) : 255
   const red = row[at] ?? 0
-  const green = grey ? red : (row[at + 1] ?? 0)
-  const blue = grey ? red : (row[at + 2] ?? 0)
+  const green = channels < 3 ? red : (row[at + 1] ?? 0)
+  const blue = channels < 3 ? red : (row[at + 2] ?? 0)
+  const alphaOffset = channels === 2 ? 1 : channels === 4 ? 3 : -1
+  const alpha = alphaOffset === -1 ? 255 : (row[at + alphaOffset] ?? 0)
   const overWhite = (value: number) => Math.round((value * alpha + 255 * (255 - alpha)) / 255)
   return (overWhite(red) << 16) | (overWhite(green) << 8) | overWhite(blue)
 }
 
-/** The PNG filter's prediction for one byte, from its neighbours to the left, above and above-left. */
-function predicted(filter: number | undefined, left: number, up: number, upLeft: number): number {
-  if (filter === 1) return left
-  if (filter === 2) return up
-  if (filter === 3) return (left + up) >> 1
-  if (filter !== 4) return 0
+function paeth(left: number, up: number, upLeft: number): number {
   const p = left + up - upLeft
-  const [a, b, c] = [Math.abs(p - left), Math.abs(p - up), Math.abs(p - upLeft)]
-  return a <= b && a <= c ? left : b <= c ? up : upLeft
+  const a = Math.abs(p - left)
+  const b = Math.abs(p - up)
+  const c = Math.abs(p - upLeft)
+  if (a <= b && a <= c) return left
+  return b <= c ? up : upLeft
+}
+
+/** The PNG filter's prediction for one byte, from its neighbours to the left, above and above-left. */
+const PREDICTORS: readonly ((left: number, up: number, upLeft: number) => number)[] = [
+  () => 0,
+  (left) => left,
+  (_left, up) => up,
+  (left, up) => (left + up) >> 1,
+  paeth,
+]
+
+function predicted(filter: number | undefined, left: number, up: number, upLeft: number): number {
+  const fn = PREDICTORS[filter ?? 0]
+  return fn ? fn(left, up, upLeft) : 0
 }
 
 /**

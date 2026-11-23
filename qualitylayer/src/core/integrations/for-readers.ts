@@ -11,63 +11,101 @@ export type ForReaders = {
   lines: number[]
 }
 
+function consumeLineComments(
+  line: string,
+  startInComment: boolean,
+): { silent: boolean; inComment: boolean } {
+  let inComment = startInComment
+  let rest = line
+  let shown = false
+  while (rest !== "") {
+    if (inComment) {
+      const end = rest.indexOf("-->")
+      inComment = end === -1
+      rest = end === -1 ? "" : rest.slice(end + 3)
+      continue
+    }
+    const start = rest.indexOf("<!--")
+    const visible = start === -1 ? rest : rest.slice(0, start)
+    if (visible.trim() !== "") shown = true
+    inComment = start !== -1
+    rest = start === -1 ? "" : rest.slice(start + 4)
+  }
+  return { silent: !shown, inComment }
+}
+
 /** Whether a line shows nothing when rendered: blank, or inside an HTML comment. */
 function silentLines(lines: string[]): boolean[] {
   let inComment = false
   return lines.map((line) => {
-    let rest = line
-    let shown = false
-    while (rest !== "") {
-      if (inComment) {
-        const end = rest.indexOf("-->")
-        if (end === -1) rest = ""
-        else {
-          inComment = false
-          rest = rest.slice(end + 3)
-        }
-        continue
-      }
-      const start = rest.indexOf("<!--")
-      if ((start === -1 ? rest : rest.slice(0, start)).trim() !== "") shown = true
-      if (start === -1) rest = ""
-      else {
-        inComment = true
-        rest = rest.slice(start + 4)
-      }
-    }
-    return !shown
+    const result = consumeLineComments(line, inComment)
+    inComment = result.inComment
+    return result.silent
   })
+}
+
+function headingLevel(lines: string[], prose: Set<number>, index: number): number {
+  if (!prose.has(index)) return 0
+  return lines[index]?.match(/^(#{1,6}) /)?.[1]?.length ?? 0
+}
+
+function sectionEnd(lines: string[], prose: Set<number>, start: number, depth: number): number {
+  let end = start + 1
+  while (end < lines.length) {
+    const nextDepth = headingLevel(lines, prose, end)
+    if (nextDepth > 0 && nextDepth <= depth) break
+    end++
+  }
+  return end
+}
+
+function emptyHeadingIndices(lines: string[], silent: boolean[], prose: Set<number>): Set<number> {
+  const dropped = new Set<number>()
+  for (let index = 0; index < lines.length; index++) {
+    const depth = headingLevel(lines, prose, index)
+    if (depth === 0) continue
+    const end = sectionEnd(lines, prose, index, depth)
+    let hasContent = false
+    for (let i = index + 1; i < end && !hasContent; i++) {
+      hasContent = !silent[i] && headingLevel(lines, prose, i) === 0
+    }
+    if (!hasContent) {
+      for (let i = index; i < end; i++) dropped.add(i)
+    }
+  }
+  return dropped
+}
+
+function compactKeptLines(
+  lines: string[],
+  dropped: Set<number>,
+  prose: Set<number>,
+  offset: number,
+): { line: string; from: number; prose: boolean }[] {
+  const kept: { line: string; from: number; prose: boolean }[] = []
+  for (const [index, line] of lines.entries()) {
+    if (dropped.has(index)) continue
+    // No two blank lines where a section went, and none at the start (a code block keeps its own).
+    const isProse = prose.has(index)
+    const blank = line.trim() === "" && isProse
+    const before = kept.at(-1)
+    const duplicateBlank = before === undefined || (before.prose && before.line.trim() === "")
+    if (blank && duplicateBlank) continue
+    kept.push({ line, from: index + 1 + offset, prose: isProse })
+  }
+  while (kept.length > 0 && (kept.at(-1)?.line.trim() ?? "") === "") kept.pop()
+  return kept
 }
 
 export function forReaders(markdown: string): ForReaders {
   const { bodyStart } = parseDoc(markdown)
   const all = markdown.replace(/\r\n?/g, "\n").split("\n")
-  const lines = all.slice(bodyStart - 1)
   const offset = bodyStart - 1
+  const lines = all.slice(offset)
   const silent = silentLines(lines)
   const prose = new Set(proseLines(lines.join("\n")).map((l) => l.line - 1))
-  const level = (index: number) =>
-    prose.has(index) ? (lines[index]?.match(/^(#{1,6}) /)?.[1]?.length ?? 0) : 0
-  const dropped = new Set<number>()
-  for (let index = 0; index < lines.length; index++) {
-    const depth = level(index)
-    if (depth === 0) continue
-    let end = index + 1
-    while (end < lines.length && !(level(end) > 0 && level(end) <= depth)) end++
-    let content = false
-    for (let i = index + 1; i < end && !content; i++) content = !silent[i] && level(i) === 0
-    if (!content) for (let i = index; i < end; i++) dropped.add(i)
-  }
-  const kept: { line: string; from: number; prose: boolean }[] = []
-  for (const [index, line] of lines.entries()) {
-    if (dropped.has(index)) continue
-    // No two blank lines where a section went, and none at the start (a code block keeps its own).
-    const blank = line.trim() === "" && prose.has(index)
-    const before = kept.at(-1)
-    if (blank && (before === undefined || (before.prose && before.line.trim() === ""))) continue
-    kept.push({ line, from: index + 1 + offset, prose: prose.has(index) })
-  }
-  while (kept.length > 0 && (kept.at(-1)?.line.trim() ?? "") === "") kept.pop()
+  const dropped = emptyHeadingIndices(lines, silent, prose)
+  const kept = compactKeptLines(lines, dropped, prose, offset)
   return {
     text: `${kept.map((k) => k.line).join("\n")}\n`,
     lines: kept.map((k) => k.from),

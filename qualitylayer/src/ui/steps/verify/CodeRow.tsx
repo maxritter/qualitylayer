@@ -196,7 +196,7 @@ export function CodeRow({ taskId, view }: { taskId: string; view: Query<Walkthro
   const isFileViewed = (file: WalkFile) =>
     viewedMarks[file.path] !== undefined && viewedMarks[file.path] === stampOf(file)
   const generated = generatedCountOf(walk)
-  const slices = walk !== null && walk.counted ? walk.slices : []
+  const slices = walk?.counted ? walk.slices : []
   const shownSlices =
     expanded || slices.length <= SHOW_SLICES ? slices : slices.slice(0, SHOW_SLICES)
 

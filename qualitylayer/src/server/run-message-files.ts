@@ -1,63 +1,85 @@
-import { createHash, randomUUID } from "node:crypto"
-import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
-import { extname, join } from "node:path"
-import { RUN_MESSAGE_BATCHES_MAX, RUN_MESSAGE_FILES_MAX_BYTES } from "../core/home-caps.ts"
+import { lstat, mkdir } from "node:fs/promises"
+import { join } from "node:path"
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../core/interaction-docs/attachment-rules.ts"
-import {
-  type Attachment,
-  attachmentProblem,
-  type Incoming,
-  messageAttachmentType,
-  safeName,
-} from "../core/interaction-docs/attachments.ts"
+import { attachmentProblem, type Incoming } from "../core/interaction-docs/attachments.ts"
 import { readRun, runDir } from "../core/run/registry.ts"
 import type { Ctx } from "../ctx.ts"
 import { ArtifactBodyError, readArtifactBody } from "./request-body.ts"
+import {
+  describeMessageFiles,
+  messageFilesDigest,
+  messageFilesReply,
+  verifyExistingMessageBatch,
+  writeNewMessageBatch,
+} from "./run-message-files-store.ts"
 
 export const messageFilesRunId = (path: string) =>
   /^\/api\/agent-runs\/([a-f0-9-]{1,128})\/message-files$/.exec(path)?.[1]
-const reply = (value: unknown, status = 200) =>
-  Response.json(value, { status, headers: { "cache-control": "no-store" } })
-const digest = (files: Incoming[]) => {
-  const hash = createHash("sha256")
-  for (const file of files)
-    hash.update(JSON.stringify([file.name, file.bytes.length])).update(file.bytes)
-  return hash.digest("hex")
+
+function isRunAvailable(
+  ctx: Ctx,
+  id: string,
+  authorized: () => boolean,
+  generation?: number,
+): boolean {
+  const run = readRun(ctx.home, id)
+  if (run?.status !== "running" || run.agent === "other") return false
+  const isShell = run.purpose.kind === "terminal" && run.purpose.shell === true
+  const matchesGeneration = generation === undefined || run.generation === generation
+  return !isShell && matchesGeneration && authorized()
 }
 
-function describe(files: Incoming[], folder: string): Attachment[] {
-  const taken = new Set<string>(["receipt.json"])
-  return files.map((file) => {
-    const base = safeName(file.name)
-    const ext = extname(base)
-    let name = base
-    for (let n = 2; taken.has(name.toLowerCase()); n++)
-      name = `${base.slice(0, base.length - ext.length)} (${n})${ext}`
-    taken.add(name.toLowerCase())
+type ParsedMessageUpload =
+  | { ok: true; batch: string; generation: number; files: Incoming[]; uploadBytes: number }
+  | { ok: false; response: Response }
+
+async function parseMessageUpload(request: Request): Promise<ParsedMessageUpload> {
+  const contentType = request.headers.get("content-type")
+  if (!contentType?.startsWith("multipart/form-data"))
     return {
-      name,
-      type: messageAttachmentType(file.name, file.bytes),
-      size: file.bytes.length,
-      path: join(folder, name),
+      ok: false,
+      response: messageFilesReply(
+        { error: "Attach files with the file picker, paste or drop." },
+        400,
+      ),
     }
-  })
-}
-
-/** Only run-owned, regular files count toward the budget; unsafe entries refuse further writes. */
-async function inventory(root: string) {
-  let bytes = 0
-  const folders = await readdir(root)
-  for (const name of folders) {
-    const folder = join(root, name)
-    if (!(await lstat(folder)).isDirectory() || (await lstat(folder)).isSymbolicLink())
-      throw new Error("Unsafe message attachment folder")
-    for (const file of await readdir(folder)) {
-      const stat = await lstat(join(folder, file))
-      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Unsafe message attachment file")
-      bytes += stat.size
+  const bytes = await readArtifactBody(request, MAX_ATTACHMENTS * MAX_ATTACHMENT_BYTES + 64 * 1024)
+  const form = await new Response(bytes, { headers: { "content-type": contentType } }).formData()
+  const batch = form.get("draft")
+  const generation = Number(form.get("generation"))
+  const validBatch = typeof batch === "string" && /^[a-f0-9-]{36}$/.test(batch)
+  const validGeneration = Number.isSafeInteger(generation) && generation >= 1
+  if (!validBatch || !validGeneration)
+    return {
+      ok: false,
+      response: messageFilesReply({ error: "Refresh this agent window and try again." }, 400),
+    }
+  const parts = form.getAll("file")
+  if (
+    !parts.length ||
+    parts.length > MAX_ATTACHMENTS ||
+    parts.some((part) => typeof part === "string" || part.size > MAX_ATTACHMENT_BYTES)
+  ) {
+    return {
+      ok: false,
+      response: messageFilesReply(
+        { error: "Attach one to six files, each 10 MB or smaller." },
+        400,
+      ),
     }
   }
-  return { bytes, count: folders.length }
+  const files: Incoming[] = []
+  for (const part of parts) {
+    if (typeof part !== "string")
+      files.push({ name: part.name, bytes: new Uint8Array(await part.arrayBuffer()) })
+  }
+  const problem = attachmentProblem(files, { allowAnyType: true })
+  if (problem)
+    return {
+      ok: false,
+      response: messageFilesReply({ error: problem.replace("to a comment", "to a message") }, 400),
+    }
+  return { ok: true, batch, generation, files, uploadBytes: bytes.byteLength }
 }
 
 /** Uploads do not send a prompt. The controlling window sends the returned paths with its message. */
@@ -68,131 +90,57 @@ export async function messageFilesResponse(
   authorized: () => boolean,
   options: { onCreated?: (folder: string) => void } = {},
 ): Promise<Response> {
-  const available = (generation?: number) => {
-    const run = readRun(ctx.home, id)
-    return (
-      run &&
-      run.status === "running" &&
-      run.agent !== "other" &&
-      !(run.purpose.kind === "terminal" && run.purpose.shell) &&
-      (generation === undefined || run.generation === generation) &&
-      authorized()
-    )
-  }
+  const available = (generation?: number) => isRunAvailable(ctx, id, authorized, generation)
   if (!available())
-    return reply({ error: "Take control of the running agent before attaching files." }, 403)
-  let temporary: string | undefined
+    return messageFilesReply(
+      { error: "Take control of the running agent before attaching files." },
+      403,
+    )
   try {
-    if (!request.headers.get("content-type")?.startsWith("multipart/form-data"))
-      return reply({ error: "Attach files with the file picker, paste or drop." }, 400)
-    const bytes = await readArtifactBody(
-      request,
-      MAX_ATTACHMENTS * MAX_ATTACHMENT_BYTES + 64 * 1024,
-    )
-    const form = await new Response(bytes, {
-      headers: { "content-type": request.headers.get("content-type") as string },
-    }).formData()
-    const batch = form.get("draft")
-    const generation = Number(form.get("generation"))
-    if (
-      typeof batch !== "string" ||
-      !/^[a-f0-9-]{36}$/.test(batch) ||
-      !Number.isSafeInteger(generation) ||
-      generation < 1
-    )
-      return reply({ error: "Refresh this agent window and try again." }, 400)
-    const parts = form.getAll("file")
-    if (
-      !parts.length ||
-      parts.length > MAX_ATTACHMENTS ||
-      parts.some((part) => typeof part === "string" || part.size > MAX_ATTACHMENT_BYTES)
-    )
-      return reply({ error: "Attach one to six files, each 10 MB or smaller." }, 400)
-    const files: Incoming[] = []
-    for (const part of parts) {
-      if (typeof part !== "string")
-        files.push({ name: part.name, bytes: new Uint8Array(await part.arrayBuffer()) })
-    }
-    const problem = attachmentProblem(files, { allowAnyType: true })
-    if (problem) return reply({ error: problem.replace("to a comment", "to a message") }, 400)
+    const parsed = await parseMessageUpload(request)
+    if (!parsed.ok) return parsed.response
     const directory = runDir(ctx.home, id)
     await ctx.fs.assertSafeDirectory?.(directory)
     return await ctx.fs.withLock(join(directory, ".message-files.lock"), async () => {
-      if (!available(generation))
-        return reply(
+      if (!available(parsed.generation)) {
+        return messageFilesReply(
           { error: "This agent window changed. Your files are kept; reconnect and try again." },
           409,
         )
+      }
       const root = join(directory, "message-files")
       await mkdir(root, { recursive: true, mode: 0o700 })
       if ((await lstat(root)).isSymbolicLink()) throw new Error("Unsafe message attachment folder")
-      const folder = join(root, batch)
-      const hash = digest(files)
-      const described = describe(files, folder)
+      const folder = join(root, parsed.batch)
+      const hash = messageFilesDigest(parsed.files)
+      const described = describeMessageFiles(parsed.files, folder)
       const existing = await lstat(folder).catch(() => null)
       if (existing) {
         if (!existing.isDirectory() || existing.isSymbolicLink())
           throw new Error("Unsafe message attachment folder")
-        const manifest = join(folder, "receipt.json")
-        const receiptStat = await lstat(manifest)
-        if (!receiptStat.isFile() || receiptStat.isSymbolicLink() || receiptStat.size > 1024)
-          throw new Error("Unsafe attachment receipt")
-        const saved = JSON.parse(await readFile(manifest, "utf8")) as {
-          hash: string
-          generation: number
-        }
-        if (saved.hash !== hash || saved.generation !== generation)
-          return reply(
-            { error: "These selected files changed. Remove and attach them again." },
-            409,
-          )
-        // Re-derive paths and verify bytes, so a receipt cannot redirect a retry or hide changed files.
-        for (const [index, file] of described.entries()) {
-          const stat = await lstat(file.path)
-          if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== file.size)
-            throw new Error("Attached file changed")
-          if (!(await readFile(file.path)).equals(files[index]!.bytes))
-            throw new Error("Attached file changed")
-        }
-        return reply({ files: described })
-      }
-      const used = await inventory(root)
-      const launchBytes = (readRun(ctx.home, id)?.launchFiles ?? []).reduce(
-        (total, file) => total + file.size,
-        0,
-      )
-      if (
-        used.count >= RUN_MESSAGE_BATCHES_MAX ||
-        used.bytes + launchBytes + bytes.byteLength > RUN_MESSAGE_FILES_MAX_BYTES
-      )
-        return reply(
-          {
-            error:
-              "This session’s attachment storage is full. Send your message without more files.",
-          },
-          409,
-        )
-      temporary = join(root, `.upload-${randomUUID()}`)
-      await mkdir(temporary, { mode: 0o700 })
-      for (const [index, file] of files.entries()) {
-        await writeFile(join(temporary, described[index]!.name), file.bytes, {
-          flag: "wx",
-          mode: 0o600,
+        return verifyExistingMessageBatch(folder, {
+          hash,
+          generation: parsed.generation,
+          files: parsed.files,
+          described,
         })
       }
-      await writeFile(join(temporary, "receipt.json"), JSON.stringify({ hash, generation }), {
-        flag: "wx",
-        mode: 0o600,
+      return writeNewMessageBatch({
+        ctx,
+        id,
+        root,
+        folder,
+        uploadBytes: parsed.uploadBytes,
+        hash,
+        generation: parsed.generation,
+        files: parsed.files,
+        described,
+        available,
+        onCreated: options.onCreated,
       })
-      if (!available(generation))
-        return reply({ error: "This agent window changed. Reconnect and try again." }, 409)
-      await rename(temporary, folder)
-      temporary = undefined
-      options.onCreated?.(folder)
-      return reply({ files: described })
     })
   } catch (cause) {
-    return reply(
+    return messageFilesReply(
       {
         error:
           cause instanceof ArtifactBodyError
@@ -201,7 +149,5 @@ export async function messageFilesResponse(
       },
       cause instanceof ArtifactBodyError ? cause.status : 400,
     )
-  } finally {
-    if (temporary) await rm(temporary, { recursive: true, force: true }).catch(() => {})
   }
 }

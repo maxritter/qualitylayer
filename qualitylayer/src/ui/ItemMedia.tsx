@@ -1,8 +1,8 @@
 // The thing an item is about, drawn under it: a sandboxed mockup, a diagram, a diff or a plain
 // sentence. The step pages decide which items carry media; this only draws one.
 
-import { CheckIcon, Maximize2Icon } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { CheckIcon } from "lucide-react"
+import { useState } from "react"
 import type { ItemMedia as Media } from "../core/items.ts"
 import type { Evidence } from "./api.ts"
 import {
@@ -10,181 +10,10 @@ import {
   type ArtifactHostValue,
   ArtifactPreview,
 } from "./artifact/ArtifactPreview.tsx"
+import { Screenshot } from "./item-media-screenshot.tsx"
 import type { Pinned } from "./reader/diagram-pins.ts"
 import { type DiagramPin, MermaidBlock } from "./reader/MermaidBlock.tsx"
-import { FullscreenDialog } from "./reader/VisualParts.tsx"
 import { WireframeBlock } from "./reader/WireframeBlock.tsx"
-
-type Shot = Extract<Media, { kind: "screenshot" }>
-
-/** A click's place on the picture, as the pin's anchor: percent from the left and from the top. */
-const spot = (x: number, y: number) => `spot:${x}:${y}`
-const place = (target: string): { x: number; y: number } | null => {
-  const [kind, x, y] = target.split(":")
-  return kind === "spot" && x !== undefined && y !== undefined
-    ? { x: Number(x), y: Number(y) }
-    : null
-}
-
-/**
- * A picture the checks saved, read from the task's evidence folder, with what it proves beside it.
- * A click anywhere on it pins a change there; a pin shows its number and its thread.
- */
-function Screenshot({
-  media,
-  load,
-  onPin,
-  pins = [],
-}: {
-  media: Shot
-  load?: (name: string) => Promise<Evidence>
-  onPin?: (pinned: Pinned) => void
-  pins?: DiagramPin[]
-}) {
-  const { name, caption } = media
-  const [src, setSrc] = useState<string | null>(null)
-  const [shown, setShown] = useState<string | null>(null)
-  const [error, setError] = useState(false)
-  const [retry, setRetry] = useState(0)
-  const [open, setOpen] = useState(false)
-  const [actual, setActual] = useState(false)
-  const thumbnail = useRef<HTMLButtonElement>(null)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry deliberately reloads the same evidence name.
-  useEffect(() => {
-    let live = true
-    setSrc(null)
-    setError(false)
-    load?.(name)
-      .then((found) => {
-        if (!live) return
-        if (found.kind === "image") setSrc(`data:${found.type};base64,${found.base64}`)
-        else setError(true)
-      })
-      .catch(() => {
-        if (live) setError(true)
-      })
-    if (!load) setError(true)
-    return () => {
-      live = false
-    }
-  }, [name, load, retry])
-  const proves = media.proves ?? []
-  return (
-    <figure className="q-see m-0" data-testid="item-screenshot">
-      <div className="rp-shot">
-        {src !== null ? (
-          <button
-            type="button"
-            className="shot"
-            ref={thumbnail}
-            aria-label={
-              onPin ? "Pin a change on this screen" : `Enlarge screenshot: ${caption ?? name}`
-            }
-            onClick={(event) => {
-              if (!onPin) {
-                setActual(false)
-                setOpen(true)
-                return
-              }
-              const box = event.currentTarget.getBoundingClientRect()
-              if (box.width === 0 || box.height === 0) return
-              const x = Math.round(((event.clientX - box.left) / box.width) * 100)
-              const y = Math.round(((event.clientY - box.top) / box.height) * 100)
-              onPin?.({ target: spot(x, y), label: `A spot on ${name}` })
-            }}
-          >
-            <img src={src} alt={caption ?? name} />
-            {!onPin ? (
-              <span className="item-screenshot-enlarge">
-                <Maximize2Icon size={14} /> Enlarge screenshot
-              </span>
-            ) : null}
-          </button>
-        ) : (
-          <div className="item-screenshot-loading" role="status">
-            {error ? (
-              <div>
-                <p>Could not load this screenshot.</p>
-                <button
-                  type="button"
-                  className="q-btn sm"
-                  onClick={() => setRetry((old) => old + 1)}
-                >
-                  Try again
-                </button>
-              </div>
-            ) : (
-              "Loading screenshot…"
-            )}
-          </div>
-        )}
-        {pins.map((pin, index) => {
-          const at = place(pin.target)
-          return at === null ? null : (
-            <span key={pin.target} className="pin" style={{ left: `${at.x}%`, top: `${at.y}%` }}>
-              <button
-                type="button"
-                className="q-pin static"
-                aria-label={`Pin ${index + 1}`}
-                aria-expanded={shown === pin.target}
-                onClick={() => setShown(shown === pin.target ? null : pin.target)}
-              >
-                {index + 1}
-              </button>
-              {shown === pin.target && pin.thread !== undefined ? (
-                <div className="q-thread">{pin.thread}</div>
-              ) : null}
-            </span>
-          )
-        })}
-      </div>
-      <figcaption className="side">
-        {caption !== undefined ? <span>{caption}</span> : null}
-        {proves.length > 0 ? (
-          <span data-testid="proves">
-            Proves {proves.map((p) => `Done ${p.n}: ${p.point.replace(/\.$/, "")}`).join("; ")}.
-          </span>
-        ) : null}
-        {media.also !== undefined && media.also.length > 0 ? (
-          <span>Also cited by {media.also.join(", ")}.</span>
-        ) : null}
-        {onPin !== undefined ? (
-          <span className="q-dot-o">
-            <span className="q-pin static" aria-hidden="true">
-              1
-            </span>
-            Click anywhere on the screen to pin a change.
-          </span>
-        ) : null}
-      </figcaption>
-      {src ? (
-        <FullscreenDialog
-          open={open}
-          onClose={() => setOpen(false)}
-          title={caption ?? name}
-          bar={<b>{caption ?? name}</b>}
-          returnFocus={thumbnail}
-          testId="screenshot-overlay"
-          style={{ width: "min(1800px, 96vw)", height: "auto", maxHeight: "92vh" }}
-          actions={
-            <button
-              type="button"
-              className="q-btn sm"
-              aria-pressed={actual}
-              onClick={() => setActual(!actual)}
-            >
-              {actual ? "Fit image" : "Actual size"}
-            </button>
-          }
-        >
-          <div className="item-screenshot-viewport" data-actual={actual}>
-            <img src={src} alt={caption ?? name} />
-          </div>
-        </FullscreenDialog>
-      ) : null}
-    </figure>
-  )
-}
 
 /** Your own words, a few lines of them, the rest on click. */
 function Words({ text }: { text: string }) {
@@ -233,6 +62,56 @@ export function Choices({ media }: { media: Extract<Media, { kind: "choices" }> 
   )
 }
 
+function DiffMedia({ media }: { media: Extract<Media, { kind: "diff" }> }) {
+  return (
+    <div className="q-diff" data-testid="item-diff">
+      <div className="q-diff-h">
+        <span>{media.title}</span>
+        {media.where !== undefined ? <span className="n">{media.where}</span> : null}
+      </div>
+      {media.lines.split("\n").map((line, index) => (
+        <div
+          // A diff has no ids; its lines are a fixed list.
+          // biome-ignore lint/suspicious/noArrayIndexKey: lines of one diff never reorder
+          key={index}
+          className={`q-ln${line.startsWith("+") ? " add" : line.startsWith("-") || line.startsWith("−") ? " del" : ""}`}
+        >
+          {line}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StaticMedia({
+  media,
+}: {
+  media: Extract<Media, { kind: "choices" | "words" | "prompt" | "facts" | "diff" | "text" }>
+}) {
+  if (media.kind === "choices") return <Choices media={media} />
+  if (media.kind === "words") return <Words text={media.text} />
+  if (media.kind === "diff") return <DiffMedia media={media} />
+  if (media.kind === "facts") {
+    return (
+      <dl className="q-facts m-0" data-testid="item-facts">
+        {media.rows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+  return media.kind === "prompt" ? (
+    <div className="q-prompt" data-testid="item-prompt">
+      {media.text}
+    </div>
+  ) : (
+    <p className="m-0 text-[13px] text-muted-foreground">{media.text}</p>
+  )
+}
+
 export function ItemMedia({
   media,
   theme,
@@ -252,7 +131,7 @@ export function ItemMedia({
   /** The task's artifacts: a mockup shows as their preview, with Open full size. */
   artifactHost?: ArtifactHostValue | null
 }) {
-  if (media.kind === "artifact")
+  if (media.kind === "artifact") {
     return (
       <ArtifactHostProvider value={artifactHost}>
         <ArtifactPreview
@@ -261,7 +140,8 @@ export function ItemMedia({
         />
       </ArtifactHostProvider>
     )
-  if (media.kind === "mermaid")
+  }
+  if (media.kind === "mermaid") {
     return (
       <MermaidBlock
         source={media.source}
@@ -271,7 +151,8 @@ export function ItemMedia({
         {...(pins !== undefined ? { pins } : {})}
       />
     )
-  if (media.kind === "wireframe" || media.kind === "panel")
+  }
+  if (media.kind === "wireframe" || media.kind === "panel") {
     return (
       <WireframeBlock
         kind={media.kind}
@@ -281,54 +162,16 @@ export function ItemMedia({
         onPin={onPin}
       />
     )
-  if (media.kind === "choices") return <Choices media={media} />
-  if (media.kind === "words") return <Words text={media.text} />
-  if (media.kind === "prompt")
+  }
+  if (media.kind === "screenshot") {
     return (
-      <div className="q-prompt" data-testid="item-prompt">
-        {media.text}
-      </div>
-    )
-  if (media.kind === "facts") {
-    return (
-      <dl className="q-facts m-0" data-testid="item-facts">
-        {media.rows.map((row) => (
-          <div key={row.label}>
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <Screenshot
+        media={media}
+        load={loadEvidence}
+        {...(onPin !== undefined ? { onPin } : {})}
+        {...(pins !== undefined ? { pins } : {})}
+      />
     )
   }
-  if (media.kind === "diff") {
-    return (
-      <div className="q-diff" data-testid="item-diff">
-        <div className="q-diff-h">
-          <span>{media.title}</span>
-          {media.where !== undefined ? <span className="n">{media.where}</span> : null}
-        </div>
-        {media.lines.split("\n").map((line, index) => (
-          <div
-            // A diff has no ids; its lines are a fixed list.
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines of one diff never reorder
-            key={index}
-            className={`q-ln${line.startsWith("+") ? " add" : line.startsWith("-") || line.startsWith("−") ? " del" : ""}`}
-          >
-            {line}
-          </div>
-        ))}
-      </div>
-    )
-  }
-  if (media.kind === "text")
-    return <p className="m-0 text-[13px] text-muted-foreground">{media.text}</p>
-  return (
-    <Screenshot
-      media={media}
-      load={loadEvidence}
-      {...(onPin !== undefined ? { onPin } : {})}
-      {...(pins !== undefined ? { pins } : {})}
-    />
-  )
+  return <StaticMedia media={media} />
 }

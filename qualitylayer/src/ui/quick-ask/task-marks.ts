@@ -64,15 +64,18 @@ export function passageMark(
   }
 }
 
-/** Words quoted by a button on a step page ("Ask why"), opened under that button. */
-export function quoteMark(
+type QuoteMarkArgs = [
   task: Task,
   target: ContextDraftTarget,
   page: string,
   source: string,
   quote: string,
   anchor: Element,
-): QuickAskMark {
+]
+
+/** Words quoted by a button on a step page ("Ask why"), opened under that button. */
+export function quoteMark(...args: QuoteMarkArgs): QuickAskMark {
+  const [task, target, page, source, quote, anchor] = args
   const box = anchor.getBoundingClientRect()
   const place = pageName(page)
   return {

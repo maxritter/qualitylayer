@@ -5,19 +5,23 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { loadIdentity as loadState } from "../licence/identity-access.ts"
-import { machineFingerprint } from "../licence/trial.ts"
-import { feedbackApiUrl, HTTP_TIMEOUT_MS } from "../licensing-client/endpoints.ts"
+import {
+  deliverFeedback,
+  feedbackIdentity,
+  type QueuedWhy,
+  type Verdict,
+} from "./outbox-deliver.ts"
 import {
   type FeedbackKind,
   type ImageType,
-  imageExtension,
   problemWith,
   type Report,
   type Sender,
   sniffImage,
 } from "./report.ts"
 import type { Diagnostics } from "./words.ts"
+
+export type { QueuedWhy } from "./outbox-deliver.ts"
 
 export const outboxDir = (ctx: Ctx) => join(ctx.home, "feedback-outbox")
 
@@ -34,22 +38,12 @@ type Stored = {
   notBefore?: number
 }
 
-/** Why a queued report waits: the fetch itself failed, the site could not take it, or it asked for a pause. */
-export type QueuedWhy = "offline" | "busy" | "limit"
-
 export type Delivery =
   | { status: "sent"; reference: string }
   | { status: "queued"; id: string; why: QueuedWhy; message?: string }
 
-type Verdict =
-  | { kind: "sent"; reference: string }
-  | { kind: "wait"; why: string; reason: QueuedWhy; notBefore?: number; message?: string }
-  | { kind: "refused"; message: string }
-
 /** A queued report is dropped after this long: the machine had no licence or trial, or the site never took it. */
 export const OUTBOX_MAX_AGE_MS = 30 * 24 * 3_600_000
-/** The longest pause a site's Retry-After may ask for. */
-const MAX_PAUSE_S = 2 * 3600
 
 /** Reports being delivered right now, by the interactive send or a retry; neither touches the other's. */
 const inFlight = new Set<string>()
@@ -85,122 +79,6 @@ const toReport = (entry: Stored): Report => ({
 /** A report's id: letters, digits, dash and underscore only, as the site accepts it. */
 export const newReportId = (): string => randomUUID()
 
-async function identity(ctx: Ctx): Promise<Record<string, string> | null> {
-  const { state } = await loadState(ctx)
-  if (state === null) return null
-  if (state.tier === "trial") {
-    return { "x-trial-fingerprint": await machineFingerprint(ctx), "x-trial-token": state.key }
-  }
-  return { "x-licence-key": state.key }
-}
-
-/** Seconds the site asks us to wait: the body's `retryAfter`, else the header, else an hour; at most two hours. */
-async function retryAfterOf(response: Response): Promise<number> {
-  let seconds = Number(response.headers.get("retry-after"))
-  try {
-    const body = (await response.clone().json()) as { retryAfter?: unknown }
-    if (typeof body.retryAfter === "number") seconds = body.retryAfter
-  } catch {
-    // not JSON: the header or the default says it
-  }
-  if (!Number.isFinite(seconds) || seconds <= 0) seconds = 3600
-  return Math.min(Math.ceil(seconds), MAX_PAUSE_S)
-}
-
-async function messageOf(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { message?: unknown }
-    if (typeof body.message === "string" && body.message !== "") return body.message
-  } catch {
-    // not JSON: the fallback says it
-  }
-  return fallback
-}
-
-/** One attempt at the site. A wait is for the network or a site that cannot answer yet. */
-async function deliver(ctx: Ctx, report: Report): Promise<Verdict> {
-  const headers = await identity(ctx)
-  if (headers === null) {
-    return { kind: "wait", why: "no licence or trial on this computer", reason: "busy" }
-  }
-  const form = new FormData()
-  form.append(
-    "report",
-    JSON.stringify({
-      id: report.id,
-      kind: report.kind,
-      text: report.text.trim(),
-      ...(report.sender !== null
-        ? { sender: { name: report.sender.name.trim(), email: report.sender.email.trim() } }
-        : {}),
-      ...(report.diagnostics !== null ? { diagnostics: report.diagnostics } : {}),
-    }),
-  )
-  report.images.forEach((image, index) => {
-    form.append(
-      "image",
-      new Blob([image.bytes as Uint8Array<ArrayBuffer>], { type: image.type }),
-      `screenshot-${index + 1}.${imageExtension(image.type)}`,
-    )
-  })
-  let response: Response
-  try {
-    response = await ctx.http.fetch(feedbackApiUrl(ctx.env), {
-      method: "POST",
-      headers: { ...headers, "user-agent": "qualitylayer-feedback" },
-      body: form,
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-    })
-  } catch (cause) {
-    return { kind: "wait", why: (cause as Error).message, reason: "offline" }
-  }
-  if (response.ok) {
-    try {
-      const body = (await response.json()) as { reference?: unknown }
-      if (typeof body.reference === "string" && /^QL-\d+$/.test(body.reference)) {
-        return { kind: "sent", reference: body.reference }
-      }
-    } catch {
-      // an answer without a reference is not a receipt
-    }
-    return { kind: "wait", why: "qualitylayer.dev answered without a reference", reason: "busy" }
-  }
-  // Busy, not configured, or a gateway: the same report may go through later.
-  if (response.status >= 500) {
-    return { kind: "wait", why: `HTTP ${response.status}`, reason: "busy" }
-  }
-  if (response.status === 413) {
-    return {
-      kind: "refused",
-      message: "The report is too large to send. Remove a screenshot and try again.",
-    }
-  }
-  if (response.status === 401) {
-    return {
-      kind: "refused",
-      message: "qualitylayer.dev did not accept this licence or trial for a report.",
-    }
-  }
-  if (response.status === 429) {
-    // A pause, not a refusal of the report: it stays queued until the site's Retry-After has passed.
-    const seconds = await retryAfterOf(response)
-    return {
-      kind: "wait",
-      why: "HTTP 429",
-      reason: "limit",
-      notBefore: ctx.clock.now() + seconds * 1000,
-      message: await messageOf(response, "Too many reports just now. It goes out again later."),
-    }
-  }
-  return {
-    kind: "refused",
-    message: await messageOf(
-      response,
-      `qualitylayer.dev refused the report (HTTP ${response.status}).`,
-    ),
-  }
-}
-
 async function write(ctx: Ctx, entry: Stored): Promise<void> {
   await ctx.fs.mkdir(outboxDir(ctx), { mode: 0o700 })
   // Temp file, then rename: a crash mid-write never leaves a half entry that stored() skips forever.
@@ -209,43 +87,48 @@ async function write(ctx: Ctx, entry: Stored): Promise<void> {
 
 const drop = (ctx: Ctx, id: string) => ctx.fs.remove(join(outboxDir(ctx), `${id}.json`))
 
+async function preflightSend(ctx: Ctx, report: Report, trial: boolean): Promise<string | null> {
+  const problem = problemWith(report, trial)
+  if (problem !== null) return problem
+  if ((await feedbackIdentity(ctx)) === null) {
+    return "There is no licence or trial on this computer, so the report cannot be sent."
+  }
+  return null
+}
+
+async function finishSend(ctx: Ctx, entry: Stored, verdict: Verdict): Promise<Result<Delivery>> {
+  if (verdict.kind === "sent") {
+    await drop(ctx, entry.id)
+    return ok({ status: "sent", reference: verdict.reference })
+  }
+  if (verdict.kind === "refused") {
+    await drop(ctx, entry.id)
+    return err({ code: "bad_args", message: verdict.message })
+  }
+  if (verdict.notBefore !== undefined) await write(ctx, { ...entry, notBefore: verdict.notBefore })
+  return ok({
+    status: "queued",
+    id: entry.id,
+    why: verdict.reason,
+    ...(verdict.message !== undefined ? { message: verdict.message } : {}),
+  })
+}
+
 /** Check, save and send a report. `queued` means the network could not carry it: it waits in the outbox. */
 export async function sendFeedback(
   ctx: Ctx,
   report: Report,
   options: { trial: boolean },
 ): Promise<Result<Delivery>> {
-  const problem = problemWith(report, options.trial)
+  const problem = await preflightSend(ctx, report, options.trial)
   if (problem !== null) return err({ code: "bad_args", message: problem })
-  if ((await identity(ctx)) === null) {
-    return err({
-      code: "bad_args",
-      message: "There is no licence or trial on this computer, so the report cannot be sent.",
-    })
-  }
   // The same report already on its way (a second Send of one draft): it waits for that delivery.
   if (inFlight.has(report.id)) return ok({ status: "queued", id: report.id, why: "busy" })
   inFlight.add(report.id)
   try {
     const entry = toStored(report, ctx.clock.now())
     await write(ctx, entry)
-    const verdict = await deliver(ctx, report)
-    if (verdict.kind === "sent") {
-      await drop(ctx, report.id)
-      return ok({ status: "sent", reference: verdict.reference })
-    }
-    if (verdict.kind === "refused") {
-      await drop(ctx, report.id)
-      return err({ code: "bad_args", message: verdict.message })
-    }
-    if (verdict.notBefore !== undefined)
-      await write(ctx, { ...entry, notBefore: verdict.notBefore })
-    return ok({
-      status: "queued",
-      id: report.id,
-      why: verdict.reason,
-      ...(verdict.message !== undefined ? { message: verdict.message } : {}),
-    })
+    return await finishSend(ctx, entry, await deliverFeedback(ctx, report))
   } finally {
     inFlight.delete(report.id)
   }
@@ -275,49 +158,61 @@ export async function waiting(ctx: Ctx): Promise<number> {
   return (await stored(ctx)).length
 }
 
+async function deliverStoredEntry(
+  ctx: Ctx,
+  entry: Stored,
+): Promise<"sent" | "dropped" | "waiting"> {
+  const report = toReport(entry)
+  // An image that is not one any more is not sent.
+  report.images = report.images.filter((image) => sniffImage(image.bytes) !== null)
+  const verdict = await deliverFeedback(ctx, report)
+  if (verdict.kind === "sent") {
+    await drop(ctx, entry.id)
+    return "sent"
+  }
+  if (verdict.kind === "refused") {
+    await drop(ctx, entry.id)
+    return "dropped"
+  }
+  // Only while the file is still there: it may have been sent and dropped meanwhile.
+  if (await ctx.fs.exists(join(outboxDir(ctx), `${entry.id}.json`))) {
+    await write(ctx, {
+      ...entry,
+      attempts: entry.attempts + 1,
+      ...(verdict.notBefore !== undefined ? { notBefore: verdict.notBefore } : {}),
+    })
+  }
+  return "waiting"
+}
+
+async function retryEntry(
+  ctx: Ctx,
+  entry: Stored,
+  now: number,
+): Promise<"sent" | "dropped" | "waiting"> {
+  if (inFlight.has(entry.id)) return "waiting"
+  if (typeof entry.at === "number" && now - entry.at > OUTBOX_MAX_AGE_MS) {
+    await drop(ctx, entry.id)
+    return "dropped"
+  }
+  if (typeof entry.notBefore === "number" && entry.notBefore > now) return "waiting"
+  inFlight.add(entry.id)
+  try {
+    return await deliverStoredEntry(ctx, entry)
+  } finally {
+    inFlight.delete(entry.id)
+  }
+}
+
 /** Send what waits in the outbox; reports the site accepts or refuses leave it, the rest stay for the next try. */
 export async function retryOutbox(ctx: Ctx): Promise<{ sent: number; waiting: number }> {
   let sent = 0
   let left = 0
   const now = ctx.clock.now()
   for (const entry of await stored(ctx)) {
-    if (inFlight.has(entry.id)) {
-      left++
-      continue
-    }
-    if (typeof entry.at === "number" && now - entry.at > OUTBOX_MAX_AGE_MS) {
-      await drop(ctx, entry.id)
-      continue
-    }
-    if (typeof entry.notBefore === "number" && entry.notBefore > now) {
-      left++
-      continue
-    }
-    inFlight.add(entry.id)
-    try {
-      const report = toReport(entry)
-      // An image that is not one any more is not sent.
-      report.images = report.images.filter((image) => sniffImage(image.bytes) !== null)
-      const verdict = await deliver(ctx, report)
-      if (verdict.kind === "sent") {
-        await drop(ctx, entry.id)
-        sent++
-      } else if (verdict.kind === "refused") {
-        await drop(ctx, entry.id)
-      } else {
-        // Only while the file is still there: it may have been sent and dropped meanwhile.
-        if (await ctx.fs.exists(join(outboxDir(ctx), `${entry.id}.json`))) {
-          await write(ctx, {
-            ...entry,
-            attempts: entry.attempts + 1,
-            ...(verdict.notBefore !== undefined ? { notBefore: verdict.notBefore } : {}),
-          })
-        }
-        left++
-      }
-    } finally {
-      inFlight.delete(entry.id)
-    }
+    const outcome = await retryEntry(ctx, entry, now)
+    if (outcome === "sent") sent++
+    else if (outcome === "waiting") left++
   }
   return { sent, waiting: left }
 }

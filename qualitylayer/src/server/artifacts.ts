@@ -3,437 +3,38 @@
 // its thumbnail, comments on a spot of it, and Open in browser. An artifact is read only from the folder
 // that holds artifacts: a name that climbs out, or a file of any other kind, is refused.
 
-import { readFile, stat } from "node:fs/promises"
-import { dirname, join } from "node:path"
-import {
-  ARTIFACT_PAGE_NAME,
-  type Artifact,
-  type ArtifactAnchor,
-  artifactMeta,
-  folderArtifactOf,
-  LASTING_ARTIFACTS,
-  lastingDocOf,
-} from "../core/artifact/format.ts"
-import { readLasting } from "../core/artifact/lasting.ts"
-import {
-  type ArtifactFile,
-  type ArtifactHome,
-  artifactPath,
-  commentsHolder,
-  listArtifacts,
-} from "../core/artifact/store.ts"
-import {
-  type ArtifactMutation,
-  artifactAnchor,
-  artifactHistory,
-  mutateArtifact,
-  readArtifactSource,
-  safeArtifactPath,
-  sourceRevision,
-} from "../core/artifact/workspace.ts"
-import { folderDoc } from "../core/docs/names.ts"
+import { ARTIFACT_PAGE_NAME, type ArtifactAnchor } from "../core/artifact/format.ts"
+import { commentsHolder } from "../core/artifact/store.ts"
 import {
   addArtifactComment,
   type Comment,
-  isArtifactDoc,
   readComments,
   resolveArtifactComment,
 } from "../core/gate/comments.ts"
-import { ARTIFACT_SOURCE_MAX_BYTES, ARTIFACT_SOURCE_TOO_LARGE } from "../core/home-caps.ts"
 import { resolveThread } from "../core/interaction-docs/threads.ts"
-import { taskDir } from "../core/paths.ts"
 import { startAnswering } from "../core/review/answers.ts"
 import { isArchived } from "../core/task/archive.ts"
-import type { Task } from "../core/task/store.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
-import { withoutNotice } from "../workflow/notice.ts"
-import { listProjects, locate, type Project } from "./api.ts"
-import { withBridge } from "./artifact-bridge.ts"
-import { packFolderPage } from "./artifact-pack.ts"
+import { locate } from "./api.ts"
+import { locateArtifact } from "./artifacts-locate.ts"
 import { type Opener, openableArtifact, openFile } from "./open-file.ts"
-import type { Thumbs } from "./thumbs.ts"
 
-export const taskHome = (task: Task): ArtifactHome => ({
-  scope: "task",
-  root: task.repoRoot,
-  dir: task.dir,
-  runtimeDir: task.runtimeDir,
-  provenance: { task: { id: `${task.repoId}~${task.slug}`, title: task.title } },
-})
-
-/** A task is shared by its checkouts; its agent may draw in a different one than the App selected. */
-async function taskHomes(ctx: Ctx, project: Project, task: Task): Promise<ArtifactHome[]> {
-  const homes = [taskHome(task)]
-  for (const root of project.paths) {
-    const dir = taskDir(root, task.slug)
-    if (dir !== task.dir && (await ctx.fs.exists(dir)))
-      homes.push({ scope: "task", dir, runtimeDir: task.runtimeDir })
-  }
-  return homes
-}
-
-/** A project's checkouts that are on disk, each a home of the project's artifacts. */
-export async function projectHomes(ctx: Ctx, project: Project): Promise<ArtifactHome[]> {
-  const homes: ArtifactHome[] = []
-  for (const root of project.paths)
-    if (await ctx.fs.exists(root)) homes.push({ scope: "project", root, repoId: project.id })
-  return homes
-}
-
-export async function findProject(ctx: Ctx, id: string): Promise<Result<Project>> {
-  const project = (await listProjects(ctx)).find((p) => p.id === id)
-  return project !== undefined
-    ? ok(project)
-    : err({ code: "no_task", message: `unknown project "${id}"` })
-}
-
-/**
- * An artifact's picture lookup. A folder artifact is drawn per page, from the page as packed, and its key
- * follows the folder's newest change and total size: the page depends on every file of it.
- */
-export const thumbOf = (thumbs: Thumbs | undefined, repoId: string) =>
-  thumbs === undefined
-    ? undefined
-    : (entry: ArtifactFile, updated: number, size: number, page?: string) => {
-        const folder = entry.folder
-        if (folder === undefined || page === undefined)
-          return thumbs.lookup(repoId, entry.path, updated, size)
-        return thumbs.lookup(repoId, join(folder.dir, page), updated, size, async () => {
-          const packed = await packFolderPage(folder.dir, page)
-          return packed.ok ? packed.data.html : null
-        })
-      }
-
-/** A project's artifacts across its checkouts, newest first; one name shows once, its newest. */
-export async function projectList(
-  ctx: Ctx,
-  project: Project,
-  thumbs?: Thumbs,
-): Promise<{ artifacts: Artifact[]; comments: Comment[] }> {
-  const homes = await projectHomes(ctx, project)
-  const comments =
-    homes[0] !== undefined ? await readComments(ctx, commentsHolder(ctx, homes[0])) : []
-  const seen = new Map<string, Artifact>()
-  for (const home of homes) {
-    const thumb = thumbOf(thumbs, project.id)
-    for (const artifact of await listArtifacts(ctx, home, {
-      comments,
-      ...(thumb !== undefined ? { thumb } : {}),
-    })) {
-      const before = seen.get(artifact.file)
-      if (before === undefined || before.updated < artifact.updated)
-        seen.set(artifact.file, artifact)
-    }
-  }
-  return {
-    artifacts: [...seen.values()].sort((a, b) => b.updated - a.updated),
-    comments: comments.filter((c) => isArtifactDoc(c.doc)),
-  }
-}
-
-export type TaskArtifacts = {
-  task: Artifact[]
-  /** The project's id and name, for Home's picker and the project's artifacts' own addresses. */
-  projectId: string
-  projectName: string
-}
-
-/** The Files rail of a task lists only artifacts belonging to that task. */
-export async function taskArtifacts(
-  ctx: Ctx,
-  id: string,
-  thumbs?: Thumbs,
-): Promise<Result<TaskArtifacts>> {
-  const found = await locate(ctx, id)
-  if (!found.ok) return found
-  const { project, task } = found.data
-  const planFile = join(task.dir, folderDoc("plan"))
-  const plan = (await ctx.fs.exists(planFile)) ? await ctx.fs.readFile(planFile) : ""
-  const thumb = thumbOf(thumbs, task.repoId)
-  const comments = await readComments(ctx, task)
-  const own = new Map<string, Artifact>()
-  for (const home of await taskHomes(ctx, project, task))
-    for (const artifact of await listArtifacts(ctx, home, {
-      comments,
-      plan,
-      ...(thumb !== undefined ? { thumb } : {}),
-    })) {
-      const previous = own.get(artifact.file)
-      if (previous === undefined || previous.updated < artifact.updated)
-        own.set(artifact.file, artifact)
-    }
-  return ok({
-    task: [...own.values()].sort((a, b) => b.updated - a.updated),
-    projectId: project.id,
-    projectName: project.name,
-  })
-}
-
-/** Home's Artifacts tab: the project's artifacts and the comments on them. */
-export async function projectArtifacts(
-  ctx: Ctx,
-  id: string,
-  thumbs?: Thumbs,
-): Promise<Result<{ artifacts: Artifact[]; comments: Comment[] }>> {
-  const project = await findProject(ctx, id)
-  if (!project.ok) return project
-  return ok(await projectList(ctx, project.data, thumbs))
-}
-
-export type Located = { home: ArtifactHome; path: string; repoId: string; folder: string }
-
-/** Where a task's artifact or a project's artifact is on disk; refused for anything else. */
-export async function locateArtifact(
-  ctx: Ctx,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-): Promise<Result<Located>> {
-  if (!isArtifactDoc(file))
-    return err({ code: "bad_args", message: `"${file}" is not an artifact` })
-  if (scope === "task") {
-    const found = await locate(ctx, id)
-    if (!found.ok) return found
-    const candidates: { home: ArtifactHome; path: string; updated: number }[] = []
-    for (const home of await taskHomes(ctx, found.data.project, found.data.task)) {
-      const path = artifactPath(home, file)
-      if (path === null)
-        return err({ code: "bad_args", message: `"${file}" is not an artifact of this task` })
-      if (await ctx.fs.exists(path))
-        candidates.push({ home, path, updated: (await ctx.fs.stat?.(path))?.mtimeMs ?? 0 })
-    }
-    const newest = candidates.sort((a, b) => b.updated - a.updated)[0]
-    if (newest === undefined) return err({ code: "no_task", message: `${file} does not exist` })
-    const { home, path } = newest
-    return ok({
-      home,
-      path,
-      repoId: found.data.task.repoId,
-      folder: join((home as { dir: string }).dir, file.split("/")[0] as string),
-    })
-  }
-  const project = await findProject(ctx, id)
-  if (!project.ok) return project
-  // A project's lasting artifact: its pages live where its `artifact.json` says, read through the guard.
-  const lasting = lastingDocOf(file)
-  if (lasting !== null) {
-    let why = `${LASTING_ARTIFACTS}/${lasting.name} does not exist`
-    for (const home of await projectHomes(ctx, project.data)) {
-      const read = await readLasting((home as { root: string }).root, lasting.name)
-      if (!read.ok) {
-        why = read.error.message
-        continue
-      }
-      if (!read.data.pages.includes(lasting.page)) {
-        why = `${lasting.name} has no page ${lasting.page}`
-        continue
-      }
-      return ok({
-        home,
-        path: join(read.data.dir, lasting.page),
-        repoId: project.data.id,
-        folder: read.data.dir,
-      })
-    }
-    return err({ code: "no_task", message: why })
-  }
-  for (const home of await projectHomes(ctx, project.data)) {
-    const path = artifactPath(home, file)
-    if (path === null)
-      return err({ code: "bad_args", message: `"${file}" is not an artifact of this project` })
-    if (await ctx.fs.exists(path))
-      return ok({
-        home,
-        path,
-        repoId: project.data.id,
-        folder: join((home as { root: string }).root, "docs", "artifacts"),
-      })
-  }
-  return err({ code: "no_task", message: `${file} does not exist` })
-}
-
-/** One artifact's page for the App's frame: the policy first, the bridge last. Never served as a page. */
-export async function artifactPage(
-  ctx: Ctx,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-): Promise<Result<{ html: string }>> {
-  const found = await locateArtifact(ctx, scope, id, file)
-  if (!found.ok) return found
-  const named = folderArtifactOf(file)
-  if (named !== null) return folderPage(ctx, found.data, named.page)
-  const read = await readArtifactSource(ctx, found.data.home, file)
-  if (!read.ok) return read
-  const source = read.data.html
-  // Only the known agent instruction preamble is removed; artifact copy stays intact.
-  const html = withoutNotice(source)
-  return ok({ html: withBridge(html) })
-}
-
-/**
- * A page of an artifact that is a folder, packed into one page: its stylesheets, scripts, fonts and
- * pictures inside it, so the frame's sandbox and policy stay as they are. The folder is walked link by
- * link first; an artifact never reads past a symbolic link.
- */
-async function folderPage(
-  ctx: Ctx,
-  found: Located,
-  page: string,
-): Promise<Result<{ html: string }>> {
-  const dir = dirname(found.path)
-  try {
-    await safeArtifactPath(ctx, artifactAnchor(found.home), dir)
-  } catch (cause) {
-    return err({
-      code: "bad_args",
-      message: cause instanceof Error ? cause.message : String(cause),
-    })
-  }
-  const packed = await packFolderPage(dir, page)
-  return packed.ok ? ok({ html: withBridge(packed.data.html) }) : packed
-}
-
-async function workspaceHome(
-  ctx: Ctx,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-): Promise<Result<ArtifactHome>> {
-  const found = await locateArtifact(ctx, scope, id, file)
-  if (found.ok) return ok(found.data.home)
-  if (scope === "task") {
-    const task = await locate(ctx, id)
-    return task.ok ? ok(taskHome(task.data.task)) : task
-  }
-  const project = await findProject(ctx, id)
-  if (!project.ok) return project
-  const home = (await projectHomes(ctx, project.data))[0]
-  return home
-    ? ok(home)
-    : err({ code: "bad_args", message: "The project's checkout is not on disk" })
-}
-
-export async function artifactWorkspaceRead(
-  ctx: Ctx,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-  action: "source" | "history",
-): Promise<Result<unknown>> {
-  // A lasting artifact's page can be read; its changes are git's (see the artifact's history route).
-  if (lastingDocOf(file) !== null) {
-    if (scope !== "project")
-      return err({ code: "bad_args", message: `"${file}" is not an artifact of this task` })
-    const found = await locateArtifact(ctx, scope, id, file)
-    if (!found.ok) return found
-    if (action === "history") return ok({ revisions: [] })
-    try {
-      const info = await stat(found.data.path)
-      if (info.size > ARTIFACT_SOURCE_MAX_BYTES)
-        return err({ code: "bad_args", message: ARTIFACT_SOURCE_TOO_LARGE })
-      const html = await readFile(found.data.path, "utf8")
-      return ok({ file, html, revision: sourceRevision(html), meta: artifactMeta(html) })
-    } catch (cause) {
-      return err({
-        code: "bad_args",
-        message: cause instanceof Error ? cause.message : String(cause),
-      })
-    }
-  }
-  const home = await workspaceHome(ctx, scope, id, file)
-  if (!home.ok) return home
-  return action === "source"
-    ? readArtifactSource(ctx, home.data, file)
-    : artifactHistory(ctx, home.data, file)
-}
-
-export async function artifactWorkspaceWrite(
-  ctx: Ctx,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-  body: Record<string, unknown>,
-): Promise<Result<unknown>> {
-  if (lastingDocOf(file) !== null)
-    return err({
-      code: "bad_args",
-      message:
-        "A lasting artifact changes through a task: draft on it, then fold the draft in at Review.",
-    })
-  if (scope === "task") {
-    const found = await locate(ctx, id)
-    if (!found.ok) return found
-    if (
-      (await isArchived(ctx, found.data.task)) ||
-      ["shipped", "abandoned"].includes(found.data.task.stage)
-    )
-      return err({ code: "bad_args", message: "This task is closed; its artifacts are read-only" })
-  }
-  const home = await workspaceHome(ctx, scope, id, file)
-  if (!home.ok) return home
-  const expected = body.expected
-  if (typeof expected !== "string" || !/^(?:0|[a-f0-9]{64})$/.test(expected))
-    return err({
-      code: "bad_args",
-      message: "Read the source revision before changing an artifact",
-    })
-  let change: ArtifactMutation
-  if (body.action === "write" && typeof body.html === "string")
-    change = { action: "write", html: body.html, expected }
-  else if (
-    body.action === "metadata" &&
-    (typeof body.title === "string" || typeof body.purpose === "string")
-  )
-    change = {
-      action: "metadata",
-      expected,
-      ...(typeof body.title === "string" ? { title: body.title.slice(0, 300) } : {}),
-      ...(typeof body.purpose === "string" ? { purpose: body.purpose.slice(0, 2000) } : {}),
-    }
-  else if ((body.action === "copy" || body.action === "rename") && typeof body.name === "string")
-    change = { action: body.action, name: body.name, expected }
-  else if (body.action === "delete") change = { action: "delete", expected }
-  else if (body.action === "restore" && typeof body.id === "string")
-    change = { action: "restore", id: body.id, expected }
-  else return err({ code: "bad_args", message: "Unknown artifact operation or missing fields" })
-  if (change.action === "delete" && scope === "task") {
-    const source = await readArtifactSource(ctx, home.data, file)
-    if (!source.ok) return source
-    if (source.data.revision !== expected)
-      return err({
-        code: "bad_args",
-        message:
-          "The artifact changed since it was read. Read its source and revision again before deleting it.",
-      })
-  }
-  return mutateArtifact(ctx, home.data, file, change)
-}
-
-/** An artifact's thumbnail, when it is drawn: the PNG, kept by the browser for as long as its key holds. */
-export async function artifactThumb(
-  ctx: Ctx,
-  thumbs: Thumbs,
-  scope: "task" | "project",
-  id: string,
-  file: string,
-  key: string,
-): Promise<Response> {
-  const found = await locateArtifact(ctx, scope, id, file)
-  if (!found.ok || !/^[0-9a-f]{20}$/.test(key)) return new Response("not found", { status: 404 })
-  try {
-    const bytes = await readFile(thumbs.file(found.data.repoId, key))
-    return new Response(bytes, {
-      headers: {
-        "content-type": "image/png",
-        "cache-control": "private, max-age=31536000, immutable",
-        "x-content-type-options": "nosniff",
-      },
-    })
-  } catch {
-    return new Response("not drawn yet", { status: 404, headers: { "cache-control": "no-store" } })
-  }
-}
+export {
+  findProject,
+  projectArtifacts,
+  projectHomes,
+  projectList,
+  type TaskArtifacts,
+  taskArtifacts,
+  taskHome,
+  thumbOf,
+} from "./artifacts-list.ts"
+export { artifactPage, type Located, locateArtifact } from "./artifacts-locate.ts"
+export {
+  artifactThumb,
+  artifactWorkspaceRead,
+  artifactWorkspaceWrite,
+} from "./artifacts-workspace.ts"
 
 export const spotOf = (value: unknown): ArtifactAnchor | undefined => {
   if (typeof value !== "object" || value === null) return undefined
@@ -451,6 +52,45 @@ export const spotOf = (value: unknown): ArtifactAnchor | undefined => {
   }
 }
 
+function validateCommentBody(
+  body: Record<string, unknown>,
+): Result<{ remark: string; spot: ArtifactAnchor | undefined }> {
+  const remark = typeof body.remark === "string" ? body.remark.trim() : ""
+  if (remark === "") return err({ code: "bad_args", message: "a comment needs words" })
+  if (remark.length > 8000) {
+    return err({
+      code: "bad_args",
+      message: "Shorten the comment to 8000 characters; your words have not been saved.",
+    })
+  }
+  const spot = body.spot === undefined ? undefined : spotOf(body.spot)
+  if (body.spot !== undefined && spot === undefined) {
+    return err({
+      code: "bad_args",
+      message: "This pin has invalid coordinates. Pick the spot again.",
+    })
+  }
+  return ok({ remark, spot })
+}
+
+async function ensureTaskCommentable(ctx: Ctx, id: string): Promise<Result<true>> {
+  const task = await locate(ctx, id)
+  if (!task.ok) return task
+  if (await isArchived(ctx, task.data.task)) {
+    return err({
+      code: "bad_args",
+      message: "Restore this task before commenting on its artifacts.",
+    })
+  }
+  if (["shipped", "abandoned"].includes(task.data.task.stage)) {
+    return err({
+      code: "bad_args",
+      message: "This task is closed; its artifact comments are kept.",
+    })
+  }
+  return ok(true)
+}
+
 /** A comment on an artifact: on a spot of it, or on the page. It goes to the agent at once. */
 export async function postArtifactComment(
   ctx: Ctx,
@@ -459,51 +99,28 @@ export async function postArtifactComment(
   file: string,
   body: Record<string, unknown>,
 ): Promise<Result<{ comment: Comment }>> {
-  if (scope === "project")
+  if (scope === "project") {
     return err({
       code: "bad_args",
       message: "Standalone artifact feedback is retired; its history is read-only.",
     })
-  const remark = typeof body.remark === "string" ? body.remark.trim() : ""
-  if (remark === "") return err({ code: "bad_args", message: "a comment needs words" })
-  if (remark.length > 8000)
-    return err({
-      code: "bad_args",
-      message: "Shorten the comment to 8000 characters; your words have not been saved.",
-    })
-  if (body.spot !== undefined && spotOf(body.spot) === undefined)
-    return err({
-      code: "bad_args",
-      message: "This pin has invalid coordinates. Pick the spot again.",
-    })
-  if (scope === "task") {
-    const task = await locate(ctx, id)
-    if (!task.ok) return task
-    if (await isArchived(ctx, task.data.task))
-      return err({
-        code: "bad_args",
-        message: "Restore this task before commenting on its artifacts.",
-      })
-    if (["shipped", "abandoned"].includes(task.data.task.stage))
-      return err({
-        code: "bad_args",
-        message: "This task is closed; its artifact comments are kept.",
-      })
   }
+  const parsed = validateCommentBody(body)
+  if (!parsed.ok) return parsed
+  const open = await ensureTaskCommentable(ctx, id)
+  if (!open.ok) return open
   const found = await locateArtifact(ctx, scope, id, file)
   if (!found.ok) return found
   const comment = await addArtifactComment(
     ctx,
     commentsHolder(ctx, found.data.home),
     file,
-    remark,
-    spotOf(body.spot),
+    parsed.data.remark,
+    parsed.data.spot,
   )
   // The backstop: a comment the artifact's agent does not read in time goes to a helper.
-  if (scope === "task") {
-    const task = await locate(ctx, id)
-    if (task.ok) await startAnswering(ctx, task.data.task).catch(() => {})
-  }
+  const task = await locate(ctx, id)
+  if (task.ok) await startAnswering(ctx, task.data.task).catch(() => {})
   return ok({ comment })
 }
 
@@ -515,19 +132,19 @@ export async function resolveArtifact(
   file: string,
   body: Record<string, unknown>,
 ): Promise<Result<Record<string, never>>> {
-  if (scope === "project")
+  if (scope === "project") {
     return err({
       code: "bad_args",
       message: "Standalone artifact feedback is retired; its history is read-only.",
     })
-  if (scope === "task") {
-    const task = await locate(ctx, id)
-    if (!task.ok) return task
-    if (await isArchived(ctx, task.data.task))
-      return err({
-        code: "bad_args",
-        message: "Restore this task before resolving artifact comments.",
-      })
+  }
+  const task = await locate(ctx, id)
+  if (!task.ok) return task
+  if (await isArchived(ctx, task.data.task)) {
+    return err({
+      code: "bad_args",
+      message: "Restore this task before resolving artifact comments.",
+    })
   }
   const found = await locateArtifact(ctx, scope, id, file)
   if (!found.ok) return found
@@ -546,28 +163,43 @@ export type ArtifactBrowser = (
   section?: string,
 ) => Promise<Result<Record<string, never>>>
 
-export async function openArtifact(
-  ctx: Ctx,
+function openInViewer(
   scope: "task" | "project",
   id: string,
   file: string,
   body: Record<string, unknown>,
-  opener: Opener,
   browser?: ArtifactBrowser,
 ): Promise<Result<Record<string, never>>> {
+  if (!browser) {
+    return Promise.resolve(
+      err({
+        code: "bad_args",
+        message: "The artifact viewer could not be opened in a browser",
+      }),
+    )
+  }
+  if (body.section !== undefined && typeof body.section !== "string")
+    return Promise.resolve(err({ code: "bad_args", message: "section needs an exact id or label" }))
+  return browser(scope, id, file, body.section as string | undefined)
+}
+
+export async function openArtifact(
+  ...args: [
+    ctx: Ctx,
+    scope: "task" | "project",
+    id: string,
+    file: string,
+    body: Record<string, unknown>,
+    opener: Opener,
+    browser?: ArtifactBrowser,
+  ]
+): Promise<Result<Record<string, never>>> {
+  const [ctx, scope, id, file, body, opener, browser] = args
   const found = await locateArtifact(ctx, scope, id, file)
   if (!found.ok) return found
   const path = await openableArtifact(found.data.folder, found.data.path, body.how)
   if (!path.ok) return path
-  if (body.how === "browser" && body.viewer === true) {
-    if (!browser)
-      return err({
-        code: "bad_args",
-        message: "The artifact viewer could not be opened in a browser",
-      })
-    if (body.section !== undefined && typeof body.section !== "string")
-      return err({ code: "bad_args", message: "section needs an exact id or label" })
-    return browser(scope, id, file, body.section as string | undefined)
-  }
+  if (body.how === "browser" && body.viewer === true)
+    return openInViewer(scope, id, file, body, browser)
   return openFile(path.data.how, path.data.path, opener.platform, opener.run)
 }

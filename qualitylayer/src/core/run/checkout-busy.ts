@@ -7,15 +7,13 @@
 // The answer is kept for a few seconds, so a polling page costs one read per interval, not per poll.
 
 import { realpath } from "node:fs/promises"
-import { join, relative, resolve, sep } from "node:path"
+import { join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { folderDoc } from "../docs/names.ts"
-import { allTasks, extractPaths } from "../docs/outline.ts"
-import { cardsPath, readCards } from "../docs/outline-files.ts"
 import { RUN_LEASES_MAX_BYTES } from "../home-caps.ts"
 import { projectRuntimeDir } from "../paths.ts"
 import { pidAlive } from "../self.ts"
-import { readSession, type Task } from "../task/store.ts"
+import { readSession } from "../task/store.ts"
+import { changedFiles, overlapCount, type Place } from "./checkout-overlap.ts"
 import { activeRun, readRun } from "./registry.ts"
 
 export type CheckoutBusy = { kind: "overlap" | "session" | "changes"; count?: number }
@@ -23,8 +21,6 @@ export type CheckoutBusy = { kind: "overlap" | "session" | "changes"; count?: nu
 /** How long an answer is reused. A session or an edit that starts later shows within this time. */
 const KEEP_MS = 5000
 const kept = new Map<string, { at: number; answer: Promise<CheckoutBusy | null> }>()
-
-type Place = Pick<Task, "slug" | "repoId" | "repoRoot" | "dir">
 
 async function canonical(path: string): Promise<string> {
   try {
@@ -70,152 +66,34 @@ async function appRunHere(ctx: Ctx, task: Place, here: string): Promise<boolean>
   return false
 }
 
+async function liveTerminalInRuntime(ctx: Ctx, runtimeDir: string, here: string): Promise<boolean> {
+  const session = await readSession(ctx, { runtimeDir })
+  if (typeof session?.checkout !== "string" || (await canonical(session.checkout)) !== here)
+    return false
+  const owner = (await json(ctx, join(runtimeDir, "live", "owner.json"))) as {
+    key?: unknown
+  } | null
+  if (typeof owner?.key !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(owner.key)) return false
+  const proc = (await json(ctx, join(runtimeDir, "live", owner.key, "process.json"))) as {
+    pid?: unknown
+  } | null
+  return (
+    typeof proc?.pid === "number" &&
+    Number.isSafeInteger(proc.pid) &&
+    proc.pid > 0 &&
+    pidAlive(proc.pid)
+  )
+}
+
 /** Another task's terminal session in this checkout, by the files its hooks left and one pid probe. */
 async function terminalHere(ctx: Ctx, task: Place, here: string): Promise<boolean> {
   const tasks = join(projectRuntimeDir(ctx, task.repoId), "tasks")
-  let slugs: string[]
-  try {
-    slugs = await ctx.fs.readdir(tasks)
-  } catch {
-    return false
-  }
+  const slugs = await ctx.fs.readdir(tasks).catch(() => [] as string[])
   for (const slug of slugs) {
-    if (slug === task.slug) continue
-    const runtimeDir = join(tasks, slug)
-    const session = await readSession(ctx, { runtimeDir })
-    if (typeof session?.checkout !== "string" || (await canonical(session.checkout)) !== here)
-      continue
-    const owner = (await json(ctx, join(runtimeDir, "live", "owner.json"))) as {
-      key?: unknown
-    } | null
-    if (typeof owner?.key !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(owner.key)) continue
-    const proc = (await json(ctx, join(runtimeDir, "live", owner.key, "process.json"))) as {
-      pid?: unknown
-    } | null
-    if (typeof proc?.pid === "number" && Number.isSafeInteger(proc.pid) && proc.pid > 0)
-      if (pidAlive(proc.pid)) return true
+    if (slug !== task.slug && (await liveTerminalInRuntime(ctx, join(tasks, slug), here)))
+      return true
   }
   return false
-}
-
-const ownFolder = (task: Place) => `${relative(task.repoRoot, task.dir).split(sep).join("/")}/`
-
-/**
- * Files with uncommitted tracked changes or staged paths, outside the task's own plan folder. A
- * renamed or copied file also reports the path it came from, as `from`. Read-only: git is told not
- * to take its optional lock, so the checkout's index is never refreshed by this question. Throws when
- * git cannot answer, so the caller proposes no worktree on a guess.
- */
-async function changedFiles(
-  ctx: Ctx,
-  task: Place,
-): Promise<{ paths: Set<string>; from: Set<string> }> {
-  const own = ownFolder(task)
-  const paths = new Set<string>()
-  const from = new Set<string>()
-  const status = await ctx.git.run(task.repoRoot, [
-    "--no-optional-locks",
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=no",
-  ])
-  // A failed inspection is unknown, never "nothing changed": throwing keeps the checkout the default.
-  if (status.code !== 0) throw new Error("git could not report the checkout's changes")
-  const fields = status.stdout.split("\0").filter(Boolean)
-  for (let at = 0; at < fields.length; at++) {
-    const field = fields[at] as string
-    if (field.length < 4) continue
-    const renamed = /[RC]/.test(field.slice(0, 2))
-    const path = field.slice(3)
-    // A rename or copy is followed by the old path as a field of its own.
-    if (renamed) {
-      at++
-      const old = fields[at]
-      if (old !== undefined && !old.startsWith(own)) from.add(old)
-    }
-    if (!path.startsWith(own)) paths.add(path)
-  }
-  return { paths, from }
-}
-
-/** A path in the Plan's text with its `:line` suffix and a leading `./` removed; null when it is no repository path. */
-function repositoryPath(token: string): string | null {
-  const path = token.replace(/:\d+(?:-\d+)?$/, "").replace(/^\.\//, "")
-  return path === "" || path.startsWith("/") || path.split("/").includes("..") ? null : path
-}
-
-/**
- * The files the approved Plan names: the backticked repository paths of its Plan document, and the
- * Files of every card of its Outline once there is one. A folder stands for every file below it.
- */
-async function approvedFiles(ctx: Ctx, task: Place): Promise<string[]> {
-  const own = ownFolder(task)
-  const named = new Set<string>()
-  const plan = join(task.dir, folderDoc("plan"))
-  if (await ctx.fs.exists(plan))
-    for (const token of extractPaths(await ctx.fs.readFile(plan))) {
-      const path = repositoryPath(token)
-      if (path !== null) named.add(path)
-    }
-  if (await ctx.fs.exists(cardsPath(task.dir)))
-    for (const card of allTasks(await readCards(ctx, task.dir)))
-      for (const file of card.files) {
-        const path = repositoryPath(file)
-        if (path !== null) named.add(path)
-      }
-  return [...named].filter((path) => !path.startsWith(own))
-}
-
-const covers = (entry: string, path: string) =>
-  path === entry || path.startsWith(entry.endsWith("/") ? entry : `${entry}/`)
-
-/** At most this many pathspecs go to one git call. */
-const PATHSPECS = 200
-
-/**
- * The Plan's files that exist only in the working tree, untracked, whether git ignores them or not
- * (a `.env` or a generated source the Plan names): a worktree from HEAD lacks them too, and they are
- * never copied into one. When git cannot answer, this throws, so no worktree is proposed on a guess.
- */
-async function untrackedApproved(ctx: Ctx, task: Place, approved: string[]): Promise<string[]> {
-  const found: string[] = []
-  for (let at = 0; at < approved.length; at += PATHSPECS) {
-    const specs = approved.slice(at, at + PATHSPECS).map((path) => `:(literal)${path}`)
-    for (const ignored of [false, true]) {
-      const listed = await ctx.git.run(task.repoRoot, [
-        "--no-optional-locks",
-        "ls-files",
-        "--others",
-        ...(ignored ? ["--ignored"] : []),
-        "--exclude-standard",
-        "-z",
-        "--",
-        ...specs,
-      ])
-      if (listed.code !== 0) throw new Error("git could not list the Plan's untracked files")
-      found.push(...listed.stdout.split("\0").filter(Boolean))
-    }
-  }
-  return found
-}
-
-/**
- * How many of the Plan's files hold uncommitted edits here: changed or staged paths the approved
- * Plan names, and untracked files it names. Zero when the Plan names nothing yet.
- */
-async function overlapCount(
-  ctx: Ctx,
-  task: Place,
-  changed: { paths: Set<string>; from: Set<string> },
-): Promise<number> {
-  const approved = await approvedFiles(ctx, task)
-  if (approved.length === 0) return 0
-  const hit = new Set<string>()
-  for (const path of [...changed.paths, ...changed.from])
-    if (approved.some((entry) => covers(entry, path))) hit.add(path)
-  for (const path of await untrackedApproved(ctx, task, approved)) hit.add(path)
-  return hit.size
 }
 
 async function read(ctx: Ctx, task: Place): Promise<CheckoutBusy | null> {

@@ -5,43 +5,29 @@
 //! progress never notifies. These polls count as activity, which keeps the server up while the App
 //! runs.
 
-use qualitylayer_launcher::quality_layer_home;
+#[path = "poll_gates.rs"]
+mod gates;
+#[path = "poll_http.rs"]
+mod http;
+#[path = "poll_live.rs"]
+mod live;
+#[path = "poll_log.rs"]
+mod log;
+
+use gates::{open_gates, shipped, stops, Gate};
+pub use http::{get, Failed};
+pub use log::{record, remember, should_announce};
+
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+#[cfg(test)]
 use std::fs;
+#[cfg(test)]
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpStream};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 /// How often the tray looks.
 pub const INTERVAL: Duration = Duration::from_secs(60);
-/// Both the page's title bridge and the tray poller claim the same moment before delivery.
-pub fn should_announce(home: &std::path::Path, key: &str, focused: bool) -> bool {
-    !focused && remember(home, key)
-}
-
-pub fn remember(home: &std::path::Path, key: &str) -> bool {
-    static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let Ok(_guard) = WRITER.lock() else {
-        return false;
-    };
-    let path = home.join("notified.json");
-    let mut seen: HashSet<String> = fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    if !seen.insert(key.to_string()) {
-        return false;
-    }
-    let mut keys: Vec<_> = seen.into_iter().collect();
-    keys.sort();
-    let temporary = home.join(format!("notified.{}.tmp", std::process::id()));
-    fs::create_dir_all(home).is_ok()
-        && serde_json::to_vec(&keys).is_ok_and(|bytes| fs::write(&temporary, bytes).is_ok())
-        && fs::rename(temporary, path).is_ok()
-}
-const TIMEOUT: Duration = Duration::from_secs(10);
-
 /// The local server and the key that opens it.
 #[derive(Clone)]
 pub struct Server {
@@ -187,189 +173,6 @@ fn name(task: &Value) -> &str {
     }
 }
 
-/// What a gate asks of the person.
-#[derive(Clone, Copy, PartialEq)]
-enum Waits {
-    Plan,
-    Review,
-}
-
-struct Gate {
-    key: String,
-    notice: Notice,
-    line: Waiting,
-    /// Approve is still locked, because the other agent's review has not come in: the person can
-    /// read, but there is nothing to tell them yet.
-    locked: bool,
-}
-
-/// The task is stopped for a decision: the agent opened a stop gate, a checkpoint failed twice, or
-/// the checks ran twice without settling.
-struct Stop {
-    key: String,
-    notice: Notice,
-    line: Waiting,
-}
-
-/// A stop is a gate of kind `stop`.
-fn is_stop_gate(gate: &Value) -> bool {
-    matches!(text(gate, "kind"), "stop" | "fix-rounds")
-}
-
-/// An amend hold (kind `amend`) is the agent waiting on the person's addition to the Plan; it has
-/// no notification of its own, and it is not a review.
-fn is_amend_hold(gate: &Value) -> bool {
-    text(gate, "kind") == "amend"
-}
-
-fn pending_gate(task: &Value) -> Option<&Value> {
-    let gate = &task["gate"];
-    (!gate.is_null() && text(gate, "decision") == "pending" && gate["settled"] != true)
-        .then_some(gate)
-}
-
-/// The Plans and reviews that wait on any task, oldest first as the server lists them.
-fn open_gates(tasks: &Value) -> Vec<Gate> {
-    let mut found = Vec::new();
-    for task in tasks["tasks"].as_array().into_iter().flatten() {
-        let Some(gate) = pending_gate(task) else {
-            continue;
-        };
-        if is_stop_gate(gate) || is_amend_hold(gate) || task["archived"] == true {
-            continue;
-        }
-        let id = text(task, "id");
-        let which = gate["id"].as_str().unwrap_or_else(|| text(gate, "target"));
-        let target = text(gate, "target");
-        let waits = if target == "01-plan.md" {
-            Waits::Plan
-        } else {
-            Waits::Review
-        };
-        let items = task["openItems"].as_u64();
-        let (title, body, place, line) = match waits {
-            Waits::Plan => (
-                format!("{}: Plan ready", name(task)),
-                items_waiting(items, "before the build starts")
-                    .unwrap_or_else(|| "Read the Plan and approve it.".to_string()),
-                route(&format!("task/{id}/{target}")),
-                format!("{}: the Plan waits for you", name(task)),
-            ),
-            Waits::Review => (
-                format!("{} needs your review", name(task)),
-                if text(gate, "target") == "final" {
-                    items_waiting(items, "before it ships")
-                        .unwrap_or_else(|| "The change is ready for your review.".to_string())
-                } else {
-                    items_waiting(items, "before it ships")
-                        .unwrap_or_else(|| "It waits for your review.".to_string())
-                },
-                route(&format!("task/{id}")),
-                format!("{}: the review waits for you", name(task)),
-            ),
-        };
-        found.push(Gate {
-            locked: gate["locked"].as_str().is_some_and(|why| !why.is_empty()),
-            key: format!("{id}|{which}|{}", gate["opened"]),
-            notice: Notice {
-                key: format!("{id}|{which}|{}", gate["opened"]),
-                title,
-                body,
-                route: place.clone(),
-                switch: Switch::NeedsYou,
-            },
-            line: Waiting {
-                text: line,
-                route: place,
-            },
-        });
-    }
-    found
-}
-
-/// The tasks that stopped and wait for a decision.
-fn stops(tasks: &Value) -> Vec<Stop> {
-    let mut found = Vec::new();
-    for task in tasks["tasks"].as_array().into_iter().flatten() {
-        if task["archived"] == true {
-            continue;
-        }
-        let id = text(task, "id");
-        let gate = pending_gate(task).filter(|gate| is_stop_gate(gate));
-        let (key, body) = match (task["action"].as_str(), gate) {
-            (_, Some(gate)) => (
-                format!(
-                    "{id}|hold|{}",
-                    gate["id"]
-                        .as_str()
-                        .map_or_else(|| gate["opened"].to_string(), str::to_string)
-                ),
-                "The checks wait for your decision.",
-            ),
-            (Some("build"), _) => (
-                format!("{id}|build|{}", task["checkpoint"]),
-                "A checkpoint failed twice. Choose how to go on.",
-            ),
-            (Some("capped"), _) => (
-                format!("{id}|capped"),
-                "Checking ran twice without settling. Choose how to go on.",
-            ),
-            _ => continue,
-        };
-        let place = route(&format!("task/{id}"));
-        found.push(Stop {
-            key: key.clone(),
-            notice: Notice {
-                key,
-                title: format!("{} stopped", name(task)),
-                body: body.to_string(),
-                route: place.clone(),
-                switch: Switch::NeedsYou,
-            },
-            line: Waiting {
-                text: format!("{}: stopped, waits for you", name(task)),
-                route: place,
-            },
-        });
-    }
-    found
-}
-
-/// Every task that shipped, as a key, and the ones to tell about (an archived task is put away).
-fn shipped(tasks: &Value) -> (HashSet<String>, Vec<(String, Notice)>) {
-    let mut all = HashSet::new();
-    let mut events = Vec::new();
-    for task in tasks["tasks"].as_array().into_iter().flatten() {
-        if text(task, "stage") != "shipped" {
-            continue;
-        }
-        let id = text(task, "id").to_string();
-        all.insert(id.clone());
-        if task["archived"] == true {
-            continue;
-        }
-        let slices = task["closing"]["slices"].as_u64().unwrap_or(0);
-        // The pull request, when the summary knows it (`closing.pr.number`).
-        let body = match (task["closing"]["pr"]["number"].as_u64(), slices) {
-            (Some(number), _) => format!("Pull request #{number}."),
-            (None, 0) => "The change is done.".to_string(),
-            (None, 1) => "The change is done. 1 slice was built.".to_string(),
-            (None, many) => format!("The change is done. {many} slices were built."),
-        };
-        events.push((
-            id.clone(),
-            Notice {
-                key: format!("{id}|shipped"),
-                title: format!("{} shipped", name(task)),
-                body,
-                route: route(&format!("task/{id}")),
-                switch: Switch::Finished,
-            },
-        ));
-    }
-    (all, events)
-}
-
 impl Seen {
     /// Local questions and needs use the page's keys, including a whole question batch. A task's first
     /// question is `front`: on this computer the CLI's launcher brings the App forward and tells it,
@@ -381,142 +184,7 @@ impl Seen {
         notifications: Option<&Value>,
         from_machine: bool,
     ) -> Vec<Notice> {
-        let mut events = Vec::new();
-        let mut batched = HashSet::new();
-        for row in notifications
-            .into_iter()
-            .flat_map(|v| v["notifications"].as_array())
-            .flatten()
-        {
-            let Some(batch) = row["batch"].as_str() else {
-                continue;
-            };
-            if text(row, "state") != "open"
-                || text(&row["target"], "itemId").starts_with("question:")
-            {
-                continue;
-            }
-            let id = text(&row["target"], "taskId");
-            batched.insert(id.to_string());
-            let batch = batch.strip_prefix(&format!("{id}|")).unwrap_or(batch);
-            events.push(Notice {
-                key: format!("{id}|batch|{batch}"),
-                title: "Your turn".into(),
-                body: text(row, "text").into(),
-                route: route(&format!("task/{id}")),
-                switch: Switch::NeedsYou,
-            });
-        }
-        for task in tasks["tasks"].as_array().into_iter().flatten() {
-            if task["archived"] == true || matches!(text(task, "stage"), "shipped" | "abandoned") {
-                continue;
-            }
-            let id = text(task, "id");
-            let question = &task["live"]["question"];
-            let signals = &task["live"]["signals"];
-            let last = [
-                signals["hook"]["at"].as_u64(),
-                signals["transcript"].as_u64(),
-                signals["cli"]["at"].as_u64(),
-                signals["question"].as_u64(),
-            ]
-            .into_iter()
-            .flatten()
-            .max()
-            .unwrap_or(0);
-            let ended = matches!(text(&signals["end"], "kind"), "session-end" | "interrupted")
-                && signals["end"]["at"]
-                    .as_u64()
-                    .is_some_and(|at| last <= at + 5000);
-            let stopped = text(signals, "process") == "gone" || ended;
-            if task["gate"].is_null()
-                && (stopped || !question["stopped"].is_null())
-                && !signals.is_null()
-            {
-                let at = signals["stoppedAt"]
-                    .as_u64()
-                    .or(signals["end"]["at"].as_u64())
-                    .unwrap_or(last);
-                let key = if !question.is_null() && !question["stopped"].is_null() {
-                    format!(
-                        "{id}|ask-stopped|{}|{}",
-                        question["number"], question["stopped"]
-                    )
-                } else {
-                    format!("{id}|stopped|{at}")
-                };
-                events.push(Notice {
-                    key,
-                    title: format!("{} stopped", name(task)),
-                    body: "Continue with /ql.".into(),
-                    route: route(&format!("task/{id}")),
-                    switch: Switch::NeedsYou,
-                });
-            }
-            if !batched.contains(id)
-                && !stopped
-                && !question.is_null()
-                && (question["front"] != true || from_machine)
-                && task["gate"].is_null()
-            {
-                let number = question["number"].as_u64().unwrap_or(0);
-                // The shell lists a question as its own row, or in Discuss as the Discuss item.
-                // Rows that could not be read leave a first question untold: it may be a batch's, which
-                // the batch's own notice tells.
-                let confirmed = (notifications.is_none() && question["front"] != true)
-                    || notifications
-                        .into_iter()
-                        .flat_map(|v| v["notifications"].as_array())
-                        .flatten()
-                        .any(|row| {
-                            let item = text(&row["target"], "itemId");
-                            text(row, "state") == "open"
-                                && text(&row["target"], "taskId") == id
-                                && (item == format!("question:{number}")
-                                    || item.ends_with(&format!(":question:{number}")))
-                        });
-                if confirmed {
-                    events.push(Notice {
-                        key: format!("{id}|question|{number}"),
-                        title: format!("Question {number} for you"),
-                        body: format!("{}\n{}", text(question, "text"), name(task)),
-                        route: route(&format!("task/{id}")),
-                        switch: Switch::NeedsYou,
-                    });
-                }
-            }
-            for need in task["live"]["needs"].as_array().into_iter().flatten() {
-                if text(need, "state") == "resolved" {
-                    continue;
-                }
-                let waits = !need["waiting"].is_null();
-                let at = if waits {
-                    &need["waiting"]
-                } else if !need["reopened"]["at"].is_null() {
-                    &need["reopened"]["at"]
-                } else {
-                    &need["opened"]
-                };
-                events.push(Notice {
-                    key: format!(
-                        "{id}|{}|{}|{at}",
-                        if waits { "need-waits" } else { "need" },
-                        text(need, "for")
-                    ),
-                    title: if waits {
-                        "The build waits for you"
-                    } else {
-                        "The build needs you"
-                    }
-                    .into(),
-                    body: format!("{}\n{}", text(need, "what"), name(task)),
-                    route: route(&format!("task/{id}")),
-                    switch: Switch::NeedsYou,
-                });
-            }
-        }
-        let mut unique = HashSet::new();
-        events.retain(|n| unique.insert(n.key.clone()));
+        let events = live::collect_live_events(tasks, notifications, from_machine);
         let all = events.iter().map(|n| n.key.clone()).collect();
         self.live.observe(
             all,
@@ -575,112 +243,6 @@ impl Seen {
             news.extend(self.shipped.observe(all, events));
         }
         (news, summary)
-    }
-}
-
-/// Why a read of the server failed.
-#[derive(Debug, PartialEq)]
-pub enum Failed {
-    /// No server answered, or it did not take the key: the watch in `liveness.rs` brings one back.
-    Down,
-    /// The server answered with something other than 200.
-    Status(u16),
-}
-
-/// The status and body of an HTTP/1.1 answer, whole or chunked.
-fn parse_response(raw: &[u8]) -> Option<(u16, Vec<u8>)> {
-    let split = raw.windows(4).position(|w| w == b"\r\n\r\n")?;
-    let head = std::str::from_utf8(&raw[..split]).ok()?;
-    let status = head
-        .lines()
-        .next()?
-        .split_whitespace()
-        .nth(1)?
-        .parse()
-        .ok()?;
-    let chunked = head.lines().any(|l| {
-        l.to_ascii_lowercase().starts_with("transfer-encoding:")
-            && l.to_ascii_lowercase().contains("chunked")
-    });
-    let body = &raw[split + 4..];
-    if !chunked {
-        return Some((status, body.to_vec()));
-    }
-    let mut out = Vec::new();
-    let mut rest = body;
-    loop {
-        let line_end = rest.windows(2).position(|w| w == b"\r\n")?;
-        let size = usize::from_str_radix(
-            std::str::from_utf8(&rest[..line_end])
-                .ok()?
-                .split(';')
-                .next()?
-                .trim(),
-            16,
-        )
-        .ok()?;
-        rest = &rest[line_end + 2..];
-        if size == 0 {
-            return Some((status, out));
-        }
-        out.extend_from_slice(rest.get(..size)?);
-        rest = rest.get(size + 2..)?;
-    }
-}
-
-/// One GET to the local server with the key in its header, as the App's own requests carry it.
-pub fn get(server: &Server, path: &str) -> Result<Value, Failed> {
-    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, server.port));
-    let mut stream = TcpStream::connect_timeout(&address, TIMEOUT).map_err(|_| Failed::Down)?;
-    let _ = stream.set_read_timeout(Some(TIMEOUT));
-    let _ = stream.set_write_timeout(Some(TIMEOUT));
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nx-qualitylayer-token: {}\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
-        server.port, server.token
-    );
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|_| Failed::Down)?;
-    let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).map_err(|_| Failed::Down)?;
-    let (status, body) = parse_response(&raw).ok_or(Failed::Down)?;
-    match status {
-        200 => serde_json::from_slice(&body).map_err(|_| Failed::Down),
-        // The server did not take the key: it was replaced, so ask the CLI for the current one.
-        401 | 403 => Err(Failed::Down),
-        other => Err(Failed::Status(other)),
-    }
-}
-
-/// The log keeps the latest notifications in the QualityLayer home, a line each; it starts over
-/// when it grows past this.
-const LOG_LIMIT: u64 = 64 * 1024;
-
-/// Note a notification the App showed, in `<QL home>/notifications.log`: what a person who missed
-/// one can look up, and what a test reads, since a native notification cannot be read back.
-pub fn record(notice: &Notice) {
-    let Some(home) = quality_layer_home() else {
-        return;
-    };
-    let path = home.join("notifications.log");
-    if fs::metadata(&path).is_ok_and(|log| log.len() > LOG_LIMIT) {
-        let _ = fs::remove_file(&path);
-    }
-    let at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_millis() as u64);
-    let line = serde_json::json!({
-        "at": at, "key": notice.key, "title": notice.title, "body": notice.body, "route": notice.route
-    });
-    let mut options = fs::OpenOptions::new();
-    options.create(true).append(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    if let Ok(mut log) = options.open(path) {
-        let _ = writeln!(log, "{line}");
     }
 }
 

@@ -8,351 +8,27 @@
 // from the draft's `base`), a page it lost or gained meanwhile, all blocking until the person goes on
 // anyway; and another open task drafting on the same page, which only warns.
 
-import { createHash } from "node:crypto"
-import { lstat, mkdir, open, rm } from "node:fs/promises"
+import { mkdir } from "node:fs/promises"
 import { dirname, join, relative, sep } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { recordSliceCommit } from "../git/build-start.ts"
 import { commitSlice } from "../git/slice-commit.ts"
+import { type FoldPreview, type FoldResult, LASTING_ARTIFACTS } from "./format.ts"
+import { adoptStored } from "./lasting.ts"
+import { changedInputs, updateBase } from "./lasting-fold-base.ts"
 import {
-  ARTIFACT_FILE_MAX_BYTES,
-  draftOnFrom,
-  type FoldConflict,
-  type FoldPage,
-  type FoldPreview,
-  type FoldResult,
-  LASTING_ARTIFACTS,
-  TASK_ARTIFACTS,
-} from "./format.ts"
-import { adoptStored, blobId, readLasting } from "./lasting.ts"
-import {
-  bad,
-  type Draft,
-  failure,
-  keepAllFiles,
-  LASTING_KEEP_ALL,
-  readDraft,
-  safeRel,
-  type WriteTask,
-} from "./lasting-write.ts"
-import { packArtifactPage } from "./pack.ts"
+  type FileWitness,
+  readAtIdentity,
+  restoreFoldFiles,
+  rollbackNote,
+  sha256,
+  witness,
+  writeGuarded,
+} from "./lasting-fold-io.ts"
+import { type FoldPlan, type OtherDrafts, planFold } from "./lasting-fold-plan.ts"
+import { bad, keepAllFiles, LASTING_KEEP_ALL, type WriteTask } from "./lasting-write.ts"
 
-const sha256 = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex")
-
-/** Other open tasks drafting on the same page of an artifact: asked by the fold's preview. */
-export type OtherDrafts = (
-  artifact: string,
-  page: string,
-) => Promise<{ id: string; title: string }[]>
-
-type Plan = {
-  preview: FoldPreview
-  draft: Draft
-  lasting: { name: string; dir: string; folder: string; stored: boolean }
-  /** Per page: the files to write into the lasting artifact's folder (the page first). */
-  copies: Map<string, { from: string; rel: string }[]>
-  inputs: Map<string, FileWitness>
-  guards: Map<string, Set<string>>
-  metadata: Set<string>
-  pairs: Map<string, { from: string; rel: string }[]>
-}
-
-type FileWitness = {
-  kind: "file" | "missing" | "other"
-  identity: string | null
-  version: string
-  blob: string | null
-  sha256: string | null
-  size: number
-}
-const identityOf = (info: Awaited<ReturnType<typeof lstat>>) =>
-  JSON.stringify([info.dev, info.ino, info.mode, info.size, info.mtimeMs, info.ctimeMs])
-
-async function readAtIdentity(path: string, identity: string, size: number): Promise<Buffer> {
-  if (size > ARTIFACT_FILE_MAX_BYTES) throw new Error(`${path} exceeds the artifact file limit`)
-  const handle = await open(path, "r")
-  try {
-    if (identityOf(await handle.stat()) !== identity) throw new Error(`${path} was replaced`)
-    const bytes = Buffer.alloc(size)
-    const { bytesRead } = await handle.read(bytes, 0, size, 0)
-    const after = await lstat(path)
-    if (
-      bytesRead !== size ||
-      identityOf(after) !== identity ||
-      identityOf(await handle.stat()) !== identity
-    )
-      throw new Error(`${path} changed while it was read`)
-    return bytes
-  } finally {
-    await handle.close()
-  }
-}
-
-async function witness(path: string): Promise<FileWitness> {
-  const info = await lstat(path).catch(() => null)
-  if (info === null)
-    return {
-      kind: "missing",
-      identity: null,
-      version: "missing",
-      blob: null,
-      sha256: null,
-      size: 0,
-    }
-  const identity = identityOf(info)
-  const bytes =
-    info.isFile() && info.size <= ARTIFACT_FILE_MAX_BYTES
-      ? await readAtIdentity(path, identity, info.size).catch(() => null)
-      : null
-  const after = await lstat(path).catch(() => null)
-  if (bytes === null || after === null || identityOf(after) !== identity)
-    return {
-      kind: "other",
-      identity,
-      version: `unavailable:${identity}`,
-      blob: null,
-      sha256: null,
-      size: info.size,
-    }
-  const hash = sha256(bytes)
-  return {
-    kind: "file",
-    identity,
-    version: `${identity}:${hash}`,
-    blob: blobId(bytes),
-    sha256: hash,
-    size: info.size,
-  }
-}
-
-/** The open descriptor must still be the inspected file; a replaced path keeps its replacement. */
-async function writeGuarded(
-  path: string,
-  bytes: Buffer,
-  expected: FileWitness,
-): Promise<FileWitness> {
-  if ((await witness(path)).version !== expected.version || expected.kind === "other")
-    throw new Error(`${path} changed since it was inspected`)
-  const handle = await open(path, expected.kind === "missing" ? "wx" : "r+")
-  try {
-    if (
-      expected.identity !== null &&
-      (identityOf(await handle.stat()) !== expected.identity ||
-        identityOf(await lstat(path)) !== expected.identity)
-    )
-      throw new Error(`${path} was replaced before writing`)
-    await handle.writeFile(bytes)
-    await handle.truncate(bytes.length)
-    const info = await handle.stat()
-    const identity = identityOf(info)
-    if (identityOf(await lstat(path)) !== identity)
-      throw new Error(`${path} was replaced during writing`)
-    const hash = sha256(bytes)
-    return {
-      kind: "file",
-      identity,
-      version: `${identity}:${hash}`,
-      blob: blobId(bytes),
-      sha256: hash,
-      size: bytes.length,
-    }
-  } finally {
-    await handle.close()
-  }
-}
-
-async function changedInputs(
-  planned: Plan,
-  pages: string[],
-  written: Map<string, FileWitness> = new Map(),
-): Promise<string[]> {
-  const paths = new Set([
-    ...planned.metadata,
-    ...pages.flatMap((page) => [...(planned.guards.get(page) ?? [])]),
-  ])
-  const changed: string[] = []
-  for (const path of paths) {
-    const expected = written.get(path) ?? planned.inputs.get(path)
-    if (!expected || (await witness(path)).version !== expected.version) changed.push(path)
-  }
-  return changed
-}
-
-async function updateBase(
-  planned: Plan,
-  pages: string[],
-  written: Map<string, FileWitness>,
-): Promise<Result<null>> {
-  if ((await changedInputs(planned, pages, written)).length)
-    return bad(
-      "The draft or lasting artifact changed during the fold; its ancestry was not updated",
-    )
-  const config = planned.draft.config
-  if (config === null) return ok(null)
-  try {
-    const expected = planned.inputs.get(config)
-    if (!expected) return bad("The draft metadata was not inspected")
-    if (expected.identity === null) return bad("The draft metadata disappeared")
-    const raw = JSON.parse(
-      (await readAtIdentity(config, expected.identity, expected.size)).toString("utf8"),
-    ) as Record<string, unknown>
-    const on = draftOnFrom(raw.draftOn)
-    if (on === null) return bad("The draft's ancestry no longer reads")
-    const base = { ...(on.base ?? {}) }
-    for (const page of pages)
-      for (const { from, rel } of planned.pairs.get(page) ?? []) {
-        const target = join(planned.lasting.dir, rel)
-        const mine = planned.inputs.get(from)
-        const current = written.get(target) ?? planned.inputs.get(target)
-        if (current?.blob && (written.has(target) || mine?.blob === current.blob))
-          base[rel] = current.blob
-      }
-    await writeGuarded(
-      config,
-      Buffer.from(`${JSON.stringify({ ...raw, draftOn: { ...on, base } }, null, 2)}\n`),
-      expected,
-    )
-    return ok(null)
-  } catch (cause) {
-    return failure(cause)
-  }
-}
-
-async function plan(
-  task: WriteTask,
-  draftName: string,
-  others: OtherDrafts,
-): Promise<Result<Plan>> {
-  const draft = await readDraft(task, draftName)
-  if (!draft.ok) return draft
-  const on = draft.data.draftOn
-  if (on === null) return bad(`${draftName} does not draft on a lasting artifact`)
-  if ((on.project ?? task.repoId) !== task.repoId)
-    return bad(
-      `${on.artifact} belongs to another project: fold its pages in from a task of that project`,
-    )
-  const inputs: Plan["inputs"] = new Map()
-  const metadata: Plan["metadata"] = new Set()
-  const inspect = async (path: string, files = metadata) => {
-    files.add(path)
-    let state = inputs.get(path)
-    if (!state) {
-      state = await witness(path)
-      inputs.set(path, state)
-    }
-    return state.blob
-  }
-  if (draft.data.config !== null) {
-    await inspect(draft.data.config)
-    try {
-      const expected = inputs.get(draft.data.config)
-      if (!expected?.identity) return bad("The draft metadata disappeared")
-      const raw = JSON.parse(
-        (await readAtIdentity(draft.data.config, expected.identity, expected.size)).toString(
-          "utf8",
-        ),
-      ) as Record<string, unknown>
-      if (JSON.stringify(draftOnFrom(raw.draftOn)) !== JSON.stringify(on))
-        return bad("The draft's ancestry changed while it was inspected")
-    } catch (cause) {
-      return failure(cause)
-    }
-  }
-  await inspect(join(task.repoRoot, LASTING_ARTIFACTS, on.artifact, "artifact.json"))
-  const lasting = await readLasting(task.repoRoot, on.artifact)
-  if (!lasting.ok) return bad(`${on.artifact}: ${lasting.error.message}`)
-  const { dir } = draft.data
-  const pages: FoldPage[] = []
-  const conflicts: FoldConflict[] = []
-  const copies: Plan["copies"] = new Map()
-  const guards: Plan["guards"] = new Map()
-  const pairs: Plan["pairs"] = new Map()
-  for (const { file, page } of draft.data.pages) {
-    if (on.page !== undefined && page !== on.page) continue
-    const filesGuard = new Set<string>()
-    guards.set(page, filesGuard)
-    pairs.set(page, [{ from: join(dir, file), rel: page }])
-    const mine = await inspect(join(dir, file), filesGuard)
-    if (mine === null) continue
-    const now = await inspect(join(lasting.data.dir, page), filesGuard)
-    const began = on.base?.[page]
-    // A draft without a base (a single page that says so with a meta tag) is compared with the artifact as it is.
-    const pageChanged = on.base === undefined ? mine !== now : began === undefined || began !== mine
-    const pageToWrite = pageChanged && mine !== now
-
-    // The files the page uses: those the draft changed (against what it began from) go with it.
-    const files: string[] = []
-    const fileConflicts: FoldConflict[] = []
-    if (draft.data.config !== null) {
-      const used = await packArtifactPage(dir, file, async () => "")
-      for (const rel of used.ok ? used.data.files.filter(safeRel) : []) {
-        pairs.get(page)?.push({ from: join(dir, rel), rel })
-        const a = await inspect(join(dir, rel), filesGuard)
-        const b = await inspect(join(lasting.data.dir, rel), filesGuard)
-        const c = on.base?.[rel]
-        const changed = on.base === undefined ? a !== b : c === undefined || a !== c
-        if (a === null || !changed || a === b) continue
-        files.push(rel)
-        if (on.base !== undefined) {
-          if (c !== undefined && b === null)
-            fileConflicts.push({ page, file: rel, kind: "removed", blocking: true })
-          else if (c !== undefined && b !== c)
-            fileConflicts.push({ page, file: rel, kind: "changed", blocking: true })
-          else if (c === undefined && b !== null)
-            fileConflicts.push({ page, file: rel, kind: "exists", blocking: true })
-        }
-      }
-    }
-    const foldable = pageToWrite || files.length > 0
-    pages.push({
-      page,
-      status: !foldable ? "unchanged" : now === null ? "new" : "changed",
-      before: now === null ? null : `${LASTING_ARTIFACTS}/${on.artifact}/${page}`,
-      after: `${TASK_ARTIFACTS}/${draft.data.name}/${file}`,
-      files,
-    })
-    if (!foldable) continue
-    copies.set(page, [
-      ...(pageToWrite ? [{ from: join(dir, file), rel: page }] : []),
-      ...files.map((rel) => ({ from: join(dir, rel), rel })),
-    ])
-    if (pageToWrite && on.base !== undefined) {
-      if (began !== undefined && now === null)
-        conflicts.push({ page, kind: "removed", blocking: true })
-      else if (began !== undefined && now !== began)
-        conflicts.push({ page, kind: "changed", blocking: true })
-      else if (began === undefined && now !== null)
-        conflicts.push({ page, kind: "exists", blocking: true })
-    }
-    conflicts.push(...fileConflicts)
-    const also = await others(on.artifact, page)
-    if (also.length > 0)
-      conflicts.push({ page, kind: "also-drafted", blocking: false, tasks: also })
-  }
-  return ok({
-    preview: {
-      draft: draftName,
-      artifact: on.artifact,
-      project: task.repoId,
-      folder: lasting.data.folder,
-      message: `artifact: fold ${draftName} into ${on.artifact} (${task.title})`,
-      pages,
-      conflicts,
-    },
-    draft: draft.data,
-    lasting: {
-      name: lasting.data.name,
-      dir: lasting.data.dir,
-      folder: lasting.data.folder,
-      stored: lasting.data.stored === true,
-    },
-    copies,
-    inputs,
-    guards,
-    metadata,
-    pairs,
-  })
-}
+export type { OtherDrafts } from "./lasting-fold-plan.ts"
 
 /** What folding a task's draft into its lasting artifact would write, and what is in the way. Writes nothing. */
 export async function foldPreview(
@@ -360,7 +36,7 @@ export async function foldPreview(
   draft: string,
   others: OtherDrafts = async () => [],
 ): Promise<Result<FoldPreview>> {
-  const planned = await plan(task, draft, others)
+  const planned = await planFold(task, draft, others)
   return planned.ok ? ok(planned.data.preview) : planned
 }
 
@@ -370,27 +46,20 @@ export type FoldInput = {
   force?: boolean
 }
 
-/**
- * Copy the chosen pages (and the files they changed) from the task's draft into the lasting artifact's
- * folder and commit exactly those paths. A blocking conflict on a chosen page answers the preview
- * and writes nothing, unless `force`. A refused commit restores only files still owned by the fold.
- */
-export async function foldArtifact(
+async function prepareFoldPlan(
   ctx: Ctx,
   task: WriteTask,
-  input: FoldInput,
-  others: OtherDrafts = async () => [],
-): Promise<Result<FoldResult>> {
-  let planned = await plan(task, input.draft, others)
-  if (planned.ok && planned.data.lasting.stored) {
-    // A design stored before the rename: the fold lands in the artifact folder, copied from it first.
-    const adopted = await adoptStored(task.repoRoot, planned.data.lasting.name, ctx)
-    if (!adopted.ok) return adopted
-    planned = await plan(task, input.draft, others)
-  }
-  if (!planned.ok) return planned
-  const state = planned.data
-  const { preview, lasting, copies } = state
+  draft: string,
+  others: OtherDrafts,
+): Promise<Result<FoldPlan>> {
+  const planned = await planFold(task, draft, others)
+  if (!planned.ok || !planned.data.lasting.stored) return planned
+  // A design stored before the rename: the fold lands in the artifact folder, copied from it first.
+  const adopted = await adoptStored(task.repoRoot, planned.data.lasting.name, ctx)
+  return adopted.ok ? planFold(task, draft, others) : adopted
+}
+
+function validateFoldPages(preview: FoldPreview, input: FoldInput): Result<string[]> {
   if (
     !Array.isArray(input.pages) ||
     input.pages.length === 0 ||
@@ -398,85 +67,100 @@ export async function foldArtifact(
   )
     return bad("choose the pages to fold in")
   const chosen = [...new Set(input.pages)]
-  for (const name of chosen)
+  for (const name of chosen) {
     if (!preview.pages.some((p) => p.page === name))
       return bad(`${input.draft} has no page ${name} to fold in`)
-  const stops = preview.conflicts.filter((c) => c.blocking && chosen.includes(c.page))
-  if (stops.length > 0 && input.force !== true) return ok({ folded: false, preview })
-
-  const writes = new Map<string, string>()
-  for (const name of chosen)
-    for (const { from, rel } of copies.get(name) ?? []) writes.set(rel, from)
-  const paths = [...writes.keys()].map((rel) => `${lasting.folder}/${rel}`)
-  if ((await changedInputs(state, chosen)).length > 0)
-    return bad("The draft or lasting artifact changed since the fold was prepared")
-  if (paths.length === 0) {
-    const rebased = await updateBase(state, chosen, new Map())
-    return rebased.ok
-      ? ok({ folded: true, commit: null, subject: null, files: [], preview })
-      : rebased
   }
+  return ok(chosen)
+}
 
+type StageFoldInput = {
+  task: WriteTask
+  state: FoldPlan
+  writes: Map<string, string>
+  paths: string[]
+  before: Map<string, Buffer | null>
+  written: Map<string, FileWitness>
+}
+
+async function stageFoldFiles({
+  task,
+  state,
+  writes,
+  paths,
+  before,
+  written,
+}: StageFoldInput): Promise<void> {
+  // An artifact kept before the rule existed gets it with its first fold, in the same commit.
+  // An artifact whose files live in a source folder of the project follows that folder's own rules.
+  const rule = state.lasting.folder.startsWith(`${LASTING_ARTIFACTS}/`)
+    ? await keepAllFiles(task.repoRoot)
+    : null
+  if (rule !== null) {
+    const at = join(task.repoRoot, ...LASTING_KEEP_ALL.split("/"))
+    before.set(at, null)
+    const applied = await witness(at)
+    if (applied.kind !== "file") throw new Error(`${at} changed while it was created`)
+    written.set(at, applied)
+    paths.push(rule)
+  }
+  for (const [rel, from] of writes) {
+    const at = join(state.lasting.dir, rel)
+    const expected = state.inputs.get(at)
+    const source = state.inputs.get(from)
+    if (!expected || !source?.identity || source.kind !== "file")
+      throw new Error(`${from} is no longer a regular draft input`)
+    const bytes = await readAtIdentity(from, source.identity, source.size)
+    if (sha256(bytes) !== source.sha256) throw new Error(`${from} changed before copying`)
+    before.set(
+      at,
+      expected.kind === "missing"
+        ? null
+        : await readAtIdentity(at, expected.identity as string, expected.size),
+    )
+    await mkdir(dirname(at), { recursive: true })
+    written.set(at, await writeGuarded(at, bytes, expected))
+  }
+}
+
+async function reconcileHookWrites(
+  ctx: Ctx,
+  repoRoot: string,
+  commit: string | null,
+  written: Map<string, FileWitness>,
+): Promise<void> {
+  if (commit === null) return
+  // Hook formatting is accepted only when the current file is exactly the recorded commit's input.
+  for (const [at, own] of written) {
+    const current = await witness(at)
+    if (current.version === own.version) continue
+    const saved = await ctx.git.run(repoRoot, [
+      "cat-file",
+      "--filters",
+      `${commit}:${relative(repoRoot, at).split(sep).join("/")}`,
+    ])
+    if (saved.code === 0 && sha256(Buffer.from(saved.stdout)) === current.sha256)
+      written.set(at, current)
+  }
+}
+
+async function commitStagedFold(
+  ctx: Ctx,
+  task: WriteTask,
+  state: FoldPlan,
+  chosen: string[],
+  writes: Map<string, string>,
+): Promise<Result<FoldResult>> {
+  const paths = [...writes.keys()].map((rel) => `${state.lasting.folder}/${rel}`)
   const before = new Map<string, Buffer | null>()
   const written = new Map<string, FileWitness>()
-  const restore = async () => {
-    const kept: string[] = []
-    for (const [at, expected] of written) {
-      try {
-        if ((await witness(at)).version !== expected.version) {
-          kept.push(at)
-          continue
-        }
-        const bytes = before.get(at)
-        if (bytes === null) await rm(at, { force: true })
-        else if (bytes !== undefined) await writeGuarded(at, bytes, expected)
-      } catch {
-        kept.push(at)
-      }
-    }
-    return kept
-  }
-  const rollbackNote = (kept: string[]) =>
-    kept.length === 0
-      ? ""
-      : ` Concurrent changes were preserved instead of rolling back: ${kept.join(", ")}.`
   try {
-    // An artifact kept before the rule existed gets it with its first fold, in the same commit.
-    // An artifact whose files live in a source folder of the project follows that folder's own rules.
-    const rule = lasting.folder.startsWith(`${LASTING_ARTIFACTS}/`)
-      ? await keepAllFiles(task.repoRoot)
-      : null
-    if (rule !== null) {
-      const at = join(task.repoRoot, ...LASTING_KEEP_ALL.split("/"))
-      before.set(at, null)
-      const applied = await witness(at)
-      if (applied.kind !== "file") throw new Error(`${at} changed while it was created`)
-      written.set(at, applied)
-      paths.push(rule)
-    }
-    for (const [rel, from] of writes) {
-      const at = join(lasting.dir, rel)
-      const expected = state.inputs.get(at)
-      const source = state.inputs.get(from)
-      if (!expected || !source?.identity || source.kind !== "file")
-        throw new Error(`${from} is no longer a regular draft input`)
-      const bytes = await readAtIdentity(from, source.identity, source.size)
-      if (sha256(bytes) !== source.sha256) throw new Error(`${from} changed before copying`)
-      before.set(
-        at,
-        expected.kind === "missing"
-          ? null
-          : await readAtIdentity(at, expected.identity as string, expected.size),
-      )
-      await mkdir(dirname(at), { recursive: true })
-      const applied = await writeGuarded(at, bytes, expected)
-      written.set(at, applied)
-    }
+    await stageFoldFiles({ task, state, writes, paths, before, written })
   } catch (cause) {
-    const kept = await restore()
+    const kept = await restoreFoldFiles(written, before)
     return bad(`${cause instanceof Error ? cause.message : String(cause)}${rollbackNote(kept)}`)
   }
-  const committed = await commitSlice(task.repoRoot, paths, [], preview.message, {
+  const committed = await commitSlice(task.repoRoot, paths, [], state.preview.message, {
     named: paths,
     records: [],
     leave: [],
@@ -493,28 +177,59 @@ export async function foldArtifact(
         : {},
   })
   if (!committed.ok) {
-    const kept = await restore()
+    const kept = await restoreFoldFiles(written, before)
     return err({ ...committed.error, message: committed.error.message + rollbackNote(kept) })
   }
   const { commit, subject } = committed.data
   if (commit !== null) await recordSliceCommit(ctx, task, commit)
-
-  // Hook formatting is accepted only when the current file is exactly the recorded commit's input.
-  for (const [at, own] of written) {
-    const current = await witness(at)
-    if (current.version === own.version || commit === null) continue
-    const saved = await ctx.git.run(task.repoRoot, [
-      "cat-file",
-      "--filters",
-      `${commit}:${relative(task.repoRoot, at).split(sep).join("/")}`,
-    ])
-    if (saved.code === 0 && sha256(Buffer.from(saved.stdout)) === current.sha256)
-      written.set(at, current)
-  }
+  await reconcileHookWrites(ctx, task.repoRoot, commit, written)
   const rebased = await updateBase(state, chosen, written)
-  if (!rebased.ok)
-    return bad(
-      `${commit === null ? "The fold matched the existing commit" : `Committed ${commit}`}, but ${rebased.error.message}. Refresh the draft before retrying.`,
-    )
-  return ok({ folded: true, commit, subject, files: paths, preview })
+  return rebased.ok
+    ? ok({ folded: true, commit, subject, files: paths, preview: state.preview })
+    : bad(
+        `${commit === null ? "The fold matched the existing commit" : `Committed ${commit}`}, but ${rebased.error.message}. Refresh the draft before retrying.`,
+      )
+}
+
+async function executeValidatedFold(
+  ctx: Ctx,
+  task: WriteTask,
+  state: FoldPlan,
+  chosen: string[],
+): Promise<Result<FoldResult>> {
+  const writes = new Map<string, string>()
+  for (const name of chosen) {
+    for (const { from, rel } of state.copies.get(name) ?? []) writes.set(rel, from)
+  }
+  if ((await changedInputs(state, chosen)).length > 0)
+    return bad("The draft or lasting artifact changed since the fold was prepared")
+  if (writes.size === 0) {
+    const rebased = await updateBase(state, chosen, new Map())
+    return rebased.ok
+      ? ok({ folded: true, commit: null, subject: null, files: [], preview: state.preview })
+      : rebased
+  }
+  return commitStagedFold(ctx, task, state, chosen, writes)
+}
+
+/**
+ * Copy the chosen pages (and the files they changed) from the task's draft into the lasting artifact's
+ * folder and commit exactly those paths. A blocking conflict on a chosen page answers the preview
+ * and writes nothing, unless `force`. A refused commit restores only files still owned by the fold.
+ */
+export async function foldArtifact(
+  ctx: Ctx,
+  task: WriteTask,
+  input: FoldInput,
+  others: OtherDrafts = async () => [],
+): Promise<Result<FoldResult>> {
+  const planned = await prepareFoldPlan(ctx, task, input.draft, others)
+  if (!planned.ok) return planned
+  const state = planned.data
+  const chosenResult = validateFoldPages(state.preview, input)
+  if (!chosenResult.ok) return chosenResult
+  const chosen = chosenResult.data
+  const stops = state.preview.conflicts.filter((c) => c.blocking && chosen.includes(c.page))
+  if (stops.length > 0 && input.force !== true) return ok({ folded: false, preview: state.preview })
+  return executeValidatedFold(ctx, task, state, chosen)
 }

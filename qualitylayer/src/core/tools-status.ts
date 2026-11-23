@@ -4,7 +4,7 @@
 // short programs and is kept for five minutes; "Check again" reads afresh.
 
 import type { Ctx } from "../ctx.ts"
-import { runIn } from "./ship/pull-request.ts"
+import { run } from "./ship/pull-request.ts"
 
 export type GitStatus = { available: boolean; version: string | null }
 export type GhStatus = {
@@ -24,7 +24,7 @@ const kept = new Map<string, ToolsStatus>()
 const VERSION = /\b(\d+\.\d+(?:\.\d+)?)\b/
 
 async function versionOf(ctx: Ctx, program: string): Promise<string | null | undefined> {
-  const out = await runIn(ctx, ctx.env.cwd(), [program, "--version"]).catch(() => null)
+  const out = await run(ctx, ctx.env.cwd(), [program, "--version"]).catch(() => null)
   if (out === null || out.code !== 0) return undefined
   return VERSION.exec(out.stdout.split("\n")[0] ?? "")?.[1] ?? null
 }
@@ -38,7 +38,7 @@ async function readGh(ctx: Ctx): Promise<GhStatus> {
   const version = await versionOf(ctx, "gh")
   if (version === undefined)
     return { available: false, version: null, signedIn: false, account: null }
-  const auth = await runIn(ctx, ctx.env.cwd(), [
+  const auth = await run(ctx, ctx.env.cwd(), [
     "gh",
     "auth",
     "status",

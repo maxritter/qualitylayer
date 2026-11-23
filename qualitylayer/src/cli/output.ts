@@ -32,43 +32,58 @@ function splitFindings(errors: ValidationError[]): {
   }
 }
 
-export function renderText(result: Result<unknown>): string {
-  if (!result.ok) {
-    const { error } = result
-    let text = `error (${error.code}): ${error.message}`
-    if (error.code === "validation_failed") {
-      const { errors, warnings } = splitFindings(error.errors)
-      if (errors.length) text += `\n${renderErrors(errors)}`
-      if (warnings.length) text += `\nwarnings (they do not block):\n${renderErrors(warnings)}`
-    }
-    return text
+function renderFailure(error: Extract<Result<unknown>, { ok: false }>["error"]): string {
+  let text = `error (${error.code}): ${error.message}`
+  if (error.code === "validation_failed") {
+    const { errors, warnings } = splitFindings(error.errors)
+    if (errors.length) text += `\n${renderErrors(errors)}`
+    if (warnings.length) text += `\nwarnings (they do not block):\n${renderErrors(warnings)}`
   }
+  return text
+}
+
+function stringItems(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((line): line is string => typeof line === "string")
+    : []
+}
+
+function formatEntryLines(
+  data: Record<string, unknown>,
+  fileKeys: string[],
+  summaryFirst: boolean,
+): string[] {
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(data)) {
+    if (fileKeys.includes(key) || value === undefined) continue
+    if (key === "summary" && Array.isArray(value)) {
+      if (!summaryFirst) lines.push(...stringItems(value))
+      continue
+    }
+    lines.push(
+      typeof value === "string" ? `${key}: ${value}` : `${key}: ${JSON.stringify(value, null, 2)}`,
+    )
+  }
+  return lines
+}
+
+export function renderText(result: Result<unknown>): string {
+  if (!result.ok) return renderFailure(result.error)
   const data = actionFirst(result.data as Record<string, unknown>)
   const printed = result.terminalText ?? data.printed
   if (typeof printed === "string") return printed
   // A reply may open with one plain line per item (a wait's answers); the details follow as before.
   const summaryFirst = data === result.data
-  const lines: string[] =
-    summaryFirst && Array.isArray(data.summary)
-      ? data.summary.filter((line): line is string => typeof line === "string")
-      : []
   // A long Verify brief lives on disk. Keep its two working files visible above the helper payload.
   const fileKeys =
     data.phase === "verify" && Array.isArray(data.helpers_pending)
       ? ["instructions_ref", "record_in"].filter((key) => typeof data[key] === "string")
       : []
-  for (const key of fileKeys) lines.push(`${key}: ${data[key]}`)
-  for (const [key, value] of Object.entries(data)) {
-    if (fileKeys.includes(key)) continue
-    if (value === undefined) continue
-    if (key === "summary" && Array.isArray(value)) {
-      if (!summaryFirst)
-        lines.push(...value.filter((line): line is string => typeof line === "string"))
-      continue
-    }
-    if (typeof value === "string") lines.push(`${key}: ${value}`)
-    else lines.push(`${key}: ${JSON.stringify(value, null, 2)}`)
-  }
+  const lines: string[] = [
+    ...(summaryFirst ? stringItems(data.summary) : []),
+    ...fileKeys.map((key) => `${key}: ${data[key]}`),
+    ...formatEntryLines(data, fileKeys, summaryFirst),
+  ]
   return lines.join("\n")
 }
 

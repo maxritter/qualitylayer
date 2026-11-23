@@ -143,6 +143,41 @@ async function inputOf(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
+async function limitsReadRoute(ctx: Ctx, url: URL, resume: LimitResume): Promise<Response | null> {
+  if (url.pathname === "/api/usage/display") {
+    return reply(
+      ok(
+        await readUsageDisplay(
+          ctx,
+          sources,
+          url.searchParams.get("refresh") === "1",
+          url.searchParams.get("menu") === "1",
+        ),
+      ),
+    )
+  }
+  if (url.pathname === "/api/limits") {
+    return reply(
+      await limitsPayload(
+        ctx,
+        resume,
+        sources,
+        url.searchParams.get("refresh") === "1",
+        url.searchParams.get("refresh") === "auto" && url.searchParams.get("claude") !== "0",
+      ),
+    )
+  }
+  if (url.pathname === "/api/usage") {
+    // How Claude Code is billed follows its last limits reading, read from the home: nothing is run.
+    return reply(
+      await readUsage(ctx, url.searchParams.get("period"), {
+        claude: () => sources.claude.cached(ctx),
+      }),
+    )
+  }
+  return null
+}
+
 /**
  * The plan-limit and usage routes; null for any other request. Cancelling a resume is the person's
  * own act, so it needs a browser the App opened (`keyPaired`).
@@ -154,35 +189,7 @@ export async function limitsRoute(
   keyPaired: boolean,
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  const get = request.method === "GET"
-  if (url.pathname === "/api/usage/display" && get)
-    return reply(
-      ok(
-        await readUsageDisplay(
-          ctx,
-          sources,
-          url.searchParams.get("refresh") === "1",
-          url.searchParams.get("menu") === "1",
-        ),
-      ),
-    )
-  if (url.pathname === "/api/limits" && get)
-    return reply(
-      await limitsPayload(
-        ctx,
-        resume,
-        sources,
-        url.searchParams.get("refresh") === "1",
-        url.searchParams.get("refresh") === "auto" && url.searchParams.get("claude") !== "0",
-      ),
-    )
-  if (url.pathname === "/api/usage" && get)
-    // How Claude Code is billed follows its last limits reading, read from the home: nothing is run.
-    return reply(
-      await readUsage(ctx, url.searchParams.get("period"), {
-        claude: () => sources.claude.cached(ctx),
-      }),
-    )
+  if (request.method === "GET") return limitsReadRoute(ctx, url, resume)
   if (url.pathname !== "/api/limits/resume/cancel" || request.method !== "POST") return null
   if (!keyPaired)
     return new Response("Only the App and browsers it opened may cancel a resume.", {

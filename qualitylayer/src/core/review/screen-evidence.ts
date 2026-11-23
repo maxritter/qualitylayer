@@ -90,34 +90,42 @@ export const safeScreenKey = (key: string): boolean =>
     key,
   )
 
-const optionalSize = (value: unknown, least: number, most: number) =>
-  value === undefined ||
-  (Number.isInteger(value) && Number(value) >= least && Number(value) <= most)
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const isBoundedInt = (value: unknown, least: number, most: number): boolean =>
+  Number.isInteger(value) && Number(value) >= least && Number(value) <= most
+
+const isPositiveSafeInt = (value: unknown): boolean =>
+  Number.isSafeInteger(value) && Number(value) > 0
+
+const isTheme = (value: unknown): boolean => value === "light" || value === "dark"
 
 const shared = (item: Record<string, unknown>): boolean =>
   isEvidenceSource(item) && typeof item.buildRevision === "string" && typeof item.at === "number"
 
+function hasValidSurfaceOutcome(item: Record<string, unknown>): boolean {
+  if (item.outcome === "captured") {
+    return isPictureFile(item.file) && typeof item.shotDigest === "string"
+  }
+  if (item.file !== null) return false
+  if (item.outcome === "skipped: no browser") return true
+  return typeof item.outcome === "string" && /^unavailable: .+/.test(item.outcome)
+}
+
 /** A picture of a planned screen validates apart from an added picture or output. */
 function isSurfaceRow(item: Record<string, unknown>): boolean {
-  const captured = item.outcome === "captured"
-  return (
+  const validMeta =
     item.kind === "picture" &&
     shared(item) &&
     typeof item.key === "string" &&
-    safeScreenKey(item.key) &&
+    safeScreenKey(item.key)
+  const validDimensions =
     typeof item.url === "string" &&
-    Number.isInteger(item.width) &&
-    Number(item.width) >= 240 &&
-    Number(item.width) <= 8000 &&
-    optionalSize(item.height, 240, 8000) &&
-    (item.theme === "light" || item.theme === "dark") &&
-    typeof item.artifactDigest === "string" &&
-    (captured
-      ? isPictureFile(item.file) && typeof item.shotDigest === "string"
-      : item.file === null &&
-        (item.outcome === "skipped: no browser" ||
-          (typeof item.outcome === "string" && /^unavailable: .+/.test(item.outcome))))
-  )
+    isBoundedInt(item.width, 240, 8000) &&
+    (item.height === undefined || isBoundedInt(item.height, 240, 8000))
+  const validVisual = isTheme(item.theme) && typeof item.artifactDigest === "string"
+  return validMeta && validDimensions && validVisual && hasValidSurfaceOutcome(item)
 }
 
 function isAddedPicture(item: Record<string, unknown>): boolean {
@@ -140,10 +148,9 @@ function isAddedOutput(item: Record<string, unknown>): boolean {
 
 /** Pictures and outputs validate separately; anything else, or an old record, is refused. */
 export function isEvidenceRow(value: unknown): value is EvidenceRow {
-  if (typeof value !== "object" || value === null) return false
-  const item = value as Record<string, unknown>
-  if (item.kind === "output") return !("key" in item) && isAddedOutput(item)
-  return "key" in item ? isSurfaceRow(item) : isAddedPicture(item)
+  if (!isRecord(value)) return false
+  if (value.kind === "output") return !("key" in value) && isAddedOutput(value)
+  return "key" in value ? isSurfaceRow(value) : isAddedPicture(value)
 }
 
 /** One run of the acceptance test with everything recorded for it. */
@@ -202,27 +209,25 @@ export type VerificationRun = {
  */
 export type VerificationScreens = { screens: VerificationScreen[]; runs?: VerificationRun[] }
 
+const isVerificationFile = (file: unknown): boolean => {
+  if (!isRecord(file)) return false
+  const validPath =
+    file.kind === "picture"
+      ? isPictureFile(file.file)
+      : file.kind === "output" && isOutputFile(file.file)
+  const validStep = file.step === undefined || isAcceptanceStep(file.step)
+  const validCites = file.cites === undefined || typeof file.cites === "string"
+  return validPath && validStep && validCites && typeof file.at === "number"
+}
+
 const isVerificationRun = (value: unknown): value is VerificationRun => {
-  if (typeof value !== "object" || value === null) return false
-  const item = value as Record<string, unknown>
-  return (
-    isRunId(item.run) &&
-    isEvidenceMode(item.mode) &&
-    typeof item.at === "number" &&
-    typeof item.passed === "boolean" &&
-    Array.isArray(item.files) &&
-    item.files.every((file: unknown) => {
-      if (typeof file !== "object" || file === null) return false
-      const entry = file as Record<string, unknown>
-      return (
-        (entry.kind === "picture" ? isPictureFile(entry.file) : isOutputFile(entry.file)) &&
-        (entry.kind === "picture" || entry.kind === "output") &&
-        (entry.step === undefined || isAcceptanceStep(entry.step)) &&
-        (entry.cites === undefined || typeof entry.cites === "string") &&
-        typeof entry.at === "number"
-      )
-    })
-  )
+  if (!isRecord(value)) return false
+  const validMeta =
+    isRunId(value.run) &&
+    isEvidenceMode(value.mode) &&
+    typeof value.at === "number" &&
+    typeof value.passed === "boolean"
+  return validMeta && Array.isArray(value.files) && value.files.every(isVerificationFile)
 }
 
 /** One step of the Plan's acceptance test with the files the run that passed recorded for it. */
@@ -269,42 +274,41 @@ export type AcceptanceAsRun = {
   before?: { run: string; mode: EvidenceMode; steps: AcceptanceRow[] }
 }
 
+const KNOWN_SCREEN_OUTCOMES = new Set([
+  "captured",
+  "not captured",
+  "skipped: no browser",
+  "omitted: size",
+])
+
+const isVerificationOutcome = (value: unknown): value is VerificationScreen["outcome"] =>
+  typeof value === "string" &&
+  (KNOWN_SCREEN_OUTCOMES.has(value) || value.startsWith("unavailable: "))
+
+const isVerificationScreen = (row: unknown): boolean => {
+  if (!isRecord(row)) return false
+  const validMeta =
+    typeof row.key === "string" && typeof row.title === "string" && isTheme(row.theme)
+  const validSize =
+    isPositiveSafeInt(row.width) && (row.height === undefined || isPositiveSafeInt(row.height))
+  const validOutcome =
+    isVerificationOutcome(row.outcome) && (row.outcome === "not captured" || isEvidenceSource(row))
+  const validStale =
+    typeof row.stale === "boolean" &&
+    (row.staleReason === undefined || typeof row.staleReason === "string")
+  const validFile =
+    (row.file === null || isPictureFile(row.file)) &&
+    (row.outcome !== "captured" || row.file !== null)
+  if (!validMeta || !validSize) return false
+  return validOutcome && validStale && validFile
+}
+
 /** Reject an incompatible response instead of treating missing evidence as an empty success. */
 export function isVerificationScreens(value: unknown): value is VerificationScreens {
-  if (typeof value !== "object" || value === null || !("screens" in value)) return false
-  if (
-    "runs" in value &&
-    value.runs !== undefined &&
-    !(Array.isArray(value.runs) && value.runs.every(isVerificationRun))
-  )
-    return false
-  const rows = value.screens
-  return (
-    Array.isArray(rows) &&
-    rows.every((row: unknown) => {
-      if (typeof row !== "object" || row === null) return false
-      const item = row as Record<string, unknown>
-      return (
-        typeof item.key === "string" &&
-        typeof item.title === "string" &&
-        Number.isSafeInteger(item.width) &&
-        Number(item.width) > 0 &&
-        (item.height === undefined ||
-          (Number.isSafeInteger(item.height) && Number(item.height) > 0)) &&
-        (item.theme === "light" || item.theme === "dark") &&
-        typeof item.outcome === "string" &&
-        (item.outcome === "captured" ||
-          item.outcome === "not captured" ||
-          item.outcome === "skipped: no browser" ||
-          item.outcome === "omitted: size" ||
-          item.outcome.startsWith("unavailable: ")) &&
-        // A surface nobody captured has no run to name; every record names one.
-        (item.outcome === "not captured" || isEvidenceSource(item)) &&
-        typeof item.stale === "boolean" &&
-        (item.staleReason === undefined || typeof item.staleReason === "string") &&
-        (item.file === null || isPictureFile(item.file)) &&
-        (item.outcome !== "captured" || item.file !== null)
-      )
-    })
-  )
+  if (!isRecord(value) || !("screens" in value)) return false
+  const runsOk =
+    !("runs" in value) ||
+    value.runs === undefined ||
+    (Array.isArray(value.runs) && value.runs.every(isVerificationRun))
+  return runsOk && Array.isArray(value.screens) && value.screens.every(isVerificationScreen)
 }

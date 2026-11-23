@@ -67,19 +67,13 @@ export type HandlingContext = {
   deadline?: number
 }
 
-/** The status of one comment on a planning document; null for a note, a team thread or another document. */
-export function commentHandling(c: Comment, ctx: HandlingContext): CommentHandling | null {
-  if (c.for === "person" || c.source !== undefined || !helperDoc(c.doc)) return null
-  const base = { agent: ctx.agent }
-  if (c.answer !== undefined)
-    return {
-      ...base,
-      phase: c.changed === true ? "changed" : "answered",
-      since: c.answered ?? c.created,
-      ...(c.answeredBy === "helper" ? { by: "helper" as const } : {}),
-    }
-  if (c.resolved !== undefined) return null
-  if (c.answeredBy === "session" && (c.pickedAt !== undefined || c.delivered === true))
+function activeCommentHandling(
+  c: Comment,
+  ctx: HandlingContext,
+  base: { agent: string },
+): CommentHandling | null {
+  const pickedOrDelivered = c.pickedAt !== undefined || c.delivered === true
+  if (c.answeredBy === "session" && pickedOrDelivered)
     return { ...base, phase: "reading", since: c.pickedAt ?? c.created }
   if (c.noAnswer !== undefined)
     return { ...base, phase: "no-answer", since: c.created, reason: c.noAnswer }
@@ -92,8 +86,14 @@ export function commentHandling(c: Comment, ctx: HandlingContext): CommentHandli
       since: c.pickedAt ?? c.helperNow ?? c.created,
       ...(ctx.helper !== null ? { helper: ctx.helper } : {}),
     }
-  if (c.pickedAt !== undefined || c.delivered === true)
-    return { ...base, phase: "reading", since: c.pickedAt ?? c.created }
+  return pickedOrDelivered ? { ...base, phase: "reading", since: c.pickedAt ?? c.created } : null
+}
+
+function pendingCommentHandling(
+  c: Comment,
+  ctx: HandlingContext,
+  base: { agent: string },
+): CommentHandling {
   return {
     ...base,
     phase: ctx.reach === "waiting" ? "sent" : "queued",
@@ -102,6 +102,21 @@ export function commentHandling(c: Comment, ctx: HandlingContext): CommentHandli
     helperDueAt: c.created + (ctx.deadline ?? pickDeadline(ctx.reach)),
     ...(c.told !== undefined ? { told: true as const } : {}),
   }
+}
+
+/** The status of one comment on a planning document; null for a note, a team thread or another document. */
+export function commentHandling(c: Comment, ctx: HandlingContext): CommentHandling | null {
+  if (c.for === "person" || c.source !== undefined || !helperDoc(c.doc)) return null
+  const base = { agent: ctx.agent }
+  if (c.answer !== undefined)
+    return {
+      ...base,
+      phase: c.changed === true ? "changed" : "answered",
+      since: c.answered ?? c.created,
+      ...(c.answeredBy === "helper" ? { by: "helper" as const } : {}),
+    }
+  if (c.resolved !== undefined) return null
+  return activeCommentHandling(c, ctx, base) ?? pendingCommentHandling(c, ctx, base)
 }
 
 /** A thread stands where its newest comment with a status does. */

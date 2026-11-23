@@ -58,9 +58,20 @@ const SKILLS = {
 }
 const MOD_FILES = [
   ".claude-plugin/plugin.json",
+  "hooks/atoms.ts",
+  "hooks/band-layout.ts",
+  "hooks/band-line.ts",
+  "hooks/band-model.ts",
+  "hooks/band.tsx",
+  "hooks/board-model.ts",
+  "hooks/board.tsx",
   "hooks/hooks.json",
+  "hooks/palette.tsx",
+  "hooks/pane-sections.tsx",
+  "hooks/pane.tsx",
   "hooks/register.tsx",
   "hooks/register.test.tsx",
+  "hooks/status.ts",
   "types/index.d.ts",
 ]
 

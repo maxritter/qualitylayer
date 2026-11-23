@@ -3,28 +3,16 @@
 // Model's usage-billing story into them: its 12 Done means points, its eleven slices and the lines the
 // build decided on its own.
 
-import type { Checklist, CheckRow } from "../../../core/checklist.ts"
-import type { Note, TimelineSlice, TimelineTask } from "../../../core/timeline.ts"
+import type { Note, Timeline, TimelineSlice, TimelineTask } from "../../../core/timeline.ts"
 import type { TaskDetail } from "../../api.ts"
 import { verifyChecklist } from "../verify.ts"
 import type { Area } from "./area.ts"
 import { demoSliceFiles } from "./diffs.ts"
 import { atReview, type Moment } from "./moments.ts"
-import { BUILD_DECISIONS, DEMO_SLICE_COLUMNS, DONE_MEANS, SLICES } from "./story-data.ts"
+import { FINANCE_CONFIRMATION, failedWords, pointState, storyChecklist } from "./story-checklist.ts"
+import { BUILD_DECISIONS, DEMO_SLICE_COLUMNS, SLICES } from "./story-data.ts"
 
-/** The live-admin point is settled by a simulated answer before Verify turns to the person. */
-const FINANCE_POINT = 7
-export const FINANCE_CONFIRMATION =
-  "Illustrative confirmation: Finance schedules the test account's switch at renewal; support cannot use the switch."
-/** The point that stays open after the fix rounds, and whose fix is rechecked after the person's comment. */
-const FAILING = 3
-const FAILING_WORDS =
-  "2 proration tests still fail: a mid-cycle downgrade prorated the lower tier half a cent off"
-/** The points Verify has passed while it works, and the one it is checking now. */
-const PASSED_WHILE_WORKING = [1, 2, 4, 5]
-const CHECKING_NOW = 6
-
-const POINTS = DONE_MEANS.filter((p) => !p.withdrawn)
+export { FINANCE_CONFIRMATION, failedWords, pointState }
 
 /** The story's slices as the timeline holds them; `finished` ticks every box (Verify and later). */
 function storySlices(finished: boolean): TimelineSlice[] {
@@ -82,109 +70,73 @@ function storyNotes(): Note[] {
   })
 }
 
-/** Each point's state at a moment of Verify. */
-export function pointState(n: number, moment: Moment): CheckRow["state"] {
-  if (moment === "verify-rechecking") {
-    return n === FAILING ? "running" : "passed"
-  }
-  if (moment === "verify-asked") {
-    return n === FINANCE_POINT ? "user" : n === FAILING ? "failed" : "passed"
-  }
-  if (moment === "verify-fixing") {
-    // After the fix round: every point but the Finance one and the one being rechecked stands.
-    return n === FINANCE_POINT ? "user" : n === CHECKING_NOW ? "running" : "passed"
-  }
-  if (moment === "verify-checking" || moment === "verify-red") {
-    if (n === FINANCE_POINT) return "user"
-    // The model's order: point 3 failed in the first run, the next point is being checked, the rest wait.
-    if (n === FAILING) return "failed"
-    if (PASSED_WHILE_WORKING.includes(n)) return "passed"
-    return n === CHECKING_NOW ? "running" : "waiting"
-  }
-  return "passed"
-}
-
-/** The words under a point that failed: the tests that still fail. */
-export const failedWords = (_n: number): string => FAILING_WORDS
-
-function storyChecklist(list: Checklist, moment: Moment): Checklist {
-  const groups = list.groups.map((group) =>
-    group.id !== "done"
-      ? group
-      : {
-          ...group,
-          rows: POINTS.map((p): CheckRow => {
-            const state = pointState(p.n, moment)
-            return {
-              id: `done:${p.n}`,
-              label: p.text,
-              state,
-              ...(state === "failed"
-                ? { text: failedWords(p.n) }
-                : state === "user"
-                  ? { text: "it needs a Finance login on the live admin" }
-                  : state === "passed"
-                    ? {
-                        text:
-                          p.n === FINANCE_POINT
-                            ? FINANCE_CONFIRMATION
-                            : "proved on the running program",
-                      }
-                    : {}),
-            }
-          }),
-        },
-  )
-  const rows = groups.flatMap((g) => g.rows)
-  const counted = rows.filter((r) => r.off !== true && r.state !== "user" && r.extra !== true)
+function financeConfirmation(task: TaskDetail, settled: boolean) {
+  if (!settled) return {}
   return {
-    ...list,
-    groups,
-    total: counted.length,
-    passed: counted.filter((r) => r.state === "passed").length,
-    failed: rows.filter((r) => r.state === "failed").length,
-    user: rows.filter((r) => r.state === "user"),
+    answeredQuestions: [
+      ...(task.answeredQuestions ?? []).filter(
+        (answer) => answer.id !== "demo-finance-confirmation",
+      ),
+      {
+        id: "demo-finance-confirmation",
+        number: 9,
+        question: "Can Finance schedule the billing-mode switch while support cannot?",
+        choice: FINANCE_CONFIRMATION,
+        at: (task.gate?.opened ?? task.shipped?.approvedAt ?? Date.now() - 4 * 3_600_000) - 60_000,
+        via: "app" as const,
+        delivered: true,
+      },
+    ],
   }
 }
+
+function buildStoryTimeline(
+  base: Timeline,
+  slices: TimelineSlice[],
+  building: boolean,
+  moment: Moment,
+): Timeline {
+  const now = Date.now()
+  const builder = !building
+    ? null
+    : {
+        task: "T16",
+        line:
+          moment === "impl-fix"
+            ? "fixing the proration test in slice 4 · slice 6 goes on after"
+            : "building slice 6 · 14 of 28 tasks",
+        at: now - 6_000,
+      }
+  return {
+    ...base,
+    slices,
+    columns: DEMO_SLICE_COLUMNS,
+    builder,
+    notes: [...base.notes.filter((n) => n.kind === "baseline"), ...storyNotes()],
+  }
+}
+
+const VERIFY_WORKING: ReadonlySet<Moment> = new Set([
+  "verify-checking",
+  "verify-red",
+  "verify-fixing",
+  "verify-asked",
+])
 
 export const story: Area = {
   patch: (task: TaskDetail, moment: Moment): TaskDetail => {
     const settled = atReview(moment) || moment.startsWith("pr-")
-    const finished =
-      ["verify-checking", "verify-red", "verify-fixing", "verify-asked"].includes(moment) || settled
-    // The review keeps the finished checks and the illustrative answer that settled its live-admin point.
+    const finished = VERIFY_WORKING.has(moment) || settled
     const base = task.checklist ?? (settled ? verifyChecklist("passed") : null)
     const checklist = base === null ? task.checklist : storyChecklist(base, moment)
-    const confirmation = settled
-      ? {
-          answeredQuestions: [
-            ...(task.answeredQuestions ?? []).filter(
-              (answer) => answer.id !== "demo-finance-confirmation",
-            ),
-            {
-              id: "demo-finance-confirmation",
-              number: 9,
-              question: "Can Finance schedule the billing-mode switch while support cannot?",
-              choice: FINANCE_CONFIRMATION,
-              at:
-                (task.gate?.opened ?? task.shipped?.approvedAt ?? Date.now() - 4 * 3_600_000) -
-                60_000,
-              via: "app" as const,
-              delivered: true,
-            },
-          ],
-        }
-      : {}
+    const confirmation = financeConfirmation(task, settled)
     if (task.timeline === null)
       return { ...task, ...confirmation, ...(checklist === undefined ? {} : { checklist }) }
     const slices = storySlices(finished)
-    const building = task.stage === "implement"
-    const now = Date.now()
     return {
       ...task,
       ...confirmation,
       ...(checklist === undefined ? {} : { checklist }),
-      // The slices the build reads beside the timeline.
       ...(task.slices.length > 0
         ? {
             slices: slices.map((s) => ({
@@ -201,25 +153,7 @@ export const story: Area = {
         checked: slices.reduce((sum, s) => sum + s.tasks.filter((t) => t.checked).length, 0),
         slices: slices.length,
       },
-      timeline: {
-        ...task.timeline,
-        slices,
-        columns: DEMO_SLICE_COLUMNS,
-        builder: building
-          ? moment === "impl-fix"
-            ? {
-                task: "T16",
-                line: "fixing the proration test in slice 4 · slice 6 goes on after",
-                at: now - 6_000,
-              }
-            : {
-                task: "T16",
-                line: "building slice 6 · 14 of 28 tasks",
-                at: now - 6_000,
-              }
-          : null,
-        notes: [...task.timeline.notes.filter((n) => n.kind === "baseline"), ...storyNotes()],
-      },
+      timeline: buildStoryTimeline(task.timeline, slices, task.stage === "implement", moment),
     }
   },
 }

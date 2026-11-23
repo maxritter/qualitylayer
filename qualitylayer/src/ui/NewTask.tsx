@@ -3,29 +3,8 @@
 // In the person's terminal they copy one prompt into any coding agent. An open terminal
 // session keeps its own settings and conversation; neither way clears it or changes its model.
 
-import {
-  AppWindowIcon,
-  BugIcon,
-  FileTextIcon,
-  LightbulbIcon,
-  NetworkIcon,
-  SquareTerminalIcon,
-} from "lucide-react"
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog"
-import type { HistorySession } from "../core/agents/history-sessions.ts"
-import type {
-  Config,
-  DefaultsAgent,
-  PlanningDefaults,
-  PlanningLaunch,
-} from "../core/config-values.ts"
-import { newTaskCommand } from "../core/handoff/new-task.ts"
-import { pickProblem } from "../core/interaction-docs/attachment-rules.ts"
-import { defaultPermissionChoice, permissionDescription } from "../core/run/launch-spec.ts"
-import { branchPrefix, worktreeName } from "../core/run/worktree-plan.ts"
-import { type AgentHistoryApi, agentHistoryApi } from "./agent-history-api.ts"
-import type { Project, SubagentModels } from "./api.ts"
+import { permissionDescription } from "../core/run/launch-spec.ts"
 import { InfoHint } from "./kit/InfoHint.tsx"
 import {
   NewTaskFooter,
@@ -34,675 +13,223 @@ import {
   ResumeList,
   StartFields,
 } from "./NewTaskParts.tsx"
-import { startHint } from "./new-task-hint.ts"
-import { type TicketApi, TicketCard, ticketApi, ticketIn, useTicket } from "./new-task-link.tsx"
-import {
-  appUnavailable,
-  firstTarget,
-  launchValues,
-  type NewTaskDraft,
-  PASTED_PLAN_FILE,
-  PLAN_FILE,
-  resumeRequest,
-  startRequest,
-  unfinishedNewTaskDraft,
-  useFolderBranch,
-  useFolderSessions,
-  useRequestText,
-  useSavedPaths,
-  withPick,
-} from "./new-task-state.ts"
-import type { ProjectFolderApi, ProjectTarget } from "./ProjectPicker.tsx"
-import { retainedPlanningStart } from "./planning-start.ts"
-import {
-  type AgentLaunchValue,
-  launchAgentAvailable,
-  preferredLaunchAgent,
-} from "./run/AgentLaunchFields.tsx"
-import { ExtraPlanners, keptPlanners, type PlannerPick, plannerSpec } from "./run/ExtraPlanners.tsx"
+import { EXISTING, KIND_ICONS, KINDS, STARTS, WHERE } from "./new-task-copy.tsx"
+import { TicketCard } from "./new-task-link.tsx"
+import { type NewTaskProps, useNewTaskModel } from "./new-task-model.ts"
+import { ExtraPlanners } from "./run/ExtraPlanners.tsx"
 import { LaunchAttachments } from "./run/LaunchAttachments.tsx"
-import {
-  INITIAL_BRANCH_STATE,
-  type LaunchBranchState,
-  resolveLaunchBranch,
-} from "./run/LaunchBranch.tsx"
 import { TerminalHandoff } from "./run/LaunchPrompt.tsx"
-import { type RunWindow, useOptionalRuns } from "./run-context.tsx"
-import type { RunSupport } from "./runs-api.ts"
-import { runColors, uploadHandoffAttachments } from "./runs-api.ts"
 import { Segmented } from "./Segmented.tsx"
-import { useCreditsNote } from "./sidebar/use-credits-note.ts"
 import "./start-model.css"
 import "./project-picker.css"
 
-type Kind = "feature" | "bugfix" | "chat"
-
-/** One icon per kind of task, as the App Model's icon map has them (kind.feature, kind.bugfix). */
-const KIND_ICONS: Record<"feature" | "bugfix", ReactNode> = {
-  feature: <LightbulbIcon aria-hidden="true" />,
-  bugfix: <BugIcon aria-hidden="true" />,
+function NewTaskKindControls({ m }: { m: ReturnType<typeof useNewTaskModel> }) {
+  return (
+    <div className="q-nt-kind">
+      <Segmented
+        size="md"
+        label="New task: kind"
+        value={m.taskKind}
+        options={(["feature", "bugfix"] as const).map((id) => ({
+          id,
+          label: KINDS[id].label,
+          icon: KIND_ICONS[id],
+          disabled: m.starting || m.copying,
+        }))}
+        onChange={m.setKind}
+      />
+      <Segmented
+        size="md"
+        label="New task: how it starts"
+        value={m.startMode}
+        options={STARTS.map((option) => ({
+          ...option,
+          disabled: m.starting || m.copying,
+        }))}
+        onChange={m.setStartMode}
+      />
+      {m.existing ? (
+        <p className="q-nt-hint">
+          {EXISTING.line}
+          <InfoHint text={EXISTING.hint} />
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
-type Start = "plan" | "existing"
-/**
- * How a Feature or Bugfix starts: planned with QualityLayer (the default), or from the person's existing plan, kept exactly as given and mapped by the Plan. The icons are
- * the App Model's (step.plan's map, a document).
- */
-const STARTS: { id: Start; label: string; icon: ReactNode }[] = [
-  { id: "plan", label: "Plan with QualityLayer", icon: <NetworkIcon aria-hidden="true" /> },
-  { id: "existing", label: "Existing plan", icon: <FileTextIcon aria-hidden="true" /> },
-]
-
-/** Where the agent runs: two choices with the App Model's marks (run.app, run.terminal); the sentence is each tooltip. */
-const WHERE: { id: "app" | "terminal"; label: string; icon: ReactNode; hint: string }[] = [
-  {
-    id: "app",
-    label: "In the App",
-    icon: <AppWindowIcon aria-hidden="true" />,
-    hint: "The agent runs beside your task. Questions and feedback happen here.",
-  },
-  {
-    id: "terminal",
-    label: "In my own agent",
-    icon: <SquareTerminalIcon aria-hidden="true" />,
-    hint: "Your terminal, IDE or agent app: Claude Code, Codex, T3 Code, Orca… Questions and feedback happen there.",
-  },
-]
-/** An existing plan's words: what the request field asks for, and what the card says about it. */
-const EXISTING = {
-  ask: "Paste the plan",
-  placeholder: "Paste here, or attach a .md or .txt file",
-  /** The one consequence worth a line; the whole explanation is its info mark's tooltip. */
-  line: "Maps your plan onto the Plan. You still approve it before any code.",
-  hint: "Implement a plan you already have. It is kept exactly as given; other attachments are context. The agent maps it onto what QualityLayer checks and asks only what it leaves open; you approve that Plan before any code.",
-  need: "add a plan",
-  request: "Implement the existing plan I attached.",
-}
-
-/** What each kind asks and says; the kind decides the words the agent starts with and the branch prefix. */
-const KINDS: Record<
-  Kind,
-  { label: string; ask: string; placeholder: string; hint: string; empty: string; noun: string }
-> = {
-  chat: {
-    label: "Chat",
-    ask: "What do you want to work on?",
-    placeholder: "For example: why does the usage export skip archived accounts?",
-    hint: "A conversation with the agent, with no steps or approvals. Ask it to save a plan, build in slices or convert it to a task whenever you want.",
-    empty: "[describe what you want to work on]",
-    noun: "work you want to do",
-  },
-  feature: {
-    label: "Feature",
-    ask: "What do you want to build?",
-    placeholder: "For example: add rate limits to the public API",
-    hint: "The agent agrees with you what done means, then plans the change.",
-    empty: "[describe the feature]",
-    noun: "feature",
-  },
-  bugfix: {
-    label: "Bugfix",
-    ask: "What is broken?",
-    placeholder: "For example: invoices show last month’s usage after a plan change",
-    hint: "The agent confirms what goes wrong and what should happen, then plans the fix.",
-    empty: "[describe the bug]",
-    noun: "bug",
-  },
-}
-
-export function NewTask({
-  config,
-  installed,
-  initialAgent,
-  initialKind,
-  projects,
-  project,
-  prompt: taskPrompt,
-  onPrompt: onTaskPrompt,
-  onCopy,
-  onClose,
-  runSupport,
-  folderApi,
-  selectedTarget,
-  onTarget,
-  onStarted,
-  onRemember,
-  onRememberPlanning,
-  draft,
-  onDraft,
-  saveAttachments = uploadHandoffAttachments,
-  currentBranch,
-  historyApi = agentHistoryApi,
-  tickets = ticketApi,
+function NewTaskLaunchSection({
+  props,
+  m,
 }: {
-  config: Config
-  /** Installed agent discovery; null while it is not known. */
-  installed: SubagentModels[] | null | undefined
-  /** The agent the first-run page asked for; "other" opens the terminal, where any agent can take the prompt. */
-  initialAgent?: DefaultsAgent | null
-  /** The + menu's pick: Chat opens on Chat, Task on Feature or Bugfix (a kept Chat draft becomes Feature). */
-  initialKind?: "task" | "chat"
-  projects: Project[]
-  /** A project asked for by name (+ on its header in the sidebar): it wins over the last folder chosen. */
-  project?: string
-  /** What the person typed: kept by the App while the card is closed. */
-  prompt: string
-  onPrompt: (text: string) => void
-  onCopy:
-    | ((text: string, note: string) => void)
-    | ((text: string, note: string) => Promise<boolean>)
-  onStarted?: (run: RunWindow) => void
-  onClose: () => void
-  runSupport?: RunSupport
-  folderApi?: ProjectFolderApi
-  selectedTarget?: ProjectTarget | null
-  onTarget?: (target: ProjectTarget) => void
-  /** Completion notification; it never establishes a fresh launch's default. */
-  onRemember?: (runWhere: "app" | "terminal") => void
-  onRememberPlanning?: (choice: PlanningLaunch) => Promise<void>
-  draft?: NewTaskDraft | null
-  onDraft?: (draft: NewTaskDraft | null) => void
-  /** Saves files attached to a copied prompt on this computer and answers their absolute paths (default: the App's server). */
-  saveAttachments?: (files: File[]) => Promise<string[]>
-  /** The selected checkout's current branch, when the App knows it. */
-  currentBranch?: string | null
-  /** The sessions an agent already has in a project, and making one a Chat (default: the App's server). */
-  historyApi?: AgentHistoryApi
-  /** A ticket link's preview and the start from it (default: the App's server). */
-  tickets?: TicketApi
+  props: NewTaskProps
+  m: ReturnType<typeof useNewTaskModel>
 }) {
-  const runs = useOptionalRuns()
-  const supported = runSupport?.supported === true && runs !== null
-  const canStart = runSupport?.canStart === true
-  const canConfigure = runSupport?.canConfigure === true
-  const loading = installed == null
-  // New chat is this card with Chat fixed: it starts empty and keeps no draft, and the task draft the
-  // App holds is neither read nor cleared by it.
-  const chatCard = initialKind === "chat"
-  const held = useRef(chatCard ? null : unfinishedNewTaskDraft(taskPrompt, draft)).current
-  const latest = retainedPlanningStart(undefined, runs?.runs ?? [])
-  const remembered =
-    latest && (latest.at ?? 0) > (config.planning.lastStart?.at ?? 0)
-      ? latest
-      : config.planning.lastStart
-  const [prompt, onPrompt] = useRequestText(chatCard, taskPrompt, onTaskPrompt)
-  // A fresh card opens at Feature, Plan with QualityLayer and In the App; only unfinished work keeps its choices.
-  const [taskKind, setKind] = useState<"feature" | "bugfix">(
-    held?.kind === "bugfix" ? "bugfix" : "feature",
+  const defaults = props.config.planning.defaults
+  return (
+    <>
+      {m.inApp ? (
+        <StartFields
+          permissions={permissionDescription(m.agent, m.permission.perm, m.permission.permMode)}
+          projects={props.projects}
+          target={m.target}
+          onTarget={m.chooseTarget}
+          folderApi={props.folderApi}
+          canConfigure={m.canConfigure}
+          onChoosing={m.setChoosingFolder}
+          chat={m.kind === "chat"}
+          disabled={m.starting}
+          onLeave={props.onClose}
+          branch={{
+            state: m.branchState,
+            resolved: m.resolved,
+            current: m.shownBranch,
+            onChange: (patch) => {
+              m.setBranchState((current) => ({ ...current, ...patch }))
+              m.setProblem(null)
+            },
+          }}
+          agent={{
+            value: {
+              agent: m.agent,
+              model: m.values.model,
+              effort: m.values.effort,
+              runWhere: "app",
+            },
+            installed: props.installed,
+            supported: m.supported,
+            defaultModel: m.own ? defaults[m.own].model : undefined,
+            onChange: m.changeAgent,
+          }}
+          {...(m.plannable ? { planners: { value: m.planners, onChange: m.setPlanners } } : {})}
+        />
+      ) : m.plannable ? (
+        <ExtraPlanners
+          main="other"
+          installed={props.installed}
+          value={m.planners}
+          onChange={m.setPlanners}
+          disabled={m.copying}
+        />
+      ) : null}
+      {m.chatCard && m.inApp && m.target !== null && m.target.available !== false ? (
+        <ResumeList
+          label={m.target.project.name}
+          path={m.target.path}
+          list={m.sessions}
+          busy={m.resuming}
+          disabled={!m.canStart || m.starting}
+          onResume={(session) => void m.resume(session)}
+        />
+      ) : null}
+      {m.inApp ? null : (
+        <TerminalHandoff
+          prompt={m.done && m.copied ? m.copied.text : m.previewText}
+          files={m.files.length}
+          empty={m.empty}
+          testId="new-task-command"
+          copyTestId="new-task-copy"
+          disabled={m.copyBlocked}
+          onCopy={() => void m.copy()}
+          copied={m.done}
+          copying={m.copying}
+          folder={m.target && m.target.available !== false ? m.target.path : null}
+          folderLabel="project folder"
+          onCopyFolder={async (path) =>
+            (await props.onCopy(path, "Copied the project folder")) !== false
+          }
+        />
+      )}
+    </>
   )
-  const kind: Kind = chatCard ? "chat" : taskKind
-  const [startMode, setStartMode] = useState<Start>(held?.start ?? "plan")
-  const [chosenWhere, setChosenWhere] = useState<"app" | "terminal">(
-    initialAgent === "other" ? "terminal" : (held?.where ?? remembered?.runWhere ?? "app"),
-  )
-  const [starting, setStarting] = useState(false)
-  /** The id of the earlier session being resumed as a Chat. */
-  const [resuming, setResuming] = useState<string | null>(null)
-  const [copying, setCopying] = useState(false)
-  const [files, setFiles] = useState<File[]>(held?.files ?? [])
-  const [fileRevision, setFileRevision] = useState(0)
-  const [problem, setProblem] = useState<string | null>(null)
-  const attempt = useRef({ key: "", id: "" })
-  const startedChat = useRef(false)
-  const defaults = config.planning.defaults
-  const [asked, setAsked] = useState<DefaultsAgent | null>(
-    initialAgent && initialAgent !== "other" ? initialAgent : (held?.agent ?? null),
-  )
-  const agent =
-    asked ??
-    (remembered && launchAgentAvailable(remembered.agent, installed) && remembered.agent !== "other"
-      ? remembered.agent
-      : launchAgentAvailable(defaults.agent, installed)
-        ? defaults.agent
-        : preferredLaunchAgent(installed))
-  const available = launchAgentAvailable(agent, installed)
-  /** The picks changed here, per agent; they start from the Planning defaults each time. */
-  const [picks, setPicks] = useState<Partial<Record<DefaultsAgent, Partial<PlanningDefaults>>>>(
-    held?.picks ?? {},
-  )
-  const [target, setTarget] = useState<ProjectTarget | null>(() =>
-    firstTarget(projects, project, selectedTarget),
-  )
-  const [choosingFolder, setChoosingFolder] = useState(false)
-  const branchPath = target && target.available !== false ? target.path : null
-  const shownBranch = useFolderBranch(folderApi?.projectFolder, branchPath, currentBranch)
-  const [branchState, setBranchState] = useState<LaunchBranchState>(
-    held?.branch ?? { ...INITIAL_BRANCH_STATE, works: remembered?.works ?? "checkout" },
-  )
-  // A feature's extra planners: none by default (they cost money); chosen per task, never remembered.
-  const [planners, setPlanners] = useState<PlannerPick[]>([])
-  useEffect(() => {
-    if (chatCard) return
-    onDraft?.(
-      unfinishedNewTaskDraft(prompt, {
-        request: prompt,
-        where: chosenWhere,
-        kind,
-        start: startMode,
-        files,
-        agent: asked,
-        picks,
-        branch: branchState,
-      }),
-    )
-  }, [chatCard, onDraft, prompt, chosenWhere, kind, startMode, files, asked, picks, branchState])
-  const [copied, setCopied] = useState<{ key: string; text: string } | null>(null)
-  const fieldId = useId()
-  const whereId = useId()
+}
 
-  const words = KINDS[kind]
-  // From an existing plan, the original is the pasted text or else the first attached Markdown or text
-  // file; every other file is context. It travels as a launch file the server adopts.
-  const existing = kind !== "chat" && startMode === "existing"
-  const plannable = kind === "feature" && !existing
-  const pasted = prompt.trim() !== ""
-  const planFile =
-    existing && !pasted ? (files.find((file) => PLAN_FILE.test(file.name)) ?? null) : null
-  const launchFiles = useMemo(
-    () =>
-      existing && pasted
-        ? [new File([prompt], PASTED_PLAN_FILE, { type: "text/plain" }), ...files]
-        : files,
-    [existing, pasted, prompt, files],
+function NewTaskWhereSection({ m }: { m: ReturnType<typeof useNewTaskModel> }) {
+  return (
+    <section className="q-nt-sec" aria-labelledby={m.whereId}>
+      <div className="q-nt-where">
+        <span className="q-nt-k" id={m.whereId}>
+          Where the agent runs
+        </span>
+        <Segmented
+          size="md"
+          label="New task: where the agent runs"
+          value={m.where}
+          options={WHERE.map((option) => ({
+            ...option,
+            disabled: m.starting || m.copying || (option.id === "app" && m.appOff !== null),
+          }))}
+          onChange={m.setChosenWhere}
+        />
+      </div>
+      {m.appOff !== null ? (
+        <p className="q-nt-hint" role="status">
+          {m.appOff}
+        </p>
+      ) : null}
+    </section>
   )
-  const fromPlan = !existing ? undefined : pasted ? PASTED_PLAN_FILE : planFile?.name
-  const ticket = useTicket(kind === "chat" || existing ? "" : prompt, tickets)
-  const empty = existing ? fromPlan === undefined : prompt.trim() === ""
-  const own = agent === "other" ? null : agent
-  const credits = useCreditsNote(own ?? undefined)
-  const appOff = appUnavailable(runSupport, runs !== null, installed)
-  const inApp = appOff === null && chosenWhere === "app"
-  const where: "app" | "terminal" = inApp ? "app" : "terminal"
-  /** The extra planners this start carries: a feature planned here, never the planner's own agent. */
-  const chosenPlanners = plannable ? keptPlanners(inApp ? agent : "other", planners) : []
-  const values = {
-    ...launchValues(own, defaults, picks),
-    ...(own && remembered?.agent === own ? { model: remembered.model, ...picks[own] } : {}),
-  }
-  const permission = defaultPermissionChoice(config, agent, remembered)
-  const resolved = resolveLaunchBranch(branchState, {
-    defaultBranch: `${branchPrefix(kind)}${worktreeName(prompt)}`,
-    defaultName: worktreeName(prompt),
-    prefix: branchPrefix(kind),
-    checkout: target?.path ?? null,
-  })
-  const addFiles = (picked: FileList) => {
-    if (starting || copying || (inApp && !canStart) || !picked.length) return
-    const next = [...files, ...Array.from(picked)]
-    const problem = pickProblem(next)?.replace("to a comment", "to this launch") ?? null
-    setProblem(problem)
-    if (!problem) {
-      setFiles(next)
-      setFileRevision((value) => value + 1)
-    }
-  }
-  /**
-   * The prompt for another agent: its words, the request and the attached files' paths or names, one
-   * per launch file. From an existing plan the plan's own path leads and the rest are context.
-   */
-  const promptFor = (attached: readonly string[]) => {
-    const planAt = !existing ? -1 : pasted ? 0 : planFile ? launchFiles.indexOf(planFile) : -1
-    const context = attached.filter((_, index) => index !== planAt)
-    return newTaskCommand(
-      {
-        agent: "other",
-        model: "",
-        effort: "high",
-        answers: "terminal",
-        where: "new",
-        type: kind,
-        ...(context.length ? { files: context } : {}),
-        ...(planAt >= 0 && attached[planAt] !== undefined ? { fromPlan: attached[planAt] } : {}),
-        ...(chosenPlanners.length ? { planners: chosenPlanners.map(plannerSpec) } : {}),
-      },
-      empty ? (existing ? `[${EXISTING.need}]` : words.empty) : prompt,
-    ).command
-  }
-  const previewKey = JSON.stringify([
-    kind,
-    startMode,
-    prompt,
-    chosenPlanners,
-    files.map((file) => [file.name, file.size, file.lastModified]),
-  ])
-  const previewText = promptFor(launchFiles.map((file) => file.name))
-  const done = copied?.key === previewKey
-  const chooseTarget = (selected: ProjectTarget) => {
-    setTarget(selected)
-    onTarget?.(selected)
-    setProblem(null)
-  }
-  /** A pick in the agent line: another agent, or its model or effort, kept per agent. */
-  const changeAgent = (patch: Partial<AgentLaunchValue>) => {
-    if (patch.agent) setAsked(patch.agent)
-    setPicks((current) => withPick(current, patch.agent ?? agent, patch, patch.agent !== undefined))
-  }
+}
 
-  // One reason, in the footer, for whatever stops the main button; the fields keep their own notes.
-  const reason = startHint({
-    noun: words.noun,
-    ...(existing ? { need: EXISTING.need } : {}),
-    empty,
-    inApp,
-    hasProject: target !== null && target.available !== false,
-    branchProblem: resolved.problem,
-    choosingFolder,
-    canStart,
-  })
-  const startBlocked =
-    reason !== null ||
-    own === null ||
-    loading ||
-    !available ||
-    starting ||
-    resuming !== null ||
-    runs === null
-  const copyBlocked = empty || copying
-
-  // A location the computer forced on the person is not their choice to remember.
-  const remember = () => {
-    if (appOff === null) onRemember?.(where)
-  }
-  const start = async () => {
-    if (startBlocked) return
-    // Nothing here may end a click without a word: say why this window cannot start.
-    if (own === null || target === null || runs === null) {
-      setProblem(
-        "This window cannot start an agent yet. Choose a project and an agent, or copy the prompt and run it in your own agent.",
-      )
-      return
-    }
-    const request = startRequest({
-      agent,
-      prompt: existing ? EXISTING.request : prompt,
-      kind,
-      cwd: target.path,
-      resolved,
-      values,
-      ...(fromPlan !== undefined ? { fromPlan } : {}),
-      planners: chosenPlanners,
-    })
-    if (remembered?.agent === own)
-      Object.assign(request.settings, {
-        perm: remembered.perm,
-        ...(remembered.permMode ? { permMode: remembered.permMode } : {}),
-      })
-    const key = JSON.stringify([request, fileRevision, existing && pasted ? prompt : ""])
-    if (attempt.current.key !== key) attempt.current = { key, id: crypto.randomUUID() }
-    setStarting(true)
-    setProblem(null)
-    try {
-      // From a ticket that was read: the task is made from it (its title and quoted text, the link
-      // kept), then the planner starts on that task. The same link again answers the same task.
-      // A link that cannot be read starts with the person's words beside it, and the task keeps it.
-      const words = ticketIn(prompt)?.words ?? ""
-      if (ticket.state === "unread" && words === "") {
-        setProblem(`${ticket.problem} Describe the work beside the link to start anyway.`)
-        return
-      }
-      const fromTicket =
-        (ticket.state === "read" || ticket.state === "unread") && kind !== "chat" && !existing
-      const made = fromTicket
-        ? await tickets.start({
-            cwd: target.path,
-            from: ticket.link.url,
-            request: words,
-            type: kind === "bugfix" ? "bugfix" : "feature",
-          })
-        : null
-      const { purpose: _new, allocateTask: _allocate, ...rest } = request
-      const run = await runs.start(
-        {
-          ...(made !== null
-            ? { ...rest, purpose: { kind: "task", task: made.id, phase: "planning" } }
-            : request),
-          idempotencyKey: attempt.current.id,
-          colors: runColors(),
-        },
-        launchFiles,
-      )
-      remember()
-      startedChat.current = kind === "chat"
-      setFiles([])
-      onPrompt("")
-      // The task draft is the App's; a chat never wrote it, so it does not clear it.
-      if (!chatCard) onDraft?.(null)
-      onStarted?.(run)
-      onClose()
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "The agent could not start.")
-    } finally {
-      setStarting(false)
-    }
-  }
-  // New chat's foot: the sessions an agent already has in this project. Choosing one makes it a Chat
-  // task and resumes the agent's own conversation in it.
-  const sessions = useFolderSessions(historyApi, branchPath, chatCard && inApp)
-  const resume = async (session: HistorySession) => {
-    if (runs === null || target === null || resuming !== null || starting) return
-    setResuming(session.id)
-    setProblem(null)
-    try {
-      const made = await historyApi.resume(target.path, session.agent, session.id)
-      const run = await runs.start({
-        ...resumeRequest(made.task, session, made.cwd),
-        colors: runColors(),
-      })
-      remember()
-      startedChat.current = true
-      onStarted?.(run.task ? run : { ...run, task: made.task })
-      onClose()
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "That session could not be resumed.")
-    } finally {
-      setResuming(null)
-    }
-  }
-  const savedPaths = useSavedPaths(launchFiles, saveAttachments)
-  const copy = async () => {
-    if (copyBlocked) return
-    setCopying(true)
-    setProblem(null)
-    try {
-      const text = promptFor(await savedPaths())
-      const accepted = await onCopy(text, "Copied the prompt")
-      if (accepted !== false) {
-        await onRememberPlanning?.({
-          at: Date.now(),
-          agent: "other",
-          model: "",
-          effort: "",
-          perm: "own",
-          permMode: "",
-          runWhere: "terminal",
-          works: "checkout",
-        })
-        setCopied({ key: previewKey, text })
-        remember()
-      }
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "The files could not be saved.")
-    } finally {
-      setCopying(false)
-    }
-  }
-
+export function NewTask(props: NewTaskProps) {
+  const m = useNewTaskModel(props)
+  const words = KINDS[m.kind]
+  const startLabel =
+    m.kind === "chat" ? "Start chat" : m.existing ? "Start from this plan" : "Start planning"
   return (
     // Esc, a press on the dimmed page and the close button all close it; a menu open inside closes first.
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent
         className="q-nt flex w-[600px] max-h-[calc(100dvh-3rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[600px]"
         overlayClassName="bg-black/35 supports-backdrop-filter:backdrop-blur-none"
         data-testid="new-task"
-        data-agent={agent}
-        finalFocus={() => !startedChat.current}
+        data-agent={m.agent}
+        finalFocus={() => !m.startedChat.current}
       >
-        <NewTaskHeader title={chatCard ? "New chat" : "New task"} />
+        <NewTaskHeader title={m.chatCard ? "New chat" : "New task"} />
         <DialogDescription className="sr-only">
-          {chatCard
+          {m.chatCard
             ? "Describe what you want to work on, choose the project and agent, and start a chat."
             : "Describe what you want to work on, choose the project and agent, and start a task."}
         </DialogDescription>
         <div className="q-nt-body">
-          {chatCard ? null : (
-            <div className="q-nt-kind">
-              <Segmented
-                size="md"
-                label="New task: kind"
-                value={taskKind}
-                options={(["feature", "bugfix"] as const).map((id) => ({
-                  id,
-                  label: KINDS[id].label,
-                  icon: KIND_ICONS[id],
-                  disabled: starting || copying,
-                }))}
-                onChange={setKind}
-              />
-              <Segmented
-                size="md"
-                label="New task: how it starts"
-                value={startMode}
-                options={STARTS.map((option) => ({
-                  ...option,
-                  disabled: starting || copying,
-                }))}
-                onChange={setStartMode}
-              />
-              {existing ? (
-                <p className="q-nt-hint">
-                  {EXISTING.line}
-                  <InfoHint text={EXISTING.hint} />
-                </p>
-              ) : null}
-            </div>
-          )}
+          {m.chatCard ? null : <NewTaskKindControls m={m} />}
           <RequestField
-            id={fieldId}
-            label={existing ? EXISTING.ask : words.ask}
-            value={prompt}
-            placeholder={existing ? EXISTING.placeholder : words.placeholder}
-            disabled={starting}
-            onChange={onPrompt}
-            onFiles={addFiles}
+            id={m.fieldId}
+            label={m.existing ? EXISTING.ask : words.ask}
+            value={m.prompt}
+            placeholder={m.existing ? EXISTING.placeholder : words.placeholder}
+            disabled={m.starting}
+            onChange={m.onPrompt}
+            onFiles={m.addFiles}
             onSubmit={() => {
-              if (inApp) void start()
+              if (m.inApp) void m.start()
             }}
           />
-          {kind === "chat" || existing ? null : <TicketCard ticket={ticket} />}
+          {m.kind === "chat" || m.existing ? null : <TicketCard ticket={m.ticket} />}
           <LaunchAttachments
             scope="New task"
-            files={files}
-            disabled={starting || copying || (inApp && !canStart)}
+            files={m.files}
+            disabled={m.starting || m.copying || (m.inApp && !m.canStart)}
             onChange={(next) => {
-              setFiles(next)
-              setFileRevision((value) => value + 1)
+              m.setFiles(next)
+              m.setFileRevision((value) => value + 1)
             }}
           />
-          <section className="q-nt-sec" aria-labelledby={whereId}>
-            <div className="q-nt-where">
-              <span className="q-nt-k" id={whereId}>
-                Where the agent runs
-              </span>
-              <Segmented
-                size="md"
-                label="New task: where the agent runs"
-                value={where}
-                options={WHERE.map((option) => ({
-                  ...option,
-                  disabled: starting || copying || (option.id === "app" && appOff !== null),
-                }))}
-                onChange={setChosenWhere}
-              />
-            </div>
-            {appOff !== null ? (
-              <p className="q-nt-hint" role="status">
-                {appOff}
-              </p>
-            ) : null}
-          </section>
-          {inApp ? (
-            <StartFields
-              permissions={permissionDescription(agent, permission.perm, permission.permMode)}
-              projects={projects}
-              target={target}
-              onTarget={chooseTarget}
-              folderApi={folderApi}
-              canConfigure={canConfigure}
-              onChoosing={setChoosingFolder}
-              chat={kind === "chat"}
-              disabled={starting}
-              onLeave={onClose}
-              branch={{
-                state: branchState,
-                resolved,
-                current: shownBranch,
-                onChange: (patch) => {
-                  setBranchState((current) => ({ ...current, ...patch }))
-                  setProblem(null)
-                },
-              }}
-              agent={{
-                value: { agent, model: values.model, effort: values.effort, runWhere: "app" },
-                installed,
-                supported,
-                defaultModel: own ? defaults[own].model : undefined,
-                onChange: changeAgent,
-              }}
-              {...(plannable ? { planners: { value: planners, onChange: setPlanners } } : {})}
-            />
-          ) : plannable ? (
-            // Outside the App the prompt names them; they run on agents here all the same.
-            <ExtraPlanners
-              main="other"
-              installed={installed}
-              value={planners}
-              onChange={setPlanners}
-              disabled={copying}
-            />
-          ) : null}
-          {chatCard && inApp && target !== null && target.available !== false ? (
-            <ResumeList
-              label={target.project.name}
-              path={target.path}
-              list={sessions}
-              busy={resuming}
-              disabled={!canStart || starting}
-              onResume={(session) => void resume(session)}
-            />
-          ) : null}
-
-          {inApp ? null : (
-            <TerminalHandoff
-              prompt={done && copied ? copied.text : previewText}
-              files={files.length}
-              empty={empty}
-              testId="new-task-command"
-              copyTestId="new-task-copy"
-              disabled={copyBlocked}
-              onCopy={() => void copy()}
-              copied={done}
-              copying={copying}
-              folder={target && target.available !== false ? target.path : null}
-              folderLabel="project folder"
-              onCopyFolder={async (path) =>
-                (await onCopy(path, "Copied the project folder")) !== false
-              }
-            />
-          )}
-          {problem ? (
+          <NewTaskWhereSection m={m} />
+          <NewTaskLaunchSection props={props} m={m} />
+          {m.problem ? (
             <p role="alert" className="q-run-error">
-              {problem}
+              {m.problem}
             </p>
           ) : null}
         </div>
         <NewTaskFooter
-          startLabel={
-            kind === "chat" ? "Start chat" : existing ? "Start from this plan" : "Start planning"
-          }
-          credits={credits}
-          reason={reason}
-          inApp={inApp}
-          start={{ blocked: startBlocked, busy: starting, run: () => void start() }}
+          startLabel={startLabel}
+          credits={m.credits}
+          reason={m.reason}
+          inApp={m.inApp}
+          start={{ blocked: m.startBlocked, busy: m.starting, run: () => void m.start() }}
         />
       </DialogContent>
     </Dialog>

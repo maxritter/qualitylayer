@@ -125,13 +125,40 @@ function baseFor(stage: string): TaskDetail {
   return structuredClone(flagshipTask(at))
 }
 
-export function demoTask(moment: Moment, now = Date.now()): TaskDetail {
-  const where = MOMENTS[moment]
-  const written = writtenSteps(moment)
-  const base = baseFor(where.stage === "shipped" ? "verify" : where.stage)
-  const built = ["implement", "verify", "shipped"].includes(where.stage)
-  const files = taskFiles(PROJECT, SLUG, "feature", (role: DocRole) => written.has(role))
-  const entries = STEPS.map((step) => {
+type MomentShape = (typeof MOMENTS)[Moment]
+
+function gateFor(where: MomentShape, now: number): TaskDetail["gate"] {
+  if (where.waits === "plan") {
+    return {
+      id: "demo-plan",
+      target: TASK_FILES.plan,
+      targets: [TASK_FILES.plan],
+      opened: now - 6 * 60_000,
+      decision: "pending",
+      settled: false,
+    } as TaskDetail["gate"]
+  }
+  if (where.waits === "final") {
+    return {
+      id: "demo-final",
+      target: "final",
+      targets: ["final"],
+      opened: now - 4 * 60 * 60_000,
+      decision: "pending",
+      settled: false,
+    } as TaskDetail["gate"]
+  }
+  return null
+}
+
+function actionFor(where: MomentShape): TaskDetail["action"] {
+  if (where.waits === "plan") return "review"
+  if (where.waits === "final") return "final"
+  return where.starting === true ? "implement" : null
+}
+
+function docEntriesFor(where: MomentShape, written: Set<Step>): TaskDetail["docs"] {
+  return STEPS.map((step) => {
     const here = flowStepOf(where.stage) === step
     return {
       name: TASK_FILES[step],
@@ -141,26 +168,15 @@ export function demoTask(moment: Moment, now = Date.now()): TaskDetail {
       approved: false,
     }
   })
-  const gate =
-    where.waits === "plan"
-      ? {
-          id: "demo-plan",
-          target: TASK_FILES.plan,
-          targets: [TASK_FILES.plan],
-          opened: now - 6 * 60_000,
-          decision: "pending",
-          settled: false,
-        }
-      : where.waits === "final"
-        ? {
-            id: "demo-final",
-            target: "final",
-            targets: ["final"],
-            opened: now - 4 * 60 * 60_000,
-            decision: "pending",
-            settled: false,
-          }
-        : null
+}
+
+export function demoTask(moment: Moment, now = Date.now()): TaskDetail {
+  const where = MOMENTS[moment]
+  const written = writtenSteps(moment)
+  const base = baseFor(where.stage === "shipped" ? "verify" : where.stage)
+  const built = ["implement", "verify", "shipped"].includes(where.stage)
+  const inReview = where.mode === "yours" || where.mode === "rechecking"
+  const files = taskFiles(PROJECT, SLUG, "feature", (role: DocRole) => written.has(role))
   const items = Array.from({ length: where.stage === "plan" ? (where.open ?? 0) : 0 }, (_, i) =>
     openQuestion(i + 1),
   )
@@ -172,19 +188,12 @@ export function demoTask(moment: Moment, now = Date.now()): TaskDetail {
     answers: "app",
     projectName: PROJECT,
     files,
-    docs: entries,
+    docs: docEntriesFor(where, written),
     stage: where.stage,
     ...verifyModeField(where.mode ?? null),
-    iterations: where.mode === "yours" || where.mode === "rechecking" ? 2 : 0,
-    gate: gate as TaskDetail["gate"],
-    action:
-      where.waits === "plan"
-        ? "review"
-        : where.waits === "final"
-          ? "final"
-          : where.starting === true
-            ? "implement"
-            : null,
+    iterations: inReview ? 2 : 0,
+    gate: gateFor(where, now),
+    action: actionFor(where),
     session: {
       agent: "claude-code",
       phase: where.stage,
@@ -204,8 +213,7 @@ export function demoTask(moment: Moment, now = Date.now()): TaskDetail {
     buildLog: built ? base.buildLog : null,
     quality: built ? base.quality : [],
     verification: built ? base.verification : [],
-    prDescription:
-      where.mode === "yours" || where.mode === "rechecking" ? base.prDescription : null,
+    prDescription: inReview ? base.prDescription : null,
     pages: STEPS.map((step) =>
       stepPage(step, written.has(step) ? (taskDocument(TASK_FILES[step]) ?? null) : null),
     ),

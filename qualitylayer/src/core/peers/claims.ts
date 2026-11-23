@@ -46,7 +46,8 @@ export function claimPath(repo: string, raw: string): string {
 
 /** Whether two claimed paths cover any file in common: the same path, or one inside the other. */
 export function overlaps(a: string, b: string): boolean {
-  return a === b || a === "." || b === "." || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
+  if (a === b || a === "." || b === ".") return true
+  return a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
 }
 
 export type Held = { path: string; note: string | null; since: string }
@@ -68,6 +69,32 @@ const dataOf = (e: Entry): Record<string, unknown> =>
 const textOrNull = (value: unknown): string | null =>
   typeof value === "string" && value !== "" ? value : null
 
+function applyBoardEvent(holder: Holder, entry: Entry): void {
+  const data = dataOf(entry)
+  const paths = Array.isArray(data.paths)
+    ? data.paths.filter((p): p is string => typeof p === "string")
+    : []
+  switch (entry.kind) {
+    case "claim": {
+      const note = textOrNull(data.note)
+      holder.paths = holder.paths.filter((held) => !paths.includes(held.path))
+      holder.paths.push(...paths.map((path) => ({ path, note, since: entry.ts })))
+      holder.paused = null
+      break
+    }
+    case "release":
+      holder.paths =
+        data.all === true ? [] : holder.paths.filter((held) => !paths.includes(held.path))
+      break
+    case "pause":
+      holder.paused = { note: textOrNull(data.note), since: entry.ts }
+      break
+    case "resume":
+      holder.paused = null
+      break
+  }
+}
+
 /** Who holds which paths on a board, in posting order, keeping only the sessions `live` accepts. */
 export function holders(entries: Entry[], live: (who: string) => boolean): Holder[] {
   const byWho = new Map<string, Holder>()
@@ -76,23 +103,7 @@ export function holders(entries: Entry[], live: (who: string) => boolean): Holde
     if (who === null) continue
     const holder = byWho.get(who) ?? { who, name: null, paths: [], paused: null }
     holder.name = entry.from_name ?? holder.name
-    const data = dataOf(entry)
-    const paths = Array.isArray(data.paths)
-      ? data.paths.filter((p): p is string => typeof p === "string")
-      : []
-    if (entry.kind === "claim") {
-      const note = textOrNull(data.note)
-      holder.paths = holder.paths.filter((held) => !paths.includes(held.path))
-      holder.paths.push(...paths.map((path) => ({ path, note, since: entry.ts })))
-      holder.paused = null
-    } else if (entry.kind === "release") {
-      holder.paths =
-        data.all === true ? [] : holder.paths.filter((held) => !paths.includes(held.path))
-    } else if (entry.kind === "pause") {
-      holder.paused = { note: textOrNull(data.note), since: entry.ts }
-    } else if (entry.kind === "resume") {
-      holder.paused = null
-    }
+    applyBoardEvent(holder, entry)
     byWho.set(who, holder)
   }
   return [...byWho.values()].filter((h) => live(h.who) && (h.paths.length > 0 || h.paused !== null))

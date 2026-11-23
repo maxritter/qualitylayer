@@ -3,75 +3,57 @@
 // succeeded), each refusal with `missing` (what is not there, and the move that settles it), each
 // reply with the moves open after it, from the one table in next/moves.ts.
 
-import { join } from "node:path"
-import { phaseText } from "#workflow"
 import { type Ctx, ok, type Result } from "../ctx.ts"
 import { ciParityWarning } from "./ci-parity.ts"
 import type { Answers } from "./config-values.ts"
-import { readBuildRecord } from "./docs/build-log.ts"
-import { fillNames, LOGS } from "./docs/names.ts"
-import { allTasks } from "./docs/outline.ts"
-import { ensurePlanBaseline } from "./gate/amend.ts"
-import { markPicked } from "./gate/comments.ts"
-import {
-  FINAL,
-  type GateFile,
-  type GateOutcome,
-  invalidateGate,
-  pendingDecision,
-  readGate,
-  reopenVerify,
-  settle,
-} from "./gate/gate.ts"
-import { readBuildStart, stagedBaseline, withStagedBaseline } from "./git/build-start.ts"
-import { matchingStartRoute, readStart } from "./handoff/start.ts"
-import { otherBuildLead, readBuildLead } from "./next/build-lead.ts"
 import { moveStateOf } from "./next/compass.ts"
-import { buildDone, buildStart, implementPayload, implementStop } from "./next/implement.ts"
 import { movesOf } from "./next/moves.ts"
 import { planPayload, planText } from "./next/plan.ts"
 import { actionable, refused } from "./next/refusal.ts"
-import { served, stepTextAsServed } from "./next/reply.ts"
-import { BUILD_STAGES, base, type NextPayload } from "./next/shared.ts"
-import { adoptPlan, pendingShip, shippedPayload, showMePayload, waitingShips } from "./next/ship.ts"
+import { served } from "./next/reply.ts"
+import { base, type NextPayload } from "./next/shared.ts"
+import { showMePayload, waitingShips } from "./next/ship.ts"
 import { askPlaceFirst, handback, startedPayload } from "./next/start.ts"
-import { finalPayload, type VerifyVerb, verifyBrief, verifyVerb } from "./next/verify.ts"
-import { type RepoRef, resolveRepo, taskDir } from "./paths.ts"
+import { type BriefStep, brief, commitBriefMarker, onceText } from "./next-brief.ts"
+import { buildDoneVerb, buildStartVerb, verifyVerbCmd } from "./next-build.ts"
+import { afterDecision, shipVerb } from "./next-ship.ts"
+import { type RepoRef, resolveRepo } from "./paths.ts"
 import { noteTaskStatus } from "./peers/task-status.ts"
-import { withTaskComments } from "./planning-comments.ts"
-import { closingReadyPath, shipStatePath } from "./ship/closing-record.ts"
 import { adoptExistingPlan, ORIGINAL_FILE, type OriginalSource } from "./task/adoption.ts"
 import { isArchived } from "./task/archive.ts"
-import { boundSlug, sessionKey } from "./task/binding.ts"
 import { advance } from "./task/machine.ts"
-import { reconcile } from "./task/reconcile.ts"
 import { startTask } from "./task/startup.ts"
 import {
   EARLIER_LAYOUT_REASON,
   isCurrentLayout,
-  listTasks,
   loadTask,
   lostIdentity,
-  readmeFrontmatter,
-  readSession,
   registerProject,
   resolveTask,
   type Task,
   type TaskType,
 } from "./task/store.ts"
-import { type TaskFlow, taskFlow } from "./task-flow.ts"
 
 export { type Compass, compass, stripInvocation } from "./next/compass.ts"
 export { INLINE_REPLY_LIMIT } from "./next/reply.ts"
 export type { NextPayload } from "./next/shared.ts"
+export {
+  afterDecision,
+  type BriefStep,
+  brief,
+  buildDoneVerb,
+  buildStartVerb,
+  shipVerb,
+  verifyVerbCmd,
+}
 
 type Replied = Result<NextPayload>
 type Reply = Promise<Replied>
 
-const START_MOVE = { what: "a task", move: 'qualitylayer task start "<request>"' }
+export const START_MOVE = { what: "a task", move: 'qualitylayer task start "<request>"' }
 
 /** The open task a verb acts on, or the refusal that names how to get one. */
-async function taskOf(ctx: Ctx, repo: RepoRef): Promise<Result<Task>> {
+export async function taskOf(ctx: Ctx, repo: RepoRef): Promise<Result<Task>> {
   const task = await resolveTask(ctx, repo)
   if (task === null) {
     const lost = await lostIdentity(ctx, repo)
@@ -83,7 +65,7 @@ async function taskOf(ctx: Ctx, repo: RepoRef): Promise<Result<Task>> {
 }
 
 /** A task the workflow can act on: of this workflow, not archived, not a Chat. */
-async function usable(ctx: Ctx, task: Task): Promise<Result<Task>> {
+export async function usable(ctx: Ctx, task: Task): Promise<Result<Task>> {
   if (!isCurrentLayout(task)) return refused(`${task.slug}: ${EARLIER_LAYOUT_REASON}`, [START_MOVE])
   if (await isArchived(ctx, task))
     return refused(`${task.slug} is archived.`, [
@@ -100,7 +82,7 @@ async function usable(ctx: Ctx, task: Task): Promise<Result<Task>> {
  * A verb's reply as it leaves: a refusal made actionable; a success
  * with the moves open after it, the CI warning, and the texts filled and marked (`served`).
  */
-async function finish(ctx: Ctx, task: Task, _verb: string, result: Replied): Reply {
+export async function finish(ctx: Ctx, task: Task, _verb: string, result: Replied): Reply {
   if (!result.ok) return { ok: false, error: actionable(result.error) }
   const now = (await loadTask(ctx, { root: task.repoRoot, id: task.repoId }, task.slug)) ?? task
   const { state } = await moveStateOf(ctx, now)
@@ -124,15 +106,17 @@ async function finish(ctx: Ctx, task: Task, _verb: string, result: Replied): Rep
 }
 
 /** The verb run on the open task; its refusals and replies finished alike. */
-async function onTask(ctx: Ctx, verb: string, act: (task: Task, repo: RepoRef) => Reply): Reply {
+export async function onTask(
+  ctx: Ctx,
+  verb: string,
+  act: (task: Task, repo: RepoRef) => Reply,
+): Reply {
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return repo
   const task = await taskOf(ctx, repo.data)
   if (!task.ok) return task
   return finish(ctx, task.data, verb, await act(task.data, repo.data))
 }
-
-// ---------------------------------------------------------------- task start · handback · abandon
 
 export type StartOptions = {
   type?: TaskType
@@ -142,6 +126,39 @@ export type StartOptions = {
   script?: boolean
   /** The person's own plan, kept as given; the Plan maps it. */
   fromPlan?: OriginalSource
+}
+
+/**
+ * `task start --from-plan <file|->`: a task from a plan the person already has. The plan is kept as
+ * given (task/adoption.ts) and the task enters the Plan, which maps it. Sending the same plan again
+ * from this session continues the task it started.
+ */
+async function startFromPlan(
+  ctx: Ctx,
+  repo: RepoRef,
+  source: OriginalSource,
+  options: StartOptions,
+): Reply {
+  const adopted = await adoptExistingPlan(ctx, repo, source, {
+    type: options.type === "chat" ? undefined : options.type,
+    title: options.title,
+    answers: options.answers,
+  })
+  if (!adopted.ok) return adopted
+  const { task, created } = adopted.data
+  const payload = await planPayload(ctx, task)
+  const message = `${created ? "Started a new task" : "Continuing the task"} from your existing plan: ${task.slug}. The plan is kept exactly as given in ${ORIGINAL_FILE}; the Plan maps it.`
+  const raw = {
+    ...payload,
+    ...(created ? { created: true } : { already: true }),
+    message,
+    ...(await askPlaceFirst(ctx, task, String(payload.instructions ?? ""), message)),
+  }
+  const deduped = await onceText(ctx, task, "plan", raw, {
+    setAlready: false,
+    baseText: planText(task),
+  })
+  return finish(ctx, task, "task start", ok(deduped))
 }
 
 /** `task start "<request>"`: a task at Plan, its brief, and the place question when nothing is chosen. */
@@ -184,37 +201,29 @@ export async function taskStart(ctx: Ctx, request: string, options: StartOptions
   )
 }
 
-/**
- * `task start --from-plan <file|->`: a task from a plan the person already has. The plan is kept as
- * given (task/adoption.ts) and the task enters the Plan, which maps it. Sending the same plan again
- * from this session continues the task it started.
- */
-async function startFromPlan(
+async function handbackTaskReply(
   ctx: Ctx,
   repo: RepoRef,
-  source: OriginalSource,
-  options: StartOptions,
+  task: Task,
+  reason: string,
+  options: { prompt?: string; title?: string },
 ): Reply {
-  const adopted = await adoptExistingPlan(ctx, repo, source, {
-    type: options.type === "chat" ? undefined : options.type,
-    title: options.title,
-    answers: options.answers,
-  })
-  if (!adopted.ok) return adopted
-  const { task, created } = adopted.data
-  const payload = await planPayload(ctx, task)
-  const message = `${created ? "Started a new task" : "Continuing the task"} from your existing plan: ${task.slug}. The plan is kept exactly as given in ${ORIGINAL_FILE}; the Plan maps it.`
-  const raw = {
-    ...payload,
-    ...(created ? { created: true } : { already: true }),
-    message,
-    ...(await askPlaceFirst(ctx, task, String(payload.instructions ?? ""), message)),
+  if (task.stage === "abandoned") return ok(base(task, { already: true, done: true }))
+  if (task.stage !== "plan") {
+    return refused(
+      `Task handback is available during Plan. ${task.slug} is in ${task.stage}.`,
+      task.stage === "verify"
+        ? [
+            { what: "the current Verify move", move: "qualitylayer next" },
+            {
+              what: "a prerequisite only the person can provide",
+              move: 'qualitylayer need "<what. why>" --for T<n>',
+            },
+          ]
+        : [{ what: "the task stopped instead", move: "qualitylayer task abandon" }],
+    )
   }
-  const deduped = await onceText(ctx, task, "plan", raw, {
-    setAlready: false,
-    baseText: planText(task),
-  })
-  return finish(ctx, task, "task start", ok(deduped))
+  return handback(ctx, repo, task, reason, options)
 }
 
 /** `task handback "<reason>" --prompt "<prompt>"`: close the Plan task and keep a plain prompt. */
@@ -230,36 +239,22 @@ export async function taskHandback(
   if (found === null) return handback(ctx, repo.data, null, reason, options)
   const task = await usable(ctx, found)
   if (!task.ok) return task
-  if (task.data.stage === "abandoned")
-    return finish(
-      ctx,
-      task.data,
-      "task handback",
-      ok(base(task.data, { already: true, done: true })),
-    )
-  if (task.data.stage !== "plan")
-    return finish(
-      ctx,
-      task.data,
-      "task handback",
-      refused(
-        `Task handback is available during Plan. ${task.data.slug} is in ${task.data.stage}.`,
-        task.data.stage === "verify"
-          ? [
-              { what: "the current Verify move", move: "qualitylayer next" },
-              {
-                what: "a prerequisite only the person can provide",
-                move: 'qualitylayer need "<what. why>" --for T<n>',
-              },
-            ]
-          : [{ what: "the task stopped instead", move: "qualitylayer task abandon" }],
-      ),
-    )
   return finish(
     ctx,
     task.data,
     "task handback",
-    await handback(ctx, repo.data, task.data, reason, options),
+    await handbackTaskReply(ctx, repo.data, task.data, reason, options),
+  )
+}
+
+async function abandonTaskReply(ctx: Ctx, task: Task): Reply {
+  const abandoned = await advance(ctx, task, "user_abandoned")
+  if (!abandoned.ok) return abandoned
+  return ok(
+    base(task, {
+      done: true,
+      message: `${task.slug} was abandoned; its files stay in the repository.`,
+    }),
   )
 }
 
@@ -273,19 +268,7 @@ export async function taskAbandon(ctx: Ctx): Reply {
     return ok(base(found, { already: true, done: true, moves: movesOf({ stage: "abandoned" }) }))
   const task = await usable(ctx, found)
   if (!task.ok) return task
-  const abandoned = await advance(ctx, task.data, "user_abandoned")
-  if (!abandoned.ok) return finish(ctx, task.data, "task abandon", abandoned)
-  return finish(
-    ctx,
-    task.data,
-    "task abandon",
-    ok(
-      base(task.data, {
-        done: true,
-        message: `${task.data.slug} was abandoned; its files stay in the repository.`,
-      }),
-    ),
-  )
+  return finish(ctx, task.data, "task abandon", await abandonTaskReply(ctx, task.data))
 }
 
 /** `show <topic>`: the "show me" view of a topic, at any stage, without moving the task. */
@@ -293,589 +276,4 @@ export async function showTopic(ctx: Ctx, topic: string): Reply {
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return repo
   return served(ctx, await showMePayload(ctx, await resolveTask(ctx, repo.data), topic))
-}
-
-// ------------------------------------------------------------------------------------- brief
-
-/** Which session read a step's text: QualityLayer's own record, outside the briefs folder the agent is granted. */
-const briefMarker = (task: Task, step: string) => join(task.runtimeDir, `brief-served-${step}.json`)
-
-type BriefSeen = {
-  session?: string
-  /** Legacy single-digest fields, still read for continuity. */
-  digest?: string
-  ref?: string
-  /** Map of served text digests -> ref file or "inline". */
-  entries?: Record<string, string>
-  /** Digests staged during this call, committed after `served()` chooses inline vs file. */
-  pending?: { digest: string; file: string; base?: true }[]
-}
-
-function seenEntries(seen: BriefSeen): Record<string, string> {
-  const entries = { ...(seen.entries ?? {}) }
-  if (typeof seen.digest === "string" && typeof seen.ref === "string")
-    entries[seen.digest] = seen.ref
-  return entries
-}
-
-/** Commit any staged step-text digest after `served()` finishes (recording inline vs spilled file). */
-async function commitBriefMarker(ctx: Ctx, task: Task, data: NextPayload): Promise<void> {
-  const step = typeof data.phase === "string" ? data.phase : null
-  if (step === null) return
-  const marker = briefMarker(task, step)
-  let seen: BriefSeen
-  try {
-    seen = JSON.parse(await ctx.fs.readFile(marker)) as BriefSeen
-  } catch {
-    return
-  }
-  if (!Array.isArray(seen.pending) || seen.pending.length === 0) return
-  const entries = seenEntries(seen)
-  const servedRef = typeof data.instructions_ref === "string" ? data.instructions_ref : "inline"
-  for (const item of seen.pending) entries[item.digest] = item.base === true ? item.file : servedRef
-  await ctx.fs.atomicWrite(marker, `${JSON.stringify({ session: seen.session, entries })}\n`)
-}
-
-/**
- * The step's text, paid once per session across all verbs (`task start`, `build start`, `build done`,
- * `verify`, `brief`): served again to the same session with the same text, the reply names the file
- * holding it instead of repeating it.
- */
-async function onceText(
-  ctx: Ctx,
-  task: Task,
-  step: string,
-  payload: NextPayload,
-  options: { setAlready?: boolean; baseText?: string } = {},
-): Promise<NextPayload> {
-  const { setAlready = true, baseText } = options
-  const said = typeof payload.instructions === "string" ? payload.instructions : ""
-  // Only full step briefs (carrying a `# ` phase heading) are paid once per session; short
-  // dynamic recovery or status messages (e.g. judgeAtWork) must stay visible on every call.
-  if (said === "" || !/(?:^|\n)# /.test(said)) return payload
-  // The file holds the text as the session got it, the person's block for the step included, so an
-  // edit of their instructions is a new text and reaches the next brief.
-  const phase = String(payload.phase ?? step)
-  const text = await stepTextAsServed(ctx, task, phase, fillNames(said))
-  const { createHash } = await import("node:crypto")
-  const hash = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 24)
-  const digest = hash(text)
-  const session = sessionKey(ctx.env) ?? "unbound"
-  // In the briefs folder the session reads from (a managed run's grant, else the task's own); a
-  // text too long for a reply was filed there as served, under the same digest.
-  const dir = ctx.managedBriefsDir ?? join(task.runtimeDir, "briefs")
-  const file = join(dir, `${step}-${digest}.md`)
-  let seen: BriefSeen = {}
-  try {
-    seen = JSON.parse(await ctx.fs.readFile(briefMarker(task, step))) as BriefSeen
-  } catch {
-    seen = {}
-  }
-  const entries = seen.session === session ? seenEntries(seen) : {}
-  const recorded = entries[digest]
-  // Paid once only after the text reached the session (`commitBriefMarker` records where it went).
-  if (typeof recorded === "string" && (await ctx.fs.exists(file))) {
-    const ref = recorded !== "inline" && (await ctx.fs.exists(recorded)) ? recorded : file
-    return {
-      ...payload,
-      ...(setAlready ? { already: true } : {}),
-      instructions: `The ${step} text is unchanged since this session read it; read \`${ref}\` again only if it is no longer in your context.`,
-      instructions_ref: ref,
-      instructions_once: true,
-    }
-  }
-  await ctx.fs.mkdir(dir)
-  await ctx.fs.atomicWrite(file, text)
-  const pending: { digest: string; file: string; base?: true }[] = [{ digest, file }]
-  if (typeof baseText === "string" && baseText !== "" && baseText !== said) {
-    const baseServed = await stepTextAsServed(ctx, task, phase, fillNames(baseText))
-    const baseDigest = hash(baseServed)
-    if (baseDigest !== digest) {
-      const baseFile = join(dir, `${step}-${baseDigest}.md`)
-      await ctx.fs.atomicWrite(baseFile, baseServed)
-      pending.push({ digest: baseDigest, file: baseFile, base: true })
-    }
-  }
-  await ctx.fs.atomicWrite(
-    briefMarker(task, step),
-    `${JSON.stringify({ session, entries, pending })}\n`,
-  )
-  return payload
-}
-
-/**
- * The staged files from before the build that the cards, once written, name: said once, with the
- * first brief that has the cards. `build start` comes before the cards and can name none of them.
- */
-async function withCardsStaged(
-  ctx: Ctx,
-  task: Task,
-  flow: TaskFlow,
-  payload: NextPayload,
-): Promise<NextPayload> {
-  if (flow.plan === null || allTasks(flow.plan).length === 0) return payload
-  const noted = join(task.runtimeDir, "staged-baseline-noted.json")
-  if (await ctx.fs.exists(noted)) return payload
-  const start = await readBuildStart(ctx, task)
-  if (start === null) return payload
-  const found = stagedBaseline(start, flow.plan)
-  await ctx.fs.atomicWrite(noted, `${JSON.stringify({ at: ctx.clock.now() })}\n`)
-  return found !== null && found.named_by_cards.length > 0
-    ? withStagedBaseline(payload, found)
-    : payload
-}
-
-export type BriefStep = "plan" | "implement" | "verify"
-
-/**
- * `brief [plan|implement|verify]`: the step's text and payload. The current step's brief may start
- * its helpers (the research helpers, the security review); another step's is its text alone.
- */
-export async function brief(ctx: Ctx, asked?: BriefStep): Reply {
-  const reply = await briefReply(ctx, asked)
-  // The person's comments on the planning documents come with the Plan's brief, once each, ahead
-  // of the step's text.
-  if (reply.ok && reply.data.phase === "plan") {
-    const repo = await resolveRepo(ctx)
-    const task = repo.ok ? await resolveTask(ctx, repo.data) : null
-    if (task !== null) return ok(await withTaskComments(ctx, task, reply.data))
-  }
-  return reply
-}
-
-async function briefReply(ctx: Ctx, asked?: BriefStep): Reply {
-  return onTask(ctx, `brief ${asked ?? ""}`.trim(), async (task) => {
-    const current: BriefStep | null =
-      task.stage === "plan" || task.stage === "implement" || task.stage === "verify"
-        ? task.stage
-        : task.stage === "shipped"
-          ? "verify"
-          : null
-    const step = asked ?? current
-    if (step === null)
-      return refused(`${task.slug} is ${task.stage}: no step's text applies.`, [START_MOVE])
-    if (step !== current)
-      return ok(
-        base(task, {
-          phase: step,
-          instructions:
-            phaseText(task.type === "bugfix" ? `${step}-bugfix` : step) ?? phaseText(step) ?? "",
-          message: `The ${step} text only: ${task.slug} is in ${task.stage}.`,
-        }),
-      )
-    if (step === "plan") return ok(await onceText(ctx, task, step, await planPayload(ctx, task)))
-    if (step === "implement") {
-      if ((await readBuildLead(ctx, task)) === null)
-        return ok(
-          base(task, {
-            phase: "implement",
-            instructions:
-              phaseText(task.type === "bugfix" ? "implement-bugfix" : "implement") ?? "",
-            message: "No session builds this task yet: qualitylayer build start takes it here.",
-          }),
-        )
-      const checked = await reconcile(ctx, task)
-      if (!checked.ok) return checked
-      const flow = await taskFlow(ctx, task)
-      const payload = await implementPayload(ctx, task, flow, await readBuildRecord(ctx, task))
-      return ok(await onceText(ctx, task, step, await withCardsStaged(ctx, task, flow, payload)))
-    }
-    if (task.stage === "shipped") return ok(await finalPayload(ctx, task))
-    const checked = await reconcile(ctx, task)
-    if (!checked.ok) return checked
-    const verified = await verifyBrief(ctx, task)
-    if (!verified.ok) return verified
-    // The reply may be a move alone (run the checks, hand out the judge): the brief is still
-    // Verify's text. An exit's reply keeps its own words: its question is all that is open.
-    const said = typeof verified.data.instructions === "string" ? verified.data.instructions : ""
-    const payload =
-      verified.data.phase === "verify" && said === "" && verified.data.exit === undefined
-        ? {
-            ...verified.data,
-            instructions: phaseText(task.type === "bugfix" ? "verify-bugfix" : "verify") ?? "",
-          }
-        : verified.data
-    return ok(await onceText(ctx, task, step, payload))
-  })
-}
-
-// ------------------------------------------------------------------------------------- build
-
-/**
- * The task `build start` without a task name builds: the one approved Plan whose build no other
- * session leads; several are listed, each with the command that builds it.
- */
-async function approvedPlan(ctx: Ctx, repo: RepoRef): Promise<Result<Task>> {
-  if ((ctx.env.get("QUALITYLAYER_TASK") ?? "") !== "") return taskOf(ctx, repo)
-  const mine = sessionKey(ctx.env)
-  const waiting: Task[] = []
-  for (const task of await listTasks(ctx, repo)) {
-    if (!isCurrentLayout(task) || (await isArchived(ctx, task))) continue
-    const gate = task.stage === "plan" ? await readGate(ctx, task) : null
-    const approved =
-      task.stage === "implement" ||
-      (gate !== null &&
-        gate.target !== FINAL &&
-        gate.decision === "approved" &&
-        gate.settled !== true)
-    if (!approved) continue
-    const lead = await readBuildLead(ctx, task)
-    if (lead !== null && lead.session !== mine) continue
-    waiting.push(task)
-  }
-  const [only] = waiting
-  if (waiting.length === 1 && only !== undefined) return ok(only)
-  if (waiting.length > 1)
-    return refused(
-      `${waiting.length} approved Plans wait for their build.`,
-      waiting.map((task) => ({
-        what: task.title,
-        move: `qualitylayer build start --task ${task.slug}`,
-      })),
-    )
-  return taskOf(ctx, repo)
-}
-
-/** A decision recorded but not applied yet (the App, a timeout), applied once, here. */
-async function applyDecision(
-  ctx: Ctx,
-  task: Task,
-): Promise<Result<{ task: Task; outcome: GateOutcome | null }>> {
-  const decided = await pendingDecision(ctx, task)
-  if (decided === null) return ok({ task, outcome: null })
-  const settled = await settle(ctx, task, decided)
-  if (!settled.ok) return settledRefusal(ctx, task, decided, settled)
-  const now = (await loadTask(ctx, { root: task.repoRoot, id: task.repoId }, task.slug)) ?? task
-  return ok({ task: now, outcome: settled.data })
-}
-
-/**
- * A recorded decision that cannot be applied. A final approval whose reviewed papers moved is set
- * aside and the review reopened, so the agents recheck and the person approves again.
- */
-async function settledRefusal(
-  ctx: Ctx,
-  task: Task,
-  decided: GateFile,
-  settled: Extract<Result<GateOutcome>, { ok: false }>,
-): Promise<Result<never>> {
-  if (decided.target === FINAL && settled.error.code === "validation_failed") {
-    await invalidateGate(ctx, task)
-    await ctx.fs.remove(closingReadyPath(task))
-    await ctx.fs.remove(shipStatePath(task))
-    await reopenVerify(ctx, task)
-    return refused("The approved review's papers moved since the approval; the review reopens.", [
-      { what: "the change rechecked", move: "qualitylayer verify recheck" },
-    ])
-  }
-  return { ok: false, error: actionable(settled.error) }
-}
-
-/**
- * A build lives in one checkout; say so instead of working on a stale copy. Before the build has
- * started anywhere, any checkout may start it.
- */
-async function wrongCheckout(ctx: Ctx, task: Task): Promise<Result<never> | null> {
-  const session = await readSession(ctx, task)
-  if (session === null || session.checkout === task.repoRoot) return null
-  if (!BUILD_STAGES.includes(session.phase) || !(await ctx.fs.exists(session.checkout))) return null
-  if (
-    task.stage === "implement" &&
-    !(await ctx.fs.exists(join(taskDir(session.checkout, task.slug), LOGS.implement)))
-  )
-    return null
-  return refused(
-    `This task's build lives in ${session.checkout}.`,
-    [{ what: "the build continued there", move: `cd ${session.checkout} && qualitylayer next` }],
-    "wrong_checkout",
-  )
-}
-
-/** What a build verb needs before it acts: the approved Plan as approved, in this checkout. */
-async function buildReady(ctx: Ctx, task: Task): Promise<Result<true>> {
-  const checked = await reconcile(ctx, task)
-  if (!checked.ok) return checked
-  // What the person decided, remembered while the Plan is the approved one.
-  await ensurePlanBaseline(ctx, task)
-  return (await wrongCheckout(ctx, task)) ?? ok(true)
-}
-
-/** What a verb in a later step needs while the task is still at Plan: the person's approval. */
-async function approvalFirst(ctx: Ctx, task: Task): Promise<Result<never>> {
-  const gate = await readGate(ctx, task)
-  const open =
-    gate !== null && gate.target !== FINAL && gate.settled !== true && gate.decision === "pending"
-  return refused(`${task.slug} is at Plan: the build starts once the person approves it.`, [
-    open
-      ? { what: "the person's approval of the Plan", move: "qualitylayer wait --for approval" }
-      : { what: "the Plan's gate, open", move: "qualitylayer gate open plan" },
-  ])
-}
-
-/** `build start [--task <task>]`: this session takes the approved Plan's build. */
-export async function buildStartVerb(ctx: Ctx): Reply {
-  const repo = await resolveRepo(ctx)
-  if (!repo.ok) return repo
-  await registerProject(ctx, repo.data)
-  // The checkout that builds holds the Plan: copy it from the one that planned it when it is missing.
-  if ((await resolveTask(ctx, repo.data)) === null) {
-    const session = sessionKey(ctx.env)
-    const requested =
-      ctx.env.get("QUALITYLAYER_TASK") ||
-      (session === null ? null : boundSlug(ctx, repo.data.id, session))
-    const adopted = await adoptPlan(ctx, repo.data, requested)
-    if (!adopted.ok) return adopted
-  }
-  const picked = await approvedPlan(ctx, repo.data)
-  if (!picked.ok) return picked
-  const applied = await applyDecision(ctx, picked.data)
-  if (!applied.ok) return finish(ctx, picked.data, "build start", applied)
-  const task = applied.data.task
-  if (task.stage === "plan") return finish(ctx, task, "build start", await approvalFirst(ctx, task))
-  if (task.stage === "verify" || task.stage === "shipped")
-    return finish(
-      ctx,
-      task,
-      "build start",
-      ok(
-        base(task, {
-          already: true,
-          message: `The build of ${task.slug} is done; it is in ${task.stage}.`,
-        }),
-      ),
-    )
-  if (task.stage !== "implement")
-    return finish(ctx, task, "build start", refused(`${task.slug} is ${task.stage}.`, [START_MOVE]))
-  const ready = await buildReady(ctx, task)
-  if (!ready.ok) return finish(ctx, task, "build start", ready)
-  // Another session leads this build: without the task's name this session does not take it over.
-  if ((ctx.env.get("QUALITYLAYER_TASK") ?? "") === "" && (await otherBuildLead(ctx, task)) !== null)
-    return finish(
-      ctx,
-      task,
-      "build start",
-      refused(`Another session builds ${task.slug}; nothing was taken over.`, [
-        { what: "its progress, without taking it", move: "qualitylayer next" },
-        {
-          what: "this session taking the build over, by the task's name",
-          move: `qualitylayer build start --task ${task.slug}`,
-        },
-      ]),
-    )
-  const started = await buildStart(ctx, task)
-  return finish(
-    ctx,
-    task,
-    "build start",
-    started.ok
-      ? ok(await onceText(ctx, task, "implement", started.data, { setAlready: false }))
-      : started,
-  )
-}
-
-/** Attach Verify's initial brief and step text right after `buildDone` moves Implement → Verify. */
-async function verifyHandoff(
-  ctx: Ctx,
-  repo: RepoRef,
-  task: Task,
-  done: Result<NextPayload>,
-): Reply {
-  if (!done.ok) return done
-  const now = (await loadTask(ctx, repo, task.slug)) ?? task
-  const verified = await verifyBrief(ctx, now)
-  if (!verified.ok) return done
-  const said = typeof verified.data.instructions === "string" ? verified.data.instructions : ""
-  const payload: NextPayload =
-    verified.data.phase === "verify" && said === "" && verified.data.exit === undefined
-      ? {
-          ...done.data,
-          ...verified.data,
-          instructions: phaseText(now.type === "bugfix" ? "verify-bugfix" : "verify") ?? "",
-        }
-      : { ...done.data, ...verified.data }
-  return ok(
-    await onceText(ctx, now, String(payload.phase ?? "verify"), payload, { setAlready: false }),
-  )
-}
-
-/** Deduplicate Verify/Final step text when a verify verb returns a full step brief. */
-async function dedupeVerifyReply(ctx: Ctx, task: Task, out: Result<NextPayload>): Reply {
-  if (!out.ok) return out
-  const phase = typeof out.data.phase === "string" ? out.data.phase : null
-  if (phase === "verify" || phase === "final")
-    return ok(await onceText(ctx, task, phase, out.data, { setAlready: false }))
-  return out
-}
-
-/** `build done [--defer "<why>"]`: the build is ready, Implement → Verify, returning Verify's first move directly. */
-export async function buildDoneVerb(ctx: Ctx, defer: string | null): Reply {
-  return onTask(ctx, "build done", async (task, repo) => {
-    if (task.stage === "plan") return approvalFirst(ctx, task)
-    if (task.stage === "verify" || task.stage === "shipped")
-      return ok(base(task, { already: true, message: `${task.slug} is in ${task.stage}.` }))
-    if (task.stage !== "implement") return refused(`${task.slug} is ${task.stage}.`, [START_MOVE])
-    if ((await readBuildLead(ctx, task)) === null)
-      return refused("No session builds this task yet.", [
-        { what: "the build taken by this session", move: "qualitylayer build start" },
-      ])
-    const ready = await buildReady(ctx, task)
-    if (!ready.ok) return ready
-    return verifyHandoff(ctx, repo, task, await buildDone(ctx, task, defer))
-  })
-}
-
-// ------------------------------------------------------------------------------------- verify
-
-/** `verify judge | recheck | fix | keep-red`. */
-export async function verifyVerbCmd(ctx: Ctx, verb: VerifyVerb): Reply {
-  return onTask(ctx, `verify ${verb}`, async (task) => {
-    if (task.stage === "plan") return approvalFirst(ctx, task)
-    if (task.stage === "implement")
-      return refused(`${task.slug} is still in Implement.`, [
-        { what: "the build declared ready", move: "qualitylayer build done" },
-      ])
-    // After the approval, a fix for what the pull request says is rechecked before it is pushed.
-    if (task.stage === "shipped")
-      return verb === "recheck"
-        ? ok(await shippedPayload(ctx, task))
-        : ok(base(task, { already: true, message: `${task.slug} is approved; ship lands it.` }))
-    if (task.stage !== "verify") return refused(`${task.slug} is ${task.stage}.`, [START_MOVE])
-    // The person's approval always saves; once it is recorded the agents' verbs give way to it.
-    const decided = await pendingDecision(ctx, task)
-    if (decided !== null && decided.target === FINAL && decided.decision === "approved")
-      return refused("The person approved the change.", [
-        { what: "their approval, applied", move: "qualitylayer wait --for approval" },
-      ])
-    const ready = await buildReady(ctx, task)
-    if (!ready.ok) return ready
-    return dedupeVerifyReply(ctx, task, await verifyVerb(ctx, task, verb))
-  })
-}
-
-// ------------------------------------------------------------------------------------- ship
-
-/**
- * A crash after settling the final gate but before clearing the closing marker leaves the task on
- * Verify while it is shipped: the closing finishes once, here.
- */
-async function finishedClosing(ctx: Ctx, task: Task): Promise<boolean> {
-  const closingPending = join(task.runtimeDir, "closing-pending")
-  if (!(await ctx.fs.exists(closingPending))) return false
-  const frontmatter = await readmeFrontmatter(ctx, task)
-  const gate = await readGate(ctx, task)
-  const closed =
-    frontmatter.stage === "shipped" &&
-    (await ctx.fs.exists(shipStatePath(task))) &&
-    gate?.target === FINAL &&
-    gate.decision === "approved" &&
-    gate.settled === true
-  if (closed) await ctx.fs.remove(closingPending)
-  return closed
-}
-
-/**
- * `ship`: after the final approval, the landing steps (the approved description, the pull request
- * the person chose, with the approved commit); asked again, the pull request's triage.
- */
-export async function shipVerb(ctx: Ctx): Reply {
-  const repo = await resolveRepo(ctx)
-  if (!repo.ok) return repo
-  // A task the App approved without a pull request is shipped and no longer open, so the usual
-  // lookup skips it: the one whose landing steps wait is the task `ship` means.
-  if ((await resolveTask(ctx, repo.data)) === null) {
-    const waiting = await waitingShips(ctx, repo.data)
-    if (waiting.length > 1)
-      return refused(
-        "Several shipped tasks wait for their landing steps.",
-        waiting.map(({ slug }) => ({
-          what: `${slug} landed`,
-          move: `qualitylayer ship --task ${slug}`,
-        })),
-      )
-    const only = waiting[0]
-    const task = only === undefined ? null : await loadTask(ctx, repo.data, only.slug)
-    if (task !== null) {
-      const found = await usable(ctx, task)
-      if (!found.ok) return found
-      return finish(ctx, found.data, "ship", await landing(ctx, found.data, repo.data))
-    }
-  }
-  return onTask(ctx, "ship", (found, repo) => landing(ctx, found, repo))
-}
-
-/** `ship` on its task: the decision applied, then the landing steps or what still stands before them. */
-async function landing(ctx: Ctx, found: Task, repo: RepoRef): Reply {
-  let task = found
-  if (await finishedClosing(ctx, task)) task = (await loadTask(ctx, repo, task.slug)) ?? task
-  const applied = await applyDecision(ctx, task)
-  if (!applied.ok) return applied
-  task = applied.data.task
-  if (task.stage === "plan") return approvalFirst(ctx, task)
-  if (task.stage === "implement")
-    return refused(`${task.slug} is still in Implement.`, [
-      { what: "the build declared ready", move: "qualitylayer build done" },
-    ])
-  if (task.stage === "verify")
-    return refused(`${task.slug} waits for the person's approval of the change.`, [
-      { what: "their approval", move: "qualitylayer wait --for approval" },
-    ])
-  if (task.stage !== "shipped") return refused(`${task.slug} is ${task.stage}.`, [START_MOVE])
-  const ship = await pendingShip(ctx, repo, task.slug)
-  if (ship === null) return ok({ ...(await shippedPayload(ctx, task)), already: true })
-  const gate = await readGate(ctx, task)
-  return ok(
-    gate?.target === FINAL && gate.decision === "approved" && gate.approvedHead !== undefined
-      ? { ...ship, approved_commit: gate.approvedHead }
-      : ship,
-  )
-}
-
-// ------------------------------------------------------------------------------------- wait
-
-/**
- * What `wait` adds to a decision it applied: on the Plan's approval, the stop that lets the person
- * choose where the build runs; on the final approval, the ship step; on changes to the final
- * review, the reopened review and its move.
- */
-export async function afterDecision(
-  ctx: Ctx,
-  task: Task,
-  outcome: GateOutcome,
-): Promise<NextPayload> {
-  const now = (await loadTask(ctx, { root: task.repoRoot, id: task.repoId }, task.slug)) ?? task
-  const { state } = await moveStateOf(ctx, now)
-  const moves = movesOf(state)
-  if (outcome.decision === "approved" && now.stage === "implement") {
-    const chosen =
-      state.stage === "implement" && !state.started
-        ? matchingStartRoute(
-            await readStart(ctx, now),
-            await readGate(ctx, now),
-            sessionKey(ctx.env),
-          )
-        : null
-    return { ...outcome, ...(await implementStop(ctx, now, chosen ?? undefined)), moves }
-  }
-  if (outcome.decision === "approved" && now.stage === "shipped")
-    return {
-      ...outcome,
-      next: "qualitylayer ship",
-      then: outcome.then ?? "qualitylayer ship",
-      moves,
-    }
-  if (outcome.decision === "changes" && now.stage === "verify") {
-    await reopenVerify(ctx, now)
-    // Handed to the agent with this reply: the person's notes read "picked up".
-    await markPicked(
-      ctx,
-      now,
-      outcome.comments.map((c) => c.id),
-    )
-    return {
-      ...outcome,
-      then: 'Apply each comment test first, commit with qualitylayer commit fix, answer each with qualitylayer comments resolve <id> --answer "<what changed>", then qualitylayer verify recheck.',
-      moves: movesOf((await moveStateOf(ctx, now)).state),
-    }
-  }
-  return { ...outcome, moves }
 }

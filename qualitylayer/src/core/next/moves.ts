@@ -62,110 +62,103 @@ const abandon: Move = {
   by: "agent",
 }
 
+const STATIC_STAGE_MOVES: Record<"none" | "chat" | "shipped" | "abandoned", Move[]> = {
+  none: [START],
+  chat: [
+    { ...START, does: "start a task at Plan from this Chat" },
+    {
+      command: "qualitylayer chat plan save --text <markdown>",
+      does: "save the Chat's plan",
+      by: "agent",
+    },
+  ],
+  shipped: [{ command: "qualitylayer ship", does: "finish the approved handoff", by: "agent" }],
+  abandoned: [{ ...START, does: "start a new task" }],
+}
+
 /** The moves legal now. Every state holds a move the agent can take alone, or a wait on the person. */
 export function movesOf(state: MoveState): Move[] {
-  switch (state.stage) {
-    case "none":
-      return [START]
-    case "chat":
-      return [
-        { ...START, does: "start a task at Plan from this Chat" },
-        {
-          command: "qualitylayer chat plan save --text <markdown>",
-          does: "save the Chat's plan",
-          by: "agent",
-        },
-      ]
-    case "plan":
-      return planMoves(state.gate)
-    case "implement":
-      return implementMoves(state)
-    case "verify":
-      return verifyMoves(state.mode)
-    case "shipped":
-      return [{ command: "qualitylayer ship", does: "finish the approved handoff", by: "agent" }]
-    case "abandoned":
-      return [{ ...START, does: "start a new task" }]
-  }
+  if (state.stage === "plan") return planMoves(state.gate)
+  if (state.stage === "implement") return implementMoves(state)
+  if (state.stage === "verify") return verifyMoves(state.mode)
+  return STATIC_STAGE_MOVES[state.stage]
+}
+
+const PLAN_NONE_MOVES: Move[] = [
+  brief("plan"),
+  {
+    command: "qualitylayer plan draft",
+    does: "validate the Plan; start the enabled review or reuse its existing run",
+    by: "agent",
+  },
+  {
+    command: "qualitylayer gate open plan",
+    does: "ask the person to approve the Plan",
+    by: "agent",
+  },
+  {
+    command: 'qualitylayer task handback "<reason>" --prompt "<prompt>"',
+    does: "hand back a plain prompt",
+    by: "agent",
+  },
+  abandon,
+]
+
+const PLAN_GATE_MOVES: Record<PlanGate, Move[]> = {
+  reviewing: [wait("review", "until the Plan's reviewers finish"), brief("plan")],
+  reviewed: [
+    {
+      command: "qualitylayer gate open plan",
+      does: "unlock Approve once each finding in reviews/plan.md is answered",
+      by: "agent",
+    },
+    {
+      command: "qualitylayer plan draft",
+      does: "validate the Plan; start the enabled review or reuse its existing run",
+      by: "agent",
+    },
+  ],
+  open: [
+    wait(
+      "approval",
+      "your move while the person reads: returns when they approve or comment, in the App or here; again while it says pending",
+    ),
+    {
+      command: "qualitylayer plan draft",
+      does: "validate the Plan; start the enabled review or reuse its existing run",
+      by: "agent",
+    },
+    {
+      command: "qualitylayer gate open plan",
+      does: "reopen the gate after folding a comment in",
+      by: "agent",
+    },
+  ],
+  changes: [
+    {
+      command: "qualitylayer wait --for approval",
+      does: "hear the person's comments, then apply them",
+      by: "agent",
+    },
+    {
+      command: "qualitylayer gate open plan",
+      does: "ask again once they are applied",
+      by: "agent",
+    },
+  ],
+  approved: [
+    {
+      command: "qualitylayer build start",
+      does: "take the approved Plan's build here",
+      by: "agent",
+    },
+  ],
+  "earlier-approval": PLAN_NONE_MOVES,
+  none: PLAN_NONE_MOVES,
 }
 
 function planMoves(gate: PlanGate): Move[] {
-  switch (gate) {
-    case "reviewing":
-      return [wait("review", "until the Plan's reviewers finish"), brief("plan")]
-    case "reviewed":
-      return [
-        {
-          command: "qualitylayer gate open plan",
-          does: "unlock Approve once each finding in reviews/plan.md is answered",
-          by: "agent",
-        },
-        {
-          command: "qualitylayer plan draft",
-          does: "validate the Plan; start the enabled review or reuse its existing run",
-          by: "agent",
-        },
-      ]
-    case "open":
-      return [
-        wait(
-          "approval",
-          "your move while the person reads: returns when they approve or comment, in the App or here; again while it says pending",
-        ),
-        {
-          command: "qualitylayer plan draft",
-          does: "validate the Plan; start the enabled review or reuse its existing run",
-          by: "agent",
-        },
-        {
-          command: "qualitylayer gate open plan",
-          does: "reopen the gate after folding a comment in",
-          by: "agent",
-        },
-      ]
-    case "changes":
-      return [
-        {
-          command: "qualitylayer wait --for approval",
-          does: "hear the person's comments, then apply them",
-          by: "agent",
-        },
-        {
-          command: "qualitylayer gate open plan",
-          does: "ask again once they are applied",
-          by: "agent",
-        },
-      ]
-    case "approved":
-      return [
-        {
-          command: "qualitylayer build start",
-          does: "take the approved Plan's build here",
-          by: "agent",
-        },
-      ]
-    case "earlier-approval":
-    case "none":
-      return [
-        brief("plan"),
-        {
-          command: "qualitylayer plan draft",
-          does: "validate the Plan; start the enabled review or reuse its existing run",
-          by: "agent",
-        },
-        {
-          command: "qualitylayer gate open plan",
-          does: "ask the person to approve the Plan",
-          by: "agent",
-        },
-        {
-          command: 'qualitylayer task handback "<reason>" --prompt "<prompt>"',
-          does: "hand back a plain prompt",
-          by: "agent",
-        },
-        abandon,
-      ]
-  }
+  return PLAN_GATE_MOVES[gate]
 }
 
 function implementMoves(state: Extract<MoveState, { stage: "implement" }>): Move[] {
@@ -299,47 +292,40 @@ export function briefStepOf(state: MoveState): "plan" | "implement" | "verify" |
     : null
 }
 
+const DONE_VERB_BY_STAGE: Partial<Record<MoveState["stage"], string>> = {
+  plan: "qualitylayer plan draft, then qualitylayer gate open plan",
+  implement: "qualitylayer build done",
+  verify: "qualitylayer verify judge",
+}
+
+const STATIC_MEANT_VERBS: Record<string, string> = {
+  judge: "qualitylayer verify judge",
+  rerun: "qualitylayer verify recheck",
+  round: "qualitylayer verify fix",
+  keep: "qualitylayer verify keep-red",
+  abandon: "qualitylayer task abandon",
+  implement: "qualitylayer build start",
+  accept: "qualitylayer wait --for approval",
+  "outline-early": "qualitylayer build start, once the Plan is approved",
+}
+
 /**
  * The verb an old `next <word>` meant, read against the state: a word after `next` changes nothing,
  * the reply only names the command that does what it asked. Null for words that name no verb.
  */
 export function meantVerb(words: string, state: MoveState): string | null {
   const said = words.trim()
-  const word = said.toLowerCase().split(/\s+/)[0] ?? ""
   const start = said.match(/^start\s+(feature|bug|bugfix|chat)\s*:\s*([\s\S]+)$/i)
   if (start !== null) {
     const type = (start[1] ?? "").toLowerCase()
-    return `qualitylayer task start ${JSON.stringify((start[2] ?? "").trim())}${type === "feature" ? "" : type === "chat" ? " --type chat" : " --type bug"}`
+    const suffix = type === "feature" ? "" : type === "chat" ? " --type chat" : " --type bug"
+    return `qualitylayer task start ${JSON.stringify((start[2] ?? "").trim())}${suffix}`
   }
   if (/^hand\s*back\b/i.test(said))
     return 'qualitylayer task handback "<reason>" --prompt "<prompt>"'
   if (/^show\s+me\b/i.test(said))
     return `qualitylayer show ${said.replace(/^show\s+me\b[:,]?\s*/i, "") || "<topic>"}`
-  switch (word) {
-    case "":
-    case "status":
-      return null
-    case "done":
-      if (state.stage === "plan") return "qualitylayer plan draft, then qualitylayer gate open plan"
-      if (state.stage === "implement") return "qualitylayer build done"
-      if (state.stage === "verify") return "qualitylayer verify judge"
-      return null
-    case "judge":
-      return "qualitylayer verify judge"
-    case "rerun":
-      return "qualitylayer verify recheck"
-    case "round":
-      return "qualitylayer verify fix"
-    case "keep":
-      return "qualitylayer verify keep-red"
-    case "abandon":
-      return "qualitylayer task abandon"
-    case "implement":
-      return "qualitylayer build start"
-    case "accept":
-      return "qualitylayer wait --for approval"
-    case "outline-early":
-      return "qualitylayer build start, once the Plan is approved"
-  }
-  return null
+  const word = said.toLowerCase().split(/\s+/)[0] ?? ""
+  if (word === "done") return DONE_VERB_BY_STAGE[state.stage] ?? null
+  return STATIC_MEANT_VERBS[word] ?? null
 }

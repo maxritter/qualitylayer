@@ -3,164 +3,75 @@
 // what Claude sends into the thread with `codex queue`, and tails the thread's
 // rollout to post each finished turn back to whoever asked, under a loop guard
 // (at most three consecutive replies to one requester unless allowed more).
-//
-// Differences from the Python original, forced by the runtime: ownership is an
-// exclusive lock file naming pid and process start instead of flock, and the
-// peer-uid check on each connection is replaced by the socket folder's own
-// guard (owned by this user, mode 700, socket mode 600). Windows connections
-// authenticate with an owner-only key before any message is handled.
 
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
-import { existsSync, mkdirSync, chmodSync as setMode, unlinkSync, writeFileSync } from "node:fs"
-import { createServer, type Server, type Socket } from "node:net"
+import { randomBytes } from "node:crypto"
+import { existsSync, mkdirSync, chmodSync as setMode } from "node:fs"
+import type { Server } from "node:net"
 import { join } from "node:path"
-import { ownerOnlyFile, windows } from "../platform.ts"
-import { pidAlive } from "../self.ts"
+import { windows } from "../platform.ts"
 import {
   asRecord,
-  BUDGET_ALLOW_MAX,
-  budgetAllowPath,
-  budgetResetPath,
   CODEX_TESTED,
-  CONN_TIMEOUT_MS,
-  CONTACT_HISTORY,
   claudeSessionsDir,
   envNumber,
-  isUuid,
   log,
-  MAX_CONCURRENT_CLIENTS,
-  MAX_FRAMES_PER_CONNECTION,
-  MAX_RECORD_REWRITES,
-  MAX_TEXT_CHARS,
   nowIso,
   nowSeconds,
   PEER_FEATURES,
   PEER_PROTOCOL,
-  PeerError,
   PROCESSED_TURN_HISTORY,
   parseTime,
   parseVersion,
   REPLY_BUDGET,
   REPLY_BUDGET_WINDOW_DEFAULT,
-  RESTART_DELIVERY_WINDOW,
   readJson,
   SHIM_FEATURES,
   stableDir,
   threadPidPath,
   threadStatePath,
   toolVersion,
-  truncateUtf8,
   unlinkQuiet,
-  utf8Len,
   writeJsonAtomic,
 } from "./base.ts"
+import { defaultSocketDir, peerKeyName, pidDomain, procStart } from "./claude.ts"
 import {
-  buildCcBody,
-  buildUserFrame,
-  type ClaudeRecord,
-  claudeRecordBySocket,
-  claudeRecordsByName,
-  defaultSocketDir,
-  deliverToRecord,
-  ensureSocketDir,
-  liveClaudeRecords,
-  peerKeyName,
-  pidDomain,
-  procStart,
-  replyText,
-  socketPathOk,
-  unwrapMessage,
-} from "./claude.ts"
-import {
-  argvTextBudget,
-  buildTag,
-  codexQueueOrWait,
   codexThreads,
   codexTitleOwner,
   lastBoundary,
   peerNameForThread,
-  QueueError,
   RolloutTail,
-  refreshRegisteredName,
-  stripTag,
   type Tag,
   type Thread,
   type Turn,
   threadIsHeld,
-  WAITING_DETAIL,
   writerLockPath,
 } from "./codex.ts"
-import { saveOrdinary, updateOrdinary } from "./inbox.ts"
-import { lockHolder, releaseLock, tryLock } from "./lock.ts"
+import { releaseLock, tryLock } from "./lock.ts"
+import {
+  advanceBudgetSequence,
+  allowanceWaiting,
+  consumeBudgetReset,
+  releaseHeldReplies,
+  resetBudgetSequence,
+  sequenceExpired,
+} from "./shim-budget.ts"
+import { dispatchInboundLine } from "./shim-inbound.ts"
+import {
+  type Allowance,
+  boundMap,
+  type Contact,
+  type Held,
+  type ShimRuntime,
+  type UnansweredEntry,
+  validAllowance,
+} from "./shim-lifecycle.ts"
+import { flushUnansweredNotices } from "./shim-notices.ts"
+import { processTurnEnd } from "./shim-outbound.ts"
+import { bindShimServer, runShimPollLoop } from "./shim-poll.ts"
 
-const AT_NAME_RE = /^@([A-Za-z0-9][A-Za-z0-9_.-]*)/
+export { shimPid, shimReady, shimSupports, stopShim } from "./shim-lifecycle.ts"
 
-type Held = { text: string; mid: string | null; turn_id: string; at: number; release?: string }
-type Allowance = { sid: string; total: number; at: number; bound?: boolean }
-type Contact = { name: string | null; socket: string; last_seen: string }
-
-/** The pid of the stand-in that provably owns this thread, or null. */
-export function shimPid(threadId: string): number | null {
-  const pid = lockHolder(threadPidPath(threadId))
-  if (pid === null) return null
-  const rec = asRecord(readJson(join(claudeSessionsDir(), `${pid}.json`), null))
-  if (rec !== null && rec.entrypoint === "codex" && rec.sessionId !== threadId) {
-    log(`the pidfile for ${threadId} names another thread's stand-in; ignoring`)
-    return null
-  }
-  return pid
-}
-
-/** A stand-in that owns the thread and has written its record and socket. */
-export function shimReady(threadId: string, startedChildPid?: number): number | null {
-  // The spawning parent already owns a live child handle. Repeated OS process
-  // probes during startup can block a busy machine long enough to miss readiness.
-  const owned =
-    startedChildPid === undefined ? null : asRecord(readJson(threadPidPath(threadId), null))
-  const pid =
-    startedChildPid === undefined
-      ? shimPid(threadId)
-      : owned?.pid === startedChildPid
-        ? startedChildPid
-        : null
-  if (pid === null) return null
-  const rec = asRecord(readJson(join(claudeSessionsDir(), `${pid}.json`), null))
-  if (rec === null || rec.pid !== pid || rec.sessionId !== threadId) return null
-  const sock = rec.messagingSocketPath
-  // Named pipes have no filesystem entry to stat. The record is published only after bind.
-  return typeof sock === "string" && (windows ? socketPathOk(sock) : existsSync(sock)) ? pid : null
-}
-
-/** True only when the state file proves stand-in `pid` has `feature`. */
-export function shimSupports(threadId: string, pid: number, feature: string): boolean {
-  const state = asRecord(readJson(threadStatePath(threadId), null))
-  if (state === null || state.shim_pid !== pid) return false
-  return Array.isArray(state.shim_features) && state.shim_features.includes(feature)
-}
-
-function validAllowance(value: unknown): value is Allowance {
-  const rec = asRecord(value)
-  if (rec === null || typeof rec.sid !== "string") return false
-  const total = rec.total
-  return (
-    typeof total === "number" &&
-    Number.isInteger(total) &&
-    total >= 1 &&
-    total <= BUDGET_ALLOW_MAX &&
-    parseTime(rec.at) !== null
-  )
-}
-
-/** How many message ids the one folded notice names; the rest are only counted. */
-const UNANSWERED_IDS_SHOWN = 5
-
-function bound<T>(map: Record<string, T>, cap = CONTACT_HISTORY): Record<string, T> {
-  const keys = Object.keys(map)
-  for (const key of keys.slice(0, Math.max(0, keys.length - cap))) delete map[key]
-  return map
-}
-
-export class Shim {
+export class Shim implements ShimRuntime {
   readonly threadId: string
   readonly rolloutPath: string | null
   readonly lockPath: string
@@ -189,23 +100,18 @@ export class Shim {
   readonly livenessMs: number
   readonly aliasMs: number
   readonly replyWindow: number
-  /** How long the notices for one requester wait for more before they go as one line. */
   readonly noticeFoldMs: number
-  /** Requests that ended without a final message, by requester, until their one notice goes. */
-  private unanswered = new Map<
-    string,
-    { rec: ClaudeRecord; mids: string[]; total: number; at: number }
-  >()
+  unanswered = new Map<string, UnansweredEntry>()
   private procStartValue: string | null = null
-  private readonly authToken = windows ? randomBytes(32).toString("hex") : null
-  private readonly authKeyPath: string
-  private idleSubs: [string | null, string][] = []
-  private recordRewrites = 0
-  private stopped = false
+  readonly authToken = windows ? randomBytes(32).toString("hex") : null
+  readonly authKeyPath: string
+  idleSubs: [string | null, string][] = []
+  recordRewrites = 0
+  stopped = false
   private server: Server | null = null
   private cleaned = false
   private owns = false
-  private clients = 0
+  clients = 0
   codexVersion: string | null = null
   livenessUnverified = false
 
@@ -215,7 +121,6 @@ export class Shim {
     this.lockPath = writerLockPath(this.threadId)
     this.holderPid = thread.holder_pid
     this.threadName = thread.name
-    // Only a validated alias reaches Claude's wrapper; an unusable title gets a UUID-derived one.
     this.name = peerNameForThread(
       this.threadName,
       this.threadId,
@@ -247,13 +152,9 @@ export class Shim {
     this.allowance = validAllowance(state.allowance) ? state.allowance : null
     this.contacts = { ...((asRecord(state.contacts) ?? {}) as Record<string, Contact>) }
     this.fresh = Object.keys(state).length === 0
-    if (this.fresh) {
-      // A SessionStart hook can start us after the tagged request was logged:
-      // recover that open turn without replaying finished ones.
-      this.tail.poll(false)
-    } else if (this.tail.lastBoundary === null && this.rolloutPath) {
+    if (this.fresh) this.tail.poll(false)
+    else if (this.tail.lastBoundary === null && this.rolloutPath)
       this.tail.lastBoundary = lastBoundary(this.rolloutPath)
-    }
     this.startedAt = nowSeconds()
     this.nameSince = this.startedAt
     this.status = this.tail.lastBoundary === "started" ? "busy" : "idle"
@@ -265,18 +166,14 @@ export class Shim {
     this.noticeFoldMs = (fold >= 0 ? fold : 2) * 1000
     const window = envNumber("QUALITYLAYER_PEERS_REPLY_BUDGET_WINDOW", REPLY_BUDGET_WINDOW_DEFAULT)
     this.replyWindow = window > 0 ? window : REPLY_BUDGET_WINDOW_DEFAULT
-    // `peers restart` reloads this state: a sequence past its idle window, or a waiting grant
-    // past its own window, is not brought back.
     const now = nowSeconds()
-    if (this.sequenceExpired(now))
-      this.resetSequence(`the ${this.replyWindow}s idle window elapsed`, now)
-    if (this.allowance !== null && !this.allowance.bound && !this.allowanceWaiting(now)) {
+    if (sequenceExpired(this, now))
+      resetBudgetSequence(this, `the ${this.replyWindow}s idle window elapsed`, now)
+    if (this.allowance !== null && !this.allowance.bound && !allowanceWaiting(this, now)) {
       log(`reply allowance for ${this.allowance.sid} dropped: its window elapsed before this start`)
       this.allowance = null
     }
   }
-
-  // ------------------------------------------------------------ lifecycle
 
   async run(): Promise<number> {
     if (!this.rolloutPath) {
@@ -284,19 +181,17 @@ export class Shim {
       return 2
     }
     const [held, pid] = threadIsHeld(this.rolloutPath, this.holderPid, this.lockPath)
-    if (held === null) {
-      log(`thread ${this.threadId} liveness is unverified; not starting a stand-in`)
-      return 3
-    }
     if (!held) {
-      log(`thread ${this.threadId} is not held by a live codex process; not starting`)
+      log(
+        held === null
+          ? `thread ${this.threadId} liveness is unverified; not starting a stand-in`
+          : `thread ${this.threadId} is not held by a live codex process; not starting`,
+      )
       return 3
     }
     this.holderPid = pid ?? this.holderPid
     const parsed = parseVersion(toolVersion("codex"))
     this.codexVersion = parsed !== null ? parsed.join(".") : CODEX_TESTED
-
-    // Ownership first: everything below touches state another stand-in may own.
     if (!tryLock(threadPidPath(this.threadId))) {
       log(
         `another stand-in already owns thread ${this.threadId}; exiting without touching its files`,
@@ -313,18 +208,18 @@ export class Shim {
     try {
       this.consumeBudgetMarker(true)
       this.saveState()
-      await this.bind()
+      this.server = await bindShimServer(this)
       this.writeRecord()
       log(
         `stand-in up: thread=${this.threadId} name=${this.name} socket=${this.sockPath} holder=${this.holderPid}`,
       )
       if (this.releaseAfterStart) {
         this.releaseAfterStart = false
-        await this.releaseHeld()
+        await releaseHeldReplies(this)
         this.saveState()
       }
-      await this.pollLoop()
-      await this.flushUnanswered(true)
+      await runShimPollLoop(this)
+      await flushUnansweredNotices(this, true)
     } finally {
       this.cleanup()
     }
@@ -342,41 +237,7 @@ export class Shim {
     if (this.owns) releaseLock(threadPidPath(this.threadId))
   }
 
-  // ------------------------------------------------------- socket, record
-
-  private bind(): Promise<void> {
-    ensureSocketDir(this.sockDir)
-    if (!socketPathOk(this.sockPath)) {
-      throw new PeerError(
-        `refusing to bind ${this.sockPath}: outside the allowlisted socket folders`,
-      )
-    }
-    if (!windows && utf8Len(this.sockPath) > 100) {
-      throw new PeerError(
-        `socket path ${this.sockPath} is too long for a Unix socket (macOS caps at 104 bytes)`,
-      )
-    }
-    unlinkQuiet(this.sockPath)
-    if (this.authToken !== null) {
-      mkdirSync(claudeSessionsDir(), { recursive: true })
-      writeFileSync(this.authKeyPath, "", { mode: 0o600, flag: "wx" })
-      ownerOnlyFile(this.authKeyPath)
-      writeFileSync(this.authKeyPath, this.authToken, "utf8")
-    }
-    return new Promise((resolve, reject) => {
-      const server = createServer((conn) => this.handleConnection(conn))
-      server.maxConnections = MAX_CONCURRENT_CLIENTS
-      server.on("error", reject)
-      server.listen(this.sockPath, () => {
-        if (!windows) setMode(this.sockPath, 0o600)
-        this.server = server
-        resolve()
-      })
-    })
-  }
-
   record(): Record<string, unknown> {
-    // Every timestamp in a live record is integer milliseconds; only procStart is a string.
     const stamp = Date.now()
     this.procStartValue ??= procStart(process.pid)
     return {
@@ -401,7 +262,7 @@ export class Shim {
     }
   }
 
-  private writeRecord(): void {
+  writeRecord(): void {
     const dir = claudeSessionsDir()
     mkdirSync(dir, { recursive: true })
     try {
@@ -412,7 +273,7 @@ export class Shim {
     writeJsonAtomic(this.recordPath, this.record(), 0o644)
   }
 
-  private setStatus(status: "busy" | "idle"): void {
+  setStatus(status: "busy" | "idle"): void {
     if (status === this.status) return
     this.status = status
     if (existsSync(this.recordPath)) this.writeRecord()
@@ -430,833 +291,38 @@ export class Shim {
         shim_features: [...SHIM_FEATURES],
         tail: this.tail.state(),
         processed_turns: this.processedTurns.slice(-PROCESSED_TURN_HISTORY),
-        budgets: bound(this.budgets),
+        budgets: boundMap(this.budgets),
         budget_sender_sid: this.budgetSenderSid,
         budget_last_at: this.budgetLastAt,
         budget_notified: [...this.budgetNotified].sort(),
-        held: bound(this.held),
+        held: boundMap(this.held),
         allowance: this.allowance,
-        contacts: bound(this.contacts),
+        contacts: boundMap(this.contacts),
         updated_at: nowIso(),
       },
       0o600,
     )
   }
 
-  // --------------------------------------------------------------- inbound
-
-  private handleConnection(conn: Socket): void {
-    if (this.clients >= MAX_CONCURRENT_CLIENTS) {
-      log(`refusing a client: ${MAX_CONCURRENT_CLIENTS} already in flight`)
-      conn.destroy()
-      return
-    }
-    this.clients++
-    let buffer = ""
-    let frames = 0
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      clearTimeout(deadline)
-      this.clients--
-      conn.destroy()
-    }
-    // One deadline for the whole connection, so a trickle cannot hold a slot for ever.
-    const deadline = setTimeout(() => {
-      log(`client sent no complete line in ${CONN_TIMEOUT_MS / 1000}s`)
-      finish()
-    }, CONN_TIMEOUT_MS)
-    const lines: string[] = []
-    conn.setEncoding("utf8")
-    conn.on("data", (chunk: string) => {
-      buffer += chunk
-      let newline = buffer.indexOf("\n")
-      while (newline !== -1) {
-        frames++
-        if (frames > MAX_FRAMES_PER_CONNECTION) {
-          log(`dropping a client after ${MAX_FRAMES_PER_CONNECTION} frames on one connection`)
-          finish()
-          return
-        }
-        lines.push(buffer.slice(0, newline))
-        buffer = buffer.slice(newline + 1)
-        newline = buffer.indexOf("\n")
-      }
-      if (buffer.length > MAX_TEXT_CHARS) {
-        log(`dropping a client whose line exceeds ${MAX_TEXT_CHARS} chars`)
-        finish()
-      }
-    })
-    conn.on("end", () => {
-      if (buffer.trim() !== "" && frames < MAX_FRAMES_PER_CONNECTION) lines.push(buffer)
-      const handle = async () => {
-        if (this.authToken !== null) {
-          const first = lines.shift()
-          let frame: Record<string, unknown> | null = null
-          try {
-            frame = asRecord(JSON.parse(first ?? ""))
-          } catch {
-            return
-          }
-          const candidate =
-            typeof frame?.token === "string" ? Buffer.from(frame.token) : Buffer.alloc(0)
-          const expected = Buffer.from(this.authToken)
-          if (
-            frame?.type !== "auth" ||
-            candidate.length !== expected.length ||
-            !timingSafeEqual(candidate, expected)
-          )
-            return
-        }
-        for (const line of lines) await this.handleLine(line)
-      }
-      void handle().finally(finish)
-    })
-    conn.on("error", finish)
-  }
-
   async handleLine(raw: string): Promise<void> {
-    const line = raw.trim()
-    if (line === "") return
-    let frame: Record<string, unknown> | null
-    try {
-      frame = asRecord(JSON.parse(line))
-    } catch {
-      log("ignoring a non-JSON line from a client")
-      return
-    }
-    if (frame === null) return
-    // Windows authentication was checked per connection; Unix socket permissions are the boundary.
-    if (frame.type === "auth") return
-    if (frame.type === "user") return this.handleUser(frame)
-    if (frame.type === "control") return this.handleControl(frame)
-    log(`ignoring an unknown frame type ${JSON.stringify(frame.type)}`)
+    return dispatchInboundLine(this, raw)
   }
-
-  private async handleUser(frame: Record<string, unknown>): Promise<void> {
-    const content = asRecord(frame.message)?.content
-    let [body, attrs] = unwrapMessage(content)
-    if (body.trim() === "") {
-      log("ignoring an empty inbound message")
-      return
-    }
-    const originalBody = body
-    const fromField = String(frame.from ?? attrs.from ?? "")
-    let sockPath = fromField.startsWith("uds:") ? fromField.slice(4) : fromField
-    let sender: ClaudeRecord | null = null
-    if (sockPath && socketPathOk(sockPath)) sender = claudeRecordBySocket(sockPath)
-    else if (sockPath) {
-      log("ignoring a reply address outside the allowlisted folders")
-      sockPath = ""
-    }
-    const senderName = sender?.name ?? attrs["from-name"] ?? null
-    const senderSid = sender?.sessionId ?? attrs["from-session"] ?? null
-    if (senderSid) {
-      delete this.contacts[senderSid]
-      this.contacts[senderSid] = { name: senderName, socket: sockPath, last_seen: nowIso() }
-      bound(this.contacts)
-    }
-    const msgId = typeof frame.msg_id === "string" ? frame.msg_id : null
-    const tag = buildTag(
-      senderName,
-      senderSid,
-      sender ? sockPath : null,
-      msgId,
-      frame.reply_wanted === false,
-    )
-    // The tag rides inside the text Codex caps: trim the body to leave it room (bytes and characters).
-    const roomBytes = argvTextBudget() - utf8Len(tag) - 1
-    const roomChars = MAX_TEXT_CHARS - tag.length - 1
-    let trimmedFrom: number | null = null
-    if (utf8Len(body) > roomBytes || body.length > roomChars) {
-      trimmedFrom = body.length
-      body = truncateUtf8(body, roomBytes).slice(0, roomChars)
-      log(`truncating an inbound body of ${trimmedFrom} chars to ${body.length}`)
-    }
-    const text = `${tag}\n${body}`
-
-    const [held] = threadIsHeld(this.rolloutPath, this.holderPid, this.lockPath)
-    if (held === null) {
-      log(`thread ${this.threadId} liveness is unverified; not queueing`)
-      await this.statusTo(
-        sender,
-        msgId,
-        "failed",
-        "the Codex thread liveness probe is unavailable; run qualitylayer peers doctor where process inspection is permitted",
-      )
-      return
-    }
-    if (!held) {
-      log(`thread ${this.threadId} is no longer live; refusing to queue`)
-      await this.statusTo(sender, msgId, "failed", "the Codex thread is no longer running")
-      this.stopped = true
-      return
-    }
-    const paused = this.tail.lastBoundary === "aborted"
-    const durableId = isUuid(msgId) ? (msgId as string) : randomUUID()
-    const source =
-      sender && isUuid(sender.sessionId)
-        ? {
-            kind: sender.entrypoint === "codex" ? ("codex" as const) : ("cc" as const),
-            uuid: sender.sessionId as string,
-          }
-        : null
-    if (!saveOrdinary(durableId, { kind: "codex", uuid: this.threadId }, originalBody, source)) {
-      log(`inbound message ${durableId} is already recorded; not queueing twice`)
-      return
-    }
-    updateOrdinary(durableId, {
-      transport_message_id: msgId,
-      ...(trimmedFrom !== null ? { trimmed_from: trimmedFrom } : {}),
-    })
-    try {
-      if (codexQueueOrWait(this.threadId, text, this.thread.cwd) === "waiting") {
-        updateOrdinary(durableId, { delivery_status: "waiting", detail: WAITING_DETAIL })
-        log(
-          `queue of thread ${this.threadId} is full; message ${msgId ?? "unknown"} waits in its inbox`,
-        )
-        // No status to a Claude sender: Claude Code reads "held" as a permission hold that never
-        // delivers. The message is saved and the thread reads it; `peers receipt` shows the pickup.
-        return
-      }
-      updateOrdinary(durableId, { delivery_status: "queued" })
-    } catch (cause) {
-      const detail = cause instanceof QueueError ? cause.message : String(cause)
-      updateOrdinary(durableId, { delivery_status: "delivery_failed", detail })
-      log(`queue failed for message ${msgId ?? "unknown"}: ${detail}`)
-      await this.statusTo(sender, msgId, "failed", detail)
-      // A plain SendMessage has no status tracking: tell the sender once, with no reply route.
-      if (sender !== null) {
-        const notice = `[qualitylayer peers] your message to ${this.name} was not queued: ${detail}`
-        await deliverToRecord(
-          sender,
-          buildUserFrame(buildCcBody(notice, this.threadId, this.name, null)),
-        )
-      }
-      return
-    }
-    log(`queued inbound message ${msgId ?? "unknown"} to thread ${this.threadId}`)
-    if (!paused) this.setStatus("busy")
-    if (trimmedFrom !== null) {
-      await this.statusTo(
-        sender,
-        msgId,
-        "truncated",
-        `delivered, but trimmed from ${trimmedFrom} to ${body.length} characters: \`codex queue\` carries the message as one argument`,
-      )
-    }
-    if (paused) {
-      log(`thread ${this.threadId} is paused after an interrupt`)
-      await this.statusTo(
-        sender,
-        msgId,
-        "held",
-        "queued, but the Codex thread is paused after an interrupt; it drains when its user types any prompt",
-      )
-    }
-  }
-
-  /** One correlated status to the sender of a known message. */
-  private async statusTo(
-    sender: ClaudeRecord | null,
-    msgId: string | null,
-    status: string,
-    detail: string,
-  ): Promise<boolean> {
-    if (sender === null || !msgId) return false
-    return deliverToRecord(sender, {
-      type: "control",
-      action: "peer_message_status",
-      orig_msg_id: msgId,
-      status,
-      detail,
-      from: `uds:${this.sockPath}`,
-    })
-  }
-
-  private async handleControl(frame: Record<string, unknown>): Promise<void> {
-    if (frame.action !== "notify_when_idle") {
-      log(`ignoring control action ${JSON.stringify(frame.action)}`)
-      return
-    }
-    const fromField = String(frame.from ?? "")
-    const sock = fromField.startsWith("uds:") ? fromField.slice(4) : fromField
-    const sub: [string | null, string] = [
-      typeof frame.msg_id === "string" ? frame.msg_id : null,
-      sock,
-    ]
-    if (this.status === "idle") {
-      await this.fireIdle(sub, "the Codex thread is idle")
-      return
-    }
-    this.idleSubs.push(sub)
-  }
-
-  private async fireIdle([msgId, sock]: [string | null, string], detail: string): Promise<void> {
-    if (!socketPathOk(sock)) {
-      log(`cannot answer notify_when_idle: ${JSON.stringify(sock)} is not an allowed socket`)
-      return
-    }
-    const rec = claudeRecordBySocket(sock)
-    if (rec === null) {
-      log(`cannot answer notify_when_idle: no live session at ${sock}`)
-      return
-    }
-    await deliverToRecord(rec, {
-      type: "control",
-      action: "peer_idle_notice",
-      orig_msg_id: msgId,
-      state: "idle",
-      finished_at: Date.now(),
-      detail,
-    })
-  }
-
-  // -------------------------------------------------------------- outbound
-
-  private async pollLoop(): Promise<void> {
-    let lastLive = Date.now()
-    let lastAlias = lastLive
-    while (!this.stopped) {
-      await Bun.sleep(this.pollMs)
-      if (this.stopped) break
-      this.consumeBudgetMarker(false)
-      await this.consumeBudgetAllowMarker()
-      this.expireHeld()
-      let events: ReturnType<RolloutTail["poll"]> = []
-      try {
-        events = this.tail.poll()
-      } catch (cause) {
-        log(`rollout read failed: ${(cause as Error).message}`)
-      }
-      for (const event of events) {
-        if (event.kind === "start") this.setStatus("busy")
-        else {
-          this.setStatus("idle")
-          await this.handleTurnEnd(event.turn)
-        }
-      }
-      if (events.length > 0) this.saveState()
-      await this.flushUnanswered(false)
-      this.ensureRecord()
-      const now = Date.now()
-      if (now - lastLive >= this.livenessMs) {
-        lastLive = now
-        this.checkLiveness()
-        if (this.stopped) break
-        await this.retryHeld()
-      }
-      if (now - lastAlias >= this.aliasMs) {
-        lastAlias = now
-        this.refreshName()
-      }
-    }
-  }
-
-  /**
-   * One notice per requester for the requests that ended without a final message: a quiet spell of
-   * the fold window gathers what came in meanwhile into one line. Runs inside the poll loop, so it
-   * costs no timer; `all` sends what is left when the stand-in stops.
-   */
-  private async flushUnanswered(all: boolean): Promise<void> {
-    const now = Date.now()
-    for (const [sid, entry] of [...this.unanswered]) {
-      if (!all && now - entry.at < this.noticeFoldMs) continue
-      this.unanswered.delete(sid)
-      const mids = entry.mids
-      const notice =
-        entry.total === 1
-          ? `[qualitylayer peers] ${this.name} answered your message${mids[0] ? ` ${mids[0]}` : ""} with no final message. Ask again or check its TUI.`
-          : `[qualitylayer peers] ${entry.total} messages ended without a reply from ${this.name}${mids.length > 0 ? ` (ids ${mids.join(", ")}${entry.total > mids.length ? " …" : ""})` : ""}. Ask again or check its TUI.`
-      await deliverToRecord(
-        entry.rec,
-        buildUserFrame(buildCcBody(notice, this.threadId, this.name, null)),
-      )
-    }
-  }
-
-  private checkLiveness(): void {
-    const [held] = threadIsHeld(this.rolloutPath, this.holderPid, this.lockPath)
-    if (held === null) {
-      if (!this.livenessUnverified)
-        log(`codex pid ${this.holderPid} liveness is unverified; keeping the stand-in`)
-      this.livenessUnverified = true
-    } else if (held) {
-      if (this.livenessUnverified) log(`codex pid ${this.holderPid} liveness probe recovered`)
-      this.livenessUnverified = false
-    } else {
-      log(
-        `codex pid ${this.holderPid} no longer holds ${this.rolloutPath} or its writer lock; exiting`,
-      )
-      this.stopped = true
-    }
-  }
-
-  /** Follow a Codex /rename to a new alias. */
-  private refreshName(): void {
-    // Which threads are live costs a scan of the machine's open files, about a second of CPU on
-    // macOS: ask only when another thread shares this one's title and the alias depends on it.
-    let [threads, ok] = codexThreads(false)
-    if (!ok) return
-    const own = threads.find((t) => t.id === this.threadId)
-    if (own !== undefined && threads.some((t) => t.id !== own.id && t.name === own.name)) {
-      ;[threads, ok] = codexThreads()
-      if (!ok) return
-    }
-    const thread = threads.find((t) => t.id === this.threadId)
-    if (thread === undefined || thread.live === null) return
-    let desired: string
-    try {
-      desired = peerNameForThread(
-        thread.name,
-        this.threadId,
-        undefined,
-        codexTitleOwner(thread.name, threads),
-        threads,
-      )
-    } catch (cause) {
-      log(`cannot refresh the peer alias: ${(cause as Error).message}`)
-      return
-    }
-    this.threadName = thread.name
-    if (desired !== this.name) {
-      const previous = this.name
-      this.name = desired
-      this.nameSince = nowSeconds()
-      if (existsSync(this.recordPath)) this.writeRecord()
-      this.saveState()
-      log(`peer alias changed from ${previous} to ${desired}`)
-    }
-    try {
-      refreshRegisteredName(this.threadId, desired)
-    } catch {
-      // an alias that is not a peer name cannot be registered; the record still has it
-    }
-  }
-
-  private ensureRecord(): void {
-    if (existsSync(this.recordPath) || this.recordRewrites >= MAX_RECORD_REWRITES) return
-    this.recordRewrites++
-    log(`registry record was removed; rewriting (${this.recordRewrites} of ${MAX_RECORD_REWRITES})`)
-    this.writeRecord()
-  }
-
-  // ------------------------------------------------------------ the loop guard
 
   consumeBudgetMarker(initial: boolean): void {
-    const path = budgetResetPath(this.threadId)
-    if (!existsSync(path)) return
-    try {
-      unlinkSync(path)
-    } catch {
-      return
-    }
-    this.budgets = {}
-    this.budgetSenderSid = null
-    this.budgetLastAt = null
-    this.budgetNotified = new Set()
-    this.allowance = null
-    if (initial) {
-      // Not bound yet: release once the socket exists.
-      this.releaseAfterStart = Object.keys(this.held).length > 0
-      return
-    }
-    log(`reply budget reset for thread ${this.threadId}`)
-    void this.releaseHeld().then(() => this.saveState())
-  }
-
-  private expireHeld(now = nowSeconds()): void {
-    const stale = Object.entries(this.held)
-      .filter(([, entry]) => now - Number(entry?.at ?? 0) > this.replyWindow)
-      .map(([sid]) => sid)
-    if (stale.length === 0) return
-    for (const sid of stale) delete this.held[sid]
-    log(`purged ${stale.length} expired held reply(s)`)
-    this.saveState()
-  }
-
-  private async releaseHeld(): Promise<void> {
-    if (Object.keys(this.held).length === 0) return
-    const records = liveClaudeRecords()
-    for (const sid of Object.keys(this.held)) await this.releaseOne(sid, "reset", records)
-  }
-
-  private async releaseOne(sid: string, reason: string, records: ClaudeRecord[]): Promise<string> {
-    const entry = this.held[sid]
-    const outcome = await this.deliverHeld(sid, entry, records, reason === "reset")
-    if (outcome === "failed" && entry !== undefined) entry.release = reason
-    else delete this.held[sid]
-    return outcome
-  }
-
-  private async retryHeld(): Promise<void> {
-    const pending = Object.entries(this.held)
-      .filter(([, entry]) => entry?.release)
-      .map(([sid, entry]) => [sid, entry.release as string] as const)
-    if (pending.length === 0) return
-    const records = liveClaudeRecords()
-    let changed = false
-    for (const [sid, reason] of pending) {
-      if (reason === "allow" && (this.budgets[sid] ?? 0) >= this.capFor(sid)) {
-        delete this.held[sid]?.release
-        changed = true
-        continue
-      }
-      changed = (await this.releaseOne(sid, reason, records)) !== "failed" || changed
-    }
-    if (changed) this.saveState()
-  }
-
-  private async deliverHeld(
-    sid: string,
-    entry: Held | undefined,
-    records: ClaudeRecord[],
-    newSequence: boolean,
-  ): Promise<"delivered" | "failed" | "discarded"> {
-    if (entry === undefined || !entry.text) return "discarded"
-    const now = nowSeconds()
-    const age = now - Number(entry.at ?? 0)
-    if (age > this.replyWindow) {
-      log(`discarding a held reply for ${sid}: ${Math.round(age)}s old`)
-      return "discarded"
-    }
-    const rec = records.find((r) => r.sessionId === sid)
-    if (rec === undefined) {
-      log(`discarding a held reply: session ${sid} is gone`)
-      return "discarded"
-    }
-    if (!socketPathOk(rec.messagingSocketPath)) {
-      log(`discarding a held reply: ${sid} listens outside the allowlist`)
-      return "discarded"
-    }
-    let body: string
-    try {
-      body = buildCcBody(
-        replyText(entry.text, entry.mid, true),
-        this.threadId,
-        this.name,
-        this.sockPath,
-      )
-    } catch (cause) {
-      log(`cannot build a held reply for ${sid}: ${(cause as Error).message}`)
-      return "discarded"
-    }
-    if (!(await deliverToRecord(rec, buildUserFrame(body, this.sockPath)))) {
-      log(`keeping the held reply for ${sid} to retry`)
-      return "failed"
-    }
-    this.budgets[sid] = newSequence ? 1 : (this.budgets[sid] ?? 0) + 1
-    this.budgetSenderSid = sid
-    this.budgetLastAt = now
-    log(`released a held reply (turn ${entry.turn_id}) to ${rec.name ?? sid}`)
-    return "delivered"
-  }
-
-  private allowanceFresh(at: number, now: number): boolean {
-    return now - at >= -60 && now - at <= this.replyWindow
+    consumeBudgetReset(this, initial)
   }
 
   capFor(sid: string): number {
-    if (this.allowance !== null && this.allowance.sid === sid) {
-      return Math.max(REPLY_BUDGET, this.allowance.total)
-    }
-    return REPLY_BUDGET
+    return this.allowance !== null && this.allowance.sid === sid
+      ? Math.max(REPLY_BUDGET, this.allowance.total)
+      : REPLY_BUDGET
   }
 
-  /** Apply a `budget allow` grant: a total, never additive or replenishing. */
-  private async consumeBudgetAllowMarker(): Promise<void> {
-    const path = budgetAllowPath(this.threadId)
-    if (!existsSync(path)) return
-    const grant = readJson(path, null)
-    try {
-      unlinkSync(path)
-    } catch {
-      return
-    }
-    if (!validAllowance(grant)) {
-      log(`ignoring a malformed reply allowance for thread ${this.threadId}`)
-      return
-    }
-    const { sid, total } = grant
-    const grantedAt = parseTime(grant.at) as number
-    const now = nowSeconds()
-    if (!this.allowanceFresh(grantedAt, now)) {
-      log(
-        `ignoring a stale reply allowance for ${sid}: granted ${Math.round(now - grantedAt)}s ago`,
-      )
-      return
-    }
-    if (this.sequenceExpired(now))
-      this.resetSequence(`the ${this.replyWindow}s idle window elapsed`, now)
-    const current = this.allowance
-    if (current !== null && current.sid === sid && current.total >= total) {
-      log(`reply allowance of ${current.total} for ${sid} already covers ${total}; unchanged`)
-      this.saveState()
-      return
-    }
-    const oldCap = this.capFor(sid)
-    this.allowance = { sid, total, at: grantedAt, bound: this.budgetSenderSid === sid }
-    const newCap = this.capFor(sid)
-    log(`reply allowance for ${sid} set to ${newCap} (${this.budgets[sid] ?? 0} spent)`)
-    if (newCap > oldCap) {
-      this.budgetNotified.delete(sid)
-      if ((this.budgets[sid] ?? 0) < newCap && sid in this.held) {
-        await this.releaseOne(sid, "allow", liveClaudeRecords())
-      }
-    }
-    this.saveState()
-  }
-
-  private advanceBudgetSequence(tag: Tag | null): void {
-    const senderSid = tag?.sid ?? null
-    const now = nowSeconds()
-    const expired = this.sequenceExpired(now)
-    if (senderSid === null || expired || senderSid !== this.budgetSenderSid) {
-      this.resetSequence(
-        senderSid === null
-          ? "a direct Codex turn"
-          : expired
-            ? `the ${this.replyWindow}s idle window elapsed`
-            : "the requesting peer changed",
-        now,
-      )
-    }
-    if (this.allowance !== null && this.allowance.sid === senderSid) this.allowance.bound = true
-    this.budgetSenderSid = senderSid
-    this.budgetLastAt = senderSid !== null ? now : null
-  }
-
-  private sequenceExpired(now: number): boolean {
-    return this.budgetLastAt !== null && now - this.budgetLastAt > this.replyWindow
-  }
-
-  /** End the sequence: usage, notices, held replies and a grant bound to it go; a waiting grant stays. */
-  private resetSequence(reason: string, now: number): void {
-    if (Object.keys(this.budgets).length > 0) log(`reply budget sequence reset: ${reason}`)
-    if (Object.keys(this.held).length > 0) {
-      log(`discarding ${Object.keys(this.held).length} held reply(s): the sequence moved on`)
-    }
-    this.budgets = {}
-    this.budgetNotified = new Set()
-    this.held = {}
-    if (this.allowance !== null && !this.allowanceWaiting(now)) {
-      log(`reply allowance for ${this.allowance.sid} dropped: the sequence moved on`)
-      this.allowance = null
-    }
-    this.budgetSenderSid = null
-    this.budgetLastAt = null
-  }
-
-  private allowanceWaiting(now: number): boolean {
-    return (
-      this.allowance !== null &&
-      this.allowance.bound === false &&
-      this.allowanceFresh(parseTime(this.allowance.at) ?? 0, now)
-    )
+  advanceBudgetSequence(tag: Tag | null): void {
+    advanceBudgetSequence(this, tag)
   }
 
   async handleTurnEnd(turn: Turn): Promise<void> {
-    if (this.processedTurns.includes(turn.turn_id)) return
-    this.processedTurns.push(turn.turn_id)
-    if (this.processedTurns.length > PROCESSED_TURN_HISTORY) this.processedTurns.shift()
-
-    const subs = this.idleSubs
-    this.idleSubs = []
-    const detail =
-      turn.outcome === "complete" ? "the Codex turn finished" : "the Codex turn was interrupted"
-    for (const sub of subs) await this.fireIdle(sub, detail)
-
-    if (turn.outcome !== "complete") {
-      log(`turn ${turn.turn_id} aborted; nothing to deliver`)
-      return
-    }
-    // A turn that finished long before this stand-in started is recorded, not posted.
-    const age = turn.completed_at === null ? null : this.startedAt - turn.completed_at
-    if (age !== null && age > RESTART_DELIVERY_WINDOW) {
-      log(
-        `turn ${turn.turn_id} completed ${Math.round(age)}s before this stand-in started; recording it without posting`,
-      )
-      return
-    }
-    const tag = turn.tag
-    this.advanceBudgetSequence(tag)
-    const text = stripTag(turn.last_agent_message ?? "").trim()
-    const records = liveClaudeRecords()
-    const targets: ClaudeRecord[] = []
-    let requester: ClaudeRecord | null = null
-    const reply = tag?.reply ?? null
-    if (reply) {
-      if (!socketPathOk(reply))
-        log(`reply address ${JSON.stringify(reply)} is not an allowed socket`)
-      else {
-        const rec = claudeRecordBySocket(reply, records)
-        if (rec === null) log(`the session that queued turn ${turn.turn_id} is gone`)
-        else if (!tag?.sid) {
-          // Sockets are named after pids and pids are reused: no session id, no auto-delivery.
-          log(
-            `the tag for turn ${turn.turn_id} carries no session id; not auto-delivering to ${reply}`,
-          )
-        } else if (rec.sessionId !== tag.sid) log(`session id at ${reply} changed; not delivering`)
-        else requester = rec
-      }
-    }
-    if (requester?.sessionId !== undefined) {
-      // A verified requester is a contact however its message arrived: a direct `peers send`
-      // queues straight into Codex and never passes the inbound handler, so without this a
-      // later @-addressed turn to that same session was dropped as "no prior contact".
-      const sid = requester.sessionId
-      delete this.contacts[sid]
-      this.contacts[sid] = {
-        name: requester.name ?? tag?.from ?? null,
-        socket: reply ?? "",
-        last_seen: nowIso(),
-      }
-      bound(this.contacts)
-    }
-    if (text === "") {
-      log(`turn ${turn.turn_id} finished with no agent message`)
-      if (requester !== null) {
-        // The correlated status always goes. The notice goes unless the sender marked the
-        // message informational (`--no-reply`): most requests arrive without any mark, and the
-        // requester must not wait on them. It has no reply route, so it cannot start a loop, and
-        // several for one requester go as one line.
-        const mid = tag?.mid ?? null
-        await this.statusTo(
-          requester,
-          mid,
-          "failed",
-          "the Codex turn finished with no final message; nothing to deliver",
-        )
-        if (tag?.informational !== true) {
-          const sid = requester.sessionId ?? ""
-          const waiting = this.unanswered.get(sid)
-          if (waiting === undefined) {
-            // Requesters are bounded like contacts: past the limit the oldest entry is dropped.
-            while (this.unanswered.size >= CONTACT_HISTORY) {
-              const oldest = this.unanswered.keys().next().value
-              if (oldest === undefined) break
-              this.unanswered.delete(oldest)
-            }
-            this.unanswered.set(sid, {
-              rec: requester,
-              mids: mid === null ? [] : [mid],
-              total: 1,
-              at: Date.now(),
-            })
-          } else {
-            // Only the ids the notice can show are kept, with the count of all.
-            if (mid !== null && waiting.mids.length < UNANSWERED_IDS_SHOWN) waiting.mids.push(mid)
-            waiting.total += 1
-            waiting.at = Date.now()
-          }
-        }
-      }
-      return
-    }
-    if (requester !== null && tag?.informational !== true) targets.push(requester)
-    const addressed = AT_NAME_RE.exec(text.trimStart())
-    if (addressed?.[1] !== undefined) {
-      const name = addressed[1]
-      const matches = claudeRecordsByName(name, records)
-      if (matches.length === 0) log(`no live Claude session named ${JSON.stringify(name)}`)
-      else if (matches.length > 1)
-        log(`${JSON.stringify(name)} names ${matches.length} live sessions; not delivering`)
-      else if (targets.some((t) => t.sessionId === matches[0]?.sessionId)) {
-        // Addressed to the session the reply already goes to: the reply path delivers it once.
-      } else {
-        const rec = matches[0] as ClaudeRecord
-        const allowed =
-          (rec.sessionId !== undefined && rec.sessionId in this.contacts) ||
-          process.env.QUALITYLAYER_PEERS_ALLOW_UNSOLICITED === "1"
-        if (allowed) targets.push(rec)
-        else {
-          log(
-            `dropping an unsolicited reply to ${JSON.stringify(name)}: no prior contact (set QUALITYLAYER_PEERS_ALLOW_UNSOLICITED=1 to allow)`,
-          )
-        }
-      }
-    }
-    const seen = new Set<string>()
-    for (const rec of targets) {
-      const sid = rec.sessionId ?? ""
-      if (seen.has(sid)) continue
-      seen.add(sid)
-      const spent = this.budgets[sid] ?? 0
-      const cap = this.capFor(sid)
-      if (spent >= cap) {
-        const detail =
-          `reply held, not delivered: the loop guard reached ${cap} consecutive replies for this peer. The held reply is kept; nothing else is lost. ` +
-          `\`qualitylayer peers budget allow ${this.threadId} --replies N\` raises this requester's total (up to ${BUDGET_ALLOW_MAX}) and releases the held reply; ` +
-          `\`qualitylayer peers budget reset ${this.threadId}\` releases the latest held reply and clears the guard; another peer, a direct Codex turn, or ${this.replyWindow} seconds idle also clears it but discards the held reply`
-        if (sid === tag?.sid) {
-          this.held[sid] = { text, mid: tag.mid, turn_id: turn.turn_id, at: nowSeconds() }
-        }
-        log(`reply budget of ${cap} spent for session ${rec.name ?? sid}; holding the reply`)
-        await this.statusTo(rec, sid === tag?.sid ? tag.mid : null, "failed", detail)
-        if (!this.budgetNotified.has(sid)) {
-          const notice =
-            `[qualitylayer peers] a reply from ${this.name} is held, not delivered: the reply budget of ${cap} consecutive replies is spent for this peer. ` +
-            `The held reply is kept; nothing else is lost. ` +
-            `Run \`qualitylayer peers budget allow ${this.threadId} --replies N\` (N up to ${BUDGET_ALLOW_MAX}, a total for this sequence) to continue and release the held reply, ` +
-            `or \`qualitylayer peers budget reset ${this.threadId}\` to release the latest held reply and clear the guard.`
-          if (
-            await deliverToRecord(
-              rec,
-              buildUserFrame(buildCcBody(notice, this.threadId, this.name, null)),
-            )
-          ) {
-            this.budgetNotified.add(sid)
-          }
-        }
-        continue
-      }
-      const out = sid === tag?.sid ? replyText(text, tag.mid) : text
-      let body: string
-      try {
-        body = buildCcBody(out, this.threadId, this.name, this.sockPath)
-      } catch (cause) {
-        log(`cannot build a reply for turn ${turn.turn_id}: ${(cause as Error).message}`)
-        break
-      }
-      if (await deliverToRecord(rec, buildUserFrame(body, this.sockPath))) {
-        this.budgets[sid] = spent + 1
-        // No body text in the log: it is a delivery record, not a transcript.
-        log(`delivered turn ${turn.turn_id} to ${rec.name ?? sid}`)
-      }
-    }
-    this.saveState()
+    return processTurnEnd(this, turn)
   }
-}
-
-/** SIGTERM the stand-in for a thread; never signals a pid it cannot prove it owns. */
-export async function stopShim(threadId: string): Promise<boolean> {
-  const pid = shimPid(threadId)
-  if (pid === null) return false
-  try {
-    process.kill(pid, "SIGTERM")
-  } catch {
-    return false
-  }
-  for (let i = 0; i < 30 && pidAlive(pid); i++) await Bun.sleep(100)
-  if (pidAlive(pid)) {
-    try {
-      process.kill(pid, "SIGKILL")
-    } catch {
-      // gone between the check and the kill
-    }
-  }
-  if (windows) {
-    for (let i = 0; i < 30 && pidAlive(pid); i++) await Bun.sleep(100)
-    if (pidAlive(pid)) return false
-    const recordPath = join(claudeSessionsDir(), `${pid}.json`)
-    const record = asRecord(readJson(recordPath, null))
-    if (record?.pid === pid && record.sessionId === threadId && record.entrypoint === "codex") {
-      if (typeof record.messagingSocketPath === "string")
-        unlinkQuiet(join(claudeSessionsDir(), peerKeyName(pid, record.messagingSocketPath)))
-      unlinkQuiet(recordPath)
-    }
-  }
-  unlinkQuiet(threadPidPath(threadId))
-  return true
 }

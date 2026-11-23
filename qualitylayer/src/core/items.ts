@@ -212,47 +212,35 @@ export type DecidedElsewhere = {
   drafts: number
 }
 
-/** The words of every kind, as the kind line starts. */
-export const KIND_LABEL: Record<ItemKind, string> = {
-  question: "Question for you",
-  confirm: "Only you can confirm",
-  decision: "Engineering decision",
-  decided: "Decided by the agent",
-  scope: "Out of scope",
-  "extra-review": "Extra review",
-  done: "Done means",
-  asked: "Is this what you asked for?",
-  mockup: "Mockup",
-  result: "Look at the result",
-  diagram: "Diagram",
-  found: "Found while checking",
-  deviation: "Decided by the agent during the build",
-  teammate: "Question from a teammate",
-  finding: "Found by a second agent",
-  note: "Your note",
-  handback: "Handed back",
+const KIND_META: Record<ItemKind, [string, ItemFamily]> = {
+  question: ["Question for you", "answer"],
+  confirm: ["Only you can confirm", "confirm"],
+  decision: ["Engineering decision", "decide"],
+  decided: ["Decided by the agent", "decide"],
+  scope: ["Out of scope", "decide"],
+  "extra-review": ["Extra review", "decide"],
+  done: ["Done means", "decide"],
+  asked: ["Is this what you asked for?", "decide"],
+  mockup: ["Mockup", "look"],
+  result: ["Look at the result", "look"],
+  diagram: ["Diagram", "look"],
+  found: ["Found while checking", "fix"],
+  deviation: ["Decided by the agent during the build", "fix"],
+  teammate: ["Question from a teammate", "answer"],
+  finding: ["Found by a second agent", "decide"],
+  note: ["Your note", "decide"],
+  handback: ["Handed back", "answer"],
 }
 
+/** The words of every kind, as the kind line starts. */
+export const KIND_LABEL = Object.fromEntries(
+  Object.entries(KIND_META).map(([kind, [label]]) => [kind, label]),
+) as Record<ItemKind, string>
+
 /** The family a kind belongs to when the server does not say otherwise. */
-export const FAMILY_OF: Record<ItemKind, ItemFamily> = {
-  question: "answer",
-  confirm: "confirm",
-  decision: "decide",
-  decided: "decide",
-  scope: "decide",
-  "extra-review": "decide",
-  done: "decide",
-  asked: "decide",
-  mockup: "look",
-  result: "look",
-  diagram: "look",
-  found: "fix",
-  deviation: "fix",
-  teammate: "answer",
-  finding: "decide",
-  note: "decide",
-  handback: "answer",
-}
+export const FAMILY_OF = Object.fromEntries(
+  Object.entries(KIND_META).map(([kind, [, family]]) => [kind, family]),
+) as Record<ItemKind, ItemFamily>
 
 /** Every answer's button, in the words of the Decide family. */
 export const ANSWER_LABEL: Record<AnswerKind, string> = {
@@ -383,7 +371,12 @@ export function openCount(items: readonly Item[], step?: FlowStepId): number {
 }
 
 /** The answers that need nothing from the agent: given the moment they are clicked. */
-const GIVEN_AT_ONCE: ReadonlySet<AnswerKind> = new Set(["agree", "accept", "fine", "keep"])
+export const GIVEN_AT_ONCE: ReadonlySet<AnswerKind> = new Set(["agree", "accept", "fine", "keep"])
+
+function chosenWaits(item: Item): boolean {
+  if (item.state !== "chosen") return false
+  return item.answer === undefined || !GIVEN_AT_ONCE.has(item.answer.kind) || item.updated === true
+}
 
 /**
  * An item waits while it is open, or answered here with an answer the agent must act on (a change,
@@ -391,10 +384,7 @@ const GIVEN_AT_ONCE: ReadonlySet<AnswerKind> = new Set(["agree", "accept", "fine
  * after it: then it waits again until what it says now is answered.
  */
 const waits = (item: Item): boolean =>
-  item.uncounted !== true &&
-  (item.state === "open" ||
-    (item.state === "chosen" &&
-      (item.answer === undefined || !GIVEN_AT_ONCE.has(item.answer.kind) || item.updated === true)))
+  item.uncounted !== true && (item.state === "open" || chosenWaits(item))
 
 /** Where an answer was given, as a row says it: "Answered in the chat" or "Answered in the App". */
 export const answeredWhere = (answer: ItemAnswer): string =>
@@ -528,142 +518,7 @@ export type ItemEnv = {
 export const pointText = (item: Pick<Item, "what" | "why">): string =>
   item.why !== undefined ? `${item.what}\n${item.why}` : item.what
 
-function answerFiles(
-  comment: ItemEnv["comments"][number],
-): Pick<ItemAnswer, "files" | "attachmentComment" | "recordAttachments"> {
-  if (comment.recordAttachments?.length) return { recordAttachments: comment.recordAttachments }
-  if (!comment.files?.length) return {}
-  return {
-    files: comment.files.map(({ name, type, size }) => ({ name, type, size })),
-    ...(comment.id ? { attachmentComment: comment.id } : {}),
-  }
-}
-
-export function resolveItem(item: Item, env: ItemEnv): Item {
-  const children = item.children?.map((child) => resolveItem(child, env))
-  const base: Item = { ...item, ...(children !== undefined ? { children } : {}) }
-  const mine = env.comments.filter(
-    (c) =>
-      c.item === item.id &&
-      c.kind !== undefined &&
-      (c.authorityDigest === undefined || c.authorityDigest === item.digest),
-  )
-  const draft = [...mine].reverse().find((c) => c.delivered !== true)
-  const sentOne = [...mine].reverse().find((c) => c.delivered === true)
-  const replied = [...mine].reverse().find((c) => c.delivered === true && c.answer !== undefined)
-  const reply =
-    replied?.answer !== undefined
-      ? { text: replied.answer, at: replied.answered ?? replied.created }
-      : undefined
-  const answerOf = (c: (typeof mine)[number]): ItemAnswer => ({
-    kind: c.kind as AnswerKind,
-    ...(c.remark.trim() !== "" ? { note: c.remark } : {}),
-    at: c.created,
-    ...(c.via !== undefined ? { via: c.via } : {}),
-    ...answerFiles(c),
-  })
-
-  // Confirmed by the person (attestations.json), whatever was answered before: it stays settled.
-  if (item.kind === "confirm" && item.state === "settled") return base
-
-  const rec = lastDecision(env.decided, targetOf(item.step), item.id)
-  const latest = mine.at(-1)
-  // Undo after pickup is a correction for the agent, not another chosen answer. A later
-  // formal decision still supersedes an earlier withdrawal.
-  if (latest?.kind === "revisit" && (rec === undefined || latest.created > rec.gate.at))
-    return {
-      ...base,
-      state: "open",
-      answer: undefined,
-      settledAt: undefined,
-      ...(reply ? { reply } : {}),
-    }
-  // A draft older than a decision that covered the item was never sent with it (the decision was
-  // made in the agent's window): it stays a comment, and the item stands as that decision left it.
-  const keptOnly = draft !== undefined && rec !== undefined && draft.created <= rec.gate.at
-  if (draft !== undefined && !keptOnly) {
-    return {
-      ...base,
-      state: "chosen",
-      answer: answerOf(draft),
-      ...(reply !== undefined ? { reply } : {}),
-      ...(draft.seen !== undefined && draft.seen !== item.digest ? { updated: true } : {}),
-    }
-  }
-  // An agreement to the current words stays given after the agent picks it up. An older
-  // changes-review baseline cannot reopen it merely because its draft became delivered.
-  if (
-    sentOne?.kind !== undefined &&
-    GIVEN_AT_ONCE.has(sentOne.kind) &&
-    item.digest !== undefined &&
-    sentOne.seen === item.digest &&
-    (rec === undefined || sentOne.created > rec.gate.at)
-  ) {
-    return {
-      ...base,
-      state: "sent",
-      answer: answerOf(sentOne),
-      ...(reply !== undefined ? { reply } : {}),
-    }
-  }
-  if (rec === undefined) {
-    if (item.state === "settled") return base
-    // Said in the chat: the agent heard it there, so an agreement settles the item at once, while a
-    // change (or words that settle nothing) leaves it open beside what was said.
-    if (sentOne?.via === "chat") {
-      const answer = answerOf(sentOne)
-      return asksForChange(answer.kind) || answer.kind === "reply"
-        ? { ...base, state: "open", answer }
-        : { ...base, state: "settled", settledAt: sentOne.created, answer }
-    }
-    if (sentOne !== undefined)
-      return {
-        ...base,
-        state: "sent",
-        answer: answerOf(sentOne),
-        ...(reply !== undefined ? { reply } : {}),
-      }
-    return base
-  }
-  const sameRevision =
-    env.revision !== undefined &&
-    rec.gate.revision !== undefined &&
-    env.revision === rec.gate.revision
-  if (!sameRevision && rec.item.digest !== item.digest) {
-    return {
-      ...base,
-      state: "open",
-      changedSinceReview: true,
-      ...(reply !== undefined ? { reply } : {}),
-    }
-  }
-  const kind = rec.item.answer
-  // The agent answered what you asked and opened the gate again: the answer comes back to you,
-  // next to what you asked, whether or not it changed the item.
-  if (kind !== null && asksForChange(kind) && !sameRevision && reply !== undefined) {
-    return {
-      ...base,
-      state: "open",
-      answer: sentOne !== undefined ? answerOf(sentOne) : { kind, at: rec.gate.at },
-      reply,
-    }
-  }
-  if (kind !== null && asksForChange(kind)) {
-    return {
-      ...base,
-      state: "sent",
-      answer: sentOne !== undefined ? answerOf(sentOne) : { kind, at: rec.gate.at },
-      ...(reply !== undefined ? { reply } : {}),
-    }
-  }
-  return {
-    ...base,
-    state: "settled",
-    settledAt: rec.gate.at,
-    ...(kind !== null ? { answer: { kind, at: rec.gate.at } } : {}),
-    ...(reply !== undefined ? { reply } : {}),
-  }
-}
+export { resolveItem } from "./items-resolve.ts"
 
 // ---------------------------------------------------------------- what a step page shows besides items
 

@@ -4,7 +4,7 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { checksReadyForReview, latestRuns, readCheckRecords } from "../checks.ts"
+import { type CheckRecord, checksReadyForReview, latestRuns, readCheckRecords } from "../checks.ts"
 import { buildOwnPaths } from "../gate/revision.ts"
 import { revisionPaths } from "../git/revision-paths.ts"
 import { releaseWaiting } from "../judge-environment.ts"
@@ -16,17 +16,47 @@ import { answeredQuestions } from "./question.ts"
 import { type VerifyMode, verifyModeOf } from "./stages.ts"
 import { readEvents, type Task } from "./store.ts"
 
+function isFreshPassingRun(r: CheckRecord, at: number): boolean {
+  if (r.at <= at || !r.ran || r.reused === true) return false
+  return r.exit === 0 && !r.notRun && r.timedOut !== true
+}
+
 /** The project checks show the environment works again: each latest run is a fresh pass after the exit. */
 async function checksWorkSince(ctx: Ctx, task: Task, at: number): Promise<boolean> {
   const latest = latestRuns(await readCheckRecords(ctx, task)).filter((r) => r.scope === "all")
   return (
     latest.length > 0 &&
-    latest.every(
-      (r) =>
-        r.at > at && r.ran && r.reused !== true && r.exit === 0 && !r.notRun && r.timedOut !== true,
-    ) &&
+    latest.every((r) => isFreshPassingRun(r, at)) &&
     (await checksReadyForReview(ctx, task))
   )
+}
+
+const exitGoneChecks: Partial<
+  Record<VerifyExit["reason"], (ctx: Ctx, task: Task, exit: VerifyExit) => Promise<boolean>>
+> = {
+  fix_cap: async (ctx, task, exit) => {
+    // Old automatic stops lift unless this exact question already reached the person.
+    const base = exit.id.replace(/-r\d+$/, "")
+    return (
+      (await openExitQuestion(ctx, task, exit.id)) === null &&
+      !(await answeredQuestions(ctx, task)).some((a) => a.id?.replace(/-r\d+$/, "") === base)
+    )
+  },
+  person_needed: async (ctx, task) => openNeeds(await readNeeds(ctx, task)).length === 0,
+  release_wait: async (ctx, task) => (await releaseWaiting(ctx, task))?.exhausted !== true,
+  check_budget: async (ctx, task) =>
+    (await checksReadyForReview(ctx, task)) &&
+    (await redProjectChecks(ctx, task)).every((record) => record.timedOut !== true),
+  environment: async (ctx, task, exit) => {
+    const open = openNeeds(await readNeeds(ctx, task)).map((need) => need.for)
+    const needs = exit.needs ?? []
+    if (needs.length > 0 && needs.every((id) => !open.includes(id))) return true
+    return checksWorkSince(ctx, task, exit.at)
+  },
+  red_base: async (ctx, task) => {
+    const { red, excused } = await projectRedState(ctx, task)
+    return !red.some((r) => excused.standing.get(r)?.state === "unmatched")
+  },
 }
 
 /**
@@ -34,37 +64,8 @@ async function checksWorkSince(ctx: Ctx, task: Task, at: number): Promise<boolea
  * the timed-out checks passed since, the environment working again, the red base matched or fixed.
  */
 export async function exitCauseGone(ctx: Ctx, task: Task, exit: VerifyExit): Promise<boolean> {
-  switch (exit.reason) {
-    case "fix_cap":
-      // Old automatic stops lift unless this exact question already reached the person.
-      return (
-        (await openExitQuestion(ctx, task, exit.id)) === null &&
-        !(await answeredQuestions(ctx, task)).some(
-          (answer) => answer.id?.replace(/-r\d+$/, "") === exit.id.replace(/-r\d+$/, ""),
-        )
-      )
-    case "person_needed":
-      return openNeeds(await readNeeds(ctx, task)).length === 0
-    case "release_wait":
-      return (await releaseWaiting(ctx, task))?.exhausted !== true
-    case "check_budget":
-      return (
-        (await checksReadyForReview(ctx, task)) &&
-        (await redProjectChecks(ctx, task)).every((record) => record.timedOut !== true)
-      )
-    case "environment": {
-      const open = openNeeds(await readNeeds(ctx, task)).map((need) => need.for)
-      const needs = exit.needs ?? []
-      if (needs.length > 0 && needs.every((id) => !open.includes(id))) return true
-      return checksWorkSince(ctx, task, exit.at)
-    }
-    case "red_base": {
-      const { red, excused } = await projectRedState(ctx, task)
-      return !red.some((r) => excused.standing.get(r)?.state === "unmatched")
-    }
-    default:
-      return false
-  }
+  const check = exitGoneChecks[exit.reason]
+  return check ? check(ctx, task, exit) : false
 }
 
 /** The mode of a task in Verify, or null for a task in any other stage. */
@@ -151,18 +152,27 @@ async function ownFilesDirty(ctx: Ctx, task: Task): Promise<string> {
   return status?.code === 0 ? status.stdout : ""
 }
 
+async function passCacheKey(
+  ctx: Ctx,
+  task: Task,
+  judged: string,
+  seen: number,
+): Promise<string | null> {
+  const head = await headCommit(ctx, task.repoRoot)
+  if (head === null) return null
+  // HEAD is the judged commit: only the task's own files left changed uncommitted can withdraw it.
+  const dirty = head === judged ? await ownFilesDirty(ctx, task) : ""
+  if (head === judged && dirty === "") return null
+  return `${head}|${dirty}|${seen}`
+}
+
 async function ownChangeSincePass(ctx: Ctx, task: Task, seen: number): Promise<boolean> {
   const receipt = await readAssignment(ctx, task)
   // A judge handed out after the pass and not ruled yet: Verify rechecks.
   if (receipt !== null && receipt.result !== "pass") return true
   const judged = receipt?.head
-  if (judged === undefined) return false
-  const head = await headCommit(ctx, task.repoRoot)
-  if (head === null) return false
-  // HEAD is the judged commit: only the task's own files left changed uncommitted can withdraw it.
-  const dirty = head === judged ? await ownFilesDirty(ctx, task) : ""
-  if (head === judged && dirty === "") return false
-  const key = `${head}|${dirty}|${seen}`
+  const key = judged === undefined ? null : await passCacheKey(ctx, task, judged, seen)
+  if (key === null) return false
   const cached = standings.get(task.runtimeDir)
   if (cached?.key === key) return cached.withdrawn
   const withdrawn = !(await passStanding(ctx, task)).stands

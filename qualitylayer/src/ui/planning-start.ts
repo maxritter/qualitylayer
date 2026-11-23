@@ -1,20 +1,24 @@
 import { type PlanningLaunch, planningLaunchOf } from "../core/config-values.ts"
 import type { RunWindow } from "./run-context.tsx"
 
+function isPlanningPurpose(purpose: RunWindow["purpose"]): boolean {
+  if (purpose.kind === "new-task") return true
+  return purpose.kind === "task" && purpose.phase === "planning"
+}
+
+function isRetainedPlanningRun(candidate: RunWindow, task: string | undefined): boolean {
+  if (task !== undefined && candidate.task !== task) return false
+  if (candidate.startPhase !== "ready" || candidate.status === "failed") return false
+  return isPlanningPurpose(candidate.purpose)
+}
+
 /** Older tasks can retain their successful planning setup in a native run. */
 export function retainedPlanningStart(
   task: string | undefined,
   runs: readonly RunWindow[],
 ): PlanningLaunch | null {
   const run = runs
-    .filter(
-      (candidate) =>
-        (task === undefined || candidate.task === task) &&
-        candidate.startPhase === "ready" &&
-        candidate.status !== "failed" &&
-        (candidate.purpose.kind === "new-task" ||
-          (candidate.purpose.kind === "task" && candidate.purpose.phase === "planning")),
-    )
+    .filter((candidate) => isRetainedPlanningRun(candidate, task))
     .sort((a, b) =>
       task ? b.updatedAt.localeCompare(a.updatedAt) : b.startedAt.localeCompare(a.startedAt),
     )[0]

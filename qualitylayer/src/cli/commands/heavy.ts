@@ -22,66 +22,72 @@ function flag(args: string[], name: string): string | undefined {
   return at === -1 ? undefined : args[at + 1]
 }
 
+async function heavyStatus(ctx: Ctx): Promise<Result<unknown>> {
+  const hold = await readHeavy(ctx)
+  if (hold === null) return ok({ held: false, message: "The machine is free." })
+  return ok({
+    held: true,
+    holder: hold.holder,
+    reason: hold.reason,
+    since: hold.since,
+    until: hold.until,
+    message: `The machine is held by ${hold.holder} for ${hold.reason} ${untilText(hold)}.`,
+  })
+}
+
+async function heavyRelease(ctx: Ctx, lease: string | undefined): Promise<Result<unknown>> {
+  if (lease === undefined)
+    return err({
+      code: "bad_args",
+      message:
+        "Release needs the lease that `qualitylayer heavy hold` printed: `qualitylayer heavy release --lease <id>`.",
+    })
+  const done = await releaseHeavy(ctx, lease)
+  if (!done.ok) return done
+  return ok({
+    released: done.data.released,
+    message: done.data.released
+      ? "The machine is released."
+      : "That lease holds nothing; run `qualitylayer heavy status` to see who holds the machine.",
+  })
+}
+
+async function heavyHold(
+  ctx: Ctx,
+  rest: string[],
+  holder: string,
+  lease: string | undefined,
+): Promise<Result<unknown>> {
+  const reason = flag(rest, "reason")
+  if (reason === undefined || reason.trim() === "") return err({ code: "bad_args", message: USAGE })
+  const untilArg = flag(rest, "until")
+  const until = untilArg === undefined ? null : parseUntil(untilArg, ctx.clock.now())
+  if (untilArg !== undefined && until === null)
+    return err({
+      code: "bad_args",
+      message: `--until wants HH:MM or an ISO time, not "${untilArg}"`,
+    })
+  // The hold ends with the session that took it (this call's parent), not with this short call.
+  const held = await holdHeavy(ctx, { holder, reason, until, pid: process.ppid, lease })
+  if (!held.ok) return held
+  return ok({
+    held: true,
+    holder: held.data.holder,
+    reason: held.data.reason,
+    since: held.data.since,
+    until: held.data.until,
+    lease: held.data.lease,
+    message: `${held.data.holder} holds the machine for ${held.data.reason} ${untilText(held.data)}. Release it with \`qualitylayer heavy release --lease ${held.data.lease}\`.`,
+  })
+}
+
 export async function heavyCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const [sub, ...rest] = args
   const holder = flag(rest, "holder")?.trim() || defaultHolder(ctx)
   // The lease of the caller's own hold: the flag, else the environment of a run its holder started.
   const lease = flag(rest, "lease")?.trim() || ctx.env.get(HEAVY_LEASE_ENV)?.trim() || undefined
-
-  if (sub === "status") {
-    const hold = await readHeavy(ctx)
-    if (hold === null) return ok({ held: false, message: "The machine is free." })
-    return ok({
-      held: true,
-      holder: hold.holder,
-      reason: hold.reason,
-      since: hold.since,
-      until: hold.until,
-      message: `The machine is held by ${hold.holder} for ${hold.reason} ${untilText(hold)}.`,
-    })
-  }
-
-  if (sub === "release") {
-    if (lease === undefined)
-      return err({
-        code: "bad_args",
-        message:
-          "Release needs the lease that `qualitylayer heavy hold` printed: `qualitylayer heavy release --lease <id>`.",
-      })
-    const done = await releaseHeavy(ctx, lease)
-    if (!done.ok) return done
-    return ok({
-      released: done.data.released,
-      message: done.data.released
-        ? "The machine is released."
-        : "That lease holds nothing; run `qualitylayer heavy status` to see who holds the machine.",
-    })
-  }
-
-  if (sub === "hold") {
-    const reason = flag(rest, "reason")
-    if (reason === undefined || reason.trim() === "")
-      return err({ code: "bad_args", message: USAGE })
-    const untilArg = flag(rest, "until")
-    const until = untilArg === undefined ? null : parseUntil(untilArg, ctx.clock.now())
-    if (untilArg !== undefined && until === null)
-      return err({
-        code: "bad_args",
-        message: `--until wants HH:MM or an ISO time, not "${untilArg}"`,
-      })
-    // The hold ends with the session that took it (this call's parent), not with this short call.
-    const held = await holdHeavy(ctx, { holder, reason, until, pid: process.ppid, lease })
-    if (!held.ok) return held
-    return ok({
-      held: true,
-      holder: held.data.holder,
-      reason: held.data.reason,
-      since: held.data.since,
-      until: held.data.until,
-      lease: held.data.lease,
-      message: `${held.data.holder} holds the machine for ${held.data.reason} ${untilText(held.data)}. Release it with \`qualitylayer heavy release --lease ${held.data.lease}\`.`,
-    })
-  }
-
+  if (sub === "status") return heavyStatus(ctx)
+  if (sub === "release") return heavyRelease(ctx, lease)
+  if (sub === "hold") return heavyHold(ctx, rest, holder, lease)
   return err({ code: "bad_args", message: USAGE })
 }

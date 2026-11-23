@@ -17,6 +17,31 @@ export const freshKey = (id: string, generation: number) =>
   `fresh:${createHash("sha256").update(`${id}:${generation}`).digest("hex")}`
 export const freshPath = (ctx: Pick<Ctx, "home">, run: Pick<RunRecord, "id">) =>
   join(runDir(ctx.home, run.id), "fresh-conversation.json")
+const FRESH_STATES = new Set<FreshState["state"]>([
+  "prepared",
+  "source-stopped",
+  "started",
+  "failed",
+])
+
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1
+}
+
+function isValidFreshJournal(value: FreshJournal, runId: string): boolean {
+  const validHeader =
+    value.version === 1 && isPositiveInt(value.generation) && isPositiveInt(value.sequence)
+  const validStrings =
+    typeof value.context === "string" &&
+    value.context.length <= 2048 &&
+    typeof value.sourceSession === "string" &&
+    value.sourceSession.length <= 128
+  const validDestination =
+    value.destination === undefined || /^[a-f0-9-]{1,128}$/.test(value.destination)
+  if (!validHeader || !validStrings || !validDestination) return false
+  return value.key === freshKey(runId, value.generation) && FRESH_STATES.has(value.state)
+}
+
 export async function readFreshJournal(ctx: Ctx, run: RunRecord): Promise<FreshJournal | null> {
   const path = freshPath(ctx, run)
   if (!(await ctx.fs.exists(path))) return null
@@ -33,20 +58,7 @@ export async function readFreshJournal(ctx: Ctx, run: RunRecord): Promise<FreshJ
       "Fresh conversation state exceeds its limit. The previous conversation is kept.",
     )
   const value = JSON.parse(text) as FreshJournal
-  if (
-    value.version !== 1 ||
-    !Number.isSafeInteger(value.generation) ||
-    value.generation < 1 ||
-    !Number.isSafeInteger(value.sequence) ||
-    value.sequence < 1 ||
-    value.key !== freshKey(run.id, value.generation) ||
-    typeof value.context !== "string" ||
-    value.context.length > 2048 ||
-    typeof value.sourceSession !== "string" ||
-    value.sourceSession.length > 128 ||
-    !["prepared", "source-stopped", "started", "failed"].includes(value.state) ||
-    (value.destination !== undefined && !/^[a-f0-9-]{1,128}$/.test(value.destination))
-  )
+  if (!isValidFreshJournal(value, run.id))
     throw new Error(
       "Fresh conversation state cannot be verified. The previous conversation is kept.",
     )
@@ -80,13 +92,16 @@ export async function assertPreviousMayResume(ctx: Ctx, run: RunRecord): Promise
     },
     ...(host?.descendants ?? []),
   ]
-  if (
-    !["stopped", "failed"].includes(destination.status) ||
-    destination.cleanup?.complete !== true ||
-    host?.cleanup?.complete === false ||
-    identities.some((identity) => identity && identityState(identity) !== "dead") ||
-    (!host && (await ctx.fs.exists(join(runDir(ctx.home, destination.id), "host.lock"))))
+  const cleanStopped =
+    ["stopped", "failed"].includes(destination.status) &&
+    destination.cleanup?.complete === true &&
+    host?.cleanup?.complete !== false
+  const hasLiveIdentity = identities.some(
+    (identity) => identity && identityState(identity) !== "dead",
   )
+  const hasHostLock =
+    !host && (await ctx.fs.exists(join(runDir(ctx.home, destination.id), "host.lock")))
+  if (!cleanStopped || hasLiveIdentity || hasHostLock)
     throw new Error(
       "A newer conversation is running or its cleanup is unverified. Open or stop it before resuming this one.",
     )

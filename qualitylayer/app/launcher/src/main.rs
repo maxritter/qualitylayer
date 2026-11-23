@@ -11,80 +11,15 @@
 // with `say!`/`say_err!` (qualitylayer_launcher::out) instead.
 #![deny(clippy::print_stdout, clippy::print_stderr, clippy::dbg_macro)]
 
+mod json_cli;
+
+use json_cli::parse_cli;
 use qualitylayer_launcher::{private_files, problem, quality_layer_home, say_err, update_lock};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs, thread};
-
-/// The text of a JSON string whose opening quote has been read, or None when it is malformed.
-fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<String> {
-    let mut out = String::new();
-    loop {
-        match chars.next()? {
-            '"' => return Some(out),
-            '\\' => match chars.next()? {
-                '"' => out.push('"'),
-                '\\' => out.push('\\'),
-                '/' => out.push('/'),
-                'b' => out.push('\u{8}'),
-                'f' => out.push('\u{c}'),
-                'n' => out.push('\n'),
-                'r' => out.push('\r'),
-                't' => out.push('\t'),
-                'u' => out.push(read_unicode(chars)?),
-                _ => return None,
-            },
-            other => out.push(other),
-        }
-    }
-}
-
-/// `XXXX` after `\u`, joining a surrogate pair into one character.
-fn read_unicode(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<char> {
-    let unit = |chars: &mut std::iter::Peekable<std::str::Chars>| -> Option<u32> {
-        let hex: String = (0..4).map(|_| chars.next()).collect::<Option<_>>()?;
-        u32::from_str_radix(&hex, 16).ok()
-    };
-    let first = unit(chars)?;
-    if !(0xD800..0xDC00).contains(&first) {
-        return char::from_u32(first);
-    }
-    if chars.next()? != '\\' || chars.next()? != 'u' {
-        return None;
-    }
-    let second = unit(chars)?;
-    char::from_u32(0x10000 + ((first - 0xD800) << 10) + second.checked_sub(0xDC00)?)
-}
-
-/// The `cli` string of app.json's top-level object.
-fn parse_cli(text: &str) -> Option<String> {
-    let mut chars = text.chars().peekable();
-    let mut depth = 0u32;
-    while let Some(c) = chars.next() {
-        match c {
-            '{' | '[' => depth += 1,
-            '}' | ']' => depth = depth.saturating_sub(1),
-            '"' => {
-                let text = read_string(&mut chars)?;
-                if depth != 1 {
-                    continue;
-                }
-                while chars.next_if(|c| c.is_whitespace()).is_some() {}
-                if chars.next_if_eq(&':').is_none() {
-                    continue;
-                }
-                while chars.next_if(|c| c.is_whitespace()).is_some() {}
-                if text == "cli" && chars.next_if_eq(&'"').is_some() {
-                    return read_string(&mut chars);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
 
 /// Whether an agent's hook is calling, not a person typing: `qualitylayer hook <event>`, or the
 /// session start hook that attaches the session to the peers board (`qualitylayer peers session-hook`).

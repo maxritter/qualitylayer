@@ -6,21 +6,39 @@ const MAX_WORD_CHARS = 100
 
 export type Tokenizer = { encode(text: string): number[] }
 
-const isControl = (char: string, code: number) =>
-  code === 0xfffd || (/^\p{C}$/u.test(char) && code !== 9 && code !== 10 && code !== 13)
-const isPunctuation = (char: string, code: number) =>
-  (code >= 33 && code <= 47) ||
-  (code >= 58 && code <= 64) ||
-  (code >= 91 && code <= 96) ||
-  (code >= 123 && code <= 126) ||
-  /^\p{P}$/u.test(char)
-const isCjk = (code: number) =>
-  (code >= 0x4e00 && code <= 0x9fff) ||
-  (code >= 0x3400 && code <= 0x4dbf) ||
-  (code >= 0x20000 && code <= 0x2a6df) ||
-  (code >= 0x2a700 && code <= 0x2ceaf) ||
-  (code >= 0xf900 && code <= 0xfaff) ||
-  (code >= 0x2f800 && code <= 0x2fa1f)
+const WHITESPACE_CONTROL_CODES = new Set([9, 10, 13])
+const ASCII_PUNCTUATION_RANGES: readonly (readonly [number, number])[] = [
+  [33, 47],
+  [58, 64],
+  [91, 96],
+  [123, 126],
+]
+const CJK_RANGES: readonly (readonly [number, number])[] = [
+  [0x4e00, 0x9fff],
+  [0x3400, 0x4dbf],
+  [0x20000, 0x2a6df],
+  [0x2a700, 0x2ceaf],
+  [0xf900, 0xfaff],
+  [0x2f800, 0x2fa1f],
+]
+
+function inCodeRanges(code: number, ranges: readonly (readonly [number, number])[]): boolean {
+  return ranges.some(([start, end]) => code >= start && code <= end)
+}
+
+function isControl(char: string, code: number): boolean {
+  if (code === 0xfffd) return true
+  if (WHITESPACE_CONTROL_CODES.has(code)) return false
+  return /^\p{C}$/u.test(char)
+}
+
+function isSplitChar(char: string, code: number): boolean {
+  return (
+    inCodeRanges(code, ASCII_PUNCTUATION_RANGES) ||
+    inCodeRanges(code, CJK_RANGES) ||
+    /^\p{P}$/u.test(char)
+  )
+}
 
 /** Whitespace and punctuation split the text; each CJK character stands alone. */
 function basicTokens(text: string): string[] {
@@ -38,7 +56,7 @@ function basicTokens(text: string): string[] {
     const code = char.codePointAt(0) as number
     if (isControl(char, code)) continue
     if (/^\s$/u.test(char)) flush()
-    else if (isPunctuation(char, code) || isCjk(code)) {
+    else if (isSplitChar(char, code)) {
       flush()
       out.push(char)
     } else word += char
@@ -47,48 +65,62 @@ function basicTokens(text: string): string[] {
   return out
 }
 
-export function createTokenizer(vocabulary: string, maxTokens = MAX_TOKENS): Tokenizer {
+function parseVocabulary(vocabulary: string): Map<string, number> {
   const ids = new Map<string, number>()
   for (const [index, line] of vocabulary.split("\n").entries()) {
     const piece = line.replace(/\r$/, "")
     if (piece) ids.set(piece, index)
   }
-  const id = (piece: string): number => {
-    const found = ids.get(piece)
-    if (found === undefined) throw new Error(`The vocabulary has no ${piece}`)
-    return found
-  }
-  const [cls, sep, unk] = [id("[CLS]"), id("[SEP]"), id("[UNK]")]
+  return ids
+}
 
-  function pieces(word: string): number[] {
-    const chars = [...word]
-    if (chars.length > MAX_WORD_CHARS) return [unk]
-    const out: number[] = []
-    let start = 0
-    while (start < chars.length) {
-      let end = chars.length,
-        found: number | undefined
-      while (start < end) {
-        const piece = (start > 0 ? "##" : "") + chars.slice(start, end).join("")
-        found = ids.get(piece)
-        if (found !== undefined) break
-        end--
-      }
-      if (found === undefined) return [unk]
-      out.push(found)
-      start = end
-    }
-    return out
-  }
+function requirePieceId(ids: Map<string, number>, piece: string): number {
+  const found = ids.get(piece)
+  if (found === undefined) throw new Error(`The vocabulary has no ${piece}`)
+  return found
+}
 
+function matchLongestPiece(
+  ids: Map<string, number>,
+  chars: string[],
+  start: number,
+): { id: number; end: number } | undefined {
+  const prefix = start > 0 ? "##" : ""
+  for (let end = chars.length; end > start; end--) {
+    const id = ids.get(prefix + chars.slice(start, end).join(""))
+    if (id !== undefined) return { id, end }
+  }
+  return undefined
+}
+
+function encodeWordPieces(ids: Map<string, number>, unk: number, word: string): number[] {
+  const chars = [...word]
+  if (chars.length > MAX_WORD_CHARS) return [unk]
+  const out: number[] = []
+  let start = 0
+  while (start < chars.length) {
+    const match = matchLongestPiece(ids, chars, start)
+    if (!match) return [unk]
+    out.push(match.id)
+    start = match.end
+  }
+  return out
+}
+
+export function createTokenizer(vocabulary: string, maxTokens = MAX_TOKENS): Tokenizer {
+  const ids = parseVocabulary(vocabulary)
+  const cls = requirePieceId(ids, "[CLS]")
+  const sep = requirePieceId(ids, "[SEP]")
+  const unk = requirePieceId(ids, "[UNK]")
+  const limit = maxTokens - 2
   return {
     encode(text) {
       const body: number[] = []
       for (const word of basicTokens(text)) {
-        body.push(...pieces(word))
-        if (body.length >= maxTokens - 2) break
+        body.push(...encodeWordPieces(ids, unk, word))
+        if (body.length >= limit) break
       }
-      return [cls, ...body.slice(0, maxTokens - 2), sep]
+      return [cls, ...body.slice(0, limit), sep]
     },
   }
 }

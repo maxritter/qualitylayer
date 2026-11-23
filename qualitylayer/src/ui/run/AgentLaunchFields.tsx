@@ -1,5 +1,4 @@
-import { type ReactNode, useId } from "react"
-import { Input } from "@/components/ui/input"
+import type { ReactNode } from "react"
 import {
   AGENT_DISPLAY_ORDER,
   AGENT_NAMES,
@@ -25,9 +24,26 @@ import {
   recommendedModel,
   toPick,
 } from "../settings/Defaults.tsx"
+import {
+  AgentLaunchWorkspace,
+  invalidBranchName,
+  type LaunchContested,
+  type LaunchWorkspaceValue,
+  launchContestedLine,
+  launchWorkspaceProblem,
+} from "./AgentLaunchWorkspace.tsx"
 import { LaunchChoice } from "./LaunchChoice.tsx"
 import { groupedByFamily } from "./model-family.ts"
 import "./agent-launch-fields.css"
+
+export {
+  AgentLaunchWorkspace,
+  invalidBranchName,
+  type LaunchContested,
+  type LaunchWorkspaceValue,
+  launchContestedLine,
+  launchWorkspaceProblem,
+}
 
 export type AgentLaunchValue = {
   agent: DefaultsAgent
@@ -75,172 +91,6 @@ export type AgentLaunchFieldsProps = {
   heading?: { label: string; icon: ReactNode }
   /** What follows the row inside the same block: the extra planners, the build's explanation. */
   afterModels?: ReactNode
-}
-
-export type LaunchWorkspaceValue = {
-  works: "checkout" | "branch" | "worktree"
-  branch: string
-  worktreePath: string
-}
-
-/** Git remains authoritative; this catches the names it would refuse before anything starts. */
-export const invalidBranchName = (branch: string): boolean =>
-  !branch ||
-  branch.startsWith("-") ||
-  /[\s~^:?*[\\]/.test(branch) ||
-  branch.includes("..") ||
-  branch.includes("@{") ||
-  branch.startsWith("/") ||
-  branch.endsWith("/") ||
-  branch.endsWith(".") ||
-  branch.endsWith(".lock") ||
-  branch.includes("//")
-
-/** Git remains authoritative; these checks prevent an obviously incomplete launch. */
-export function launchWorkspaceProblem(value: LaunchWorkspaceValue): string | null {
-  if (value.works === "checkout") return null
-  if (invalidBranchName(value.branch)) return "Choose a valid new branch name."
-  if (
-    value.works === "worktree" &&
-    (!/^(\/|[A-Za-z]:[\\/]|\\\\)/.test(value.worktreePath) || value.worktreePath.includes("\0"))
-  )
-    return "Choose an absolute folder for the new worktree."
-  return null
-}
-
-/**
- * Why this checkout is contested: files this Plan changes hold uncommitted edits here (`overlap`),
- * another agent session works in it, or it holds work from elsewhere.
- */
-export type LaunchContested = { kind: "overlap" | "session" | "changes"; count?: number }
-
-/** The line under the workspace summary: a recommendation for a worktree, the cost for anything else. */
-export function launchContestedLine(
-  contested: LaunchContested,
-  works: LaunchWorkspaceValue["works"],
-) {
-  const count = contested.count ?? 0
-  // A new worktree starts from HEAD, so it never has these edits: the build stays here to keep them.
-  if (contested.kind === "overlap") {
-    const files = `${count} ${count === 1 ? "file" : "files"}`
-    return works === "worktree"
-      ? `A new worktree starts without the uncommitted edits to ${files} this Plan changes.`
-      : `${files} this Plan changes ${count === 1 ? "has" : "have"} uncommitted edits here, so the build stays in this checkout to keep them.`
-  }
-  const lead =
-    contested.kind === "session"
-      ? "another agent session is working in this checkout."
-      : `${count} ${count === 1 ? "file here has" : "files here have"} uncommitted changes from other work.`
-  return works === "worktree"
-    ? `Recommended: ${lead}`
-    : `${lead.charAt(0).toUpperCase()}${lead.slice(1)} Commits from both may wait for each other.`
-}
-
-export function AgentLaunchWorkspace({
-  value,
-  onChange,
-  checkout,
-  currentBranch,
-  baseBranch,
-  loading = false,
-  unavailable = false,
-  disabled = false,
-  scope = "Launch",
-  contested = null,
-}: {
-  value: LaunchWorkspaceValue
-  onChange: (patch: Partial<LaunchWorkspaceValue>) => void
-  checkout: string | null
-  currentBranch?: string | null
-  baseBranch?: string | null
-  loading?: boolean
-  unavailable?: boolean
-  disabled?: boolean
-  scope?: string
-  contested?: LaunchContested | null
-}) {
-  const id = useId()
-  const problem = launchWorkspaceProblem(value)
-  return (
-    <section className="q-launch-workspace" title={checkout ?? undefined}>
-      <div className="q-launch-workspace-heading">
-        <span>Workspace</span>
-        {currentBranch ? <small title={checkout ?? undefined}>{currentBranch}</small> : null}
-      </div>
-      {contested ? (
-        <p className="q-launch-why">{launchContestedLine(contested, value.works)}</p>
-      ) : null}
-      {!checkout ? <p className="q-lands-note">The project checkout is unavailable.</p> : null}
-      {loading || unavailable ? (
-        <p className="q-lands-note" role="status">
-          {loading
-            ? "Reading the build branch…"
-            : "The build branch and pull request target are unavailable."}
-        </p>
-      ) : null}
-      <ModelPick
-        label={`${scope}: workspace`}
-        look="row"
-        value={value.works}
-        disabled={disabled}
-        options={[
-          { id: "checkout", name: "Project checkout" },
-          { id: "branch", name: "New branch" },
-          { id: "worktree", name: "New worktree" },
-        ]}
-        onChange={(works) => onChange({ works: works as LaunchWorkspaceValue["works"] })}
-      />
-      {value.works !== "checkout" ? (
-        <label htmlFor={`${id}-branch`}>
-          New branch
-          <Input
-            id={`${id}-branch`}
-            aria-label={`${scope}: new branch`}
-            value={value.branch}
-            disabled={disabled}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => onChange({ branch: event.target.value })}
-          />
-        </label>
-      ) : null}
-      {value.works === "worktree" ? (
-        <label htmlFor={`${id}-worktree`}>
-          Worktree folder
-          <Input
-            id={`${id}-worktree`}
-            aria-label={`${scope}: worktree folder`}
-            value={value.worktreePath}
-            disabled={disabled}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => onChange({ worktreePath: event.target.value })}
-          />
-        </label>
-      ) : null}
-      {value.works !== "checkout" ? (
-        <p className="q-lands-note">
-          Starts from this checkout's HEAD.{" "}
-          {baseBranch ? (
-            <>
-              The pull request targets <code>{baseBranch}</code>.
-            </>
-          ) : null}
-        </p>
-      ) : null}
-      {value.works === "checkout" && currentBranch && currentBranch === baseBranch ? (
-        <p className="q-lands-note">
-          This is the pull request target branch. Choose a new branch before opening a pull request
-          in Verify.
-        </p>
-      ) : null}
-      {problem ? (
-        <p className="q-lands-note" role="status">
-          {problem}
-        </p>
-      ) : null}
-    </section>
-  )
 }
 
 /**
@@ -313,6 +163,140 @@ export function agentModelChoices(agent: NativeAgent, model: string, defaultMode
   )
 }
 
+function buildAgentOptions(
+  available: NativeAgent[],
+  current: DefaultsAgent,
+  unavailable: boolean,
+  nativeOnly: boolean,
+): PickOption[] {
+  const mark = (agent: string) => <AgentMark agent={agent} size={14} />
+  const options: PickOption[] = AGENT_DISPLAY_ORDER.filter((agent) =>
+    available.includes(agent),
+  ).map((agent) => ({ id: agent, name: AGENT_NAMES[agent], icon: mark(agent) }))
+  if (unavailable && current !== "other") {
+    options.push({
+      id: current,
+      name: `${AGENT_NAMES[current]} · unavailable`,
+      icon: mark(current),
+    })
+  }
+  if (!nativeOnly || current === "other") {
+    options.push({
+      id: "other",
+      name: "Another agent",
+      apart: available.length > 0,
+      icon: mark("other"),
+    })
+  }
+  return options
+}
+
+function agentSelectionPatch(next: string): Partial<AgentLaunchValue> {
+  const agent = next as DefaultsAgent
+  if (agent === "other") return { agent, model: "", effort: "high", runWhere: "terminal" }
+  const model = (agent === "pi" ? startModel(agent) : undefined) ?? recommendedModel(agent)
+  return { agent, model, effort: "high" }
+}
+
+function LaunchStatusNotes({
+  own,
+  retainSettings,
+  loading,
+  availableCount,
+  unavailable,
+}: {
+  own: NativeAgent | null
+  retainSettings: boolean
+  loading: boolean
+  availableCount: number
+  unavailable: boolean
+}) {
+  return (
+    <>
+      {own && retainSettings ? (
+        <p className="q-lands-note">Keeps the current session’s model and effort.</p>
+      ) : null}
+      {loading ? (
+        <p className="q-lands-note" role="status">
+          Checking installed agents…
+        </p>
+      ) : null}
+      {!loading && availableCount === 0 ? (
+        <p className="q-lands-note" role="status">
+          No supported agent is installed. Run it in your own agent instead.
+        </p>
+      ) : null}
+      {unavailable ? (
+        <p className="q-lands-note" role="status">
+          This agent is unavailable. Choose an installed agent, or run it in your own agent.
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+function AgentPickerRow({
+  scope,
+  value,
+  loading,
+  options,
+  disabled,
+  unavailable,
+  own,
+  retainSettings,
+  modelRole,
+  modelChoices,
+  efforts,
+  onChange,
+}: {
+  scope: string
+  value: AgentLaunchValue
+  loading: boolean
+  options: PickOption[]
+  disabled: boolean
+  unavailable: boolean
+  own: NativeAgent | null
+  retainSettings: boolean
+  modelRole: AgentLaunchFieldsProps["modelRole"]
+  modelChoices: PickOption[]
+  efforts: PickOption[]
+  onChange: (patch: Partial<AgentLaunchValue>) => void
+}) {
+  const showTuning = own !== null && !retainSettings
+  return (
+    <div
+      className="q-agent-launch-fields"
+      data-inline
+      data-effort={showTuning && efforts.length === 0 ? "in-model" : undefined}
+    >
+      <div className="q-model-field q-pick-agent" title="Agent">
+        <ModelPick
+          label={`${scope}: agent`}
+          look="row"
+          value={loading ? "loading" : value.agent}
+          options={loading ? [{ id: "loading", name: "Checking installed agents…" }] : options}
+          disabled={disabled}
+          onChange={(next) => onChange(agentSelectionPatch(next))}
+        />
+      </div>
+      {showTuning ? (
+        <ModelEffortPicks
+          agent={own}
+          scope={scope}
+          modelRole={modelRole}
+          model={value.model}
+          effort={value.effort}
+          choices={modelChoices}
+          efforts={efforts}
+          custom={customModelAgent(value.agent)}
+          disabled={disabled || unavailable}
+          onChange={onChange}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 export function AgentLaunchFields({
   value,
   onChange,
@@ -334,46 +318,13 @@ export function AgentLaunchFields({
   const loading = installed == null
   const available = availableLaunchAgents(installed)
   const unavailable = !loading && !launchAgentAvailable(value.agent, installed)
-  const mark = (agent: string) => <AgentMark agent={agent} size={14} />
-  const options: PickOption[] = [
-    ...AGENT_DISPLAY_ORDER.filter((agent) => available.includes(agent)).map((agent) => ({
-      id: agent,
-      name: AGENT_NAMES[agent],
-      icon: mark(agent),
-    })),
-    ...(unavailable && value.agent !== "other"
-      ? [
-          {
-            id: value.agent,
-            name: `${AGENT_NAMES[value.agent]} · unavailable`,
-            icon: mark(value.agent),
-          },
-        ]
-      : []),
-    ...(nativeOnly && value.agent !== "other"
-      ? []
-      : [{ id: "other", name: "Another agent", apart: available.length > 0, icon: mark("other") }]),
-  ]
+  const options = buildAgentOptions(available, value.agent, unavailable, nativeOnly)
   const own = value.agent === "other" ? null : value.agent
   const modelChoices =
     own === null ? [] : (models ?? agentModelChoices(own, value.model, defaultModel))
   // One row everywhere an agent starts (Max, 11 November 2026): agent · model · effort, all in view.
   const efforts = own === null ? [] : agentEfforts(own)
-  const tuning =
-    own && !retainSettings ? (
-      <ModelEffortPicks
-        agent={own}
-        scope={scope}
-        modelRole={modelRole}
-        model={value.model}
-        effort={value.effort}
-        choices={modelChoices}
-        efforts={efforts}
-        custom={customModelAgent(value.agent)}
-        disabled={disabled || !canConfigure || loading || unavailable}
-        onChange={onChange}
-      />
-    ) : null
+  const fieldDisabled = disabled || !canConfigure || loading
   return (
     <div className="q-agent-launch" data-testid="agent-launch-fields">
       {heading ? (
@@ -382,60 +333,35 @@ export function AgentLaunchFields({
           <span>{heading.label}</span>
         </div>
       ) : null}
-      <div
-        className="q-agent-launch-fields"
-        data-inline
-        data-effort={tuning !== null && efforts.length === 0 ? "in-model" : undefined}
-      >
-        <div className="q-model-field q-pick-agent" title="Agent">
-          <ModelPick
-            label={`${scope}: agent`}
-            look="row"
-            value={loading ? "loading" : value.agent}
-            options={loading ? [{ id: "loading", name: "Checking installed agents…" }] : options}
-            disabled={disabled || !canConfigure || loading}
-            onChange={(next) => {
-              const agent = next as DefaultsAgent
-              onChange({
-                agent,
-                model:
-                  agent === "other"
-                    ? ""
-                    : ((agent === "pi" ? startModel(agent) : undefined) ?? recommendedModel(agent)),
-                effort: "high",
-                ...(agent === "other" ? { runWhere: "terminal" } : {}),
-              })
-            }}
-          />
-        </div>
-        {tuning}
-      </div>
+      <AgentPickerRow
+        scope={scope}
+        value={value}
+        loading={loading}
+        options={options}
+        disabled={fieldDisabled}
+        unavailable={unavailable}
+        own={own}
+        retainSettings={retainSettings}
+        modelRole={modelRole}
+        modelChoices={modelChoices}
+        efforts={efforts}
+        onChange={onChange}
+      />
       {afterModels}
-      {own && retainSettings ? (
-        <p className="q-lands-note">Keeps the current session’s model and effort.</p>
-      ) : null}
-      {loading ? (
-        <p className="q-lands-note" role="status">
-          Checking installed agents…
-        </p>
-      ) : null}
-      {!loading && available.length === 0 ? (
-        <p className="q-lands-note" role="status">
-          No supported agent is installed. Run it in your own agent instead.
-        </p>
-      ) : null}
-      {unavailable ? (
-        <p className="q-lands-note" role="status">
-          This agent is unavailable. Choose an installed agent, or run it in your own agent.
-        </p>
-      ) : null}
+      <LaunchStatusNotes
+        own={own}
+        retainSettings={retainSettings}
+        loading={loading}
+        availableCount={available.length}
+        unavailable={unavailable}
+      />
       {location ? (
         <LaunchChoice
           value={own && supported ? value.runWhere : "terminal"}
           onChange={(next) => onChange({ runWhere: next === "terminal" ? "terminal" : "app" })}
           supported={supported}
           terminalOnly={!own}
-          disabled={disabled || loading || unavailable || !canConfigure}
+          disabled={fieldDisabled || unavailable}
         />
       ) : null}
     </div>

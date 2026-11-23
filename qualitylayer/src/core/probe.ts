@@ -48,68 +48,84 @@ function killGroup(leader: number): void {
   }
 }
 
+function killChildPid(child: ReturnType<typeof spawn>): void {
+  if (child.pid !== undefined) killGroup(child.pid)
+}
+
+function collectProbeOutput(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+  resolve: (result: ProbeResult) => void,
+): void {
+  let stdout = ""
+  let stderr = ""
+  let timedOut = false
+  let settled = false
+  child.stdout?.setEncoding("utf8")
+  child.stdout?.on("data", (chunk: string) => {
+    stdout += chunk
+  })
+  child.stderr?.setEncoding("utf8")
+  child.stderr?.on("data", (chunk: string) => {
+    stderr += chunk
+  })
+  const finish = (result: ProbeResult) => {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    killChildPid(child)
+    resolve(result)
+  }
+  const timer = setTimeout(() => {
+    timedOut = true
+    killChildPid(child)
+  }, timeoutMs)
+  // A wrapper that exits while its subshell lives on would keep our pipe open: take it down now.
+  child.on("exit", () => killChildPid(child))
+  child.on("error", (error) =>
+    finish({
+      status: null,
+      stdout,
+      stderr,
+      timedOut,
+      error: (error as NodeJS.ErrnoException).code,
+    }),
+  )
+  child.on("close", (code) => finish({ status: timedOut ? null : code, stdout, stderr, timedOut }))
+}
+
 /** Runs `argv` in its own process group; killed, with everything it started, after the timeout. */
 export function probe(argv: string[], options: ProbeOptions = {}): Promise<ProbeResult> {
   const [program, ...args] = argv
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  return new Promise((resolve) => {
-    if (program === undefined) {
-      resolve({ status: null, stdout: "", stderr: "", timedOut: false, error: "no command" })
-      return
-    }
-    let child: ReturnType<typeof spawn>
-    try {
-      child = spawn(program, args, {
-        env: options.env as NodeJS.ProcessEnv | undefined,
-        cwd: options.cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: !windows,
-        windowsHide: true,
-      })
-    } catch (error) {
-      resolve({ status: null, stdout: "", stderr: "", timedOut: false, error: String(error) })
-      return
-    }
-    let stdout = ""
-    let stderr = ""
-    let timedOut = false
-    let settled = false
-    child.stdout?.setEncoding("utf8")
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk
+  if (program === undefined) {
+    return Promise.resolve({
+      status: null,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+      error: "no command",
     })
-    child.stderr?.setEncoding("utf8")
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk
+  }
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn(program, args, {
+      env: options.env as NodeJS.ProcessEnv | undefined,
+      cwd: options.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: !windows,
+      windowsHide: true,
     })
-    const finish = (result: ProbeResult) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      if (child.pid !== undefined) killGroup(child.pid)
-      resolve(result)
-    }
-    const timer = setTimeout(() => {
-      timedOut = true
-      if (child.pid !== undefined) killGroup(child.pid)
-    }, timeoutMs)
-    // A wrapper that exits while its subshell lives on would keep our pipe open: take it down now.
-    child.on("exit", () => {
-      if (child.pid !== undefined) killGroup(child.pid)
+  } catch (error) {
+    return Promise.resolve({
+      status: null,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+      error: String(error),
     })
-    child.on("error", (error) =>
-      finish({
-        status: null,
-        stdout,
-        stderr,
-        timedOut,
-        error: (error as NodeJS.ErrnoException).code,
-      }),
-    )
-    child.on("close", (code) =>
-      finish({ status: timedOut ? null : code, stdout, stderr, timedOut }),
-    )
-  })
+  }
+  return new Promise((resolve) => collectProbeOutput(child, timeoutMs, resolve))
 }
 
 /**

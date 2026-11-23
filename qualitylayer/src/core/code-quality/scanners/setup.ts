@@ -5,23 +5,11 @@
 
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  rmdir,
-  writeFile,
-} from "node:fs/promises"
-import { dirname, isAbsolute, join } from "node:path"
+import { chmod, mkdir, mkdtemp, rm, rmdir } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
-import { configIsolationProblem } from "../../install/config-isolation.ts"
-import { unsafePath, userHome } from "../../install/manifest.ts"
-import { assertSafeDirectory, windows, windowsSystemCommand } from "../../platform.ts"
-import { fetchPinned, sha256Of } from "../pinned-download.ts"
+import { windows } from "../../platform.ts"
+import { fetchPinned } from "../pinned-download.ts"
 import {
   commandBytes,
   placeStage,
@@ -39,10 +27,19 @@ import {
   type ScannerId,
   type ScannerSpec,
 } from "./registry.ts"
+import {
+  assertOwnedHome,
+  extractWith,
+  installedResult,
+  makeFolders,
+  receiptAt,
+  replaceable,
+  scannerExe,
+  scannerReady,
+  stageScanner,
+} from "./setup-stage.ts"
 
 const DOWNLOAD_LIMIT = 96 * 1024 * 1024
-const BINARY_LIMIT = 128 * 1024 * 1024
-const LISTING_LIMIT = 64 * 1024
 const DOWNLOAD_TIMEOUT_MS = 120_000
 
 export type ScannerSetup = {
@@ -63,8 +60,6 @@ export type ScannerSetupDeps = StagePlacement & {
   downloadTimeoutMs?: number
 }
 
-const exe = (target: string, name: string) => (target.includes("windows") ? `${name}.exe` : name)
-
 /** Where a scanner's executable lives once installed, or null where it has no build. */
 export function scannerPath(
   ctx: Ctx,
@@ -74,44 +69,7 @@ export function scannerPath(
 ): string | null {
   const target = targetFor(options)
   if (target === null || spec.assets[target] === undefined) return null
-  return join(toolHome(ctx), "tools", id, spec.version, target, exe(target, spec.binary))
-}
-
-type Receipt = {
-  schema: 1
-  id: ScannerId
-  version: string
-  target: string
-  assetSha256: string
-  binarySha256: string
-  licenceSha256: string
-}
-
-async function receiptAt(dir: string, spec: ScannerSpec, target: string): Promise<Receipt | null> {
-  const path = join(dir, "receipt.json")
-  const entry = await lstat(path).catch(() => null)
-  if (!entry?.isFile() || entry.isSymbolicLink() || entry.size > 4096) return null
-  try {
-    const value = JSON.parse(await readFile(path, "utf8")) as Receipt
-    return value.schema === 1 &&
-      value.id === spec.id &&
-      value.version === spec.version &&
-      value.target === target &&
-      value.assetSha256 === spec.assets[target]?.sha256 &&
-      /^[a-f0-9]{64}$/.test(value.binarySha256) &&
-      /^[a-f0-9]{64}$/.test(value.licenceSha256)
-      ? value
-      : null
-  } catch {
-    return null
-  }
-}
-
-async function regularBytes(path: string, limit: number): Promise<Uint8Array> {
-  const entry = await lstat(path)
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.size < 1 || entry.size > limit)
-    throw new Error("Invalid managed scanner file")
-  return readFile(path)
+  return join(toolHome(ctx), "tools", id, spec.version, target, scannerExe(target, spec.binary))
 }
 
 /**
@@ -158,154 +116,72 @@ function versionOf(ctx: Ctx) {
     ).toString("utf8")
 }
 
-/** Whether `dir` holds exactly the receipt's executable and licence, and the executable says its version. */
-async function ready(
-  dir: string,
-  binary: string,
-  spec: ScannerSpec,
-  target: string,
-  version: (binary: string, spec: ScannerSpec) => Promise<string>,
-): Promise<boolean> {
-  const receipt = await receiptAt(dir, spec, target)
-  if (receipt === null) return false
-  try {
-    const bytes = await regularBytes(binary, BINARY_LIMIT)
-    const licence = await regularBytes(join(dir, "LICENSE.txt"), 1024 * 1024)
-    return (
-      sha256Of(bytes) === receipt.binarySha256 &&
-      sha256Of(licence) === receipt.licenceSha256 &&
-      (await version(binary, spec)).includes(spec.versionText)
-    )
-  } catch {
-    return false
-  }
+type InstallState = {
+  ctx: Ctx
+  id: ScannerId
+  spec: ScannerSpec
+  asset: ScannerAsset
+  target: string
+  binary: string
+  dir: string
+  parent: string
+  created: string[]
+  deps: ScannerSetupDeps
+  version: (binary: string, spec: ScannerSpec) => Promise<string>
+  stage?: string
+  published: boolean
 }
 
-/** The executable from a tar.gz or zip: exactly one member named like the scanner, among known files. */
-function extractWith(ctx: Ctx) {
-  return async (archive: string, spec: ScannerSpec): Promise<Uint8Array> => {
-    const tool = windows
-      ? windowsSystemCommand("tar.exe")
-      : existsSync("/usr/bin/tar")
-        ? "/usr/bin/tar"
-        : "/bin/tar"
-    const cwd = dirname(archive)
-    const env = setupEnvironment(ctx, cwd)
-    const names = (await commandBytes(tool, ["-tf", archive], LISTING_LIMIT, cwd, env))
-      .toString("utf8")
-      .trimEnd()
-      .split("\n")
-      .map((name) => name.replace(/\r$/, ""))
-    const allowed = new Set([spec.binary, `${spec.binary}.exe`, "LICENSE", "README.md"])
-    if (
-      names.length === 0 ||
-      names.length > 8 ||
-      names.some((name) => !allowed.has(name) || name.includes("/") || name.includes("\\"))
-    )
-      throw new Error(`Unexpected ${spec.name} archive layout`)
-    const member = names.filter((name) => name === spec.binary || name === `${spec.binary}.exe`)
-    if (member.length !== 1) throw new Error(`${spec.name} archive has no single executable`)
-    return commandBytes(tool, ["-xOf", archive, member[0] as string], BINARY_LIMIT, cwd, env)
-  }
-}
-
-async function installedResult(
-  id: ScannerId,
-  spec: ScannerSpec,
-  binary: string,
-  dirs: string[],
-): Promise<ScannerSetup> {
-  const files = []
-  for (const path of [
-    binary,
-    join(dirname(binary), "LICENSE.txt"),
-    join(dirname(binary), "receipt.json"),
-  ])
-    files.push({ path, sha256: sha256Of(await readFile(path)) })
-  // The scanner's own three folders are always recorded, so an uninstall after a reinstall removes them too.
-  const target = dirname(binary)
-  const own = [dirname(dirname(target)), dirname(target), target]
-  return {
-    id,
-    status: "ready",
-    version: spec.version,
-    binary,
-    files,
-    dirs: [...new Set([...dirs, ...own])],
-  }
-}
-
-/** Installs one scanner, or confirms the installed one; never throws. */
-/** The tools home is absolute, inside the person's home and isolated from their agents' folders. */
-function assertOwnedHome(ctx: Ctx): void {
-  if (!isAbsolute(ctx.home)) throw new Error("The tools home must be absolute")
-  const home = userHome(ctx)
-  if (!home.ok) throw new Error(home.reason)
-  const problem = configIsolationProblem(ctx, home.home) ?? unsafePath(home.home, ctx.home)
-  if (problem !== null) throw new Error(problem)
-}
-
-/** Creates each missing folder (recording it in `created`) and refuses one that is not a plain folder. */
-async function makeFolders(paths: readonly string[], created: string[]): Promise<void> {
-  for (const path of paths) {
-    try {
-      await mkdir(path, { mode: 0o700 })
-      created.push(path)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-    }
-    await assertSafeDirectory(path)
-  }
-}
-
-/** The installed folder to replace, if any; anything QualityLayer did not write there is left untouched. */
-async function replaceable(dir: string, spec: ScannerSpec, target: string) {
-  const previous = await lstat(dir).catch(() => null)
-  if (previous === null) return null
-  const owned = [exe(target, spec.binary), "LICENSE.txt", "receipt.json"]
-  if (
-    !previous.isDirectory() ||
-    previous.isSymbolicLink() ||
-    (await readdir(dir)).some((name) => !owned.includes(name))
-  )
-    throw new Error(`Existing ${spec.name} folder is not a recognised installation; left untouched`)
-  return previous
-}
-
-/** Writes the executable, its licence and the receipt into `stage`; returns the staged executable. */
-async function stageScanner(
+async function swapStagedScanner(
   stage: string,
-  bytes: Uint8Array,
-  pin: { spec: ScannerSpec; asset: ScannerAsset; target: string },
-  extract: (archive: string) => Promise<Uint8Array>,
-): Promise<string> {
-  const { spec, asset, target } = pin
-  let data: Uint8Array = bytes
-  if (asset.kind !== "raw") {
-    const archive = join(stage, asset.file)
-    await writeFile(archive, bytes, { mode: 0o600, flag: "wx" })
-    data = await extract(archive)
-    await rm(archive)
+  dir: string,
+  previous: unknown,
+  deps: ScannerSetupDeps,
+): Promise<{ stageLeft: boolean; retired: string }> {
+  const move = stageMove(deps)
+  const retired = `${dir}.retired-${randomUUID()}`
+  if (previous) await move(dir, retired)
+  try {
+    const placed = await placeStage(stage, dir, deps)
+    return { stageLeft: placed.stageLeft, retired }
+  } catch (error) {
+    if (previous) await move(retired, dir)
+    throw error
   }
-  if (!data.length || data.length > BINARY_LIMIT)
-    throw new Error(`${spec.name} executable is missing or oversized`)
-  const stagedBinary = join(stage, exe(target, spec.binary))
-  await writeFile(stagedBinary, data, { mode: 0o700, flag: "wx" })
-  await writeFile(join(stage, "LICENSE.txt"), spec.licence, { mode: 0o600, flag: "wx" })
-  const receipt: Receipt = {
-    schema: 1,
-    id: spec.id,
-    version: spec.version,
-    target,
-    assetSha256: asset.sha256,
-    binarySha256: sha256Of(data),
-    licenceSha256: sha256Of(spec.licence),
+}
+
+async function installScannerLocked(state: InstallState): Promise<ScannerSetup> {
+  const { ctx, id, spec, asset, target, binary, dir, parent, created, deps, version } = state
+  if (await scannerReady(dir, binary, spec, target, version)) {
+    state.published = true
+    return installedResult(id, spec, binary, created)
   }
-  await writeFile(join(stage, "receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`, {
-    mode: 0o600,
-    flag: "wx",
+  const previous = await replaceable(dir, spec, target)
+  const bytes = await fetchPinned(ctx, {
+    release: spec.release,
+    overrideEnv: "QUALITYLAYER_SCANNER_RELEASE_BASE",
+    file: asset.file,
+    sha256: asset.sha256,
+    limit: DOWNLOAD_LIMIT,
+    timeoutMs: deps.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS,
+    label: spec.name,
   })
-  return stagedBinary
+  const stage = await mkdtemp(join(parent, `.${target}-`))
+  state.stage = stage
+  await chmod(stage, 0o700)
+  const stagedBinary = await stageScanner(stage, bytes, { spec, asset, target }, (archive) =>
+    (deps.extract ?? extractWith(ctx))(archive, spec),
+  )
+  if (!(await scannerReady(stage, stagedBinary, spec, target, version)))
+    throw new Error(`Staged ${spec.name} failed integrity or version verification`)
+  const { stageLeft, retired } = await swapStagedScanner(stage, dir, previous, deps)
+  state.stage = undefined
+  state.published = true
+  const result = await installedResult(id, spec, binary, [...created, dir])
+  if (stageLeft)
+    result.reason = `${spec.name} is ready; its temporary setup folder ${stage} could not be removed yet`
+  if (previous) await rm(retired, { recursive: true, force: true }).catch(() => {})
+  return result
 }
 
 export async function ensureScanner(
@@ -335,57 +211,29 @@ export async function ensureScanner(
     }
   const dir = dirname(binary)
   const parent = dirname(dir)
-  const created: string[] = []
-  const version = deps.version ?? versionOf(ctx)
-  let stage: string | undefined
-  let published = false
+  const state: InstallState = {
+    ctx,
+    id,
+    spec,
+    asset,
+    target,
+    binary,
+    dir,
+    parent,
+    created: [],
+    deps,
+    version: deps.version ?? versionOf(ctx),
+    published: false,
+  }
   try {
     assertOwnedHome(ctx)
     await makeFolders(
       [ctx.home, join(ctx.home, "tools"), join(ctx.home, "tools", id), parent],
-      created,
+      state.created,
     )
-    return await ctx.fs.withLock(join(parent, `${target}.setup.lock`), async () => {
-      if (await ready(dir, binary, spec, target, version)) {
-        published = true
-        return installedResult(id, spec, binary, created)
-      }
-      const previous = await replaceable(dir, spec, target)
-      const bytes = await fetchPinned(ctx, {
-        release: spec.release,
-        overrideEnv: "QUALITYLAYER_SCANNER_RELEASE_BASE",
-        file: asset.file,
-        sha256: asset.sha256,
-        limit: DOWNLOAD_LIMIT,
-        timeoutMs: deps.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS,
-        label: spec.name,
-      })
-      stage = await mkdtemp(join(parent, `.${target}-`))
-      await chmod(stage, 0o700)
-      const stagedBinary = await stageScanner(stage, bytes, { spec, asset, target }, (archive) =>
-        (deps.extract ?? extractWith(ctx))(archive, spec),
-      )
-      if (!(await ready(stage, stagedBinary, spec, target, version)))
-        throw new Error(`Staged ${spec.name} failed integrity or version verification`)
-      const move = stageMove(deps)
-      const retired = `${dir}.retired-${randomUUID()}`
-      if (previous) await move(dir, retired)
-      let placed: { stageLeft: boolean }
-      try {
-        placed = await placeStage(stage, dir, deps)
-      } catch (error) {
-        if (previous) await move(retired, dir)
-        throw error
-      }
-      const left = placed.stageLeft ? stage : undefined
-      stage = undefined
-      published = true
-      const result = await installedResult(id, spec, binary, [...created, dir])
-      if (left !== undefined)
-        result.reason = `${spec.name} is ready; its temporary setup folder ${left} could not be removed yet`
-      if (previous) await rm(retired, { recursive: true, force: true }).catch(() => {})
-      return result
-    })
+    return await ctx.fs.withLock(join(parent, `${target}.setup.lock`), () =>
+      installScannerLocked(state),
+    )
   } catch (error) {
     return {
       id,
@@ -394,8 +242,10 @@ export async function ensureScanner(
       reason: error instanceof Error ? error.message : String(error),
     }
   } finally {
-    if (stage !== undefined) await rm(stage, { recursive: true, force: true }).catch(() => {})
-    if (!published) for (const path of [...created].reverse()) await rmdir(path).catch(() => {})
+    if (state.stage !== undefined)
+      await rm(state.stage, { recursive: true, force: true }).catch(() => {})
+    if (!state.published)
+      for (const path of [...state.created].reverse()) await rmdir(path).catch(() => {})
   }
 }
 

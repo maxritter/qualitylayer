@@ -26,6 +26,12 @@ export const ordinaryPath = (id: string) => {
   return join(ordinaryDir(), `${id}.json`)
 }
 
+function samePeer(raw: Record<string, unknown> | null, peer: NativePeer | null): boolean {
+  return (
+    (raw?.kind ?? null) === (peer?.kind ?? null) && (raw?.uuid ?? null) === (peer?.uuid ?? null)
+  )
+}
+
 export function saveOrdinary(
   id: string,
   target: NativePeer,
@@ -36,16 +42,11 @@ export function saveOrdinary(
   return withLock(`${path}.lock`, () => {
     const existing = asRecord(readJson(path, null))
     if (existing) {
-      const previousTarget = asRecord(existing.target)
-      const previousSender = asRecord(existing.sender)
-      if (
-        existing.message !== message ||
-        previousTarget?.kind !== target.kind ||
-        previousTarget.uuid !== target.uuid ||
-        (previousSender?.kind ?? null) !== (sender?.kind ?? null) ||
-        (previousSender?.uuid ?? null) !== (sender?.uuid ?? null)
-      )
-        throw new PeerError("message id already belongs to different content or peers")
+      const matches =
+        existing.message === message &&
+        samePeer(asRecord(existing.target), target) &&
+        samePeer(asRecord(existing.sender), sender)
+      if (!matches) throw new PeerError("message id already belongs to different content or peers")
       return false
     }
     return writeJsonExclusive(path, {
@@ -102,13 +103,9 @@ export function arrivedOrdinary(caller: NativePeer, since: number): string[] {
     .filter((name) => name.endsWith(".json") && isUuid(name.slice(0, -5)))
     .flatMap((name) => {
       const record = asRecord(readJson(join(ordinaryDir(), name), null))
-      const target = asRecord(record?.target)
-      const created = Date.parse(String(record?.created_at ?? "")) / 1000
-      return record !== null &&
-        target?.kind === caller.kind &&
-        target.uuid === caller.uuid &&
-        !record.acknowledged_at &&
-        created >= since
+      if (record === null || record.acknowledged_at) return []
+      const created = Date.parse(String(record.created_at ?? "")) / 1000
+      return samePeer(asRecord(record.target), caller) && created >= since
         ? [name.slice(0, -5)]
         : []
     })

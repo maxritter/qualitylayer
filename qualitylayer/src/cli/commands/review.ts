@@ -44,31 +44,29 @@ async function threadsCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   })
 }
 
-export async function reviewCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  if (args[0] === "threads" || args[0] === "decide") return threadsCmd(ctx, args)
-  // The worker a question on a line of the change starts: it answers through the waiting session or
-  // a fresh helper, and ends once every question is settled.
-  if (args[0] === "answer") {
-    // A project's artifacts belong to no task: the worker is named by their project and root.
-    const { flags } = parseArgs(args.slice(1), ["task", "artifacts", "root"])
-    if (flags.artifacts !== undefined)
-      return err({
-        code: "bad_args",
-        message: "Standalone artifact feedback is retired; its history is read-only.",
-      })
-    const task = await requireTask(ctx)
-    if (!task.ok) return task
-    return ok(await runAnswers(ctx, task.data))
-  }
-  // The worker Ask another reviewer starts: one review of a file or the whole change.
-  if (args[0] === "another") {
-    const task = await requireTask(ctx)
-    if (!task.ok) return task
-    const { flags } = parseArgs(args.slice(1), ["run"])
-    if (typeof flags.run !== "string")
-      return err({ code: "bad_args", message: "usage: qualitylayer review another --run <id>" })
-    return ok({ run: await runAnotherReview(ctx, task.data, flags.run) })
-  }
+async function answerCmd(ctx: Ctx, rest: string[]): Promise<Result<unknown>> {
+  // A project's artifacts belong to no task: the worker is named by their project and root.
+  const { flags } = parseArgs(rest, ["task", "artifacts", "root"])
+  if (flags.artifacts !== undefined)
+    return err({
+      code: "bad_args",
+      message: "Standalone artifact feedback is retired; its history is read-only.",
+    })
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  return ok(await runAnswers(ctx, task.data))
+}
+
+async function anotherCmd(ctx: Ctx, rest: string[]): Promise<Result<unknown>> {
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  const { flags } = parseArgs(rest, ["run"])
+  if (typeof flags.run !== "string")
+    return err({ code: "bad_args", message: "usage: qualitylayer review another --run <id>" })
+  return ok({ run: await runAnotherReview(ctx, task.data, flags.run) })
+}
+
+async function crossReviewCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const point = args[0] as ReviewPoint | undefined
   if (point === undefined || !POINTS.includes(point))
     return err({ code: "bad_args", message: USAGE })
@@ -79,6 +77,15 @@ export async function reviewCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
   const decided = decidedStepOf(task.data, point, flags)
   if (!decided.ok) return decided
   const result = await runCrossReview(ctx, task.data, point, decided.data)
-  if (!result.ok) return result
-  return { ok: true, data: result.data }
+  return result.ok ? { ok: true, data: result.data } : result
+}
+
+export async function reviewCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  if (args[0] === "threads" || args[0] === "decide") return threadsCmd(ctx, args)
+  // The worker a question on a line of the change starts: it answers through the waiting session or
+  // a fresh helper, and ends once every question is settled.
+  if (args[0] === "answer") return answerCmd(ctx, args.slice(1))
+  // The worker Ask another reviewer starts: one review of a file or the whole change.
+  if (args[0] === "another") return anotherCmd(ctx, args.slice(1))
+  return crossReviewCmd(ctx, args)
 }

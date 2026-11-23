@@ -2,12 +2,14 @@
 // file, so a first draft already looks like the product instead of a generic sample. Without a design
 // file the page keeps scaffold tokens and its comment says so.
 
-import { basename, join, relative, sep } from "node:path"
+import { join, relative, sep } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { isLineText, lastLineBreak, skipWhitespace } from "../text-boundaries.ts"
+import { fontFaces } from "./tokens-fonts.ts"
+import { type Palette, parsePalette, withPalette } from "./tokens-palette.ts"
+import { type Colour, familyOf, parseDesign, type Tree } from "./tokens-parse.ts"
 
-/** One colour: its light value, and its dark value when the design file names a twin. */
-export type Colour = { light: string; dark: string; twin: boolean }
+export { parsePalette } from "./tokens-palette.ts"
+export { type Colour, parseDesign } from "./tokens-parse.ts"
 
 export type ProductTokens = {
   /** The design file the tokens were read from, from the repository root. */
@@ -37,178 +39,40 @@ const SCAFFOLD_OTHERS: [string, string][] = [
   ["--font-mono", 'ui-monospace, "SF Mono", Menlo, monospace'],
 ]
 
-type Tree = { [key: string]: string | Tree }
-
-const unquote = (value: string): string => {
-  const quoted = /^(["'])(.*)\1\s*(?:#.*)?$/.exec(value)
-  if (quoted !== null) return quoted[2] ?? ""
-  for (
-    let at = value.indexOf("#", lastLineBreak(value) + 1);
-    at >= 0;
-    at = value.indexOf("#", at + 1)
-  ) {
-    if (at > 0 && /\s/.test(value.charAt(at - 1))) return value.slice(0, at).trim()
-  }
-  return value.trim()
-}
-
-/** The nested `key: value` lines of a design file's frontmatter (maps and scalars, as the file uses them). */
-function frontmatterTree(markdown: string): Tree {
-  const lines = markdown.split(/\r?\n/)
-  if (lines[0]?.trim() !== "---") return {}
-  const root: Tree = {}
-  const stack: { indent: number; node: Tree }[] = [{ indent: -1, node: root }]
-  for (const raw of lines.slice(1)) {
-    if (raw.trim() === "---") break
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue
-    const match = /^(\s*)([A-Za-z0-9_-]+):/.exec(raw)
-    if (match === null) continue
-    const value = raw.slice(match[0].length).trimStart()
-    if (!isLineText(value)) continue
-    const indent = (match[1] ?? "").length
-    while (stack.length > 1 && (stack[stack.length - 1]?.indent ?? -1) >= indent) stack.pop()
-    const parent = stack[stack.length - 1]?.node ?? root
-    const key = match[2] ?? ""
-    if (value === "") {
-      const child: Tree = {}
-      parent[key] = child
-      stack.push({ indent, node: child })
-    } else parent[key] = unquote(value)
-  }
-  return root
-}
-
-/** A value that is safe to write into a style block: one line, no braces, no markup. */
-const cssValue = (value: unknown): string | null =>
-  typeof value === "string" && /^[^;{}<>\\\r\n]+$/.test(value) && !value.includes("/*")
-    ? value.trim()
-    : null
-
-const scalars = (tree: string | Tree | undefined): [string, string][] =>
-  typeof tree === "object"
-    ? Object.entries(tree).flatMap(([key, value]) => {
-        const safe = cssValue(value)
-        return safe !== null && /^[A-Za-z0-9-]+$/.test(key) ? [[key, safe] as [string, string]] : []
-      })
-    : []
-
-const familyOf = (tree: string | Tree | undefined, role: string): string | null => {
-  const node = typeof tree === "object" ? tree[role] : undefined
-  return typeof node === "object" ? cssValue(node.fontFamily) : null
-}
+const topLevelFolders = async (ctx: Ctx, root: string): Promise<string[]> =>
+  (await ctx.fs.entries(root))
+    .filter((e) => e.kind === "directory" && !e.name.startsWith(".") && e.name !== "node_modules")
+    .map((e) => e.name)
+    .sort()
 
 /** The design file: `DESIGN.md` at the repository root, else the first one under a top-level folder. */
 async function designFiles(ctx: Ctx, root: string): Promise<string[]> {
   const found: string[] = []
   if (await ctx.fs.exists(join(root, "DESIGN.md"))) found.push("DESIGN.md")
-  const folders = (await ctx.fs.entries(root))
-    .filter((e) => e.kind === "directory" && !e.name.startsWith(".") && e.name !== "node_modules")
-    .map((e) => e.name)
-    .sort()
-  for (const folder of folders)
+  for (const folder of await topLevelFolders(ctx, root)) {
     if (await ctx.fs.exists(join(root, folder, "DESIGN.md"))) found.push(`${folder}/DESIGN.md`)
+  }
   return found
 }
-
-/** A family name as a file name spells it: lower case, letters and digits only. */
-const squash = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, "")
 
 const firstFamily = (stack: string): string =>
   (stack.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "")
 
-const FONT_MAX_BYTES = 1_000_000
-
-/**
- * `@font-face` rules for the `.woff2` files under any `fonts/` folder of the repository whose name
- * starts with a family's lower-cased name; a file belongs to the longest family name it starts with,
- * so `geist-mono-latin.woff2` is Geist Mono's and never Geist's.
- */
-async function fontFaces(
-  ctx: Ctx,
-  root: string,
-  families: string[],
-  fontFiles?: NonNullable<ProductTokens["fontFiles"]>,
-): Promise<string[]> {
-  if (families.length === 0 || ctx.fs.readBytes === undefined) return []
-  const listed = await ctx.git.run(root, [
-    "ls-files",
-    "-z",
-    "--cached",
-    "--others",
-    "--exclude-standard",
-    "--",
-    "*.woff2",
-  ])
-  if (listed.code !== 0) return []
-  const files = new Map<string, string>()
-  for (const path of listed.stdout.split("\0").sort()) {
-    const folders = path.split("/").slice(0, -1)
-    if (
-      path !== "" &&
-      folders.some((f) => f.toLowerCase() === "fonts") &&
-      !files.has(basename(path))
-    )
-      files.set(basename(path), path)
-  }
-  const faces: string[] = []
-  for (const family of families) {
-    for (const [name, path] of files) {
-      const owner = families
-        .filter((f) => squash(name).startsWith(squash(f)))
-        .sort((a, b) => squash(b).length - squash(a).length)[0]
-      if (owner !== family) continue
-      const bytes = await ctx.fs.readBytes(join(root, path))
-      if (bytes.length === 0 || bytes.length > FONT_MAX_BYTES) continue
-      let url: string
-      if (fontFiles !== undefined) {
-        let local = /^[A-Za-z0-9][A-Za-z0-9._-]*\.woff2$/.test(name)
-          ? name
-          : `font-${fontFiles.length + 1}.woff2`
-        let suffix = 0
-        while (fontFiles.some((file) => file.name.toLowerCase() === local.toLowerCase()))
-          local = `font-${fontFiles.length + 1}-${++suffix}.woff2`
-        fontFiles.push({ name: local, bytes })
-        url = local
-      } else url = `data:font/woff2;base64,${Buffer.from(bytes).toString("base64")}`
-      faces.push(
-        `  @font-face {\n    font-family: "${family}";\n    src: url(${url}) format("woff2");\n    font-weight: 100 900;\n    font-style: normal;\n    font-display: swap;\n  }`,
-      )
-    }
-  }
-  return faces
-}
-
-/** The product palette's colours by name without `--ql-`: light, and dark where the palette changes it. */
-export type Palette = Map<string, { light: string; dark: string }>
-
-const declarations = (css: string): Map<string, string> => {
-  const found = new Map<string, string>()
-  const statements = css.replace(/\/\*[\s\S]*?\*\//g, "").split(";")
-  for (const statement of statements.slice(0, -1)) {
-    const declaration = statement.slice(
-      Math.max(statement.lastIndexOf("{"), statement.lastIndexOf("}")) + 1,
-    )
-    for (const name of declaration.matchAll(/[A-Za-z0-9-]+/g)) {
-      const prefix = name[0].indexOf("--ql-")
-      if (prefix === -1 || prefix + 5 === name[0].length) continue
-      const colon = skipWhitespace(declaration, name.index + name[0].length)
-      if (declaration[colon] !== ":") continue
-      const raw = declaration.slice(colon + 1)
-      const value = cssValue(raw.trimStart() || raw.slice(-1))
-      if (value !== null) found.set(name[0].slice(prefix + 5), value)
-      break
-    }
-  }
-  return found
+function extractTypographyFamilies(typography: string | Tree | undefined): string[] {
+  const roles = typeof typography === "object" ? Object.keys(typography) : []
+  return [
+    ...new Set(
+      roles
+        .map((role) => familyOf(typography, role))
+        .flatMap((stack) => (stack === null ? [] : [firstFamily(stack)]))
+        .filter((family) => /^[A-Za-z0-9][A-Za-z0-9 ]*$/.test(family)),
+    ),
+  ]
 }
 
 /** The product's palette file (`src/ui/brand/palette.css`, at the root or under a top-level folder). */
 async function paletteFile(ctx: Ctx, root: string): Promise<string | null> {
-  const folders = (await ctx.fs.entries(root))
-    .filter((e) => e.kind === "directory" && !e.name.startsWith(".") && e.name !== "node_modules")
-    .map((e) => e.name)
-    .sort()
-  for (const folder of ["", ...folders]) {
+  for (const folder of ["", ...(await topLevelFolders(ctx, root))]) {
     const path = join(root, folder, "src", "ui", "brand", "palette.css")
     if (await ctx.fs.exists(path)) return path
   }
@@ -219,58 +83,6 @@ async function paletteFile(ctx: Ctx, root: string): Promise<string | null> {
 async function productPalette(ctx: Ctx, root: string): Promise<Palette | null> {
   const path = await paletteFile(ctx, root)
   return path === null ? null : parsePalette(await ctx.fs.readFile(path))
-}
-
-/** A palette file's text read into its colours; null when it names none. */
-export function parsePalette(css: string): Palette | null {
-  const at = css.indexOf("prefers-color-scheme: dark")
-  const light = declarations(at < 0 ? css : css.slice(0, at))
-  const dark = at < 0 ? new Map<string, string>() : declarations(css.slice(at))
-  const palette: Palette = new Map()
-  for (const [name, value] of light)
-    palette.set(name, { light: value, dark: dark.get(name) ?? value })
-  return palette.size === 0 ? null : palette
-}
-
-/**
- * The design file's colours completed from the palette: a colour with no twin takes the palette's dark
- * value, and a palette colour the file never names (the text on the accent, say) is added.
- */
-function withPalette(colours: Map<string, Colour>, palette: Palette | null): void {
-  if (palette === null) return
-  for (const [name, colour] of colours) {
-    const twin = palette.get(name)
-    if (!colour.twin && twin !== undefined)
-      colours.set(name, { ...colour, dark: twin.dark, twin: true })
-  }
-  for (const [name, pair] of palette)
-    if (!colours.has(name)) colours.set(name, { ...pair, twin: true })
-}
-
-/** What a design file's frontmatter names: the parsed tree, its colours (with dark twins) and the other tokens. */
-export function parseDesign(markdown: string): {
-  tree: Tree
-  colours: Map<string, Colour>
-  others: Map<string, string>
-} {
-  const tree = frontmatterTree(markdown)
-  const colours = new Map<string, Colour>()
-  const named = scalars(tree.colors)
-  const byName = new Map(named)
-  for (const [name, light] of named) {
-    const base = name.endsWith("-dark") ? name.slice(0, -5) : null
-    if (base !== null && byName.has(base)) continue
-    const dark = byName.get(`${name}-dark`)
-    colours.set(name, { light, dark: dark ?? light, twin: dark !== undefined })
-  }
-  const others = new Map<string, string>()
-  const sans = familyOf(tree.typography, "body")
-  const mono = familyOf(tree.typography, "command")
-  if (sans !== null) others.set("--font-sans", sans)
-  if (mono !== null) others.set("--font-mono", mono)
-  for (const [key, value] of scalars(tree.rounded)) others.set(`--ql-radius-${key}`, value)
-  for (const [key, value] of scalars(tree.spacing)) others.set(`--ql-space-${key}`, value)
-  return { tree, colours, others }
 }
 
 /**
@@ -290,15 +102,7 @@ export async function productTokens(
       tokenless ??= source
       continue
     }
-    const roles = typeof tree.typography === "object" ? Object.keys(tree.typography) : []
-    const families = [
-      ...new Set(
-        roles
-          .map((role) => familyOf(tree.typography, role))
-          .flatMap((stack) => (stack === null ? [] : [firstFamily(stack)]))
-          .filter((family) => /^[A-Za-z0-9][A-Za-z0-9 ]*$/.test(family)),
-      ),
-    ]
+    const families = extractTypographyFamilies(tree.typography)
     withPalette(colours, colours.size === 0 ? null : await productPalette(ctx, root))
     const fontFiles: ProductTokens["fontFiles"] = options.fontMode === "files" ? [] : undefined
     const faces = options.fontMode === "none" ? [] : await fontFaces(ctx, root, families, fontFiles)
@@ -351,6 +155,21 @@ export async function designStamp(
 
 const NO_TWIN = "/* no dark twin in the design file: the light value */"
 
+function formatTokensNote(product: ProductTokens | null): string {
+  if (product === null)
+    return "Tokens: no design file was found in this repository, so the colours, type and spacing below are scaffold values. Replace them with the product's before you draw."
+  if (product.empty)
+    return `Tokens: the design file holds no tokens (${product.source} has no colours, type, radii or spacing in its frontmatter), so the colours, type and spacing below are scaffold values. Add the product's tokens to that file, or replace these before you draw.`
+  const count = product.faces.length
+  const fonts =
+    count === 0
+      ? "no font file was found, so the page uses the stack"
+      : product.fontFiles !== undefined
+        ? `${count} font file${count === 1 ? " sits" : "s sit"} beside this page`
+        : `${count} font file${count === 1 ? " is" : "s are"} embedded`
+  return `Tokens: read from ${product.source}: its colours (a dark twin where the file has one), type, radii and spacing; ${fonts}. Draw with these and add no colour of your own.`
+}
+
 /** The template with its token placeholders filled: the product's tokens, else the scaffold. */
 export function withTokens(template: string, product: ProductTokens | null): string {
   const colours = new Map<string, Colour>(
@@ -368,21 +187,8 @@ export function withTokens(template: string, product: ProductTokens | null): str
   const dark = [...colours].map(
     ([name, c]) => `      --ql-${name}: ${c.dark};${c.twin ? "" : ` ${NO_TWIN}`}`,
   )
-  const count = product?.faces.length ?? 0
-  const fonts =
-    count === 0
-      ? "no font file was found, so the page uses the stack"
-      : product?.fontFiles !== undefined
-        ? `${count} font file${count === 1 ? " sits" : "s sit"} beside this page`
-        : `${count} font file${count === 1 ? " is" : "s are"} embedded`
-  const note =
-    product === null
-      ? "Tokens: no design file was found in this repository, so the colours, type and spacing below are scaffold values. Replace them with the product's before you draw."
-      : product.empty
-        ? `Tokens: the design file holds no tokens (${product.source} has no colours, type, radii or spacing in its frontmatter), so the colours, type and spacing below are scaffold values. Add the product's tokens to that file, or replace these before you draw.`
-        : `Tokens: read from ${product.source}: its colours (a dark twin where the file has one), type, radii and spacing; ${fonts}. Draw with these and add no colour of your own.`
   return template
-    .replaceAll("{{TOKENS_NOTE}}", note)
+    .replaceAll("{{TOKENS_NOTE}}", formatTokensNote(product))
     .replaceAll("{{FONT_FACES}}", product?.faces.join("\n") ?? "")
     .replaceAll("{{TOKENS_LIGHT}}", light.join("\n"))
     .replaceAll("{{TOKENS_DARK}}", dark.join("\n"))

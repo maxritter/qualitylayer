@@ -50,12 +50,14 @@ export function pageSections(html: string): ArtifactSection[] {
 
 /** The plain command and captured-source checks share packing, finding order and token policy. */
 export async function plainArtifactCheck(
-  ctx: Ctx,
-  root: string,
-  entry: ArtifactFile,
-  name: string,
-  lasting: boolean,
-  flags: Record<string, string | true>,
+  ...[ctx, root, entry, name, lasting, flags]: [
+    ctx: Ctx,
+    root: string,
+    entry: ArtifactFile,
+    name: string,
+    lasting: boolean,
+    flags: Record<string, string | true>,
+  ]
 ) {
   const packed = entry.folder
     ? await packFolderPage(entry.folder.dir, entry.path.split(/[\\/]/).at(-1) ?? "")
@@ -63,7 +65,7 @@ export async function plainArtifactCheck(
   if (!packed.ok) return packed
   const checked = checkArtifactSource(packed.data.html)
   const tokens = await tokenDrift(ctx, targetOf(root, entry.path, entry.folder))
-  const drift = await plainTokenFinding(ctx, tokens, entry, name, lasting, flags)
+  const drift = await plainTokenFinding({ ctx, drift: tokens, entry, name, lasting, flags })
   const findings = [
     ...checked.findings,
     ...packingFindings(packed.data.omissions),
@@ -82,15 +84,24 @@ export async function plainArtifactCheck(
   })
 }
 
+type TokenFindingInput = {
+  ctx: Ctx
+  drift: TokenDrift
+  entry: ArtifactFile
+  name: string
+  lasting: boolean
+  flags: Record<string, string | true>
+}
+
 /** A prior design-file value is drift; an artifact's independent choice remains its own. */
-async function plainTokenFinding(
-  ctx: Ctx,
-  drift: TokenDrift,
-  entry: ArtifactFile,
-  name: string,
-  lasting: boolean,
-  flags: Record<string, string | true>,
-): Promise<{ rule: string; message: string } | null> {
+async function plainTokenFinding({
+  ctx,
+  drift,
+  entry,
+  name,
+  lasting,
+  flags,
+}: TokenFindingInput): Promise<{ rule: string; message: string } | null> {
   if (drift.state !== "drifted") return null
   const names = [...new Set((drift.changed ?? []).map((change) => change.name))]
   const count = drift.count ?? names.length

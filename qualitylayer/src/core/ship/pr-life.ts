@@ -6,18 +6,25 @@
 
 import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { byCode } from "../code-order.ts"
 import { currentBranch } from "../git/repo.ts"
-import { readReview } from "../review/threads.ts"
-import { needsTriage } from "../review/triage.ts"
 import { appendEvent, readEvents, type Task } from "../task/store.ts"
-import { readRecord } from "./landing-record.ts"
-import { type PrThreadRow, type PullRequestRecord, readPullRequestRecord } from "./pr-record.ts"
+import {
+  askedPath,
+  askingOf,
+  branchTip,
+  commitsAhead,
+  keptTime,
+  leftPath,
+  settledThreads,
+  unpushedTimes,
+} from "./pr-life-state.ts"
+import { type PullRequestRecord, readPullRequestRecord } from "./pr-record.ts"
 import { wakeField } from "./pr-wake.ts"
 import { watchOf } from "./pr-watch-record.ts"
 import { type PrWaiting, type PullRequestLife, waitingWords } from "./pr-words.ts"
 import { ghInstalled, pullRequestOf, wrongBranch } from "./pull-request.ts"
 
+export { commitsAhead } from "./pr-life-state.ts"
 export type { PullRequestLife, PullRequestRecord }
 export { readPullRequestRecord, waitingWords }
 
@@ -31,171 +38,7 @@ const NONE: PrWaiting = {
   since: null,
 }
 
-const leftPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "pull-request-left.json")
-
-/** A thread settled on this side: when the last word of the review log on it was said, and which GitHub comments it holds. */
-type Settled = { at: number; held: Set<string> }
-
-/** The threads of the pull request the review log shows settled on this side: decided, answered or resolved. */
-async function settledThreads(ctx: Ctx, task: Task): Promise<Map<string, Settled>> {
-  const review = await readReview(ctx, task)
-  const settled = new Map<string, Settled>()
-  for (const t of review.threads) {
-    if (!t.id.startsWith("pr:") || (t.state === "open" && needsTriage(t))) continue
-    settled.set(t.id.slice(3), {
-      at: Math.max(t.decision?.at ?? 0, ...t.messages.map((m) => m.at)),
-      held: new Set(t.messages.flatMap((m) => (m.ref !== undefined ? [m.ref] : []))),
-    })
-  }
-  return settled
-}
-
-/**
- * A reviewer wrote on a settled thread after it was settled, and the review log has not taken the
- * comment in yet (`/ql review` does, and then the log itself says whether the thread needs the person).
- * The person's own comments never ask for them.
- */
-function heardAgain(row: PrThreadRow, settled: Settled): boolean {
-  const last = row.latest
-  return last !== null && !last.mine && !settled.held.has(last.id) && last.at > settled.at
-}
-
-/** What the pull request holds that asks for the person, as one line to compare: a new thread or check changes it. */
-const signatureOf = (
-  threads: string[],
-  failing: string[],
-  changes: boolean,
-  conflict = false,
-): string =>
-  threads.length + failing.length === 0 && !changes && !conflict
-    ? ""
-    : JSON.stringify([
-        [...threads].sort(byCode),
-        [...failing].sort(byCode),
-        changes,
-        ...(conflict ? [true] : []),
-      ])
-
-const askedPath = (task: Pick<Task, "runtimeDir">) =>
-  join(task.runtimeDir, "pull-request-asked.json")
-
-/**
- * When something first waited on the person and the commit the task's branch was at then (the note
- * `noteAsking` keeps; `tip` is "" in a note from before it was kept); null when nothing ever did.
- */
-async function firstWaited(ctx: Ctx, task: Task): Promise<{ at: number; tip: string } | null> {
-  try {
-    const kept = JSON.parse(await ctx.fs.readFile(askedPath(task))) as {
-      at?: unknown
-      tip?: unknown
-    }
-    if (typeof kept.at !== "number") return null
-    return { at: kept.at, tip: typeof kept.tip === "string" ? kept.tip : "" }
-  } catch {
-    return null
-  }
-}
-
-/** The commit the task's branch is at now; "" when git cannot say. */
-async function branchTip(ctx: Ctx, task: Task): Promise<string> {
-  const ref = task.branch ? `refs/heads/${task.branch}` : "HEAD"
-  const tip = await ctx.git.run(task.repoRoot, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `${ref}^{commit}`,
-  ])
-  const sha = tip.stdout.trim()
-  return tip.code === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? sha : ""
-}
-
-/**
- * When the commits the task's branch has and its remote branch lacks were made, in seconds, one per
- * commit; null when git cannot say. Without a remote branch to compare with, the pull request's own
- * head stands in for it. With `after`, only the commits that commit does not hold are listed.
- */
-async function unpushedTimes(
-  ctx: Ctx,
-  task: Task,
-  head: string,
-  after = "",
-): Promise<number[] | null> {
-  const not = after !== "" ? [`^${after}`] : []
-  let listed = await ctx.git.run(task.repoRoot, [
-    "log",
-    "--format=%ct",
-    "@{upstream}..HEAD",
-    ...not,
-  ])
-  if (listed.code !== 0 && head !== "")
-    listed = await ctx.git.run(task.repoRoot, ["log", "--format=%ct", `${head}..HEAD`, ...not])
-  if (listed.code !== 0) return null
-  return listed.stdout
-    .split("\n")
-    .map((line) => Number(line.trim()))
-    .filter((time) => Number.isFinite(time) && time > 0)
-}
-
-/**
- * The fix that waits for the push: commits on the task's branch that its remote branch lacks and
- * that were made after something first waited on the person. What the agent pushed itself when it
- * shipped is on the remote, and what was made before anything waited is no answer to it: the
- * closing commit of a pull request opened before the click made that commit first is one. Which
- * commits came after is told by the branch's commit kept with the note, as a commit's time has
- * only seconds and the closing commit can be made in the same second as the first read that saw
- * something wait. A task whose approval recorded its commit (the landing record) needs none of
- * that: its fix is every commit after the approved one that the remote lacks.
- */
-export async function commitsAhead(ctx: Ctx, task: Task, head: string): Promise<number> {
-  if (wrongBranch(task, await currentBranch(ctx, task.repoRoot)) !== null) return 0
-  // The approval names its commit: the pull request is opened with that commit alone, so what the
-  // branch holds beyond it and the remote lacks was made after the approval and waits for the
-  // person's push, whether or not anything of the pull request ever waited on them.
-  const approved = (await readRecord(ctx, task).catch(() => null))?.approvedHead
-  if (approved !== undefined) {
-    const since = await unpushedTimes(ctx, task, head, approved)
-    if (since !== null) return since.length
-  }
-  const waited = await firstWaited(ctx, task)
-  if (waited === null) return 0
-  if (waited.tip !== "") {
-    const since = await unpushedTimes(ctx, task, head, waited.tip)
-    if (since !== null) return since.length
-  }
-  // A note from before the tip was kept, or a tip git no longer knows: the times decide.
-  const made = await unpushedTimes(ctx, task, head)
-  if (made === null || made.length === 0) return 0
-  return Math.max(...made) >= Math.floor(waited.at / 1000) ? made.length : 0
-}
-
-/** What of an open pull request asks for the person right now, before they chose to leave it. */
-async function askingOf(ctx: Ctx, task: Task, record: PullRequestRecord) {
-  const settled = await settledThreads(ctx, task)
-  const threads = record.threads.filter((t) => {
-    const done = settled.get(t.id)
-    return done === undefined || heardAgain(t, done)
-  })
-  const failing = record.checks.filter((c) => c.result === "failed")
-  const changes = record.changesRequested && threads.length === 0 && settled.size === 0
-  const conflict = record.conflicting === true
-  const signature = signatureOf(
-    threads.map((t) => t.id),
-    failing.map((c) => c.name),
-    changes,
-    conflict,
-  )
-  return { threads, failing, changes, conflict, signature }
-}
-
-/** The signature a small file of the task's runtime folder holds, and its time; null when it holds another or none. */
-async function keptTime(ctx: Ctx, path: string, signature: string): Promise<number | null> {
-  try {
-    const kept = JSON.parse(await ctx.fs.readFile(path)) as { signature?: unknown; at?: unknown }
-    return kept.signature === signature && typeof kept.at === "number" ? kept.at : null
-  } catch {
-    return null
-  }
-}
+const bad = (message: string) => ({ code: "bad_args" as const, message })
 
 /** The pull request as last read, with what waits on the person; null for a task that has none. */
 export async function pullRequestLife(ctx: Ctx, task: Task): Promise<PullRequestLife | null> {
@@ -260,8 +103,6 @@ async function noteAsking(ctx: Ctx, task: Task, record: PullRequestRecord): Prom
   )
 }
 
-const bad = (message: string) => ({ code: "bad_args" as const, message })
-
 /** The merge is on the task's record once: the first read that sees it appends `task_merged`. */
 async function recordMerged(ctx: Ctx, task: Task, record: PullRequestRecord): Promise<void> {
   await ctx.fs.mkdir(task.runtimeDir)
@@ -299,6 +140,21 @@ export async function recordSeen(ctx: Ctx, task: Task): Promise<PullRequestRecor
   return record
 }
 
+async function checkPushTarget(
+  ctx: Ctx,
+  task: Task,
+): Promise<Result<{ record: PullRequestRecord; branch: string }>> {
+  const record = await readPullRequestRecord(ctx, task)
+  if (record === null) return err(bad("This task has no pull request to push a fix to."))
+  if (record.state !== "open")
+    return err(bad(`The pull request is ${record.state}; nothing to push to.`))
+  const branch = await currentBranch(ctx, task.repoRoot)
+  const wrong = wrongBranch(task, branch)
+  if (wrong !== null) return err(bad(`${wrong}. Check ${task.branch} out first.`))
+  if (branch === null) return err(bad("The checkout is on no branch; check one out first."))
+  return ok({ record, branch })
+}
+
 /**
  * Push the task's branch to its remote on the person's click, after a fix: the commits made since
  * the pull request was last pushed. The checkout must be on the task's branch, and the pull request
@@ -308,14 +164,9 @@ export async function pushFix(
   ctx: Ctx,
   task: Task,
 ): Promise<Result<{ branch: string; pr: PullRequestRecord | null }>> {
-  const record = await readPullRequestRecord(ctx, task)
-  if (record === null) return err(bad("This task has no pull request to push a fix to."))
-  if (record.state !== "open")
-    return err(bad(`The pull request is ${record.state}; nothing to push to.`))
-  const branch = await currentBranch(ctx, task.repoRoot)
-  const wrong = wrongBranch(task, branch)
-  if (wrong !== null) return err(bad(`${wrong}. Check ${task.branch} out first.`))
-  if (branch === null) return err(bad("The checkout is on no branch; check one out first."))
+  const target = await checkPushTarget(ctx, task)
+  if (!target.ok) return target
+  const { record, branch } = target.data
   const unpushed = await unpushedTimes(ctx, task, record.head)
   if (unpushed !== null && unpushed.length === 0)
     return err(bad(`Nothing to push: ${branch} has no commit that its remote branch lacks.`))

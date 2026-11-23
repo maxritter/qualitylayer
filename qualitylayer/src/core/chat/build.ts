@@ -116,33 +116,39 @@ export async function buildChat(ctx: Ctx, task: Task, markdown?: string): Promis
   })
 }
 
-function chatSlices(markdown: string): Result<Outline> {
-  const outline = parseChatSlices(markdown)
-  const bad = () =>
-    err({
-      code: "bad_args" as const,
-      message: "Supply complete unique slice cards with files, test first and validation checks",
-    })
+function hasValidSliceNumbers(outline: Outline): boolean {
   const numbers = outline.slices.map((slice) => slice.n)
-  if (outline.malformed.length || !numbers.length || numbers.length > 32) return bad()
-  if (
-    numbers.some((n) => !Number.isSafeInteger(n) || n < 1) ||
-    new Set(numbers).size !== numbers.length
+  if (outline.malformed.length || !numbers.length || numbers.length > 32) return false
+  return (
+    numbers.every((n) => Number.isSafeInteger(n) && n >= 1) &&
+    new Set(numbers).size === numbers.length
   )
-    return bad()
+}
+
+function isValidChatCard(card: Outline["slices"][number]["tasks"][number]): boolean {
+  return [card.objective, card.files.length, card.testFirst, taskCommands(card).length].every(
+    Boolean,
+  )
+}
+
+function isValidChatOutline(outline: Outline): boolean {
+  if (!hasValidSliceNumbers(outline)) return false
   const cards = outline.slices.flatMap((slice) => slice.tasks)
   const ids = cards.map((card) => card.id)
-  if (ids.length > 256 || new Set(ids).size !== ids.length) return bad()
-  if (outline.slices.some((slice) => !slice.tasks.length || !sliceCommands(slice).length))
-    return bad()
-  if (
-    cards.some(
-      (card) =>
-        ![card.objective, card.files.length, card.testFirst, taskCommands(card).length].every(
-          Boolean,
-        ),
-    )
+  if (ids.length > 256 || new Set(ids).size !== ids.length) return false
+  const validSlices = outline.slices.every(
+    (slice) => slice.tasks.length > 0 && sliceCommands(slice).length > 0,
   )
-    return bad()
+  return validSlices && cards.every(isValidChatCard)
+}
+
+function chatSlices(markdown: string): Result<Outline> {
+  const outline = parseChatSlices(markdown)
+  if (!isValidChatOutline(outline)) {
+    return err({
+      code: "bad_args",
+      message: "Supply complete unique slice cards with files, test first and validation checks",
+    })
+  }
   return ok(outline)
 }

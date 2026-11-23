@@ -73,6 +73,16 @@ export function subscribeUsageLimits(ctx: Ctx, changed: (revision: number) => vo
   }
 }
 
+function isQuotaFresh(
+  ctx: Ctx,
+  held: Quotas | undefined,
+  refresh: boolean,
+  attempted: boolean | undefined,
+): held is Quotas {
+  if (refresh || attempted || !held) return false
+  return held.generation === usageGeneration() && ctx.clock.now() - held.at < EXTERNAL_USAGE_MS
+}
+
 /** One source-owned quota reading; cost-index dirty reads never reset Claude's automatic cadence. */
 export async function readUsageLimits(
   ctx: Ctx,
@@ -89,14 +99,7 @@ export async function readUsageLimits(
   const read = async () => {
     const attempted = automatic ? await sources.claude.automatic?.(ctx) : false
     const held = quotas.get(ctx)
-    if (
-      !refresh &&
-      !attempted &&
-      held &&
-      held.generation === usageGeneration() &&
-      ctx.clock.now() - held.at < EXTERNAL_USAGE_MS
-    )
-      return held.values
+    if (isQuotaFresh(ctx, held, refresh, attempted)) return held.values
     const values = await readLimits(ctx, sources, refresh)
     rememberUsageLimits(ctx, values)
     return values
@@ -108,6 +111,41 @@ export async function readUsageLimits(
   } finally {
     if (quotaPending.get(ctx) === current) quotaPending.delete(ctx)
   }
+}
+
+function isUsageStale(ctx: Ctx, usage: ReturnType<typeof cachedUsage>, refresh: boolean): boolean {
+  if (refresh || !usage || usage.dirty) return true
+  if (!usage.data.complete || usage.data.period !== 7) return true
+  const expired = checked?.home !== ctx.home || ctx.clock.now() - checked.at >= EXTERNAL_USAGE_MS
+  return expired || usage.data.days.at(-1) !== dayKey(ctx.clock.now())
+}
+
+async function computeUsageDisplay(
+  ctx: Ctx,
+  sources: LimitSources,
+  refresh: boolean,
+  includeMenu: boolean,
+): Promise<UsageSnapshot> {
+  const config = await readConfig(ctx)
+  if (!config.usage.menuBar && !includeMenu)
+    return usageSnapshot(config.usage, [], null, ctx.clock.now())
+  const imported = (await ctx.fs.stat?.(join(ctx.home, "usage-imports")))?.mtimeMs ?? null
+  if (imports?.home === ctx.home && imports.at !== imported) markUsageDirty()
+  imports = { home: ctx.home, at: imported }
+  let usage = cachedUsage(ctx)
+  if (isUsageStale(ctx, usage, refresh)) {
+    const result = await readUsage(ctx, "7", { claude: () => sources.claude.cached(ctx) })
+    usage = result.ok ? { data: result.data, dirty: false } : null
+    if (result.ok) checked = { home: ctx.home, at: ctx.clock.now() }
+  }
+  const selectedClaude = selectsQuota(config.usage, "claude-code")
+  const values = await readUsageLimits(
+    ctx,
+    sources,
+    refresh,
+    !refresh && config.usage.menuBar && selectedClaude,
+  )
+  return usageSnapshot(config.usage, values, usage?.data ?? null, ctx.clock.now(), includeMenu)
 }
 
 /** Idle tray reads use held data; turns, imports, a new day and explicit refresh invalidate it. */
@@ -122,38 +160,12 @@ export async function readUsageDisplay(
     await pending.promise
     return readUsageDisplay(ctx, sources, refresh, includeMenu)
   }
-  const read = async () => {
-    const config = await readConfig(ctx)
-    if (!config.usage.menuBar && !includeMenu)
-      return usageSnapshot(config.usage, [], null, ctx.clock.now())
-    const imported = (await ctx.fs.stat?.(join(ctx.home, "usage-imports")))?.mtimeMs ?? null
-    if (imports?.home === ctx.home && imports.at !== imported) markUsageDirty()
-    imports = { home: ctx.home, at: imported }
-    let usage = cachedUsage(ctx)
-    const expired = checked?.home !== ctx.home || ctx.clock.now() - checked.at >= EXTERNAL_USAGE_MS
-    if (
-      refresh ||
-      !usage ||
-      usage.dirty ||
-      !usage.data.complete ||
-      usage.data.period !== 7 ||
-      expired ||
-      usage.data.days.at(-1) !== dayKey(ctx.clock.now())
-    ) {
-      const result = await readUsage(ctx, "7", { claude: () => sources.claude.cached(ctx) })
-      usage = result.ok ? { data: result.data, dirty: false } : null
-      if (result.ok) checked = { home: ctx.home, at: ctx.clock.now() }
-    }
-    const selectedClaude = selectsQuota(config.usage, "claude-code")
-    const values = await readUsageLimits(
-      ctx,
-      sources,
-      refresh,
-      !refresh && config.usage.menuBar && selectedClaude,
-    )
-    return usageSnapshot(config.usage, values, usage?.data ?? null, ctx.clock.now(), includeMenu)
+  const active = {
+    home: ctx.home,
+    menu: includeMenu,
+    refresh,
+    promise: computeUsageDisplay(ctx, sources, refresh, includeMenu),
   }
-  const active = { home: ctx.home, menu: includeMenu, refresh, promise: read() }
   pending = active
   try {
     return await active.promise

@@ -8,6 +8,11 @@ export type ScreenEvidenceApi = Api & {
   verificationScreens?: (id: string) => Promise<VerificationScreens>
 }
 
+const isScreensResponseOk = (payload: unknown): payload is VerificationScreens => {
+  if (typeof payload !== "object" || payload === null) return false
+  return "ok" in payload && payload.ok === true && isVerificationScreens(payload)
+}
+
 /** The live task API or an explicit adapter; missing adapter support is not an empty inventory. */
 export async function loadVerificationScreens(
   api: ScreenEvidenceApi,
@@ -23,14 +28,7 @@ export async function loadVerificationScreens(
   if (api !== liveApi) return null
   const response = await fetch(`/api/tasks/${encodeURIComponent(id)}/screens`, { signal })
   const payload: unknown = await response.json().catch(() => null)
-  if (
-    !response.ok ||
-    typeof payload !== "object" ||
-    payload === null ||
-    !("ok" in payload) ||
-    payload.ok !== true ||
-    !isVerificationScreens(payload)
-  ) {
+  if (!response.ok || !isScreensResponseOk(payload)) {
     throw new ApiError(
       "The screenshot records could not be read. Try again.",
       response.status,

@@ -18,6 +18,30 @@ const EMPTY: ReadonlyMap<string, string> = new Map()
 /** The evidence name a recorded file is read by: `evidence/screen-ab.png` → `screen-ab.png`. */
 export const evidenceName = (file: string): string => file.replace(/^evidence\//, "")
 
+async function readEvidenceImage(load: LoadEvidence, file: string): Promise<string | null> {
+  try {
+    const found = await load(evidenceName(file))
+    return found.kind === "image" ? `data:${found.type};base64,${found.base64}` : null
+  } catch {
+    // An unreadable picture keeps its empty frame.
+    return null
+  }
+}
+
+async function drainEvidenceQueue(
+  list: readonly string[],
+  load: LoadEvidence,
+  state: { active: boolean; next: number },
+  onLoaded: (file: string, src: string) => void,
+): Promise<void> {
+  while (state.active && state.next < list.length) {
+    const file = list[state.next++]
+    if (file === undefined) break
+    const src = await readEvidenceImage(load, file)
+    if (state.active && src !== null) onLoaded(file, src)
+  }
+}
+
 /**
  * The source of each file, in the order given. `files` is read by value: the same list of names
  * loads once per loader, however often the page draws. A task or content-version change supplies
@@ -33,30 +57,18 @@ export function useEvidenceSources(
   const [loaded, setLoaded] = useState({ load, list, sources: EMPTY })
   useEffect(() => {
     if (load === undefined) return
-    let active = true
-    let next = 0
+    const state = { active: true, next: 0 }
     setLoaded({ load, list, sources: EMPTY })
-    const run = async () => {
-      while (active && next < list.length) {
-        const file = list[next++]
-        if (file === undefined) break
-        try {
-          const found = await load(evidenceName(file))
-          if (!active || found.kind !== "image") continue
-          const src = `data:${found.type};base64,${found.base64}`
-          setLoaded((before) =>
-            before.load === load && before.list === list
-              ? { load, list, sources: new Map(before.sources).set(file, src) }
-              : before,
-          )
-        } catch {
-          // An unreadable picture keeps its empty frame.
-        }
-      }
+    const onLoaded = (file: string, src: string) => {
+      setLoaded((before) =>
+        before.load === load && before.list === list
+          ? { load, list, sources: new Map(before.sources).set(file, src) }
+          : before,
+      )
     }
-    for (let i = 0; i < AT_ONCE; i++) void run()
+    for (let i = 0; i < AT_ONCE; i++) void drainEvidenceQueue(list, load, state, onLoaded)
     return () => {
-      active = false
+      state.active = false
     }
   }, [list, load])
   return loaded.load === load && loaded.list === list ? loaded.sources : EMPTY

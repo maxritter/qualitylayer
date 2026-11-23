@@ -30,15 +30,19 @@ const CLAUDE_KEY_VARIABLES = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
 
 const set = (ctx: Ctx, name: string): boolean => (ctx.env.get(name) ?? "") !== ""
 
-async function claudeBilling(ctx: Ctx, hints: BillingHints): Promise<UsageBilling> {
-  if (set(ctx, "ANTHROPIC_BASE_URL")) return "gateway"
-  if (CLAUDE_KEY_VARIABLES.some((name) => set(ctx, name))) return "key"
-  const report = (await hints.claude?.().catch(() => null)) ?? null
+function claudeReportBilling(report: ClaudeReport | null): UsageBilling {
   if (report === null) return "unknown"
   if ("windows" in report) return "plan"
   if (report.cause !== "no-plan") return "unknown"
   if (report.reason === CLAUDE_NO_PLAN) return "key"
   return report.reason === CLAUDE_UNREPORTED ? "plan" : "unknown"
+}
+
+async function claudeBilling(ctx: Ctx, hints: BillingHints): Promise<UsageBilling> {
+  if (set(ctx, "ANTHROPIC_BASE_URL")) return "gateway"
+  if (CLAUDE_KEY_VARIABLES.some((name) => set(ctx, name))) return "key"
+  const report = (await hints.claude?.().catch(() => null)) ?? null
+  return claudeReportBilling(report)
 }
 
 async function codexBilling(ctx: Ctx): Promise<UsageBilling> {

@@ -10,10 +10,9 @@ import {
   useState,
 } from "react"
 import { folderArtifactOf } from "../core/artifact/format.ts"
-import { headingSlug } from "../core/docs/anchor.ts"
-import { trimmedLineTail } from "../core/text-boundaries.ts"
 import type { Viewing } from "../core/viewing.ts"
 import type { Api } from "./api.ts"
+import { activeSectionSlug, collectSectionHeadings } from "./viewing-helpers.ts"
 
 const ViewingContext = createContext<((location: Viewing) => void) | null>(null)
 const pending = new WeakMap<Api, Promise<unknown>>()
@@ -37,39 +36,7 @@ export function artifactViewing(file: string): Viewing {
       }
 }
 
-export function ViewingProvider({
-  api,
-  task,
-  location,
-  children,
-  eligible = true,
-}: {
-  api: Api
-  task: string
-  location: Viewing | null
-  children: ReactNode
-  eligible?: boolean
-}) {
-  const key = JSON.stringify(location)
-  const [detail, setDetail] = useState<{ key: string; location: Viewing } | null>(null)
-  const report = useCallback(
-    (location: Viewing) => {
-      setDetail((old) =>
-        old?.key === key && JSON.stringify(old.location) === JSON.stringify(location)
-          ? old
-          : { key, location },
-      )
-    },
-    [key],
-  )
-  const current = useMemo(
-    () =>
-      key === "null"
-        ? null
-        : ({ ...JSON.parse(key), ...(detail?.key === key ? detail.location : {}) } as Viewing),
-    [key, detail],
-  )
-  const identity = JSON.stringify(current)
+function useViewingReporter(api: Api, task: string, identity: string, eligible: boolean): void {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!eligible) return
@@ -96,12 +63,42 @@ export function ViewingProvider({
     window.addEventListener("pagehide", clear)
     return () => window.removeEventListener("pagehide", clear)
   }, [api, task])
-  useEffect(
-    () => () => {
-      send(api, task, { clear: true })
+  useEffect(() => () => send(api, task, { clear: true }), [api, task])
+}
+
+export function ViewingProvider({
+  api,
+  task,
+  location,
+  children,
+  eligible = true,
+}: {
+  api: Api
+  task: string
+  location: Viewing | null
+  children: ReactNode
+  eligible?: boolean
+}) {
+  const key = JSON.stringify(location)
+  const [detail, setDetail] = useState<{ key: string; location: Viewing } | null>(null)
+  const report = useCallback(
+    (next: Viewing) => {
+      setDetail((old) =>
+        old?.key === key && JSON.stringify(old.location) === JSON.stringify(next)
+          ? old
+          : { key, location: next },
+      )
     },
-    [api, task],
+    [key],
   )
+  const current = useMemo(
+    () =>
+      key === "null"
+        ? null
+        : ({ ...JSON.parse(key), ...(detail?.key === key ? detail.location : {}) } as Viewing),
+    [key, detail],
+  )
+  useViewingReporter(api, task, JSON.stringify(current), eligible)
   return <ViewingContext.Provider value={report}>{children}</ViewingContext.Provider>
 }
 
@@ -111,9 +108,6 @@ export function useArtifactViewing(file: string | null) {
     if (file) report?.(artifactViewing(file))
   }, [report, file])
 }
-
-/** How far below the page's top edge a heading still counts as where a jump landed, in px. */
-const LANDING_BAND = 160
 
 export function useSectionViewing(
   host: RefObject<HTMLDivElement | null> | HTMLDivElement | null,
@@ -125,43 +119,13 @@ export function useSectionViewing(
     const page = host && "current" in host ? host.current : host
     if (!page || !report || !markdown) return
     const root = page.closest<HTMLElement>("[data-scroll-root]") ?? page.parentElement
-    const headings = () =>
-      [...page.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6,[data-block-key$="-heading"]')]
-        .filter(
-          (heading) =>
-            !heading.matches('[data-block-key$="-heading"]') ||
-            !heading.querySelector("h1,h2,h3,h4,h5,h6"),
-        )
-        .map((element) => {
-          const raw =
-            element.closest<HTMLElement>("[data-comment-source]")?.dataset.commentSource ?? ""
-          const mark = /^#{1,6}/.exec(raw)?.[0]
-          const source = mark === undefined ? null : trimmedLineTail(raw, mark.length, 1)
-          const text = source ?? element.textContent ?? ""
-          return { element, slug: headingSlug(text) }
-        })
     const update = () => {
-      const area = root?.getBoundingClientRect()
-      const line = (area?.top ?? 0) + 96
-      const all = headings()
-      let active =
-        all.filter((heading) => heading.element.getBoundingClientRect().top <= line).at(-1) ??
-        all[0]
-      // A jump lands its heading a little below the top edge (the block's own spacing sits above the words),
-      // and a page that ends early cannot bring it higher: while that heading is in the top band of the page,
-      // it is the section being read.
-      const asked = at ? all.find((heading) => heading.slug === at) : undefined
-      if (
-        asked !== undefined &&
-        area !== undefined &&
-        all.indexOf(asked) > all.indexOf(active ?? asked)
-      ) {
-        const top = asked.element.getBoundingClientRect().top
-        if (top >= area.top && top < area.top + LANDING_BAND) active = asked
-      }
-      report(active ? { section: active.slug } : {})
+      const slug = activeSectionSlug(page, root, at)
+      report(slug ? { section: slug } : {})
     }
-    const target = at ? headings().find((heading) => heading.slug === at) : undefined
+    const target = at
+      ? collectSectionHeadings(page).find((heading) => heading.slug === at)
+      : undefined
     if (target) report({ section: at })
     else update()
     root?.addEventListener("scroll", update, { passive: true })

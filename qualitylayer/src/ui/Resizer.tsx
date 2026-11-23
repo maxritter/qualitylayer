@@ -3,6 +3,7 @@
 
 import { cn } from "cn"
 import { useCallback, useRef, useState } from "react"
+import { applyResizerDrag, handleResizerKeyDown, resizerTitle } from "./resizer-helpers.ts"
 import { useResizeDrag } from "./useResizeDrag.ts"
 
 export type StoredWidth = {
@@ -82,22 +83,16 @@ export function Resizer({
     axis: "x",
     size: width,
     direction: side === "right" ? 1 : -1,
-    onResize: (next) => {
-      if (collapsed) {
-        if (onExpand && next >= 120) {
-          onResize(Math.max(min, next))
-          onExpand()
-        }
-        return
-      }
-      if (onCollapse && next <= 80) {
-        if (onExpand) onResize(beforeDrag.current)
-        else drag.cancel()
-        onCollapse()
-        return
-      }
-      onResize(onCollapse ? Math.max(min, next) : next)
-    },
+    onResize: (next) =>
+      applyResizerDrag(next, {
+        collapsed,
+        min,
+        beforeDrag: beforeDrag.current,
+        onResize,
+        onCollapse,
+        onExpand,
+        cancelDrag: () => drag.cancel(),
+      }),
     onDragging: (active) => {
       if (active) beforeDrag.current = expandedWidth
       onDragging?.(active)
@@ -115,13 +110,7 @@ export function Resizer({
       aria-valuetext={collapsed ? "Collapsed; drag outward or press Enter to expand" : undefined}
       aria-valuemax={max}
       tabIndex={0}
-      title={
-        collapsed
-          ? "Drag outward or press Enter to expand"
-          : onCollapse
-            ? `${label} · keep dragging towards the outer edge to collapse; double-click resets`
-            : `${label} · drag to resize, double-click to reset`
-      }
+      title={resizerTitle(label, collapsed, Boolean(onCollapse))}
       onPointerDown={(event) => {
         if (onCollapse || onExpand) event.currentTarget.focus({ preventScroll: true })
         drag.start(event)
@@ -130,38 +119,18 @@ export function Resizer({
         onReset()
         if (collapsed) onExpand?.()
       }}
-      onKeyDown={(e) => {
-        const step = e.shiftKey ? 48 : 16
-        const grow = side === "right" ? "ArrowRight" : "ArrowLeft"
-        const shrink = side === "right" ? "ArrowLeft" : "ArrowRight"
-        if (
-          (onCollapse || onExpand) &&
-          e.key === "Enter" &&
-          !e.ctrlKey &&
-          !e.metaKey &&
-          !e.altKey &&
-          !e.shiftKey
-        ) {
-          e.preventDefault()
-          e.stopPropagation()
-          drag.cancel()
-          if (collapsed) {
-            onResize(expandedWidth)
-            onExpand?.()
-          } else onCollapse?.()
-          return
-        }
-        if (collapsed && e.key === grow && onExpand) {
-          e.preventDefault()
-          onResize(expandedWidth)
-          onExpand()
-          return
-        }
-        if (e.key === grow) onResize(width + step)
-        else if (e.key === shrink) onResize(width - step)
-        else return
-        e.preventDefault()
-      }}
+      onKeyDown={(e) =>
+        handleResizerKeyDown(e, {
+          side,
+          width,
+          collapsed,
+          expandedWidth,
+          onResize,
+          onCollapse,
+          onExpand,
+          cancelDrag: () => drag.cancel(),
+        })
+      }
       className={cn(
         "group absolute top-0 bottom-0 z-20 w-4 touch-none cursor-col-resize outline-none",
         side === "right" ? "-right-2" : "-left-2",

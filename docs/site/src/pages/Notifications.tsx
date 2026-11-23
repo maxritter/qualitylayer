@@ -21,14 +21,16 @@ async function turnOff(token: string): Promise<{ email: string } | "bad"> {
   return { email };
 }
 
-/** The footer link of every notification email lands here; only the button turns email off, so a mail scanner opening the link changes nothing. */
-function TurnOff({ token }: { token: string }) {
-  const [state, setState] = useState<"ask" | "busy" | "done" | "bad">(token ? "ask" : "bad");
+type TurnOffState = "ask" | "busy" | "done" | "bad";
+
+function useTurnOff(token: string) {
+  const [state, setState] = useState<TurnOffState>(token ? "ask" : "bad");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   const retry = useRef<HTMLButtonElement>(null);
   const acted = useRef(false);
+
   // Focus follows the button's own swap to the result heading, or back to the button after an error, so the keyboard is not dropped to the page.
   useEffect(() => {
     if (!acted.current) return;
@@ -39,7 +41,8 @@ function TurnOff({ token }: { token: string }) {
   async function off() {
     if (state === "busy") return;
     acted.current = true;
-    setState("busy"); setError("");
+    setState("busy");
+    setError("");
     try {
       const result = await turnOff(token);
       if (result === "bad") setState("bad");
@@ -49,6 +52,13 @@ function TurnOff({ token }: { token: string }) {
       setError(FAILED);
     }
   }
+
+  return { state, email, error, heading, retry, off };
+}
+
+/** The footer link of every notification email lands here; only the button turns email off, so a mail scanner opening the link changes nothing. */
+function TurnOff({ token }: { token: string }) {
+  const { state, email, error, heading, retry, off } = useTurnOff(token);
 
   if (state === "done") return (
     <Done icon={CircleCheck} title="Emails are off" heading={heading}>

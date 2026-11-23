@@ -1,41 +1,71 @@
 // Reads one run's session record a little at a time and keeps what it drew in memory, so the Conversation view
 // can poll for changes: a stat when nothing changed, only the new bytes when something did. The agent's own file
 // is never written; a record this cannot read gives an empty answer, never an error.
-import { closeSync, openSync, readSync, type Stats, statSync } from "node:fs"
 import type { Ctx } from "../../ctx.ts"
 import agents from "../agents/agents.json" with { type: "json" }
-import { isCompressedRollout, readCompressedSync } from "../agents/codex-rollout.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import type { RunRecord } from "../run/contracts.ts"
-import { unverifiedNativeFields } from "../run/effective-native-settings.ts"
 import { type AntigravityState, antigravityState, mapAntigravity } from "./antigravity.ts"
-import { bindImageSources, rememberImageSources } from "./attachments.ts"
 import { type ClaudeState, claudeState, mapClaude } from "./claude.ts"
 import type { ClaudeSettingsScope } from "./claude-settings.ts"
 import { type CodexState, codexState, mapCodex } from "./codex.ts"
 import { type CopilotState, copilotState, mapCopilot } from "./copilot.ts"
 import { type CursorState, cursorState, mapCursor } from "./cursor.ts"
 import { type GrokState, grokState, mapGrok } from "./grok.ts"
-import { locateRecord, type RecordLocation } from "./locate.ts"
+import { locateRecord } from "./locate.ts"
 import { selectNativePlan } from "./native-plan.ts"
 import { readOpencode } from "./opencode.ts"
 import { mapPi, piState } from "./pi.ts"
 import {
+  type CacheEntry,
+  CONVERSATION_CACHE_BYTES,
+  CONVERSATION_EVENT_BYTES,
+  cachedEvents,
+  clearConversationCache,
+  clearWorkerConversationCache,
+  continues,
+  conversationCache,
+  conversationCacheBytes,
+  conversationCacheSize,
+  cursorOf,
+  freshEntry,
+  IDLE_MS,
+  MAX_ENTRIES,
+  STOPPED_IDLE_MS,
+  sequenceOf,
+  sweepCaches,
+} from "./service-cache.ts"
+import { readDatabase, readTranscript } from "./service-read.ts"
+import {
+  claudeWorkers,
+  derivedState,
+  snapshotChecklist,
+  snapshotQuestion,
+  usageOf,
+} from "./service-snapshot.ts"
+import { readWorkerConversationWith } from "./service-worker.ts"
+import {
   CONVERSATION_LIMITS,
-  type ConversationAttachmentSource,
   type ConversationEvent,
   type ConversationPart,
   type ConversationSnapshot,
-  type ConversationUsage,
   type ConversationWorker,
   type MapResult,
 } from "./types.ts"
-import {
-  claudeWorkerPath,
-  codexWorkerLocation,
-  opencodeWorkerLinked,
-  workerIdValid,
-} from "./worker-location.ts"
+
+export {
+  CONVERSATION_CACHE_BYTES,
+  CONVERSATION_EVENT_BYTES,
+  cachedEvents,
+  clearConversationCache,
+  clearWorkerConversationCache,
+  continues,
+  conversationCacheBytes,
+  conversationCacheSize,
+  IDLE_MS,
+  MAX_ENTRIES,
+  STOPPED_IDLE_MS,
+}
 
 export type NativeRun = RunRecord & { agent: NativeAgent }
 export const nativeRun = (run: RunRecord): run is NativeRun => run.agent !== "other"
@@ -44,10 +74,9 @@ export const nativeRun = (run: RunRecord): run is NativeRun => run.agent !== "ot
 export type JsonlMapper = {
   state(parent?: string, scope?: ClaudeSettingsScope): unknown
   map(lines: string, state: unknown, sourceOffset?: number): MapResult<unknown>
-  /** The agent rewrites its record in place instead of appending, so before reading on, the bytes already
-   * read are checked and a changed record is read again from the start. */
   rewrites?: true
 }
+
 export type OpencodeReader = (
   db: string,
   session: string,
@@ -96,80 +125,7 @@ const defaultDeps: ConversationDeps = {
   opencode: readOpencode,
 }
 
-/** A run nobody has read for this long loses its cache; a stopped run's goes sooner, it is rebuilt on demand. */
-export const IDLE_MS = 10 * 60_000
-export const STOPPED_IDLE_MS = 30_000
-/** Runs kept at once; the least recently read go first, stopped ones before running ones. */
-export const MAX_ENTRIES = 8
-export const CONVERSATION_EVENT_BYTES = 16 * 1024 * 1024
-export const CONVERSATION_CACHE_BYTES = 64 * 1024 * 1024
-/** How long a missing record waits before the next search, and the least between two database reads. */
 const LOCATE_RETRY_MS = 2_000
-const DATABASE_POLL_MS = 500
-/** A single line longer than this is dropped whole instead of held in memory. */
-const MAX_LINE_BYTES = 16 * 1024 * 1024
-/** Child telemetry does not retain giant partial code/output records across requests. */
-const MAX_WORKER_CARRY_BYTES = 256 * 1024
-/** Bytes before the read position that tell an in-place rewrite from an append. */
-const PREFIX_CHECK_BYTES = 64
-
-type Stored = { event: ConversationEvent; seq: number; bytes: number }
-
-type Entry = {
-  imageSources: Map<string, ConversationAttachmentSource>
-  question: ConversationSnapshot["question"]
-  checklist: ConversationSnapshot["checklist"]
-  generation: number
-  session?: string
-  /** Changes whenever the cache starts over, so an old cursor reads as "everything". */
-  epoch: string
-  location: RecordLocation | null
-  nextLocateAt: number
-  /** The file seen at the last read; another inode or a smaller size means a new file. */
-  ino?: number
-  /** Bytes of the file consumed so far, including the carried partial line. */
-  position: number
-  /** The last bytes consumed, checked before reading on for a record its agent rewrites in place. */
-  tail: Buffer
-  hasMore: boolean
-  carry: Buffer
-  /** Skipping the rest of a line that was too long. */
-  skipping: boolean
-  state: unknown
-  since?: number
-  lastDatabaseAt: number
-  events: Map<string, Stored>
-  eventBytes: number
-  seq: number
-  truncated: boolean
-  usage?: ConversationUsage
-  nativeState?: "working" | "idle"
-  source: ConversationSnapshot["source"]
-  lastRead: number
-  finished: boolean
-  workers?: ConversationWorker[]
-  workersIncomplete?: boolean
-  children: Map<string, Entry>
-  activity?: string
-  latestAt?: string
-  /** Bytes consumed by the latest read, including after replacement/truncation. */
-  readBytes: number
-}
-
-const cache = new Map<string, Entry>()
-const workerCache = new Map<string, Entry>()
-
-/** For tests and shutdown. */
-export function clearConversationCache(): void {
-  cache.clear()
-  workerCache.clear()
-}
-export const conversationCacheSize = () => cache.size
-
-/** Child history is shown only while requested; closing/hiding a Conversation drops its buffers. */
-export function clearWorkerConversationCache(runId: string): void {
-  for (const key of workerCache.keys()) if (key.startsWith(`${runId}:`)) workerCache.delete(key)
-}
 
 /** What the agent's record does not give the Conversation, as `agents.json` lists it. */
 function gapsOf(agent: NativeAgent): Pick<ConversationSnapshot, "missing"> {
@@ -178,390 +134,14 @@ function gapsOf(agent: NativeAgent): Pick<ConversationSnapshot, "missing"> {
   return missing?.length ? { missing } : {}
 }
 
-const newEpoch = () => Math.random().toString(36).slice(2, 10)
-
-function fresh(generation: number, now: number): Entry {
-  return {
-    imageSources: new Map(),
-    question: null,
-    checklist: null,
-    generation,
-    epoch: newEpoch(),
-    location: null,
-    nextLocateAt: 0,
-    position: 0,
-    tail: Buffer.alloc(0),
-    hasMore: false,
-    carry: Buffer.alloc(0),
-    skipping: false,
-    state: undefined,
-    lastDatabaseAt: 0,
-    events: new Map(),
-    eventBytes: 0,
-    seq: 0,
-    truncated: false,
-    source: "none",
-    lastRead: now,
-    finished: false,
-    children: new Map(),
-    readBytes: 0,
-  }
-}
-
-/** Forget what was read, keep where the record is. */
-function restart(entry: Entry): Entry {
-  const next = fresh(entry.generation, entry.lastRead)
-  next.location = entry.location
-  next.source = entry.source
-  next.session = entry.session
-  return next
-}
-
-function store(entry: Entry, events: ConversationEvent[], retainEvents = true): void {
-  for (const event of events) {
-    if (event.at) entry.latestAt = event.at
-    if (event.kind === "tool")
-      entry.activity = `${event.name}${event.target ? `: ${event.target}` : ""}`
-    else if (event.kind === "thinking") entry.activity = "Thinking"
-    if (!retainEvents) continue
-    const known = entry.events.get(event.id)
-    const text = JSON.stringify(event)
-    if (known && JSON.stringify(known.event) === text) continue
-    const bytes = text.length * 2
-    entry.eventBytes += bytes - (known?.bytes ?? 0)
-    entry.events.set(event.id, { event, seq: ++entry.seq, bytes })
-  }
-  for (const id of entry.events.keys()) {
-    if (
-      entry.events.size <= CONVERSATION_LIMITS.events &&
-      entry.eventBytes <= CONVERSATION_EVENT_BYTES
-    )
-      break
-    entry.eventBytes -= entry.events.get(id)?.bytes ?? 0
-    entry.events.delete(id)
-    entry.truncated = true
-  }
-}
-
-function feed(
-  entry: Entry,
-  lines: string,
-  mapper: JsonlMapper,
-  retainEvents = true,
-  sourceOffset?: number,
-): void {
-  if (lines === "") return
-  try {
-    rememberImageSources(lines, sourceOffset, entry.imageSources)
-    const out = mapper.map(lines, entry.state, sourceOffset)
-    entry.state = out.state
-    if (out.question !== undefined) entry.question = out.question
-    if (out.checklist !== undefined) entry.checklist = out.checklist
-    store(entry, bindImageSources(out.events, entry.imageSources), retainEvents)
-    if (out.usage === null) delete entry.usage
-    else if (out.usage) entry.usage = out.usage
-    if (out.workers) entry.workers = out.workers
-    if (out.workersIncomplete !== undefined) entry.workersIncomplete = out.workersIncomplete
-  } catch {
-    // A reader that cannot make sense of these lines leaves them out; the terminal still shows them.
-  }
-}
-
-/** The last bytes consumed after `got` more bytes were read into `chunk`. */
-function tailOf(previous: Buffer, chunk: Buffer, got: number): Buffer {
-  const read = chunk.subarray(Math.max(0, got - PREFIX_CHECK_BYTES), got)
-  return got >= PREFIX_CHECK_BYTES
-    ? Buffer.from(read)
-    : Buffer.from(Buffer.concat([previous, read]).subarray(-PREFIX_CHECK_BYTES))
-}
-
-/** The record changed under the position: the file is another one, shorter, or, for an agent that rewrites
- * its record in place, no longer starts with the bytes already read. */
-function moved(path: string, info: Stats, entry: Entry, mapper: JsonlMapper) {
-  if (info.ino !== entry.ino || info.size < entry.position) return true
-  if (!mapper.rewrites || info.size === entry.position || entry.tail.length === 0) return false
-  try {
-    const fd = openSync(path, "r")
-    try {
-      const seen = Buffer.allocUnsafe(entry.tail.length)
-      const got = readSync(fd, seen, 0, seen.length, entry.position - seen.length)
-      return got !== seen.length || !seen.equals(entry.tail)
-    } finally {
-      closeSync(fd)
-    }
-  } catch {
-    return false
-  }
-}
-
-/** Read the next chunk of the transcript: whole lines go to the reader, a torn last line waits. */
-function readTranscript(
-  entry: Entry,
-  path: string,
-  mapper: JsonlMapper,
-  budget = CONVERSATION_LIMITS.readBytes,
-  parent?: string,
-  retainEvents = parent === undefined,
-  scope?: ClaudeSettingsScope,
-): Entry {
-  entry.readBytes = 0
-  entry.hasMore = false
-  let info: ReturnType<typeof statSync>
-  try {
-    info = statSync(path)
-  } catch {
-    entry.location = null
-    return entry
-  }
-  // A compressed Codex rollout is finished and read from its decompressed bytes; one too big to wait for is not shown.
-  const whole = isCompressedRollout(path) ? readCompressedSync(path) : undefined
-  if (whole === null) return entry
-  const size = whole?.length ?? info.size
-  if (
-    entry.position > 0 &&
-    (whole ? info.ino !== entry.ino || size < entry.position : moved(path, info, entry, mapper))
-  )
-    entry = restart(entry)
-  entry.ino = info.ino
-  if (size === entry.position) return entry
-  entry.state ??= mapper.state(parent, scope)
-  const length = Math.min(size - entry.position, budget)
-  if (length <= 0) return entry
-  const chunk = Buffer.allocUnsafe(length)
-  let got = 0
-  if (whole) got = whole.copy(chunk, 0, entry.position, entry.position + length)
-  else
-    try {
-      const fd = openSync(path, "r")
-      try {
-        got = readSync(fd, chunk, 0, length, entry.position)
-      } finally {
-        closeSync(fd)
-      }
-    } catch {
-      return entry
-    }
-  entry.position += got
-  entry.tail = tailOf(entry.tail, chunk, got)
-  entry.hasMore = entry.position < size
-  entry.readBytes = got
-  let data = chunk.subarray(0, got)
-  if (entry.skipping) {
-    const end = data.indexOf(10)
-    if (end < 0) return entry
-    data = data.subarray(end + 1)
-    entry.skipping = false
-  }
-  data = entry.carry.length > 0 ? Buffer.concat([entry.carry, data]) : data
-  const last = data.lastIndexOf(10)
-  entry.carry = Buffer.from(data.subarray(last + 1))
-  if (entry.carry.length > (parent ? MAX_WORKER_CARRY_BYTES : MAX_LINE_BYTES)) {
-    entry.carry = Buffer.alloc(0)
-    entry.skipping = true
-  }
-  if (last >= 0) {
-    const complete = data.subarray(0, last + 1)
-    const text = complete.toString("utf8")
-    const sourceOffset =
-      Buffer.byteLength(text) === complete.length ? entry.position - data.length : undefined
-    feed(entry, text, mapper, retainEvents, sourceOffset)
-  }
-  return entry
-}
-
-function readDatabase(
-  entry: Entry,
-  location: Extract<RecordLocation, { kind: "sqlite" }>,
-  now: number,
-  read: OpencodeReader,
-): void {
-  if (now - entry.lastDatabaseAt < DATABASE_POLL_MS) return
-  entry.lastDatabaseAt = now
-  try {
-    const out = read(location.path, location.session, entry.since)
-    if (!out) return
-    store(entry, out.events)
-    if (out.usage) entry.usage = out.usage
-    entry.since = out.since
-    if (out.state) entry.nativeState = out.state
-    if (out.truncated) entry.truncated = true
-  } catch {
-    // A database that is locked or being migrated is read again at the next poll.
-  }
-}
-
-/** Without a native answer, the turn's own end says it: the reader's last event decides. */
-function derivedState(entry: Entry): "working" | "idle" | undefined {
-  if (entry.workers?.length || entry.workersIncomplete) return "working"
-  let last: ConversationEvent | undefined
-  for (const stored of entry.events.values()) last = stored.event
-  if (!last) return undefined
-  return last.kind === "turn-end" || last.kind === "error" ? "idle" : "working"
-}
-
-/** Claude's parent records identify child files but do not contain their progress. Read only
- * those exact files, incrementally, inside the existing request's shared byte budget. */
-function claudeWorkers(
-  entry: Entry,
-  path: string,
-  mapper: JsonlMapper,
-  budget: number,
-): ConversationWorker[] | undefined {
-  if (!entry.workers) return undefined
-  const active = new Set(entry.workers.map((worker) => worker.callId))
-  for (const id of entry.children.keys()) if (!active.has(id)) entry.children.delete(id)
-  return entry.workers.map((worker, index) => {
-    if (
-      index >= CONVERSATION_LIMITS.workers ||
-      worker.id === worker.callId ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(worker.id)
-    )
-      return worker
-    const childPath = claudeWorkerPath(path, worker.id)
-    if (!childPath) return worker
-    let child = entry.children.get(worker.callId) ?? fresh(entry.generation, entry.lastRead)
-    child.state ??= mapper.state(worker.callId)
-    child = readTranscript(child, childPath, mapper, budget, worker.callId)
-    budget = Math.max(0, budget - child.readBytes)
-    entry.children.set(worker.callId, child)
-    return {
-      ...worker,
-      ...(child.latestAt ? { updatedAt: child.latestAt } : {}),
-      ...(child.activity ? { activity: child.activity } : {}),
-      ...(child.usage ? usageOf(child) : {}),
-    }
-  })
-}
-
-function cursorOf(run: RunRecord, entry: Entry): string {
-  return `${run.generation}.${entry.epoch}.${entry.seq}`
-}
-
-/** Whether `after` was handed out by the cache that `cursor` belongs to, at or before `cursor`'s position:
- * only then the events sent with it are the newer ones, not everything. */
-export function continues(after: string | undefined, cursor: string): boolean {
-  const [generation, epoch, seq] = (after ?? "").split(".")
-  const [currentGeneration, currentEpoch, current] = cursor.split(".")
-  const number = Number(seq)
-  return (
-    generation === currentGeneration &&
-    epoch === currentEpoch &&
-    Number.isInteger(number) &&
-    number >= 0 &&
-    number <= Number(current)
-  )
-}
-
-/** The sequence a cursor stands for in this cache, or null when it comes from another generation or cache. */
-function sequenceOf(run: RunRecord, entry: Entry, after: string | undefined): number | null {
-  return continues(after, cursorOf(run, entry)) ? Number((after ?? "").split(".")[2]) : null
-}
-
-const entryBytes = (entry: Entry): number =>
-  entry.eventBytes +
-  Buffer.byteLength(JSON.stringify({ question: entry.question, checklist: entry.checklist })) +
-  entry.carry.byteLength +
-  [...entry.children.values()].reduce((sum, child) => sum + entryBytes(child), 0)
-export const conversationCacheBytes = () =>
-  [...cache.values(), ...workerCache.values()].reduce((sum, entry) => sum + entryBytes(entry), 0)
-function sweep(now: number): void {
-  for (const [key, entry] of cache)
-    if (now - entry.lastRead > (entry.finished ? STOPPED_IDLE_MS : IDLE_MS)) cache.delete(key)
-  while (cache.size > MAX_ENTRIES) {
-    let oldest: [string, Entry] | undefined
-    for (const item of cache)
-      if (
-        !oldest ||
-        Number(item[1].finished) > Number(oldest[1].finished) ||
-        (item[1].finished === oldest[1].finished && item[1].lastRead < oldest[1].lastRead)
-      )
-        oldest = item
-    if (!oldest) break
-    cache.delete(oldest[0])
-  }
-  for (const [key, entry] of workerCache)
-    if (now - entry.lastRead > (entry.finished ? STOPPED_IDLE_MS : IDLE_MS)) workerCache.delete(key)
-  while (workerCache.size > MAX_ENTRIES) {
-    const oldest = [...workerCache.entries()].sort((a, b) => a[1].lastRead - b[1].lastRead)[0]
-    if (!oldest) break
-    workerCache.delete(oldest[0])
-  }
-  while (conversationCacheBytes() > CONVERSATION_CACHE_BYTES) {
-    const oldest = [...cache, ...workerCache].sort(
-      (a, b) => Number(b[1].finished) - Number(a[1].finished) || a[1].lastRead - b[1].lastRead,
-    )[0]
-    if (!oldest) break
-    if (cache.get(oldest[0]) === oldest[1]) cache.delete(oldest[0])
-    else workerCache.delete(oldest[0])
-  }
-}
-
-/**
- * The run's conversation: every event newer than the `after` cursor (all of them for a cursor from another
- * generation or cache), the latest usage and state, and a new cursor. One call reads at most
- * CONVERSATION_LIMITS.readBytes of a large record; the rest follows on the next calls.
- */
-function usageOf(entry: Entry, run?: NativeRun): Pick<ConversationSnapshot, "usage"> {
-  const unknown = run ? unverifiedNativeFields(run, entry.usage?.settingsAt) : []
-  if (!entry.hasMore) {
-    if (!unknown.length) return entry.usage ? { usage: entry.usage } : {}
-    return {
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        turns: 0,
-        ...entry.usage,
-        ...(unknown.includes("model") ? { model: undefined } : {}),
-        ...(unknown.includes("effort") ? { effort: undefined } : {}),
-        settingsUnknown: [...new Set([...(entry.usage?.settingsUnknown ?? []), ...unknown])],
-      },
-    }
-  }
-  return {
-    usage: {
-      ...entry.usage,
-      input: entry.usage?.input ?? 0,
-      output: entry.usage?.output ?? 0,
-      cacheRead: entry.usage?.cacheRead ?? 0,
-      cacheWrite: entry.usage?.cacheWrite ?? 0,
-      turns: entry.usage?.turns ?? 0,
-      model: undefined,
-      effort: undefined,
-      contextWindow: undefined,
-      contextUsed: undefined,
-      // A record still being caught up prices only what is read so far: no estimate yet.
-      estimatedUsd: undefined,
-      settingsUnknown: ["model", "effort"],
-    },
-  }
-}
-
-/** Every event the cache holds for this run, in record order, without reading the record again. */
-export function cachedEvents(run: NativeRun): ConversationEvent[] {
-  const entry = cache.get(`${run.id}:${run.generation}`)
-  return entry ? [...entry.events.values()].map((stored) => stored.event) : []
-}
-
-export function readConversation(
+function loadEntryRecord(
   ctx: Ctx,
   run: NativeRun,
-  after?: string,
-  deps: ConversationDeps = defaultDeps,
-): ConversationSnapshot {
-  const now = ctx.clock.now()
-  const key = `${run.id}:${run.generation}`
-  for (const [other, entry] of cache)
-    if (other.startsWith(`${run.id}:`) && entry.generation !== run.generation) cache.delete(other)
-  let entry = cache.get(key) ?? fresh(run.generation, now)
-  if (entry.session !== run.nativeSession) {
-    entry = fresh(run.generation, now)
-    clearWorkerConversationCache(run.id)
-  }
-  entry.session = run.nativeSession
-  entry.lastRead = now
-  entry.finished = run.status === "stopped" || run.status === "failed"
+  initial: CacheEntry,
+  now: number,
+  deps: ConversationDeps,
+): { entry: CacheEntry; workers: ConversationWorker[] | undefined } {
+  let entry = initial
   let workers = entry.workers
   try {
     if (!entry.location && now >= entry.nextLocateAt) {
@@ -571,25 +151,23 @@ export function readConversation(
     const location = entry.location
     if (location?.kind === "jsonl") {
       entry.source = "transcript"
-      entry = readTranscript(
-        entry,
-        location.path,
-        deps.jsonl[run.agent as keyof ConversationDeps["jsonl"]],
-        undefined,
-        undefined,
-        true,
-        run.agent === "claude-code" && run.nativeSession
-          ? { session: run.nativeSession, cwd: run.cwd }
-          : undefined,
-      )
-      if (run.agent === "claude-code")
+      entry = readTranscript(entry, {
+        path: location.path,
+        mapper: deps.jsonl[run.agent as keyof ConversationDeps["jsonl"]],
+        retainEvents: true,
+        scope:
+          run.agent === "claude-code" && run.nativeSession
+            ? { session: run.nativeSession, cwd: run.cwd }
+            : undefined,
+      })
+      if (run.agent === "claude-code") {
         workers = claudeWorkers(
           entry,
           location.path,
           deps.jsonl["claude-code"],
           Math.max(0, CONVERSATION_LIMITS.readBytes - entry.readBytes),
         )
-      // A record that vanished is searched for again after a pause.
+      }
       if (!entry.location) entry.nextLocateAt = now + LOCATE_RETRY_MS
     } else if (location?.kind === "sqlite") {
       entry.source = "database"
@@ -598,14 +176,42 @@ export function readConversation(
   } catch {
     // Whatever was read before is still good.
   }
-  cache.set(key, entry)
-  entry.finished = run.status === "stopped" || run.status === "failed"
-  sweep(now)
-  const seq = sequenceOf(run, entry, after)
+  return { entry, workers }
+}
+
+function collectEvents(entry: CacheEntry, seq: number | null): ConversationEvent[] {
   const events: ConversationEvent[] = []
-  if (seq !== entry.seq)
-    for (const stored of entry.events.values())
-      if (seq === null || stored.seq > seq) events.push(stored.event)
+  if (seq === entry.seq) return events
+  for (const stored of entry.events.values()) {
+    if (seq === null || stored.seq > seq) events.push(stored.event)
+  }
+  return events
+}
+
+function ensureRunEntry(run: NativeRun, now: number): { key: string; entry: CacheEntry } {
+  const key = `${run.id}:${run.generation}`
+  for (const [other, existing] of conversationCache) {
+    if (other.startsWith(`${run.id}:`) && existing.generation !== run.generation)
+      conversationCache.delete(other)
+  }
+  let entry = conversationCache.get(key) ?? freshEntry(run.generation, now)
+  if (entry.session !== run.nativeSession) {
+    entry = freshEntry(run.generation, now)
+    clearWorkerConversationCache(run.id)
+  }
+  entry.session = run.nativeSession
+  entry.lastRead = now
+  entry.finished = run.status === "stopped" || run.status === "failed"
+  return { key, entry }
+}
+
+function buildConversationSnapshot(
+  ctx: Ctx,
+  run: NativeRun,
+  entry: CacheEntry,
+  workers: ConversationWorker[] | undefined,
+  after?: string,
+): ConversationSnapshot {
   const state = entry.finished
     ? "idle"
     : workers?.length || entry.workersIncomplete
@@ -621,29 +227,18 @@ export function readConversation(
           (entry.state as CodexState | undefined)?.planObservation,
         )
       : { checklist: entry.checklist, captured: false }
-  const checklist = selected.checklist
   return {
     agent: run.agent,
     ...gapsOf(run.agent),
-    question: entry.question
-      ? {
-          ...entry.question,
-          answerable: entry.question.answerable && !entry.hasMore,
-          availability: entry.hasMore
-            ? "catching-up"
-            : (entry.question.availability ??
-              (entry.question.answerable ? "ready" : "unsupported")),
-        }
-      : null,
-    checklist: checklist
-      ? {
-          ...checklist,
-          scope: run.nativeSession ?? entry.epoch,
-          ...(entry.hasMore && !selected.captured ? { coverage: "incomplete" as const } : {}),
-        }
-      : null,
+    question: snapshotQuestion(entry),
+    checklist: snapshotChecklist(
+      selected.checklist,
+      run.nativeSession ?? entry.epoch,
+      entry.hasMore,
+      selected.captured,
+    ),
     source: entry.source,
-    events,
+    events: collectEvents(entry, sequenceOf(run, entry, after)),
     ...usageOf(entry, run),
     ...(state ? { state } : {}),
     ...(workers ? { workers: entry.finished ? [] : workers } : {}),
@@ -656,6 +251,21 @@ export function readConversation(
   }
 }
 
+export function readConversation(
+  ctx: Ctx,
+  run: NativeRun,
+  after?: string,
+  deps: ConversationDeps = defaultDeps,
+): ConversationSnapshot {
+  const now = ctx.clock.now()
+  const { key, entry: initial } = ensureRunEntry(run, now)
+  const { entry, workers } = loadEntryRecord(ctx, run, initial, now, deps)
+  conversationCache.set(key, entry)
+  entry.finished = run.status === "stopped" || run.status === "failed"
+  sweepCaches(now)
+  return buildConversationSnapshot(ctx, run, entry, workers, after)
+}
+
 /** A read-only view of a proven native child. No file supplied by the caller is opened and
  * no parent conversation is returned as a fallback when membership/history is unavailable. */
 export function readWorkerConversation(
@@ -664,133 +274,11 @@ export function readWorkerConversation(
   worker: string,
   after?: string,
 ): ConversationSnapshot | undefined {
-  if (
-    !workerIdValid(worker) ||
-    !run.nativeSession ||
-    worker === run.nativeSession ||
-    run.agent === "pi"
-  )
-    return undefined
-  const now = ctx.clock.now()
-  const ownerKey = `${run.id}:${run.generation}`
-  // Claude records child membership/completion in the parent's transcript. Database-backed
-  // clients prove it directly below, without also loading the parent's conversation history.
-  if (run.agent === "claude-code") readConversation(ctx, run)
-  const parent = run.agent === "claude-code" ? cache.get(ownerKey) : undefined
-  let budget = CONVERSATION_LIMITS.readBytes as number
-  if (parent)
-    budget = Math.max(
-      0,
-      budget -
-        parent.readBytes -
-        [...parent.children.values()].reduce((sum, child) => sum + child.readBytes, 0),
-    )
-  let location: RecordLocation | null = null
-  let externalParent: string | undefined
-  let active: boolean | undefined
-  try {
-    if (run.agent === "claude-code" && parent?.location?.kind === "jsonl") {
-      const state = parent.state as ClaudeState | undefined
-      externalParent = state?.agents[worker]
-      if (!externalParent) return undefined
-      const path = claudeWorkerPath(parent.location.path, worker)
-      if (!path) return undefined
-      location = { kind: "jsonl", path }
-      active = Object.values(state?.workers ?? {}).some((row) => row.id === worker)
-        ? true
-        : state?.workersIncomplete
-          ? undefined
-          : false
-    } else if (run.agent === "opencode") {
-      const own = locateRecord(ctx, run)
-      if (own?.kind !== "sqlite" || !opencodeWorkerLinked(own.path, run.nativeSession, worker))
-        return undefined
-      location = { kind: "sqlite", path: own.path, session: worker }
-    } else if (run.agent === "codex") location = codexWorkerLocation(ctx, run, worker)
-  } catch {
-    return undefined
-  }
-  if (!location) return undefined
-  const nativeOwnerKey = `${ownerKey}:${run.nativeSession}`
-  const key = `${nativeOwnerKey}:${worker}`
-  for (const other of workerCache.keys())
-    if (other.startsWith(`${run.id}:`) && !other.startsWith(`${nativeOwnerKey}:`))
-      workerCache.delete(other)
-  let entry = workerCache.get(key) ?? fresh(run.generation, now)
-  entry.lastRead = now
-  entry.location = location
-  if (location.kind === "jsonl") {
-    entry.source = "transcript"
-    entry = readTranscript(
-      entry,
-      location.path,
-      defaultDeps.jsonl[run.agent as "claude-code" | "codex"],
-      budget,
-      externalParent,
-      true,
-    )
-  } else {
-    entry.source = "database"
-    readDatabase(entry, location, now, defaultDeps.opencode)
-  }
-  entry.finished = run.status === "stopped" || run.status === "failed"
-  workerCache.set(key, entry)
-  sweep(now)
-  const seq = sequenceOf(run, entry, after)
-  const events = [...entry.events.values()]
-    .filter((stored) => seq === null || stored.seq > seq)
-    .map(({ event }) => {
-      if (externalParent && event.parent === externalParent) {
-        const { parent: _parent, ...root } = event
-        return root
-      }
-      return event
-    })
-  const state = entry.finished
-    ? "idle"
-    : run.agent === "claude-code"
-      ? active === undefined
-        ? undefined
-        : active
-          ? "working"
-          : "idle"
-      : (entry.nativeState ?? derivedState(entry))
-  const selected =
-    run.agent === "codex"
-      ? selectNativePlan(
-          ctx,
-          worker,
-          entry.checklist,
-          entry.location?.kind === "jsonl" ? entry.location.path : undefined,
-          (entry.state as CodexState | undefined)?.planObservation,
-        )
-      : { checklist: entry.checklist, captured: false }
-  const checklist = selected.checklist
-  return {
-    agent: run.agent,
-    source: entry.source,
-    question: entry.question
-      ? {
-          ...entry.question,
-          answerable: entry.question.answerable && !entry.hasMore,
-          availability: entry.hasMore
-            ? "catching-up"
-            : (entry.question.availability ??
-              (entry.question.answerable ? "ready" : "unsupported")),
-        }
-      : null,
-    checklist: checklist
-      ? {
-          ...checklist,
-          scope: worker,
-          ...(entry.hasMore && !selected.captured ? { coverage: "incomplete" as const } : {}),
-        }
-      : null,
-    events,
-    ...usageOf(entry),
-    ...(state ? { state } : {}),
-    cursor: cursorOf(run, entry),
-    truncated: entry.truncated,
-    ...(entry.hasMore ? { hasMore: true } : {}),
-  }
+  return readWorkerConversationWith(ctx, run, worker, {
+    after,
+    defaultDeps,
+    refreshParent: (parentCtx, parentRun) => {
+      readConversation(parentCtx, parentRun)
+    },
+  })
 }

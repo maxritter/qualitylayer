@@ -39,15 +39,20 @@ export async function sealForLink(key: string, purpose: Purpose, plain: string):
   return { v: 3, iv: toBase64(iv), ct: toBase64(new Uint8Array(ct)) };
 }
 
+function isSealedPayload(sealed: unknown): sealed is SealedPayload {
+  if (typeof sealed !== "object" || sealed === null) return false;
+  const s = sealed as Partial<SealedPayload>;
+  return s.v === 3 && typeof s.iv === "string" && typeof s.ct === "string";
+}
+
 /** What a seal holds, or null when it is not one, was sealed for another purpose or with another key. */
 export async function openFromLink(key: string, purpose: Purpose, sealed: unknown): Promise<string | null> {
-  const s = sealed as Partial<SealedPayload> | null;
-  if (typeof s !== "object" || s === null || s.v !== 3 || typeof s.iv !== "string" || typeof s.ct !== "string") return null;
+  if (!isSealedPayload(sealed)) return null;
   try {
     const plain = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: fromBase64(s.iv) as BufferSource, additionalData: additionalData(purpose) },
+      { name: "AES-GCM", iv: fromBase64(sealed.iv) as BufferSource, additionalData: additionalData(purpose) },
       await aesKey(key, "decrypt"),
-      fromBase64(s.ct) as BufferSource,
+      fromBase64(sealed.ct) as BufferSource,
     );
     return new TextDecoder().decode(plain);
   } catch {
@@ -72,21 +77,42 @@ const annotation = (blockId: string, originalText: string, body: string, now: nu
   createdAt: now,
 });
 
+function passageContext(r: Extract<Remark, { kind: "passage" }>) {
+  const ctx: { before?: string; after?: string; section?: string } = {};
+  if (r.before !== undefined) ctx.before = r.before;
+  if (r.after !== undefined) ctx.after = r.after;
+  if (r.section !== undefined) ctx.section = r.section;
+  return ctx;
+}
+
+function passageAnnotation(r: Extract<Remark, { kind: "passage" }>, now: number) {
+  const context = passageContext(r);
+  const forPerson = r.for === "person";
+  const blockId = forPerson ? "review" : r.doc;
+  const originalText = forPerson
+    ? JSON.stringify({ t: "thread", note: true, for: "person", doc: r.doc, quote: r.quote, ...context })
+    : r.quote;
+  const base = annotation(blockId, originalText, r.text, now);
+  return {
+    ...base,
+    ...context,
+    ...(r.for ? { for: r.for } : {}),
+    ...(r.id ? { id: r.id } : {}),
+  };
+}
+
+function threadHead(r: Extract<Remark, { kind: "thread" | "reply" }>) {
+  if (r.kind === "reply") return { t: "reply", thread: r.thread };
+  const anchor = r.anchor.quote
+    ? { ...r.anchor, quote: r.anchor.quote.slice(0, 300) }
+    : { ...r.anchor };
+  return { t: "thread", thread: r.thread, anchor };
+}
+
 function toAnnotation(r: Remark, now: number) {
-  if (r.kind === "passage") {
-    const context = { ...(r.before !== undefined ? { before: r.before } : {}), ...(r.after !== undefined ? { after: r.after } : {}), ...(r.section !== undefined ? { section: r.section } : {}) };
-    return { ...annotation(r.for === "person" ? "review" : r.doc, r.for === "person" ? JSON.stringify({ t: "thread", note: true, for: "person", doc: r.doc, quote: r.quote, ...context }) : r.quote, r.text, now), ...context, ...(r.for ? { for: r.for } : {}), ...(r.id ? { id: r.id } : {}) };
-  }
+  if (r.kind === "passage") return passageAnnotation(r, now);
   // The change's threads carry a small JSON head the App decodes (core/review/threads.ts fromWire).
-  const head =
-    r.kind === "reply"
-      ? { t: "reply", thread: r.thread }
-      : {
-          t: "thread",
-          thread: r.thread,
-          anchor: { ...r.anchor, ...(r.anchor.quote ? { quote: r.anchor.quote.slice(0, 300) } : {}) },
-        };
-  return annotation("review", JSON.stringify(head), r.text, now);
+  return annotation("review", JSON.stringify(threadHead(r)), r.text, now);
 }
 
 /** Everything a guest wrote, as one batch in the annotation format the App reads. */

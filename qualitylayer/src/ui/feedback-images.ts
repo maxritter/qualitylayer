@@ -73,41 +73,59 @@ async function shrink(
 
 export type Prepared = { ok: true; shot: Shot } | { ok: false; message: string }
 
-/** Public preparation always produces PNG; the server independently strips and validates it. */
-export async function preparePublicImage(file: File, taken: Shot[]): Promise<Prepared> {
-  if (taken.length >= MAX_IMAGES) return { ok: false, message: "Use at most five screenshots." }
-  if (file.size > MAX_IMAGE_BYTES) return { ok: false, message: "Choose an image up to 5 MB." }
-  const original = await readBytes(file)
-  const type = sniffImage(original)
-  if (type === null) return { ok: false, message: "Choose a PNG, JPEG or WebP screenshot." }
-  let bytes = original
-  if (typeof createImageBitmap === "function") {
-    let bitmap: ImageBitmap | null = null
-    try {
-      bitmap = await createImageBitmap(file)
-      const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
-      const blob = await encode(
-        bitmap,
-        Math.max(1, Math.round(bitmap.width * scale)),
-        Math.max(1, Math.round(bitmap.height * scale)),
-        "image/png",
-        1,
-      )
-      if (blob?.type !== "image/png") throw new Error("PNG conversion unavailable")
-      bytes = await readBytes(blob)
-    } catch {
-      return {
-        ok: false,
-        message: "This image could not be converted to PNG. Export it as PNG and add it again.",
-      }
-    } finally {
-      bitmap?.close()
-    }
-  } else if (type !== "image/png")
+type PngResult = { ok: true; bytes: Uint8Array } | { ok: false; message: string }
+
+async function convertToPublicPng(
+  file: File,
+  type: ImageType,
+  original: Uint8Array,
+): Promise<PngResult> {
+  if (typeof createImageBitmap !== "function") {
+    if (type === "image/png") return { ok: true, bytes: original }
     return {
       ok: false,
       message: "PNG conversion is unavailable. Export this screenshot as PNG and add it again.",
     }
+  }
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height))
+    const blob = await encode(
+      bitmap,
+      Math.max(1, Math.round(bitmap.width * scale)),
+      Math.max(1, Math.round(bitmap.height * scale)),
+      "image/png",
+      1,
+    )
+    if (blob?.type !== "image/png") throw new Error("PNG conversion unavailable")
+    return { ok: true, bytes: await readBytes(blob) }
+  } catch {
+    return {
+      ok: false,
+      message: "This image could not be converted to PNG. Export it as PNG and add it again.",
+    }
+  } finally {
+    bitmap?.close()
+  }
+}
+
+function validatePublicFileMeta(file: File, taken: Shot[]): string | null {
+  if (taken.length >= MAX_IMAGES) return "Use at most five screenshots."
+  if (file.size > MAX_IMAGE_BYTES) return "Choose an image up to 5 MB."
+  return null
+}
+
+/** Public preparation always produces PNG; the server independently strips and validates it. */
+export async function preparePublicImage(file: File, taken: Shot[]): Promise<Prepared> {
+  const metaError = validatePublicFileMeta(file, taken)
+  if (metaError !== null) return { ok: false, message: metaError }
+  const original = await readBytes(file)
+  const type = sniffImage(original)
+  if (type === null) return { ok: false, message: "Choose a PNG, JPEG or WebP screenshot." }
+  const converted = await convertToPublicPng(file, type, original)
+  if (!converted.ok) return converted
+  const { bytes } = converted
   if (taken.reduce((sum, shot) => sum + shot.bytes.length, 0) + bytes.length > MAX_TOTAL_BYTES)
     return { ok: false, message: "Screenshots must be up to 4 MB together. Use a smaller image." }
   return {

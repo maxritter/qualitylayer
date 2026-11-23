@@ -11,7 +11,6 @@ export function anchorWords(anchor: ReviewAnchor): string {
     case "doneMeans":
       return `Done ${anchor.id}`
     case "picture":
-      return anchor.id
     case "check":
       return anchor.id
     case "plan":

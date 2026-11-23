@@ -65,6 +65,19 @@ function headings(lines: string[]): Heading[] {
   return out
 }
 
+function sliceHeadingBody(lines: string[], all: Heading[], start: number, level: 2 | 3): string {
+  const end = all.find((h) => h.index > start && h.level <= level)?.index ?? lines.length
+  const body = lines.slice(start, end)
+  while (body.length > 1 && (body[body.length - 1] ?? "").trim() === "") body.pop()
+  return body.join("\n")
+}
+
+function decisionMarkerId(section: string, text: string): string | undefined {
+  if (section !== "Engineering decisions") return undefined
+  const decisions = parseMarkers(text).markers.filter((marker) => marker.name === "decide")
+  return decisions.length === 1 ? decisions[0]?.args[0] : undefined
+}
+
 /** The H3 contracts (and, with `whole`, the H2 sections themselves) under the named H2 sections. */
 export function parseContracts(
   markdown: string,
@@ -77,12 +90,6 @@ export function parseContracts(
   const contracts: Contract[] = []
   const wholes: Contract[] = []
   let current: string | null = null
-  const slice = (start: number, level: 2 | 3): string => {
-    const end = all.find((h) => h.index > start && h.level <= level)?.index ?? lines.length
-    const body = lines.slice(start, end)
-    while (body.length > 1 && (body[body.length - 1] ?? "").trim() === "") body.pop()
-    return body.join("\n")
-  }
   for (const h of all) {
     if (h.level === 2) {
       current = sections.includes(h.text) ? h.text : null
@@ -91,19 +98,15 @@ export function parseContracts(
           name: h.text,
           doc,
           section: h.text,
-          text: slice(h.index, 2),
+          text: sliceHeadingBody(lines, all, h.index, 2),
           line: h.index + 1,
         })
       }
       continue
     }
     if (current === null) continue
-    const text = slice(h.index, 3)
-    const decisions =
-      current === "Engineering decisions"
-        ? parseMarkers(text).markers.filter((marker) => marker.name === "decide")
-        : []
-    const id = decisions.length === 1 ? decisions[0]?.args[0] : undefined
+    const text = sliceHeadingBody(lines, all, h.index, 3)
+    const id = decisionMarkerId(current, text)
     contracts.push({
       name: h.text,
       doc,

@@ -12,113 +12,119 @@ type QuestionDelivery = {
   onQuestionAnswer?: (id: string, answer: AnsweredQuestion | null) => void
 }
 
-export function questionActionsFor({
-  api,
-  task,
-  reload,
-  onQuestionAnswer,
-}: QuestionDelivery): QuestionActions {
+type AnswerInput = Parameters<QuestionActions["answer"]>[0]
+type OpenQuestion = NonNullable<TaskDetail["question"]>
+
+function optimisticChoiceLabel(open: OpenQuestion, answer: AnswerInput) {
+  if ("choices" in answer)
+    return answer.choices.map((i) => open.choices[i]?.label ?? "").join(" + ")
+  if ("choice" in answer) return open.choices[answer.choice]?.label ?? ""
+  if ("text" in answer) return answer.text
+  return recommendedLabel(open) ?? ""
+}
+
+function buildOptimisticAnswer(open: OpenQuestion, answer: AnswerInput): AnsweredQuestion {
+  return {
+    id: open.id,
+    number: open.number,
+    question: open.question,
+    choice: optimisticChoiceLabel(open, answer),
+    at: Date.now(),
+    via: "app",
+    delivered: false,
+    ...(open.agent !== undefined ? { agent: open.agent } : {}),
+    ...(open.about !== undefined ? { about: open.about } : {}),
+  }
+}
+
+function buildAnswerPayload(openId: string, answer: AnswerInput) {
+  let body: Record<string, unknown>
+  if ("choices" in answer) body = { choices: answer.choices }
+  else if ("choice" in answer) body = { choice: answer.choice }
+  else if ("text" in answer) body = { text: answer.text }
+  else if ("more" in answer) body = { more: { request: answer.request ?? "" } }
+  else body = { unsure: true as const }
+  return { id: openId, ...body } as Parameters<Api["answerQuestion"]>[1]
+}
+
+async function runToastAction(
+  work: () => Promise<void>,
+  onSuccess?: () => void,
+  onError?: () => void,
+) {
+  try {
+    await work()
+    onSuccess?.()
+    return true
+  } catch (cause) {
+    toast.error(questionError(cause))
+    onError?.()
+    return false
+  }
+}
+
+async function submitOpenAnswer(
+  delivery: QuestionDelivery,
+  answer: AnswerInput,
+  files: Parameters<QuestionActions["answer"]>[1],
+) {
+  const { api, task, reload, onQuestionAnswer } = delivery
+  const open = task.question
+  if (open == null) return false
+  if (!("more" in answer) && !files?.length) {
+    onQuestionAnswer?.(task.id, buildOptimisticAnswer(open, answer))
+  }
+  try {
+    await api.answerQuestion(task.id, buildAnswerPayload(open.id, answer), files)
+    reload()
+    return true
+  } catch (cause) {
+    onQuestionAnswer?.(task.id, null)
+    // The card shows the failure inline and keeps the answer; no second message here.
+    reload()
+    throw cause
+  }
+}
+
+export function questionActionsFor(delivery: QuestionDelivery): QuestionActions {
+  const { api, task, reload } = delivery
+  const focus = api.focusQuestion
   /** The question card's answers, sent at once: a refusal is said where the person looks. */
   return {
-    answer: async (answer, files) => {
-      const open = task.question
-      if (open == null) return false
-      if (!("more" in answer) && !files?.length) {
-        const choice =
-          "choices" in answer
-            ? answer.choices.map((i) => open.choices[i]?.label ?? "").join(" + ")
-            : "choice" in answer
-              ? open.choices[answer.choice]?.label
-              : "text" in answer
-                ? answer.text
-                : recommendedLabel(open)
-        onQuestionAnswer?.(task.id, {
-          id: open.id,
-          number: open.number,
-          question: open.question,
-          choice: choice ?? "",
-          at: Date.now(),
-          via: "app",
-          delivered: false,
-          ...(open.agent !== undefined ? { agent: open.agent } : {}),
-          ...(open.about !== undefined ? { about: open.about } : {}),
-        })
-      }
-      try {
-        await api.answerQuestion(
-          task.id,
-          {
-            id: open.id,
-            ...("choices" in answer
-              ? { choices: answer.choices }
-              : "choice" in answer
-                ? { choice: answer.choice }
-                : "text" in answer
-                  ? { text: answer.text }
-                  : "more" in answer
-                    ? { more: { request: answer.request ?? "" } }
-                    : { unsure: true as const }),
-          } as Parameters<typeof api.answerQuestion>[1],
-          files,
-        )
-        reload()
-        return true
-      } catch (cause) {
-        onQuestionAnswer?.(task.id, null)
-        // The card shows the failure inline and keeps the answer; no second message here.
-        reload()
-        throw cause
-      }
-    },
-    answerRest: async (members) => {
-      try {
-        for (const member of members)
-          await api.answerQuestion(task.id, {
-            id: member.id,
-            ...(member.choices ? { choices: member.choices } : { choice: member.choice }),
-          })
-        reload()
-        return true
-      } catch (cause) {
-        toast.error(questionError(cause))
-        reload()
-        return false
-      }
-    },
-    ...(api.focusQuestion !== undefined
+    answer: (answer, files) => submitOpenAnswer(delivery, answer, files),
+    answerRest: (members) =>
+      runToastAction(
+        async () => {
+          for (const member of members) {
+            const payload = member.choices ? { choices: member.choices } : { choice: member.choice }
+            await api.answerQuestion(task.id, { id: member.id, ...payload })
+          }
+          reload()
+        },
+        undefined,
+        reload,
+      ),
+    ...(focus !== undefined
       ? {
-          focus: async (id: string) => {
-            try {
-              await api.focusQuestion?.(task.id, id)
+          focus: (id: string) =>
+            runToastAction(async () => {
+              await focus(task.id, id)
               reload()
-              return true
-            } catch (cause) {
-              toast.error(questionError(cause))
-              return false
-            }
-          },
+            }),
         }
       : {}),
-    cancel: async () => {
-      try {
+    cancel: () =>
+      runToastAction(async () => {
         await api.cancelMore(task.id)
         reload()
-        return true
-      } catch (cause) {
-        toast.error(questionError(cause))
-        return false
-      }
-    },
-    change: async (number, answer) => {
-      try {
-        await api.changeAnswer(task.id, { number, ...answer })
-        toast.success("Changed. The agent hears of it with its next step")
-        reload()
-        return true
-      } catch (cause) {
-        toast.error(questionError(cause))
-        return false
-      }
-    },
+      }),
+    change: (number, answer) =>
+      runToastAction(
+        async () => {
+          await api.changeAnswer(task.id, { number, ...answer })
+          reload()
+        },
+        () => toast.success("Changed. The agent hears of it with its next step"),
+      ),
   }
 }

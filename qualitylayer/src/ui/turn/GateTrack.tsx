@@ -1,25 +1,75 @@
 import { BookOpenIcon } from "lucide-react"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
-import { flowStepOf } from "../../core/flow.ts"
 import { flattenItems, type Item, type ItemAnswer } from "../../core/items.ts"
-import { interactionApi, api as liveApi } from "../api.ts"
 import { setDocumentFullSize, setDocumentReturn, useDocumentFullSize } from "../docs/mode.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { fileOf, viewedStep } from "../model.ts"
-import { approvesOutside } from "../outside.ts"
 import { AgentTurn } from "../shell/AgentTurn.tsx"
-import { mutateTurn } from "./actions.ts"
-import { answerBody } from "./answer-body.ts"
-import { focusChoice } from "./ChoiceList.tsx"
 import { DecisionCard } from "./DecisionCard.tsx"
 import { DocumentRow } from "./DocumentRow.tsx"
+import {
+  enterQuickAgreeKind,
+  GateTrackNav,
+  isTrackItem,
+  persistGateAnswer,
+  shouldFallbackToAgentTurn,
+  useGateWindowKeys,
+} from "./GateTrackParts.tsx"
 import { useTurnSnapshot } from "./projection.ts"
 
 const selectedDecisions = new Map<string, string | null>()
 type TrackSection = "decisions" | "artifacts"
 const selectedSections = new Map<string, TrackSection>()
+
+function initialTrackSection(taskId: string, decisions: Item[], artifacts: Item[]): TrackSection {
+  const saved = selectedSections.get(taskId)
+  if (saved) return saved
+  if (
+    decisions.some((item) => item.state === "open" && (item.blocking || item.kind === "decision"))
+  ) {
+    return "decisions"
+  }
+  return artifacts.some((item) => item.state === "open") ? "artifacts" : "decisions"
+}
+
+function useGateAnswer(
+  props: TaskSurfaceProps,
+  group: Item[],
+  index: number,
+  setSelected: (value: string | null) => void,
+) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const pendingAnswers = useRef(new Set<string>())
+
+  const answer = async (item: Item, value: ItemAnswer | null, files: File[] = []) => {
+    if (pendingAnswers.current.has(item.id)) return false
+    pendingAnswers.current.add(item.id)
+    setBusy(true)
+    setError(null)
+    try {
+      await persistGateAnswer(props, item, value, files)
+      if (value) {
+        toast("Answer saved", {
+          duration: 5000,
+          action: { label: "Undo", onClick: () => void answer(item, null) },
+        })
+      }
+      setSelected(group.slice(index + 1).find((row) => row.state === "open")?.id ?? item.id)
+      props.reload()
+      return true
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save your answer. Try again.")
+      return false
+    } finally {
+      pendingAnswers.current.delete(item.id)
+      setBusy(false)
+    }
+  }
+  return { busy, error, answer }
+}
 
 export function GateTrack(props: TaskSurfaceProps) {
   const root = useRef<HTMLDivElement | null>(null)
@@ -28,83 +78,18 @@ export function GateTrack(props: TaskSurfaceProps) {
   useLayoutEffect(() => {
     setTrackHost(document.getElementById(`task-gate-track-${props.task.id}`))
   })
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (
-        reading ||
-        event.defaultPrevented ||
-        event.repeat ||
-        event.isComposing ||
-        (event.target instanceof Node && root.current?.contains(event.target)) ||
-        (event.target instanceof HTMLElement &&
-          (event.target.isContentEditable ||
-            ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        document.querySelector('[role="dialog"][data-open], [role="menu"]') ||
-        ![
-          "ArrowLeft",
-          "ArrowRight",
-          "ArrowUp",
-          "ArrowDown",
-          "Enter",
-          "a",
-          "A",
-          "y",
-          "Y",
-          "c",
-          "C",
-          "1",
-          "2",
-          "3",
-          "4",
-          "5",
-          "6",
-          "7",
-          "8",
-          "9",
-        ].includes(event.key)
-      )
-        return
-      const card = root.current?.querySelector<HTMLElement>('[data-testid="decision-card"]')
-      if (!card) return
-      if (event.key === "ArrowDown" && document.activeElement === document.body) {
-        event.preventDefault()
-        if (!focusChoice(card)) card.focus()
-        return
-      }
-      event.preventDefault()
-      card.dispatchEvent(
-        new KeyboardEvent("keydown", { key: event.key, bubbles: true, cancelable: true }),
-      )
-    }
-    window.addEventListener("keydown", key)
-    return () => window.removeEventListener("keydown", key)
-  }, [reading])
+  useGateWindowKeys(root, reading)
+
   const turn = useTurnSnapshot(props.task.id)
   const phase = viewedStep(props.view) ?? "plan"
-  const items = flattenItems(turn?.items ?? props.task.items ?? []).filter(
-    (item) =>
-      !item.children &&
-      !item.uncounted &&
-      item.step === phase &&
-      item.kind !== "question" &&
-      item.kind !== "done" &&
-      item.kind !== "asked",
+  const items = flattenItems(turn?.items ?? props.task.items ?? []).filter((item) =>
+    isTrackItem(item, phase),
   )
   const decisions = items.filter((item) => item.kind !== "done" && item.kind !== "mockup")
   const artifacts = items.filter((item) => item.kind === "mockup")
-  const [section, updateSection] = useState<TrackSection>(
-    () =>
-      selectedSections.get(props.task.id) ??
-      (decisions.some(
-        (item) => item.state === "open" && (item.blocking || item.kind === "decision"),
-      )
-        ? "decisions"
-        : artifacts.some((item) => item.state === "open")
-          ? "artifacts"
-          : "decisions"),
+
+  const [section, updateSection] = useState<TrackSection>(() =>
+    initialTrackSection(props.task.id, decisions, artifacts),
   )
   const setSection = (value: TrackSection) => {
     selectedSections.set(props.task.id, value)
@@ -117,9 +102,7 @@ export function GateTrack(props: TaskSurfaceProps) {
     selectedDecisions.set(props.task.id, value)
     updateSelected(value)
   }
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const pendingAnswers = useRef(new Set<string>())
+
   const onArtifacts =
     (section === "artifacts" && artifacts.some((item) => item.state === "open")) ||
     !decisions.some((item) => item.state === "open")
@@ -128,129 +111,40 @@ export function GateTrack(props: TaskSurfaceProps) {
     group.find((item) => item.id === selected && item.state === "open") ??
     group.find((item) => item.state === "open")
   const index = current ? group.indexOf(current) : -1
-  const answer = async (item: Item, value: ItemAnswer | null, files: File[] = []) => {
-    if (pendingAnswers.current.has(item.id)) return false
-    pendingAnswers.current.add(item.id)
-    setBusy(true)
-    setError(null)
-    try {
-      const update = (rows: Item[]): Item[] =>
-        rows.map((row) =>
-          row.id === item.id
-            ? { ...row, state: value ? "sent" : "open", answer: value ?? undefined }
-            : { ...row, ...(row.children ? { children: update(row.children) } : {}) },
-        )
-      if (props.api !== liveApi) props.live.answer(item.id, value)
-      else
-        await mutateTurn(
-          props.task.id,
-          "item",
-          { item: item.id, answer: value, seen: item.digest },
-          (was) => (files.length ? was : { ...was, items: update(was.items) }),
-          () =>
-            interactionApi.taskRoute(props.task.id, "turn", "item", {
-              method: "POST",
-              body: answerBody({ item: item.id, answer: value, seen: item.digest }, files),
-            }),
-        )
-      if (value)
-        toast("Answer saved", {
-          duration: 5000,
-          action: { label: "Undo", onClick: () => void answer(item, null) },
-        })
-      setSelected(group.slice(index + 1).find((row) => row.state === "open")?.id ?? item.id)
-      props.reload()
-      return true
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save your answer. Try again.")
-      return false
-    } finally {
-      pendingAnswers.current.delete(item.id)
-      setBusy(false)
-    }
-  }
-  if (
-    (phase !== flowStepOf(props.task.stage) &&
-      !items.some((item) => item.kind === "note" && item.state === "open")) ||
-    props.task.archived ||
-    // The agent runs in the terminal: it asks the calls there, and the Plan bar says so.
-    approvesOutside(props.task) ||
-    (phase === "plan" && props.task.gate?.decision === "approved") ||
-    !items.some((item) => item.state === "open")
+  const { busy, error, answer } = useGateAnswer(props, group, index, setSelected)
+
+  if (shouldFallbackToAgentTurn(props, phase, items)) return <AgentTurn {...props} />
+
+  const track = (
+    <GateTrackNav
+      phase={phase}
+      decisions={decisions}
+      artifacts={artifacts}
+      hasCurrent={current !== undefined}
+      onArtifacts={onArtifacts}
+      onSelectSection={setSection}
+    />
   )
-    return <AgentTurn {...props} />
-  const pips = (rows: Item[]) => (
-    <span
-      className="ir-gate-pips"
-      role="img"
-      aria-label={`${rows.filter((item) => item.state !== "open").length} of ${rows.length} settled`}
-    >
-      {rows.map((item) => (
-        <i key={item.id} data-done={item.state !== "open"} />
-      ))}
-    </span>
-  )
-  // One decision and no artifacts leaves nothing to move between: the header's chip says it.
-  const track =
-    decisions.length > 1 || artifacts.length > 0 ? (
-      <nav
-        aria-label={phase === "plan" ? "Plan approval track" : "Decisions track"}
-        className="ir-gate-track"
-      >
-        <button
-          type="button"
-          className="q-link"
-          aria-current={current && !onArtifacts ? "step" : undefined}
-          onClick={() => setSection("decisions")}
-        >
-          Decisions {pips(decisions)}
-        </button>
-        {artifacts.length ? (
-          <button
-            type="button"
-            className="q-link"
-            aria-current={onArtifacts ? "step" : undefined}
-            onClick={() => setSection("artifacts")}
-          >
-            Artifacts {pips(artifacts)}
-          </button>
-        ) : null}
-      </nav>
-    ) : null
   const readDocument = () => {
     setDocumentReturn({ taskId: props.task.id, view: props.view })
     setDocumentFullSize(true)
   }
-  // The way into the whole document stands in the card's helpers row, on the card's own measure.
   const contextLink = (
     <button type="button" className="q-btn sm" onClick={readDocument}>
       <BookOpenIcon size={14} aria-hidden="true" />
       Read document context
     </button>
   )
-  // A late call is settled while reading: the Plan folds to one row under it until the call is made.
   const folded = current?.call !== undefined
+
   return (
     <div
       ref={root}
       className="ir-gate-stage"
       data-testid="gate-track"
       onKeyDownCapture={(event) => {
-        const target = event.target as HTMLElement
-        const kind = current?.answers.options[0]
-        if (
-          event.key === "Enter" &&
-          !event.repeat &&
-          !event.nativeEvent.isComposing &&
-          !busy &&
-          current &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey &&
-          !target.isContentEditable &&
-          !["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName) &&
-          (kind === "agree" || kind === "keep" || kind === "resolve")
-        ) {
+        const kind = enterQuickAgreeKind(event, busy, current)
+        if (kind && current) {
           event.preventDefault()
           void answer(current, { kind, at: Date.now() })
         }

@@ -1,169 +1,84 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
+import { existsSync, lstatSync, rmSync } from "node:fs"
+import { join, resolve } from "node:path"
+import { isAgentKind, isRunPurpose, type RunRecord } from "./contracts.ts"
+import { cleanupOwned, signalOwned } from "./registry-cleanup.ts"
+import { connectHost, type HostConnection, startHost } from "./registry-host.ts"
 import {
-  chmodSync,
-  closeSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs"
-import { connect, type Socket } from "node:net"
-import { isAbsolute, join, resolve } from "node:path"
-import { trimLogSync } from "../home-caps.ts"
-import { pidDomain, procStart } from "../peers/claude.ts"
-import { ownerOnlyFile, windowsUserSid } from "../platform.ts"
-import { pidAlive, selfCommand } from "../self.ts"
-import {
-  type CleanupResult,
-  canRecoverRun,
-  type HostRecord,
-  isAgentKind,
-  isRunPurpose,
-  type LaunchRecord,
-  PROTOCOL_VERSION,
-  type ProcessIdentity,
-  type RunRecord,
-} from "./contracts.ts"
-import {
-  BOOT_MARGIN_SECONDS,
-  InvalidOwnershipEnvironment,
-  nativeProcess,
-  nativeProcesses,
-  PROCESS_LIMITS,
-  processOwnerHash,
-  startedBeforeBoot,
-} from "./processes.ts"
-import {
-  encodeFrame,
-  FrameDecoder,
-  type HostFrame,
-  type ServerFrame,
-  validSize,
-} from "./protocol.ts"
-import { replaceRunRecord } from "./record-rename.ts"
-import {
-  cleanupWindowsJob,
-  protectWindowsObject,
-  terminateWindowsMember,
-  windowsJobMembers,
-  windowsProcessBirth,
-  windowsStartedBeforeBoot,
-} from "./windows.ts"
+  launchOwner,
+  privateDir,
+  readHost,
+  readLaunch,
+  readToken,
+  recordLock,
+  runDir,
+  setLaunchPhase,
+  socketPath,
+  withRunRecord,
+  writeHost,
+  writeLaunch,
+  writePrivate,
+  writeToken,
+} from "./registry-io.ts"
+import { identityState, ownedProcesses, processIdentity } from "./registry-ownership.ts"
+import { reconcileRuns } from "./registry-reconcile.ts"
+import { activeRun, listRuns, readRun } from "./registry-state.ts"
 
-const RUN_ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/
-function privateDir(path: string) {
-  mkdirSync(path, { recursive: true, mode: 0o700 })
-  const st = lstatSync(path)
-  if (!st.isDirectory() || st.isSymbolicLink() || (process.getuid && st.uid !== process.getuid()))
-    throw new Error(`unsafe run directory: ${path}`)
-  if (process.platform === "win32") {
-    ownerOnlyFile(path)
-    protectWindowsObject(path, true)
-  }
-  chmodSync(path, 0o700)
-}
-export function runDir(home: string, run: string): string {
-  if (!RUN_ID.test(run)) throw new Error("invalid run id")
-  return join(home, "runs", run)
-}
-function writePrivate(path: string, value: unknown) {
-  if (existsSync(path) && lstatSync(path).isSymbolicLink())
-    throw new Error(`unsafe run file: ${path}`)
-  const temporary = `${path}.${randomUUID()}.tmp`
-  const fd = openSync(temporary, "wx", 0o600)
-  try {
-    try {
-      if (process.platform === "win32") protectWindowsObject(temporary)
-      writeFileSync(fd, JSON.stringify(value))
-    } finally {
-      closeSync(fd)
-    }
-    replaceRunRecord(temporary, path)
-  } catch (cause) {
-    rmSync(temporary, { force: true })
-    throw cause
-  }
-}
-function readJson<T>(path: string): T | null {
-  try {
-    if (lstatSync(path).isSymbolicLink()) return null
-    return JSON.parse(readFileSync(path, "utf8")) as T
-  } catch {
-    return null
-  }
-}
-let writerIdentity: ProcessIdentity | null | undefined
-let starterIdentity: ProcessIdentity | undefined
-function launchOwner(generation: number): NonNullable<RunRecord["launchOwner"]> {
-  starterIdentity ??= processIdentity(process.pid, "host") ?? undefined
-  if (!starterIdentity) throw new Error("Cannot verify this launch transaction's process identity")
-  return { generation, identity: starterIdentity, phase: "preparing" }
+export {
+  activeRun,
+  cleanupOwned,
+  connectHost,
+  type HostConnection,
+  identityState,
+  listRuns,
+  ownedProcesses,
+  processIdentity,
+  readHost,
+  readLaunch,
+  readRun,
+  readToken,
+  reconcileRuns,
+  runDir,
+  setLaunchPhase,
+  signalOwned,
+  socketPath,
+  startHost,
+  withRunRecord,
+  writeHost,
+  writeLaunch,
+  writeToken,
 }
 
-export function setLaunchPhase(
-  home: string,
-  id: string,
-  generation: number,
-  phase: NonNullable<RunRecord["launchOwner"]>["phase"],
-): RunRecord {
-  return updateRun(home, id, generation, (run) => {
-    const owner = launchOwner(generation)
-    const previous = run.launchOwner
-    if (previous && previous.generation !== generation)
-      throw new Error("Stale launch owner generation")
-    if (
-      previous &&
-      (previous.identity.pid !== owner.identity.pid ||
-        previous.identity.processStart !== owner.identity.processStart ||
-        previous.identity.pidDomain !== owner.identity.pidDomain ||
-        previous.identity.nativeStart !== owner.identity.nativeStart) &&
-      identityState(previous.identity) !== "dead"
+type CreateRunInput = Pick<RunRecord, "agent" | "cwd" | "purpose" | "idempotencyKey"> &
+  Partial<
+    Pick<
+      RunRecord,
+      "settings" | "nativeSession" | "sourceCheckout" | "artifactBinding" | "previousRun"
+    >
+  >
+
+function assertValidPreviousRun(home: string, records: RunRecord[], input: CreateRunInput): void {
+  if (!input.previousRun) return
+  const prev = input.previousRun
+  const source = records.find((record) => record.id === prev.id)
+  const matchesIdentity =
+    source !== undefined &&
+    source.generation === prev.generation &&
+    source.nativeSession === prev.nativeSession
+  const cleanAndMatching =
+    source !== undefined &&
+    source.status === "stopped" &&
+    source.cleanup?.complete === true &&
+    !activeRun(home, source)
+  const sameTarget =
+    source !== undefined && source.agent === input.agent && source.cwd === resolve(input.cwd)
+  if (!matchesIdentity || !cleanAndMatching || !sameTarget)
+    throw new Error(
+      "The previous conversation identity and cleanup must be verified before allocation",
     )
-      throw new Error("Another live or unverified process owns this launch transaction")
-    return { launchOwner: { ...owner, phase } }
-  })
 }
-function recordLock<T>(path: string, action: () => T): T {
-  writerIdentity ??= processIdentity(process.pid, "host")
-  if (!writerIdentity) throw new Error("cannot identify registry writer")
-  const deadline = Date.now() + 2000
-  let fd: number | undefined
-  while (fd === undefined) {
-    try {
-      fd = openSync(path, "wx", 0o600)
-      writeFileSync(fd, JSON.stringify(writerIdentity))
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-      const previous = readJson<ProcessIdentity>(path)
-      if (previous && identityState(previous) === "dead") {
-        rmSync(path, { force: true })
-        continue
-      }
-      if (Date.now() > deadline) throw new Error("run registry writer is busy")
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-    }
-  }
-  try {
-    return action()
-  } finally {
-    closeSync(fd)
-    rmSync(path, { force: true })
-  }
-}
-export function createRun(
-  home: string,
-  input: Pick<RunRecord, "agent" | "cwd" | "purpose" | "idempotencyKey"> &
-    Partial<
-      Pick<
-        RunRecord,
-        "settings" | "nativeSession" | "sourceCheckout" | "artifactBinding" | "previousRun"
-      >
-    >,
-): RunRecord {
+
+export function createRun(home: string, input: CreateRunInput): RunRecord {
   if (!isRunPurpose(input.purpose)) throw new Error("invalid run purpose")
   if (!isAgentKind(input.agent) || !input.idempotencyKey || input.idempotencyKey.length > 256)
     throw new Error("invalid run start")
@@ -182,22 +97,7 @@ export function createRun(
         throw new Error("idempotency key belongs to another start")
       return previous
     }
-    if (input.previousRun) {
-      const source = records.find((record) => record.id === input.previousRun?.id)
-      if (
-        !source ||
-        source.generation !== input.previousRun.generation ||
-        source.nativeSession !== input.previousRun.nativeSession ||
-        source.status !== "stopped" ||
-        source.cleanup?.complete !== true ||
-        activeRun(home, source) ||
-        source.agent !== input.agent ||
-        source.cwd !== resolve(input.cwd)
-      )
-        throw new Error(
-          "The previous conversation identity and cleanup must be verified before allocation",
-        )
-    }
+    assertValidPreviousRun(home, records, input)
     const now = new Date().toISOString()
     const run: RunRecord = {
       ...input,
@@ -213,98 +113,6 @@ export function createRun(
     privateDir(runDir(home, run.id))
     writePrivate(join(runDir(home, run.id), "run.json"), run)
     return run
-  })
-}
-/**
- * A run record written before the rename calls its artifact run "design" and keeps the binding as
- * `designBinding`. The same record, with the same conversation, is an artifact run: it is renamed in
- * place the first time it is read, so a running session reconnects instead of being orphaned.
- */
-function renameStoredRun(run: Record<string, unknown>): boolean {
-  let changed = false
-  const purpose = run.purpose as Record<string, unknown> | undefined
-  if (purpose?.kind === "design") {
-    purpose.kind = "artifact"
-    changed = true
-  }
-  const context = purpose?.context as Record<string, unknown> | undefined
-  if (purpose?.kind === "terminal" && context?.kind === "design") {
-    context.kind = "artifact"
-    changed = true
-  }
-  if (run.designBinding !== undefined) {
-    run.artifactBinding ??= run.designBinding
-    run.designBinding = undefined
-    changed = true
-  }
-  return changed
-}
-export function readRun(home: string, id: string): RunRecord | null {
-  const path = join(runDir(home, id), "run.json")
-  const run = readJson<RunRecord>(path)
-  if (run && renameStoredRun(run as unknown as Record<string, unknown>)) {
-    try {
-      writePrivate(path, JSON.parse(JSON.stringify(run)))
-    } catch {
-      // read-only for now: the renamed record is still what this reader returns
-    }
-  }
-  return run?.id === id && isRunPurpose(run.purpose) ? run : null
-}
-export function listRuns(home: string): RunRecord[] {
-  let names: string[]
-  try {
-    names = readdirSync(join(home, "runs"))
-  } catch {
-    return []
-  }
-  return names
-    .filter((name) => RUN_ID.test(name))
-    .flatMap((id) => {
-      const run = readRun(home, id)
-      return run ? [run] : []
-    })
-}
-
-export function activeRun(home: string, run: RunRecord): boolean {
-  if (!["stopped", "failed"].includes(run.status) || (run.cleanup && !run.cleanup.complete))
-    return true
-  const host = readHost(home, run.id)
-  if (
-    host &&
-    (host.run !== run.id ||
-      host.generation > run.generation ||
-      host.cleanup?.complete === false ||
-      (host.generation < run.generation &&
-        (run.host || run.lead || host.cleanup?.complete !== true)) ||
-      (run.host &&
-        (host.pid !== run.host.pid ||
-          host.processStart !== run.host.processStart ||
-          host.pidDomain !== run.host.pidDomain)))
-  )
-    return true
-  return [
-    run.host ??
-      (host && {
-        pid: host.pid,
-        processStart: host.processStart,
-        pidDomain: host.pidDomain,
-        knownBy: "host" as const,
-      }),
-    run.lead,
-    host?.lead,
-    ...(host?.descendants ?? []),
-    ...(host?.cleanup?.remaining ?? []),
-    ...(host?.cleanup?.unverified ?? []),
-    ...(run.cleanup?.remaining ?? []),
-    ...(run.cleanup?.unverified ?? []),
-  ].some((identity) => {
-    if (!identity) return false
-    try {
-      return identityState(identity) !== "dead"
-    } catch {
-      return true
-    }
   })
 }
 
@@ -330,6 +138,7 @@ export function removeCompletedRun(
     })
   })
 }
+
 export function updateRun(
   home: string,
   id: string,
@@ -344,7 +153,6 @@ export function updateRun(
     const run = readRun(home, id)
     if (!run || run.generation !== generation) throw new Error("stale or missing run generation")
     const change = typeof patch === "function" ? patch(run) : patch
-    // A patch function returns null when the record already says what it would write.
     if (change === null) return run
     const next = {
       ...run,
@@ -358,6 +166,7 @@ export function updateRun(
     return next
   })
 }
+
 export function nextGeneration(
   home: string,
   id: string,
@@ -388,717 +197,4 @@ export function nextGeneration(
       return next
     }),
   )
-}
-function validateLaunch(launch: LaunchRecord) {
-  if (
-    !Array.isArray(launch.argv) ||
-    !launch.argv.length ||
-    !isAbsolute(launch.argv[0] ?? "") ||
-    !launch.argv.every((v) => typeof v === "string" && !v.includes("\0")) ||
-    typeof launch.cwd !== "string" ||
-    !isAbsolute(launch.cwd) ||
-    !launch.env ||
-    !launch.colors ||
-    !validSize(launch.cols, launch.rows) ||
-    !Object.values(launch.env).every((v) => typeof v === "string" && !v.includes("\0"))
-  )
-    throw new Error("invalid launch record")
-  for (const color of [launch.colors.fg, launch.colors.bg, launch.colors.cursor])
-    if (!Number.isInteger(color) || color < 0 || color > 0xffffff)
-      throw new Error("invalid terminal color")
-}
-export function writeLaunch(home: string, id: string, launch: LaunchRecord) {
-  validateLaunch(launch)
-  privateDir(runDir(home, id))
-  writePrivate(join(runDir(home, id), "launch.json"), launch)
-}
-export function readLaunch(home: string, id: string): LaunchRecord {
-  const launch = readJson<LaunchRecord>(join(runDir(home, id), "launch.json"))
-  if (!launch) throw new Error("missing launch record")
-  validateLaunch(launch)
-  return launch
-}
-export function readHost(home: string, id: string) {
-  return readJson<HostRecord>(join(runDir(home, id), "host.json"))
-}
-export function writeHost(home: string, id: string, host: HostRecord) {
-  writePrivate(join(runDir(home, id), "host.json"), host)
-}
-export function readToken(home: string, id: string): string {
-  const path = join(runDir(home, id), "token")
-  if (lstatSync(path).isSymbolicLink()) throw new Error("unsafe run token")
-  return readFileSync(path, "utf8").trim()
-}
-export function socketPath(home: string, id: string): string {
-  if (process.platform === "win32") {
-    const generation = readRun(home, id)?.generation ?? 1
-    const hash = createHash("sha256")
-      .update(JSON.stringify([windowsUserSid(), resolve(home).toLowerCase(), id, generation]))
-      .digest("hex")
-    return `\\\\.\\pipe\\qualitylayer-${hash}`
-  }
-  const dir = join("/tmp", `ql-runs-${process.getuid?.() ?? "user"}`)
-  privateDir(dir)
-  const hash = createHash("sha256").update(resolve(home)).update(id).digest("hex").slice(0, 24)
-  const path = join(dir, `${hash}.sock`)
-  if (Buffer.byteLength(path) > 103) throw new Error("run socket path exceeds platform limit")
-  return path
-}
-export function writeToken(home: string, id: string): string {
-  const token = randomBytes(32).toString("hex")
-  const path = join(runDir(home, id), "token")
-  if (existsSync(path)) rmSync(path)
-  const fd = openSync(path, "wx", 0o600)
-  try {
-    ownerOnlyFile(path)
-    writeFileSync(fd, token)
-  } finally {
-    closeSync(fd)
-  }
-  return token
-}
-export function processIdentity(
-  pid: number,
-  knownBy: ProcessIdentity["knownBy"],
-  parent?: number,
-): ProcessIdentity | null {
-  const native = process.platform === "win32" ? null : nativeProcess(pid)
-  const processStart =
-    process.platform === "win32" ? windowsProcessBirth(pid) : native?.processStart
-  if (!processStart) return null
-  let pgid: number | undefined
-  if (knownBy === "lead" && process.platform !== "win32") {
-    pgid = native?.pgid
-    if (pgid !== pid) throw new Error("agent is not the leader of its own process group")
-  }
-  return {
-    pid,
-    ...(pgid === undefined ? {} : { pgid }),
-    processStart,
-    pidDomain: pidDomain(),
-    knownBy,
-    ...(native ? { nativeStart: native.nativeStart } : {}),
-    ...(parent === undefined ? {} : { parent }),
-  }
-}
-/**
- * The PID is held by a process this user cannot read. After a crash or restart that is usually
- * another user's process reusing it; a recorded process that started before this boot is gone.
- */
-function unreadable(identity: ProcessIdentity): "dead" | "unverified" {
-  const before =
-    process.platform === "win32"
-      ? windowsStartedBeforeBoot(identity.processStart, BOOT_MARGIN_SECONDS)
-      : startedBeforeBoot(identity.nativeStart)
-  return before ? "dead" : "unverified"
-}
-export function identityState(identity: ProcessIdentity): "live" | "dead" | "unverified" {
-  if (process.platform === "win32") {
-    if (identity.pidDomain !== pidDomain()) return "dead"
-    try {
-      const current = windowsProcessBirth(identity.pid)
-      if (current === null || current !== identity.processStart) return "dead"
-      if (identity.knownBy === "inherited" && !identity.windowsJob) return "unverified"
-      return "live"
-    } catch {
-      return unreadable(identity)
-    }
-  }
-  if (identity.pidDomain !== pidDomain() || !pidAlive(identity.pid)) return "dead"
-  if (identity.nativeStart) {
-    try {
-      const current = nativeProcess(identity.pid)
-      if (
-        !current ||
-        current.nativeStart !== identity.nativeStart ||
-        current.processStart !== identity.processStart
-      )
-        return "dead"
-      // An inherited witness must still prove its marker at the signal boundary. An ancestry
-      // witness remains valid for this precise process even if its environment later changes.
-      if (
-        identity.knownBy === "inherited" &&
-        (!identity.ownerHash || processOwnerHash(identity.pid) !== identity.ownerHash)
-      )
-        return "unverified"
-      return "live"
-    } catch {
-      return pidAlive(identity.pid) ? unreadable(identity) : "dead"
-    }
-  }
-  const start = procStart(identity.pid)
-  return start === null ? "unverified" : start === identity.processStart ? "live" : "dead"
-}
-export function ownedProcesses(lead?: ProcessIdentity, hash = lead?.ownerHash): ProcessIdentity[] {
-  if (process.platform === "win32") {
-    if (!lead?.windowsJob) throw new Error("Windows Job ownership is unavailable")
-    return windowsJobMembers(lead.windowsJob).filter((p) => p.pid !== process.pid)
-  }
-  if (hash !== undefined && !/^[a-f0-9]{64}$/.test(hash))
-    throw new Error("invalid run ownership hash")
-  const deadline = Date.now() + PROCESS_LIMITS.scanMs
-  const rows = nativeProcesses()
-  const found = new Map<number, ProcessIdentity>()
-  if (lead && identityState(lead) === "live") found.set(lead.pid, lead)
-  const withinDeadline = () => {
-    if (Date.now() > deadline) throw new Error("run ownership scan exceeded its time bound")
-  }
-  const withinRoster = () => {
-    if (found.size >= PROCESS_LIMITS.owned) throw new Error("run process roster exceeds its bound")
-  }
-  const children = new Map<number, typeof rows>()
-  for (const row of rows) {
-    withinDeadline()
-    const siblings = children.get(row.parent) ?? []
-    siblings.push(row)
-    children.set(row.parent, siblings)
-  }
-  const queue = [...found.values()]
-  for (let offset = 0; offset < queue.length; offset++) {
-    withinDeadline()
-    const parent = queue[offset]
-    if (!parent) continue
-    for (const row of children.get(parent.pid) ?? []) {
-      withinDeadline()
-      if (!found.has(row.pid)) {
-        withinRoster()
-        const current = nativeProcess(row.pid)
-        if (
-          identityState(parent) !== "live" ||
-          !current ||
-          current.nativeStart !== row.nativeStart ||
-          current.parent !== parent.pid
-        )
-          continue
-        const witness: ProcessIdentity = {
-          pid: row.pid,
-          parent: row.parent,
-          processStart: row.processStart,
-          nativeStart: row.nativeStart,
-          pidDomain: pidDomain(),
-          knownBy: "descendant",
-        }
-        found.set(row.pid, witness)
-        queue.push(witness)
-      }
-    }
-  }
-  if (hash)
-    for (const row of rows) {
-      withinDeadline()
-      if (found.has(row.pid) || row.uid !== process.getuid?.()) continue
-      let marked: string | null
-      try {
-        marked = processOwnerHash(row.pid, deadline)
-      } catch (cause) {
-        if (!nativeProcess(row.pid)) continue
-        // Only a completely read environment can exclude this run's marker. Unreadable rows,
-        // or ambiguous environments containing our marker, still prevent a cleanup proof.
-        if (cause instanceof InvalidOwnershipEnvironment && !cause.candidateHashes.includes(hash))
-          continue
-        throw cause
-      }
-      if (marked !== hash) continue
-      const current = nativeProcess(row.pid)
-      if (!current || current.nativeStart !== row.nativeStart) continue
-      withinRoster()
-      found.set(row.pid, {
-        pid: row.pid,
-        parent: row.parent,
-        processStart: row.processStart,
-        nativeStart: row.nativeStart,
-        pidDomain: pidDomain(),
-        knownBy: "inherited",
-        ownerHash: hash,
-      })
-    }
-  return [...found.values()]
-}
-export function signalOwned(
-  identity: ProcessIdentity,
-  signal: NodeJS.Signals,
-  group = false,
-): boolean {
-  if (identityState(identity) !== "live") return false
-  if (process.platform === "win32") return terminateWindowsMember(identity)
-  if (group && (identity.knownBy !== "lead" || identity.pgid !== identity.pid))
-    throw new Error("only lead owns its group")
-  try {
-    process.kill(group ? -identity.pid : identity.pid, signal)
-    return true
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ESRCH") return false
-    throw cause
-  }
-}
-export async function cleanupOwned(
-  lead: ProcessIdentity | undefined,
-  recorded: ProcessIdentity[] = [],
-  interrupt?: () => void,
-  hash = lead?.ownerHash,
-): Promise<CleanupResult> {
-  if (process.platform === "win32") {
-    const scope = lead?.windowsJob ?? recorded.find((p) => p.windowsJob)?.windowsJob
-    if (!scope)
-      return {
-        complete: false,
-        remaining: [],
-        unverified: recorded,
-        errors: ["Windows Job ownership is unavailable"],
-        at: new Date().toISOString(),
-      }
-    interrupt?.()
-    return cleanupWindowsJob(scope, [...recorded, ...(lead ? [lead] : [])])
-  }
-  const errors: string[] = []
-  const error = (cause: unknown) => {
-    const message = String(cause)
-    if (!errors.includes(message) && errors.length < 32) errors.push(message)
-  }
-  const owned = new Map<string, ProcessIdentity>()
-  const add = (identities: ProcessIdentity[]) => {
-    for (const identity of identities) {
-      const key = `${identity.pid}:${identity.nativeStart ?? identity.processStart}`
-      const previous = owned.get(key)
-      if (!previous || (previous.knownBy === "inherited" && identity.knownBy !== "inherited"))
-        owned.set(key, identity)
-      if (owned.size > PROCESS_LIMITS.owned) {
-        owned.delete(key)
-        error("run process roster exceeds its bound")
-        break
-      }
-    }
-  }
-  add([...recorded, ...(lead ? [lead] : [])])
-  let discoveryError: string | undefined
-  const snapshot = () => {
-    try {
-      add(ownedProcesses(lead, hash))
-      discoveryError = undefined
-    } catch (cause) {
-      discoveryError = String(cause)
-    }
-  }
-  snapshot()
-  interrupt?.()
-  try {
-    if (lead) signalOwned(lead, "SIGTERM", true)
-  } catch (cause) {
-    error(cause)
-  }
-  const terminated = new Set<string>()
-  const terminate = () => {
-    for (const [key, identity] of owned) {
-      if (terminated.has(key)) continue
-      terminated.add(key)
-      try {
-        signalOwned(identity, "SIGTERM")
-      } catch (cause) {
-        error(cause)
-      }
-    }
-  }
-  terminate()
-  const deadline = Date.now() + 5000
-  while (
-    Date.now() < deadline &&
-    [...owned.values()].some((identity) => identityState(identity) === "live")
-  ) {
-    await Bun.sleep(250)
-    snapshot()
-    terminate()
-  }
-  try {
-    if (lead) signalOwned(lead, "SIGKILL", true)
-  } catch (cause) {
-    error(cause)
-  }
-  const killDeadline = Date.now() + 1000
-  do {
-    for (const identity of [...owned.values()].reverse())
-      try {
-        signalOwned(identity, "SIGKILL")
-      } catch (cause) {
-        error(cause)
-      }
-    await Bun.sleep(50)
-    // Discover late owners and revalidate failed final proof within this same kill window.
-    snapshot()
-  } while (
-    Date.now() < killDeadline &&
-    (discoveryError !== undefined ||
-      [...owned.values()].some((identity) => identityState(identity) === "live"))
-  )
-  if (discoveryError) error(discoveryError)
-  return cleanupResult([...owned.values()], errors)
-}
-export function withRunRecord<T>(
-  home: string,
-  id: string,
-  generation: number,
-  action: (run: Readonly<RunRecord>) => T,
-): T {
-  return recordLock(join(runDir(home, id), ".record.lock"), () => {
-    const run = readRun(home, id)
-    if (!run || run.generation !== generation) throw new Error("stale or missing run generation")
-    return action(run)
-  })
-}
-
-export async function startHost(
-  home: string,
-  id: string,
-  command = selfCommand(["agent-host", "--run", id]),
-  guard?: (run: Readonly<RunRecord>) => void,
-): Promise<ProcessIdentity> {
-  const run = readRun(home, id)
-  if (!run) throw new Error("missing run")
-  setLaunchPhase(home, id, run.generation, "starting-host")
-  const logPath = join(runDir(home, id), "host.log")
-  if (existsSync(logPath) && lstatSync(logPath).isSymbolicLink()) throw new Error("unsafe host log")
-  trimLogSync(logPath)
-  const log = openSync(logPath, "a", 0o600)
-  const { spawn } = await import("node:child_process")
-  try {
-    const started = withRunRecord(home, id, run.generation, (current) => {
-      guard?.(current)
-      return spawn(command[0] as string, command.slice(1), {
-        detached: true,
-        stdio: ["ignore", "ignore", log],
-        env: {
-          ...Object.fromEntries(
-            Object.entries(process.env).filter(([key]) =>
-              [
-                "HOME",
-                "PATH",
-                "USERPROFILE",
-                "SYSTEMROOT",
-                "WINDIR",
-                "COMSPEC",
-                "TEMP",
-                "TMP",
-                "PATHEXT",
-                "APPDATA",
-                "LOCALAPPDATA",
-              ].includes(key.toUpperCase()),
-            ),
-          ),
-          QUALITYLAYER_HOME: home,
-        },
-      })
-    })
-    await new Promise<void>((resolve, reject) => {
-      started.once("error", reject)
-      started.once("spawn", resolve)
-    })
-    started.unref()
-    const identity = started.pid ? processIdentity(started.pid, "host") : null
-    if (!identity) throw new Error("host process identity unavailable")
-    updateRun(home, id, run.generation, (current) => ({
-      host: identity,
-      ...(current.recovery?.generation === run.generation && current.recovery.state === "cancelled"
-        ? {}
-        : { status: "starting", startPhase: "host-started" }),
-    }))
-    return identity
-  } finally {
-    closeSync(log)
-  }
-}
-export type HostConnection = {
-  ready: Extract<HostFrame, { type: "ready" }>
-  socket: Socket
-  send(frame: ServerFrame): void
-  onFrame(listener: (frame: HostFrame) => void): () => void
-  /**
-   * Tell the host how much of what it sent has been taken in (the bytes read so far), when at least
-   * `every` bytes came in since the last time. The first call, with any `every`, also says this viewer
-   * acknowledges. A host that does not take acks is not sent any.
-   */
-  ack(every?: number): void
-  close(): void
-}
-export async function connectHost(
-  home: string,
-  id: string,
-  timeoutMs = 2000,
-): Promise<HostConnection> {
-  const host = readHost(home, id)
-  if (!host) throw new Error("missing host record")
-  const token = readToken(home, id)
-  if (createHash("sha256").update(token).digest("hex") !== host.tokenHash)
-    throw new Error("host token hash mismatch")
-  return await new Promise((resolveConnection, reject) => {
-    const socket = connect(host.socket)
-    const decoder = new FrameDecoder("host")
-    const listeners = new Set<(frame: HostFrame) => void>()
-    let authenticated = false
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error("host ready timeout"))
-    }, timeoutMs)
-    socket.on("error", (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-    socket.on("close", () => {
-      clearTimeout(timer)
-      if (!authenticated) reject(new Error("host closed before ready"))
-    })
-    socket.on("connect", () =>
-      socket.write(encodeFrame({ type: "hello", protocol: PROTOCOL_VERSION, token })),
-    )
-    let received = 0
-    let acknowledged = -1
-    socket.on("data", (data) => {
-      received += data.length
-      try {
-        for (const raw of decoder.push(typeof data === "string" ? Buffer.from(data) : data)) {
-          const frame = raw as HostFrame
-          if (!authenticated) {
-            if (
-              frame.type !== "ready" ||
-              frame.protocol !== PROTOCOL_VERSION ||
-              frame.run !== id ||
-              frame.generation !== host.generation ||
-              frame.pid !== host.pid ||
-              frame.processStart !== host.processStart
-            )
-              throw new Error("host ready identity mismatch")
-            authenticated = true
-            clearTimeout(timer)
-            resolveConnection({
-              ready: frame,
-              socket,
-              send: (frame) => socket.write(encodeFrame(frame)),
-              onFrame(listener) {
-                listeners.add(listener)
-                return () => listeners.delete(listener)
-              },
-              ack(every = 0) {
-                if (!frame.acknowledges || socket.destroyed) return
-                if (acknowledged >= 0 && received - acknowledged < every) return
-                acknowledged = received
-                socket.write(encodeFrame({ type: "ack", bytes: received }))
-              },
-              close: () => socket.destroy(),
-            })
-          } else for (const listener of listeners) listener(frame)
-        }
-      } catch (cause) {
-        socket.destroy()
-        reject(cause)
-      }
-    })
-  })
-}
-export async function reconcileRuns(
-  home: string,
-  snapshot: readonly RunRecord[] = listRuns(home),
-  stop = true,
-): Promise<RunRecord[]> {
-  for (const previous of snapshot) {
-    const run = readRun(home, previous.id)
-    if (!run || run.generation !== previous.generation) continue
-    const host = readHost(home, run.id)
-    if (!recoveryEvidence(home, run, host)) continue
-    const state = recoveryHostState(home, run, host)
-    if (state === "unverified") continue
-    if (host && state === "live") {
-      await reconnectRun(home, run, host)
-      continue
-    }
-    const cleanup = await recoverRunCleanup(run, host, stop)
-    publishRunCleanup(home, run, host, cleanup, !stop)
-  }
-  return listRuns(home)
-}
-
-function endedRun(run: RunRecord): boolean {
-  return run.status === "stopped" || run.status === "failed"
-}
-
-function recoveryEvidence(home: string, run: RunRecord, host: HostRecord | null): boolean {
-  const ended = endedRun(run)
-  if (ended && !activeRun(home, run)) return false
-  // A terminal status is not cleanup evidence. Retry only this generation's recorded host;
-  // missing evidence must not erase the incomplete cleanup or free its checkout.
-  if (ended && (!host || (!host.lead && !host.ownerHash))) return false
-  if ((!host || (!host.lead && !host.ownerHash)) && (run.lead || run.cleanup)) return false
-  if (
-    host &&
-    (host.run !== run.id ||
-      host.generation !== run.generation ||
-      (run.host &&
-        (run.host.pid !== host.pid ||
-          run.host.processStart !== host.processStart ||
-          run.host.pidDomain !== host.pidDomain)))
-  ) {
-    if (!ended)
-      updateRun(home, run.id, run.generation, {
-        error: "The recorded host does not match this run generation; recovery was refused",
-      })
-    return false
-  }
-  return true
-}
-
-function recoveryHostState(home: string, run: RunRecord, host: HostRecord | null) {
-  const hostState = host
-    ? identityState(
-        run.host ?? {
-          pid: host.pid,
-          processStart: host.processStart,
-          pidDomain: host.pidDomain,
-          knownBy: "host",
-        },
-      )
-    : "dead"
-  if (hostState === "unverified") {
-    if (!endedRun(run))
-      updateRun(home, run.id, run.generation, {
-        error: "Host process ownership could not be confirmed",
-      })
-  }
-  return hostState
-}
-
-async function reconnectRun(home: string, run: RunRecord, host: HostRecord): Promise<void> {
-  if (endedRun(run)) return
-  try {
-    const connection = await connectHost(home, run.id)
-    connection.close()
-    updateRun(home, run.id, run.generation, {
-      status: host.status,
-      lead: host.lead,
-      ...(["stopped", "failed"].includes(host.status) && host.cleanup
-        ? { cleanup: host.cleanup }
-        : {}),
-    })
-  } catch {
-    updateRun(home, run.id, run.generation, {
-      error: "Host is alive but its identity could not be authenticated",
-    })
-  }
-}
-
-async function recoverRunCleanup(run: RunRecord, host: HostRecord | null, stop: boolean) {
-  const recorded = [
-    ...(host?.descendants ?? []),
-    ...(host?.cleanup?.remaining ?? []),
-    ...(host?.cleanup?.unverified ?? []),
-    ...(run.cleanup?.remaining ?? []),
-    ...(run.cleanup?.unverified ?? []),
-  ]
-  if (!host || (!host.lead && !host.ownerHash)) return undefined
-  if (!stop) return inspectRunCleanup(host, recorded)
-  if (host.windowsJob) return cleanupWindowsJob(host.windowsJob, host.descendants)
-  return cleanupOwned(host.lead, recorded, undefined, host.ownerHash)
-}
-
-function publishRunCleanup(
-  home: string,
-  run: RunRecord,
-  host: HostRecord | null,
-  cleanup: CleanupResult | undefined,
-  passive: boolean,
-) {
-  // Cleanup awaited: a Resume may have published the next generation, which owns the same socket
-  // and token paths. Unlink and record only under the record lock, for this generation.
-  try {
-    updateRun(home, run.id, run.generation, (current) => {
-      if (
-        JSON.stringify(current) !== JSON.stringify(run) ||
-        JSON.stringify(readHost(home, run.id)) !== JSON.stringify(host)
-      )
-        return null
-      if (host && cleanup?.complete) {
-        const expected = socketPath(home, run.id)
-        if (host.socket === expected && process.platform !== "win32")
-          rmSync(expected, { force: true })
-        rmSync(join(runDir(home, run.id), "token"), { force: true })
-      }
-      const ended = endedRun(run)
-      const hostStatus = cleanup && !cleanup.complete ? "stopping" : "stopped"
-      if (host)
-        writeHost(home, run.id, {
-          ...host,
-          cleanup,
-          ...(!ended ? { status: hostStatus } : {}),
-        })
-      if (ended) return { cleanup }
-      const interrupted =
-        passive &&
-        canRecoverRun(run) &&
-        run.host?.knownBy === "host" &&
-        ["running", "starting"].includes(run.status) &&
-        host &&
-        ["running", "starting"].includes(host.status) &&
-        run.recovery?.generation !== run.generation
-      return {
-        status: cleanup && !cleanup.complete ? "stopping" : host ? "stopped" : "failed",
-        stoppedAt: new Date().toISOString(),
-        error: host ? undefined : "Start ended before the host became ready",
-        cleanup,
-        ...(interrupted
-          ? {
-              recovery: {
-                generation: run.generation,
-                state: "pending" as const,
-                at: new Date().toISOString(),
-              },
-            }
-          : {}),
-      }
-    })
-  } catch (cause) {
-    if (readRun(home, run.id)?.generation === run.generation) throw cause
-  }
-}
-
-/** Prove cleanup without sending signals; starting another task never grants Stop authority. */
-function inspectRunCleanup(host: HostRecord, recorded: ProcessIdentity[]): CleanupResult {
-  const errors: string[] = []
-  let discovered: ProcessIdentity[] = []
-  try {
-    if (process.platform === "win32") {
-      if (!host.windowsJob) throw new Error("Windows Job ownership is unavailable")
-      try {
-        discovered = windowsJobMembers(host.windowsJob)
-      } catch (cause) {
-        // A vanished named Job has no surviving handles: kill-on-close ended its whole tree (as
-        // `cleanupWindowsJob` reads it). Any other failure leaves the roster unproven.
-        if (!String(cause).includes("OpenJobObjectW failed (Win32 2)")) throw cause
-      }
-    } else discovered = ownedProcesses(host.lead, host.ownerHash)
-  } catch (cause) {
-    errors.push(String(cause))
-  }
-  const identities = [
-    ...new Map(
-      [...recorded, ...discovered, ...(host.lead ? [host.lead] : [])].map((identity) => [
-        `${identity.pid}:${identity.nativeStart ?? identity.processStart}`,
-        identity,
-      ]),
-    ).values(),
-  ]
-  if (identities.length > PROCESS_LIMITS.owned) errors.push("run process roster exceeds its bound")
-  return cleanupResult(identities, errors)
-}
-
-function cleanupResult(identities: ProcessIdentity[], errors: string[]): CleanupResult {
-  const remaining: ProcessIdentity[] = []
-  const unverified: ProcessIdentity[] = []
-  for (const identity of identities) {
-    const state = identityState(identity)
-    if (state === "live") remaining.push(identity)
-    else if (state === "unverified") unverified.push(identity)
-  }
-  return {
-    complete: !remaining.length && !unverified.length && !errors.length,
-    remaining,
-    unverified,
-    errors,
-    at: new Date().toISOString(),
-  }
 }

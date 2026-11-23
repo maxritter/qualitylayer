@@ -81,51 +81,38 @@ function UseIcon({ use }: { use: SessionUse }) {
   return <Icon className="size-3.5" aria-hidden="true" />
 }
 
-export function SessionFooter(props: SessionFooterProps) {
-  const { percent } = useUsageDisplay()
-  const { run, agentName, status, usage, usageOpen, onUsageOpen, changes } = props
-  const { limits, reload } = useAgentLimits(props.loadLimits, run.agent, props.on, props.turn)
-  const billing = useAgentBilling(props.loadUsage, run.agent, props.on)
-  const use = sessionUse({
-    billing,
-    limits,
-    estimatedUsd: usage?.estimatedUsd,
-    now: Date.now(),
-    percentMode: percent,
-  })
-  const source = sessionSource(run, { model: props.model, effort: props.effort }, props.unknown)
-  const model = source.name
-    ? `${source.name}${source.effort ? ` · ${effortLabel(source.effort).toLowerCase()} effort` : ""}`
-    : undefined
-  const [section, setSection] = useState<UsageSection>("context")
-  const kind = run.agent === "other" ? undefined : run.agent
-  const observedId = usage?.observedModel
-  const routed = kind !== undefined && automaticModel(kind, source.model)
+function observedModelFor(
+  agent: SessionFooterProps["run"]["agent"],
+  source: ReturnType<typeof sessionSource>,
+  observedId: string | undefined,
+): ObservedModel | undefined {
+  if (agent === "other" || observedId === undefined) return undefined
+  const routed = automaticModel(agent, source.model)
   // The selection is what the footer names; a call's model is named apart, never as the person's choice.
-  const observed: ObservedModel | undefined =
-    kind !== undefined && observedId !== undefined && (routed || observedId !== source.model)
-      ? { name: modelName(kind, observedId), selected: source.name, routed }
-      : undefined
-  const meta = useRef<HTMLDivElement>(null)
-  const forms = useRef<HTMLSpanElement>(null)
-  const cluster = useRef<HTMLSpanElement>(null)
-  const fold = useChipFold(meta, forms, [
-    run.agent,
-    status?.text,
-    source.name,
-    source.effort,
-    source.perm,
-    run.pendingSettings?.id,
-    run.pendingSettings?.error,
-    changes?.files,
-    use?.word,
-  ])
+  return routed || observedId !== source.model
+    ? { name: modelName(agent, observedId), selected: source.name, routed }
+    : undefined
+}
+
+function FooterChips({
+  changes,
+  use,
+  fold,
+  onViewChanges,
+  onOpenUsage,
+}: {
+  changes: SessionChanges | null | undefined
+  use: SessionUse | null
+  fold: number
+  onViewChanges: (() => void) | undefined
+  onOpenUsage: () => void
+}) {
   const shownChanges = changes && fold < 4 ? changes : null
   const shownUse = use && fold < 5 ? use : null
-  const chips = (
+  return (
     <>
       {shownChanges ? (
-        <FilesChip changes={shownChanges} fold={fold} onView={props.onViewChanges} />
+        <FilesChip changes={shownChanges} fold={fold} onView={onViewChanges} />
       ) : null}
       {shownUse ? (
         <PopoverTrigger
@@ -140,7 +127,7 @@ export function SessionFooter(props: SessionFooterProps) {
               aria-label={shownUse.label}
               aria-haspopup="dialog"
               data-testid="usage-chip"
-              onClick={() => setSection("usage")}
+              onClick={onOpenUsage}
             />
           }
         >
@@ -149,6 +136,81 @@ export function SessionFooter(props: SessionFooterProps) {
         </PopoverTrigger>
       ) : null}
     </>
+  )
+}
+
+function ChipMeasure({
+  changes,
+  use,
+  measureRef,
+}: {
+  changes: SessionChanges | null | undefined
+  use: SessionUse | null
+  measureRef: React.RefObject<HTMLSpanElement | null>
+}) {
+  return (
+    <span className="cv-chip-measure" aria-hidden="true" ref={measureRef}>
+      {changes ? (
+        <>
+          <FormFiles m="files-0" changes={changes} counts />
+          <FormFiles m="files-1" changes={changes} />
+          <FormFiles m="files-2" changes={changes} short />
+        </>
+      ) : null}
+      {use ? (
+        <>
+          <span className="cv-chip" data-m="use-0">
+            <UseIcon use={use} />
+            <span>{use.word}</span>
+          </span>
+          <span className="cv-chip" data-m="use-1">
+            <UseIcon use={use} />
+          </span>
+        </>
+      ) : null}
+    </span>
+  )
+}
+
+export function SessionFooter(props: SessionFooterProps) {
+  const { percent } = useUsageDisplay()
+  const { run, agentName, status, usage, usageOpen, onUsageOpen, changes } = props
+  const { limits, reload } = useAgentLimits(props.loadLimits, run.agent, props.on, props.turn)
+  const billing = useAgentBilling(props.loadUsage, run.agent, props.on)
+  const use = sessionUse({
+    billing,
+    limits,
+    estimatedUsd: usage?.estimatedUsd,
+    now: Date.now(),
+    percentMode: percent,
+  })
+  const source = sessionSource(run, { model: props.model, effort: props.effort }, props.unknown)
+  const effortSuffix = source.effort ? ` · ${effortLabel(source.effort).toLowerCase()} effort` : ""
+  const model = source.name ? `${source.name}${effortSuffix}` : undefined
+  const [section, setSection] = useState<UsageSection>("context")
+  const observed = observedModelFor(run.agent, source, usage?.observedModel)
+  const meta = useRef<HTMLDivElement>(null)
+  const forms = useRef<HTMLSpanElement>(null)
+  const cluster = useRef<HTMLSpanElement>(null)
+  const fold = useChipFold(meta, forms, [
+    run.agent,
+    status?.text,
+    source.name,
+    source.effort,
+    source.perm,
+    run.pendingSettings?.id,
+    run.pendingSettings?.error,
+    changes?.files,
+    use?.word,
+  ])
+  const chips = (
+    <FooterChips
+      changes={changes}
+      use={use}
+      fold={fold}
+      onViewChanges={props.onViewChanges}
+      onOpenUsage={() => setSection("usage")}
+    />
   )
   return (
     <div className="cv-session-meta" ref={meta}>
@@ -190,26 +252,7 @@ export function SessionFooter(props: SessionFooterProps) {
         </span>
       ) : null}
       {/* Every form the two chips can take, drawn out of sight so the fold is chosen from their real widths. */}
-      <span className="cv-chip-measure" aria-hidden="true" ref={forms}>
-        {changes ? (
-          <>
-            <FormFiles m="files-0" changes={changes} counts />
-            <FormFiles m="files-1" changes={changes} />
-            <FormFiles m="files-2" changes={changes} short />
-          </>
-        ) : null}
-        {use ? (
-          <>
-            <span className="cv-chip" data-m="use-0">
-              <UseIcon use={use} />
-              <span>{use.word}</span>
-            </span>
-            <span className="cv-chip" data-m="use-1">
-              <UseIcon use={use} />
-            </span>
-          </>
-        ) : null}
-      </span>
+      <ChipMeasure changes={changes} use={use} measureRef={forms} />
     </div>
   )
 }

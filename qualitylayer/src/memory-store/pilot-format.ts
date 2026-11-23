@@ -1,5 +1,6 @@
-import { hash, MEMORY_KINDS, relativeFile, safeText } from "../core/memory/validation.ts"
+import { relativeFile, safeText } from "../core/memory/validation.ts"
 import type { MemoryKind } from "../memory-contracts.ts"
+import { parsePilotMarkdown, pilotKind, pilotStrings } from "./pilot-markdown.ts"
 
 export type PilotLesson = {
   sourceId: string
@@ -12,14 +13,88 @@ export type PilotLesson = {
   sourceAt?: string
   metadata: unknown
 }
+
+const UID_PATTERN = /^[a-zA-Z0-9._-]{1,128}$/
+
+function isValidJsonlHeader(
+  record: Record<string, unknown>,
+  projectNames: string[],
+  now: number,
+): boolean {
+  const validIdentity =
+    record.schemaVersion === 1 &&
+    typeof record.uid === "string" &&
+    UID_PATTERN.test(record.uid) &&
+    projectNames.includes(record.project as string)
+  const validFields =
+    typeof record.type === "string" &&
+    typeof record.author === "string" &&
+    typeof record.createdAt === "string"
+  if (!validIdentity || !validFields) return false
+  const created = Date.parse(record.createdAt as string)
+  return Number.isFinite(created) && created <= now + 60_000
+}
+
+function isRetiredOrStaleJsonl(record: Record<string, unknown>, now: number): boolean {
+  if (record.status === "deprecated" || record.state === "retired") return true
+  return Boolean(record.stale_after) && Date.parse(String(record.stale_after)) <= now
+}
+
+function parsePilotJsonlLine(line: string, projectNames: string[], now: number): PilotLesson {
+  if (Buffer.byteLength(line) > 32 * 1024) throw new Error("Record exceeds 32 KiB")
+  const r = JSON.parse(line) as Record<string, unknown>
+  if (!isValidJsonlHeader(r, projectNames, now))
+    throw new Error("Malformed, foreign or future Pilot record")
+  if (isRetiredOrStaleJsonl(r, now)) throw new Error("Retired or stale Pilot record")
+  safeText(line)
+  const content = [r.subtitle, ...(Array.isArray(r.facts) ? r.facts : []), r.narrative]
+    .filter((x) => typeof x === "string" && x.trim())
+    .join("\n\n")
+  const title = typeof r.title === "string" && r.title.trim() ? r.title : "Imported Pilot lesson"
+  return {
+    sourceId: r.uid as string,
+    title,
+    content,
+    kind: pilotKind(r.type as string),
+    tags: pilotStrings(r.concepts),
+    files: [...pilotStrings(r.filesRead), ...pilotStrings(r.filesModified)]
+      .filter(relativeFile)
+      .slice(0, 32),
+    author: r.author as string,
+    sourceAt: r.createdAt as string,
+    metadata: r,
+  }
+}
+
+function parsePilotJsonlFile(
+  text: string,
+  projectNames: string[],
+  now: number,
+  reject: (reason: string) => void,
+): PilotLesson[] {
+  const records: PilotLesson[] = []
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue
+    try {
+      records.push(parsePilotJsonlLine(line, projectNames, now))
+    } catch (cause) {
+      reject(cause instanceof Error ? cause.message : "Malformed Pilot record")
+    }
+    if (records.length >= 5_000) {
+      reject("Import record limit reached")
+      break
+    }
+  }
+  return records
+}
+
 export function parsePilot(
   name: string,
   text: string,
   projectNames: string[],
   now: number,
 ): { records: PilotLesson[]; skipped: number; issues: string[] } {
-  const records: PilotLesson[] = [],
-    issues: string[] = []
+  const issues: string[] = []
   let skipped = 0
   const reject = (reason: string) => {
     skipped++
@@ -27,120 +102,16 @@ export function parsePilot(
   }
   if (!relativeFile(name) || !/\.(?:jsonl|md)$/.test(name)) {
     reject("Expected a relative .jsonl or .md file name")
-    return { records, skipped, issues }
+    return { records: [], skipped, issues }
   }
   if (name.endsWith(".jsonl")) {
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue
-      try {
-        if (Buffer.byteLength(line) > 32 * 1024) throw new Error("Record exceeds 32 KiB")
-        const r = JSON.parse(line)
-        if (
-          r.schemaVersion !== 1 ||
-          typeof r.uid !== "string" ||
-          !/^[a-zA-Z0-9._-]{1,128}$/.test(r.uid) ||
-          !projectNames.includes(r.project) ||
-          typeof r.type !== "string" ||
-          typeof r.author !== "string" ||
-          typeof r.createdAt !== "string" ||
-          !Number.isFinite(Date.parse(r.createdAt)) ||
-          Date.parse(r.createdAt) > now + 60_000
-        )
-          throw new Error("Malformed, foreign or future Pilot record")
-        if (
-          r.status === "deprecated" ||
-          r.state === "retired" ||
-          (r.stale_after && Date.parse(r.stale_after) <= now)
-        )
-          throw new Error("Retired or stale Pilot record")
-        safeText(line)
-        const content = [r.subtitle, ...(Array.isArray(r.facts) ? r.facts : []), r.narrative]
-          .filter((x) => typeof x === "string" && x.trim())
-          .join("\n\n")
-        records.push({
-          sourceId: r.uid,
-          title: typeof r.title === "string" && r.title.trim() ? r.title : "Imported Pilot lesson",
-          content,
-          kind: kind(r.type),
-          tags: strings(r.concepts),
-          files: [...strings(r.filesRead), ...strings(r.filesModified)]
-            .filter(relativeFile)
-            .slice(0, 32),
-          author: r.author,
-          sourceAt: r.createdAt,
-          metadata: r,
-        })
-      } catch (cause) {
-        reject(cause instanceof Error ? cause.message : "Malformed Pilot record")
-      }
-      if (records.length >= 5_000) {
-        reject("Import record limit reached")
-        break
-      }
-    }
-  } else {
-    try {
-      safeText(text)
-      const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
-      if (!match || /^(?:<{7}|>{7})(?: |$)/m.test(text))
-        throw new Error("Invalid Markdown frontmatter or merge conflict")
-      const frontmatter = match[1] as string
-      if (/[&*!][A-Za-z]/.test(frontmatter))
-        throw new Error("YAML aliases and tags are not supported")
-      // The global, not an import of "bun": a bundle for Node or Deno must not name the Bun module.
-      const r = Bun.YAML.parse(frontmatter) as Record<string, unknown>
-      if (!r || typeof r !== "object" || Array.isArray(r) || typeof r.type !== "string")
-        throw new Error("Knowledge type is required")
-      if (r.schemaVersion !== undefined && r.schemaVersion !== 1)
-        throw new Error("Unsupported knowledge schema")
-      if (r.project !== undefined && !projectNames.includes(String(r.project)))
-        throw new Error("Foreign knowledge project")
-      if (
-        ["deprecated", "retired"].includes(String(r.status)) ||
-        (r.stale_after !== undefined &&
-          (!Number.isFinite(Date.parse(String(r.stale_after))) ||
-            Date.parse(String(r.stale_after)) <= now))
-      )
-        throw new Error("Retired or stale knowledge")
-      const generated = r.generated as { by?: unknown; at?: unknown } | undefined
-      const sourceAt =
-        typeof r.createdAt === "string"
-          ? r.createdAt
-          : typeof generated?.at === "string"
-            ? generated.at
-            : undefined
-      if (
-        sourceAt &&
-        (!Number.isFinite(Date.parse(sourceAt)) || Date.parse(sourceAt) > now + 60_000)
-      )
-        throw new Error("Invalid or future knowledge timestamp")
-      const sourceId =
-        typeof r.id === "string" ? r.id : `knowledge-${hash(name.includes("/") ? name : text)}`
-      records.push({
-        sourceId,
-        title:
-          typeof r.title === "string"
-            ? r.title
-            : (name.split("/").at(-1) as string).replace(/\.md$/, ""),
-        content: text.slice(match[0].length).trim(),
-        kind: kind(r.type),
-        tags: strings(r.tags),
-        files: [],
-        ...(typeof generated?.by === "string" ? { author: generated.by } : {}),
-        ...(sourceAt ? { sourceAt } : {}),
-        metadata: r,
-      })
-    } catch (cause) {
-      reject(cause instanceof Error ? cause.message : "Malformed knowledge document")
-    }
+    return { records: parsePilotJsonlFile(text, projectNames, now, reject), skipped, issues }
+  }
+  const records: PilotLesson[] = []
+  try {
+    records.push(parsePilotMarkdown(name, text, projectNames, now))
+  } catch (cause) {
+    reject(cause instanceof Error ? cause.message : "Malformed knowledge document")
   }
   return { records, skipped, issues }
-}
-function strings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((x): x is string => typeof x === "string").slice(0, 32)
-    : []
-}
-function kind(type: string): MemoryKind {
-  return MEMORY_KINDS.has(type) ? (type as MemoryKind) : "discovery"
 }

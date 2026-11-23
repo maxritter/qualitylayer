@@ -5,43 +5,23 @@
 // folded System details row; there is no diagnostics switch (Max, 31 October 2026). The server owns the sending.
 
 import { cn } from "cn"
+import { BugIcon, SparklesIcon } from "lucide-react"
+import { type ReactNode, useCallback, useRef } from "react"
+import { type CloseDetails, Dialog, DialogContent, keepWhile } from "@/components/ui/dialog"
+import { MAX_TEXT } from "../core/feedback/report.ts"
+import type { Api } from "./api.ts"
 import {
-  BugIcon,
-  ChevronDownIcon,
-  CircleCheckIcon,
-  ClockIcon,
-  CpuIcon,
-  ImagePlusIcon,
-  LockIcon,
-  SparklesIcon,
-  XIcon,
-} from "lucide-react"
-import {
-  type ClipboardEvent,
-  type DragEvent,
-  Fragment,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react"
-import {
-  type CloseDetails,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  keepWhile,
-} from "@/components/ui/dialog"
-import type { QueuedWhy } from "../core/feedback/outbox.ts"
-import { MAX_IMAGES, MAX_TEXT, validEmail } from "../core/feedback/report.ts"
-import { type Diagnostics, diagnosticRows } from "../core/feedback/words.ts"
-import type { Api, FeedbackWho } from "./api.ts"
-import { forgetShot, prepareImage, type Shot } from "./feedback-images.ts"
-import { WhoMark } from "./kit/WhoMark.tsx"
+  copyText,
+  FeedbackDetailsFold,
+  FeedbackHead,
+  FeedbackLicenceFrom,
+  FeedbackQueuedView,
+  FeedbackSentView,
+  FeedbackShotsSection,
+  FeedbackTrialFields,
+} from "./feedback-sheet-parts.tsx"
+import { type FeedbackKind, usePrivateFeedbackForm } from "./feedback-sheet-state.ts"
 import { PublicFeedbackSheet } from "./PublicFeedbackSheet.tsx"
-import { recentErrors } from "./report.ts"
 import { Segmented } from "./Segmented.tsx"
 import type { ReportUpdate } from "./Updates.tsx"
 
@@ -53,55 +33,23 @@ export type FeedbackStart = {
   page?: string
 }
 
-type Kind = FeedbackStart["kind"]
-type View =
-  | { name: "form" }
-  | { name: "sent"; reference: string }
-  | { name: "queued"; copy: string; why: QueuedWhy; message?: string }
-
 /** The same choice, with the same marks, as the public sheet. */
-const KINDS: { id: Kind; label: string; icon: ReactNode }[] = [
+const KINDS: { id: FeedbackKind; label: string; icon: ReactNode }[] = [
   { id: "bug", label: "Report a bug", icon: <BugIcon /> },
   { id: "idea", label: "Suggest an improvement", icon: <SparklesIcon /> },
 ]
 
-const TIER_WORD = { solo: "Solo", team: "Team" } as const
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join("")
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** The two lines the saved view says, by why the report waits; "offline" only when the fetch itself failed. */
-function queuedLines(view: { why: QueuedWhy; message?: string }): [string, string] {
-  if (view.why === "offline") {
-    return [
-      "You are offline, so the report waits on this computer.",
-      "It goes out by itself when you are back online. Nothing to do.",
-    ]
-  }
-  if (view.why === "limit") {
-    return [
-      `${view.message ?? "Too many reports just now."} The report waits on this computer.`,
-      "It goes out by itself a little later. Nothing to do.",
-    ]
-  }
-  return [
-    "qualitylayer.dev could not take it just now, so the report waits on this computer.",
-    "It goes out by itself in a few minutes. Nothing to do.",
-  ]
+function feedbackFooterNote(
+  signedOut: boolean,
+  trial: boolean,
+  senderOk: boolean,
+  email: string,
+): string {
+  if (signedOut) return "Start the trial or activate a licence in Settings to send a report."
+  if (!trial) return "Sent privately to Max with your licence e-mail."
+  return senderOk
+    ? `Sent privately to Max from ${email.trim()}.`
+    : "Name and e-mail are needed to send."
 }
 
 function Body({
@@ -116,304 +64,43 @@ function Body({
   /** Whether there is a draft worth keeping from a stray click or Escape. */
   onDraft: (has: boolean) => void
 }) {
-  const [kind, setKind] = useState<Kind>(start.kind)
-  // One id per draft: a second Send of the same report (after a request that failed on the way back)
-  // is the same report to the site, never a second issue.
-  const [reportId, setReportId] = useState(() => crypto.randomUUID())
-  const [text, setText] = useState(
-    start.error !== undefined ? `${start.error}\n\nWhat I was doing: ` : "",
-  )
-  const [shots, setShots] = useState<Shot[]>([])
-  const [problem, setProblem] = useState<string | null>(null)
-  // The system details every private report carries, read when the folded row is first opened.
-  const [details, setDetails] = useState<{ label: string; value: string }[] | null | undefined>(
-    undefined,
-  )
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [who, setWho] = useState<FeedbackWho | null>(null)
-  const [view, setView] = useState<View>({ name: "form" })
-  const [sending, setSending] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const additions = useRef(Promise.resolve())
-  const pendingImages = useRef(0)
-  const mounted = useRef(true)
-  const [dragging, setDragging] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const field = useRef<HTMLTextAreaElement | null>(null)
-  const files = useRef<HTMLInputElement | null>(null)
+  const form = usePrivateFeedbackForm(api, start, onDraft)
 
-  useEffect(() => {
-    let live = true
-    api
-      .feedbackWho()
-      .then((found) => live && setWho(found))
-      .catch(() => live && setWho({ kind: "none" }))
-    return () => {
-      live = false
-    }
-  }, [api])
-
-  useEffect(() => {
-    const area = field.current
-    if (area === null) return
-    area.focus()
-    area.setSelectionRange(area.value.length, area.value.length)
-  }, [])
-
-  // The pictures held here are revoked when the sheet closes.
-  const held = useRef<Shot[]>([])
-  held.current = shots
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      for (const shot of held.current) forgetShot(shot)
-    }
-  }, [])
-
-  const drafting = view.name === "form" && (text.trim() !== "" || shots.length > 0)
-  useEffect(() => {
-    onDraft(drafting)
-  }, [drafting, onDraft])
-
-  const trial = who?.kind === "trial"
-  const signedOut = who?.kind === "none"
-  const senderOk = !trial || (name.trim() !== "" && validEmail(email.trim()))
-  const ready = text.trim() !== "" && senderOk && !signedOut && who !== null
-
-  const add = (list: FileList | File[]) => {
-    const chosen = Array.from(list)
-    pendingImages.current++
-    setAdding(true)
-    additions.current = additions.current
-      .then(async () => {
-        if (!mounted.current) return
-        setProblem(null)
-        for (const file of chosen) {
-          const made = await prepareImage(file, held.current)
-          if (!mounted.current) {
-            if (made.ok) forgetShot(made.shot)
-            return
-          }
-          if (!made.ok) {
-            setProblem(made.message)
-            break
-          }
-          held.current = [...held.current, made.shot]
-          setShots(held.current)
-        }
-      })
-      .catch(() => {
-        if (mounted.current) setProblem("That image could not be read. Try adding it again.")
-      })
-      .finally(() => {
-        pendingImages.current--
-        if (mounted.current && pendingImages.current === 0) setAdding(false)
-      })
-    return additions.current
-  }
-
-  const paste = (event: ClipboardEvent) => {
-    const images = Array.from(event.clipboardData.files).filter((f) => f.type.startsWith("image/"))
-    if (images.length === 0) return
-    event.preventDefault()
-    void add(images)
-  }
-
-  const drop = (event: DragEvent) => {
-    event.preventDefault()
-    setDragging(false)
-    void add(event.dataTransfer.files)
-  }
-
-  const form = () => {
-    const body = new FormData()
-    body.append(
-      "report",
-      JSON.stringify({
-        id: reportId,
-        kind,
-        text: text.trim(),
-        includeDiagnostics: true,
-        ...(start.page !== undefined ? { page: start.page } : {}),
-        errors: recentErrors(),
-        ...(trial ? { sender: { name: name.trim(), email: email.trim() } } : {}),
-      }),
-    )
-    for (const shot of shots)
-      body.append(
-        "image",
-        new Blob([shot.bytes as Uint8Array<ArrayBuffer>], { type: shot.type }),
-        shot.name,
-      )
-    return body
-  }
-
-  const preview = async (): Promise<Diagnostics | null> => {
-    try {
-      return await api.feedbackPreview({
-        ...(start.page !== undefined ? { page: start.page } : {}),
-        errors: recentErrors(),
-      })
-    } catch {
-      return null
-    }
-  }
-
-  const detailsRead = useRef(false)
-  const readDetails = async () => {
-    if (detailsRead.current) return
-    detailsRead.current = true
-    setDetails(null)
-    const shown = await preview()
-    setDetails(shown === null ? [] : diagnosticRows(shown))
-  }
-
-  /** What the person can paste into an issue themselves, when the report could not go out. */
-  const asText = async (): Promise<string> => {
-    const lines = [kind === "bug" ? "Something doesn't work" : "An idea", "", text.trim()]
-    if (trial) lines.push("", `From ${name.trim()} <${email.trim()}>`)
-    const shown = await preview()
-    if (shown !== null)
-      lines.push("", ...diagnosticRows(shown).map((row) => `${row.label}: ${row.value}`))
-    return lines.join("\n")
-  }
-
-  const send = async () => {
-    setSending(true)
-    setProblem(null)
-    try {
-      const delivery = await api.sendFeedback(form())
-      if (delivery.status === "sent") setView({ name: "sent", reference: delivery.reference })
-      else {
-        setView({
-          name: "queued",
-          copy: await asText(),
-          why: delivery.why,
-          ...(delivery.message !== undefined ? { message: delivery.message } : {}),
-        })
-      }
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const another = () => {
-    for (const shot of shots) forgetShot(shot)
-    setShots([])
-    setText("")
-    setProblem(null)
-    setReportId(crypto.randomUUID())
-    setView({ name: "form" })
-  }
-
-  const head = (title: string, line?: string, Icon: typeof LockIcon = LockIcon) => (
-    <header className="grid gap-1.5 border-b border-line px-5 pt-5 pb-3.5">
-      <div className="q-report-heading">
-        <span className="q-report-heading-icon">
-          <Icon size={18} aria-hidden="true" />
-        </span>
-        <DialogTitle className="m-0 text-[17px] leading-snug font-semibold">{title}</DialogTitle>
-      </div>
-      {line !== undefined ? (
-        <DialogDescription className="m-0 text-[13.5px] text-muted-foreground">
-          {line}
-        </DialogDescription>
-      ) : null}
-    </header>
-  )
-
-  if (view.name === "sent") {
+  if (form.view.name === "sent") {
     return (
-      <>
-        {head("Sent to Max", undefined, CircleCheckIcon)}
-        <div
-          className="grid gap-3 px-5 py-5 text-[13.5px] leading-relaxed"
-          data-testid="feedback-sent"
-        >
-          <p className="m-0">
-            Thanks for taking the time to report this. I’ll read your message and attachments. — Max
-          </p>
-          <p className="m-0 text-muted-foreground">
-            Reference <b>{view.reference}</b>
-          </p>
-        </div>
-        <p className="m-0 px-5 pb-4 text-[13px] text-muted-foreground">
-          You can also email me at{" "}
-          <a className="q-link" href="mailto:hello@qualitylayer.dev">
-            hello@qualitylayer.dev
-          </a>
-          .
-        </p>
-        <footer className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-          <button type="button" className="q-link" onClick={another}>
-            Send another
-          </button>
-          <button type="button" className="q-btn primary" onClick={onClose}>
-            Done
-          </button>
-        </footer>
-      </>
+      <FeedbackSentView
+        reference={form.view.reference}
+        onAnother={form.another}
+        onClose={onClose}
+      />
     )
   }
-
-  if (view.name === "queued") {
+  if (form.view.name === "queued") {
+    const queued = form.view
     return (
-      <>
-        {head("Saved to send later", undefined, ClockIcon)}
-        <ul
-          className="m-0 grid list-none gap-2.5 px-5 py-4 text-[13.5px]"
-          data-testid="feedback-queued"
-        >
-          <li className="flex items-center gap-2.5">
-            <WhoMark who="you" />
-            <span>{queuedLines(view)[0]}</span>
-          </li>
-          <li className="flex items-center gap-2.5">
-            <WhoMark who="todo" />
-            <span>{queuedLines(view)[1]}</span>
-          </li>
-        </ul>
-        <footer className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-          <button
-            type="button"
-            className="q-link"
-            onClick={async () => setCopied(await copyText(view.copy))}
-          >
-            {copied ? "Copied" : "Copy it as text"}
-          </button>
-          <button type="button" className="q-btn primary" onClick={onClose}>
-            Done
-          </button>
-        </footer>
-      </>
+      <FeedbackQueuedView
+        view={queued}
+        copied={form.copied}
+        onCopy={() => void copyText(queued.copy).then(form.setCopied)}
+        onClose={onClose}
+      />
     )
   }
 
-  const note = signedOut
-    ? "Start the trial or activate a licence in Settings to send a report."
-    : trial
-      ? senderOk
-        ? `Sent privately to Max from ${email.trim()}.`
-        : "Name and e-mail are needed to send."
-      : "Sent privately to Max with your licence e-mail."
-
+  const note = feedbackFooterNote(form.signedOut, form.trial, form.senderOk, form.email)
   return (
     <>
-      {head(
-        "Contact Max privately",
-        "For account details, private screenshots or a security concern.",
-      )}
+      <FeedbackHead
+        title="Contact Max privately"
+        line="For account details, private screenshots or a security concern."
+      />
       <div className="grid max-h-[min(66vh,560px)] gap-4 overflow-y-auto px-5 py-4">
         <div className="q-private-kind">
           <Segmented
             label="Kind of report"
-            value={kind}
+            value={form.kind}
             options={KINDS}
-            onChange={(next) => setKind(next)}
+            onChange={(next) => form.setKind(next)}
           />
         </div>
         <div className="grid gap-1.5">
@@ -422,178 +109,44 @@ function Body({
           </label>
           <textarea
             id="feedback-text"
-            ref={field}
-            value={text}
+            ref={form.field}
+            value={form.text}
             maxLength={MAX_TEXT}
-            onChange={(event) => setText(event.target.value)}
-            onPaste={paste}
+            onChange={(event) => form.setText(event.target.value)}
+            onPaste={form.paste}
             placeholder={
-              kind === "bug"
+              form.kind === "bug"
                 ? "What did you do, and what happened instead?"
                 : "What would help you?"
             }
             className="min-h-[130px] w-full resize-y rounded-lg border border-border bg-background px-3 py-2.5 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring"
             data-testid="feedback-text"
           />
-          {text.length > MAX_TEXT - 500 ? (
+          {form.text.length > MAX_TEXT - 500 ? (
             <span className="q-dim justify-self-end text-[12px]" data-testid="feedback-count">
-              {text.length.toLocaleString("en-US")} / {MAX_TEXT.toLocaleString("en-US")}
+              {form.text.length.toLocaleString("en-US")} / {MAX_TEXT.toLocaleString("en-US")}
             </span>
           ) : null}
         </div>
-
-        {trial ? (
-          <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-              <label className="grid gap-1 text-[12.5px] text-muted-foreground">
-                Your name
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  autoComplete="name"
-                  className="h-9 rounded-lg border border-border bg-background px-3 text-[13.5px] text-foreground outline-none focus-visible:border-ring"
-                  data-testid="feedback-name"
-                />
-              </label>
-              <label className="grid gap-1 text-[12.5px] text-muted-foreground">
-                Your e-mail
-                <input
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  type="email"
-                  autoComplete="email"
-                  className="h-9 rounded-lg border border-border bg-background px-3 text-[13.5px] text-foreground outline-none focus-visible:border-ring"
-                  data-testid="feedback-email"
-                />
-              </label>
-            </div>
-            <p className="q-dim m-0 text-[12.5px]">
-              During the trial I ask for these to identify your report. They are used for this
-              report only.
-            </p>
-          </div>
+        {form.trial ? (
+          <FeedbackTrialFields
+            name={form.name}
+            email={form.email}
+            onName={form.setName}
+            onEmail={form.setEmail}
+          />
         ) : null}
-
-        <section
-          className="grid gap-2"
-          aria-label="Screenshots"
-          onDragOver={(event) => {
-            event.preventDefault()
-            setDragging(true)
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={drop}
-        >
-          <b className="text-[13px] font-normal text-muted-foreground">Screenshots</b>
-          <div className="flex flex-wrap gap-2.5" data-testid="feedback-shots">
-            {shots.map((shot) => (
-              <div
-                key={shot.id}
-                className="relative h-[90px] w-[122px] overflow-hidden rounded-lg border border-border bg-sunken"
-              >
-                {shot.url !== "" ? (
-                  <img src={shot.url} alt={shot.name} className="size-full object-cover" />
-                ) : (
-                  <span className="q-dim grid size-full place-items-center px-2 text-center text-[12px]">
-                    {shot.name}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-background/85 text-foreground"
-                  aria-label={`Remove ${shot.name}`}
-                  onClick={() => {
-                    forgetShot(shot)
-                    held.current = held.current.filter((other) => other.id !== shot.id)
-                    setShots(held.current)
-                  }}
-                >
-                  <XIcon className="size-3.5" />
-                </button>
-              </div>
-            ))}
-            {shots.length < MAX_IMAGES ? (
-              <button
-                type="button"
-                className={cn(
-                  "grid h-[90px] w-[122px] place-items-center gap-1 rounded-lg border border-dashed border-strong px-2 text-center text-[12.5px] text-muted-foreground hover:border-(--ql-accent) hover:text-(--ql-accent)",
-                  dragging && "border-(--ql-accent) text-(--ql-accent)",
-                )}
-                onClick={() => files.current?.click()}
-                data-testid="feedback-add"
-              >
-                <span>
-                  <ImagePlusIcon className="mx-auto mb-1 size-4" aria-hidden="true" />
-                  Add, paste or drop an image
-                </span>
-              </button>
-            ) : null}
-            <input
-              ref={files}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              data-testid="feedback-file"
-              onChange={(event) => {
-                if (event.target.files !== null) void add(event.target.files)
-                event.target.value = ""
-              }}
-            />
-          </div>
-          <p className="q-dim m-0 text-[12.5px]">
-            Screenshots can show your code or plans. Check them before sending.
-          </p>
-        </section>
-
-        <div className="q-report-utilities q-private-details">
-          <details onToggle={(event) => event.currentTarget.open && void readDetails()}>
-            <summary>
-              <CpuIcon size={14} aria-hidden="true" />
-              System details · included
-              <ChevronDownIcon size={12} aria-hidden="true" />
-            </summary>
-            {details === undefined || details === null ? (
-              <p data-testid="diagnostics-rows">Reading this computer…</p>
-            ) : (
-              <dl data-testid="diagnostics-rows">
-                {details.map((row) => (
-                  <Fragment key={row.label}>
-                    <dt>{row.label}</dt>
-                    <dd>{row.value}</dd>
-                  </Fragment>
-                ))}
-              </dl>
-            )}
-          </details>
-        </div>
-
-        {who?.kind === "licence" ? (
-          <p
-            className="m-0 flex items-center gap-2.5 text-[13px] text-muted-foreground"
-            data-testid="feedback-from"
-          >
-            <span
-              aria-hidden="true"
-              className="grid size-6 flex-none place-items-center rounded-full border border-(--ql-accent-line) bg-(--ql-accent-soft) text-[10px] font-semibold text-foreground"
-            >
-              {initials(who.name !== "" ? who.name : who.email)}
-            </span>
-            <span>
-              From{" "}
-              <b className="font-medium text-foreground">
-                {who.name !== "" ? who.name : who.email}
-              </b>
-              {who.name !== "" && who.email !== "" ? (
-                <>
-                  {" "}
-                  {"·"} {who.email}
-                </>
-              ) : null}
-              {" · "}from your {TIER_WORD[who.tier]} licence
-            </span>
-          </p>
-        ) : null}
+        <FeedbackShotsSection
+          shots={form.shots}
+          dragging={form.dragging}
+          filesRef={form.files}
+          onDragging={form.setDragging}
+          onDrop={form.drop}
+          onAddFiles={(list) => void form.add(list)}
+          onRemoveShot={form.removeShot}
+        />
+        <FeedbackDetailsFold details={form.details} onOpen={() => void form.readDetails()} />
+        {form.who?.kind === "licence" ? <FeedbackLicenceFrom who={form.who} /> : null}
       </div>
       <p className="m-0 px-5 pb-4 text-[13px] text-muted-foreground">
         You can also email me at{" "}
@@ -604,11 +157,11 @@ function Body({
       </p>
       <footer className="flex items-center justify-between gap-3 border-t border-line bg-sunken px-5 py-3">
         <p
-          className={cn("m-0 text-[12.5px]", problem !== null ? "text-danger" : "q-dim")}
-          role={problem !== null ? "alert" : undefined}
+          className={cn("m-0 text-[12.5px]", form.problem !== null ? "text-danger" : "q-dim")}
+          role={form.problem !== null ? "alert" : undefined}
           data-testid="feedback-note"
         >
-          {problem ?? note}
+          {form.problem ?? note}
         </p>
         <div className="flex flex-none gap-2">
           <button type="button" className="q-btn quiet" onClick={onClose}>
@@ -617,11 +170,11 @@ function Body({
           <button
             type="button"
             className="q-btn primary"
-            disabled={!ready || sending || adding}
-            onClick={() => void send()}
+            disabled={!form.ready || form.sending || form.adding}
+            onClick={() => void form.send()}
             data-testid="feedback-send"
           >
-            {sending ? "Sending…" : "Send report"}
+            {form.sending ? "Sending…" : "Send report"}
           </button>
         </div>
       </footer>

@@ -6,16 +6,16 @@
 // changed), and that second run is the verdict. A check that passes in the checkout is never run
 // again, and a checkout nobody else changed has nothing to leave out.
 
-import { constants } from "node:fs"
-import { copyFile, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises"
-import { dirname, join, relative } from "node:path"
+import { mkdir, rm } from "node:fs/promises"
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { CommandRunner, Ran } from "../checks.ts"
 import { allTasks } from "../docs/outline.ts"
 import { readCards } from "../docs/outline-files.ts"
 import type { Task } from "../task/store.ts"
-import { covers, statusEntries } from "./slice-commit.ts"
-import { git } from "./slice-git.ts"
+import { changedWorkFiles, isolationHeader, populateSliceCopy } from "./slice-tree-copy.ts"
+
+export { notIsolatedWords } from "./slice-tree-copy.ts"
 
 /**
  * The files the cards of a slice name: the slice's own, whatever the work tree holds besides. A card
@@ -35,103 +35,6 @@ export async function ownFiles(
   )
   if (slice !== undefined) return slice.tasks.flatMap((t) => t.files)
   return scope.kind === "task" ? (allTasks(outline).find((t) => same(t.id))?.files ?? []) : []
-}
-
-/** Copy one file of the work tree as it is: a link stays a link, a copy-on-write clone where the disk has them. */
-async function copyAsIs(from: string, to: string): Promise<void> {
-  const info = await lstat(from).catch(() => null)
-  if (info === null) return
-  if (info.isSymbolicLink()) await symlink(await readlink(from), to)
-  else if (info.isFile()) await copyFile(from, to, constants.COPYFILE_FICLONE)
-}
-
-/** Installed dependencies are not tracked: the copy's folders point at the checkout's, as the base copy does. */
-async function linkDependencies(root: string, dir: string): Promise<void> {
-  const ignored = await git(root, [
-    "ls-files",
-    "--others",
-    "--ignored",
-    "--exclude-standard",
-    "--directory",
-  ])
-  for (const entry of ignored.text.split("\n")) {
-    const folder = entry.replace(/\/$/, "")
-    if (!/(^|\/)node_modules$/.test(folder)) continue
-    await mkdir(dirname(join(dir, folder)), { recursive: true })
-    await symlink(join(root, folder), join(dir, folder)).catch(() => undefined)
-  }
-}
-
-/**
- * HEAD's files in `dir`, each as the work tree holds it except those in `foreign`, which are
- * HEAD's own, plus the slice's changed files that HEAD does not have yet. False when git cannot
- * list HEAD or write the files others changed.
- */
-async function populate(
-  root: string,
-  dir: string,
-  changed: { own: readonly string[]; foreign: readonly string[] },
-  scratch: string,
-): Promise<boolean> {
-  const listed = await git(root, ["ls-tree", "-r", "-z", "--name-only", "HEAD"])
-  if (listed.code !== 0) return false
-  const tracked = listed.text.split("\0").filter((path) => path !== "")
-  const known = new Set(tracked)
-  const left = new Set(changed.foreign)
-  const wanted = [
-    ...tracked.filter((path) => !left.has(path)),
-    ...changed.own.filter((path) => !known.has(path)),
-  ]
-  // A folder is made once, and every file in it waits for that same call: a file that only saw the
-  // folder listed as made could copy into it before it existed.
-  const made = new Map<string, Promise<string | undefined>>()
-  for (let at = 0; at < wanted.length; at += 32)
-    await Promise.all(
-      wanted.slice(at, at + 32).map(async (path) => {
-        const folder = dirname(join(dir, path))
-        let folderMade = made.get(folder)
-        if (!folderMade) {
-          folderMade = mkdir(folder, { recursive: true })
-          made.set(folder, folderMade)
-        }
-        await folderMade
-        await copyAsIs(join(root, path), join(dir, path))
-      }),
-    )
-  // The files others changed come from HEAD through a checkout, so filters, modes and links hold.
-  const heads = changed.foreign.filter((path) => known.has(path))
-  if (heads.length > 0) {
-    const env = { GIT_INDEX_FILE: join(scratch, "head-index") }
-    const read = await git(root, ["read-tree", "HEAD"], { env })
-    const out = await git(root, ["checkout-index", "-f", "-z", "--stdin", `--prefix=${dir}/`], {
-      env,
-      input: heads.map((path) => `${path}\0`).join(""),
-    })
-    if (read.code !== 0 || out.code !== 0) return false
-  }
-  await linkDependencies(root, dir)
-  return true
-}
-
-/**
- * The checkout's changed files: the slice's own, and those others changed (the task's records are
- * neither). `untracked` are the ones git does not track at all.
- */
-async function changedFiles(
-  task: Pick<Task, "repoRoot" | "dir">,
-  own: readonly string[],
-): Promise<{ own: string[]; foreign: string[]; untracked: Set<string> } | null> {
-  const entries = await statusEntries(task.repoRoot)
-  if (entries === null) return null
-  const records = relative(task.repoRoot, task.dir).split("\\").join("/")
-  const inRecords = (path: string) =>
-    records !== "" && !records.startsWith("..") && path.startsWith(`${records}/`)
-  const paths = [...entries.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-  return {
-    own: paths.filter((path) => own.some((entry) => covers(entry, path))),
-    foreign: paths.filter((path) => !own.some((entry) => covers(entry, path)) && !inRecords(path)),
-    untracked: new Set(paths.filter((path) => entries.get(path) === "??")),
-  }
 }
 
 /**
@@ -160,28 +63,63 @@ export function namesPath(output: string, paths: readonly string[]): boolean {
   })
 }
 
-/** "3 untracked files no session of this task wrote were": the files a clean copy left out as nobody's of the task. */
-export const strayWords = (strays: readonly string[]): string =>
-  `${strays.length} untracked file${strays.length === 1 ? "" : "s"} no session of this task wrote ${strays.length === 1 ? "was" : "were"}`
+type SliceTreeOptions = {
+  /**
+   * Why a run did none of its work, read in the folder it ran in (`cwd`), or null when it did.
+   * Asked for the first run in the checkout and for the rerun in its copy, while the copy exists.
+   */
+  notRun: (ran: Ran, command: string, cwd: string) => Promise<string | null>
+  /** Of these changed paths, those another session's record provably claims. */
+  theirs: (paths: string[]) => Promise<string[]>
+  whose: "slice" | "task"
+}
 
-/**
- * Why a failed run was not run again on a clean copy, as the reply's words after its outcome; ""
- * for a run that was run again. The reason is the one that applied (`Ran.notIsolated`): the
- * output naming no file of another session is one of three, and was said for all of them.
- */
-export function notIsolatedWords(ran: Pick<Ran, "first" | "notIsolated">): string {
-  if (ran.first !== undefined) return ""
-  const again = "(you can run the check again)"
-  const reason = ran.notIsolated
-  if (reason === undefined) return `; it was not run again on a clean copy ${again}`
-  if (reason.why === "nothing-else-changed")
-    return `; it was not run again on a clean copy, since only this task's own files are changed in this checkout ${again}`
-  if (reason.why === "unnamed")
-    return `; it was not run again on a clean copy, since its output names no file another session changed ${again}`
-  const named = reason.named ?? []
-  if (named.length === 0)
-    return `; it was not run again on a clean copy, since no other session's record claims a changed file of this checkout ${again}`
-  return `; it was not run again on a clean copy: its output names ${named.join(", ")}, changed in this checkout, but no other session's record claims ${named.length === 1 ? "it, so it counts" : "them, so they count"} as this task's own (run the check again once ${named.length === 1 ? "it is" : "they are"} committed or gone)`
+type IsolationPlan =
+  | { kind: "stop"; result: Ran }
+  | { kind: "rerun"; changed: { own: string[]; foreign: string[] }; strays: string[] }
+
+async function planIsolation(
+  first: Ran,
+  listed: { own: string[]; foreign: string[]; untracked: Set<string> },
+  context: { command: string; cwd: string; options: SliceTreeOptions },
+): Promise<IsolationPlan> {
+  // Why the first run stands is kept with it, so the reply says the reason that applied.
+  if (listed.foreign.length === 0)
+    return { kind: "stop", result: { ...first, notIsolated: { why: "nothing-else-changed" } } }
+  // A file is this task's source for the check only on positive evidence that it is the task's:
+  // a card names it or a session of the task wrote it (`own`), or git tracks it (a tracked file
+  // changed by nobody's record may be the task's own unrecorded edit, so it stays in: that doubt
+  // goes to red, never to green). Left out are the files another session's record claims, and
+  // the untracked files with no such evidence (`strays`): written by no session of this task
+  // and named by no card, they are not what the task would commit, and the task's agent may
+  // neither delete nor commit them. Nothing is hidden: the run says what it left out and why.
+  const claimed = new Set(await context.options.theirs(listed.foreign))
+  const strays = listed.foreign.filter((path) => !claimed.has(path) && listed.untracked.has(path))
+  const left = new Set([...claimed, ...strays])
+  const changed = {
+    own: [...listed.own, ...listed.foreign.filter((path) => !left.has(path))],
+    foreign: listed.foreign.filter((path) => left.has(path)),
+  }
+  // What the output names among the tracked files changed by nobody's record.
+  const unclaimed = changed.own
+    .filter((path) => !listed.own.includes(path) && namesPath(first.output, [path]))
+    .slice(0, 5)
+  if (changed.foreign.length === 0)
+    return {
+      kind: "stop",
+      result: { ...first, notIsolated: { why: "unclaimed", named: unclaimed } },
+    }
+  const hasEvidence =
+    namesPath(first.output, changed.foreign) ||
+    (await context.options.notRun(first, context.command, context.cwd)) !== null
+  if (!hasEvidence) {
+    const notIsolated =
+      unclaimed.length > 0
+        ? { why: "unclaimed" as const, named: unclaimed }
+        : { why: "unnamed" as const }
+    return { kind: "stop", result: { ...first, notIsolated } }
+  }
+  return { kind: "rerun", changed, strays }
 }
 
 /**
@@ -197,74 +135,24 @@ export function onSliceTree(
   task: Pick<Task, "repoRoot" | "dir" | "runtimeDir">,
   own: readonly string[],
   runner: CommandRunner,
-  options: {
-    /**
-     * Why a run did none of its work, read in the folder it ran in (`cwd`), or null when it did.
-     * Asked for the first run in the checkout and for the rerun in its copy, while the copy exists.
-     */
-    notRun: (ran: Ran, command: string, cwd: string) => Promise<string | null>
-    /** Of these changed paths, those another session's record provably claims. */
-    theirs: (paths: string[]) => Promise<string[]>
-    whose: "slice" | "task"
-  },
+  options: SliceTreeOptions,
 ): CommandRunner {
   return async (command, cwd, timeoutMs, stream) => {
     const first = await runner(command, cwd, timeoutMs, stream)
     if (first.exit === 0 || first.exit === null || first.exit === 127 || first.timedOut)
       return first
-    const listed = await changedFiles(task, own)
+    const listed = await changedWorkFiles(task, own)
     if (listed === null) return first
-    // Why the first run stands is kept with it, so the reply says the reason that applied.
-    if (listed.foreign.length === 0)
-      return { ...first, notIsolated: { why: "nothing-else-changed" } }
-    // A file is this task's source for the check only on positive evidence that it is the task's:
-    // a card names it or a session of the task wrote it (`own`), or git tracks it (a tracked file
-    // changed by nobody's record may be the task's own unrecorded edit, so it stays in: that doubt
-    // goes to red, never to green). Left out are the files another session's record claims, and
-    // the untracked files with no such evidence (`strays`): written by no session of this task
-    // and named by no card, they are not what the task would commit, and the task's agent may
-    // neither delete nor commit them. Nothing is hidden: the run says what it left out and why.
-    const claimed = new Set(await options.theirs(listed.foreign))
-    const strays = listed.foreign.filter((path) => !claimed.has(path) && listed.untracked.has(path))
-    const left = new Set([...claimed, ...strays])
-    const changed = {
-      own: [...listed.own, ...listed.foreign.filter((path) => !left.has(path))],
-      foreign: listed.foreign.filter((path) => left.has(path)),
-    }
-    // What the output names among the tracked files changed by nobody's record.
-    const unclaimed = changed.own
-      .filter((path) => !listed.own.includes(path) && namesPath(first.output, [path]))
-      .slice(0, 5)
-    if (changed.foreign.length === 0)
-      return { ...first, notIsolated: { why: "unclaimed", named: unclaimed } }
-    if (
-      !namesPath(first.output, changed.foreign) &&
-      (await options.notRun(first, command, cwd)) === null
-    )
-      return {
-        ...first,
-        notIsolated:
-          unclaimed.length > 0 ? { why: "unclaimed", named: unclaimed } : { why: "unnamed" },
-      }
+    const plan = await planIsolation(first, listed, { command, cwd, options })
+    if (plan.kind === "stop") return plan.result
     const folder = join(task.runtimeDir, "slice-trees")
     // A run that was killed leaves its copy behind; this one holds the check lock, so it is nobody's.
     await rm(folder, { recursive: true, force: true })
     const dir = join(folder, "tree")
     try {
       await mkdir(dir, { recursive: true })
-      if (!(await populate(task.repoRoot, dir, changed, folder))) return first
-      const left = changed.foreign
-      const others = left.filter((path) => !strays.includes(path))
-      const shown = (paths: string[]) =>
-        paths.slice(0, 5).join(", ") + (paths.length > 5 ? ", …" : "")
-      const header = `\n--- run again on a copy of HEAD plus this ${options.whose}'s own files: ${[
-        ...(others.length > 0
-          ? [
-              `${others.length} file${others.length === 1 ? "" : "s"} others changed in this checkout and have not committed were left out (${shown(others)})`,
-            ]
-          : []),
-        ...(strays.length > 0 ? [`${strayWords(strays)} left out (${shown(strays)})`] : []),
-      ].join("; ")} ---\n`
+      if (!(await populateSliceCopy(task.repoRoot, dir, plan.changed, folder))) return first
+      const header = isolationHeader(options.whose, plan.changed.foreign, plan.strays)
       await stream?.output(header)
       const again = await runner(command, dir, timeoutMs, stream)
       // Whether it did its work is decided here, in the tree it ran in: the copy holds HEAD's
@@ -274,8 +162,8 @@ export function onSliceTree(
       return {
         ...again,
         output: `${first.output}${header}${again.output}`,
-        isolated: left,
-        ...(strays.length > 0 ? { strays } : {}),
+        isolated: plan.changed.foreign,
+        ...(plan.strays.length > 0 ? { strays: plan.strays } : {}),
         first: { exit: first.exit, output: first.output },
         notRun,
       }

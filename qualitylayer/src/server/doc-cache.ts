@@ -27,6 +27,56 @@ function forget(path: string): void {
   entries.delete(path)
 }
 
+function getCached<T>(
+  path: string,
+  stamp: string,
+  kind: string,
+): { hit: true; value: T } | { hit: false } {
+  const entry = entries.get(path)
+  if (entry === undefined) return { hit: false }
+  if (entry.stamp !== stamp) {
+    forget(path)
+    return { hit: false }
+  }
+  if (!entry.parsed.has(kind)) return { hit: false }
+  entries.delete(path)
+  entries.set(path, entry)
+  return { hit: true, value: entry.parsed.get(kind) as T }
+}
+
+function storeEntry(
+  path: string,
+  stamp: string,
+  kind: string,
+  parsed: unknown,
+  bytes: number,
+): void {
+  const current = entries.get(path)
+  if (current !== undefined && current.stamp === stamp) {
+    if (!current.parsed.has(kind)) {
+      current.bytes += bytes
+      kept += bytes
+    }
+    current.parsed.set(kind, parsed)
+    entries.delete(path)
+    entries.set(path, current)
+  } else {
+    forget(path)
+    entries.set(path, { stamp, parsed: new Map([[kind, parsed]]), bytes })
+    kept += bytes
+  }
+  evictOverBudget(path)
+}
+
+function evictOverBudget(keepPath: string): void {
+  for (const [oldest, old] of entries) {
+    if (kept <= DOC_CACHE_BYTES) break
+    if (oldest === keepPath) continue
+    kept -= old.bytes
+    entries.delete(oldest)
+  }
+}
+
 export const docCache = {
   /** Bytes kept now. */
   get bytes(): number {
@@ -62,41 +112,13 @@ export const docCache = {
       return null
     }
     const stamp = `${seen.mtimeMs}:${seen.size}`
-    let entry = entries.get(path)
-    if (entry !== undefined && entry.stamp !== stamp) {
-      forget(path)
-      entry = undefined
-    }
-    if (entry?.parsed.has(kind)) {
-      entries.delete(path)
-      entries.set(path, entry)
-      return entry.parsed.get(kind) as T
-    }
+    const cached = getCached<T>(path, stamp, kind)
+    if (cached.hit) return cached.value
     const text = await ctx.fs.readFile(path)
     const parsed = parse(text)
     const bytes = Buffer.byteLength(text, "utf8")
-    if (bytes > DOC_CACHE_MAX_DOC) return parsed
     // The stamp is from before the read: a file changed in between differs at the next stat.
-    const current = entries.get(path)
-    if (current !== undefined && current.stamp === stamp) {
-      if (!current.parsed.has(kind)) {
-        current.bytes += bytes
-        kept += bytes
-      }
-      current.parsed.set(kind, parsed)
-      entries.delete(path)
-      entries.set(path, current)
-    } else {
-      forget(path)
-      entries.set(path, { stamp, parsed: new Map([[kind, parsed]]), bytes })
-      kept += bytes
-    }
-    for (const [oldest, old] of entries) {
-      if (kept <= DOC_CACHE_BYTES) break
-      if (oldest === path) continue
-      kept -= old.bytes
-      entries.delete(oldest)
-    }
+    if (bytes <= DOC_CACHE_MAX_DOC) storeEntry(path, stamp, kind, parsed, bytes)
     return parsed
   },
 }

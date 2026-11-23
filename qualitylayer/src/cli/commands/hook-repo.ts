@@ -1,10 +1,8 @@
 import type { Ctx, Git } from "../../ctx.ts"
 
-/** Discovery is stable within one activity hook; task and permission reads stay live. */
-export function activityRepository(ctx: Ctx, session: unknown): Ctx {
-  if (typeof session !== "string" || !/^[A-Za-z0-9_.-]{1,128}$/.test(session.trim())) return ctx
-  const cwd = ctx.env.cwd()
-  type Lookup = "topLevel" | "commonDir"
+type Lookup = "topLevel" | "commonDir"
+
+function createRepoCache(ctx: Ctx, cwd: string) {
   const answers: Partial<Record<Lookup, Promise<string | null>>> = {}
   const clear = () => {
     delete answers.topLevel
@@ -27,6 +25,13 @@ export function activityRepository(ctx: Ctx, session: unknown): Ctx {
     const common = start("commonDir")
     return method === "topLevel" ? top : common
   }
+  return { clear, read }
+}
+
+/** Discovery is stable within one activity hook; task and permission reads stay live. */
+export function activityRepository(ctx: Ctx, session: unknown): Ctx {
+  if (typeof session !== "string" || !/^[A-Za-z0-9_.-]{1,128}$/.test(session.trim())) return ctx
+  const { clear, read } = createRepoCache(ctx, ctx.env.cwd())
   const git: Git = {
     commitPaths: async (where, paths, message, authority) => {
       clear()

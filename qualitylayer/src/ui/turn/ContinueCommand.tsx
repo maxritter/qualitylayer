@@ -4,16 +4,24 @@
 import { CopyIcon } from "lucide-react"
 import { toast } from "sonner"
 
-export function ContinueCommand({ command }: { command: string }) {
+export function ContinueCommand({
+  command,
+  testId = "focus-continue",
+  copiedMessage = "Copied",
+}: {
+  command: string
+  testId?: string
+  copiedMessage?: string
+}) {
   return (
-    <div className="aa-cmd" data-testid="focus-continue">
+    <div className="aa-cmd" data-testid={testId}>
       <code>{command}</code>
       <button
         type="button"
         className="q-btn quiet sm"
         onClick={() => {
           void navigator.clipboard?.writeText(command).then(
-            () => toast.success("Copied"),
+            () => toast.success(copiedMessage),
             () => toast.error("Could not copy"),
           )
         }}

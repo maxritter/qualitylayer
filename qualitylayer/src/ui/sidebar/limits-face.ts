@@ -41,16 +41,16 @@ export type LimitFace = {
 /** A window that says how much is used, or says it ran out. */
 const known = (window: LimitWindow): boolean => window.reached || window.usedPercent !== null
 
+const isActiveWindow = (window: LimitWindow, now: number | undefined): boolean =>
+  now === undefined || window.resetsAt === null || window.resetsAt > now
+
 /** The window of an agent with the least left; none while no window says. */
 export function tightestWindow(agent: AgentLimits, now?: number): LimitWindow | undefined {
   let best: LimitWindow | undefined
-  for (const window of agent.windows)
-    if (
-      (now === undefined || window.resetsAt === null || window.resetsAt > now) &&
-      known(window) &&
-      (best === undefined || leftIn(window) < leftIn(best))
-    )
-      best = window
+  for (const window of agent.windows) {
+    if (!known(window) || !isActiveWindow(window, now)) continue
+    if (best === undefined || leftIn(window) < leftIn(best)) best = window
+  }
   return best
 }
 

@@ -1,155 +1,18 @@
-import { CheckIcon, SquareTerminalIcon } from "lucide-react"
-import { type RefObject, useCallback, useEffect, useId, useRef, useState } from "react"
-import type { PickerRequest, PickerResult } from "../../../core/conversation/codex-picker.ts"
+import { SquareTerminalIcon } from "lucide-react"
+import { useId } from "react"
+import type { PickerResult } from "../../../core/conversation/codex-picker.ts"
 import type { ConversationQuestion } from "../../../core/conversation/types.ts"
-import type { NativeChoice } from "./context-draft.ts"
+import { QuestionChoices, QuestionStatusNotices } from "./QuestionParts.tsx"
+import {
+  answerText,
+  type NativeAnswer,
+  type NativeAnswerUpload,
+  type QuestionComposer,
+} from "./question-helpers.ts"
+import { useQuestionController } from "./use-question-controller.ts"
 import "./question.css"
 
-export type NativeAnswer = PickerRequest | { callId: string; answers: Record<string, string[]> }
-export type NativeAnswerUpload = { draft: string; files: readonly File[] }
-type Picks = NativeChoice
-type NativeQuestion = ConversationQuestion["questions"][number]
-
-function answerText(question: ConversationQuestion, picks: Record<string, Picks>): string {
-  return question.questions
-    .flatMap((item) => {
-      const value = picks[item.id]
-      return value ? [`${item.header}: ${Array.isArray(value) ? value.join(", ") : value.own}`] : []
-    })
-    .join("\n")
-}
-
-function answerPayload(
-  question: ConversationQuestion,
-  current: NativeQuestion,
-  picks: Record<string, Picks>,
-): NativeAnswer {
-  const selected = picks[current.id]
-  if (!selected) throw new Error("Choose an answer before submitting.")
-  if (question.agent === "codex")
-    return { callId: question.id, questionId: current.id, picks: selected }
-  return {
-    callId: question.id,
-    answers: Object.fromEntries(
-      question.questions.map((item) => {
-        const value = picks[item.id]
-        if (!value) throw new Error("Answer every question before submitting.")
-        return [item.id, Array.isArray(value) ? value : [value.own]]
-      }),
-    ),
-  }
-}
-
-function useAnswerDelivery(
-  answer:
-    | ((answer: NativeAnswer, upload?: NativeAnswerUpload) => Promise<PickerResult>)
-    | undefined,
-) {
-  const [status, setStatus] = useState<PickerResult["status"]>()
-  const [problem, setProblem] = useState<string>()
-  const [busy, setBusy] = useState(false)
-  const flight = useRef(false)
-  const deliver = async (payload: NativeAnswer, upload?: NativeAnswerUpload) => {
-    if (!answer || flight.current) return undefined
-    flight.current = true
-    setBusy(true)
-    setProblem(undefined)
-    try {
-      const result = await (upload ? answer(payload, upload) : answer(payload))
-      setStatus(result.status)
-      if (result.status === "refused")
-        setProblem(
-          result.message ??
-            "The answer was rejected. Your choices are kept. Take control or use Terminal.",
-        )
-      return result
-    } catch (error) {
-      setProblem(
-        error instanceof Error ? error.message : "Could not send. Your answer is kept; try again.",
-      )
-      return undefined
-    } finally {
-      flight.current = false
-      setBusy(false)
-    }
-  }
-  return { status, setStatus, problem, setProblem, busy, deliver }
-}
-
-function useNumberChoices(
-  q: NativeQuestion | undefined,
-  locked: boolean,
-  choose: (label: string) => void,
-) {
-  useEffect(() => {
-    const key = (event: globalThis.KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      if (
-        locked ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.repeat ||
-        target?.matches?.("input,textarea,[contenteditable=true]")
-      )
-        return
-      const option = q?.options[Number(event.key) - 1]
-      if (!/^[1-9]$/.test(event.key) || !option) return
-      event.preventDefault()
-      choose(option.label)
-    }
-    document.addEventListener("keydown", key)
-    return () => document.removeEventListener("keydown", key)
-  })
-}
-
-function QuestionChoices({
-  q,
-  id,
-  selected,
-  locked,
-  choose,
-}: {
-  q: NativeQuestion
-  id: string
-  selected: Picks | undefined
-  locked: boolean
-  choose(label: string): void
-}) {
-  return (
-    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: both explicit group roles support an accessible label.
-    <div
-      role={q.multiSelect ? "group" : "radiogroup"}
-      aria-labelledby={id}
-      className="cv-native-options"
-    >
-      {q.options.map((option, index) => (
-        // biome-ignore lint/a11y/useAriaPropsSupportedByRole: both radio and checkbox expose their checked state.
-        <button
-          type="button"
-          key={option.label}
-          role={q.multiSelect ? "checkbox" : "radio"}
-          aria-label={[option.label, option.description, index + 1].filter(Boolean).join(" ")}
-          aria-checked={Array.isArray(selected) && selected.includes(option.label)}
-          disabled={locked}
-          onClick={() => choose(option.label)}
-        >
-          <span className={`cv-native-mark${q.multiSelect ? " multi" : ""}`} aria-hidden="true">
-            {Array.isArray(selected) && selected.includes(option.label) ? (
-              <CheckIcon size={12} />
-            ) : null}
-          </span>
-          <span>
-            <b>{option.label.replace(/\(Recommended\)$/i, "").trimEnd()}</b>
-            {/\(Recommended\)$/i.test(option.label) ? <small>Recommended</small> : null}
-            {option.description ? <small>{option.description}</small> : null}
-          </span>
-          <kbd>{index + 1}</kbd>
-        </button>
-      ))}
-    </div>
-  )
-}
+export type { NativeAnswer, NativeAnswerUpload }
 
 export function Question({
   question,
@@ -166,148 +29,22 @@ export function Question({
   onTerminal(): void
   readOnly?: boolean
   onDone?(): void
-  composer: {
-    text: string
-    change(text: string): void
-    ready(ready: boolean): void
-    submit: RefObject<(() => void) | null>
-    files?: readonly File[]
-    draftId?: string
-    nativeQuestionId?: string
-    choices?: Record<string, Picks>
-    changeChoices?(choices: Record<string, Picks>, clearText: boolean): void
-    accepted?(draft: string): void
-    busy?(busy: boolean): void
-  }
+  composer: QuestionComposer
 }) {
-  const [at, setAt] = useState(() =>
-    Math.max(
-      0,
-      question.questions.findIndex(
-        (item) => !question.submitted?.some((answer) => answer.questionId === item.id),
-      ),
-    ),
-  )
-  const [localPicks, setLocalPicks] = useState<Record<string, Picks>>(() =>
-    Object.fromEntries((question.submitted ?? []).map((item) => [item.questionId, item.picks])),
-  )
-  const picks = composer.choices ?? localPicks
-  const setPicks = (next: Record<string, Picks>, clearText = false) => {
-    setLocalPicks(next)
-    if (composer.changeChoices) composer.changeChoices(next, clearText)
-    else if (clearText) composer.change("")
-  }
-  const currentQuestion = useRef<string | undefined>(question.id)
-  useEffect(() => {
-    currentQuestion.current = question.id
-    return () => {
-      currentQuestion.current = undefined
-    }
-  }, [question.id])
-  const own = composer.text
-  const setOwn = composer.change
-  const { status, setStatus, problem, setProblem, busy, deliver } = useAnswerDelivery(answer)
-  const q = question.questions[at]
   const id = useId()
-  const expired = question.availability === "expired" || status === "expired"
-  const availability = readOnly ? "read-only" : question.availability
-  const locked =
-    readOnly ||
-    !answer ||
-    !question.answerable ||
-    busy ||
-    expired ||
-    status === "submitted" ||
-    status === "confirmed"
-  const selected = q ? picks[q.id] : undefined
-  const choose = (label: string) => {
-    if (!q || locked) return
-    const prior = Array.isArray(selected) ? selected : []
-    setPicks(
-      {
-        ...picks,
-        [q.id]: q.multiSelect
-          ? prior.includes(label)
-            ? prior.filter((item) => item !== label)
-            : [...prior, label]
-          : [label],
-      },
-      true,
-    )
-    if (question.agent === "claude-code" && !q.multiSelect && at < question.questions.length - 1)
-      setAt(at + 1)
-  }
-  useNumberChoices(q, locked, choose)
-  const files = composer.files ?? []
-  const current = own.trim()
-    ? { own: own.trim() }
-    : (selected ?? (files.length ? { own: "See attached files." } : undefined))
-  const ready = Boolean(!locked && current && (!Array.isArray(current) || current.length > 0))
-  const reportReady = composer.ready
-  const completed = useRef<string | undefined>(undefined)
-  const complete = useCallback(() => {
-    if (completed.current === question.id) return
-    completed.current = question.id
-    onDone?.()
-  }, [question.id, onDone])
-  useEffect(() => {
-    reportReady(ready)
-  }, [ready, reportReady])
-  useEffect(() => {
-    composer.busy?.(busy)
-    return () => composer.busy?.(false)
-  }, [busy, composer.busy])
-  useEffect(() => {
-    if (status === "submitted" && expired) complete()
-  }, [status, expired, complete])
-  const words = (all = picks) => answerText(question, all)
-  const submit = async () => {
-    if (!q || locked || !ready || !current) return
-    if (files.length && !composer.draftId) {
-      setProblem("Could not attach these files. Your draft is kept; try again.")
-      return
-    }
-    if (files.length && composer.nativeQuestionId && composer.nativeQuestionId !== question.id) {
-      setProblem(
-        "These files belong to an earlier question. Remove and reattach them for this answer.",
-      )
-      return
-    }
-    const all = { ...picks, [q.id]: current }
-    setPicks(all)
-    if (question.agent === "claude-code" && at < question.questions.length - 1) {
-      setAt(at + 1)
-      setOwn("")
-      return
-    }
-    try {
-      const upload =
-        files.length && composer.draftId ? { draft: composer.draftId, files } : undefined
-      const result = await deliver(answerPayload(question, q, all), upload)
-      if (!result || currentQuestion.current !== question.id) return
-      if (result.status === "submitted" || result.status === "confirmed") {
-        if (upload && composer.accepted) composer.accepted(upload.draft)
-        else setOwn("")
-      }
-      if (
-        ["submitted", "confirmed"].includes(result.status) &&
-        question.agent === "codex" &&
-        at < question.questions.length - 1
-      ) {
-        setAt(at + 1)
-        if (!upload) setOwn("")
-        setStatus(undefined)
-      } else if (result.status === "confirmed") complete()
-    } catch (error) {
-      setProblem(
-        error instanceof Error ? error.message : "Could not send. Your answer is kept; try again.",
-      )
-    }
-  }
-  composer.submit.current = () => {
-    void submit()
-  }
+  const ctrl = useQuestionController({ question, answer, readOnly, onDone, composer })
+  const q = ctrl.q
   if (!q) return null
+  const availability = readOnly ? "read-only" : question.availability
+  const words = (all = ctrl.picks) => answerText(question, all)
+  const sendAsMessage = () => {
+    const own = composer.text.trim()
+    const merged = own ? { ...ctrl.picks, [q.id]: { own } } : ctrl.picks
+    if (send(words(merged))) {
+      composer.change("")
+      ctrl.complete()
+    } else ctrl.setProblem("Could not send the message. Your answer is kept; try again.")
+  }
   return (
     <section
       className="cv-native-question"
@@ -316,7 +53,7 @@ export function Question({
       <header>
         <b>{q.header}</b>
         <span className="cv-native-head-end">
-          {at + 1} of {question.questions.length}
+          {ctrl.at + 1} of {question.questions.length}
           <button
             type="button"
             className="q-btn quiet icon sm"
@@ -329,41 +66,25 @@ export function Question({
         </span>
       </header>
       <p id={id}>{q.question}</p>
-      <QuestionChoices q={q} id={id} selected={selected} locked={locked} choose={choose} />
-      {question.submitted?.length ? (
-        <p role="status">Earlier answers submitted to the agent.</p>
-      ) : null}
-      {problem ? <p role="alert">{problem}</p> : null}
-      {busy ? <p role="status">Sending your answer…</p> : null}
-      {availability === "read-only" ? (
-        <p>Watching this session. Take control to answer.</p>
-      ) : availability === "catching-up" ? (
-        <p role="status">Catching up with the conversation. Your choices are kept.</p>
-      ) : !answer || availability === "unsupported" || (!question.answerable && !expired) ? (
-        <p>This native question cannot be answered here. Use Terminal.</p>
-      ) : null}
-      {status === "submitted" ? (
-        <p role="status">Submitted. Waiting for the agent’s confirmation.</p>
-      ) : null}
-      {status === "confirmed" ? <p role="status">Answer confirmed.</p> : null}
-      {expired ? (
-        <>
-          <p role="status">This question expired. Your choices are kept.</p>
-          <button
-            type="button"
-            className="q-btn sm"
-            disabled={readOnly || !(own.trim() || words())}
-            onClick={() => {
-              if (send(words(own.trim() ? { ...picks, [q.id]: { own: own.trim() } } : picks))) {
-                setOwn("")
-                complete()
-              } else setProblem("Could not send the message. Your answer is kept; try again.")
-            }}
-          >
-            Send as a message
-          </button>
-        </>
-      ) : null}
+      <QuestionChoices
+        q={q}
+        id={id}
+        selected={ctrl.selected}
+        locked={ctrl.locked}
+        choose={ctrl.choose}
+      />
+      <QuestionStatusNotices
+        question={question}
+        problem={ctrl.problem}
+        busy={ctrl.busy}
+        availability={availability}
+        hasAnswer={Boolean(answer)}
+        expired={ctrl.expired}
+        status={ctrl.status}
+        readOnly={readOnly}
+        canSendMessage={Boolean(composer.text.trim() || words())}
+        onSendAsMessage={sendAsMessage}
+      />
     </section>
   )
 }

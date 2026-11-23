@@ -1,12 +1,21 @@
 import { join } from "node:path"
 import { promoteChat } from "../core/chat/promote.ts"
-import { AGENT_CAPABILITIES, taskLaunchPrompt } from "../core/run/launch-spec.ts"
-import { readRun, runDir, updateRun } from "../core/run/registry.ts"
+import { taskLaunchPrompt } from "../core/run/launch-spec.ts"
+import { runDir } from "../core/run/registry.ts"
 import { sendToRun } from "../core/run/send-message.ts"
 import { isArchived } from "../core/task/archive.ts"
-import { readEvents } from "../core/task/store.ts"
+import type { Task } from "../core/task/store.ts"
 import type { Ctx } from "../ctx.ts"
 import { locate } from "./api.ts"
+import {
+  assertRetryablePromotion,
+  type HandoffAuthority,
+  type HandoffRequest,
+  matchingReceiptStatus,
+  recordFailureReceipt,
+  recordHandoffStatus,
+  requireControlledRun,
+} from "./chat-workflow-handoff-helpers.ts"
 
 export type WorkflowController = {
   run: string
@@ -16,146 +25,84 @@ export type WorkflowController = {
 }
 type Send = typeof sendToRun
 
-/** One user-requested handoff, bound to the existing native window; no session or task is created. */
-export async function handoffChatWorkflow(
+type HandoffChatWorkflowArgs = [
   ctx: Ctx,
   id: string,
   type: "feature" | "bugfix",
   expected: WorkflowController,
   retry: boolean,
-  authority: { current(): boolean; capable(): Promise<boolean> },
-  send: Send = sendToRun,
+  authority: HandoffAuthority,
+  send?: Send,
   /** Start the Plan from the Chat's saved plan (kept as the original). */
-  fromSavedPlan = false,
-) {
-  const step = "plan"
-  const current = () => {
-    const run = readRun(ctx.home, expected.run)
-    if (
-      !authority.current() ||
-      !run ||
-      run.status !== "running" ||
-      run.generation !== expected.generation ||
-      run.nativeSession !== expected.nativeSession ||
-      run.handedOff ||
-      (run.task ?? (run.purpose.kind === "task" ? run.purpose.task : undefined)) !== id ||
-      // An agent with a question picker the workflow can fill (agents.json `picker`).
-      !(run.agent !== "other" && AGENT_CAPABILITIES[run.agent].picker)
-    )
-      throw new Error(
-        "The same native agent window must still control this task. Take control there and retry.",
-      )
-    return run
+  fromSavedPlan?: boolean,
+]
+
+async function promoteIfChat(req: HandoffRequest, task: Task): Promise<Task> {
+  if (task.type !== "chat") return task
+  const promoted = await promoteChat(req.ctx, task, req.type, {
+    beforeAdvance: () => {
+      requireControlledRun(req)
+    },
+    fromSavedPlan: req.fromSavedPlan,
+  })
+  if (!promoted.ok) throw new Error(promoted.error.message)
+  return promoted.data.task
+}
+
+async function deliverPlanPrompt(req: HandoffRequest, task: Task, send: Send, step: "plan") {
+  let wrote = false
+  try {
+    if (!(await req.authority.capable()) || (await isArchived(req.ctx, task))) {
+      throw new Error("Control changed before the Plan request was sent. Take control and retry.")
+    }
+    // A crash or lost acknowledgement after this point must never trigger an automatic duplicate.
+    const run = recordHandoffStatus(req, "uncertain")
+    const prompt = taskLaunchPrompt(run.agent, req.id, step, run.settings?.answers)
+    await send(req.ctx, run, prompt, {
+      strictFlush: true,
+      beforeSend: () => {
+        requireControlledRun(req)
+      },
+      onWrite: () => {
+        wrote = true
+      },
+    })
+    recordHandoffStatus(req, "sent")
+    return { task, handoff: "sent" as const }
+  } catch (cause) {
+    return { task, handoff: recordFailureReceipt(req, wrote, cause) }
   }
+}
+
+async function executeLockedHandoff(req: HandoffRequest, send: Send) {
+  const step = "plan" as const
+  const run = requireControlledRun(req)
+  const found = await locate(req.ctx, req.id)
+  if (!found.ok) throw new Error(found.error.message)
+  let task = found.data.task
+  if (await isArchived(req.ctx, task)) throw new Error("Restore this task before starting the Plan")
+  const receiptStatus = matchingReceiptStatus(run, req)
+  if (receiptStatus === "sent") return { task, handoff: "already_sent" as const }
+  if (receiptStatus === "uncertain") {
+    throw new Error(
+      "The Plan request may already have been sent. Inspect the same agent's Terminal before sending anything again.",
+    )
+  }
+  if (task.type !== "chat") await assertRetryablePromotion(req, task, step)
+  recordHandoffStatus(req, "pending")
+  task = await promoteIfChat(req, task)
+  requireControlledRun(req)
+  return deliverPlanPrompt(req, task, send, step)
+}
+
+/** One user-requested handoff, bound to the existing native window; no session or task is created. */
+export async function handoffChatWorkflow(...args: HandoffChatWorkflowArgs) {
+  const [ctx, id, type, expected, retry, authority, send = sendToRun, fromSavedPlan = false] = args
+  const req: HandoffRequest = { ctx, id, type, expected, retry, authority, fromSavedPlan }
   if (!(await authority.capable()))
     throw new Error("Take control of the current agent window before starting the Plan")
-  current()
-  return ctx.fs.withLock(
-    join(runDir(ctx.home, expected.run), "workflow-handoff.lock"),
-    async () => {
-      let run = current()
-      const found = await locate(ctx, id)
-      if (!found.ok) throw new Error(found.error.message)
-      let task = found.data.task
-      if (await isArchived(ctx, task)) throw new Error("Restore this task before starting the Plan")
-      const receipt = run.workflowHandoff
-      const same =
-        receipt?.task === id &&
-        receipt.generation === run.generation &&
-        receipt.nativeSession === run.nativeSession &&
-        receipt.type === type
-      if (same && receipt.status === "sent")
-        return {
-          task,
-          handoff: "already_sent" as const,
-        }
-      if (same && receipt.status === "uncertain")
-        throw new Error(
-          "The Plan request may already have been sent. Inspect the same agent's Terminal before sending anything again.",
-        )
-      if (task.type !== "chat") {
-        const promoted = (await readEvents(ctx, task)).some(
-          (event) =>
-            event.event === (fromSavedPlan ? "plan_adopted" : "workflow_started") &&
-            event.from === "chat" &&
-            event.to === step,
-        )
-        if (!retry || task.stage !== step || task.type !== type || !promoted)
-          throw new Error("Only this Chat's existing Plan handoff can be retried")
-      }
-      const record = (status: "pending" | "sent" | "uncertain", message?: string) => {
-        run = current()
-        run = updateRun(ctx.home, run.id, run.generation, {
-          workflowHandoff: {
-            task: id,
-            nativeSession: expected.nativeSession,
-            generation: expected.generation,
-            type,
-            status,
-            ...(message ? { message: message.slice(0, 2048) } : {}),
-          },
-        })
-      }
-      record("pending")
-      if (task.type === "chat") {
-        const promoted = await promoteChat(ctx, task, type, {
-          beforeAdvance: () => {
-            current()
-          },
-          fromSavedPlan,
-        })
-        if (!promoted.ok) throw new Error(promoted.error.message)
-        task = promoted.data.task
-      }
-      run = current()
-      let wrote = false
-      try {
-        if (!(await authority.capable()) || (await isArchived(ctx, task)))
-          throw new Error(
-            "Control changed before the Plan request was sent. Take control and retry.",
-          )
-        current()
-        // A crash or lost acknowledgement after this point must never trigger an automatic duplicate.
-        record("uncertain")
-        const prompt = taskLaunchPrompt(run.agent, id, step, run.settings?.answers)
-        await send(ctx, run, prompt, {
-          strictFlush: true,
-          beforeSend: () => {
-            current()
-          },
-          onWrite: () => {
-            wrote = true
-          },
-        })
-        record("sent")
-        return {
-          task,
-          handoff: "sent" as const,
-        }
-      } catch (cause) {
-        const message =
-          cause instanceof Error ? cause.message : "The Plan request could not be sent"
-        // Recording delivery state is an App receipt, not permission to write into a changed session.
-        const latest = readRun(ctx.home, expected.run)
-        if (
-          latest?.generation === expected.generation &&
-          latest.nativeSession === expected.nativeSession
-        )
-          updateRun(ctx.home, latest.id, latest.generation, {
-            workflowHandoff: {
-              task: id,
-              nativeSession: expected.nativeSession,
-              generation: expected.generation,
-              type,
-              status: wrote ? "uncertain" : "pending",
-              message: message.slice(0, 2048),
-            },
-          })
-        return {
-          task,
-          handoff: wrote ? ("uncertain" as const) : ("pending" as const),
-        }
-      }
-    },
+  requireControlledRun(req)
+  return ctx.fs.withLock(join(runDir(ctx.home, expected.run), "workflow-handoff.lock"), () =>
+    executeLockedHandoff(req, send),
   )
 }

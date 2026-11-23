@@ -2,127 +2,24 @@
 // file both go through realpath before containment is checked, so a link cannot lead out; the path
 // is one argv element, never a shell string.
 
-import { existsSync } from "node:fs"
 import { realpath } from "node:fs/promises"
-import { release } from "node:os"
-import { dirname, extname, join, posix, win32 } from "node:path"
-import { editorCli, insidePath, screenOf } from "../core/platform.ts"
+import { extname, join, posix, win32 } from "node:path"
+import { insidePath } from "../core/platform.ts"
 import type { Task } from "../core/task/store.ts"
-import { type Env, err, ok, type Result } from "../ctx.ts"
+import { err, ok, type Result } from "../ctx.ts"
+import { type OpenHow, TEXT_FILES } from "./open-file-platform.ts"
 
-/** In the editor, shown in its folder, a folder itself opened, or a page opened in the browser. */
-export type OpenHow = "open" | "reveal" | "folder" | "browser"
+export {
+  linuxOpener,
+  type Opener,
+  type OpenerHost,
+  type OpenHow,
+  openerArgv,
+  openFile,
+  systemOpener,
+  windowsPath,
+} from "./open-file-platform.ts"
 
-/** Starts a program, in `cwd` when given, and answers its exit code; it rejects when the program cannot start. */
-export type Run = (argv: string[], cwd?: string) => Promise<number>
-
-/** The platform's opener and how to start it: both are replaced by a test. */
-export type Opener = { platform: string; run: Run }
-
-/** `Bun.spawn` with nothing attached: the opener is a program of its own, not a child to read from. */
-const spawn: Run = async (argv, cwd = process.cwd()) => {
-  const child = Bun.spawn(argv, {
-    env: process.env,
-    cwd,
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-    // Explorer or the editor shows its own window: on Windows it must not start hidden.
-    windowsHide: false,
-  })
-  return child.exited
-}
-
-/** What the opener can find on this machine: replaced by a test. */
-export type OpenerHost = {
-  env: Env
-  wsl: boolean
-  has: (command: string) => boolean
-  exists: (path: string) => boolean
-}
-
-/** A Linux path as Windows reaches it: a drive under /mnt is that drive, the rest is the distro's share. */
-export function windowsPath(path: string, distro: string): string {
-  const drive = /^\/mnt\/([a-z])(\/.*)?$/i.exec(path)
-  if (drive !== null) return `${drive[1]?.toUpperCase()}:${(drive[2] ?? "/").replaceAll("/", "\\")}`
-  return `\\\\wsl.localhost\\${distro}${path.replaceAll("/", "\\")}`
-}
-
-/**
- * Linux without xdg-open (a dev container, WSL, a server): the same request in the opener that is
- * there. WSL hands it to Windows; an attached VS Code window opens a text file in its editor. Null
- * when nothing on this machine can show it.
- */
-export function linuxOpener(argv: string[], host: OpenerHost): string[] | null {
-  const [command, target] = argv
-  if (command !== "xdg-open" || target === undefined || host.has("xdg-open")) return argv
-  if (host.wsl) {
-    if (host.has("wslview")) return ["wslview", target]
-    const distro = host.env.get("WSL_DISTRO_NAME")
-    return distro === undefined ? null : ["explorer.exe", windowsPath(target, distro)]
-  }
-  const code = editorCli(host.env, host.exists)
-  return code !== null && TEXT_FILES.has(extname(target).toLowerCase()) ? [code, target] : null
-}
-
-function thisHost(): OpenerHost {
-  const env: Env = { get: (name) => process.env[name], cwd: () => process.cwd() }
-  return {
-    env,
-    wsl: screenOf({ os: process.platform, release: release(), env, exists: existsSync }) === "wsl",
-    has: (command) => Bun.which(command) !== null,
-    exists: existsSync,
-  }
-}
-
-export const systemOpener = (): Opener => ({
-  platform: process.platform,
-  run: async (argv, cwd) => {
-    const found = process.platform === "linux" ? linuxOpener(argv, thisHost()) : argv
-    if (found === null) throw new Error("no opener on this machine")
-    const code = await spawn(found, cwd)
-    // Explorer exits 1 on success, from WSL as on Windows.
-    return found[0] === "explorer.exe" ? 0 : code
-  },
-})
-
-/** The command that opens a file in its editor, or shows it in the file manager. */
-export function openerArgv(how: OpenHow, file: string, platform: string): string[] {
-  // A folder, or a page in the browser: the system's own choice for that kind of file.
-  if (how === "folder" || how === "browser")
-    return platform === "darwin"
-      ? ["/usr/bin/open", file]
-      : platform === "win32"
-        ? ["explorer.exe", file]
-        : ["xdg-open", file]
-  if (platform === "darwin") return ["/usr/bin/open", how === "open" ? "-t" : "-R", file]
-  if (platform === "win32")
-    return how === "open" ? ["explorer.exe", file] : ["explorer.exe", `/select,${file}`]
-  return ["xdg-open", how === "open" ? file : dirname(file)]
-}
-
-/** Start the opener on a file. Explorer exits 1 on success, so only a failure to start counts there. */
-export async function openFile(
-  how: OpenHow,
-  path: string,
-  platform: string,
-  run: Run,
-): Promise<Result<Record<string, never>>> {
-  let code: number
-  try {
-    code = await run(openerArgv(how, path, platform))
-  } catch {
-    return err({ code: "open_failed", message: "The system opener could not be started." })
-  }
-  if (code !== 0 && platform !== "win32")
-    return err({
-      code: "open_failed",
-      message: `The system opener stopped with exit code ${code}.`,
-    })
-  return ok({})
-}
-
-const TEXT_FILES = new Set([".md", ".txt"])
 const TEXT_ONLY = "Open starts text files only; Reveal shows any file in its folder."
 
 export const refuse = (message: string) => err({ code: "bad_args", message } as const)
@@ -134,28 +31,20 @@ export function plainName(file: unknown): file is string {
   return !file.split(/[\\/]/).includes("..")
 }
 
-/**
- * The real path of a file Open or Reveal may start: one inside the task folder, and nothing else.
- * Open is for text only.
- */
-export async function openablePath(
-  task: Pick<Task, "dir">,
-  file: unknown,
-  how: unknown,
-): Promise<Result<string>> {
-  // The task folder itself, for "Open the task folder".
-  if (how === "folder") {
-    if (file !== ".") return refuse("only the task folder opens as a folder")
-    try {
-      return ok(await realpath(task.dir))
-    } catch {
-      return err({ code: "no_task", message: "the task folder does not exist" })
-    }
+async function openableTaskFolder(task: Pick<Task, "dir">, file: unknown): Promise<Result<string>> {
+  if (file !== ".") return refuse("only the task folder opens as a folder")
+  try {
+    return ok(await realpath(task.dir))
+  } catch {
+    return err({ code: "no_task", message: "the task folder does not exist" })
   }
-  if (how !== "open" && how !== "reveal") return refuse(`"${String(how)}" is not a way to open`)
-  if (!plainName(file)) return refuse(`"${String(file)}" is not a file of this task`)
-  if (how === "open" && !TEXT_FILES.has(extname(file).toLowerCase())) return refuse(TEXT_ONLY)
+}
 
+async function resolveInsideTask(
+  task: Pick<Task, "dir">,
+  file: string,
+  how: "open" | "reveal",
+): Promise<Result<string>> {
   let realFolder: string
   let realFile: string
   try {
@@ -168,6 +57,23 @@ export async function openablePath(
   // A link named like text can lead to a program: Open judges the file it reaches.
   if (how === "open" && !TEXT_FILES.has(extname(realFile).toLowerCase())) return refuse(TEXT_ONLY)
   return ok(realFile)
+}
+
+/**
+ * The real path of a file Open or Reveal may start: one inside the task folder, and nothing else.
+ * Open is for text only.
+ */
+export async function openablePath(
+  task: Pick<Task, "dir">,
+  file: unknown,
+  how: unknown,
+): Promise<Result<string>> {
+  // The task folder itself, for "Open the task folder".
+  if (how === "folder") return openableTaskFolder(task, file)
+  if (how !== "open" && how !== "reveal") return refuse(`"${String(how)}" is not a way to open`)
+  if (!plainName(file)) return refuse(`"${String(file)}" is not a file of this task`)
+  if (how === "open" && !TEXT_FILES.has(extname(file).toLowerCase())) return refuse(TEXT_ONLY)
+  return resolveInsideTask(task, file, how)
 }
 
 /**

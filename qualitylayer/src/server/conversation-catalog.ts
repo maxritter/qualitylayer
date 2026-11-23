@@ -29,6 +29,23 @@ const drop = (key: string) => {
   if (entry) cacheBytes -= entry.bytes
   cache.delete(key)
 }
+function storeCatalogEntry(key: string, value: CommandCatalog) {
+  const bytes = Buffer.byteLength(JSON.stringify(value))
+  drop(key)
+  while (
+    cache.size &&
+    (cache.size >= CATALOG_LIMITS.cacheEntries || cacheBytes + bytes > CATALOG_LIMITS.cacheBytes)
+  ) {
+    const first = cache.keys().next().value
+    if (first === undefined) break
+    drop(first)
+  }
+  if (bytes <= CATALOG_LIMITS.cacheBytes) {
+    cache.set(key, { value, bytes, at: Date.now() })
+    cacheBytes += bytes
+  }
+}
+
 async function catalog(
   ctx: Ctx,
   run: RunRecord,
@@ -44,22 +61,7 @@ async function catalog(
   const startedEpoch = epoch
   const promise = discover(ctx, run)
     .then((value) => {
-      if (startedEpoch !== epoch) return value
-      const bytes = Buffer.byteLength(JSON.stringify(value))
-      drop(key)
-      while (
-        cache.size &&
-        (cache.size >= CATALOG_LIMITS.cacheEntries ||
-          cacheBytes + bytes > CATALOG_LIMITS.cacheBytes)
-      ) {
-        const first = cache.keys().next().value
-        if (first === undefined) break
-        drop(first)
-      }
-      if (bytes <= CATALOG_LIMITS.cacheBytes) {
-        cache.set(key, { value, bytes, at: Date.now() })
-        cacheBytes += bytes
-      }
+      if (startedEpoch === epoch) storeCatalogEntry(key, value)
       return value
     })
     .finally(() => {
@@ -67,6 +69,36 @@ async function catalog(
     })
   loading.set(key, promise)
   return promise
+}
+
+type CatalogRequestCheck =
+  | { ok: true; run: RunRecord; generation: number; refresh: boolean }
+  | { ok: false; response: Response }
+
+function validateCatalogRequest(
+  ctx: Ctx,
+  request: Request,
+  id: string,
+  authority: { keyPaired: boolean; canConfigure: boolean; current?: () => boolean },
+): CatalogRequestCheck {
+  if (!authority.keyPaired || !authority.canConfigure || authority.current?.() === false)
+    return {
+      ok: false,
+      response: reply({ error: "Skill discovery requires the App or a browser it opened." }, 403),
+    }
+  const query = new URL(request.url).searchParams
+  if ([...query.keys()].some((key) => !["generation", "refresh"].includes(key)))
+    return { ok: false, response: reply({ error: "Unknown catalog option." }, 400) }
+  const generation = Number(query.get("generation"))
+  const run = readRun(ctx.home, id)
+  if (!run || run.agent === "other")
+    return { ok: false, response: reply({ error: "Native agent run not found." }, 404) }
+  if (!Number.isSafeInteger(generation) || generation < 1 || generation !== run.generation)
+    return {
+      ok: false,
+      response: reply({ error: "This run has changed. Open its window again." }, 409),
+    }
+  return { ok: true, run, generation, refresh: query.get("refresh") === "1" }
 }
 
 /** Personal skill metadata is configuration, never a task's watch-only conversation payload. */
@@ -77,21 +109,13 @@ export async function conversationCatalogResponse(
   authority: { keyPaired: boolean; canConfigure: boolean; current?: () => boolean },
   discover: typeof discoverSkills = discoverSkills,
 ): Promise<Response> {
-  if (!authority.keyPaired || !authority.canConfigure || authority.current?.() === false)
-    return reply({ error: "Skill discovery requires the App or a browser it opened." }, 403)
-  const query = new URL(request.url).searchParams
-  if ([...query.keys()].some((key) => !["generation", "refresh"].includes(key)))
-    return reply({ error: "Unknown catalog option." }, 400)
-  const generation = Number(query.get("generation"))
-  const run = readRun(ctx.home, id)
-  if (!run || run.agent === "other") return reply({ error: "Native agent run not found." }, 404)
-  if (!Number.isSafeInteger(generation) || generation < 1 || generation !== run.generation)
-    return reply({ error: "This run has changed. Open its window again." }, 409)
+  const checked = validateCatalogRequest(ctx, request, id, authority)
+  if (!checked.ok) return checked.response
   try {
-    const value = await catalog(ctx, run, query.get("refresh") === "1", discover)
+    const value = await catalog(ctx, checked.run, checked.refresh, discover)
     if (authority.current?.() === false)
       return reply({ error: "Skill discovery authority changed." }, 403)
-    if (readRun(ctx.home, id)?.generation !== generation)
+    if (readRun(ctx.home, id)?.generation !== checked.generation)
       return reply({ error: "This run changed while its skills were loading." }, 409)
     return reply(value)
   } catch {

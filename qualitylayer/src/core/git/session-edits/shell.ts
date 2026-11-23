@@ -1,5 +1,17 @@
-import { isAbsolute, join } from "node:path"
 import { asObject } from "./records.ts"
+import { inlineShell, shellCommand, shellSegments } from "./shell-lex.ts"
+
+export { shellPatchedPaths } from "./shell-writes.ts"
+
+function patchEditedPaths(given: Record<string, unknown>): string[] {
+  const patch = [given.input, given.patch, given.patchText, given.command].find(
+    (v) => typeof v === "string",
+  )
+  if (typeof patch !== "string") return []
+  return [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) =>
+    (m[1] ?? "").trim(),
+  )
+}
 
 /**
  * The files one tool call changed, as written in its input: Claude Code's Edit, MultiEdit, Write
@@ -9,150 +21,13 @@ import { asObject } from "./records.ts"
 export function editedPaths(tool: unknown, input: unknown): string[] {
   const given = typeof input === "string" ? { input } : asObject(input)
   if (given === null || typeof tool !== "string") return []
-  if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(tool)) {
-    const path = given.file_path ?? given.notebook_path
-    return typeof path === "string" && path !== "" ? [path] : []
-  }
-  if (tool === "edit" || tool === "write") {
-    const path = given.path ?? given.filePath ?? given.file_path
-    return typeof path === "string" && path !== "" ? [path] : []
-  }
-  if (tool === "apply_patch") {
-    const patch = [given.input, given.patch, given.patchText, given.command].find(
-      (v) => typeof v === "string",
-    )
-    if (typeof patch !== "string") return []
-    return [...patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)].map((m) =>
-      (m[1] ?? "").trim(),
-    )
-  }
-  return []
-}
-
-/** The source files the edit-with-the-file-tool rule is about. */
-const SOURCE_FILE =
-  /\.(?:tsx?|jsx?|mjs|cjs|py|rs|go|java|kt|swift|rb|php|c|h|cpp|cs|sh|sql|s?css|html|vue|svelte|md|json|ya?ml|toml)$/i
-
-/** Whether one option word of `sed` or `perl` asks for an in-place edit: `-i`, `-pi`, `-i.bak`, `--in-place`. */
-function inPlaceOption(tool: string, word: string): boolean {
-  if (word.startsWith("--")) return word.startsWith("--in-place")
-  if (!word.startsWith("-")) return false
-  // Letters that take the rest of the word as their argument end the cluster (`-Mstrict`, `-e<script>`).
-  const takesRest = tool === "perl" ? "eEfFMmIxCdD" : "efl"
-  for (const letter of word.slice(1)) {
-    if (letter === "i") return true
-    if (takesRest.includes(letter)) return false
-  }
-  return false
-}
-
-/**
- * The paths a Python or Node script in a command passes to its write call: `open(<path>, "w")`
- * (or `"a"`, `"x"`, `"r+"`: any mode that writes), `<path>.write_text(…)`,
- * `writeFileSync(<path>, …)`, `Bun.write(<path>, …)`. A path is a quoted literal or a name the
- * command assigned a literal or a `Path(…)`/`pathlib.Path(…)` of one to; a path it builds, and
- * every path the script only reads or mentions, is not found.
- */
-function scriptWrites(command: string): string[] {
-  const names = new Map<string, string>()
-  for (const m of command.matchAll(
-    /\b([A-Za-z_]\w*)\s*=\s*(?:(?:pathlib\.)?Path\(\s*)?(['"])([^'"\n]+)\2/g,
-  ))
-    names.set(m[1] ?? "", m[3] ?? "")
-  const pathOf = (arg: string): string | undefined => {
-    const text = arg.trim()
-    const literal = text.match(/^(?:Path\(\s*)?(['"])([^'"\n]+)\1\s*\)?$/)
-    if (literal !== null) return literal[2]
-    const name = text.match(/^(?:Path\(\s*)?([A-Za-z_]\w*)\s*\)?$/)
-    return name !== null ? names.get(name[1] ?? "") : undefined
-  }
-  const arguments_ = [
-    ...command.matchAll(
-      /\bopen\(([^,()]+(?:\([^()]*\))?),\s*(?:mode\s*=\s*)?['"](?:[wax][bt+]*|r[bt]*\+[bt]*)['"]/g,
-    ),
-    ...[...command.matchAll(/Path\([^()]+\)/g), ...command.matchAll(/[A-Za-z_]\w*/g)]
-      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-      .filter((match) =>
-        /^\.write_(?:text|bytes)\(/.test(command.slice((match.index ?? 0) + match[0].length)),
-      )
-      .map((match) => [match[0], match[0]]),
-    ...command.matchAll(/\b(?:writeFileSync|appendFileSync|writeFile)\(\s*([^,()]+)/g),
-    ...command.matchAll(/\bBun\.write\(\s*([^,()]+)/g),
-  ]
-  return arguments_.flatMap((m) => pathOf(m[1] ?? "") ?? [])
-}
-
-type ShellToken = { text: string; redirect: boolean }
-
-/** A word owns its quoted operators and escapes; the outer lexer owns separators. */
-class ShellWord {
-  at: number
-  constructor(
-    private readonly command: string,
-    at: number,
-  ) {
-    this.at = at
-  }
-
-  private escaped(quote: string): string | null {
-    if (this.command[this.at] !== "\\" || quote === "'") return null
-    const next = this.command[this.at + 1]
-    if (next === undefined) return null
-    const unquoted = quote === "" && /[\s|&;<>"'\\$`]/.test(next)
-    return unquoted || /[$`"\\\n]/.test(next) ? next : null
-  }
-
-  read(): string {
-    let word = ""
-    let quote = ""
-    for (; this.at < this.command.length; this.at++) {
-      const char = this.command[this.at] as string
-      const escaped = this.escaped(quote)
-      if (escaped !== null) {
-        if (escaped !== "\n") word += escaped
-        this.at++
-      } else if (quote !== "") {
-        if (char === quote) quote = ""
-        else word += char
-      } else if (char === "'" || char === '"') quote = char
-      else if (/[\s;|&>]/.test(char)) break
-      else word += char
-    }
-    return word
-  }
-}
-
-function shellSegments(command: string): ShellToken[][] {
-  const segments: ShellToken[][] = []
-  let tokens: ShellToken[] = []
-  for (let at = 0; at < command.length; ) {
-    const char = command[at] as string
-    if (/[;\n|&]/.test(char)) {
-      if (tokens.length > 0) segments.push(tokens)
-      tokens = []
-      at++
-    } else if (char === ">") {
-      tokens.push({ text: ">", redirect: true })
-      at += command[at + 1] === ">" ? 2 : 1
-    } else if (/\s/.test(char)) at++
-    else {
-      const word = new ShellWord(command, at)
-      tokens.push({ text: word.read(), redirect: false })
-      at = word.at
-    }
-  }
-  if (tokens.length > 0) segments.push(tokens)
-  return segments
-}
-
-/** The command line of a shell tool call, or "" when the call is no shell command. */
-function shellCommand(tool: unknown, input: unknown): string {
-  const given = asObject(input)
-  if (given === null || typeof tool !== "string") return ""
-  if (!["Bash", "bash", "powershell", "shell", "exec_command", "local_shell"].includes(tool))
-    return ""
-  const raw = given.command ?? given.cmd
-  return Array.isArray(raw) ? raw.join(" ") : typeof raw === "string" ? raw : ""
+  if (tool === "apply_patch") return patchEditedPaths(given)
+  let path: unknown
+  if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(tool))
+    path = given.file_path ?? given.notebook_path
+  else if (tool === "edit" || tool === "write")
+    path = given.path ?? given.filePath ?? given.file_path
+  return typeof path === "string" && path !== "" ? [path] : []
 }
 
 /** The git subcommands that can leave a new commit at HEAD. */
@@ -263,81 +138,4 @@ function commitsCommand(words: string[]): boolean {
     }
   }
   return false
-}
-
-function inlineShell(words: string[], program: string): string | undefined {
-  if (!/(?:^|\/)(?:sh|bash|dash|ksh|zsh)$/.test(program)) return undefined
-  const flag = words.findIndex((word) => /^-[a-z]+$/.test(word) && word.includes("c"))
-  return flag < 0 ? undefined : words[flag + 1]
-}
-
-type Folder = string | null
-
-/** Literal writes follow the folder at their segment, including a nested shell's relative paths. */
-class ShellWrites {
-  private readonly found = new Set<string>()
-  private at: Folder = ""
-  private scriptAt: Folder | undefined
-
-  private place(from: Folder, path: string): Folder {
-    if (path.startsWith("~") || /[$`]/.test(path)) return null
-    return isAbsolute(path) ? path : from === null ? null : join(from, path)
-  }
-
-  private add(from: Folder, path: string): void {
-    const placed = this.place(from, path)
-    if (placed !== null) this.found.add(placed)
-  }
-
-  private inPlaceFiles(words: string[]): void {
-    // Skip the program's expression; subsequent positional words name its files.
-    let script = false
-    for (let i = 1; i < words.length; i++) {
-      const word = words[i] ?? ""
-      if (word === "-e" || word === "--expression") {
-        i++
-        script = true
-      } else if (!word.startsWith("-")) {
-        if (script) this.add(this.at, word)
-        script = true
-      }
-    }
-  }
-
-  private segment(tokens: ShellToken[]): void {
-    const words = tokens.map((token) => token.text)
-    const tool = words[0] ?? ""
-    if (tool === "cd") {
-      const target = words.slice(1).find((word) => !word.startsWith("-"))
-      this.at = target === undefined || target === "-" ? null : this.place(this.at, target)
-      return
-    }
-    if (this.scriptAt === undefined && words.some((word) => /\b(?:python3?|node|bun)\b/.test(word)))
-      this.scriptAt = this.at
-    const script = inlineShell(words, tool)
-    if (script !== undefined)
-      for (const path of shellPatchedPaths("Bash", { command: script })) this.add(this.at, path)
-    if ((tool === "sed" || tool === "perl") && words.some((word) => inPlaceOption(tool, word)))
-      this.inPlaceFiles(words)
-    for (let i = 0; i < tokens.length; i++) {
-      const next = tokens[i + 1]
-      if (tokens[i]?.redirect && next && !next.redirect) this.add(this.at, next.text)
-    }
-    if (tool === "tee")
-      for (const path of words.slice(1).filter((word) => !word.startsWith("-")))
-        this.add(this.at, path)
-  }
-
-  paths(command: string): string[] {
-    for (const tokens of shellSegments(command)) this.segment(tokens)
-    if (/\bpython3?\b|\bnode\b|\bbun\b/.test(command))
-      for (const path of scriptWrites(command))
-        this.add(this.scriptAt === undefined ? "" : this.scriptAt, path)
-    return [...this.found].filter((path) => SOURCE_FILE.test(path) && !path.startsWith("/dev/"))
-  }
-}
-
-/** Literal in-place writes, redirects and script write calls; computed paths stay unseen. */
-export function shellPatchedPaths(tool: unknown, input: unknown): string[] {
-  return new ShellWrites().paths(shellCommand(tool, input))
 }

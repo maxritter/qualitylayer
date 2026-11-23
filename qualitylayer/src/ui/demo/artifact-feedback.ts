@@ -2,50 +2,23 @@
 // artifact feedback routes. A comment queues for the busy artifact agent, a helper steps in after a
 // short wait and answers; nothing leaves the page. State is bounded; the oldest entries go first.
 
-import { threadHandling } from "../../core/comment-handling.ts"
 import type { CommentThread } from "../../interaction/contracts.ts"
-import type {
-  ArtifactFeedbackAddress,
-  ArtifactFeedbackApi,
-  ArtifactFeedbackPost,
-} from "../artifact/feedback-api.ts"
-import { ME } from "./person.ts"
+import type { ArtifactFeedbackAddress, ArtifactFeedbackApi } from "../artifact/feedback-api.ts"
+import {
+  addComment,
+  clone,
+  DEMO_PICK_MS,
+  type DemoLocalSource,
+  listForAddress,
+  resolveLocalSource,
+  runAgentChange,
+  runHelperAnswer,
+  threadIn,
+  withThreadHandling,
+} from "./artifact-feedback-helpers.ts"
 
-/** Bounds on what the demo keeps; the oldest entries go first. */
-const CAPS = { threads: 50, replies: 50, artifacts: 20 } as const
-const MAX_TEXT = 4000
-/** The real helper waits 90 s for the agent; the demo's waits a little. */
-const DEMO_PICK_MS = 12_000
+export type { DemoLocalSource }
 
-const clone = <T>(value: T): T => structuredClone(value)
-const keyOf = (address: ArtifactFeedbackAddress) =>
-  `${address.scope}\0${address.id}\0${address.file}`
-const trimmed = (text: unknown) => (typeof text === "string" ? text.trim() : "")
-const dropOldest = <T>(rows: T[], cap: number) => {
-  if (rows.length > cap) rows.splice(0, rows.length - cap)
-}
-
-function fingerprint(seed: string): string {
-  let out = ""
-  for (let salt = 1; salt <= 8; salt++) {
-    let hash = 0x811c9dc5 ^ (salt * 0x9e3779b1)
-    for (let index = 0; index < seed.length; index++)
-      hash = Math.imul(hash ^ seed.charCodeAt(index), 0x01000193)
-    out += (hash >>> 0).toString(16).padStart(8, "0")
-  }
-  return out
-}
-
-/** A title for a local artifact from its file: the folder of an index page, else the file's name. */
-function titleOf(file: string): string {
-  const parts = file.split("/")
-  const stem = (parts.at(-1) ?? file).replace(/\.html?$/i, "")
-  const name = (stem === "index" ? (parts.at(-2) ?? stem) : stem).replace(/[-_]+/g, " ").trim()
-  return name === "" ? "Artifact" : `${name.charAt(0).toUpperCase()}${name.slice(1)}`
-}
-
-/** What the App knows of a local artifact: its title, every page and its source revision. */
-export type DemoLocalSource = { title: string; pages: string[]; revision: string }
 export type DemoArtifactFeedbackOptions = {
   /** Reads the local artifact behind an address; without it a single page is derived from the file name. */
   localSource?: (address: ArtifactFeedbackAddress) => Promise<DemoLocalSource>
@@ -58,204 +31,39 @@ export type DemoArtifactFeedbackOptions = {
   ) => { answer: string; apply: () => void } | undefined
 }
 
-function threadIn(list: CommentThread[], doc: string, id: string): CommentThread {
-  const found = list.find((thread) => thread.id === id && thread.doc === doc)
-  if (!found) throw new Error("Demo: this thread is not on the artifact page.")
-  return found
-}
-
-/** Adds a comment thread (or a reply) to a bounded list; the caller has checked the page. */
-function addComment(
-  list: CommentThread[],
-  doc: string,
-  input: ArtifactFeedbackPost,
-  newId: (prefix: string) => string,
-  now: number,
-): CommentThread {
-  const remark = trimmed(input.remark).slice(0, MAX_TEXT)
-  if (remark === "") throw new Error("Demo: a comment needs words")
-  if (input.thread) {
-    const thread = threadIn(list, doc, input.thread)
-    if (thread.state === "resolved") throw new Error("Reopen this thread before replying.")
-    thread.replies.push({
-      id: newId("demo-reply"),
-      author: { name: ME.name, email: ME.email },
-      text: remark,
-      at: now,
-      via: "app",
-    })
-    dropOldest(thread.replies, CAPS.replies)
-    return clone(thread)
-  }
-  const id = newId("demo-thread")
-  const thread: CommentThread = {
-    id,
-    doc,
-    item: null,
-    quote: input.quote ?? "",
-    state: "open",
-    comments: [
-      {
-        id: `${id}-root`,
-        doc,
-        quote: input.quote ?? "",
-        remark,
-        created: now,
-        author: ME.name,
-        ...(input.for ? { for: input.for } : {}),
-        ...(input.spot ? { spot: input.spot } : {}),
-        ...(input.revision ? { artifactRevision: input.revision } : {}),
-      },
-    ],
-    replies: [],
-    delivery: "immediate",
-    tally: null,
-  }
-  list.push(thread)
-  dropOldest(list, CAPS.threads)
-  return clone(thread)
-}
-
 export function createDemoArtifactFeedback(
   options: DemoArtifactFeedbackOptions = {},
 ): ArtifactFeedbackApi<ArtifactFeedbackAddress> {
-  const clock = () => Date.now()
   let serial = 0
   const nextId = (prefix: string) => `${prefix}-${++serial}`
-  const checkAddress = (address: ArtifactFeedbackAddress) => {
-    if (
-      !address ||
-      (address.scope !== "task" && address.scope !== "project") ||
-      !trimmed(address.id) ||
-      !/\.html?$/i.test(address.file ?? "")
-    )
-      throw new Error(`Demo: no artifact ${JSON.stringify(address)}`)
-  }
-  /** The artifact behind a local address: from the supplied source, else one page from the file name. */
-  const sourceOf = async (address: ArtifactFeedbackAddress): Promise<DemoLocalSource> => {
-    checkAddress(address)
-    if (options.localSource) {
-      const found = await options.localSource(address)
-      const pages = Array.isArray(found?.pages) ? [...new Set(found.pages)] : []
-      if (
-        typeof found?.title !== "string" ||
-        typeof found.revision !== "string" ||
-        found.revision === "" ||
-        pages.length === 0 ||
-        pages.length > 50 ||
-        pages.some((page) => typeof page !== "string" || !/\.html?$/i.test(page))
-      )
-        throw new Error(`Demo: no artifact ${JSON.stringify(address)}`)
-      return {
-        title: found.title.slice(0, 300) || titleOf(address.file),
-        pages,
-        revision: found.revision,
-      }
-    }
-    return {
-      title: titleOf(address.file),
-      pages: [address.file.split("/").at(-1) ?? address.file],
-      revision: fingerprint(`local|${keyOf(address)}`),
-    }
-  }
-  /** The threads per artifact address; the oldest address goes first. */
   const threads = new Map<string, CommentThread[]>()
-  const listOf = (address: ArtifactFeedbackAddress) => {
-    checkAddress(address)
-    const key = keyOf(address)
-    let list = threads.get(key)
-    if (!list) {
-      list = []
-      threads.set(key, list)
-      while (threads.size > CAPS.artifacts) {
-        const oldest = threads.keys().next().value
-        if (oldest === undefined) break
-        threads.delete(oldest)
-      }
-    }
-    return list
-  }
-  // The demo's artifact agent is busy: a comment queues, a helper steps in after a short wait and
-  // answers a few seconds later; "Answer now" skips the wait.
-  const helperAnswers = (thread: CommentThread, after: number) => {
-    const root = thread.comments.at(-1)
-    if (!root || root.answeredBy === "helper" || root.answer !== undefined) return
-    Object.assign(root, { answeredBy: "helper", delivered: true, pickedAt: clock() })
-    setTimeout(() => {
-      if (root.answer !== undefined || thread.state === "resolved") return
-      Object.assign(root, {
-        answer:
-          "Yes. The page reads that value from the saved plan, so changing it there changes it here.",
-        answered: clock(),
-      })
-      thread.replies.push({
-        id: nextId("demo-reply"),
-        author: { name: "Agent", email: "" },
-        text: String(root.answer),
-        at: clock(),
-        via: "agent",
-        ...(root.answeredBy === "helper" ? { helper: "Sonnet 5.5" } : {}),
-      })
-    }, after)
-  }
-  /** The agent picks the feedback up, changes the page and says what it changed. */
-  const agentChanges = (thread: CommentThread, change: { answer: string; apply: () => void }) => {
-    const root = thread.comments.at(-1)
-    if (!root || root.answer !== undefined) return
-    Object.assign(root, { answeredBy: "agent", delivered: true, pickedAt: clock() })
-    setTimeout(() => {
-      if (root.answer !== undefined || thread.state === "resolved") return
-      Object.assign(root, { answer: change.answer, answered: clock() })
-      thread.replies.push({
-        id: nextId("demo-reply"),
-        author: { name: "Claude Code", email: "" },
-        text: change.answer,
-        at: clock(),
-        via: "agent",
-      })
-      change.apply()
-    }, 3500)
-  }
-  const withHandling = (thread: CommentThread): CommentThread => {
-    const root = thread.comments.at(-1)
-    if (!root || root.for === "person" || !thread.id.startsWith("demo-thread")) return thread
-    const handling = threadHandling(thread.comments, {
-      now: clock(),
-      agent: "Claude Code",
-      reach: "busy",
-      busyWith: "this artifact",
-      helper: { name: "Sonnet 5.5", line: `Reading ${thread.doc}` },
-      deadline: DEMO_PICK_MS,
-    })
-    return handling ? { ...thread, handling } : thread
-  }
+  const listOf = (address: ArtifactFeedbackAddress) => listForAddress(threads, address)
+
   return {
     read: async (address) => ({
-      threads: clone(listOf(address).map(withHandling)),
+      threads: clone(listOf(address).map(withThreadHandling)),
       capabilities: { team: false },
     }),
     helper: async (address, id) => {
       const found = threadIn(listOf(address), address.file, id)
-      helperAnswers(found, 2500)
-      return clone(withHandling(found))
+      runHelperAnswer(found, 2500, nextId)
+      return clone(withThreadHandling(found))
     },
-    // The source as it is on this computer now, for an agent's context.
     context: async (address) => {
-      const source = await sourceOf(address)
+      const source = await resolveLocalSource(address, options.localSource)
       return {
         revision: source.revision,
         prompt: `Artifact: ${source.title}\nScope: ${address.scope}\nProject or task: ${address.id}\nSource: ${address.file}\nPages: ${source.pages.join(", ")}`,
       }
     },
     post: async (address, input) => {
-      const added = addComment(listOf(address), address.file, input, nextId, clock())
+      const added = addComment(listOf(address), address.file, input, nextId, Date.now())
       const stored = listOf(address).find((one) => one.id === added.id)
       const change = options.agentChanges?.(address)
-      if (stored && !input.thread && input.for !== "person" && change)
-        // The agent is on this artifact: it reads the feedback at its next step, in a couple of seconds.
-        setTimeout(() => agentChanges(stored, change), 2_000)
-      else if (stored && !input.thread && input.for !== "person")
-        setTimeout(() => helperAnswers(stored, 3500), DEMO_PICK_MS)
+      if (stored && !input.thread && input.for !== "person") {
+        if (change) setTimeout(() => runAgentChange(stored, change, nextId), 2_000)
+        else setTimeout(() => runHelperAnswer(stored, 3500, nextId), DEMO_PICK_MS)
+      }
       return added
     },
     state: async (address, thread, open) => {

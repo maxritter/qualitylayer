@@ -9,7 +9,6 @@
 // browser reads the conversation and nothing more. A read is the only renewal: nothing on the server
 // renews it for a browser that stopped reading (hidden, suspended, crashed).
 
-import { isNativeAgent } from "../core/agents/ids.ts"
 import { decide, listPending, markViewing, stopViewing } from "../core/conversation/approvals.ts"
 import { qualifiedCodexPickerVersion } from "../core/conversation/codex-picker.ts"
 import { listPickers } from "../core/conversation/pickers.ts"
@@ -21,16 +20,18 @@ import {
   readConversation,
   readWorkerConversation,
 } from "../core/conversation/service.ts"
-import type { ConversationQuestion } from "../core/conversation/types.ts"
-import { outsideLead } from "../core/handoff/outside.ts"
+import type { ConversationQuestion, ConversationSnapshot } from "../core/conversation/types.ts"
 import type { RunRecord } from "../core/run/contracts.ts"
 import { readRun } from "../core/run/registry.ts"
-import { isArchived } from "../core/task/archive.ts"
-import { keyOf } from "../core/task/binding.ts"
 import type { Ctx } from "../ctx.ts"
-import { locate } from "./api.ts"
 import { prepareAttachmentEvents } from "./conversation-files.ts"
 import { conversationAttachmentResponse, wireAttachmentEvents } from "./conversation-images.ts"
+import {
+  attachmentSnapshot,
+  conversationReply,
+  cursorParam,
+  preparePage,
+} from "./conversation-outside.ts"
 import {
   boundedAttachmentPage,
   earlierPage,
@@ -38,6 +39,11 @@ import {
   wholeEvent,
   wireSnapshot,
 } from "./conversation-wire.ts"
+
+export {
+  outsideConversationBinding,
+  outsideConversationResponse,
+} from "./conversation-outside.ts"
 
 /** The run id in a conversation route, or undefined for any other path. */
 export const conversationRunId = (path: string) =>
@@ -53,84 +59,8 @@ export function approvalRoute(path: string): { run: string; approval: string } |
   return match ? { run: match[1] as string, approval: match[2] as string } : undefined
 }
 
-const reply = (value: unknown, status = 200) =>
-  Response.json(value, { status, headers: { "cache-control": "no-store" } })
-
+const reply = conversationReply
 const live = (run: RunRecord) => !["stopped", "failed"].includes(run.status)
-
-/** The server-resolved outside Chat binding; no caller may supply its record path or cwd. */
-export async function outsideConversationBinding(ctx: Ctx, id: string) {
-  const found = await locate(ctx, id)
-  if (!found.ok) return reply({ error: found.error.message }, 404)
-  const task = found.data.task
-  if (task.type !== "chat") return reply({ error: "This task is not a Chat" }, 409)
-  const lead = await outsideLead(ctx, task)
-  if (!lead?.sessionId || !lead.agent || !isNativeAgent(lead.agent))
-    return reply({ error: "This task has no outside native session" }, 409)
-  if (keyOf(lead.sessionId) !== lead.session)
-    return reply({ error: "The outside session identity cannot be verified" }, 409)
-  const at = new Date(lead.since).toISOString()
-  const run: NativeRun = {
-    id: `outside-${task.repoId}-${lead.session}`,
-    agent: lead.agent,
-    cwd: lead.folder,
-    purpose: { kind: "task", task: id },
-    task: id,
-    taskRuntimeDir: task.runtimeDir,
-    nativeSession: lead.sessionId,
-    generation: 1,
-    status: "running",
-    startedAt: at,
-    updatedAt: at,
-    idempotencyKey: `outside:${id}:${lead.session}`,
-    startPhase: "ready",
-  }
-  return { task, lead: { ...lead, sessionId: lead.sessionId }, run }
-}
-
-/** An outside Chat reads its bound native record without creating an App-owned run. */
-export async function outsideConversationResponse(
-  ctx: Ctx,
-  id: string,
-  request: Request,
-  canAnswer: boolean,
-): Promise<Response> {
-  const binding = await outsideConversationBinding(ctx, id)
-  if (binding instanceof Response) return binding
-  const { task, lead, run } = binding
-  const url = new URL(request.url)
-  if (url.searchParams.has("attachment"))
-    return conversationAttachmentResponse(ctx, run, url.searchParams)
-  const after = cursorParam(url.searchParams)
-  const read = wireAttachmentEvents(
-    readConversation(ctx, run, after),
-    new URL(request.url).pathname,
-    run,
-    true,
-    true,
-  )
-  const snapshot = wireSnapshot(read, after, () => ({
-    ...read,
-    events: wireAttachmentEvents(cachedEvents(run), new URL(request.url).pathname, run, true, true),
-  }))
-  if (lead.agent === "claude-code") {
-    if (canAnswer && !(await isArchived(ctx, task)))
-      await markViewing(ctx, "claude-code", lead.sessionId)
-    const pending = (await listPickers(ctx, lead.sessionId))[0]
-    snapshot.question = pending
-      ? {
-          ...pending.question,
-          answerable: canAnswer && !(await isArchived(ctx, task)),
-          availability: canAnswer && !(await isArchived(ctx, task)) ? "ready" : "read-only",
-        }
-      : null
-  } else if (snapshot.question)
-    snapshot.question = { ...snapshot.question, answerable: false, availability: "unsupported" }
-  return reply({
-    run: { ...run, title: task.title, resumeLine: "" },
-    snapshot: await attachmentSnapshot(ctx, run, snapshot, url.pathname),
-  })
-}
 
 /** Who asks: whether the browser may answer for the agent, and what to tell the server about its lease. */
 export type Viewer = {
@@ -151,12 +81,6 @@ function shown(ctx: Ctx, id: string): NativeRun | Response {
   if (run.purpose.kind === "terminal" && run.purpose.shell === true)
     return reply({ error: "A shell has no agent conversation" }, 409)
   return run
-}
-
-/** The cursor a request carries, when it is one this server could have handed out. */
-const cursorParam = (params: URLSearchParams) => {
-  const after = params.get("after")
-  return after && after.length <= 128 ? after : undefined
 }
 
 /** The older turns or the whole event a request names; undefined when it names neither. */
@@ -195,6 +119,78 @@ async function detail(
     : reply({ error: "This message is no longer kept" }, 404)
 }
 
+function applyQuestionAvailability(
+  run: NativeRun,
+  question: ConversationQuestion | null | undefined,
+  viewer: Viewer,
+): ConversationQuestion | null | undefined {
+  if (question?.agent === "codex") {
+    const qualified = qualifiedCodexPickerVersion(run.binary?.version)
+    return {
+      ...question,
+      answerable: question.answerable && viewer.canAnswer && qualified,
+      availability: !viewer.canAnswer
+        ? "read-only"
+        : !qualified
+          ? "unsupported"
+          : question.availability,
+      submitted: viewer.submitted?.(question.id) ?? [],
+    }
+  }
+  if (question?.agent === "claude-code") {
+    const canPick = viewer.canPick ?? viewer.canAnswer
+    return {
+      ...question,
+      answerable: question.answerable && canPick,
+      availability: canPick ? question.availability : "read-only",
+    }
+  }
+  return question
+}
+
+async function resolveConversationQuestion(
+  ctx: Ctx,
+  run: NativeRun,
+  snapshot: ConversationSnapshot,
+  viewer: Viewer,
+): Promise<ConversationQuestion | null | undefined> {
+  let question = snapshot.question
+  if (run.agent === "claude-code" && live(run) && run.nativeSession) {
+    const pending = (await listPickers(ctx, run.nativeSession))[0]
+    if (pending) {
+      question = {
+        ...pending.question,
+        answerable: pending.question.answerable && !snapshot.hasMore,
+        availability: snapshot.hasMore ? "catching-up" : "ready",
+      }
+    } else if (viewer.canAnswer) {
+      question = null
+    }
+  }
+  return applyQuestionAvailability(run, question, viewer)
+}
+
+async function specialConversationRequest(
+  ctx: Ctx,
+  run: NativeRun,
+  url: URL,
+): Promise<Response | undefined> {
+  const params = url.searchParams
+  if (params.has("attachment")) return conversationAttachmentResponse(ctx, run, params)
+  if (params.has("worker")) {
+    const snapshot = readWorkerConversation(
+      ctx,
+      run,
+      params.get("worker") ?? "",
+      cursorParam(params),
+    )
+    return snapshot
+      ? reply(wireAttachmentEvents(snapshot, url.pathname, run, false))
+      : reply({ error: "This subagent's history is unavailable" }, 404)
+  }
+  return detail(ctx, run, params, url.pathname)
+}
+
 export async function conversationResponse(
   ctx: Ctx,
   request: Request,
@@ -203,70 +199,31 @@ export async function conversationResponse(
 ): Promise<Response> {
   const run = shown(ctx, id)
   if (run instanceof Response) return run
-  const params = new URL(request.url).searchParams
-  if (params.has("attachment")) return conversationAttachmentResponse(ctx, run, params)
-  const after = cursorParam(params)
-  if (params.has("worker")) {
-    const snapshot = readWorkerConversation(ctx, run, params.get("worker") ?? "", after)
-    return snapshot
-      ? reply(wireAttachmentEvents(snapshot, new URL(request.url).pathname, run, false))
-      : reply({ error: "This subagent's history is unavailable" }, 404)
-  }
-  const pathname = new URL(request.url).pathname
-  const asked = await detail(ctx, run, params, pathname)
-  if (asked) return asked
+  const url = new URL(request.url)
+  const special = await specialConversationRequest(ctx, run, url)
+  if (special) return special
+  const after = cursorParam(url.searchParams)
   const read = wireAttachmentEvents(
     readConversation(ctx, run, after),
-    new URL(request.url).pathname,
+    url.pathname,
     run,
     true,
     true,
   )
   const snapshot = wireSnapshot(read, after, () => ({
     ...read,
-    events: wireAttachmentEvents(cachedEvents(run), new URL(request.url).pathname, run, true, true),
+    events: wireAttachmentEvents(cachedEvents(run), url.pathname, run, true, true),
   }))
-  if (run.agent === "claude-code" && live(run) && run.nativeSession) {
-    const pending = (await listPickers(ctx, run.nativeSession))[0]
-    if (pending)
-      snapshot.question = {
-        ...pending.question,
-        answerable: pending.question.answerable && !snapshot.hasMore,
-        availability: snapshot.hasMore ? "catching-up" : "ready",
-      }
-    else if (viewer.canAnswer) snapshot.question = null
-  }
-  if (snapshot.question?.agent === "codex") {
-    snapshot.question = {
-      ...snapshot.question,
-      answerable:
-        snapshot.question.answerable &&
-        viewer.canAnswer &&
-        qualifiedCodexPickerVersion(run.binary?.version),
-      availability: !viewer.canAnswer
-        ? "read-only"
-        : !qualifiedCodexPickerVersion(run.binary?.version)
-          ? "unsupported"
-          : snapshot.question.availability,
-      submitted: viewer.submitted?.(snapshot.question.id) ?? [],
-    }
-  }
-  if (snapshot.question?.agent === "claude-code")
-    snapshot.question = {
-      ...snapshot.question,
-      answerable: snapshot.question.answerable && (viewer.canPick ?? viewer.canAnswer),
-      availability:
-        (viewer.canPick ?? viewer.canAnswer) ? snapshot.question.availability : "read-only",
-    }
+  snapshot.question = (await resolveConversationQuestion(ctx, run, snapshot, viewer)) ?? null
   // Only a browser that may answer renews the lease and sees the prompts; a watcher just reads.
   if (viewer.canAnswer && live(run) && nativeRun(run) && run.nativeSession) {
     await markViewing(ctx, run.agent, run.nativeSession)
     viewer.viewing?.()
     const approvals = await listPending(ctx, run.agent, run.nativeSession)
     if (approvals.length > 0)
-      return reply({ ...(await attachmentSnapshot(ctx, run, snapshot, pathname)), approvals })
+      return reply({ ...(await attachmentSnapshot(ctx, run, snapshot, url.pathname)), approvals })
   }
-  return reply(await attachmentSnapshot(ctx, run, snapshot, pathname))
+  return reply(await attachmentSnapshot(ctx, run, snapshot, url.pathname))
 }
 
 export async function conversationClosedResponse(
@@ -309,17 +266,4 @@ export async function approvalResponse(
   return decided
     ? reply({ ok: true })
     : reply({ error: "This request was already answered or is no longer waiting" }, 409)
-}
-
-async function preparePage<
-  T extends { events: import("../core/conversation/types.ts").ConversationEvent[] },
->(ctx: Ctx, run: NativeRun, page: T): Promise<T> {
-  return { ...page, events: await prepareAttachmentEvents(ctx, run, page.events) }
-}
-async function attachmentSnapshot<
-  T extends { events: import("../core/conversation/types.ts").ConversationEvent[] },
->(ctx: Ctx, run: NativeRun, snapshot: T, pathname: string): Promise<T> {
-  return boundedAttachmentPage(
-    wireAttachmentEvents(await preparePage(ctx, run, snapshot), pathname, run),
-  )
 }

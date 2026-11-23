@@ -26,24 +26,31 @@ function codexProgress(event: Record<string, unknown>): string | null {
   return null
 }
 
+/** Claude's latest tool call in an assistant message, or null. */
+function claudeProgress(event: Record<string, unknown>): string | null {
+  if (event.type !== "assistant") return null
+  const content = (event.message as { content?: unknown } | undefined)?.content
+  if (!Array.isArray(content)) return null
+  const tool = [...content]
+    .reverse()
+    .find((block) => (block as Record<string, unknown>).type === "tool_use") as
+    | Record<string, unknown>
+    | undefined
+  return tool ? clip(`${text(tool.name)} ${hint(tool.input)}`) : null
+}
+
 /** One short line for an event that starts a tool call, or null when it says nothing new. */
 export function progressOf(agent: Reviewer, raw: string): string | null {
   const reader = readerOf(agent)
   if (reader !== undefined) return reader.progress(raw)
   const event = parse(raw)
   if (event === null) return null
-  if (agent === "pi" && event.type === "tool_execution_start")
-    return clip(`${text(event.toolName)} ${hint(event.args)}`)
-  if (agent === "opencode" && event.type === "tool_use") return opencodeProgress(event)
-  if (agent === "codex") return codexProgress(event)
-  if (event.type !== "assistant") return null
-  const content = (event.message as { content?: unknown } | undefined)?.content
-  if (!Array.isArray(content)) return null
-  for (const block of content.slice().reverse()) {
-    const part = block as Record<string, unknown>
-    if (part.type === "tool_use") return clip(`${text(part.name)} ${hint(part.input)}`)
-  }
-  return null
+  if (agent === "pi")
+    return event.type === "tool_execution_start"
+      ? clip(`${text(event.toolName)} ${hint(event.args)}`)
+      : null
+  if (agent === "opencode") return event.type === "tool_use" ? opencodeProgress(event) : null
+  return agent === "codex" ? codexProgress(event) : claudeProgress(event)
 }
 
 /** The text of a finished assistant message in Pi's stream, or "" for any other event. */
@@ -57,6 +64,38 @@ function piAnswer(event: Record<string, unknown>): string {
     .join("\n")
 }
 
+function claudeMessageText(event: Record<string, unknown>): string {
+  const content = (event.message as { content?: unknown } | undefined)?.content
+  if (!Array.isArray(content)) return ""
+  let latest = ""
+  for (const block of content) {
+    const part = block as Record<string, unknown>
+    if (part.type === "text" && text(part.text) !== "") latest = text(part.text)
+  }
+  return latest
+}
+
+function nextAnswer(
+  agent: Reviewer,
+  event: Record<string, unknown>,
+  current: string,
+): { value: string; done?: true } {
+  if (agent === "pi") return { value: piAnswer(event) || current }
+  if (agent === "opencode") {
+    const part = event.part as { text?: unknown } | undefined
+    const chunk = event.type === "text" ? text(part?.text) : ""
+    return { value: chunk ? current + chunk : current }
+  }
+  if (agent === "codex") {
+    const item = event.item as Record<string, unknown> | undefined
+    const msg =
+      event.type === "item.completed" && item?.type === "agent_message" ? text(item.text) : ""
+    return { value: msg || current }
+  }
+  if (event.type === "result") return { value: text(event.result), done: true }
+  return { value: event.type === "assistant" ? claudeMessageText(event) || current : current }
+}
+
 /** The reviewer's last words as the stream carries them, or "" when it carries none. */
 export function answerOf(agent: Reviewer, lines: string[]): string {
   const reader = readerOf(agent)
@@ -65,31 +104,9 @@ export function answerOf(agent: Reviewer, lines: string[]): string {
   for (const raw of lines) {
     const event = parse(raw)
     if (event === null) continue
-    if (agent === "pi") {
-      answer = piAnswer(event) || answer
-      continue
-    }
-    if (agent === "opencode") {
-      const part = event.part as { text?: unknown } | undefined
-      if (event.type === "text" && text(part?.text)) answer += text(part?.text)
-      continue
-    }
-    if (agent === "codex") {
-      const item = event.item as Record<string, unknown> | undefined
-      if (event.type === "item.completed" && item?.type === "agent_message") {
-        answer = text(item.text) || answer
-      }
-    } else if (event.type === "result") {
-      return text(event.result)
-    } else if (event.type === "assistant") {
-      const content = (event.message as { content?: unknown } | undefined)?.content
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          const part = block as Record<string, unknown>
-          if (part.type === "text" && text(part.text) !== "") answer = text(part.text)
-        }
-      }
-    }
+    const step = nextAnswer(agent, event, answer)
+    answer = step.value
+    if (step.done) return answer
   }
   return answer
 }

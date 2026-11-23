@@ -1,154 +1,20 @@
 // The demonstration's `?open=<step>,<step>…` address: after the App has drawn, each step is found
 // (waiting a bounded time) and used in order, so a link can land on a popover, dialog, menu or tab the
 // way a person would reach it. Demo only: nothing here is imported by the shipped App.
-//
-// A step is one of (an example after each):
-//   <testid>            click [data-testid="<testid>"]                        new-task-button
-//   label:<text>        click the element whose aria-label is <text>          label:Agent controls
-//   label*:<text>       click the element whose aria-label contains <text>    label*:Context
-//   text:<text>         click the button, menu row, tab or link whose whole
-//                       text is <text> (case-insensitive); an icon-only
-//                       control uses its aria-label                          text:Files
-//   text*:<text>        the same, with <text> anywhere in its text            text*:Share with
-//   fill:<field>=<v>    type <v> into the field whose placeholder or
-//                       aria-label contains <field>; `@testid` names a
-//                       test id instead                                       fill:Message=/
-//   attach:<f>=<a>|<b>  give the file picker whose aria-label is <f> (else
-//                       contains <f>) small made-up files of those names      attach:Attach files=a.log|b.pdf
-//   key:<combo>         press a key on the page, modifiers joined by `+`      key:Meta+k
-//   wait:<ms>           pause (at most 5000) for an animation to settle       wait:300
-// With a dialog, menu or list open, a click step looks in the one on top first.
-// Steps are separated by commas; write `\,` for a comma inside one. A step that finds nothing within
-// the time stops the run and says so in the console, so a link never half-follows in silence. While
-// it runs, <html data-demo-open> is "running", then "done" or "failed" (for a script to wait on).
 
-export type OpenStep =
-  | { kind: "testid"; value: string }
-  | { kind: "label"; value: string; contains: boolean }
-  | { kind: "fill"; field: string; value: string }
-  | { kind: "text"; value: string; contains: boolean }
-  | { kind: "attach"; field: string; names: string[] }
-  | { kind: "key"; combo: ParsedKey }
-  | { kind: "wait"; ms: number }
+import {
+  type OpenStep,
+  type ParsedKey,
+  parseKey,
+  parseOpenSteps,
+  parseStep,
+} from "./open-steps-parse.ts"
 
-export type ParsedKey = {
-  key: string
-  ctrlKey: boolean
-  metaKey: boolean
-  altKey: boolean
-  shiftKey: boolean
-}
+export { type OpenStep, type ParsedKey, parseKey, parseOpenSteps, parseStep }
 
 export const STEP_TIMEOUT_MS = 5000
-const MAX_WAIT_MS = 5000
-const MAX_STEPS = 24
-const MAX_FILES = 6
 const POLL_MS = 50
 const SETTLE_MS = 400
-
-const MODIFIERS: Record<string, keyof Omit<ParsedKey, "key">> = {
-  ctrl: "ctrlKey",
-  control: "ctrlKey",
-  meta: "metaKey",
-  cmd: "metaKey",
-  command: "metaKey",
-  alt: "altKey",
-  option: "altKey",
-  shift: "shiftKey",
-}
-
-/** `Meta+k` becomes a key with its modifiers; an unreadable combination gives `undefined`. */
-export function parseKey(text: string): ParsedKey | undefined {
-  // In an address a bare `+` reads as a space, so both separate the modifiers.
-  const parts = text.split(/[+ ]/)
-  const key = parts.pop()
-  if (key === undefined || key.length === 0) return undefined
-  const parsed: ParsedKey = {
-    key: key.length === 1 ? key.toLowerCase() : key,
-    ctrlKey: false,
-    metaKey: false,
-    altKey: false,
-    shiftKey: false,
-  }
-  for (const part of parts) {
-    const modifier = MODIFIERS[part.toLowerCase()]
-    if (modifier === undefined) return undefined
-    parsed[modifier] = true
-  }
-  return parsed
-}
-
-function splitSteps(value: string): string[] {
-  const steps: string[] = []
-  let current = ""
-  for (let at = 0; at < value.length; at += 1) {
-    const character = value.charAt(at)
-    if (character === "\\" && value.charAt(at + 1) === ",") {
-      current += ","
-      at += 1
-    } else if (character === ",") {
-      steps.push(current)
-      current = ""
-    } else current += character
-  }
-  steps.push(current)
-  return steps
-}
-
-export function parseStep(raw: string): OpenStep | undefined {
-  const step = raw.trim()
-  if (step.length === 0) return undefined
-  const colon = step.indexOf(":")
-  if (colon < 0) return /^[\w.-]+$/.test(step) ? { kind: "testid", value: step } : undefined
-  const head = step.slice(0, colon)
-  const rest = step.slice(colon + 1)
-  if (rest.length === 0) return undefined
-  if (head === "label") return { kind: "label", value: rest, contains: false }
-  if (head === "label*") return { kind: "label", value: rest, contains: true }
-  if (head === "fill") {
-    const equals = rest.indexOf("=")
-    return equals > 0
-      ? { kind: "fill", field: rest.slice(0, equals), value: rest.slice(equals + 1) }
-      : undefined
-  }
-  if (head === "text") return { kind: "text", value: rest, contains: false }
-  if (head === "text*") return { kind: "text", value: rest, contains: true }
-  if (head === "attach") {
-    const equals = rest.indexOf("=")
-    const names = rest
-      .slice(equals + 1)
-      .split("|")
-      .map((name) => name.trim())
-      .filter(Boolean)
-    return equals > 0 && names.length > 0 && names.length <= MAX_FILES
-      ? { kind: "attach", field: rest.slice(0, equals), names }
-      : undefined
-  }
-  if (head === "key") {
-    const combo = parseKey(rest)
-    return combo === undefined ? undefined : { kind: "key", combo }
-  }
-  if (head === "wait") {
-    const ms = Number(rest)
-    return Number.isFinite(ms) && ms >= 0
-      ? { kind: "wait", ms: Math.min(ms, MAX_WAIT_MS) }
-      : undefined
-  }
-  return undefined
-}
-
-/** The steps an address asks for (`?open=a,b`); steps that do not read are left out, with a warning. */
-export function parseOpenSteps(search: string): OpenStep[] {
-  const asked = new URLSearchParams(search).get("open")
-  if (asked === null) return []
-  const steps: OpenStep[] = []
-  for (const raw of splitSteps(asked).slice(0, MAX_STEPS)) {
-    const step = parseStep(raw)
-    if (step !== undefined) steps.push(step)
-    else if (raw.trim().length > 0) console.warn(`[demo open] step not understood: "${raw}"`)
-  }
-  return steps
-}
 
 const normalise = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase()
 
@@ -162,48 +28,60 @@ function usable(element: Element): boolean {
   return element.getClientRects().length > 0
 }
 
-function lookup(step: OpenStep, scope: ParentNode): Element | undefined {
-  if (step.kind === "testid")
-    return [...scope.querySelectorAll(`[data-testid="${CSS.escape(step.value)}"]`)].find(usable)
-  if (step.kind === "label")
-    return [
-      ...scope.querySelectorAll(
-        `[aria-label${step.contains ? "*" : ""}="${CSS.escape(step.value)}"]`,
-      ),
-    ].find(usable)
-  if (step.kind === "attach") {
-    const wanted = normalise(step.field)
-    const pickers = [...scope.querySelectorAll('input[type="file"]')].map((input) => ({
-      input,
-      label: normalise(input.getAttribute("aria-label") ?? ""),
-    }))
-    return (
-      pickers.find(({ label }) => label === wanted) ??
-      pickers.find(({ label }) => label.includes(wanted))
-    )?.input
-  }
-  if (step.kind === "fill") {
-    if (step.field.startsWith("@"))
-      return [...scope.querySelectorAll(`[data-testid="${CSS.escape(step.field.slice(1))}"]`)].find(
-        usable,
-      )
-    const wanted = normalise(step.field)
-    return [...scope.querySelectorAll("input, textarea")].find(
-      (element) =>
-        usable(element) &&
-        normalise(
-          `${element.getAttribute("placeholder") ?? ""} ${element.getAttribute("aria-label") ?? ""}`,
-        ).includes(wanted),
-    )
-  }
-  if (step.kind !== "text") return undefined
-  const wanted = normalise(step.value)
+function lookupAttach(field: string, scope: ParentNode): Element | undefined {
+  const wanted = normalise(field)
+  const pickers = [...scope.querySelectorAll('input[type="file"]')].map((input) => ({
+    input,
+    label: normalise(input.getAttribute("aria-label") ?? ""),
+  }))
+  return (
+    pickers.find(({ label }) => label === wanted) ??
+    pickers.find(({ label }) => label.includes(wanted))
+  )?.input
+}
+
+function lookupFill(field: string, scope: ParentNode): Element | undefined {
+  if (field.startsWith("@"))
+    return [...scope.querySelectorAll(`[data-testid="${CSS.escape(field.slice(1))}"]`)].find(usable)
+  const wanted = normalise(field)
+  return [...scope.querySelectorAll("input, textarea")].find(
+    (element) =>
+      usable(element) &&
+      normalise(
+        `${element.getAttribute("placeholder") ?? ""} ${element.getAttribute("aria-label") ?? ""}`,
+      ).includes(wanted),
+  )
+}
+
+function lookupText(value: string, contains: boolean, scope: ParentNode): Element | undefined {
+  const wanted = normalise(value)
   return [...scope.querySelectorAll(TEXT_TARGETS)].find((element) => {
     if (!usable(element)) return false
     const text =
       normalise(element.textContent ?? "") || normalise(element.getAttribute("aria-label") ?? "")
-    return step.contains ? text.includes(wanted) : text === wanted
+    return contains ? text.includes(wanted) : text === wanted
   })
+}
+
+const LOOKUP: Partial<
+  Record<OpenStep["kind"], (step: never, scope: ParentNode) => Element | undefined>
+> = {
+  testid: (step: Extract<OpenStep, { kind: "testid" }>, scope) =>
+    [...scope.querySelectorAll(`[data-testid="${CSS.escape(step.value)}"]`)].find(usable),
+  label: (step: Extract<OpenStep, { kind: "label" }>, scope) =>
+    [
+      ...scope.querySelectorAll(
+        `[aria-label${step.contains ? "*" : ""}="${CSS.escape(step.value)}"]`,
+      ),
+    ].find(usable),
+  attach: (step: Extract<OpenStep, { kind: "attach" }>, scope) => lookupAttach(step.field, scope),
+  fill: (step: Extract<OpenStep, { kind: "fill" }>, scope) => lookupFill(step.field, scope),
+  text: (step: Extract<OpenStep, { kind: "text" }>, scope) =>
+    lookupText(step.value, step.contains, scope),
+}
+
+function lookup(step: OpenStep, scope: ParentNode): Element | undefined {
+  return LOOKUP[step.kind]?.(step as never, scope)
 }
 
 const LAYERS = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
@@ -290,31 +168,49 @@ type Options = {
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
+async function waitForTarget(
+  step: OpenStep,
+  root: ParentNode,
+  timeoutMs: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<Element | undefined> {
+  let target = findTarget(step, root)
+  for (let waited = 0; target === undefined && waited < timeoutMs; waited += POLL_MS) {
+    await sleep(POLL_MS)
+    target = findTarget(step, root)
+  }
+  return target
+}
+
+async function runDomStep(
+  step: OpenStep,
+  root: ParentNode,
+  timeoutMs: number,
+  sleep: (ms: number) => Promise<void>,
+): Promise<boolean> {
+  const target = await waitForTarget(step, root, timeoutMs, sleep)
+  if (target === undefined) return false
+  if (step.kind === "attach" && target instanceof HTMLInputElement) attach(target, step.names)
+  else if (step.kind === "fill") fill(target, step.value)
+  else press(target)
+  await sleep(POLL_MS)
+  return true
+}
+
 /** Does each step in order. The first one that cannot be found within the time ends the run. */
 export async function runOpenSteps(
   steps: OpenStep[],
   { root = document, timeoutMs = STEP_TIMEOUT_MS, sleep = pause }: Options = {},
 ): Promise<OpenResult> {
   let done = 0
-  // The App draws first and registers its window keys a moment later: a key press needs that settled.
   if (steps.length > 0) await sleep(SETTLE_MS)
   for (const step of steps) {
     if (step.kind === "wait") await sleep(step.ms)
     else if (step.kind === "key") {
       const doc = root instanceof Document ? root : document
       pressKey(doc.activeElement ?? doc.body, step.combo)
-    } else {
-      let target = findTarget(step, root)
-      for (let waited = 0; target === undefined && waited < timeoutMs; waited += POLL_MS) {
-        await sleep(POLL_MS)
-        target = findTarget(step, root)
-      }
-      if (target === undefined) return { done, failed: step }
-      if (step.kind === "attach" && target instanceof HTMLInputElement) attach(target, step.names)
-      else if (step.kind === "fill") fill(target, step.value)
-      else press(target)
-      // Let the App draw what the press opened before the next step looks for it.
-      await sleep(POLL_MS)
+    } else if (!(await runDomStep(step, root, timeoutMs, sleep))) {
+      return { done, failed: step }
     }
     done += 1
   }

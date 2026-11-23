@@ -9,7 +9,7 @@ import { readLasting } from "../core/artifact/lasting.ts"
 import { artifactFiles, commentsHolder } from "../core/artifact/store.ts"
 import { artifactAnchor } from "../core/artifact/workspace.ts"
 import { isArchived } from "../core/task/archive.ts"
-import { type Ctx, err } from "../ctx.ts"
+import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { locate } from "./api.ts"
 import { artifactWorkspaceRead, locateArtifact } from "./artifacts.ts"
 
@@ -30,72 +30,106 @@ export async function refreshArtifactAgentContext(
   return readArtifactAgentContext(ctx, binding, request, options)
 }
 
-/** Preview and launch share one resolver; native hooks retain only its server-derived binding. */
-export async function resolveArtifactAgentContext(
-  ctx: Ctx,
-  input: ArtifactAgentInput,
-): ReturnType<typeof readArtifactAgentContext> {
+const ALLOWED_KEYS = new Set(["scope", "id", "file", "revision", "request"])
+
+function isValidArtifactAgentInput(input: ArtifactAgentInput): boolean {
+  if (!input || typeof input !== "object") return false
+  if (Object.keys(input).some((key) => !ALLOWED_KEYS.has(key))) return false
+  if (input.scope !== "task" && input.scope !== "project") return false
   if (
-    !input ||
-    typeof input !== "object" ||
-    Object.keys(input).some(
-      (key) => !["scope", "id", "file", "revision", "request"].includes(key),
-    ) ||
-    !["task", "project"].includes(input.scope) ||
     typeof input.id !== "string" ||
     typeof input.file !== "string" ||
-    typeof input.request !== "string" ||
-    (input.revision !== undefined && !/^[a-f0-9]{64}$/.test(input.revision))
+    typeof input.request !== "string"
   )
+    return false
+  return input.revision === undefined || /^[a-f0-9]{64}$/.test(input.revision)
+}
+
+async function ensureTaskOpen(ctx: Ctx, id: string): Promise<ReturnType<typeof err> | null> {
+  const task = await locate(ctx, id)
+  if (!task.ok) return task
+  const closed =
+    (await isArchived(ctx, task.data.task)) ||
+    task.data.task.stage === "shipped" ||
+    task.data.task.stage === "abandoned"
+  return closed
+    ? err({
+        code: "bad_args",
+        message: "Restore or reopen this task before starting its artifact agent.",
+      })
+    : null
+}
+
+async function resolvePagesAndTitle(
+  ctx: Ctx,
+  home: Parameters<typeof artifactFiles>[1],
+  foundPath: string,
+  file: string,
+  root: string,
+): Promise<Result<{ pages: string[]; ownTitle: string; kind: "folder" | "file" }>> {
+  const folder = folderArtifactOf(file)
+  const lasting = lastingDocOf(file)
+  if (lasting) {
+    const read = await readLasting(root, lasting.name)
+    if (!read.ok) return read
+    return ok({
+      pages: read.data.pages.map((page) => `${dirname(file)}/${page}`),
+      ownTitle: read.data.config.title.trim(),
+      kind: "folder",
+    })
+  }
+  let pages = [file]
+  if (folder) {
+    const entries = await artifactFiles(ctx, home)
+    const entry = entries.find((item) => item.folder?.dir === dirname(foundPath))
+    if (entry?.folder)
+      pages = entry.folder.pages.map((page) => `${folder.root}/${folder.name}/${page}`)
+  }
+  return ok({ pages, ownTitle: "", kind: folder ? "folder" : "file" })
+}
+
+async function loadArtifactSource(ctx: Ctx, input: ArtifactAgentInput) {
+  if (!isValidArtifactAgentInput(input)) {
     return err({
       code: "bad_args",
       message: "Expected an exact artifact address, revision and request.",
     })
+  }
   if (input.scope === "task") {
-    const task = await locate(ctx, input.id)
-    if (!task.ok) return task
-    if (
-      (await isArchived(ctx, task.data.task)) ||
-      ["shipped", "abandoned"].includes(task.data.task.stage)
-    )
-      return err({
-        code: "bad_args",
-        message: "Restore or reopen this task before starting its artifact agent.",
-      })
+    const closed = await ensureTaskOpen(ctx, input.id)
+    if (closed) return closed
   }
   const located = await locateArtifact(ctx, input.scope, input.id, input.file)
   if (!located.ok) return located
   const source = await artifactWorkspaceRead(ctx, input.scope, input.id, input.file, "source")
   if (!source.ok) return source
-  const value = source.data as { html: string }
-  const found = located.data
-  const home = found.home
-  const root = artifactAnchor(home)
-  const folder = folderArtifactOf(input.file)
-  const lasting = lastingDocOf(input.file)
-  let pages = [input.file]
-  // A lasting artifact is called what its own file says (App Model), not what its first page is titled (Home).
-  let ownTitle = ""
-  if (lasting) {
-    const read = await readLasting(root, lasting.name)
-    if (!read.ok) return read
-    pages = read.data.pages.map((page) => `${dirname(input.file)}/${page}`)
-    ownTitle = read.data.config.title.trim()
-  } else if (folder) {
-    const entries = await artifactFiles(ctx, home)
-    const entry = entries.find((entry) => entry.folder?.dir === dirname(found.path))
-    if (entry?.folder)
-      pages = entry.folder.pages.map((page) => `${folder.root}/${folder.name}/${page}`)
-  }
+  return ok({ found: located.data, html: (source.data as { html: string }).html })
+}
+
+/** Preview and launch share one resolver; native hooks retain only its server-derived binding. */
+export async function resolveArtifactAgentContext(
+  ctx: Ctx,
+  input: ArtifactAgentInput,
+): ReturnType<typeof readArtifactAgentContext> {
+  const loaded = await loadArtifactSource(ctx, input)
+  if (!loaded.ok) return loaded
+  const { found, html } = loaded.data
+  const root = artifactAnchor(found.home)
+  const resolved = await resolvePagesAndTitle(ctx, found.home, found.path, input.file, root)
+  if (!resolved.ok) return resolved
   const binding: ArtifactAgentBinding = {
     address: { scope: input.scope, id: input.id, file: input.file, revision: input.revision ?? "" },
     root: await realpath(root),
     sourcePath: found.path,
     folder: dirname(found.path),
-    runtimeDir: commentsHolder(ctx, home).runtimeDir,
-    title: ownTitle || artifactMeta(value.html).title || input.file.split("/").at(-1) || "Artifact",
-    pages,
-    kind: folder || lasting ? "folder" : "file",
+    runtimeDir: commentsHolder(ctx, found.home).runtimeDir,
+    title:
+      resolved.data.ownTitle ||
+      artifactMeta(html).title ||
+      input.file.split("/").at(-1) ||
+      "Artifact",
+    pages: resolved.data.pages,
+    kind: resolved.data.kind,
   }
   return refreshArtifactAgentContext(ctx, binding, input.request, {
     expectedRevision: input.revision,

@@ -4,22 +4,26 @@
 // person decided needs their answer in the chat, recorded with --by user. Either way the Plan is
 // validated, its approval is rebound, and one note records who and why.
 
-import { join } from "node:path"
-import { type Ctx, err, ok, type Result, type ValidationError } from "../../ctx.ts"
+import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { proofOf } from "../acceptance.ts"
-import { addedBlocks } from "../docs/added.ts"
 import { appendToSection, implementAgentsPath, NOTES } from "../docs/build-log.ts"
-import { parseDoc, patchFrontmatter } from "../docs/frontmatter.ts"
 import { agentFileOf, folderDoc } from "../docs/names.ts"
-import { allTasks } from "../docs/outline.ts"
+import { allTasks, type Outline } from "../docs/outline.ts"
 import { readCards } from "../docs/outline-files.ts"
-import { validateDoc } from "../docs/validate.ts"
 import { readPullRequestRecord } from "../ship/pr-record.ts"
 import { advance, type Stage } from "../task/machine.ts"
 import { doctor } from "../task/reconcile.ts"
 import { appendEvent, loadTask, type Task, taskDocPath } from "../task/store.ts"
 import {
-  type Baseline,
+  formatAmendMessage,
+  rebindAmendedDocs,
+  recordAgreedAdditions,
+  reopenedTasks,
+  staleApprovals,
+  unagreedBuildAdditions,
+  validateAmendedDocs,
+} from "./amend-helpers.ts"
+import {
   commandsMoved,
   DECIDED_BY_YOU,
   readBaseline,
@@ -28,13 +32,7 @@ import {
 } from "./baseline.ts"
 import { lockPath } from "./gate.ts"
 import { movedByUser, movedSinceApproval } from "./plan-moved.ts"
-import {
-  approvalCurrent,
-  approvalFields,
-  documentRevision,
-  gateRevision,
-  reviewTargets,
-} from "./revision.ts"
+import { approvalCurrent } from "./revision.ts"
 import { type StaleStep, staleSteps } from "./stale-steps.ts"
 
 /** Once the Plan is approved, a changed Plan is amended in place instead of going back to planning. */
@@ -47,11 +45,6 @@ export function notApprovedMessage(command: string, stage: Stage): string {
     : `${command} works on a task in progress after its Plan was approved; this task is at stage "${stage}"`
 }
 
-/** The approval of the Plan holds: the Plan on disk is the one the person approved. */
-async function planApproved(ctx: Ctx, task: Task): Promise<boolean> {
-  return approvalCurrent(ctx, task, folderDoc("plan"))
-}
-
 /**
  * Remember what the person decided, once the Plan is approved, so a later amendment can tell
  * whether it touches it. The Plan's approval records it; this fills it in on a build that has
@@ -60,71 +53,8 @@ async function planApproved(ctx: Ctx, task: Task): Promise<boolean> {
 export async function ensurePlanBaseline(ctx: Ctx, task: Task): Promise<void> {
   if (!AMEND_STAGES.includes(task.stage)) return
   if ((await readBaseline(ctx, task)) !== null) return
-  if (!(await planApproved(ctx, task))) return
+  if (!(await approvalCurrent(ctx, task, folderDoc("plan")))) return
   await writeBaseline(ctx, task)
-}
-
-/** The approved Plan, when its recorded approval no longer describes it. */
-async function staleApprovals(ctx: Ctx, task: Task): Promise<string[]> {
-  const stale: string[] = []
-  for (const name of reviewTargets(folderDoc("plan"), task)) {
-    const path = join(task.dir, name)
-    if (!(await ctx.fs.exists(path))) continue
-    const fm = parseDoc(await ctx.fs.readFile(path)).frontmatter
-    if (fm?.approved !== true) continue
-    if (fm.review_basis !== (await gateRevision(ctx, task, name))) stale.push(name)
-  }
-  return stale
-}
-
-type Addition = { doc: string; text: string }
-const agreedPath = (task: Task) => join(task.runtimeDir, "agreed-additions.json")
-
-async function agreedAdditions(ctx: Ctx, task: Task): Promise<Addition[]> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(agreedPath(task))) as Addition[]
-  } catch {
-    // None recorded yet.
-    return []
-  }
-}
-
-/** The `[!ADDED] build` blocks in the Plan no `plan amend --by user` recorded yet. */
-async function unagreedBuildAdditions(ctx: Ctx, task: Task): Promise<Addition[]> {
-  const agreed = await agreedAdditions(ctx, task)
-  const found: Addition[] = []
-  for (const doc of reviewTargets(folderDoc("plan"), task)) {
-    const path = join(task.dir, doc)
-    if (!(await ctx.fs.exists(path))) continue
-    for (const block of addedBlocks(parseDoc(await ctx.fs.readFile(path)).body))
-      if (block.stage === "build" && !agreed.some((a) => a.doc === doc && a.text === block.text))
-        found.push({ doc, text: block.text })
-  }
-  return found
-}
-
-async function recordAgreedAdditions(ctx: Ctx, task: Task, added: Addition[]): Promise<void> {
-  const agreed = await agreedAdditions(ctx, task)
-  await ctx.fs.mkdir(task.runtimeDir)
-  await ctx.fs.atomicWrite(agreedPath(task), `${JSON.stringify([...agreed, ...added])}\n`)
-}
-
-/**
- * The cards the build finished and the cards file shows open again: a box of a known card found
- * unticked in Verify, or on a shipped task, is one the build reopens, and the amendment records
- * it. A card the baseline did not know is an addition, not a reopened task.
- */
-async function reopenedTasks(
-  ctx: Ctx,
-  task: Task,
-  baseline: Baseline | null,
-  afterApproval: boolean,
-): Promise<string[]> {
-  if (!afterApproval && task.stage !== "verify") return []
-  const known = baseline?.tasks ?? []
-  return allTasks(await readCards(ctx, task.dir))
-    .filter((t) => !t.checked && known.includes(t.id))
-    .map((t) => t.id)
 }
 
 export type AmendOptions = {
@@ -200,16 +130,13 @@ async function reopenShipped(
   return outcome.amended ?? (reopened.ok ? amendWithin(ctx, task, options) : reopened)
 }
 
-/** `amendPlan` for a caller that holds the gate lock already. */
-export async function amendWithin(
+async function checkAmendInputs(
   ctx: Ctx,
   task: Task,
   options: AmendOptions,
-): Promise<Result<AmendResult>> {
-  if (!AMEND_STAGES.includes(task.stage)) {
+): Promise<Result<{ note: string; cards: Outline; taskIds: string[] }>> {
+  if (!AMEND_STAGES.includes(task.stage))
     return err({ code: "bad_args", message: notApprovedMessage("plan amend", task.stage) })
-  }
-  const plan = folderDoc("plan")
   const note = options.note.replace(/\s+/g, " ").trim()
   if (note === "") {
     return err({
@@ -227,102 +154,64 @@ export async function amendWithin(
       message: `${unknown.join(", ")} ${unknown.length === 1 ? "is not a card" : "are not cards"} in ${agentFileOf("implement")}`,
     })
   }
-  // The Plan's approval binds what the person agreed and decided: any change they own leaves it stale.
-  const stale = await staleApprovals(ctx, task)
-  const baseline = await readBaseline(ctx, task)
-  const moved = await movedByUser(ctx, task, baseline)
-  const touchesUser = baseline === null || moved.agreed || moved.decided
-  // A card the build finished and the cards file shows open again is part of the amendment too.
-  const reopened = await reopenedTasks(ctx, task, baseline, options.afterApproval === true)
-  const named = [...new Set([...taskIds, ...reopened])]
+  return ok({ note, cards, taskIds })
+}
 
-  // One line names every task of the amendment. A long or path-naming note is kept as written; the
-  // build log's plain-line rule warns about it.
-  const kind = options.by === "user" ? "agreed" : "amended"
-  const subject = named.length > 0 ? named.join(", ") : "Plan"
-  const line = `- ${subject} (${kind}): ${note}`
+function emptyAmendResult(plan: string, by: AmendOptions["by"]): Result<AmendResult> {
+  return ok({
+    held: false,
+    by,
+    changed: [],
+    rebound: [],
+    lines: [],
+    details: "",
+    then: "qualitylayer next",
+    message:
+      `Nothing in the approved Plan changed, so nothing was amended. A card is yours to change in ${agentFileOf("implement")} without an amendment. ` +
+      `To amend, change ${plan} first, then run plan amend. Something the person decided during the build goes in ${plan} as a quote block ` +
+      "that opens `> [!ADDED] build · <why>`, its text on the `>` lines after it, then `plan amend --by user`. " +
+      "A note that changes no promise goes under Notes as a tactical line.",
+  })
+}
 
-  // A decision the person made during the build, written into the Plan as an `[!ADDED] build`
-  // block, is theirs to record: it changes no approval (the final approval approves what the build
-  // added), but its (agreed) line carries it there.
-  const decided = options.by === "user" ? await unagreedBuildAdditions(ctx, task) : []
-  // Nothing in the approved Plan changed: a quiet success, and the note belongs under Notes. A
-  // check command changed since the commands were recorded is amended, so `check` runs it.
-  if (
-    stale.length === 0 &&
-    reopened.length === 0 &&
-    decided.length === 0 &&
-    !(await commandsMoved(ctx, task, baseline))
-  )
-    return ok({
-      held: false,
-      by: options.by,
-      changed: [],
-      rebound: [],
-      lines: [],
-      details: "",
-      then: "qualitylayer next",
-      message:
-        `Nothing in the approved Plan changed, so nothing was amended. A card is yours to change in ${agentFileOf("implement")} without an amendment. ` +
-        `To amend, change ${plan} first, then run plan amend. Something the person decided during the build goes in ${plan} as a quote block ` +
-        "that opens `> [!ADDED] build · <why>`, its text on the `>` lines after it, then `plan amend --by user`. " +
-        "A note that changes no promise goes under Notes as a tactical line.",
-    })
-  // What the person approved (the problem, scope and Done means points, their decisions) changes
-  // only with their own words. A decision only the person can make goes through the question flow
-  // before an amendment.
-  if (options.by === "agent" && touchesUser) {
-    const why = await movedSinceApproval(ctx, task)
-    return err({
-      code: "bad_args",
-      message:
-        `${why === "" ? "" : `${why}\n`}this amendment changes what the person approved (the Problem, the Scope or a Done means point in ${plan}, ` +
-        `or its ${DECIDED_BY_YOU}), which only they change. Put those passages back as approved; adding a step under a point is yours. ` +
-        "Complete the approved promise; if it requires a decision only the person can make, ask them through the question flow " +
-        "and record their answer before amending.",
-    })
-  }
+async function userDecisionGuardError(
+  ctx: Ctx,
+  task: Task,
+  plan: string,
+): Promise<Result<AmendResult>> {
+  const why = await movedSinceApproval(ctx, task)
+  return err({
+    code: "bad_args",
+    message:
+      `${why === "" ? "" : `${why}\n`}this amendment changes what the person approved (the Problem, the Scope or a Done means point in ${plan}, ` +
+      `or its ${DECIDED_BY_YOU}), which only they change. Put those passages back as approved; adding a step under a point is yours. ` +
+      "Complete the approved promise; if it requires a decision only the person can make, ask them through the question flow " +
+      "and record their answer before amending.",
+  })
+}
 
-  // The amended Plan must hold, as its gate would check it.
-  const errors: ValidationError[] = []
-  for (const name of stale) {
-    const report = await validateDoc(ctx, task.dir, name, { runtimeDir: task.runtimeDir })
-    if (!report.ok) return report
-    errors.push(
-      ...report.data.errors
-        .filter((e) => e.severity === "error")
-        .map((e) => ({ ...e, message: `${name}: ${e.message}` })),
-    )
-  }
-  if (errors.length > 0) {
-    return err({
-      code: "validation_failed",
-      message: `the amended Plan has ${errors.length} validation error(s); fix them and run plan amend again`,
-      errors,
-    })
-  }
-
-  const changed: string[] = []
-  for (const name of stale) {
-    const path = join(task.dir, name)
-    const revision = await documentRevision(ctx, task, name)
-    if (parseDoc(await ctx.fs.readFile(path)).frontmatter?.review_digest !== revision)
-      changed.push(name)
-    await ctx.fs.writeFile(
-      path,
-      patchFrontmatter(await ctx.fs.readFile(path), {
-        status: "approved",
-        approved: true,
-        review_digest: revision,
-        ...(await approvalFields(ctx, task, name)),
-      }),
-    )
-  }
-  // The person's answer is the new baseline of what they decided; any amendment renews the commands.
+async function recordAmendment(input: {
+  ctx: Ctx
+  task: Task
+  options: AmendOptions
+  plan: string
+  note: string
+  cards: Outline
+  taskIds: string[]
+  stale: string[]
+  baseline: Awaited<ReturnType<typeof readBaseline>>
+  reopened: string[]
+  decided: Awaited<ReturnType<typeof unagreedBuildAdditions>>
+}): Promise<Result<AmendResult>> {
+  const { ctx, task, options, plan, note, cards, taskIds, stale, baseline, reopened, decided } =
+    input
+  const changed = await rebindAmendedDocs(ctx, task, stale)
   if (options.by === "user") await writeBaseline(ctx, task)
   else await rebaseCommands(ctx, task)
 
-  const lines = [line]
+  const named = [...new Set([...taskIds, ...reopened])]
+  const kind = options.by === "user" ? "agreed" : "amended"
+  const line = `- ${named.length > 0 ? named.join(", ") : "Plan"} (${kind}): ${note}`
   const logPath = implementAgentsPath(task)
   const logWritten = await ctx.fs.exists(logPath)
   if (logWritten)
@@ -337,11 +226,9 @@ export async function amendWithin(
     ...(named.length > 0 ? { tasks: named } : {}),
     ...(reopened.length > 0 ? { reopened } : {}),
     changed: documents,
-    // The Plan page lists what changed after the approval, one line per amendment.
     note,
   })
   const repaired = await doctor(ctx, task, true)
-  // Past Implement the build stays at its step: the open cards are built there before the reviewer.
   const open =
     task.stage === "verify"
       ? allTasks(cards)
@@ -355,31 +242,67 @@ export async function amendWithin(
     baseline?.files,
     (await proofOf(ctx, task)).steps,
   )
-  const stepsNote =
-    steps.length > 0
-      ? ` These Done means steps no longer match the cards; correct the step in ${plan} and amend again: ${steps.map((s) => `step ${s.step} ${s.problem}`).join("; ")}.`
-      : ""
   return ok({
     held: false,
     by: options.by,
     changed: documents,
     rebound: stale,
-    lines,
+    lines: [line],
     details: taskDocPath(task, "implement"),
     ...(steps.length > 0 ? { stale_steps: steps } : {}),
     then: "qualitylayer next",
-    message:
-      (stale.length === 0
-        ? `The amendment is recorded (${documents.join(", ")}) and the Plan's approval holds; `
-        : `The Plan is amended and its approval rebound (${documents.join(", ")}); `) +
-      (open.length > 0
-        ? `${open.join(", ")} ${open.length === 1 ? "is" : "are"} open: build ${open.length === 1 ? "it" : "them"} and tick ${open.length === 1 ? "its box" : "their boxes"} before the next reviewer; `
-        : "") +
-      (logWritten
-        ? `${line.slice(2)} is recorded in ${agentFileOf("implement")}; add the full reasoning under its heading there. `
-        : `${line.slice(2)} is recorded in the task's events and shows on the Plan page; keep the reasoning in the note. `) +
-      "Keep the workflow documents on disk; the person decides whether to commit them. Run qualitylayer next." +
-      (repaired.repaired ? ` ${repaired.message}` : "") +
-      stepsNote,
+    message: formatAmendMessage({
+      plan,
+      stale,
+      documents,
+      open,
+      logWritten,
+      line,
+      repaired,
+      steps,
+    }),
+  })
+}
+
+/** `amendPlan` for a caller that holds the gate lock already. */
+export async function amendWithin(
+  ctx: Ctx,
+  task: Task,
+  options: AmendOptions,
+): Promise<Result<AmendResult>> {
+  const checked = await checkAmendInputs(ctx, task, options)
+  if (!checked.ok) return checked
+  const { note, cards, taskIds } = checked.data
+  const plan = folderDoc("plan")
+  const stale = await staleApprovals(ctx, task)
+  const baseline = await readBaseline(ctx, task)
+  const moved = await movedByUser(ctx, task, baseline)
+  const reopened = reopenedTasks(task, cards, baseline, options.afterApproval === true)
+  const decided = options.by === "user" ? await unagreedBuildAdditions(ctx, task) : []
+
+  const nothingChanged =
+    stale.length === 0 &&
+    reopened.length === 0 &&
+    decided.length === 0 &&
+    !(await commandsMoved(ctx, task, baseline))
+  if (nothingChanged) return emptyAmendResult(plan, options.by)
+  if (options.by === "agent" && (baseline === null || moved.agreed || moved.decided))
+    return userDecisionGuardError(ctx, task, plan)
+
+  const validated = await validateAmendedDocs(ctx, task, stale)
+  if (!validated.ok) return validated
+
+  return recordAmendment({
+    ctx,
+    task,
+    options,
+    plan,
+    note,
+    cards,
+    taskIds,
+    stale,
+    baseline,
+    reopened,
+    decided,
   })
 }

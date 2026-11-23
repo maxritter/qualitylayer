@@ -1,44 +1,19 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { pendingRunApproval } from "../conversation/approvals.ts"
 import { implementLogPath } from "../docs/build-log.ts"
-import { folderDoc } from "../docs/names.ts"
-import { HELPER_FRESH_MS } from "../estimate.ts"
-import { isAutonomousBuildStage } from "../flow.ts"
 import { readDecided } from "../gate/decided.ts"
 import { type GateFile, readGate } from "../gate/gate.ts"
 import type { Activity } from "../helpers.ts"
-import { openNeeds, readNeeds } from "../need/need.ts"
-import { taskHelperWait } from "../run/helper-wait.ts"
-import { listRuns, readRun } from "../run/registry.ts"
+import { readNeeds } from "../need/need.ts"
 import { readShipRecord, type ShipChoice } from "../ship/choice.ts"
 import { answerModeInfo, approvalModeInfo } from "../task/answer-mode.ts"
 import { isArchived } from "../task/archive.ts"
 import { openQuestion } from "../task/question.ts"
 import { approvalsOf } from "../task/sides.ts"
 import { readmeFrontmatter, readSession, type Task } from "../task/store.ts"
-import { readVerifyMode } from "../task/verify-mode.ts"
+import { resolveWaitingOn, type WaitingOn } from "./waiting-on.ts"
 
-export type WaitingOn = {
-  kind: "person" | "agent" | "helper" | "none" | "unknown"
-  reason:
-    | "plan_approval"
-    | "build_start"
-    | "final_review"
-    | "question"
-    | "prerequisite"
-    | "agent_permission"
-    | "review"
-    | "helper_running"
-    | "helper_queued"
-    | "working"
-    | "continuation"
-    | "workflow_complete"
-    | "archived"
-    | "stopped"
-    | "no_current_activity"
-  since: number | null
-}
+export type { WaitingOn } from "./waiting-on.ts"
 
 export type DecisionSummary = {
   target: string
@@ -104,85 +79,20 @@ export async function managerStatus(
     isArchived(ctx, task),
     latestDecision(ctx, task, gate),
   ])
-  const waiting = (
-    kind: WaitingOn["kind"],
-    reason: WaitingOn["reason"],
-    since: number | null = null,
-  ): WaitingOn => ({ kind, reason, since })
-  async function waitingOn(): Promise<WaitingOn> {
-    if (archived) return waiting("none", "archived")
-    if (question && (!question.gate || question.item))
-      return waiting("person", "question", question.asked)
-    // A gate left pending while the agents have the task waits for nobody yet: the App's Needs you
-    // reads it the same way (ui/model.ts, needsYou).
-    if (
-      gate?.decision === "pending" &&
-      !isAutonomousBuildStage(task.stage, (await readVerifyMode(ctx, task)) ?? undefined)
-    ) {
-      if (gate.waitsFor) return waiting("agent", "review", gate.opened)
-      return waiting(
-        "person",
-        gate.target === folderDoc("plan") ? "plan_approval" : "final_review",
-        gate.opened,
-      )
-    }
-    if (question) return waiting("person", "question", question.asked)
-    if (task.stage === "abandoned") return waiting("none", "stopped")
-    if (task.stage !== "shipped") {
-      if (await awaitingBuildStart(ctx, task)) return waiting("person", "build_start")
-      const need = openNeeds(needs).find((one) => one.waiting !== null)
-      if (need) return waiting("person", "prerequisite", need.waiting)
-    }
-    const taskId = `${task.repoId}~${task.slug}`
-    for (const run of listRuns(ctx.home)) {
-      if (
-        (run.task ?? (run.purpose.kind === "task" ? run.purpose.task : undefined)) !== taskId ||
-        run.taskRuntimeDir !== task.runtimeDir
-      )
-        continue
-      const request = await pendingRunApproval(ctx, run)
-      if (request) return waiting("person", "agent_permission", Date.parse(request.createdAt))
-      const current = readRun(ctx.home, run.id)
-      if (
-        current?.generation === run.generation &&
-        current.nativeSession === run.nativeSession &&
-        (current.task ?? (current.purpose.kind === "task" ? current.purpose.task : undefined)) ===
-          taskId &&
-        current.taskRuntimeDir === task.runtimeDir &&
-        (current.status === "running" || current.status === "starting") &&
-        current.terminalPrompt === "permission"
-      ) {
-        const since = Date.parse(current.waitSince ?? current.updatedAt)
-        return waiting("person", "agent_permission", Number.isFinite(since) ? since : null)
-      }
-    }
-    if (task.stage === "shipped") return waiting("none", "workflow_complete")
-    const helperWait = await taskHelperWait(ctx, task)
-    if (helperWait) return waiting("helper", "helper_running", helperWait.startedAt)
-    const running = activities.find(
-      (one) =>
-        one.state === "running" &&
-        (one.kind === "review" || (one.at !== null && ctx.clock.now() - one.at < HELPER_FRESH_MS)),
-    )
-    if (running)
-      return waiting(
-        running.kind === "helper" ? "helper" : "agent",
-        running.kind === "helper" ? "helper_running" : "review",
-        running.started ?? running.at,
-      )
-    const queued = activities.find((one) => one.kind === "helper" && one.state === "queued")
-    if (queued) return waiting("helper", "helper_queued", queued.started)
-    if (
-      session &&
-      ctx.clock.now() >= session.heartbeat &&
-      ctx.clock.now() - session.heartbeat < 90_000
-    )
-      return waiting("agent", session.state === "busy" ? "working" : "continuation", session.since)
-    return waiting("unknown", "no_current_activity")
-  }
+  const waiting_on: WaitingOn = await resolveWaitingOn({
+    ctx,
+    task,
+    archived,
+    gate,
+    question,
+    needs,
+    session,
+    activities,
+    awaitingBuildStart,
+  })
   return {
     question: question?.question ?? null,
-    waiting_on: await waitingOn(),
+    waiting_on,
     last_decision: lastDecision,
     answer_mode: answerModeInfo(frontmatter, task.answers),
     approval_mode: approvalModeInfo(frontmatter, approvalsOf(task)),

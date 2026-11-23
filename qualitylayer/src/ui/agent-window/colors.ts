@@ -1,20 +1,33 @@
 type Rgba = [number, number, number, number]
 
-function numericColor(value: string): Rgba | undefined {
+function parseHexColor(value: string): Rgba | undefined {
   if (/^#[\da-f]{3,4}$/i.test(value))
-    return numericColor(`#${[...value.slice(1)].map((c) => c + c).join("")}`)
-  if (/^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value))
-    return [
-      Number.parseInt(value.slice(1, 3), 16),
-      Number.parseInt(value.slice(3, 5), 16),
-      Number.parseInt(value.slice(5, 7), 16),
-      value.length === 9 ? Number.parseInt(value.slice(7, 9), 16) / 255 : 1,
-    ]
+    return parseHexColor(`#${[...value.slice(1)].map((c) => c + c).join("")}`)
+  if (!/^#[\da-f]{6}(?:[\da-f]{2})?$/i.test(value)) return undefined
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+    value.length === 9 ? Number.parseInt(value.slice(7, 9), 16) / 255 : 1,
+  ]
+}
+
+function validChannel(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 255
+}
+
+function validAlpha(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 1
+}
+
+function parseRgbColor(value: string): Rgba | undefined {
   const match = /^rgba?\(([^)]+)\)$/i.exec(value)
   if (!match) return undefined
   const parts = (match[1] ?? "").replaceAll(",", " ").replace("/", " ").trim().split(/\s+/)
-  if (parts.length !== 3 && parts.length !== 4) return undefined
-  if (parts.some((part) => !/^\d*(?:\.\d+)?%?$/.test(part) || part === "")) return undefined
+  const badParts =
+    (parts.length !== 3 && parts.length !== 4) ||
+    parts.some((part) => !/^\d*(?:\.\d+)?%?$/.test(part) || part === "")
+  if (badParts) return undefined
   const channels = parts
     .slice(0, 3)
     .map((part) =>
@@ -22,19 +35,17 @@ function numericColor(value: string): Rgba | undefined {
     )
   const alpha =
     parts[3] === undefined ? 1 : Number.parseFloat(parts[3]) * (parts[3].endsWith("%") ? 0.01 : 1)
-  if (
-    channels.some((c) => !Number.isFinite(c) || c < 0 || c > 255) ||
-    !Number.isFinite(alpha) ||
-    alpha < 0 ||
-    alpha > 1
-  )
-    return undefined
+  if (!channels.every(validChannel) || !validAlpha(alpha)) return undefined
   return [
     Math.round(channels[0] ?? 0),
     Math.round(channels[1] ?? 0),
     Math.round(channels[2] ?? 0),
     alpha,
   ]
+}
+
+function numericColor(value: string): Rgba | undefined {
+  return parseHexColor(value) ?? parseRgbColor(value)
 }
 
 export function computedCssColor(value: string, root: HTMLElement): Rgba | undefined {

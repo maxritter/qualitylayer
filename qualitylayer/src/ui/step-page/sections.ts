@@ -22,18 +22,24 @@ export function bodyOf(markdown: string): string {
     .trim()
 }
 
+function updateFence(
+  fence: string | null,
+  line: string,
+): { fence: string | null; toggled: boolean } {
+  const opened = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+  if (opened === undefined) return { fence, toggled: false }
+  if (fence === null) return { fence: opened.slice(0, 3), toggled: true }
+  return { fence: opened.startsWith(fence) ? null : fence, toggled: true }
+}
+
 /** The text of a section with the code fences taken out, which no row or sentence is read from. */
 function proseOf(markdown: string): string {
   const out: string[] = []
   let fence: string | null = null
   for (const line of bodyOf(markdown).split(/\r?\n/)) {
-    const opened = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
-    if (opened !== undefined) {
-      if (fence === null) fence = opened.slice(0, 3)
-      else if (opened.startsWith(fence)) fence = null
-      continue
-    }
-    if (fence === null) out.push(line)
+    const next = updateFence(fence, line)
+    fence = next.fence
+    if (!next.toggled && fence === null) out.push(line)
   }
   return out.join("\n")
 }
@@ -135,6 +141,24 @@ export type Takeaway = {
   answers: string | null
 }
 
+function buildTakeaway(title: string, lines: readonly string[]): Takeaway {
+  const text = lines.join("\n")
+  const prose = proseOf(text)
+    .split(/\r?\n/)
+    .filter((l) => {
+      const trimmed = l.trim()
+      return trimmed !== "" && !/^\*\*[^*]+:\*\*/.test(trimmed) && !/^###\s/.test(l)
+    })
+  const answers = /\*\*Answers:\*\*\s*([^\n]+)/i.exec(text)?.[1]?.trim() ?? null
+  return {
+    title: plain(title),
+    slug: headingSlug(title),
+    lead: plain(sentencesOf(prose[0] ?? "")[0] ?? ""),
+    markdown: text,
+    answers,
+  }
+}
+
 /**
  * The `###` takeaways of a section, and the text that stands before the first (a trust boundary
  * line, a lead-in), which the page draws above the rows.
@@ -143,39 +167,19 @@ export function takeawaysOf(markdown: string): { intro: string; items: Takeaway[
   const out: Takeaway[] = []
   const intro: string[] = []
   let current: { title: string; lines: string[] } | null = null
-  const flush = () => {
-    if (current === null) return
-    const text = current.lines.join("\n")
-    const prose = proseOf(text)
-      .split(/\r?\n/)
-      .filter((l) => l.trim() !== "" && !/^\*\*[^*]+:\*\*/.test(l.trim()) && !/^###\s/.test(l))
-    const answers = /\*\*Answers:\*\*\s*([^\n]+)/i.exec(text)?.[1]?.trim() ?? null
-    out.push({
-      title: plain(current.title),
-      slug: headingSlug(current.title),
-      lead: plain(sentencesOf(prose[0] ?? "")[0] ?? ""),
-      markdown: text,
-      answers,
-    })
-    current = null
-  }
   let fence: string | null = null
   for (const line of markdown.replace(/^## .*\n?/, "").split(/\r?\n/)) {
-    const opened = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
-    if (opened !== undefined) {
-      if (fence === null) fence = opened.slice(0, 3)
-      else if (opened.startsWith(fence)) fence = null
-    }
+    fence = updateFence(fence, line).fence
     const head = fence === null && line.startsWith("###") ? trimmedLineTail(line, 3, 1) : null
     if (head !== null) {
-      flush()
+      if (current !== null) out.push(buildTakeaway(current.title, current.lines))
       current = { title: head, lines: [line] }
       continue
     }
     if (current !== null) current.lines.push(line)
     else intro.push(line)
   }
-  flush()
+  if (current !== null) out.push(buildTakeaway(current.title, current.lines))
   return { intro: intro.join("\n").trim(), items: out }
 }
 

@@ -64,6 +64,85 @@ const stillAsked = (task: TaskDetail, id: string, at: number) =>
   task.question.more?.at === at &&
   task.question.more.cancelled === undefined
 
+type MoreKind = ReturnType<typeof moreKind>
+
+function applyTakenMore(task: TaskDetail, id: string, at: number, kind: MoreKind): boolean {
+  const q = task.question
+  if (q === null || q === undefined || !stillAsked(task, id, at) || q.more === undefined)
+    return false
+  task.question = {
+    ...q,
+    more: {
+      ...q.more,
+      taken: Date.now(),
+      lines: [
+        kind === "explain"
+          ? "rereading research finding 1 for what each choice means"
+          : "rereading research finding 1 for plainer words",
+      ],
+    },
+  }
+  return true
+}
+
+function buildPlainUpdate(q: Question) {
+  const plain = PLAIN[q.id] ?? {
+    question: `In other words: ${q.question}`,
+    why: q.why ?? "",
+    choices: [],
+  }
+  return {
+    plain,
+    patch: {
+      question: plain.question,
+      ...(plain.why !== "" ? { why: plain.why } : {}),
+      choices: q.choices.map((c, i) => ({ ...c, label: plain.choices[i] ?? c.label })),
+      earlier: [
+        ...(q.earlier ?? []),
+        {
+          question: q.question,
+          choices: q.choices.map((c) => ({ label: c.label })),
+          at: Date.now(),
+        },
+      ],
+    },
+  }
+}
+
+function moreAnswerText(kind: MoreKind, request: string): string {
+  if (kind === "explain") return EXPLAINED
+  if (kind === "ask") return `About “${request}”: ${EXPLAINED}`
+  return "The same question in plainer words. The choices mean what they meant before."
+}
+
+function applyAnsweredMore(
+  task: TaskDetail,
+  id: string,
+  at: number,
+  kind: MoreKind,
+  request: string,
+): boolean {
+  const q = task.question
+  if (q === null || q === undefined || !stillAsked(task, id, at)) return false
+  const { more: _closed, ...rest } = q
+  const plainUpdate = kind === "plain" ? buildPlainUpdate(q) : undefined
+  task.question = {
+    ...rest,
+    ...(plainUpdate?.patch ?? {}),
+    found: { asked: request, text: moreAnswerText(kind, request), evidence: [], at: Date.now() },
+  }
+  // The strip names the question by its wording.
+  if (plainUpdate !== undefined && task.batch != null) {
+    task.batch = {
+      ...task.batch,
+      members: task.batch.members.map((m) =>
+        m.id === q.id ? { ...m, text: plainUpdate.plain.question } : m,
+      ),
+    }
+  }
+  return true
+}
+
 /**
  * The visitor pressed Tell me more: the question carries the request now, and an agent that is not
  * there is played by two timers.
@@ -75,74 +154,10 @@ export function demoMore(task: TaskDetail, open: Question, request: string, onCh
   if (knob("more") === "late") return asked
   const kind = moreKind(request)
   setTimeout(() => {
-    const q = task.question
-    if (q === null || q === undefined || !stillAsked(task, open.id, at) || q.more === undefined)
-      return
-    task.question = {
-      ...q,
-      more: {
-        ...q.more,
-        taken: Date.now(),
-        lines: [
-          kind === "explain"
-            ? "rereading research finding 1 for what each choice means"
-            : "rereading research finding 1 for plainer words",
-        ],
-      },
-    }
-    onChange()
+    if (applyTakenMore(task, open.id, at, kind)) onChange()
   }, DEMO_TAKEN_MS)
   setTimeout(() => {
-    const q = task.question
-    if (q === null || q === undefined || !stillAsked(task, open.id, at)) return
-    const { more: _closed, ...rest } = q
-    const plain =
-      kind === "plain"
-        ? (PLAIN[q.id] ?? {
-            question: `In other words: ${q.question}`,
-            why: q.why ?? "",
-            choices: [],
-          })
-        : undefined
-    const found = {
-      asked: request,
-      text:
-        kind === "explain"
-          ? EXPLAINED
-          : kind === "ask"
-            ? `About “${request}”: ${EXPLAINED}`
-            : "The same question in plainer words. The choices mean what they meant before.",
-      evidence: [],
-      at: Date.now(),
-    }
-    task.question = {
-      ...rest,
-      ...(plain !== undefined
-        ? {
-            question: plain.question,
-            ...(plain.why !== "" ? { why: plain.why } : {}),
-            choices: q.choices.map((c, i) => ({ ...c, label: plain.choices[i] ?? c.label })),
-            earlier: [
-              ...(q.earlier ?? []),
-              {
-                question: q.question,
-                choices: q.choices.map((c) => ({ label: c.label })),
-                at: Date.now(),
-              },
-            ],
-          }
-        : {}),
-      found,
-    }
-    // The strip names the question by its wording.
-    if (plain !== undefined && task.batch != null)
-      task.batch = {
-        ...task.batch,
-        members: task.batch.members.map((m) =>
-          m.id === q.id ? { ...m, text: plain.question } : m,
-        ),
-      }
-    onChange()
+    if (applyAnsweredMore(task, open.id, at, kind, request)) onChange()
   }, DEMO_ANSWERED_MS)
   return asked
 }

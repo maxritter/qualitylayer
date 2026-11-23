@@ -23,6 +23,92 @@ const MARK: Record<TabTone, "done" | "you" | "agent" | "stop" | "todo"> = {
 /** What a tab says of its step while it runs: progress, "fixing 1", "sent". The mark and the count say the rest. */
 const SAID = /^(\d+\/\d+|fixing \d+|blocked \d+|checking|sent)$/
 
+function showsTabState(badges: boolean, open: number, tab: StageTab): boolean {
+  if (!badges || open !== 0 || tab.added !== 0) return false
+  return tab.tone !== "done" && SAID.test(tab.state)
+}
+
+function StepTabButton({
+  tab,
+  selected,
+  tabStop,
+  starting,
+  open,
+  tone,
+  badges,
+  approves,
+  onOpen,
+}: {
+  tab: StageTab
+  selected: boolean
+  tabStop: boolean
+  starting: boolean
+  open: number
+  tone: TabTone
+  badges: boolean
+  approves: boolean
+  onOpen: (key: string) => void
+}) {
+  return (
+    <Fragment>
+      {tab.step === "implement" ? (
+        <div
+          className={cn("q-gap", starting && "waiting")}
+          data-testid="build-gap"
+          data-waiting={String(starting)}
+          aria-hidden="true"
+        />
+      ) : null}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={selected}
+        tabIndex={tabStop ? 0 : -1}
+        aria-disabled={!tab.enabled || undefined}
+        title={tab.title}
+        data-tone={tone}
+        className="q-tab"
+        onClick={() => onOpen(tab.key)}
+      >
+        <WhoMark who={MARK[tone]} running={tone === "live"} />
+        {tab.label}
+        {approves ? <ApprovesIcon step={tab.step} /> : null}
+        {badges && open > 0 ? (
+          <span className="n" data-testid="step-count" title={`${open} need you`}>
+            {open}
+          </span>
+        ) : null}
+        {showsTabState(badges, open, tab) ? (
+          <span className="t" data-testid="tab-state">
+            {tab.state}
+          </span>
+        ) : null}
+        {badges && tab.added > 0 ? (
+          <span className="t" data-testid="added-badge">
+            {tab.added} added
+          </span>
+        ) : null}
+      </button>
+    </Fragment>
+  )
+}
+
+function moveTabFocus(row: HTMLDivElement | null, key: string): boolean {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"]
+  if (!keys.includes(key)) return false
+  const buttons = [...(row?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])]
+  const here = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  if (here === -1 || buttons.length === 0) return false
+  const next =
+    key === "Home"
+      ? 0
+      : key === "End"
+        ? buttons.length - 1
+        : (here + (key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length
+  buttons[next]?.focus()
+  return true
+}
+
 export function StepTabs({
   tabs,
   items,
@@ -57,19 +143,7 @@ export function StepTabs({
   const row = useRef<HTMLDivElement | null>(null)
   // ← and → move between the steps; Home and End go to the first and the last.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"]
-    if (!keys.includes(event.key)) return
-    const tabs = [...(row.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [])]
-    const here = tabs.indexOf(document.activeElement as HTMLButtonElement)
-    if (here === -1 || tabs.length === 0) return
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? tabs.length - 1
-          : (here + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
-    event.preventDefault()
-    tabs[next]?.focus()
+    if (moveTabFocus(row.current, event.key)) event.preventDefault()
   }
   // One stop in the Tab order: the step in view, or the first step.
   const stop = tabs.find((tab) => tab.step === at) ?? tabs[0]
@@ -85,7 +159,6 @@ export function StepTabs({
         onKeyDown={onKeyDown}
       >
         {tabs.map((tab) => {
-          const selected = tab.step === at
           const asked = items !== undefined ? openCount(items, tab.step) : 0
           const need = needs !== null && needs.step === tab.step ? needs : null
           const open = asked + (need?.count ?? 0)
@@ -94,50 +167,18 @@ export function StepTabs({
           const tone =
             (asked > 0 || need?.blocking === true) && tab.tone !== "bad" ? "you" : tab.tone
           return (
-            <Fragment key={tab.key}>
-              {tab.step === "implement" ? (
-                <div
-                  className={cn("q-gap", starting && "waiting")}
-                  data-testid="build-gap"
-                  data-waiting={String(starting)}
-                  aria-hidden="true"
-                />
-              ) : null}
-              <button
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                tabIndex={tab === stop ? 0 : -1}
-                aria-disabled={!tab.enabled || undefined}
-                title={tab.title}
-                data-tone={tone}
-                className="q-tab"
-                onClick={() => onOpen(tab.key)}
-              >
-                <WhoMark who={MARK[tone]} running={tone === "live"} />
-                {tab.label}
-                {approves ? <ApprovesIcon step={tab.step} /> : null}
-                {badges && open > 0 ? (
-                  <span className="n" data-testid="step-count" title={`${open} need you`}>
-                    {open}
-                  </span>
-                ) : null}
-                {badges &&
-                open === 0 &&
-                tab.added === 0 &&
-                tab.tone !== "done" &&
-                SAID.test(tab.state) ? (
-                  <span className="t" data-testid="tab-state">
-                    {tab.state}
-                  </span>
-                ) : null}
-                {badges && tab.added > 0 ? (
-                  <span className="t" data-testid="added-badge">
-                    {tab.added} added
-                  </span>
-                ) : null}
-              </button>
-            </Fragment>
+            <StepTabButton
+              key={tab.key}
+              tab={tab}
+              selected={tab.step === at}
+              tabStop={tab === stop}
+              starting={starting}
+              open={open}
+              tone={tone}
+              badges={badges}
+              approves={approves}
+              onOpen={onOpen}
+            />
           )
         })}
       </div>

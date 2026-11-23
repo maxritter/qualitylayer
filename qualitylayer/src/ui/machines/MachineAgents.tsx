@@ -1,109 +1,13 @@
-import { CheckIcon, TerminalIcon } from "lucide-react"
+import { CheckIcon } from "lucide-react"
 import { useEffect } from "react"
 import { createPortal } from "react-dom"
-import type { AgentHealth } from "../../core/agents/health-types.ts"
-import { AGENT_NAMES, type NativeAgent } from "../../core/agents/ids.ts"
-import {
-  type AgentSetupCapability,
-  type AgentSetupState,
-  usableSetupAgent,
-} from "../../core/agents/setup.ts"
+import type { NativeAgent } from "../../core/agents/ids.ts"
+import { type AgentSetupState, usableSetupAgent } from "../../core/agents/setup.ts"
 import { Disclosure } from "../kit/Fold.tsx"
-import { AgentMark } from "../kit/marks/index.ts"
+import { AgentRow } from "./MachineAgentRow.tsx"
 import { MachineSetupTerminal } from "./MachineSetupTerminal.tsx"
-import {
-  type MachineHealthApi,
-  setupContextOf,
-  setupRunning,
-  useMachineSetup,
-} from "./useMachineSetup.ts"
+import { type MachineHealthApi, setupRunning, useMachineSetup } from "./useMachineSetup.ts"
 import "./machine-setup.css"
-
-function accountWord(row: AgentHealth | undefined, enabled: boolean): string {
-  if (!enabled) return "Disabled"
-  if (row?.status === "not-found") return "Not installed"
-  if (row?.status === "failed") return "Needs attention"
-  if (row?.status !== "available") return "Not checked"
-  if (row.accountCheck?.state === "signed-in")
-    return row.accountCheck.plan ?? row.account ?? "Signed in"
-  return row.account ?? "Installed"
-}
-
-type Setup = ReturnType<typeof useMachineSetup>
-function AgentRow({ capability, setup }: { capability: AgentSetupCapability; setup: Setup }) {
-  const { agent } = capability
-  const health = setup.agents.find((row) => row.agent === agent)
-  const run = setup.latest.get(agent)
-  const context = run && setupContextOf(run)
-  const active = run && setupRunning(run)
-  const missing = health?.status === "not-found" || health?.status === "failed"
-  const signingOut = health?.accountCheck?.state === "signed-out"
-  const operation =
-    missing && capability.install
-      ? "install"
-      : capability.signIn && (signingOut || health?.accountCheck?.state === "unknown")
-        ? "sign-in"
-        : null
-  const busy = setup.starting === agent
-  return (
-    <div className="q-machine-agent" data-agent={agent}>
-      <AgentMark agent={agent} size={16} />
-      <b>{AGENT_NAMES[agent]}</b>
-      <span className="q-machine-agent-state">
-        {busy
-          ? "Starting…"
-          : active
-            ? context?.operation === "install"
-              ? "Installing…"
-              : "In the terminal"
-            : accountWord(health, capability.enabled)}
-      </span>
-      <span className="q-machine-agent-actions">
-        {!capability.enabled ? (
-          <a className="q-link" href="#/settings/agents">
-            Agents settings
-          </a>
-        ) : active ? (
-          <button type="button" className="q-btn sm" onClick={() => setup.show(run.id)}>
-            <TerminalIcon className="size-3.5" />
-            Terminal
-          </button>
-        ) : operation ? (
-          <button
-            type="button"
-            className="q-btn sm"
-            disabled={busy || !setup.runs?.support?.canStart}
-            onClick={() => void setup.start(agent, operation)}
-          >
-            {operation === "install"
-              ? context?.operation === "install"
-                ? "Retry install"
-                : "Install"
-              : "Sign in"}
-          </button>
-        ) : missing || signingOut ? (
-          <a className="q-link" href={capability.guide} target="_blank" rel="noopener noreferrer">
-            Setup guide
-          </a>
-        ) : run ? (
-          <button
-            type="button"
-            className="q-ibtn"
-            aria-label={`${AGENT_NAMES[agent]} setup output`}
-            onClick={() => setup.show(run.id)}
-          >
-            <TerminalIcon className="size-3.5" />
-          </button>
-        ) : null}
-      </span>
-      {health?.detail ? (
-        <Disclosure className="q-machine-agent-detail" head="Details">
-          <p>{health.detail}</p>
-        </Disclosure>
-      ) : null}
-    </div>
-  )
-}
 
 export function MachineAgents({
   state,

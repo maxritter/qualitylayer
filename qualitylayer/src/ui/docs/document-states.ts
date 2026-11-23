@@ -22,6 +22,41 @@ export type DocumentRow = {
   state: DocumentState
 }
 
+function currentStepState(args: {
+  step: Step
+  exists: boolean
+  action: TaskDetail["action"]
+  tone: string | undefined
+  yours: boolean
+}): DocumentState {
+  const { step, exists, action, tone, yours } = args
+  // Approved, and the build session has not written the Implement file yet: it is written once the
+  // person starts the build; the control does not claim that the file is written.
+  if (!exists && step === "implement" && action === "implement") return "not yet"
+  if (!exists) return tone === "live" ? "being written" : "not yet"
+  if (yours || tone === "you") return "your turn"
+  return tone === "bad" ? "stopped" : "being written"
+}
+
+function stepDocumentState(args: {
+  step: Step
+  index: number
+  current: number
+  shipped: boolean
+  exists: boolean
+  action: TaskDetail["action"]
+  tone: string | undefined
+  yours: boolean
+}): DocumentState {
+  const { step, index, current, shipped, exists, action, tone, yours } = args
+  // The approved Plan waits to be started: Implement holds the build start. An absent file still
+  // remains unwritten.
+  if (step === "implement" && exists && action === "implement") return "your turn"
+  if (shipped || (current !== -1 && index < current)) return exists ? "done" : "not yet"
+  if (index > current) return exists ? "started early" : "not yet"
+  return currentStepState({ step, exists, action, tone, yours })
+}
+
 /**
  * One row per step of a task, in flow order. `yours` says the person is needed in the step
  * the task is at (a question of its batch is open); the step's own tab says it for an approval.
@@ -37,20 +72,16 @@ export function documentStates(
   return steps.map((step, index) => {
     const file = task.files.find((f) => f.role === step.id)
     const tab = tabs.find((t) => t.step === step.id)
-    const exists = file?.exists === true
-    let state: DocumentState
-    // The approved Plan waits to be started: Implement holds the build start. An absent file still
-    // remains unwritten.
-    if (step.id === "implement" && exists && task.action === "implement") state = "your turn"
-    else if (shipped || (current !== -1 && index < current)) state = exists ? "done" : "not yet"
-    else if (index > current) state = exists ? "started early" : "not yet"
-    // Approved, and the build session has not written the Implement file yet: it is written once the
-    // person starts the build; the control does not claim that the file is written.
-    else if (!exists && step.id === "implement" && task.action === "implement") state = "not yet"
-    else if (!exists) state = tab?.tone === "live" ? "being written" : "not yet"
-    else if (yours || tab?.tone === "you") state = "your turn"
-    else if (tab?.tone === "bad") state = "stopped"
-    else state = "being written"
+    const state = stepDocumentState({
+      step: step.id,
+      index,
+      current,
+      shipped,
+      exists: file?.exists === true,
+      action: task.action ?? null,
+      tone: tab?.tone,
+      yours,
+    })
     return { step: step.id, file, state }
   })
 }

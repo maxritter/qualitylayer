@@ -5,67 +5,43 @@
 // other path, passes; anything else gets no answer and the person is asked as before.
 
 import { isAbsolute, relative, resolve } from "node:path"
+import { segments, words } from "./own-command-parse.ts"
 
 /** Shell syntax this check does not read: redirection, substitution, background jobs, subshells. */
 const UNREAD = /[<>`$(){}&\\]|\|\|/
 
-/** Words outside quotes, or null for a quote left open. Quotes keep their text as one word. */
-function words(segment: string): string[] | null {
-  const found: string[] = []
-  let word = ""
-  let quote: string | null = null
-  let started = false
-  for (const char of segment) {
-    if (quote !== null) {
-      if (char === quote) quote = null
-      else word += char
-    } else if (char === "'" || char === '"') {
-      quote = char
-      started = true
-    } else if (/\s/.test(char)) {
-      if (started) found.push(word)
-      word = ""
-      started = false
-    } else {
-      word += char
-      started = true
-    }
-  }
-  if (quote !== null) return null
-  if (started) found.push(word)
-  return found
-}
-
-/** The segments of a command split at `|`, `&&` and `;` outside quotes; null when a quote stays open. */
-function segments(command: string): string[] | null {
-  const parts: string[] = []
-  let part = ""
-  let quote: string | null = null
-  for (let at = 0; at < command.length; at++) {
-    const char = command[at] as string
-    if (quote !== null) {
-      if (char === quote) quote = null
-      part += char
-    } else if (char === "'" || char === '"') {
-      quote = char
-      part += char
-    } else if (char === ";" || char === "|" || char === "\n") {
-      parts.push(part)
-      part = ""
-    } else if (char === "&" && command[at + 1] === "&") {
-      parts.push(part)
-      part = ""
-      at++
-    } else part += char
-  }
-  if (quote !== null) return null
-  parts.push(part)
-  return parts.map((text) => text.trim()).filter((text) => text !== "")
-}
-
 const inside = (folder: string, path: string): boolean => {
   const rel = relative(folder, path)
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+}
+
+function isSafePrintf(rest: string[]): boolean {
+  const format = rest[0] === "--" ? rest[1] : rest[0]
+  return (
+    !rest[0]?.startsWith("-v") &&
+    format !== undefined &&
+    !format.replace(/%%|%s/g, "").includes("%")
+  )
+}
+
+function argsStayInCwd(rest: string[], quoted: string[], cwd: string): boolean {
+  for (const word of rest) {
+    if (quoted.some((text) => text.slice(1, -1) === word)) continue
+    const pathLike = word.startsWith("/") || word.startsWith("~") || word.includes("..")
+    if (pathLike && !(isAbsolute(word) && inside(cwd, resolve(word)))) return false
+  }
+  return true
+}
+
+function classifySegment(part: string, binary: string, cwd: string): "call" | "helper" | "invalid" {
+  const quoted = part.match(/'[^']*'|"[^"]*"/g) ?? []
+  const list = words(part)
+  if (list === null || list.length === 0) return "invalid"
+  const [program, ...rest] = list
+  if (program === "printf" && !isSafePrintf(rest)) return "invalid"
+  if (program !== binary && program !== "printf" && program !== "echo") return "invalid"
+  if (!argsStayInCwd(rest, quoted, cwd)) return "invalid"
+  return program === binary ? "call" : "helper"
 }
 
 /**
@@ -79,26 +55,9 @@ export function ownCommand(command: string, binary: string, cwd: string): boolea
   if (parts === null || parts.length === 0) return false
   let calls = 0
   for (const part of parts) {
-    const quoted = part.match(/'[^']*'|"[^"]*"/g) ?? []
-    const list = words(part)
-    if (list === null || list.length === 0) return false
-    const [program, ...rest] = list
-    if (program === "printf") {
-      const format = rest[0] === "--" ? rest[1] : rest[0]
-      if (
-        rest[0]?.startsWith("-v") ||
-        format === undefined ||
-        format.replace(/%%|%s/g, "").includes("%")
-      )
-        return false
-    }
-    if (program === binary) calls++
-    else if (program !== "printf" && program !== "echo") return false
-    for (const word of rest) {
-      if (quoted.some((text) => text.slice(1, -1) === word)) continue
-      const pathLike = word.startsWith("/") || word.startsWith("~") || word.includes("..")
-      if (pathLike && !(isAbsolute(word) && inside(cwd, resolve(word)))) return false
-    }
+    const kind = classifySegment(part, binary, cwd)
+    if (kind === "invalid") return false
+    if (kind === "call") calls++
   }
   return calls > 0
 }

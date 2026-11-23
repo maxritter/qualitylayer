@@ -69,6 +69,82 @@ async function input(request: Request): Promise<Record<string, unknown> | string
   return "The request is not a JSON object."
 }
 
+type LookRouteAction = "get-looks" | "put-look" | "put-order" | "put-title" | "reveal"
+
+const LOOK_ROUTE_RULES: Array<{
+  action: LookRouteAction
+  match: (parts: string[], method: string) => boolean
+}> = [
+  {
+    action: "get-looks",
+    match: (p, m) => m === "GET" && p.length === 3 && p[1] === "projects" && p[2] === "look",
+  },
+  {
+    action: "put-look",
+    match: (p, m) => m === "PUT" && p.length === 4 && p[1] === "projects" && p[2] === "look",
+  },
+  {
+    action: "put-order",
+    match: (p, m) => m === "PUT" && p.length === 3 && p[1] === "projects" && p[2] === "order",
+  },
+  {
+    action: "reveal",
+    match: (p, m) => m === "POST" && p.length === 4 && p[1] === "projects" && p[3] === "reveal",
+  },
+  {
+    action: "put-title",
+    match: (p, m) => m === "PUT" && p.length === 4 && p[1] === "tasks" && p[3] === "title",
+  },
+]
+
+function matchLookRoute(parts: string[], method: string): LookRouteAction | null {
+  if (parts[0] !== "api") return null
+  return LOOK_ROUTE_RULES.find((rule) => rule.match(parts, method))?.action ?? null
+}
+
+function decodeSegments(parts: string[]): string[] | null {
+  try {
+    return parts.map(decodeURIComponent)
+  } catch {
+    return null
+  }
+}
+
+async function runLookMutation(
+  ctx: Ctx,
+  action: "put-look" | "put-order" | "put-title",
+  segments: string[],
+  sent: Record<string, unknown>,
+): Promise<Result<unknown>> {
+  if (action === "put-order") return setOrder(ctx, sent.ids)
+  if (action === "put-look") {
+    const unknown = Object.keys(sent).find(
+      (key) => !["color", "label", "hidden", "artifacts"].includes(key),
+    )
+    if (unknown !== undefined)
+      return err({ code: "bad_args", message: `unknown field "${unknown}"` })
+    return setLook(ctx, segments[3] ?? "", sent as LookPatch)
+  }
+  const found = await locate(ctx, segments[2] ?? "")
+  return found.ok ? renameTask(ctx, found.data.task, sent.title) : found
+}
+
+async function dispatchLookAction(
+  ctx: Ctx,
+  action: LookRouteAction,
+  segments: string[],
+  request: Request,
+  hooks: { changed: () => void; opener: Opener },
+): Promise<Response> {
+  if (action === "get-looks") return answer({ ok: true, data: await readLooks(ctx) })
+  if (action === "reveal") return answer(await revealProject(ctx, segments[2] ?? "", hooks.opener))
+  const sent = await input(request)
+  if (typeof sent === "string") return bad(sent)
+  const result = await runLookMutation(ctx, action, segments, sent)
+  if (result.ok) hooks.changed()
+  return answer(result)
+}
+
 /**
  * `GET /api/projects/look`, `PUT /api/projects/look/<id>`, `PUT /api/projects/order` and
  * `PUT /api/tasks/<id>/title`, and `POST /api/projects/<id>/reveal` (the project's folder in the file
@@ -82,46 +158,13 @@ export async function projectLookRoute(
   changed: () => void = () => {},
   opener: Opener = systemOpener(),
 ): Promise<Response | null> {
-  const url = new URL(request.url)
-  const parts = url.pathname.split("/").filter(Boolean)
-  if (parts[0] !== "api") return null
-  const method = request.method
-  const isReveal = parts[1] === "projects" && parts[3] === "reveal" && parts.length === 4
-  const isLook = parts[1] === "projects" && parts[2] === "look" && !isReveal
-  const isOrder = parts[1] === "projects" && parts[2] === "order" && parts.length === 3
-  const isTitle = parts[1] === "tasks" && parts[3] === "title" && parts.length === 4
-  const matches =
-    (isLook && parts.length === 3 && method === "GET") ||
-    (isLook && parts.length === 4 && method === "PUT") ||
-    (isOrder && method === "PUT") ||
-    (isTitle && method === "PUT") ||
-    (isReveal && method === "POST")
-  if (!matches) return null
+  const parts = new URL(request.url).pathname.split("/").filter(Boolean)
+  const action = matchLookRoute(parts, request.method)
+  if (action === null) return null
   const refusal = refuse(request, guard, true)
   if (refusal !== null) return new Response(refusal.reason, { status: refusal.status })
 
-  let segments: string[]
-  try {
-    segments = parts.map(decodeURIComponent)
-  } catch {
-    return bad("malformed URL encoding")
-  }
-  if (method === "GET") return answer({ ok: true, data: await readLooks(ctx) })
-  if (isReveal) return answer(await revealProject(ctx, segments[2] ?? "", opener))
-  const sent = await input(request)
-  if (typeof sent === "string") return bad(sent)
-  let result: Result<unknown>
-  if (isOrder) {
-    result = await setOrder(ctx, sent.ids)
-  } else if (isLook) {
-    for (const key of Object.keys(sent))
-      if (!["color", "label", "hidden", "artifacts"].includes(key))
-        return bad(`unknown field "${key}"`)
-    result = await setLook(ctx, segments[3] ?? "", sent as LookPatch)
-  } else {
-    const found = await locate(ctx, segments[2] ?? "")
-    result = found.ok ? await renameTask(ctx, found.data.task, sent.title) : found
-  }
-  if (result.ok) changed()
-  return answer(result)
+  const segments = decodeSegments(parts)
+  if (segments === null) return bad("malformed URL encoding")
+  return dispatchLookAction(ctx, action, segments, request, { changed, opener })
 }

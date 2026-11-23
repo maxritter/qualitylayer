@@ -2,20 +2,15 @@ import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { type Ctx, ok, type Result } from "../../ctx.ts"
 import { type FiledHelper, type Helper, withBriefFiles } from "../briefs.ts"
-import { fillNames } from "../docs/names.ts"
 import { flowStepOf } from "../flow.ts"
 import { readComments } from "../gate/comments.ts"
 import { readGate } from "../gate/gate.ts"
 import { rememberHelperOffers } from "../helpers.ts"
 import { instructionsBlock } from "../instructions.ts"
-import { loadState } from "../licence/cache.ts"
-import { licenceHash } from "../licence/hash.ts"
-import { markText } from "../mark.ts"
 import { type RepoRef, resolveRepo } from "../paths.ts"
 import { MIGRATION_FILE } from "../records/contract.ts"
 import { requiredReply } from "../required-lines.ts"
 import { checkGeneratedBrief, writeGeneratedBrief } from "../run/bind.ts"
-import { shellQuote } from "../shell.ts"
 import type { Meanwhile } from "../task/question.ts"
 import {
   clarificationInstructions,
@@ -26,6 +21,7 @@ import {
 import { loadTask, type Task } from "../task/store.ts"
 import { agentActionable } from "../team/comments.ts"
 import { updateNotice } from "../update/notice.ts"
+import { fillTexts, markedFor, reportingTo } from "./reply-texts.ts"
 import type { NextPayload } from "./shared.ts"
 
 /** The task a reply is about, loaded once for every step of the reply below. */
@@ -91,15 +87,6 @@ async function withFiles({ ctx, task }: About, payload: NextPayload): Promise<Ne
     ...(Array.isArray(mapped.helpers) ? (mapped.helpers as FiledHelper[]) : []),
   ])
   return mapped
-}
-
-/** `value` with the file-name placeholders of every text in it filled. */
-function fillTexts(value: unknown): unknown {
-  if (typeof value === "string") return fillNames(value)
-  if (Array.isArray(value)) return value.map((item) => fillTexts(item))
-  if (value !== null && typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, fillTexts(item)]))
-  return value
 }
 
 /** Every text in a reply (instructions, templates, briefs, steps) names the task's files. */
@@ -237,42 +224,4 @@ async function meanwhileFor({ ctx, task }: About): Promise<Meanwhile> {
     if (await ctx.fs.exists(join(task.runtimeDir, MIGRATION_FILE))) throw cause
     return {}
   }
-}
-
-/** `change` over every text a reply carries to the agent: the instructions and each helper's brief. */
-function mapTexts(payload: NextPayload, change: (text: string) => string): NextPayload {
-  const mapped: NextPayload = { ...payload }
-  if (typeof mapped.instructions === "string") mapped.instructions = change(mapped.instructions)
-  const brief = (helper: Helper | FiledHelper): Helper | FiledHelper =>
-    "brief" in helper && typeof helper.brief === "string"
-      ? { ...helper, brief: change(helper.brief) }
-      : helper
-  if (typeof mapped.helper === "object" && mapped.helper !== null) {
-    mapped.helper = brief(mapped.helper as Helper | FiledHelper)
-  }
-  if (Array.isArray(mapped.helpers))
-    mapped.helpers = (mapped.helpers as (Helper | FiledHelper)[]).map(brief)
-  return mapped
-}
-
-/**
- * Every progress, check and verdict command in a reply names the QualityLayer home it reports to, so a
- * helper whose shell exports a temporary home of its own still reaches this build. A command that
- * already names a home keeps it: a reply built by a nested `next` passes through here twice.
- */
-const reportingTo = (home: string, payload: NextPayload): NextPayload =>
-  mapTexts(payload, (text) =>
-    text.replace(
-      /(QUALITYLAYER_HOME=(?:'[^']*'|\S+) )?(qualitylayer (?:progress|check|verdict) )/g,
-      (_match, named: string | undefined, command: string) =>
-        `${named ?? `QUALITYLAYER_HOME=${shellQuote(home)} `}${command}`,
-    ),
-  )
-
-/** Every text in a reply (the instructions, each helper's brief) marked for the licence it goes to. */
-async function markedFor(ctx: Ctx, payload: NextPayload): Promise<NextPayload> {
-  const key = (await loadState(ctx)).state?.key
-  if (key === undefined) return payload
-  const hash = licenceHash(key)
-  return mapTexts(payload, (text) => markText(text, hash))
 }

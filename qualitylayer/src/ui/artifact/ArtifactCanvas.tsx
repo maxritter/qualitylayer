@@ -84,6 +84,110 @@ function Board({
   )
 }
 
+function CanvasToolbar({
+  artifacts,
+  visibleCount,
+  compare,
+  onToggleCompare,
+  filter,
+  onFilter,
+  fitted,
+  percent,
+  onFit,
+  onStep,
+  onClose,
+}: {
+  artifacts: readonly Artifact[]
+  visibleCount: number
+  compare: readonly string[]
+  onToggleCompare: (file: string) => void
+  filter: string
+  onFilter: (value: string) => void
+  fitted: boolean
+  percent: string
+  onFit: () => void
+  onStep: (by: number) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="dg-bar tools dc-tools" role="toolbar" aria-label="Canvas tools">
+      <Hint label="Back to the artifact">
+        <button type="button" className="back" aria-label="Back to artifact" onClick={onClose}>
+          <ArrowLeftIcon aria-hidden="true" />
+        </button>
+      </Hint>
+      <span className="nm dc-name">Compare</span>
+      <span className="dc-count" role="status" aria-label={`${visibleCount} artboards`}>
+        {visibleCount}
+      </span>
+      <span className="dg-vs" aria-hidden="true" />
+      <fieldset className="dc-selection" aria-label="Artboards to compare">
+        {artifacts.map((artifact) => {
+          const on = compare.includes(artifact.file)
+          return (
+            <button
+              key={artifact.file}
+              type="button"
+              className="dc-chip"
+              aria-pressed={on}
+              title={artifact.title}
+              onClick={() => onToggleCompare(artifact.file)}
+            >
+              <FrameIcon aria-hidden="true" />
+              <span>{artifact.title}</span>
+            </button>
+          )
+        })}
+      </fieldset>
+      <label className="dc-find">
+        <SearchIcon aria-hidden="true" />
+        <input
+          type="search"
+          aria-label="Find artifacts"
+          placeholder="Find"
+          value={filter}
+          onChange={(e) => onFilter(e.target.value)}
+        />
+      </label>
+      <fieldset className="dg-zoom" aria-label="Zoom">
+        <Hint label="Zoom out">
+          <button
+            type="button"
+            className="dg-t"
+            aria-label="Zoom canvas out"
+            onClick={() => onStep(-0.1)}
+          >
+            <ZoomOutIcon aria-hidden="true" />
+          </button>
+        </Hint>
+        <Hint label="Fit the width">
+          <button
+            type="button"
+            className="dg-t pct"
+            aria-label={fitted ? "Fit canvas" : `${percent}, fit canvas`}
+            onClick={onFit}
+          >
+            {fitted ? "Fit" : percent}
+          </button>
+        </Hint>
+        <Hint label="Zoom in">
+          <button
+            type="button"
+            className="dg-t"
+            aria-label="Zoom canvas in"
+            onClick={() => onStep(0.1)}
+          >
+            <ZoomInIcon aria-hidden="true" />
+          </button>
+        </Hint>
+      </fieldset>
+      <output className="sr-only" aria-label="Canvas zoom">
+        {percent}
+      </output>
+    </div>
+  )
+}
+
 export function ArtifactCanvas({ artifacts, current, load, onOpen, onClose, theme }: Props) {
   const room = useRef<HTMLElement>(null)
   const [scale, setScale] = useState(0.33)
@@ -115,88 +219,26 @@ export function ArtifactCanvas({ artifacts, current, load, onOpen, onClose, them
     setFitted(false)
     setScale((s) => Math.min(1.5, Math.max(0.1, s + by)))
   }
+  const toggleCompare = (file: string) =>
+    setCompare((list) =>
+      list.includes(file) ? list.filter((item) => item !== file) : [...list, file],
+    )
   const percent = `${Math.round(scale * 100)}%`
   return (
     <section className="dc-workspace" aria-label="Artifact canvas" data-testid="artifact-workspace">
-      <div className="dg-bar tools dc-tools" role="toolbar" aria-label="Canvas tools">
-        <Hint label="Back to the artifact">
-          <button type="button" className="back" aria-label="Back to artifact" onClick={onClose}>
-            <ArrowLeftIcon aria-hidden="true" />
-          </button>
-        </Hint>
-        <span className="nm dc-name">Compare</span>
-        <span className="dc-count" role="status" aria-label={`${visible.length} artboards`}>
-          {visible.length}
-        </span>
-        <span className="dg-vs" aria-hidden="true" />
-        <fieldset className="dc-selection" aria-label="Artboards to compare">
-          {artifacts.map((artifact) => {
-            const on = compare.includes(artifact.file)
-            return (
-              <button
-                key={artifact.file}
-                type="button"
-                className="dc-chip"
-                aria-pressed={on}
-                title={artifact.title}
-                onClick={() =>
-                  setCompare((list) =>
-                    on ? list.filter((file) => file !== artifact.file) : [...list, artifact.file],
-                  )
-                }
-              >
-                <FrameIcon aria-hidden="true" />
-                <span>{artifact.title}</span>
-              </button>
-            )
-          })}
-        </fieldset>
-        <label className="dc-find">
-          <SearchIcon aria-hidden="true" />
-          <input
-            type="search"
-            aria-label="Find artifacts"
-            placeholder="Find"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-        </label>
-        <fieldset className="dg-zoom" aria-label="Zoom">
-          <Hint label="Zoom out">
-            <button
-              type="button"
-              className="dg-t"
-              aria-label="Zoom canvas out"
-              onClick={() => step(-0.1)}
-            >
-              <ZoomOutIcon aria-hidden="true" />
-            </button>
-          </Hint>
-          <Hint label="Fit the width">
-            <button
-              type="button"
-              className="dg-t pct"
-              aria-label={fitted ? "Fit canvas" : `${percent}, fit canvas`}
-              onClick={fit}
-            >
-              {fitted ? "Fit" : percent}
-            </button>
-          </Hint>
-          <Hint label="Zoom in">
-            <button
-              type="button"
-              className="dg-t"
-              aria-label="Zoom canvas in"
-              onClick={() => step(0.1)}
-            >
-              <ZoomInIcon aria-hidden="true" />
-            </button>
-          </Hint>
-        </fieldset>
-        <output className="sr-only" aria-label="Canvas zoom">
-          {percent}
-        </output>
-      </div>
+      <CanvasToolbar
+        artifacts={artifacts}
+        visibleCount={visible.length}
+        compare={compare}
+        onToggleCompare={toggleCompare}
+        filter={filter}
+        onFilter={setFilter}
+        fitted={fitted}
+        percent={percent}
+        onFit={fit}
+        onStep={step}
+        onClose={onClose}
+      />
       <section
         className="dc-room"
         ref={room}

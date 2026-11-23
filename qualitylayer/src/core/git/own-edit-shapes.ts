@@ -137,36 +137,46 @@ export async function changedAfterOwnEdit(
   return moved
 }
 
+async function readCountsAt(
+  ctx: Ctx,
+  root: string,
+  path: string,
+  rev: string,
+): Promise<number[] | null> {
+  const read = await ctx.git.run(root, ["cat-file", "--filters", `${rev}:${path}`], {
+    maxOutputBytes: CONTENT_LIMIT,
+  })
+  return read.code === 0 ? byteCounts(new TextEncoder().encode(read.stdout)) : null
+}
+
+async function readWorkCounts(ctx: Ctx, root: string, path: string): Promise<number[] | null> {
+  if (!ctx.fs.readRegularFile) return null
+  try {
+    return byteCounts(await ctx.fs.readRegularFile(join(root, path), CONTENT_LIMIT))
+  } catch {
+    return null
+  }
+}
+
 /**
  * Whether what changed in the file since the task's last edit is exactly what commits since then
  * brought to HEAD: another session committed its own hunks of the file, so they are no one's
  * uncommitted work, and the file is the task's own plus HEAD's.
  */
 async function landedSince(ctx: Ctx, root: string, path: string, seen: Seen): Promise<boolean> {
-  if (!ctx.fs.readRegularFile) return false
+  const work = await readWorkCounts(ctx, root, path)
+  if (work === null) return false
   // Commit times have whole seconds: a commit of the edit's own second may be from before it.
   const since = new Date(Math.floor(seen.at / 1000) * 1000).toISOString()
   const log = await ctx.git.run(root, ["log", "--format=%H", `--since=${since}`, "--", path])
   const commits = log.code === 0 ? log.stdout.split("\n").filter(Boolean).slice(0, 8) : []
   if (commits.length === 0) return false
-  const at = async (rev: string) => {
-    const read = await ctx.git.run(root, ["cat-file", "--filters", `${rev}:${path}`], {
-      maxOutputBytes: CONTENT_LIMIT,
-    })
-    return read.code === 0 ? byteCounts(new TextEncoder().encode(read.stdout)) : null
-  }
-  const head = await at("HEAD")
+  const head = await readCountsAt(ctx, root, path, "HEAD")
   if (head === null) return false
-  let work: number[]
-  try {
-    work = byteCounts(await ctx.fs.readRegularFile(join(root, path), CONTENT_LIMIT))
-  } catch {
-    return false
-  }
   // The file as the task left it: now, less what the commits since then added, plus what they took
   // out; tried from the newest commit back, since which of them came after the edit is not known.
   for (const commit of commits) {
-    const before = await at(`${commit}^`)
+    const before = await readCountsAt(ctx, root, path, `${commit}^`)
     if (before === null) continue
     const left = work.map((count, byte) => count - (head[byte] ?? 0) + (before[byte] ?? 0))
     if (left.every((count) => count >= 0) && shapeOfCounts(left) === seen.shape) return true

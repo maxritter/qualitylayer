@@ -4,24 +4,13 @@
 // record is one model call; the Conversation's turn ends when the assistant answers without asking for a tool.
 // Hook, model-timing and other bookkeeping rows are not part of the conversation.
 import { conversationAttachments, imageContentText, imageMessageText } from "./attachments.ts"
-import {
-  editDiff,
-  inputJson,
-  type Json,
-  jsonCount,
-  jsonObject,
-  jsonText,
-  patchDiffs,
-  resultSummary,
-  shellKind,
-  targetOf,
-} from "./tools.ts"
+import { copilotComplete, copilotRequest, copilotUsageRecord } from "./copilot-tools.ts"
+import { type Json, jsonCount, jsonObject, jsonText } from "./tools.ts"
 import {
   bounded,
   CONVERSATION_LIMITS,
   type ConversationEvent,
   type ConversationUsage,
-  type DiffSummary,
   type MapResult,
   nativeEffort,
   type ToolKind,
@@ -66,7 +55,6 @@ export const copilotState = (): CopilotState => ({
 })
 
 const OPEN_CALLS = 200
-const TARGETS = ["path", "command", "pattern", "url", "query", "description"]
 
 /** Native selection events name the choice; usage names the model routed for a call. */
 export function copilotSelectedModel(type: unknown, value: unknown): string | undefined {
@@ -81,83 +69,27 @@ export function copilotSelectedModel(type: unknown, value: unknown): string | un
   return jsonText(chosen) || undefined
 }
 
-/** What Copilot's built-in tools do. A tool of an MCP server is `<server>-<tool>`. */
-const KINDS: Record<string, ToolKind> = {
-  bash: "shell",
-  powershell: "shell",
-  read_bash: "shell",
-  write_bash: "shell",
-  stop_bash: "shell",
-  view: "read",
-  create: "write",
-  edit: "edit",
-  str_replace_editor: "edit",
-  apply_patch: "edit",
-  grep: "search",
-  rg: "search",
-  glob: "search",
-  web_fetch: "web",
-  web_search: "web",
-  task: "subagent",
-  update_todo: "todo",
-  sql: "todo",
-}
-
-const BUILT_IN = new Set([
-  ...Object.keys(KINDS),
-  "skill",
-  "ask_user",
-  "report_intent",
-  "list_agents",
-])
-
-function toolOf(name: string, input: Json): { tool: ToolKind; detail?: string } {
-  const known = KINDS[name]
-  if (known === "shell") return shellKind(jsonText(input.command))
-  if (known) return { tool: known }
-  return { tool: BUILT_IN.has(name) || !name.includes("-") ? "other" : "mcp" }
-}
-
-/** Added and removed lines of an edit or a new file, from the call's own arguments. */
-function argumentDiff(name: string, input: Json): DiffSummary | undefined {
-  const path = jsonText(input.path)
-  if (name === "apply_patch") return patchDiffs(jsonText(input.input) || jsonText(input.patch))[0]
-  if (!path) return undefined
-  if (name === "create" && typeof input.file_text === "string")
-    return editDiff(path, "", input.file_text)
-  const before = jsonText(input.old_str)
-  const after = jsonText(input.new_str)
-  return name === "edit" && (before || after) ? editDiff(path, before, after) : undefined
-}
-
-function request(
-  state: CopilotState,
-  events: ConversationEvent[],
-  item: Json,
-  index: number,
-  at?: string,
-) {
-  const callId = jsonText(item.toolCallId)
-  const name = jsonText(item.name) || "tool"
-  const input = jsonObject(item.arguments) ?? {}
-  if (!callId) return
-  const kind = toolOf(name, input)
-  const id = `r${state.rows}:${index}`
-  state.calls[callId] = { id, name, tool: kind.tool, input }
+function userMessage(state: CopilotState, events: ConversationEvent[], data: Json, at?: string) {
+  const attachments = conversationAttachments(data)
+  const text = imageMessageText(imageContentText(data.content), attachments)
+  state.startedAt = at ? Date.parse(at) || undefined : undefined
+  state.answered = false
+  if (!text && !attachments.length) return
   events.push({
-    id,
+    id: `r${state.rows}`,
     at,
-    kind: "tool",
-    callId,
-    name,
-    tool: kind.tool,
-    target: targetOf(kind.tool, input, TARGETS),
-    detail: kind.detail,
-    input: inputJson(input),
+    kind: "user",
+    text: bounded(text, CONVERSATION_LIMITS.textChars),
+    ...(attachments.length ? { attachments } : {}),
   })
 }
 
-function message(state: CopilotState, events: ConversationEvent[], data: Json, at?: string) {
+function assistantMessage(
+  state: CopilotState,
+  events: ConversationEvent[],
+  data: Json,
+  at?: string,
+) {
   const reasoning = jsonText(data.reasoningText).trim()
   if (reasoning)
     events.push({
@@ -177,58 +109,15 @@ function message(state: CopilotState, events: ConversationEvent[], data: Json, a
   const requests = Array.isArray(data.toolRequests) ? data.toolRequests : []
   requests.forEach((item, index) => {
     const call = jsonObject(item)
-    if (call) request(state, events, call, index, at)
+    if (call) copilotRequest(state, events, call, index, at)
   })
   state.answered = requests.length === 0
-}
-
-function complete(state: CopilotState, events: ConversationEvent[], data: Json, at?: string) {
-  const callId = jsonText(data.toolCallId)
-  const call = state.calls[callId]
-  if (!callId || !call) return
-  delete state.calls[callId]
-  const ok = data.success !== false
-  const output = ok
-    ? jsonText(jsonObject(data.result)?.content)
-    : jsonText(jsonObject(data.error)?.message) || jsonText(jsonObject(data.result)?.content)
-  const diff = ok ? argumentDiff(call.name, call.input) : undefined
-  events.push({
-    id: `${call.id}:result`,
-    at,
-    kind: "tool-result",
-    callId,
-    ok,
-    summary: diff
-      ? `+${diff.added} -${diff.removed}`
-      : resultSummary(call.tool, ok, output.trimEnd()),
-    output: output ? bounded(output.trimEnd(), CONVERSATION_LIMITS.outputChars) : undefined,
-    diff,
-  })
-}
-
-function usageRecord(state: CopilotState, data: Json) {
-  const usage = jsonObject(data.usage)
-  if (!usage) return
-  const input = jsonCount(usage.inputTokens)
-  const read = jsonCount(usage.cacheReadTokens)
-  const write = jsonCount(usage.cacheWriteTokens)
-  const output = jsonCount(usage.outputTokens)
-  state.turns++
-  state.input += Math.max(0, input - read - write)
-  state.output += output
-  state.cacheRead += read
-  state.cacheWrite += write
-  state.turnTokens += input + output
-  state.contextUsed = input || state.contextUsed
-  state.contextWindow = jsonCount(usage.maxPromptTokens) || state.contextWindow
-  state.observedModel = jsonText(usage.model) || state.observedModel
-  state.effort = nativeEffort(usage.reasoningEffort) ?? state.effort
 }
 
 function turnEnd(state: CopilotState, events: ConversationEvent[], at?: string) {
   if (!state.answered) return
   const began = state.startedAt
-  const ended = at ? Date.parse(at) : Number.NaN
+  const ended = Date.parse(at ?? "")
   events.push({
     id: `r${state.rows}`,
     at,
@@ -242,25 +131,17 @@ function turnEnd(state: CopilotState, events: ConversationEvent[], at?: string) 
   state.startedAt = undefined
 }
 
-function row(state: CopilotState, events: ConversationEvent[], value: Json) {
-  const type = jsonText(value.type)
-  const data = jsonObject(value.data) ?? {}
-  const at = jsonText(value.timestamp) || undefined
-  if (type === "user.message") {
-    const attachments = conversationAttachments(data)
-    const text = imageMessageText(imageContentText(data.content), attachments)
-    state.startedAt = at ? Date.parse(at) || undefined : undefined
-    state.answered = false
-    if (text || attachments.length)
-      events.push({
-        id: `r${state.rows}`,
-        at,
-        kind: "user",
-        text: bounded(text, CONVERSATION_LIMITS.textChars),
-        ...(attachments.length ? { attachments: attachments } : {}),
-      })
-  } else if (type === "assistant.message") message(state, events, data, at)
-  else if (type === "assistant.reasoning") {
+type RowHandler = (
+  state: CopilotState,
+  events: ConversationEvent[],
+  data: Json,
+  at?: string,
+) => void
+
+const ROW_HANDLERS: Record<string, RowHandler> = {
+  "user.message": userMessage,
+  "assistant.message": assistantMessage,
+  "assistant.reasoning": (state, events, data, at) => {
     const text = jsonText(data.content).trim()
     if (text)
       events.push({
@@ -269,28 +150,33 @@ function row(state: CopilotState, events: ConversationEvent[], value: Json) {
         kind: "thinking",
         text: bounded(text, CONVERSATION_LIMITS.textChars),
       })
-  } else if (type === "tool.execution_complete") complete(state, events, data, at)
-  else if (type === "assistant.turn_end") turnEnd(state, events, at)
-  else if (type === "session.usage_record") usageRecord(state, data)
-  else if (type === "session.start") {
-    state.model = copilotSelectedModel(type, data) || state.model
+  },
+  "tool.execution_complete": copilotComplete,
+  "assistant.turn_end": (state, events, _data, at) => turnEnd(state, events, at),
+  "session.usage_record": (state, _events, data) => copilotUsageRecord(state, data),
+  "session.start": (state, _events, data) => {
+    state.model = copilotSelectedModel("session.start", data) || state.model
     state.effort = nativeEffort(data.reasoningEffort) ?? state.effort
-  } else if (type === "session.model_change") {
-    const chosen = copilotSelectedModel(type, data)
+  },
+  "session.model_change": (state, _events, data) => {
+    const chosen = copilotSelectedModel("session.model_change", data)
     // A call made on the old selection says nothing about the new one.
     if (chosen && chosen !== state.model) state.observedModel = undefined
     state.model = chosen || state.model
     state.effort = nativeEffort(data.reasoningEffort) ?? state.effort
-  } else if (type === "session.error")
+  },
+  "session.error": (state, events, data, at) => {
     events.push({
       id: `r${state.rows}`,
       at,
       kind: "error",
       text: bounded(jsonText(data.message) || "Copilot stopped with an error", 400),
     })
-  else if (type === "abort")
+  },
+  abort: (state, events, _data, at) => {
     events.push({ id: `r${state.rows}`, at, kind: "error", text: "Stopped" })
-  else if (type === "session.compaction_complete")
+  },
+  "session.compaction_complete": (state, events, data, at) => {
     events.push({
       id: `r${state.rows}`,
       at,
@@ -298,6 +184,13 @@ function row(state: CopilotState, events: ConversationEvent[], value: Json) {
       before: jsonCount(data.preCompactionTokens) || undefined,
       after: jsonCount(data.postCompactionTokens) || undefined,
     })
+  },
+}
+
+function row(state: CopilotState, events: ConversationEvent[], value: Json) {
+  const handler = ROW_HANDLERS[jsonText(value.type)]
+  if (!handler) return
+  handler(state, events, jsonObject(value.data) ?? {}, jsonText(value.timestamp) || undefined)
 }
 
 function usageOf(state: CopilotState): ConversationUsage | undefined {

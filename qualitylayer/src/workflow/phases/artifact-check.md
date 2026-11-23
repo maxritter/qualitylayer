@@ -14,11 +14,14 @@ and the only other file you write is your report (one report for a draft with se
    missing. Without Chrome, say so and mark every visual point not checked.
 3. **Hold the pictures against the acceptance points**: a point the artifact does not show is the most
    serious finding; one only the finished program can prove is not a finding. **Then against the craft** (`qualitylayer artifact guide`, if not in context): reading order, grouping,
-   consistency with real components, truthful content, reachable empty, loading, error, disabled and focus
-   states, wrapping at supported widths and each theme. A desktop screen framed by `.scroll-x` at 390 is
-   no failed phone layout. Compute contrast from actual colours; leave keyboard and zoom unverified until
-   exercised. Report `anchor: "missing"` comments and `artifact tokens <name>` drift as findings; change
-   nothing.
+   consistency with real components and exact source metrics, truthful content (no filler cards or invented
+   numbers), targeted scope (no unasked redesigns of untouched parts), real semantic controls (`<button>`,
+   `<a href>`, `<input>` + `<label>`), reachable empty, loading, error, disabled and focus states, ≥ 44 px
+   touch targets and no fake OS chrome on mobile screens, and wrapping at supported widths and each theme. A
+   desktop screen framed by `.scroll-x` at 390 is no failed phone layout. Compute contrast from actual
+   colours (≥ 4.5:1 normal text, ≥ 3:1 at 24 px+, lightness separation not hue alone); leave keyboard and zoom
+   unverified until exercised. Report `anchor: "missing"` comments and `artifact tokens <name>` drift as
+   findings; change nothing.
 
 Write the report to a file in your scratch folder and return its absolute path and report in your final
 message. The lead files a workflow helper's report with `qualitylayer helper result <helper-id> --file

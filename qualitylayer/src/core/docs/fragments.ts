@@ -1,344 +1,32 @@
-import * as css from "css-tree"
-import {
-  type DefaultTreeAdapterMap,
-  parseFragment,
-  serialize,
-  Tokenizer,
-  TokenizerMode,
-} from "parse5"
 import { FENCE_MAX_BYTES, type FragmentKind, readHeaderLine, SURFACES } from "./fence-header.ts"
-import { FRAGMENT_PROPERTIES } from "./fragment-properties.ts"
+import { boundedErrors, FRAGMENT_ATTRS, FRAGMENT_TAGS } from "./fragment-dom.ts"
+import { inspectFragment } from "./fragment-inspect.ts"
 
 export { type FragmentKind, SURFACES } from "./fence-header.ts"
+export { panelNodes } from "./fragment-dom.ts"
+
 export type FragmentError = {
   rule: string
   message: string
   line: number
   severity: "error" | "warning"
 }
-const ID = /^[a-z][a-z0-9-]*$/
+
 const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
+
 export const LENSES = new Set(
   "request-lifecycle data-flow state-transitions route-page-map command-surface external-integrations dependency-map orchestration storage architecture sequence state data screens commands services flow".split(
     " ",
   ),
 )
-const TAGS = new Set(
-  "div span h1 h2 h3 p br a small strong em button input select option textarea label table thead tbody tr th td ul ol li hr".split(
-    " ",
-  ),
-)
-const ATTRS = new Set(
-  "class id style type value placeholder checked selected disabled colspan href".split(" "),
-)
-const KEYWORDS = new Set(
-  "auto none block inline inline-block flex inline-flex grid inline-grid contents flow-root table table-row table-cell row row-reverse column column-reverse wrap nowrap wrap-reverse normal start end center flex-start flex-end stretch baseline space-between space-around space-evenly left right justify pre pre-wrap pre-line break-spaces visible hidden clip ellipsis span".split(
-    " ",
-  ),
-)
-type Node = DefaultTreeAdapterMap["node"]
-export const MARKS = ["new", "changed", "removed", "risk"] as const
-export type PanelNode = { id: string; label: string; marks: string[]; region: string; line: number }
-export function panelNodes(html: string): PanelNode[] {
-  const nodes: PanelNode[] = []
-  let index = 0
-  const visit = (node: Node, region: string) => {
-    if (!("tagName" in node)) return
-    const own = classes(node)
-    if (own.some((c) => ["panel", "layer"].includes(c))) {
-      region = attr(node, "data-role") ?? String(index)
-      index++
-    }
-    if (own.includes("node"))
-      nodes.push({
-        id: attr(node, "data-id") ?? "",
-        label: textOf(node).trim(),
-        marks: own.filter((c) => MARKS.includes(c as (typeof MARKS)[number])),
-        region,
-        line: node.sourceCodeLocation?.startLine ?? 1,
-      })
-    for (const child of node.childNodes) visit(child, region)
-  }
-  for (const child of parseFragment(html, { sourceCodeLocationInfo: true }).childNodes)
-    visit(child, "0")
-  return nodes
-}
-const boundedErrors = (errors: FragmentError[]) => {
-  const kept = errors.slice(0, 40)
-  const firstError = errors.find((e) => e.severity === "error")
-  if (firstError !== undefined && !kept.some((e) => e.severity === "error"))
-    kept[kept.length - 1] = firstError
-  return kept.map((e) => ({ ...e, message: e.message.slice(0, 240) }))
-}
+
 export function fragmentVocabulary(kind: FragmentKind): { tags: string[]; attrs: string[] } {
   return {
-    tags: [...TAGS, ...(kind === "panel" ? ["section"] : [])],
-    attrs: [...ATTRS, ...(kind === "panel" ? ["data-title", "data-role", "data-id"] : [])].filter(
-      (a) => kind !== "panel" || a !== "id",
-    ),
-  }
-}
-type Element = DefaultTreeAdapterMap["element"]
-const classes = (node: Element) =>
-  (node.attrs.find((a) => a.name === "class")?.value ?? "").split(/\s+/)
-const attr = (node: Element, name: string) => node.attrs.find((a) => a.name === name)?.value
-const textOf = (node: Node): string =>
-  node.nodeName === "br"
-    ? "\n"
-    : "value" in node
-      ? node.value
-      : "childNodes" in node
-        ? node.childNodes.map(textOf).join("")
-        : ""
-
-function safeStyle(style: string, fail: (rule: string, message: string) => void): void {
-  try {
-    const ast = css.parse(style, { context: "declarationList" })
-    css.walk(ast, (node) => {
-      if (node.type === "Atrule" || node.type === "Raw")
-        fail("fence-style-safe", `invalid style: ${style}`)
-      if (node.type !== "Declaration") return
-      const property = node.property.toLowerCase()
-      const value = css.generate(node.value)
-      let safe =
-        FRAGMENT_PROPERTIES.has(property) &&
-        !node.important &&
-        !/[\\]/.test(style) &&
-        css.lexer.matchProperty(property, node.value).error === null
-      css.walk(node.value, (valueNode) => {
-        if (valueNode.type === "Function" && !["minmax", "repeat"].includes(valueNode.name))
-          safe = false
-        if (valueNode.type === "Url" || valueNode.type === "Raw") safe = false
-        if (valueNode.type === "Dimension") {
-          const n = Number(valueNode.value)
-          if (!["px", "fr"].includes(valueNode.unit) || n < 0 || n > 2000) safe = false
-        }
-        if (
-          valueNode.type === "Percentage" &&
-          (Number(valueNode.value) < 0 || Number(valueNode.value) > 100)
-        )
-          safe = false
-        if (
-          valueNode.type === "Number" &&
-          (Number(valueNode.value) > 2000 || (Number(valueNode.value) < 0 && property !== "order"))
-        )
-          safe = false
-        if (valueNode.type === "Identifier" && !KEYWORDS.has(valueNode.name)) safe = false
-        if (valueNode.type === "Brackets") safe = false
-      })
-      if (property === "overflow" && !/^(visible|hidden|auto)$/.test(value)) safe = false
-      if (property === "order" && (!/^-?\d+$/.test(value) || Math.abs(Number(value)) > 9))
-        safe = false
-      if (!safe) fail("fence-style-safe", `unsafe style ${property}: ${value}`)
-    })
-  } catch {
-    fail("fence-style-safe", `invalid style: ${style}`)
-  }
-}
-
-function inspect(kind: FragmentKind, html: string): { fragment: string; errors: FragmentError[] } {
-  const errors: FragmentError[] = []
-  // Fragment parsing drops document wrappers. Check the original tokens too, so a stray tag cannot disappear into trusted markup.
-  const checkTag = (tagName: string, line: number) => {
-    if (!TAGS.has(tagName) && !(kind === "panel" && tagName === "section"))
-      errors.push({
-        rule: `${kind}-fragment`,
-        message: `tag <${tagName}> is not allowed`,
-        line,
-        severity: "error",
-      })
-  }
-  const tokenizer = new Tokenizer(
-    { sourceCodeLocationInfo: true },
-    {
-      onStartTag(token) {
-        checkTag(token.tagName, token.location?.startLine ?? 1)
-        if (token.tagName === "textarea") tokenizer.state = TokenizerMode.RCDATA
-      },
-      onEndTag(token) {
-        checkTag(token.tagName, token.location?.startLine ?? 1)
-      },
-      onDoctype(token) {
-        errors.push({
-          rule: `${kind}-fragment`,
-          message: "a fragment cannot contain a doctype",
-          line: token.location?.startLine ?? 1,
-          severity: "error",
-        })
-      },
-      onComment() {},
-      onEof() {},
-      onCharacter() {},
-      onNullCharacter() {},
-      onWhitespaceCharacter() {},
-    },
-  )
-  tokenizer.write(html, true)
-  const tree = parseFragment(html, {
-    sourceCodeLocationInfo: true,
-    onParseError: (e) =>
-      errors.push({
-        rule: `${kind}-fragment`,
-        message: `invalid HTML: ${e.code}`,
-        line: e.startLine,
-        severity: "error",
-      }),
-  })
-  const roots = tree.childNodes.filter(
-    (n) => !("value" in n && n.value.trim() === "") && n.nodeName !== "#comment",
-  )
-  const root = roots[0]
-  if (
-    roots.length !== 1 ||
-    root === undefined ||
-    !("tagName" in root) ||
-    !classes(root).some((c) =>
-      (kind === "wireframe" ? ["screen"] : ["compare", "layers", "grid", "panel"]).includes(c),
-    )
-  )
-    errors.push({
-      rule: `${kind}-fragment`,
-      message: `expected one ${kind === "wireframe" ? ".screen" : ".compare, .layers, .grid or .panel"} root`,
-      line: 1,
-      severity: "error",
-    })
-  const ids = new Set<string>()
-  if (
-    kind === "panel" &&
-    root !== undefined &&
-    "tagName" in root &&
-    classes(root).includes("compare")
-  ) {
-    const count = root.childNodes.filter(
-      (node) => "tagName" in node && classes(node).includes("panel"),
-    ).length
-    if (count < 2 || count > 3)
-      errors.push({
-        rule: "panel-fragment",
-        message: "a comparison needs two or three panel regions",
-        line: 1,
-        severity: "error",
-      })
-  }
-  const regions = new Map<string, Set<string>>()
-  const regionCounts = new Map<string, number>()
-  const roles = new Set<string>()
-  let regionIndex = 0
-  const visit = (node: Node, region: string) => {
-    if (!("tagName" in node)) return
-    const line = node.sourceCodeLocation?.startLine ?? 1
-    const fail = (rule: string, message: string) =>
-      errors.push({ rule, message, line, severity: "error" as const })
-    if (!TAGS.has(node.tagName) && !(kind === "panel" && node.tagName === "section"))
-      fail(`${kind}-fragment`, `tag <${node.tagName}> is not allowed`)
-    for (const a of node.attrs) {
-      if (
-        a.namespace !== undefined ||
-        !(
-          ATTRS.has(a.name) ||
-          (kind === "panel" && ["data-title", "data-role", "data-id"].includes(a.name))
-        ) ||
-        (kind === "panel" && a.name === "id")
-      )
-        fail(`${kind}-fragment`, `attribute ${a.name} is not allowed`)
-      if (a.name === "href" && a.value !== "#") fail(`${kind}-fragment`, 'href must be "#"')
-      if (a.name === "id") {
-        if (!ID.test(a.value) || ids.has(a.value))
-          fail(`${kind}-fragment`, `invalid or duplicate id: ${a.value}`)
-        ids.add(a.value)
-      }
-      if (kind === "panel" && a.name === "data-id" && !ID.test(a.value))
-        fail("panel-fragment", `invalid data-id: ${a.value}`)
-      if (a.name === "style") safeStyle(a.value, fail)
-    }
-    const own = classes(node)
-    if (kind === "panel") {
-      const marks = own.filter((c) => MARKS.includes(c as (typeof MARKS)[number]))
-      if (marks.length > 0 && !own.includes("node"))
-        fail("panel-marks", "marks belong only on nodes")
-      if (marks.filter((c) => c !== "risk").length > 1)
-        fail("panel-marks", "a node has at most one change mark")
-    }
-    if (
-      kind === "wireframe" &&
-      (node.tagName === "button" || own.some((c) => ["box", "field", "pill"].includes(c)))
-    ) {
-      const text = textOf(node).trim()
-      if (text === "" || /\b(?:lorem|placeholder|todo)\b/i.test(text))
-        errors.push({
-          rule: "wireframe-labels",
-          message: "use a visible, real label for this box",
-          line,
-          severity: "warning",
-        })
-    }
-    if (kind === "panel" && own.some((c) => ["panel", "layer"].includes(c))) {
-      const role = attr(node, "data-role")
-      region = role ?? String(regionIndex)
-      regionIndex++
-      if (role !== undefined && (!ID.test(role) || roles.has(role)))
-        fail("panel-fragment", `invalid or duplicate region role: ${role}`)
-      if (role !== undefined) roles.add(role)
-    }
-    if (kind === "panel" && own.includes("node")) {
-      const id = attr(node, "data-id") ?? ""
-      const seen = regions.get(region) ?? new Set<string>()
-      if (!ID.test(id)) fail("panel-fragment", `invalid data-id in region ${region}: ${id}`)
-      if (seen.has(id))
-        errors.push({
-          rule: "panel-ids",
-          message: `duplicate data-id in region ${region}: ${id}`,
-          line,
-          severity: "warning",
-        })
-      seen.add(id)
-      regions.set(region, seen)
-      regionCounts.set(region, (regionCounts.get(region) ?? 0) + 1)
-      if (!textOf(node).trim() || /\b(?:lorem|placeholder|todo)\b/i.test(textOf(node)))
-        fail("panel-labels", "use a visible, real label for this node")
-    }
-    if (kind === "panel" && own.includes("arrow") && !/[a-zA-Z]{2,}/.test(textOf(node)))
-      fail("panel-fragment", "an arrow needs a word after its glyph")
-    for (const child of node.childNodes) visit(child, region)
-  }
-  for (const node of tree.childNodes) visit(node, "0")
-  if (kind === "panel") {
-    for (const [region, count] of regionCounts)
-      if (count > 8)
-        errors.push({
-          rule: "panel-size",
-          message: `region ${region} has ${count} nodes; keep at most twelve`,
-          line: 1,
-          severity: count > 12 ? "error" : "warning",
-        })
-    if (root !== undefined && "tagName" in root && classes(root).includes("compare")) {
-      const nodes = panelNodes(html)
-      const today = new Set(nodes.filter((n) => n.region === "today").map((n) => n.id))
-      if (roles.has("today") && roles.has("after"))
-        for (const node of nodes.filter((n) => n.region === "after")) {
-          const exists = today.has(node.id)
-          const message =
-            node.marks.includes("new") && exists
-              ? `new node ${node.id} already exists today`
-              : node.marks.includes("removed") && !exists
-                ? `removed node ${node.id} does not exist today`
-                : !exists && !node.marks.includes("new") && !node.marks.includes("removed")
-                  ? `node ${node.id} is missing today and has no new mark`
-                  : null
-          if (message !== null)
-            errors.push({
-              rule: "panel-marks",
-              message,
-              line: node.line,
-              severity:
-                node.marks.includes("new") || node.marks.includes("removed") ? "error" : "warning",
-            })
-        }
-    }
-  }
-  return {
-    fragment: errors.some((e) => e.severity === "error") ? "" : serialize(tree),
-    errors: boundedErrors(errors),
+    tags: [...FRAGMENT_TAGS, ...(kind === "panel" ? ["section"] : [])],
+    attrs: [
+      ...FRAGMENT_ATTRS,
+      ...(kind === "panel" ? ["data-title", "data-role", "data-id"] : []),
+    ].filter((a) => kind !== "panel" || a !== "id"),
   }
 }
 
@@ -347,26 +35,15 @@ export function fenceValid(kind: FragmentKind, text: string): boolean {
   return !parseFence(kind, text).errors.some((error) => error.severity === "error")
 }
 
-export function parseFence(
+function parseHeaderLines(
   kind: FragmentKind,
-  body: string,
-): { header: Record<string, string>; fragment: string; errors: FragmentError[] } {
-  const header: Record<string, string> = {}
-  const errors: FragmentError[] = []
-  const fail = (message: string, line: number) =>
-    errors.push({ rule: `${kind}-header`, message, line, severity: "error" as const })
-  if (body.length > FENCE_MAX_BYTES || new TextEncoder().encode(body).length > FENCE_MAX_BYTES)
-    return {
-      header,
-      fragment: "",
-      errors: [{ rule: "fence-size", message: "fence exceeds 24 KB", line: 1, severity: "error" }],
-    }
-  const lines = body.split(/\r?\n/)
-  const split = lines.findIndex((l) => l.trim() === "")
-  if (split < 0) fail("header needs a blank line before the fragment", 1)
+  headerLines: string[],
+  header: Record<string, string>,
+  fail: (message: string, line: number) => void,
+): void {
   const keys =
     kind === "wireframe" ? ["name", "surface", "title", "state"] : ["name", "lens", "title"]
-  lines.slice(0, split < 0 ? lines.length : split).forEach((line, index) => {
+  headerLines.forEach((line, index) => {
     const match = readHeaderLine(line)
     const key = match?.[1] ?? ""
     const value = match?.[2] ?? ""
@@ -381,7 +58,28 @@ export function parseFence(
   })
   if (kind === "wireframe" && !Object.hasOwn(SURFACES, header.surface ?? ""))
     fail("surface must be browser, desktop, phone, popover or panel", 1)
-  const inspected = inspect(kind, split < 0 ? "" : lines.slice(split + 1).join("\n"))
+}
+
+export function parseFence(
+  kind: FragmentKind,
+  body: string,
+): { header: Record<string, string>; fragment: string; errors: FragmentError[] } {
+  const header: Record<string, string> = {}
+  const errors: FragmentError[] = []
+  const fail = (message: string, line: number) =>
+    errors.push({ rule: `${kind}-header`, message, line, severity: "error" as const })
+  if (body.length > FENCE_MAX_BYTES || new TextEncoder().encode(body).length > FENCE_MAX_BYTES) {
+    return {
+      header,
+      fragment: "",
+      errors: [{ rule: "fence-size", message: "fence exceeds 24 KB", line: 1, severity: "error" }],
+    }
+  }
+  const lines = body.split(/\r?\n/)
+  const split = lines.findIndex((l) => l.trim() === "")
+  if (split < 0) fail("header needs a blank line before the fragment", 1)
+  parseHeaderLines(kind, lines.slice(0, split < 0 ? lines.length : split), header, fail)
+  const inspected = inspectFragment(kind, split < 0 ? "" : lines.slice(split + 1).join("\n"))
   errors.push(...inspected.errors.map((e) => ({ ...e, line: e.line + Math.max(0, split + 1) })))
   return {
     header,
@@ -393,5 +91,5 @@ export function parseFence(
 export function sanitizeFragment(kind: FragmentKind, html: string): string {
   if (html.length > FENCE_MAX_BYTES || new TextEncoder().encode(html).length > FENCE_MAX_BYTES)
     return ""
-  return inspect(kind, html).fragment
+  return inspectFragment(kind, html).fragment
 }

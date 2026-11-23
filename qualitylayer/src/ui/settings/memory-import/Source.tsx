@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react"
+import { type MutableRefObject, useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { PilotSourceInput, PilotSourceKind } from "../../../pilot-memory-contracts.ts"
@@ -22,6 +22,27 @@ const sourceHints: Record<PilotSourceKind, string> = {
 export const importError = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The request did not finish. Try again."
 
+async function browseSourceFolder(params: {
+  value: string
+  controller: MutableRefObject<AbortController | null>
+  setBusy: (busy: boolean) => void
+  setError: (error: string | null) => void
+  onChange: (path: string) => void
+}): Promise<void> {
+  const control = new AbortController()
+  params.controller.current = control
+  params.setBusy(true)
+  params.setError(null)
+  try {
+    const picked = await api.pickProjectFolder(params.value || undefined, control.signal)
+    if (!control.signal.aborted && picked.kind === "selected") params.onChange(picked.folder.path)
+  } catch (cause) {
+    if (!control.signal.aborted) params.setError(importError(cause))
+  } finally {
+    if (!control.signal.aborted) params.setBusy(false)
+  }
+}
+
 export function SourcePath({
   label,
   value,
@@ -40,20 +61,7 @@ export function SourcePath({
   const [error, setError] = useState<string | null>(null)
   const controller = useRef<AbortController | null>(null)
   useEffect(() => () => controller.current?.abort(), [])
-  const browse = async () => {
-    const control = new AbortController()
-    controller.current = control
-    setBusy(true)
-    setError(null)
-    try {
-      const picked = await api.pickProjectFolder(value || undefined, control.signal)
-      if (!control.signal.aborted && picked.kind === "selected") onChange(picked.folder.path)
-    } catch (cause) {
-      if (!control.signal.aborted) setError(importError(cause))
-    } finally {
-      if (!control.signal.aborted) setBusy(false)
-    }
-  }
+  const locked = disabled || busy
   return (
     <div className="q-pilot-path">
       <label htmlFor={id}>{label}</label>
@@ -64,7 +72,7 @@ export function SourcePath({
           placeholder={folder ? "Absolute folder path" : "Absolute file path"}
           spellCheck={false}
           autoComplete="off"
-          disabled={disabled || busy}
+          disabled={locked}
           onChange={(event) => {
             setError(null)
             onChange(event.target.value)
@@ -74,8 +82,10 @@ export function SourcePath({
           <Button
             type="button"
             variant="outline"
-            disabled={disabled || busy}
-            onClick={() => void browse()}
+            disabled={locked}
+            onClick={() =>
+              void browseSourceFolder({ value, controller, setBusy, setError, onChange })
+            }
           >
             {busy ? "Choosing…" : "Choose folder"}
           </Button>
@@ -157,6 +167,41 @@ export function AdditionalFolders({
   )
 }
 
+function validatePilotFiles(chosen: File[]): void {
+  const totalBytes = chosen.reduce((sum, file) => sum + file.size, 0)
+  if (chosen.length > 100 || totalBytes > 2 * 1024 * 1024)
+    throw new Error("Choose up to 100 files, at most 2 MB in total.")
+  if (chosen.some((file) => !/\.(jsonl|md)$/i.test(file.name)))
+    throw new Error("Choose Pilot .jsonl or .md memory files.")
+}
+
+async function readSelectedPilotFiles(params: {
+  chosen: File[]
+  input: PilotSourceInput
+  sequence: MutableRefObject<number>
+  onChange: (input: PilotSourceInput) => void
+  setError: (error: string | null) => void
+  setReading: (reading: boolean) => void
+}): Promise<void> {
+  const token = ++params.sequence.current
+  params.setError(null)
+  params.setReading(true)
+  params.onChange({ ...params.input, files: undefined })
+  try {
+    if (!params.chosen.length) return
+    validatePilotFiles(params.chosen)
+    const loaded = await Promise.all(params.chosen.map(pilotFile))
+    const next = { ...params.input, files: loaded }
+    if (new TextEncoder().encode(JSON.stringify(next)).byteLength > 3 * 1024 * 1024)
+      throw new Error("These files are too large after encoding. Choose a smaller batch.")
+    if (token === params.sequence.current) params.onChange(next)
+  } catch (cause) {
+    if (token === params.sequence.current) params.setError(importError(cause))
+  } finally {
+    if (token === params.sequence.current) params.setReading(false)
+  }
+}
+
 export function PilotSource({
   input,
   onChange,
@@ -180,28 +225,8 @@ export function PilotSource({
     },
     [],
   )
-  const files = async (chosen: File[]) => {
-    const token = ++sequence.current
-    setError(null)
-    setReading(true)
-    onChange({ ...input, files: undefined })
-    try {
-      if (!chosen.length) return
-      if (chosen.length > 100 || chosen.reduce((sum, file) => sum + file.size, 0) > 2 * 1024 * 1024)
-        throw new Error("Choose up to 100 files, at most 2 MB in total.")
-      if (chosen.some((file) => !/\.(jsonl|md)$/i.test(file.name)))
-        throw new Error("Choose Pilot .jsonl or .md memory files.")
-      const loaded = await Promise.all(chosen.map(pilotFile))
-      const next = { ...input, files: loaded }
-      if (new TextEncoder().encode(JSON.stringify(next)).byteLength > 3 * 1024 * 1024)
-        throw new Error("These files are too large after encoding. Choose a smaller batch.")
-      if (token === sequence.current) onChange(next)
-    } catch (cause) {
-      if (token === sequence.current) setError(importError(cause))
-    } finally {
-      if (token === sequence.current) setReading(false)
-    }
-  }
+  const locked = busy || reading
+  const missingSource = input.kind === "files" ? !input.files?.length : !input.path?.trim()
   return (
     <>
       <div className="q-pilot-body" id="pilot-source">
@@ -209,7 +234,7 @@ export function PilotSource({
           Bring your saved knowledge into QualityLayer. Choose what to import before anything is
           saved.
         </p>
-        <fieldset className="q-pilot-sources" disabled={busy || reading}>
+        <fieldset className="q-pilot-sources" disabled={locked}>
           <legend>Memory source</legend>
           {(Object.keys(sourceNames) as PilotSourceKind[]).map((kind) => (
             <label key={kind}>
@@ -238,8 +263,17 @@ export function PilotSource({
               type="file"
               accept=".jsonl,.md"
               multiple
-              disabled={busy || reading}
-              onChange={(event) => void files(Array.from(event.target.files ?? []))}
+              disabled={locked}
+              onChange={(event) =>
+                void readSelectedPilotFiles({
+                  chosen: Array.from(event.target.files ?? []),
+                  input,
+                  sequence,
+                  onChange,
+                  setError,
+                  setReading,
+                })
+              }
             />
             {input.files?.length ? <span>{input.files.length} files selected</span> : null}
           </label>
@@ -258,7 +292,7 @@ export function PilotSource({
           Nothing is read until you scan.
         </p>
         <p>The import stays on this computer. Pilot Shell files stay as they are.</p>
-        <AdditionalFolders input={input} onChange={onChange} busy={busy || reading} />
+        <AdditionalFolders input={input} onChange={onChange} busy={locked} />
         <Disclosure className="q-pilot-details" head="What is included">
           <p>
             Saved observations, knowledge documents and selected session learnings. Prompts,
@@ -272,13 +306,7 @@ export function PilotSource({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          type="button"
-          disabled={
-            busy || reading || (input.kind === "files" ? !input.files?.length : !input.path?.trim())
-          }
-          onClick={onScan}
-        >
+        <Button type="button" disabled={locked || missingSource} onClick={onScan}>
           {busy ? "Scanning…" : "Scan memories"}
         </Button>
       </footer>

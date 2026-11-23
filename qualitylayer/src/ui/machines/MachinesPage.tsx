@@ -5,327 +5,89 @@
 
 import {
   CircleCheckIcon,
-  ContainerIcon,
-  DownloadIcon,
-  EllipsisIcon,
   KeyRoundIcon,
   LaptopIcon,
-  LoaderCircleIcon,
-  MonitorIcon,
-  PencilIcon,
   PlusIcon,
-  RefreshCwIcon,
-  RotateCwIcon,
-  ServerIcon,
-  ShieldCheckIcon,
-  Trash2Icon,
   TriangleAlertIcon,
-  WifiOffIcon,
 } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { compareVersions, releaseOf } from "../../core/update/versions.ts"
 import { routeHash } from "../hooks.ts"
 import { SettingRow, SettingsGroup } from "../settings/Rows.tsx"
 import { AddMachine } from "./AddMachine.tsx"
-import { clockOf, refusesSsh } from "./MachineDown.tsx"
-import {
-  COMPUTERS_PER_KEY,
-  isSshMissing,
-  type Machine,
-  machineHash,
-  type Pairing,
-  readPairings,
-  renameMachine,
-  retryMachine,
-  setMachines,
-  startPairing,
-  systemWord,
-  updateMachine,
-  useMachines,
-  useSshMissing,
-} from "./machines-api.ts"
+import { MachineRow, PairingRow } from "./MachineRow.tsx"
+import { COMPUTERS_PER_KEY, type Machine } from "./machines-api.ts"
 import { RemoveMachine } from "./RemoveMachine.tsx"
+import {
+  type MachinesReader,
+  targetVersionFor,
+  useMachinesTabState,
+} from "./useMachinesTabState.ts"
 import "./machines.css"
 
 const ICON = "size-[15px]"
 const SMALL = "size-3.5"
 
-type Reader = (signal?: AbortSignal) => Promise<Machine[]>
-
-/** How ssh reaches the machine, and what runs there. */
-function howText(machine: Machine): string {
-  const system = machine.container ? "Dev container" : systemWord(machine.system)
-  const version = machine.version === undefined ? null : releaseOf(machine.version)
-  return [machine.shown ?? machine.target, system, version]
-    .filter((part) => part !== null)
-    .join(" · ")
-}
-
-/** What a machine's row says of its state, with the mark that goes with it. */
-function stateOf(
-  machine: Machine,
-  waiting: number,
-): { words: string; icon: ReactNode; warn: boolean } {
-  switch (machine.state) {
-    case "connected":
-      return {
-        words: waiting > 0 ? `Connected · ${waiting} waiting for you` : "Connected",
-        icon: <CircleCheckIcon className={SMALL} aria-hidden="true" />,
-        warn: false,
-      }
-    case "connecting":
-      return {
-        words: "Connecting…",
-        icon: <LoaderCircleIcon className={`${SMALL} ma-spin`} aria-hidden="true" />,
-        warn: false,
-      }
-    case "offline":
-      return {
-        words: refusesSsh(machine) ? "Refuses ssh" : `No answer since ${clockOf(machine.since)}`,
-        icon: <WifiOffIcon className={SMALL} aria-hidden="true" />,
-        warn: false,
-      }
-    case "needs-you":
-      return {
-        words: "Key refused",
-        icon: <TriangleAlertIcon className={SMALL} aria-hidden="true" />,
-        warn: true,
-      }
-    case "unknown-host":
-      return {
-        words: "Host key changed",
-        icon: <TriangleAlertIcon className={SMALL} aria-hidden="true" />,
-        warn: true,
-      }
-  }
-}
-
-/** The step a pairing is at, in a row's few words. */
-function pairingWords(pairing: Pairing): { words: string; warn: boolean } {
-  if (pairing.state === "waiting")
-    return {
-      words: pairing.waiting?.for === "keys-only" ? "Waits for its key" : "Waits for the password",
-      warn: true,
-    }
-  if (pairing.state === "failed") {
-    const failed = pairing.steps.find((step) => step.state === "fail")
-    return { words: failed?.fail?.cause ?? "Stopped", warn: true }
-  }
-  const now = pairing.steps.find((step) => step.state === "now")
-  return { words: now?.detail || "Pairing…", warn: false }
-}
-
-type Renaming = { id: string; value: string; problem: string | null }
-
-function MachineRow({
-  machine,
-  waiting,
-  renaming,
-  field,
-  updateTo,
-  onTry,
-  onPair,
-  onRename,
-  onUpdate,
-  onRemove,
-  onValue,
-  onSave,
-  onCancel,
+function MachinesEmptyFoot({
+  hasReader,
+  machines,
+  failed,
+  listedCount,
+  pairingsCount,
+  onReload,
 }: {
-  machine: Machine
-  waiting: number
-  renaming: Renaming | null
-  field: React.RefObject<HTMLInputElement | null>
-  /** The release this computer runs, when the machine runs an older one and can be updated now. */
-  updateTo: string | null
-  onTry: () => void
-  onPair: () => void
-  onRename: () => void
-  onUpdate: () => void
-  onRemove: () => void
-  onValue: (value: string) => void
-  onSave: () => void
-  onCancel: () => void
+  hasReader: boolean
+  machines: Machine[] | null
+  failed: boolean
+  listedCount: number
+  pairingsCount: number
+  onReload: () => void
 }) {
-  const state = stateOf(machine, waiting)
-  const mine = renaming?.id === machine.id ? renaming : null
-  return (
-    <div className="mc-machine" data-machine={machine.id}>
-      <SettingRow
-        icon={
-          machine.container ? <ContainerIcon className={ICON} /> : <ServerIcon className={ICON} />
-        }
-        label={
-          mine === null ? (
-            <span className="mc-name" title={machine.name}>
-              {machine.name}
-            </span>
-          ) : (
-            <Input
-              ref={field}
-              className="mc-rename"
-              aria-label={`Name of ${machine.name}`}
-              value={mine.value}
-              // The name is what the person came to change.
-              autoFocus
-              spellCheck={false}
-              autoComplete="off"
-              onChange={(event) => onValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) onSave()
-                else if (event.key === "Escape") {
-                  event.stopPropagation()
-                  onCancel()
-                }
-              }}
-            />
-          )
-        }
-        hint={
-          <span className="mc-how" title={howText(machine)}>
-            {howText(machine)}
-          </span>
-        }
-      >
-        <span className="mc-acts">
-          <span className={state.warn ? "mc-state warn" : "mc-state"}>
-            {state.icon}
-            {state.words}
-          </span>
-          {machine.state === "offline" ? (
-            <Button type="button" variant="outline" size="sm" onClick={onTry}>
-              <RotateCwIcon aria-hidden="true" />
-              Try now
-            </Button>
-          ) : machine.state === "needs-you" ? (
-            <Button type="button" variant="outline" size="sm" onClick={onPair}>
-              <KeyRoundIcon aria-hidden="true" />
-              Pair again
-            </Button>
-          ) : machine.state === "unknown-host" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                window.location.hash = machineHash(machine.id)
-              }}
-            >
-              <ShieldCheckIcon aria-hidden="true" />
-              Check key
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`More for ${machine.name}`}
-                />
-              }
-            >
-              <EllipsisIcon aria-hidden="true" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              collisionPadding={10}
-              className="min-w-[180px]"
-              // A name being typed takes the focus the menu gave up.
-              finalFocus={() => field.current ?? true}
-            >
-              {machine.state === "connected" ? (
-                <DropdownMenuItem
-                  onClick={() => {
-                    window.location.hash = machineHash(machine.id)
-                  }}
-                >
-                  <MonitorIcon aria-hidden="true" />
-                  Open
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={onRename}>
-                <PencilIcon aria-hidden="true" />
-                Rename
-              </DropdownMenuItem>
-              {updateTo !== null ? (
-                <DropdownMenuItem onClick={onUpdate}>
-                  <DownloadIcon aria-hidden="true" />
-                  {`Update to ${updateTo}`}
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={onPair}>
-                <RefreshCwIcon aria-hidden="true" />
-                Pair again
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={onRemove}>
-                <Trash2Icon aria-hidden="true" />
-                Remove…
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
-      </SettingRow>
-      {mine?.problem != null ? (
-        <p role="alert" className="q-sg-foot q-sg-problem">
-          {mine.problem}
+  if (hasReader && machines === null) {
+    if (failed) {
+      return (
+        <p role="status" className="q-sg-foot">
+          The machines could not be read.{" "}
+          <button type="button" className="q-link" onClick={onReload}>
+            Try again
+          </button>
         </p>
-      ) : null}
-    </div>
-  )
+      )
+    }
+    return (
+      <p role="status" className="q-sg-foot">
+        Reading your machines…
+      </p>
+    )
+  }
+  if (listedCount === 0 && pairingsCount === 0) {
+    return <p className="q-sg-foot">No other machines yet.</p>
+  }
+  return null
 }
 
-/** A machine being paired: the step it is at, and Show to open its progress again. */
-function PairingRow({ pairing, onShow }: { pairing: Pairing; onShow: () => void }) {
-  const { words, warn } = pairingWords(pairing)
+function MachinesHeaderAction({
+  hasReader,
+  noSsh,
+  onAdd,
+}: {
+  hasReader: boolean
+  noSsh: boolean
+  onAdd: () => void
+}) {
+  if (!hasReader) return undefined
+  if (noSsh) {
+    return (
+      <span className="mc-state warn">
+        <TriangleAlertIcon className={SMALL} aria-hidden="true" />
+        ssh was not found on this computer
+      </span>
+    )
+  }
   return (
-    <div className="mc-machine" data-pairing={pairing.id}>
-      <SettingRow
-        icon={
-          pairing.kind === "container" ? (
-            <ContainerIcon className={ICON} />
-          ) : (
-            <ServerIcon className={ICON} />
-          )
-        }
-        label={
-          <span className="mc-name" title={pairing.name}>
-            {pairing.name}
-          </span>
-        }
-        hint={
-          <span className="mc-how" title={pairing.target}>
-            {pairing.target}
-          </span>
-        }
-      >
-        <span className="mc-acts">
-          <span className={warn ? "mc-state warn" : "mc-state"} title={words}>
-            {warn ? (
-              <TriangleAlertIcon className={SMALL} aria-hidden="true" />
-            ) : (
-              <LoaderCircleIcon className={`${SMALL} ma-spin`} aria-hidden="true" />
-            )}
-            <span className="mc-state-t">{words}</span>
-          </span>
-          <Button type="button" variant="outline" size="sm" onClick={onShow}>
-            Show
-          </Button>
-        </span>
-      </SettingRow>
-    </div>
+    <Button type="button" variant="outline" size="sm" onClick={onAdd}>
+      <PlusIcon aria-hidden="true" />
+      Add machine
+    </Button>
   )
 }
 
@@ -334,120 +96,28 @@ export function MachinesTab({
   version,
 }: {
   /** This page's server; without `machines` the page has no server of its own. */
-  api?: { machines?: Reader }
+  api?: { machines?: MachinesReader }
   /** This computer's release, for its row; empty when it is not known. */
   version: string
 }) {
   const read = api?.machines
-  const { machines, needsYou } = useMachines()
-  const missing = useSshMissing()
-  const [failed, setFailed] = useState(false)
-  /** The Add dialog: new, or on a pairing under way. */
-  const [adding, setAdding] = useState<null | "new" | Pairing>(null)
-  const [pairings, setPairings] = useState<Pairing[]>([])
-  const [renaming, setRenaming] = useState<Renaming | null>(null)
-  const [removing, setRemoving] = useState<Machine | null>(null)
-  const field = useRef<HTMLInputElement | null>(null)
-
-  const load = useCallback(async () => {
-    if (read === undefined) return
-    try {
-      setMachines(await read())
-      setFailed(false)
-    } catch {
-      setFailed(true)
-    }
-    // The pairings under way, hidden from their dialog: they show here until they are done.
-    setPairings((await readPairings()).filter((one) => one.state !== "done"))
-  }, [read])
-  // The list is read when the page opens and after each change; the server's stream keeps it current.
-  useEffect(() => {
-    void load()
-  }, [load])
-  // A pairing that runs is read again until it waits, fails or is done.
-  const running = pairings.some((one) => one.state === "running")
-  useEffect(() => {
-    if (!running || adding !== null) return
-    const timer = setInterval(() => void load(), 1500)
-    return () => clearInterval(timer)
-  }, [running, adding, load])
-  const pairAgainOf = async (machine: Machine) => {
-    try {
-      setAdding(await startPairing({ machine: machine.id }))
-    } catch (cause) {
-      toast.error(
-        cause instanceof Error ? cause.message : `${machine.name} could not be paired again.`,
-      )
-    }
-  }
-
-  const listed = machines ?? []
-  const noSsh = missing || listed.some((machine) => isSshMissing(machine.reason))
-  const asked = async (action: () => Promise<void>, onError?: (message: string) => void) => {
-    try {
-      await action()
-    } catch (cause) {
-      onError?.(cause instanceof Error ? cause.message : "The machine could not be changed.")
-      return false
-    }
-    await load()
-    return true
-  }
-
-  const save = async () => {
-    if (renaming === null) return
-    const machine = listed.find((one) => one.id === renaming.id)
-    const name = renaming.value.trim()
-    if (machine === undefined || name === "" || name === machine.name) {
-      setRenaming(null)
-      return
-    }
-    const done = await asked(
-      () => renameMachine(machine.id, name),
-      (problem) => setRenaming((was) => (was === null ? was : { ...was, problem })),
-    )
-    if (done) setRenaming(null)
-  }
-
-  /** The release this computer runs, when this machine runs an older one and answers now. */
-  const updateTo = (machine: Machine): string | null => {
-    if (version === "" || machine.state !== "connected" || machine.version === undefined)
-      return null
-    return compareVersions(releaseOf(machine.version), version) < 0 ? version : null
-  }
-  // Updating runs the installer there, which takes a while: the toast says so, then what came of it.
-  const update = async (machine: Machine, to: string) => {
-    const id = toast.loading(`Updating QualityLayer on ${machine.name} to ${to}`)
-    try {
-      const done = await updateMachine(machine.id)
-      toast.success(
-        `${machine.name} updated to ${done.version === null ? to : releaseOf(done.version)}`,
-        { id },
-      )
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "QualityLayer could not be updated.", {
-        id,
-      })
-    }
-    await load()
-  }
-
-  const add =
-    read === undefined ? undefined : noSsh ? (
-      <span className="mc-state warn">
-        <TriangleAlertIcon className={SMALL} aria-hidden="true" />
-        ssh was not found on this computer
-      </span>
-    ) : (
-      <Button type="button" variant="outline" size="sm" onClick={() => setAdding("new")}>
-        <PlusIcon aria-hidden="true" />
-        Add machine
-      </Button>
-    )
+  const state = useMachinesTabState(read, version)
+  const addEnd = MachinesHeaderAction({
+    hasReader: read !== undefined,
+    noSsh: state.noSsh,
+    onAdd: () => state.setAdding("new"),
+  })
+  const activePairings = state.pairings.filter(
+    (one) => !state.listed.some((machine) => machine.id === one.machine?.id),
+  )
+  const inUse = Math.min(
+    1 + state.listed.filter((one) => one.activated === true).length,
+    COMPUTERS_PER_KEY,
+  )
 
   return (
     <div className="q-sgs">
-      <SettingsGroup title="Machines" testId="machines-list" end={add}>
+      <SettingsGroup title="Machines" testId="machines-list" end={addEnd}>
         <SettingRow
           icon={<LaptopIcon className={ICON} />}
           label="This computer"
@@ -458,52 +128,41 @@ export function MachinesTab({
             Connected
           </span>
         </SettingRow>
-        {listed.map((machine) => (
+        {state.listed.map((machine) => (
           <MachineRow
             key={machine.id}
             machine={machine}
-            waiting={needsYou[machine.id] ?? 0}
-            renaming={renaming}
-            field={field}
-            updateTo={updateTo(machine)}
-            onTry={() => void asked(() => retryMachine(machine.id))}
-            onPair={() => void pairAgainOf(machine)}
-            onRename={() => setRenaming({ id: machine.id, value: machine.name, problem: null })}
-            onUpdate={() => {
-              const to = updateTo(machine)
-              if (to !== null) void update(machine, to)
-            }}
-            onRemove={() => setRemoving(machine)}
-            onValue={(value) =>
-              setRenaming((was) => (was === null ? was : { ...was, value, problem: null }))
+            waiting={state.needsYou[machine.id] ?? 0}
+            renaming={state.renaming}
+            field={state.field}
+            updateTo={targetVersionFor(machine, version)}
+            onTry={() => state.retry(machine.id)}
+            onPair={() => void state.pairAgainOf(machine)}
+            onRename={() =>
+              state.setRenaming({ id: machine.id, value: machine.name, problem: null })
             }
-            onSave={() => void save()}
-            onCancel={() => setRenaming(null)}
+            onUpdate={() => state.update(machine)}
+            onRemove={() => state.setRemoving(machine)}
+            onValue={(value) =>
+              state.setRenaming((was) => (was === null ? was : { ...was, value, problem: null }))
+            }
+            onSave={() => void state.saveRename()}
+            onCancel={() => state.setRenaming(null)}
           />
         ))}
-        {pairings
-          .filter((one) => !listed.some((machine) => machine.id === one.machine?.id))
-          .map((one) => (
-            <PairingRow key={one.id} pairing={one} onShow={() => setAdding(one)} />
-          ))}
-        {read !== undefined && machines === null ? (
-          failed ? (
-            <p role="status" className="q-sg-foot">
-              The machines could not be read.{" "}
-              <button type="button" className="q-link" onClick={() => void load()}>
-                Try again
-              </button>
-            </p>
-          ) : (
-            <p role="status" className="q-sg-foot">
-              Reading your machines…
-            </p>
-          )
-        ) : listed.length === 0 && pairings.length === 0 ? (
-          <p className="q-sg-foot">No other machines yet.</p>
-        ) : null}
+        {activePairings.map((one) => (
+          <PairingRow key={one.id} pairing={one} onShow={() => state.setAdding(one)} />
+        ))}
+        <MachinesEmptyFoot
+          hasReader={read !== undefined}
+          machines={state.machines}
+          failed={state.failed}
+          listedCount={state.listed.length}
+          pairingsCount={state.pairings.length}
+          onReload={() => void state.load()}
+        />
       </SettingsGroup>
-      {read !== undefined && machines !== null ? (
+      {read !== undefined && state.machines !== null ? (
         <SettingsGroup title="Licence">
           <SettingRow
             icon={<KeyRoundIcon className={ICON} />}
@@ -512,11 +171,7 @@ export function MachinesTab({
           >
             <span className="mc-acts">
               <span className="mc-state">
-                {Math.min(
-                  1 + listed.filter((one) => one.activated === true).length,
-                  COMPUTERS_PER_KEY,
-                )}{" "}
-                of {COMPUTERS_PER_KEY} in use
+                {inUse} of {COMPUTERS_PER_KEY} in use
               </span>
               <Button
                 type="button"
@@ -532,26 +187,22 @@ export function MachinesTab({
           </SettingRow>
         </SettingsGroup>
       ) : null}
-      {adding !== null ? (
+      {state.adding !== null ? (
         <AddMachine
-          key={adding === "new" ? "new" : adding.id}
-          resume={adding === "new" ? undefined : adding}
+          key={state.adding === "new" ? "new" : state.adding.id}
+          resume={state.adding === "new" ? undefined : state.adding}
           onClose={() => {
-            setAdding(null)
-            void load()
+            state.setAdding(null)
+            void state.load()
           }}
-          onAdded={() => {
-            void load()
-          }}
+          onAdded={() => void state.load()}
         />
       ) : null}
-      {removing !== null ? (
+      {state.removing !== null ? (
         <RemoveMachine
-          machine={removing}
-          onClose={() => setRemoving(null)}
-          onRemoved={() => {
-            void load()
-          }}
+          machine={state.removing}
+          onClose={() => state.setRemoving(null)}
+          onRemoved={() => void state.load()}
         />
       ) : null}
     </div>

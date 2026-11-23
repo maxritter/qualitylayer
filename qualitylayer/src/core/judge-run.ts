@@ -132,29 +132,28 @@ function runArgv(
   })
 }
 
-export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<Result<RunOutcome>> {
+async function resolveScopedTask(ctx: Ctx, task: Task, assignment: string): Promise<Result<Task>> {
   const current = await readAssignment(ctx, task)
-  if (current === null || current.id !== input.assignment)
+  if (current === null || current.id !== assignment)
     return err({
       code: "bad_args",
       message:
         "that assignment was replaced by a later one (or the id is mistyped), so nothing runs under it. Stop: you were replaced, and the current assignment belongs to another reviewer.",
     })
-  let scoped = task
-  if (current.recovery || (await hasReviewCandidate(ctx, task))) {
-    const candidate = await selectedReviewCandidate(ctx, task).catch(() => null)
-    if (!candidate || current.recovery !== candidate.id || current.head !== candidate.choice.head)
-      return err({
-        code: "bad_args",
-        message: "This assignment no longer matches the selected review candidate.",
-      })
-    scoped = { ...task, repoRoot: candidate.choice.checkout }
-  }
-  // One of the task's checks is run as the check runner runs it: its whole command (the folder it
-  // changes into, a shell for `cd x && y`), from the repository. QualityLayer runs that shell, not
-  // the judge: the judge's own call stays one program with its arguments.
-  const found = await commandsFor(ctx, scoped, { kind: "all" }).catch(() => null)
-  const checks = found?.ok ? found.data.now : []
+  if (!current.recovery && !(await hasReviewCandidate(ctx, task))) return ok(task)
+  const candidate = await selectedReviewCandidate(ctx, task).catch(() => null)
+  if (!candidate || current.recovery !== candidate.id || current.head !== candidate.choice.head)
+    return err({
+      code: "bad_args",
+      message: "This assignment no longer matches the selected review candidate.",
+    })
+  return ok({ ...task, repoRoot: candidate.choice.checkout })
+}
+
+function validateRunRequest(
+  input: RunInput,
+  checks: readonly string[],
+): Result<{ check: string | null; name: string; seconds: number }> {
   const check = checkCommandFor(input.argv, checks)
   const refused = check === null ? refusedArgv(input.argv) : null
   if (refused !== null) return err({ code: "bad_args", message: refused })
@@ -164,19 +163,85 @@ export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<R
   const seconds = Math.min(input.seconds ?? RUN_DEFAULT_SECONDS, RUN_MAX_SECONDS)
   if (!Number.isFinite(seconds) || seconds < 1)
     return err({ code: "bad_args", message: "--timeout takes a number of seconds, at least 1" })
-  const where = {
-    cwd: scoped.repoRoot,
-    env: Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ),
+  return ok({ check, name, seconds })
+}
+
+function notStartedMessage(
+  command: string,
+  cwd: string,
+  notStarted: string,
+  checks: readonly string[],
+  assignment: string,
+): string {
+  const listed = checks.map((entry) => `\`${entry}\``).join(", ")
+  const asRun = checks
+    .map((entry) => `qualitylayer verdict run ${assignment} -- ${withoutFolder(entry)}`)
+    .join("; ")
+  const guidance =
+    checks.length > 0
+      ? `The task's checks run from the repository as ${listed}. Name one by its command, and it runs that way: ${asRun}.`
+      : "Run the program from the folder it lives in, by its path."
+  return `\`${command}\` could not be started from ${cwd}: ${notStarted}. Nothing was recorded: a command that did not run is no evidence. ${guidance}`
+}
+
+async function saveRunEvidence(
+  ctx: Ctx,
+  task: Task,
+  details: {
+    name: string
+    command: string
+    cwd: string
+    seconds: number
+    result: { exit: number | null; timedOut: boolean; output: string }
+  },
+): Promise<RunOutcome> {
+  const folder = join(task.dir, EVIDENCE_DIR)
+  await ctx.fs.mkdir(folder)
+  let file =
+    details.name === "" ? "" : details.name.includes(".") ? details.name : `${details.name}.txt`
+  if (file === "") {
+    let n = 1
+    while (await ctx.fs.exists(join(folder, `run-${n}.txt`))) n++
+    file = `run-${n}.txt`
   }
+  const { exit, timedOut, output } = details.result
+  const stoppedNote = timedOut ? ` (stopped after ${details.seconds} s)` : ""
+  const text =
+    `$ ${details.command}\n` +
+    `cwd: ${details.cwd}\n` +
+    `exit: ${exit === null ? "none" : exit}${stoppedNote}\n\n` +
+    output
+  await ctx.fs.writeFile(join(folder, file), text.endsWith("\n") ? text : `${text}\n`)
+  return {
+    evidence: `${EVIDENCE_DIR}/${file}`,
+    exit,
+    timedOut,
+    tail: output.trimEnd().split("\n").slice(-20).join("\n"),
+  }
+}
+
+export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<Result<RunOutcome>> {
+  const scopedResult = await resolveScopedTask(ctx, task, input.assignment)
+  if (!scopedResult.ok) return scopedResult
+  const scoped = scopedResult.data
+  // One of the task's checks is run as the check runner runs it: its whole command (the folder it
+  // changes into, a shell for `cd x && y`), from the repository. QualityLayer runs that shell, not
+  // the judge: the judge's own call stays one program with its arguments.
+  const found = await commandsFor(ctx, scoped, { kind: "all" }).catch(() => null)
+  const checks = found?.ok ? found.data.now : []
+  const validated = validateRunRequest(input, checks)
+  if (!validated.ok) return validated
+  const { check, name, seconds } = validated.data
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  )
   const command = check ?? input.argv.join(" ")
   const result =
     check === null
-      ? await runArgv(input.argv, where.cwd, where.env, seconds)
-      : await shellRunner(check, where.cwd, seconds * 1000).then((ran) => ({
+      ? await runArgv(input.argv, scoped.repoRoot, env, seconds)
+      : await shellRunner(check, scoped.repoRoot, seconds * 1000).then((ran) => ({
           exit: ran.exit,
           timedOut: ran.timedOut === true,
           output: keepEnd(ran.output),
@@ -185,43 +250,24 @@ export async function judgeRun(ctx: Ctx, task: Task, input: RunInput): Promise<R
   // is not recorded, and the reply says how the task's checks are run.
   const notStarted = result.timedOut
     ? null
-    : await notRunReason(ctx, command, where.cwd, {
+    : await notRunReason(ctx, command, scoped.repoRoot, {
         exit: result.exit,
         ms: 0,
         output: result.output,
       })
   if (notStarted !== null) {
-    const listed = checks.map((entry) => `\`${entry}\``).join(", ")
-    const asRun = checks
-      .map((entry) => `qualitylayer verdict run ${input.assignment} -- ${withoutFolder(entry)}`)
-      .join("; ")
     return err({
       code: "bad_args",
-      message:
-        `\`${command}\` could not be started from ${where.cwd}: ${notStarted}. Nothing was recorded: a command that did not run is no evidence. ` +
-        (checks.length > 0
-          ? `The task's checks run from the repository as ${listed}. Name one by its command, and it runs that way: ${asRun}.`
-          : "Run the program from the folder it lives in, by its path."),
+      message: notStartedMessage(command, scoped.repoRoot, notStarted, checks, input.assignment),
     })
   }
-  const folder = join(task.dir, EVIDENCE_DIR)
-  await ctx.fs.mkdir(folder)
-  let file = name === "" ? "" : name.includes(".") ? name : `${name}.txt`
-  if (file === "") {
-    let n = 1
-    while (await ctx.fs.exists(join(folder, `run-${n}.txt`))) n++
-    file = `run-${n}.txt`
-  }
-  const text =
-    `$ ${command}\n` +
-    `cwd: ${where.cwd}\n` +
-    `exit: ${result.exit === null ? "none" : result.exit}${result.timedOut ? ` (stopped after ${seconds} s)` : ""}\n\n` +
-    result.output
-  await ctx.fs.writeFile(join(folder, file), text.endsWith("\n") ? text : `${text}\n`)
-  return ok({
-    evidence: `${EVIDENCE_DIR}/${file}`,
-    exit: result.exit,
-    timedOut: result.timedOut,
-    tail: result.output.trimEnd().split("\n").slice(-20).join("\n"),
-  })
+  return ok(
+    await saveRunEvidence(ctx, task, {
+      name,
+      command,
+      cwd: scoped.repoRoot,
+      seconds,
+      result,
+    }),
+  )
 }

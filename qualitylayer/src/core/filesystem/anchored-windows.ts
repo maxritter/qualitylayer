@@ -1,5 +1,5 @@
 import { win32 } from "node:path"
-import { type AnchoredRoot, relativeParts } from "./anchored-root.ts"
+import type { AnchoredRoot } from "./anchored-root.ts"
 import { exchangeFiles } from "./windows-exchange.ts"
 import {
   atomic,
@@ -13,87 +13,28 @@ import {
   verifyVersion,
 } from "./windows-files.ts"
 import {
+  openWindowsRootHandle,
+  probeWindowsFile,
+  windowsChild,
+  windowsRootParts,
+} from "./windows-root-ops.ts"
+import {
   access,
   api,
   close,
-  failure,
   type HeldParent,
   openChild,
   requireKind,
-  requireReadableKind,
   share,
-  utf16,
   windowsRelativeParts,
 } from "./windows-system.ts"
 
-export { windowsRelativeParts } from "./windows-system.ts"
-
-export function windowsRootParts(root: string) {
-  if (!/^[A-Za-z]:\\/.test(root) || root.includes("/"))
-    throw new Error("Native Windows root must be an absolute local drive directory")
-  return {
-    drive: root.slice(0, 3),
-    parts: windowsRelativeParts(root.slice(3).replaceAll("\\", "/"), true),
-  }
-}
-
-function child(parent: bigint, name: string, create: boolean) {
-  const spec = {
-    desired: access.read,
-    disposition: 1,
-    directory: true,
-    sharing: share.read | share.write,
-  }
-  try {
-    return openChild(parent, name, spec)
-  } catch (cause) {
-    if (!create || (cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
-  }
-  try {
-    return openChild(parent, name, { ...spec, disposition: 2 })
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-    return openChild(parent, name, spec)
-  }
-}
-function rootOf(root: string) {
-  const parsed = windowsRootParts(root)
-  const opened = api().CreateFileW(
-    utf16(`\\\\?\\${parsed.drive}`),
-    access.read | access.attributes | access.sync,
-    share.read | share.write,
-    null,
-    3,
-    0x02000000 | 0x00200000,
-    null,
-  )
-  const drive = opened ? BigInt(opened) : 0n
-  if (!drive || drive === -1n || drive === 0xffffffffffffffffn)
-    throw failure("Pin native volume root")
-  const handles = [drive]
-  try {
-    requireKind(drive, true)
-    const filesystem = Buffer.alloc(64)
-    if (!api().GetVolumeInformationByHandleW(drive, null, 0, null, null, null, filesystem, 32))
-      throw failure("Query native filesystem")
-    if (filesystem.toString("utf16le").replace(/\0.*$/s, "") !== "NTFS")
-      throw new Error("Native Windows directory I/O requires NTFS")
-    let handle = drive
-    for (const part of parsed.parts) {
-      handle = child(handle, part, false)
-      handles.push(handle)
-    }
-    return { root, handle, handles, identity: requireKind(handle, true).identity }
-  } catch (cause) {
-    close(handles)
-    throw cause
-  }
-}
+export { probeWindowsFile, windowsRelativeParts, windowsRootParts }
 
 class WindowsRoot implements AnchoredRoot {
   private closed = false
   private readonly locks = new Map<string, { handle: bigint; acquired: boolean }>()
-  constructor(private readonly owner: ReturnType<typeof rootOf>) {}
+  constructor(private readonly owner: ReturnType<typeof openWindowsRootHandle>) {}
   get identity() {
     return this.owner.identity
   }
@@ -109,7 +50,7 @@ class WindowsRoot implements AnchoredRoot {
     let handle = this.owner.handle
     try {
       for (const part of parts) {
-        handle = child(handle, part, create)
+        handle = windowsChild(handle, part, create)
         handles.push(handle)
       }
       return { handle, name, close: () => close(handles) }
@@ -125,7 +66,7 @@ class WindowsRoot implements AnchoredRoot {
     let handle = this.owner.handle
     try {
       for (const part of parts) {
-        handle = child(handle, part, false)
+        handle = windowsChild(handle, part, false)
         handles.push(handle)
       }
       return new WindowsRoot({
@@ -193,7 +134,7 @@ class WindowsRoot implements AnchoredRoot {
     let handle = this.owner.handle
     try {
       for (const part of windowsRelativeParts(path, true)) {
-        handle = child(handle, part, false)
+        handle = windowsChild(handle, part, false)
         handles.push(handle)
       }
       return listing(handle, maximum)
@@ -322,7 +263,7 @@ class WindowsRoot implements AnchoredRoot {
   }
   assertCurrentRoot() {
     this.alive()
-    const current = rootOf(this.owner.root)
+    const current = openWindowsRootHandle(this.owner.root)
     try {
       if (current.identity !== this.identity) throw new Error("Registered root identity changed")
     } finally {
@@ -338,69 +279,12 @@ class WindowsRoot implements AnchoredRoot {
 }
 
 export function openWindowsRoot(root: string): AnchoredRoot {
-  return new WindowsRoot(rootOf(root))
-}
-
-function readPathParts(path: string) {
-  const plain = path.startsWith("\\\\?\\UNC\\")
-    ? `\\\\${path.slice(8)}`
-    : path.startsWith("\\\\?\\")
-      ? path.slice(4)
-      : path
-  if (/^[A-Za-z]:\\/.test(plain)) {
-    const parsed = windowsRootParts(plain)
-    return { volume: `\\\\?\\${parsed.drive}`, parts: parsed.parts }
-  }
-  if (!plain.startsWith("\\\\")) throw new Error("Native read requires an absolute filesystem path")
-  const [server, shareName, ...parts] = relativeParts(plain.slice(2).replaceAll("\\", "/"))
-  if (!server || !shareName || !parts.length)
-    throw new Error("Native read requires a UNC file path")
-  if (/[<>"|?*]/u.test(server + shareName)) throw new Error("Invalid native UNC authority")
-  return {
-    volume: `\\\\?\\UNC\\${server}\\${shareName}\\`,
-    parts: windowsRelativeParts(parts.join("/")),
-  }
-}
-
-/** Read-only local/UNC pinning; registered mutation roots retain their NTFS restriction. */
-export function probeWindowsFile(path: string, maximum: number) {
-  const { volume, parts } = readPathParts(path)
-  const name = parts.pop()
-  if (!name) throw new Error("Native read requires a regular file")
-  const opened = api().CreateFileW(
-    utf16(volume),
-    access.read | access.attributes | access.sync,
-    share.read | share.write,
-    null,
-    3,
-    0x02000000 | 0x00200000,
-    null,
-  )
-  const root = opened ? BigInt(opened) : 0n
-  if (!root || root === -1n || root === 0xffffffffffffffffn) throw failure("Pin native read root")
-  const handles = [root]
-  try {
-    requireReadableKind(root, true)
-    let handle = root
-    for (const part of parts) {
-      handle = openChild(handle, part, {
-        desired: access.read,
-        disposition: 1,
-        directory: true,
-        sharing: share.read | share.write,
-        readOnly: true,
-      })
-      handles.push(handle)
-    }
-    return probe({ handle, name, close: () => {} }, maximum)
-  } finally {
-    close(handles)
-  }
+  return new WindowsRoot(openWindowsRootHandle(root))
 }
 
 /** Record files share the same backend and keep their native parent alive until close. */
 export function openWindowsFile(runtime: string, file: string, createParents: boolean) {
-  const root = new WindowsRoot(rootOf(runtime))
+  const root = new WindowsRoot(openWindowsRootHandle(runtime))
   let parent: HeldParent
   try {
     parent = root.parent(file, createParents)

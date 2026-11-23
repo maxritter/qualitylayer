@@ -1,19 +1,24 @@
-import { randomUUID } from "node:crypto"
-import { existsSync, lstatSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { RUN_LEASES_MAX_BYTES } from "../home-caps.ts"
 import type { ProcessIdentity, RunRecord } from "./contracts.ts"
-import { leadCaller } from "./lead-process.ts"
 import {
-  activeRun,
-  identityState,
-  readHost,
-  readRun,
-  removeCompletedRun,
-  updateRun,
-} from "./registry.ts"
-import { settleDeadHost } from "./settle.ts"
+  assertNoLeaseConflicts,
+  branchChangePending,
+  leaseFile,
+  runTaskLeaseKey,
+  stillHeld,
+} from "./lease-checks.ts"
+import {
+  attachPlanningHandoff,
+  checkoutLeaseStatus,
+  repairDeadLeases,
+  validateRefreshPatch,
+  withLeaseLock,
+  writeLeasesSync,
+} from "./lease-status.ts"
+import { readRun, removeCompletedRun, updateRun } from "./registry.ts"
+
+export { checkoutLeaseStatus, runTaskLeaseKey }
 
 export type RunLease = {
   run: string
@@ -24,160 +29,22 @@ export type RunLease = {
   session?: string
   planningHandoff?: { run: string; generation: number; branchAcknowledged: boolean }
 }
-const file = (ctx: Ctx) => join(ctx.home, "runs", "leases.json")
-export function runTaskLeaseKey(run: Pick<RunRecord, "task" | "purpose">): string | undefined {
-  return run.purpose.kind === "artifact"
-    ? `artifact:${run.purpose.scope}:${run.purpose.id}:${run.purpose.file}`
-    : (run.task ?? (run.purpose.kind === "task" ? run.purpose.task : undefined))
-}
-async function read(ctx: Ctx): Promise<RunLease[]> {
-  if (!(await ctx.fs.exists(file(ctx)))) return []
-  if (((await ctx.fs.stat?.(file(ctx)))?.size ?? 0) > RUN_LEASES_MAX_BYTES)
-    throw new Error("run leases exceed their byte bound")
-  const text = await ctx.fs.readFile(file(ctx))
-  if (Buffer.byteLength(text) > RUN_LEASES_MAX_BYTES)
-    throw new Error("run leases exceed their byte bound")
-  const rows: unknown = JSON.parse(text)
-  if (
-    !Array.isArray(rows) ||
-    rows.some(
-      (row) =>
-        !row ||
-        typeof row.run !== "string" ||
-        !Number.isSafeInteger(row.generation) ||
-        typeof row.checkout !== "string",
-    )
-  )
-    throw new Error("run leases are unreadable")
-  // A lease written before the rename keys an artifact run as `design:…`.
-  return (rows as RunLease[]).map((row) =>
-    row.task?.startsWith("design:") ? { ...row, task: `artifact:${row.task.slice(7)}` } : row,
-  )
-}
-function stillHeld(ctx: Ctx, lease: RunLease) {
-  const run = readRun(ctx.home, lease.run)
-  if (!run) return true
-  if (run.generation !== lease.generation) return true
-  return activeRun(ctx.home, run)
-}
 
-/** Recheck dead hosts without signalling or resuming their agents. Live hosts stay untouched. */
-async function repairDeadLeases(ctx: Ctx, checkout: string): Promise<void> {
-  for (const lease of await read(ctx)) {
-    if (lease.checkout !== checkout) continue
-    const run = readRun(ctx.home, lease.run)
-    if (!run || run.generation !== lease.generation) continue
-    const host = readHost(ctx.home, run.id)
-    if (host && host.generation !== run.generation) continue
-    await settleDeadHost(ctx.home, run.id, run.generation, false)
-  }
-}
+export type LeasePatch = Partial<
+  Pick<
+    RunRecord,
+    | "nativeSession"
+    | "task"
+    | "taskRuntimeDir"
+    | "cwd"
+    | "branch"
+    | "intent"
+    | "lastPrompt"
+    | "runEvents"
+    | "guardedRestart"
+  >
+>
 
-/** Report checkout holders even when their tasks have finished; repair never stops a live run. */
-export async function checkoutLeaseStatus(ctx: Ctx, checkout: string, repair = false) {
-  if (repair) {
-    await repairDeadLeases(ctx, checkout)
-    await locked(ctx, async (rows) => {
-      const kept = rows.filter((lease) => lease.checkout !== checkout || stillHeld(ctx, lease))
-      if (kept.length !== rows.length) await ctx.fs.atomicWrite(file(ctx), JSON.stringify(kept))
-    })
-  }
-  const holders = (await read(ctx))
-    .filter((lease) => lease.checkout === checkout && stillHeld(ctx, lease))
-    .map((lease) => {
-      const run = readRun(ctx.home, lease.run)
-      const needsAttention =
-        !run ||
-        run.generation !== lease.generation ||
-        ["stopped", "failed"].includes(run.status) ||
-        run.cleanup?.complete === false
-      const holder = `Checkout lease held by run ${lease.run}${lease.task ? ` (task ${lease.task})` : ""}`
-      return {
-        run: lease.run,
-        generation: lease.generation,
-        task: lease.task ?? null,
-        status: run?.status ?? "missing",
-        needs_attention: needsAttention,
-        message: needsAttention
-          ? `${holder}; its generation or process cleanup is not verified. Inspect its run and host records; Stop requires verified process ownership.`
-          : `${holder}. Finish or stop that run before changing this checkout's branch.`,
-      }
-    })
-  return { holders, issues: holders.filter((holder) => holder.needs_attention) }
-}
-/** Older records kept branch:true for the session's lifetime, after Git had already switched. */
-function branchChangePending(ctx: Ctx, lease: RunLease): boolean {
-  if (!lease.branch) return false
-  const run = readRun(ctx.home, lease.run)
-  if (!run || run.generation !== lease.generation) return true
-  return !["branch-made", "launch-written", "host-started", "ready"].includes(run.startPhase)
-}
-function checkoutConflict(ctx: Ctx, lease: RunLease): string {
-  const error = readRun(ctx.home, lease.run)?.error
-  return error?.startsWith(`Run ${lease.run} cannot be retired:`)
-    ? leaseConflict(error, lease)
-    : leaseConflict(
-        "Another managed run is working in this checkout; its branch cannot change.",
-        lease,
-      )
-}
-function leaseConflict(message: string, lease: RunLease): string {
-  return `${message} Holding run: ${lease.run}${lease.task ? `; task: ${lease.task}` : ""}.`
-}
-function planningPair(builder: RunRecord, planner: RunRecord): boolean {
-  return (
-    builder.purpose.kind === "task" &&
-    builder.purpose.phase !== "planning" &&
-    (!builder.task || builder.task === builder.purpose.task) &&
-    ((planner.purpose.kind === "new-task" && planner.task === builder.purpose.task) ||
-      (planner.purpose.kind === "task" &&
-        planner.purpose.phase === "planning" &&
-        planner.purpose.task === builder.purpose.task &&
-        (!planner.task || planner.task === planner.purpose.task))) &&
-    (builder.worktreePath
-      ? builder.worktreePath === builder.cwd && builder.sourceCheckout === planner.cwd
-      : builder.cwd === planner.cwd &&
-        (!builder.sourceCheckout || builder.sourceCheckout === planner.cwd))
-  )
-}
-function handedOff(ctx: Ctx, left: RunLease, right: RunLease): boolean {
-  const builderLease = left.planningHandoff ? left : right
-  const plannerLease = builderLease === left ? right : left
-  const handoff = builderLease.planningHandoff
-  if (
-    !handoff ||
-    handoff.run !== plannerLease.run ||
-    handoff.generation !== plannerLease.generation
-  )
-    return false
-  const builder = readRun(ctx.home, builderLease.run)
-  const planner = readRun(ctx.home, plannerLease.run)
-  return !!(
-    builder &&
-    planner &&
-    builder.generation === builderLease.generation &&
-    planner.generation === plannerLease.generation &&
-    builderLease.checkout === builder.cwd &&
-    plannerLease.checkout === planner.cwd &&
-    builderLease.task === runTaskLeaseKey(builder) &&
-    plannerLease.task === runTaskLeaseKey(planner) &&
-    planningPair(builder, planner) &&
-    (!(branchChangePending(ctx, left) || branchChangePending(ctx, right)) ||
-      handoff.branchAcknowledged)
-  )
-}
-async function locked<T>(
-  ctx: Ctx,
-  action: (rows: RunLease[]) => Promise<T>,
-  create = true,
-): Promise<T> {
-  if (create) await ctx.fs.mkdir(join(ctx.home, "runs"), { mode: 0o700 })
-  return ctx.fs.withLock(
-    join(ctx.home, "runs", "leases.lock"),
-    async () => action(await read(ctx)),
-    { createParent: create },
-  )
-}
 export async function acquireRunLeases(
   ctx: Ctx,
   run: Pick<RunRecord, "id" | "generation">,
@@ -185,155 +52,83 @@ export async function acquireRunLeases(
   options: { approvedPlanningHandoff?: boolean; startAnyway?: boolean } = {},
 ): Promise<void> {
   await repairDeadLeases(ctx, input.checkout)
-  await locked(ctx, async (saved) => {
+  await withLeaseLock(ctx, async (saved) => {
     const record = readRun(ctx.home, run.id)
     if (!record || record.generation !== run.generation) throw new Error("stale run generation")
     const rows = saved.filter((row) => stillHeld(ctx, row))
     const own = rows.find((row) => row.run === run.id)
     if (own && own.generation !== run.generation) throw new Error("stale lease generation")
     const others = rows.filter((row) => row.run !== run.id)
-    const claim: RunLease = { ...input, run: run.id, generation: run.generation }
-    if (own?.planningHandoff) claim.planningHandoff = own.planningHandoff
-    if (options.approvedPlanningHandoff && record.purpose.kind === "task") {
-      const plannerLease = others.find((lease) => {
-        const planner = readRun(ctx.home, lease.run)
-        return planner && planner.generation === lease.generation && planningPair(record, planner)
-      })
-      if (plannerLease) {
-        if ((input.branch || branchChangePending(ctx, plannerLease)) && !options.startAnyway)
-          throw new Error(
-            leaseConflict(
-              "A planning session is working in this checkout. Choose Start anyway before changing its branch.",
-              plannerLease,
-            ),
-          )
-        claim.planningHandoff = {
-          run: plannerLease.run,
-          generation: plannerLease.generation,
-          branchAcknowledged: options.startAnyway === true,
-        }
-      }
+    const claim: RunLease = {
+      ...input,
+      run: run.id,
+      generation: run.generation,
+      ...(own?.planningHandoff ? { planningHandoff: own.planningHandoff } : {}),
     }
-    for (const other of others) {
-      if (input.session && input.session === other.session)
-        throw new Error(leaseConflict("Another run holds this native session.", other))
-      if (handedOff(ctx, claim, other)) continue
-      if (input.task && input.task === other.task)
-        throw new Error(leaseConflict("Another run holds this task.", other))
-      if (input.checkout === other.checkout && (input.branch || branchChangePending(ctx, other)))
-        throw new Error(checkoutConflict(ctx, other))
-    }
+    attachPlanningHandoff(ctx, record, claim, others, options)
+    assertNoLeaseConflicts(ctx, claim, others)
     const text = JSON.stringify([...others, claim])
     if (Buffer.byteLength(text) > RUN_LEASES_MAX_BYTES)
       throw new Error("run leases exceed their byte bound")
-    await ctx.fs.atomicWrite(file(ctx), text)
+    await ctx.fs.atomicWrite(leaseFile(ctx), text)
   })
 }
+
 export async function releaseRunLeases(ctx: Ctx, run: string, generation: number): Promise<void> {
-  await locked(ctx, async (rows) => {
+  await withLeaseLock(ctx, async (rows) => {
     const record = readRun(ctx.home, run)
     if (!record || record.generation !== generation) throw new Error("stale run generation")
     const held = rows.find((row) => row.run === run)
     if (held && held.generation !== generation) throw new Error("stale lease generation")
     if (held && stillHeld(ctx, held))
       throw new Error("run still owns processes; lease remains held")
-    await ctx.fs.atomicWrite(file(ctx), JSON.stringify(rows.filter((row) => row.run !== run)))
+    await ctx.fs.atomicWrite(leaseFile(ctx), JSON.stringify(rows.filter((row) => row.run !== run)))
   })
+}
+
+function buildRefreshedClaim(
+  ctx: Ctx,
+  run: Pick<RunRecord, "id" | "generation">,
+  next: RunRecord,
+  own: RunLease | undefined,
+): RunLease {
+  const task = runTaskLeaseKey(next)
+  return {
+    run: run.id,
+    generation: run.generation,
+    checkout: next.artifactBinding?.root ?? next.cwd,
+    branch: own ? branchChangePending(ctx, own) : false,
+    ...(task ? { task } : {}),
+    ...(next.nativeSession ? { session: next.nativeSession } : {}),
+    ...(own?.planningHandoff ? { planningHandoff: own.planningHandoff } : {}),
+  }
 }
 
 /** Claim binding metadata and its lease together, with the retirement transaction's lock order. */
 export async function refreshRunLeases(
   ctx: Ctx,
   run: Pick<RunRecord, "id" | "generation">,
-  patch: Partial<
-    Pick<
-      RunRecord,
-      | "nativeSession"
-      | "task"
-      | "taskRuntimeDir"
-      | "cwd"
-      | "branch"
-      | "intent"
-      | "lastPrompt"
-      | "runEvents"
-      | "guardedRestart"
-    >
-  > = {},
+  patch: LeasePatch = {},
   resume?: { previousSession: string; lead: ProcessIdentity },
 ): Promise<RunRecord> {
-  return locked(ctx, async (saved) => {
+  return withLeaseLock(ctx, async (saved) => {
     const rows = saved.filter((row) => stillHeld(ctx, row))
     const own = rows.find((row) => row.run === run.id)
     if (own && own.generation !== run.generation) throw new Error("stale lease generation")
     const others = rows.filter((row) => row.run !== run.id)
-    const path = file(ctx)
-    if (existsSync(path) && lstatSync(path).isSymbolicLink())
-      throw new Error("unsafe run lease file")
-    const publish = (leases: RunLease[]) => {
-      const text = JSON.stringify(leases)
-      if (Buffer.byteLength(text) > RUN_LEASES_MAX_BYTES)
-        throw new Error("run leases exceed their byte bound")
-      const temporary = `${path}.${randomUUID()}.tmp`
-      try {
-        writeFileSync(temporary, text, { mode: 0o600, flag: "wx" })
-        renameSync(temporary, path)
-      } finally {
-        rmSync(temporary, { force: true })
-      }
-    }
+    const path = leaseFile(ctx)
     let published = false
     try {
       return updateRun(ctx.home, run.id, run.generation, (current) => {
-        if (!["validated", "starting", "running"].includes(current.status))
-          throw new Error("Only an active generation can claim binding leases")
-        if (
-          current.nativeSession &&
-          patch.nativeSession &&
-          current.nativeSession !== patch.nativeSession
-        )
-          if (
-            !resume ||
-            resume.previousSession !== current.nativeSession ||
-            current.purpose.kind !== "task" ||
-            !current.lead ||
-            current.lead.pid !== resume.lead.pid ||
-            current.lead.nativeStart !== resume.lead.nativeStart ||
-            current.lead.processStart !== resume.lead.processStart ||
-            current.lead.pidDomain !== resume.lead.pidDomain ||
-            identityState(current.lead) !== "live" ||
-            !leadCaller(ctx.home, current, process.pid)?.direct
-          )
-            throw new Error("This run is already bound to another native session")
-        if (current.task && patch.task && current.task !== patch.task)
-          throw new Error("This run is already bound to another task")
-        const next = { ...current, ...patch }
-        const claim: RunLease = {
-          run: run.id,
-          generation: run.generation,
-          checkout: next.artifactBinding?.root ?? next.cwd,
-          branch: own ? branchChangePending(ctx, own) : false,
-          ...(runTaskLeaseKey(next) ? { task: runTaskLeaseKey(next) } : {}),
-          ...(next.nativeSession ? { session: next.nativeSession } : {}),
-          ...(own?.planningHandoff ? { planningHandoff: own.planningHandoff } : {}),
-        }
-        for (const other of others) {
-          if (claim.session && claim.session === other.session)
-            throw new Error(leaseConflict("Another run holds this native session.", other))
-          if (handedOff(ctx, claim, other)) continue
-          if (claim.task && claim.task === other.task)
-            throw new Error(leaseConflict("Another run holds this task.", other))
-          if (
-            claim.checkout === other.checkout &&
-            (claim.branch || branchChangePending(ctx, other))
-          )
-            throw new Error(checkoutConflict(ctx, other))
-        }
-        publish([...others, claim])
+        validateRefreshPatch(ctx, current, patch, resume)
+        const claim = buildRefreshedClaim(ctx, run, { ...current, ...patch }, own)
+        assertNoLeaseConflicts(ctx, claim, others)
+        writeLeasesSync(path, [...others, claim])
         published = true
         return patch
       })
     } catch (cause) {
-      if (published) publish(saved)
+      if (published) writeLeasesSync(path, saved)
       throw cause
     }
   })
@@ -347,24 +142,14 @@ export async function pruneCompletedRun(
 ): Promise<boolean> {
   if (!(await ctx.fs.exists(ctx.home))) return false
   try {
-    return await locked(
+    return await withLeaseLock(
       ctx,
       async (rows) => {
         if (rows.some((row) => row.run === run && row.generation !== generation))
           throw new Error("stale lease generation; run recording retained")
         return removeCompletedRun(ctx.home, run, generation, () => {
           const kept = rows.filter((row) => row.run !== run || row.generation !== generation)
-          if (kept.length === rows.length) return
-          const path = file(ctx)
-          if (existsSync(path) && lstatSync(path).isSymbolicLink())
-            throw new Error("unsafe run lease file")
-          const temporary = `${path}.${randomUUID()}.tmp`
-          try {
-            writeFileSync(temporary, JSON.stringify(kept), { mode: 0o600, flag: "wx" })
-            renameSync(temporary, path)
-          } finally {
-            rmSync(temporary, { force: true })
-          }
+          if (kept.length !== rows.length) writeLeasesSync(leaseFile(ctx), kept)
         })
       },
       false,

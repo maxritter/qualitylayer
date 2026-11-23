@@ -220,43 +220,46 @@ export type PlanningLaunch = {
   works: "checkout" | "branch" | "worktree"
 }
 
+const PLANNING_LAUNCH_KEYS = "agent,effort,model,perm,permMode,runWhere,works"
+const PLANNING_LAUNCH_WORKS = ["checkout", "branch", "worktree"] as const
+
+function hasValidPlanningBase(v: PlanningLaunch): boolean {
+  const validAt =
+    v.at === undefined || (typeof v.at === "number" && Number.isFinite(v.at) && v.at > 0)
+  const keys = Object.keys(v)
+    .filter((key) => key !== "at")
+    .sort()
+    .join()
+  if (!validAt || keys !== PLANNING_LAUNCH_KEYS) return false
+  const validEnums =
+    DEFAULTS_AGENTS.includes(v.agent) &&
+    RUN_PERMISSIONS.includes(v.perm) &&
+    RUN_WHERE.includes(v.runWhere)
+  const validDetails =
+    PLANNING_LAUNCH_WORKS.includes(v.works) &&
+    (v.effort === "" || DEFAULTS_EFFORTS.includes(v.effort)) &&
+    typeof v.permMode === "string"
+  return validEnums && validDetails
+}
+
+function hasValidNativeLaunch(v: PlanningLaunch & { agent: NativeAgent }): boolean {
+  if (v.model !== "" && !validModelId(v.agent, v.model)) return false
+  const modes = agents[v.agent].capabilities.permissionModes
+  const permAllowed =
+    v.perm === "own" ||
+    (v.agent === "pi" && v.perm === "bypass") ||
+    modes.some((mode) => mode.level === v.perm)
+  if (!permAllowed) return false
+  return v.permMode === "" || modes.some((mode) => mode.id === v.permMode && mode.level === v.perm)
+}
+
 export function planningLaunchOf(value: unknown): PlanningLaunch | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const v = value as PlanningLaunch
-  if (v.at !== undefined && (typeof v.at !== "number" || !Number.isFinite(v.at) || v.at <= 0))
-    return null
-  if (
-    Object.keys(v)
-      .filter((key) => key !== "at")
-      .sort()
-      .join() !== "agent,effort,model,perm,permMode,runWhere,works"
-  )
-    return null
-  if (
-    !DEFAULTS_AGENTS.includes(v.agent) ||
-    !RUN_PERMISSIONS.includes(v.perm) ||
-    !RUN_WHERE.includes(v.runWhere) ||
-    !["checkout", "branch", "worktree"].includes(v.works) ||
-    !(v.effort === "" || DEFAULTS_EFFORTS.includes(v.effort)) ||
-    typeof v.permMode !== "string"
-  )
-    return null
+  if (!hasValidPlanningBase(v)) return null
   if (v.agent === "other") return v.model === "" && v.perm === "own" && v.permMode === "" ? v : null
-  if (!(v.model === "" || validModelId(v.agent, v.model))) return null
-  if (
-    v.perm !== "own" &&
-    !(v.agent === "pi" && v.perm === "bypass") &&
-    !agents[v.agent].capabilities.permissionModes.some((mode) => mode.level === v.perm)
-  )
-    return null
-  if (
-    v.permMode !== "" &&
-    !agents[v.agent].capabilities.permissionModes.some(
-      (mode) => mode.id === v.permMode && mode.level === v.perm,
-    )
-  )
-    return null
-  return isNativeAgent(v.agent) ? v : null
+  if (!isNativeAgent(v.agent)) return null
+  return hasValidNativeLaunch(v as PlanningLaunch & { agent: NativeAgent }) ? v : null
 }
 /**
  * What Implement Start opens with for one agent. `orchestrator` is the build session's model for a

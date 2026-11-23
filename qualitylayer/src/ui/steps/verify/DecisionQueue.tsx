@@ -1,12 +1,40 @@
 import { CheckIcon, ChevronLeftIcon, MessageSquareIcon } from "lucide-react"
-import { type ReactNode, useState } from "react"
+import type { ReactNode } from "react"
 import { answerLabel, asksForChange, type Item, type ItemAnswer } from "../../../core/items.ts"
 import type { TaskSurfaceProps } from "../../interaction/props.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { CodeRow } from "../../review-workspace/CodeRow.tsx"
 import { sectionId } from "../../step-page/sections.ts"
 import { StepItem } from "../StepItem.tsx"
+import { itemStatusLabel, type QueueModel, useReviewQueue } from "./use-review-queue.ts"
 import "./decision-queue.css"
+
+function SavedAnswerCard({
+  item,
+  answer,
+  onEdit,
+}: {
+  item: Item
+  answer: ItemAnswer
+  onEdit: () => void
+}) {
+  return (
+    <div className="review-saved-answer">
+      <h3>
+        <InlineMarkdown text={item.what} />
+      </h3>
+      <p>You answered: {answerLabel(answer.kind, item.family, item.answers.labels)}</p>
+      {answer.note ? (
+        <p>
+          <InlineMarkdown text={answer.note} />
+        </p>
+      ) : null}
+      <button type="button" className="q-btn" onClick={onEdit}>
+        Change answer
+      </button>
+    </div>
+  )
+}
 
 export function ReviewDecisionQueue({
   items: givenItems,
@@ -52,22 +80,7 @@ export function ReviewDecisionQueue({
         ) : (
           <>
             {answer && editing !== current.id ? (
-              <div className="review-saved-answer">
-                <h3>
-                  <InlineMarkdown text={current.what} />
-                </h3>
-                <p>
-                  You answered: {answerLabel(answer.kind, current.family, current.answers.labels)}
-                </p>
-                {answer.note ? (
-                  <p>
-                    <InlineMarkdown text={answer.note} />
-                  </p>
-                ) : null}
-                <button type="button" className="q-btn" onClick={() => edit(current.id)}>
-                  Change answer
-                </button>
-              </div>
+              <SavedAnswerCard item={current} answer={answer} onEdit={() => edit(current.id)} />
             ) : (
               <StepItem
                 key={`${current.id}:${current.digest}:${editing === current.id}`}
@@ -102,179 +115,77 @@ export function ReviewDecisionQueue({
   )
 }
 
-function isOpen(item: Item): boolean {
-  return item.state === "open" || item.updated === true
+function DecisionNavButton({ item, at, queue }: { item: Item; at: number; queue: QueueModel }) {
+  const answer = queue.answerOf(item)
+  const isAnswered = queue.answered(item)
+  const change = Boolean(answer && asksForChange(answer.kind))
+  const label = itemStatusLabel(item, answer, isAnswered, queue.skipped.has(item.id))
+  const answerState = change ? "change" : isAnswered ? "saved" : "open"
+  const isCurrent = !queue.overview && queue.current?.id === item.id
+  return (
+    <button
+      type="button"
+      aria-label={`${at + 1}. ${item.what}: ${label}`}
+      aria-current={isCurrent ? "step" : undefined}
+      title={`${item.what} · ${label}`}
+      data-answer={answerState}
+      onClick={() => queue.choose(item.id)}
+    >
+      <span>{at + 1}</span>
+      {change ? <MessageSquareIcon size={10} /> : isAnswered ? <CheckIcon size={10} /> : null}
+    </button>
+  )
 }
 
-type QueueInput = {
-  items: Item[]
-  onAnswered: (item: Item, answer: ItemAnswer) => void
-}
-function useReviewQueue({ items, onAnswered }: QueueInput) {
-  const [selected, select] = useState<string | null>(() => items.find(isOpen)?.id ?? null)
-  const [skipped, skip] = useState<Set<string>>(() => new Set())
-  const [saved, save] = useState<
-    Record<string, { digest: string | undefined; answer: ItemAnswer }>
-  >({})
-  const [editing, edit] = useState<string | null>(null)
-  const [overview, showOverview] = useState(items.every((item) => !isOpen(item)))
-  const answerOf = (item: Item): ItemAnswer | undefined => {
-    if (saved[item.id]?.digest === item.digest) return saved[item.id]?.answer
-    return item.updated ? undefined : item.answer
-  }
-  const answered = (item: Item) => answerOf(item) !== undefined || !isOpen(item)
-  const remaining = items.filter((item) => !answered(item))
-  const current = items.find((item) => item.id === selected) ?? remaining[0] ?? items[0]
-  const index = current ? items.indexOf(current) : -1
-  const choose = (id: string) => {
-    select(id)
-    edit(null)
-    showOverview(false)
-  }
-  const advance = (savedId?: string) => {
-    const next = items
-      .slice(index + 1)
-      .concat(items.slice(0, index))
-      .find((item) => item.id !== savedId && !answered(item))
-    if (next) choose(next.id)
-    else showOverview(true)
-  }
-  const answer = current ? answerOf(current) : undefined
-  const changes = items.filter((item) => {
-    const answer = answerOf(item)
-    return answer && asksForChange(answer.kind)
-  }).length
-  const required = remaining.some((item) => item.blocking)
-  const title =
-    changes > 0
-      ? "Send your changes"
-      : remaining.length === 0
-        ? "Ready for your approval"
-        : "Review the change"
-
-  const answerCurrent = (given: ItemAnswer) => {
-    if (!current) return
-    save((old) => ({ ...old, [current.id]: { digest: current.digest, answer: given } }))
-    onAnswered(current, given)
-    advance(current.id)
-  }
-  const previous = () => {
-    const item = items[index - 1]
-    if (item) choose(item.id)
-  }
-  const skipCurrent = () => {
-    if (!current) return
-    skip((old) => new Set(old).add(current.id))
-    advance()
-  }
-  return {
-    items,
-    remaining,
-    current,
-    overview,
-    answer,
-    editing,
-    index,
-    edit,
-    title,
-    changes,
-    required,
-    answerOf,
-    answered,
-    skipped,
-    choose,
-    showOverview,
-    answerCurrent,
-    previous,
-    skipCurrent,
-  }
-}
-type QueueModel = ReturnType<typeof useReviewQueue>
 function DecisionNavigation({ queue }: { queue: QueueModel }) {
-  const { items, answerOf, answered, skipped, overview, current, choose, showOverview } = queue
   return (
     <nav aria-label="Review decisions">
-      {items.map((item, at) => {
-        const answer = answerOf(item)
-        const change = answer && asksForChange(answer.kind)
-        const label = answer
-          ? answerLabel(answer.kind, item.family, item.answers.labels)
-          : answered(item)
-            ? "Settled"
-            : skipped.has(item.id)
-              ? "Skipped"
-              : "Not answered"
-        return (
-          <button
-            type="button"
-            key={item.id}
-            aria-label={`${at + 1}. ${item.what}: ${label}`}
-            aria-current={!overview && current?.id === item.id ? "step" : undefined}
-            title={`${item.what} · ${label}`}
-            data-answer={change ? "change" : answered(item) ? "saved" : "open"}
-            onClick={() => choose(item.id)}
-          >
-            <span>{at + 1}</span>
-            {change ? (
-              <MessageSquareIcon size={10} />
-            ) : answered(item) ? (
-              <CheckIcon size={10} />
-            ) : null}
-          </button>
-        )
-      })}
+      {queue.items.map((item, at) => (
+        <DecisionNavButton key={item.id} item={item} at={at} queue={queue} />
+      ))}
       <button
         type="button"
         className="review-finish"
-        aria-current={overview ? "step" : undefined}
-        onClick={() => showOverview(true)}
+        aria-current={queue.overview ? "step" : undefined}
+        onClick={() => queue.showOverview(true)}
       >
         Finish review
       </button>
     </nav>
   )
 }
+
+function overviewHint(remainingCount: number, required: boolean): string {
+  if (remainingCount === 0) return "Your answers are saved. Approval is a separate decision."
+  return required
+    ? "Some items are unanswered. Required confirmations must be settled before approval."
+    : "Some items are unanswered. Approving accepts them as they stand."
+}
+
 function DecisionOverview({ queue }: { queue: QueueModel }) {
   const { title, remaining, required, items, answerOf, answered, skipped, choose } = queue
+  const firstRemaining = remaining[0]
   return (
     <div className="review-overview">
       <h2>{title}</h2>
-      <p>
-        {remaining.length > 0
-          ? required
-            ? "Some items are unanswered. Required confirmations must be settled before approval."
-            : "Some items are unanswered. Approving accepts them as they stand."
-          : "Your answers are saved. Approval is a separate decision."}
-      </p>
+      <p>{overviewHint(remaining.length, required)}</p>
       <ul>
         {items.map((item) => {
-          const answer = answerOf(item)
+          const label = itemStatusLabel(item, answerOf(item), answered(item), skipped.has(item.id))
           return (
             <li key={item.id}>
               <button type="button" onClick={() => choose(item.id)}>
                 <span className="review-overview-title">
                   <InlineMarkdown text={item.what} />
                 </span>
-                <b>
-                  {answer
-                    ? answerLabel(answer.kind, item.family, item.answers.labels)
-                    : answered(item)
-                      ? "Settled"
-                      : skipped.has(item.id)
-                        ? "Skipped"
-                        : "Not answered"}
-                </b>
+                <b>{label}</b>
               </button>
             </li>
           )
         })}
       </ul>
-      {remaining[0] ? (
-        <button
-          type="button"
-          className="q-btn"
-          onClick={() => remaining[0] && choose(remaining[0].id)}
-        >
+      {firstRemaining ? (
+        <button type="button" className="q-btn" onClick={() => choose(firstRemaining.id)}>
           Continue review
         </button>
       ) : null}

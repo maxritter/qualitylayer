@@ -33,6 +33,21 @@ const START: Rounds = {
   passStands: false,
 }
 
+function verifyResultStep(r: Rounds, event: Record<string, unknown>): Rounds {
+  if (event.passed === true)
+    return {
+      judgeRuns: 0,
+      asked: 0,
+      before: { judgeRuns: r.judgeRuns, asked: r.asked },
+      passStands: true,
+    }
+  return {
+    ...r,
+    judgeRuns: r.judgeRuns + (event.budgeted !== false ? 1 : 0),
+    passStands: false,
+  }
+}
+
 function roundStep(r: Rounds, event: Record<string, unknown>): Rounds {
   switch (event.event) {
     // Straight after a pass it undoes that pass (its counts are spent again); withdrawn again with no
@@ -42,18 +57,7 @@ function roundStep(r: Rounds, event: Record<string, unknown>): Rounds {
         ? { ...r, judgeRuns: r.before.judgeRuns + 1, asked: r.before.asked, passStands: false }
         : { ...r, judgeRuns: r.judgeRuns + 1, passStands: false }
     case "verify_result":
-      if (event.passed === true)
-        return {
-          judgeRuns: 0,
-          asked: 0,
-          before: { judgeRuns: r.judgeRuns, asked: r.asked },
-          passStands: true,
-        }
-      return {
-        ...r,
-        judgeRuns: r.judgeRuns + (event.budgeted !== false ? 1 : 0),
-        passStands: false,
-      }
+      return verifyResultStep(r, event)
     case "plan_amended":
       return event.by === "user" ? START : r
     case "fix_round_asked":

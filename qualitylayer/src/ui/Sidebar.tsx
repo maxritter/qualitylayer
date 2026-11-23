@@ -5,54 +5,40 @@
 // column of the page, never laid over it; below 900 px it is a sheet the Menu button opens. Find types
 // here; ⌘K searches everything and sets the project filter.
 
-import { cn } from "cn"
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  FolderPlusIcon,
-  HouseIcon,
-  PanelLeftIcon,
-  ShapesIcon,
-} from "lucide-react"
+import { FolderPlusIcon } from "lucide-react"
 import { type ReactNode, useMemo, useState } from "react"
-import { Button } from "@/components/ui/button"
 import { type LookPatch, NO_LOOKS, type ProjectLooks } from "../core/project-look.ts"
 import type { HomeQuestion, Licence, Project, TaskSummary } from "./api.ts"
 import { type Route, useNow } from "./hooks.ts"
-import { appShortcut, CHORD } from "./kit/command-keys.ts"
 import { NavLoading } from "./kit/LoadingState.tsx"
-import { Logo } from "./Logo.tsx"
-import { groupByStatus } from "./live-status.ts"
-import { MachineSwitch, useSwitchView } from "./machines/MachineSwitch.tsx"
-import { NEED_WORD, type TaskFilter } from "./model.ts"
+import { useSwitchView } from "./machines/MachineSwitch.tsx"
+import type { TaskFilter } from "./model.ts"
 import { PREF, useIdSet, usePref } from "./prefs.ts"
-import { projectBuildGroups, runAttention } from "./run-attention.ts"
+import { runAttention } from "./run-attention.ts"
 import { type RunWindow, useOptionalRuns } from "./run-context.tsx"
 import { buildRunsVersion, runTaskId } from "./runs-api.ts"
-import { shellGroups } from "./shell/model.ts"
-import {
-  ACTIVITY_WINDOWS,
-  type ActivityWindow,
-  matchesActivity,
-  matchingTasks,
-} from "./sidebar/activity.ts"
-import { type NewKind, NewMenu } from "./sidebar/NewMenu.tsx"
+import { ACTIVITY_WINDOWS, type ActivityWindow, matchingTasks } from "./sidebar/activity.ts"
+import type { NewKind } from "./sidebar/NewMenu.tsx"
 import { ProjectList } from "./sidebar/ProjectList.tsx"
 import {
   chipWords,
   knownProjects,
-  matchesQuery,
   orderProjects,
   projectFacts,
   projectView,
-  tasksOfShownProjects,
 } from "./sidebar/project-model.ts"
-import { SearchRow } from "./sidebar/SearchRow.tsx"
 import { SidebarFoot } from "./sidebar/SidebarFoot.tsx"
 import { TaskRail } from "./sidebar/TaskRail.tsx"
-import { RunRow, TaskRow } from "./sidebar/TaskRow.tsx"
 import { useUnread } from "./sidebar/use-seen.ts"
 import { type GroupBy, ROW_HEIGHTS, type RowsHeight, ViewMenu } from "./sidebar/ViewMenu.tsx"
+import {
+  deriveSidebarLists,
+  isCurrentTaskHidden,
+  sidebarCurrentGroup,
+  sidebarManagedRuns,
+  sidebarRailState,
+} from "./sidebar-helpers.ts"
+import { SidebarStatusGroups, SidebarTopChrome } from "./sidebar-status-groups.tsx"
 
 type Props = {
   /** Explicitly enabled by the mounted interaction adapter; older adapters keep their list. */
@@ -103,104 +89,175 @@ type Props = {
   onProjectMenu?: (projectId: string, event: React.MouseEvent) => void
 }
 
+function SidebarListBody({
+  reading,
+  byProject,
+  view,
+  emptyFiltered,
+  searching,
+  query,
+  onOpenSearch,
+  filtered,
+  chip,
+  matchingCount,
+  outside,
+  showAll,
+  projectListProps,
+  statusProps,
+}: {
+  reading?: boolean
+  byProject: boolean
+  view: ReturnType<typeof projectView> | null
+  emptyFiltered: boolean
+  searching: boolean
+  query: string
+  onOpenSearch: () => void
+  filtered: boolean
+  chip: string[]
+  matchingCount: number
+  outside: number
+  showAll: () => void
+  projectListProps: Omit<React.ComponentProps<typeof ProjectList>, "view">
+  statusProps: Omit<React.ComponentProps<typeof SidebarStatusGroups>, "nothingFound">
+}) {
+  const noMatches = emptyFiltered ? (
+    <p className="pj-quiet-note" data-testid="sidebar-no-matches">
+      No tasks match this view.{" "}
+      <button type="button" className="q-link" onClick={showAll}>
+        Clear filters
+      </button>
+    </p>
+  ) : null
+  const nothingFound = searching ? (
+    <p className="pj-quiet-note" data-testid="find-nothing">
+      Nothing here matches “{query}”.{" "}
+      <button type="button" className="q-link" onClick={onOpenSearch}>
+        Search everything
+      </button>
+    </p>
+  ) : null
+  return (
+    <div className="-mx-1 min-h-0 flex-1 overflow-auto px-1">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5">
+        {filtered ? (
+          <div className="q-filter-chip" data-testid="filter-note">
+            <span className="min-w-0 truncate">{chip.join(" · ")}</span>
+            <button type="button" className="q-link ml-auto" onClick={showAll}>
+              Clear filters
+            </button>
+          </div>
+        ) : null}
+        <span role="status" className="sr-only" data-testid="sidebar-results">
+          {matchingCount} matching tasks. {outside} other open tasks outside this view.
+        </span>
+        {!reading ? (emptyFiltered && searching ? nothingFound : noMatches) : null}
+        {reading ? (
+          <NavLoading />
+        ) : byProject && view !== null ? (
+          <>
+            <ProjectList
+              {...projectListProps}
+              view={emptyFiltered ? { ...view, quietNote: null } : view}
+            />
+            {view.groups.length === 0 && !emptyFiltered ? nothingFound : null}
+          </>
+        ) : (
+          <SidebarStatusGroups {...statusProps} nothingFound={nothingFound} />
+        )}
+        {filtered && outside > 0 ? (
+          <p className="pj-quiet-note" data-testid="sidebar-outside">
+            {outside} other open tasks outside this view.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function useSidebarPrefs() {
+  const [groupBy, setGroupBy] = usePref<GroupBy>(PREF.groupBy, "project", ["project", "status"])
+  const [rows, setRows] = usePref<RowsHeight>(PREF.rows, "detailed", ROW_HEIGHTS)
+  const [activity, setActivity] = usePref<ActivityWindow>(PREF.activity, "any", ACTIVITY_WINDOWS)
+  const [folded, toggleFold, assignFolded] = useIdSet(PREF.folded)
+  const [doneOpen, toggleDone] = useIdSet(PREF.doneOpen)
+  const [shippedFold, setShippedFold] = usePref(PREF.shipped, "closed", ["open", "closed"])
+  const [archivedFold, setArchivedFold] = usePref(PREF.archived, "closed", ["open", "closed"])
+  const [typed, setTyped] = useState("")
+  return {
+    groupBy,
+    setGroupBy,
+    rows,
+    setRows,
+    activity,
+    setActivity,
+    folded,
+    toggleFold,
+    assignFolded,
+    doneOpen,
+    toggleDone,
+    shippedFold,
+    setShippedFold,
+    archivedFold,
+    setArchivedFold,
+    typed,
+    setTyped,
+  }
+}
+
 export function Sidebar(props: Props) {
   const { tasks, projects, filter, route, go } = props
   const looks = props.looks ?? NO_LOOKS
   const windows = useOptionalRuns()
-  const liveRuns =
-    windows?.runs.filter(
-      (run) =>
-        !!runTaskId(run) &&
-        // A New terminal is not task work until the person binds it with /ql.
-        (run.purpose.kind !== "terminal" || !!run.task) &&
-        run.status !== "stopped" &&
-        !run.taskLifecycle?.archived &&
-        !["shipped", "abandoned", "deleted"].includes(run.taskLifecycle?.stage ?? "") &&
-        (filter.agent === "" || filter.agent === run.agent) &&
-        (filter.project === "" ||
-          tasks.some((task) => task.id === runTaskId(run) && task.project === filter.project)),
-    ) ?? []
+  const prefs = useSidebarPrefs()
+  const byProject = prefs.groupBy === "project"
+  const oneLine = prefs.rows === "one"
+  const detailed = prefs.rows === "detailed"
+  const query = prefs.typed.trim()
+  const searching = query !== ""
+  const closeFind = () => prefs.setTyped("")
+  const { managedRuns, unboundRuns } = sidebarManagedRuns(windows?.runs, filter, tasks, searching)
   const openRun = (run: RunWindow) => {
     windows?.select(run.id)
     const task = runTaskId(run)
     if (task && tasks.some((item) => item.id === task)) go({ view: "task", id: task, doc: null })
   }
-  const [groupBy, setGroupBy] = usePref<GroupBy>(PREF.groupBy, "project", ["project", "status"])
-  const [rows, setRows] = usePref<RowsHeight>(PREF.rows, "detailed", ROW_HEIGHTS)
-  const [activity, setActivity] = usePref<ActivityWindow>(PREF.activity, "any", ACTIVITY_WINDOWS)
-  const byProject = groupBy === "project"
-  const oneLine = rows === "one"
-  const detailed = rows === "detailed"
-  const [folded, toggleFold, assignFolded] = useIdSet(PREF.folded)
-  const [doneOpen, toggleDone] = useIdSet(PREF.doneOpen)
-  const [shippedFold, setShippedFold] = usePref(PREF.shipped, "closed", ["open", "closed"])
-  const [archivedFold, setArchivedFold] = usePref(PREF.archived, "closed", ["open", "closed"])
-  // The name filter lives in the View options and applies while it holds words; the filter strip names it.
-  const [typed, setTyped] = useState("")
-  const query = typed.trim()
-  const searching = query !== ""
-  // Agent windows are not tasks: the name filter leaves them out.
-  const managedRuns = searching ? [] : liveRuns
-  const unboundRuns = managedRuns.filter(
-    (run) => !!runTaskId(run) && !tasks.some((task) => task.id === runTaskId(run)),
-  )
-  const closeFind = () => setTyped("")
-  // The rows' words move with the clock (a quiet agent's minutes), not only with the server's events.
   const now = useNow(true, 30_000)
-  // A selected task stays accessible: under its project, else in Open now when its group is folded.
   const openId = route.view === "task" ? route.id : null
-  // The tasks that changed since the viewer looked: the unread dot of a detailed row.
   const unread = useUnread(tasks, openId)
   const buildVersion = buildRunsVersion(windows?.runs ?? [])
   // biome-ignore lint/correctness/useExhaustiveDependencies: buildVersion covers build transitions; output timestamps do not change attention or project grouping.
   const attention = useMemo(
     () =>
       runAttention(
-        {
-          tasks,
-          project: filter.project,
-          agent: filter.agent,
-          now,
-        },
+        { tasks, project: filter.project, agent: filter.agent, now },
         windows?.runs ?? [],
       ),
     [tasks, filter.project, filter.agent, now, buildVersion],
   )
-  const shell = attention.shell
   const factsById = useMemo(
     () => new Map(knownProjects(projects, tasks).map((p) => [p.id, projectFacts(p, looks)])),
     [projects, tasks, looks],
   )
-  // Every project in the person's order, hidden ones too: a move among the shown keeps them in place.
   const fullOrder = useMemo(
     () => orderProjects(knownProjects(projects, tasks), tasks, looks).map((p) => p.id),
     [projects, tasks, looks],
   )
   const factsOf = (task: TaskSummary) =>
     factsById.get(task.project) ?? projectFacts({ id: task.project, name: task.projectName }, looks)
-  // Status grouping leaves out the tasks of hidden projects, except the one on screen; Find narrows
-  // it by title and project name.
-  const activityTasks = tasks.filter((task) =>
-    matchesActivity(task, activity, now, attention.managed),
-  )
-  const visible = byProject
-    ? activityTasks
-    : tasksOfShownProjects(activityTasks, looks, openId, filter.project)
-  const listed = searching
-    ? visible.filter((t) => matchesQuery(`${t.title} ${factsOf(t).label}`, query))
-    : visible
-  const listShell =
-    listed.length === tasks.length
-      ? shell
-      : projectBuildGroups(
-          shellGroups(listed, filter.project, filter.agent, now),
-          attention.managed,
-        )
-  const groups =
-    props.interaction === true
-      ? { ...listShell, progress: listShell.running }
-      : groupByStatus(listed, filter.project, filter.agent, now)
-  const show = (need: Exclude<TaskFilter["need"], "">) => filter.need === "" || filter.need === need
+  const { listShell, groups, counts } = deriveSidebarLists({
+    tasks,
+    looks,
+    filter,
+    activity: prefs.activity,
+    byProject,
+    query,
+    openId,
+    now,
+    interaction: props.interaction === true,
+    attentionShell: attention.shell,
+    managed: attention.managed,
+    factsOf,
+  })
   const view = useMemo(
     () =>
       byProject
@@ -209,13 +266,13 @@ export function Sidebar(props: Props) {
             projects,
             looks,
             filter: { need: filter.need, agent: filter.agent, project: filter.project },
-            folded,
-            doneOpen,
+            folded: prefs.folded,
+            doneOpen: prefs.doneOpen,
             openId,
             now,
             query,
             managed: attention.managed,
-            activity,
+            activity: prefs.activity,
           })
         : null,
     [
@@ -226,104 +283,46 @@ export function Sidebar(props: Props) {
       filter.need,
       filter.agent,
       filter.project,
-      folded,
-      doneOpen,
+      prefs.folded,
+      prefs.doneOpen,
       openId,
       now,
       query,
       attention.managed,
-      activity,
+      prefs.activity,
     ],
   )
-  // Find shows what matches, shipped and archived too: those folds stand open while it is typed.
-  const shippedOpen = shippedFold === "open" || filter.need === "shipped" || searching
-  const archivedOpen = archivedFold === "open" || searching
+  const shippedOpen = prefs.shippedFold === "open" || filter.need === "shipped" || searching
+  const archivedOpen = prefs.archivedFold === "open" || searching
   const currentTask = tasks.find((t) => t.id === openId)
-  const currentHidden =
-    currentTask !== undefined &&
-    !(
-      (show("you") && groups.you.some((t) => t.id === openId)) ||
-      (show("running") && groups.progress.some((t) => t.id === openId)) ||
-      (show("shipped") && shippedOpen && groups.shipped.some((t) => t.id === openId)) ||
-      (filter.need === "" && archivedOpen && groups.archived.some((t) => t.id === openId))
-    )
-  const home = () => {
-    props.onFilter({ project: "", agent: "", need: "" })
-    setActivity("any")
-    closeFind()
-    go({ view: "home" })
-  }
+  const currentHidden = isCurrentTaskHidden({
+    currentTask,
+    openId,
+    filterNeed: filter.need,
+    groups,
+    shippedOpen,
+    archivedOpen,
+  })
   const showAll = () => {
     props.onFilter({ project: "", need: "", agent: "" })
-    setActivity("any")
+    prefs.setActivity("any")
     closeFind()
   }
-  // The View menu's counts: what each Show choice lists under the agent and project filters.
-  const activityShell = projectBuildGroups(
-    shellGroups(activityTasks, filter.project, filter.agent, now),
-    attention.managed,
-  )
-  const counts = {
-    "": activityShell.open.length,
-    you: activityShell.you.length,
-    running: activityShell.running.length,
-    shipped: activityShell.shipped.length,
+  const home = () => {
+    showAll()
+    go({ view: "home" })
   }
-  const foldAll = () => assignFolded(fullOrder)
-  const unfoldAll = () => assignFolded([])
-
-  const attentionItems = attention.items
-  const homeWaiting = attentionItems.length
-  // With a machine added the chosen machine's name stands where the product name does; without, null.
+  const homeWaiting = attention.items.length
   const machines = useSwitchView(homeWaiting)
-  const chip = chipWords({
-    query,
-    need: filter.need,
-    agent: filter.agent,
-    project: filter.project === "" ? "" : (factsById.get(filter.project)?.label ?? filter.project),
-    activity,
-  })
-  const filtered = chip.length > 0
-  const matching = matchingTasks(groups, listShell.open, filter.need, searching)
-  const matched = new Set(matching.map((task) => task.id))
-  const allGroups = projectBuildGroups(shellGroups(tasks, "", "", now), attention.managed)
-  const currentGroup = allGroups.you.some((task) => task.id === openId)
-    ? "you"
-    : allGroups.running.some((task) => task.id === openId)
-      ? "running"
-      : "shipped"
-  const outside = allGroups.open.filter(
-    (task) => !matched.has(task.id) && task.id !== openId,
-  ).length
-  const emptyFiltered = filtered && matching.length === 0
-  const noMatches = emptyFiltered ? (
-    <p className="pj-quiet-note" data-testid="sidebar-no-matches">
-      No tasks match this view.{" "}
-      <button type="button" className="q-link" onClick={showAll}>
-        Clear filters
-      </button>
-    </p>
-  ) : null
-  // Find with no match: say so, and offer the wider search ⌘K does.
-  const nothingFound = searching ? (
-    <p className="pj-quiet-note" data-testid="find-nothing">
-      Nothing here matches “{query}”.{" "}
-      <button type="button" className="q-link" onClick={props.onOpenSearch}>
-        Search everything
-      </button>
-    </p>
-  ) : null
-  // Collapsed: the task rail, from the same groups as the status view over every shown project.
   if (props.rail !== undefined) {
-    const railTasks = tasksOfShownProjects(tasks, looks, openId, "")
-    const railGroups =
-      props.interaction === true
-        ? projectBuildGroups(shellGroups(railTasks, "", "", now), attention.managed)
-        : (({ you, progress }) => ({ you, running: progress }))(
-            groupByStatus(railTasks, "", "", now),
-          )
-    const listed = new Set([...railGroups.you, ...railGroups.running].map((task) => task.id))
-    const open = tasks.find((task) => task.id === openId && !listed.has(task.id)) ?? null
+    const { railGroups, open } = sidebarRailState({
+      tasks,
+      looks,
+      openId,
+      now,
+      interaction: props.interaction === true,
+      managed: attention.managed,
+    })
     return (
       <TaskRail
         you={railGroups.you}
@@ -343,11 +342,25 @@ export function Sidebar(props: Props) {
       />
     )
   }
-  // Before the first task the empty Needs you and Running groups stay out of the sidebar.
+  const chip = chipWords({
+    query,
+    need: filter.need,
+    agent: filter.agent,
+    project: filter.project === "" ? "" : (factsById.get(filter.project)?.label ?? filter.project),
+    activity: prefs.activity,
+  })
+  const filtered = chip.length > 0
+  const matching = matchingTasks(groups, listShell.open, filter.need, searching)
+  const matched = new Set(matching.map((task) => task.id))
+  const { currentGroup, outside } = sidebarCurrentGroup(
+    tasks,
+    openId,
+    now,
+    attention.managed,
+    matched,
+  )
+  const emptyFiltered = filtered && matching.length === 0
   const firstRun = tasks.length === 0 && unboundRuns.length === 0
-  const statusEmpty =
-    groups.you.length + groups.progress.length + groups.shipped.length + groups.archived.length ===
-    0
 
   return (
     <aside
@@ -356,330 +369,122 @@ export function Sidebar(props: Props) {
       data-testid="sidebar"
       data-interaction={props.interaction === true}
     >
-      <div className="group/brand flex min-w-0 items-center gap-0.5">
-        {machines !== null ? (
-          <MachineSwitch view={machines} placement="sidebar" />
-        ) : (
-          <button
-            type="button"
-            className="q-brand min-w-0 flex-1 border-0 bg-transparent text-left"
-            onClick={home}
-            title="QualityLayer"
-          >
-            <Logo />
-            <span className="truncate">QualityLayer</span>
-          </button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "order-first text-muted-foreground",
-            props.onNewTask !== undefined && "w-7 min-w-7",
-          )}
-          onClick={props.onHide}
-          aria-label="Hide the task list"
-          title={appShortcut("Hide the task list", CHORD.taskList)}
-        >
-          <PanelLeftIcon />
-        </Button>
-        {props.onNewTask !== undefined ? (
-          <NewMenu cardOpen={props.newTaskOpen === true} onPick={props.onNewTask} />
-        ) : null}
-      </div>
-
-      <SearchRow onOpen={props.onOpenSearch} />
-
-      <button
-        type="button"
-        className="q-sitem ir-home-nav"
-        aria-current={route.view === "home" ? "page" : undefined}
-        onClick={home}
-        title={appShortcut(
-          props.interaction === true ? "Home · your tasks on this computer" : "Home",
-          CHORD.home,
-        )}
-      >
-        <HouseIcon className="size-4" aria-hidden="true" />
-        <span className="ir-place-label">Home</span>
-        {props.interaction === true ? null : <small>Your tasks on this computer</small>}
-        {homeWaiting > 0 ? <span className="ir-place-count">{homeWaiting}</span> : null}
-      </button>
-      <button
-        type="button"
-        className="q-sitem ir-artifacts-nav"
-        aria-current={route.view === "artifacts" || route.view === "artifact" ? "page" : undefined}
-        onClick={() => {
+      <SidebarTopChrome
+        machines={machines}
+        onHome={home}
+        onHide={props.onHide}
+        onNewTask={props.onNewTask}
+        newTaskOpen={props.newTaskOpen}
+        onOpenSearch={props.onOpenSearch}
+        route={route}
+        interaction={props.interaction}
+        homeWaiting={homeWaiting}
+        onArtifacts={() => {
           closeFind()
           go({ view: "artifacts" })
         }}
-        title={appShortcut(
-          "Artifacts · every project's lasting artifacts and the drafts in open tasks",
-          CHORD.artifacts,
-        )}
-        data-testid="artifacts-place"
-      >
-        <ShapesIcon className="size-4" aria-hidden="true" />
-        <span className="ir-place-label">Artifacts</span>
-      </button>
+      />
 
-      {
-        <div className="q-list-header" data-testid="task-list-header">
-          <h2 className="pj-label">{byProject ? "Projects" : "Tasks"}</h2>
-          <ViewMenu
-            query={typed}
-            onQuery={setTyped}
-            groupBy={groupBy}
-            onGroupBy={setGroupBy}
-            need={filter.need}
-            counts={counts}
-            onNeed={(need) => props.onFilter({ need })}
-            agent={filter.agent}
-            onAgent={(agent) => props.onFilter({ agent })}
-            activity={activity}
-            onActivity={setActivity}
-            rows={rows}
-            onRows={setRows}
-            onFoldAll={foldAll}
-            onUnfoldAll={unfoldAll}
-          />
-          {props.onAddProject !== undefined ? (
-            <button
-              type="button"
-              className="q-ic"
-              aria-label="Add a project"
-              data-add-project-toggle
-              title="Add a project"
-              onClick={(event) => props.onAddProject?.(event.currentTarget)}
-            >
-              <FolderPlusIcon className="size-[13px]" aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-      }
-
-      <div className="-mx-1 min-h-0 flex-1 overflow-auto px-1">
-        {
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5">
-            {filtered ? (
-              <div className="q-filter-chip" data-testid="filter-note">
-                <span className="min-w-0 truncate">{chip.join(" · ")}</span>
-                <button type="button" className="q-link ml-auto" onClick={showAll}>
-                  Clear filters
-                </button>
-              </div>
-            ) : null}
-            <span role="status" className="sr-only" data-testid="sidebar-results">
-              {matching.length} matching tasks. {outside} other open tasks outside this view.
-            </span>
-            {!props.reading ? (emptyFiltered && searching ? nothingFound : noMatches) : null}
-            {props.reading ? (
-              <NavLoading />
-            ) : byProject && view !== null ? (
-              <>
-                <ProjectList
-                  view={emptyFiltered ? { ...view, quietNote: null } : view}
-                  tasks={tasks}
-                  route={route}
-                  go={go}
-                  now={now}
-                  interaction={props.interaction}
-                  onTaskMenu={props.onTaskMenu}
-                  onToggleFold={toggleFold}
-                  onToggleDone={toggleDone}
-                  runs={managedRuns}
-                  onOpenRun={openRun}
-                  showRuns={filter.need === "" || filter.need === "running"}
-                  order={fullOrder}
-                  onLook={props.onLook}
-                  onOrder={props.onOrder}
-                  onReveal={props.onReveal}
-                  onNewTaskIn={props.onNewTaskIn}
-                  onProjectMenu={props.onProjectMenu}
-                  onAddProject={props.onAddProject}
-                  onShowAll={showAll}
-                  oneLine={oneLine}
-                  detailed={detailed}
-                  unread={unread}
-                />
-                {view.groups.length === 0 && !emptyFiltered ? nothingFound : null}
-              </>
-            ) : (
-              <>
-                {currentHidden ? (
-                  <div className="q-sgroup" data-testid="group-current">
-                    <div className="q-shead">
-                      <span>Open now</span>
-                    </div>
-                    <TaskRow
-                      onMenu={props.onTaskMenu}
-                      oneLine={oneLine}
-                      detailed={detailed}
-                      unread={unread.has(currentTask.id)}
-                      project={factsOf(currentTask)}
-                      task={currentTask}
-                      group={currentGroup}
-                      route={route}
-                      go={go}
-                      now={now}
-                      interaction={props.interaction}
-                    />
-                  </div>
-                ) : null}
-                {show("you") &&
-                (!filtered || groups.you.length > 0) &&
-                (!firstRun || groups.you.length > 0) ? (
-                  <div className="q-sgroup" data-testid="group-you">
-                    <div className="q-shead you">
-                      <span>{props.interaction === true ? "Your turn" : NEED_WORD.you}</span>
-                      <span>{groups.you.length}</span>
-                    </div>
-                    {groups.you.map((t) => (
-                      <TaskRow
-                        onMenu={props.onTaskMenu}
-                        key={t.id}
-                        oneLine={oneLine}
-                        detailed={detailed}
-                        unread={unread.has(t.id)}
-                        project={factsOf(t)}
-                        task={t}
-                        group="you"
-                        route={route}
-                        go={go}
-                        now={now}
-                        interaction={props.interaction}
-                      />
-                    ))}
-                    {groups.you.length === 0 ? (
-                      <p className="q-nav-empty">Nothing right now</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {show("running") &&
-                (!filtered || groups.progress.length > 0) &&
-                (!firstRun || groups.progress.length + unboundRuns.length > 0) ? (
-                  <div className="q-sgroup" data-testid="group-running">
-                    <div className="q-shead">
-                      <span>{NEED_WORD.running}</span>
-                      <span>{groups.progress.length + unboundRuns.length}</span>
-                    </div>
-                    {groups.progress.map((t) => (
-                      <TaskRow
-                        onMenu={props.onTaskMenu}
-                        key={t.id}
-                        oneLine={oneLine}
-                        detailed={detailed}
-                        unread={unread.has(t.id)}
-                        project={factsOf(t)}
-                        task={t}
-                        group="running"
-                        route={route}
-                        go={go}
-                        now={now}
-                        interaction={props.interaction}
-                      />
-                    ))}
-                    {unboundRuns.map((run) => (
-                      <RunRow key={run.id} run={run} onOpen={openRun} oneLine={oneLine} />
-                    ))}
-                    {groups.progress.length === 0 && unboundRuns.length === 0 ? (
-                      <p className="q-nav-empty">No agent is working</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {show("shipped") && (!filtered || groups.shipped.length > 0) ? (
-                  <div className="q-sgroup" data-testid="group-shipped">
-                    <button
-                      type="button"
-                      className="q-shead"
-                      aria-expanded={shippedOpen}
-                      onClick={() => setShippedFold(shippedOpen ? "closed" : "open")}
-                    >
-                      <span>{NEED_WORD.shipped}</span>
-                      <span>
-                        {groups.shipped.length}
-                        {shippedOpen ? (
-                          <ChevronDownIcon className="size-3" aria-hidden="true" />
-                        ) : (
-                          <ChevronRightIcon className="size-3" aria-hidden="true" />
-                        )}
-                      </span>
-                    </button>
-                    {shippedOpen
-                      ? groups.shipped
-                          .filter((t, i) => searching || i < 12 || t.id === openId)
-                          .map((t) => (
-                            <TaskRow
-                              onMenu={props.onTaskMenu}
-                              key={t.id}
-                              oneLine={oneLine}
-                              detailed={detailed}
-                              unread={unread.has(t.id)}
-                              project={factsOf(t)}
-                              task={t}
-                              group="shipped"
-                              route={route}
-                              go={go}
-                              now={now}
-                            />
-                          ))
-                      : null}
-                    {shippedOpen && !searching && groups.shipped.length > 12 ? (
-                      <p className="q-smore m-0" data-testid="shipped-more">
-                        {groups.shipped.length - 12} more. Search finds them.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-                {filter.need === "" && (!filtered || groups.archived.length > 0) ? (
-                  // Put away, not gone: folded until asked for, and ⌘K finds it too.
-                  <div className="q-sgroup" data-testid="archived-group">
-                    <button
-                      type="button"
-                      className="q-shead"
-                      aria-expanded={archivedOpen}
-                      onClick={() => setArchivedFold(archivedOpen ? "closed" : "open")}
-                    >
-                      <span>Archived</span>
-                      <span>
-                        {groups.archived.length}
-                        {archivedOpen ? (
-                          <ChevronDownIcon className="size-3" aria-hidden="true" />
-                        ) : (
-                          <ChevronRightIcon className="size-3" aria-hidden="true" />
-                        )}
-                      </span>
-                    </button>
-                    {archivedOpen
-                      ? groups.archived.map((t) => (
-                          <TaskRow
-                            onMenu={props.onTaskMenu}
-                            key={t.id}
-                            oneLine={oneLine}
-                            detailed={detailed}
-                            unread={unread.has(t.id)}
-                            project={factsOf(t)}
-                            task={t}
-                            group="shipped"
-                            route={route}
-                            go={go}
-                            now={now}
-                          />
-                        ))
-                      : null}
-                  </div>
-                ) : null}
-                {statusEmpty && !emptyFiltered ? nothingFound : null}
-              </>
-            )}
-            {filtered && outside > 0 ? (
-              <p className="pj-quiet-note" data-testid="sidebar-outside">
-                {outside} other open tasks outside this view.
-              </p>
-            ) : null}
-          </div>
-        }
+      <div className="q-list-header" data-testid="task-list-header">
+        <h2 className="pj-label">{byProject ? "Projects" : "Tasks"}</h2>
+        <ViewMenu
+          query={prefs.typed}
+          onQuery={prefs.setTyped}
+          groupBy={prefs.groupBy}
+          onGroupBy={prefs.setGroupBy}
+          need={filter.need}
+          counts={counts}
+          onNeed={(need) => props.onFilter({ need })}
+          agent={filter.agent}
+          onAgent={(agent) => props.onFilter({ agent })}
+          activity={prefs.activity}
+          onActivity={prefs.setActivity}
+          rows={prefs.rows}
+          onRows={prefs.setRows}
+          onFoldAll={() => prefs.assignFolded(fullOrder)}
+          onUnfoldAll={() => prefs.assignFolded([])}
+        />
+        {props.onAddProject !== undefined ? (
+          <button
+            type="button"
+            className="q-ic"
+            aria-label="Add a project"
+            data-add-project-toggle
+            title="Add a project"
+            onClick={(event) => props.onAddProject?.(event.currentTarget)}
+          >
+            <FolderPlusIcon className="size-[13px]" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
+
+      <SidebarListBody
+        reading={props.reading}
+        byProject={byProject}
+        view={view}
+        emptyFiltered={emptyFiltered}
+        searching={searching}
+        query={query}
+        onOpenSearch={props.onOpenSearch}
+        filtered={filtered}
+        chip={chip}
+        matchingCount={matching.length}
+        outside={outside}
+        showAll={showAll}
+        projectListProps={{
+          tasks,
+          route,
+          go,
+          now,
+          interaction: props.interaction,
+          onTaskMenu: props.onTaskMenu,
+          onToggleFold: prefs.toggleFold,
+          onToggleDone: prefs.toggleDone,
+          runs: managedRuns,
+          onOpenRun: openRun,
+          showRuns: filter.need === "" || filter.need === "running",
+          order: fullOrder,
+          onLook: props.onLook,
+          onOrder: props.onOrder,
+          onReveal: props.onReveal,
+          onNewTaskIn: props.onNewTaskIn,
+          onProjectMenu: props.onProjectMenu,
+          onAddProject: props.onAddProject,
+          onShowAll: showAll,
+          oneLine,
+          detailed,
+          unread,
+        }}
+        statusProps={{
+          groups,
+          currentTask,
+          currentHidden,
+          currentGroup,
+          filterNeed: filter.need,
+          filtered,
+          firstRun,
+          searching,
+          openId,
+          shippedOpen,
+          archivedOpen,
+          onToggleShipped: () => prefs.setShippedFold(shippedOpen ? "closed" : "open"),
+          onToggleArchived: () => prefs.setArchivedFold(archivedOpen ? "closed" : "open"),
+          unboundRuns,
+          onOpenRun: openRun,
+          emptyFiltered,
+          base: {
+            onTaskMenu: props.onTaskMenu,
+            oneLine,
+            detailed,
+            unread,
+            factsOf,
+            route,
+            go,
+            now,
+            interaction: props.interaction,
+          },
+        }}
+      />
 
       <SidebarFoot
         update={props.update}

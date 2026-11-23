@@ -25,13 +25,8 @@ export function readingId(agent: string, kind: "cost" | "limit", window?: string
     : `${agent}:limit:${encodeURIComponent(window ?? "closest")}`
 }
 
-export function validReading(id: unknown): id is string {
-  if (id === "auto") return true
-  if (typeof id !== "string" || id.length > 256) return false
-  const [agent, kind, window, ...extra] = id.split(":")
-  if (!isNativeAgent(agent) || extra.length > 0) return false
-  if (kind === "cost") return window === undefined
-  if (kind !== "limit" || !window) return false
+function validLimitWindow(window: string | undefined): boolean {
+  if (!window) return false
   try {
     const decoded = decodeURIComponent(window)
     return (
@@ -43,16 +38,26 @@ export function validReading(id: unknown): id is string {
   }
 }
 
+export function validReading(id: unknown): id is string {
+  if (id === "auto") return true
+  if (typeof id !== "string" || id.length > 256) return false
+  const [agent, kind, window, ...extra] = id.split(":")
+  if (!isNativeAgent(agent) || extra.length > 0) return false
+  if (kind === "cost") return window === undefined
+  return kind === "limit" && validLimitWindow(window)
+}
+
+function isLimitReading(id: string, agent?: string): boolean {
+  if (!validReading(id)) return false
+  const [readingAgent, kind] = id.split(":")
+  return kind === "limit" && (agent === undefined || readingAgent === agent)
+}
+
 /** The saved selector also applies before a source has reported its first quota. */
 export function selectsQuota(preferences: UsageDisplay, agent?: string): boolean {
   return (
     preferences.readings.includes("auto") ||
-    preferences.readings.some(
-      (id) =>
-        validReading(id) &&
-        (agent === undefined || id.split(":")[0] === agent) &&
-        id.split(":")[1] === "limit",
-    )
+    preferences.readings.some((id) => isLimitReading(id, agent))
   )
 }
 

@@ -18,24 +18,55 @@ export type LegacyAttachmentCopy = {
   source?: { owner: RecordOwner; file: string }
 }
 
-/** Legacy paths are migration evidence; only an exact owner attachment path may supply bytes. */
-export async function readLegacyAttachment(
-  ctx: Ctx,
+type LegacyAttachmentRef = {
+  name: string
+  type: string
+  path: string
+  size?: unknown
+  missing?: unknown
+}
+
+function resolveLegacyOwner(
   owner: RecordOwner,
   record: { id: string },
-  raw: unknown,
-  id: string,
-  owners: readonly RecordOwner[] = [owner],
+  reference: LegacyAttachmentRef,
+  owners: readonly RecordOwner[],
+): RecordOwner | undefined {
+  if (!token(record.id) || !plainFilename(reference.name)) return undefined
+  return owners.find(
+    (candidate) =>
+      candidate.home === owner.home &&
+      candidate.key === owner.key &&
+      reference.path === join(candidate.runtimeDir, "attachments", record.id, reference.name),
+  )
+}
+
+function classifyLegacyReadError(cause: unknown, asset: ArchiveAsset): LegacyAttachmentCopy {
+  const code = (cause as NodeJS.ErrnoException).code
+  if (code === "ENOENT") return { asset }
+  if (
+    code === "ELOOP" ||
+    (cause instanceof Error && cause.message === "Linked or non-directory record path")
+  )
+    return { asset: { ...asset, state: "unsafe" } }
+  throw cause
+}
+
+/** Legacy paths are migration evidence; only an exact owner attachment path may supply bytes. */
+export async function readLegacyAttachment(
+  ...args: [
+    ctx: Ctx,
+    owner: RecordOwner,
+    record: { id: string },
+    raw: unknown,
+    id: string,
+    owners?: readonly RecordOwner[],
+  ]
 ): Promise<LegacyAttachmentCopy> {
+  const [ctx, owner, record, raw, id, owners = [owner]] = args
   if (!fields(raw, { name: text, type: text, path: text }))
     throw new Error("Corrupt legacy attachment; originals were kept")
-  const reference = raw as {
-    name: string
-    type: string
-    path: string
-    size?: unknown
-    missing?: unknown
-  }
+  const reference = raw as LegacyAttachmentRef
   const asset: ArchiveAsset = {
     id,
     name: reference.name,
@@ -44,14 +75,7 @@ export async function readLegacyAttachment(
     bytes: 0,
   }
   if (reference.missing === true || reference.path === "") return { asset }
-  if (!token(record.id) || !plainFilename(reference.name))
-    return { asset: { ...asset, state: "unsafe" } }
-  const selected = owners.find(
-    (candidate) =>
-      candidate.home === owner.home &&
-      candidate.key === owner.key &&
-      reference.path === join(candidate.runtimeDir, "attachments", record.id, reference.name),
-  )
+  const selected = resolveLegacyOwner(owner, record, reference, owners)
   if (!selected) return { asset: { ...asset, state: "unsafe" } }
   const source = relative(selected.runtimeDir, reference.path)
   try {
@@ -64,12 +88,6 @@ export async function readLegacyAttachment(
       source: { owner: selected, file: source },
     }
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return { asset }
-    if (
-      (cause as NodeJS.ErrnoException).code === "ELOOP" ||
-      (cause instanceof Error && cause.message === "Linked or non-directory record path")
-    )
-      return { asset: { ...asset, state: "unsafe" } }
-    throw cause
+    return classifyLegacyReadError(cause, asset)
   }
 }

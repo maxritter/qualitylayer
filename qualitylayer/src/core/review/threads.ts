@@ -3,12 +3,16 @@
 // author decided a thread. Every state the Cockpit shows (open threads, who approved) is
 // folded from the log, so the author's machine and a teammate's read the same review.
 
-import { randomUUID } from "node:crypto"
-import { type Ctx, err, ok, type Result } from "../../ctx.ts"
+import { type Ctx, ok, type Result } from "../../ctx.ts"
 import type { Task } from "../task/store.ts"
-import { REVIEW_DOC, readTeamComments, type TeamComment } from "../team/comments.ts"
-import { appendOwnWith, isMirrored, isRecord, readOwn } from "../team/own-log.ts"
+import { REVIEW_DOC, readTeamComments } from "../team/comments.ts"
+import { appendOwnWith, isMirrored, readOwn } from "../team/own-log.ts"
 import type { Person } from "../team/people.ts"
+import { eventFrom, newThreadId } from "./threads-actions.ts"
+import { foldReview } from "./threads-fold.ts"
+import { fromWire, toWire } from "./threads-wire.ts"
+
+export { eventFrom, foldReview, fromWire, newThreadId, toWire }
 
 /** The kinds of item in a review a thread can be about. `pr` is a comment made on the pull request. */
 export const REVIEW_KINDS = ["doneMeans", "picture", "check", "plan", "diff", "pr"] as const
@@ -68,8 +72,6 @@ export type ThreadMessage = {
   ref?: string
 }
 
-const refOf = (ev: { ref?: string }) => (ev.ref !== undefined ? { ref: ev.ref } : {})
-
 export type ReviewThread = {
   id: string
   anchor: ReviewAnchor
@@ -116,240 +118,6 @@ export type ReviewAction =
 /** What the author's own words are signed with in the log. */
 export const AUTHOR = "You"
 
-/** Fold what was said, oldest first, into the threads and the reviewers. */
-export function foldReview(events: ReviewEvent[], author: string = AUTHOR): ReviewState {
-  const threads = new Map<string, ReviewThread>()
-  const people = new Map<string, Reviewer>()
-  const sorted = events
-    .map((event, index) => ({ event, index }))
-    .sort((a, b) => a.event.at - b.event.at || a.index - b.index)
-  const person = (ev: ReviewEvent): Reviewer | undefined => {
-    if (ev.src === "me" || ev.src === "pr") return undefined
-    const email = ev.src === "team" ? ev.actor?.email.trim().toLowerCase() : undefined
-    const key = `${ev.src}:${email || ev.by}`
-    let known = people.get(key)
-    if (known === undefined) {
-      known = { name: ev.by, role: ev.src === "link" ? "link" : "team", state: "commented", at: 0 }
-      people.set(key, known)
-    }
-    if (email) {
-      known.name = ev.by
-      known.email = email
-    }
-    known.at = ev.at
-    return known
-  }
-  for (const { event: ev } of sorted) {
-    if (ev.src === "link" && !["thread", "reply", "verdict"].includes(ev.t)) continue
-    if (
-      (ev.t === "decision" || ev.t === "rereview") &&
-      ev.src !== "me" &&
-      !(ev.src === "team" && ev.owner === true)
-    )
-      continue
-    const speaker = person(ev)
-    // A guest's chosen thread id cannot replace a team thread's authority.
-    const threadId =
-      "thread" in ev && ev.src === "link" ? `link:${ev.thread}` : "thread" in ev ? ev.thread : ""
-    switch (ev.t) {
-      case "thread":
-        if (!threads.has(threadId)) {
-          threads.set(threadId, {
-            id: threadId,
-            anchor: ev.anchor,
-            messages: [
-              { id: ev.id, by: ev.by, at: ev.at, text: ev.text, src: ev.src, ...refOf(ev) },
-            ],
-            state: "open",
-            created: ev.at,
-            by: ev.by,
-            src: ev.src,
-          })
-        }
-        break
-      case "reply":
-        threads.get(threadId)?.messages.push({
-          id: ev.id,
-          by: ev.by,
-          at: ev.at,
-          text: ev.text,
-          src: ev.src,
-          ...refOf(ev),
-        })
-        break
-      case "resolve":
-      case "reopen": {
-        const thread = threads.get(ev.thread)
-        if (thread !== undefined) thread.state = ev.t === "resolve" ? "resolved" : "open"
-        break
-      }
-      case "decision": {
-        const thread = threads.get(ev.thread)
-        if (thread !== undefined)
-          thread.decision = {
-            kind: ev.kind,
-            note: ev.note,
-            at: ev.at,
-            round: ev.round,
-            head: ev.head,
-          }
-        break
-      }
-      case "verdict":
-        // A guest with the link comments as advice: their word is no vote.
-        if (speaker !== undefined && speaker.role === "team") speaker.state = ev.state
-        break
-      case "rereview": {
-        const target = ev.to.trim().toLowerCase()
-        const direct = `team:${target}`
-        const named = [...people.entries()].filter(
-          ([, reviewer]) => reviewer.role === "team" && reviewer.name.toLowerCase() === target,
-        )
-        const key = people.has(direct)
-          ? direct
-          : named.length === 1
-            ? (named[0]?.[0] ?? direct)
-            : direct
-        const asked = people.get(key) ?? {
-          name: ev.to,
-          role: "team" as const,
-          state: "commented" as const,
-          at: ev.at,
-        }
-        asked.state = "requested"
-        asked.at = ev.at
-        people.set(key, asked)
-        break
-      }
-    }
-  }
-  return {
-    threads: [...threads.values()],
-    reviewers: [{ name: author, role: "author", state: "author", at: 0 }, ...people.values()],
-  }
-}
-
-/** A word said in the review, as a comment on the team backend: the structure rides in `quote`. */
-export type WireComment = Omit<TeamComment, "remote_id" | "taken">
-
-const FALLBACK_REMARK = "commented"
-
-export function toWire(ev: ReviewEvent): Pick<WireComment, "doc" | "quote" | "remark" | "verdict"> {
-  const mine = ev.src === "me" ? { o: 1, at: ev.at } : {}
-  const make = (fields: object, remark: string, verdict?: "approve" | "changes") => ({
-    doc: REVIEW_DOC,
-    quote: JSON.stringify({ t: ev.t, ...fields, ...mine }),
-    remark,
-    ...(verdict !== undefined ? { verdict } : {}),
-  })
-  switch (ev.t) {
-    case "thread":
-      return make({ thread: ev.thread, anchor: ev.anchor, ...refOf(ev) }, ev.text)
-    case "reply":
-      return make({ thread: ev.thread, ...refOf(ev) }, ev.text)
-    case "resolve":
-      return make({ thread: ev.thread }, "resolved the thread")
-    case "reopen":
-      return make({ thread: ev.thread }, "reopened the thread")
-    case "verdict":
-      return make(
-        { state: ev.state },
-        ev.text ?? (ev.state === "commented" ? FALLBACK_REMARK : ""),
-        ev.state === "approved" ? "approve" : ev.state === "changes" ? "changes" : undefined,
-      )
-    case "rereview":
-      return make({ to: ev.to }, `asked ${ev.to} to review again`)
-    case "decision":
-      return make({ thread: ev.thread, kind: ev.kind, round: ev.round, head: ev.head }, ev.note)
-  }
-}
-
-/** A well-formed anchor from untrusted input, or undefined. */
-export function reviewAnchor(value: unknown): ReviewAnchor | undefined {
-  if (!isRecord(value)) return undefined
-  const { kind, id, quote, line, side, stamp } = value
-  if (!(REVIEW_KINDS as readonly unknown[]).includes(kind)) return undefined
-  if (typeof id !== "string" || id === "" || id.length > 1000) return undefined
-  return {
-    kind: kind as ReviewKind,
-    id,
-    ...(typeof quote === "string" && quote !== "" ? { quote: quote.slice(0, 300) } : {}),
-    ...(typeof line === "number" && Number.isInteger(line) && line >= 0 ? { line } : {}),
-    ...(side === "old" || side === "new" ? { side } : {}),
-    ...(typeof stamp === "string" && /^[a-f0-9]{64}$/.test(stamp) ? { stamp } : {}),
-  }
-}
-
-const text = (v: unknown): string => (typeof v === "string" ? v : "")
-
-/** The event a team comment stands for, or null when it is no part of the review. */
-export function fromWire(c: WireComment): ReviewEvent | null {
-  if (c.doc !== REVIEW_DOC) return null
-  let head: unknown
-  try {
-    head = JSON.parse(c.quote)
-  } catch {
-    return null
-  }
-  if (!isRecord(head)) return null
-  if (c.source === "link" && !["thread", "reply", "verdict"].includes(text(head.t))) return null
-  // The author's own words are mirrored for the team and marked: they are the author's, not a reviewer's.
-  const owner = c.source === "team" && c.owner === true
-  const authors = owner && head.o === 1
-  const src: ReviewSource = c.source === "team" && authors ? "me" : c.source
-  const at = {
-    id: `${c.source}-${c.id}`,
-    by: c.author,
-    at:
-      owner && typeof head.at === "number" && Number.isFinite(head.at) && head.at >= 0
-        ? head.at
-        : c.created,
-    src,
-    ...(src === "team" && c.actor !== undefined ? { actor: c.actor } : {}),
-    ...(owner ? { owner: true as const } : {}),
-  }
-  const thread = text(head.thread)
-  const ref = text(head.ref) !== "" ? { ref: text(head.ref) } : {}
-  switch (head.t) {
-    case "thread": {
-      const anchor = reviewAnchor(head.anchor)
-      return anchor === undefined || thread === ""
-        ? null
-        : { ...at, t: "thread", thread, anchor, text: c.remark, ...ref }
-    }
-    case "reply":
-      return thread === "" ? null : { ...at, t: "reply", thread, text: c.remark, ...ref }
-    case "resolve":
-    case "reopen":
-      return thread === "" ? null : { ...at, t: head.t, thread }
-    case "verdict": {
-      const state = head.state
-      if (state !== "approved" && state !== "changes" && state !== "commented") return null
-      const said = c.remark !== "" && c.remark !== FALLBACK_REMARK ? c.remark : undefined
-      return { ...at, t: "verdict", state, ...(said !== undefined ? { text: said } : {}) }
-    }
-    case "rereview":
-      return !owner || text(head.to) === "" ? null : { ...at, t: "rereview", to: text(head.to) }
-    case "decision": {
-      const kind = head.kind
-      if (!owner || !(DECISIONS as readonly unknown[]).includes(kind) || thread === "") return null
-      const round = typeof head.round === "number" ? head.round : 0
-      const built = typeof head.head === "string" ? head.head : ""
-      return {
-        ...at,
-        t: "decision",
-        thread,
-        kind: kind as DecisionKind,
-        note: c.remark,
-        round,
-        head: built,
-      }
-    }
-    default:
-      return null
-  }
-}
-
 /** Everything said in the review: the author's own words and what the team said. */
 export async function reviewEvents(
   ctx: Ctx,
@@ -365,87 +133,6 @@ export async function reviewEvents(
 /** What the review holds so far: the threads and who has said what. */
 export async function readReview(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<ReviewState> {
   return foldReview(await reviewEvents(ctx, task))
-}
-
-const MAX_TEXT = 4000
-
-const refFrom = (action: { ref?: string }) =>
-  typeof action.ref === "string" && action.ref !== "" && action.ref.length <= 200
-    ? { ref: action.ref }
-    : {}
-
-/** A name for a thread that two people starting one at once will not share. */
-export const newThreadId = () => `t${randomUUID().slice(0, 8)}`
-
-/** Check what the Cockpit sent and give it its ids; the thread it names must exist. */
-export function eventFrom(
-  action: ReviewAction,
-  made: { id: string; now: number; by: string; src: ReviewSource },
-  known: (thread: string) => boolean,
-  thread: () => string,
-): Result<ReviewEvent> {
-  const at = { id: made.id, by: made.by, at: made.now, src: made.src }
-  const bad = (message: string) => err({ code: "bad_args" as const, message })
-  const words = (value: unknown) => (typeof value === "string" ? value.trim() : "")
-  switch (action.t) {
-    case "thread": {
-      const anchor = reviewAnchor(action.anchor)
-      const said = words(action.text)
-      if (anchor === undefined)
-        return bad(`expected an anchor { kind: ${REVIEW_KINDS.join(" | ")}, id }`)
-      if (said === "" || said.length > MAX_TEXT)
-        return bad("a thread needs words, 4000 characters at most")
-      return ok({
-        ...at,
-        t: "thread",
-        thread: action.thread ?? thread(),
-        anchor,
-        text: said,
-        ...refFrom(action),
-      })
-    }
-    case "reply": {
-      const said = words(action.text)
-      if (!known(action.thread)) return bad(`the review has no thread "${action.thread}"`)
-      if (said === "" || said.length > MAX_TEXT)
-        return bad("a reply needs words, 4000 characters at most")
-      return ok({ ...at, t: "reply", thread: action.thread, text: said, ...refFrom(action) })
-    }
-    case "resolve":
-    case "reopen":
-      return known(action.thread)
-        ? ok({ ...at, t: action.t, thread: action.thread })
-        : bad(`the review has no thread "${action.thread}"`)
-    case "verdict":
-      if (!["approved", "changes", "commented"].includes(action.state))
-        return bad("unknown verdict")
-      return ok({
-        ...at,
-        t: "verdict",
-        state: action.state,
-        ...(words(action.text) !== "" ? { text: words(action.text).slice(0, MAX_TEXT) } : {}),
-      })
-    case "rereview":
-      return words(action.to) === ""
-        ? bad("name who to ask again")
-        : ok({ ...at, t: "rereview", to: words(action.to) })
-    case "decision": {
-      if (!known(action.thread)) return bad(`the review has no thread "${action.thread}"`)
-      if (!(DECISIONS as readonly unknown[]).includes(action.kind))
-        return bad(`a decision is one of ${DECISIONS.join(", ")}`)
-      return ok({
-        ...at,
-        t: "decision",
-        thread: action.thread,
-        kind: action.kind,
-        note: words(action.note).slice(0, MAX_TEXT),
-        round: typeof action.round === "number" ? action.round : 0,
-        head: typeof action.head === "string" ? action.head : "",
-      })
-    }
-    default:
-      return bad("unknown review action")
-  }
 }
 
 /** Add the author's word to the review log. */

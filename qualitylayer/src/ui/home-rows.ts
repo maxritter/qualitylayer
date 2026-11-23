@@ -4,27 +4,18 @@
 // words are tested without a browser.
 
 import { type FlowStepId, flowStepOf } from "../core/flow.ts"
-import {
-  agentIdOf,
-  asksInChat,
-  doingWords,
-  liveRow,
-  shellStatus,
-} from "../core/interaction-shell/status.ts"
+import { doingWords, liveRow, shellStatus } from "../core/interaction-shell/status.ts"
 import type { Person } from "../core/team/people.ts"
 import type { TaskSummary } from "./api.ts"
+import { agentOf, elapsedWords, ownWords } from "./home-rows-helpers.ts"
 import { ago } from "./hooks.ts"
-import { agentInfo, type ForYouItem, type NeedsGroup, stepLabel } from "./model.ts"
-import { outsideAction, outsideSub } from "./outside-home.ts"
+import { agentInfo, type ForYouItem, stepLabel } from "./model.ts"
 import {
   finalApproved,
   landingOf,
-  openLine,
-  openMove,
   prOpen,
   pullRequestChip,
   pullRequestLine,
-  statusWords,
 } from "./shell/lines.ts"
 
 /** Whose move the row's current step is: you, an agent at work, a quiet agent, a stop, a wait or nobody's. */
@@ -68,28 +59,9 @@ export type HomeRow = {
 /** A status line begins like a sentence, whatever case the status words came in. */
 const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
 
-/** A time already gone, rounded down: 61 minutes is "1 h", never "2 h". */
-function elapsedWords(ms: number): string {
-  const minutes = Math.max(1, Math.floor(ms / 60_000))
-  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h`
-}
-
-const agentOf = (task: TaskSummary): HomeRow["agent"] => {
-  const id = agentIdOf(task)
-  return { id, name: agentInfo(id ?? undefined).name }
-}
-
 /** The step a task is at: the shipped task whose pull request is open is still at Verify. */
 export const stepOf = (task: Pick<TaskSummary, "stage">): RowStep =>
   task.stage === "chat" ? "chat" : (flowStepOf(task.stage) ?? "plan")
-
-/** The pull request line with its number and without "open", which the chip and the list already say. */
-function prWords(task: TaskSummary, line: string): string {
-  const number = task.pullRequest?.number
-  const named =
-    number === undefined ? line : line.replace("Pull request", `Pull request #${number}`)
-  return named.replace(" · open", "")
-}
 
 /**
  * What a finished task says in Home's Shipped lists: its pull request as the chip ("Opening pull
@@ -106,83 +78,6 @@ export function doneWords(task: TaskSummary, how: string): { chip: string | null
   // Saved and not applied yet, or approved with no pull request and not landed.
   if (task.stage !== "shipped" && finalApproved(task)) return { chip: null, state: "Approved" }
   return { chip: null, state: landingOf(task) !== null ? "Approved · not merged yet" : how }
-}
-
-type OwnWords = { move: string; work: string; note?: string }
-
-/** The move and the status line of one of the member's own tasks that waits on them. */
-function ownWords(
-  item: ForYouItem,
-  task: TaskSummary,
-  group: NeedsGroup | undefined,
-  now: number,
-  building: boolean,
-): OwnWords {
-  const status = shellStatus(task, now)
-  // The age alone: the chip says whose move it is and the column says what the task is doing.
-  // A task with no known start (a Plan without `created`) shows no time.
-  const waits = item.since > 0 ? elapsedWords(now - item.since) : undefined
-  if (item.agentIssue) return { move: "Open the agent", work: item.agentIssue.reason, note: waits }
-  // Held by its plan limit (core/limits): nothing is asked or done until it resets.
-  if (status.signals?.limit != null)
-    return {
-      move: status.doing,
-      work: `${agentOf(task)?.name ?? "The agent"} hit its usage limit`,
-      note: waits,
-    }
-  // A Chat has no steps to read: its agent's own line says what it needs, or that its process ended.
-  const live = task.type === "chat" ? liveRow(task, now) : null
-  if (live?.state === "needs")
-    return { move: `Answer ${agentOf(task)?.name ?? "your agent"}`, work: live.line, note: waits }
-  if (live?.state === "stopped-early")
-    return {
-      move: "Continue",
-      work: "Its process ended while working",
-      note: "Stopped early · work kept",
-    }
-  // The build's lead ended its turn in its own chat: whether it asked is not known, only where to look.
-  if (asksInChat(task, now))
-    return { move: `Open ${agentOf(task)?.name}`, work: doingWords(task, now), note: waits }
-  const outside = outsideAction(task, now)
-  if (outside !== null)
-    return { move: `${outside} in your own agent`, work: status.doing, note: outsideSub(task) }
-  const pullRequest = openLine(task)
-  if (pullRequest !== null)
-    // Changes after the approval wait for Approve change; the pull request's own words wait on GitHub.
-    return { move: openMove(task), work: prWords(task, pullRequest), note: waits }
-  if (!building && task.action === "implement") {
-    const outside = task.start?.route === true && task.start.where === "here"
-    return {
-      move: outside ? "Open the task" : "Start the build",
-      work: outside ? status.doing : "Plan approved · nothing builds until you start it",
-      note: waits,
-    }
-  }
-  if (task.action === "review" && !task.gate?.locked)
-    return { move: "Review the Plan", work: "Complete · ready to approve", note: waits }
-  if (task.action === "final")
-    return { move: "Review the change", work: "Built and verified", note: waits }
-  if (agentIdOf(task) === null)
-    return { move: "Open the task", work: "No agent is attached", note: waits }
-  const notice = group?.notices.find(
-    (n) => n.tone === "bad" || n.key.includes("no-agent") || n.key.endsWith("|asking"),
-  )
-  if (notice) return { move: "Open the task", work: notice.text, note: waits }
-  const current = building && task.action === "implement" ? { ...task, action: null } : task
-  const currentStatus = shellStatus(current, now)
-  const words = statusWords(current, currentStatus)
-  const asked = /^\d+ (question|questions|choice|choices)$/.test(words)
-  if (currentStatus.state === "stopped" && liveRow(task, now)?.state === "stopped-early")
-    return { move: "Continue", work: doingWords(task, now), note: "Stopped early · work kept" }
-  if (currentStatus.state === "stopped")
-    return {
-      move: `Resume ${agentInfo(agentIdOf(task) ?? undefined).name}`,
-      work: `Stopped · ${doingWords(task, now)}`,
-      note: waits,
-    }
-  return asked
-    ? { move: `Answer ${words}`, work: doingWords(task, now), note: waits }
-    : { move: "Open the task", work: words, note: waits }
 }
 
 /** A local task waiting for the person's next move. */

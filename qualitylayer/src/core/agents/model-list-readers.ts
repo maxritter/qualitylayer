@@ -4,160 +4,19 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { MODEL_LIST_IDS_MAX } from "../home-caps.ts"
 import { roots } from "../install/agent-settings.ts"
-import { plain, record } from "./account-reading.ts"
+import { record } from "./account-reading.ts"
 import { configDirVariable } from "./config-dir.ts"
 import { type NativeAgent, validModelId } from "./ids.ts"
+import { modelRowLabels, readIds, validModelLabel } from "./model-list-formats.ts"
+
+export { modelRowLabels, readIds, validModelLabel }
 
 /** The most a settings file is read for. */
 const SETTINGS_MAX_BYTES = 256 * 1024
 
-const capped = (ids: Iterable<string>): string[] => [...ids].slice(0, MODEL_LIST_IDS_MAX)
-
-/** `provider/model` per line, whatever else is printed around the ids dropped. */
-function lines(agent: NativeAgent, text: string): string[] {
-  const ids = new Set<string>()
-  for (const line of plain(text).split(/\r?\n/)) {
-    const id = line.trim()
-    if (id.includes("/") && validModelId(agent, id)) ids.add(id)
-    if (ids.size >= MODEL_LIST_IDS_MAX) break
-  }
-  return [...ids]
-}
-
-/** A table headed `provider  model …` (Pi): each row's first two words are `provider/model`. */
-function table(agent: NativeAgent, text: string): string[] {
-  const ids = new Set<string>()
-  let headed = false
-  for (const row of plain(text).split(/\r?\n/)) {
-    const words = row.trim().split(/\s+/)
-    if (!headed) headed = /^provider$/i.test(words[0] ?? "") && /^model$/i.test(words[1] ?? "")
-    else if (words.length >= 2) {
-      const id = `${words[0]}/${words[1]}`
-      if (validModelId(agent, id)) ids.add(id)
-    }
-    if (ids.size >= MODEL_LIST_IDS_MAX) break
-  }
-  return [...ids]
-}
-
-const BLOCK = /^[ \t]*\[model\.(?:"([^"\n]+)"|'([^'\n]+)'|([A-Za-z0-9._-]+))\][ \t]*(?:#.*)?$/gm
-
-/** The names of the `[model.<id>]` blocks of a TOML file (Grok). */
-function blocks(agent: NativeAgent, text: string): string[] {
-  const ids = new Set<string>()
-  for (const match of text.matchAll(BLOCK)) {
-    const id = match[1] ?? match[2] ?? match[3] ?? ""
-    if (validModelId(agent, id)) ids.add(id)
-  }
-  return capped(ids)
-}
-
-const MODEL_KEY = /^[ \t]*`model`:/
-const QUOTED_ID = /^[ \t]*-[ \t]+"([^"\n]+)"[ \t]*$/
-
-/**
- * The quoted ids listed under the `model` key of `copilot help config` (`    - "claude-sonnet-5.5"`
- * per line); the list ends at the first line that is not one.
- */
-function helpModels(agent: NativeAgent, text: string): string[] {
-  const ids = new Set<string>()
-  let listing = false
-  for (const line of plain(text).split(/\r?\n/)) {
-    if (!listing) listing = MODEL_KEY.test(line)
-    else {
-      const id = QUOTED_ID.exec(line)?.[1]
-      if (id === undefined) break
-      if (validModelId(agent, id)) ids.add(id)
-    }
-  }
-  return capped(ids)
-}
-
-/**
- * The models Codex caches for the signed-in account (`models_cache.json`, the list its own `/model`
- * picker shows): each listed `slug` in Codex's `priority` order. Hidden models (its auto reviewer) are
- * left out.
- */
-function codexCache(agent: NativeAgent, text: string): string[] {
-  try {
-    const models = record(JSON.parse(text))?.models
-    if (!Array.isArray(models)) return []
-    const listed = models
-      .map((model) => record(model))
-      .filter((model) => model?.visibility === "list" && validModelId(agent, model.slug))
-      .map((model) => ({
-        slug: model?.slug as string,
-        rank: typeof model?.priority === "number" ? model.priority : Number.POSITIVE_INFINITY,
-      }))
-      // A stable sort: models without a priority keep their order, after those with one.
-      .sort((a, b) => (a.rank === b.rank ? 0 : a.rank < b.rank ? -1 : 1))
-    return capped(new Set(listed.map((model) => model.slug)))
-  } catch {
-    return []
-  }
-}
-
-function modelRow(line: string): { id: string; label: string } | null {
-  const row = line.trim()
-  const split = row.search(/[ \t]/)
-  if (split < 1) return null
-  const separator = row[split] === "\t" ? 1 : 3
-  if (separator === 3 && !row.startsWith(" - ", split)) return null
-  const label = row.slice(split + separator).trim()
-  return label ? { id: row.slice(0, split), label } : null
-}
-
-/**
- * An id then its name on each row: `id<TAB>name` (Antigravity's `agy models`) or `id - name`
- * (Cursor's `cursor-agent models`). Headings and notes around the rows are dropped.
- */
-function idRows(agent: NativeAgent, text: string): string[] {
-  const ids = new Set<string>()
-  for (const line of plain(text).split(/\r?\n/)) {
-    const id = modelRow(line)?.id
-    if (id !== undefined && validModelId(agent, id)) ids.add(id)
-    if (ids.size >= MODEL_LIST_IDS_MAX) break
-  }
-  return [...ids]
-}
-
-/** Only labels attached to valid, actually offered IDs are cached. The ID remains the launch argument. */
-export function modelRowLabels(models: readonly string[], text: string): Record<string, string> {
-  const known = new Set(models)
-  const labels: [string, string][] = []
-  let bytes = 0
-  for (const line of plain(text).split(/\r?\n/)) {
-    const row = modelRow(line)
-    if (!row) continue
-    const { id, label } = row
-    if (!known.has(id) || !validModelLabel(label) || label === id) continue
-    bytes += Buffer.byteLength(id) + Buffer.byteLength(label) + 8
-    if (bytes > 24 * 1024) break
-    labels.push([id, label])
-  }
-  return Object.fromEntries(labels)
-}
-
-export const validModelLabel = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0 && value.length <= 120 && !/\p{C}/u.test(value)
-
-const FORMATS: Record<string, (agent: NativeAgent, text: string) => string[]> = {
-  "id-rows": idRows,
-  lines,
-  table,
-  "toml-blocks": blocks,
-  "copilot-help": helpModels,
-  "codex-cache": codexCache,
-}
-
 /** The most a list file is read for: Codex's model cache carries each model's instructions. */
 export const LIST_FILE_MAX_BYTES = 4 * 1024 * 1024
-
-/** The ids in one text, read as `format` says; an unknown format reads none. */
-export const readIds = (format: string, agent: NativeAgent, text: string): string[] =>
-  FORMATS[format]?.(agent, text) ?? []
 
 /** A small text file of the agent's own folder, or null when it is missing, too large or unreadable. */
 export async function settingsText(

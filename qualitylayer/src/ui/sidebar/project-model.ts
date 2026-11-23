@@ -3,14 +3,13 @@
 // (your turn first, an open pull request last); the counts a folded header keeps; the open task
 // kept under a fold or a filter; and the filter applied per project. The components only draw it.
 
-import { shellStatus } from "../../core/interaction-shell/status.ts"
 import type { ProjectColor, ProjectLooks } from "../../core/project-look.ts"
 import type { Project, TaskSummary } from "../api.ts"
 import { agentInfo, type Need, type TaskFilter, teamStageWord } from "../model.ts"
-import { type ManagedRunGroups, projectBuildGroups } from "../run-attention.ts"
-import { historyAt, openWaits, unlanded } from "../shell/lines.ts"
-import { shellGroups } from "../shell/model.ts"
-import { type ActivityWindow, activityWord, matchesActivity } from "./activity.ts"
+import type { ManagedRunGroups } from "../run-attention.ts"
+import { type ActivityWindow, activityWord } from "./activity.ts"
+
+export { projectView } from "./project-view.ts"
 
 /** The row's list in the sidebar's own words: the group the task sorts into. */
 export type RowGroup = "you" | "running" | "shipped"
@@ -173,20 +172,6 @@ export type ProjectView = {
   empty: boolean
 }
 
-function rank(t: TaskSummary, you: boolean, now: number): Attention {
-  if (unlanded(t) && !openWaits(t)) return 4
-  const state = shellStatus(t, now).state
-  if (you) return state === "stopped" ? 1 : 0
-  return state === "quiet" ? 3 : 2
-}
-
-const waited = (t: TaskSummary) => t.waitingSince ?? t.created
-
-/** Your turn and stopped by who waited longest; the rest newest first. */
-const bySeat = (a: ProjectRow, b: ProjectRow) =>
-  a.attention - b.attention ||
-  (a.attention <= 1 ? waited(a.task) - waited(b.task) : b.task.created - a.task.created)
-
 /** "needs you", "is running", "shipped" or "matches": what a project had nothing of. */
 const NOTHING_WORD: Record<TaskFilter["need"], string> = {
   "": "matches",
@@ -255,141 +240,6 @@ export function matchesQuery(text: string, query: string): boolean {
     .split(/\s+/)
     .filter(Boolean)
     .every((word) => hay.includes(word))
-}
-
-export function projectView(input: ProjectViewInput): ProjectView {
-  const { tasks, looks, filter, folded, doneOpen, openId, now } = input
-  const query = (input.query ?? "").trim()
-  const searching = query !== ""
-  const activity = input.activity ?? "any"
-  const filtering = filter.need !== "" || filter.agent !== "" || searching || activity !== "any"
-  const known = knownProjects(input.projects, tasks)
-  const ordered = orderProjects(known, tasks, looks)
-  const active = tasks.find((t) => t.id === openId)
-  const hiddenIds = new Set(
-    ordered
-      .filter(
-        (p) =>
-          looks.projects[p.id]?.hidden === true &&
-          // The person asked for this one by name, or its task is on screen: it stays on the list.
-          filter.project !== p.id &&
-          active?.project !== p.id,
-      )
-      .map((p) => p.id),
-  )
-
-  const groups: ProjectGroup[] = []
-  let quietCount = 0
-  for (const project of ordered) {
-    if (hiddenIds.has(project.id)) continue
-    if (filter.project !== "" && filter.project !== project.id) continue
-    const mine = tasks.filter((t) => t.project === project.id)
-    const sorted = projectBuildGroups(
-      shellGroups(mine, project.id, filter.agent, now),
-      input.managed,
-    )
-    const original =
-      filter.agent === ""
-        ? sorted
-        : projectBuildGroups(shellGroups(mine, project.id, "", now), input.managed)
-    const rowOf = (t: TaskSummary): ProjectRow => {
-      const you = original.you.includes(t)
-      const group: RowGroup = you ? "you" : original.running.includes(t) ? "running" : "shipped"
-      return { task: t, group, attention: group === "shipped" ? 4 : rank(t, you, now) }
-    }
-    // Human attention has already taken precedence over Running in the shared groups.
-    const runningRow = (t: TaskSummary): ProjectRow => ({
-      task: t,
-      group: "running",
-      attention: rank(t, false, now),
-    })
-    // Every open task belongs to one group, with human attention first.
-    const openRows = sorted.open.map(rowOf).sort(bySeat)
-    // Find looks through everything the Show choice allows: with no choice, shipped and archived too.
-    const pool: ProjectRow[] =
-      filter.need === "you"
-        ? openRows.filter((r) => r.group === "you")
-        : filter.need === "running"
-          ? sorted.running.map(runningRow).sort(bySeat)
-          : filter.need === "shipped"
-            ? sorted.shipped.map(rowOf)
-            : searching
-              ? [...openRows, ...sorted.shipped.map(rowOf), ...sorted.archived.map(rowOf)]
-              : openRows
-    const label = projectLabel(project, looks)
-    const hits = pool.filter(
-      (r) =>
-        matchesActivity(r.task, activity, now, input.managed) &&
-        (!searching || matchesQuery(`${r.task.title} ${label}`, query)),
-    )
-    const activeRow = mine.find((t) => t.id === openId)
-    if (filtering && hits.length === 0 && activeRow === undefined) {
-      quietCount++
-      continue
-    }
-
-    // A query unfolds the projects it matches: the matches have to be seen.
-    const isFolded = folded.has(project.id) && !searching
-    const pastAll = [...sorted.shipped, ...sorted.archived]
-      .sort((a, b) => historyAt(b) - historyAt(a))
-      .map(rowOf)
-    const showFold = !filtering && !isFolded && pastAll.length > 0
-    const foldOpen = doneOpen.has(project.id)
-    const pastShown = showFold && foldOpen ? pastAll.slice(0, PAST_SHOWN) : []
-    const rows = isFolded ? [] : [...hits]
-    const kept = activeRow === undefined ? undefined : rowOf(activeRow)
-    if (
-      kept !== undefined &&
-      !rows.some((r) => r.task === kept.task) &&
-      !pastShown.some((r) => r.task === kept.task)
-    )
-      rows.push(kept)
-
-    const allOpen = sorted.open.map(rowOf)
-    const youN = allOpen.filter((r) => r.group === "you").length
-    const working = allOpen.some(
-      (r) =>
-        r.attention !== 4 &&
-        (input.managed?.builds.has(r.task.id) || shellStatus(r.task, now).state === "working"),
-    )
-    groups.push({
-      ...projectFacts(project, looks),
-      folded: isFolded,
-      rows,
-      pastRows: pastShown,
-      pastMore: showFold && foldOpen ? Math.max(0, pastAll.length - PAST_SHOWN) : 0,
-      foldLabel: showFold ? pastLabel(sorted.shipped.length, sorted.archived.length) : null,
-      foldParts: showFold
-        ? foldParts({ shipped: sorted.shipped.length, archived: sorted.archived.length })
-        : [],
-      foldOpen: showFold && foldOpen,
-      sign:
-        youN > 0
-          ? { kind: "you", n: youN }
-          : working
-            ? { kind: "working" }
-            : allOpen.length > 0
-              ? { kind: "open", n: allOpen.length }
-              : null,
-      openCount: allOpen.length,
-      empty:
-        !isFolded && !filtering && allOpen.length === 0 && kept === undefined
-          ? mine.length === 0
-            ? "No tasks yet"
-            : "Nothing open"
-          : null,
-      quiet: allOpen.length === 0,
-    })
-  }
-
-  return {
-    groups,
-    hidden: ordered.filter((p) => hiddenIds.has(p.id)).map((p) => projectFacts(p, looks)),
-    quietCount,
-    quietNote: filtering && filter.project === "" ? quietNote(quietCount, filter.need) : null,
-    filtering,
-    empty: known.length === 0,
-  }
 }
 
 /**

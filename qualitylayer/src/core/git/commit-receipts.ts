@@ -84,6 +84,45 @@ export type ReceiptDuplicate = {
   reason: "off-history" | "earlier-registration"
 }
 
+async function groupCommitsByContent(
+  ctx: Ctx,
+  task: Runtime,
+  commits: string[],
+): Promise<Map<string, string[]>> {
+  const byContent = new Map<string, string[]>()
+  for (const sha of commits.slice(0, 512)) {
+    const content = await commitContent(ctx, task, sha)
+    if (content === null) continue
+    byContent.set(content, [...(byContent.get(content) ?? []), sha])
+  }
+  return byContent
+}
+
+async function classifyDuplicateGroup(
+  group: string[],
+  onHead: (sha: string) => Promise<boolean>,
+  duplicates: ReceiptDuplicate[],
+  ambiguous: [string, string][],
+): Promise<void> {
+  const dropped = new Set<string>()
+  // Within one group, walk the entries in the order they were registered.
+  for (let i = 1; i < group.length; i++) {
+    const later = group[i] as string
+    const earlier = group.slice(0, i).find((sha) => !dropped.has(sha))
+    if (earlier === undefined) continue
+    const [earlierCurrent, laterCurrent] = [await onHead(earlier), await onHead(later)]
+    if (earlierCurrent && laterCurrent) {
+      ambiguous.push([earlier, later])
+      continue
+    }
+    const drop = earlierCurrent ? later : earlier
+    const keep = earlierCurrent ? earlier : later
+    const reason = earlierCurrent || laterCurrent ? "off-history" : "earlier-registration"
+    duplicates.push({ drop, keep, reason })
+    dropped.add(drop)
+  }
+}
+
 /** Entries that hold the same work twice, and which one of each pair is the leftover. */
 export async function duplicateReceipts(
   ctx: Ctx,
@@ -106,34 +145,11 @@ export async function duplicateReceipts(
     }
     return known
   }
-  const byContent = new Map<string, string[]>()
-  for (const sha of commits.slice(0, 512)) {
-    const content = await commitContent(ctx, task, sha)
-    if (content === null) continue
-    byContent.set(content, [...(byContent.get(content) ?? []), sha])
-  }
+  const byContent = await groupCommitsByContent(ctx, task, commits)
   const duplicates: ReceiptDuplicate[] = []
   const ambiguous: [string, string][] = []
   for (const group of byContent.values()) {
-    if (group.length < 2) continue
-    const dropped = new Set<string>()
-    // Within one group, walk the entries in the order they were registered.
-    for (let i = 1; i < group.length; i++) {
-      const later = group[i] as string
-      const earlier = group.slice(0, i).find((sha) => !dropped.has(sha))
-      if (earlier === undefined) continue
-      const [earlierCurrent, laterCurrent] = [await onHead(earlier), await onHead(later)]
-      if (earlierCurrent && !laterCurrent) {
-        duplicates.push({ drop: later, keep: earlier, reason: "off-history" })
-        dropped.add(later)
-      } else if (!earlierCurrent && laterCurrent) {
-        duplicates.push({ drop: earlier, keep: later, reason: "off-history" })
-        dropped.add(earlier)
-      } else if (!earlierCurrent && !laterCurrent) {
-        duplicates.push({ drop: earlier, keep: later, reason: "earlier-registration" })
-        dropped.add(earlier)
-      } else ambiguous.push([earlier, later])
-    }
+    if (group.length >= 2) await classifyDuplicateGroup(group, onHead, duplicates, ambiguous)
   }
   return { duplicates, ambiguous }
 }

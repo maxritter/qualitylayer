@@ -48,6 +48,60 @@ function withPlanMarker(task: TaskDetail, name: string, text: string): TaskDetai
   }
 }
 
+type ReviewFixture = "panel-round" | "panel-findings" | "reviewing" | "findings" | "failed"
+
+type ReviewFixtureSpec = {
+  panel: boolean
+  running: boolean
+  state: "running" | "done" | "failed"
+  locked: string
+  line: string
+  findings: number | null
+}
+
+const REVIEW_FIXTURES: Record<ReviewFixture, ReviewFixtureSpec> = {
+  "panel-round": {
+    panel: true,
+    running: true,
+    state: "running",
+    locked: "Approve unlocks when the panel's review is in (round 2 of 2, running 4:12)",
+    line: "Answering each other's findings",
+    findings: null,
+  },
+  "panel-findings": {
+    panel: true,
+    running: false,
+    state: "done",
+    locked: "Approve unlocks when the agent has read the panel's review and opened the gate again",
+    line: "Review result recorded",
+    findings: 4,
+  },
+  reviewing: {
+    panel: false,
+    running: true,
+    state: "running",
+    locked: "The Codex Plan review is running.",
+    line: "Reading the Plan",
+    findings: null,
+  },
+  findings: {
+    panel: false,
+    running: false,
+    state: "done",
+    locked: "The planner must address the Codex review findings.",
+    line: "Review result recorded",
+    findings: 2,
+  },
+  failed: {
+    panel: false,
+    running: false,
+    state: "failed",
+    locked: "The Codex Plan review could not finish.",
+    line: "Review result recorded",
+    findings: null,
+  },
+}
+
 /** Explicit source-preview fixtures; ordinary moments and the person's tasks are untouched. */
 export function demoPlanEntry(task: TaskDetail): TaskDetail {
   const fixture = new URLSearchParams(globalThis.location?.search ?? "").get("plan-entry")
@@ -58,45 +112,26 @@ export function demoPlanEntry(task: TaskDetail): TaskDetail {
       "decided-by-you",
       `- Plan · Which behavior must stay? — ${PLAN_LONG_ANSWER}`,
     )
-  // A review panel: its second round running, or its findings folded in. The demo itself keeps
-  // one reviewer; these two previews exist for the model and the tests.
-  const panel = fixture === "panel-round" || fixture === "panel-findings"
-  if (!panel && !["reviewing", "findings", "failed"].includes(fixture)) return task
-  const running = fixture === "reviewing" || fixture === "panel-round"
-  const state = running ? "running" : fixture === "failed" ? "failed" : "done"
-  const shown = panel
-    ? withPlanMarker(task, "reviews", running ? PLAN_PANEL_ROUND : PLAN_PANEL_FINDINGS)
+  const spec = REVIEW_FIXTURES[fixture as ReviewFixture]
+  if (spec === undefined) return task
+  const shown = spec.panel
+    ? withPlanMarker(task, "reviews", spec.running ? PLAN_PANEL_ROUND : PLAN_PANEL_FINDINGS)
     : task
   return {
     ...shown,
     action: null,
-    gate: {
-      ...task.gate,
-      locked: panel
-        ? running
-          ? "Approve unlocks when the panel's review is in (round 2 of 2, running 4:12)"
-          : "Approve unlocks when the agent has read the panel's review and opened the gate again"
-        : fixture === "reviewing"
-          ? "The Codex Plan review is running."
-          : fixture === "findings"
-            ? "The planner must address the Codex review findings."
-            : "The Codex Plan review could not finish.",
-    },
+    gate: { ...task.gate, locked: spec.locked },
     helpers: [
       ...task.helpers.filter((helper) => helper.id !== "review-plan"),
       {
         id: "review-plan",
         kind: "review",
-        label: panel ? "Panel review · Codex, Grok, Pi" : "Codex review",
-        state,
-        line: running
-          ? panel
-            ? "Answering each other's findings"
-            : "Reading the Plan"
-          : "Review result recorded",
+        label: spec.panel ? "Panel review · Codex, Grok, Pi" : "Codex review",
+        state: spec.state,
+        line: spec.line,
         at: Date.now(),
-        started: Date.now() - (panel ? 252_000 : 40_000),
-        findings: fixture === "findings" ? 2 : fixture === "panel-findings" ? 4 : null,
+        started: Date.now() - (spec.panel ? 252_000 : 40_000),
+        findings: spec.findings,
       },
     ],
   }

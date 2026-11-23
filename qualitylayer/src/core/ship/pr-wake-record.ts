@@ -6,133 +6,54 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { Task } from "../task/store.ts"
+import {
+  type CleanupPending,
+  cleanupField,
+  commentsField,
+  coverageField,
+  coverComments,
+  type Decision,
+  EMPTY_WAKE_RECORD,
+  type Ending,
+  keptDecisions,
+  parseWakeRecord,
+  settledDecisions,
+  WAKE_PERIOD_MS,
+  type WakeEvent,
+  type WakeRecord,
+} from "./pr-wake-codec.ts"
+
+export {
+  type CleanupPending,
+  type CommentCoverage,
+  coverComments,
+  type Ending,
+  WAKE_PERIOD_MS,
+  type WakeEvent,
+  type WakeRecord,
+} from "./pr-wake-codec.ts"
 
 /** Wake-ups per pull request in one rolling period for checks, change requests and conflicts. */
 export const WAKE_CAP = 3
 /** Wake-ups for people's comments alone, in the same period, on top of `WAKE_CAP`. */
 export const COMMENT_WAKE_CAP = 2
-export const WAKE_PERIOD_MS = 24 * 3_600_000
 
 /** An event about people's comments, as opposed to the pull request's checks, reviews or conflicts. */
 export const isCommentEvent = (event: Pick<WakeEvent, "key">): boolean =>
   event.key.startsWith("comment:")
-/** Decisions kept per pull request; the oldest go first. */
-const KEPT_DECISIONS = 40
-
-/** The newest words a batch covered, including every ID observed at that timestamp. */
-export type CommentCoverage = { at: number; keys: string[] }
-
-/** One thing on the pull request that could wake the agent. `key` tells two of the same apart. */
-export type WakeEvent = { key: string; what: string; comments?: CommentCoverage }
-
-type Decision = {
-  key: string
-  at: number
-  /** `sending`: claimed and on its way (a crash leaves it so, and it counts as a wake-up). */
-  outcome: "sending" | "woken" | "skipped"
-  what: string
-  reason?: string
-  comments?: CommentCoverage
-}
-
-/**
- * A resumed session that could not be told and could not be stopped either: kept with the exact run
- * generation, so a later round finishes the stop (`attempts` rounds so far; the policy bounds them).
- */
-export type CleanupPending = { run: string; generation: number; attempts: number }
-
-export type WakeRecord = {
-  version: 1
-  decisions: Decision[]
-  /** Every wake-up of the last day; those for comments alone are also in `commentWakes`. */
-  wakes: number[]
-  commentWakes: number[]
-  /** Completed comment coverage survives the short decision history; it holds one timestamp only. */
-  covered?: CommentCoverage
-  cleanup?: CleanupPending
-}
 
 type Where = Pick<Task, "runtimeDir">
 
 const recordPath = (task: Where) => join(task.runtimeDir, "pull-request-wakes.json")
 const lockPath = (task: Where) => join(task.runtimeDir, "pull-request-wakes.lock")
 
-const EMPTY: WakeRecord = { version: 1, decisions: [], wakes: [], commentWakes: [] }
-
-const times = (value: unknown): number[] =>
-  (Array.isArray(value) ? value : []).filter((at): at is number => typeof at === "number")
-
-const OUTCOMES = ["sending", "woken", "skipped"]
-
-function coverageOf(value: unknown): CommentCoverage | undefined {
-  const row = value as Partial<CommentCoverage> | null | undefined
-  if (typeof row?.at !== "number" || !Number.isFinite(row.at) || row.at <= 0) return
-  if (!Array.isArray(row.keys)) return
-  return {
-    at: row.at,
-    keys: [...new Set(row.keys.filter((key): key is string => typeof key === "string"))],
-  }
-}
-
-/** Keep only the newest boundary; equal timestamps combine their observed IDs. */
-export function coverComments(
-  before: CommentCoverage | undefined,
-  next: CommentCoverage | undefined,
-): CommentCoverage | undefined {
-  if (next === undefined || (before !== undefined && before.at > next.at)) return before
-  if (before === undefined || next.at > before.at) return next
-  return { at: before.at, keys: [...new Set([...before.keys, ...next.keys])] }
-}
-
-const coverageField = (covered: CommentCoverage | undefined): { covered?: CommentCoverage } =>
-  covered === undefined ? {} : { covered }
-
-const commentsField = (comments: CommentCoverage | undefined): { comments?: CommentCoverage } =>
-  comments === undefined ? {} : { comments }
-
-const pendingCleanup = (value: unknown): CleanupPending | undefined => {
-  const row = value as Partial<CleanupPending> | null | undefined
-  return typeof row?.run === "string" &&
-    Number.isSafeInteger(row.generation) &&
-    Number.isSafeInteger(row.attempts)
-    ? { run: row.run, generation: row.generation as number, attempts: row.attempts as number }
-    : undefined
-}
-
 export async function readWakes(ctx: Ctx, task: Where): Promise<WakeRecord> {
   try {
-    const value = JSON.parse(await ctx.fs.readFile(recordPath(task))) as Partial<WakeRecord> | null
-    if (value === null || typeof value !== "object" || value.version !== 1) return EMPTY
-    return {
-      version: 1,
-      decisions: (Array.isArray(value.decisions) ? value.decisions : [])
-        .filter(
-          (row): row is Decision =>
-            typeof row?.key === "string" &&
-            typeof row.at === "number" &&
-            OUTCOMES.includes(row.outcome) &&
-            typeof row.what === "string",
-        )
-        .map((row) => ({
-          key: row.key,
-          at: row.at,
-          outcome: row.outcome,
-          what: row.what,
-          ...(typeof row.reason === "string" ? { reason: row.reason } : {}),
-          ...commentsField(coverageOf(row.comments)),
-        })),
-      wakes: times(value.wakes),
-      commentWakes: times(value.commentWakes),
-      ...coverageField(coverageOf(value.covered)),
-      ...cleanupField(pendingCleanup(value.cleanup)),
-    }
+    return parseWakeRecord(JSON.parse(await ctx.fs.readFile(recordPath(task))))
   } catch {
-    return EMPTY
+    return EMPTY_WAKE_RECORD
   }
 }
-
-const cleanupField = (cleanup: CleanupPending | undefined): { cleanup?: CleanupPending } =>
-  cleanup === undefined ? {} : { cleanup }
 
 async function writeWakes(ctx: Ctx, task: Where, record: WakeRecord) {
   await ctx.fs.atomicWrite(recordPath(task), `${JSON.stringify(record)}\n`)
@@ -168,15 +89,6 @@ type Choice = {
   fresh: readonly WakeEvent[]
   outcome: Decision["outcome"]
   reason?: string
-}
-
-/** Pending sends remain settleable while older completed rows leave the display history. */
-function keptDecisions(decisions: Decision[], now: number): Decision[] {
-  const pending = (row: Decision) => row.outcome === "sending" && now - row.at < WAKE_PERIOD_MS
-  return [...decisions]
-    .sort((a, b) => Number(pending(a)) - Number(pending(b)) || a.at - b.at)
-    .slice(-KEPT_DECISIONS)
-    .sort((a, b) => a.at - b.at)
 }
 
 /** Keep a decision for each event, and (for a wake-up) its time. Call under the lock. */
@@ -215,30 +127,8 @@ export async function decide(
   return now
 }
 
-/** How a claimed wake-up ended: it went out, it must be tried again, or it cannot be done (with why). */
-export type Ending = "woken" | "release" | { skipped: string }
-
 /** How a claimed wake-up ended, and the stop it left to do (for the run generation that was resumed). */
 export type Delivered = { ending: Ending; cleanup?: Omit<CleanupPending, "attempts"> }
-
-/** The decisions with the `sending` ones made at `at` for `fresh` settled as `ending` says (released ones are gone). */
-function settledDecisions(
-  decisions: Decision[],
-  fresh: readonly WakeEvent[],
-  at: number,
-  ending: Ending,
-): Decision[] {
-  const mine = (row: Decision) =>
-    row.outcome === "sending" && row.at === at && fresh.some((event) => event.key === row.key)
-  if (ending === "release") return decisions.filter((row) => !mine(row))
-  return decisions.map((row) =>
-    !mine(row)
-      ? row
-      : ending === "woken"
-        ? { ...row, outcome: "woken" as const }
-        : { ...row, outcome: "skipped" as const, reason: ending.skipped },
-  )
-}
 
 /**
  * Settle the `sending` decisions made at `at`: say how it ended. `cleanup` is a stop that is still

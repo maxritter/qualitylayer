@@ -15,21 +15,15 @@
 // answer (or "not checked yet") for the rest, so repeated requests finish the work. There are no
 // watchers and no timers, and nothing leaves this machine.
 
-import { createHash } from "node:crypto"
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
-import type { Atrule, CssNode, Declaration, Rule } from "css-tree"
-import { generate, parse as parseCss } from "css-tree"
-import { parse as parseHtml } from "parse5"
 import type { Ctx } from "../../ctx.ts"
 import type { TokenSummary } from "./format.ts"
-import {
-  forgetTokenHistory,
-  historyKey,
-  NO_HISTORY,
-  readHistory,
-  type TokenHistory,
-} from "./token-history.ts"
-import { designStamp, type ProductTokens, productTokens, tokenFiles } from "./tokens.ts"
+import { clearDesignCache, currentStamp, loadDesign, stampOf } from "./token-drift-design.ts"
+import { type Edit, inspectTokens } from "./token-drift-inspect.ts"
+import { type Stamps, type StyleSource, sha256, stampFile } from "./token-drift-sources.ts"
+import { forgetTokenHistory } from "./token-history.ts"
+
+export type { Edit } from "./token-drift-inspect.ts"
+export type { StyleSource } from "./token-drift-sources.ts"
 
 export type TokenState = TokenSummary["state"]
 export type Theme = "light" | "dark"
@@ -65,8 +59,6 @@ export type DriftTarget = {
   dir?: string
 }
 
-// ---------------------------------------------------------------- limits
-
 /** At most this many stylesheets and bytes (page included) are read for one artifact. */
 export const DRIFT_FILES_MAX = 32
 export const DRIFT_BYTES_MAX = 4 * 1024 * 1024
@@ -80,9 +72,6 @@ export const DRIFT_REQUEST_BYTES = 16 * 1024 * 1024
 export const DRIFT_CHANGED_KEPT = 20
 
 const NOT_CHECKED_YET: TokenDrift = { state: "unassessed", reason: "not checked yet" }
-const unassessed = (reason: string): TokenDrift => ({ state: "unassessed", reason })
-const notApplicable = (reason: string): TokenDrift => ({ state: "n/a", reason })
-// ---------------------------------------------------------------- the budget of one listing request
 
 export type DriftBudget = {
   /** Recomputations left. */
@@ -107,537 +96,6 @@ export function newDriftBudget(
 export const unlimitedDriftBudget = (): DriftBudget =>
   newDriftBudget({ recomputations: Number.POSITIVE_INFINITY, bytes: Number.POSITIVE_INFINITY })
 
-// ---------------------------------------------------------------- reading values
-
-type Media = "none" | "light" | "dark"
-
-/** `(prefers-color-scheme: dark)` and its plain forms; null for any other condition. */
-function mediaOf(text: string | undefined): Media | null {
-  const t = (text ?? "").toLowerCase().replace(/\s+/g, " ").trim()
-  if (t === "" || t === "all" || t === "screen" || t === "only screen") return "none"
-  const m =
-    /^(?:(?:only )?(?:screen|all) and )?\( ?prefers-color-scheme ?: ?(dark|light) ?\)$/.exec(t)
-  return m ? (m[1] as Media) : null
-}
-
-/** Which theme a selector sets, given the media rule around it; null for any other scope. */
-function themeOf(selector: string, media: Media): Theme | null {
-  const t = selector.toLowerCase().replace(/\s+/g, "").replace(/["']/g, "")
-  if (/^(?::root|html)?\[data-theme=light\]$/.test(t)) return "light"
-  if (/^(?::root|html)?\[data-theme=dark\]$/.test(t) || /^(?::root|html)?\.dark$/.test(t))
-    return "dark"
-  if (/^(?::root|html)$/.test(t)) return media === "dark" ? "dark" : "light"
-  if (/^(?::root|html):not\(\[data-theme=light\]\)$/.test(t) && media === "dark") return "dark"
-  return null
-}
-
-/** A declaration the scanner found in a root or theme block. */
-type Found = {
-  name: string
-  theme: Theme
-  value: string
-  important: boolean
-  source: number
-  /** Offsets of the value in its source's text. */
-  start: number
-  end: number
-}
-
-/** The last declaration of each name, per theme: the cascade across blocks and files in link order. */
-type Winners = Map<string, Found>
-
-function scanSheet(
-  css: string,
-  source: number,
-  media0: Media,
-  winners: Winners,
-): "ok" | "import" | "unreadable" {
-  let tree: CssNode
-  try {
-    tree = parseCss(css, {
-      positions: true,
-      parseValue: false,
-      parseCustomProperty: false,
-      parseAtrulePrelude: false,
-    })
-  } catch {
-    return "unreadable"
-  }
-  let imported = false
-  const rule = (node: Rule, media: Media) => {
-    if (node.prelude.type !== "SelectorList" || node.block === null) return
-    const themes = new Set<Theme>()
-    node.prelude.children.forEach((selector) => {
-      const theme = themeOf(generate(selector), media)
-      if (theme !== null) themes.add(theme)
-    })
-    if (themes.size === 0) return
-    node.block.children.forEach((child) => {
-      if (child.type !== "Declaration") return
-      const declaration: Declaration = child
-      if (!declaration.property.startsWith("--") || declaration.value.type !== "Raw") return
-      const at = declaration.value.loc
-      if (at === null || at === undefined) return
-      const raw = css.slice(at.start.offset, at.end.offset)
-      const value = raw.trim()
-      if (value === "") return
-      const start = at.start.offset + (raw.length - raw.trimStart().length)
-      for (const theme of themes)
-        winners.set(`${theme}\0${declaration.property}`, {
-          name: declaration.property,
-          theme,
-          value,
-          important: declaration.important !== false,
-          source,
-          start,
-          end: start + value.length,
-        })
-    })
-  }
-  const visit = (nodes: Iterable<CssNode>, media: Media) => {
-    for (const node of nodes) {
-      if (node.type === "Rule") rule(node, media)
-      else if (node.type === "Atrule") {
-        const at: Atrule = node
-        const name = at.name.toLowerCase()
-        if (name === "import") imported = true
-        else if (at.block !== null && (name === "media" || name === "layer")) {
-          const inner =
-            name === "layer"
-              ? media
-              : mediaOf(at.prelude?.type === "Raw" ? at.prelude.value : undefined)
-          if (inner !== null) visit(at.block.children, inner === "none" ? media : inner)
-        }
-      }
-    }
-  }
-  if (tree.type === "StyleSheet") visit(tree.children, media0)
-  return imported ? "import" : "ok"
-}
-
-// ---------------------------------------------------------------- comparing values
-
-const NOT_COMPARABLE = /(?:\b|^)(?:var|calc|color-mix|env)\(/i
-
-const comparable = (value: string): boolean =>
-  !NOT_COMPARABLE.test(value) && !/!\s*important/i.test(value)
-
-/** The items of a comma list, outside quotes and parentheses. */
-function splitList(value: string): string[] {
-  const items: string[] = []
-  let depth = 0
-  let quote = ""
-  let from = 0
-  for (let i = 0; i < value.length; i++) {
-    const c = value[i] as string
-    if (quote !== "") {
-      if (c === "\\") i++
-      else if (c === quote) quote = ""
-    } else if (c === '"' || c === "'") quote = c
-    else if (c === "(") depth++
-    else if (c === ")") depth = Math.max(0, depth - 1)
-    else if (c === "," && depth === 0) {
-      items.push(value.slice(from, i))
-      from = i + 1
-    }
-  }
-  items.push(value.slice(from))
-  return items
-}
-
-/**
- * A value as it is compared: whitespace collapsed, hex colours lower-cased and expanded, plain zero
- * lengths as `0`, and, in a font list, the outer quotes of each family removed. Nothing else is
- * rewritten.
- */
-function normalise(name: string, value: string): string {
-  let text = value
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-  text = text.replace(/#([0-9a-fA-F]{3,8})(?![0-9a-zA-Z_-])/g, (whole, hex: string) => {
-    if (hex.length === 3 || hex.length === 4)
-      return `#${[...hex.toLowerCase()].map((c) => c + c).join("")}`
-    return hex.length === 6 || hex.length === 8 ? `#${hex.toLowerCase()}` : whole
-  })
-  text = text.replace(
-    /(^|[\s,(/])0(?:\.0+)?(?:px|rem|em|pt|ex|ch|vh|vw)(?=$|[\s,)/])/g,
-    (_whole, before: string) => `${before}0`,
-  )
-  text = text.replace(/\s*,\s*/g, ",")
-  if (/^--(?:ql-)?font-/.test(name))
-    text = splitList(text)
-      .map((item) => item.trim().replace(/^(["'])(.*)\1$/, "$2"))
-      .join(",")
-  return text
-}
-
-// ---------------------------------------------------------------- the design file's tokens
-
-type Def = { group: string; colour: boolean; light: string; dark: string | null }
-
-/** Every variable a design token can appear as: a colour as `--ql-<name>` and `--<name>`, the rest by name. */
-function definitions(product: ProductTokens): { defs: Map<string, Def>; colours: number } {
-  const defs = new Map<string, Def>()
-  for (const [name, c] of product.colours) {
-    const def = { group: name, colour: true, light: c.light, dark: c.twin ? c.dark : null }
-    defs.set(`--ql-${name}`, def)
-    defs.set(`--${name}`, def)
-  }
-  for (const [name, value] of product.others)
-    if (!defs.has(name)) defs.set(name, { group: name, colour: false, light: value, dark: null })
-  return { defs, colours: product.colours.size }
-}
-
-/** The design file's tokens now, and the values it held before (empty without git or history). */
-type Design = { stamp: string; tokens: ProductTokens | null; history: TokenHistory }
-
-/** The tokens and history of each checkout's design file, kept while its stamp stands. */
-const designs = new Map<string, Design>()
-const DESIGNS_KEPT = 64
-/** The histories kept hold at most about this many characters in all. */
-export const DRIFT_HISTORY_BYTES = 1024 * 1024
-let designWeight = 0
-
-const weightOf = (design: Design): number => design.history.weight + 200
-
-async function loadDesign(ctx: Ctx, root: string, stamp: string): Promise<Design> {
-  const known = designs.get(root)
-  if (known !== undefined && known.stamp === stamp) return known
-  const tokens = await productTokens(ctx, root, { fontMode: "none" })
-  let history = NO_HISTORY()
-  if (tokens !== null && !tokens.empty) {
-    const files = await tokenFiles(ctx, root)
-    history = await readHistory(ctx, root, {
-      design: tokens.source,
-      palette: files.palette,
-    })
-  }
-  const design: Design = { stamp, tokens, history }
-  if (known !== undefined) designWeight -= weightOf(known)
-  designs.delete(root)
-  designs.set(root, design)
-  designWeight += weightOf(design)
-  while ((designs.size > DESIGNS_KEPT || designWeight > DRIFT_HISTORY_BYTES) && designs.size > 1) {
-    const oldest = designs.keys().next().value as string
-    designWeight -= weightOf(designs.get(oldest) as Design)
-    designs.delete(oldest)
-  }
-  return design
-}
-
-/** The design file's stamp and the newest commit that touched it or the palette: what a cached answer depends on. */
-async function currentStamp(ctx: Ctx, root: string): Promise<string> {
-  const files = await tokenFiles(ctx, root)
-  const history = await historyKey(ctx, root, [
-    ...files.designs,
-    ...(files.palette === null ? [] : [files.palette]),
-  ])
-  return `${await designStamp(ctx, root, files)}\0${history}`
-}
-
-function stampOf(ctx: Ctx, root: string, budget: DriftBudget | undefined): Promise<string> {
-  if (budget === undefined) return currentStamp(ctx, root)
-  let stamp = budget.stamps.get(root)
-  if (stamp === undefined) {
-    stamp = currentStamp(ctx, root)
-    budget.stamps.set(root, stamp)
-  }
-  return stamp
-}
-
-/**
- * Whether the design file held this value for the token before now. The comparison is the one used
- * everywhere: the same normalisation, in the same theme.
- */
-function heldBefore(
-  history: TokenHistory,
-  def: Def,
-  theme: Theme,
-  name: string,
-  value: string,
-): boolean {
-  const held = history.values.get(`${theme}\0${def.group}`)
-  if (held === undefined) return false
-  const mine = normalise(name, value)
-  for (const old of held) if (comparable(old) && normalise(name, old) === mine) return true
-  return false
-}
-
-// ---------------------------------------------------------------- reading an artifact's styles
-
-/** One piece of CSS a page uses: an inline `<style>` (inside the page) or a linked file. */
-export type StyleSource = {
-  /** The file as the artifact names it: the page, or the stylesheet from the artifact's folder. */
-  file: string
-  /** Null for a `<style>` inside the page. */
-  path: string | null
-  /** Where the text starts in the page (inline) or 0 (a file). */
-  base: number
-  text: string
-  /** sha256 of a file's text, witnessed when it was read. */
-  sha: string | null
-  media: Media
-}
-
-type Piece =
-  | { kind: "style"; start: number; end: number; media: string | undefined }
-  | { kind: "link"; href: string; media: string | undefined }
-
-type HtmlNode = {
-  nodeName: string
-  attrs?: { name: string; value: string }[]
-  childNodes?: HtmlNode[]
-  content?: { childNodes?: HtmlNode[] }
-  sourceCodeLocation?: { startOffset: number; endOffset: number } | null
-}
-
-/** The `<style>` blocks and stylesheet links of a page, in document order. */
-function piecesOf(html: string): Piece[] {
-  const found: Piece[] = []
-  const stack: HtmlNode[] = [
-    parseHtml(html, { sourceCodeLocationInfo: true }) as unknown as HtmlNode,
-  ]
-  while (stack.length > 0) {
-    const node = stack.pop() as HtmlNode
-    const attr = (name: string) => node.attrs?.find((a) => a.name === name)?.value
-    if (node.nodeName === "style") {
-      const text = node.childNodes?.[0]?.sourceCodeLocation
-      if (text)
-        found.push({
-          kind: "style",
-          start: text.startOffset,
-          end: text.endOffset,
-          media: attr("media"),
-        })
-    } else if (node.nodeName === "link") {
-      const rel = (attr("rel") ?? "").toLowerCase().split(/\s+/)
-      const href = attr("href")
-      if (rel.includes("stylesheet") && !rel.includes("alternate") && href !== undefined)
-        found.push({ kind: "link", href, media: attr("media") })
-    }
-    const kids = node.content?.childNodes ?? node.childNodes ?? []
-    for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i] as HtmlNode)
-  }
-  return found
-}
-
-type Stamps = Map<string, string>
-
-async function stampFile(ctx: Ctx, path: string): Promise<string> {
-  const stat = await ctx.fs.stat?.(path)
-  return stat ? `${stat.mtimeMs}:${stat.size}` : "missing"
-}
-
-/** The stylesheet an `href` names inside the artifact's folder; null for a link to somewhere else. */
-function localPath(dir: string, href: string): string | "remote" | null {
-  const bare = href.trim()
-  if (bare === "") return "remote"
-  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(bare)) return "remote"
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(bare.split(/[?#]/)[0] ?? "")
-  } catch {
-    return null
-  }
-  if (decoded === "" || decoded.includes("\0") || isAbsolute(decoded) || decoded.startsWith("/"))
-    return null
-  const path = resolve(dir, decoded)
-  return path.startsWith(`${dir}${sep}`) ? path : null
-}
-
-/** Every folder from the artifact's folder down to the file is a plain folder, the file a plain file. */
-async function plainPath(ctx: Ctx, dir: string, path: string): Promise<boolean> {
-  if (ctx.fs.lstat === undefined) return false
-  const parts = relative(dir, path).split(sep)
-  let at = dir
-  for (const part of parts) {
-    at = join(at, part)
-    const entry = await ctx.fs.lstat(at)
-    if (entry === null || entry.kind === "symlink" || entry.kind === "other") return false
-  }
-  return true
-}
-
-const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex")
-
-type Inspected = {
-  /** The whole answer, every changed declaration. */
-  result: TokenDrift
-  stamps: Stamps
-  /** Bytes of artifact files read. */
-  read: number
-  /** What a refresh would write, one per changed declaration. */
-  edits: Edit[]
-  sources: StyleSource[]
-  html: string | null
-  pageName: string
-}
-
-/** One value to replace: its place in a source's text, and the design file's value. */
-export type Edit = { source: number; start: number; end: number; to: string; change: TokenChange }
-
-/** The files read for one artifact, then the comparison. */
-async function inspect(ctx: Ctx, target: DriftTarget, design: Design): Promise<Inspected> {
-  const pageName = basename(target.page)
-  const stamps: Stamps = new Map()
-  const sources: StyleSource[] = []
-  const done = (result: TokenDrift, read = 0, html: string | null = null, edits: Edit[] = []) => ({
-    result,
-    stamps,
-    read,
-    edits,
-    sources,
-    html,
-    pageName,
-  })
-  const product = design.tokens
-  if (product === null) return done(notApplicable("no design file"))
-  if (product.empty || (product.colours.size === 0 && product.others.size === 0))
-    return done(notApplicable("the design file has no tokens"))
-  if (ctx.fs.stat === undefined) return done(unassessed("cannot be read here"))
-
-  // The entry page.
-  stamps.set(target.page, await stampFile(ctx, target.page))
-  const size = (await ctx.fs.stat(target.page))?.size
-  if (size === undefined) return done(unassessed("could not be read"))
-  let read = size
-  if (size > DRIFT_BYTES_MAX) return done(unassessed("too large to check"), 0)
-  let html: string
-  try {
-    html = await ctx.fs.readFile(target.page)
-  } catch {
-    return done(unassessed("could not be read"))
-  }
-
-  // Its styles in link order: `<style>` blocks and local stylesheets inside its own folder.
-  let files = 0
-  const byPath = new Map<string, StyleSource>()
-  for (const piece of piecesOf(html)) {
-    const media = mediaOf(piece.media)
-    if (media === null) continue
-    if (piece.kind === "style") {
-      sources.push({
-        file: pageName,
-        path: null,
-        base: piece.start,
-        text: html.slice(piece.start, piece.end),
-        sha: null,
-        media,
-      })
-      continue
-    }
-    const path = target.dir === undefined ? null : localPath(target.dir, piece.href)
-    if (path === "remote") continue
-    const unreadable = (): Inspected =>
-      done(
-        unassessed(`a linked stylesheet could not be read (${piece.href.trim().slice(0, 80)})`),
-        read,
-      )
-    if (path === null || target.dir === undefined) return unreadable()
-    const known = byPath.get(path)
-    if (known !== undefined) {
-      sources.push({ ...known, media })
-      continue
-    }
-    stamps.set(path, await stampFile(ctx, path))
-    if (!(await plainPath(ctx, target.dir, path))) return unreadable()
-    const fileSize = (await ctx.fs.stat(path))?.size
-    if (fileSize === undefined) return unreadable()
-    if (++files > DRIFT_FILES_MAX || read + fileSize > DRIFT_BYTES_MAX)
-      return done(unassessed("too large to check"), read)
-    read += fileSize
-    let text: string
-    try {
-      text = await ctx.fs.readFile(path)
-    } catch {
-      return unreadable()
-    }
-    const source: StyleSource = {
-      file: relative(target.dir, path).split(sep).join("/"),
-      path,
-      base: 0,
-      text,
-      sha: sha256(text),
-      media,
-    }
-    byPath.set(path, source)
-    sources.push(source)
-  }
-
-  // The cascade: later declarations of a name win within a theme.
-  const winners: Winners = new Map()
-  for (const [index, source] of sources.entries()) {
-    const scanned = scanSheet(source.text, index, source.media, winners)
-    if (scanned === "import") return done(unassessed("uses @import, which is not followed"), read)
-    if (scanned === "unreadable") return done(unassessed("its styles could not be read"), read)
-  }
-
-  const { defs, colours } = definitions(product)
-  const edits: Edit[] = []
-  const differing = new Set<string>()
-  const matchedColours = new Set<string>()
-  let declared = 0
-  let compared = 0
-  for (const found of winners.values()) {
-    const def = defs.get(found.name)
-    if (def === undefined) continue
-    const designValue = found.theme === "light" ? def.light : def.dark
-    if (designValue === null) continue
-    declared++
-    if (found.important || !comparable(found.value) || !comparable(designValue)) continue
-    compared++
-    if (normalise(found.name, found.value) === normalise(found.name, designValue)) {
-      if (def.colour) matchedColours.add(def.group)
-      continue
-    }
-    // A value the design file never held is the page's own choice: not drift, never rewritten.
-    if (!heldBefore(design.history, def, found.theme, found.name, found.value)) continue
-    differing.add(def.group)
-    const source = sources[found.source] as StyleSource
-    edits.push({
-      source: found.source,
-      start: found.start,
-      end: found.end,
-      to: designValue,
-      change: {
-        name: found.name,
-        theme: found.theme,
-        file: source.file,
-        page: pageName,
-        value: found.value,
-        now: designValue,
-      },
-    })
-  }
-  if (declared === 0) return done(notApplicable("page declares no design-file tokens"), read, html)
-  if (compared === 0)
-    return done(
-      unassessed(
-        "its token values are computed (var, calc, !important), so they cannot be compared",
-      ),
-      read,
-      html,
-    )
-  // A page that matches fewer than three of the design file's colours draws with its own palette. A
-  // design file with three colours or fewer asks for one less, so one moved colour does not hide it.
-  if (matchedColours.size < Math.max(1, Math.min(3, colours - 1)))
-    return done(notApplicable("uses its own palette"), read, html)
-  edits.sort(
-    (a, b) =>
-      (a.change.name < b.change.name ? -1 : a.change.name > b.change.name ? 1 : 0) ||
-      (a.change.theme < b.change.theme ? -1 : a.change.theme > b.change.theme ? 1 : 0),
-  )
-  const changed = edits.map((edit) => edit.change)
-  const result: TokenDrift =
-    differing.size === 0
-      ? { state: "current", count: 0 }
-      : { state: "drifted", count: differing.size, changed }
-  return done(result, read, html, edits)
-}
-
-// ---------------------------------------------------------------- the cache
-
 type Entry = { design: string; stamps: Stamps; result: TokenDrift; weight: number }
 
 /** Least recently used first. */
@@ -647,10 +105,9 @@ let cacheWeight = 0
 /** Forget every cached answer (a test starts clean). */
 export function forgetTokenDrift(): void {
   cache.clear()
-  designs.clear()
+  clearDesignCache()
   forgetTokenHistory()
   cacheWeight = 0
-  designWeight = 0
 }
 
 /** How many answers are cached and about how heavy they are. */
@@ -704,7 +161,7 @@ export async function tokenDrift(
   if (budget !== undefined && (budget.recomputations <= 0 || budget.bytes <= 0))
     return had?.result ?? NOT_CHECKED_YET
   if (budget !== undefined) budget.recomputations--
-  const done = await inspect(ctx, target, await loadDesign(ctx, target.root, stamp))
+  const done = await inspectTokens(ctx, target, await loadDesign(ctx, target.root, stamp))
   if (budget !== undefined) budget.bytes -= done.read
   const result = kept(done.result)
   remember(key, { design: stamp, stamps: done.stamps, result }, done.stamps.size)
@@ -735,7 +192,7 @@ export type TokenCheck = {
 export async function checkTokens(ctx: Ctx, target: DriftTarget): Promise<TokenCheck> {
   const stamp = await currentStamp(ctx, target.root)
   const design = await loadDesign(ctx, target.root, stamp)
-  const done = await inspect(ctx, target, design)
+  const done = await inspectTokens(ctx, target, design)
   remember(
     `${target.root}\0${target.page}`,
     { design: stamp, stamps: done.stamps, result: kept(done.result) },

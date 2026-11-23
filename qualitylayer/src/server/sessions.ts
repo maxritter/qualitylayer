@@ -39,6 +39,12 @@ export type SessionAuthority = { keyPaired: boolean; expiresAt: number }
 const hashOf = (id: string) => createHash("sha256").update(id).digest("hex")
 const sessionsPath = (ctx: Ctx) => join(ctx.home, "cockpit.sessions")
 
+function isValidPairing(entry: Pairing | undefined): entry is Pairing {
+  if (!entry) return false
+  if (typeof entry.remember !== "boolean" || typeof entry.keyPaired !== "boolean") return false
+  return /^[A-Za-z0-9_-]{43}$/.test(entry.code) && /^[a-f0-9]{64}$/.test(entry.server)
+}
+
 export class Sessions {
   private codes = new Map<string, Pairing>()
   private server: string | undefined
@@ -50,24 +56,14 @@ export class Sessions {
     pairings: Pairing[] = [],
   ) {
     for (const entry of pairings.slice(0, MAX_CODES)) {
-      if (
-        entry &&
-        /^[A-Za-z0-9_-]{43}$/.test(entry.code) &&
-        typeof entry.remember === "boolean" &&
-        typeof entry.keyPaired === "boolean" &&
-        /^[a-f0-9]{64}$/.test(entry.server)
-      ) {
-        if (
-          [...this.codes.values()].some(
-            (held) =>
-              held.server === entry.server &&
-              held.remember === entry.remember &&
-              held.keyPaired === entry.keyPaired,
-          )
-        )
-          continue
-        this.codes.set(entry.code, entry)
-      }
+      if (!isValidPairing(entry)) continue
+      const duplicate = [...this.codes.values()].some(
+        (held) =>
+          held.server === entry.server &&
+          held.remember === entry.remember &&
+          held.keyPaired === entry.keyPaired,
+      )
+      if (!duplicate) this.codes.set(entry.code, entry)
     }
   }
 

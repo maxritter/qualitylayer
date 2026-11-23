@@ -5,165 +5,57 @@
 // tokens in all four. A run that did not print its totals has no calls, and its row says so.
 
 import type { NativeAgent } from "../agents/ids.ts"
-import { grokPricing, nativeUsageUsd } from "./grok-pricing.ts"
-import type { Tokens } from "./prices.ts"
+import {
+  grokStreamCalls,
+  type StreamRow,
+  streamCall,
+  streamCount,
+  streamObject,
+} from "./review-headless-grok.ts"
 import type { Call } from "./transcripts.ts"
 
-type Row = Record<string, unknown>
-
-const object = (value: unknown): Row =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Row) : {}
-
-/** A count the stream gave, or null when it is missing or not a whole non-negative number. */
-const count = (value: unknown): number | null =>
-  typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null
-
-function call(
-  at: number,
-  model: string,
-  usage: { input: unknown; output: unknown; read: unknown; write?: unknown },
-): Call[] {
-  const input = count(usage.input)
-  const output = count(usage.output)
-  if (input === null || output === null) return []
-  return [
-    {
-      at,
-      model,
-      tokens: {
-        input,
-        output,
-        cacheRead: count(usage.read) ?? 0,
-        cacheWrite5m: count(usage.write) ?? 0,
-        cacheWrite1h: 0,
-      },
-    },
-  ]
-}
-
 /** Each reader turns one parsed row of the stream into the calls it carries. */
-const READERS: Partial<Record<NativeAgent, (row: Row, model: string, at: number) => Call[]>> = {
-  cursor: (row, model, at) => {
-    if (row.type !== "result") return []
-    const u = object(row.usage)
-    return call(at, model, {
-      input: u.inputTokens,
-      output: u.outputTokens,
-      read: u.cacheReadTokens,
-      write: u.cacheWriteTokens,
-    })
-  },
-  copilot: (row, _model, at) => {
-    if (row.type !== "session.usage_checkpoint") return []
-    const metrics = object(object(object(row.data).accountingSnapshot).modelMetrics)
-    return Object.entries(metrics).flatMap(([name, entry]) => {
-      const u = object(object(entry).usage)
-      const input = count(u.inputTokens)
-      const read = count(u.cacheReadTokens)
-      const write = count(u.cacheWriteTokens)
-      // Copilot's input tokens hold the cached ones, read and written.
-      return call(at, name, {
-        input: input === null ? null : Math.max(0, input - (read ?? 0) - (write ?? 0)),
+const READERS: Partial<Record<NativeAgent, (row: StreamRow, model: string, at: number) => Call[]>> =
+  {
+    cursor: (row, model, at) => {
+      if (row.type !== "result") return []
+      const u = streamObject(row.usage)
+      return streamCall(at, model, {
+        input: u.inputTokens,
         output: u.outputTokens,
-        read,
-        write,
+        read: u.cacheReadTokens,
+        write: u.cacheWriteTokens,
       })
-    })
-  },
-  antigravity: (row, model, at) => {
-    if (row.event !== "result") return []
-    const u = object(object(row.result).usage)
-    return call(at, model, {
-      input: u.input_tokens,
-      output: u.output_tokens,
-      read: u.cache_read_tokens,
-    })
-  },
-}
-
-function grokRequest(row: Row, at: number): Tokens | null {
-  const u = object(row.usage)
-  if (
-    [
-      u.input_tokens,
-      u.output_tokens,
-      u.cache_read_input_tokens ?? 0,
-      u.cache_creation_input_tokens ?? 0,
-    ].some((n) => !Number.isSafeInteger(n) || (n as number) < 0)
-  )
-    return null
-  return (
-    call(at, "unknown", {
-      input: u.input_tokens,
-      output: u.output_tokens,
-      read: u.cache_read_input_tokens,
-      write: u.cache_creation_input_tokens,
-    })[0]?.tokens ?? null
-  )
-}
-
-function grokEnd(row: Row, at: number, requests?: readonly Tokens[]): Call[] {
-  const models = Object.entries(object(row.modelUsage))
-  return models.flatMap(([model, usage]) => {
-    const u = object(usage)
-    const own = call(at, model, {
-      input: u.inputTokens,
-      output: u.outputTokens,
-      read: u.cacheReadInputTokens,
-      write: u.cacheCreationInputTokens,
-    })[0]
-    if (!own) return []
-    const reportedUsd = nativeUsageUsd(u.costUSD)
-    const complete = [
-      u.inputTokens,
-      u.outputTokens,
-      u.cacheReadInputTokens ?? 0,
-      u.cacheCreationInputTokens ?? 0,
-    ].every((n) => Number.isSafeInteger(n) && (n as number) >= 0)
-    return [
-      {
-        ...own,
-        billing: "unknown" as const,
-        ...(reportedUsd !== undefined ? { reportedUsd } : {}),
-        missingTokens: !complete,
-        pricing: grokPricing(model, own.tokens, {
-          modelCalls: u.modelCalls,
-          nativeUsd: reportedUsd,
-          complete,
-          requests: models.length === 1 ? requests : undefined,
-        }),
-      },
-    ]
-  })
-}
-
-/** An end is the invocation's total. Request rows supply context, never additional receipts. */
-function grokStreamCalls(text: string, at: number): Call[] {
-  let requests: Tokens[] = []
-  let validRequests = true
-  let last: Call[] = []
-  let end = ""
-  for (const line of text.split("\n")) {
-    try {
-      const row = object(JSON.parse(line))
-      if (row.type === "usage") {
-        const request = grokRequest(row, at)
-        if (request) requests.push(request)
-        else validRequests = false
-      }
-      if (row.type !== "end") continue
-      const identity = JSON.stringify(row.modelUsage)
-      if (requests.length === 0 && validRequests && identity === end) continue
-      last = grokEnd(row, at, validRequests ? requests : undefined)
-      end = identity
-      requests = []
-      validRequests = true
-    } catch {
-      /* A partial line carries no complete request context. */
-    }
+    },
+    copilot: (row, _model, at) => {
+      if (row.type !== "session.usage_checkpoint") return []
+      const metrics = streamObject(
+        streamObject(streamObject(row.data).accountingSnapshot).modelMetrics,
+      )
+      return Object.entries(metrics).flatMap(([name, entry]) => {
+        const u = streamObject(streamObject(entry).usage)
+        const input = streamCount(u.inputTokens)
+        const read = streamCount(u.cacheReadTokens)
+        const write = streamCount(u.cacheWriteTokens)
+        // Copilot's input tokens hold the cached ones, read and written.
+        return streamCall(at, name, {
+          input: input === null ? null : Math.max(0, input - (read ?? 0) - (write ?? 0)),
+          output: u.outputTokens,
+          read,
+          write,
+        })
+      })
+    },
+    antigravity: (row, model, at) => {
+      if (row.event !== "result") return []
+      const u = streamObject(streamObject(row.result).usage)
+      return streamCall(at, model, {
+        input: u.input_tokens,
+        output: u.output_tokens,
+        read: u.cache_read_tokens,
+      })
+    },
   }
-  return last
-}
 
 /** The agents whose stream repeats running totals, so only its last report counts. */
 const CUMULATIVE: ReadonlySet<NativeAgent> = new Set(["copilot"])
@@ -180,7 +72,7 @@ export function headlessCalls(agent: NativeAgent, model: string, text: string, a
   const found: Call[][] = []
   for (const line of text.split("\n")) {
     try {
-      const calls = read(object(JSON.parse(line)), model, at)
+      const calls = read(streamObject(JSON.parse(line)), model, at)
       if (calls.length > 0) found.push(calls)
     } catch {
       /* A partial line or a diagnostic carries no usage. */

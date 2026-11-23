@@ -70,6 +70,66 @@ export type StartBranchView = {
   byHand: string | null
 }
 
+type BranchRefs = {
+  live: React.RefObject<boolean>
+  clicked: React.RefObject<boolean>
+  currentTask: React.RefObject<string | null>
+  readRevision: React.RefObject<number>
+}
+
+function readTaskBranch(
+  task: string,
+  refs: BranchRefs,
+  setAnswered: (task: string) => void,
+  setState: (state: BranchState | null) => void,
+): void {
+  const revision = ++refs.readRevision.current
+  const isStale = () =>
+    !refs.live.current ||
+    refs.currentTask.current !== task ||
+    revision !== refs.readRevision.current
+  branchApi.read(task).then(
+    (next) => {
+      if (isStale()) return
+      setAnswered(task)
+      if (!refs.clicked.current) setState(next)
+    },
+    () => {
+      if (isStale()) return
+      setAnswered(task)
+      if (!refs.clicked.current) setState(null)
+    },
+  )
+}
+
+function createTaskBranch(
+  task: string,
+  refs: BranchRefs,
+  handlers: {
+    setState: (state: BranchState) => void
+    setMade: (branch: string | null) => void
+    setRefused: (message: string) => void
+    setBusy: (busy: boolean) => void
+  },
+): void {
+  refs.clicked.current = true
+  handlers.setBusy(true)
+  branchApi.create(task).then(
+    (next) => {
+      if (!refs.live.current || refs.currentTask.current !== task) return
+      handlers.setState(next)
+      handlers.setMade(next.branch)
+      handlers.setBusy(false)
+    },
+    (cause: unknown) => {
+      if (!refs.live.current || refs.currentTask.current !== task) return
+      refs.clicked.current = false
+      handlers.setRefused(cause instanceof Error ? cause.message : "git refused the new branch.")
+      handlers.setBusy(false)
+    },
+  )
+}
+
 /** The row's state for one task; `task` is the App's task id, null when the card has no task. */
 export function useStartBranch(
   task: string | null,
@@ -87,6 +147,7 @@ export function useStartBranch(
   const currentTask = useRef(task)
   currentTask.current = task
   const readRevision = useRef(0)
+  const refs = { live, clicked, currentTask, readRevision }
   useEffect(() => {
     currentTask.current = task
     clicked.current = false
@@ -105,22 +166,8 @@ export function useStartBranch(
   }, [])
 
   const read = useCallback(() => {
-    if (task === null) return
-    const revision = ++readRevision.current
-    branchApi.read(task).then(
-      (next) => {
-        if (!live.current || currentTask.current !== task || revision !== readRevision.current)
-          return
-        setAnswered(task)
-        if (!clicked.current) setState(next)
-      },
-      () => {
-        if (!live.current || currentTask.current !== task || revision !== readRevision.current)
-          return
-        setAnswered(task)
-        if (!clicked.current) setState(null)
-      },
-    )
+    if (task !== null)
+      readTaskBranch(task, { live, clicked, currentTask, readRevision }, setAnswered, setState)
   }, [task])
   useEffect(() => {
     read()
@@ -138,24 +185,8 @@ export function useStartBranch(
     if (task === null || state === null || busy || made !== null) return
     setRefused(null)
     setPicked(which)
-    if (deferred) return
-    if (which === "stay") return
-    clicked.current = true
-    setBusy(true)
-    branchApi.create(task).then(
-      (next) => {
-        if (!live.current || currentTask.current !== task) return
-        setState(next)
-        setMade(next.branch)
-        setBusy(false)
-      },
-      (cause: unknown) => {
-        if (!live.current || currentTask.current !== task) return
-        clicked.current = false
-        setRefused(cause instanceof Error ? cause.message : "git refused the new branch.")
-        setBusy(false)
-      },
-    )
+    if (deferred || which === "stay") return
+    createTaskBranch(task, refs, { setState, setMade, setRefused, setBusy })
   }
 
   return {

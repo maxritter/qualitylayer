@@ -39,6 +39,25 @@ export async function readAttestations(
   }
 }
 
+async function validateEvidence(
+  ctx: Ctx,
+  task: Task,
+  raw: string | undefined,
+): Promise<Result<string | undefined>> {
+  if (raw === undefined || raw === "") return ok(undefined)
+  const path = raw.replace(/^\.\//, "")
+  if (!isProofPath(path)) {
+    return err({
+      code: "bad_args",
+      message: `\`${raw}\` is not a file under evidence/ or ${RECORDS_DIR}/`,
+    })
+  }
+  if (!(await ctx.fs.exists(join(task.dir, path)))) {
+    return err({ code: "bad_args", message: `\`${path}\` is not in the task folder` })
+  }
+  return ok(path)
+}
+
 export async function recordAttestation(
   ctx: Ctx,
   task: Task,
@@ -73,20 +92,9 @@ export async function recordAttestation(
   if (text === "") {
     return err({ code: "bad_args", message: "an attestation needs the person's words" })
   }
-  let evidence: string | undefined
-  if (input.evidence !== undefined && input.evidence !== "") {
-    const path = input.evidence.replace(/^\.\//, "")
-    if (!isProofPath(path)) {
-      return err({
-        code: "bad_args",
-        message: `\`${input.evidence}\` is not a file under evidence/ or ${RECORDS_DIR}/`,
-      })
-    }
-    if (!(await ctx.fs.exists(join(task.dir, path)))) {
-      return err({ code: "bad_args", message: `\`${path}\` is not in the task folder` })
-    }
-    evidence = path
-  }
+  const checkedEvidence = await validateEvidence(ctx, task, input.evidence)
+  if (!checkedEvidence.ok) return checkedEvidence
+  const evidence = checkedEvidence.data
   const attestation: Attestation = {
     item,
     text,

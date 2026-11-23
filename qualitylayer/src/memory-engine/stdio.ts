@@ -1,8 +1,11 @@
-type JsonObject = Record<string, unknown>
-type Pending = {
-  resolve: (value: JsonObject) => void
-  reject: (error: Error) => void
-}
+import {
+  type JsonObject,
+  type PendingRequest,
+  parseRpcLine,
+  parseToolCallResult,
+  parseToolInventory,
+  settleRpcResponse,
+} from "./stdio-protocol.ts"
 
 export const MEMORY_ENGINE_TOOLS = [
   "mem_save",
@@ -15,6 +18,15 @@ export const MEMORY_ENGINE_TOOLS = [
 ] as const
 const MAX_MESSAGE = 256 * 1024
 const MAX_OUTPUT = 1024 * 1024
+
+type MemoryStdioArgs = [
+  binary: string,
+  home: string,
+  data: string,
+  project: string,
+  timeout: number,
+  databaseBytes?: number,
+]
 
 export function memoryEngineEnvironment(
   home: string,
@@ -40,20 +52,14 @@ export function memoryEngineEnvironment(
 
 export class MemoryStdio {
   private child: Bun.Subprocess<"pipe", "pipe", "ignore">
-  private pending = new Map<number, Pending>()
+  private pending = new Map<number, PendingRequest>()
   private sequence = 0
   private failure: Error | null = null
   private timer: ReturnType<typeof setTimeout>
   private reader: Promise<void>
 
-  constructor(
-    binary: string,
-    home: string,
-    data: string,
-    project: string,
-    timeout: number,
-    databaseBytes = 16 * 1024 * 1024,
-  ) {
+  constructor(...args: MemoryStdioArgs) {
+    const [binary, home, data, project, timeout, databaseBytes = 16 * 1024 * 1024] = args
     this.child = Bun.spawn([binary], {
       cwd: home,
       env: memoryEngineEnvironment(home, data, project, databaseBytes),
@@ -73,34 +79,29 @@ export class MemoryStdio {
     if (this.child.exitCode === null) this.child.kill("SIGKILL")
   }
 
+  private drainLines(buffered: Buffer): Buffer {
+    let remaining = buffered
+    let newline = remaining.indexOf(10)
+    while (newline !== -1) {
+      if (newline > MAX_MESSAGE) throw new Error("Project memory engine message exceeds limit")
+      const response = parseRpcLine(remaining.subarray(0, newline))
+      settleRpcResponse(response, this.pending)
+      remaining = remaining.subarray(newline + 1)
+      newline = remaining.indexOf(10)
+    }
+    if (remaining.byteLength > MAX_MESSAGE)
+      throw new Error("Project memory engine message exceeds limit")
+    return remaining
+  }
+
   private async read(): Promise<void> {
     let total = 0
-    let buffered = Buffer.alloc(0)
+    let buffered: Buffer = Buffer.alloc(0)
     try {
       for await (const chunk of this.child.stdout) {
         total += chunk.byteLength
         if (total > MAX_OUTPUT) throw new Error("Project memory engine output exceeds limit")
-        buffered = Buffer.concat([buffered, chunk])
-        let newline = buffered.indexOf(10)
-        while (newline !== -1) {
-          if (newline > MAX_MESSAGE) throw new Error("Project memory engine message exceeds limit")
-          const response = JSON.parse(buffered.subarray(0, newline).toString("utf8")) as JsonObject
-          if (response.jsonrpc !== "2.0") throw new Error("Invalid project memory engine response")
-          const waiting = this.pending.get(response.id as number)
-          if (waiting) {
-            this.pending.delete(response.id as number)
-            if (response.error) waiting.reject(new Error("Project memory engine request failed"))
-            else if (response.result && typeof response.result === "object")
-              waiting.resolve(response.result as JsonObject)
-            else waiting.reject(new Error("Invalid project memory engine result"))
-          } else if (typeof response.method === "string" && "id" in response) {
-            throw new Error("Project memory engine cannot request client capabilities")
-          }
-          buffered = buffered.subarray(newline + 1)
-          newline = buffered.indexOf(10)
-        }
-        if (buffered.byteLength > MAX_MESSAGE)
-          throw new Error("Project memory engine message exceeds limit")
+        buffered = this.drainLines(Buffer.concat([buffered, chunk]))
       }
       if (buffered.byteLength) throw new Error("Incomplete project memory engine response")
     } catch (error) {
@@ -147,47 +148,13 @@ export class MemoryStdio {
 
   async toolNames(): Promise<string[]> {
     const result = await this.rpc("tools/list", {})
-    if (!Array.isArray(result.tools) || result.tools.length > 32)
-      throw new Error("Invalid project memory tool inventory")
-    const names: string[] = []
-    for (const tool of result.tools) {
-      if (
-        !tool ||
-        typeof tool !== "object" ||
-        Array.isArray(tool) ||
-        typeof tool.name !== "string" ||
-        !/^[a-z][a-z0-9_]{0,63}$/.test(tool.name) ||
-        names.includes(tool.name)
-      )
-        throw new Error("Invalid project memory tool inventory")
-      names.push(tool.name)
-    }
-    return names
+    return parseToolInventory(result)
   }
 
   async call(name: (typeof MEMORY_ENGINE_TOOLS)[number], args: JsonObject): Promise<JsonObject> {
     if (!MEMORY_ENGINE_TOOLS.includes(name)) throw new Error("Project memory tool is not allowed")
     const result = await this.rpc("tools/call", { name, arguments: args })
-    const content = result.content as { type?: string; text?: string }[] | undefined
-    if (result.isError) {
-      if (content?.some((entry) => /SQLITE_FULL|database or disk is full/i.test(entry.text ?? "")))
-        throw new Error(
-          "Project memory index reached its storage limit; saved records are preserved",
-        )
-      throw new Error("Project memory engine operation failed")
-    }
-    const text = content?.find((entry) => entry.type === "text")?.text
-    if (typeof text !== "string") throw new Error("Invalid project memory engine content")
-    let value: unknown
-    try {
-      value = JSON.parse(text)
-    } catch {
-      if (name === "mem_update" || name === "mem_delete") return {}
-      throw new Error("Invalid project memory engine tool result")
-    }
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new Error("Invalid project memory engine tool result")
-    return value as JsonObject
+    return parseToolCallResult(name, result)
   }
 
   async close(): Promise<void> {

@@ -2,11 +2,9 @@
 // The template is never authored twice: it is generated from the schema.
 
 import { schemaText } from "#workflow"
-import type { Frontmatter } from "./frontmatter.ts"
-import { stringifyFrontmatter } from "./frontmatter.ts"
 import { agentFileOf, agentRoleOf, type DocRole, IDENTITY_FILE, NAMES, roleOf } from "./names.ts"
 import type { ProofList } from "./proof-list.ts"
-import { slotLine } from "./slots.ts"
+import { GUIDANCE_PREFIX, templateFrom } from "./schema-template.ts"
 
 export type SectionSpec = {
   heading: string
@@ -197,53 +195,7 @@ export function sectionMatches(spec: SectionSpec, heading: string): boolean {
   return spec.heading === heading
 }
 
-export const GUIDANCE_PREFIX = "<!-- fill:"
-
-/**
- * Generate the document skeleton: headings plus guidance comments. Every
- * `<!-- fill: ... -->` comment is guidance; validation checks required records.
- */
-export function templateFrom(schema: DocSchema, title = ""): string {
-  const parts: string[] = []
-  if (schema.frontmatter.template !== null && schema.frontmatter.none !== true) {
-    parts.push(stringifyFrontmatter(schema.frontmatter.template as Frontmatter).trimEnd())
-    parts.push("")
-  }
-  if (schema.title === "required") {
-    parts.push(
-      `# ${title !== "" ? title : `${GUIDANCE_PREFIX} a short title for this document -->`}`,
-    )
-    parts.push("")
-  }
-  if (schema.preamble !== undefined) {
-    parts.push(...schema.preamble)
-    parts.push("")
-  }
-  for (const section of schema.sections) {
-    if (!section.required) {
-      // QualityLayer writes its own optional sections when it has something to say; an agent is not
-      // offered a slot for one.
-      if (section.writer === "ql") continue
-      parts.push(slotLine(section.heading, section.when))
-      if (section.skeleton !== undefined)
-        parts.push(
-          `<!-- ${section.skeleton.join("\n").replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;")} -->`,
-        )
-      parts.push("")
-      continue
-    }
-    parts.push(`## ${section.heading}`)
-    parts.push("")
-    if (section.skeleton !== undefined) {
-      parts.push(...section.skeleton)
-      parts.push("")
-    } else if (section.allowEmpty !== true) {
-      parts.push(`${GUIDANCE_PREFIX} ${section.hint ?? section.heading} -->`)
-      parts.push("")
-    }
-  }
-  return `${parts.join("\n").trimEnd()}\n`
-}
+export { GUIDANCE_PREFIX, templateFrom }
 
 /**
  * Verify's people's file as QualityLayer creates it: *Changed from the Plan* is in every new one

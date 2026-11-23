@@ -21,6 +21,16 @@ const shareFile = (holder: ArtifactShareHolder) => {
   return join(holder.runtimeDir, "artifact-team.json")
 }
 
+function isValidArtifactShare(row: ArtifactShare): boolean {
+  if (!row?.address || !["task", "project"].includes(row.address.scope)) return false
+  const hasStrings =
+    typeof row.address.id === "string" &&
+    typeof row.address.file === "string" &&
+    typeof row.remoteId === "string" &&
+    typeof row.teamId === "string"
+  return hasStrings && (row.ownerToken === undefined || typeof row.ownerToken === "string")
+}
+
 export async function readArtifactShares(
   ctx: Ctx,
   holder: ArtifactShareHolder,
@@ -34,16 +44,7 @@ export async function readArtifactShares(
   if (
     !Array.isArray(rows) ||
     rows.length > ARTIFACT_SHARES_MAX ||
-    rows.some(
-      (row) =>
-        !row?.address ||
-        !["task", "project"].includes(row.address.scope) ||
-        typeof row.address.id !== "string" ||
-        typeof row.address.file !== "string" ||
-        typeof row.remoteId !== "string" ||
-        typeof row.teamId !== "string" ||
-        (row.ownerToken !== undefined && typeof row.ownerToken !== "string"),
-    )
+    !rows.every(isValidArtifactShare)
   )
     throw new Error("The artifact share registry is invalid; recover it before sharing again.")
   return rows

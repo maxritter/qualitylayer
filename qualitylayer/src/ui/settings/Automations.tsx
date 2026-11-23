@@ -4,66 +4,51 @@
 // as `qualitylayer automations` (App Model: settings-automations, settings-automations-add,
 // settings-automations-command).
 
-import {
-  BookOpenIcon,
-  CircleCheckIcon,
-  CopyIcon,
-  ExternalLinkIcon,
-  FolderIcon,
-  KeyRoundIcon,
-  LayersIcon,
-  LinkIcon,
-  ListFilterIcon,
-  PencilIcon,
-  PlusIcon,
-  SendIcon,
-  SquareTerminalIcon,
-  TriangleAlertIcon,
-  WebhookIcon,
-} from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { PencilIcon, PlusIcon, SendIcon, TriangleAlertIcon, WebhookIcon } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import type {
-  Api,
-  AutomationDraft,
-  AutomationsApi,
-  AutomationsReply,
-  AutomationView,
-  DeliveryView,
-} from "../api.ts"
+import type { Api, AutomationsApi, AutomationsReply, AutomationView, DeliveryView } from "../api.ts"
 import { subscribeEventCount } from "../hooks.ts"
-import { Choice, SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
+import { AutomationForm } from "./AutomationForm.tsx"
+import {
+  AutomationDeliveries,
+  AutomationIconAction,
+  AutomationsCliGroup,
+  automationFailure,
+  automationKindIcon,
+} from "./AutomationFormParts.tsx"
+import { SettingRow, SettingsGroup } from "./Rows.tsx"
 import "./automations.css"
 import { agoText } from "./usage-model.ts"
 
 const ICON = "size-[15px]"
 const SMALL = "size-3.5"
 
-/** What the form's event boxes call each public event; the event's own id stands beside it. */
-const EVENT_NAMES: Record<string, string> = {
-  "task.created": "Task created",
-  "task.step_changed": "Step changed",
-  "question.asked": "Question asked",
-  "question.answered": "Question answered",
-  "approval.requested": "Approval requested",
-  "approval.decided": "Approval decided",
-  "task.verified": "Verified",
-  "task.shipped": "Shipped",
-  "task.merged": "Merged",
-  "task.archived": "Archived",
-}
-
-const ADD_COMMAND = "qualitylayer automations add --url <url>"
-const DOCS_URL = "https://qualitylayer.dev/docs/automations"
-
 type Reading =
   | { status: "loading" }
   | { status: "failed" }
   | { status: "ready"; reply: AutomationsReply; deliveries: DeliveryView[] }
+
+function subscribeAutomationsRefresh(load: () => Promise<void>): () => void {
+  let running = false
+  const again = () => {
+    if (running || document.visibilityState === "hidden") return
+    running = true
+    void load().finally(() => {
+      running = false
+    })
+  }
+  document.addEventListener("visibilitychange", again)
+  window.addEventListener("focus", again)
+  const unsubscribe = subscribeEventCount("automations", again)
+  return () => {
+    document.removeEventListener("visibilitychange", again)
+    window.removeEventListener("focus", again)
+    unsubscribe()
+  }
+}
 
 /** The automations and the recent deliveries as the server has them, and a way to read them again. */
 function useAutomations(api: AutomationsApi | undefined) {
@@ -84,79 +69,16 @@ function useAutomations(api: AutomationsApi | undefined) {
       const [reply, deliveries] = await Promise.all([api.list(), api.deliveries()])
       if (live.current) setReading({ status: "ready", reply, deliveries })
     } catch {
-      // A reading that was on show stays; a first one that failed says so.
       if (live.current) setReading((was) => (was.status === "ready" ? was : { status: "failed" }))
     }
   }, [api])
   useEffect(() => {
     void load()
   }, [load])
-  // The command line and the sender change these files without the page: it reads them again when
-  // the server's stream says the file or the delivery log changed, and when the person comes back to
-  // the window (a focus, or the page becoming visible), never on a timer.
-  useEffect(() => {
-    let running = false
-    const again = () => {
-      if (running || document.visibilityState === "hidden") return
-      running = true
-      void load().finally(() => {
-        running = false
-      })
-    }
-    document.addEventListener("visibilitychange", again)
-    window.addEventListener("focus", again)
-    const unsubscribe = subscribeEventCount("automations", again)
-    return () => {
-      document.removeEventListener("visibilitychange", again)
-      window.removeEventListener("focus", again)
-      unsubscribe()
-    }
-  }, [load])
+  useEffect(() => subscribeAutomationsRefresh(load), [load])
   return { reading, load }
 }
 
-const failure = (cause: unknown, fallback: string): string =>
-  cause instanceof Error && cause.message !== "" ? cause.message : fallback
-
-/** An icon button with a tooltip that names the control only. */
-function IconAction({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={label}
-              disabled={disabled}
-              onClick={onClick}
-            />
-          }
-        >
-          {children}
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
-const kindIcon = (kind: "url" | "command") =>
-  kind === "url" ? <LinkIcon className={ICON} /> : <SquareTerminalIcon className={ICON} />
-
-/** "All events", "3 events", "1 event": what an automation asked for. */
 function eventsText(automation: AutomationView, all: number): string {
   const { events } = automation
   if (events === "all" || events.length >= all) return "All events"
@@ -175,14 +97,6 @@ function lastText(automation: AutomationView, now: number): string {
   if (automation.last === null) return "Not sent yet"
   const ago = agoText(automation.last.at, now) ?? "just now"
   return `${automation.kind === "url" ? "Sent" : "Ran"} ${ago}`
-}
-
-/** A try's time: the clock for today's, the day for an older one. */
-function clockOf(at: number, now: number): string {
-  const date = new Date(at)
-  return date.toDateString() === new Date(now).toDateString()
-    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
-    : date.toLocaleDateString([], { month: "short", day: "numeric" })
 }
 
 function AutomationRow({
@@ -204,7 +118,7 @@ function AutomationRow({
     <div className={automation.on ? "au-row" : "au-row off"}>
       <SettingRow
         testId={`automation-${automation.id}`}
-        icon={kindIcon(automation.kind)}
+        icon={automationKindIcon(automation.kind)}
         label={
           <span className="au-target" title={automation.target}>
             {automation.target}
@@ -222,12 +136,12 @@ function AutomationRow({
         }
       >
         <span className="au-acts">
-          <IconAction label="Send a test event" onClick={onTest}>
+          <AutomationIconAction label="Send a test event" onClick={onTest}>
             <SendIcon className={SMALL} aria-hidden="true" />
-          </IconAction>
-          <IconAction label="Edit" onClick={onEdit}>
+          </AutomationIconAction>
+          <AutomationIconAction label="Edit" onClick={onEdit}>
             <PencilIcon className={SMALL} aria-hidden="true" />
-          </IconAction>
+          </AutomationIconAction>
           <Switch
             checked={automation.on}
             aria-label={`Send to ${automation.target}`}
@@ -239,390 +153,33 @@ function AutomationRow({
   )
 }
 
-function Deliveries({ deliveries, open }: { deliveries: DeliveryView[]; open: boolean }) {
-  const now = Date.now()
-  return (
-    <SettingsMore summary="Recent deliveries" open={open}>
-      <ul className="au-log" aria-label="Recent deliveries">
-        {deliveries.map((line, n) => (
-          // The server's list has no key of its own: a try is told apart by its place.
-          // biome-ignore lint/suspicious/noArrayIndexKey: the list is read whole and replaced
-          <li key={n} className={line.ok ? undefined : "bad"}>
-            <time
-              dateTime={new Date(line.at).toISOString()}
-              title={new Date(line.at).toLocaleString()}
-            >
-              {clockOf(line.at, now)}
-            </time>
-            <code>{line.event}</code>
-            <span className="au-to">{line.to}</span>
-            <span className="au-res">
-              {line.ok ? (
-                <CircleCheckIcon className={SMALL} aria-hidden="true" />
-              ) : (
-                <TriangleAlertIcon className={SMALL} aria-hidden="true" />
-              )}
-              <span className="au-res-t" title={line.text}>
-                {line.text}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </SettingsMore>
-  )
+async function toggleAutomation(
+  automations: AutomationsApi,
+  id: string,
+  patch: Parameters<AutomationsApi["change"]>[1],
+  load: () => Promise<void>,
+) {
+  try {
+    await automations.change(id, patch)
+  } catch (cause) {
+    toast.error(automationFailure(cause, "The change was not saved. Try again."))
+  }
+  await load()
 }
 
-/** A signing secret of 32 random bytes as hex: the form shows it before Save and the server keeps it. */
-function newSecret(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
-}
-
-/** A secret as the page shows it: the last four characters, never the rest. */
-const maskedSecret = (secret: string): string => `${"•".repeat(12)}${secret.slice(-4)}`
-
-function EventsBox({
-  events,
-  picked,
-  onPick,
-}: {
-  events: string[]
-  picked: Set<string>
-  onPick: (picked: Set<string>) => void
-}) {
-  const all = picked.size === events.length
-  return (
-    <>
-      <label className="au-all-row">
-        <input
-          type="checkbox"
-          className="size-4 accent-(--ql-accent)"
-          aria-label="All events"
-          checked={all}
-          ref={(box) => {
-            if (box !== null) box.indeterminate = picked.size > 0 && !all
-          }}
-          onChange={() => onPick(all ? new Set() : new Set(events))}
-        />
-        <span className="au-all">
-          <ListFilterIcon className={ICON} aria-hidden="true" />
-          All events
-        </span>
-        <span className="au-count">
-          {picked.size} of {events.length}
-        </span>
-      </label>
-      <fieldset className="au-events">
-        <legend className="sr-only">Events</legend>
-        {events.map((id) => (
-          <label key={id}>
-            <input
-              type="checkbox"
-              className="size-4 accent-(--ql-accent)"
-              checked={picked.has(id)}
-              onChange={() => {
-                const next = new Set(picked)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
-                onPick(next)
-              }}
-            />
-            <span>{EVENT_NAMES[id] ?? id}</span>
-            <code>{id}</code>
-          </label>
-        ))}
-      </fieldset>
-    </>
-  )
-}
-
-/** The form of a new automation, or of one being edited. */
-function AutomationForm({
-  api,
-  reply,
-  editing,
-  onClose,
-  onCopy,
-}: {
-  api: AutomationsApi
-  reply: AutomationsReply
-  editing: AutomationView | null
-  onClose: (saved: boolean) => void
-  onCopy: (text: string, note: string) => unknown
-}) {
-  const [kind, setKind] = useState<"url" | "command">(editing?.kind ?? "url")
-  const [target, setTarget] = useState(editing?.target ?? "")
-  const [picked, setPicked] = useState<Set<string>>(
-    new Set(editing === null || editing.events === "all" ? reply.events : editing.events),
-  )
-  const [scope, setScope] = useState<"all" | "some">(
-    editing === null || editing.projects === "all" ? "all" : "some",
-  )
-  const [chosen, setChosen] = useState<Set<string>>(
-    new Set(editing === null || editing.projects === "all" ? [] : editing.projects),
-  )
-  // A new URL's secret is made here so it can be shown and copied before Save; a saved one is read
-  // from the server when the form opens. A command that becomes a URL gets its secret when it is saved.
-  const [secret, setSecret] = useState<string | null>(editing === null ? newSecret : null)
-  const [problem, setProblem] = useState<string | null>(null)
-  const [tested, setTested] = useState<string | null>(null)
-  const [busy, setBusy] = useState<"test" | "save" | "remove" | null>(null)
-  const [confirming, setConfirming] = useState(false)
-
-  const editingId = editing?.id
-  const editingKind = editing?.kind
-  useEffect(() => {
-    if (editingId === undefined || editingKind !== "url") return
-    let live = true
-    api.secret(editingId).then(
-      (whole) => live && setSecret(whole),
-      () => {},
-    )
-    return () => {
-      live = false
-    }
-  }, [api, editingId, editingKind])
-
-  const text = target.trim()
-  const everything = picked.size === reply.events.length
-  const draft: AutomationDraft = {
-    kind,
-    target: text,
-    events: everything ? "all" : reply.events.filter((id) => picked.has(id)),
-    projects:
-      scope === "all" ? "all" : reply.projects.filter((p) => chosen.has(p.id)).map((p) => p.id),
+async function runAutomationTest(
+  automations: AutomationsApi,
+  automation: AutomationView,
+  load: () => Promise<void>,
+) {
+  try {
+    const sent = await automations.test(automation.id)
+    if (sent.delivered) toast.success(`Test event sent · ${sent.result}`)
+    else toast.error(`Test event failed · ${sent.result}`)
+  } catch (cause) {
+    toast.error(automationFailure(cause, "The test could not be sent. Try again."))
   }
-  const canSave = text !== "" && picked.size > 0 && (scope === "all" || chosen.size > 0)
-  const secretFor = kind === "url" ? secret : null
-
-  const test = async () => {
-    setBusy("test")
-    setProblem(null)
-    setTested(null)
-    try {
-      const sent = await api.testDraft({
-        kind,
-        target: text,
-        ...(secretFor !== null ? { secret: secretFor } : {}),
-        // A command is tested in one of the projects the form has chosen so far.
-        ...(draft.projects === "all" || draft.projects.length > 0
-          ? { projects: draft.projects }
-          : {}),
-      })
-      setTested(sent.delivered ? `Test sent · ${sent.result}` : `Test failed · ${sent.result}`)
-    } catch (cause) {
-      setProblem(failure(cause, "The test could not be sent. Try again."))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  const save = async () => {
-    setBusy("save")
-    setProblem(null)
-    try {
-      if (editing === null) {
-        await api.add({ ...draft, ...(secretFor !== null ? { secret: secretFor } : {}) })
-        toast.success("Automation added")
-      } else {
-        await api.change(editing.id, draft)
-        toast.success("Automation saved")
-      }
-      onClose(true)
-    } catch (cause) {
-      setProblem(failure(cause, "The automation was not saved. Try again."))
-      setBusy(null)
-    }
-  }
-
-  const remove = async () => {
-    if (editing === null) return
-    setBusy("remove")
-    try {
-      await api.remove(editing.id)
-      toast.success("Automation removed")
-      onClose(true)
-    } catch (cause) {
-      setProblem(failure(cause, "The automation was not removed. Try again."))
-      setBusy(null)
-    }
-  }
-
-  const field = kind === "url" ? "URL" : "Command"
-  return (
-    <SettingsGroup
-      title={editing === null ? "New automation" : "Edit automation"}
-      testId="automation-new"
-    >
-      <SettingRow
-        icon={<WebhookIcon className={ICON} />}
-        label="Send to"
-        hint={
-          kind === "url"
-            ? "Signed JSON over HTTP, retried while the receiver is down."
-            : "Runs on this computer with the event as JSON on its input."
-        }
-      >
-        <Choice
-          label="Send to"
-          value={kind}
-          options={[
-            { id: "url", name: "URL", icon: <LinkIcon className={SMALL} /> },
-            { id: "command", name: "Command", icon: <SquareTerminalIcon className={SMALL} /> },
-          ]}
-          onChange={(next) => {
-            setKind(next)
-            setTested(null)
-          }}
-        />
-      </SettingRow>
-      <SettingRow icon={kindIcon(kind)} label={<label htmlFor="automation-target">{field}</label>}>
-        <Input
-          id="automation-target"
-          className="au-field"
-          // The field is what the person came to fill in.
-          // biome-ignore lint/a11y/noAutofocus: the form opens to be filled in
-          autoFocus
-          value={target}
-          onChange={(event) => {
-            setTarget(event.target.value)
-            setTested(null)
-          }}
-          placeholder={kind === "url" ? "https://example.com/hook" : "./scripts/on-event.sh"}
-          spellCheck={false}
-          autoComplete="off"
-        />
-      </SettingRow>
-      <EventsBox events={reply.events} picked={picked} onPick={setPicked} />
-      <SettingRow
-        icon={<FolderIcon className={ICON} />}
-        label="Projects"
-        hint={
-          scope === "all"
-            ? "Tasks of every project on this computer."
-            : "Only tasks of the projects you tick."
-        }
-      >
-        <Choice
-          label="Projects"
-          value={scope}
-          options={[
-            { id: "all", name: "All", icon: <LayersIcon className={SMALL} /> },
-            { id: "some", name: "Chosen", icon: <FolderIcon className={SMALL} /> },
-          ]}
-          onChange={setScope}
-        />
-      </SettingRow>
-      {scope === "some" ? (
-        <fieldset className="au-events">
-          <legend className="sr-only">Projects</legend>
-          {reply.projects.length === 0 ? (
-            <p className="au-none">No project is registered on this computer yet.</p>
-          ) : (
-            reply.projects.map((project) => (
-              <label key={project.id}>
-                <input
-                  type="checkbox"
-                  className="size-4 accent-(--ql-accent)"
-                  checked={chosen.has(project.id)}
-                  onChange={() => {
-                    const next = new Set(chosen)
-                    if (next.has(project.id)) next.delete(project.id)
-                    else next.add(project.id)
-                    setChosen(next)
-                  }}
-                />
-                <span>{project.name}</span>
-                <code />
-              </label>
-            ))
-          )}
-        </fieldset>
-      ) : null}
-      {kind === "url" ? (
-        <SettingRow
-          icon={<KeyRoundIcon className={ICON} />}
-          label="Signing secret"
-          hint="Your receiver checks each event's signature with it."
-        >
-          {secretFor === null ? (
-            <span className="au-secret">
-              <span className="au-later">
-                {secret === null && editing !== null && editing.kind === "command"
-                  ? "Made when you save"
-                  : "…"}
-              </span>
-            </span>
-          ) : (
-            <span className="au-secret">
-              <code className="au-code">{maskedSecret(secretFor)}</code>
-              <IconAction
-                label="Copy the signing secret"
-                onClick={() => void onCopy(secretFor, "Copied the signing secret")}
-              >
-                <CopyIcon className={SMALL} aria-hidden="true" />
-              </IconAction>
-            </span>
-          )}
-        </SettingRow>
-      ) : null}
-      {problem !== null ? (
-        <p role="alert" className="q-sg-foot q-sg-problem">
-          {problem}
-        </p>
-      ) : null}
-      <div className="au-foot">
-        {editing !== null ? (
-          confirming ? (
-            <span className="au-remove">
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={busy !== null}
-                onClick={() => void remove()}
-              >
-                Remove automation
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setConfirming(false)}>
-                Keep it
-              </Button>
-            </span>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              className="au-remove"
-              disabled={busy !== null}
-              onClick={() => setConfirming(true)}
-            >
-              Remove
-            </Button>
-          )
-        ) : null}
-        {tested !== null ? (
-          <span className="au-tested" role="status">
-            {tested}
-          </span>
-        ) : null}
-        <Button type="button" variant="ghost" onClick={() => onClose(false)}>
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={text === "" || busy !== null}
-          onClick={() => void test()}
-        >
-          <SendIcon className={SMALL} aria-hidden="true" />
-          Send test
-        </Button>
-        <Button type="button" disabled={!canSave || busy !== null} onClick={() => void save()}>
-          Save
-        </Button>
-      </div>
-    </SettingsGroup>
-  )
+  await load()
 }
 
 export function AutomationsTab({
@@ -630,12 +187,10 @@ export function AutomationsTab({
   onCopy,
 }: {
   api?: Api | undefined
-  /** The App's copy: it says it copied, or that it could not. */
   onCopy: (text: string, note: string) => unknown
 }) {
   const automations = api?.automations
   const { reading, load } = useAutomations(automations)
-  // The form: closed, a new automation, or the one being edited.
   const [form, setForm] = useState<{ editing: AutomationView | null } | null>(null)
 
   if (reading.status !== "ready" || automations === undefined) {
@@ -660,44 +215,22 @@ export function AutomationsTab({
   const rows = reply.automations
   const anyFailing = rows.some((row) => row.on && row.failing !== null)
   const open = (editing: AutomationView | null) => setForm({ editing })
-  const change = async (id: string, patch: Parameters<AutomationsApi["change"]>[1]) => {
-    try {
-      await automations.change(id, patch)
-    } catch (cause) {
-      toast.error(failure(cause, "The change was not saved. Try again."))
-    }
-    await load()
-  }
-  const test = async (automation: AutomationView) => {
-    try {
-      const sent = await automations.test(automation.id)
-      if (sent.delivered) toast.success(`Test event sent · ${sent.result}`)
-      else toast.error(`Test event failed · ${sent.result}`)
-    } catch (cause) {
-      toast.error(failure(cause, "The test could not be sent. Try again."))
-    }
-    await load()
-  }
+  const headerEnd =
+    rows.length > 0 ? (
+      <>
+        {rows.length}
+        {form === null ? (
+          <Button type="button" variant="outline" size="sm" onClick={() => open(null)}>
+            <PlusIcon aria-hidden="true" />
+            Add
+          </Button>
+        ) : null}
+      </>
+    ) : undefined
 
   return (
     <div className="q-sgs">
-      <SettingsGroup
-        title="Your automations"
-        testId="automations-list"
-        end={
-          rows.length > 0 ? (
-            <>
-              {rows.length}
-              {form === null ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => open(null)}>
-                  <PlusIcon aria-hidden="true" />
-                  Add
-                </Button>
-              ) : null}
-            </>
-          ) : undefined
-        }
-      >
+      <SettingsGroup title="Your automations" testId="automations-list" end={headerEnd}>
         {reply.problem !== undefined ? (
           <p role="alert" className="q-sg-foot q-sg-problem">
             {reply.problem}
@@ -720,17 +253,18 @@ export function AutomationsTab({
               key={row.id}
               automation={row}
               reply={reply}
-              onTest={() => void test(row)}
+              onTest={() => void runAutomationTest(automations, row, load)}
               onEdit={() => open(row)}
-              onSwitch={(on) => void change(row.id, { on })}
+              onSwitch={(on) => void toggleAutomation(automations, row.id, { on }, load)}
             />
           ))
         )}
-        {rows.length > 0 ? <Deliveries deliveries={deliveries} open={anyFailing} /> : null}
+        {rows.length > 0 ? (
+          <AutomationDeliveries deliveries={deliveries} open={anyFailing} />
+        ) : null}
       </SettingsGroup>
       {form !== null ? (
         <AutomationForm
-          // A form for another automation starts from that automation, not from this one's boxes.
           key={form.editing?.id ?? "new"}
           api={automations}
           reply={reply}
@@ -742,33 +276,7 @@ export function AutomationsTab({
           }}
         />
       ) : null}
-      <SettingsGroup title="From your agent or a script" testId="automations-command">
-        <SettingRow
-          icon={<SquareTerminalIcon className={ICON} />}
-          label="Set up by command"
-          hint="Everything on this page also works from the command line."
-        >
-          <span className="au-secret">
-            <code className="au-code au-cmd">{ADD_COMMAND}</code>
-            <IconAction
-              label="Copy the command"
-              onClick={() => void onCopy(ADD_COMMAND, "Copied the command")}
-            >
-              <CopyIcon className={SMALL} aria-hidden="true" />
-            </IconAction>
-          </span>
-        </SettingRow>
-        <SettingRow
-          icon={<BookOpenIcon className={ICON} />}
-          label="Events and payload"
-          hint="The event list, the JSON and the commands that read and start tasks."
-        >
-          <a className="q-btn" href={DOCS_URL} target="_blank" rel="noopener noreferrer">
-            <ExternalLinkIcon className={SMALL} aria-hidden="true" />
-            Open docs
-          </a>
-        </SettingRow>
-      </SettingsGroup>
+      <AutomationsCliGroup onCopy={onCopy} />
     </div>
   )
 }

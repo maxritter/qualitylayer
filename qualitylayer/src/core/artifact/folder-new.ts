@@ -15,12 +15,14 @@ import { type ArtifactFile, type ArtifactHome, artifactFolder } from "./store.ts
 import { type ProductTokens, withTokens } from "./tokens.ts"
 
 export async function createFolderArtifact(
-  ctx: Ctx,
-  home: ArtifactHome,
-  name: string,
-  template: string,
-  purpose: string,
-  product: ProductTokens | null = null,
+  ...[ctx, home, name, template, purpose, product = null]: [
+    ctx: Ctx,
+    home: ArtifactHome,
+    name: string,
+    template: string,
+    purpose: string,
+    product?: ProductTokens | null,
+  ]
 ): Promise<Result<ArtifactFile>> {
   const base = name.replace(/\.html$/, "")
   if (!ARTIFACT_NAME.test(base))

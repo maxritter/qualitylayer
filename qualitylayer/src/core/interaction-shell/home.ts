@@ -63,76 +63,106 @@ export function shippedAt(task: TaskSummary, timezone = "UTC"): number | null {
   const at = Date.parse(task.closing?.shipped ?? "")
   return Number.isFinite(at) ? at : null
 }
-export function homeFacts(
+type HomeSpending = Partial<
+  Record<HomePeriod, NonNullable<HomeFacts["periods"]["today"]["spending"]>>
+>
+
+type HomeFactsArgs = [
   tasks: TaskSummary[],
   now: number,
   timezone: string,
   costs: Record<string, number | null>,
-  approvals: Record<string, number | null> = {},
-  spending?: Partial<Record<HomePeriod, NonNullable<HomeFacts["periods"]["today"]["spending"]>>>,
-): HomeFacts {
+  approvals?: Record<string, number | null>,
+  spending?: HomeSpending,
+]
+
+function medianDuration(durations: number[]): number | null {
+  if (durations.length === 0) return null
+  const middle = Math.floor(durations.length / 2)
+  if (durations.length % 2 === 1) return durations[middle] ?? null
+  return ((durations[middle - 1] ?? 0) + (durations[middle] ?? 0)) / 2
+}
+
+function shippedInRange(params: {
+  tasks: TaskSummary[]
+  range: { from: number; to: number }
+  now: number
+  timezone: string
+  costs: Record<string, number | null>
+  approvals: Record<string, number | null>
+}) {
+  const { tasks, range, now, timezone, costs, approvals } = params
+  const ceiling = Math.min(range.to, now + 1)
+  // A task whose pull request is still open is not closed: it is in the open list (Running) until
+  // the merge, as in the sidebar, and counts as shipped from then on.
+  return tasks
+    .filter((t) => t.stage === "shipped" && t.pullRequest?.state !== "open")
+    .flatMap((t) => {
+      const recorded =
+        approvals[t.id] ?? (t.closing?.shipped?.includes("T") ? shippedAt(t, timezone) : null)
+      const at = recorded ?? shippedAt(t, timezone)
+      if (at === null || at < range.from || at >= ceiling) return []
+      return [
+        {
+          taskId: t.id,
+          at,
+          costUsd: costs[t.id] ?? null,
+          durationMs: recorded !== null && recorded >= t.created ? recorded - t.created : null,
+        },
+      ]
+    })
+    .sort((a, b) => b.at - a.at)
+}
+
+function buildPeriodFacts(params: {
+  tasks: TaskSummary[]
+  range: { from: number; to: number }
+  now: number
+  timezone: string
+  costs: Record<string, number | null>
+  approvals: Record<string, number | null>
+  periodSpending: HomeFacts["periods"]["today"]["spending"] | undefined
+}): HomeFacts["periods"]["today"] {
+  const shipped = shippedInRange(params)
+  const durations = shipped
+    .map((t) => t.durationMs)
+    .filter((n): n is number => n !== null)
+    .sort((a, b) => a - b)
+  const allCostsKnown = shipped.length > 0 && shipped.every((t) => t.costUsd !== null)
+  return {
+    ...params.range,
+    shipped,
+    shippedCostUsd: allCostsKnown ? shipped.reduce((sum, t) => sum + (t.costUsd ?? 0), 0) : null,
+    spentUsd: params.periodSpending?.usd ?? null,
+    ...(params.periodSpending ? { spending: params.periodSpending } : {}),
+    typicalDurationMs: medianDuration(durations),
+    fastestDurationMs: durations[0] ?? null,
+  }
+}
+
+function isActiveStepTask(task: TaskSummary, stepId: FlowStepId): boolean {
+  if (task.archived || task.handedBack !== undefined) return false
+  if (task.stage === "shipped" || task.stage === "abandoned") return false
+  return flowStepOf(task.stage) === stepId
+}
+
+export function homeFacts(...args: HomeFactsArgs): HomeFacts {
+  const [tasks, now, timezone, costs, approvals = {}, spending] = args
   const ranges = calendarPeriods(now, timezone)
   const periods = {} as HomeFacts["periods"]
   for (const period of ["today", "week", "month"] as const) {
-    const range = ranges[period]
-    // A task whose pull request is still open is not closed: it is in the open list (Running) until
-    // the merge, as in the sidebar, and counts as shipped from then on.
-    const shipped = tasks
-      .filter((t) => t.stage === "shipped" && t.pullRequest?.state !== "open")
-      .flatMap((t) => {
-        const recorded =
-          approvals[t.id] ?? (t.closing?.shipped?.includes("T") ? shippedAt(t, timezone) : null)
-        const at = recorded ?? shippedAt(t, timezone)
-        return at !== null && at >= range.from && at < Math.min(range.to, now + 1)
-          ? [
-              {
-                taskId: t.id,
-                at,
-                costUsd: costs[t.id] ?? null,
-                durationMs:
-                  recorded !== null && recorded >= t.created ? recorded - t.created : null,
-              },
-            ]
-          : []
-      })
-      .sort((a, b) => b.at - a.at)
-    const durations = shipped
-      .map((t) => t.durationMs)
-      .filter((n): n is number => n !== null)
-      .sort((a, b) => a - b)
-    const middle = Math.floor(durations.length / 2)
-    periods[period] = {
-      ...range,
-      shipped,
-      shippedCostUsd:
-        shipped.length > 0 && shipped.every((t) => t.costUsd !== null)
-          ? shipped.reduce((sum, t) => sum + (t.costUsd ?? 0), 0)
-          : null,
-      spentUsd: spending?.[period]?.usd ?? null,
-      ...(spending?.[period] ? { spending: spending[period] } : {}),
-      typicalDurationMs:
-        durations.length === 0
-          ? null
-          : durations.length % 2 === 1
-            ? durations[middle]!
-            : ((durations[middle - 1] ?? 0) + (durations[middle] ?? 0)) / 2,
-      fastestDurationMs: durations[0] ?? null,
-    }
+    periods[period] = buildPeriodFacts({
+      tasks,
+      range: ranges[period],
+      now,
+      timezone,
+      costs,
+      approvals,
+      periodSpending: spending?.[period],
+    })
   }
   const steps = Object.fromEntries(
-    FLOW_STEPS.map((s) => [
-      s.id,
-      tasks
-        .filter(
-          (t) =>
-            !t.archived &&
-            t.stage !== "shipped" &&
-            t.stage !== "abandoned" &&
-            t.handedBack === undefined &&
-            flowStepOf(t.stage) === s.id,
-        )
-        .map((t) => t.id),
-    ]),
+    FLOW_STEPS.map((s) => [s.id, tasks.filter((t) => isActiveStepTask(t, s.id)).map((t) => t.id)]),
   ) as Record<FlowStepId, string[]>
   return { timezone, periods, steps }
 }

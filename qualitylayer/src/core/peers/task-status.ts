@@ -67,15 +67,49 @@ async function ended(ctx: Ctx, task: Task): Promise<boolean> {
 
 function parse(value: unknown): TaskStatus | null {
   const rec = asRecord(value)
-  return rec !== null &&
-    typeof rec.who === "string" &&
-    typeof rec.repo === "string" &&
-    typeof rec.checkout === "string" &&
-    typeof rec.task === "string" &&
-    typeof rec.text === "string" &&
-    typeof rec.since === "number"
-    ? (rec as TaskStatus)
-    : null
+  if (rec === null || typeof rec.since !== "number") return null
+  const fields = [rec.who, rec.repo, rec.checkout, rec.task, rec.text]
+  return fields.every((field) => typeof field === "string") ? (rec as TaskStatus) : null
+}
+
+async function readExistingStatus(ctx: Ctx, path: string): Promise<TaskStatus | null> {
+  if (!(await ctx.fs.exists(path))) return null
+  try {
+    return parse(JSON.parse(await ctx.fs.readFile(path)))
+  } catch {
+    return null
+  }
+}
+
+async function syncTaskStatusFile(
+  ctx: Ctx,
+  who: { kind: string; uuid: string },
+  task: Task,
+): Promise<void> {
+  const dir = taskStatusDir(ctx.home)
+  const path = join(dir, fileOf(who))
+  const previous = await readExistingStatus(ctx, path)
+  const same = previous?.repo === task.repoId && previous.task === task.slug
+  const text = taskStatusText(task.stage, task.title)
+  if (text === null || (await ended(ctx, task))) {
+    if (same) await ctx.fs.remove(path)
+    return
+  }
+  if (same && previous?.text === text && previous.checkout === task.repoRoot) return
+  const now = ctx.clock.now()
+  const record: TaskStatus = {
+    who: `${who.kind}:${who.uuid}`,
+    repo: task.repoId,
+    checkout: task.repoRoot,
+    task: task.slug,
+    title: task.title,
+    stage: task.stage,
+    text,
+    since: same && previous !== null ? previous.since : now,
+    at: now,
+  }
+  await ctx.fs.mkdir(dir, { mode: 0o700 })
+  await ctx.fs.writeFile(path, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 })
 }
 
 /**
@@ -84,44 +118,11 @@ function parse(value: unknown): TaskStatus | null {
  */
 export async function noteTaskStatus(ctx: Ctx, slug: unknown): Promise<void> {
   try {
-    if (typeof slug !== "string") return
-    const who = caller(ctx)
+    const who = typeof slug === "string" ? caller(ctx) : null
     if (who === null) return
     const repo = await resolveRepo(ctx)
-    if (!repo.ok) return
-    const task = await loadTask(ctx, repo.data, slug)
-    if (task === null) return
-    const dir = taskStatusDir(ctx.home)
-    const path = join(dir, fileOf(who))
-    let previous: TaskStatus | null = null
-    if (await ctx.fs.exists(path)) {
-      try {
-        previous = parse(JSON.parse(await ctx.fs.readFile(path)))
-      } catch {
-        previous = null
-      }
-    }
-    const same = previous?.repo === task.repoId && previous.task === task.slug
-    const text = taskStatusText(task.stage, task.title)
-    if (text === null || (await ended(ctx, task))) {
-      if (same) await ctx.fs.remove(path)
-      return
-    }
-    if (same && previous?.text === text && previous.checkout === task.repoRoot) return
-    const now = ctx.clock.now()
-    const record: TaskStatus = {
-      who: `${who.kind}:${who.uuid}`,
-      repo: task.repoId,
-      checkout: task.repoRoot,
-      task: task.slug,
-      title: task.title,
-      stage: task.stage,
-      text,
-      since: same && previous !== null ? previous.since : now,
-      at: now,
-    }
-    await ctx.fs.mkdir(dir, { mode: 0o700 })
-    await ctx.fs.writeFile(path, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 })
+    const task = repo.ok ? await loadTask(ctx, repo.data, slug as string) : null
+    if (task !== null) await syncTaskStatusFile(ctx, who, task)
   } catch {
     // A status line is never worth a failed `next`.
   }

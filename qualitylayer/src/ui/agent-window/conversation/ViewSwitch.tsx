@@ -1,101 +1,73 @@
 // The two ways to draw an agent's window, in the tab row beside the session menu: Conversation reads the
 // session as messages and tool calls, Terminal is the agent's own window. Only the drawing changes.
 import { BotMessageSquareIcon, SquareTerminalIcon } from "lucide-react"
-import { useLayoutEffect, useRef, useState } from "react"
+import { useRef } from "react"
 import type { AgentView } from "../../../core/config-values.ts"
+import {
+  moveSidebarTab,
+  optionTabId,
+  optionTitle,
+  useCompactSwitch,
+} from "./view-switch-helpers.ts"
 
 const OPTIONS = [
   { id: "conversation", label: "Conversation", Icon: BotMessageSquareIcon },
   { id: "terminal", label: "Terminal", Icon: SquareTerminalIcon },
 ] as const
 
-/** The free space the tab list keeps beyond its tabs' own width. */
-const GAP = 12
-
-/** The Chat header's width below which the switch shows its icons alone. */
-const NARROW_BAR = 900
-
-function moveSidebarTab(event: React.KeyboardEvent<HTMLButtonElement>) {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
-  const list = event.currentTarget.closest('[role="tablist"]')
-  const tabs = [
-    ...(list?.querySelectorAll<HTMLButtonElement>(
-      '[role="tab"]:not(:disabled):not([aria-disabled="true"])',
-    ) ?? []),
-  ]
-  const from = tabs.indexOf(event.currentTarget)
-  if (from < 0) return
-  event.preventDefault()
-  event.stopPropagation()
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? tabs.length - 1
-        : (from + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length
-  tabs[next]?.click()
-  tabs[next]?.focus()
+function arrowStep(key: string): number {
+  if (key === "ArrowRight" || key === "ArrowDown") return 1
+  if (key === "ArrowLeft" || key === "ArrowUp") return -1
+  return 0
 }
 
-/** What a tab needs to show its name and count uncut, however wide the row stretches it. */
-function tabNeed(tab: HTMLElement) {
-  const range = document.createRange()
-  range.selectNodeContents(tab)
-  const style = getComputedStyle(tab)
+type OptionButtonProps = {
+  option: (typeof OPTIONS)[number]
+  value: AgentView
+  active: boolean
+  tabs: boolean
+  compact: boolean
+  tabId: string
+  plainShell: boolean
+  conversationAvailable: boolean
+  terminalAvailable: boolean
+  buttonRef: (node: HTMLButtonElement | null) => void
+  onSelect: (id: AgentView) => void
+  onArrowKey: (event: React.KeyboardEvent<HTMLButtonElement>) => void
+}
+
+function ViewOptionButton(props: OptionButtonProps) {
+  const { option, value, active, tabs, compact, tabId, plainShell } = props
+  const { id, label, Icon } = option
+  const shellOff = plainShell && (id === "conversation" || active)
+  const unavailable =
+    id === "conversation" ? !props.conversationAvailable : !props.terminalAvailable
+  const off = shellOff || unavailable
+  const selected = active && value === id
+  const roleProps = tabs
+    ? { role: "tab" as const, "aria-selected": selected }
+    : { role: "radio" as const, "aria-checked": value === id }
   return (
-    range.getBoundingClientRect().width +
-    Number.parseFloat(style.paddingLeft) +
-    Number.parseFloat(style.paddingRight)
+    <button
+      ref={props.buttonRef}
+      type="button"
+      {...roleProps}
+      id={optionTabId(tabs, id, tabId)}
+      aria-controls={tabs ? "terminal-right-panel" : undefined}
+      aria-disabled={off || undefined}
+      aria-label={tabs || compact ? label : undefined}
+      title={optionTitle({ id, label, off, shellOff, tabs, compact })}
+      tabIndex={selected ? 0 : -1}
+      className={selected ? "on" : undefined}
+      onKeyDown={props.onArrowKey}
+      onClick={() => {
+        if (!off) props.onSelect(id)
+      }}
+    >
+      <Icon size={13} aria-hidden="true" />
+      {compact ? null : <span className={tabs ? "rs-tab-label" : undefined}>{label}</span>}
+    </button>
   )
-}
-
-/**
- * Whether the switch shows its icons alone. The names show while the tab list has room beyond what its
- * tabs need; less than {@link GAP} to spare folds the switch, and it unfolds once the spare room fits the
- * width the names needed. The names stay as accessible names either way.
- */
-function useCompact(host: React.RefObject<HTMLElement | null>, tabs: boolean) {
-  const [compact, setCompact] = useState(false)
-  const full = useRef(0)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: compact changes the switch's width, which the next check reads
-  useLayoutEffect(() => {
-    if (tabs) return
-    // The Chat's header holds the switch with no tab row: icons alone once the header is narrow.
-    const bar = host.current?.closest<HTMLElement>('[data-testid="chat-header"]')
-    if (bar) {
-      const fit = () => setCompact(bar.clientWidth > 0 && bar.clientWidth < NARROW_BAR)
-      fit()
-      if (typeof ResizeObserver === "undefined") return
-      const watch = new ResizeObserver(fit)
-      watch.observe(bar)
-      return () => watch.disconnect()
-    }
-    let row = host.current?.parentElement ?? null
-    while (row && !row.querySelector('[role="tablist"]')) row = row.parentElement
-    const list = row?.querySelector<HTMLElement>('[role="tablist"]')
-    if (!row || !list) return
-    const check = () => {
-      const node = host.current
-      const tabs = [...list.querySelectorAll<HTMLElement>('[role="tab"]')]
-      if (!node || tabs.length === 0) return
-      const width = node.offsetWidth
-      const gaps = (Number.parseFloat(getComputedStyle(list).columnGap) || 0) * (tabs.length - 1)
-      const spare = list.clientWidth - gaps - tabs.reduce((sum, tab) => sum + tabNeed(tab), 0)
-      setCompact((before) => {
-        if (!before) {
-          full.current = width
-          return spare < GAP
-        }
-        return spare - (full.current - width) >= GAP ? false : before
-      })
-    }
-    check()
-    if (typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver(check)
-    observer.observe(row)
-    return () => observer.disconnect()
-  }, [compact, host, tabs])
-  return compact
 }
 
 export function ViewSwitch({
@@ -121,14 +93,9 @@ export function ViewSwitch({
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
   const host = useRef<HTMLSpanElement>(null)
-  const compact = useCompact(host, tabs)
+  const compact = useCompactSwitch(host, tabs)
   const move = (event: React.KeyboardEvent, from: number) => {
-    const step =
-      event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? 1
-        : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? -1
-          : 0
+    const step = arrowStep(event.key)
     if (step === 0) return
     event.preventDefault()
     // Two options, so an arrow goes to the other one, unless that is the unavailable Conversation.
@@ -144,56 +111,28 @@ export function ViewSwitch({
       className={tabs ? "rs-agent-view-tabs" : "cv-switch"}
       {...(tabs ? {} : { role: "radiogroup", "aria-label": "Show the agent as" })}
     >
-      {OPTIONS.map(({ id, label, Icon }, index) => {
-        const shellOff = plainShell && (id === "conversation" || active)
-        const off =
-          shellOff || (id === "conversation" ? !conversationAvailable : !terminalAvailable)
-        return (
-          <button
-            key={id}
-            ref={(node) => {
-              buttons.current[index] = node
-            }}
-            type="button"
-            {...(tabs
-              ? { role: "tab", "aria-selected": active && value === id }
-              : { role: "radio", "aria-checked": value === id })}
-            id={
-              tabs
-                ? id === "conversation"
-                  ? tabId.replace(/(?:terminal|agent)$/, "conversation")
-                  : tabId
-                : undefined
-            }
-            aria-controls={tabs ? "terminal-right-panel" : undefined}
-            aria-disabled={off || undefined}
-            aria-label={tabs || compact ? label : undefined}
-            title={
-              off
-                ? shellOff
-                  ? "A plain terminal has no Conversation or Terminal view"
-                  : id === "conversation"
-                    ? "Not shown for another agent"
-                    : "The terminal is available only in the owner's local session"
-                : tabs || compact
-                  ? label
-                  : undefined
-            }
-            tabIndex={active && value === id ? 0 : -1}
-            className={active && value === id ? "on" : undefined}
-            onKeyDown={(event) => {
-              if (tabs) moveSidebarTab(event)
-              else move(event, index)
-            }}
-            onClick={() => {
-              if (!off) onChange(id)
-            }}
-          >
-            <Icon size={13} aria-hidden="true" />
-            {compact ? null : <span className={tabs ? "rs-tab-label" : undefined}>{label}</span>}
-          </button>
-        )
-      })}
+      {OPTIONS.map((option, index) => (
+        <ViewOptionButton
+          key={option.id}
+          option={option}
+          value={value}
+          active={active}
+          tabs={tabs}
+          compact={compact}
+          tabId={tabId}
+          plainShell={plainShell}
+          conversationAvailable={conversationAvailable}
+          terminalAvailable={terminalAvailable}
+          buttonRef={(node) => {
+            buttons.current[index] = node
+          }}
+          onSelect={onChange}
+          onArrowKey={(event) => {
+            if (tabs) moveSidebarTab(event)
+            else move(event, index)
+          }}
+        />
+      ))}
     </span>
   )
 }

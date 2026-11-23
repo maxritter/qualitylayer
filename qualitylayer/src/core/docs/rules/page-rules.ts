@@ -2,14 +2,14 @@
 // present, and hold QualityLayer's text; the Plan names its
 // artifact and marks each decision for the person's call.
 
-import { join } from "node:path"
 import type { ValidationError } from "../../../ctx.ts"
-import { parseArtifactReference } from "../../artifact/reference.ts"
-import { artifactReferenceSource } from "../../artifact/reference-source.ts"
 import { ownText, readPagesRecord } from "../../pages/record.ts"
-import { parseFence } from "../fragments.ts"
 import { type Marker, markerKey, parseMarkers } from "../markers.ts"
-import { proseLines, type Rule, type RuleInput, sectionRanges, verr } from "./types.ts"
+import { proseLines, type Rule, sectionRanges, verr } from "./types.ts"
+
+type SectionRange = ReturnType<typeof sectionRanges>[number]
+
+export { fenceStyleSafe, planArtifact, wireframeFragment, wireframeHeader } from "./page-fences.ts"
 
 /** Where a marker a template places stands: the heading it goes under. */
 const MARKER_HOME: Record<string, string> = {
@@ -38,30 +38,32 @@ const holds = (markers: readonly Marker[], name: string) => markers.some((m) => 
 const pair = (name: string) =>
   `\`<!-- ql:${name}${MARKER_ARGS_OF[name] ?? ""} -->\` and \`<!-- /ql:${name} -->\``
 
-/**
- * The markers of a document: written as the grammar says, each one the schema asks for present, no
- * key twice, and each one's text what QualityLayer last wrote there (or empty, for it to fill).
- */
-export const markersOwned: Rule = async (input) => {
-  const { markers, problems } = parseMarkers(input.markdown)
-  const errors = problems.map((p) => verr(p.line, "marker-malformed", p.message, p.fix))
-  for (const name of input.schema.markers ?? []) {
+function checkRequiredMarkers(
+  docName: string,
+  required: readonly string[],
+  markers: readonly Marker[],
+  errors: ValidationError[],
+): void {
+  for (const name of required) {
     if (holds(markers, name)) continue
     const home = MARKER_HOME[name]
     errors.push(
       verr(
         1,
         "marker-missing",
-        `${input.docName} has no \`ql:${name}\` marker`,
+        `${docName} has no \`ql:${name}\` marker`,
         `add the two lines ${pair(name)}${home !== undefined ? ` under "## ${home}"` : ""}, with nothing between them: QualityLayer writes the text`,
       ),
     )
   }
+}
+
+function checkDuplicateMarkers(markers: readonly Marker[], errors: ValidationError[]): void {
   const seen = new Map<string, number>()
   for (const marker of markers) {
     const key = markerKey(marker)
     const before = seen.get(key)
-    if (before !== undefined)
+    if (before !== undefined) {
       errors.push(
         verr(
           marker.line,
@@ -70,13 +72,10 @@ export const markersOwned: Rule = async (input) => {
           "keep one of them; a decision of its own takes the next id: d1, d2 …",
         ),
       )
-    else seen.set(key, marker.line)
+    } else {
+      seen.set(key, marker.line)
+    }
   }
-  if (input.runtimeDir === null) return errors
-  const record = (await readPagesRecord(input.ctx, input.runtimeDir))[input.docName]
-  for (const marker of markers)
-    if (!ownText(record, markerKey(marker), marker.fallback)) errors.push(edited(marker))
-  return errors
 }
 
 const edited = (marker: Marker) =>
@@ -87,134 +86,22 @@ const edited = (marker: Marker) =>
     `QualityLayer writes the text between \`<!-- ql:${markerKey(marker)} -->\` and \`<!-- /ql:${marker.name} -->\`, from its records and the person's answers. Move your words above or below the markers, then delete everything between them: QualityLayer writes it again`,
   )
 
-const inRange = (marker: Marker, range: { start: number; end: number } | undefined) =>
-  range !== undefined && marker.line > range.start && marker.line < range.end
-
 /**
- * A task that changes what a user sees names its artifact in the Interface section, as a
- * `ql:artifact <name>` marker, and the artifact exists under artifacts/.
+ * The markers of a document: written as the grammar says, each one the schema asks for present, no
+ * key twice, and each one's text what QualityLayer last wrote there (or empty, for it to fill).
  */
-export const planArtifact: Rule = async (input) => {
-  const { markers } = parseMarkers(input.markdown)
-  const range = sectionRanges(input.markdown).find((r) => r.heading === "Interface")
-  const artifacts = markers.filter((m) => m.name === "artifact")
-  const errors = []
-  const wireframes = input
-    .fences()
-    .filter(
-      (f) =>
-        f.kind === "wireframe" && range !== undefined && f.line > range.start && f.line < range.end,
-    )
-  const hasWireframe = wireframes.some((f) => {
-    const parsed = parseFence("wireframe", f.body)
-    return parsed.header.name !== undefined && parsed.fragment !== ""
-  })
-  if (input.task.ui && !artifacts.some((m) => inRange(m, range)) && !hasWireframe)
-    errors.push(
-      verr(
-        range?.start ?? 1,
-        "plan-artifact",
-        range === undefined
-          ? 'this task changes what a user sees, but the Plan has no "## Interface" section'
-          : "the Interface section names no artifact or valid wireframe",
-        `draw the artifact with \`qualitylayer artifact new <name>\`, show it as soon as it renders, then add the two lines \`<!-- ql:artifact <name> -->\` and \`<!-- /ql:artifact -->\` under "## Interface"`,
-      ),
-    )
-  for (const marker of artifacts) {
-    const name = marker.args[0]
-    if (name === undefined) continue
-    if (!inRange(marker, range))
-      errors.push(
-        verr(
-          marker.line,
-          "plan-artifact",
-          `\`ql:artifact ${name}\` stands outside the Interface section`,
-          'move it under "## Interface"',
-        ),
-      )
-    const reference = parseArtifactReference(name)
-    const exists =
-      reference?.scope === "project"
-        ? await artifactReferenceSource(input.ctx, input, reference, { pack: false }).then(
-            () => true,
-            () => false,
-          )
-        : reference !== null && (await input.ctx.fs.exists(join(input.taskDir, reference.file)))
-    if (!exists)
-      errors.push(
-        verr(
-          marker.line,
-          "plan-artifact",
-          `\`ql:artifact ${name}\` names ${reference?.file ?? name}, which does not exist or is unavailable`,
-          `draw it with \`qualitylayer artifact new ${name}\`, or name an artifact that exists`,
-        ),
-      )
+export const markersOwned: Rule = async (input) => {
+  const { markers, problems } = parseMarkers(input.markdown)
+  const errors = problems.map((p) => verr(p.line, "marker-malformed", p.message, p.fix))
+  checkRequiredMarkers(input.docName, input.schema.markers ?? [], markers, errors)
+  checkDuplicateMarkers(markers, errors)
+  if (input.runtimeDir === null) return errors
+  const record = (await readPagesRecord(input.ctx, input.runtimeDir))[input.docName]
+  for (const marker of markers) {
+    if (!ownText(record, markerKey(marker), marker.fallback)) errors.push(edited(marker))
   }
   return errors
 }
-
-function boundedFences(input: RuleInput): ValidationError[] {
-  const errors = []
-  const names = new Set<string>()
-  const interfaceRange = sectionRanges(input.markdown).find((r) => r.heading === "Interface")
-  for (const fence of input.fences()) {
-    if (fence.kind !== "wireframe" && fence.kind !== "panel") continue
-    const parsed = parseFence(fence.kind, fence.body)
-    if (
-      fence.kind === "wireframe" &&
-      interfaceRange !== undefined &&
-      fence.line > interfaceRange.start &&
-      fence.line < interfaceRange.end &&
-      parsed.header.name === undefined
-    )
-      errors.push(
-        verr(
-          fence.line,
-          "wireframe-header",
-          "a wireframe in Interface needs a name",
-          "add name: <surface-name> to its header",
-        ),
-      )
-    for (const error of parsed.errors)
-      errors.push(
-        verr(
-          fence.line + error.line,
-          error.rule,
-          error.message,
-          "use a bounded fragment with safe layout styles",
-          error.severity,
-        ),
-      )
-    if (parsed.header.name !== undefined) {
-      if (names.has(parsed.header.name))
-        errors.push(
-          verr(
-            fence.line,
-            `${fence.kind}-header`,
-            `duplicate fence name: ${parsed.header.name}`,
-            "give each fence its own name",
-          ),
-        )
-      names.add(parsed.header.name)
-    }
-  }
-  return errors
-}
-
-const fenceVerdicts = new WeakMap<RuleInput, ValidationError[]>()
-function fenceRule(name: string): Rule {
-  return (input) => {
-    let errors = fenceVerdicts.get(input)
-    if (errors === undefined) {
-      errors = boundedFences(input)
-      fenceVerdicts.set(input, errors)
-    }
-    return errors.filter((e) => e.rule === name)
-  }
-}
-export const wireframeHeader = fenceRule("wireframe-header")
-export const wireframeFragment = fenceRule("wireframe-fragment")
-export const fenceStyleSafe = fenceRule("fence-style-safe")
 
 /**
  * Where a helper's block belongs in a task's Verify document, by the heading it opens with: the
@@ -226,6 +113,40 @@ const BLOCK_HOME: readonly [RegExp, string][] = [
   [/^Review fix [0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12} · re-check [1-9]\d*$/i, "Verification"],
 ]
 
+function checkOwnedHeading(
+  title: string,
+  line: number,
+  ranges: readonly SectionRange[],
+  errors: ValidationError[],
+): void {
+  const home = BLOCK_HOME.find(([pattern]) => pattern.test(title))?.[1]
+  const under = ranges.find((r) => line > r.start && line < r.end)?.heading
+  if (home === undefined) {
+    if (under === "Security" || under === "Verification") {
+      errors.push(
+        verr(
+          line,
+          "section-owned",
+          `the block "### ${title}" is not a ${under} record`,
+          under === "Security"
+            ? "keep only Security and Security re-check blocks here; put receipts in records/ and link them"
+            : "keep only Iteration N and Review fix <UUID> · re-check R blocks here; put other receipts in records/ and link them",
+        ),
+      )
+    }
+    return
+  }
+  if (under === home) return
+  errors.push(
+    verr(
+      line,
+      "section-owned",
+      `the block "### ${title}" stands ${under !== undefined ? `under "## ${under}"` : "above every section"}, but it belongs under "## ${home}"`,
+      `move the whole block under "## ${home}"; each section holds only what its writer records there`,
+    ),
+  )
+}
+
 /**
  * Who may write which section of a task's document: the text between QualityLayer's markers is
  * QualityLayer's (as `markers-owned`), and a block a helper or the build appends stands under the
@@ -234,34 +155,9 @@ const BLOCK_HOME: readonly [RegExp, string][] = [
 export const sectionOwned: Rule = async (input) => {
   const errors = await markersOwned(input)
   const ranges = sectionRanges(input.markdown)
-  proseLines(input.markdown).forEach(({ text, line }) => {
+  for (const { text, line } of proseLines(input.markdown)) {
     const title = text.match(/^### (.+)$/)?.[1]?.trim()
-    if (title === undefined) return
-    const home = BLOCK_HOME.find(([pattern]) => pattern.test(title))?.[1]
-    const under = ranges.find((r) => line > r.start && line < r.end)?.heading
-    if (home === undefined) {
-      if (under === "Security" || under === "Verification")
-        errors.push(
-          verr(
-            line,
-            "section-owned",
-            `the block "### ${title}" is not a ${under} record`,
-            under === "Security"
-              ? "keep only Security and Security re-check blocks here; put receipts in records/ and link them"
-              : "keep only Iteration N and Review fix <UUID> · re-check R blocks here; put other receipts in records/ and link them",
-          ),
-        )
-      return
-    }
-    if (under === home) return
-    errors.push(
-      verr(
-        line,
-        "section-owned",
-        `the block "### ${title}" stands ${under !== undefined ? `under "## ${under}"` : "above every section"}, but it belongs under "## ${home}"`,
-        `move the whole block under "## ${home}"; each section holds only what its writer records there`,
-      ),
-    )
-  })
+    if (title !== undefined) checkOwnedHeading(title, line, ranges, errors)
+  }
   return errors
 }

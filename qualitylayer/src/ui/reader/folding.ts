@@ -6,6 +6,8 @@
 import type { Token, Tokens } from "marked"
 import type { Block } from "./DocReader.tsx"
 
+export { foldDocument } from "./folding-sections.ts"
+
 /** One item of a folded list. */
 export type Row = {
   number: string
@@ -94,13 +96,6 @@ export function qaRows(table: Tokens.Table, inline: Html): QaRow[] | null {
   }))
 }
 
-const FOLDED_SECTIONS = new Set([
-  "not doing",
-  "launch",
-  "decisions made for you",
-  "decided with you",
-])
-
 /**
  * The blocks without the sections whose headings (lower case) are named: a section the page shows
  * in its own place (an item with its diagram, a list in a box) is not drawn twice. A section runs
@@ -116,147 +111,4 @@ export function withoutSections(blocks: Block[], hide: readonly string[]): Block
     if (!skipping) out.push(block)
   }
   return out
-}
-
-const isList = (block: Block): block is Block & { kind: "html"; rows: Row[] } =>
-  block.kind === "html" && block.rows !== undefined
-/** A heading block's level and lower-cased words; null for any other block. */
-const headOf = (block: Block) =>
-  block.kind === "html" && block.heading !== undefined
-    ? { level: block.level ?? 6, words: block.heading.trim().toLowerCase(), text: block.heading }
-    : null
-
-/** Fold the callouts that restate or extend a numbered list into that list, one row per item. */
-function mergeLists(blocks: Block[]): Block[] {
-  const out: Block[] = []
-  for (const block of blocks) {
-    const prev = out[out.length - 1]
-    if (isList(block)) {
-      if (prev?.kind === "rows" && prev.ordered && block.ordered === true) {
-        prev.rows.push(...block.rows)
-        prev.also = [...(prev.also ?? []), block.text]
-      } else {
-        out.push({
-          kind: "rows",
-          key: block.key,
-          text: block.text,
-          ordered: block.ordered === true,
-          rows: block.rows.slice(),
-        })
-      }
-      continue
-    }
-    if (
-      block.kind === "added" &&
-      block.rows !== undefined &&
-      prev?.kind === "rows" &&
-      prev.ordered
-    ) {
-      for (const row of block.rows) {
-        const at = prev.rows.findIndex((r) => r.number === row.number)
-        const stage = block.stage
-        const made = { ...row, why: block.reason, anchors: [block.anchor] }
-        if (at === -1) {
-          prev.rows.push({ ...made, tag: `added · ${stage}` })
-        } else {
-          const old = prev.rows[at] as Row
-          prev.rows[at] = {
-            ...made,
-            tag: `updated · ${stage}`,
-            anchors: [...old.anchors, block.anchor],
-            earlier: [
-              ...old.earlier,
-              {
-                stage: old.tag !== undefined ? (old.tag.split(" · ")[1] ?? null) : null,
-                html: old.whole,
-              },
-            ],
-          }
-        }
-      }
-      prev.also = [...(prev.also ?? []), block.text]
-      continue
-    }
-    out.push(block)
-  }
-  return out
-}
-
-/** How many things a block lists: items, table rows or rows. */
-function countOf(block: Block): number {
-  if (block.kind === "rows" || block.kind === "qa") return block.rows.length
-  if (block.kind === "html" || block.kind === "added") {
-    const items = block.html.match(/<li\b/g)?.length ?? 0
-    if (items > 0) return items
-    return block.kind === "html" && block.table === true
-      ? Math.max(0, (block.html.match(/<tr\b/g)?.length ?? 0) - 1)
-      : 0
-  }
-  return 0
-}
-
-/** The sections only the agent needs, and the diagrams of the system design, behind labelled counts. */
-function foldSections(blocks: Block[]): { blocks: Block[]; folds: Fold[] } {
-  const folds: Fold[] = []
-  const out: Block[] = blocks.slice()
-  const take = (id: string, from: number, to: number) => {
-    for (let i = from; i < to; i++) out[i] = { ...(out[i] as Block), fold: id }
-  }
-  let section: { id: string; label: string; from: number } | null = null
-  const close = (to: number) => {
-    if (section === null) return
-    take(section.id, section.from, to)
-    const count = out.slice(section.from, to).reduce((sum, b) => sum + countOf(b), 0)
-    folds.push({ id: section.id, label: section.label, count: count > 0 ? String(count) : "" })
-    section = null
-  }
-  let system = false
-  let diagrams: number[] = []
-  const closeSystem = () => {
-    if (diagrams.length === 0) return
-    const id = "fold-diagrams"
-    // A diagram's own heading goes with it, so the page keeps no title with nothing under it.
-    const picked = new Set<number>()
-    for (const at of diagrams) {
-      picked.add(at)
-      if (headOf(out[at - 1] as Block)?.level === 3) picked.add(at - 1)
-    }
-    for (const at of picked) out[at] = { ...(out[at] as Block), fold: id }
-    folds.push({
-      id,
-      label: "How it fits together",
-      count: `${diagrams.length} ${diagrams.length === 1 ? "diagram" : "diagrams"}`,
-    })
-    diagrams = []
-  }
-  for (const [at, block] of out.entries()) {
-    const head = headOf(block)
-    if (head !== null && head.level <= 2) {
-      close(at)
-      closeSystem()
-      system = head.words === "system design"
-      if (FOLDED_SECTIONS.has(head.words)) {
-        section = { id: `fold-${folds.length}`, label: head.text, from: at }
-      }
-      continue
-    }
-    if (system && block.kind === "mermaid") diagrams.push(at)
-  }
-  close(out.length)
-  closeSystem()
-  // The buttons read in the order their sections stand in the document.
-  const first = (id: string) => out.findIndex((b) => b.fold === id)
-  folds.sort((a, b) => first(a.id) - first(b.id))
-  return { blocks: out, folds }
-}
-
-/** The blocks of a glance page as the person reads them, and the folds behind the page. */
-export function foldDocument(blocks: Block[]): { blocks: Block[]; folds: Fold[] } {
-  const next = mergeLists(blocks).map((block): Block => {
-    if (block.kind === "html" && block.qa !== undefined) {
-      return { kind: "qa", key: block.key, text: block.text, rows: block.qa }
-    }
-    return block
-  })
-  return foldSections(next)
 }

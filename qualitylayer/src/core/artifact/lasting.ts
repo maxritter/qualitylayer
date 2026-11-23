@@ -1,4 +1,3 @@
-import { adoptLibraryRecords } from "./library-adoption.ts"
 // A project's lasting artifacts: artifacts every task builds on, kept in the repository as
 // `.qualitylayer/artifacts/<name>/artifact.json` (`{ v: 1, title, purpose, entry?, source?,
 // claudeDesign? }`). Its files are the folder itself, or the repository folder `source` names (the
@@ -11,39 +10,31 @@ import { adoptLibraryRecords } from "./library-adoption.ts"
 // Plain node file access, like the packer: a real path needs `realpath`, which the harness's
 // file system does not offer.
 
-import { createHash } from "node:crypto"
 import type { Dirent } from "node:fs"
-import { lstat, open, readdir, readFile, realpath, stat } from "node:fs/promises"
-import { isAbsolute, join, sep } from "node:path"
+import { lstat, readdir, readFile, realpath } from "node:fs/promises"
+import { join, sep } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import {
   ARTIFACT_NAME,
   ARTIFACT_PAGE_NAME,
-  artifactMeta,
   LASTING_ARTIFACTS,
   LASTING_CONFIG,
   LASTING_CONFIG_MAX_BYTES,
   LASTING_NAME_MAX,
-  LASTING_PER_PROJECT_MAX,
-  LASTING_PURPOSE_MAX,
-  LASTING_TITLE_MAX,
-  LASTING_URL_MAX,
   STORED_LASTING_CONFIG,
   STORED_LASTING_DESIGNS,
 } from "./format.ts"
+import { type LastingConfig, parseLastingConfig } from "./lasting-config.ts"
+import { adoptLibraryRecords } from "./library-adoption.ts"
 
-/** What `artifact.json` of a lasting artifact holds, checked. */
-export type LastingConfig = {
-  v: 1
-  title: string
-  purpose: string
-  entry?: string
-  /** The repository folder holding the files, written relative to the repository's root. */
-  source?: string
-  claudeDesign?: string
-  archivedAt?: number
-  deletedAt?: number
-}
+export { blobId, fileBlobId, pageTitle } from "./lasting-cache.ts"
+export {
+  cleanLink,
+  cleanSource,
+  type LastingConfig,
+  parseLastingConfig,
+} from "./lasting-config.ts"
+export { type LastingEntry, listLasting } from "./lasting-list.ts"
 
 /** A lasting artifact read from the repository: where it is and its pages. */
 export type LastingRead = {
@@ -67,91 +58,8 @@ export type LastingRead = {
 
 const bad = (message: string): Result<never> => err({ code: "bad_args", message })
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-/** A link to Claude Design (or any page the person names): https only, no credentials. */
-export function cleanLink(value: unknown): Result<string> {
-  if (typeof value !== "string" || value.trim() === "") return bad("the link is empty")
-  const text = value.trim()
-  if (text.length > LASTING_URL_MAX) return bad("the link is too long")
-  let url: URL
-  try {
-    url = new URL(text)
-  } catch {
-    return bad("the link is not an address")
-  }
-  if (url.protocol !== "https:") return bad("the link must be https")
-  if (url.username !== "" || url.password !== "") return bad("the link must not carry a login")
-  return ok(url.toString())
-}
-
-/** A repository folder as `source` writes it: relative, inside, not in `.git`; the clean spelling. */
-export function cleanSource(value: unknown): Result<string> {
-  if (typeof value !== "string" || value.trim() === "") return bad("source is empty")
-  const text = value.trim()
-  if (
-    text.includes("\0") ||
-    text.includes("\\") ||
-    text.startsWith("/") ||
-    isAbsolute(text) ||
-    /^[a-zA-Z]:/.test(text)
-  )
-    return bad("source must be a folder of this repository, written from its root")
-  const parts = text.split("/").filter((part) => part !== "" && part !== ".")
-  if (parts.length === 0) return bad("source must name a folder below the repository's root")
-  if (parts.includes("..")) return bad("source leaves the repository")
-  if ((parts[0] as string).toLowerCase() === ".git") return bad("source may not be inside .git")
-  return ok(parts.join("/"))
-}
-
-/** `artifact.json` read and checked; the reason when it is not a lasting artifact's. */
-export function parseLastingConfig(text: string): Result<LastingConfig> {
-  let raw: unknown
-  try {
-    raw = JSON.parse(text)
-  } catch {
-    return bad("artifact.json is not valid JSON")
-  }
-  if (!isRecord(raw)) return bad("artifact.json must be a JSON object")
-  if (raw.v !== 1) return bad(`artifact.json says v ${JSON.stringify(raw.v)}; this reads v 1`)
-  const title = typeof raw.title === "string" ? raw.title.replace(/\s+/g, " ").trim() : ""
-  if (title === "") return bad("artifact.json needs a title")
-  if (title.length > LASTING_TITLE_MAX)
-    return bad(`the title is over ${LASTING_TITLE_MAX} characters`)
-  const purpose = typeof raw.purpose === "string" ? raw.purpose.replace(/\s+/g, " ").trim() : ""
-  if (raw.purpose !== undefined && typeof raw.purpose !== "string")
-    return bad("purpose must be text")
-  if (purpose.length > LASTING_PURPOSE_MAX)
-    return bad(`the purpose is over ${LASTING_PURPOSE_MAX} characters`)
-  const config: LastingConfig = { v: 1, title, purpose }
-  if (raw.entry !== undefined) {
-    if (typeof raw.entry !== "string" || !ARTIFACT_PAGE_NAME.test(raw.entry))
-      return bad("entry must be the file name of a page (an .html file at the top of the folder)")
-    config.entry = raw.entry
-  }
-  if (raw.source !== undefined) {
-    const source = cleanSource(raw.source)
-    if (!source.ok) return source
-    config.source = source.data
-  }
-  if (raw.claudeDesign !== undefined) {
-    const link = cleanLink(raw.claudeDesign)
-    if (!link.ok) return bad(`claudeDesign: ${link.error.message}`)
-    config.claudeDesign = link.data
-  }
-  for (const key of ["archivedAt", "deletedAt"] as const) {
-    const value = raw[key]
-    if (value === undefined) continue
-    if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
-      return bad(`${key} must be a positive timestamp`)
-    config[key] = value
-  }
-  return ok(config)
-}
-
 /** The first of these path parts (below `root`) that is missing, a link, or not a folder; else null. */
-async function foldersOnly(root: string, parts: string[]): Promise<string | null> {
+export async function foldersOnly(root: string, parts: string[]): Promise<string | null> {
   let at = root
   for (const [index, part] of parts.entries()) {
     at = join(at, part)
@@ -179,6 +87,43 @@ async function pagesOf(dir: string, entry: string | undefined): Promise<Result<s
   const first = entry ?? (pages.includes("index.html") ? "index.html" : (pages[0] as string))
   if (!pages.includes(first)) return bad(`the entry page ${first} is not in its folder`)
   return ok([first, ...pages.filter((page) => page !== first)])
+}
+
+async function readConfigFile(
+  configPath: string,
+  configName: string,
+  includeDeleted: boolean | undefined,
+): Promise<Result<{ config: LastingConfig; mtimeMs: number }>> {
+  const info = await lstat(configPath).catch(() => null)
+  if (info === null) return bad(`${configName} is missing`)
+  if (!info.isFile()) return bad(`${configName} is not a plain file`)
+  if (info.size > LASTING_CONFIG_MAX_BYTES) return bad(`${configName} is too big`)
+  const config = parseLastingConfig(await readFile(configPath, "utf8"))
+  if (!config.ok) return config
+  return config.data.deletedAt !== undefined && !includeDeleted
+    ? bad("This artifact was deleted. Restore it from its Library viewer before using it.")
+    : ok({ config: config.data, mtimeMs: info.mtimeMs })
+}
+
+async function resolveLastingDir(
+  root: string,
+  source: string | undefined,
+  configDir: string,
+  defaultFolder: string,
+): Promise<Result<{ dir: string; folder: string }>> {
+  if (source === undefined) return ok({ dir: configDir, folder: defaultFolder })
+  const parts = source.split("/")
+  const problem = await foldersOnly(root, parts)
+  if (problem !== null) return bad(`source: ${problem}`)
+  try {
+    const realRoot = await realpath(root)
+    const real = await realpath(join(root, ...parts))
+    return real.startsWith(`${realRoot}${sep}`)
+      ? ok({ dir: real, folder: source })
+      : bad("source leaves the repository")
+  } catch {
+    return bad("source cannot be resolved")
+  }
 }
 
 /** A lasting artifact read and guarded; the reason it cannot be used when it is not. */
@@ -210,45 +155,29 @@ async function readLastingIn(
   if (walked !== null) return bad(walked)
   const configDir = join(root, ...base, name)
   const configPath = join(configDir, configName)
-  const info = await lstat(configPath).catch(() => null)
-  if (info === null) return bad(`${configName} is missing`)
-  if (!info.isFile()) return bad(`${configName} is not a plain file`)
-  if (info.size > LASTING_CONFIG_MAX_BYTES) return bad(`${configName} is too big`)
-  const config = parseLastingConfig(await readFile(configPath, "utf8"))
-  if (!config.ok) return config
-  if (config.data.deletedAt !== undefined && !options.includeDeleted)
-    return bad("This artifact was deleted. Restore it from its Library viewer before using it.")
-  let dir = configDir
-  let folder = `${registry}/${name}`
-  if (config.data.source !== undefined) {
-    const parts = config.data.source.split("/")
-    const problem = await foldersOnly(root, parts)
-    if (problem !== null) return bad(`source: ${problem}`)
-    let real: string
-    let realRoot: string
-    try {
-      realRoot = await realpath(root)
-      real = await realpath(join(root, ...parts))
-    } catch {
-      return bad("source cannot be resolved")
-    }
-    if (!real.startsWith(`${realRoot}${sep}`)) return bad("source leaves the repository")
-    dir = real
-    folder = config.data.source
-  }
-  const pages = await pagesOf(dir, config.data.entry)
-  if (!pages.ok) return pages
-  return ok({
-    name,
-    config: config.data,
+  const loaded = await readConfigFile(configPath, configName, options.includeDeleted)
+  if (!loaded.ok) return loaded
+  const resolved = await resolveLastingDir(
+    root,
+    loaded.data.config.source,
     configDir,
-    configPath,
-    configUpdatedAt: info.mtimeMs,
-    dir,
-    folder,
-    pages: pages.data,
-    ...(registry === STORED_LASTING_DESIGNS ? { stored: true as const } : {}),
-  })
+    `${registry}/${name}`,
+  )
+  if (!resolved.ok) return resolved
+  const pages = await pagesOf(resolved.data.dir, loaded.data.config.entry)
+  return pages.ok
+    ? ok({
+        name,
+        config: loaded.data.config,
+        configDir,
+        configPath,
+        configUpdatedAt: loaded.data.mtimeMs,
+        dir: resolved.data.dir,
+        folder: resolved.data.folder,
+        pages: pages.data,
+        ...(registry === STORED_LASTING_DESIGNS ? { stored: true as const } : {}),
+      })
+    : pages
 }
 
 /**
@@ -266,122 +195,4 @@ export async function adoptStored(root: string, name: string, ctx: Ctx): Promise
   } catch (cause) {
     return bad(cause instanceof Error ? cause.message : "Could not copy the stored design")
   }
-}
-
-export type LastingEntry =
-  | { name: string; ok: true; read: LastingRead }
-  | { name: string; ok: false; reason: string }
-
-/** The folder names of one registry that could be artifacts; links are reported, other files skipped. */
-async function registryNames(
-  root: string,
-  registry: string,
-): Promise<{ name: string; link: boolean }[]> {
-  const parts = registry.split("/")
-  if ((await foldersOnly(root, parts)) !== null) return []
-  let entries: Dirent[]
-  try {
-    entries = await readdir(join(root, ...parts), { withFileTypes: true })
-  } catch {
-    return []
-  }
-  return entries
-    .filter((e) => ARTIFACT_NAME.test(e.name) && e.name.length <= LASTING_NAME_MAX)
-    .filter((e) => e.isSymbolicLink() || e.isDirectory())
-    .map((e) => ({ name: e.name, link: e.isSymbolicLink() }))
-}
-
-/** Whether the folder that `readLasting` would read holds its manifest; a folder without one is not an artifact. */
-async function hasManifest(root: string, name: string): Promise<boolean> {
-  const here = join(root, ...LASTING_ARTIFACTS.split("/"), name)
-  const [dir, config] =
-    (await lstat(here).catch(() => null)) === null
-      ? [join(root, ...STORED_LASTING_DESIGNS.split("/"), name), STORED_LASTING_CONFIG]
-      : [here, LASTING_CONFIG]
-  try {
-    await lstat(join(dir, config))
-  } catch (cause) {
-    if ((cause as { code?: string }).code === "ENOENT") return false
-  }
-  return true
-}
-
-/**
- * Every lasting artifact of a checkout, readable or not, by name: the artifact folder first, then
- * designs stored before the rename under names it does not hold. At most `LASTING_PER_PROJECT_MAX`.
- */
-export async function listLasting(root: string): Promise<LastingEntry[]> {
-  const names = new Map<string, boolean>()
-  for (const registry of [LASTING_ARTIFACTS, STORED_LASTING_DESIGNS])
-    for (const { name, link } of await registryNames(root, registry))
-      if (!names.has(name)) names.set(name, link)
-  const found: LastingEntry[] = []
-  for (const [name, link] of [...names].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    if (link) {
-      found.push({ name, ok: false, reason: `${name} is a symbolic link` })
-      continue
-    }
-    if (!(await hasManifest(root, name))) continue
-    const read = await readLasting(root, name, { includeDeleted: true })
-    found.push(
-      read.ok
-        ? { name, ok: true, read: read.data }
-        : { name, ok: false, reason: read.error.message },
-    )
-    if (found.length >= LASTING_PER_PROJECT_MAX) break
-  }
-  return found
-}
-
-// ---------------------------------------------------------------- blobs and titles, kept by file stamp
-
-/** The git blob id of these bytes, as `git hash-object` gives them for a repository without filters. */
-export function blobId(bytes: Uint8Array): string {
-  return createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex")
-}
-
-type Stamped<T> = { mtimeMs: number; size: number; value: T }
-const KEPT = 400
-
-function remember<T>(cache: Map<string, Stamped<T>>, key: string, entry: Stamped<T>): void {
-  if (cache.size >= KEPT) cache.delete(cache.keys().next().value as string)
-  cache.set(key, entry)
-}
-
-const blobs = new Map<string, Stamped<string>>()
-
-/** The blob id of a file's bytes now; null for a file that is missing or no plain file. Kept by size and time. */
-export async function fileBlobId(path: string): Promise<string | null> {
-  const seen = await stat(path).catch(() => null)
-  if (seen === null || !seen.isFile()) return null
-  const hit = blobs.get(path)
-  if (hit !== undefined && hit.mtimeMs === seen.mtimeMs && hit.size === seen.size) return hit.value
-  const id = blobId(new Uint8Array(await readFile(path)))
-  remember(blobs, path, { mtimeMs: seen.mtimeMs, size: seen.size, value: id })
-  return id
-}
-
-const HEAD_BYTES = 64 * 1024
-const titles = new Map<string, Stamped<string>>()
-
-/** A page's title from its first 64 KB, kept by size and time. */
-export async function pageTitle(path: string, page: string): Promise<string> {
-  const seen = await stat(path).catch(() => null)
-  if (seen === null) return artifactMeta("", page).title
-  const hit = titles.get(path)
-  if (hit !== undefined && hit.mtimeMs === seen.mtimeMs && hit.size === seen.size) return hit.value
-  let head = ""
-  const handle = await open(path, "r").catch(() => null)
-  if (handle !== null) {
-    try {
-      const buffer = Buffer.alloc(Math.min(HEAD_BYTES, seen.size))
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-      head = buffer.subarray(0, bytesRead).toString("utf8")
-    } finally {
-      await handle.close()
-    }
-  }
-  const title = artifactMeta(head, page).title
-  remember(titles, path, { mtimeMs: seen.mtimeMs, size: seen.size, value: title })
-  return title
 }

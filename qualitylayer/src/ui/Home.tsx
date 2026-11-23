@@ -1,32 +1,23 @@
 // Home lists this person's task decisions and running agent sessions.
-import {
-  BrainIcon,
-  CheckIcon,
-  ChevronRightIcon,
-  GitMergeIcon,
-  GitPullRequestIcon,
-} from "lucide-react"
-import { type ReactNode, useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
-import { flowStepOf } from "../core/flow.ts"
-import { agentAtWork, asksInChat } from "../core/interaction-shell/status.ts"
+import { useEffect, useRef, useState } from "react"
 import type { MemoryOverview } from "../memory-contracts.ts"
-import { useTerminalLayout } from "./agent-window/layout.tsx"
 import type { Api, HomeQuestion, TaskSummary } from "./api.ts"
 import { AllClear, UnfinishedRequest } from "./home/QuietParts.tsx"
-import { doneWords, type HomeRow, needsRow, runningRow, sessionRow } from "./home-rows.ts"
+import { HomeHeader, NeedsYouSection, RunningSection } from "./home-parts.tsx"
+import {
+  buildHomeRunningEntries,
+  collectHomeManagedRuns,
+  isTaskAtWork,
+  managedRepresentatives,
+} from "./home-runs.ts"
+import { Shipped, ShippedLately } from "./home-shipped.tsx"
 import { type Route, useEventCount } from "./hooks.ts"
-import { jumpToItem } from "./jump.ts"
-import { Fold } from "./kit/Fold.tsx"
-import { WhoMark } from "./kit/WhoMark.tsx"
-import { endedChat, type ForYouItem, type Need } from "./model.ts"
-import { PREF, usePref } from "./prefs.ts"
-import { runAttention, startingPlanningRun } from "./run-attention.ts"
-import { type RunWindow, useOptionalRuns } from "./run-context.tsx"
-import { preferredBuildRun, runStatusText, runTaskId } from "./runs-api.ts"
-import { Queue, QueueRow, SHOW_FIRST, SHOW_MORE } from "./shell/HomeQueue.tsx"
+import { endedChat, type Need } from "./model.ts"
+import { runAttention } from "./run-attention.ts"
+import { useOptionalRuns } from "./run-context.tsx"
+import { runTaskId } from "./runs-api.ts"
+import { QueueRow, SHOW_FIRST, SHOW_MORE } from "./shell/HomeQueue.tsx"
 import { historyAt as closedAt } from "./shell/lines.ts"
-import { Hint } from "./sidebar/Hint.tsx"
 import "./shell/home.css"
 
 type Props = {
@@ -50,277 +41,47 @@ type Props = {
   onDiscardUnfinished?: () => void
 }
 
-function managedTitle(run: RunWindow, tasks: readonly TaskSummary[]): string {
-  const taskId = runTaskId(run)
-  if (taskId) {
-    const current = tasks.find((task) => task.id === taskId)?.title.trim()
-    if (current) return current
-    const slug = taskId.split("~").at(-1) ?? ""
-    const words = slug
-      .replace(/^\d{4}-\d{2}-\d{2}[-_]?/, "")
-      .replace(/[-_]+/g, " ")
-      .trim()
-    return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Task"
-  }
-  return run.purpose.kind === "new-task"
-    ? run.purpose.title?.trim() || "Planning a new task"
-    : run.title
-}
-
-function managedRepresentatives(runs: readonly RunWindow[]): RunWindow[] {
-  const groups = new Map<string, RunWindow[]>()
-  for (const run of runs) {
-    const task = runTaskId(run)
-    const key = task ? `task:${task}` : `run:${run.id}`
-    groups.set(key, [...(groups.get(key) ?? []), run])
-  }
-  return [...groups.values()].flatMap((group) => {
-    const chosen =
-      preferredBuildRun(group) ??
-      group.sort(
-        (a, b) =>
-          (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) ||
-          b.generation - a.generation ||
-          b.id.localeCompare(a.id),
-      )[0]
-    return chosen ? [chosen] : []
-  })
-}
-
-function managedStatus(run: RunWindow): string {
-  const status = runStatusText(run)
-  return status === "Running in the App" || status === "Running · task not created yet"
-    ? "Session open in the App"
-    : status
-}
-
-/** A session open in the App that Home lists on its own: its title, its status and the step it last recorded. */
-function sessionRowOf(run: RunWindow, tasks: readonly TaskSummary[]): HomeRow {
-  const taskId = runTaskId(run)
-  const stage = tasks.find((task) => task.id === taskId)?.stage ?? run.taskLifecycle?.stage
-  return sessionRow({
-    taskId: taskId ?? run.id,
-    title: managedTitle(run, tasks),
-    agent: run.agent,
-    bound: !!taskId,
-    status: managedStatus(run),
-    tone: run.status === "failed" ? "stop" : run.attention === "waiting" ? "you" : "wait",
-    step: stage === undefined ? null : flowStepOf(stage as Parameters<typeof flowStepOf>[0]),
-  })
-}
-
-/** Opens the local task or native session that needs the person. */
-function ForYouRow({ item, now, go }: { item: ForYouItem; now: number; go: Props["go"] }) {
-  const runs = useOptionalRuns()
-  const terminalLayout = useTerminalLayout()
-  const own = item.own
-  const row = needsRow(item, {
-    now,
-    building: !!preferredBuildRun(runs?.runs ?? [], own.task.id),
-  })
-  return (
-    <QueueRow
-      row={row}
-      onOpen={() => {
-        if (item.agentIssue) runs?.select(item.agentIssue.run)
-        go(item.action.route)
-        if (asksInChat(own.task, now)) terminalLayout?.setPanel("terminal")
-        if (item.focus) jumpToItem(item.focus)
-      }}
-    />
-  )
-}
-
-/** How a task closed, in a few words. */
-const howClosed = (task: TaskSummary) =>
-  task.archived
-    ? "archived"
-    : (task.closing?.how ?? (task.stage === "abandoned" ? "closed without shipping" : "shipped"))
-
-/** A finished task's line as words: its pull request and what it does, or how it closed. */
-const closedWords = (task: TaskSummary) => {
-  const { chip, state } = doneWords(task, howClosed(task))
-  return [chip, state].filter(Boolean).join(" · ")
-}
-
-function dayWord(at: number, now: number): string {
-  const day = (ms: number) => new Date(ms).setHours(0, 0, 0, 0)
-  const diff = Math.round((day(now) - day(at)) / 86_400_000)
-  if (diff <= 0) return "today"
-  if (diff === 1) return "yesterday"
-  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-}
-
-function ShipLine({
-  task,
-  now,
-  go,
-  action,
-}: {
-  task: TaskSummary
-  now: number
-  go: Props["go"]
-  action: { label: string; run: () => void }
-}) {
-  return (
-    <li className="q-ship" data-testid="ship-line">
-      <WhoMark who="done" />
-      <button
-        type="button"
-        className="t"
-        onClick={() => go({ view: "task", id: task.id, doc: null })}
-      >
-        {task.title}
-      </button>
-      <span className="how">
-        {closedWords(task)} · {dayWord(closedAt(task), now)}
-      </span>
-      {/* What it cost opens from the task's own header; no dollar figure shows here by default. */}
-      <span className="cost" />
-      <button type="button" className="q-link" onClick={action.run}>
-        {action.label}
-      </button>
-    </li>
-  )
-}
-
-function Shipped({
-  api,
-  shipped,
-  archived,
-  now,
-  go,
-  reload,
-}: {
-  api: Api
-  shipped: TaskSummary[]
-  archived: TaskSummary[]
-  now: number
-  go: Props["go"]
-  reload: () => void
-}) {
-  const put = async (task: TaskSummary, away: boolean) => {
-    try {
-      await api.archive(task.id, away)
-      toast.success(away ? "Archived. It waits under Archived." : "Restored")
-      reload()
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
+function useHomeMemories(memoryApi: Api["memory"], project: string): MemoryOverview | null {
+  const [memories, setMemories] = useState<MemoryOverview | null>(null)
+  const memoryScope = useRef({ api: memoryApi, project })
+  const memoryVersion = useEventCount("memory")
+  // biome-ignore lint/correctness/useExhaustiveDependencies: memoryVersion invalidates this read on a paced catalog event.
+  useEffect(() => {
+    let current = true
+    if (memoryScope.current.api !== memoryApi || memoryScope.current.project !== project) {
+      setMemories(null)
+      memoryScope.current = { api: memoryApi, project }
     }
-  }
-  return (
-    <>
-      <div className="q-list" data-testid="shipped">
-        <ul className="m-0 grid list-none p-0">
-          {shipped.map((task) => (
-            <ShipLine
-              key={task.id}
-              task={task}
-              now={now}
-              go={go}
-              action={{ label: "Archive", run: () => void put(task, true) }}
-            />
-          ))}
-        </ul>
-        {shipped.length === 0 ? (
-          <p className="m-0 px-4 py-3.5 text-[13px] text-muted-foreground">Nothing shipped yet.</p>
-        ) : null}
-      </div>
-      {archived.length > 0 ? (
-        <Fold
-          name="Archived"
-          count={archived.length}
-          line={archived.map((t) => t.title).join(" · ")}
-        >
-          <ul className="m-0 grid list-none p-0" data-testid="archived">
-            {archived.map((task) => (
-              <ShipLine
-                key={task.id}
-                task={task}
-                now={now}
-                go={go}
-                action={{ label: "Restore", run: () => void put(task, false) }}
-              />
-            ))}
-          </ul>
-        </Fold>
-      ) : null}
-    </>
-  )
+    if (memoryApi) {
+      void memoryApi
+        .overview(project || undefined)
+        .then((value) => {
+          if (current) setMemories(value)
+        })
+        .catch(() => {})
+    }
+    return () => {
+      current = false
+    }
+  }, [memoryApi, project, memoryVersion])
+  return memories
 }
 
-/** Home's last three shipped tasks; the header folds the list, remembered in this browser. */
-function ShippedLately({
-  shipped,
-  now,
-  go,
-  onAll,
-}: {
-  shipped: TaskSummary[]
-  now: number
-  go: Props["go"]
-  onAll: () => void
-}) {
-  const [open, setOpen] = usePref(PREF.homeShipped, "open", ["open", "folded"] as const)
-  if (shipped.length === 0) return null
-  const expanded = open === "open"
+function buildUnfinishedRow(
+  unfiltered: boolean,
+  unfinished: Props["unfinished"],
+  onContinue: Props["onContinueUnfinished"],
+  onDiscard: Props["onDiscardUnfinished"],
+) {
+  const draft = unfiltered && unfinished?.request.trim() ? unfinished : null
+  if (!draft || !onContinue || !onDiscard) return null
   return (
-    <section
-      className="hf-section hq-shipped"
-      data-testid="shipped-lately"
-      data-folded={expanded ? undefined : "true"}
-      aria-labelledby="hq-shipped-h"
-    >
-      <header className="hf-section-header">
-        <h2 id="hq-shipped-h">
-          <button
-            type="button"
-            className="hq-fold"
-            aria-expanded={expanded}
-            aria-controls="hq-shipped-list"
-            onClick={() => setOpen(expanded ? "folded" : "open")}
-          >
-            <ChevronRightIcon size={14} className="hq-chev" aria-hidden="true" />
-            <WhoMark who="done" />
-            Shipped lately
-          </button>
-        </h2>
-        <button type="button" className="q-link hq-all" onClick={onAll}>
-          All shipped
-        </button>
-      </header>
-      {expanded ? (
-        <ul className="hq-list" id="hq-shipped-list">
-          {shipped.map((task) => {
-            const { chip, state } = doneWords(task, howClosed(task))
-            return (
-              <li key={task.id} data-testid="shipped-row" data-task-id={task.id}>
-                <button
-                  type="button"
-                  className="hq-row"
-                  onClick={() => go({ view: "task", id: task.id, doc: null })}
-                >
-                  <GitMergeIcon size={14} className="hq-ic" aria-hidden="true" />
-                  <span className="hq-t">{task.title}</span>
-                  {/* The pull request an approval chose: opening, then its number. */}
-                  {chip !== null ? (
-                    <span className="hf-chip" data-tone="done" data-testid="shipped-pr">
-                      <GitPullRequestIcon size={12} aria-hidden="true" />
-                      {chip}
-                    </span>
-                  ) : null}
-                  <span className="hq-meta">
-                    {[task.projectName, state, dayWord(closedAt(task), now)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      ) : null}
-    </section>
+    <UnfinishedRequest
+      request={draft.request.trim()}
+      project={draft.project}
+      onContinue={onContinue}
+      onDiscard={onDiscard}
+    />
   )
 }
 
@@ -339,131 +100,46 @@ export function Home({
   onContinueUnfinished,
   onDiscardUnfinished,
 }: Props) {
-  const [memories, setMemories] = useState<MemoryOverview | null>(null)
-  // How many rows each queue shows: the first few, then 25 more each time, so Running stays reachable.
+  const memories = useHomeMemories(api.memory, project)
   const [shownYou, setShownYou] = useState(SHOW_FIRST)
   const [shownRunning, setShownRunning] = useState(SHOW_FIRST)
-  const memoryScope = useRef({ api: api.memory, project })
-  const memoryVersion = useEventCount("memory")
-  // biome-ignore lint/correctness/useExhaustiveDependencies: memoryVersion invalidates this read on a paced catalog event.
-  useEffect(() => {
-    let current = true
-    if (memoryScope.current.api !== api.memory || memoryScope.current.project !== project) {
-      setMemories(null)
-      memoryScope.current = { api: api.memory, project }
-    }
-    if (api.memory)
-      void api.memory
-        .overview(project || undefined)
-        .then((value) => {
-          if (current) setMemories(value)
-        })
-        .catch(() => {})
-    return () => {
-      current = false
-    }
-  }, [api.memory, project, memoryVersion])
   const windows = useOptionalRuns()
-  const archivedTaskIds = new Set(
-    tasks
-      .filter((task) => task.archived || task.stage === "shipped" || task.stage === "abandoned")
-      .map((task) => task.id),
-  )
-  const managed =
-    windows?.runs.filter(
-      (run) =>
-        // A New terminal is not task work until the person binds it with /ql.
-        (run.purpose.kind !== "terminal" || !!run.task) &&
-        run.status !== "stopped" &&
-        !run.taskLifecycle?.archived &&
-        !["shipped", "abandoned", "deleted"].includes(run.taskLifecycle?.stage ?? "") &&
-        run.intent?.state !== "complete" &&
-        !archivedTaskIds.has(runTaskId(run) ?? "") &&
-        (agent === "" || agent === run.agent) &&
-        (project === "" ||
-          tasks.some((task) => task.id === runTaskId(run) && task.project === project)),
-    ) ?? []
+  const managed = collectHomeManagedRuns(windows?.runs, tasks, agent, project)
   const { shell: groups, items } = runAttention({ tasks, project, agent, now }, windows?.runs ?? [])
   const attentionIds = new Set(items.map((item) => item.own.task.id))
-  // Human attention owns a task's one row even while its agent works in the background.
-  // A Chat the person ended is quiet: the sidebar lists it, Home does not.
   const running = groups.running.filter(
     (task) => !attentionIds.has(task.id) && !endedChat(task, now),
   )
-  const showAttention = need === "" || need === "you"
-  const showRunning = need === "" || need === "running"
   const listedIds = new Set([...attentionIds, ...running.map((task) => task.id)])
   const extraRuns = managedRepresentatives(
     managed.filter((run) => !!runTaskId(run) && !listedIds.has(runTaskId(run) ?? "")),
   )
   const runningCount = running.length + extraRuns.length
-  const working = running.filter(
-    (task) =>
-      !!preferredBuildRun(managed, task.id) ||
-      !!startingPlanningRun(managed, task, now) ||
-      agentAtWork(task, now),
-  ).length
-  const taskRows = running.map((task) => {
-    const managedRun =
-      preferredBuildRun(managed, task.id) ?? managed.find((run) => runTaskId(run) === task.id)
-    const atWork =
-      !!preferredBuildRun(managed, task.id) ||
-      !!startingPlanningRun(managed, task, now) ||
-      agentAtWork(task, now)
-    const session = managedRun
-      ? { text: runStatusText(managedRun), since: Date.parse(managedRun.startedAt) }
-      : undefined
-    return { task, managedRun, row: runningRow(task, { now, atWork, session }) }
-  })
-  const runningNodes: ReactNode[] = [
-    ...taskRows.map(({ task, managedRun, row }) => (
+  const working = running.filter((task) => isTaskAtWork(task, managed, now)).length
+  const runningNodes = buildHomeRunningEntries({ running, extraRuns, managed, tasks, now }).map(
+    (entry) => (
       <QueueRow
-        key={task.id}
-        row={row}
+        key={entry.key}
+        row={entry.row}
         onOpen={() => {
-          if (managedRun) windows?.select(managedRun.id)
-          go({ view: "task", id: task.id, doc: null })
+          if (entry.selectRunId) windows?.select(entry.selectRunId)
+          if (entry.taskId) go({ view: "task", id: entry.taskId, doc: null })
         }}
       />
-    )),
-    ...extraRuns.map((run) => (
-      <QueueRow
-        key={runTaskId(run) ?? run.id}
-        row={sessionRowOf(run, tasks)}
-        onOpen={() => {
-          windows?.select(run.id)
-          const task = runTaskId(run)
-          if (task) go({ view: "task", id: task, doc: null })
-        }}
-      />
-    )),
-  ]
-  // Quiet Home: on the unfiltered Home, empty Needs you and Running fold into one All clear line.
+    ),
+  )
   const unfiltered = need === ""
   const allClear = unfiltered && items.length === 0 && runningCount === 0
-  const draft = unfiltered && unfinished?.request.trim() ? unfinished : null
-  const unfinishedRow =
-    draft && onContinueUnfinished && onDiscardUnfinished ? (
-      <UnfinishedRequest
-        request={draft.request.trim()}
-        project={draft.project}
-        onContinue={onContinueUnfinished}
-        onDiscard={onDiscardUnfinished}
-      />
-    ) : null
-  // A task of an earlier workflow shipped before the three steps: it stays in the task list, not in Shipped lately.
+  const unfinishedRow = buildUnfinishedRow(
+    unfiltered,
+    unfinished,
+    onContinueUnfinished,
+    onDiscardUnfinished,
+  )
   const shippedLately = [...groups.shipped]
     .filter((t) => t.earlier !== true)
     .sort((a, b) => closedAt(b) - closedAt(a))
     .slice(0, 3)
-  const heading =
-    need === "shipped"
-      ? "Shipped and archived"
-      : need === "running"
-        ? "Running"
-        : need === "you"
-          ? "Needs attention"
-          : "Home"
 
   return (
     <div
@@ -471,42 +147,15 @@ export function Home({
       data-testid="home"
       data-scroll-root
     >
-      <header className="hf-heading">
-        <h1>{heading}</h1>
-        {memories && memories.total > 0 ? (
-          <Hint
-            label={`${memories.total} saved ${memories.total === 1 ? "lesson" : "lessons"}${memories.enabled ? "" : " · paused"}`}
-            side="bottom"
-          >
-            <button
-              type="button"
-              className="hf-lessons"
-              aria-label={`${memories.total} saved ${memories.total === 1 ? "lesson" : "lessons"}${memories.enabled ? "" : " · paused"}`}
-              onClick={() =>
-                go({
-                  view: "settings",
-                  tab: "memory",
-                  ...(project ? { memoryProject: project } : {}),
-                })
-              }
-            >
-              <BrainIcon size={14} aria-hidden="true" />
-              {memories.total}
-              {memories.enabled ? null : <span>paused</span>}
-            </button>
-          </Hint>
-        ) : null}
-        {project ? (
-          <small>
-            {tasks.find((task) => task.project === project)?.projectName ?? project} only
-          </small>
-        ) : null}
-        {need === "shipped" ? (
-          <p>
-            {groups.shipped.length} shipped · {groups.archived.length} archived · newest first
-          </p>
-        ) : null}
-      </header>
+      <HomeHeader
+        need={need}
+        memories={memories}
+        project={project}
+        tasks={tasks}
+        shippedCount={groups.shipped.length}
+        archivedCount={groups.archived.length}
+        go={go}
+      />
       <div className="hf-grid">
         <div className="hf-main" data-testid="home-main-column">
           {allClear ? (
@@ -514,76 +163,31 @@ export function Home({
               <AllClear onNewTask={unfinishedRow ? undefined : onNewTask} />
               {unfinishedRow}
             </div>
-          ) : null}
-          {showAttention && !allClear ? (
-            <section
-              className="hf-section hf-job"
-              data-job="you"
-              data-empty={items.length === 0 ? "true" : undefined}
-              data-testid="needs-you"
-              aria-labelledby="hf-needs-you"
-            >
-              <header className="hf-section-header">
-                <h2 id="hf-needs-you">
-                  <WhoMark who={items.length > 0 ? "you" : "done"} />
-                  Needs you
-                </h2>
-                <span className="hf-count">{items.length}</span>
-              </header>
-              {items.length > 0 ? (
-                <Queue
-                  total={items.length}
+          ) : (
+            <>
+              {need === "" || need === "you" ? (
+                <NeedsYouSection
+                  items={items}
                   shown={shownYou}
+                  working={working}
+                  runningCount={runningCount}
+                  now={now}
+                  go={go}
                   onMore={() => setShownYou((n) => n + SHOW_MORE)}
-                >
-                  {items.slice(0, shownYou).map((item) => (
-                    <ForYouRow key={item.key} item={item} now={now} go={go} />
-                  ))}
-                </Queue>
-              ) : (
-                <div className="hf-calm">
-                  <CheckIcon size={18} aria-hidden="true" />
-                  <div>
-                    <p>
-                      {working > 0
-                        ? "Your agents are working. When one of your tasks asks a question or waits for an approval, it comes here first."
-                        : runningCount > 0
-                          ? "When one of your tasks asks a question or waits for an approval, it comes here first."
-                          : "Start a task from your agent when you're ready."}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </section>
-          ) : null}
-          {showRunning && !allClear ? (
-            <section
-              className="hf-section hf-job"
-              data-job="agents"
-              data-testid="in-progress"
-              aria-labelledby="hf-running"
-            >
-              <header className="hf-section-header">
-                <h2 id="hf-running">
-                  <WhoMark who={working > 0 ? "agent" : "done"} />
-                  Running
-                </h2>
-                <span className="hf-count">{runningCount}</span>
-              </header>
-              {runningCount > 0 ? (
-                <Queue
-                  total={runningCount}
+                />
+              ) : null}
+              {need === "" || need === "running" ? (
+                <RunningSection
+                  working={working}
+                  runningCount={runningCount}
                   shown={shownRunning}
+                  nodes={runningNodes}
                   onMore={() => setShownRunning((n) => n + SHOW_MORE)}
-                >
-                  {runningNodes.slice(0, shownRunning)}
-                </Queue>
-              ) : (
-                <p className="hf-empty">None of your agents is working right now.</p>
-              )}
-            </section>
-          ) : null}
-          {allClear ? null : unfinishedRow}
+                />
+              ) : null}
+              {unfinishedRow}
+            </>
+          )}
           {unfiltered ? (
             <ShippedLately
               shipped={shippedLately}

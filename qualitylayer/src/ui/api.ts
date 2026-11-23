@@ -1,5 +1,5 @@
 import type { AppPrecommitAction, PrecommitView } from "../core/task/precommit.ts"
-import { ApiError, call } from "./http.ts"
+import { call } from "./http.ts"
 
 export { ApiError } from "./http.ts"
 
@@ -12,24 +12,7 @@ import type { FoundProject } from "../core/agents/history.ts"
 import type { NativeAgent } from "../core/agents/ids.ts"
 import type { AgentSetupState } from "../core/agents/setup.ts"
 import type { SubagentModels } from "../core/agents/subagent-model.ts"
-import type {
-  Artifact,
-  ArtifactAnchor,
-  ArtifactHistoryList,
-  ArtifactsOverview,
-  DraftOn,
-  FoldPreview,
-  FoldResult,
-  KeepResult,
-  LastingLookup,
-} from "../core/artifact/format.ts"
-import type { LibraryMutation, LibraryResult } from "../core/artifact/library-manage.ts"
-import type {
-  ArtifactHistory,
-  ArtifactMutation,
-  ArtifactRevision,
-  ArtifactSource,
-} from "../core/artifact/workspace.ts"
+import type { Artifact, DraftOn } from "../core/artifact/format.ts"
 import type { CommitTiming, Config, Editor } from "../core/config-values.ts"
 import type { TaskCost } from "../core/cost/index.ts"
 import type { Usage, UsagePeriod } from "../core/cost/usage.ts"
@@ -47,7 +30,6 @@ import type { RepairReport } from "../core/install/install.ts"
 import type { IntegrationHealth } from "../core/install/integration.ts"
 import type { AnswerKind } from "../core/items.ts"
 import type { Need } from "../core/need/need.ts"
-import type { ArtifactAnnotationStatus, ArtifactRecordRef } from "../core/records/contract.ts"
 import type { ReviewFileSource, SourceRequest } from "../core/review/file-source.ts"
 import type { AnotherRun, LineFinding } from "../core/review/findings.ts"
 import type { PullRequestView } from "../core/review/summary.ts"
@@ -65,7 +47,7 @@ import type { UpdateInfo } from "../core/update/state.ts"
 import type { Viewing } from "../core/viewing.ts"
 import type { ValidationError } from "../ctx.ts"
 import type { HomeFacts } from "../interaction/contracts.ts"
-import type { MemoryApi, MemoryPreview } from "../memory-contracts.ts"
+import type { MemoryApi } from "../memory-contracts.ts"
 import type {
   TaskChanges as Changes,
   DocEntry,
@@ -81,12 +63,17 @@ import type { AutomationsReply, AutomationView, DeliveryView } from "../server/a
 import type { DocSections } from "../server/doc-sections-split.ts"
 import type { FeedbackWho } from "../server/feedback.ts"
 import type { ProjectFolder } from "../server/projects.ts"
-import type { SetupFinishResult, SetupState } from "../server/setup.ts"
+import type { SetupState } from "../server/setup.ts"
 import type { AgentHistoryApi } from "./agent-history-api.ts"
+import { artifactApi, artifactThumbUrl } from "./api-artifacts.ts"
+import { automationsApi, interactionApi, memoryApi } from "./api-endpoints.ts"
 import { type Machine, readMachines } from "./machines/machines-api.ts"
 import { type DiffPage, type DiffReadOptions, readDiffPages } from "./review-workspace/read-diff.ts"
 import { noticeTaskDisposition, type TaskDispositionTarget } from "./task-disposition.ts"
 import { answerBody } from "./turn/answer-body.ts"
+
+export { interactionApi, type SetupApi, setupApi } from "./api-endpoints.ts"
+export { artifactThumbUrl }
 
 /** What recording a decision answered: `sent` answers and comments went to the agent; `turned` when an approval became changes. */
 export type GateResult = {
@@ -104,7 +91,6 @@ export type GateResult = {
 /** The licence as the CLI reports it, with the running version. */
 export type {
   Artifact,
-  ArtifactAnchor,
   Changes,
   Comment,
   Config,
@@ -165,22 +151,6 @@ export type FindResult = {
 
 const enc = encodeURIComponent
 
-const annotationBase = (project: string, file: string) =>
-  `/api/projects/${enc(project)}/artifacts/${enc(file)}/records/annotations-v1`
-
-async function annotationStatus(path: string, method: "GET" | "POST") {
-  const response = await fetch(path, { method, signal: AbortSignal.timeout(15_000) })
-  const value = (await response.json()) as ArtifactAnnotationStatus
-  if (
-    (response.ok || response.status === 409) &&
-    ["absent", "preserved", "ready"].includes(value.state) &&
-    Array.isArray(value.snapshots) &&
-    (response.status !== 409 || value.state === "preserved")
-  )
-    return value
-  throw new ApiError("Annotation history could not be read. Try again.", response.status, "history")
-}
-
 /** Where an artifact belongs: a task, or a project for an artifact outside any task. */
 export type ArtifactWhere = { scope: "task" | "project"; id: string }
 
@@ -229,24 +199,12 @@ export type DraftedOn = {
 }
 
 export type {
-  ArtifactHistoryList,
-  ArtifactsOverview,
   BrokenArtifact,
   DraftOn,
-  FoldPreview,
-  FoldResult,
   KeepResult,
   LastingArtifact,
-  LastingLookup,
   ProjectArtifacts,
 } from "../core/artifact/format.ts"
-
-const artifactBase = (where: ArtifactWhere) =>
-  `/api/${where.scope === "task" ? "tasks" : "projects"}/${enc(where.id)}/artifacts`
-
-/** The address of an artifact's thumbnail; the key changes with each version of its file. */
-export const artifactThumbUrl = (where: ArtifactWhere, file: string, key: string): string =>
-  `${artifactBase(where)}/${enc(file)}/thumb?k=${enc(key)}`
 
 async function readFileDiff(
   id: string,
@@ -397,142 +355,7 @@ export const api = {
     interactionApi
       .taskRoute<{ text: string }>(id, "docs", `record?path=${encodeURIComponent(path)}`)
       .then((r) => r.text),
-  artifact: (id: string, name: string) =>
-    call<{ html: string }>(`/api/tasks/${enc(id)}/artifact/${enc(name)}`).then((r) => r.html),
-  /** A task's own artifacts; project-wide artifacts use the separate project endpoint. */
-  taskArtifacts: (id: string, thumbnails = true) =>
-    call<TaskArtifacts & { ok: true }>(
-      `/api/tasks/${enc(id)}/artifacts${thumbnails ? "" : "?thumbnails=0"}`,
-    ).then(({ task, projectId, projectName }) => ({ task, projectId, projectName })),
-  /** Home's Artifacts tab: a project's artifacts and the comments on them. */
-  projectArtifacts: (id: string, thumbnails = true) =>
-    call<{ artifacts: Artifact[]; comments: Comment[] }>(
-      `/api/projects/${enc(id)}/artifacts${thumbnails ? "" : "?thumbnails=0"}`,
-    ).then(({ artifacts, comments }) => ({ artifacts, comments })),
-  /** One artifact's page for the sandboxed frame, with the App's bridge in it. */
-  artifactPage: (where: ArtifactWhere, file: string) =>
-    call<{ html: string }>(`${artifactBase(where)}/${enc(file)}`).then((r) => r.html),
-  artifactContext: (where: ArtifactWhere, file: string) =>
-    call<{ revision: string; prompt?: string; folder?: string }>(
-      `${artifactBase(where)}/${enc(file)}/agent-context`,
-    ),
-  artifactAnnotationStatus: (project: string, file: string) =>
-    annotationStatus(`${annotationBase(project, file)}/status`, "GET"),
-  upgradeArtifactAnnotations: (project: string, file: string) =>
-    annotationStatus(`${annotationBase(project, file)}/upgrade`, "POST"),
-  artifactAnnotationUrl: (project: string, file: string, ref: ArtifactRecordRef) =>
-    `${annotationBase(project, file)}/snapshots/${enc(ref.snapshot)}/${enc(ref.entry)}${ref.asset === undefined ? "" : `/assets/${enc(ref.asset)}`}`,
-  artifactSource: (where: ArtifactWhere, file: string) =>
-    call<ArtifactSource>(`${artifactBase(where)}/${enc(file)}/source`),
-  artifactHistory: (where: ArtifactWhere, file: string) =>
-    call<{ revisions: ArtifactRevision[] }>(`${artifactBase(where)}/${enc(file)}/history`).then(
-      (r) => r.revisions,
-    ),
-  artifactProvenance: (where: ArtifactWhere, file: string) =>
-    call<ArtifactHistory>(`${artifactBase(where)}/${enc(file)}/history`),
-  artifactMutate: (where: ArtifactWhere, file: string, change: ArtifactMutation) =>
-    call<{ file: string; revision: string; deleted?: true }>(
-      `${artifactBase(where)}/${enc(file)}/workspace`,
-      { method: "POST", body: JSON.stringify(change) },
-    ),
-  /** A comment on a spot of an artifact, or on the whole page; it reaches the agent at once. */
-  artifactComment: (where: ArtifactWhere, file: string, remark: string, spot?: ArtifactAnchor) =>
-    call<{ comment: Comment }>(`${artifactBase(where)}/${enc(file)}/comments`, {
-      method: "POST",
-      body: JSON.stringify({ remark, ...(spot !== undefined ? { spot } : {}) }),
-    }).then((r) => r.comment),
-  artifactResolve: (where: ArtifactWhere, file: string, comment: string) =>
-    call<Record<string, never>>(`${artifactBase(where)}/${enc(file)}/resolve`, {
-      method: "POST",
-      body: JSON.stringify({ id: comment }),
-    }).then(() => undefined),
-  /** Open in browser, or show the file in its folder. */
-  artifactOpen: (
-    where: ArtifactWhere,
-    file: string,
-    how: "browser" | "reveal",
-    options?: { viewer?: boolean; section?: string },
-  ) =>
-    call<Record<string, never>>(`${artifactBase(where)}/${enc(file)}/open`, {
-      method: "POST",
-      body: JSON.stringify({ how, ...options }),
-    }).then(() => undefined),
-  /**
-   * The Artifacts place: every project's lasting artifacts, its personal artifacts ("On this computer") and
-   * the drafts of its open tasks. A lasting artifact opens through the project artifact routes, by the
-   * file of one of its pages (`LastingPage.file`).
-   */
-  artifactsOverview: (thumbnails = true) =>
-    call<ArtifactsOverview & { ok: true }>(
-      `/api/artifacts${thumbnails ? "" : "?thumbnails=0"}`,
-    ).then(({ projects }): ArtifactsOverview => ({ projects })),
-  /** One lasting artifact as the Artifacts place lists it, read on its own: an artifact opens without the whole overview. */
-  lastingArtifact: (project: string, name: string, thumbnails = true) =>
-    call<LastingLookup & { ok: true }>(
-      `/api/projects/${enc(project)}/artifacts/${enc(name)}/lasting${thumbnails ? "" : "?thumbnails=0"}`,
-    ).then(({ project: owner, artifact }) => ({ project: owner, artifact })),
-  /** A lasting artifact's commits, newest first; a commit a task made names the task. */
-  lastingHistory: (project: string, name: string) =>
-    call<ArtifactHistoryList & { ok: true }>(
-      `/api/projects/${enc(project)}/artifacts/${enc(name)}/history`,
-    ).then(({ entries, truncated }) => ({ entries, truncated })),
-  manageLibraryArtifact: (project: string, name: string, request: LibraryMutation) =>
-    call<LibraryResult & { ok: true }>(
-      `/api/projects/${enc(project)}/artifacts/${enc(name)}/manage`,
-      { method: "POST", body: JSON.stringify(request) },
-    ).then(({ ok: _ok, ...result }) => result),
-  /** Keep a task's draft or a personal artifact as a lasting artifact, in the repository or on this computer. */
-  keepArtifact: (project: string, request: KeepRequest) =>
-    call<KeepResult & { ok: true }>(`/api/projects/${enc(project)}/artifacts/keep`, {
-      method: "POST",
-      body: JSON.stringify(request),
-    }).then(({ name, where, path, files }): KeepResult => ({ name, where, path, files })),
-  /** New artifact: a lasting artifact in the repository with one blank page. */
-  newArtifact: (project: string, request: NewArtifactRequest) =>
-    call<KeepResult & { ok: true }>(`/api/projects/${enc(project)}/artifacts/new`, {
-      method: "POST",
-      body: JSON.stringify(request),
-    }).then(({ name, where, path, files }): KeepResult => ({ name, where, path, files })),
-  /** What folding a task's draft into its lasting artifact would write, and what is in the way. */
-  foldPreview: (task: string, draft: string) =>
-    call<{ preview: FoldPreview }>(
-      `/api/tasks/${enc(task)}/artifacts/fold?draft=${enc(draft)}`,
-    ).then((r) => r.preview),
-  /** Fold the chosen pages in; a blocking conflict answers `folded: false` with the preview unless `force`. */
-  foldArtifact: (task: string, request: FoldRequest) =>
-    call<FoldResult & { ok: true }>(`/api/tasks/${enc(task)}/artifacts/fold`, {
-      method: "POST",
-      body: JSON.stringify(request),
-    }).then(({ ok: _ok, ...result }): FoldResult => result),
-  /** List a lasting artifact (`<project id>:<name>`) under another project too; per machine, kept with the project look. */
-  alsoShowArtifact: async (project: string, ref: string) => {
-    const looks = await call<{ projects?: Record<string, { artifacts?: string[] }> }>(
-      "/api/projects/look",
-    )
-    const current = looks.projects?.[project]?.artifacts ?? []
-    if (current.includes(ref)) return
-    await call<Record<string, never>>(`/api/projects/look/${enc(project)}`, {
-      method: "PUT",
-      body: JSON.stringify({ artifacts: [...current, ref] }),
-    })
-  },
-  stopShowingArtifact: async (project: string, ref: string) => {
-    const looks = await call<{ projects?: Record<string, { artifacts?: string[] }> }>(
-      "/api/projects/look",
-    )
-    const current = looks.projects?.[project]?.artifacts ?? []
-    if (!current.includes(ref)) return
-    await call<Record<string, never>>(`/api/projects/look/${enc(project)}`, {
-      method: "PUT",
-      body: JSON.stringify({ artifacts: current.filter((entry) => entry !== ref) }),
-    })
-  },
-  /** Draft on a lasting artifact of the task's project: a copy in the task that remembers its source. */
-  draftOnArtifact: (task: string, request: DraftOnRequest) =>
-    call<DraftedOn & { ok: true }>(`/api/tasks/${enc(task)}/artifacts/draft-on`, {
-      method: "POST",
-      body: JSON.stringify(request),
-    }).then(({ draft, file, draftOn, copied }): DraftedOn => ({ draft, file, draftOn, copied })),
+  ...artifactApi,
   evidence: (id: string, name: string) =>
     call<{ evidence: Evidence }>(`/api/tasks/${enc(id)}/evidence/${enc(name)}`).then(
       (r) => r.evidence,
@@ -613,15 +436,18 @@ export const api = {
       body: JSON.stringify(action),
     }),
   gate: (
-    id: string,
-    decision: "approved" | "changes",
-    remark?: string,
-    gateId?: string,
-    /** The final approval's choice: open the pull request, approve only, or the git commands to run yourself. Never a merge. */
-    ship?: "pull-request" | "only" | "commands",
-    options?: { revision?: string },
-  ) =>
-    call<GateResult>(`/api/tasks/${enc(id)}/gate`, {
+    ...args: [
+      id: string,
+      decision: "approved" | "changes",
+      remark?: string,
+      gateId?: string,
+      /** The final approval's choice: open the pull request, approve only, or the git commands to run yourself. Never a merge. */
+      ship?: "pull-request" | "only" | "commands",
+      options?: { revision?: string },
+    ]
+  ) => {
+    const [id, decision, remark, gateId, ship, options] = args
+    return call<GateResult>(`/api/tasks/${enc(id)}/gate`, {
       method: "POST",
       body: JSON.stringify({
         decision,
@@ -630,7 +456,8 @@ export const api = {
         ...(options?.revision !== undefined ? { revision: options.revision } : {}),
         ...(ship !== undefined ? { ship } : {}),
       }),
-    }),
+    })
+  },
   /**
    * Answer an item of the running build at once: Fine or Ask why on a choice it made, Add or Skip it on
    * an addition to the Plan, how to go on after a stop (`note` is the hint, or the change to the Plan).
@@ -880,32 +707,6 @@ export const api = {
     call<{ delivery: PublicDelivery | null }>(`/api/feedback/public/status/${enc(id)}`).then(
       (r) => r.delivery,
     ),
-  /** Your own instructions and when the file changed (0 with no file). The route answers plain JSON, outside the `ok` envelope. */
-  instructions: async (): Promise<InstructionsText> => {
-    const response = await fetch("/api/instructions", { cache: "no-store" })
-    if (!response.ok) throw new Error("The App could not read your instructions. Try again.")
-    return (await response.json()) as InstructionsText
-  },
-  /** Save them against the `updated` the editor opened with; a file changed since answers with the current one. */
-  putInstructions: async (text: string, base: number): Promise<InstructionsOutcome> => {
-    const response = await fetch("/api/instructions", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, base }),
-    })
-    if (response.status === 409) return { conflict: await api.instructions() }
-    if (!response.ok) {
-      const said = await response.text()
-      throw new Error(
-        response.status === 403
-          ? "Only the App and browsers it opened may change your instructions."
-          : said.includes("characters")
-            ? "The text is over 12,000 characters."
-            : "The App did not accept that. Try again.",
-      )
-    }
-    return { saved: (await response.json()) as InstructionsText }
-  },
 }
 
 /** A workflow instructions text with the `updated` (ms) of the file it came from. */
@@ -924,9 +725,8 @@ type CandidateMethods = Pick<
   | "changeCommitTiming"
 >
 
-export type Api = Omit<
+type OptionalProjectMethods = Pick<
   typeof api,
-  | "memory"
   | "exportFile"
   | "automations"
   | "projectFolder"
@@ -935,6 +735,11 @@ export type Api = Omit<
   | "chooseProjectFolder"
   | "foundProjects"
   | "taskRecords"
+  | "viewing"
+>
+
+type OptionalArtifactMethods = Pick<
+  typeof api,
   | "artifactSource"
   | "artifactAnnotationStatus"
   | "artifactContext"
@@ -943,7 +748,10 @@ export type Api = Omit<
   | "artifactHistory"
   | "artifactProvenance"
   | "artifactMutate"
-  | "viewing"
+>
+
+type OptionalHostMethods = Pick<
+  typeof api,
   | "agentHealth"
   | "checkAgents"
   | "agentSignIns"
@@ -959,219 +767,19 @@ export type Api = Omit<
   | "restartServer"
   | "tools"
   | "checkTools"
-  | keyof CandidateMethods
-> &
-  Partial<CandidateMethods> & {
-    exportFile?: typeof api.exportFile
+>
+
+type OptionalApiMethods = OptionalProjectMethods & OptionalArtifactMethods & OptionalHostMethods
+
+export type Api = Omit<typeof api, "memory" | keyof OptionalApiMethods | keyof CandidateMethods> &
+  Partial<OptionalApiMethods & CandidateMethods> & {
     /** A source demo adapter that implements the current task-turn controls. */
     currentTurnLayout?: true
     /** A source demo's batch lets the person jump to another open member from the strip. */
     focusQuestion?: (id: string, question: string) => Promise<void>
-    agentHealth?: typeof api.agentHealth
-    checkAgents?: typeof api.checkAgents
-    agentSignIns?: typeof api.agentSignIns
-    agentIntegration?: typeof api.agentIntegration
-    repairAgent?: typeof api.repairAgent
-    usage?: typeof api.usage
-    tools?: typeof api.tools
-    checkTools?: typeof api.checkTools
-    agentSessions?: typeof api.agentSessions
-    machines?: typeof api.machines
     /** Where a machine's page is served: the demo's own page in another world; absent, this computer's port. */
     machinePage?: (machine: Machine) => string
-    stopIdle?: typeof api.stopIdle
-    diskUse?: typeof api.diskUse
-    revealHome?: typeof api.revealHome
-    serverPort?: typeof api.serverPort
-    restartServer?: typeof api.restartServer
     memory?: MemoryApi
-    /** Settings › Automations; absent in an App that does not have the page's routes. */
-    automations?: AutomationsApi
     /** New chat's resume list; absent, the card reads this computer's agent history over HTTP. */
     agentHistory?: AgentHistoryApi
-    viewing?: typeof api.viewing
-    projectFolder?: typeof api.projectFolder
-    projectFolders?: typeof api.projectFolders
-    pickProjectFolder?: typeof api.pickProjectFolder
-    chooseProjectFolder?: typeof api.chooseProjectFolder
-    foundProjects?: typeof api.foundProjects
-    taskRecords?: typeof api.taskRecords
-    artifactSource?: typeof api.artifactSource
-    artifactAnnotationStatus?: typeof api.artifactAnnotationStatus
-    artifactContext?: typeof api.artifactContext
-    upgradeArtifactAnnotations?: typeof api.upgradeArtifactAnnotations
-    artifactAnnotationUrl?: typeof api.artifactAnnotationUrl
-    artifactHistory?: typeof api.artifactHistory
-    artifactProvenance?: typeof api.artifactProvenance
-    artifactMutate?: typeof api.artifactMutate
   }
-
-const automationsApi: AutomationsApi = {
-  list: () => call<AutomationsReply & { ok: true }>("/api/automations"),
-  deliveries: (automation) =>
-    call<{ deliveries: DeliveryView[] }>(
-      `/api/automations/deliveries${automation === undefined ? "" : `?automation=${enc(automation)}`}`,
-    ).then((r) => r.deliveries),
-  add: (draft) =>
-    call<{ automation: AutomationView }>("/api/automations", {
-      method: "POST",
-      body: JSON.stringify(draft),
-    }).then((r) => r.automation),
-  change: (id, patch) =>
-    call<{ automation: AutomationView }>(`/api/automations/${enc(id)}`, {
-      method: "PUT",
-      body: JSON.stringify(patch),
-    }).then((r) => r.automation),
-  remove: (id) =>
-    call<{ removed: string }>(`/api/automations/${enc(id)}`, { method: "DELETE" }).then(
-      () => undefined,
-    ),
-  test: (id) => call<AutomationTest>(`/api/automations/${enc(id)}/test`, { method: "POST" }),
-  testDraft: (draft) =>
-    call<AutomationTest>("/api/automations/test", { method: "POST", body: JSON.stringify(draft) }),
-  secret: (id) =>
-    call<{ secret: string }>(`/api/automations/${enc(id)}/secret`).then((r) => r.secret),
-}
-
-function memoryParams(input: object): string {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(input)) {
-    if (value !== undefined && value !== "") query.set(key, String(value))
-  }
-  return query.size > 0 ? `?${query}` : ""
-}
-
-export const memoryApi: MemoryApi = {
-  repository: {
-    preview: (project, operation) => call(`/api/memory/repository/${enc(project)}/${operation}`),
-    export: (project) => call(`/api/memory/repository/${enc(project)}/export`, { method: "POST" }),
-    restore: (project) =>
-      call(`/api/memory/repository/${enc(project)}/restore`, { method: "POST" }),
-    conflicts: (project) =>
-      call(
-        project === undefined
-          ? "/api/memory/repository/conflicts"
-          : `/api/memory/repository/${enc(project)}/conflicts`,
-      ),
-    compare: (project, id) => call(`/api/memory/repository/${enc(project)}/conflicts/${enc(id)}`),
-    reconcile: (project, id, input) =>
-      call(`/api/memory/repository/${enc(project)}/conflicts/${enc(id)}`, {
-        method: "POST",
-        body: JSON.stringify(input),
-      }),
-  },
-  pilotMigration: {
-    scan: (input, signal) =>
-      call("/api/memory/import/pilot/scan", {
-        method: "POST",
-        body: JSON.stringify(input),
-        signal,
-      }),
-    records: (scan, group, offset) =>
-      call("/api/memory/import/pilot/records", {
-        method: "POST",
-        body: JSON.stringify({ scan, group, offset }),
-      }),
-    review: (input) =>
-      call("/api/memory/import/pilot/review", { method: "POST", body: JSON.stringify(input) }),
-    apply: (input, signal) =>
-      call("/api/memory/import/pilot/apply", {
-        method: "POST",
-        body: JSON.stringify(input),
-        signal,
-      }),
-    cancel: (scan) =>
-      call("/api/memory/import/pilot/cancel", { method: "POST", body: JSON.stringify({ scan }) }),
-  },
-  activity: (project, task) =>
-    call(`/api/memory/projects/${enc(project)}/tasks/${enc(task)}/activity`),
-  overview: (project) => call(`/api/memory/overview${memoryParams({ project })}`),
-  settings: (patch) => call("/api/memory/settings", { method: "PUT", body: JSON.stringify(patch) }),
-  projects: (query = {}) => call(`/api/memory/projects${memoryParams(query)}`),
-  sharing: (project, enabled) =>
-    call(`/api/memory/projects/${enc(project)}/sharing`, {
-      method: "PUT",
-      body: JSON.stringify({ enabled }),
-    }),
-  list: (query = {}) => call(`/api/memory/records${memoryParams(query)}`),
-  read: (id) => call(`/api/memory/records/${enc(id)}`),
-  retire: (id, active) =>
-    call(`/api/memory/records/${enc(id)}`, {
-      method: "PUT",
-      body: JSON.stringify({ active }),
-    }),
-  confirm: (id, reason) =>
-    call(`/api/memory/records/${enc(id)}/confirm`, {
-      method: "PUT",
-      body: JSON.stringify(reason === undefined ? {} : { reason }),
-    }),
-  pin: (id, pinned) =>
-    call(`/api/memory/records/${enc(id)}/pin`, {
-      method: "PUT",
-      body: JSON.stringify({ pinned }),
-    }),
-  pinned: async (project) =>
-    (await call<{ items: MemoryPreview[] }>(`/api/memory/projects/${enc(project)}/pinned`)).items,
-  importPilot: (input) =>
-    call("/api/memory/import/pilot", { method: "POST", body: JSON.stringify(input) }),
-}
-
-/** Additive build API. Kept separate so demo and test implementations of Api remain valid. */
-export const interactionApi = {
-  turnHome: <T>(project: string, action = "", init?: RequestInit) =>
-    call<T>(`/api/interaction/turn/home/${enc(project)}${action ? `/${action}` : ""}`, init),
-  task: (id: string) =>
-    call<{ interaction: import("../interaction/contracts.ts").InteractionSnapshot }>(
-      `/api/tasks/${enc(id)}/interaction`,
-    ).then((r) => r.interaction),
-  taskRoute: <T>(
-    id: string,
-    lane: "turn" | "shell" | "docs" | "steps",
-    action: string,
-    init?: RequestInit,
-  ) => call<T>(`/api/tasks/${enc(id)}/interaction/${lane}/${action}`, init),
-  shell: <T>(action: string, init?: RequestInit) =>
-    call<T>(`/api/interaction/shell/${action}`, init),
-}
-
-/** First-start setup. Apart from `Api`, which the website's demo implements: the demo has no setup. */
-export const setupApi = {
-  state: () => call<{ setup: SetupState }>("/api/setup").then((r) => r.setup),
-  /** A key goes through the same activation as `qualitylayer licence activate`; no key starts a trial. */
-  licence: (key: string) =>
-    call<Record<string, unknown>>("/api/setup/licence", {
-      method: "POST",
-      body: JSON.stringify({ key }),
-    }).then(() => undefined),
-  /** Install, calling `onStep` with each step as the server starts it. */
-  finish: async (onStep: (step: string) => void): Promise<SetupFinishResult> => {
-    let steps: EventSource | null = null
-    if (typeof EventSource !== "undefined") {
-      const opened = new EventSource("/api/setup/events")
-      // The stream's first event says it is listening: only then does the install start.
-      await new Promise<void>((resolve) => {
-        opened.onmessage = (event: MessageEvent) => {
-          try {
-            const seen = JSON.parse(String(event.data)) as { type?: string; step?: string }
-            if (seen.type === "step" && seen.step !== undefined) onStep(seen.step)
-          } catch {
-            // an event the page cannot read is only a step it does not show
-          }
-          resolve()
-        }
-        opened.onerror = () => resolve()
-      })
-      steps = opened
-    }
-    try {
-      const result = await call<SetupFinishResult>("/api/setup", { method: "POST", body: "{}" })
-      return { codexHooks: result.codexHooks }
-    } finally {
-      steps?.close()
-    }
-  },
-}
-
-export type SetupApi = Omit<typeof setupApi, "finish"> & {
-  finish: (onStep: (step: string) => void) => Promise<SetupFinishResult> | Promise<void>
-}

@@ -76,6 +76,88 @@ export type LockOptions = {
   createParent?: boolean
 }
 
+const WINDOWS_BUSY_CODES = ["EPERM", "EACCES", "EBUSY"]
+
+function isWindowsBusy(code: string): boolean {
+  return process.platform === "win32" && WINDOWS_BUSY_CODES.includes(code)
+}
+
+function isDeadOwnerPid(pid: unknown): pid is number {
+  return typeof pid === "number" && Number.isInteger(pid) && pid > 0 && !processExists(pid)
+}
+
+async function tryAcquireLock(candidate: string, path: string): Promise<boolean> {
+  try {
+    await rename(candidate, path)
+    return true
+  } catch (cause) {
+    const code = (cause as NodeJS.ErrnoException).code ?? ""
+    // Windows refuses the rename while another process holds the lock directory or has just
+    // released it (EPERM, EACCES, EBUSY): that is contention, tried again until `waitMs`. A lock
+    // that vanished between the refusal and the look is the same: its holder has just let go.
+    const windowsContention =
+      isWindowsBusy(code) &&
+      (await stat(path).then(
+        (entry) => entry.isDirectory(),
+        () => true,
+      ))
+    if (!["EEXIST", "ENOTEMPTY"].includes(code) && !windowsContention) throw cause
+    return false
+  }
+}
+
+async function inspectSingleOwner(
+  path: string,
+  ownerFile: string,
+  options: LockOptions,
+  announced: boolean,
+): Promise<{ retryNow: boolean; announced: boolean }> {
+  const oldOwner = join(path, ownerFile)
+  const held = JSON.parse(await readFile(oldOwner, "utf8")) as {
+    pid?: unknown
+    label?: unknown
+  }
+  if (isDeadOwnerPid(held.pid)) {
+    await rm(oldOwner, { force: true })
+    await rmdir(path)
+    return { retryNow: true, announced }
+  }
+  if (options.onWait && !announced && typeof held.pid === "number") {
+    const what = typeof held.label === "string" ? held.label : "another QualityLayer process"
+    options.onWait(`Waiting for ${what} (pid ${held.pid}) to finish.`)
+    return { retryNow: false, announced: true }
+  }
+  return { retryNow: false, announced }
+}
+
+async function reapOrAnnounceHolder(
+  path: string,
+  options: LockOptions,
+  announced: boolean,
+): Promise<{ retryNow: boolean; announced: boolean }> {
+  // Remove only a dead owner's unique file, then rmdir the EMPTY directory.
+  // A second reaper cannot remove a new owner's populated lock directory.
+  let result = { retryNow: false, announced }
+  try {
+    const owners = await readdir(path)
+    if (owners.length === 0) {
+      await rmdir(path)
+      result = { retryNow: true, announced }
+    } else {
+      const singleOwner = owners.length === 1 ? owners[0] : undefined
+      if (singleOwner && /^[a-f0-9-]+\.json$/.test(singleOwner)) {
+        result = await inspectSingleOwner(path, singleOwner, options, announced)
+      }
+    }
+  } catch (cause) {
+    const code = (cause as NodeJS.ErrnoException).code ?? ""
+    // Windows refuses to read or remove a lock its holder is deleting at that moment (EPERM,
+    // EACCES, EBUSY): the holder is letting go, so the waiter looks again until `waitMs`.
+    if (!["ENOENT", "ENOTEMPTY"].includes(code) && !isWindowsBusy(code)) throw cause
+  }
+  return result
+}
+
 /** Serialize short state transactions across the CLI and Cockpit processes. */
 export async function withFileLock<T>(
   path: string,
@@ -101,62 +183,13 @@ export async function withFileLock<T>(
       { mode: 0o600 },
     )
     for (;;) {
-      try {
-        await rename(candidate, path)
+      if (await tryAcquireLock(candidate, path)) {
         acquired = true
         break
-      } catch (cause) {
-        const code = (cause as NodeJS.ErrnoException).code ?? ""
-        // Windows refuses the rename while another process holds the lock directory or has just
-        // released it (EPERM, EACCES, EBUSY): that is contention, tried again until `waitMs`. A lock
-        // that vanished between the refusal and the look is the same: its holder has just let go.
-        const windowsContention =
-          process.platform === "win32" &&
-          ["EPERM", "EACCES", "EBUSY"].includes(code) &&
-          (await stat(path).then(
-            (entry) => entry.isDirectory(),
-            () => true,
-          ))
-        if (!["EEXIST", "ENOTEMPTY"].includes(code) && !windowsContention) throw cause
       }
-      // Remove only a dead owner's unique file, then rmdir the EMPTY directory.
-      // A second reaper cannot remove a new owner's populated lock directory.
-      try {
-        const owners = await readdir(path)
-        if (owners.length === 0) {
-          await rmdir(path)
-          continue
-        }
-        if (owners.length === 1 && /^[a-f0-9-]+\.json$/.test(owners[0] ?? "")) {
-          const oldOwner = join(path, owners[0] as string)
-          const held = JSON.parse(await readFile(oldOwner, "utf8")) as {
-            pid?: unknown
-            label?: unknown
-          }
-          if (
-            typeof held.pid === "number" &&
-            Number.isInteger(held.pid) &&
-            held.pid > 0 &&
-            !processExists(held.pid)
-          ) {
-            await rm(oldOwner, { force: true })
-            await rmdir(path)
-            continue
-          }
-          if (options.onWait && !announced && typeof held.pid === "number") {
-            announced = true
-            const what =
-              typeof held.label === "string" ? held.label : "another QualityLayer process"
-            options.onWait(`Waiting for ${what} (pid ${held.pid}) to finish.`)
-          }
-        }
-      } catch (cause) {
-        const code = (cause as NodeJS.ErrnoException).code ?? ""
-        // Windows refuses to read or remove a lock its holder is deleting at that moment (EPERM,
-        // EACCES, EBUSY): the holder is letting go, so the waiter looks again until `waitMs`.
-        const letGo = process.platform === "win32" && ["EPERM", "EACCES", "EBUSY"].includes(code)
-        if (!["ENOENT", "ENOTEMPTY"].includes(code) && !letGo) throw cause
-      }
+      const next = await reapOrAnnounceHolder(path, options, announced)
+      announced = next.announced
+      if (next.retryNow) continue
       if (Date.now() - start > waitMs)
         throw new WorkflowStateBusy(`Workflow state is busy at ${path}; retry the command`)
       await new Promise((resolve) => setTimeout(resolve, 25))

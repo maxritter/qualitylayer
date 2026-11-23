@@ -76,14 +76,16 @@ export const DEMO_NOTES: Item[] = [
   },
 ]
 
-const decision = (
-  id: string,
-  family: Item["family"],
-  kind: Item["kind"],
-  kindLabel: string,
-  what: string,
-  patch: Partial<Item>,
-): Item => ({
+type DecisionSpec = {
+  id: string
+  family: Item["family"]
+  kind: Item["kind"]
+  kindLabel: string
+  what: string
+  patch: Partial<Item>
+}
+
+const decision = ({ id, family, kind, kindLabel, what, patch }: DecisionSpec): Item => ({
   id: `verify:${id}`,
   step: "verify",
   family,
@@ -101,18 +103,18 @@ const decision = (
  * review's items.
  */
 export const DEMO_DECISIONS: Item[] = [
-  decision(
-    "confirm:done:7",
-    "confirm",
-    "confirm",
-    "Only you can confirm",
-    "Finance controls each account's billing mode",
-    {
+  decision({
+    id: "confirm:done:7",
+    family: "confirm",
+    kind: "confirm",
+    kindLabel: "Only you can confirm",
+    what: "Finance controls each account's billing mode",
+    patch: {
       why: "Done 7 asks for a Finance login on the live admin. The agents checked the switch in staging; only you can confirm it on the live admin.",
       answers: { options: ["confirm", "record"] },
       blocking: true,
     },
-  ),
+  }),
 ]
 
 export const review: Area = {

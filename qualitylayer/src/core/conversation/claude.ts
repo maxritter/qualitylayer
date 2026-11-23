@@ -2,44 +2,28 @@
 // the complete lines it is given and keeps in `state` what later lines need: open tool calls, message ids
 // whose usage was counted, and the running totals. The same line fed twice gives the same events.
 
-import { priceOf, recordedPricing } from "../cost/prices.ts"
-import { type ClaudeUsage, claudeTokens } from "../cost/transcripts.ts"
-import { conversationAttachments, imageContentText, imageMessageText } from "./attachments.ts"
+import { type ChecklistState, checklistState } from "./checklist.ts"
 import {
-  type ChecklistState,
-  checklistCall,
-  checklistResult,
-  checklistState,
-  checklistToolOk,
-} from "./checklist.ts"
+  type ClaudeCounts,
+  type ClaudeJson,
+  type ClaudeOpenCall,
+  claudeCount,
+  claudeObj,
+  claudeStr,
+  completedClaudeTask,
+  nativeTaskOrigin,
+} from "./claude-helpers.ts"
+import { claudeAssistant, claudeSystem, claudeUser, humanQueuedCommand } from "./claude-records.ts"
 import {
+  type ClaudeSettingsChange,
   type ClaudeSettingsCursor,
   type ClaudeSettingsScope,
-  claudeSettingsCommand,
   claudeSettingsCursor,
   readClaudeSettingsChange,
 } from "./claude-settings.ts"
-import { type QuestionState, questionCall, questionResult, questionState } from "./questions.ts"
-import { editDiff, firstText, inputJson, linesLabel, shellKind } from "./tools.ts"
-import {
-  bounded,
-  CONVERSATION_LIMITS,
-  type ConversationEvent,
-  type ConversationUsage,
-  type ConversationWorker,
-  type DiffSummary,
-  type MapResult,
-  nativeEffort,
-  type ToolKind,
-} from "./types.ts"
-
-type Json = Record<string, unknown>
-
-/** A tool call waiting for its result. */
-type OpenCall = { name: string; tool: ToolKind; input: Json; diff?: DiffSummary }
-
-/** Input, output, cache read and cache write tokens of one API message. */
-type Counts = [number, number, number, number]
+import { claudeUsageOf } from "./claude-usage.ts"
+import { type QuestionState, questionState } from "./questions.ts"
+import type { ConversationEvent, ConversationWorker, MapResult } from "./types.ts"
 
 export type ClaudeState = {
   checklist: ChecklistState
@@ -47,14 +31,14 @@ export type ClaudeState = {
   /** The Task/Agent call that started this transcript, when it is a subagent's own file and the caller knows it. */
   parent?: string
   line: number
-  calls: Record<string, OpenCall>
+  calls: Record<string, ClaudeOpenCall>
   /** Subagent id to the call that started it, learned from that call's result. */
   agents: Record<string, string>
   workers: Record<string, ConversationWorker>
   /** An omitted worker cannot later be matched safely without retaining unbounded IDs. */
   workersIncomplete: boolean
   /** Usage counted per API message id: one message spans several records and a resumed session repeats them. */
-  messages: Record<string, Counts>
+  messages: Record<string, ClaudeCounts>
   /** What each of those messages cost at list prices; negative when its model has no price. */
   spent: Record<string, number>
   /** The sum of the messages with a price, and how many have none (then the session has no estimate). */
@@ -64,7 +48,7 @@ export type ClaudeState = {
   usageCapped: boolean
   /** Real prompts already counted. */
   prompts: Record<string, true>
-  total: Counts
+  total: ClaudeCounts
   model?: string
   effort?: string
   settingsUnknown?: ("model" | "effort")[]
@@ -99,35 +83,62 @@ export function claudeState(parent?: string, scope?: ClaudeSettingsScope): Claud
   }
 }
 
-const OPEN_CALLS = 400
-const WORKER_USAGE_MESSAGES = 1024
-
-const obj = (value: unknown): Json | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined
-const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
-const count = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-const oneLine = (text: string, limit = 300): string => {
-  const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length <= limit ? flat : `${flat.slice(0, limit)}…`
-}
-
-/** Drop the keys an event has no value for, so events compare and serialize cleanly. */
-function clean<T extends object>(event: T): T {
-  const record = event as Record<string, unknown>
-  for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key]
-  return event
-}
-
-function* records(lines: string): Generator<Json> {
+function* records(lines: string): Generator<ClaudeJson> {
   for (const line of lines.split("\n")) {
     if (line.trim() === "") continue
     try {
-      const record = obj(JSON.parse(line))
+      const record = claudeObj(JSON.parse(line))
       if (record) yield record
     } catch {
       // a torn or damaged line is skipped
     }
+  }
+}
+
+function applySettingsChange(
+  rec: ClaudeJson,
+  change: ClaudeSettingsChange,
+  state: ClaudeState,
+): void {
+  for (const field of change.withdrawn) delete state[field]
+  Object.assign(state, change.values)
+  for (const field of ["model", "effort"] as const) {
+    if (change.values?.[field] !== undefined && typeof rec.timestamp === "string")
+      state.settingsAt = { ...state.settingsAt, [field]: rec.timestamp }
+  }
+  state.settingsUnknown = [
+    ...new Set([...(state.settingsUnknown ?? []), ...change.withdrawn]),
+  ].filter((field) => change.values?.[field] === undefined)
+}
+
+function handleAttachment(rec: ClaudeJson, state: ClaudeState, out: ConversationEvent[]): void {
+  const attachment = claudeObj(rec.attachment)
+  if (
+    attachment?.type === "queued_command" &&
+    attachment.commandMode === "task-notification" &&
+    nativeTaskOrigin(claudeObj(attachment.origin))
+  ) {
+    completedClaudeTask(claudeStr(attachment.prompt) ?? "", state)
+    return
+  }
+  humanQueuedCommand(rec, attachment, state, out)
+}
+
+function mapRecord(rec: ClaudeJson, state: ClaudeState, out: ConversationEvent[]): void {
+  state.localSettings ??= claudeSettingsCursor()
+  const change = readClaudeSettingsChange(rec, state.localSettings)
+  if (change) {
+    applySettingsChange(rec, change, state)
+    return
+  }
+  const type = claudeStr(rec.type)
+  if (type === "assistant") claudeAssistant(rec, state, out)
+  else if (type === "user") claudeUser(rec, state, out)
+  else if (type === "attachment") handleAttachment(rec, state, out)
+  else if (type === "system") claudeSystem(rec, state, out)
+  else if (type === "cost-state") {
+    const cost = claudeCount(rec.totalCostUSD)
+    if (cost > 0) state.costUsd = cost
   }
 }
 
@@ -145,792 +156,9 @@ export function mapClaude(lines: string, state: ClaudeState): MapResult<ClaudeSt
     events,
     checklist: state.checklist.value,
     question: state.question.value,
-    usage: state.usageCapped ? null : usageOf(state),
+    usage: state.usageCapped ? null : claudeUsageOf(state),
     workers: Object.values(state.workers),
     workersIncomplete: state.workersIncomplete,
     state,
   }
-}
-
-function mapRecord(rec: Json, state: ClaudeState, out: ConversationEvent[]): void {
-  state.localSettings ??= claudeSettingsCursor()
-  const change = readClaudeSettingsChange(rec, state.localSettings)
-  if (change) {
-    for (const field of change.withdrawn) delete state[field]
-    Object.assign(state, change.values)
-    for (const field of ["model", "effort"] as const)
-      if (change.values?.[field] !== undefined && typeof rec.timestamp === "string")
-        state.settingsAt = { ...state.settingsAt, [field]: rec.timestamp }
-    state.settingsUnknown = [
-      ...new Set([...(state.settingsUnknown ?? []), ...change.withdrawn]),
-    ].filter((field) => change.values?.[field] === undefined)
-    return
-  }
-  const type = str(rec.type)
-  if (type === "assistant") assistant(rec, state, out)
-  else if (type === "user") user(rec, state, out)
-  else if (type === "attachment") {
-    const attachment = obj(rec.attachment)
-    if (
-      attachment?.type === "queued_command" &&
-      attachment.commandMode === "task-notification" &&
-      nativeTaskOrigin(obj(attachment.origin))
-    )
-      completedTask(str(attachment.prompt) ?? "", state)
-    // A message the person sent while the agent worked: Claude Code takes it in at its next step
-    // and records it here, not in a user row (as session-proof reads it).
-    else humanQueuedCommand(rec, attachment, state, out)
-  } else if (type === "system") system(rec, state, out)
-  else if (type === "cost-state") {
-    const cost = count(rec.totalCostUSD)
-    if (cost > 0) state.costUsd = cost
-  }
-  // Everything else is bookkeeping: attachments, request logs, titles, modes, queue and snapshot records.
-}
-
-function humanQueuedCommand(
-  rec: Json,
-  attachment: Json | undefined,
-  state: ClaudeState,
-  out: ConversationEvent[],
-) {
-  if (
-    attachment?.type !== "queued_command" ||
-    attachment.commandMode === "task-notification" ||
-    obj(attachment.origin)?.kind !== "human"
-  )
-    return
-  const attachments = conversationAttachments(attachment.prompt)
-  const text = imageMessageText(promptText(imageContentText(attachment.prompt)) ?? "", attachments)
-  const id = str(attachment.source_uuid) ?? idOf(rec, state)
-  if ((!text && !attachments.length) || state.prompts[id]) return
-  state.prompts[id] = true
-  out.push(
-    clean({
-      id,
-      at: str(attachment.timestamp) ?? str(rec.timestamp),
-      kind: "user" as const,
-      text: bounded(text, CONVERSATION_LIMITS.textChars),
-      ...(attachments.length ? { attachments: attachments } : {}),
-    }),
-  )
-}
-
-/** Where a record's events hang: the call that started the subagent it belongs to. */
-function parentOf(rec: Json, state: ClaudeState): string | undefined {
-  const named = str(rec.parent_tool_use_id)
-  if (named) return named
-  if (rec.isSidechain !== true) return undefined
-  const agent = str(rec.agentId)
-  return (agent ? state.agents[agent] : undefined) ?? state.parent
-}
-
-function idOf(rec: Json, state: ClaudeState): string {
-  return str(rec.uuid) ?? `claude:${state.line}`
-}
-
-function assistant(rec: Json, state: ClaudeState, out: ConversationEvent[]): void {
-  const message = obj(rec.message)
-  if (!message) return
-  const uuid = idOf(rec, state)
-  const at = str(rec.timestamp)
-  const parent = parentOf(rec, state)
-  const model = str(message.model)
-  const content = Array.isArray(message.content) ? message.content : []
-
-  if (model === "<synthetic>") {
-    // Claude Code's own notes: only an API error is worth a row.
-    if (rec.isApiErrorMessage === true) {
-      const text = content
-        .map((block) => str(obj(block)?.text) ?? "")
-        .join("\n")
-        .trim()
-      out.push(
-        clean({
-          id: uuid,
-          at,
-          parent,
-          kind: "error" as const,
-          text: bounded(text || "API error", CONVERSATION_LIMITS.textChars),
-        }),
-      )
-    }
-    return
-  }
-  if (rec.isSidechain !== true) {
-    const previousModel = state.model
-    if (model) {
-      state.model = model
-      if (typeof rec.timestamp === "string")
-        state.settingsAt = { ...state.settingsAt, model: rec.timestamp }
-      state.settingsUnknown = state.settingsUnknown?.filter((field) => field !== "model")
-    }
-    const effort = nativeEffort(rec.effort)
-    if (effort) {
-      state.effort = effort
-      if (typeof rec.timestamp === "string")
-        state.settingsAt = { ...state.settingsAt, effort: rec.timestamp }
-      state.settingsUnknown = state.settingsUnknown?.filter((field) => field !== "effort")
-    } else if (model && previousModel && model !== previousModel) {
-      delete state.effort
-      state.settingsUnknown = [...new Set([...(state.settingsUnknown ?? []), "effort" as const])]
-    }
-  }
-  countUsage(message, str(message.id) ?? uuid, model, rec.isSidechain === true, state)
-
-  const seconds = count(rec.thinkingDurationMs) / 1000
-  content.forEach((raw, index) => {
-    const block = obj(raw)
-    if (!block) return
-    const id = `${uuid}:${index}`
-    const kind = str(block.type)
-    if (kind === "text") {
-      const text = (str(block.text) ?? "").trim()
-      if (text)
-        out.push(
-          clean({
-            id,
-            at,
-            parent,
-            kind: "assistant" as const,
-            text: bounded(text, CONVERSATION_LIMITS.textChars),
-          }),
-        )
-    } else if (kind === "thinking") {
-      const text = (str(block.thinking) ?? "").trim()
-      if (text)
-        out.push(
-          clean({
-            id,
-            at,
-            parent,
-            kind: "thinking" as const,
-            text: bounded(text, CONVERSATION_LIMITS.textChars),
-            seconds: seconds > 0 ? Math.max(1, Math.round(seconds)) : undefined,
-          }),
-        )
-    } else if (kind === "redacted_thinking") {
-      // nothing readable to draw
-    } else if (kind === "tool_use" || kind === "server_tool_use") {
-      toolUse(
-        block,
-        id,
-        at,
-        parent,
-        state,
-        out,
-        kind === "tool_use" && rec.isSidechain !== true && !state.parent,
-      )
-    } else if (kind?.endsWith("_tool_result")) {
-      toolResult(block, rec, id, at, parent, state, out)
-    } else {
-      out.push(
-        clean({ id, at, parent, kind: "unknown" as const, label: kind ?? "assistant content" }),
-      )
-    }
-  })
-}
-
-/** The message's cost by its own model: a later record of it replaces the earlier, a subagent's cheaper model is its own. */
-function countSpend(
-  state: ClaudeState,
-  key: string,
-  model: string | undefined,
-  usage: Json,
-  counts: Counts,
-): void {
-  const before = state.spent[key]
-  if (before !== undefined) {
-    if (before < 0) state.unpriced--
-    else state.estimate -= before
-  }
-  // A message with no tokens (the synthetic "no response" one) costs nothing and needs no price.
-  const usd =
-    counts.every((n) => n === 0) || model === undefined
-      ? 0
-      : (priceOf(model, claudeTokens(usage as ClaudeUsage), recordedPricing(usage)) ?? -1)
-  if (usd < 0) state.unpriced++
-  else state.estimate += usd
-  state.spent[key] = usd
-}
-
-function countUsage(
-  message: Json,
-  key: string,
-  model: string | undefined,
-  sidechain: boolean,
-  state: ClaudeState,
-): void {
-  const usage = obj(message.usage)
-  if (!usage) return
-  if (state.parent !== undefined) {
-    if (state.usageCapped) return
-    if (
-      !Object.hasOwn(state.messages, key) &&
-      Object.keys(state.messages).length >= WORKER_USAGE_MESSAGES
-    ) {
-      state.usageCapped = true
-      state.messages = {}
-      state.spent = {}
-      return
-    }
-  }
-  const next: Counts = [
-    count(usage.input_tokens),
-    count(usage.output_tokens),
-    count(usage.cache_read_input_tokens),
-    count(usage.cache_creation_input_tokens),
-  ]
-  // A later record of the same message holds the final output count: replace, never add.
-  const before = state.messages[key] ?? [0, 0, 0, 0]
-  for (let i = 0; i < 4; i++)
-    state.total[i] = (state.total[i] ?? 0) - (before[i] ?? 0) + (next[i] ?? 0)
-  state.messages[key] = next
-  countSpend(state, key, model ?? state.model, usage, next)
-  // A subagent's calls cost tokens but say nothing of this conversation's own context.
-  if (sidechain && state.parent === undefined) return
-  if (model) state.model = model
-  const used = next[0] + next[2] + next[3]
-  state.contextUsed = used
-  state.contextMost = Math.max(state.contextMost, used)
-}
-
-const FIRST_ARGUMENTS = [
-  "file_path",
-  "notebook_path",
-  "path",
-  "pattern",
-  "command",
-  "url",
-  "query",
-  "description",
-  "skill",
-  "subject",
-  "name",
-  "prompt",
-  "message",
-  "text",
-]
-
-function genericTarget(input: Json): string | undefined {
-  for (const key of FIRST_ARGUMENTS) {
-    const value = str(input[key])
-    if (value) return oneLine(value)
-  }
-  const first = firstText(input)
-  return first ? oneLine(first) : undefined
-}
-
-/** What a task update did, by the status it sets; the row says it in words. */
-const TASK_ACTIONS: Record<string, string> = {
-  pending: "reopened",
-  in_progress: "started",
-  completed: "completed",
-  deleted: "removed",
-}
-
-/** The first question an AskUserQuestion call asks, for its row. */
-function askedQuestion(input: Json): string | undefined {
-  const first = Array.isArray(input.questions) ? obj(input.questions[0]) : undefined
-  const text = str(first?.question)
-  return text ? oneLine(text) : undefined
-}
-
-function describe(
-  name: string,
-  input: Json,
-  taskNamed: (id: string) => string | undefined = () => undefined,
-): { tool: ToolKind; target?: string; detail?: string } {
-  const text = (key: string) => {
-    const value = str(input[key])
-    return value ? oneLine(value) : undefined
-  }
-  switch (name) {
-    case "Read":
-      return { tool: "read", target: text("file_path") }
-    case "Write":
-      return { tool: "write", target: text("file_path") }
-    case "Edit":
-    case "MultiEdit":
-      return { tool: "edit", target: text("file_path") }
-    case "NotebookEdit":
-      return { tool: "edit", target: text("notebook_path") }
-    case "Grep":
-    case "Glob":
-      return { tool: "search", target: text("pattern") }
-    case "LS":
-      return { tool: "list", target: text("path") }
-    case "Bash":
-    case "PowerShell": {
-      const command = str(input.command) ?? ""
-      return { ...shellKind(command), target: command ? oneLine(command) : undefined }
-    }
-    case "WebFetch":
-      return { tool: "web", target: text("url") }
-    case "WebSearch":
-    case "web_search":
-      return { tool: "web", target: text("query") }
-    case "Task":
-    case "Agent":
-      return {
-        tool: "subagent",
-        target: text("description") ?? text("prompt"),
-        detail: text("subagent_type"),
-      }
-    case "TodoWrite":
-      return {
-        tool: "todo",
-        target: Array.isArray(input.todos) ? `${input.todos.length} items` : undefined,
-      }
-    case "TaskCreate":
-      return { tool: "todo", detail: "created", target: text("subject") }
-    case "TaskUpdate": {
-      // The task's own words when the list has met it; its number otherwise.
-      const id = text("taskId")
-      return {
-        tool: "todo",
-        detail: TASK_ACTIONS[text("status") ?? ""] ?? "updated",
-        target: text("subject") ?? (id ? (taskNamed(id) ?? `#${id}`) : undefined),
-      }
-    }
-    case "TaskList":
-    case "TaskGet": {
-      const id = text("taskId")
-      return {
-        tool: "todo",
-        detail: "read",
-        target: id ? (taskNamed(id) ?? `#${id}`) : undefined,
-      }
-    }
-    case "AskUserQuestion":
-      return { tool: "other", target: askedQuestion(input) }
-    default:
-      return { tool: name.startsWith("mcp__") ? "mcp" : "other", target: genericTarget(input) }
-  }
-}
-
-/** What an edit tool's own input says it changed, to attach to its result. */
-function diffOf(name: string, input: Json): DiffSummary | undefined {
-  const path = str(input.file_path) ?? str(input.notebook_path)
-  if (!path) return undefined
-  if (name === "Write") return editDiff(path, "", str(input.content) ?? "")
-  if (name === "Edit")
-    return editDiff(path, str(input.old_string) ?? "", str(input.new_string) ?? "")
-  if (name === "NotebookEdit" && input.edit_mode !== "delete")
-    return editDiff(path, "", str(input.new_source) ?? "")
-  if (name === "MultiEdit" && Array.isArray(input.edits)) {
-    const parts = input.edits.map((edit) => {
-      const e = obj(edit) ?? {}
-      return editDiff(path, str(e.old_string) ?? "", str(e.new_string) ?? "")
-    })
-    return {
-      path,
-      added: parts.reduce((sum, part) => sum + part.added, 0),
-      removed: parts.reduce((sum, part) => sum + part.removed, 0),
-      patch: bounded(
-        parts.map((part) => part.patch ?? "").join("\n"),
-        CONVERSATION_LIMITS.diffBytes,
-      ),
-    }
-  }
-  return undefined
-}
-
-function toolUse(
-  block: Json,
-  id: string,
-  at: string | undefined,
-  parent: string | undefined,
-  state: ClaudeState,
-  out: ConversationEvent[],
-  primary: boolean,
-): void {
-  const callId = str(block.id)
-  const name = str(block.name) ?? "unknown"
-  if (!callId) return
-  const input = obj(block.input) ?? {}
-  const taskCall = primary && checklistCall(state.checklist, callId, name, input)
-  if (primary && name === "AskUserQuestion")
-    questionCall(state.question, callId, "claude-code", input)
-  const { tool, target, detail } = describe(
-    name,
-    input,
-    (task) => state.checklist.value?.items.find((item) => item.id === task)?.text,
-  )
-  out.push(
-    clean({
-      id,
-      at,
-      parent,
-      kind: "tool" as const,
-      callId,
-      name,
-      tool,
-      target,
-      detail,
-      input: inputJson(input),
-    }),
-  )
-  // Child readers expose telemetry only, so retain no code, shell body or diff payload.
-  // Result summaries need just these small selectors to recognize search/completion.
-  const retainedInput = state.parent
-    ? Object.fromEntries(
-        ["output_mode", "task_id"].flatMap((key) => {
-          const value = str(input[key])
-          return value ? [[key, value.slice(0, 128)]] : []
-        }),
-      )
-    : taskCall || name === "AskUserQuestion"
-      ? {}
-      : input
-  state.calls[callId] = {
-    name,
-    tool,
-    input: retainedInput,
-    ...(state.parent ? {} : { diff: diffOf(name, input) }),
-  }
-  if (tool === "subagent") {
-    if (state.workers[callId] || Object.keys(state.workers).length < CONVERSATION_LIMITS.workers)
-      state.workers[callId] = clean({
-        id: callId,
-        callId,
-        name: detail ?? "Agent",
-        task: target,
-        startedAt: at,
-        updatedAt: at,
-      })
-    else state.workersIncomplete = true
-  }
-  const open = Object.keys(state.calls)
-  for (const old of open.slice(0, Math.max(0, open.length - OPEN_CALLS))) delete state.calls[old]
-}
-
-/** The text of a result: a string, or a list of text and image parts. */
-function resultText(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .map((part) => {
-      const p = obj(part)
-      if (!p) return ""
-      if (typeof p.text === "string") return p.text
-      return p.type === "image" ? "[image]" : ""
-    })
-    .filter((text) => text !== "")
-    .join("\n")
-}
-
-const lineCount = (text: string): number => text.split("\n").filter((l) => l.trim() !== "").length
-
-function summarize(
-  call: OpenCall | undefined,
-  ok: boolean,
-  text: string,
-  result: Json | undefined,
-): string | undefined {
-  const first = oneLine(
-    text
-      .replace(/<\/?tool_use_error>/g, "")
-      .split("\n")
-      .find((line) => line.trim() !== "") ?? "",
-    100,
-  )
-  if (!ok) {
-    const exit = text.match(/^Exit code (-?\d+)/)?.[1]
-    return exit !== undefined ? `exit ${exit}` : first || "failed"
-  }
-  switch (call?.tool) {
-    case "read": {
-      if (result?.type === "image") return "image"
-      if (result?.type === "file_unchanged") return "unchanged"
-      const lines = count(obj(result?.file)?.numLines) || (text ? lineCount(text) : 0)
-      return lines > 0 ? linesLabel(lines) : undefined
-    }
-    case "shell":
-    case "qualitylayer": {
-      if (result?.interrupted === true) return "interrupted"
-      if (result?.backgroundTaskId !== undefined) return "running in background"
-      return str(result?.returnCodeInterpretation) ?? "exit 0"
-    }
-    case "search": {
-      if (/^No (files|matches)/i.test(text.trim())) return "no matches"
-      const n = lineCount(text)
-      if (call.name === "Glob") return `${n} files`
-      const mode = str(call.input.output_mode) ?? "files_with_matches"
-      return `${n} ${mode === "content" ? "matches" : mode === "count" ? "counts" : "files"}`
-    }
-    case "list":
-      return `${lineCount(text)} entries`
-    case "edit":
-    case "write":
-      return call.diff ? `+${call.diff.added} -${call.diff.removed}` : undefined
-    case "web":
-      return typeof result?.code === "number" ? `HTTP ${result.code}` : undefined
-    case "subagent": {
-      const tools = count(result?.totalToolUseCount)
-      if (tools > 0) return `${tools} tool calls`
-      return result?.isAsync === true ? "started in background" : str(result?.status)
-    }
-    default:
-      return undefined
-  }
-}
-
-function toolResult(
-  block: Json,
-  rec: Json,
-  id: string,
-  at: string | undefined,
-  parent: string | undefined,
-  state: ClaudeState,
-  out: ConversationEvent[],
-): void {
-  const callId = str(block.tool_use_id)
-  if (!callId) return
-  const call = state.calls[callId]
-  delete state.calls[callId]
-  const ok = block.is_error !== true
-  const text = resultText(block.content)
-  const result = obj(rec.toolUseResult)
-  if (!parent && rec.isSidechain !== true && !state.parent) questionResult(state.question, callId)
-  if (!parent && rec.isSidechain !== true && !state.parent)
-    checklistResult(state.checklist, callId, checklistToolOk(!ok, text, result), text, result)
-  const agent = str(result?.agentId)
-  if (agent) {
-    state.agents[agent] = callId
-    const known = Object.keys(state.agents)
-    for (const old of known.slice(0, Math.max(0, known.length - OPEN_CALLS)))
-      delete state.agents[old]
-  }
-  if (call?.tool === "subagent" || state.workers[callId]) {
-    if (ok && (result?.isAsync === true || result?.status === "async_launched")) {
-      const worker = state.workers[callId]
-      if (worker) state.workers[callId] = clean({ ...worker, id: agent ?? callId, updatedAt: at })
-    } else delete state.workers[callId]
-  }
-  const task = obj(result?.task)
-  const taskId = str(call?.input.task_id) ?? str(task?.task_id)
-  const taskStatus = str(task?.status) ?? str(result?.status)
-  if (
-    taskId &&
-    ok &&
-    (call?.name === "TaskStop" || taskStatus === "completed" || taskStatus === "failed")
-  ) {
-    for (const [id, worker] of Object.entries(state.workers))
-      if (worker.id === taskId) delete state.workers[id]
-  }
-  out.push(
-    clean({
-      id,
-      at,
-      parent,
-      kind: "tool-result" as const,
-      callId,
-      ok,
-      summary: summarize(call, ok, text, result),
-      output: text.trim() ? bounded(text, CONVERSATION_LIMITS.outputChars) : undefined,
-      diff: ok ? call?.diff : undefined,
-    }),
-  )
-}
-
-/** Text in a user record that Claude Code or a hook put there, not the person. */
-const INJECTED = [
-  "<task-notification",
-  "<local-command-",
-  "<system-reminder",
-  "<bash-stdout",
-  "<bash-stderr",
-  "<user-prompt-submit-hook",
-  "This session is being continued from a previous conversation",
-  "[Request interrupted by user",
-]
-
-const nativeTaskOrigin = (origin: Json | undefined): boolean =>
-  origin?.kind === "task-notification" && origin.producer === "session-task"
-
-function completedTask(notice: string, state: ClaudeState): void {
-  if (!notice.trimStart().startsWith("<task-notification>")) return
-  const taskId = notice.match(/<task-id>([^<]+)<\/task-id>/)?.[1]?.trim()
-  const status = notice.match(/<status>([^<]+)<\/status>/)?.[1]?.trim()
-  if (taskId && status && ["completed", "failed", "killed", "stopped"].includes(status))
-    for (const [id, worker] of Object.entries(state.workers))
-      if (worker.id === taskId) delete state.workers[id]
-}
-
-function promptText(text: string): string | undefined {
-  const trimmed = text.trim()
-  if (INJECTED.some((start) => trimmed.startsWith(start))) return undefined
-  const command = trimmed.match(/<command-name>([^<]*)<\/command-name>/)?.[1]?.trim()
-  if (command) {
-    const args = trimmed.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim()
-    return args ? `${command} ${args}` : command
-  }
-  const bash = trimmed.match(/^<bash-input>([\s\S]*?)<\/bash-input>/)?.[1]?.trim()
-  if (bash) return `! ${bash}`
-  const said = trimmed.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim()
-  return said || undefined
-}
-
-function user(rec: Json, state: ClaudeState, out: ConversationEvent[]): void {
-  const message = obj(rec.message)
-  if (!message) return
-  const uuid = idOf(rec, state)
-  const at = str(rec.timestamp)
-  const parent = parentOf(rec, state)
-  const content = message.content
-  const notice = resultText(content)
-  const noticeOrigin = obj(rec.origin)
-  const nativeNotice =
-    nativeTaskOrigin(noticeOrigin) ||
-    (rec.isMeta === true && noticeOrigin === undefined && rec.isSidechain !== true)
-  if (nativeNotice) completedTask(notice, state)
-
-  if (Array.isArray(content) && content.some((block) => obj(block)?.type === "tool_result")) {
-    content.forEach((raw, index) => {
-      const block = obj(raw)
-      if (block?.type === "tool_result")
-        toolResult(block, rec, `${uuid}:r${index}`, at, parent, state, out)
-    })
-    return
-  }
-
-  if (rec.isCompactSummary === true) {
-    // The boundary record already drew this compaction; older sessions have none.
-    if (state.lastBoundary === undefined || str(rec.parentUuid) !== state.lastBoundary)
-      out.push(clean({ id: uuid, at, parent, kind: "compaction" as const }))
-    return
-  }
-  if (rec.isMeta === true || rec.isSidechain === true) return
-  const origin = str(obj(rec.origin)?.kind)
-  if (origin !== undefined && origin !== "human") return
-
-  let raw = ""
-  if (typeof content === "string") raw = content
-  else if (Array.isArray(content))
-    raw = content
-      .map((part) => {
-        const block = obj(part)
-        if (block?.type === "text") return str(block.text) ?? ""
-        return ""
-      })
-      .filter((text) => text !== "")
-      .join("\n")
-  const attachments = conversationAttachments(content)
-  const text = imageMessageText(promptText(raw) ?? "", attachments)
-  if (!text && !attachments.length) return
-  state.prompts[uuid] = true
-  out.push(
-    clean({
-      id: uuid,
-      at,
-      kind: "user" as const,
-      text: bounded(text, CONVERSATION_LIMITS.textChars),
-      ...(attachments.length ? { attachments: attachments } : {}),
-    }),
-  )
-}
-
-/** System records worth no row. */
-const QUIET = new Set([
-  "informational",
-  "local_command",
-  "away_summary",
-  "stop_hook_summary",
-  "scheduled_task_fire",
-])
-
-function system(rec: Json, state: ClaudeState, out: ConversationEvent[]): void {
-  const withdrawn = claudeSettingsCommand(rec)
-  if (withdrawn.length > 0) {
-    for (const field of withdrawn) delete state[field]
-    state.settingsUnknown = [...new Set([...(state.settingsUnknown ?? []), ...withdrawn])]
-    return
-  }
-  const subtype = str(rec.subtype)
-  const uuid = idOf(rec, state)
-  const at = str(rec.timestamp)
-  const parent = parentOf(rec, state)
-  if (subtype === "compact_boundary") {
-    const meta = obj(rec.compactMetadata)
-    const before = count(meta?.preTokens) || undefined
-    const after = count(meta?.postTokens) || undefined
-    state.lastBoundary = uuid
-    if (after !== undefined) state.contextUsed = after
-    out.push(clean({ id: uuid, at, parent, kind: "compaction" as const, before, after }))
-  } else if (subtype === "turn_duration") {
-    out.push(
-      clean({
-        id: uuid,
-        at,
-        parent,
-        kind: "turn-end" as const,
-        durationMs: count(rec.durationMs) || undefined,
-      }),
-    )
-  } else if (rec.level === "error") {
-    const text = (str(rec.content) ?? "").trim()
-    out.push(
-      clean({
-        id: uuid,
-        at,
-        parent,
-        kind: "error" as const,
-        text: bounded(text || subtype || "error", CONVERSATION_LIMITS.textChars),
-      }),
-    )
-  } else if (subtype && !QUIET.has(subtype)) {
-    out.push(clean({ id: uuid, at, parent, kind: "unknown" as const, label: `system: ${subtype}` }))
-  }
-}
-
-/**
- * The context window of a Claude model. The transcript does not record it, and it drops a `[1m]` suffix
- * from the model id. Claude Code's model docs (checked 2026-10-19) give 1M tokens to Fable, Sonnet, Haiku
- * from 5, and Opus from 4.7; everything older has 200k unless it ran as `[1m]`. A call that used more than
- * the table says shows the longer window was on.
- */
-function claudeContextWindow(model: string | undefined, mostUsed: number): number | undefined {
-  const parsed = model
-    ?.replace(/\[1m\]$/, "")
-    .match(/^claude-(fable|sonnet|haiku|opus)-(\d{1,2})(?:-(\d{1,2})(?!\d))?/)
-  let window: number | undefined
-  if (model?.endsWith("[1m]")) window = 1_000_000
-  else if (parsed) {
-    const major = Number(parsed[2])
-    const minor = Number(parsed[3] ?? 0)
-    const long = parsed[1] === "opus" ? major > 4 || (major === 4 && minor >= 7) : major >= 5
-    window = long ? 1_000_000 : 200_000
-  }
-  if (mostUsed > (window ?? 200_000)) return 1_000_000
-  return window
-}
-
-function usageOf(state: ClaudeState): ConversationUsage | undefined {
-  const turns = Object.keys(state.prompts).length
-  if (
-    Object.keys(state.messages).length === 0 &&
-    turns === 0 &&
-    state.costUsd === undefined &&
-    !state.model &&
-    !state.effort &&
-    !state.settingsUnknown?.length
-  )
-    return undefined
-  const [input, output, cacheRead, cacheWrite] = state.total
-  return clean({
-    model: state.model,
-    effort: state.effort,
-    settingsUnknown: state.settingsUnknown?.length ? state.settingsUnknown : undefined,
-    settingsAt: state.settingsAt,
-    contextWindow: claudeContextWindow(state.model, state.contextMost),
-    contextUsed: state.contextUsed,
-    input: input ?? 0,
-    output: output ?? 0,
-    cacheRead: cacheRead ?? 0,
-    cacheWrite: cacheWrite ?? 0,
-    costUsd: state.costUsd,
-    estimatedUsd: state.unpriced === 0 && state.estimate > 0 ? state.estimate : undefined,
-    turns,
-  })
 }

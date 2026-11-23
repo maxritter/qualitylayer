@@ -11,6 +11,18 @@ import { finalApproved, historyAt, openWaits } from "./lines.ts"
  * failing check on its pull request, changes after the approval, a question of its agent). `open`
  * is every task of the open list, the number beside the project picker.
  */
+function needsPersonAttention(t: TaskSummary, now: number): boolean {
+  const s = shellStatus(t, now)
+  if (s.openItems > 0 || t.live?.question != null || t.action !== null) return true
+  // The final review stays available during a recheck. An exit question counts only while open.
+  if (t.stage === "verify" && (t.verifyMode === "yours" || t.verifyMode === "rechecking")) {
+    return true
+  }
+  if (s.state === "stopped" || s.state === "waits-for-you") return true
+  // The build's lead ended its turn and waits for an answer in its chat.
+  return asksInChat(t, now)
+}
+
 export function shellGroups(
   tasks: TaskSummary[],
   project: string,
@@ -26,21 +38,8 @@ export function shellGroups(
   /** What still needs the person after their approval. */
   const waitsAfterApproval = (t: TaskSummary) =>
     openWaits(t) || t.live?.question != null || shellStatus(t, now).state === "waits-for-you"
-  const attention = (t: TaskSummary) => {
-    if (finalApproved(t)) return waitsAfterApproval(t)
-    const s = shellStatus(t, now)
-    return (
-      s.openItems > 0 ||
-      t.live?.question != null ||
-      t.action !== null ||
-      // The final review stays available during a recheck. An exit question counts only while open.
-      (t.stage === "verify" && (t.verifyMode === "yours" || t.verifyMode === "rechecking")) ||
-      s.state === "stopped" ||
-      s.state === "waits-for-you" ||
-      // The build's lead ended its turn and waits for an answer in its chat.
-      asksInChat(t, now)
-    )
-  }
+  const attention = (t: TaskSummary) =>
+    finalApproved(t) ? waitsAfterApproval(t) : needsPersonAttention(t, now)
   const active = all.filter(
     (t) => !t.archived && (!finished(t) || (finalApproved(t) && waitsAfterApproval(t))),
   )

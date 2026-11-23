@@ -1,27 +1,10 @@
-import { createHash } from "node:crypto"
-import { isAbsolute, join } from "node:path"
-import { phaseText } from "#workflow"
+import { join } from "node:path"
 import { type Ctx, ok, type Result } from "../../ctx.ts"
 import { detectAgent } from "../agents/detect.ts"
-import { changedAreas, type Gap } from "../briefs.ts"
-import { contextOf } from "../build-package.ts"
-import { readCheckRecords } from "../checks.ts"
-import {
-  type BuildLog,
-  type Verdict as BuildVerdict,
-  implementAgentsPath,
-  implementLogPath,
-  lastIteration,
-  readBuildRecord,
-  sectionText,
-} from "../docs/build-log.ts"
-import { sliceCommands, taskCommands } from "../docs/commands.ts"
-import { agentFileOf, folderDoc } from "../docs/names.ts"
-import { allTasks, evidenceIn, type Outline, progress } from "../docs/outline.ts"
-import { proofOfPlan } from "../docs/proof-of-plan.ts"
-import { agentsTemplateFor } from "../docs/schema.ts"
+import { implementLogPath, readBuildRecord } from "../docs/build-log.ts"
+import { agentFileOf } from "../docs/names.ts"
+import { allTasks, type Outline, progress } from "../docs/outline.ts"
 import { validateDoc } from "../docs/validate.ts"
-import { startFixRound } from "../gate/fix-rounds.ts"
 import { recordCheckout } from "../git/branch.ts"
 import {
   readBuildStart,
@@ -29,20 +12,13 @@ import {
   stagedBaseline,
   withStagedBaseline,
 } from "../git/build-start.ts"
-import { otherTasksOnly } from "../git/session-edits.ts"
-import { taskCommitDiff } from "../git/task-diff.ts"
 import { finishPlannerForOutsideBuild } from "../handoff/outside.ts"
 import { implementPrompt } from "../handoff/prompt.ts"
-import { environmentBlocked } from "../judge-environment.ts"
-import { neededTasks, openNeeds, readNeeds } from "../need/need.ts"
 import { humanNeedBlockedTasks } from "../open-items.ts"
-import { resolveRepo } from "../paths.ts"
-import { readRun, reviewFile } from "../review/cross.ts"
 import { sessionKey } from "../task/binding.ts"
 import { chatQuestions } from "../task/chat-questions.ts"
-import { openedChecks, reviewFindings } from "../task/items.ts"
 import { advance } from "../task/machine.ts"
-import { advanceWithTaskCommit, requestedCommitEdits } from "../task/precommit.ts"
+import { advanceWithTaskCommit } from "../task/precommit.ts"
 import type { Question } from "../task/question.ts"
 import { countLeftRound, ensureBuildLog, ensureVerifyLog } from "../task/reconcile.ts"
 import { approvesInAgent } from "../task/sides.ts"
@@ -55,13 +31,20 @@ import {
   type Task,
   touchSession,
 } from "../task/store.ts"
-import { cardOf } from "../task-card.ts"
-import { plannedSizeOf, type TaskFlow, taskFlow } from "../task-flow.ts"
-import { fixCommittedSinceFailedRound } from "../verification.ts"
+import { plannedSizeOf, taskFlow } from "../task-flow.ts"
 import { noteBuildLead, readBuildLead } from "./build-lead.ts"
+import { gapsResolved } from "./implement-gaps.ts"
+import { implementPayload } from "./implement-payload.ts"
 import { type Missing, refused } from "./refusal.ts"
-import { artifactToolsField, at, base, flowFields, type NextPayload } from "./shared.ts"
+import { at, base, flowFields, type NextPayload } from "./shared.ts"
 import { unprovenSteps } from "./steps.ts"
+
+export {
+  committedAreas,
+  notesOf,
+  otherWork,
+} from "./implement-gaps.ts"
+export { fixReply, implementPayload } from "./implement-payload.ts"
 
 const handoffMarker = (task: Task) => join(task.runtimeDir, "handoff.json")
 
@@ -204,321 +187,6 @@ export async function implementStop(
   })
 }
 
-type Verdict = Pick<BuildVerdict, "verdict" | "kind" | "subject" | "text">
-
-/** What a passing judge noted without failing it: for the user at the final approval. */
-export function notesOf(log: BuildLog): Verdict[] {
-  const iteration = lastIteration(log)
-  if (iteration === null || iteration.result !== "pass") return []
-  return iteration.verdicts
-    .filter((v) => v.verdict === "NOTE")
-    .map(({ verdict, kind, subject, text }) => ({ verdict, kind, subject, text }))
-}
-
-/** A verdict's point as a gap names it: `done 1`, `dod T2`, `outline T4`. */
-const pointOf = (v: Pick<Verdict, "kind" | "subject">) => `${v.kind} ${v.subject}`.trim()
-
-export function gapsOf(log: BuildLog): Verdict[] {
-  const iteration = lastIteration(log)
-  if (iteration === null || iteration.result !== "fail") return []
-  return iteration.verdicts
-    .filter((v) => v.verdict === "FAIL" || v.verdict === "MISSING")
-    .map(({ verdict, kind, subject, text }) => ({ verdict, kind, subject, text }))
-}
-
-/**
- * The findings of the other agent's review of the change that carry no `Answer: Taken`, `Kept` or
- * `Ask` line yet: gaps of the fix, with the file and line the finding names. A review that has not
- * finished, or that did not complete, has none to hand out; a hand-written file counts as done.
- */
-async function openFindings(ctx: Ctx, task: Task): Promise<Gap[]> {
-  const run = await readRun(ctx, task, "verify")
-  if (run !== null && run.state !== "done") return []
-  const file = reviewFile(task, "verify")
-  if (!(await ctx.fs.exists(file))) return []
-  return reviewFindings(await ctx.fs.readFile(file))
-    .filter((f) => f.stance === undefined)
-    .map((f) => {
-      const text = [f.what, f.detail].filter((part) => part !== "").join(" ")
-      // A path starts only at the start of its run, so the run is scanned once.
-      const place = text.match(/(?<![\w@./-])([\w@./-]+\.\w+):(\d+)/)
-      return {
-        source: "second opinion",
-        subject: place !== null ? `${place[1]}:${place[2]}` : "",
-        text,
-      }
-    })
-}
-
-/** A slice whose last `check slice` failed after every box was ticked. */
-type FailedCheck = { slice: number; gaps: Gap[] }
-
-/** The slices whose last recorded `check slice` failed after every box was ticked. */
-async function failedSliceChecks(ctx: Ctx, task: Task, outline: Outline): Promise<FailedCheck[]> {
-  const records = await readCheckRecords(ctx, task)
-  const opened = await openedChecks(ctx, task)
-  const failed: FailedCheck[] = []
-  for (const slice of outline.slices) {
-    if (slice.tasks.length === 0 || slice.tasks.some((t) => !t.checked)) continue
-    // Only a command the Plan names now counts: one an amendment removed or rewrote holds nothing.
-    const current = new Set([...sliceCommands(slice), ...slice.tasks.flatMap(taskCommands)])
-    const latest = new Map(
-      records
-        .filter((r) => r.scope === `slice ${slice.n}` && current.has(r.command))
-        .map((r) => [r.command, r]),
-    )
-    const failing = [...latest.values()].filter(
-      (r) => r.ran && r.exit !== 0 && r.at > (opened.get(slice.n) ?? 0),
-    )
-    if (failing.length > 0)
-      failed.push({
-        slice: slice.n,
-        gaps: failing.map((record) => ({
-          source: "check",
-          subject: `slice ${slice.n}`,
-          text: `\`${record.command}\` exited ${record.exit ?? "at the time limit"}; its output is under checks/ in the task's runtime folder`,
-        })),
-      })
-  }
-  return failed
-}
-
-/**
- * Another build's files on the same branch: files only other tasks' sessions edited, which this
- * task's reviews (Security, the independent review, the fix round, the pull request) leave out.
- */
-export async function otherWork(ctx: Ctx, task: Task): Promise<string[]> {
-  const repo = await resolveRepo(ctx)
-  return repo.ok ? otherTasksOnly(ctx, repo.data, task.slug) : []
-}
-
-/** The areas the build's commits changed since `since`, other tasks' files and the plan folders left out. */
-export async function committedAreas(
-  ctx: Ctx,
-  task: Task,
-  since: string,
-  leaveOut: readonly string[],
-): Promise<string[]> {
-  const owned = await taskCommitDiff(ctx, task)
-  if (owned) return changedAreas(owned.files)
-  const run = await ctx.git.run(task.repoRoot, [
-    "diff",
-    "--name-only",
-    "-z",
-    `${since}..HEAD`,
-    "--",
-    ".",
-    ":(exclude)docs/plans/**",
-    ...leaveOut.map((path) => `:(exclude)${path}`),
-  ])
-  return run.code === 0 ? changedAreas(run.stdout.split(/[\0\n]/).filter(Boolean)) : []
-}
-
-/**
- * What a run that saw a gap fail leaves for its fix: the evidence files its line cites, whole paths.
- * A run that ran the program (`ran`) is always marked, one that only read a document only when it cites files.
- */
-function observedBy(task: Task, text: string, ran: boolean): Pick<Gap, "observed"> {
-  const evidence = evidenceIn(text).map((path) => join(task.dir, path))
-  return ran || evidence.length > 0 ? { observed: { evidence } } : {}
-}
-
-/**
- * What the build session does next: the next card whole (the session builds the cards itself), the
- * gaps a failed check or judge round left for it to fix, the recorded needs, and what holds the move
- * to Verify. Nothing here waits for a helper: the session fixes, commits and moves on.
- */
-export async function implementPayload(
-  ctx: Ctx,
-  task: Task,
-  flow: TaskFlow,
-  log: BuildLog,
-): Promise<NextPayload> {
-  const outline = flow.plan
-  if (outline === null || allTasks(outline).length === 0) return cardsFirst(ctx, task, flow)
-  const { total, checked } = progress(outline)
-  // A task that waits for a need (a key, a login only the person can give) is left for Verify; the
-  // build goes on with every task that does not wait for one.
-  const needs = await readNeeds(ctx, task)
-  const needed = neededTasks(needs)
-  const next = allTasks(outline).find((t) => !t.checked && !needed.has(t.id.toUpperCase())) ?? null
-  const environment = gapsOf(log).filter(environmentBlocked)
-  const failedChecks = await failedSliceChecks(ctx, task, outline)
-  const gaps = await buildGaps(ctx, task, log, failedChecks)
-  const uncommitted = await uncommittedCardFiles(ctx, task, outline)
-  const open = openNeeds(needs)
-  // Gaps and the next open card come together: the session sees all its work and picks the order.
-  const card = next !== null ? await cardOf(ctx, task, next) : null
-  const slice =
-    card !== null && next !== null
-      ? outline.slices.find((s) => s.tasks.some((t) => t.id === next.id))
-      : undefined
-  const patterns = slice !== undefined ? await patternsOf(ctx, task) : {}
-  const commitEdits = await requestedCommitEdits(ctx, task)
-  return base(task, {
-    phase: "implement",
-    instructions: phaseText(task.type === "bugfix" ? "implement-bugfix" : "implement"),
-    commit_timing: task.commitTiming ?? "slice",
-    ...(commitEdits ? { commit_edits_requested: commitEdits } : {}),
-    progress: { total, checked },
-    next_task:
-      card !== null && next !== null
-        ? { id: next.id, title: next.title, line: next.line, owner: next.owner }
-        : null,
-    ...(card !== null
-      ? {
-          task_card: card.card,
-          contract: card.contract,
-          ...(card.unresolved.length > 0 ? { contract_unresolved: card.unresolved } : {}),
-          ...(card.pages.length > 0 ? { artifact_pages: card.pages } : {}),
-        }
-      : {}),
-    ...patterns,
-    ...(gaps.length > 0 ? { gaps } : {}),
-    ...(uncommitted.length > 0 ? { uncommitted } : {}),
-    ...(environment.length > 0
-      ? {
-          unverified_environment: environment.map((verdict) => ({
-            subject: pointOf(verdict),
-            text: verdict.text,
-          })),
-        }
-      : {}),
-    ...(open.length > 0
-      ? {
-          needs_open: open.map((n) => ({ for: n.for, what: n.what, state: n.state })),
-          deferred_until: "verify",
-        }
-      : {}),
-    ...(task.ui ? await artifactToolsField(ctx, task) : {}),
-    ...flowFields(flow),
-    iteration: task.iterations + 1,
-    record_in: implementAgentsPath(task),
-    context: await contextOf(ctx, "coordinator", task),
-  })
-}
-
-/**
- * A fix round in Verify: the gaps the failed judgement (or a red check) left, the needs, the next
- * open card. The task stays in Verify (mode `fixing`); the build session fixes, commits with
- * `commit fix`, and a fresh reviewer rechecks what failed and the lines the fix changed.
- */
-export async function fixReply(
-  ctx: Ctx,
-  task: Task,
-  flow: TaskFlow,
-  log: BuildLog,
-): Promise<NextPayload> {
-  await startFixRound(ctx, task)
-  const {
-    instructions: _implementText,
-    cards_template: _cards,
-    ...build
-  } = await implementPayload(ctx, task, flow, log)
-  return {
-    ...build,
-    phase: "verify",
-    mode: "fixing",
-    message:
-      "The judgement failed. Fix what you can within the approved scope, commit the fix, and recheck. If you need a decision only the person can make, ask for it.",
-    then: "qualitylayer verify recheck",
-  }
-}
-
-/**
- * The build before its cards: Implement's text and the template of *Task cards* in
- * `agents/02-implement.md`, which the build session cuts from the approved Plan first.
- */
-async function cardsFirst(ctx: Ctx, task: Task, flow: TaskFlow): Promise<NextPayload> {
-  // Proof order asks for one line per Done means step of the approved Plan.
-  const plan = join(task.dir, folderDoc("plan"))
-  const proof = (await ctx.fs.exists(plan)) ? proofOfPlan(await ctx.fs.readFile(plan)) : undefined
-  const template = agentsTemplateFor(
-    folderDoc("implement"),
-    { ...task, ...(proof !== undefined ? { proof } : {}) },
-    `${task.title} · the build`,
-  )
-  return base(task, {
-    phase: "implement",
-    instructions: phaseText(task.type === "bugfix" ? "implement-bugfix" : "implement"),
-    progress: { total: 0, checked: 0 },
-    next_task: null,
-    cards_in: implementAgentsPath(task),
-    ...(template !== undefined ? { cards_template: template } : {}),
-    ...(task.ui ? await artifactToolsField(ctx, task) : {}),
-    ...flowFields(flow),
-    record_in: implementAgentsPath(task),
-    context: await contextOf(ctx, "coordinator", task),
-  })
-}
-
-/**
- * The gaps the build session fixes now: a failed judge round's (until a fix is committed since the
- * round, when the next round judges it), a recorded slice check that still fails, and the second
- * opinion's open findings beside a failed round. Points only the person settles and environment
- * blockers are no code gaps: they reach the person's review at Verify.
- */
-async function buildGaps(
-  ctx: Ctx,
-  task: Task,
-  log: BuildLog,
-  failedChecks: FailedCheck[],
-): Promise<Gap[]> {
-  const fixed = await fixCommittedSinceFailedRound(ctx, task)
-  // A card that waits only for the person cannot be fixed by the session: its gap goes to the person's review.
-  const waiting = new Set((await humanNeedBlockedTasks(ctx, task)).map((id) => id.toUpperCase()))
-  const judged = fixed
-    ? []
-    : gapsOf(log).filter(
-        (g) =>
-          !environmentBlocked(g) && !(g.kind === "dod" && waiting.has(g.subject.toUpperCase())),
-      )
-  return [
-    ...judged.map((g) => ({
-      source: `judge ${g.verdict}`,
-      subject: `${g.kind} ${g.subject}`.trim(),
-      text: g.text,
-      ...observedBy(task, g.text, ["scenario", "acceptance"].includes(g.kind)),
-    })),
-    ...failedChecks.flatMap((f) => f.gaps),
-    ...(judged.length > 0 ? await openFindings(ctx, task) : []),
-  ]
-}
-
-/** The cards' files that hold uncommitted changes: the build is committed before Verify judges it. */
-async function uncommittedCardFiles(ctx: Ctx, task: Task, outline: Outline): Promise<string[]> {
-  // Only paths in the repository: a planned file outside it (`/etc/…`, `~/…`) has nothing to commit.
-  const files = [...new Set(allTasks(outline).flatMap((card) => card.files))].filter(
-    (file) => !file.endsWith("/") && !isAbsolute(file) && !file.startsWith("~"),
-  )
-  if (files.length === 0) return []
-  const status = await ctx.git.run(task.repoRoot, ["status", "--porcelain", "-z", "--", ...files])
-  if (status.code !== 0) return []
-  return status.stdout
-    .split("\0")
-    .filter((row) => row.length > 3)
-    .map((row) => row.slice(3))
-}
-
-/**
- * After a failed iteration the boxes are still checked; the build is done
- * again once a newer pass exists or the agent re-ran `next` after fixing.
- */
-export function gapsResolved(
-  log: BuildLog,
-  outline: Outline,
-  task: Task,
-  deferred?: ReadonlySet<string>,
-): boolean {
-  const iteration = lastIteration(log)
-  if (iteration === null || iteration.result !== "fail") return true
-  // The failed iteration has been counted; the gaps were fixed and the build asks to verify again.
-  return (
-    iteration.n <= task.iterations &&
-    allTasks(outline).every((t) => t.checked || deferred?.has(t.id) === true)
-  )
-}
-
 /**
  * `build start`: this session takes the approved Plan's build. It leads the build from now on, the
  * task lives in this checkout, and the build files are written the first time; the reply is the
@@ -570,18 +238,17 @@ export async function buildStart(ctx: Ctx, task: Task): Promise<Result<NextPaylo
   })
 }
 
-/**
- * `build done [--defer "<why>"]`: the build is ready, Implement → Verify. Refused while the cards do
- * not validate, and, without `--defer`, while a card is open or a Done means step never ran green on
- * the built tree; each with the move that settles it. With `--defer` what is open goes to Verify,
- * named with the reason.
- */
-export async function buildDone(
+async function checkBuildDoneReady(
   ctx: Ctx,
   task: Task,
   defer: string | null,
-  pairedCommitReview = false,
-): Promise<Result<NextPayload>> {
+): Promise<
+  Result<{
+    outline: Outline
+    open: ReturnType<typeof allTasks>
+    unproven: Awaited<ReturnType<typeof unprovenSteps>>
+  }>
+> {
   const cardsFile = agentFileOf("implement")
   const outline = (await taskFlow(ctx, task)).plan
   if (outline === null || allTasks(outline).length === 0)
@@ -622,6 +289,24 @@ export async function buildDone(
         },
       ],
     )
+  return ok({ outline, open, unproven })
+}
+
+/**
+ * `build done [--defer "<why>"]`: the build is ready, Implement → Verify. Refused while the cards do
+ * not validate, and, without `--defer`, while a card is open or a Done means step never ran green on
+ * the built tree; each with the move that settles it. With `--defer` what is open goes to Verify,
+ * named with the reason.
+ */
+export async function buildDone(
+  ctx: Ctx,
+  task: Task,
+  defer: string | null,
+  pairedCommitReview = false,
+): Promise<Result<NextPayload>> {
+  const ready = await checkBuildDoneReady(ctx, task, defer)
+  if (!ready.ok) return ready
+  const { outline, open, unproven } = ready.data
   const { total, checked } = progress(outline)
   const advanced = await advanceWithTaskCommit(
     ctx,
@@ -661,26 +346,4 @@ export async function buildDone(
       then: "qualitylayer brief verify",
     }),
   )
-}
-
-/** The marker that holds which *Code to imitate* the build session was handed last. */
-const PATTERNS_SENT = "patterns-sent"
-
-/**
- * The patterns a card follows: the *Code to imitate* of the Plan's agents' file. The build session
- * is handed them once, and again when they changed; a later reply names the file that holds them.
- */
-async function patternsOf(ctx: Ctx, task: Task): Promise<NextPayload> {
-  const path = join(task.dir, agentFileOf("plan"))
-  const patterns = (await ctx.fs.exists(path))
-    ? sectionText(await ctx.fs.readFile(path), "Code to imitate")
-    : ""
-  if (patterns === "") return {}
-  const marker = join(task.runtimeDir, PATTERNS_SENT)
-  const digest = createHash("sha256").update(patterns).digest("hex")
-  if ((await ctx.fs.exists(marker)) && (await ctx.fs.readFile(marker)).trim() === digest)
-    return { patterns_in: path }
-  await ctx.fs.mkdir(task.runtimeDir)
-  await ctx.fs.writeFile(marker, `${digest}\n`)
-  return { patterns }
 }

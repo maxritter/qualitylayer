@@ -6,26 +6,20 @@
 // name top left, a slot top right the panel fills with its own actions (a preview's age, Designed or
 // Built, the square button that opens it in its card), the picture under them. One item needs no tabs.
 
-import { MonitorIcon, MoreHorizontalIcon } from "lucide-react"
-import { createContext, type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react"
+import { MonitorIcon } from "lucide-react"
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { ActionSlot } from "../../kit/action-slot.ts"
+  type Collection,
+  DiagramPicker,
+  FigureBelow,
+  FigureCard,
+  GalleryPanels,
+  type GalleryTab,
+  galleryClass,
+  MoreTabsMenu,
+} from "./GalleryParts.tsx"
 
-export type GalleryTab = {
-  id: string
-  icon: ReactNode
-  label: string
-  panel: ReactNode
-  caption?: ReactNode
-  thumbnail?: ReactNode
-}
-
-type Collection = "diagrams" | "artifacts"
+export { FigureBelow }
 
 /**
  * One screen under its name, outside a gallery (the Plan's wireframe, a screen in the reader, an
@@ -89,55 +83,6 @@ export function GalleryTabs(props: GalleryProps) {
   )
 }
 
-/**
- * A named screen as a figure card, the diagrams' own design (Workflow model: Plan, Verify): its icon
- * and name top left, its actions top right (the preview's age, Designed or Built, and the square
- * button that opens it in its card), the picture under them; a caption stands under the card.
- */
-function FigureCard({
-  tab,
-  shown,
-  collection,
-}: {
-  tab: GalleryTab
-  shown: boolean
-  collection: Collection | undefined
-}) {
-  const [slot, setSlot] = useState<HTMLElement | null>(null)
-  const [below, setBelow] = useState<HTMLElement | null>(null)
-  return (
-    <>
-      <div className="gal-fig" data-testid="figure-card">
-        <div className="gal-fig-head">
-          {collection === undefined ? (
-            <span className="gal-solo">
-              {tab.icon}
-              <span className="gal-tab-label">{tab.label}</span>
-            </span>
-          ) : (
-            <div className="gal-figure-name">
-              <h3>{tab.label}</h3>
-              {tab.caption}
-            </div>
-          )}
-          <span className="gal-act" ref={setSlot} />
-        </div>
-        <FigureBelow.Provider value={below}>
-          <ActionSlot.Provider value={{ element: slot, shown }}>{tab.panel}</ActionSlot.Provider>
-        </FigureBelow.Provider>
-      </div>
-      <div className="gal-fig-below" ref={setBelow} />
-    </>
-  )
-}
-
-/** Where a figure card's panel puts its caption: under the card, as the diagrams' caption stands. */
-export const FigureBelow = createContext<HTMLElement | null>(null)
-
-/** One item needs no tabs: its panel stands alone, in its figure card when `named`. */
-const galleryClass = (collection: Collection | undefined) =>
-  collection === undefined ? "gal" : `gal gal-collection gal-collection-${collection}`
-
 function OneItem({
   only,
   label,
@@ -171,29 +116,61 @@ function nextTab(key: string, from: number, count: number, vertical: boolean): n
   return step ? (from + step + count) % count : undefined
 }
 
-function DiagramPicker({
-  tabs,
-  active,
-  choose,
+function TabButton({
+  tab,
+  selected,
+  mounted,
+  focusable,
+  collection,
+  tabId,
+  panelId,
+  buttonRef,
+  onChoose,
+  onMove,
 }: {
-  tabs: readonly GalleryTab[]
-  active: string | undefined
-  choose: (id: string) => void
+  tab: GalleryTab
+  selected: boolean
+  mounted: boolean
+  focusable: boolean
+  collection: Collection | undefined
+  tabId: string
+  panelId: string
+  buttonRef: (node: HTMLButtonElement | null) => void
+  onChoose: () => void
+  onMove: (event: KeyboardEvent) => void
 }) {
   return (
-    <select
-      className="gal-picker"
-      aria-label="Choose a diagram"
-      value={active}
-      onChange={(event) => choose(event.currentTarget.value)}
+    <button
+      ref={buttonRef}
+      type="button"
+      role="tab"
+      id={tabId}
+      aria-selected={selected}
+      aria-controls={mounted ? panelId : undefined}
+      tabIndex={focusable ? 0 : -1}
+      onClick={onChoose}
+      onKeyDown={onMove}
     >
-      {tabs.map((tab) => (
-        <option key={tab.id} value={tab.id}>
-          {tab.label}
-        </option>
-      ))}
-    </select>
+      {collection === undefined ? (
+        tab.icon
+      ) : (
+        <span className="gal-thumb" aria-hidden="true">
+          {tab.thumbnail ?? tab.icon}
+        </span>
+      )}
+      <span className="gal-tab-label">{tab.label}</span>
+    </button>
   )
+}
+
+function useTabRefs() {
+  const refs = useRef(new Map<string, HTMLButtonElement>())
+  const ref = (id: string) => (node: HTMLButtonElement | null) => {
+    if (node) refs.current.set(id, node)
+    else refs.current.delete(id)
+  }
+  const focus = (id: string) => refs.current.get(id)?.focus()
+  return { ref, focus }
 }
 
 function ManyTabs({ tabs, label, initial, named = false, collection }: GalleryProps) {
@@ -201,7 +178,7 @@ function ManyTabs({ tabs, label, initial, named = false, collection }: GalleryPr
   const first = tabs.find((tab) => tab.id === initial)?.id ?? tabs[0]?.id
   const [active, setActive] = useState(first)
   const [seen, setSeen] = useState<ReadonlySet<string>>(new Set(first ? [first] : []))
-  const refs = useRef(new Map<string, HTMLButtonElement>())
+  const { ref, focus } = useTabRefs()
   const rowed =
     collection === undefined && tabs.length > GALLERY_TABS_SHOWN + 1
       ? tabs.slice(0, GALLERY_TABS_SHOWN)
@@ -224,12 +201,8 @@ function ManyTabs({ tabs, label, initial, named = false, collection }: GalleryPr
     if (next === undefined) return
     event.preventDefault()
     const id = order[next] ?? ""
-    refs.current.get(id)?.focus()
+    focus(id)
     if (id !== "more") choose(id)
-  }
-  const ref = (id: string) => (node: HTMLButtonElement | null) => {
-    if (node) refs.current.set(id, node)
-    else refs.current.delete(id)
   }
 
   return (
@@ -245,76 +218,42 @@ function ManyTabs({ tabs, label, initial, named = false, collection }: GalleryPr
           aria-orientation={collection === "diagrams" ? "vertical" : undefined}
         >
           {rowed.map((tab) => (
-            <button
+            <TabButton
               key={tab.id}
-              ref={ref(tab.id)}
-              type="button"
-              role="tab"
-              id={tabId(tab.id)}
-              aria-selected={tab.id === current?.id}
-              aria-controls={
-                seen.has(tab.id) || tab.id === current?.id ? panelId(tab.id) : undefined
-              }
-              tabIndex={tab.id === focusStop ? 0 : -1}
-              onClick={() => choose(tab.id)}
-              onKeyDown={(event) => move(event, tab.id)}
-            >
-              {collection === undefined ? (
-                tab.icon
-              ) : (
-                <span className="gal-thumb" aria-hidden="true">
-                  {tab.thumbnail ?? tab.icon}
-                </span>
-              )}
-              <span className="gal-tab-label">{tab.label}</span>
-            </button>
+              tab={tab}
+              selected={tab.id === current?.id}
+              mounted={seen.has(tab.id) || tab.id === current?.id}
+              focusable={tab.id === focusStop}
+              collection={collection}
+              tabId={tabId(tab.id)}
+              panelId={panelId(tab.id)}
+              buttonRef={ref(tab.id)}
+              onChoose={() => choose(tab.id)}
+              onMove={(event) => move(event, tab.id)}
+            />
           ))}
-          {rest.length > 0 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                ref={ref("more")}
-                type="button"
-                role="tab"
-                id={tabId("more")}
-                aria-selected={inRest}
-                tabIndex={focusStop === "more" ? 0 : -1}
-                onKeyDown={(event: KeyboardEvent) => move(event, "more")}
-              >
-                <MoreHorizontalIcon className="size-[13px]" aria-hidden="true" />
-                <span className="gal-tab-label">
-                  {inRest && current ? `More · ${current.label}` : "More"}
-                </span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="gal-more">
-                {rest.map((tab) => (
-                  <DropdownMenuItem key={tab.id} onClick={() => choose(tab.id)}>
-                    {tab.icon}
-                    {tab.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
+          <MoreTabsMenu
+            rest={rest}
+            current={current}
+            inRest={inRest}
+            focusStop={focusStop}
+            tabId={tabId("more")}
+            buttonRef={ref("more")}
+            onMove={(event) => move(event, "more")}
+            onChoose={choose}
+          />
         </div>
       </div>
-      {tabs.map((tab) =>
-        seen.has(tab.id) || tab.id === current?.id ? (
-          <div
-            key={tab.id}
-            className="gal-p"
-            role="tabpanel"
-            id={panelId(tab.id)}
-            aria-labelledby={tab.id === current?.id && inRest ? tabId("more") : tabId(tab.id)}
-            hidden={tab.id !== current?.id}
-          >
-            {named ? (
-              <FigureCard tab={tab} shown={tab.id === current?.id} collection={collection} />
-            ) : (
-              tab.panel
-            )}
-          </div>
-        ) : null,
-      )}
+      <GalleryPanels
+        tabs={tabs}
+        seen={seen}
+        current={current}
+        inRest={inRest}
+        named={named}
+        collection={collection}
+        tabId={tabId}
+        panelId={panelId}
+      />
     </div>
   )
 }

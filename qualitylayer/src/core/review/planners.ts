@@ -5,8 +5,6 @@
 // the planner works their findings in. Kept in the task's runtime folder, so the choice is the task's
 // own and no Setting changes.
 
-import { join } from "node:path"
-import type { Ctx } from "../../ctx.ts"
 import {
   AGENT_NAMES,
   isNativeAgent,
@@ -16,7 +14,6 @@ import {
 } from "../agents/ids.ts"
 import { DEFAULTS_EFFORTS, type DefaultsEffort } from "../config-values.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
-import type { Task } from "../task/store.ts"
 
 /**
  * One extra planner: the agent that runs it, the model it reads the Plan on, and its effort (one of
@@ -27,8 +24,6 @@ export type ExtraPlanner = { agent: NativeAgent; model: string; effort?: string 
 
 /** The most extra planners a task carries. */
 export const EXTRA_PLANNERS = 2
-
-const FILE = "extra-planners.json"
 
 export const PLANNERS_USAGE = `--planners takes up to ${EXTRA_PLANNERS} agent:model[:effort] entries separated by commas, each agent once (agents: ${NATIVE_AGENTS.join(", ")}; efforts: ${DEFAULTS_EFFORTS.join(", ")}), e.g. --planners codex:gpt-6.2-astra:high,claude-code:opus:high`
 
@@ -47,6 +42,39 @@ const isEffort = (value: unknown): value is DefaultsEffort =>
 const either = (words: readonly string[]): string =>
   words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} or ${words.at(-1)}`
 
+const PLANNER_KEYS = new Set(["agent", "model", "effort"])
+
+function validatePlannerEffort(agent: NativeAgent, name: string, effort: unknown): string | null {
+  if (effort === undefined) return null
+  const levels = plannerEfforts(agent)
+  if (levels.length === 0) return `${name} sets its effort in the model: name no effort for it`
+  if (!isEffort(effort) || !levels.includes(effort))
+    return `${name} plans at ${either(levels)} effort, not ${String(effort)}`
+  return null
+}
+
+function validateOnePlanner(
+  entry: unknown,
+  own: string | undefined,
+  planners: readonly ExtraPlanner[],
+): ExtraPlanner | string {
+  const p = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>
+  if (Object.keys(p).some((key) => !PLANNER_KEYS.has(key)))
+    return "An extra planner names only its agent, model and effort"
+  const { agent, model, effort } = p
+  if (!isNativeAgent(agent)) return `An extra planner runs on one of ${either(NATIVE_AGENTS)}`
+  const name = AGENT_NAMES[agent]
+  const problem = !validModelId(agent, model)
+    ? `${name}'s extra planner needs a model, as one word`
+    : agent === own
+      ? `${name} is this task's own planner: choose another agent`
+      : planners.some((q) => q.agent === agent)
+        ? `${name} is named twice: each agent plans once`
+        : validatePlannerEffort(agent, name, effort)
+  if (problem !== null) return problem
+  return { agent, model: model as string, ...(isEffort(effort) ? { effort } : {}) }
+}
+
 /**
  * The extra planners a list names, or the sentence that says what is wrong with it: at most two,
  * each a native agent once (not `own`, the task's planner), on a model of its own, at an effort it
@@ -58,28 +86,9 @@ export function validatePlanners(list: unknown, own?: string): ExtraPlanner[] | 
     return `A task takes at most ${EXTRA_PLANNERS} extra planners, not ${list.length}`
   const planners: ExtraPlanner[] = []
   for (const entry of list) {
-    const p = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>
-    const keys = Object.keys(p)
-    if (keys.some((key) => !["agent", "model", "effort"].includes(key)))
-      return "An extra planner names only its agent, model and effort"
-    const { agent, model, effort } = p
-    if (!isNativeAgent(agent)) return `An extra planner runs on one of ${either(NATIVE_AGENTS)}`
-    const name = AGENT_NAMES[agent]
-    if (!validModelId(agent, model)) return `${name}'s extra planner needs a model, as one word`
-    if (agent === own) return `${name} is this task's own planner: choose another agent`
-    if (planners.some((q) => q.agent === agent))
-      return `${name} is named twice: each agent plans once`
-    if (effort !== undefined) {
-      const levels = plannerEfforts(agent)
-      if (levels.length === 0) return `${name} sets its effort in the model: name no effort for it`
-      if (!isEffort(effort) || !levels.includes(effort))
-        return `${name} plans at ${either(levels)} effort, not ${String(effort)}`
-    }
-    planners.push({
-      agent,
-      model,
-      ...(isEffort(effort) ? { effort } : {}),
-    })
+    const validated = validateOnePlanner(entry, own, planners)
+    if (typeof validated === "string") return validated
+    planners.push(validated)
   }
   return planners
 }
@@ -106,37 +115,4 @@ export function parsePlanners(text: string): ExtraPlanner[] | string {
   return validatePlanners(named)
 }
 
-/** The extra planners a task carries; none when it was started without them. */
-export async function readPlanners(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<ExtraPlanner[]> {
-  const path = join(task.runtimeDir, FILE)
-  if (!(await ctx.fs.exists(path))) return []
-  try {
-    const held: unknown = JSON.parse(await ctx.fs.readFile(path))
-    if (!Array.isArray(held)) return []
-    const planners: ExtraPlanner[] = []
-    for (const entry of held) {
-      const p = (typeof entry === "object" && entry !== null ? entry : {}) as Partial<ExtraPlanner>
-      if (!isNativeAgent(p.agent) || typeof p.model !== "string" || p.model === "") continue
-      // An effort the agent does not take is dropped: the planner reads at the review's own.
-      const effort =
-        isEffort(p.effort) && plannerEfforts(p.agent).includes(p.effort) ? p.effort : undefined
-      planners.push({ agent: p.agent, model: p.model, ...(effort !== undefined ? { effort } : {}) })
-    }
-    return planners.slice(0, EXTRA_PLANNERS)
-  } catch {
-    return []
-  }
-}
-
-/** Keep a task's extra planners. */
-export async function writePlanners(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  planners: readonly ExtraPlanner[],
-): Promise<void> {
-  await ctx.fs.mkdir(task.runtimeDir)
-  await ctx.fs.writeFile(join(task.runtimeDir, FILE), `${JSON.stringify(planners, null, 2)}\n`)
-}
+export { readPlanners, writePlanners } from "./planners-store.ts"

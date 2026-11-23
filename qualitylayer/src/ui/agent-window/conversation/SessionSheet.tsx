@@ -13,37 +13,25 @@ import {
   SlidersHorizontalIcon,
   SparklesIcon,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import {
-  offeredModels,
-  orderedModels,
-  planModels,
-  type StepAgent,
-} from "../../../core/agents/model-values.ts"
-import type { RunSettings } from "../../../core/run/contracts.ts"
+import type { StepAgent } from "../../../core/agents/model-values.ts"
 import { AddModelRow } from "../../AddModelField.tsx"
 import { AgentMark } from "../../kit/marks/index.ts"
 import { customModelAgent, useKnownModels } from "../../known-models.ts"
-import { missingNativeSettings, type NativeSettingField } from "../../native-settings-error.ts"
+import type { NativeSettingField } from "../../native-settings-error.ts"
 import type { RunWindow } from "../../run-context.tsx"
 import { Segmented } from "../../Segmented.tsx"
 import {
-  type Draft,
-  type DraftField,
   effortChoices,
   effortKind,
   effortLabel,
-  nameChosen,
   type PermissionChoice,
-  permissionChoices,
-  type SessionSource,
-  settingsToApply,
   waitPhrase,
 } from "./footer-values.ts"
-import { sessionModelId } from "./session-values.ts"
+import { type SessionSettingsProps, type SheetProps, useSessionSheet } from "./use-session-sheet.ts"
 
-const NO_MODEL = "__choose_model__"
+export type { SessionSettingsProps }
 
 const PERMISSION_ICONS = {
   sliders: SlidersHorizontalIcon,
@@ -65,53 +53,6 @@ const EFFORT_ICONS = {
 export function EffortGlyph({ effort, size }: { effort: string | undefined; size: number }) {
   const Glyph = EFFORT_ICONS[effort as keyof typeof EFFORT_ICONS] ?? SignalIcon
   return <Glyph size={size} aria-hidden="true" />
-}
-
-export type SessionSettingsProps = {
-  run: RunWindow
-  /** The model and effort the agent's own record reports now. */
-  model?: string | undefined
-  effort?: string | undefined
-  unknown?: readonly NativeSettingField[] | undefined
-  agentName: string
-  editable: boolean
-  busy: boolean
-  /** The agent's menu asked for the sheet to open. */
-  openRequest?: boolean | undefined
-  /** The request was heard; the window clears it. */
-  onOpenHandled?(): void
-  apply(settings: Partial<RunSettings>, confirmBypass?: boolean): Promise<boolean>
-}
-
-/** The draft of a change, kept while the sheet is open; what the agent reports meanwhile updates what was not edited. */
-function useDraft(source: SessionSource, pending?: SessionSettingsProps["run"]["pendingSettings"]) {
-  const settings = pending?.settings
-  const [draft, setDraft] = useState<Draft>({
-    model: settings?.model ?? source.model,
-    effort: settings?.effort ?? source.effort,
-    perm: settings?.permMode ?? (settings?.perm === "own" ? "own" : source.perm),
-  })
-  const edited = useRef(
-    new Set<DraftField>([
-      ...(settings?.model !== undefined ? ["model" as const] : []),
-      ...(settings?.effort !== undefined ? ["effort" as const] : []),
-      ...(settings?.perm !== undefined || settings?.permMode !== undefined
-        ? ["perm" as const]
-        : []),
-    ]),
-  )
-  useEffect(() => {
-    setDraft((before) => ({
-      model: edited.current.has("model") ? before.model : source.model,
-      effort: edited.current.has("effort") ? before.effort : source.effort,
-      perm: edited.current.has("perm") ? before.perm : source.perm,
-    }))
-  }, [source.model, source.effort, source.perm])
-  const edit = (field: DraftField, value: string | undefined) => {
-    edited.current.add(field)
-    setDraft((before) => ({ ...before, [field]: value }))
-  }
-  return { draft, edited, edit }
 }
 
 function ModelRows({
@@ -239,146 +180,6 @@ function BypassAsk({
   )
 }
 
-type SheetProps = SessionSettingsProps & {
-  source: SessionSource
-  section?: DraftField
-  onApplied(): void
-}
-
-type Native = Partial<Record<NativeSettingField, string>>
-
-/** Bypass is chosen in two steps: the row asks, and the person's word sets it. */
-function useBypassAsk(
-  choices: PermissionChoice[],
-  current: string,
-  edit: (field: DraftField, value: string) => void,
-) {
-  const [asking, ask] = useState(false)
-  const [granted, grant] = useState(false)
-  const choose = (id: string) => {
-    if (choices.find((choice) => choice.id === id)?.bypass && id !== current) {
-      ask(true)
-      return
-    }
-    ask(false)
-    grant(false)
-    edit("perm", id)
-  }
-  const use = () => {
-    const id = choices.find((choice) => choice.bypass)?.id
-    if (id !== undefined) edit("perm", id)
-    grant(true)
-    ask(false)
-  }
-  return { asking, ask, granted, choose, use }
-}
-
-/** A refused restart: native fields to confirm, or a message for the person. */
-function restartFailure(cause: unknown): { fields: NativeSettingField[] } | { message: string } {
-  const fields = missingNativeSettings(cause)
-  if (fields) return { fields }
-  return { message: cause instanceof Error ? cause.message : "Could not apply these settings." }
-}
-
-/** The restart request: one at a time, with the native fields the agent did not report confirmed first. */
-function useRestart({
-  ready,
-  bypass,
-  apply,
-  onApplied,
-  settingsOf,
-}: {
-  ready: boolean
-  bypass: boolean
-  apply: SessionSettingsProps["apply"]
-  onApplied(): void
-  settingsOf(confirmed?: Native): Partial<RunSettings>
-}) {
-  const [missing, setMissing] = useState<NativeSettingField[]>([])
-  const [problem, setProblem] = useState<string>()
-  const confirmed = useRef<Native>({})
-  const applying = useRef(false)
-  const fail = (cause: unknown) => {
-    const failure = restartFailure(cause)
-    if ("message" in failure) return setProblem(failure.message)
-    confirmed.current = {}
-    setMissing(failure.fields)
-  }
-  const commit = async () => {
-    const settings = settingsOf(confirmed.current)
-    if (applying.current || !ready || Object.keys(settings).length === 0) return
-    applying.current = true
-    try {
-      if (await (bypass ? apply(settings, true) : apply(settings))) onApplied()
-    } catch (cause) {
-      fail(cause)
-    } finally {
-      applying.current = false
-    }
-  }
-  const confirmNative = (draft: Draft) => {
-    for (const field of missing) confirmed.current[field] = draft[field]
-    void commit()
-  }
-  return { commit, missing, problem, confirmNative }
-}
-
-/**
- * The models the sheet lists: those the person's plan offers (the one chosen stays, marked when the
- * plan does not offer it), with the one now chosen first when it is not among them.
- */
-function modelsOf(agent: RunWindow["agent"], selected: string, name: string | undefined) {
-  const listed =
-    agent === "other"
-      ? []
-      : offeredModels(agent, orderedModels(agent, planModels(agent)), [selected])
-  return selected === NO_MODEL || listed.some((value) => value.id === selected)
-    ? listed
-    : [{ id: selected, name: name ?? selected }, ...listed]
-}
-
-/** The draft, the Bypass question and the restart request of one open sheet. */
-function useSheet(props: SheetProps) {
-  const { run, source, busy } = props
-  const { draft, edited, edit } = useDraft(source, run.pendingSettings)
-  const choices = permissionChoices(run.agent, run.permissionMode)
-  const ask = useBypassAsk(choices, source.perm, edit)
-  const settingsOf = (confirmed?: Native) =>
-    settingsToApply(run.agent, draft, source, edited.current, confirmed)
-  const bypass = choices.find((choice) => choice.id === draft.perm)?.bypass === true
-  const retainedBypass =
-    run.pendingSettings?.confirmBypass === true &&
-    !run.pendingSettings.error &&
-    run.pendingSettings.settings.permMode === draft.perm
-  const restart = useRestart({
-    ready: !busy && props.editable,
-    bypass: bypass && (ask.granted || retainedBypass),
-    apply: props.apply,
-    onApplied: props.onApplied,
-    settingsOf,
-  })
-  const selected =
-    sessionModelId(run.agent === "other" ? undefined : run.agent, draft.model) || NO_MODEL
-  return {
-    draft,
-    edit,
-    choices,
-    models: modelsOf(run.agent, selected, nameChosen(run.agent, selected, source)),
-    selected,
-    asking: ask.asking,
-    stopAsking: () => ask.ask(false),
-    useBypass: ask.use,
-    choosePermission: ask.choose,
-    changed: Object.keys(settingsOf()).length > 0,
-    ready: !busy && props.editable,
-    ...restart,
-    commit: () => {
-      if (bypass && draft.perm !== source.perm && !ask.granted && !retainedBypass) ask.ask(true)
-      else void restart.commit()
-    },
-  }
-}
-
 function EffortSection({
   agent,
   agentName,
@@ -431,7 +232,7 @@ function NativeConfirm({ fields }: { fields: NativeSettingField[] }) {
 export function SheetBody(props: SheetProps) {
   const { run, agentName, busy } = props
   useKnownModels()
-  const sheet = useSheet(props)
+  const sheet = useSessionSheet(props)
   const confirming = sheet.missing.length > 0
   const body = useRef<HTMLDivElement>(null)
   useEffect(() => {

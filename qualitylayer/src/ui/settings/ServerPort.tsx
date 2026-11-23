@@ -7,32 +7,49 @@
 // by itself; a browser tab may reach this machine through a forwarded port, so it is given a link to
 // the new port instead of being sent there.
 
-import { CopyIcon, PlugIcon, RotateCwIcon, ServerIcon, TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { fellBackWords, PORT_PROBLEM, parsePort } from "../../core/server-port.ts"
+import { fellBackWords, parsePort } from "../../core/server-port.ts"
 import type { Api } from "../api.ts"
 import { routeHash, useQuery } from "../hooks.ts"
 import { WhoMark } from "../kit/WhoMark.tsx"
 import { machineFrame } from "../machines/framed.ts"
-import { SettingRow, SettingsGroup, SettingsMore } from "./Rows.tsx"
+import { SettingsGroup, SettingsMore } from "./Rows.tsx"
+import { ServerInUseRow, type ServerPortPhase, ServerPortSettingRow } from "./ServerPortRows.tsx"
 import "./server-port.css"
 
 export const REMOTE_DOCS_URL = "https://qualitylayer.dev/docs/install#port"
-
-const ICON = "size-[15px]"
-
-type Phase =
-  | { at: "idle" }
-  | { at: "restarting"; to: number }
-  | { at: "done"; to: number; url: string }
-  | { at: "failed"; why: string }
 
 /** Why a save or restart did not go through, in words. */
 const whyOf = (cause: unknown): string =>
   cause instanceof Error && cause.message !== ""
     ? cause.message
     : "The server did not answer. If it restarted, open the QualityLayer App again."
+
+async function runServerRestart(params: {
+  api: Pick<Api, "serverPort" | "restartServer">
+  port: number
+  save: boolean
+  onSave: (patch: unknown) => unknown
+  setPhase: (phase: ServerPortPhase) => void
+  setNow: (now: { port: number; wanted: number }) => void
+}): Promise<void> {
+  params.setPhase({ at: "restarting", to: params.port })
+  try {
+    if (params.save) {
+      const refused = await params.onSave({ cockpit: { port: params.port } })
+      if (typeof refused === "string") {
+        params.setPhase({ at: "failed", why: refused })
+        return
+      }
+    }
+    const moved = await params.api.restartServer?.()
+    if (moved === undefined) throw new Error("The server cannot be restarted from here.")
+    params.setNow({ port: moved.port, wanted: moved.wanted })
+    params.setPhase({ at: "done", to: moved.port, url: moved.url })
+  } catch (cause) {
+    params.setPhase({ at: "failed", why: whyOf(cause) })
+  }
+}
 
 export function ServerPortGroup({
   api,
@@ -54,8 +71,7 @@ export function ServerPortGroup({
   const read = useQuery(() => Promise.resolve().then(() => api.serverPort?.() ?? null), [])
   const view = read.data
   const [draft, setDraft] = useState(String(setting))
-  const [phase, setPhase] = useState<Phase>({ at: "idle" })
-  // Where the restarted server stands, once it answered: the page's own reading is of the old one.
+  const [phase, setPhase] = useState<ServerPortPhase>({ at: "idle" })
   const [now, setNow] = useState<{ port: number; wanted: number } | null>(null)
 
   const typed = draft.trim()
@@ -66,45 +82,15 @@ export function ServerPortGroup({
   const busy = phase.at === "restarting"
   const done = phase.at === "done"
 
-  const restart = async (port: number, save: boolean) => {
-    setPhase({ at: "restarting", to: port })
-    try {
-      if (save) {
-        const refused = await onSave({ cockpit: { port } })
-        if (typeof refused === "string") {
-          setPhase({ at: "failed", why: refused })
-          return
-        }
-      }
-      const moved = await api.restartServer?.()
-      if (moved === undefined) throw new Error("The server cannot be restarted from here.")
-      setNow({ port: moved.port, wanted: moved.wanted })
-      setPhase({ at: "done", to: moved.port, url: moved.url })
-    } catch (cause) {
-      setPhase({ at: "failed", why: whyOf(cause) })
-    }
-  }
+  const restart = (nextPort: number, save: boolean) =>
+    void runServerRestart({ api, port: nextPort, save, onSave, setPhase, setNow })
 
   const port = now?.port ?? view?.port
   const wanted = now?.wanted ?? view?.wanted
   const fell = port === undefined || wanted === undefined ? null : fellBackWords(wanted, port)
   const address = port === undefined ? null : `http://127.0.0.1:${port}`
-
-  // What the rows always say is their tooltip; a line shows only for a state that needs words (UI review SETTINGS-18).
-  const PORT_SAYS =
-    "Where the App and browsers on this computer reach QualityLayer. A port that is taken falls back to the next free one."
-  const IN_USE_SAYS =
-    "This server listens on this computer only. Other machines reach it through a forwarded port."
-  let hint: React.ReactNode
-  if (phase.at === "restarting")
-    hint = `Restarting on ${phase.to}… The App follows on its own; a browser tab gets a link to the new port. Running agents keep going.`
-  else if (phase.at === "done")
-    hint = inApp
-      ? `Now on ${phase.to}. The App is moving to it.`
-      : `Now on ${phase.to}. This tab still points to ${view?.port ?? "the old port"}: open the new one, and forward ${phase.to} too if you reach this machine through SSH.`
-  else if (byEnvironment)
-    hint = `QUALITYLAYER_PORT=${view?.wanted} sets the port for this server, so it wins over this setting. Unset it and restart to use the setting.`
-  else hint = null
+  const hasView = view !== null && view !== undefined
+  const canRetry = !byEnvironment && !busy && !done && hasView
 
   return (
     <SettingsGroup
@@ -119,124 +105,32 @@ export function ServerPortGroup({
         ) : undefined
       }
     >
-      <SettingRow
-        label={<label htmlFor="server-port-input">Server port</label>}
-        testId="server-port-row"
-        icon={<PlugIcon className={ICON} />}
-        title={PORT_SAYS}
-        hint={
-          hint === null && phase.at !== "failed" && !problem ? undefined : (
-            <>
-              {hint}
-              {phase.at === "failed" ? (
-                <span className="q-sr-err" role="alert" data-testid="server-port-failed">
-                  {phase.why}
-                </span>
-              ) : null}
-              {problem ? (
-                <span className="q-sr-err q-sp-bad" role="alert" data-testid="server-port-problem">
-                  <TriangleAlertIcon className="size-[13px]" aria-hidden="true" />
-                  {PORT_PROBLEM}
-                </span>
-              ) : null}
-            </>
-          )
-        }
-      >
-        <span className="q-sp-ctl">
-          <Input
-            id="server-port-input"
-            data-testid="server-port-input"
-            className="q-sp-in"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            value={draft}
-            aria-invalid={problem}
-            disabled={busy || done || byEnvironment}
-            onChange={(event) => {
-              setDraft(event.target.value)
-              if (phase.at === "failed") setPhase({ at: "idle" })
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing && changed && !busy)
-                void restart(parsed, true)
-            }}
-          />
-          {done && !inApp ? (
-            <a
-              className="q-btn primary sm"
-              data-testid="server-port-open"
-              href={`${phase.url}#/settings/about`}
-            >
-              Open on {phase.to}
-            </a>
-          ) : null}
-          {!done && (busy || changed || (phase.at === "failed" && parsed !== null)) ? (
-            <button
-              type="button"
-              className="q-btn primary"
-              data-testid="server-port-restart"
-              disabled={busy}
-              onClick={() => parsed !== null && void restart(parsed, true)}
-            >
-              {busy ? null : <RotateCwIcon className="size-3.5" aria-hidden="true" />}
-              {busy ? "Restarting…" : `Restart on ${parsed}`}
-            </button>
-          ) : null}
-          {!busy && !done && !byEnvironment && setting !== 41888 && !changed ? (
-            <button type="button" className="q-link" onClick={() => setDraft("41888")}>
-              Use 41888
-            </button>
-          ) : null}
-        </span>
-      </SettingRow>
-      <SettingRow
-        label="In use now"
-        testId="server-port-in-use"
-        icon={<ServerIcon className={ICON} />}
-        hint={
-          read.loading ? (
-            "Reading the server…"
-          ) : address === null ? (
-            "The server's port could not be read."
-          ) : fell !== null ? (
-            <span data-testid="server-port-fell">
-              <TriangleAlertIcon className="q-sp-warn size-[13px]" aria-hidden="true" />
-              {fell} {byEnvironment ? "" : `Your setting stays ${setting}. `}
-              {!byEnvironment && !busy && !done && view !== null && view !== undefined ? (
-                <button
-                  type="button"
-                  className="q-link"
-                  onClick={() => void restart(setting, false)}
-                >
-                  Try {setting} again
-                </button>
-              ) : null}
-            </span>
-          ) : byEnvironment ? (
-            "Set by the environment for this server only."
-          ) : null
-        }
-        title={IN_USE_SAYS}
-      >
-        {address !== null ? (
-          <span className="q-sp-ctl">
-            <code className="q-sp-url" data-testid="server-port-url" title={address}>
-              {address}
-            </code>
-            <button
-              type="button"
-              className="q-btn"
-              aria-label="Copy the address"
-              onClick={() => onCopy(address, `Copied ${address}`)}
-            >
-              <CopyIcon className="size-3.5" aria-hidden="true" />
-              Copy
-            </button>
-          </span>
-        ) : undefined}
-      </SettingRow>
+      <ServerPortSettingRow
+        draft={draft}
+        parsed={parsed}
+        setting={setting}
+        problem={problem}
+        changed={changed}
+        byEnvironment={byEnvironment}
+        phase={phase}
+        inApp={inApp}
+        view={view}
+        onDraft={(next) => {
+          setDraft(next)
+          if (phase.at === "failed") setPhase({ at: "idle" })
+        }}
+        onRestart={(nextPort) => void restart(nextPort, true)}
+      />
+      <ServerInUseRow
+        loading={read.loading}
+        address={address}
+        fell={fell}
+        byEnvironment={byEnvironment}
+        setting={setting}
+        canRetry={canRetry}
+        onRetry={() => void restart(setting, false)}
+        onCopy={onCopy}
+      />
       <SettingsMore summary="Ports and remote machines">
         <p className="q-sg-foot">
           Use a whole number from 1024 to 65535.{" "}

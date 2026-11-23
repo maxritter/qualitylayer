@@ -108,16 +108,18 @@ export const artifactFile = (name: string, item: Item | undefined): string => {
 export const madeForYouItems = (items: readonly Item[]): Item[] =>
   items.find((i) => i.step === "plan" && i.kind === "decided")?.children ?? []
 
+const isGroupAgreed = (group: Item | undefined): group is Item =>
+  group?.answer?.kind === "agree" && group.updated !== true && group.changedSinceReview !== true
+
+const canInheritAgreement = (point: Item): boolean =>
+  point.state === "open" && point.answer === undefined && point.changedSinceReview !== true
+
 /** The Plan's Done means: each point's own answer, or the agreement covering the whole group. */
 export function donePointItems(items: readonly Item[]): Item[] {
   const group = items.find((i) => i.step === "plan" && i.kind === "done")
+  const agreed = isGroupAgreed(group)
   return (group?.children ?? []).map((point) =>
-    group?.answer?.kind === "agree" &&
-    group.updated !== true &&
-    group.changedSinceReview !== true &&
-    point.state === "open" &&
-    point.answer === undefined &&
-    point.changedSinceReview !== true
+    agreed && canInheritAgreement(point)
       ? { ...point, state: group.state, answer: group.answer }
       : point,
   )

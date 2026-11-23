@@ -18,24 +18,17 @@
 //                run's `QUALITYLAYER_RUN` says which App session an event came from.
 
 import { createHash } from "node:crypto"
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs"
-import { dirname, join } from "node:path"
+import { join } from "node:path"
 import type { NativeAgent } from "../agents/ids.ts"
 import { launchHookGroups } from "../install/agent-settings.ts"
 import { nativeIntegrationFiles } from "../install/native-integrations.ts"
-import { rebaseFileReferences } from "../review/native-environment.ts"
-import { runDir } from "./registry.ts"
+
+export {
+  createLaunchOverlays,
+  launchHooksFolder,
+  removeLaunchOverlays,
+  removeStaleLaunchOverlays,
+} from "./launch-overlays.ts"
 
 export type LaunchOverlay = {
   /** A launch-local copy of a documented native settings file, with only these keys overridden. */
@@ -170,311 +163,118 @@ function claudeSettings(binary: string): string {
 
 /** Where the installed copy of the Pi and OpenCode extensions lives, relative to the agent's folder. */
 const OPENCODE_INSTALLED = join("plugins", "qualitylayer")
+const NONE_HOOKS: LaunchHooks = { args: [], env: {}, overlays: [] }
+
+type ResolvedHooksInput = LaunchHooksInput & { boundedCommandLine: boolean }
+
+function copilotLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
+  if (input.resume || !["ask", "allow-tools"].includes(input.permissionMode ?? ""))
+    return NONE_HOOKS
+  const dir = join(input.folder, "copilot")
+  return {
+    args: [],
+    env: { COPILOT_HOME: dir },
+    overlays: [
+      {
+        dir,
+        link: { variable: "COPILOT_HOME" },
+        files: [],
+        leave: ["settings.json"],
+        share: ["session-state"],
+        config: {
+          name: "settings.json",
+          values: {
+            defaultPermissionMode: input.permissionMode === "ask" ? "manual" : "assisted",
+          },
+        },
+      },
+    ],
+  }
+}
+
+function claudeLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
+  const env = { QUALITYLAYER_SESSION_HOOKS: input.agent }
+  const settings = claudeSettings(input.binary)
+  if (!input.boundedCommandLine) return { args: ["--settings", settings], env, overlays: [] }
+  // `--settings` takes a file as well as the JSON: the hooks ride in a file of the launch folder.
+  const dir = join(input.folder, "claude")
+  const path = join(dir, "settings.json")
+  return {
+    args: ["--settings", path],
+    env,
+    overlays: [{ dir, link: null, files: [{ path, text: settings }], leave: [] }],
+  }
+}
+
+function codexLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
+  if (!inRange(input.version, CODEX_LAUNCH_HOOKS)) return NONE_HOOKS
+  const args = codexArguments(input.binary)
+  // Codex takes its hooks only as `-c` arguments. Where they would not leave the rest of the
+  // launch room on the command line, the launch carries none: the installed hooks keep reporting.
+  if (
+    input.boundedCommandLine &&
+    args.reduce((sum, arg) => sum + arg.length + 3, 0) > CODEX_COMMAND_LINE
+  )
+    return NONE_HOOKS
+  return { args, env: { QUALITYLAYER_SESSION_HOOKS: input.agent }, overlays: [] }
+}
+
+function piLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
+  const dir = join(input.folder, "pi")
+  const files = nativeIntegrationFiles(
+    input.binary,
+    { agent: "pi", label: "Pi", skills: join(dir, "skills") },
+    { launch: true },
+  ).filter((file) => file.path.includes(join("extensions", "qualitylayer")))
+  const entry = files.find((file) => file.path.endsWith("index.ts"))
+  if (!entry) return NONE_HOOKS
+  return {
+    args: ["-e", entry.path],
+    env: { QUALITYLAYER_SESSION_HOOKS: input.agent },
+    overlays: [{ dir, link: null, files, leave: [] }],
+  }
+}
+
+function opencodeLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
+  if (!inRange(input.version, OPENCODE_LAUNCH_HOOKS)) return NONE_HOOKS
+  const dir = join(input.folder, "opencode")
+  const files = nativeIntegrationFiles(
+    input.binary,
+    { agent: "opencode", label: "OpenCode", skills: join(dir, "skills") },
+    { launch: true },
+  ).filter((file) => file.path.includes(OPENCODE_INSTALLED))
+  return {
+    args: [],
+    env: { QUALITYLAYER_SESSION_HOOKS: input.agent, OPENCODE_CONFIG_DIR: dir },
+    overlays: [
+      {
+        dir,
+        link: { variable: "OPENCODE_CONFIG_DIR" },
+        files,
+        leave: [OPENCODE_INSTALLED],
+        rebase: ["opencode.json", "opencode.jsonc"],
+      },
+    ],
+  }
+}
+
+const HOOK_BUILDERS: Partial<Record<NativeAgent, (input: ResolvedHooksInput) => LaunchHooks>> = {
+  copilot: copilotLaunchHooks,
+  "claude-code": claudeLaunchHooks,
+  codex: codexLaunchHooks,
+  pi: piLaunchHooks,
+  opencode: opencodeLaunchHooks,
+}
 
 /**
  * What a launch of this agent carries. An agent with no launch hooks, or a version that is not one
  * checked, carries nothing and no `QUALITYLAYER_SESSION_HOOKS`: its installed hooks keep reporting.
  */
 export function launchHooks(given: LaunchHooksInput): LaunchHooks {
-  const input = {
+  const input: ResolvedHooksInput = {
     ...given,
     boundedCommandLine: given.boundedCommandLine ?? process.platform === "win32",
   }
-  const { agent, binary, folder, version } = input
-  const none: LaunchHooks = { args: [], env: {}, overlays: [] }
-  const hooked = { QUALITYLAYER_SESSION_HOOKS: agent }
-  switch (agent) {
-    case "copilot": {
-      if (input.resume || !["ask", "allow-tools"].includes(input.permissionMode ?? "")) return none
-      const dir = join(folder, "copilot")
-      return {
-        args: [],
-        env: { COPILOT_HOME: dir },
-        overlays: [
-          {
-            dir,
-            link: { variable: "COPILOT_HOME" },
-            files: [],
-            leave: ["settings.json"],
-            share: ["session-state"],
-            config: {
-              name: "settings.json",
-              values: {
-                defaultPermissionMode: input.permissionMode === "ask" ? "manual" : "assisted",
-              },
-            },
-          },
-        ],
-      }
-    }
-    case "claude-code": {
-      const settings = claudeSettings(binary)
-      if (!input.boundedCommandLine)
-        return { args: ["--settings", settings], env: hooked, overlays: [] }
-      // `--settings` takes a file as well as the JSON: the hooks ride in a file of the launch folder.
-      const dir = join(folder, "claude")
-      const path = join(dir, "settings.json")
-      return {
-        args: ["--settings", path],
-        env: hooked,
-        overlays: [{ dir, link: null, files: [{ path, text: settings }], leave: [] }],
-      }
-    }
-    case "codex": {
-      if (!inRange(version, CODEX_LAUNCH_HOOKS)) return none
-      const args = codexArguments(binary)
-      // Codex takes its hooks only as `-c` arguments. Where they would not leave the rest of the
-      // launch room on the command line, the launch carries none: the installed hooks keep reporting.
-      if (
-        input.boundedCommandLine &&
-        args.reduce((sum, arg) => sum + arg.length + 3, 0) > CODEX_COMMAND_LINE
-      )
-        return none
-      return { args, env: hooked, overlays: [] }
-    }
-    case "pi": {
-      const dir = join(folder, "pi")
-      const files = nativeIntegrationFiles(
-        binary,
-        { agent: "pi", label: "Pi", skills: join(dir, "skills") },
-        { launch: true },
-      ).filter((file) => file.path.includes(join("extensions", "qualitylayer")))
-      const entry = files.find((file) => file.path.endsWith("index.ts"))
-      if (!entry) return none
-      return {
-        args: ["-e", entry.path],
-        env: hooked,
-        overlays: [{ dir, link: null, files, leave: [] }],
-      }
-    }
-    case "opencode": {
-      if (!inRange(version, OPENCODE_LAUNCH_HOOKS)) return none
-      const dir = join(folder, "opencode")
-      const files = nativeIntegrationFiles(
-        binary,
-        { agent: "opencode", label: "OpenCode", skills: join(dir, "skills") },
-        { launch: true },
-      ).filter((file) => file.path.includes(OPENCODE_INSTALLED))
-      return {
-        args: [],
-        env: { ...hooked, OPENCODE_CONFIG_DIR: dir },
-        overlays: [
-          {
-            dir,
-            link: { variable: "OPENCODE_CONFIG_DIR" },
-            files,
-            leave: [OPENCODE_INSTALLED],
-            rebase: ["opencode.json", "opencode.jsonc"],
-          },
-        ],
-      }
-    }
-    default:
-      // Copilot, Cursor, Grok and Antigravity keep their installed hook file.
-      return none
-  }
+  const builder = HOOK_BUILDERS[input.agent]
+  return builder ? builder(input) : NONE_HOOKS
 }
-
-// ---------------------------------------------------------------- overlays on disk
-
-const MANIFEST = "overlays.json"
-
-/** An overlay as made: where, whose folder it stands for, and the files it wrote itself (absolute). */
-type Made = { dir: string; source: string | null; written: string[] }
-
-/** The folder of the person's own that an overlay stands for: OpenCode's config directory. */
-function sourceOf(overlay: LaunchOverlay, env: Readonly<Record<string, string | undefined>>) {
-  if (overlay.link === null) return null
-  const named = env[overlay.link.variable]
-  if (named) return named
-  const home = env.HOME || env.USERPROFILE
-  if (overlay.link.variable === "COPILOT_HOME") return join(home ?? "", ".copilot")
-  return join(env.XDG_CONFIG_HOME || join(home ?? "", ".config"), "opencode")
-}
-
-/** Link `target` at `path`; an entry that points nowhere is left out, and where links cannot be made a copy is. */
-function link(target: string, path: string) {
-  let directory: boolean
-  try {
-    directory = statSync(target).isDirectory()
-  } catch {
-    return
-  }
-  try {
-    symlinkSync(target, path, directory ? "junction" : "file")
-  } catch {
-    // Symlinks need a privilege some systems keep back: a copy keeps the agent working.
-    cpSync(target, path, { recursive: true })
-  }
-}
-
-/** The entries of `source` linked into `dir`, except `leave`; a folder holding an entry left out is made real, level by level. */
-function linkEntries(
-  source: string,
-  dir: string,
-  leave: readonly string[],
-  skip: readonly string[],
-  at = "",
-) {
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  for (const name of readdirSync(source)) {
-    const relative = join(at, name)
-    if (leave.includes(relative) || skip.includes(relative)) continue
-    const target = join(source, name)
-    if (leave.some((path) => path.startsWith(`${relative}/`) || path.startsWith(`${relative}\\`)))
-      linkEntries(target, join(dir, name), leave, skip, relative)
-    else link(target, join(dir, name))
-  }
-}
-
-/**
- * Create the overlays of a launch: each is the person's own folder linked, less what the launch
- * replaces, plus the launch files. Sign-in and settings keep working through the links. The
- * launch's folder is made new, so a launch never inherits an earlier overlay of its own.
- */
-export function createLaunchOverlays(
-  folder: string,
-  overlays: readonly LaunchOverlay[],
-  env: Readonly<Record<string, string | undefined>>,
-): void {
-  removeLaunchOverlays(folder)
-  if (existsSync(folder))
-    throw new Error("Launch overlay contents could not be preserved; the previous folder was kept")
-  if (overlays.length === 0) return
-  mkdirSync(folder, { recursive: true, mode: 0o700 })
-  const made: Made[] = []
-  try {
-    for (const overlay of overlays) {
-      const source = sourceOf(overlay, env)
-      if (source !== null)
-        for (const name of overlay.share ?? [])
-          mkdirSync(join(source, name), { recursive: true, mode: 0o700 })
-      mkdirSync(overlay.dir, { recursive: true, mode: 0o700 })
-      // What this launch writes into the overlay is its own: it is never brought back to the person.
-      const entry: Made = {
-        dir: overlay.dir,
-        source,
-        written: [
-          ...(overlay.config ? [join(overlay.dir, overlay.config.name)] : []),
-          ...overlay.files.map((file) => file.path),
-          ...(overlay.rebase ?? []).map((name) => join(overlay.dir, name)),
-        ],
-      }
-      made.push(entry)
-      writeFileSync(join(folder, MANIFEST), JSON.stringify(made))
-      if (source !== null && existsSync(source)) {
-        linkEntries(source, overlay.dir, overlay.leave, overlay.rebase ?? [])
-        for (const name of overlay.rebase ?? [])
-          if (existsSync(join(source, name)))
-            writeFileSync(join(overlay.dir, name), rebasedConfig(join(source, name), source), {
-              mode: 0o600,
-            })
-      }
-      if (overlay.config) {
-        const { name, values } = overlay.config
-        const original = source === null ? undefined : join(source, name)
-        let settings: Record<string, unknown> = {}
-        if (original && existsSync(original)) {
-          if (!statSync(original).isFile() || statSync(original).size > 1024 * 1024)
-            throw new Error("Native settings must be a bounded JSON file")
-          const parsed = JSON.parse(readFileSync(original, "utf8"))
-          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-            throw new Error("Native settings must be a JSON object")
-          settings = parsed
-        }
-        writeFileSync(join(overlay.dir, name), `${JSON.stringify({ ...settings, ...values })}\n`, {
-          mode: 0o600,
-        })
-      }
-      for (const file of overlay.files) {
-        mkdirSync(dirname(file.path), { recursive: true, mode: 0o700 })
-        writeFileSync(file.path, file.text, { mode: 0o600 })
-      }
-    }
-  } catch (cause) {
-    removeLaunchOverlays(folder)
-    throw cause
-  }
-}
-
-/** A config file as JSON with its `{file:}` references made absolute (the review's one implementation). */
-function rebasedConfig(path: string, source: string): string {
-  return `${JSON.stringify(rebaseFileReferences(Bun.JSONC.parse(readFileSync(path, "utf8")), source))}\n`
-}
-
-/**
- * Remove a launch's overlays. What the agent made new in an overlay (its session records, on a first
- * run) goes to the person's own folder first, if that has no such entry: removing the overlay never
- * takes a conversation with it. Links are removed as links; the folders they point to stay.
- */
-export function removeLaunchOverlays(folder: string): void {
-  let made: Made[] = []
-  try {
-    made = JSON.parse(readFileSync(join(folder, MANIFEST), "utf8")) as Made[]
-  } catch {
-    // No manifest: nothing of ours to bring back.
-  }
-  for (const { dir, source, written } of made) {
-    if (source === null) continue
-    try {
-      dropWritten(dir, written)
-      for (const name of readdirSync(dir)) {
-        preserveEntry(join(dir, name), join(source, name))
-      }
-    } catch {
-      // Keep the only remaining copy when copyback fails or the person's entry conflicts.
-      return
-    }
-  }
-  rmSync(folder, { recursive: true, force: true })
-}
-
-function preserveEntry(path: string, target: string): void {
-  const entry = lstatSync(path)
-  if (entry.isSymbolicLink()) return
-  if (!existsSync(target)) {
-    mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-    cpSync(path, target, { recursive: true, force: false, errorOnExist: true })
-    return
-  }
-  const existing = lstatSync(target)
-  if (!entry.isDirectory() || !existing.isDirectory() || existing.isSymbolicLink())
-    throw new Error("An existing configuration entry prevents overlay copyback")
-  for (const name of readdirSync(path)) preserveEntry(join(path, name), join(target, name))
-}
-
-/** Remove what the launch wrote into an overlay, and the folders that held only that. */
-function dropWritten(dir: string, written: readonly string[]): void {
-  for (const path of written) {
-    rmSync(path, { force: true })
-    for (let up = dirname(path); up.startsWith(dir) && up !== dir; up = dirname(up)) {
-      if (!existsSync(up)) continue
-      if (readdirSync(up).length > 0) break
-      rmSync(up, { recursive: true, force: true })
-    }
-  }
-}
-
-/**
- * A host that starts removes the overlays of the earlier generations of its run: a killed host left
- * its own behind, and control has confirmed those hosts are gone. What their agents made is brought
- * back first, as for any removal. Later generations belong to a launch being prepared.
- */
-export function removeStaleLaunchOverlays(home: string, run: string, generation: number): void {
-  const root = join(runDir(home, run), "launch-hooks")
-  let names: string[] = []
-  try {
-    names = readdirSync(root)
-  } catch {
-    return
-  }
-  for (const name of names)
-    if (/^\d+$/.test(name) && Number(name) < generation) removeLaunchOverlays(join(root, name))
-}
-
-/**
- * The folder for the overlays of one launch of a run. Each launch has its own: a restart prepares the
- * next generation's while the previous agent is still alive, and a host removes only its own.
- */
-export const launchHooksFolder = (home: string, run: string, generation: number): string =>
-  join(runDir(home, run), "launch-hooks", String(generation))

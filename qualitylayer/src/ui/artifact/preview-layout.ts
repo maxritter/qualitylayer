@@ -53,20 +53,29 @@ type SectionInput = {
  */
 export function sectionPreview({ section, focus, room, cap, unavailable }: SectionInput) {
   const wide = room > 0 ? room : Number.POSITIVE_INFINITY
-  if (unavailable) return shape(cap, "top", 1, 0, null, 120, room)
+  if (unavailable)
+    return shape({ cap, mode: "top", scale: 1, inset: 0, region: null, pictureHeight: 120, room })
   if (section === null)
-    return shape(
+    return shape({
       cap,
-      "unknown",
-      1,
-      0,
-      null,
-      Math.min(cap, Math.max(96, Math.round((room || 640) / 2))),
+      mode: "unknown",
+      scale: 1,
+      inset: 0,
+      region: null,
+      pictureHeight: Math.min(cap, Math.max(96, Math.round((room || 640) / 2))),
       room,
-    )
+    })
   const whole = Math.min(1, wide / section.width, cap / section.height)
   if (whole >= SECTION_FLOOR) {
-    return shape(cap, "whole", whole, 0, section, Math.ceil(section.height * whole), room)
+    return shape({
+      cap,
+      mode: "whole",
+      scale: whole,
+      inset: 0,
+      region: section,
+      pictureHeight: Math.ceil(section.height * whole),
+      room,
+    })
   }
   if (focus !== null && focus.width > 0 && focus.height > 0) {
     const fit = Math.min(
@@ -76,7 +85,15 @@ export function sectionPreview({ section, focus, room, cap, unavailable }: Secti
     )
     const scale = Math.max(SECTION_FLOOR, fit)
     const height = Math.ceil(focus.height * scale) + 2 * FOCUS_INSET + FOCUS_TAG
-    return shape(cap, "focus", scale, FOCUS_INSET, focus, height, room)
+    return shape({
+      cap,
+      mode: "focus",
+      scale,
+      inset: FOCUS_INSET,
+      region: focus,
+      pictureHeight: height,
+      room,
+    })
   }
   // No focus mark: the section's top. It fills the card's width, never cut at the side and never above
   // its own pixels, so no empty band stands beside it. Drawn larger than the floor, the box grows by the
@@ -89,21 +106,30 @@ export function sectionPreview({ section, focus, room, cap, unavailable }: Secti
     width: section.width,
     height: Math.min(section.height, tall / scale),
   }
-  return shape(tall, "top", scale, 0, region, Math.ceil(region.height * scale), room)
+  return shape({
+    cap: tall,
+    mode: "top",
+    scale,
+    inset: 0,
+    region,
+    pictureHeight: Math.ceil(region.height * scale),
+    room,
+  })
 }
 
 /** The tallest a section's top may grow when it is drawn larger than the floor to fill the card. */
 export const TOP_CAP = 480
 
-function shape(
-  cap: number,
-  mode: SectionMode,
-  scale: number,
-  inset: number,
-  region: Rect | null,
-  pictureHeight: number,
-  room: number,
-) {
+function shape(args: {
+  cap: number
+  mode: SectionMode
+  scale: number
+  inset: number
+  region: Rect | null
+  pictureHeight: number
+  room: number
+}) {
+  const { cap, mode, scale, inset, region, pictureHeight, room } = args
   const height = Math.max(96, pictureHeight)
   const width = region === null ? room : Math.ceil(region.width * scale) + 2 * inset
   return {

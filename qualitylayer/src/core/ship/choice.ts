@@ -27,34 +27,37 @@ const OPENING_STALE_MS = 3 * 60_000
 
 const choicePath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "ship-choice.json")
 
+const VALID_CHOICES = new Set<ShipChoice>(["pull-request", "only", "commands"])
+const VALID_STATES = new Set<PullRequestState>(["opening", "open", "failed"])
+
+function applyPullRequestFields(
+  record: ShipRecord,
+  parsed: Record<string, unknown>,
+  now: number,
+): void {
+  const at = typeof parsed.at === "number" ? parsed.at : undefined
+  if (typeof parsed.state === "string" && VALID_STATES.has(parsed.state as PullRequestState))
+    record.state = parsed.state as PullRequestState
+  if (typeof parsed.url === "string") record.url = parsed.url
+  if (typeof parsed.error === "string") record.error = parsed.error
+  if (at !== undefined) record.at = at
+  if (record.state === "opening" && at !== undefined && now - at > OPENING_STALE_MS) {
+    record.state = "failed"
+    record.error = "Opening the pull request did not finish."
+  }
+}
+
 export async function readShipRecord(
   ctx: Ctx,
   task: Pick<Task, "runtimeDir">,
 ): Promise<ShipRecord | null> {
   try {
     const parsed = JSON.parse(await ctx.fs.readFile(choicePath(task))) as Record<string, unknown>
-    const choice = parsed.choice
-    if (choice !== "pull-request" && choice !== "only" && choice !== "commands") return null
+    if (typeof parsed.choice !== "string" || !VALID_CHOICES.has(parsed.choice as ShipChoice))
+      return null
+    const choice = parsed.choice as ShipChoice
     const record: ShipRecord = { choice }
-    if (choice === "pull-request") {
-      const at = typeof parsed.at === "number" ? parsed.at : undefined
-      const state =
-        parsed.state === "opening" || parsed.state === "open" || parsed.state === "failed"
-          ? parsed.state
-          : undefined
-      if (state !== undefined) record.state = state
-      if (typeof parsed.url === "string") record.url = parsed.url
-      if (typeof parsed.error === "string") record.error = parsed.error
-      if (at !== undefined) record.at = at
-      if (
-        record.state === "opening" &&
-        at !== undefined &&
-        ctx.clock.now() - at > OPENING_STALE_MS
-      ) {
-        record.state = "failed"
-        record.error = "Opening the pull request did not finish."
-      }
-    }
+    if (choice === "pull-request") applyPullRequestFields(record, parsed, ctx.clock.now())
     return record
   } catch {
     return null

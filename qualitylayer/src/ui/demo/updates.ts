@@ -30,9 +30,14 @@ const NOTES = `### New
 - Moving from an earlier version asks nothing; your tools and memories stay.
 `
 
-// The installed version is this checkout's release (demo/version.ts); the update on offer is its next patch.
 const CURRENT = DEMO_VERSION
 const AVAILABLE = DEMO_NEXT_VERSION
+
+const PUBLIC_SYSTEM: PublicSystem = {
+  appVersion: CURRENT,
+  os: { family: "macOS", version: "27.0" },
+  architecture: "arm64",
+}
 
 const RELEASES: Release[] = [
   { version: AVAILABLE, label: AVAILABLE, notes: NOTES },
@@ -55,32 +60,17 @@ const RELEASES: Release[] = [
   },
 ]
 
-/** A fixed morning, so the demo's "checked today at 09:12" reads the same on every visit. */
 const checkedAt = () => {
   const day = new Date()
   day.setHours(9, 12, 0, 0)
   return day.getTime()
 }
 
-export function demoUpdates(search: string, onChange: () => void) {
-  const publicSystem: PublicSystem = {
-    appVersion: CURRENT,
-    os: { family: "macOS", version: "27.0" },
-    architecture: "arm64",
-  }
-  const publicReviews = new Map<string, PublicReviewView>()
-  const publicDeliveries = new Map<string, PublicDelivery>()
-  const query = new URLSearchParams(search)
-  const asked = query.get("update")
-  const waitedDays = Number(query.get("waited"))
-  const waited =
-    query.get("waited") !== null && Number.isFinite(waitedDays) && waitedDays >= 0
-      ? waitedDays
-      : null
+function initialUpdateInfo(asked: string | null): UpdateInfo {
   const start = (DEMO_STATES as readonly string[]).includes(asked ?? "")
     ? (asked as DemoState)
     : null
-  let info: UpdateInfo = {
+  return {
     current: CURRENT,
     available: start === null ? null : AVAILABLE,
     notes: start === null ? null : NOTES,
@@ -92,22 +82,135 @@ export function demoUpdates(search: string, onChange: () => void) {
     later: false,
     managed: true,
   }
-  const set = (patch: Partial<UpdateInfo>) => {
-    info = { ...info, ...patch }
-    onChange()
+}
+
+function parseWaitedDays(query: URLSearchParams): number | null {
+  const raw = query.get("waited")
+  const days = Number(raw)
+  return raw !== null && Number.isFinite(days) && days >= 0 ? days : null
+}
+
+function releasesFor(waited: number | null): Release[] {
+  if (waited === null) return RELEASES
+  const published = new Date(Date.now() - waited * 86_400_000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z")
+  return RELEASES.map((release) =>
+    release.version === AVAILABLE ? { ...release, published } : release,
+  )
+}
+
+async function buildPublicPreview(
+  form: FormData,
+  publicReviews: Map<string, PublicReviewView>,
+): Promise<PublicReviewView> {
+  const input = JSON.parse(String(form.get("report"))) as {
+    id: string
+    kind: "bug" | "idea"
+    title: string
+    description: string
   }
-  const outcome = query.get("feedback") === "offline" ? "queued" : "sent"
-  const preview = (page?: string): Diagnostics => ({
-    app: CURRENT,
-    cli: CURRENT,
-    claudeCode: "2.1.302",
-    codex: "0.163.0",
-    os: "macOS 27.0",
-    arch: "arm64",
-    ...(page !== undefined ? { page } : {}),
-    tier: "team",
-    errors: { count: 0, kinds: [] },
+  const images = form
+    .getAll("image")
+    .filter((file): file is File => file instanceof File)
+    .map((file, index) => ({ url: URL.createObjectURL(file), alt: `Screenshot ${index + 1}` }))
+  const content = {
+    kind: input.kind,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    system: PUBLIC_SYSTEM,
+    screenshots: [],
+  }
+  const issue = {
+    repository: "maxritter/qualitylayer" as const,
+    title: content.title,
+    body: `## Description\n\n${content.description}\n\n## Environment\n\n- **QualityLayer version**: ${CURRENT}\n- **OS**: macOS 27.0\n- **Architecture**: arm64`,
+    labels: [input.kind === "bug" ? "bug" : "enhancement", "needs-triage"],
+  }
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      JSON.stringify({
+        version: 1,
+        destination: "maxritter/qualitylayer",
+        id: input.id,
+        content,
+        issue,
+      }),
+    ),
+  )
+  const contentSha256 = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")
+  const view: PublicReviewView = {
+    preview: { id: input.id, content, issue, review: { version: 1, contentSha256 } },
+    images,
+  }
+  publicReviews.get(input.id)?.images.forEach((image) => {
+    URL.revokeObjectURL(image.url)
   })
+  publicReviews.set(input.id, view)
+  return view
+}
+
+function buildPublicDelivery(id: string, feedbackMode: string | null): PublicDelivery {
+  if (feedbackMode === "uncertain") {
+    return {
+      status: "uncertain",
+      id,
+      message:
+        "Illustrative state: GitHub may have received the report. Automatic retry is paused and the draft is kept.",
+    }
+  }
+  if (feedbackMode === "offline") {
+    return {
+      status: "queued",
+      id,
+      message:
+        "Illustrative state: the reviewed public issue is saved to send when the connection returns.",
+    }
+  }
+  return {
+    status: "submitted",
+    reference: "maxritter/qualitylayer#128",
+    issueUrl: "https://github.com/maxritter/qualitylayer/issues/128",
+  }
+}
+
+const previewDiagnostics = (page?: string): Diagnostics => ({
+  app: CURRENT,
+  cli: CURRENT,
+  claudeCode: "2.1.302",
+  codex: "0.163.0",
+  os: "macOS 27.0",
+  arch: "arm64",
+  ...(page !== undefined ? { page } : {}),
+  tier: "team",
+  errors: { count: 0, kinds: [] },
+})
+
+const UPDATE_PATCHES: Record<string, () => Partial<UpdateInfo>> = {
+  later: () => ({ later: true }),
+  check: () => ({ checkedAt: Date.now() }),
+  cancel: () => ({ state: "ready" }),
+  install: () => ({
+    current: AVAILABLE,
+    available: null,
+    notes: null,
+    downloaded: false,
+    state: "idle",
+    updated: AVAILABLE,
+    checkedAt: Date.now(),
+  }),
+}
+
+export function demoUpdates(search: string, onChange: () => void) {
+  const publicReviews = new Map<string, PublicReviewView>()
+  const publicDeliveries = new Map<string, PublicDelivery>()
+  const query = new URLSearchParams(search)
+  const waited = parseWaitedDays(query)
+  const feedbackMode = query.get("feedback")
+  let info = initialUpdateInfo(query.get("update"))
 
   const api: Pick<
     Api,
@@ -125,121 +228,31 @@ export function demoUpdates(search: string, onChange: () => void) {
   > = {
     update: async () => ({ ok: true as const, ...info }),
     updateAction: async (action) => {
-      if (action === "later") set({ later: true })
-      if (action === "check") set({ checkedAt: Date.now() })
-      if (action === "cancel") set({ state: "ready" })
-      if (action === "install") {
-        // The demo updates at once and comes back updated, as the App does; `?update=installing` shows the wait.
-        set({
-          current: AVAILABLE,
-          available: null,
-          notes: null,
-          downloaded: false,
-          state: "idle",
-          updated: AVAILABLE,
-          checkedAt: Date.now(),
-        })
+      const makePatch = UPDATE_PATCHES[action]
+      if (makePatch) {
+        info = { ...info, ...makePatch() }
+        onChange()
       }
       return { requested: action }
     },
-    // `?update=ready&waited=3` publishes the update that many days ago, so the bar shows (3 or more days; 8 or more in the accent).
-    releases: async () =>
-      waited === null
-        ? RELEASES
-        : RELEASES.map((release) =>
-            release.version === AVAILABLE
-              ? {
-                  ...release,
-                  published: new Date(Date.now() - waited * 86_400_000)
-                    .toISOString()
-                    .replace(/\.\d{3}Z$/, "Z"),
-                }
-              : release,
-          ),
+    releases: async () => releasesFor(waited),
     feedbackWho: async () => ({
       kind: "licence" as const,
       tier: "team" as const,
       name: "Sam Rivera",
       email: "sam@example.com",
     }),
-    feedbackPreview: async ({ page }) => preview(page),
+    feedbackPreview: async ({ page }) => previewDiagnostics(page),
     sendFeedback: async () =>
-      outcome === "queued"
+      feedbackMode === "offline"
         ? { status: "queued" as const, id: "demo", why: "offline" as const }
         : { status: "sent" as const, reference: "QL-128" },
-    publicFeedbackSystem: async () => publicSystem,
-    publicFeedbackPreview: async (form) => {
-      const input = JSON.parse(String(form.get("report"))) as {
-        id: string
-        kind: "bug" | "idea"
-        title: string
-        description: string
-      }
-      const images = form
-        .getAll("image")
-        .filter((file): file is File => file instanceof File)
-        .map((file, index) => ({ url: URL.createObjectURL(file), alt: `Screenshot ${index + 1}` }))
-      const content = {
-        kind: input.kind,
-        title: input.title.trim(),
-        description: input.description.trim(),
-        system: publicSystem,
-        screenshots: [],
-      }
-      const issue = {
-        repository: "maxritter/qualitylayer" as const,
-        title: content.title,
-        body: `## Description\n\n${content.description}\n\n## Environment\n\n- **QualityLayer version**: ${CURRENT}\n- **OS**: macOS 27.0\n- **Architecture**: arm64`,
-        labels: [input.kind === "bug" ? "bug" : "enhancement", "needs-triage"],
-      }
-      const digest = await crypto.subtle.digest(
-        "SHA-256",
-        new TextEncoder().encode(
-          JSON.stringify({
-            version: 1,
-            destination: "maxritter/qualitylayer",
-            id: input.id,
-            content,
-            issue,
-          }),
-        ),
-      )
-      const contentSha256 = Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join("")
-      const view: PublicReviewView = {
-        preview: { id: input.id, content, issue, review: { version: 1, contentSha256 } },
-        images,
-      }
-      publicReviews.get(input.id)?.images.forEach((image) => {
-        URL.revokeObjectURL(image.url)
-      })
-      publicReviews.set(input.id, view)
-      return view
-    },
+    publicFeedbackSystem: async () => PUBLIC_SYSTEM,
+    publicFeedbackPreview: (form) => buildPublicPreview(form, publicReviews),
     publicFeedbackSubmit: async (id, digest) => {
       if (publicReviews.get(id)?.preview.review.contentSha256 !== digest)
         throw new Error("Preview the report again.")
-      const delivery: PublicDelivery =
-        query.get("feedback") === "uncertain"
-          ? {
-              status: "uncertain",
-              id,
-              message:
-                "Illustrative state: GitHub may have received the report. Automatic retry is paused and the draft is kept.",
-            }
-          : outcome === "queued"
-            ? {
-                status: "queued",
-                id,
-                message:
-                  "Illustrative state: the reviewed public issue is saved to send when the connection returns.",
-              }
-            : {
-                status: "submitted",
-                reference: "maxritter/qualitylayer#128",
-                issueUrl: "https://github.com/maxritter/qualitylayer/issues/128",
-              }
+      const delivery = buildPublicDelivery(id, feedbackMode)
       publicDeliveries.set(id, delivery)
       return delivery
     },

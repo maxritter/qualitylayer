@@ -1,26 +1,24 @@
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { sectionText } from "./core/docs/build-log.ts"
-import { cardsPath } from "./core/docs/outline-files.ts"
-import { buildBase } from "./core/git/base.ts"
-import { MEMORY_CONTEXT_MAX_BYTES } from "./core/home-caps.ts"
 import { cutChars } from "./core/memory/ranking.ts"
 import { hash } from "./core/memory/validation.ts"
-import { recordMemoryActivity } from "./core/memory-activity.ts"
 import { projectRuntimeDir, resolveRepo } from "./core/paths.ts"
 import { inPersonReview } from "./core/review/in-review.ts"
-import {
-  isTerminal,
-  loadTask,
-  readmeFrontmatter,
-  resolveTask,
-  type Task,
-  taskDocPath,
-} from "./core/task/store.ts"
+import { isTerminal, loadTask, resolveTask, type Task } from "./core/task/store.ts"
 import { type Ctx, ok, type Result } from "./ctx.ts"
 import { type MemoryPreview, PERSONAL_PROJECT } from "./memory-contracts.ts"
 import { projectMemory } from "./memory-runtime.ts"
 import { captureTaskLessons } from "./task-capture.ts"
+import {
+  attachMemoryToReply,
+  loadStepMemories,
+  lookupText,
+  readCachedContext,
+  resolveContextNonce,
+  SENT_MAX,
+  waitsOnly,
+} from "./task-memory-context.ts"
 
 /** Lesson text as one nonce-tagged data block: it cannot close its own fence or pass as instructions. */
 export function untrustedMemoryBlock(rows: unknown, nonce: string = randomUUID()): string {
@@ -90,58 +88,6 @@ export function stepQuery(
   return cutChars(parts.filter((part) => part !== "").join("\n"), STEP_QUERY_MAX)
 }
 
-/** The step's query from the task's own documents: its request, the Plan, and the files they and the reply name. */
-async function lookupText(ctx: Ctx, task: Task, reply: string): Promise<string> {
-  const read = async (path: string) => ((await ctx.fs.exists(path)) ? ctx.fs.readFile(path) : null)
-  const request = String((await readmeFrontmatter(ctx, task)).request ?? task.title)
-  const plan = await read(taskDocPath(task, "plan"))
-  const outline = await read(cardsPath(task.dir))
-  return stepQuery(task, plan, namedFiles(reply, plan, outline), request)
-}
-
-/** At most this many repository-change candidates are offered for task-scoped maintenance. */
-const KEEP_MAX = 8
-const SAVING_OPENS = "Project memory: after a recorded check passes, "
-const KEEPING =
-  "keep the project's lessons true; the person does not maintain them. lessons_to_keep contains candidates from repository changes since the build base, including other sessions' work; their titles are in lessons_to_keep_untrusted. Select only lessons about files this task changed or explicitly checked. Skip unrelated candidates without reading, confirming, retiring or rewriting them. Read selected lessons with memory_read and check them against the code: rewrite one that no longer holds with memory_save and replaces (or qualitylayer memory store --replaces <id>), merge a duplicate into it the same way, retire one that is false with memory_keep and a reason, and confirm one that still holds with memory_keep (or qualitylayer memory confirm <id> --reason <why>). Then "
-const SAVING =
-  "save a lesson only for a decision worth keeping past this task: the decision, its reason and the files it is about, with replaces when it revises a saved one, through memory_save or qualitylayer memory store --title <short title> --content <lesson> --file <path>. Use project facts and repository-relative paths; leave out prompts, logs, credentials and personal details. QualityLayer validates publication evidence. Most tasks save one lesson or none; skip saving when nothing qualifies."
-
-/**
- * The active lessons on repository changes since the build base, including shared-checkout work;
- * the agent selects the task-relevant candidates. Changed lessons come first,
- * then newest; none when the diff cannot be read. Their titles are lesson text and stay short.
- */
-async function lessonsToKeep(
-  ctx: Ctx,
-  task: Task,
-  service: Awaited<ReturnType<typeof projectMemory>>,
-): Promise<{ id: string; title: string; sources: string }[]> {
-  try {
-    const base = await buildBase(ctx, task)
-    if (base === null) return []
-    const diff = await ctx.git.run(task.repoRoot, ["diff", "--name-only", "-z", base])
-    if (diff.code !== 0) return []
-    const paths = diff.stdout.split("\0").filter((path) => path && !path.startsWith("docs/plans/"))
-    if (!paths.length) return []
-    const lessons = await service.lessonsOn(task.repoId, paths)
-    return lessons
-      .sort(
-        (a, b) =>
-          Number(b.sources?.state === "changed") - Number(a.sources?.state === "changed") ||
-          b.updatedAt - a.updatedAt,
-      )
-      .slice(0, KEEP_MAX)
-      .map((lesson) => ({
-        id: lesson.id,
-        title: lesson.title.slice(0, 200),
-        sources: lesson.sources?.state ?? "unchecked",
-      }))
-  } catch {
-    return []
-  }
-}
-
 const CAPTURE_ISSUE =
   "Project memory could not save every lesson of this task. The task can continue; the rest are retried on the next step."
 
@@ -177,56 +123,59 @@ async function captureAtShip(
   }
 }
 
-/** Running helpers need no lesson lookup until this reply hands the coordinator new work. */
-function waitsOnly(data: Record<string, unknown>): boolean {
-  if (
-    ["action", "actions", "helper", "task_card", "stop"].some((key) => data[key] !== undefined) ||
-    (data.app_answers !== undefined && data.app_answers !== 0) ||
-    [
-      "helpers",
-      "commit_carried",
-      "checks_waiting",
-      "check_open",
-      "errors",
-      "gaps",
-      "fixed_gaps",
-      "comments",
-      "artifact_comments",
-    ].some((key) => data[key] !== undefined && (!Array.isArray(data[key]) || data[key].length > 0))
-  )
-    return false
-  if (data.build_waiting === true)
-    return (
-      typeof data.wait === "string" &&
-      (data.phase === undefined || (typeof data.phase === "string" && data.phase === "plan"))
+async function enrichActiveTaskReply(
+  ctx: Ctx,
+  task: Task,
+  service: Awaited<ReturnType<typeof projectMemory>>,
+  data: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const version = await service.contextVersion(task.repoId)
+  const cache = join(projectRuntimeDir(ctx, task.repoId), "tasks", task.slug, "memory-context.json")
+  // Every reply while the person reviews captures the task's lessons that are not saved yet.
+  const captureIssue = (await inPersonReview(ctx, task))
+    ? await captureLessons(ctx, task, service)
+    : undefined
+  const lookup = await lookupText(ctx, task, data.instructions as string)
+  const key = `${task.stage}:${hash(lookup)}:${version}`
+  const cached = await readCachedContext(ctx, cache)
+  const nonce = resolveContextNonce(cached, key)
+  const looked = cached?.key === key && Array.isArray(cached.ids)
+  const memories = await loadStepMemories(ctx, task, service, lookup, {
+    matched: looked,
+    ids: looked ? (cached?.ids ?? []) : [],
+  })
+  // A step's lessons are sent once: a later reply of the step carries only what it has not sent
+  // yet. A saved or rewritten lesson changes the version, and the step's lessons are sent again.
+  const step = `${task.stage}:${version}`
+  const sentBefore =
+    cached?.sent?.step === step && Array.isArray(cached.sent.ids)
+      ? cached.sent.ids.filter((id): id is string => typeof id === "string")
+      : []
+  const fresh = memories.filter((memory) => !sentBefore.includes(memory.id))
+  const earlier = memories.length - fresh.length
+  if (!looked || fresh.length > 0)
+    await ctx.fs.atomicWrite(
+      cache,
+      JSON.stringify({
+        key,
+        ids: memories.map((memory) => memory.id),
+        nonce,
+        sent: { step, ids: [...sentBefore, ...fresh.map(({ id }) => id)].slice(-SENT_MAX) },
+      }),
     )
-  if (data.phase !== "implement" || data.next_task !== null) return false
-  const fix = data.fix_running
-  return (
-    fix !== null &&
-    typeof fix === "object" &&
-    "id" in fix &&
-    typeof fix.id === "string" &&
-    fix.id.length > 0
-  )
+  return attachMemoryToReply(ctx, task, service, data, {
+    fresh,
+    earlier,
+    nonce,
+    captureIssue,
+  })
 }
 
-/** At most this many lesson ids are remembered as sent in a step. */
-const SENT_MAX = 200
-/** The one line a reply carries in place of lessons the step already sent. */
-const SENT_EARLIER =
-  "This step's project lessons came with an earlier reply. Read one again with qualitylayer memory read <id>; look up others with qualitylayer memory context <specific query>."
-
-/**
- * Adds bounded memory context to a successful workflow reply, without changing its stop or next
- * command. A step's lessons are sent once; later replies of the step name where to read them again.
- */
-export async function withTaskMemory(ctx: Ctx, result: Result<unknown>): Promise<Result<unknown>> {
-  if (!result.ok || result.data === null || typeof result.data !== "object") return result
-  const data = result.data as Record<string, unknown>
-  if (data.phase === "ship") return captureAtShip(ctx, result, data)
-  if (typeof data.task !== "string" || typeof data.instructions !== "string") return result
-  if (waitsOnly(data)) return result
+async function tryEnrichReply(
+  ctx: Ctx,
+  result: Result<unknown>,
+  data: Record<string, unknown>,
+): Promise<Result<unknown>> {
   let service: Awaited<ReturnType<typeof projectMemory>> | null = null
   try {
     const repo = await resolveRepo(ctx)
@@ -234,121 +183,9 @@ export async function withTaskMemory(ctx: Ctx, result: Result<unknown>): Promise
     const task = await resolveTask(ctx, repo.data)
     if (!task || task.slug !== data.task || isTerminal(task.stage)) return result
     service = await projectMemory(ctx, repo.data)
-    const version = await service.contextVersion(task.repoId)
     const overview = await service.overview(repo.data.id)
     if (!overview.enabled) return result
-    const cache = join(
-      projectRuntimeDir(ctx, task.repoId),
-      "tasks",
-      task.slug,
-      "memory-context.json",
-    )
-    // Every reply while the person reviews captures the task's lessons that are not saved yet.
-    const captureIssue = (await inPersonReview(ctx, task))
-      ? await captureLessons(ctx, task, service)
-      : undefined
-    const lookup = await lookupText(ctx, task, data.instructions)
-    const key = `${task.stage}:${hash(lookup)}:${version}`
-    type Cached = {
-      key?: unknown
-      ids?: string[]
-      nonce?: string
-      sent?: { step?: unknown; ids?: unknown }
-    } | null
-    let cached = null as Cached
-    if (await ctx.fs.exists(cache)) {
-      const size = (await ctx.fs.stat?.(cache))?.size
-      if (size === undefined || size <= MEMORY_CONTEXT_MAX_BYTES) {
-        try {
-          cached = JSON.parse(
-            (await ctx.fs.readFile(cache)).slice(0, MEMORY_CONTEXT_MAX_BYTES),
-          ) as Cached
-        } catch {}
-      }
-    }
-    let memories: MemoryPreview[]
-    const nonce =
-      cached?.key === key &&
-      typeof cached.nonce === "string" &&
-      /^[a-f0-9-]{36}$/.test(cached.nonce)
-        ? cached.nonce
-        : randomUUID()
-    const looked = cached?.key === key && Array.isArray(cached.ids)
-    if (cached?.key === key && Array.isArray(cached.ids)) {
-      memories = []
-      for (const id of cached.ids.slice(0, 8)) {
-        if (typeof id !== "string") continue
-        try {
-          const record = await service.read(id)
-          if (record.project !== task.repoId || record.state !== "active") continue
-          const { content, ...preview } = record
-          memories.push({ ...preview, preview: content.slice(0, 512) })
-        } catch {}
-      }
-    } else {
-      memories = (await service.context(task.repoId, lookup)).slice(0, 8)
-      await recordMemoryActivity(
-        ctx,
-        task,
-        "reads",
-        memories.length,
-        memories.map(({ id }) => id),
-      )
-    }
-    // A step's lessons are sent once: a later reply of the step carries only what it has not sent
-    // yet. A saved or rewritten lesson changes the version, and the step's lessons are sent again.
-    const step = `${task.stage}:${version}`
-    const sentBefore =
-      cached?.sent?.step === step && Array.isArray(cached.sent.ids)
-        ? cached.sent.ids.filter((id): id is string => typeof id === "string")
-        : []
-    const fresh = memories.filter((memory) => !sentBefore.includes(memory.id))
-    const earlier = memories.length - fresh.length
-    if (!looked || fresh.length > 0)
-      await ctx.fs.atomicWrite(
-        cache,
-        JSON.stringify({
-          key,
-          ids: memories.map((memory) => memory.id),
-          nonce,
-          sent: { step, ids: [...sentBefore, ...fresh.map(({ id }) => id)].slice(-SENT_MAX) },
-        }),
-      )
-    const capture = ["verify", "review"].includes(task.stage)
-    const toKeep = capture ? await lessonsToKeep(ctx, task, service) : []
-    const saving = capture
-      ? `${SAVING_OPENS}${toKeep.length ? KEEPING : ""}${SAVING}`
-      : earlier > 0 && fresh.length === 0
-        ? SENT_EARLIER
-        : "Use qualitylayer memory context <specific query> when a relevant project fact is missing; use qualitylayer memory read <id> for the full lesson. Search with concrete code terms; if needed, try one alternate phrase."
-    const paragraphs = data.instructions.split("\n\n")
-    const instructions = capture
-      ? [paragraphs[0], saving, ...paragraphs.slice(1)].join("\n\n")
-      : `${data.instructions}\n\n${saving}`
-    const tail = fresh.length
-      ? `\n\n${historicalMemories(fresh, nonce)}`
-      : capture && earlier > 0
-        ? `\n\n${SENT_EARLIER}`
-        : ""
-    return ok({
-      ...data,
-      instructions: `${instructions}${tail}`,
-      memory: {
-        read: fresh.length,
-        enabled: true,
-        ...(earlier > 0 ? { sent_earlier: earlier } : {}),
-      },
-      // Ids and states only; the titles are lesson text and travel inside the data block.
-      ...(toKeep.length
-        ? {
-            lessons_to_keep: toKeep.map(({ id, sources }) => ({ id, sources })),
-            lessons_to_keep_untrusted: untrustedMemoryBlock(
-              toKeep.map(({ id, title }) => ({ id, title })),
-            ),
-          }
-        : {}),
-      ...(captureIssue ? { memory_issue: captureIssue } : {}),
-    })
+    return ok(await enrichActiveTaskReply(ctx, task, service, data))
   } catch {
     return ok({
       ...data,
@@ -358,4 +195,17 @@ export async function withTaskMemory(ctx: Ctx, result: Result<unknown>): Promise
   } finally {
     await service?.close()
   }
+}
+
+/**
+ * Adds bounded memory context to a successful workflow reply, without changing its stop or next
+ * command. A step's lessons are sent once; later replies of the step name where to read them again.
+ */
+export async function withTaskMemory(ctx: Ctx, result: Result<unknown>): Promise<Result<unknown>> {
+  if (!result.ok || result.data === null || typeof result.data !== "object") return result
+  const data = result.data as Record<string, unknown>
+  if (data.phase === "ship") return captureAtShip(ctx, result, data)
+  if (typeof data.task !== "string" || typeof data.instructions !== "string" || waitsOnly(data))
+    return result
+  return tryEnrichReply(ctx, result, data)
 }

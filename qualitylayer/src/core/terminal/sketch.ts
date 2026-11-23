@@ -1,102 +1,83 @@
-import { type DefaultTreeAdapterMap as Html, parse } from "parse5"
+import { parse } from "parse5"
+import {
+  attr,
+  CONTROLS,
+  type HtmlElement,
+  type HtmlNode,
+  hidden,
+  isRegion,
+  leafDisplay,
+  TEXT_TAGS,
+  text,
+  words,
+} from "./sketch-dom.ts"
 
-type Node = Html["node"]
-type Element = Html["element"]
-const omitted = new Set(["script", "style", "template", "head", "svg"])
-const controls = new Set(["input", "textarea", "select", "button"])
-const regions = new Set([
-  "main",
-  "section",
-  "article",
-  "aside",
-  "nav",
-  "header",
-  "footer",
-  "form",
-  "fieldset",
-])
-const attr = (node: Element, name: string) => node.attrs.find((a) => a.name === name)?.value
-const hidden = (node: Element) =>
-  omitted.has(node.tagName) ||
-  attr(node, "hidden") !== undefined ||
-  attr(node, "aria-hidden") === "true" ||
-  (node.tagName === "input" && attr(node, "type") === "hidden")
-const text = (node: Node, skipControls = false): string => {
-  if ("tagName" in node && (hidden(node) || (skipControls && controls.has(node.tagName)))) return ""
-  if ("value" in node) return node.value
-  if (node.nodeName === "br") return " "
-  return "childNodes" in node
-    ? node.childNodes.map((child) => text(child, skipControls)).join("")
-    : ""
+type SketchState = {
+  lines: string[]
+  index: number
+  width: number
 }
-const words = (value: string) => value.replaceAll(/\s+/g, " ").trim()
+
+function nextId(state: SketchState, prefix: string): string {
+  state.index += 1
+  return `${prefix}-${state.index}`
+}
+
+function visitNestedControls(state: SketchState, parent: HtmlElement, prefix: string): void {
+  for (const child of parent.childNodes) {
+    if (!("tagName" in child) || hidden(child)) continue
+    if (CONTROLS.has(child.tagName)) visitNode(state, child, prefix)
+    else visitNestedControls(state, child, prefix)
+  }
+}
+
+function visitRegion(state: SketchState, node: HtmlElement, prefix: string, id: string): void {
+  const title = `${attr(node, "aria-label") || attr(node, "data-title") || node.tagName} [${id}]`
+  const rule = "─".repeat(
+    Math.max(1, Math.min(state.width - Bun.stringWidth(prefix) - 4, 72) - Bun.stringWidth(title)),
+  )
+  state.lines.push(`${prefix}┌─ ${title} ${rule}┐`)
+  for (const child of node.childNodes) visitNode(state, child, `${prefix}│ `, id)
+  const bottom = "─".repeat(Math.max(1, Math.min(state.width - Bun.stringWidth(prefix) - 2, 76)))
+  state.lines.push(`${prefix}└${bottom}┘`)
+}
+
+function visitElement(state: SketchState, node: HtmlElement, prefix: string): void {
+  if (hidden(node)) return
+  const id = attr(node, "id") || attr(node, "data-id") || nextId(state, node.tagName)
+  if (isRegion(node)) {
+    visitRegion(state, node, prefix, id)
+    return
+  }
+  const label = words(attr(node, "aria-label") || text(node, !CONTROLS.has(node.tagName)))
+  const leaf = leafDisplay(node, label)
+  if (leaf !== null) {
+    state.lines.push(`${prefix}${leaf} [${id}]`)
+    return
+  }
+  if (TEXT_TAGS.has(node.tagName) && label) {
+    state.lines.push(`${prefix}${label} [${id}]`)
+    visitNestedControls(state, node, prefix)
+    return
+  }
+  for (const child of node.childNodes) visitNode(state, child, prefix, id)
+}
+
+function visitNode(state: SketchState, node: HtmlNode, prefix: string, textId?: string): void {
+  if ("tagName" in node) {
+    visitElement(state, node, prefix)
+    return
+  }
+  if ("childNodes" in node) {
+    for (const child of node.childNodes) visitNode(state, child, prefix)
+  } else if ("value" in node && words(node.value)) {
+    state.lines.push(`${prefix}${words(node.value)} [${textId ?? nextId(state, "text")}]`)
+  }
+}
 
 /** Read the inert HTML tree in source order; generated ids stay tied to that order. */
 export function sketch(html: string, width = 100): string {
-  const lines: string[] = []
-  let index = 0
-  const visit = (node: Node, prefix: string, textId?: string) => {
-    if (!("tagName" in node)) {
-      if ("childNodes" in node) for (const child of node.childNodes) visit(child, prefix)
-      else if ("value" in node && words(node.value))
-        lines.push(`${prefix}${words(node.value)} [${textId ?? `text-${++index}`}]`)
-      return
-    }
-    if (hidden(node)) return
-    const id = attr(node, "id") || attr(node, "data-id") || `${node.tagName}-${++index}`
-    const label = words(attr(node, "aria-label") || text(node, !controls.has(node.tagName)))
-    const emit = (value: string) => lines.push(`${prefix}${value} [${id}]`)
-    const region =
-      regions.has(node.tagName) ||
-      /(?:^|\s)(?:screen|region|panel|card|toolbar|sidebar)(?:\s|$)/.test(attr(node, "class") ?? "")
-    if (region) {
-      const title = `${attr(node, "aria-label") || attr(node, "data-title") || node.tagName} [${id}]`
-      const rule = "─".repeat(
-        Math.max(1, Math.min(width - Bun.stringWidth(prefix) - 4, 72) - Bun.stringWidth(title)),
-      )
-      lines.push(`${prefix}┌─ ${title} ${rule}┐`)
-      for (const child of node.childNodes) visit(child, `${prefix}│ `, id)
-      lines.push(
-        `${prefix}└${"─".repeat(Math.max(1, Math.min(width - Bun.stringWidth(prefix) - 2, 76)))}┘`,
-      )
-      return
-    }
-    if (/^h[1-6]$/.test(node.tagName)) {
-      emit(`${"#".repeat(Number(node.tagName[1]))} ${label}`)
-      return
-    }
-    if (node.tagName === "button" || attr(node, "role") === "button") {
-      emit(`( ${label} )`)
-      return
-    }
-    if (controls.has(node.tagName)) {
-      const value =
-        attr(node, "value") ||
-        attr(node, "placeholder") ||
-        attr(node, "aria-label") ||
-        words(text(node)) ||
-        attr(node, "type") ||
-        node.tagName
-      emit(`[ ${value} ]`)
-      return
-    }
-    if (
-      ["label", "p", "li", "td", "th", "a", "span", "strong", "small"].includes(node.tagName) &&
-      label
-    ) {
-      emit(label)
-      const nestedControls = (parent: Element) => {
-        for (const child of parent.childNodes) {
-          if (!("tagName" in child) || hidden(child)) continue
-          if (controls.has(child.tagName)) visit(child, prefix)
-          else nestedControls(child)
-        }
-      }
-      nestedControls(node)
-      return
-    }
-    for (const child of node.childNodes) visit(child, prefix, id)
-  }
-  visit(parse(html), "")
-  return lines.join("\n") || "No visible elements."
+  const state: SketchState = { lines: [], index: 0, width }
+  visitNode(state, parse(html), "")
+  return state.lines.join("\n") || "No visible elements."
 }

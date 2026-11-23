@@ -104,10 +104,14 @@ export class Acc {
   private accounting = emptyAccounting()
   private hasAccounting = false
 
-  add(piece: Piece): void {
-    this.calls++
-    this.files.add(piece.session)
-    addTokens(this.tokens, piece.tokens)
+  private recordSpendBilling(piece: Piece): void {
+    this.accounting.spendCalls++
+    const amount = piece.reportedUsd >= 0 ? piece.reportedUsd : piece.usd
+    if (amount >= 0) this.accounting.spendUsd += amount
+    else this.accounting.spendUnpriced++
+  }
+
+  private recordAccounting(piece: Piece): void {
     this.hasAccounting ||= piece.billing > 0 || piece.reportedUsd >= 0 || piece.missingTokens
     if (piece.billing === 0) this.accounting.unknownCalls++
     if (piece.missingTokens) this.accounting.missingTokens++
@@ -120,12 +124,14 @@ export class Acc {
       this.accounting.nativeUsd += piece.reportedUsd
       this.accounting.nativeCalls++
     }
-    if (piece.billing === 2 || piece.billing === 3) {
-      this.accounting.spendCalls++
-      const amount = piece.reportedUsd >= 0 ? piece.reportedUsd : piece.usd
-      if (amount >= 0) this.accounting.spendUsd += amount
-      else this.accounting.spendUnpriced++
-    }
+    if (piece.billing === 2 || piece.billing === 3) this.recordSpendBilling(piece)
+  }
+
+  add(piece: Piece): void {
+    this.calls++
+    this.files.add(piece.session)
+    addTokens(this.tokens, piece.tokens)
+    this.recordAccounting(piece)
     if (piece.usd < 0) {
       this.unpricedTokens += tokensIn(piece.tokens)
       return

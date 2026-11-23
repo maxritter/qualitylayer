@@ -23,6 +23,87 @@ export function Pin({ n, who }: { n: number; who?: string }) {
   )
 }
 
+function OpenAnswers({
+  card,
+  outside,
+  deferred,
+  acts,
+  pick,
+}: {
+  card: ItemCard
+  outside: boolean
+  deferred: boolean
+  acts: StepLive | undefined
+  pick: (choice: Choice, from: Element) => void
+}) {
+  if (outside) return <OutsideDecide labels={card.options.map((choice) => choice.label)} />
+  if (deferred) return <span className="sp-wait">Unverified · queued for your review</span>
+  if (acts === undefined) return <span className="sp-wait">Waits for an answer</span>
+  const link = card.link
+  return (
+    <span className="sp-acts">
+      {card.options.map((choice, index) => (
+        <button
+          key={choice.kind}
+          type="button"
+          className={index === 0 ? "q-btn sm" : "q-btn quiet sm"}
+          onClick={(event) => pick(choice, event.currentTarget)}
+        >
+          {choice.label}
+        </button>
+      ))}
+      {link !== undefined ? (
+        <button
+          type="button"
+          className="q-link"
+          onClick={(event) => pick(link, event.currentTarget)}
+        >
+          {link.label}
+        </button>
+      ) : null}
+    </span>
+  )
+}
+
+function SettledAnswers({
+  card,
+  acts,
+  undo,
+  pick,
+}: {
+  card: ItemCard
+  acts: StepLive | undefined
+  undo: boolean
+  pick: (choice: Choice, from: Element) => void
+}) {
+  const link = card.link
+  const canUndo = acts !== undefined && card.state === "chosen" && undo
+  const canChange = acts !== undefined && card.state === "settled" && link !== undefined
+  return (
+    <span className="sp-acts">
+      {card.answer !== undefined ? (
+        <span className="q-chosen" data-testid="chosen">
+          {card.answer.label}
+        </span>
+      ) : null}
+      {canUndo ? (
+        <button type="button" className="q-link" onClick={() => acts.answer(card.id, null)}>
+          Undo
+        </button>
+      ) : null}
+      {canChange ? (
+        <button
+          type="button"
+          className="q-link"
+          onClick={(event) => pick(link, event.currentTarget)}
+        >
+          {link.kind === "revisit" ? "Change" : link.label}
+        </button>
+      ) : null}
+    </span>
+  )
+}
+
 export function Answers({
   card,
   mode,
@@ -46,56 +127,9 @@ export function Answers({
     if (SAYS_WHAT.has(choice.kind)) acts.askAbout?.(card.what, from)
   }
   if (card.state === "open") {
-    if (outside) return <OutsideDecide labels={card.options.map((choice) => choice.label)} />
-    if (deferred) return <span className="sp-wait">Unverified · queued for your review</span>
-    if (acts === undefined) return <span className="sp-wait">Waits for an answer</span>
-    return (
-      <span className="sp-acts">
-        {card.options.map((choice, index) => (
-          <button
-            key={choice.kind}
-            type="button"
-            className={index === 0 ? "q-btn sm" : "q-btn quiet sm"}
-            onClick={(event) => pick(choice, event.currentTarget)}
-          >
-            {choice.label}
-          </button>
-        ))}
-        {card.link !== undefined ? (
-          <button
-            type="button"
-            className="q-link"
-            onClick={(event) => pick(card.link as Choice, event.currentTarget)}
-          >
-            {card.link.label}
-          </button>
-        ) : null}
-      </span>
-    )
+    return <OpenAnswers card={card} outside={outside} deferred={deferred} acts={acts} pick={pick} />
   }
-  return (
-    <span className="sp-acts">
-      {card.answer !== undefined ? (
-        <span className="q-chosen" data-testid="chosen">
-          {card.answer.label}
-        </span>
-      ) : null}
-      {acts !== undefined && card.state === "chosen" && undo ? (
-        <button type="button" className="q-link" onClick={() => acts.answer(card.id, null)}>
-          Undo
-        </button>
-      ) : null}
-      {acts !== undefined && card.state === "settled" && card.link !== undefined ? (
-        <button
-          type="button"
-          className="q-link"
-          onClick={(event) => pick(card.link as Choice, event.currentTarget)}
-        >
-          {card.link.kind === "revisit" ? "Change" : card.link.label}
-        </button>
-      ) : null}
-    </span>
-  )
+  return <SettledAnswers card={card} acts={acts} undo={undo} pick={pick} />
 }
 
 /** The mark at the start of a row: amber while it waits for you, filled once answered. */

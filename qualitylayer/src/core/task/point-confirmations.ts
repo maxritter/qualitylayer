@@ -123,6 +123,10 @@ export async function pointAgreements(
   return out
 }
 
+function hasImmediateAgreement(comments: readonly Comment[], hash: string): boolean {
+  return comments.some((c) => c.immediate && c.kind === "agree" && key(c.quote) === hash)
+}
+
 export async function savePointAgreements(
   ctx: Ctx,
   task: { runtimeDir: string },
@@ -136,14 +140,11 @@ export async function savePointAgreements(
   const agreed = drafts.filter(
     (d) => point(d.item) && d.kind === "agree" && (d.quote ?? "").trim() !== "",
   )
-  for (const [hash, entry] of Object.entries(stored))
-    stored[hash] = {
-      ...entry,
-      active:
-        agreed.some((d) => key(d.quote ?? "") === hash) ||
-        (entry.active &&
-          comments.some((c) => c.immediate && c.kind === "agree" && key(c.quote) === hash)),
-    }
+  for (const [hash, entry] of Object.entries(stored)) {
+    const inDrafts = agreed.some((d) => key(d.quote ?? "") === hash)
+    const keptImmediate = entry.active && hasImmediateAgreement(comments, hash)
+    stored[hash] = { ...entry, active: inDrafts || keptImmediate }
+  }
   for (const d of agreed) {
     const text = d.quote ?? ""
     stored[key(text)] = {

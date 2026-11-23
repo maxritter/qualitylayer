@@ -17,87 +17,22 @@ pub enum Link {
     Update,
 }
 
+#[path = "links_artifact.rs"]
+mod artifact;
+
+use artifact::{artifact_document, artifact_section};
+
 const SCHEME: &str = "qualitylayer://";
 const MAX_SEGMENT: usize = 120;
 
 fn plain(segment: &str) -> bool {
-    !segment.is_empty()
-        && segment.len() <= MAX_SEGMENT
-        && segment != "."
-        && segment != ".."
+    let valid_len = !segment.is_empty() && segment.len() <= MAX_SEGMENT;
+    let not_dot = segment != "." && segment != "..";
+    valid_len
+        && not_dot
         && segment
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "._~-".contains(c))
-}
-
-/// A canonical encodeURIComponent section label, decoded only after the route is split.
-fn artifact_section(segment: &str) -> bool {
-    if segment.is_empty() || segment == "." || segment == ".." || segment.len() > 2400 {
-        return false;
-    }
-    let unescaped = |c: u8| c.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&c);
-    let mut decoded = Vec::new();
-    let mut bytes = segment.as_bytes().iter().copied();
-    while let Some(c) = bytes.next() {
-        if c == b'%' {
-            let Some(high) = bytes.next().and_then(|c| (c as char).to_digit(16)) else {
-                return false;
-            };
-            let Some(low) = bytes.next().and_then(|c| (c as char).to_digit(16)) else {
-                return false;
-            };
-            let byte = (high * 16 + low) as u8;
-            if unescaped(byte) {
-                return false;
-            }
-            decoded.push(byte);
-        } else if unescaped(c) {
-            decoded.push(c);
-        } else {
-            return false;
-        }
-    }
-    std::str::from_utf8(&decoded).is_ok_and(|label| {
-        label.encode_utf16().count() <= 200 && !label.chars().any(char::is_control)
-    })
-}
-
-fn artifact_document(segment: &str, project: bool) -> bool {
-    if segment.len() > MAX_SEGMENT {
-        return false;
-    }
-    let canonical = segment.replace("%2f", "%2F");
-    let prefixes: &[&str] = if project {
-        &["docs%2Fartifacts%2F", ".qualitylayer%2Fartifacts%2F"]
-    } else {
-        &["artifacts%2F"]
-    };
-    let Some(file) = prefixes
-        .iter()
-        .find_map(|prefix| canonical.strip_prefix(prefix))
-    else {
-        return false;
-    };
-    let name_ok = |name: &str| {
-        name.chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-            && name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    };
-    if let Some((name, page)) = file.split_once("%2F") {
-        return name_ok(name)
-            && page.ends_with(".html")
-            && page
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
-            && page
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
-    }
-    !canonical.starts_with(".qualitylayer%2F") && file.strip_suffix(".html").is_some_and(name_ok)
 }
 
 /// How many segments follow the area, at least and at most.
@@ -133,43 +68,35 @@ fn machine(rest: &[&str]) -> Link {
     }
 }
 
-pub fn parse(link: &str) -> Link {
-    let Some(path) = link.strip_prefix(SCHEME) else {
-        return Link::Home;
-    };
-    // Windows adds a closing slash to a link that has no path.
-    let path = path.strip_suffix('/').unwrap_or(path);
-    if path == "update" {
-        return Link::Update;
+fn valid_segment(area: &str, parts: &[&str], index: usize, part: &str) -> bool {
+    if index == 3
+        && (area == "artifact"
+            || (area == "task"
+                && parts
+                    .get(2)
+                    .is_some_and(|file| artifact_document(file, false))))
+    {
+        return artifact_section(part);
     }
-    let parts: Vec<&str> = path.split('/').collect();
-    let [area, rest @ ..] = parts.as_slice() else {
-        return Link::Home;
-    };
-    if *area == "machine" {
+    if index == 2 && area == "artifact" {
+        return artifact_document(part, true);
+    }
+    plain(part) || (index == 2 && matches!(area, "task" | "team") && artifact_document(part, false))
+}
+
+fn parse_area(path: &str, area: &str, rest: &[&str], parts: &[&str]) -> Link {
+    if area == "machine" {
         return machine(rest);
     }
     let fits = arity(area).is_some_and(|(least, most)| (least..=most).contains(&rest.len()));
-    let valid = parts.iter().enumerate().all(|(index, part)| {
-        if index == 3
-            && (*area == "artifact"
-                || (*area == "task"
-                    && parts
-                        .get(2)
-                        .is_some_and(|file| artifact_document(file, false))))
-        {
-            return artifact_section(part);
-        }
-        if index == 2 && *area == "artifact" {
-            return artifact_document(part, true);
-        }
-        plain(part)
-            || (index == 2 && matches!(*area, "task" | "team") && artifact_document(part, false))
-    });
+    let valid = parts
+        .iter()
+        .enumerate()
+        .all(|(index, part)| valid_segment(area, parts, index, part));
     let literal_artifact_folder =
-        matches!(*area, "task" | "team") && rest.len() > 2 && rest[1] == "artifacts";
+        matches!(area, "task" | "team") && rest.len() > 2 && rest[1] == "artifacts";
     // The three steps; a link to a step that is gone (Discuss, Research, Outline, Review) opens Home.
-    let known_step = *area != "step"
+    let known_step = area != "step"
         || rest
             .get(1)
             .is_some_and(|step| matches!(*step, "plan" | "implement" | "verify"));
@@ -177,6 +104,22 @@ pub fn parse(link: &str) -> Link {
         Link::Route(format!("#/{path}"))
     } else {
         Link::Home
+    }
+}
+
+pub fn parse(link: &str) -> Link {
+    let Some(raw) = link.strip_prefix(SCHEME) else {
+        return Link::Home;
+    };
+    // Windows adds a closing slash to a link that has no path.
+    let path = raw.strip_suffix('/').unwrap_or(raw);
+    if path == "update" {
+        return Link::Update;
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    match parts.as_slice() {
+        [area, rest @ ..] => parse_area(path, area, rest, &parts),
+        [] => Link::Home,
     }
 }
 

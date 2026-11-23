@@ -4,136 +4,19 @@
 // or a `qualitylayer`/`qualitylayer-cli` program (or `main.ts`) started with `serve`.
 
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { sep } from "node:path"
-import { powershell } from "../core/platform.ts"
 import { pidAlive } from "../core/self.ts"
-import { windowsProcessStart } from "../core/windows-processes.ts"
+import { commandOf, windowsCommand, windowsProcessRows } from "./processes-inspect.ts"
+
+export {
+  commandOf,
+  parseWindowsRows,
+  processStartTime,
+  windowsCommand,
+} from "./processes-inspect.ts"
 
 export type Sleep = (ms: number) => Promise<void>
-
-/** What a Windows process query says of one process. */
-export type WindowsProcessRow = { pid: number; program: string | null; command: string | null }
-
-/** The first word of a Windows command line: a quoted program, or up to the first space. */
-function afterProgram(commandLine: string): string {
-  const line = commandLine.trim()
-  if (line.startsWith('"')) {
-    const end = line.indexOf('"', 1)
-    return end === -1 ? "" : line.slice(end + 1).trim()
-  }
-  const space = line.search(/\s/)
-  return space === -1 ? "" : line.slice(space + 1).trim()
-}
-
-/**
- * A Windows process as `ps` shows one: its program's path and then its arguments, with no quotes
- * around the program. Null when the system gave no program (a process this user may not read).
- */
-export function windowsCommand(row: WindowsProcessRow): string | null {
-  if (row.program === null || row.program === "") return null
-  const args = row.command === null ? "" : afterProgram(row.command)
-  return args === "" ? row.program : `${row.program} ${args}`
-}
-
-/** The rows `windowsProcessRows` asked for, from its JSON; none for anything it cannot read. */
-export function parseWindowsRows(json: string): WindowsProcessRow[] {
-  try {
-    const parsed = JSON.parse(json) as unknown
-    const rows = Array.isArray(parsed) ? parsed : parsed === null ? [] : [parsed]
-    return rows.flatMap((row) => {
-      const r = row as { pid?: unknown; program?: unknown; command?: unknown }
-      if (typeof r.pid !== "number") return []
-      return [
-        {
-          pid: r.pid,
-          program: typeof r.program === "string" && r.program !== "" ? r.program : null,
-          command: typeof r.command === "string" && r.command !== "" ? r.command : null,
-        },
-      ]
-    })
-  } catch {
-    return []
-  }
-}
-
-/** How long Windows may take to name a process: starting PowerShell and WMI is slow on a managed machine. */
-const WINDOWS_QUERY_MS = 30_000
-
-/**
- * Processes by one WMI filter, `ProcessId = 7` or `Name = 'x.exe'` (fixed text, never the user's).
- * Empty when the query cannot be run: the callers then do as they did before there was one.
- */
-function windowsProcessRows(filter: string): WindowsProcessRow[] {
-  const [code, out] = powershell(
-    `$qlRows = @(Get-CimInstance Win32_Process -Filter "${filter}" | ForEach-Object { ` +
-      "@{pid=[int]$_.ProcessId; program=[string]$_.ExecutablePath; command=[string]$_.CommandLine} }); " +
-      "[Console]::Write((ConvertTo-Json -InputObject $qlRows -Compress))",
-    null,
-    WINDOWS_QUERY_MS,
-  )
-  return code === 0 ? parseWindowsRows(out) : []
-}
-
-/**
- * The whole command line of a process, or null when it is gone or the system cannot say. On Windows
- * it is the program's path and its arguments, so a pid the system has handed to another program is
- * told from a server before anything ends it.
- */
-export function commandOf(pid: number): string | null {
-  if (process.platform === "win32") {
-    const row = windowsProcessRows(`ProcessId = ${Math.trunc(pid)}`)[0]
-    return row === undefined ? null : windowsCommand(row)
-  }
-  const out = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
-    encoding: "utf8",
-    timeout: 5000,
-  })
-  const text = out.status === 0 ? out.stdout.trim() : ""
-  return text === "" ? null : text
-}
-
-/** Seconds between 1601-01-01, where Windows counts from, and 1970-01-01. */
-const WINDOWS_EPOCH_SECONDS = 11_644_473_600n
-
-/**
- * When a process began, in whole seconds since the Unix epoch, or null when it is gone or the system
- * cannot say. The App reads the same number natively (macOS `proc_pidinfo`, Linux `/proc/<pid>/stat`
- * field 22 added to the boot time, Windows `GetProcessTimes`) and compares it with this one: a pid
- * the system has handed to another program began at another time.
- */
-export function processStartTime(pid: number): number | null {
-  if (!Number.isInteger(pid) || pid <= 0) return null
-  try {
-    if (process.platform === "win32") {
-      const [started] = windowsProcessStart(pid)
-      if (started === null) return null
-      const seconds = BigInt(started) / 10_000_000n - WINDOWS_EPOCH_SECONDS
-      return seconds > 0n ? Number(seconds) : null
-    }
-    if (process.platform === "linux") return linuxStartTime(pid)
-    const out = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-      encoding: "utf8",
-      timeout: 5000,
-      env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
-    })
-    const text = out.status === 0 ? out.stdout.trim() : ""
-    const ms = text === "" ? Number.NaN : Date.parse(`${text} UTC`)
-    return Number.isFinite(ms) ? Math.floor(ms / 1000) : null
-  } catch {
-    return null
-  }
-}
-
-/** `/proc/<pid>/stat` field 22 is in clock ticks (100 a second) after boot; `/proc/stat` says when that was. */
-function linuxStartTime(pid: number): number | null {
-  const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
-  // The command name is in parentheses and may hold spaces: the fields count from the last `)`.
-  const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ")
-  const ticks = Number(fields[19])
-  const boot = Number(/^btime (\d+)$/m.exec(readFileSync("/proc/stat", "utf8"))?.[1])
-  return Number.isFinite(ticks) && Number.isFinite(boot) ? boot + Math.floor(ticks / 100) : null
-}
 
 /** `/path/qualitylayer[-cli] serve ...`: a compiled QualityLayer started as the server. The path starts the line. */
 const SERVE = /^(\/.*?\/qualitylayer(?:-cli)?) serve(?: |$)/

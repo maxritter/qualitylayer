@@ -10,6 +10,19 @@
 // Pure text in, a list out, with no file or Node import, so the App's pages read it too. The
 // file-reading entry points are in `acceptance.ts`.
 
+import {
+  addAlso,
+  addRow,
+  alsoLine,
+  columnsOf,
+  FEATURE_COLUMNS,
+  isDelimiter,
+  type ProofColumns,
+  plainText,
+  replacePoint,
+  runsAsLine,
+} from "./proof-table.ts"
+
 export type ProofStep = {
   /** `A1`. */
   id: string
@@ -55,34 +68,6 @@ export function stepsOfPoint(list: ProofList, n: number): ProofStep[] {
 
 const FENCE = /^\s*(```|~~~)/
 const POINT = /^###\s+(\d+)[.)]\s*((?:\S.*)?)$/
-const STEP_ID = /^A(\d+)$/i
-function alsoLine(text: string): string[] | null {
-  const prefix = /^[*_]*also/i.exec(text)
-  if (prefix === null) return null
-  const written = text.slice(prefix[0].length)
-  let tail = written.replace(/^[*_]+/, "").trimStart()
-  if (/^[:\-–—]/.test(tail)) tail = tail.slice(1).trimStart()
-  if (tail === "" && written !== "") tail = written.slice(-1)
-  const content = /^(.+)$/.exec(tail)
-  return content === null ? null : [text, content[1] ?? ""]
-}
-function runsAsLine(text: string): string[] | null {
-  const prefix = /^(?:\*\*|__)?runs as\b/i.exec(text)
-  if (prefix === null) return null
-  let tail = text.slice(prefix[0].length).trimStart()
-  if (tail.startsWith(":")) tail = tail.slice(1).trimStart()
-  if (tail.startsWith("**") || tail.startsWith("__")) tail = tail.slice(2).trimStart()
-  if (tail.startsWith(":")) tail = tail.slice(1).trimStart()
-  const content = /^(.*)$/.exec(tail)
-  return content === null ? null : [text, content[1] ?? ""]
-}
-
-const plainText = (text: string): string =>
-  text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/[`*_]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
 
 /** The section's lines without its `## ` heading. */
 function linesOf(section: string): string[] {
@@ -104,160 +89,95 @@ function proseOf(lines: string[]): string[] {
   })
 }
 
-/** The cells of a table row, `\|` kept as a pipe. */
-function cellsOf(row: string): string[] {
-  const inner = row.trim().replace(/^\|/, "").replace(/\|$/, "")
-  return inner.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, "|").trim())
+type ParseState = {
+  points: ProofPoint[]
+  steps: ProofStep[]
+  byId: Map<string, ProofStep>
+  point: ProofPoint | null
+  columns: ProofColumns
+  runsAs: string | null
+  runsOpen: boolean
 }
 
-const isDelimiter = (row: string): boolean => /^[\s|:-]+$/.test(row) && row.includes("-")
-
-const stepIdOf = (cell: string): { id: string; n: number } | null => {
-  const found = STEP_ID.exec(cell.replace(/[`*_\s]/g, ""))
-  return found === null ? null : { id: `A${found[1]}`, n: Number(found[1]) }
-}
-
-/** `before` is -1 for a table without the column. */
-type Columns = { step: number; action: number; before: number; expected: number }
-
-const FEATURE_COLUMNS: Columns = { step: 0, action: 1, before: -1, expected: 2 }
-
-/**
- * The column positions a `| Step | Action | Expected |` header row names; null for any other row.
- * Names are matched leniently (case, bold): "Before" or "Before the fix" is the bug's before column,
- * "Expected", "After" or "After the fix" the expected one.
- */
-function columnsOf(row: string): Columns | null {
-  const names = cellsOf(row).map((cell) => plainText(cell).toLowerCase())
-  if (!names.includes("step") || !names.includes("action")) return null
-  const find = (test: (name: string) => boolean, fallback: number) => {
-    const found = names.findIndex(test)
-    return found >= 0 ? found : fallback
+function handleRunsAs(text: string, state: ParseState): boolean {
+  const runs = runsAsLine(text)
+  if (runs !== null && state.runsAs === null) {
+    state.runsAs = (runs[1] ?? "").trim()
+    state.runsOpen = true
+    return true
   }
-  const before = find((name) => /^before\b/.test(name), -1)
-  return {
-    step: find((name) => name === "step", 0),
-    action: find((name) => name === "action", 1),
-    before,
-    expected: find((name) => /^(expected|after\b)/.test(name), before >= 0 ? before + 1 : 2),
+  if (!state.runsOpen) return false
+  if (text === "" || text.startsWith("#") || text.startsWith("|")) {
+    state.runsOpen = false
+    return false
   }
+  state.runsAs = `${state.runsAs ?? ""} ${text}`.trim()
+  return true
 }
 
-/** A table row under a point: a new step, or an id written again, which proves this point too. */
-function addRow(
-  row: string,
-  columns: Columns,
-  point: ProofPoint,
-  byId: Map<string, ProofStep>,
-  steps: ProofStep[],
-): void {
-  const cells = cellsOf(row)
-  const id = stepIdOf(cells[columns.step] ?? "")
-  if (id === null) return
-  const existing = byId.get(id.id)
-  if (existing !== undefined) {
-    if (!point.also.includes(id.id) && !existing.points.includes(point.n)) point.also.push(id.id)
+function handlePointBody(text: string, state: ParseState): void {
+  const { point } = state
+  if (point === null || text === "") return
+  if (text.startsWith("|")) {
+    const header = columnsOf(text)
+    if (header !== null) state.columns = header
+    else if (!isDelimiter(text)) addRow(text, state.columns, point, state.byId, state.steps)
     return
   }
-  const action = (cells[columns.action] ?? "").trim()
-  const expected = (cells[columns.expected] ?? "").trim()
-  const before = columns.before >= 0 ? (cells[columns.before] ?? "").trim() : ""
-  const step: ProofStep = {
-    id: id.id,
-    n: id.n,
-    action,
-    expected,
-    before,
-    text: expected === "" ? action : `${action} → ${expected}`,
-    points: [point.n],
-  }
-  byId.set(step.id, step)
-  steps.push(step)
-  point.steps.push(step)
-}
-
-/** An `also A2, A3` line under a point. */
-function addAlso(line: string, point: ProofPoint): void {
-  const also = alsoLine(line)
-  if (also === null) return
-  for (const found of (also[1] ?? "").matchAll(/\bA(\d+)\b/gi)) {
-    const id = `A${found[1]}`
-    if (!point.also.includes(id)) point.also.push(id)
-  }
-}
-
-/** A point heading written again replaces the earlier one in its place, with its steps; a new number is added. */
-function replacePoint(
-  points: ProofPoint[],
-  steps: ProofStep[],
-  byId: Map<string, ProofStep>,
-  point: ProofPoint,
-): void {
-  const at = points.findIndex((p) => p.n === point.n)
-  if (at < 0) {
-    points.push(point)
+  if (alsoLine(text) !== null) {
+    addAlso(text, point)
     return
   }
-  for (const old of points[at]?.steps ?? []) {
-    byId.delete(old.id)
-    steps.splice(steps.indexOf(old), 1)
+  // The sentence on how the point shows, before its table.
+  if (point.steps.length === 0 && !text.startsWith("#") && !text.startsWith(">")) {
+    point.how = `${point.how} ${plainText(text)}`.trim()
   }
-  points[at] = point
+}
+
+function linkAlsoSteps(points: ProofPoint[], byId: Map<string, ProofStep>): void {
+  for (const each of points) {
+    for (const id of each.also) {
+      const step = byId.get(id)
+      if (step !== undefined && !step.points.includes(each.n)) step.points.push(each.n)
+    }
+  }
 }
 
 function pointsList(lines: string[]): ProofList {
-  const points: ProofPoint[] = []
-  const steps: ProofStep[] = []
-  const byId = new Map<string, ProofStep>()
-  let point: ProofPoint | null = null
-  let columns = FEATURE_COLUMNS
-  let runsAs: string | null = null
-  let runsOpen = false
+  const state: ParseState = {
+    points: [],
+    steps: [],
+    byId: new Map(),
+    point: null,
+    columns: FEATURE_COLUMNS,
+    runsAs: null,
+    runsOpen: false,
+  }
   for (const line of lines) {
     const text = line.trim()
     const heading = POINT.exec(text)
     if (heading !== null) {
-      point = {
+      state.point = {
         n: Number(heading[1]),
         text: plainText(heading[2] ?? "").replace(/[.:]$/, ""),
         how: "",
         steps: [],
         also: [],
       }
-      replacePoint(points, steps, byId, point)
-      columns = FEATURE_COLUMNS
-      runsOpen = false
+      replacePoint(state.points, state.steps, state.byId, state.point)
+      state.columns = FEATURE_COLUMNS
+      state.runsOpen = false
       continue
     }
-    const runs = runsAsLine(text)
-    if (runs !== null && runsAs === null) {
-      runsAs = (runs[1] ?? "").trim()
-      runsOpen = true
-      continue
-    }
-    if (runsOpen) {
-      if (text === "" || text.startsWith("#") || text.startsWith("|")) runsOpen = false
-      else {
-        runsAs = `${runsAs ?? ""} ${text}`.trim()
-        continue
-      }
-    }
-    if (point === null || text === "") continue
-    if (text.startsWith("|")) {
-      const header = columnsOf(text)
-      if (header !== null) columns = header
-      else if (!isDelimiter(text)) addRow(text, columns, point, byId, steps)
-    } else if (alsoLine(text) !== null) addAlso(text, point)
-    // The sentence on how the point shows, before its table.
-    else if (point.steps.length === 0 && !text.startsWith("#") && !text.startsWith(">"))
-      point.how = `${point.how} ${plainText(text)}`.trim()
+    if (handleRunsAs(text, state)) continue
+    handlePointBody(text, state)
   }
-  for (const each of points)
-    for (const id of each.also) {
-      const step = byId.get(id)
-      if (step !== undefined && !step.points.includes(each.n)) step.points.push(each.n)
-    }
-  return { points, steps, runsAs: runsAs === "" ? null : runsAs }
+  linkAlsoSteps(state.points, state.byId)
+  return {
+    points: state.points,
+    steps: state.steps,
+    runsAs: state.runsAs === "" ? null : state.runsAs,
+  }
 }
 
 /** The proof list of a Done means section's text (with or without its `## ` heading). */

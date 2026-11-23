@@ -1,37 +1,19 @@
-import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
 import { projectRuntimeDir } from "../../paths.ts"
-import { endedProc, type HookCall, procOf, stillRunning } from "./process.ts"
+import {
+  CommitSettlement,
+  type CommitWindow,
+  callName,
+  type SettlementEvent,
+} from "./commit-settlement.ts"
+import type { HookCall } from "./process.ts"
 import { asObject, COMMIT_ID, editsDir, keptRecord, readEdits, writeRecord } from "./records.ts"
 import { shellCommits } from "./shell.ts"
-
-/**
- * HEAD and the time, as a session's shell call that can commit found them before it ran. `yielded`:
- * the call returned while its command still ran (Codex's exec_command with a process session, a
- * background shell), so the note stays open and `head` is where HEAD stood when it was last read.
- */
-type CommitStart = {
-  head: string
-  at: number
-  yielded?: true
-  /** The process the yielded call's result named (`procOf`): its end closes this note alone. */
-  proc?: string
-}
-/** A session's open notes, and HEAD as its hooks last found it (`at`: when they first did). */
-type CommitWindow = { starts: Record<string, CommitStart>; seen?: { head: string; at: number } }
 
 /** Beside the edit records, not among them: their readers take every file there for a session's. */
 const startsFile = (ctx: Ctx, repoId: string, key: string) =>
   join(projectRuntimeDir(ctx, repoId), "commit-starts", `${key}.json`)
-
-/** One tool call's name in both of its hooks: its id, or its input for an agent that gives none. */
-const callName = (id: unknown, input: unknown): string =>
-  typeof id === "string" && id !== ""
-    ? id
-    : createHash("sha256")
-        .update(JSON.stringify(input) ?? "")
-        .digest("hex")
 
 async function readWindow(ctx: Ctx, file: string): Promise<CommitWindow> {
   const window: CommitWindow = { starts: Object.create(null) }
@@ -115,163 +97,11 @@ export async function noteCommitStart(
 }
 
 /**
- * Whether every move of HEAD since it stood at `from` was a fast-forward, as its reflog says: HEAD
- * then only reached commits that were there already. False when the reflog cannot say.
- */
-async function onlyFastForwards(ctx: Ctx, root: string, from: string): Promise<boolean> {
-  const log = await ctx.git.run(root, ["log", "-g", "-n", "64", "--format=%H%x00%gs", "HEAD"], {
-    fresh: true,
-  })
-  if (log.code !== 0) return false
-  const moves: string[] = []
-  for (const line of log.stdout.split("\n")) {
-    const [sha, subject = ""] = line.trim().split("\0")
-    if (sha === undefined || sha === "") continue
-    if (sha === from) return moves.length > 0 && moves.every((move) => /Fast-forward/.test(move))
-    moves.push(subject)
-  }
-  return false
-}
-
-/**
- * The commits made since HEAD stood at `start.head`: those HEAD holds now and did not then,
- * committed since `start.at`. A commit that was there before (another session's, reached by a
- * fast-forward or brought in by a merge) is older. The start is known to the millisecond and a
- * commit's time to the second, so a commit of the start's own second counts as not older, and
- * HEAD's own record decides what time cannot: where HEAD only fast-forwarded, nothing was made.
- * Null when git cannot say.
- */
-async function createdSince(
-  ctx: Ctx,
-  root: string,
-  start: { head: string; at: number },
-  head: string,
-): Promise<string[] | null> {
-  if (start.head === head) return []
-  const log = await ctx.git.run(
-    root,
-    ["log", "--format=%H %ct", "-n", "256", head, "--not", start.head],
-    { fresh: true },
-  )
-  if (log.code !== 0) return null
-  const began = Math.floor(start.at / 1000)
-  const since = log.stdout
-    .split("\n")
-    .map((line) => line.trim().split(" "))
-    .filter(([sha, at]) => COMMIT_ID.test(sha ?? "") && Number(at) >= began)
-    .map(([sha]) => sha as string)
-  if (since.length === 0 || (await onlyFastForwards(ctx, root, start.head))) return []
-  return since
-}
-
-type SettlementEvent = { call?: HookCall; ended?: "turn" | "session" }
-
-/** Reconcile observations in order, keeping a failed/overlapping call weaker than a completed one. */
-class CommitSettlement {
-  readonly made = new Set<string>()
-  readonly gained = new Set<string>()
-  unsure = false
-  readonly name: string | null
-  readonly yields: boolean
-
-  constructor(
-    private readonly ctx: Ctx,
-    private readonly root: string,
-    private readonly window: CommitWindow,
-    private readonly event: SettlementEvent,
-    private readonly head: string,
-  ) {
-    const call = event.call
-    const capable = call !== undefined && shellCommits(call.tool, call.input)
-    this.name = capable ? callName(call.id, call.input) : null
-    this.yields = capable && stillRunning(call.tool, call.input, call.response)
-  }
-
-  private collect(since: string[] | null, made = false): void {
-    if (since === null) this.unsure = true
-    else for (const sha of since) (made ? this.made : this.gained).add(sha)
-  }
-
-  private keepOpen(start: CommitStart, own: boolean, proc: string | undefined): boolean {
-    if (own) return this.yields
-    if (start.yielded !== true || this.event.ended === "session") return false
-    return this.event.ended !== "turn" || proc !== undefined
-  }
-
-  async reconcileNoted(): Promise<void> {
-    for (const [note, start] of Object.entries(this.window.starts)) {
-      const own = note === this.name
-      // A synchronous call is settled at its own end, or at a turn/session boundary.
-      if (!own && start.yielded !== true && this.event.ended === undefined) continue
-      const since = await createdSince(this.ctx, this.root, start, this.head)
-      const made = own && !this.yields && start.yielded !== true && this.event.call?.failed !== true
-      this.collect(since, made)
-      const proc = (own ? procOf(this.event.call?.response) : undefined) ?? start.proc
-      if (since !== null && this.keepOpen(start, own, proc))
-        this.window.starts[note] = {
-          head: this.head,
-          at: start.at,
-          yielded: true,
-          ...(proc !== undefined ? { proc } : {}),
-        }
-      else delete this.window.starts[note]
-    }
-  }
-
-  async reconcileUnnoted(): Promise<void> {
-    // Missing pre-hook: the last observation can establish only gained commits.
-    this.collect(
-      this.window.seen === undefined
-        ? null
-        : await createdSince(this.ctx, this.root, this.window.seen, this.head),
-    )
-    if (this.name === null || !this.yields) return
-    const proc = procOf(this.event.call?.response)
-    this.window.starts[this.name] = {
-      head: this.head,
-      at: this.ctx.clock.now(),
-      yielded: true,
-      ...(proc !== undefined ? { proc } : {}),
-    }
-  }
-
-  closeEndedProcess(): void {
-    const call = this.event.call
-    const over = call === undefined ? undefined : endedProc(call)
-    if (over === undefined) return
-    const yielded = Object.keys(this.window.starts).filter(
-      (note) => this.window.starts[note]?.yielded,
-    )
-    const named = yielded.filter((note) => this.window.starts[note]?.proc === over)
-    for (const note of named) delete this.window.starts[note]
-    // An unnamed singleton is the only safe fallback; other processes stay open.
-    const only = yielded[0]
-    if (named.length === 0 && yielded.length === 1 && only !== undefined)
-      if (this.window.starts[only]?.proc === undefined) delete this.window.starts[only]
-  }
-}
-
-/**
  * Reads HEAD at a hook event of the session `key`, building `task`, and says which commits its
  * shell calls created by hand (`git commit` and the other commands `shellCommits` knows): the
  * task's own, although no `commit slice` or `commit fix` registered them. Every hook event calls
  * it: a tool call's end (`call`, whether it succeeded or failed), any other event, and the end of
  * a turn or a session (`ended`).
- *
- * HEAD after a call is not evidence by itself: a failed commit, a rehearsal or a fast-forward
- * leaves another session's commit there. Evidence is where HEAD stood before the call
- * (`noteCommitStart`) and what it gained since, committed since (`createdSince`).
- * - `made`: gained during a successful call that has ended. Kept in the session's record as the
- *   task's own. It is everything that appeared during the call, so it says nothing of whether
- *   another task's overlapping call made the commit: no other task reads it as proof.
- * - `gained`: gained while a call was open that returned before its command ended (`stillRunning`),
- *   or since the session's hooks last read HEAD when the call's first hook never ran, or during
- *   a call that failed. Another session may have made such a commit; it is claimed all the same,
- *   also when that session's task recorded it (both are checked again). A yielded call's note
- *   stays open, read again at every later event, until the
- *   session ends or its poll says the command exited.
- * - `unsure`: a call that can commit ended and nothing says where HEAD stood before it, or git
- *   could not be read: the hooks cannot say what the session committed.
  */
 export async function settleCommits(
   ctx: Ctx,
@@ -284,10 +114,6 @@ export async function settleCommits(
   const capable = call !== undefined && shellCommits(call.tool, call.input)
   const file = startsFile(ctx, repo.id, key)
   const window = await readWindow(ctx, file)
-  // Git is asked only where HEAD can matter: a call that can commit ended, a turn or the session
-  // ended, or a call is still open. Any other tool call of the session moves nothing it could
-  // claim. The baseline for a commit call without a first hook is then HEAD as last read here
-  // or noted by `noteCommitStart`: older at worst, which only widens what is read as gained.
   if (!capable && event.ended === undefined && Object.keys(window.starts).length === 0)
     return { made: [], gained: [], unsure: false }
   const head = await headCommit(ctx, repo.root)

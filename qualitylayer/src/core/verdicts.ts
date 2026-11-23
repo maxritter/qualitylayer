@@ -3,16 +3,23 @@
 // latest line of an item stands. `03-verify.md` is still written at the end, for the record.
 
 import { join } from "node:path"
-import { type Ctx, err, ok, type Result, type ValidationError } from "../ctx.ts"
+import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { proofOf } from "./acceptance.ts"
-import { appendToSection, verifyLogPath } from "./docs/build-log.ts"
-import { agentFileOf, isProofPath } from "./docs/names.ts"
+import { isProofPath } from "./docs/names.ts"
 import { evidenceIn } from "./docs/outline.ts"
-import { validateDoc } from "./docs/validate.ts"
 import { type EvidenceMode, isEvidenceMode, isRunId } from "./review/screen-evidence.ts"
-import { ensureVerifyLog } from "./task/reconcile.ts"
 import type { Task } from "./task/store.ts"
+import { finishVerdicts } from "./verdicts-finish.ts"
+import {
+  acceptanceVerdicts,
+  passedRun,
+  readVerdicts,
+  verdictsDir,
+  verdictsPath,
+} from "./verdicts-read.ts"
 import { readAssignment } from "./verification.ts"
+
+export { acceptanceVerdicts, finishVerdicts, passedRun, readVerdicts }
 
 /** What a judge says of one item. `user` is a point only the person can confirm. */
 export const VERDICT_WORDS = ["pass", "fail", "missing", "user", "note"] as const
@@ -71,10 +78,6 @@ export function reviewCard(text: string): string | null {
   return found?.[1] === undefined ? null : found[1].toUpperCase()
 }
 
-const verdictsDir = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "verdicts")
-const verdictsPath = (task: Pick<Task, "runtimeDir">, assignment: string) =>
-  join(verdictsDir(task), `${assignment.replace(/[^A-Za-z0-9-]/g, "")}.jsonl`)
-
 /** The folder a runtime check cites proof from, as a sentence names it. */
 const PROOF_FOLDER = "evidence/ or records/"
 
@@ -89,98 +92,116 @@ export type VerdictInput = {
   share?: number
 }
 
+const badVerdict = (message: string) => err({ code: "bad_args", message })
+
+function validateRunMetadata(input: VerdictInput): Result<void> {
+  // A verdict names the run it judged and how the run happened, or neither.
+  if ((input.run === undefined) !== (input.mode === undefined))
+    return badVerdict("--run and --mode go together: name both or neither")
+  if (input.run !== undefined && !isRunId(input.run))
+    return badVerdict(`"${input.run}" is not a run name; use letters, digits, . _ - (at most 64)`)
+  if (input.mode !== undefined && !isEvidenceMode(input.mode))
+    return badVerdict(`"${input.mode}" is not a mode; use scripted or real-session`)
+  if (input.share !== undefined && (!Number.isSafeInteger(input.share) || input.share < 1))
+    return badVerdict("--share must be a positive integer")
+  return ok(undefined)
+}
+
+async function validateVerdictEvidence(
+  ctx: Ctx,
+  task: Task,
+  item: string,
+  verdict: VerdictWord,
+  rawEvidence: string | undefined,
+): Promise<Result<string | undefined>> {
+  let evidence: string | undefined
+  if (rawEvidence !== undefined && rawEvidence !== "") {
+    const path = rawEvidence.replace(/^\.\//, "")
+    if (!isProofPath(path) || !(await ctx.fs.exists(join(task.dir, path)))) {
+      return badVerdict(
+        `\`${rawEvidence}\` is not a file under ${PROOF_FOLDER} in the task folder; save it there first`,
+      )
+    }
+    evidence = path
+  }
+  // A runtime pass cites captured proof, as the build log's verdict lines do.
+  if (verdict === "pass" && /^(?:scenario|acceptance):/.test(item) && evidence === undefined) {
+    return badVerdict(
+      `a pass of ${item.replace(":", " ")} needs --evidence <file under ${PROOF_FOLDER}>`,
+    )
+  }
+  return ok(evidence)
+}
+
+async function validateVerdictTarget(
+  ctx: Ctx,
+  task: Task,
+  input: VerdictInput,
+): Promise<Result<{ item: string; verdict: VerdictWord; text: string }>> {
+  const item = itemId(input.item)
+  if (item === null) {
+    return badVerdict(
+      `"${input.item}" is not an item; use scenario <n>, done <n>, dod T<n>, acceptance A<n>, review or check`,
+    )
+  }
+  const verdict = input.verdict.toLowerCase()
+  if (!(VERDICT_WORDS as readonly string[]).includes(verdict))
+    return badVerdict(`"${input.verdict}" is not a verdict; use ${VERDICT_WORDS.join(", ")}`)
+  if (verdict === "user" && !item.startsWith("done:")) {
+    // A Done means step is what a person can be asked to check.
+    const list = await proofOf(ctx, task)
+    const step = item.startsWith("acceptance:") ? item.slice("acceptance:".length) : null
+    if (step === null || !list.steps.some((s) => s.id === step)) {
+      return badVerdict(
+        `only a Done means step (acceptance A<n>) can be the person's; judge ${item.replace(":", " ")} yourself`,
+      )
+    }
+  }
+  const text = input.text.replace(/\s+/g, " ").trim()
+  if (text === "") return badVerdict("a verdict needs the evidence behind it, in words")
+  return ok({ item, verdict: verdict as VerdictWord, text })
+}
+
+async function checkOpenAssignment(
+  ctx: Ctx,
+  task: Task,
+  assignmentId: string,
+): Promise<Result<void>> {
+  const current = await readAssignment(ctx, task)
+  if (current === null || current.id !== assignmentId) {
+    return badVerdict(
+      "that assignment was replaced by a later one (or the id is mistyped), so nothing is recorded under it. Stop: you were replaced, and the current assignment belongs to another reviewer.",
+    )
+  }
+  // The round is recorded in the build log: that record stands, a later call cannot contradict it.
+  if (current.result !== undefined) {
+    return badVerdict(
+      "this round is already recorded in the build log; run `qualitylayer next` for the next one",
+    )
+  }
+  return ok(undefined)
+}
+
 /** Append one verdict to the current assignment's file; refuses what the build log would refuse. */
 export async function recordVerdict(
   ctx: Ctx,
   task: Task,
   input: VerdictInput,
 ): Promise<Result<RecordedVerdict>> {
-  const current = await readAssignment(ctx, task)
-  if (current === null || current.id !== input.assignment) {
-    return err({
-      code: "bad_args",
-      message:
-        "that assignment was replaced by a later one (or the id is mistyped), so nothing is recorded under it. Stop: you were replaced, and the current assignment belongs to another reviewer.",
-    })
-  }
-  // The round is recorded in the build log: that record stands, a later call cannot contradict it.
-  if (current.result !== undefined) {
-    return err({
-      code: "bad_args",
-      message:
-        "this round is already recorded in the build log; run `qualitylayer next` for the next one",
-    })
-  }
-  const item = itemId(input.item)
-  if (item === null) {
-    return err({
-      code: "bad_args",
-      message: `"${input.item}" is not an item; use scenario <n>, done <n>, dod T<n>, acceptance A<n>, review or check`,
-    })
-  }
-  const verdict = input.verdict.toLowerCase()
-  if (!(VERDICT_WORDS as readonly string[]).includes(verdict)) {
-    return err({
-      code: "bad_args",
-      message: `"${input.verdict}" is not a verdict; use ${VERDICT_WORDS.join(", ")}`,
-    })
-  }
-  if (verdict === "user" && !item.startsWith("done:")) {
-    // A Done means step is what a person can be asked to check.
-    const list = await proofOf(ctx, task)
-    const step = item.startsWith("acceptance:") ? item.slice("acceptance:".length) : null
-    if (step === null || !list.steps.some((s) => s.id === step)) {
-      return err({
-        code: "bad_args",
-        message: `only a Done means step (acceptance A<n>) can be the person's; judge ${item.replace(":", " ")} yourself`,
-      })
-    }
-  }
-  const text = input.text.replace(/\s+/g, " ").trim()
-  if (text === "") {
-    return err({ code: "bad_args", message: "a verdict needs the evidence behind it, in words" })
-  }
-  // A verdict names the run it judged and how the run happened, or neither.
-  if ((input.run === undefined) !== (input.mode === undefined)) {
-    return err({ code: "bad_args", message: "--run and --mode go together: name both or neither" })
-  }
-  if (input.run !== undefined && !isRunId(input.run)) {
-    return err({
-      code: "bad_args",
-      message: `"${input.run}" is not a run name; use letters, digits, . _ - (at most 64)`,
-    })
-  }
-  if (input.mode !== undefined && !isEvidenceMode(input.mode)) {
-    return err({
-      code: "bad_args",
-      message: `"${input.mode}" is not a mode; use scripted or real-session`,
-    })
-  }
-  let evidence: string | undefined
-  if (input.evidence !== undefined && input.evidence !== "") {
-    const path = input.evidence.replace(/^\.\//, "")
-    if (!isProofPath(path) || !(await ctx.fs.exists(join(task.dir, path)))) {
-      return err({
-        code: "bad_args",
-        message: `\`${input.evidence}\` is not a file under ${PROOF_FOLDER} in the task folder; save it there first`,
-      })
-    }
-    evidence = path
-  }
-  // A runtime pass cites captured proof, as the build log's verdict lines do.
-  if (verdict === "pass" && /^(?:scenario|acceptance):/.test(item) && evidence === undefined) {
-    return err({
-      code: "bad_args",
-      message: `a pass of ${item.replace(":", " ")} needs --evidence <file under ${PROOF_FOLDER}>`,
-    })
-  }
-  if (input.share !== undefined && (!Number.isSafeInteger(input.share) || input.share < 1)) {
-    return err({ code: "bad_args", message: "--share must be a positive integer" })
-  }
+  const open = await checkOpenAssignment(ctx, task, input.assignment)
+  if (!open.ok) return open
+  const target = await validateVerdictTarget(ctx, task, input)
+  if (!target.ok) return target
+  const meta = validateRunMetadata(input)
+  if (!meta.ok) return meta
+  const { item, verdict, text } = target.data
+  const checkedEvidence = await validateVerdictEvidence(ctx, task, item, verdict, input.evidence)
+  if (!checkedEvidence.ok) return checkedEvidence
+  const evidence = checkedEvidence.data
   const entry: VerdictEntry = {
     at: ctx.clock.now(),
     item,
-    verdict: verdict as VerdictWord,
+    verdict,
     text,
     ...(evidence !== undefined ? { evidence } : {}),
     ...(input.run !== undefined && isEvidenceMode(input.mode)
@@ -201,248 +222,4 @@ export async function recordVerdict(
         }
       : entry,
   )
-}
-
-/** Every item of an assignment with its latest verdict. */
-export async function readVerdicts(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  assignment: string,
-): Promise<Map<string, VerdictEntry>> {
-  const path = verdictsPath(task, assignment)
-  const found = new Map<string, VerdictEntry>()
-  if (!(await ctx.fs.exists(path))) return found
-  for (const line of (await ctx.fs.readFile(path)).split("\n")) {
-    if (line.trim() === "") continue
-    try {
-      const entry = JSON.parse(line) as VerdictEntry
-      if (typeof entry.item === "string" && typeof entry.verdict === "string")
-        found.set(entry.item, entry)
-    } catch {
-      // A torn line from a crashed judge hides itself, nothing else.
-    }
-  }
-  return found
-}
-
-/**
- * The latest `acceptance:A<n>` verdict of each step across every assignment: what a judge recorded
- * for the acceptance test when it kept no evidence run of its own.
- */
-export async function acceptanceVerdicts(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<Map<string, VerdictEntry>> {
-  const found = new Map<string, VerdictEntry>()
-  for (const name of await ctx.fs.readdir(verdictsDir(task)).catch(() => [] as string[])) {
-    if (!name.endsWith(".jsonl")) continue
-    for (const line of (await ctx.fs.readFile(join(verdictsDir(task), name))).split("\n")) {
-      try {
-        const entry = JSON.parse(line) as VerdictEntry
-        if (typeof entry.item !== "string" || !entry.item.startsWith("acceptance:")) continue
-        const step = entry.item.slice("acceptance:".length)
-        if ((found.get(step)?.at ?? 0) <= entry.at) found.set(step, entry)
-      } catch {
-        // A torn line from a crashed judge hides itself, nothing else.
-      }
-    }
-  }
-  return found
-}
-
-/**
- * The latest run the verdicts judged where every judged item passed: the run whose evidence a task
- * keeps besides its last runs. Null when no run passed.
- */
-export async function passedRun(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<string | null> {
-  const runs = new Map<string, { latest: number; words: Map<string, VerdictWord> }>()
-  for (const name of await ctx.fs.readdir(verdictsDir(task)).catch(() => [] as string[])) {
-    if (!name.endsWith(".jsonl")) continue
-    for (const line of (await ctx.fs.readFile(join(verdictsDir(task), name))).split("\n")) {
-      try {
-        const entry = JSON.parse(line) as VerdictEntry
-        if (!isRunId(entry.run) || typeof entry.item !== "string") continue
-        const seen = runs.get(entry.run) ?? { latest: 0, words: new Map<string, VerdictWord>() }
-        seen.latest = Math.max(seen.latest, entry.at)
-        seen.words.set(`${name}\n${entry.item}`, entry.verdict)
-        runs.set(entry.run, seen)
-      } catch {
-        // A torn line from a crashed judge hides itself, nothing else.
-      }
-    }
-  }
-  let found: { run: string; latest: number } | null = null
-  for (const [run, { latest, words }] of runs) {
-    const all = [...words.values()]
-    if (!all.includes("pass") || all.some((word) => word === "fail" || word === "missing")) continue
-    if (found === null || latest >= found.latest) found = { run, latest }
-  }
-  return found?.run ?? null
-}
-
-/** Read every recorded verdict entry of an assignment in order, skipping torn lines. */
-async function readAllVerdictEntries(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  assignment: string,
-): Promise<VerdictEntry[]> {
-  const path = verdictsPath(task, assignment)
-  if (!(await ctx.fs.exists(path))) return []
-  const entries: VerdictEntry[] = []
-  for (const line of (await ctx.fs.readFile(path)).split("\n")) {
-    if (line.trim() === "") continue
-    try {
-      const entry = JSON.parse(line) as VerdictEntry
-      if (typeof entry.item === "string" && typeof entry.verdict === "string") entries.push(entry)
-    } catch {
-      // Skip torn lines.
-    }
-  }
-  return entries
-}
-
-/**
- * Collapse raw verdict entries into the final list for one iteration block:
- * - Singleton items (`acceptance:A1`, `dod:T1`, `scenario:1`, `done:1`): latest entry wins.
- * - Multi-entry items (`check`, `review`): keep each distinct `(item, verdict, text, evidence)` line.
- */
-function collapseVerdicts(entries: readonly VerdictEntry[]): VerdictEntry[] {
-  const singletons = new Map<string, number>()
-  const out: VerdictEntry[] = []
-  const seen = new Set<string>()
-  for (const entry of entries) {
-    if (entry.item !== "check" && entry.item !== "review") {
-      const prev = singletons.get(entry.item)
-      if (prev !== undefined) out[prev] = entry
-      else {
-        singletons.set(entry.item, out.length)
-        out.push(entry)
-      }
-      continue
-    }
-    const key = `${entry.item}\0${entry.verdict}\0${entry.text}\0${entry.evidence ?? ""}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(entry)
-  }
-  return out
-}
-
-function formatVerdictLine(entry: VerdictEntry): string {
-  const word = entry.verdict.toUpperCase()
-  const label = entry.item.includes(":") ? entry.item.replace(":", " ") : entry.item
-  const needsCite =
-    entry.evidence !== undefined && entry.evidence !== "" && evidenceIn(entry.text).length === 0
-  const body = needsCite ? `${entry.text} — \`${entry.evidence}\`` : entry.text
-  return `- [${word}] ${label}: ${body}`
-}
-
-/** Replace an existing `### <heading>` block inside `## Verification`, or append it to the section. */
-function upsertIterationBlock(markdown: string, heading: string, block: string): string {
-  const lines = markdown.split(/\r?\n/)
-  const target = `### ${heading}`
-  const start = lines.findIndex((line) => line.trim() === target)
-  if (start < 0) return appendToSection(markdown, "Verification", block)
-  let end = start + 1
-  while (end < lines.length && !/^#{2,3}\s/.test(lines[end] ?? "")) end++
-  while (end > start + 1 && (lines[end - 1] ?? "").trim() === "") end--
-  const updated = [...lines.slice(0, start), ...block.split("\n"), ...lines.slice(end)]
-  return `${updated.join("\n").trimEnd()}\n`
-}
-
-export type FinishVerdictsInput = {
-  assignment: string
-  judge?: string
-  share?: number
-}
-
-export type FinishedVerdicts = {
-  file: string
-  heading: string
-  result: "pass" | "fail"
-  verdicts: number
-  errors: ValidationError[]
-}
-
-/**
- * Render the recorded JSONL verdicts for `assignment` into a canonical `### Iteration N` (or
- * `### Iteration N · share K`) block in `agents/03-verify.md`, safely under a lock, and validate.
- */
-export async function finishVerdicts(
-  ctx: Ctx,
-  task: Task,
-  input: FinishVerdictsInput,
-): Promise<Result<FinishedVerdicts>> {
-  const current = await readAssignment(ctx, task)
-  if (current === null || current.id !== input.assignment) {
-    return err({
-      code: "bad_args",
-      message:
-        "that assignment was replaced by a later one (or the id is mistyped), so nothing was written under it.",
-    })
-  }
-  if (current.result !== undefined) {
-    return err({
-      code: "bad_args",
-      message:
-        "this round is already recorded in the build log; run `qualitylayer next` for the next one",
-    })
-  }
-  if (input.share !== undefined && (!Number.isSafeInteger(input.share) || input.share < 1)) {
-    return err({ code: "bad_args", message: "--share must be a positive integer" })
-  }
-  const raw = await readAllVerdictEntries(ctx, task, input.assignment)
-  const hasShareTags = raw.some((entry) => entry.share !== undefined)
-  const scoped =
-    input.share !== undefined && hasShareTags
-      ? raw.filter((entry) => entry.share === input.share)
-      : raw
-  const collapsed = collapseVerdicts(scoped)
-  if (collapsed.length === 0) {
-    const shareNote = input.share !== undefined ? ` (share ${input.share})` : ""
-    return err({
-      code: "bad_args",
-      message: `no verdicts recorded for assignment ${input.assignment}${shareNote}; record each item with \`qualitylayer verdict ${input.assignment} ...\` first`,
-    })
-  }
-  const heading =
-    input.share !== undefined
-      ? `Iteration ${current.iteration} · share ${input.share}`
-      : `Iteration ${current.iteration}`
-  const judge = (input.judge ?? "fresh helper").replace(/\s+/g, " ").trim() || "fresh helper"
-  const result: "pass" | "fail" = collapsed.some(
-    (entry) => entry.verdict === "fail" || entry.verdict === "missing",
-  )
-    ? "fail"
-    : "pass"
-  const block = [
-    `### ${heading}`,
-    "",
-    `**Assignment:** ${input.assignment}`,
-    `**Judge:** ${judge}`,
-    "",
-    ...collapsed.map(formatVerdictLine),
-    "",
-    `**Result:** ${result}`,
-  ].join("\n")
-
-  await ctx.fs.mkdir(task.runtimeDir)
-  const recordPath = verifyLogPath(task)
-  await ctx.fs.withLock(join(task.runtimeDir, "verify-record.lock"), async () => {
-    await ensureVerifyLog(ctx, task)
-    const before = await ctx.fs.readFile(recordPath)
-    const after = upsertIterationBlock(before, heading, block)
-    await ctx.fs.atomicWrite(recordPath, after)
-  })
-  const report = await validateDoc(ctx, task.dir, agentFileOf("verify"), {
-    runtimeDir: task.runtimeDir,
-  })
-  const errors = report.ok ? report.data.errors.filter((e) => e.severity === "error") : []
-  return ok({
-    file: agentFileOf("verify"),
-    heading,
-    result,
-    verdicts: collapsed.length,
-    errors,
-  })
 }

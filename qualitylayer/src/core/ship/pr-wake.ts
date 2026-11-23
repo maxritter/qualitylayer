@@ -23,7 +23,8 @@
 import type { Ctx } from "../../ctx.ts"
 import type { RunRecord } from "../run/contracts.ts"
 import type { Task } from "../task/store.ts"
-import { cleanCheckName, type PullRequestRecord, remarkKey, threadWordsKey } from "./pr-record.ts"
+import type { PullRequestRecord } from "./pr-record.ts"
+import { type CommentsSeen, wakeEvents, wakeMessage } from "./pr-wake-events.ts"
 import {
   COMMENT_WAKE_CAP,
   type CommentCoverage,
@@ -45,6 +46,7 @@ import {
 import { readWatch } from "./pr-watch-record.ts"
 import type { PrWake } from "./pr-words.ts"
 
+export { wakeEvents, wakeMessage } from "./pr-wake-events.ts"
 export { COMMENT_WAKE_CAP, WAKE_CAP, WAKE_PERIOD_MS }
 
 /** No wake-up when the agent's tightest plan window has less than this share left. */
@@ -53,133 +55,6 @@ export const WAKE_PLAN_FLOOR = 10
 export const WAKE_QUIET_MS = 30_000
 /** Rounds a stop that failed is tried again, each time finding out first whether the session was taken over. */
 export const WAKE_CLEANUP_ROUNDS = 5
-
-const named = (names: string[]): string =>
-  names.length > 3
-    ? `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`
-    : names.join(", ")
-
-/** A reviewer pauses this long before their comments wake the agent, so a burst is one wake-up. */
-export const COMMENT_QUIET_MS = 5 * 60_000
-
-/**
- * What the agent already has of people's comments: the keys `pr watch` told it, and the newest
- * timestamp actually covered by a batch, including the IDs observed at that boundary.
- */
-export type CommentsSeen = {
-  told: ReadonlySet<string>
-  since: number
-  boundary?: ReadonlySet<string>
-}
-
-const NOTHING_SEEN: CommentsSeen = { told: new Set(), since: 0 }
-
-function notCovered(word: { key: string; at: number }, seen: CommentsSeen): boolean {
-  if (word.at <= 0 || word.at < seen.since) return false
-  return word.at > seen.since || seen.boundary?.has(word.key) !== true
-}
-
-/**
- * People's new comments as one event: the threads whose latest comment is someone else's and the
- * remarks outside them, by people (bots never wake the agent), younger than a day, not told and not
- * decided before. None until the newest is `COMMENT_QUIET_MS` old at the read; its key names the batch.
- */
-function commentEvents(record: PullRequestRecord, seen: CommentsSeen): WakeEvent[] {
-  const read = record.readAt
-  const words = [
-    ...record.threads.flatMap((thread) => {
-      const key = threadWordsKey(thread)
-      const latest = thread.latest
-      return key === null || latest === null || latest.mine || latest.bot === true
-        ? []
-        : [{ key, at: latest.at }]
-    }),
-    ...(record.remarks ?? [])
-      .filter((remark) => remark.bot !== true)
-      .map((remark) => ({ key: remarkKey(remark.id), at: remark.at })),
-  ].filter(
-    (word) => notCovered(word, seen) && read - word.at < WAKE_PERIOD_MS && !seen.told.has(word.key),
-  )
-  const newest = words.reduce<(typeof words)[number] | null>(
-    (last, word) => (last === null || word.at > last.at ? word : last),
-    null,
-  )
-  if (newest === null || read - newest.at < COMMENT_QUIET_MS) return []
-  const what = words.length === 1 ? "a new review comment" : `${words.length} new review comments`
-  return [
-    {
-      key: newest.key,
-      what,
-      comments: {
-        at: newest.at,
-        keys: words.filter((word) => word.at === newest.at).map((word) => word.key),
-      },
-    },
-  ]
-}
-
-/** What on the open pull request could wake the agent, each with the key that makes it one event. */
-export function wakeEvents(
-  record: PullRequestRecord,
-  seen: CommentsSeen = NOTHING_SEEN,
-): WakeEvent[] {
-  if (record.state !== "open" || record.readAt === 0) return []
-  return [...pullRequestEvents(record), ...commentEvents(record, seen)]
-}
-
-/** Failing checks, a review asking for changes, a conflict. */
-function pullRequestEvents(record: PullRequestRecord): WakeEvent[] {
-  const failing = record.checks.filter((check) => check.result === "failed")
-  return [
-    ...(failing.length > 0
-      ? [
-          {
-            key: `checks:${record.head}`,
-            what: `failing checks (${named(failing.map((check) => cleanCheckName(check.name)))})`,
-          },
-        ]
-      : []),
-    ...(record.changesRequested
-      ? [
-          {
-            key: `review:${record.changesReview ?? record.head}`,
-            what: "a review asking for changes",
-          },
-        ]
-      : []),
-    ...(record.conflicting === true
-      ? [{ key: `conflict:${record.head}`, what: `a conflict with ${record.base || "its base"}` }]
-      : []),
-  ]
-}
-
-/**
- * The one message for the agent: what is new, and the command or place that tells it what to do.
- * People's comments are read whatever the checks say, and change nothing before the author agrees.
- */
-export function wakeMessage(
-  record: PullRequestRecord,
-  events: readonly WakeEvent[],
-  task: string,
-): string {
-  const number = record.number === null ? "" : ` #${record.number}`
-  const review = (event: WakeEvent) => event.key.startsWith("review:")
-  const code = events.some((event) => !review(event) && !isCommentEvent(event))
-  return [
-    `QualityLayer: pull request${number} has ${events.map((event) => event.what).join(" and ")}.`,
-    code
-      ? "Run `qualitylayer pr watch --wait 0`, fix what it names and push the task's branch."
-      : "",
-    events.some(review)
-      ? `Read the review at ${record.url}, answer it, and push the task's branch if it changes.`
-      : "",
-    events.some(isCommentEvent)
-      ? `For the comments, run \`qualitylayer next --task ${task}\` for the review threads' triage and read the others with \`gh pr view ${record.url} --comments\`. Ask the author in the App before changing anything one asks for; push and reply to nobody for them.`
-      : "",
-  ]
-    .filter((line) => line !== "")
-    .join(" ")
-}
 
 /**
  * Where the task's build session stands for a wake-up: `ready` (up and waiting, or stopped and able

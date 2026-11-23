@@ -23,6 +23,8 @@ import {
 } from "lucide-react"
 import { type TourHost, tourBuildChoiceOpen } from "./dom.ts"
 
+export { type Box, placeCard } from "./geometry.ts"
+
 /** Under this window width the task list and the right sidebar take turns in one slot (App.tsx `SLOT_MIN`). */
 const SHARED_SLOT_BELOW = 1100
 
@@ -88,37 +90,43 @@ export type Hold = {
   fold?: string
 }
 
+function syncNav(host: TourHost, nav: boolean | undefined): boolean {
+  if (nav === undefined || host.has("[data-testid=shell][data-nav=open]") === nav) return false
+  return host.press(
+    nav
+      ? '[aria-label^="Show the task list"], [aria-label="Expand the task list"], [aria-label^="Menu"]'
+      : '[aria-label="Hide the task list"]',
+  )
+}
+
+function syncRail(host: TourHost, rail: boolean | undefined): boolean {
+  if (rail === undefined || host.has("[data-rail=open]") === rail) return false
+  return host.press("[data-testid=sidebar-button]")
+}
+
+function syncTab(host: TourHost, tab: Hold["tab"]): boolean {
+  if (tab === undefined) return false
+  const activeSelector =
+    tab === "terminal"
+      ? "#rs-tab-terminal[aria-selected=true], #rs-tab-conversation[aria-selected=true]"
+      : `#rs-tab-${tab}[aria-selected=true]`
+  return !host.has(activeSelector) && host.press(`#rs-tab-${tab}`)
+}
+
+function syncView(host: TourHost, view: Hold["view"]): boolean {
+  return (
+    view !== undefined &&
+    !host.has("[role=radio][aria-checked=true]", view) &&
+    host.press("[role=radio]", view)
+  )
+}
+
 /** Press a control only when the App is not already in the wanted state. */
 export const hold =
   (want: Hold) =>
   (host: TourHost): void => {
-    if (want.nav !== undefined && host.has("[data-testid=shell][data-nav=open]") !== want.nav) {
-      if (
-        host.press(
-          want.nav
-            ? '[aria-label^="Show the task list"], [aria-label="Expand the task list"], [aria-label^="Menu"]'
-            : '[aria-label="Hide the task list"]',
-        )
-      )
-        return
-    }
-    if (want.rail !== undefined && host.has("[data-rail=open]") !== want.rail) {
-      if (host.press("[data-testid=sidebar-button]")) return
-    }
-    if (want.rail === false) return
-    if (
-      want.tab !== undefined &&
-      !host.has(
-        want.tab === "terminal"
-          ? "#rs-tab-terminal[aria-selected=true], #rs-tab-conversation[aria-selected=true]"
-          : `#rs-tab-${want.tab}[aria-selected=true]`,
-      )
-    ) {
-      if (host.press(`#rs-tab-${want.tab}`)) return
-    }
-    if (want.view !== undefined && !host.has("[role=radio][aria-checked=true]", want.view)) {
-      if (host.press("[role=radio]", want.view)) return
-    }
+    if (syncNav(host, want.nav) || syncRail(host, want.rail) || want.rail === false) return
+    if (syncTab(host, want.tab) || syncView(host, want.view)) return
     if (want.fold !== undefined) host.open(want.fold)
   }
 
@@ -314,39 +322,3 @@ export function stopInLength(from: TourStop[], at: number, to: TourStop[]): numb
 /** The index of a place's stop. */
 export const stopAt = (place: TourPlace, stops: TourStop[] = TOUR_STOPS): number =>
   stops.findIndex((stop) => stop.place === place)
-
-export type Box = { x: number; y: number; w: number; h: number }
-
-/**
- * Where the card goes beside the ring in a window of `width` × `height`: below it, else above it, else to
- * its right, else to its left (`first` tries the left or the right first, for a part that makes room
- * there), always inside the window. With no free side it takes the roomiest side and overlaps only the unit's edge
- * there, never its top, where a unit keeps its heading and actions.
- */
-export function placeCard(
-  ring: Box,
-  width: number,
-  height: number,
-  card: { w: number; h: number },
-  first?: "left" | "right",
-): { left: number; top: number } {
-  const gap = 14
-  const clampX = (x: number) => Math.max(12, Math.min(x, width - card.w - 12))
-  const clampY = (y: number) => Math.max(12, Math.min(y, height - card.h - 12))
-  if (first === "left" && ring.x - gap - card.w >= 12)
-    return { left: ring.x - gap - card.w, top: clampY(ring.y + 24) }
-  if (first === "right" && ring.x + ring.w + gap + card.w <= width - 12)
-    return { left: ring.x + ring.w + gap, top: clampY(ring.y + 24) }
-  if (ring.y + ring.h + gap + card.h < height)
-    return { left: clampX(ring.x), top: ring.y + ring.h + gap }
-  if (ring.y - gap - card.h > 0) return { left: clampX(ring.x), top: ring.y - gap - card.h }
-  if (ring.x + ring.w + gap + card.w < width)
-    return { left: ring.x + ring.w + gap, top: clampY(ring.y + 24) }
-  if (ring.x - gap - card.w > 0) return { left: ring.x - gap - card.w, top: clampY(ring.y + 24) }
-  const below = height - (ring.y + ring.h)
-  const right = width - (ring.x + ring.w)
-  if (below >= right && below >= ring.x)
-    return { left: clampX(ring.x), top: clampY(ring.y + ring.h + gap) }
-  if (right >= ring.x) return { left: Math.max(12, width - card.w - 12), top: clampY(ring.y + 24) }
-  return { left: 12, top: clampY(ring.y + 24) }
-}

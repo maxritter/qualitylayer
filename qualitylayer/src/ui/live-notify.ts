@@ -6,17 +6,35 @@
 // front and notifies it); every later one notifies here and never steals focus. Agent progress
 // never notifies. Pure, apart from the two helpers at the end.
 
-import { liveRow, shellStatus } from "../core/interaction-shell/status.ts"
-import { agentName, livenessOf } from "../core/live/liveness.ts"
+import { AGENT_NAMES } from "../core/agents/ids.ts"
+import { liveRow } from "../core/interaction-shell/status.ts"
 import { type RunSummary, runPermissionWaiting } from "../core/run/contracts.ts"
 import { askedInAgent } from "../core/task/sides.ts"
 import type { Notification } from "../interaction/contracts.ts"
 import type { TaskSummary } from "./api.ts"
-import { questionOf, statusOf } from "./live-status.ts"
-import { machineFrame } from "./machines/framed.ts"
-import { pendingGate, viewedStep } from "./model.ts"
-import { approvesOutside, runsInApp, runsOutside } from "./outside.ts"
-import { turnFor } from "./turn/projection.ts"
+import { liveNoticeOf, noticeWakeAt } from "./live-notify-moments.ts"
+import {
+  machineNoticeOf,
+  noticeOptions,
+  setNoticeSound,
+  showTitle,
+  type ToldNotice,
+  tellShell,
+} from "./live-notify-shell.ts"
+import { questionOf } from "./live-status.ts"
+import { pendingGate } from "./model.ts"
+import { approvesOutside, runsInApp } from "./outside.ts"
+
+export {
+  liveNoticeOf,
+  machineNoticeOf,
+  noticeOptions,
+  noticeWakeAt,
+  setNoticeSound,
+  showTitle,
+  type ToldNotice,
+  tellShell,
+}
 
 export type LiveNotice = {
   /** One notice per moment: the same key is never told twice. */
@@ -27,113 +45,48 @@ export type LiveNotice = {
   route: string
 }
 
-/** A managed permission wait uses the same native notification channel as task activity. */
-export function runLiveNoticeOf(
-  run: Pick<
-    RunSummary,
-    | "id"
-    | "generation"
-    | "agent"
-    | "waitSince"
-    | "status"
-    | "title"
-    | "task"
-    | "purpose"
-    | "settings"
-    | "taskLifecycle"
-    | "terminalPrompt"
-    | "attention"
-  >,
-  now: number,
-): LiveNotice | null {
-  if (
-    // A Chat tells its own permission from its hooks (chatMoment): never twice.
-    (!runPermissionWaiting(run) &&
-      ((run.purpose.kind === "new-task" && run.purpose.type === "chat") ||
-        run.taskLifecycle?.stage === "chat")) ||
-    (!run.terminalPrompt && run.settings?.answers === "terminal") ||
-    run.agent === "other" ||
-    !run.waitSince ||
-    now - Date.parse(run.waitSince) < 3000 ||
-    (run.status !== "running" && run.status !== "starting")
+type RunNoticeInput = Pick<
+  RunSummary,
+  | "id"
+  | "generation"
+  | "agent"
+  | "waitSince"
+  | "status"
+  | "title"
+  | "task"
+  | "purpose"
+  | "settings"
+  | "taskLifecycle"
+  | "terminalPrompt"
+  | "attention"
+>
+
+function isChatHandledByHooks(run: RunNoticeInput): boolean {
+  if (runPermissionWaiting(run)) return false
+  return (
+    (run.purpose.kind === "new-task" && run.purpose.type === "chat") ||
+    run.taskLifecycle?.stage === "chat"
   )
-    return null
-  const name = AGENT_NAMES[run.agent]
+}
+
+function isRunNoticeEligible(run: RunNoticeInput, now: number): boolean {
+  if (isChatHandledByHooks(run)) return false
+  if (!run.terminalPrompt && run.settings?.answers === "terminal") return false
+  if (run.agent === "other" || !run.waitSince || now - Date.parse(run.waitSince) < 3000)
+    return false
+  return run.status === "running" || run.status === "starting"
+}
+
+/** A managed permission wait uses the same native notification channel as task activity. */
+export function runLiveNoticeOf(run: RunNoticeInput, now: number): LiveNotice | null {
+  if (!isRunNoticeEligible(run, now)) return null
+  const name = AGENT_NAMES[run.agent as Exclude<RunNoticeInput["agent"], "other">]
   return {
     key: `run|${run.id}|${run.generation}|permission|${run.waitSince}`,
     title: `${name} asks for permission`,
     body: `Allow it in its agent window to go on.\n${run.title}`,
     route: run.task ? `#/task/${encodeURIComponent(run.task)}` : "#/",
   }
-}
-
-/** Needs you tells itself only after this long, so a prompt the agent's next step clears is never told. */
-export const NEEDS_HOLD_MS = 1500
-
-const isChat = (task: TaskSummary): boolean => task.type === "chat" || task.stage === "chat"
-
-const sentenceOf = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
-
-/**
- * A Chat's moment from its live row (Sessions design, States): Needs you after 1.5 s, Your turn once
- * its hold ended, Stopped early. Working, Quiet and a stop the person chose (Stopped, Esc) tell
- * nothing. `wakeAt` is when the row changes with no new signal (a hold ends): the page looks again then.
- */
-function chatMoment(
-  task: TaskSummary,
-  now: number,
-): { notice: LiveNotice | null; wakeAt: number | null } {
-  const none = { notice: null, wakeAt: null }
-  const signals = task.live?.signals ?? null
-  const row = liveRow(task, now)
-  if (row === null || signals === null) return none
-  const lv = livenessOf(signals, now)
-  const name = agentName(signals.agent ?? task.session?.agent ?? null)
-  const make = (key: string, title: string, request: string): LiveNotice => ({
-    key: `${task.id}|${key}`,
-    title,
-    body: `${task.projectName} · ${task.title}\n${request}`,
-    route: `#/task/${encodeURIComponent(task.id)}`,
-  })
-  if (row.state === "needs") {
-    // The prompt's own moment: the permission's hook, or the hook before the question began to wait.
-    const at = lv.state === "permission" ? lv.at : (signals.hook?.at ?? 0)
-    if (now < at + NEEDS_HOLD_MS) return { notice: null, wakeAt: at + NEEDS_HOLD_MS }
-    const request = sentenceOf(row.line.replace(/^Needs you · /, ""))
-    // The hold starts at the hook; the moment is the permission's, or the question's own number, so
-    // the helper hooks that follow never tell it again.
-    const moment = lv.state === "permission" ? at : `ask${task.live?.question?.number ?? at}`
-    return { notice: make(`chat-needs|${moment}`, `${name} needs you`, request), wakeAt: null }
-  }
-  if (row.state === "turn") {
-    if (lv.state === "stopped" && lv.why === "interrupted") return none
-    const at = lv.state === "turn-end" || lv.state === "stopped" ? lv.at : 0
-    return {
-      notice: make(`chat-turn|${at}`, `${name}: your turn`, "It finished. Reply to go on."),
-      wakeAt: null,
-    }
-  }
-  if (row.state === "stopped-early" && lv.state === "stopped")
-    return {
-      notice: make(
-        `chat-stopped-early|${lv.at}`,
-        `${name} stopped early`,
-        "It ended while working. Continue from the Chat.",
-      ),
-      wakeAt: null,
-    }
-  return { notice: null, wakeAt: row.recheckAt }
-}
-
-/** The soonest moment a held notice becomes due with no new signal, so the page looks again then. */
-export function noticeWakeAt(tasks: readonly TaskSummary[], now: number): number | null {
-  let soonest: number | null = null
-  for (const task of tasks) {
-    if (task.answers === "terminal" || task.archived || !isChat(task)) continue
-    const at = chatMoment(task, now).wakeAt
-    if (at !== null && at > now && (soonest === null || at < soonest)) soonest = at
-  }
-  return soonest
 }
 
 /** Whether the live row asks for the person: Needs you, or an agent that stopped early. */
@@ -153,14 +106,6 @@ const waitsHere = (task: TaskSummary): boolean => {
 }
 
 /**
- * Whether the first question of a task is this page's to tell. On this computer the CLI's launcher
- * brings the App forward and tells it, so the page keeps quiet. A machine's server has no such window:
- * its launcher finds no screen, so its framed page tells the first question like any other, to the
- * page around it, which names the machine.
- */
-const tellsFrontQuestion = (): boolean => typeof window !== "undefined" && machineFrame() !== null
-
-/**
  * The questions the shell's rows confirm as waiting, as the page keys their moments: a question's own
  * row, or its item (`plan:question:2`), where the shell lists a single question as an item. A batch's rows confirm no single question: the batch notifies as one.
  */
@@ -173,141 +118,21 @@ export function confirmedQuestions(rows: readonly Notification[]): Set<string> {
   return keys
 }
 
-/** The moment of a task that deserves a notice, keyed so that it is told once; null when none. */
-export function liveNoticeOf(
-  task: TaskSummary,
-  now: number,
-  batchKey?: string | null,
-  batchText?: string,
-): LiveNotice | null {
-  if (
-    (runsOutside(task) && approvesOutside(task)) ||
-    task.archived ||
-    task.stage === "shipped" ||
-    task.stage === "abandoned"
-  )
-    return null
-  if (isChat(task)) return chatMoment(task, now).notice
-  // A split task's agent runs in its terminal: the App tells only its own side.
-  const appRuns = runsInApp(task)
-  const status = statusOf(task, now)
-  const name = agentName(task.live?.signals?.agent ?? task.session?.agent ?? null)
-  const route = `#/task/${encodeURIComponent(task.id)}`
-  const liveness = status.liveness
-  const canonical = shellStatus(task, now)
-  const question = questionOf(task)
-  const projected = turnFor(task.id)?.questions
-  const questionsHere = !askedInAgent(task, question ? [question] : (projected ?? []))
-  const make = (key: string, title: string, body: string): LiveNotice => ({
-    key: `${task.id}|${key}`,
-    title,
-    body: `${body}\n${task.title}`,
-    route,
-  })
-  const batch = turnFor(task.id)?.batch
-  const activeBatch =
-    batchKey === undefined ? (batch?.questions.length ? batch.id : null) : batchKey
-  if (activeBatch !== null && questionsHere)
-    return make(
-      `batch|${activeBatch}`,
-      "Your turn",
-      batchText?.startsWith(`${task.title} · `)
-        ? batchText.slice(task.title.length + 3)
-        : (batchText ?? question?.text ?? "Answer the agent's questions in the App."),
-    )
-  const gate = pendingGate(task)
-  if (gate !== null && !task.gate?.locked && question === null && !approvesOutside(task))
-    return make(
-      `${task.gate?.id ?? gate}|${task.gate?.opened}`,
-      viewedStep(gate) === "plan" ? `${task.title}: Plan ready` : `${task.title} needs your review`,
-      viewedStep(gate) === "plan"
-        ? "Read the Plan and approve it."
-        : "The change waits for your review.",
-    )
-  // The agent's own state is told only when it runs in the App.
-  if (!appRuns) {
-    const asked =
-      status.state === "needs-you" && question !== null && (!question.front || tellsFrontQuestion())
-    return questionsHere && asked && status.target?.kind === "question"
-      ? make(`question|${question.number}`, `Question ${question.number} for you`, question.text)
-      : null
-  }
-  // The `ask` that waited was interrupted, the agent itself may well be alive.
-  if (status.state === "stopped" && question !== null && question.stopped !== null)
-    return make(
-      `ask-stopped|${question.number}|${question.stopped}`,
-      `${name} stopped waiting`,
-      `Question ${question.number} is still open. Your answer is kept.`,
-    )
-  if (status.state === "stopped" && liveness.state === "stopped" && canonical.state === "stopped") {
-    const title =
-      question !== null
-        ? `${name} stopped waiting`
-        : liveness.why === "ended"
-          ? `${name}'s session ended`
-          : liveness.why === "interrupted"
-            ? `You stopped ${name}`
-            : `${name} quit unexpectedly`
-    const body =
-      question !== null
-        ? `Question ${question.number} is still open. Your answer is kept.`
-        : liveness.why === "interrupted"
-          ? "Type anything in its window to go on."
-          : "Continue using QualityLayer."
-    return make(`stopped|${liveness.at}`, title, body)
-  }
-  if (
-    (liveness.state === "stopped" || canonical.state === "quiet") &&
-    status.target?.kind !== "need"
-  )
-    return null
-  if (liveness.state === "permission" && status.state === "your-move")
-    return make(
-      `permission|${liveness.at}`,
-      `${name} asks for permission`,
-      `Allow it in ${name}'s window to go on.`,
-    )
-  if (status.state === "needs-you" && question !== null && status.target?.kind === "question") {
-    // The CLI told the first question after /ql already, and brought the App forward for it; on a
-    // machine its launcher has no screen to bring forward, so the framed page tells it.
-    if (question.front && !tellsFrontQuestion()) return null
-    return make(`question|${question.number}`, `Question ${question.number} for you`, question.text)
-  }
-  const target = status.target
-  if (status.state === "needs-you" && target?.kind === "need") {
-    const need = (task.live?.needs ?? []).find((n) => n.for === target.for)
-    if (need === undefined) return null
-    return need.waiting !== null
-      ? make(`need-waits|${need.for}|${need.waiting}`, "The build waits for you", need.what)
-      : make(
-          `need|${need.for}|${need.reopened?.at ?? need.opened}`,
-          "The build needs you",
-          `${need.what}. The build goes on.`,
-        )
-  }
-  if (status.state === "needs-you" && task.live?.refusal != null && task.live.refusal.count >= 2)
-    return make(
-      `refused|${task.live.refusal.since}`,
-      `${task.live.refusal.lead} twice`,
-      "It comes to you now: open the task to decide.",
-    )
-  if (status.state === "your-move" && liveness.state === "turn-end")
-    return make(`turn|${liveness.at}`, `${name} waits for you`, "Answer in its window.")
-  return null
-}
-
 /**
  * What changed since the last look: a notice for each task whose moment is new. The first look
  * only learns what is there: an App opened on a waiting question does not notify it again.
  */
 export function liveNoticesFor(
-  seen: Set<string> | null,
-  tasks: TaskSummary[],
-  now: number,
-  batches?: ReadonlyMap<string, string>,
-  questions?: ReadonlySet<string>,
-  batchTexts?: ReadonlyMap<string, string>,
+  ...args: [
+    seen: Set<string> | null,
+    tasks: TaskSummary[],
+    now: number,
+    batches?: ReadonlyMap<string, string>,
+    questions?: ReadonlySet<string>,
+    batchTexts?: ReadonlyMap<string, string>,
+  ]
 ): { notices: LiveNotice[]; seen: Set<string>; current: Set<string> } {
+  const [seen, tasks, now, batches, questions, batchTexts] = args
   const current = new Set<string>()
   const notices: LiveNotice[] = []
   for (const task of tasks) {
@@ -319,8 +144,6 @@ export function liveNoticesFor(
       batchTexts?.get(task.id),
     )
     if (notice === null) continue
-    // A task list can arrive before its shell snapshot. Only announce a singleton when that
-    // snapshot confirms its identity; otherwise a batch's first question could notify twice.
     if (
       questions !== undefined &&
       notice.key.startsWith(`${task.id}|question|`) &&
@@ -370,97 +193,3 @@ export function windowTitle(
     badge: asking.length,
   }
 }
-
-// ---------------------------------------------------------------- the page and the shell
-
-/** The title the page shows; what the shell is told passes through it and comes back to this. */
-let plainTitle = typeof document !== "undefined" ? document.title : "QualityLayer"
-
-function hasSelfTestReport(): boolean {
-  if (typeof document === "undefined" || !document.title.startsWith("ql-selftest:")) return false
-  try {
-    const report: unknown = JSON.parse(document.title.slice("ql-selftest:".length))
-    return (
-      typeof report === "object" &&
-      report !== null &&
-      "ready" in report &&
-      typeof report.ready === "boolean"
-    )
-  } catch {
-    // A task's name can contain the prefix too; it is not a native report.
-    return false
-  }
-}
-
-/** Set the window title (and, in the App, the dock badge the shell reads from its "(N)"). */
-export function showTitle(title: string): void {
-  plainTitle = title
-  // WebKit delivers title changes asynchronously. Leave the self-test's report in place
-  // until the native window has read it, even if a task refresh finishes in the same frame.
-  if (hasSelfTestReport()) return
-  if (typeof document !== "undefined" && document.title !== title) document.title = title
-}
-
-/** Whether notices make a sound (Settings › Notifications); the page sets it when its config arrives. */
-let noticeSound = true
-export function setNoticeSound(on: boolean): void {
-  noticeSound = on
-}
-
-/** What a browser notification is shown with: its words, and no sound when the person turned it off. */
-export const noticeOptions = (body: string): NotificationOptions => ({
-  body,
-  silent: !noticeSound,
-})
-
-/** A notice the page tells the shell; its own `silent` (record it, show nothing) wins over the look's. */
-export type ToldNotice = LiveNotice & { silent?: boolean }
-
-/**
- * Tell the App's shell to notify. The page may not call native commands; a title change is the one
- * thing it can say, as the self-test says its report. All of one look's notices go in one title,
- * so none is lost to the next; the shell keeps the window's own title, and the page puts its title
- * back on the next frame. A machine's page shown in another computer's App has no shell of its own:
- * it says the same to the page around it, which tells the shell with the machine's name in front.
- */
-export function tellShell(notices: readonly ToldNotice[], silent = !noticeSound): void {
-  if (typeof document === "undefined" || notices.length === 0) return
-  const told = notices.map(({ key, title, body, route, silent: own }) => ({
-    key,
-    title,
-    body,
-    route,
-    silent: own ?? silent,
-  }))
-  if (toParent({ ql: 1, type: "notices", notices: told })) return
-  if (hasSelfTestReport()) return
-  document.title = `ql-notify:${JSON.stringify(told)}`
-  window.requestAnimationFrame(() => {
-    if (!hasSelfTestReport()) document.title = plainTitle
-  })
-}
-
-/**
- * A machine's notice as this computer tells it: the machine's name in front, its id on the key (so two
- * machines' moments never meet, and the shell's poll of the same moment is told once), and a route on
- * that machine. The words stay text: nothing here reaches the page as markup. A place that is not a
- * plain run of visible characters, or climbs with `..`, leads to the machine itself.
- */
-export function machineNoticeOf(
-  machine: { id: string; name: string },
-  notice: RelayNotice,
-  at: number,
-): ToldNotice {
-  const place = notice.route?.startsWith("#/") ? notice.route.slice(2) : ""
-  const plain = /^[!-~]*$/.test(place) && !place.split("/").some((part) => /^\.\.?$/.test(part))
-  return {
-    key: `${machine.id}|${notice.key ?? `${at}|${notice.title}`}`,
-    title: `${machine.name}: ${notice.title}`,
-    body: notice.body ?? "",
-    route: `#/machine/${machine.id}/${plain ? place : ""}`,
-    ...(notice.silent !== undefined ? { silent: notice.silent } : {}),
-  }
-}
-
-import { AGENT_NAMES } from "../core/agents/ids.ts"
-import { type RelayNotice, toParent } from "./machines/relay.ts"

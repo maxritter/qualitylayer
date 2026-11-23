@@ -1,41 +1,17 @@
-import {
-  ArrowUpRightIcon,
-  BugIcon,
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  ClockIcon,
-  CpuIcon,
-  EyeIcon,
-  ImagePlusIcon,
-  LockIcon,
-  ScanEyeIcon,
-  SendIcon,
-  SparklesIcon,
-  TriangleAlertIcon,
-  XIcon,
-} from "lucide-react"
-import {
-  type ClipboardEvent,
-  type DragEvent,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react"
-import { Button } from "@/components/ui/button"
+import { TriangleAlertIcon } from "lucide-react"
+import type { ReactNode } from "react"
 import { Dialog, DialogContent, DialogTitle, keepWhile } from "@/components/ui/dialog"
-import type {
-  PublicDelivery,
-  PublicReviewView,
-  PublicSystem,
-} from "../core/feedback/public-contract.ts"
 import type { Api } from "./api.ts"
 import type { FeedbackStart } from "./FeedbackSheet.tsx"
-import { forgetShot, preparePublicImage, type Shot } from "./feedback-images.ts"
-import { Segmented } from "./Segmented.tsx"
-import { type ReportUpdate, ReportUpdateNote } from "./Updates.tsx"
+import {
+  ReportFooter,
+  ReportForm,
+  ReportPreview,
+  ReportResult,
+  reportPresentation,
+} from "./public-feedback-parts.tsx"
+import { usePublicFeedback } from "./public-feedback-state.ts"
+import type { ReportUpdate } from "./Updates.tsx"
 import "./public-feedback.css"
 
 type ReportingProps = {
@@ -48,338 +24,39 @@ type ReportingProps = {
   update?: ReportUpdate | null
 }
 
-// The text of an unsent report, kept on this computer so an update's restart does not lose it. Screenshots are not kept.
-const DRAFT_KEY = "qualitylayer.report-draft"
-type StoredDraft = { kind: FeedbackStart["kind"]; title: string; description: string }
-
-function storedDraft(): StoredDraft | null {
-  try {
-    const found = JSON.parse(
-      window.localStorage.getItem(DRAFT_KEY) ?? "null",
-    ) as Partial<StoredDraft> | null
-    if (found === null || typeof found !== "object") return null
-    const { kind, title, description } = found
-    if (
-      (kind !== "bug" && kind !== "idea") ||
-      typeof title !== "string" ||
-      typeof description !== "string"
-    )
-      return null
-    return { kind, title, description }
-  } catch {
-    return null
-  }
-}
-
-function keepDraft(draft: StoredDraft | null): void {
-  try {
-    if (draft === null) window.localStorage.removeItem(DRAFT_KEY)
-    else window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    // a browser that refuses storage only costs the kept text
-  }
-}
-
-function usePublicFeedback({
-  api,
-  open,
-  onOpenChange,
-  start,
-}: Omit<ReportingProps, "privateSupport">) {
-  const [kept] = useState(storedDraft)
-  const [kind, setKind] = useState(kept?.kind ?? start.kind)
-  const [id, setId] = useState(() => crypto.randomUUID())
-  const [title, setTitle] = useState(kept?.title ?? "")
-  const [description, setDescription] = useState(kept?.description ?? "")
-  const [shots, setShots] = useState<Shot[]>([])
-  const [system, setSystem] = useState<PublicSystem | null>(null)
-  const [review, setReview] = useState<PublicReviewView | null>(null)
-  const [delivery, setDelivery] = useState<PublicDelivery | null>(null)
-  const [stage, setStage] = useState<"form" | "preview" | "result" | "private">("form")
-  const [problem, setProblem] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const created = createdIssue(delivery)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const titleField = useRef<HTMLInputElement>(null)
-  const heldShots = useRef(shots)
-  heldShots.current = shots
-  const pendingShots = useRef(new Set<Shot>())
-  const addingNow = useRef(false)
-  const statusVersion = useRef(0)
-  const mounted = useRef(true)
-  const wasOpen = useRef(false)
-  const draft = title.trim() !== "" || description.trim() !== "" || shots.length > 0
-  const showError = useCallback(
-    (cause: unknown) =>
-      setProblem(
-        cause instanceof Error ? cause.message : "The request did not finish. Your report is kept.",
-      ),
-    [],
-  )
-  // The text stays on this computer while the report is unsent, so an update's restart does not lose it.
-  // A report that went out (or is queued to) leaves nothing behind.
-  const writing = stage === "form" || stage === "preview"
-  useEffect(() => {
-    if (!writing || (title.trim() === "" && description.trim() === "")) keepDraft(null)
-    else keepDraft({ kind, title, description })
-  }, [writing, kind, title, description])
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      heldShots.current.forEach(forgetShot)
-      pendingShots.current.forEach(forgetShot)
-      pendingShots.current.clear()
-    }
-  }, [])
-  useEffect(() => {
-    if (open) api.publicFeedbackSystem().then(setSystem).catch(showError)
-  }, [api, open, showError])
-  useEffect(() => {
-    if (open && !wasOpen.current && !draft && stage === "form") {
-      setKind(start.kind)
-    }
-    wasOpen.current = open
-  }, [open, start.kind, draft, stage])
-  // The sheet opens on its first field, and so does the form again when the person comes back to it
-  // from the preview (DESIGN.md › Dialogs and popovers).
-  useEffect(() => {
-    const field = titleField.current
-    if (open && stage === "form" && field) field.focus()
-  }, [open, stage])
-  const needsStatus = stage === "result" && delivery !== null && !created
-  useEffect(() => {
-    if (!open || !needsStatus || typeof api.publicFeedbackStatus !== "function") return
-    const version = ++statusVersion.current
-    api
-      .publicFeedbackStatus(id)
-      .then((next) => {
-        if (!mounted.current || version !== statusVersion.current) return
-        setDelivery(next)
-        if (!next) setStage("form")
-      })
-      .catch((cause) => {
-        if (mounted.current && version === statusVersion.current) showError(cause)
-      })
-    return () => {
-      if (version === statusVersion.current) statusVersion.current++
-    }
-  }, [api, open, needsStatus, id, showError])
-  const addImages = useCallback(
-    async (files: File[]) => {
-      if (addingNow.current || busy) return
-      addingNow.current = true
-      setAdding(true)
-      const next = [...heldShots.current]
-      const prepared: Shot[] = []
-      let committed = false
-      try {
-        for (const file of files) {
-          const result = await preparePublicImage(file, next)
-          if (!mounted.current) {
-            if (result.ok) forgetShot(result.shot)
-            break
-          }
-          if (!result.ok) {
-            setProblem(result.message)
-            break
-          }
-          pendingShots.current.add(result.shot)
-          prepared.push(result.shot)
-          next.push(result.shot)
-        }
-        if (mounted.current) {
-          heldShots.current = next
-          setShots(next)
-          prepared.forEach((shot) => {
-            pendingShots.current.delete(shot)
-          })
-          committed = true
-        }
-      } catch {
-        if (mounted.current)
-          setProblem("The screenshot could not be prepared. Your existing screenshots are kept.")
-      } finally {
-        if (!committed)
-          prepared.forEach((shot) => {
-            if (pendingShots.current.delete(shot)) forgetShot(shot)
-          })
-        addingNow.current = false
-        if (mounted.current) setAdding(false)
-      }
-    },
-    [busy],
-  )
-  const pasted = (event: ClipboardEvent) => {
-    const files = Array.from(event.clipboardData.files).filter((file) =>
-      file.type.startsWith("image/"),
-    )
-    if (files.length && stage === "form") {
-      event.preventDefault()
-      void addImages(files)
-    }
-  }
-  const dropped = (event: DragEvent) => {
-    event.preventDefault()
-    if (stage === "form") void addImages(Array.from(event.dataTransfer.files))
-  }
-  const preview = async () => {
-    setProblem(null)
-    setBusy(true)
-    try {
-      const form = new FormData()
-      form.set("report", JSON.stringify({ id, kind, title, description }))
-      shots.forEach((shot, index) => {
-        form.append(
-          "image",
-          new Blob([new Uint8Array(shot.bytes)], { type: "image/png" }),
-          `screenshot-${index + 1}.png`,
-        )
-      })
-      const next = await api.publicFeedbackPreview(form)
-      setReview(next)
-      setStage("preview")
-    } catch (cause) {
-      showError(cause)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const submit = async () => {
-    if (!review) return
-    setProblem(null)
-    setBusy(true)
-    try {
-      setDelivery(await api.publicFeedbackSubmit(id, review.preview.review.contentSha256))
-      setStage("result")
-    } catch (cause) {
-      showError(cause)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const editQueued = async () => {
-    statusVersion.current++
-    setBusy(true)
-    setProblem(null)
-    try {
-      await api.publicFeedbackCancel(id)
-      setId(crypto.randomUUID())
-      setReview(null)
-      setDelivery(null)
-      setStage("form")
-    } catch (cause) {
-      const latest =
-        typeof api.publicFeedbackStatus === "function"
-          ? await api.publicFeedbackStatus(id).catch(() => null)
-          : null
-      if (latest) setDelivery(latest)
-      if (!createdIssue(latest)) showError(cause)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const close = () => {
-    statusVersion.current++
-    if (created) {
-      shots.forEach(forgetShot)
-      heldShots.current = []
-      setShots([])
-      setTitle("")
-      setDescription("")
-      setReview(null)
-      setDelivery(null)
-      setStage("form")
-      setId(crypto.randomUUID())
-    }
-    onOpenChange(false)
-  }
-  return {
-    kind,
-    setKind,
-    title,
-    setTitle,
-    description,
-    setDescription,
-    shots,
-    setShots,
-    system,
-    review,
-    delivery,
-    stage,
-    setStage,
-    problem,
-    busy,
-    adding,
-    fileInput,
-    titleField,
-    draft,
-    created,
-    addImages,
-    pasted,
-    dropped,
-    preview,
-    submit,
-    editQueued,
-    close,
-  }
-}
-
 export function PublicFeedbackSheet(props: ReportingProps) {
   const { open, onOpenChange, privateSupport, update } = props
-  const {
-    kind,
-    setKind,
-    title,
-    setTitle,
-    description,
-    setDescription,
-    shots,
-    setShots,
-    system,
-    review,
-    delivery,
-    stage,
-    setStage,
-    problem,
-    busy,
-    adding,
-    fileInput,
-    titleField,
-    draft,
-    created,
-    addImages,
-    pasted,
-    dropped,
-    preview,
-    submit,
-    editQueued,
-    close,
-  } = usePublicFeedback(props)
-  if (stage === "private") return privateSupport(() => setStage("form"))
-  const queued = delivery?.status === "queued" && !created
-  const { heading, HeadingIcon } = reportPresentation(stage, delivery, kind, Boolean(created))
+  const fb = usePublicFeedback(props)
+  if (fb.stage === "private") return privateSupport(() => fb.setStage("form"))
+  const queued = fb.delivery?.status === "queued" && !fb.created
+  const { heading, HeadingIcon } = reportPresentation(
+    fb.stage,
+    fb.delivery,
+    fb.kind,
+    Boolean(fb.created),
+  )
+  const ready = Boolean(fb.system && fb.title.trim() && fb.description.trim())
+  const canPreview = !fb.busy && !fb.adding && ready
   return (
     <Dialog
       open={open}
       onOpenChange={(next, details) => {
-        if (busy || adding) details.cancel()
-        else keepWhile(draft, next, details, onOpenChange)
+        if (fb.busy || fb.adding) details.cancel()
+        else keepWhile(fb.draft, next, details, onOpenChange)
       }}
     >
       <DialogContent
         className="q-public-feedback"
         showCloseButton={false}
         aria-describedby={undefined}
-        initialFocus={titleField}
+        initialFocus={fb.titleField}
         finalFocus={() =>
           document.querySelector<HTMLElement>('[data-testid="feedback-button"]') ?? true
         }
         data-testid="feedback-sheet"
-        onPaste={pasted}
+        onPaste={fb.pasted}
         onDragOver={(event) => event.preventDefault()}
-        onDrop={dropped}
+        onDrop={fb.dropped}
       >
         <header className="q-report-head">
           <div className="q-report-heading">
@@ -401,363 +78,62 @@ export function PublicFeedbackSheet(props: ReportingProps) {
           </p>
         </header>
         <div className="q-report-body">
-          {stage === "form" ? (
+          {fb.stage === "form" ? (
             <ReportForm
-              kind={kind}
-              setKind={setKind}
-              title={title}
-              setTitle={setTitle}
-              description={description}
-              setDescription={setDescription}
-              shots={shots}
-              setShots={setShots}
-              fileInput={fileInput}
-              titleField={titleField}
-              busy={busy}
-              adding={adding}
-              addImages={addImages}
-              system={system}
+              kind={fb.kind}
+              setKind={fb.setKind}
+              title={fb.title}
+              setTitle={fb.setTitle}
+              description={fb.description}
+              setDescription={fb.setDescription}
+              shots={fb.shots}
+              setShots={fb.setShots}
+              fileInput={fb.fileInput}
+              titleField={fb.titleField}
+              busy={fb.busy}
+              adding={fb.adding}
+              addImages={fb.addImages}
+              system={fb.system}
               update={update ?? null}
             />
-          ) : stage === "preview" && review ? (
-            <ReportPreview review={review} kind={kind} />
-          ) : delivery ? (
+          ) : fb.stage === "preview" && fb.review ? (
+            <ReportPreview review={fb.review} kind={fb.kind} />
+          ) : fb.delivery ? (
             <ReportResult
-              title={title}
-              delivery={delivery}
-              created={created}
+              title={fb.title}
+              delivery={fb.delivery}
+              created={fb.created}
               queued={queued}
-              busy={busy}
-              editQueued={editQueued}
+              busy={fb.busy}
+              editQueued={fb.editQueued}
               HeadingIcon={HeadingIcon}
             />
           ) : null}
-          {stage !== "preview" ? (
+          {fb.stage !== "preview" ? (
             <p className="q-report-contact">
               You can also email me at{" "}
               <a href="mailto:hello@qualitylayer.dev">hello@qualitylayer.dev</a>.
             </p>
           ) : null}
-          {problem ? (
+          {fb.problem ? (
             <p className="q-report-error" role="alert">
               <TriangleAlertIcon size={15} />
-              {problem}
+              {fb.problem}
             </p>
           ) : null}
         </div>
-        <footer className="q-report-foot">
-          {stage === "form" ? (
-            <>
-              <button
-                type="button"
-                className="q-report-support"
-                disabled={busy || adding}
-                onClick={() => setStage("private")}
-              >
-                <LockIcon size={14} />
-                Private support
-              </button>
-              <span />
-              <Button variant="outline" onClick={close} disabled={busy || adding}>
-                Cancel
-              </Button>
-              <Button
-                disabled={busy || adding || !system || !title.trim() || !description.trim()}
-                onClick={() => void preview()}
-              >
-                <ScanEyeIcon size={14} />
-                {busy ? "Preparing preview…" : "Preview public issue"}
-              </Button>
-            </>
-          ) : stage === "preview" ? (
-            <>
-              <Button variant="outline" disabled={busy} onClick={() => setStage("form")}>
-                Back to edit
-              </Button>
-              <Button disabled={busy} onClick={() => void submit()}>
-                <SendIcon size={14} />
-                {busy ? "Creating…" : "Create public GitHub issue"}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={close} disabled={busy}>
-              Done
-            </Button>
-          )}
-        </footer>
+        <ReportFooter
+          stage={fb.stage}
+          busy={fb.busy}
+          adding={fb.adding}
+          canPreview={canPreview}
+          onPrivate={() => fb.setStage("private")}
+          onClose={fb.close}
+          onPreview={() => void fb.preview()}
+          onBack={() => fb.setStage("form")}
+          onSubmit={() => void fb.submit()}
+        />
       </DialogContent>
     </Dialog>
   )
-}
-
-function ReportForm({
-  kind,
-  setKind,
-  title,
-  setTitle,
-  description,
-  setDescription,
-  shots,
-  setShots,
-  fileInput,
-  titleField,
-  busy,
-  adding,
-  addImages,
-  system,
-  update,
-}: {
-  kind: FeedbackStart["kind"]
-  setKind: (kind: FeedbackStart["kind"]) => void
-  title: string
-  setTitle: (text: string) => void
-  description: string
-  setDescription: (text: string) => void
-  shots: Shot[]
-  setShots: (next: Shot[] | ((held: Shot[]) => Shot[])) => void
-  fileInput: RefObject<HTMLInputElement | null>
-  titleField: RefObject<HTMLInputElement | null>
-  busy: boolean
-  adding: boolean
-  addImages: (files: File[]) => Promise<void>
-  system: PublicSystem | null
-  update: ReportUpdate | null
-}) {
-  return (
-    <>
-      {kind === "bug" && update !== null ? <ReportUpdateNote update={update} /> : null}
-      <Segmented
-        label="Kind of report"
-        value={kind}
-        onChange={setKind}
-        options={[
-          { id: "bug", label: "Report a bug", icon: <BugIcon />, disabled: busy },
-          {
-            id: "idea",
-            label: "Suggest an improvement",
-            icon: <SparklesIcon />,
-            disabled: busy,
-          },
-        ]}
-      />
-      <label className="q-report-field">
-        Title
-        <input
-          ref={titleField}
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          maxLength={120}
-          placeholder={
-            kind === "bug" ? "A short description of the problem" : "A short name for the idea"
-          }
-          disabled={busy}
-        />
-      </label>
-      <label className="q-report-field">
-        {kind === "bug" ? "What happened?" : "What would you like to improve?"}
-        <textarea
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          rows={5}
-          maxLength={5000}
-          placeholder={
-            kind === "bug"
-              ? "What you did, what happened and what you expected."
-              : "What you want to do and how this would help."
-          }
-          disabled={busy}
-        />
-      </label>
-      <section className="q-report-attachments" aria-label="Screenshots">
-        <div className="q-report-attachment-label">
-          <b>Screenshots</b>
-          <span>Optional · public</span>
-        </div>
-        <div className="q-report-shot-list">
-          {shots.map((shot) => (
-            <div className="q-report-shot" key={shot.id}>
-              <img src={shot.url} alt={shot.name} />
-              <button
-                type="button"
-                aria-label={`Remove screenshot ${shot.name}`}
-                disabled={busy || adding}
-                onClick={() => {
-                  forgetShot(shot)
-                  setShots((held) => held.filter((item) => item.id !== shot.id))
-                }}
-              >
-                <XIcon size={12} />
-              </button>
-            </div>
-          ))}
-          {shots.length < 5 ? (
-            <button
-              type="button"
-              className="q-report-add-shot"
-              disabled={adding || busy}
-              onClick={() => fileInput.current?.click()}
-            >
-              <ImagePlusIcon size={17} />
-              <span>{adding ? "Preparing…" : "Add screenshot"}</span>
-            </button>
-          ) : null}
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            hidden
-            onChange={(event) => {
-              void addImages(Array.from(event.target.files ?? []))
-              event.target.value = ""
-            }}
-          />
-        </div>
-      </section>
-      <div className="q-report-utilities">
-        <p>
-          <EyeIcon size={14} />
-          Keep private information out.
-        </p>
-        <details>
-          <summary>
-            <CpuIcon size={14} />
-            System details · included
-            <ChevronDownIcon size={12} />
-          </summary>
-          {system ? (
-            <dl>
-              <dt>QualityLayer</dt>
-              <dd>{system.appVersion}</dd>
-              <dt>System</dt>
-              <dd>
-                {system.os.family} {system.os.version} · {system.architecture}
-              </dd>
-              {system.agent ? (
-                <>
-                  <dt>Agent</dt>
-                  <dd>
-                    {system.agent.name} {system.agent.version}
-                  </dd>
-                </>
-              ) : null}
-            </dl>
-          ) : (
-            <p>Reading system details…</p>
-          )}
-        </details>
-      </div>
-    </>
-  )
-}
-function ReportPreview({
-  review,
-  kind,
-}: {
-  review: PublicReviewView
-  kind: FeedbackStart["kind"]
-}) {
-  return (
-    <>
-      <p className="q-report-notice">
-        <EyeIcon size={15} />
-        This is everything that will appear publicly. Your account name and email are not added.
-      </p>
-      <section className="q-report-preview">
-        <header>
-          {kind === "bug" ? <BugIcon size={14} /> : <SparklesIcon size={14} />}
-          {kind === "bug" ? "Bug report" : "Improvement"} · {review.preview.issue.repository}
-        </header>
-        <article>
-          <h3>{review.preview.issue.title}</h3>
-          <pre>{review.preview.issue.body}</pre>
-          {review.images.map((image) => (
-            <figure key={image.url}>
-              <img src={image.url} alt={image.alt} />
-              <figcaption>{image.alt}</figcaption>
-            </figure>
-          ))}
-          <p className="q-report-labels">
-            GitHub labels: {review.preview.issue.labels.join(", ") || "None"}
-          </p>
-        </article>
-      </section>
-    </>
-  )
-}
-function ReportResult({
-  title,
-  delivery,
-  created,
-  queued,
-  busy,
-  editQueued,
-  HeadingIcon,
-}: {
-  title: string
-  delivery: PublicDelivery
-  created: { reference: string; issueUrl: string } | null
-  queued: boolean
-  busy: boolean
-  editQueued: () => Promise<void>
-  HeadingIcon: typeof BugIcon
-}) {
-  return (
-    <div className="q-report-result">
-      {!created ? <HeadingIcon size={24} /> : null}
-      {created ? (
-        <>
-          <h3>{title}</h3>
-          <p>I’ll reply in the GitHub issue. You can add details there too.</p>
-          <a className="q-btn primary" href={created.issueUrl} target="_blank" rel="noreferrer">
-            View your GitHub issue <ArrowUpRightIcon size={14} aria-hidden="true" />
-          </a>
-        </>
-      ) : (
-        <>
-          <p>{"message" in delivery ? delivery.message : ""}</p>
-          {queued ? (
-            <>
-              <p>
-                The exact public issue you reviewed is saved on this computer for up to 30 days.
-                Delivery waits for the same licence or trial.
-              </p>
-              <button
-                type="button"
-                className="q-report-link"
-                disabled={busy}
-                onClick={() => void editQueued()}
-              >
-                Stop queued delivery and edit the draft
-              </button>
-              <p className="q-report-note">
-                Stopping retries cannot remove an issue GitHub has already received.
-              </p>
-            </>
-          ) : null}
-        </>
-      )}
-    </div>
-  )
-}
-
-function createdIssue(delivery: PublicDelivery | null) {
-  if (!delivery || delivery.status === "uncertain") return null
-  if (delivery.status === "queued" && delivery.reason !== "private_copy_pending") return null
-  if (!delivery.reference || !delivery.issueUrl) return null
-  return { reference: delivery.reference, issueUrl: delivery.issueUrl }
-}
-function reportPresentation(
-  stage: "form" | "preview" | "result" | "private",
-  delivery: PublicDelivery | null,
-  kind: FeedbackStart["kind"],
-  created: boolean,
-) {
-  if (stage === "preview") return { heading: "Review your public issue", HeadingIcon: ScanEyeIcon }
-  if (delivery?.status === "uncertain")
-    return { heading: "Check your report status", HeadingIcon: TriangleAlertIcon }
-  if (delivery?.status === "queued" && !created)
-    return { heading: "Saved to send when you’re online", HeadingIcon: ClockIcon }
-  if (stage === "result") return { heading: "Issue created", HeadingIcon: CheckCircle2Icon }
-  return { heading: "Bugs and ideas", HeadingIcon: kind === "idea" ? SparklesIcon : BugIcon }
 }

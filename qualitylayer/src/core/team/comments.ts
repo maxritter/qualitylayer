@@ -5,104 +5,29 @@
 
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import type { TeamReply } from "../../interaction/contracts.ts"
-import type { ArtifactAnchor } from "../artifact/format.ts"
-import type { Comment } from "../gate/comments.ts"
-import type { Attachment } from "../interaction-docs/attachments.ts"
 import { hasAnnotationMigration, refuseLegacyAnnotationWrite } from "../task/answer-migration.ts"
 import type { Task } from "../task/store.ts"
-import { commentAuthor, type Person } from "./people.ts"
+import {
+  agentActionable,
+  applyThreadChange,
+  type Incoming,
+  isStructured,
+  type TeamComment,
+  type TeamFile,
+  type ThreadChange,
+} from "./comment-rules.ts"
 import { personNote } from "./thread-publication.ts"
 
+export {
+  agentActionable,
+  asComment,
+  type Incoming,
+  isStructured,
+  PERSON_NOTE_EXPLANATION,
+  REVIEW_DOC,
+  type TeamComment,
+} from "./comment-rules.ts"
 export { personNote } from "./thread-publication.ts"
-
-/** A file a teammate's comment carried, as comments.json keeps it: `remote` is where it was fetched from. */
-type TeamFile = Attachment & {
-  remote?: { id: string; parts: number; epoch: number; tries?: number; retryAt?: number }
-}
-
-/**
- * The document name of a word said in the team's review of a verified change. These comments
- * carry a thread's structure: they belong to the review, never to `comments take`.
- */
-export const REVIEW_DOC = "review"
-
-/** The document name of an event in the asks (see asks.ts): it reaches the agent through its own answers. */
-export const ASK_DOC = "ask"
-
-/** Words that carry a structure of their own: they are no comment on a document. */
-export const isStructured = (c: Pick<TeamComment, "doc" | "source" | "quote">): boolean => {
-  if (c.source === "team") return c.doc === REVIEW_DOC || c.doc === ASK_DOC
-  if (c.doc !== REVIEW_DOC) return false
-  try {
-    const head = JSON.parse(c.quote)
-    return (
-      head !== null && typeof head === "object" && ["thread", "reply", "verdict"].includes(head.t)
-    )
-  } catch {
-    return false
-  }
-}
-
-export const PERSON_NOTE_EXPLANATION =
-  "This note is for a person. Quote it to the agent to ask for a change."
-
-export function agentActionable(
-  c: {
-    doc: string
-    quote: string
-    source?: "team" | "link"
-    for?: "person" | "agent"
-    taken?: number
-    delivered?: boolean
-    resolved?: number
-    answer?: string
-  },
-  operation: "queue" | "resolve" = "queue",
-): boolean {
-  if (c.for === "person" || personNote(c) !== null) return false
-  if (c.source !== undefined && isStructured({ ...c, source: c.source })) return false
-  return (
-    operation === "resolve" ||
-    (c.taken === undefined &&
-      c.delivered !== true &&
-      c.resolved === undefined &&
-      c.answer === undefined)
-  )
-}
-
-export type TeamComment = {
-  /** Only the artifact adapter uses this event cursor; native/local state is kept on repeated reads. */
-  artifactStateVersion?: string
-  artifactRevision?: string
-  spot?: ArtifactAnchor
-  for?: "agent" | "person"
-  before?: string
-  after?: string
-  section?: string
-  id: string
-  /** The backend's id, unique per task and source. */
-  remote_id: string
-  author: string
-  source: "team" | "link"
-  /** Member identity authenticated by the backend, never taken from the event's quote. */
-  actor?: Person
-  /** The backend verified the task-owner capability when storing this comment. */
-  owner?: true
-  doc: string
-  quote: string
-  remark: string
-  verdict?: "approve" | "changes"
-  created: number
-  /** When `take` or a `changes` decision handed it to the agent. */
-  taken?: number
-  replies?: TeamReply[]
-  resolved?: number
-  /** When the owner opened a resolved thread again: the team then sees it open. */
-  reopened?: number
-  /** Files the sender attached; fetched into the task's runtime folder (see files.ts), missing until they are. */
-  files?: TeamFile[]
-}
 
 type Where = Pick<Task, "runtimeDir">
 
@@ -125,8 +50,6 @@ async function write(ctx: Ctx, task: Where, comments: TeamComment[]): Promise<vo
   await ctx.fs.mkdir(task.runtimeDir)
   await ctx.fs.atomicWrite(filePath(task), `${JSON.stringify(comments, null, 2)}\n`)
 }
-
-export type Incoming = Omit<TeamComment, "id" | "taken">
 
 /** Keep new comments; one already known (same source and backend id) is not added twice. */
 export async function addTeamComments(
@@ -213,67 +136,18 @@ export async function takenSince(
   )
 }
 
-/** A teammate's or reviewer's comment in the shape the Cockpit and the agent read comments in. */
-export function asComment(c: TeamComment): Comment {
-  const note = personNote(c)
-  return {
-    id: c.id,
-    doc: c.doc,
-    quote: c.quote,
-    remark: c.remark,
-    ...(c.artifactRevision ? { artifactRevision: c.artifactRevision } : {}),
-    ...(c.spot ? { spot: c.spot } : {}),
-    ...(c.for !== undefined ? { for: c.for } : {}),
-    ...(c.before !== undefined ? { before: c.before } : {}),
-    ...(c.after !== undefined ? { after: c.after } : {}),
-    ...(c.section !== undefined ? { section: c.section } : {}),
-    ...(note !== null ? { ...note, for: "person" as const } : {}),
-    created: c.created,
-    delivered: c.taken !== undefined,
-    ...(c.taken !== undefined ? { pickedAt: c.taken } : {}),
-    author: commentAuthor(c),
-    source: c.source,
-    teamReplies: c.replies ?? [],
-    ...(c.resolved !== undefined ? { resolved: c.resolved } : {}),
-    ...(c.verdict !== undefined ? { verdict: c.verdict } : {}),
-    ...(c.files !== undefined && c.files.length > 0
-      ? { files: c.files.map(({ remote: _remote, ...file }) => file) }
-      : {}),
-  }
-}
-
 /** Reply and resolution share one durable, locked record with the incoming comment. */
 export async function updateTeamThread(
   ctx: Ctx,
   task: Where,
   id: string,
-  change: { text?: string; via?: "app" | "agent"; resolve?: boolean; reopen?: boolean },
+  change: ThreadChange,
 ): Promise<TeamComment | null> {
   return ctx.fs.withLock(lockPath(task), async () => {
     const rows = await readTeamComments(ctx, task)
     const root = rows.find((c) => c.id === id && (!isStructured(c) || personNote(c) !== null))
     if (!root) return null
-    if (change.via === "agent" && !agentActionable(root, "resolve"))
-      throw new Error(PERSON_NOTE_EXPLANATION)
-    if (root.resolved !== undefined && change.text?.trim())
-      throw new Error("This thread is resolved. Reload it before replying.")
-    const text = change.text?.trim()
-    const via = change.via ?? "app"
-    const reply: TeamReply | undefined = text
-      ? {
-          id: `reply-${crypto.randomUUID()}`,
-          author: { name: via === "agent" ? "Agent" : "You", email: "" },
-          text,
-          at: ctx.clock.now(),
-          via,
-        }
-      : undefined
-    const { resolved: _resolved, ...unresolved } = root
-    const next = {
-      ...(change.reopen ? { ...unresolved, reopened: ctx.clock.now() } : root),
-      ...(reply ? { replies: [...(root.replies ?? []), reply] } : {}),
-      ...(change.resolve ? { resolved: root.resolved ?? ctx.clock.now() } : {}),
-    }
+    const next = applyThreadChange(root, change, ctx.clock.now())
     await write(
       ctx,
       task,

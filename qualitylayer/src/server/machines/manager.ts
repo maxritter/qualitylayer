@@ -2,224 +2,35 @@
 // server reachable at a local end (ssh's forward; a fixture in tests); the manager then signs in on
 // the machine with its key, keeps that session in memory and serves the machine's page on its port.
 
-import { request as httpRequest } from "node:http"
-import { isAbsolute, relative, resolve } from "node:path"
-
 import type { Ctx } from "../../ctx.ts"
 import type { GuardConfig } from "../guard.ts"
+import { type ConnectionEvent, FIRST, next, retryAfterSeconds } from "./connection.ts"
 import {
-  type Connection,
-  type ConnectionEvent,
-  type ConnectionState,
-  FIRST,
-  next,
-  retryAfterSeconds,
-} from "./connection.ts"
-import {
-  type LocalEnd,
-  type MachineAccess,
-  type PassThrough,
-  startPassThrough,
-} from "./pass-through.ts"
+  ConnectFailure,
+  type Connector,
+  type Link,
+  type LiveMachine,
+  type Machines,
+  type MachineView,
+  machineViewOf,
+  portInUse,
+  queryMachineSessions,
+  signIn,
+  stillSignedIn,
+  type Wait,
+} from "./manager-link.ts"
+import { type PassThrough, startPassThrough } from "./pass-through.ts"
 import { moveMachine, readMachines, type StoredMachine } from "./store.ts"
 
-export type MachineState = ConnectionState
-
-/** What `GET /api/machines` tells a page about one machine. A machine's key is never part of it. */
-export type MachineView = {
-  id: string
-  name: string
-  target: string
-  state: MachineState
-  /** When it entered this state. */
-  since: number
-  system?: string
-  version?: string
-  /** Its listener on this computer, while connected. */
-  port?: number
-  /** Why it is not connected, when the last attempt said so. Never a key. */
-  reason?: string
-  /** This computer's licence key is activated on it: it uses one of the key's computers. */
-  activated?: true
-  /** When an offline machine is tried next by itself (ms since the epoch). */
-  retryAt?: number
-  /** A dev container (by its folder), as pairing recorded it. */
-  container?: true
-  /** How the person reaches it (`max@mac-mini.local`), when its target is the Host name pairing wrote. */
-  shown?: string
-}
-
-/** A machine's server made reachable on this computer. */
-export type Link = {
-  end: LocalEnd
-  /** The machine's server as it names itself: `127.0.0.1:<its port>`. */
-  machineHost: string
-  /** The machine's server key. Held in memory only. */
-  key: string
-  system?: string
-  version?: string
-  /** A test's own port for the listener (0 takes a free one); the stored port otherwise. */
-  listenPort?: number
-  /** Settles when the connection ended by itself (ssh's forward is gone). */
-  ended?: Promise<void>
-  close(): void
-}
-
-export class ConnectFailure extends Error {
-  constructor(
-    readonly state: Exclude<MachineState, "connecting" | "connected">,
-    detail: string,
-  ) {
-    super(detail)
-  }
-}
-
-/** Makes one machine reachable, or throws a `ConnectFailure`. */
-export type Connector = (machine: StoredMachine) => Promise<Link>
-
-export type Machines = {
-  /** The port of this computer's own server: no machine's page is ever served there. */
-  readonly ownPort: number
-  /** Read the stored machines and connect each; never throws. */
-  start(): Promise<void>
-  /** The store changed: connect what is new, drop what is gone, keep the rest. */
-  reload(): Promise<void>
-  list(): MachineView[]
-  /** Try again now (the person asked); false when there is no such machine. */
-  retry(id: string): boolean
-  /** How many agent sessions run on a connected machine, asked of its server; null when it could not be read. */
-  sessions(id: string): Promise<number | null>
-  stop(): Promise<void>
-}
-
-type Answer = { status: number; cookie: string | null; body: string }
-
-/** One request to a machine's server through its local end, as a local command line would make it. */
-function ask(
-  link: Pick<Link, "end" | "machineHost">,
-  path: string,
-  init: { method?: string; headers?: Record<string, string>; body?: string } = {},
-): Promise<Answer> {
-  return new Promise((done, failed) => {
-    const sent = httpRequest(
-      {
-        ...("socket" in link.end ? { socketPath: link.end.socket } : link.end),
-        path,
-        method: init.method ?? "GET",
-        headers: { ...init.headers, host: link.machineHost },
-        timeout: 10_000,
-      },
-      (answer) => {
-        let body = ""
-        answer.setEncoding("utf8")
-        answer.on("data", (chunk: string) => {
-          if (body.length < 65_536) body += chunk
-        })
-        answer.on("end", () => {
-          const set = answer.headers["set-cookie"]?.[0]
-          done({ status: answer.statusCode ?? 0, cookie: set?.split(";")[0] ?? null, body })
-        })
-      },
-    )
-    sent.on("timeout", () => sent.destroy(new Error("the machine did not answer")))
-    sent.on("error", failed)
-    sent.end(init.body)
-  })
-}
-
-/** A pairing code from the machine, redeemed into a session cookie (`name=value`). */
-async function session(link: Link, proof: Record<string, string>): Promise<string> {
-  const made = await ask(link, "/api/pair", {
-    method: "POST",
-    headers: { ...proof, "content-type": "application/json" },
-    body: JSON.stringify({ remember: false }),
-  })
-  const code: unknown =
-    made.status === 200 ? (JSON.parse(made.body) as { code?: unknown }).code : null
-  if (typeof code !== "string" || !/^[A-Za-z0-9_-]{8,200}$/.test(code))
-    throw new ConnectFailure("offline", `the machine's server refused to pair (${made.status})`)
-  const redeemed = await ask(link, `/pair/${code}`)
-  if (redeemed.cookie === null)
-    throw new ConnectFailure("offline", "the machine's server gave no session")
-  return redeemed.cookie
-}
-
-/**
- * Sign in on the machine: a code asked with its key carries the key's authority, one asked with that
- * session alone does not. A page gets the session that matches what its browser holds here.
- */
-export async function signIn(link: Link): Promise<MachineAccess> {
-  const keyPaired = await session(link, { "x-qualitylayer-token": link.key })
-  const plain = await session(link, { cookie: keyPaired })
-  return { key: link.key, cookie: { keyPaired, plain } }
-}
-
-/** Whether a session from an earlier connection is still honoured: a reconnect then pairs nothing new. */
-async function stillSignedIn(link: Link, access: MachineAccess): Promise<boolean> {
-  if (access.key !== link.key) return false
-  try {
-    const plain = await ask(link, "/api/config", { headers: { cookie: access.cookie.plain } })
-    const paired = await ask(link, "/api/config", { headers: { cookie: access.cookie.keyPaired } })
-    return plain.status === 200 && paired.status === 200
-  } catch {
-    return false
-  }
-}
-
-type Fixture = Record<
-  string,
-  {
-    end: LocalEnd
-    machineHost: string
-    key: string
-    system?: string
-    version?: string
-    listenPort?: number
-  }
->
-
-/**
- * Tests and the App's self-test name a machine's ready local end in a file instead of starting ssh.
- * The file must lie inside this server's home, so nothing outside a test's own home can point a
- * running server at an address of its choosing.
- */
-export function fixtureConnector(ctx: Ctx): Connector | null {
-  const named = ctx.env.get("QUALITYLAYER_MACHINES_FIXTURE")
-  if (named === undefined || named === "") return null
-  const inside = relative(resolve(ctx.home), resolve(named))
-  if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) return null
-  return async (machine) => {
-    let fixture: Fixture
-    try {
-      fixture = JSON.parse(await ctx.fs.readFile(named)) as Fixture
-    } catch {
-      throw new ConnectFailure("offline", "the machines fixture cannot be read")
-    }
-    const found = fixture[machine.id]
-    if (found === undefined)
-      throw new ConnectFailure("offline", "the machines fixture does not name this machine")
-    return { ...found, close: () => {} }
-  }
-}
-
-type Live = {
-  stored: StoredMachine
-  connection: Connection
-  since: number
-  link?: Link
-  /** What the machine last said about itself; kept while it is offline. */
-  seen?: Pick<Link, "system" | "version">
-  access?: MachineAccess
-  listener?: PassThrough
-  /** Why the last attempt did not connect, in ssh's or the machine's own words. */
-  reason?: string
-  /** Ends the wait before an offline machine's next attempt. */
-  cancelRetry?: () => void
-  retryAt?: number
-}
-
-/** Calls `then` after the wait; what it returns ends the wait early. */
-export type Wait = (seconds: number, then: () => void) => () => void
+export {
+  ConnectFailure,
+  type Connector,
+  fixtureConnector,
+  type Link,
+  type Machines,
+  type MachineView,
+  type Wait,
+} from "./manager-link.ts"
 
 const realWait: Wait = (seconds, then) => {
   const timer = setTimeout(then, seconds * 1000)
@@ -238,46 +49,14 @@ export function createMachines(
   return new MachineSet(ctx, guard, changed, connector, wait)
 }
 
-const viewOf = ({
-  stored,
-  connection,
-  since,
-  seen,
-  listener,
-  reason,
-  retryAt,
-}: Live): MachineView => {
-  const view: MachineView = {
-    id: stored.id,
-    name: stored.name,
-    target: stored.target,
-    state: connection.state,
-    since,
-  }
-  if (stored.activated === true) view.activated = true
-  if (stored.container !== undefined) view.container = true
-  if (stored.typed !== undefined) view.shown = stored.typed
-  if (connection.state === "offline" && retryAt !== undefined) view.retryAt = retryAt
-  if (seen?.system !== undefined) view.system = seen.system
-  if (seen?.version !== undefined) view.version = seen.version
-  if (connection.state === "connected" && listener !== undefined) view.port = listener.port
-  else if (connection.state !== "connecting" && reason !== undefined) view.reason = reason
-  return view
-}
-
-/** A listener that could not bind because something holds the port (Bun says so in words, node by code). */
-const portInUse = (error: unknown): boolean =>
-  (error as { code?: unknown } | null)?.code === "EADDRINUSE" ||
-  (error instanceof Error && /in use/i.test(error.message))
-
-async function drop(machine: Live): Promise<void> {
+async function drop(machine: LiveMachine): Promise<void> {
   machine.cancelRetry?.()
   machine.link?.close()
   await machine.listener?.close()
 }
 
 class MachineSet implements Machines {
-  private live = new Map<string, Live>()
+  private live = new Map<string, LiveMachine>()
   private stopped = false
 
   constructor(
@@ -294,7 +73,7 @@ class MachineSet implements Machines {
 
   start = (): Promise<void> => this.reload().catch(() => {})
 
-  list = (): MachineView[] => [...this.live.values()].map(viewOf)
+  list = (): MachineView[] => [...this.live.values()].map(machineViewOf)
 
   retry = (id: string): boolean => {
     const machine = this.live.get(id)
@@ -305,18 +84,7 @@ class MachineSet implements Machines {
 
   sessions = async (id: string): Promise<number | null> => {
     const machine = this.live.get(id)
-    if (machine?.link === undefined || machine.connection.state !== "connected") return null
-    try {
-      // The machine's own key, as the tray's poll and this computer's pass-through carry it. Read only.
-      const answer = await ask(machine.link, "/api/agent-sessions", {
-        headers: { "x-qualitylayer-token": machine.link.key },
-      })
-      if (answer.status !== 200) return null
-      const listed: unknown = (JSON.parse(answer.body) as { sessions?: unknown }).sessions
-      return Array.isArray(listed) ? listed.length : null
-    } catch {
-      return null
-    }
+    return queryMachineSessions(machine?.link, machine?.connection.state === "connected")
   }
 
   reload = async (): Promise<void> => {
@@ -346,12 +114,12 @@ class MachineSet implements Machines {
   }
 
   /** Take the stored machines in; the ones not known yet are returned to be connected. */
-  private adopt(stored: StoredMachine[]): Live[] {
-    const fresh: Live[] = []
+  private adopt(stored: StoredMachine[]): LiveMachine[] {
+    const fresh: LiveMachine[] = []
     for (const one of stored) {
       const known = this.live.get(one.id)
       if (known === undefined) {
-        const machine: Live = { stored: one, connection: FIRST, since: this.ctx.clock.now() }
+        const machine: LiveMachine = { stored: one, connection: FIRST, since: this.ctx.clock.now() }
         this.live.set(one.id, machine)
         fresh.push(machine)
         continue
@@ -363,11 +131,11 @@ class MachineSet implements Machines {
     return fresh
   }
 
-  private gone = (machine: Live): boolean =>
+  private gone = (machine: LiveMachine): boolean =>
     this.stopped || this.live.get(machine.stored.id) !== machine
 
   /** Move the machine's connection by one event; true when it is connecting afterwards. */
-  private step(machine: Live, event: ConnectionEvent): boolean {
+  private step(machine: LiveMachine, event: ConnectionEvent): boolean {
     const before = machine.connection
     machine.connection = next(before, event)
     if (machine.connection.state !== before.state) {
@@ -379,7 +147,7 @@ class MachineSet implements Machines {
   }
 
   /** An offline machine is tried again by itself; every other state has no wait. */
-  private planRetry(machine: Live): void {
+  private planRetry(machine: LiveMachine): void {
     machine.cancelRetry?.()
     machine.cancelRetry = undefined
     machine.retryAt = undefined
@@ -393,7 +161,7 @@ class MachineSet implements Machines {
   }
 
   /** One attempt; the machine is `connecting` when this is called. */
-  private async connect(machine: Live): Promise<void> {
+  private async connect(machine: LiveMachine): Promise<void> {
     if (this.connector === null) {
       this.step(machine, { type: "failed", as: "offline" })
       return
@@ -421,7 +189,7 @@ class MachineSet implements Machines {
   }
 
   /** A forward that ends by itself leaves the machine offline, to be tried again. */
-  private watch(machine: Live, link: Link): void {
+  private watch(machine: LiveMachine, link: Link): void {
     void link.ended?.then(() => this.lost(machine, link))
   }
 
@@ -429,7 +197,7 @@ class MachineSet implements Machines {
    * The connection is of no use any more: its forward ended, or the machine's server stopped
    * answering behind it (it stops when idle). The next attempt starts that server again.
    */
-  private lost(machine: Live, link: Link): void {
+  private lost(machine: LiveMachine, link: Link): void {
     if (this.gone(machine) || machine.link !== link) return
     machine.link = undefined
     link.close()
@@ -437,7 +205,7 @@ class MachineSet implements Machines {
   }
 
   /** Sign in on the machine (or keep the session of the last connection) and serve its page. */
-  private async serve(machine: Live, link: Link): Promise<void> {
+  private async serve(machine: LiveMachine, link: Link): Promise<void> {
     machine.link?.close()
     machine.link = link
     machine.seen = { system: link.system, version: link.version }
@@ -452,7 +220,7 @@ class MachineSet implements Machines {
    * server, another program) moves the machine to the next free port of the range, stored, instead
    * of failing the same way at every attempt.
    */
-  private async listen(machine: Live, link: Link): Promise<PassThrough> {
+  private async listen(machine: LiveMachine, link: Link): Promise<PassThrough> {
     const tried = new Set<number>()
     for (;;) {
       const port = link.listenPort ?? machine.stored.localPort

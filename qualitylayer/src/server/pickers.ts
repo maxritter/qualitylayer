@@ -10,45 +10,131 @@ import { TerminalReceiver } from "../ui/agent-window/transport.ts"
 
 export const pickerRunId = (path: string) =>
   /^\/api\/agent-runs\/([a-f0-9-]{1,128})\/picker$/.exec(path)?.[1]
+function isValidCallId(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 1 && value.length <= 128
+}
+
+function isValidGeneration(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1
+}
+
+function isValidPicks(picks: unknown): picks is PickerRequest["picks"] {
+  if (Array.isArray(picks)) {
+    return (
+      picks.length >= 1 &&
+      picks.length <= 20 &&
+      picks.every((item) => typeof item === "string" && item.length <= 8000)
+    )
+  }
+  return Boolean(
+    picks && typeof picks === "object" && typeof (picks as { own?: unknown }).own === "string",
+  )
+}
+
 export function pickerRequest(
   value: unknown,
 ): (PickerRequest & { generation: number; answers?: unknown }) | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   const row = value as Record<string, unknown>
-  if (
-    typeof row.callId !== "string" ||
-    row.callId.length < 1 ||
-    row.callId.length > 128 ||
-    !Number.isSafeInteger(row.generation) ||
-    Number(row.generation) < 1
-  )
-    return null
-  if (row.answers !== undefined)
+  if (!isValidCallId(row.callId) || !isValidGeneration(row.generation)) return null
+  if (row.answers !== undefined) {
     return {
       callId: row.callId,
       questionId: "",
-      generation: Number(row.generation),
+      generation: row.generation,
       picks: [],
       answers: row.answers,
     }
-  if (typeof row.questionId !== "string" || !row.questionId || row.questionId.length > 256)
-    return null
-  const picks = row.picks
-  if (
-    Array.isArray(picks)
-      ? picks.length < 1 ||
-        picks.length > 20 ||
-        picks.some((v) => typeof v !== "string" || v.length > 8000)
-      : !picks || typeof picks !== "object" || typeof (picks as { own?: unknown }).own !== "string"
-  )
-    return null
+  }
+  const validQuestion =
+    typeof row.questionId === "string" && row.questionId.length > 0 && row.questionId.length <= 256
+  if (!validQuestion || !isValidPicks(row.picks)) return null
   return {
     callId: row.callId,
-    questionId: row.questionId,
-    generation: Number(row.generation),
-    picks: picks as PickerRequest["picks"],
+    questionId: row.questionId as string,
+    generation: row.generation,
+    picks: row.picks,
   }
 }
+
+type PickerConnectionState = {
+  closed: boolean
+  replaying: boolean
+}
+
+function matchesLiveRun(latest: RunRecord | null | undefined, run: RunRecord): boolean {
+  return (
+    latest?.status === "running" &&
+    latest.generation === run.generation &&
+    latest.nativeSession === run.nativeSession
+  )
+}
+
+async function waitForPickerReplay(ctx: Ctx, state: PickerConnectionState) {
+  const deadline = ctx.clock.now() + 2000
+  while (state.replaying && !state.closed && ctx.clock.now() < deadline) await ctx.clock.sleep(25)
+  if (state.replaying || state.closed) throw new Error("The native screen could not be read")
+}
+
+function attachPickerReceiver(
+  connection: Awaited<ReturnType<typeof connectHost>>,
+  terminal: Awaited<ReturnType<typeof createHeadlessTerminal>>,
+  state: PickerConnectionState,
+  close: () => void,
+) {
+  const receiver = new TerminalReceiver(
+    {
+      write: (text) => terminal.write(text),
+      resize: (cols, rows) => terminal.resize(cols, rows),
+    },
+    (frame) => {
+      if (frame.type === "replay-begin") state.replaying = true
+      if (frame.type === "replay-end") state.replaying = false
+      if (frame.type === "exit" || frame.type === "resync" || frame.type === "error")
+        state.closed = true
+    },
+  )
+  connection.socket.once("close", () => {
+    state.closed = true
+  })
+  return connection.onFrame((frame) => {
+    if (state.closed) return
+    try {
+      receiver.receive(frame)
+    } catch {
+      close()
+    }
+  })
+}
+
+type PickerSnapshotInput = {
+  ctx: Ctx
+  run: RunRecord
+  callId: string
+  state: PickerConnectionState
+  allowed: () => Promise<boolean>
+  terminal: Awaited<ReturnType<typeof createHeadlessTerminal>>
+}
+
+async function readPickerSnapshot(input: PickerSnapshotInput) {
+  const { ctx, run, callId, state, allowed, terminal } = input
+  const latest = readRun(ctx.home, run.id)
+  const active = !state.closed && !state.replaying && matchesLiveRun(latest, run)
+  const permitted = active && (await allowed())
+  const snapshot = latest && nativeRun(latest) ? readConversation(ctx, latest) : null
+  const result = snapshot?.events.findLast(
+    (event) => event.kind === "tool-result" && event.callId === callId,
+  )
+  return {
+    allowed: permitted,
+    version: latest?.binary?.version ?? "",
+    identity: `${latest?.nativeSession}:${latest?.generation}`,
+    question: snapshot?.question ?? null,
+    result: result?.kind === "tool-result" ? (result.output ?? "") : undefined,
+    screen: state.closed ? "" : screenText(terminal),
+  }
+}
+
 /** One bounded screen subscription per active answer, disposed before the request returns. */
 export async function pickerHost(
   ctx: Ctx,
@@ -65,13 +151,12 @@ export async function pickerHost(
   })
   let host: Awaited<ReturnType<typeof connectHost>> | undefined
   let unsubscribe = () => {}
-  let closed = false
   let disposed = false
-  let replaying = true
+  const state: PickerConnectionState = { closed: false, replaying: true }
   const close = () => {
     if (disposed) return
     disposed = true
-    closed = true
+    state.closed = true
     unsubscribe()
     host?.close()
     terminal.dispose()
@@ -81,72 +166,20 @@ export async function pickerHost(
     if (host.ready.generation !== run.generation)
       throw new Error("The native host generation changed")
     const connection = host
-    const receiver = new TerminalReceiver(
-      {
-        write: (text) => terminal.write(text),
-        resize: (cols, rows) => terminal.resize(cols, rows),
-      },
-      (frame) => {
-        if (frame.type === "replay-begin") {
-          replaying = true
-        }
-        if (frame.type === "replay-end") replaying = false
-        if (frame.type === "exit" || frame.type === "resync" || frame.type === "error")
-          closed = true
-      },
-    )
-    unsubscribe = host.onFrame((frame) => {
-      if (closed) return
-      try {
-        receiver.receive(frame)
-      } catch {
-        close()
-      }
-    })
-    host.socket.once("close", () => {
-      closed = true
-    })
-    host.send({ type: "attach", generation: run.generation })
-    const deadline = ctx.clock.now() + 2000
-    while (replaying && !closed && ctx.clock.now() < deadline) await ctx.clock.sleep(25)
-    if (replaying || closed) throw new Error("The native screen could not be read")
-    const current = async () => {
-      const latest = readRun(ctx.home, run.id)
-      const permitted =
-        !closed &&
-        !replaying &&
-        latest?.status === "running" &&
-        latest.generation === run.generation &&
-        latest.nativeSession === run.nativeSession &&
-        (await allowed())
-      const snapshot = latest && nativeRun(latest) ? readConversation(ctx, latest) : null
-      const result = snapshot?.events.findLast(
-        (event) => event.kind === "tool-result" && event.callId === callId,
-      )
-      return {
-        allowed: permitted,
-        version: latest?.binary?.version ?? "",
-        identity: `${latest?.nativeSession}:${latest?.generation}`,
-        question: snapshot?.question ?? null,
-        result: result?.kind === "tool-result" ? (result.output ?? "") : undefined,
-        screen: closed ? "" : screenText(terminal),
-      }
-    }
+    unsubscribe = attachPickerReceiver(connection, terminal, state, close)
+    connection.send({ type: "attach", generation: run.generation })
+    await waitForPickerReplay(ctx, state)
+    const current = () => readPickerSnapshot({ ctx, run, callId, state, allowed, terminal })
     return {
       clock: ctx.clock,
       read: current,
       write: async (keys) => {
-        const state = await current()
+        const snapshot = await current()
         // No await after the final authority and open-call checks and before the host write.
         const latest = readRun(ctx.home, run.id)
-        if (
-          !state.allowed ||
-          !currentAuthority() ||
-          state.question?.id !== callId ||
-          latest?.generation !== run.generation ||
-          connection.socket.destroyed
-        )
-          throw new Error("The controller or native question changed")
+        const ready = snapshot.allowed && currentAuthority() && snapshot.question?.id === callId
+        const hostReady = latest?.generation === run.generation && !connection.socket.destroyed
+        if (!ready || !hostReady) throw new Error("The controller or native question changed")
         connection.send({ type: "input", data: Buffer.from(keys) })
       },
       close,

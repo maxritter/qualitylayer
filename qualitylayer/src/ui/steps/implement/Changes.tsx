@@ -4,117 +4,13 @@
 // it comes up; its answer reads here as "you agreed". Nothing here waits for the person.
 
 import { CheckIcon, MessageCircleQuestionMarkIcon } from "lucide-react"
-import type { Decision } from "../../../core/docs/build-decisions.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { LeadBullets } from "../../step-page/kit/LeadBullets.tsx"
 import { NumberedRows } from "../../step-page/kit/NumberedRows.tsx"
 import type { StepLive } from "../../step-page/live.ts"
+import { type DecisionRow, decisionRowOf, type LimitRow, limitsOf } from "./changes-model.ts"
 
-const UNCHANGED = "nothing you approved changes"
-const UNCHANGED_SUFFIX = /nothing you approved changes\.?\s*$/i
-const HEADLINE = 90
-
-function changedScope(text: string): { index: number; reason?: string } | null {
-  const end = text.trimEnd().length
-  const lastBreak = Math.max(
-    ...["\r", "\n", "\u2028", "\u2029"].map((line) => text.lastIndexOf(line, end - 1)),
-  )
-  for (const match of text.matchAll(/changes what you approved/gi)) {
-    const index = match.index ?? 0
-    const after = index + match[0].length
-    if (after === end || (after + 1 === end && text[after] === ".")) return { index }
-    if (text[after] !== ":") continue
-    let start = after + 1
-    while (start < text.length && /\s/.test(text[start] ?? "")) start++
-    if (start >= end) {
-      let last = text.length - 1
-      while (last > after && /[\r\n\u2028\u2029]/.test(text[last] ?? "")) last--
-      if (last > after && /\s/.test(text[last] ?? "")) return { index, reason: text[last] }
-      continue
-    }
-    if (start <= lastBreak) continue
-    const close = text[end - 1] === "." && end - start > 1 ? end - 1 : end
-    return { index, reason: text.slice(start, close) }
-  }
-  return null
-}
-
-function withoutScopeNote(text: string): string {
-  const unchanged = UNCHANGED_SUFFIX.exec(text)
-  let body = text
-  if (unchanged) {
-    let end = unchanged.index
-    while (end > 0 && /\s/.test(text[end - 1] ?? "")) end--
-    if (end > 0 && /[;,.]/.test(text[end - 1] ?? "")) {
-      end--
-      while (end > 0 && /\s/.test(text[end - 1] ?? "")) end--
-    }
-    body = text.slice(0, end)
-  }
-  const changes = changedScope(body)
-  if (changes) body = body.slice(0, changes.index)
-  let end = body.length
-  while (end > 0 && /[;,\s]/.test(body[end - 1] ?? "")) end--
-  return body.slice(0, end).trim()
-}
-
-export type DecisionRow = {
-  id: string
-  /** `Plan amended`, `Plan agreed` or `Build order`. */
-  kind: string
-  headline: string
-  /** What follows the headline, when the note says more. */
-  detail: string
-  /** Earlier amendments this one stands for. */
-  replaced: readonly string[]
-  /** What the row says about what was approved. */
-  approved: { tone: "unchanged" | "agreed" | "changes"; words: string }
-}
-
-/** A decision as its row: the headline first, what changes for the person last. */
-function decisionTextRow(
-  source: { text: string; task: string | null; agreed: boolean; replaced: readonly string[] },
-  index: number,
-): DecisionRow {
-  const text = source.text.trim()
-  const changes = changedScope(text)
-  const body = withoutScopeNote(text)
-  const first = /^(.+?)(?=[.;:]\s|\s—\s|$)/s.exec(body)?.[1] ?? body
-  const clipped = first.length > HEADLINE
-  const headline = clipped ? `${first.slice(0, HEADLINE - 1).trimEnd()}…` : first.replace(/\.$/, "")
-  const detail = clipped ? body : body.slice(first.length).replace(/^[.;:\s—]+/, "")
-  // A change to the approved Plan is an amendment; a task card that changes is the agents' own build
-  // order (Workflow model: Implement).
-  const kind = source.task === null ? `Plan ${source.agreed ? "agreed" : "amended"}` : "Build order"
-  const approved: DecisionRow["approved"] = source.agreed
-    ? { tone: "agreed", words: "you agreed" }
-    : changes !== null
-      ? {
-          tone: "changes",
-          words: `changes what you approved${changes.reason !== undefined ? `: ${changes.reason}` : ""}`,
-        }
-      : { tone: "unchanged", words: UNCHANGED }
-  return {
-    id: `${source.task ?? "Plan"}-${index}`,
-    kind,
-    headline,
-    detail,
-    replaced: source.replaced,
-    approved,
-  }
-}
-
-export function decisionRowOf(decision: Decision, index: number): DecisionRow {
-  return decisionTextRow(
-    {
-      text: decision.note.text,
-      task: decision.note.task,
-      agreed: decision.note.kind === "agreed",
-      replaced: decision.replaced.map((earlier) => earlier.text),
-    },
-    index,
-  )
-}
+export { type DecisionRow, decisionRowOf, type LimitRow, limitsOf }
 
 /**
  * Decided while building as numbered rows that open: the headline, a quiet tag at the right (the kind,
@@ -183,20 +79,6 @@ export function DecisionRows({
       })}
     />
   )
-}
-
-export type LimitRow = { id: string; card: string | null; text: string }
-
-const LIMIT = /^[-*]\s+(?:(T\d+)\s+·\s+)?(\S.*)$/
-
-/** The limits the people's file states, one line each (`- T12 · the limit`); "None recorded." is none. */
-export function limitsOf(text: string): LimitRow[] {
-  return text.split(/\r?\n/).flatMap((line, index) => {
-    const found = LIMIT.exec(line.trim())
-    return found?.[2] === undefined
-      ? []
-      : [{ id: `limit-${index}`, card: found[1] ?? null, text: found[2] }]
-  })
 }
 
 /** Known limits in the Summary's bullet form: the card as the bold lead, `**T12.** the limit`. */

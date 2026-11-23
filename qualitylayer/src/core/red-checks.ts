@@ -59,13 +59,10 @@ async function failuresOf(ctx: Ctx, record: CheckRecord): Promise<string[] | nul
  * failure code, and did not run out of time. A signal, a missing command or a timeout is none of
  * these, and proves nothing about which tests failed.
  */
-const ordinaryRed = (run: CheckRecord | undefined): run is CheckRecord =>
-  run?.ran === true &&
-  run.notRun === undefined &&
-  run.timedOut !== true &&
-  run.exit !== null &&
-  run.exit > 0 &&
-  run.exit < 126
+const ordinaryRed = (run: CheckRecord | undefined): run is CheckRecord => {
+  if (!run?.ran || run.notRun !== undefined || run.timedOut === true) return false
+  return run.exit !== null && run.exit > 0 && run.exit < 126
+}
 
 /** A manifest or lockfile: what the base checkout's borrowed dependencies stand in for. */
 const DEPENDENCY_FILE =
@@ -153,6 +150,23 @@ export const newFailures = (excusal: Excusal, record: CheckRecord): string[] => 
  * reviewer ruled. `excused` is what the same read found about the red results: one rule for the
  * final gate and for the open items.
  */
+function isUnexcusedRed(
+  last: CheckRecord | undefined,
+  skipped: readonly string[],
+  command: string,
+  currentRevision: { asRecorded: boolean; revision: string | null },
+  excused: Excusal,
+): last is CheckRecord {
+  if (!last?.ran || (last.exit === 0 && !last.timedOut)) return false
+  if (skipped.includes(command)) return false
+  const matchesRevision =
+    currentRevision.asRecorded ||
+    currentRevision.revision === null ||
+    last.revision === currentRevision.revision
+  const state = excused.standing.get(last)?.state
+  return matchesRevision && state !== "on_base" && state !== "kept"
+}
+
 export async function projectRedState(
   ctx: Ctx,
   task: Task,
@@ -179,16 +193,7 @@ export async function projectRedState(
   const red: CheckRecord[] = []
   for (const command of found.data.now) {
     const last = runs.filter((r) => r.command === command).at(-1)
-    const state = last === undefined ? undefined : excused.standing.get(last)?.state
-    if (
-      last?.ran &&
-      (last.exit !== 0 || last.timedOut) &&
-      !skipped.includes(command) &&
-      (asRecorded || revision === null || last.revision === revision) &&
-      state !== "on_base" &&
-      state !== "kept"
-    )
-      red.push(last)
+    if (isUnexcusedRed(last, skipped, command, { asRecorded, revision }, excused)) red.push(last)
   }
   return { red, excused }
 }

@@ -7,179 +7,47 @@
 // names and fields become the ones the shell, edit and live code read. What a hook prints back is
 // in each agent's own shape too (`stopContinuation`, `toolRefusal`, `toolContext`).
 
-import { createHash } from "node:crypto"
+import { asObject, asText, normalizeHookTools } from "./hook-tools.ts"
 
 /** The spelling of each event once case, underscores and dashes are ignored. */
-const EVENTS: Readonly<Record<string, string>> = {
-  sessionstart: "SessionStart",
-  sessionend: "SessionEnd",
-  userpromptsubmit: "UserPromptSubmit",
-  userpromptsubmitted: "UserPromptSubmit",
-  beforesubmitprompt: "UserPromptSubmit",
-  preinvocation: "UserPromptSubmit",
-  pretooluse: "PreToolUse",
-  posttooluse: "PostToolUse",
-  posttoolusefailure: "PostToolUseFailure",
-  subagentstart: "SubagentStart",
-  subagentstop: "SubagentStop",
-  permissionrequest: "PermissionRequest",
-  notification: "Notification",
-  precompact: "PreCompact",
-  stop: "Stop",
-  agentstop: "Stop",
-  stopcancelled: "Stop",
-  stopfailure: "Stop",
-}
+const EVENT_GROUPS: readonly (readonly [string, readonly string[]])[] = [
+  ["SessionStart", ["sessionstart"]],
+  ["SessionEnd", ["sessionend"]],
+  [
+    "UserPromptSubmit",
+    ["userpromptsubmit", "userpromptsubmitted", "beforesubmitprompt", "preinvocation"],
+  ],
+  ["PreToolUse", ["pretooluse"]],
+  ["PostToolUse", ["posttooluse"]],
+  ["PostToolUseFailure", ["posttoolusefailure"]],
+  ["SubagentStart", ["subagentstart"]],
+  ["SubagentStop", ["subagentstop"]],
+  ["PermissionRequest", ["permissionrequest"]],
+  ["Notification", ["notification"]],
+  ["PreCompact", ["precompact"]],
+  ["Stop", ["stop", "agentstop", "stopcancelled", "stopfailure"]],
+]
+
+const EVENTS: Readonly<Record<string, string>> = Object.fromEntries(
+  EVENT_GROUPS.flatMap(([canonical, aliases]) => aliases.map((alias) => [alias, canonical])),
+)
+
 const INTERRUPTED_EVENT = /cancel/i
 const INTERRUPTED_STATUS = /^(?:aborted|cancel+ed)$/i
 const INTERRUPTED_TERMINATION = /cancel|interrupt/i
 
 const snake = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
 const first = (value: unknown): unknown => (Array.isArray(value) ? value[0] : undefined)
-const text = (value: unknown) => (typeof value === "string" ? value : "")
 
-/** Copilot's tool names, as the Claude Code names the activity and edit code read. */
-const COPILOT_TOOLS: Readonly<Record<string, string>> = {
-  view: "read",
-  create: "write",
-  rg: "grep",
-  web_fetch: "webfetch",
-}
-
-/**
- * Grok's shell and edit tools (its own tool definitions: `run_terminal_command` takes `command`,
- * `search_replace` takes `file_path`, `old_string`, `new_string` and `replace_all`), as the names
- * the shell and edit code read. Its `write` (`file_path`, `content`) already reads as Claude's.
- */
-const GROK_TOOLS: Readonly<Record<string, string>> = {
-  run_terminal_command: "bash",
-  search_replace: "edit",
-}
-
-/** The aliases Copilot's `edit` and `create` arguments get: the names Claude Code's Edit and Write use. */
-const COPILOT_ARGS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  edit: { old_str: "old_string", new_str: "new_string" },
-  create: { file_text: "content" },
-}
-
-/**
- * Copilot's tool hooks (`toolName`, `toolArgs`, `toolResult`, no call id) as Claude Code's
- * (`tool_name`, `tool_input`, `tool_response`, `tool_use_id`). A call has no id of its own, so one
- * is made from the session, the tool and its arguments, which the call's two hooks share.
- */
-function copilotTool(out: Record<string, unknown>): void {
-  if (!("tool_args" in out) || "tool_input" in out) return
-  let args: unknown = out.tool_args
-  if (typeof args === "string")
-    try {
-      args = JSON.parse(args)
-    } catch {
-      /* the text stays the input */
-    }
-  const tool = text(out.tool_name)
-  const input = object(args)
-  const aliases = COPILOT_ARGS[tool] ?? {}
-  out.tool_input =
-    typeof args === "object" && args !== null && !Array.isArray(args)
-      ? {
-          ...input,
-          ...Object.fromEntries(
-            Object.entries(aliases)
-              .filter(([from, to]) => from in input && !(to in input))
-              .map(([from, to]) => [to, input[from]]),
-          ),
-        }
-      : args
-  out.tool_name = COPILOT_TOOLS[tool] ?? tool
-  if (typeof out.tool_use_id !== "string" && tool !== "")
-    out.tool_use_id = createHash("sha1")
-      .update(JSON.stringify([out.session_id, tool, args]))
-      .digest("hex")
-  if ("tool_result" in out) {
-    const result = object(out.tool_result)
-    const failed = text(result.resultType) !== "" && result.resultType !== "success"
-    out.tool_response = {
-      ...result,
-      success: !failed,
-      output: text(result.textResultForLlm),
-    }
-    out.is_error = failed
-  }
-}
-
-/**
- * Cursor's tool hooks (its bundle: `tool_name`, `tool_input`, `tool_use_id`, and `tool_output` as
- * JSON text) as Claude Code's. Its `Shell` takes `command`; its `Write`, which also carries every
- * edit, takes `file_path` and `content` as Claude's Write does. A helper is `subagent_id` and
- * `subagent_type`, Claude's `agent_id` and `agent_type`. Only Cursor's hooks name `workspace_roots`.
- */
-function cursorTool(out: Record<string, unknown>): void {
-  if (!Array.isArray(out.workspace_roots)) return
-  if (out.tool_name === "Shell") out.tool_name = "bash"
-  if (typeof out.tool_output === "string" && !("tool_response" in out))
-    try {
-      out.tool_response = JSON.parse(out.tool_output)
-    } catch {
-      out.tool_response = out.tool_output
-    }
-  if (typeof out.error_message === "string" && out.is_error === undefined) out.is_error = true
-  if (typeof out.subagent_id === "string" && !("agent_id" in out)) out.agent_id = out.subagent_id
-  if (typeof out.subagent_type === "string" && !("agent_type" in out))
-    out.agent_type = out.subagent_type
-}
-
-/**
- * Antigravity's tools (its own records: `run_command` takes `CommandLine`, `edit_file` `Path`,
- * `Target` and `Replacement`, `write_file` `Path` and `Content`), as the names and fields the shell
- * and edit code read. Its question tool `ask_question` keeps its name.
- */
-const ANTIGRAVITY_TOOLS: Readonly<
-  Record<string, { name: string; args: Readonly<Record<string, string>> }>
-> = {
-  run_command: { name: "bash", args: { CommandLine: "command" } },
-  edit_file: {
-    name: "edit",
-    args: { Path: "file_path", Target: "old_string", Replacement: "new_string" },
-  },
-  write_file: { name: "write", args: { Path: "file_path", Content: "content" } },
-}
-
-/**
- * Antigravity's tool hooks (its hook reference: `toolCall` with `id`, `name` and `args`; `error` on
- * a PostToolUse whose tool failed) as Claude Code's.
- */
-function antigravityTool(out: Record<string, unknown>): void {
-  if (!("tool_call" in out) || "tool_name" in out) return
-  const call = object(out.tool_call)
-  let args: unknown = call.args
-  if (typeof args === "string")
-    try {
-      args = JSON.parse(args)
-    } catch {
-      /* the text stays the input */
-    }
-  const tool = text(call.name)
-  const spec = ANTIGRAVITY_TOOLS[tool]
-  const input = object(args)
-  out.tool_name = spec?.name ?? tool
-  out.tool_input = spec
-    ? {
-        ...input,
-        ...Object.fromEntries(
-          Object.entries(spec.args)
-            .filter(([from]) => from in input)
-            .map(([from, to]) => [to, input[from]]),
-        ),
-      }
-    : args
-  if (text(call.id) !== "") out.tool_use_id = call.id
-  const failed = text(out.error) !== ""
-  out.tool_response = failed ? { error: out.error } : (out.result ?? {})
-  out.is_error = failed
+function isInterruptedStop(out: Record<string, unknown>, named: string): boolean {
+  // Copilot names its reason `stop_reason`, in either spelling the other agents use.
+  const statuses = [out.status, out.stop_reason].map(asText)
+  const terminations = [out.termination_reason, out.stop_reason].map(asText)
+  return (
+    INTERRUPTED_EVENT.test(named) ||
+    statuses.some((value) => INTERRUPTED_STATUS.test(value)) ||
+    terminations.some((value) => INTERRUPTED_TERMINATION.test(value))
+  )
 }
 
 /**
@@ -189,10 +57,13 @@ function antigravityTool(out: Record<string, unknown>): void {
  */
 export function normalizeHookPayload(raw: unknown, event?: string): Record<string, unknown> | null {
   const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(object(raw)))
-    if (!(snake(key) in out)) out[snake(key)] = value
-  if (typeof out.session_id !== "string" && typeof out.conversation_id === "string")
+  for (const [key, value] of Object.entries(asObject(raw))) {
+    const normalized = snake(key)
+    if (!(normalized in out)) out[normalized] = value
+  }
+  if (typeof out.session_id !== "string" && typeof out.conversation_id === "string") {
     out.session_id = out.conversation_id
+  }
   // Cursor's Shell names an empty `cwd` for a command in the project: the project is the folder.
   const folder = [
     out.cwd,
@@ -201,31 +72,20 @@ export function normalizeHookPayload(raw: unknown, event?: string): Record<strin
     first(out.workspace_paths),
   ].find((value) => typeof value === "string" && value !== "")
   if (typeof folder === "string") out.cwd = folder
-  const named = text(out.hook_event_name) || event || ""
+  const named = asText(out.hook_event_name) || event || ""
   const canonical = EVENTS[named.toLowerCase().replace(/[_-]/g, "")]
   if (canonical) out.hook_event_name = canonical
   else if (named) out.hook_event_name = named
-  copilotTool(out)
-  antigravityTool(out)
-  cursorTool(out)
-  const tool = text(out.tool_name)
-  if (Object.hasOwn(GROK_TOOLS, tool)) out.tool_name = GROK_TOOLS[tool]
+  normalizeHookTools(out)
   if (canonical !== "Stop") return out
   // Copilot runs agentStop inside a helper too, naming the helper's parent: that is a helper that
   // finished (Claude Code's SubagentStop), and the lead's turn goes on.
-  if (text(out.parent_agent_id) !== "") {
+  if (asText(out.parent_agent_id) !== "") {
     out.hook_event_name = "SubagentStop"
     return out
   }
   if (out.reason === "shutdown" || out.fully_idle === false) return null
-  // Copilot names its reason `stop_reason`, in either spelling the other agents use.
-  const statuses = [out.status, out.stop_reason].map(text)
-  const terminations = [out.termination_reason, out.stop_reason].map(text)
-  const interrupted =
-    INTERRUPTED_EVENT.test(named) ||
-    statuses.some((value) => INTERRUPTED_STATUS.test(value)) ||
-    terminations.some((value) => INTERRUPTED_TERMINATION.test(value))
-  if (interrupted) out.reason = "interrupted"
+  if (isInterruptedStop(out, named)) out.reason = "interrupted"
   return out
 }
 
@@ -257,13 +117,14 @@ export function toolRefusal(
   context: string | null,
 ): Record<string, unknown> {
   if (agent === "copilot") return { permissionDecision: "deny", permissionDecisionReason: reason }
-  if (agent === "cursor")
+  if (agent === "cursor") {
     return {
       permission: "deny",
       user_message: reason,
       agent_message: reason,
       ...(context !== null ? { additional_context: context } : {}),
     }
+  }
   if (agent === "antigravity") return { decision: "deny", reason }
   return {
     hookSpecificOutput: {

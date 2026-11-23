@@ -24,6 +24,7 @@ import {
   agentFolders,
   brokeRule,
   installedAgents,
+  type Outcome,
   reviewCommand,
   reviewerBinary,
   reviewWorkerEnv,
@@ -155,6 +156,75 @@ export function findingsIn(reply: string, files: readonly string[]): AskedFindin
   return found
 }
 
+function anotherReviewBrief(
+  task: Pick<Task, "dir">,
+  run: Pick<AnotherRun, "file">,
+  base: string | null,
+  files: readonly string[],
+): string {
+  const scope = run.file !== undefined ? `The file ${run.file}.` : "The whole change."
+  const origin = base !== null ? `Measured from ${base}.` : "The base is not known."
+  return [
+    phaseText("another-review") ?? "",
+    `# Scope\n\n${scope}`,
+    `# The change\n\n${origin} Changed files:\n${files.map((f) => `- ${f}`).join("\n")}`,
+    `# The task's documents\n\nIn ${task.dir}: ${NAMES.plan}, ${agentFileOf("implement")}.`,
+  ].join("\n\n")
+}
+
+async function readAnotherReply(
+  ctx: Ctx,
+  by: Reviewer,
+  stdout: string[],
+  lastMessage: string,
+): Promise<string> {
+  if (by === "codex" && (await ctx.fs.exists(lastMessage))) {
+    const reply = await ctx.fs.readFile(lastMessage)
+    await ctx.fs.remove(lastMessage)
+    return reply
+  }
+  return answerOf(by, stdout)
+}
+
+function anotherFailureReason(reviewerName: string, outcome: Outcome, stop: number): string {
+  const broke = brokeRule(reviewerName, outcome)
+  if (broke !== null) return broke
+  return outcome.timedOut
+    ? `${reviewerName} ran out of time after ${Math.round(stop / 60_000) || 1} min`
+    : `${reviewerName} stopped with an error`
+}
+
+async function changedFilesFromBase(
+  ctx: Ctx,
+  task: Task,
+): Promise<{ base: string | null; files: string[] }> {
+  const base = await buildBase(ctx, task).catch(() => null)
+  const listed =
+    base !== null ? await ctx.git.run(task.repoRoot, ["diff", "--name-only", base]) : null
+  const files = (listed?.code === 0 ? listed.stdout : "").split("\n").filter((f) => f !== "")
+  return { base, files }
+}
+
+function anotherReviewTimeout(ctx: Ctx): number {
+  const override = Number(ctx.env.get("QUALITYLAYER_ANSWER_TIMEOUT_MS"))
+  return Number.isFinite(override) && override > 0 ? override : BUDGET_MS
+}
+
+function makeProgressReporter(
+  ctx: Ctx,
+  task: Task,
+  id: string,
+  by: Reviewer,
+): (raw: string) => void {
+  let lastWrite = 0
+  return (raw) => {
+    const line = progressOf(by, raw)
+    if (line === null || ctx.clock.now() - lastWrite < 1000) return
+    lastWrite = ctx.clock.now()
+    void updateRun(ctx, task, id, { line })
+  }
+}
+
 /** The worker (`review another`): run the reviewer once and keep what it found. */
 export async function runAnotherReview(
   ctx: Ctx,
@@ -167,41 +237,20 @@ export async function runAnotherReview(
   const reviewer = await anotherReviewer(ctx, task)
   const binary = reviewer !== null ? await reviewerBinary(ctx, reviewer.by) : null
   if (reviewer === null || binary === null) {
-    await updateRun(ctx, task, id, {
-      state: "failed",
-      ended: ctx.clock.now(),
-      reason:
-        reviewer === null
-          ? "no agent is installed to review it"
-          : `${reviewer.name} is not on PATH`,
-    })
+    const reason =
+      reviewer === null ? "no agent is installed to review it" : `${reviewer.name} is not on PATH`
+    await updateRun(ctx, task, id, { state: "failed", ended: ctx.clock.now(), reason })
     return null
   }
-  const base = await buildBase(ctx, task).catch(() => null)
-  const listed =
-    base !== null ? await ctx.git.run(task.repoRoot, ["diff", "--name-only", base]) : null
-  const files = (listed?.code === 0 ? listed.stdout : "").split("\n").filter((f) => f !== "")
-  const brief = [
-    phaseText("another-review") ?? "",
-    `# Scope\n\n${run.file !== undefined ? `The file ${run.file}.` : "The whole change."}`,
-    `# The change\n\n${base !== null ? `Measured from ${base}.` : "The base is not known."} Changed files:\n${files.map((f) => `- ${f}`).join("\n")}`,
-    `# The task's documents\n\nIn ${task.dir}: ${NAMES.plan}, ${agentFileOf("implement")}.`,
-  ].join("\n\n")
-  const override = Number(ctx.env.get("QUALITYLAYER_ANSWER_TIMEOUT_MS"))
-  const stop = Number.isFinite(override) && override > 0 ? override : BUDGET_MS
+  const { base, files } = await changedFilesFromBase(ctx, task)
+  const stop = anotherReviewTimeout(ctx)
   const lastMessage = join(task.runtimeDir, `another-${id}.last`)
-  let lastWrite = 0
   const outcome = await runReviewer(
     task,
     reviewCommand(reviewer.by, binary, reviewer.model, task.repoRoot, lastMessage),
-    brief,
+    anotherReviewBrief(task, run, base, files),
     stop,
-    (raw) => {
-      const line = progressOf(reviewer.by, raw)
-      if (line === null || ctx.clock.now() - lastWrite < 1000) return
-      lastWrite = ctx.clock.now()
-      void updateRun(ctx, task, id, { line })
-    },
+    makeProgressReporter(ctx, task, id, reviewer.by),
     reviewer.by,
     await agentFolders(ctx),
   )
@@ -218,11 +267,7 @@ export async function runAnotherReview(
     },
     outcome.stdout.join("\n"),
   )
-  let reply = answerOf(reviewer.by, outcome.stdout)
-  if (reviewer.by === "codex" && (await ctx.fs.exists(lastMessage))) {
-    reply = await ctx.fs.readFile(lastMessage)
-    await ctx.fs.remove(lastMessage)
-  }
+  const reply = await readAnotherReply(ctx, reviewer.by, outcome.stdout, lastMessage)
   const scoped = run.file !== undefined ? files.filter((f) => f === run.file) : files
   const findings =
     outcome.broke === undefined ? findingsIn(reply, scoped.length > 0 ? scoped : files) : []
@@ -231,15 +276,7 @@ export async function runAnotherReview(
     state: answered ? "done" : "failed",
     ended: ctx.clock.now(),
     findings,
-    ...(answered
-      ? {}
-      : {
-          reason:
-            brokeRule(reviewer.name, outcome) ??
-            (outcome.timedOut
-              ? `${reviewer.name} ran out of time after ${Math.round(stop / 60_000) || 1} min`
-              : `${reviewer.name} stopped with an error`),
-        }),
+    ...(answered ? {} : { reason: anotherFailureReason(reviewer.name, outcome, stop) }),
   })
   return (await readAnotherRuns(ctx, task)).find((r) => r.id === id) ?? null
 }

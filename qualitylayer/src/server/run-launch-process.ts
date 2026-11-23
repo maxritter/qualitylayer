@@ -56,6 +56,77 @@ export function readyLaunchHooks(
   if (hooks) createLaunchOverlays(launchHooksFolder(ctx.home, run, generation), hooks.overlays, env)
 }
 
+async function resolveShellProgram(
+  ctx: Ctx,
+  run: RunRecord,
+  config: Config,
+  env: Record<string, string>,
+) {
+  if (run.purpose.kind !== "terminal") return undefined
+  if (run.purpose.context?.kind === "agent-setup")
+    return agentSetupProgram(ctx, run.purpose.context.agent, run.purpose.context.operation, env)
+  return run.purpose.shell === true ? terminalShell(ctx, config) : undefined
+}
+
+async function resolveBinary(
+  ctx: Ctx,
+  run: RunRecord,
+  config: Config,
+  env: Record<string, string>,
+  options: {
+    shellProgram: Awaited<ReturnType<typeof resolveShellProgram>>
+    deadline: number
+    diagnostic: ReturnType<typeof launchDiagnostic> | null
+  },
+): Promise<{ path: string; version: string }> {
+  if (run.agent === "other") {
+    const program = options.shellProgram?.program ?? config.otherAgent.program
+    const path = isAbsolute(program) ? program : Bun.which(program, { PATH: env.PATH })
+    if (!path || !runnableFile(path))
+      throw new Error(`Another agent's program cannot run: ${program || "not configured"}`)
+    return { path, version: "unknown" }
+  }
+  return checkedAgentBinary(ctx, run.agent, {
+    env,
+    timeoutMs: Math.max(1, options.deadline - Date.now()),
+    observe: options.diagnostic?.binary,
+  })
+}
+
+async function resolveArtifactPrompt(
+  ctx: Ctx,
+  run: RunRecord,
+  context: LaunchContext,
+): Promise<string | undefined> {
+  if (!context.artifact) return undefined
+  const request = run.purpose.kind === "artifact" ? run.purpose.request : ""
+  const result = await refreshArtifactAgentContext(ctx, context.artifact.binding, request, {
+    expectedRevision: context.artifact.revision,
+  })
+  if (!result.ok) throw new Error(result.error.message)
+  return result.data.prompt
+}
+
+async function ensureNativeSession(
+  ctx: Ctx,
+  run: RunRecord,
+  binaryPath: string,
+  cwd: string,
+  options: { env: Record<string, string>; deadline: number },
+): Promise<RunRecord> {
+  const create =
+    run.agent === "other" ? undefined : AGENT_CAPABILITIES[run.agent].startSession?.create
+  if (!create || run.nativeSession) return run
+  const nativeSession = await createNativeSession({
+    program: binaryPath,
+    create,
+    cwd,
+    env: options.env,
+    timeoutMs: Math.max(1, options.deadline - Date.now()),
+  })
+  return updateRun(ctx.home, run.id, run.generation, { nativeSession })
+}
+
 /** Prepare a validated start's executable, native session and arguments before the host is started. */
 export async function prepareStartProcess(
   ctx: Ctx,
@@ -69,46 +140,21 @@ export async function prepareStartProcess(
   },
 ) {
   const { input, context, config, deadline, diagnostic } = preparation
-  let current = preparation.run
-  const env = await agentEnvironment(ctx, current.id, process.env, diagnostic?.login)
+  const env = await agentEnvironment(ctx, preparation.run.id, process.env, diagnostic?.login)
   env.PWD = context.cwd
-  if (current.task) env.QUALITYLAYER_TASK = current.task.split("~").at(-1) ?? current.task
-  if (current.agent !== "other") env.QUALITYLAYER_AGENT = current.agent
-  let binary: { path: string; version: string }
-  const shell = current.purpose.kind === "terminal" && current.purpose.shell === true
-  const setup =
-    current.purpose.kind === "terminal" && current.purpose.context?.kind === "agent-setup"
-      ? current.purpose.context
-      : null
-  const shellProgram = setup
-    ? await agentSetupProgram(ctx, setup.agent, setup.operation, env)
-    : shell
-      ? terminalShell(ctx, config)
-      : undefined
-  if (current.agent === "other") {
-    const program = shellProgram?.program ?? config.otherAgent.program
-    const path = isAbsolute(program) ? program : Bun.which(program, { PATH: env.PATH })
-    if (!path || !runnableFile(path))
-      throw new Error(`Another agent's program cannot run: ${program || "not configured"}`)
-    binary = { path, version: "unknown" }
-  } else
-    binary = await checkedAgentBinary(ctx, current.agent, {
-      env,
-      timeoutMs: Math.max(1, deadline - Date.now()),
-      observe: diagnostic?.binary,
-    })
-  const create =
-    current.agent === "other" ? undefined : AGENT_CAPABILITIES[current.agent].startSession?.create
-  if (create && !current.nativeSession) {
-    const nativeSession = await createNativeSession({
-      program: binary.path,
-      create,
-      cwd: context.cwd,
-      env,
-      timeoutMs: Math.max(1, deadline - Date.now()),
-    })
-    current = updateRun(ctx.home, current.id, current.generation, { nativeSession })
-  }
+  if (preparation.run.task)
+    env.QUALITYLAYER_TASK = preparation.run.task.split("~").at(-1) ?? preparation.run.task
+  if (preparation.run.agent !== "other") env.QUALITYLAYER_AGENT = preparation.run.agent
+  const shellProgram = await resolveShellProgram(ctx, preparation.run, config, env)
+  const binary = await resolveBinary(ctx, preparation.run, config, env, {
+    shellProgram,
+    deadline,
+    diagnostic,
+  })
+  const current = await ensureNativeSession(ctx, preparation.run, binary.path, context.cwd, {
+    env,
+    deadline,
+  })
   // Resuming the outside session's own conversation: nothing else may hold it now.
   if (input.resumeNative !== undefined) assertNativeAvailable(ctx, current)
   const hooks = launchHooksFor(
@@ -118,33 +164,22 @@ export async function prepareStartProcess(
     current.settings,
     input.resumeNative !== undefined,
   )
+  const isNative = current.agent !== "other"
   const spec = launchSpec({
     ...(input.resumeNative !== undefined ? { resume: true, continue: true } : {}),
     agent: current.agent,
     launchFiles: current.launchFiles,
     toolsFolder: dirname(agentEntry(ctx)),
     answers: context.task?.answers ?? current.settings?.answers,
-    artifactPrompt: context.artifact
-      ? await refreshArtifactAgentContext(
-          ctx,
-          context.artifact.binding,
-          current.purpose.kind === "artifact" ? current.purpose.request : "",
-          { expectedRevision: context.artifact.revision },
-        ).then((result) => {
-          if (!result.ok) throw new Error(result.error.message)
-          return result.data.prompt
-        })
-      : undefined,
+    artifactPrompt: await resolveArtifactPrompt(ctx, current, context),
     stage: context.task?.stage,
     purpose: context.task ? { kind: "task", task: context.task.slug } : current.purpose,
     managed: true,
     session: current.nativeSession,
     taskBriefsDir:
-      context.task && current.agent !== "other"
-        ? await taskBriefsDirectory(ctx, context.task)
-        : undefined,
+      context.task && isNative ? await taskBriefsDirectory(ctx, context.task) : undefined,
     runBriefsDir:
-      current.purpose.kind === "new-task" && current.agent !== "other"
+      current.purpose.kind === "new-task" && isNative
         ? await runBriefsDirectory(ctx, current.id)
         : undefined,
     perm: current.settings?.perm,

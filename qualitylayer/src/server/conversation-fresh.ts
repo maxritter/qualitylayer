@@ -1,36 +1,23 @@
 import { createHash } from "node:crypto"
-import { open, realpath } from "node:fs/promises"
-import { join } from "node:path"
+import { realpath } from "node:fs/promises"
 import { checkedAgentBinary } from "../core/agents/binary.ts"
-import { artifactSourceWitness } from "../core/artifact/agent-context.ts"
 import { readConfig } from "../core/config.ts"
-import { folderDoc, STEPS } from "../core/docs/names.ts"
 import { currentBranch } from "../core/git/repo.ts"
 import { agentEnvironment } from "../core/run/agent-env.ts"
-import type { RunRecord, StartRequest } from "../core/run/contracts.ts"
+import type { RunRecord } from "../core/run/contracts.ts"
 import { effectiveNativeSettings } from "../core/run/effective-native-settings.ts"
 import { type FreshPreparation, freshPermission } from "../core/run/fresh.ts"
-import { isArchived } from "../core/task/archive.ts"
 import type { Ctx } from "../ctx.ts"
-import { locate } from "./api.ts"
+import { resolveFreshPurpose } from "./conversation-fresh-purpose.ts"
 import { readLaunchFiles } from "./run-launch-files.ts"
 import { shippedRun } from "./shipped-run.ts"
 
-const DOCUMENT_BYTES = 4 * 1024 * 1024
-const MAX_DOCUMENTS = STEPS.length
-const roles = STEPS
-
-/** No new task, branch, host or lease is allocated during this preflight. */
-export async function prepareFreshConversation(
-  ctx: Ctx,
-  source: RunRecord,
-  key: string,
-  options: { checkBinary?: typeof checkedAgentBinary } = {},
-): Promise<FreshPreparation> {
-  if (source.agent === "other" || source.agent === "opencode")
+async function verifyCheckout(ctx: Ctx, source: RunRecord) {
+  if (source.agent === "other" || source.agent === "opencode") {
     throw new Error(
       "Start a fresh conversation in Terminal for this agent. Its existing session is kept.",
     )
+  }
   const cwd = await realpath(source.cwd)
   if (cwd !== source.cwd)
     throw new Error("The recorded checkout identity changed. The existing conversation is kept.")
@@ -41,79 +28,20 @@ export async function prepareFreshConversation(
     !(await shippedRun(ctx, source))
   )
     throw new Error("This checkout changed branches. The existing conversation is kept.")
-  let purpose: StartRequest["purpose"]
-  let artifactBinding: RunRecord["artifactBinding"]
+  return { cwd, agent: source.agent }
+}
+
+/** No new task, branch, host or lease is allocated during this preflight. */
+export async function prepareFreshConversation(
+  ctx: Ctx,
+  source: RunRecord,
+  key: string,
+  options: { checkBinary?: typeof checkedAgentBinary } = {},
+): Promise<FreshPreparation> {
+  const { cwd, agent } = await verifyCheckout(ctx, source)
   const hash = createHash("sha256")
-  hash.update(JSON.stringify({ cwd, agent: source.agent, nativeSession: source.nativeSession }))
-  const taskId = source.task ?? (source.purpose.kind === "task" ? source.purpose.task : undefined)
-  if (taskId && (source.purpose.kind === "task" || source.purpose.kind === "new-task")) {
-    const found = await locate(ctx, taskId)
-    if (!found.ok) throw new Error(found.error.message)
-    const task = found.data.task
-    // An approved task keeps talking (landing or landed); only an archived or abandoned one is closed.
-    if ((await isArchived(ctx, task)) || task.stage === "abandoned")
-      throw new Error("Restore or reopen this task before starting a fresh conversation.")
-    if ((await realpath(task.repoRoot)) !== cwd)
-      throw new Error("This task belongs to another checkout. The existing conversation is kept.")
-    purpose = {
-      kind: "task",
-      task: taskId,
-      ...(task.stage === "plan" ? { phase: "planning" as const } : {}),
-    }
-    hash.update(
-      JSON.stringify({
-        stage: task.stage,
-        task: taskId,
-        runtime: task.runtimeDir,
-        answers: task.answers,
-        iterations: task.iterations,
-      }),
-    )
-    let remaining = DOCUMENT_BYTES
-    for (const role of roles.slice(0, MAX_DOCUMENTS)) {
-      const path = join(task.dir, folderDoc(role))
-      let file: Awaited<ReturnType<typeof open>> | undefined
-      try {
-        file = await open(path, "r")
-        const info = await file.stat()
-        if (!info.isFile() || info.size > remaining)
-          throw new Error("The current task documents exceed the fresh-session preflight limit.")
-        const bytes = Buffer.alloc(info.size + 1)
-        let bytesRead = 0
-        while (bytesRead < bytes.length) {
-          const chunk = await file.read(bytes, bytesRead, bytes.length - bytesRead, bytesRead)
-          if (!chunk.bytesRead) break
-          bytesRead += chunk.bytesRead
-        }
-        if (bytesRead !== info.size)
-          throw new Error("The task changed while its fresh conversation was prepared.")
-        remaining -= bytesRead
-        hash.update(role)
-        hash.update(bytes.subarray(0, bytesRead))
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
-      } finally {
-        await file?.close()
-      }
-    }
-  } else if (source.purpose.kind === "artifact" && source.artifactBinding) {
-    const witness = await artifactSourceWitness(ctx, source.artifactBinding)
-    if (!witness.ok) throw new Error(witness.error.message)
-    purpose = { ...source.purpose, revision: witness.data.revision }
-    artifactBinding = {
-      ...source.artifactBinding,
-      address: { ...source.artifactBinding.address, revision: witness.data.revision },
-      pages: witness.data.pages,
-    }
-    hash.update(JSON.stringify(purpose))
-    hash.update(source.artifactBinding.root)
-  } else if (source.purpose.kind === "terminal" && !source.purpose.shell) {
-    purpose = source.purpose
-    hash.update(JSON.stringify(purpose))
-  } else
-    throw new Error(
-      "The current task is not registered yet. Keep this conversation until planning starts.",
-    )
+  hash.update(JSON.stringify({ cwd, agent, nativeSession: source.nativeSession }))
+  const { purpose, artifactBinding } = await resolveFreshPurpose(ctx, source, cwd, hash)
   const config = await readConfig(ctx)
   const launch = await readLaunchFiles(ctx, source)
   hash.update(launch.hash)
@@ -125,14 +53,14 @@ export async function prepareFreshConversation(
     fastMode: undefined,
   }
   const env = await agentEnvironment(ctx, source.id)
-  await (options.checkBinary ?? checkedAgentBinary)(ctx, source.agent, { env, timeoutMs: 3000 })
+  await (options.checkBinary ?? checkedAgentBinary)(ctx, agent, { env, timeoutMs: 3000 })
   hash.update(JSON.stringify({ settings, otherAgent: config.otherAgent }))
   return {
     context: hash.digest("hex"),
     files: launch.files,
     ...(artifactBinding ? { artifactBinding } : {}),
     request: {
-      agent: source.agent,
+      agent,
       cwd,
       purpose,
       idempotencyKey: key,

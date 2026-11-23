@@ -50,6 +50,51 @@ function DestinationPick({
   )
 }
 
+function MappingReviewStatus({
+  migration: m,
+  disabled,
+}: {
+  migration: Migration
+  disabled: boolean
+}) {
+  return (
+    <>
+      {m.reviewing ? (
+        <p role="status">Checking selected destinations…</p>
+      ) : m.currentReview ? (
+        <p role="status">
+          <strong>{m.currentReview.toImport} to import</strong> · {m.currentReview.alreadyImported}{" "}
+          already imported · {m.currentReview.leftOut} left out · {m.currentReview.conflicts}{" "}
+          changed records left out
+        </p>
+      ) : null}
+      {m.reviewError ? (
+        <div role="alert">
+          <p>{m.reviewError}</p>
+          <Button type="button" variant="outline" disabled={disabled} onClick={m.retryReview}>
+            Retry review
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => void m.scanSource()}
+          >
+            Scan source again
+          </Button>
+        </div>
+      ) : null}
+      {m.busy === "apply" ? (
+        <p role="status">
+          {m.stopping
+            ? "Stopping import. Finishing the current memory…"
+            : "Importing memories. You can stop; memories already saved will be kept."}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 export function PilotMapping({
   api,
   migration: m,
@@ -152,38 +197,7 @@ export function PilotMapping({
             </ul>
           ) : null}
         </Disclosure>
-        {m.reviewing ? (
-          <p role="status">Checking selected destinations…</p>
-        ) : m.currentReview ? (
-          <p role="status">
-            <strong>{m.currentReview.toImport} to import</strong> ·{" "}
-            {m.currentReview.alreadyImported} already imported · {m.currentReview.leftOut} left out
-            · {m.currentReview.conflicts} changed records left out
-          </p>
-        ) : null}
-        {m.reviewError ? (
-          <div role="alert">
-            <p>{m.reviewError}</p>
-            <Button type="button" variant="outline" disabled={disabled} onClick={m.retryReview}>
-              Retry review
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={disabled}
-              onClick={() => void m.scanSource()}
-            >
-              Scan source again
-            </Button>
-          </div>
-        ) : null}
-        {m.busy === "apply" ? (
-          <p role="status">
-            {m.stopping
-              ? "Stopping import. Finishing the current memory…"
-              : "Importing memories. You can stop; memories already saved will be kept."}
-          </p>
-        ) : null}
+        <MappingReviewStatus migration={m} disabled={disabled} />
       </div>
       <footer className="q-pilot-actions">
         <Button type="button" variant="outline" disabled={disabled} onClick={() => void m.back()}>

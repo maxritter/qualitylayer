@@ -1,382 +1,15 @@
 // The rows of a conversation: the agent's thinking and words, tool calls with their results, edits with
 // their diffs, task files, errors and entries this view cannot draw.
-import {
-  BotIcon,
-  BracesIcon,
-  BrainIcon,
-  ChevronRightIcon,
-  CircleCheckIcon,
-  CirclePlayIcon,
-  EyeIcon,
-  FilePlusIcon,
-  FileTextIcon,
-  FolderIcon,
-  GlobeIcon,
-  ListChecksIcon,
-  ListPlusIcon,
-  ListTodoIcon,
-  ListXIcon,
-  type LucideIcon,
-  MessageCircleQuestionIcon,
-  PencilLineIcon,
-  PlugIcon,
-  SearchIcon,
-  SendIcon,
-  SparklesIcon,
-  TerminalIcon,
-  WrenchIcon,
-} from "lucide-react"
-import { Fragment, type ReactNode, useId, useState } from "react"
+import { BracesIcon, BrainIcon } from "lucide-react"
+import { type ReactNode, useId, useState } from "react"
 import type { ToolKind } from "../../../core/conversation/types.ts"
-import { FileIcon } from "../../kit/marks/index.ts"
 import { WhoMark } from "../../kit/WhoMark.tsx"
-import { chipOf } from "./chips.ts"
-import {
-  diffLines,
-  groupWhat,
-  type Item,
-  qualityCommand,
-  qualityLine,
-  type Row,
-  resultOf,
-  taskDocumentOf,
-  taskFileOf,
-  toolName,
-  verbOf,
-} from "./model.ts"
+import { EditRow } from "./LogEditRow.tsx"
+import { Disclosure, ICONS, Lead, type LogContext, ShowMore, ToolRow } from "./LogToolRow.tsx"
+import { groupWhat, type Item, type Row, resultOf, verbOf } from "./model.ts"
 import { Say } from "./Say.tsx"
-import type { ThinkingVisibility } from "./thinking.ts"
 
-const ICONS: Record<ToolKind, LucideIcon> = {
-  read: FileTextIcon,
-  write: FilePlusIcon,
-  edit: PencilLineIcon,
-  search: SearchIcon,
-  list: FolderIcon,
-  shell: TerminalIcon,
-  web: GlobeIcon,
-  subagent: BotIcon,
-  todo: ListTodoIcon,
-  qualitylayer: ListChecksIcon,
-  mcp: PlugIcon,
-  other: WrenchIcon,
-}
-
-/** A task call wears the mark of what it did to the task. */
-const TASK_ICONS: Record<string, LucideIcon> = {
-  created: ListPlusIcon,
-  started: CirclePlayIcon,
-  completed: CircleCheckIcon,
-  removed: ListXIcon,
-}
-
-/** The agents' own tools that are common enough to have a mark of their own. */
-const TOOL_ICONS: Record<string, LucideIcon> = {
-  Skill: SparklesIcon,
-  ToolSearch: SearchIcon,
-  SendMessage: SendIcon,
-  Monitor: EyeIcon,
-  AskUserQuestion: MessageCircleQuestionIcon,
-}
-
-function iconOf(row: Row): LucideIcon {
-  if (row.tool === "todo") return TASK_ICONS[row.detail ?? ""] ?? ICONS.todo
-  if (row.tool === "other") return TOOL_ICONS[row.name] ?? ICONS.other
-  return ICONS[row.tool]
-}
-
-/** What the log needs beyond the events: names, the checkout for shorter paths, and the two jumps. */
-export type LogContext = {
-  agentName: string
-  /** Whose mark goes before the name. */
-  agent?: string
-  /** Child user-role entries may be coordinator briefs rather than the person’s own words. */
-  userName?: string
-  cwd: string
-  task?: string
-  onShowTerminal(): void
-  /** Opens a task document in the Reader; when missing the path is shown and nothing opens. */
-  onOpenTaskFile?(task: string, name: string): void
-  /** Reads events whole that arrived shortened; false when it did not work. */
-  showMore?(ids: readonly string[]): Promise<boolean>
-  /** Calls of subagents the window lists on its own: the log does not draw them a second time. */
-  hidden?: ReadonlySet<string>
-  thinking?: ThinkingVisibility
-}
-
-/** The rest of a text that arrived shortened. */
-function ShowMore({ ids, ctx }: { ids: readonly string[]; ctx: LogContext }) {
-  const [state, setState] = useState<"idle" | "reading" | "failed">("idle")
-  if (ids.length === 0 || !ctx.showMore) return null
-  const read = async () => {
-    setState("reading")
-    setState((await ctx.showMore?.(ids)) ? "idle" : "failed")
-  }
-  return (
-    <p className="cv-more">
-      <button type="button" className="q-link" disabled={state === "reading"} onClick={read}>
-        {state === "reading" ? "Reading…" : "Show more"}
-      </button>
-      {state === "failed" ? " The rest couldn’t be read. Try again." : null}
-    </p>
-  )
-}
-
-function Disclosure({
-  open,
-  onToggle,
-  className,
-  id,
-  children,
-}: {
-  open: boolean
-  onToggle(): void
-  className: string
-  id: string
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      className={className}
-      aria-expanded={open}
-      aria-controls={open ? id : undefined}
-      onClick={onToggle}
-    >
-      {children}
-      <ChevronRightIcon size={13} className={`cv-chev${open ? " open" : ""}`} aria-hidden="true" />
-    </button>
-  )
-}
-
-/** A path inside the checkout is shown from the checkout. */
-function shown(row: Row, cwd: string): string | undefined {
-  const target = row.target
-  if (target === undefined || !["read", "write", "edit", "list"].includes(row.tool)) return target
-  return cwd && target.startsWith(`${cwd.replace(/\/$/, "")}/`)
-    ? target.slice(cwd.replace(/\/$/, "").length + 1)
-    : target
-}
-
-function Lead({ row }: { row: Row }) {
-  if (row.running) return <WhoMark who="agent" running />
-  if (row.done && row.ok === false) return <WhoMark who="stop" />
-  const Icon = iconOf(row)
-  return <Icon size={14} aria-hidden="true" />
-}
-
-/** The details a row opens to: its output, and its input when that says more than the row. */
-function details(row: Row): { label: string; text: string }[] {
-  const out: { label: string; text: string }[] = []
-  if (row.input && ["mcp", "other", "web", "todo"].includes(row.tool))
-    out.push({ label: "Input", text: row.input })
-  if (row.tool === "qualitylayer") out.push({ label: "Command", text: qualityCommand(row) })
-  if (row.output) out.push({ label: row.ok === false ? "Error" : "Output", text: row.output })
-  return out
-}
-
-/** A row's target in code, with the mark of its kind in front when it names a file. */
-function Target({ text, file, title }: { text: string; file: boolean; title?: string }) {
-  const named = file && chipOf(text)?.kind === "file"
-  return (
-    <code title={title ?? text} className={named ? "cv-file" : undefined}>
-      {named ? <FileIcon path={text} size={12} /> : null}
-      {named ? <span>{text}</span> : text}
-    </code>
-  )
-}
-
-/**
- * What a call was about, as the terminal shows it: the command, the file or pattern, a task's words. A
- * QualityLayer call names its subcommand; a tool the view has no verb for, its name and its main argument.
- */
-function Subject({ row, target }: { row: Row; target?: string }) {
-  if (row.tool === "qualitylayer")
-    return (
-      <Target text={row.detail || target || row.name} file={false} title={qualityCommand(row)} />
-    )
-  if (row.tool === "other" || row.tool === "mcp") {
-    const argument = target || row.detail
-    return (
-      <span className="cv-what" title={row.name}>
-        <span className="cv-tn">{toolName(row)}</span>
-        {argument ? (
-          <>
-            {" "}
-            <code>{argument}</code>
-          </>
-        ) : null}
-      </span>
-    )
-  }
-  // A task is its own words, not a command: the verb says what the call did to it.
-  if (row.tool === "todo")
-    return (
-      <span className="cv-what" title={target}>
-        {target}
-      </span>
-    )
-  const text = target || row.detail
-  return text ? <Target text={text} file /> : <span className="cv-what">{row.name}</span>
-}
-
-function ToolRow({ row, ctx, nested = false }: { row: Row; ctx: LogContext; nested?: boolean }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const body = details(row)
-  const target = shown(row, ctx.cwd)
-  const quality = row.tool === "qualitylayer"
-  const cls = `cv-tool${nested ? " nested" : ""}${quality ? " cv-ql" : ""}`
-  const lead = (
-    <span className="cv-ic">
-      <Lead row={row} />
-    </span>
-  )
-  const said = quality ? qualityLine(row) : undefined
-  // A QualityLayer step reads as its result in words; the command is its tooltip and its details.
-  const text =
-    said !== undefined ? (
-      <span className="cv-what cv-said" title={qualityCommand(row)}>
-        {said}
-      </span>
-    ) : (
-      <>
-        <b>{quality ? "QualityLayer" : verbOf(row.tool, row.running, row.detail)}</b>
-        <Subject row={row} target={target} />
-        <span className="cv-res">{resultOf(row)}</span>
-      </>
-    )
-  if (body.length === 0)
-    return (
-      <div className={cls}>
-        {lead}
-        {text}
-        <span className="cv-chev-space" />
-      </div>
-    )
-  return (
-    <div className="cv-tool-wrap">
-      <Disclosure open={open} onToggle={() => setOpen(!open)} className={cls} id={id}>
-        {lead}
-        {text}
-      </Disclosure>
-      {open ? (
-        <div className="cv-body" id={id}>
-          {body.map((part) => (
-            <Fragment key={part.label}>
-              <span className="cv-label">{part.label}</span>
-              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a long output scrolls, so keyboard users must reach it */}
-              <pre tabIndex={0}>{part.text}</pre>
-            </Fragment>
-          ))}
-          <ShowMore ids={row.more} ctx={ctx} />
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-const DIFF_LINES = 400
-
-function Diff({ path, patch }: { path: string; patch: string }) {
-  const lines = diffLines(patch)
-  const more = lines.length - DIFF_LINES
-  return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: a wide diff scrolls sideways, so keyboard users must reach it
-    <section className="q-diff cv-diff" aria-label={`Diff of ${path}`} tabIndex={0}>
-      {lines.slice(0, DIFF_LINES).map((line, index) =>
-        line.kind === "hunk" ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: lines of one diff, in order
-          <div key={index} className="q-ln hunk">
-            {line.text}
-          </div>
-        ) : (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines of one diff, in order
-            key={index}
-            className={`q-ln code${line.kind === "add" ? " add" : line.kind === "del" ? " del" : ""}`}
-          >
-            <span className="g">{line.no ?? ""}</span>
-            <span className="g">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}</span>
-            <span className="c">{line.text === "" ? " " : line.text}</span>
-          </div>
-        ),
-      )}
-      {more > 0 ? <div className="q-ln hunk">{more} more lines</div> : null}
-    </section>
-  )
-}
-
-function EditRow({ row, ctx }: { row: Row; ctx: LogContext }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const path = row.diff?.path ?? row.target ?? ""
-  const file = taskFileOf(path)
-  const target = shown(row, ctx.cwd)
-  const done = row.done && row.ok !== false
-  return (
-    <div className="cv-group">
-      <Disclosure open={open} onToggle={() => setOpen(!open)} className="cv-tool" id={id}>
-        <span className="cv-ic">
-          <Lead row={row} />
-        </span>
-        <b>{verbOf(row.tool, row.running)}</b>
-        <Target text={target ?? ""} file />
-        <span className="cv-res">
-          {row.running ? (
-            "writing…"
-          ) : row.diff ? (
-            <>
-              <span className="cv-add">+{row.diff.added}</span>{" "}
-              <span className="cv-del">−{row.diff.removed}</span>
-            </>
-          ) : (
-            resultOf(row)
-          )}
-        </span>
-      </Disclosure>
-      {file && done ? (
-        <div className="cv-filenote">
-          <FileTextIcon size={13} aria-hidden="true" />
-          <span>Task file{file.label ? ` · ${file.label}` : ""}</span>
-          {file.document &&
-          ctx.onOpenTaskFile &&
-          ctx.task &&
-          taskDocumentOf(row.target ?? "", ctx.task) ? (
-            <>
-              ·
-              <button
-                type="button"
-                className="q-link"
-                onClick={() => {
-                  if (ctx.task) ctx.onOpenTaskFile?.(ctx.task, file.name)
-                }}
-              >
-                Open in Reader
-              </button>
-            </>
-          ) : (
-            <code title={path}>{file.name}</code>
-          )}
-        </div>
-      ) : null}
-      {open ? (
-        <div className="cv-nest cv-diffwrap" id={id}>
-          {row.diff?.patch ? (
-            <>
-              <Diff path={path} patch={row.diff.patch} />
-              <ShowMore ids={row.more} ctx={ctx} />
-            </>
-          ) : (
-            <p className="cv-note">
-              {row.output ? row.output : "No changes were recorded for this edit."}
-            </p>
-          )}
-        </div>
-      ) : null}
-    </div>
-  )
-}
+export type { LogContext }
 
 function Subagent({ row, ctx }: { row: Row; ctx: LogContext }) {
   const [open, setOpen] = useState(false)
@@ -481,10 +114,32 @@ function Thinking({
   )
 }
 
-export function Entry({ item, ctx }: { item: Item; ctx: LogContext }) {
+function UnknownEntry({ labels, onShowTerminal }: { labels: string[]; onShowTerminal(): void }) {
+  return (
+    <div className="cv-tool cv-unknown">
+      <span className="cv-ic">
+        <BracesIcon size={14} aria-hidden="true" />
+      </span>
+      <span className="cv-what" title={labels.join(", ")}>
+        {labels.length === 1
+          ? "1 event this view doesn’t show yet"
+          : `${labels.length} events this view doesn’t show yet`}
+      </span>
+      <span className="cv-res">
+        <button type="button" className="q-link" onClick={onShowTerminal}>
+          Show in terminal
+        </button>
+      </span>
+      <span className="cv-chev-space" />
+    </div>
+  )
+}
+
+export function Entry({ item, ctx }: { item: Item; ctx: LogContext }): ReactNode {
+  let view: ReactNode = null
   switch (item.kind) {
     case "think":
-      return (
+      view = (
         <Thinking
           key={ctx.thinking ?? "collapsed"}
           text={item.text}
@@ -493,14 +148,18 @@ export function Entry({ item, ctx }: { item: Item; ctx: LogContext }) {
           ctx={ctx}
         />
       )
+      break
     case "say":
-      return <Say text={item.text} />
+      view = <Say text={item.text} />
+      break
     case "tool":
-      return ctx.hidden?.has(item.row.callId) ? null : <Rowed row={item.row} ctx={ctx} />
+      view = ctx.hidden?.has(item.row.callId) ? null : <Rowed row={item.row} ctx={ctx} />
+      break
     case "group":
-      return <Group tool={item.tool} rows={item.rows} ctx={ctx} />
+      view = <Group tool={item.tool} rows={item.rows} ctx={ctx} />
+      break
     case "error":
-      return (
+      view = (
         <div className="cv-error" role="status">
           <WhoMark who="stop" />
           <div>
@@ -508,24 +167,10 @@ export function Entry({ item, ctx }: { item: Item; ctx: LogContext }) {
           </div>
         </div>
       )
+      break
     case "unknown":
-      return (
-        <div className="cv-tool cv-unknown">
-          <span className="cv-ic">
-            <BracesIcon size={14} aria-hidden="true" />
-          </span>
-          <span className="cv-what" title={item.labels.join(", ")}>
-            {item.labels.length === 1
-              ? "1 event this view doesn’t show yet"
-              : `${item.labels.length} events this view doesn’t show yet`}
-          </span>
-          <span className="cv-res">
-            <button type="button" className="q-link" onClick={ctx.onShowTerminal}>
-              Show in terminal
-            </button>
-          </span>
-          <span className="cv-chev-space" />
-        </div>
-      )
+      view = <UnknownEntry labels={item.labels} onShowTerminal={ctx.onShowTerminal} />
+      break
   }
+  return view
 }

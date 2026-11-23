@@ -91,6 +91,106 @@ function coloursOf(): string[] {
   return COLOURS.map((name) => css.getPropertyValue(name).trim()).filter((c) => c !== "")
 }
 
+type Origin = ReturnType<typeof originOf>
+
+function playGentleSparkles(
+  layer: HTMLElement,
+  origin: Origin,
+  colours: string[],
+  remove: () => void,
+): void {
+  const rx = origin.width / 2 + 18
+  const ry = origin.height / 2 + 16
+  const done: Promise<unknown>[] = []
+  for (let i = 0; i < SPARKLES; i++) {
+    const angle = (i / SPARKLES) * Math.PI * 2 - Math.PI / 2
+    const spark = document.createElement("i")
+    spark.className = "q-spark"
+    spark.style.left = `${origin.x + Math.cos(angle) * rx}px`
+    spark.style.top = `${origin.y + Math.sin(angle) * ry}px`
+    spark.style.background = colours[i % 3] ?? "currentColor"
+    spark.style.setProperty("--k", (i % 2 ? 0.7 : 1).toString())
+    layer.appendChild(spark)
+    const dx = Math.cos(angle) * 6
+    const dy = Math.sin(angle) * 6
+    const play = spark.animate?.(
+      [
+        { transform: "translate(-50%, -50%) scale(0)", opacity: 0 },
+        { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.4 },
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.3)`,
+          opacity: 0,
+        },
+      ],
+      { duration: 700, delay: i * 28, easing: ARRIVE, fill: "both" },
+    )
+    if (play !== undefined) done.push(play.finished)
+  }
+  if (done.length === 0) remove()
+  else void Promise.all(done).then(remove, remove)
+}
+
+function drawBit(ctx: CanvasRenderingContext2D, bit: Bit, alpha: number): void {
+  ctx.save()
+  ctx.globalAlpha = alpha
+  ctx.translate(bit.x, bit.y)
+  ctx.rotate(bit.r)
+  ctx.scale(1, Math.cos(bit.flip))
+  ctx.fillStyle = bit.colour
+  if (bit.round) {
+    ctx.beginPath()
+    ctx.arc(0, 0, bit.w / 2, 0, Math.PI * 2)
+    ctx.fill()
+  } else ctx.fillRect(-bit.w / 2, -bit.h / 2, bit.w, bit.h)
+  ctx.restore()
+}
+
+function playConfettiCanvas(args: {
+  layer: HTMLElement
+  origin: Origin
+  width: number
+  height: number
+  colours: string[]
+  isGone: () => boolean
+  setFrame: (id: number) => void
+  remove: () => void
+}): void {
+  const { layer, origin, width, height, colours, isGone, setFrame, remove } = args
+  const canvas = document.createElement("canvas")
+  const scale = Math.min(2, window.devicePixelRatio || 1)
+  canvas.width = width * scale
+  canvas.height = height * scale
+  layer.appendChild(canvas)
+  const ctx = canvas.getContext("2d")
+  if (ctx === null) {
+    remove()
+    return
+  }
+  const bits = confettiBits(origin, width, colours)
+  let start = 0
+  let last = 0
+  const draw = (now: number) => {
+    if (isGone()) return
+    if (start === 0) {
+      start = now
+      last = now
+    }
+    const dt = Math.min(32, now - last)
+    const age = now - start
+    last = now
+    ctx.setTransform(scale, 0, 0, scale, 0, 0)
+    ctx.clearRect(0, 0, width, height)
+    const alpha = fadeOf(age)
+    for (const bit of bits) {
+      stepBit(bit, dt)
+      drawBit(ctx, bit, alpha)
+    }
+    if (age < CONFETTI_LIFE && !document.hidden) setFrame(requestAnimationFrame(draw))
+    else remove()
+  }
+  setFrame(requestAnimationFrame(draw))
+}
+
 /**
  * Play the ending. `button` is the Start button (or the sidebar's +); without one the burst starts
  * near the middle of the window. Returns a function that stops it and removes its layer at once.
@@ -123,80 +223,20 @@ export function celebrate(button: HTMLElement | null, mode: Motion): () => void 
     { duration: mode === "gentle" ? 420 : 520, easing: ARRIVE },
   )
   if (mode === "gentle") {
-    const rx = origin.width / 2 + 18
-    const ry = origin.height / 2 + 16
-    const done: Promise<unknown>[] = []
-    for (let i = 0; i < SPARKLES; i++) {
-      const angle = (i / SPARKLES) * Math.PI * 2 - Math.PI / 2
-      const spark = document.createElement("i")
-      spark.className = "q-spark"
-      spark.style.left = `${origin.x + Math.cos(angle) * rx}px`
-      spark.style.top = `${origin.y + Math.sin(angle) * ry}px`
-      spark.style.background = colours[i % 3] ?? "currentColor"
-      spark.style.setProperty("--k", (i % 2 ? 0.7 : 1).toString())
-      layer.appendChild(spark)
-      const dx = Math.cos(angle) * 6
-      const dy = Math.sin(angle) * 6
-      const play = spark.animate?.(
-        [
-          { transform: "translate(-50%, -50%) scale(0)", opacity: 0 },
-          { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.4 },
-          {
-            transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.3)`,
-            opacity: 0,
-          },
-        ],
-        { duration: 700, delay: i * 28, easing: ARRIVE, fill: "both" },
-      )
-      if (play !== undefined) done.push(play.finished)
-    }
-    if (done.length === 0) remove()
-    else void Promise.all(done).then(remove, remove)
+    playGentleSparkles(layer, origin, colours, remove)
     return remove
   }
-  const canvas = document.createElement("canvas")
-  const scale = Math.min(2, window.devicePixelRatio || 1)
-  canvas.width = width * scale
-  canvas.height = height * scale
-  layer.appendChild(canvas)
-  const ctx = canvas.getContext("2d")
-  if (ctx === null) {
-    remove()
-    return remove
-  }
-  const bits = confettiBits(origin, width, colours)
-  let start = 0
-  let last = 0
-  const draw = (now: number) => {
-    if (gone) return
-    if (start === 0) {
-      start = now
-      last = now
-    }
-    const dt = Math.min(32, now - last)
-    const age = now - start
-    last = now
-    ctx.setTransform(scale, 0, 0, scale, 0, 0)
-    ctx.clearRect(0, 0, width, height)
-    const alpha = fadeOf(age)
-    for (const bit of bits) {
-      stepBit(bit, dt)
-      ctx.save()
-      ctx.globalAlpha = alpha
-      ctx.translate(bit.x, bit.y)
-      ctx.rotate(bit.r)
-      ctx.scale(1, Math.cos(bit.flip))
-      ctx.fillStyle = bit.colour
-      if (bit.round) {
-        ctx.beginPath()
-        ctx.arc(0, 0, bit.w / 2, 0, Math.PI * 2)
-        ctx.fill()
-      } else ctx.fillRect(-bit.w / 2, -bit.h / 2, bit.w, bit.h)
-      ctx.restore()
-    }
-    if (age < CONFETTI_LIFE && !document.hidden) frame = requestAnimationFrame(draw)
-    else remove()
-  }
-  frame = requestAnimationFrame(draw)
+  playConfettiCanvas({
+    layer,
+    origin,
+    width,
+    height,
+    colours,
+    isGone: () => gone,
+    setFrame: (id) => {
+      frame = id
+    },
+    remove,
+  })
   return remove
 }

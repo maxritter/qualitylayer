@@ -11,17 +11,22 @@ export function sessionModelId(agent: NativeAgent | undefined, value: string | u
   }
   return value
 }
-export function sessionEffort(
-  agent: NativeAgent | undefined,
-  observedModel: string | undefined,
-  launchModel: string | undefined,
-  observedEffort: string | undefined,
-  launchEffort: string | undefined,
-  unknown: readonly ("model" | "effort")[] = [],
-) {
+export type SessionEffortInput = {
+  agent: NativeAgent | undefined
+  observedModel: string | undefined
+  launchModel: string | undefined
+  observedEffort: string | undefined
+  launchEffort: string | undefined
+  unknown?: readonly ("model" | "effort")[]
+}
+
+export function sessionEffort(input: SessionEffortInput) {
+  const unknown = input.unknown ?? []
   if (unknown.includes("effort")) return undefined
   const same =
     !unknown.includes("model") &&
-    (!observedModel || sessionModelId(agent, observedModel) === sessionModelId(agent, launchModel))
-  return (observedEffort ?? (same ? launchEffort : undefined))?.toLowerCase()
+    (!input.observedModel ||
+      sessionModelId(input.agent, input.observedModel) ===
+        sessionModelId(input.agent, input.launchModel))
+  return (input.observedEffort ?? (same ? input.launchEffort : undefined))?.toLowerCase()
 }

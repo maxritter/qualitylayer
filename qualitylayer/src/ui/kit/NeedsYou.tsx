@@ -4,19 +4,23 @@
 // Keyboard: ↑ and ↓ move between the items (↓ on a page nothing has focus on enters the first one),
 // Enter on an item picks its first answer.
 
-import { cn } from "cn"
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useRef, useState } from "react"
 import {
   answeredInChat,
-  answeredWhere,
   type Item,
   type ItemAnswer,
   mainAction,
   openCount,
   orderItems,
 } from "../../core/items.ts"
-import { InlineMarkdown } from "../reader/DocReader.tsx"
 import { ItemRow, rowState } from "./ItemRow.tsx"
+import {
+  AnsweredInChatSection,
+  handleNeedsKeyDown,
+  needsSummaryLine,
+  SettledItemsSection,
+  useGlobalArrowFocus,
+} from "./NeedsYouParts.tsx"
 import { WhoMark } from "./WhoMark.tsx"
 
 type Props = {
@@ -35,8 +39,6 @@ type Props = {
   /** Settled items stay in the card with what was decided, as in the person's review, instead of folding into one line. */
   keepSettled?: boolean
 }
-
-const ROW = '[data-testid="item"]'
 
 export function NeedsYou({
   items,
@@ -72,30 +74,9 @@ export function NeedsYou({
     })),
   )
   const asking = mainAction(items, answers).changes
+  useGlobalArrowFocus(card)
 
-  // Nothing has focus (a fresh page): ↓ goes to the first item, so the list is reachable without Tab.
-  useEffect(() => {
-    const on = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "ArrowDown" || event.defaultPrevented) return
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-      const at = document.activeElement
-      if (at !== null && at !== document.body && at !== document.documentElement) return
-      if (
-        document.querySelector(
-          '[role="dialog"][data-open], [data-slot="select-positioner"][data-open]',
-        ) !== null
-      )
-        return
-      const first = card.current?.querySelector<HTMLElement>(ROW)
-      if (first === null || first === undefined) return
-      event.preventDefault()
-      first.focus()
-    }
-    window.addEventListener("keydown", on)
-    return () => window.removeEventListener("keydown", on)
-  }, [])
-
-  const row = (item: Item, index: number) => (
+  const renderRow = (item: Item, index: number) => (
     <ItemRow
       key={item.id}
       item={item}
@@ -106,104 +87,47 @@ export function NeedsYou({
       tabIndex={index === 0 ? 0 : -1}
     />
   )
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || event.defaultPrevented) return
-    const rows = [...(card.current?.querySelectorAll<HTMLElement>(ROW) ?? [])]
-    const at = rows.findIndex((el) => el === target || el.contains(target))
-    if (at === -1) return
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      const next =
-        rows[Math.min(rows.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))]
-      event.preventDefault()
-      next?.focus()
-      return
-    }
-    // Enter on the item itself (not on one of its buttons) picks its first answer.
-    if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && rows[at] === target) {
-      const item = open.find((it) => it.id === target.dataset.itemId)
-      const first = item?.answers.options[0]
-      if (item === undefined || first === undefined || answers[item.id] !== undefined) return
-      if (stateOf(item) !== "open") return
-      event.preventDefault()
-      onAnswer(item, { kind: first, at: Date.now() })
-    }
-  }
-
+  const allDone = keepSettled && waiting === 0 && ordered.length > 0
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: arrow keys move between the items, each of which is focusable
-    <div className="grid gap-3.5" ref={card} onKeyDown={onKeyDown}>
+    <div
+      className="grid gap-3.5"
+      ref={card}
+      onKeyDown={(event) =>
+        handleNeedsKeyDown({ event, card: card.current, open, answers, onAnswer })
+      }
+    >
       {open.length > 0 || settled.length === 0 ? (
         <section className="q-calls" data-testid="needs-you" aria-label="Needs you">
           <div className="q-calls-h">
-            <WhoMark who={keepSettled && waiting === 0 && ordered.length > 0 ? "done" : "you"} />
+            <WhoMark who={allDone ? "done" : "you"} />
             <span className="title">Needs you</span>
             <span className="side">
-              {keepSettled && waiting === 0 && ordered.length > 0
-                ? `${ordered.length} of ${ordered.length} settled`
-                : keepSettled
-                  ? `${waiting} of ${ordered.length} open`
-                  : `${waiting} open`}
-              {asking > 0
-                ? ` · ${asking} ${asking === 1 ? "answer asks" : "answers ask"} for a change`
-                : ""}
-              {side !== undefined ? ` · ${side}` : ""}
+              {needsSummaryLine({
+                keepSettled,
+                waiting,
+                total: ordered.length,
+                asking,
+                side,
+              })}
             </span>
           </div>
           {waiting === 0 && (!keepSettled || ordered.length === 0) ? (
             <p className="q-empty m-0">{empty}</p>
           ) : null}
           {open.length > 0 ? (
-            <ul className="q-items">{open.map((item, index) => row(item, index))}</ul>
+            <ul className="q-items">{open.map((item, index) => renderRow(item, index))}</ul>
           ) : null}
         </section>
       ) : null}
-      {answered.length > 0 ? (
-        <section className="q-sec" data-testid="answered-in-chat">
-          <div className="q-h">
-            Answered<span className="count">{answered.length}</span>
-          </div>
-          <div className="q-list">
-            {answered.map((item) => (
-              <div className="q-row" key={item.id} data-item-id={item.id}>
-                <WhoMark who="done" />
-                <span className="t">
-                  <InlineMarkdown text={item.what} />
-                </span>
-                <span className="r">
-                  {item.answer?.note ?? ""}{" "}
-                  <span className="q-dim">
-                    {item.answer !== undefined ? answeredWhere(item.answer) : ""}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {settled.length > 0 ? (
-        <div className="grid gap-2.5">
-          <button
-            type="button"
-            className={cn("q-settled q-row-btn")}
-            aria-expanded={showSettled}
-            onClick={() => setShowSettled((was) => !was)}
-          >
-            <WhoMark who="done" />
-            <span>
-              {settledLine ??
-                `${settled.length} ${settled.length === 1 ? "item" : "items"} settled`}
-            </span>
-            <span className="q-link">{showSettled ? "Hide" : "Show"}</span>
-          </button>
-          {showSettled ? (
-            <section className="q-settled-list" aria-label="Settled">
-              <ul className="q-items">{settled.map((item) => row(item, -1))}</ul>
-            </section>
-          ) : null}
-        </div>
-      ) : null}
+      <AnsweredInChatSection answered={answered} />
+      <SettledItemsSection
+        settled={settled}
+        settledLine={settledLine}
+        showSettled={showSettled}
+        onToggle={() => setShowSettled((was) => !was)}
+        renderRow={renderRow}
+      />
     </div>
   )
 }

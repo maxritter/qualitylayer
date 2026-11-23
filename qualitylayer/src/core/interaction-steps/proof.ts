@@ -5,6 +5,9 @@ import type { CheckRow } from "../checklist.ts"
 import { stepsOfPoint } from "../docs/proof-list.ts"
 import { proofOfPlan } from "../docs/proof-of-plan.ts"
 import { flattenItems } from "../items.ts"
+import { pointFiles } from "./point-files.ts"
+
+type FlatItem = ReturnType<typeof flattenItems>[number]
 
 /** A Done means leaf keeps its number inside the Plan's item group. */
 export function donePointNumber(id: string): number | null {
@@ -12,94 +15,73 @@ export function donePointNumber(id: string): number | null {
   return number === undefined ? null : Number(number)
 }
 
-function mentionsPath(text: string, path: string): boolean {
-  for (let at = text.indexOf(path); at !== -1; at = text.indexOf(path, at + 1)) {
-    const before = text[at - 1] ?? ""
-    const after = text[at + path.length] ?? ""
-    if (!/[\w./-]/.test(before) && !/[\w./-]/.test(after)) return true
+function proofSourceRows(task: TaskDetail, items: FlatItem[]): CheckRow[] {
+  const rows = task.checklist?.groups.find((group) => group.id === "done")?.rows
+  if (rows !== undefined) return rows
+  const reviewed = task.review?.doneMeans ?? []
+  if (reviewed.length > 0) {
+    return reviewed.map((point) => ({
+      id: `done:${point.n}`,
+      label: [point.head, point.text].filter(Boolean).join(" "),
+      state: point.proven ? "passed" : point.proof !== "" ? "failed" : "waiting",
+      ...(point.proof !== "" ? { text: point.proof } : {}),
+    }))
   }
-  return false
+  return items
+    .filter((item) => item.kind === "done" && item.children === undefined)
+    .flatMap((item) => {
+      const n = donePointNumber(item.id)
+      return n ? [{ id: `done:${n}`, label: item.what, state: "waiting" as const }] : []
+    })
 }
 
-/** Explicit references only: titles and adjacent point numbers do not establish ownership. */
-function pointFiles(task: TaskDetail, row: CheckRow, point: number, allFiles: string[]) {
-  const commits = task.timeline?.commits ?? []
-  const text = [
-    row.text,
-    ...(task.review?.doneMeans.filter((p) => p.n === point).map((p) => p.proof) ?? []),
-  ].join("\n")
-  const taskIds = new Set([...text.matchAll(/\bT\d+\b/g)].map((match) => match[0]))
-  const sliceIds = new Set(
-    [...text.matchAll(/\bslice\s+(\d+)\b/gi)].map((match) => Number(match[1])),
+function isFixing(task: TaskDetail, row: CheckRow): boolean {
+  if (row.state !== "failed" || task.stage !== "verify") return false
+  return (
+    task.verifyMode === "fixing" ||
+    task.checklist?.now.some((entry) => entry.who === "Fixing") === true ||
+    task.session?.phase === "fix"
   )
-  const files = new Set<string>()
-  const slices = new Set<number>()
-  for (const path of allFiles) {
-    if (mentionsPath(text, path)) files.add(path)
+}
+
+function pointState(
+  task: TaskDetail,
+  row: CheckRow,
+  own: FlatItem | undefined,
+): PointProof["state"] {
+  if (row.state === "user" || own?.kind === "confirm") return "waiting"
+  if (isFixing(task, row)) return "fixing"
+  return row.state === "running" ? "checking" : row.state
+}
+
+function pointFailures(task: TaskDetail, point: number, steps: Set<string>): string[] {
+  return task.verification.flatMap((round) =>
+    round.verdicts
+      .filter((verdict) => {
+        if (verdict.verdict !== "FAIL" && verdict.verdict !== "MISSING") return false
+        return verdict.kind === "done"
+          ? Number(verdict.subject) === point
+          : verdict.kind === "acceptance" && steps.has(verdict.subject.toUpperCase())
+      })
+      .map((verdict) => `Check ${round.n}: ${verdict.text}`),
+  )
+}
+
+function pointConfirmation(own: FlatItem | undefined) {
+  if (own?.state !== "settled" || own.answer?.kind !== "confirm") return {}
+  return {
+    confirmation: {
+      at: own.answer.at,
+      by: own.answer.by ?? "you",
+      text: own.answer.note ?? own.what,
+    },
   }
-  for (const slice of task.timeline?.slices ?? []) {
-    for (const card of slice.tasks) {
-      const namesPoint = [card.objective, ...card.dod].some((line) =>
-        [...line.matchAll(/\bDone means\s+(\d+)\b/gi)].some((match) => Number(match[1]) === point),
-      )
-      if (!taskIds.has(card.id) && !sliceIds.has(slice.n) && !namesPoint) continue
-      const changed = new Set(
-        commits
-          .filter((commit) => commit.tasks.includes(card.id) || commit.slice === slice.n)
-          .flatMap((commit) => commit.paths),
-      )
-      for (const file of card.files) {
-        if (!changed.has(file.path) || !allFiles.includes(file.path)) continue
-        files.add(file.path)
-        slices.add(slice.n)
-      }
-    }
-  }
-  return files.size > 0
-    ? {
-        files: [...files].sort(),
-        slices: [...slices].sort((a, b) => a - b),
-        filesScope: "point" as const,
-      }
-    : {
-        files: allFiles,
-        slices: [],
-        filesScope: "task" as const,
-        ...(task.changedFiles == null ? { filesUnavailable: true } : {}),
-      }
 }
 
 export function pointProof(task: TaskDetail): PointProof[] {
-  const rows = task.checklist?.groups.find((group) => group.id === "done")?.rows
+  const items = flattenItems(task.items ?? [])
   const reviewed = task.review?.doneMeans ?? []
-  const agreements = flattenItems(task.items ?? []).filter(
-    (item) => item.kind === "done" && item.children === undefined,
-  )
-  const source: CheckRow[] =
-    rows ??
-    (reviewed.length > 0
-      ? reviewed.map((point) => ({
-          id: `done:${point.n}`,
-          label: [point.head, point.text].filter(Boolean).join(" "),
-          state: point.proven
-            ? ("passed" as const)
-            : point.proof !== ""
-              ? ("failed" as const)
-              : ("waiting" as const),
-          ...(point.proof !== "" ? { text: point.proof } : {}),
-        }))
-      : agreements.flatMap((item) => {
-          const n = donePointNumber(item.id)
-          return n
-            ? [
-                {
-                  id: `done:${n}`,
-                  label: item.what,
-                  state: "waiting" as const,
-                },
-              ]
-            : []
-        }))
+  const source = proofSourceRows(task, items)
   const list = proofOfPlan(task.pages?.find((page) => page.step === "plan")?.body ?? "")
   // Later [!ADDED] entries can revise a numbered point. Keep its latest recorded wording once.
   const unique = new Map(source.map((row) => [row.id, row]))
@@ -108,46 +90,21 @@ export function pointProof(task: TaskDetail): PointProof[] {
     const point = Number(/^done:(\d+)$/.exec(row.id)?.[1])
     if (!Number.isInteger(point) || point < 1) return []
     const review = reviewed.find((entry) => entry.n === point)
-    const own = flattenItems(task.items ?? []).find(
+    const own = items.find(
       (item) =>
         item.id === `verify:confirm:done:${point}` ||
         (item.kind === "confirm" && item.id.endsWith(`done:${point}`)),
     )
-    const fixing =
-      row.state === "failed" &&
-      task.stage === "verify" &&
-      (task.verifyMode === "fixing" ||
-        task.checklist?.now.some((entry) => entry.who === "Fixing") === true ||
-        task.session?.phase === "fix")
-    const state: PointProof["state"] =
-      row.state === "user" || own?.kind === "confirm"
-        ? "waiting"
-        : fixing
-          ? "fixing"
-          : row.state === "running"
-            ? "checking"
-            : row.state
     // A point's failures are those of the steps under it.
     const steps = new Set(stepsOfPoint(list, point).map((step) => step.id))
-    const tried = task.verification.flatMap((round) =>
-      round.verdicts
-        .filter(
-          (verdict) =>
-            (verdict.kind === "done"
-              ? Number(verdict.subject) === point
-              : verdict.kind === "acceptance" && steps.has(verdict.subject.toUpperCase())) &&
-            (verdict.verdict === "FAIL" || verdict.verdict === "MISSING"),
-        )
-        .map((verdict) => `Check ${round.n}: ${verdict.text}`),
-    )
     return [
       {
         point,
         text: row.label,
-        state,
+        state: pointState(task, row, own),
         expected: row.label,
         happened: row.text ?? (review?.proof || null),
-        tried,
+        tried: pointFailures(task, point, steps),
         evidence: [
           ...new Set([
             ...(row.evidence !== undefined ? [row.evidence] : []),
@@ -155,15 +112,7 @@ export function pointProof(task: TaskDetail): PointProof[] {
           ]),
         ],
         ...pointFiles(task, row, point, allFiles),
-        ...(own?.state === "settled" && own.answer?.kind === "confirm"
-          ? {
-              confirmation: {
-                at: own.answer.at,
-                by: own.answer.by ?? "you",
-                text: own.answer.note ?? own.what,
-              },
-            }
-          : {}),
+        ...pointConfirmation(own),
       },
     ]
   })

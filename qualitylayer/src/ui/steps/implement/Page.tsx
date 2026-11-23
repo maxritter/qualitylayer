@@ -99,6 +99,79 @@ function SlicesSection({
   )
 }
 
+function implementMetaText(
+  timing: ReturnType<typeof buildTiming>,
+  task: StepPageProps["task"],
+  built: boolean,
+): string {
+  const stageTitle = stepTitleOf(task.stage)
+  const started =
+    timing?.built !== undefined
+      ? timing.built
+      : timing !== null
+        ? `started ${timing.started}`
+        : (buildsNextLine(task.start, nameOf, task.gate?.decided) ?? "the build has not started")
+  const next =
+    built && stageTitle !== null && task.stage !== "implement" ? `now in ${stageTitle}` : undefined
+  return metaLine(started, timing?.elapsed, next)
+}
+
+function LimitsSection({
+  recorded,
+  limits,
+}: {
+  recorded: boolean
+  limits: ReturnType<typeof limitsOf>
+}) {
+  if (!recorded) return null
+  if (limits.length === 0) {
+    return (
+      <p
+        className="ib-none"
+        id={sectionId("Known limits")}
+        data-testid="known-limits"
+        data-passage-section="known-limits"
+        tabIndex={-1}
+      >
+        Known limits: none left.
+      </p>
+    )
+  }
+  return (
+    <FoldedGroup>
+      <IconFold
+        id={sectionId("Known limits")}
+        title="Known limits"
+        icon={BanIcon}
+        count={limits.length}
+      >
+        <LimitRows rows={limits} />
+      </IconFold>
+    </FoldedGroup>
+  )
+}
+
+function implementYourMove(
+  task: StepPageProps["task"],
+  mode: StepPageProps["mode"],
+  inNow: boolean,
+  live: StepPageProps["live"],
+) {
+  if (mode !== "live") return null
+  const agentCard =
+    !inNow && live !== undefined && agentCardShows(task) ? (
+      <AgentTurn task={task} onCopy={live.copy} view="implement" />
+    ) : null
+  const commitReview = live?.commitReview
+  if (!commitReview) return agentCard
+  return (
+    <>
+      {commitReview}
+      {agentCard}
+    </>
+  )
+}
+
 export function ImplementStepPage(props: StepPageProps) {
   const { task, document: incoming, sections: incomingSections, state, mode, live } = props
   const inNow = useStepsNow()
@@ -129,21 +202,9 @@ export function ImplementStepPage(props: StepPageProps) {
     [view?.decisions],
   )
   // The agent's own card (stopped, or the build to start) where no Now column draws it.
-  const agentCard =
-    mode === "live" && !inNow && live !== undefined && agentCardShows(task) ? (
-      <AgentTurn task={task} onCopy={live.copy} view="implement" />
-    ) : null
-  const commitReview = mode === "live" ? live?.commitReview : null
-  const card = commitReview ? (
-    <>
-      {commitReview}
-      {agentCard}
-    </>
-  ) : (
-    agentCard
-  )
-  const stageTitle = stepTitleOf(task.stage)
+  const card = implementYourMove(task, mode, inNow, live)
   const built = view?.slices.every((s) => s.status === "done") === true
+  const liveActs = mode === "live" ? live : undefined
 
   if ((view?.slices.length ?? 0) === 0 && decisions.length === 0 && mode !== "plain")
     return (
@@ -164,22 +225,9 @@ export function ImplementStepPage(props: StepPageProps) {
       <Bands
         yourMove={card}
         gist={{
-          actions: (
-            <StepTools doc={document} cut={sections} live={mode === "live" ? live : undefined} />
-          ),
+          actions: <StepTools doc={document} cut={sections} live={liveActs} />,
           title: STEP_TITLES.implement,
-          meta: metaLine(
-            timing?.built !== undefined
-              ? timing.built
-              : timing !== null
-                ? `started ${timing.started}`
-                : (buildsNextLine(task.start, nameOf, task.gate?.decided) ??
-                  "the build has not started"),
-            timing?.elapsed,
-            built && stageTitle !== null && task.stage !== "implement"
-              ? `now in ${stageTitle}`
-              : undefined,
-          ),
+          meta: implementMetaText(timing, task, built),
           facts: header.facts,
           now: header.now,
         }}
@@ -192,29 +240,7 @@ export function ImplementStepPage(props: StepPageProps) {
                 taskId={mode === "live" ? task.id : undefined}
               />
             ) : null}
-            {limitsRecorded &&
-              (limits.length > 0 ? (
-                <FoldedGroup>
-                  <IconFold
-                    id={sectionId("Known limits")}
-                    title="Known limits"
-                    icon={BanIcon}
-                    count={limits.length}
-                  >
-                    <LimitRows rows={limits} />
-                  </IconFold>
-                </FoldedGroup>
-              ) : (
-                <p
-                  className="ib-none"
-                  id={sectionId("Known limits")}
-                  data-testid="known-limits"
-                  data-passage-section="known-limits"
-                  tabIndex={-1}
-                >
-                  Known limits: none left.
-                </p>
-              ))}
+            <LimitsSection recorded={limitsRecorded} limits={limits} />
           </>
         }
         folds={
@@ -226,7 +252,7 @@ export function ImplementStepPage(props: StepPageProps) {
                 icon={SplitIcon}
                 count={decisions.length}
               >
-                <DecisionRows rows={decisions} live={mode === "live" ? live : undefined} />
+                <DecisionRows rows={decisions} live={liveActs} />
               </IconFold>
             </FoldedGroup>
           ) : undefined
@@ -242,7 +268,7 @@ export function ImplementStepPage(props: StepPageProps) {
                 entries={PROGRAM_DESIGN}
                 state={state}
                 mode={mode}
-                live={mode === "live" ? live : undefined}
+                live={liveActs}
               />
               <ReadRow
                 taskId={task.id}

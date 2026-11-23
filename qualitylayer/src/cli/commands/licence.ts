@@ -63,33 +63,44 @@ async function activateTyped(ctx: Ctx, rest: string[]): Promise<Result<unknown>>
   return ok({ ...activated.data, message: `Activated: ${activated.data.tier}.` })
 }
 
+async function licenceStatus(ctx: Ctx): Promise<Result<unknown>> {
+  const info = await status(ctx)
+  let message: string
+  if (info.state !== "active") {
+    message = `Not licensed (${info.state.replaceAll("_", " ")}). Licences: ${info.buy}`
+  } else if (info.tier === "trial") {
+    message = `Trial: ${info.daysLeft} day(s) left. Licences: ${info.buy}`
+  } else {
+    message = `Licensed (${info.tier})${info.email !== "" ? ` to ${info.email}` : ""}.`
+  }
+  return ok({ ...info, message })
+}
+
+async function licenceDeactivate(ctx: Ctx): Promise<Result<unknown>> {
+  const done = await deactivate(ctx)
+  if (!done.ok) return done
+  return ok({ ...done.data, message: "This machine's activation was released." })
+}
+
+function licencePortal(rest: string[]): Result<unknown> {
+  if (!rest.includes("--no-open")) open(PORTAL_URL)
+  return ok({ url: PORTAL_URL, message: `Manage the subscription at ${PORTAL_URL}` })
+}
+
 export async function licenceCmd(
   ctx: Ctx,
   args: string[],
   stdin: () => Promise<string> = readStdin,
 ): Promise<Result<unknown>> {
   const [sub, ...rest] = args
-  if (sub === "activate" && rest.includes("--key-stdin")) return activateFromStdin(ctx, rest, stdin)
-  if (sub === undefined || sub === "status") {
-    const info = await status(ctx)
-    const message =
-      info.state === "active"
-        ? info.tier === "trial"
-          ? `Trial: ${info.daysLeft} day(s) left. Licences: ${info.buy}`
-          : `Licensed (${info.tier})${info.email !== "" ? ` to ${info.email}` : ""}.`
-        : `Not licensed (${info.state.replaceAll("_", " ")}). Licences: ${info.buy}`
-    return ok({ ...info, message })
+  if (sub === undefined || sub === "status") return licenceStatus(ctx)
+  if (sub === "activate") {
+    return rest.includes("--key-stdin")
+      ? activateFromStdin(ctx, rest, stdin)
+      : activateTyped(ctx, rest)
   }
-  if (sub === "activate") return activateTyped(ctx, rest)
-  if (sub === "deactivate") {
-    const done = await deactivate(ctx)
-    if (!done.ok) return done
-    return ok({ ...done.data, message: "This machine's activation was released." })
-  }
-  if (sub === "portal") {
-    if (!rest.includes("--no-open")) open(PORTAL_URL)
-    return ok({ url: PORTAL_URL, message: `Manage the subscription at ${PORTAL_URL}` })
-  }
+  if (sub === "deactivate") return licenceDeactivate(ctx)
+  if (sub === "portal") return licencePortal(rest)
   return err({
     code: "bad_args",
     message:

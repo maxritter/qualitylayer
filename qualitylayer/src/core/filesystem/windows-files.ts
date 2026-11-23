@@ -1,24 +1,17 @@
-import { createHash, randomUUID } from "node:crypto"
-import type {
-  AnchoredEntry,
-  NativeFileProbe,
-  NativeFileSnapshot,
-  NativeFileStream,
-} from "./anchored-root.ts"
+import { createHash } from "node:crypto"
+import type { NativeFileProbe, NativeFileSnapshot, NativeFileStream } from "./anchored-root.ts"
 import {
   access,
   api,
-  checked,
   failure,
   type HeldParent,
   openChild,
-  pointer,
   requireKind,
   requireReadableKind,
   share,
-  utf16,
-  windowsRelativeParts,
 } from "./windows-system.ts"
+
+export { atomic, dispose, listing, lock, rename } from "./windows-files-write.ts"
 
 export function readHeld(handle: bigint, maximum: number, maximumLinks = 1): NativeFileSnapshot {
   if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error("Invalid record byte cap")
@@ -138,118 +131,4 @@ export function verifyVersion(handle: bigint, expected: string) {
     readHeld(handle, Number(before.size)).version !== expected
   )
     throw new Error("Moved source version changed")
-}
-export function rename(handle: bigint, target: HeldParent, replace: boolean) {
-  if (windowsRelativeParts(target.name).length !== 1)
-    throw new Error("Native rename requires one relative component")
-  requireKind(target.handle, true)
-  const name = utf16(target.name).subarray(0, -2)
-  // FILE_RENAME_INFORMATION on x64: BOOLEAN, 7 padding, HANDLE, ULONG, WCHAR[].
-  const bytes = Buffer.alloc(20 + name.length)
-  bytes[0] = Number(replace)
-  pointer(bytes, 8, target.handle)
-  bytes.writeUInt32LE(name.length, 16)
-  name.copy(bytes, 20)
-  checked(
-    api().NtSetInformationFile(handle, Buffer.alloc(16), bytes, bytes.length, 10),
-    "Rename native file",
-  )
-}
-export function dispose(handle: bigint) {
-  checked(
-    api().NtSetInformationFile(handle, Buffer.alloc(16), Buffer.from([1]), 1, 13),
-    "Remove native object",
-  )
-}
-export function atomic(parent: HeldParent, bytes: Uint8Array, replace: boolean) {
-  const temporary = { ...parent, name: `.qualitylayer-${randomUUID()}.tmp` }
-  const handle = openChild(parent.handle, temporary.name, {
-    desired: access.write | access.delete,
-    disposition: 2,
-    directory: false,
-  })
-  let committed = false
-  try {
-    const count = Buffer.alloc(4)
-    let used = 0
-    while (used < bytes.length) {
-      const chunk = bytes.subarray(used, used + 1024 * 1024)
-      if (!api().WriteFile(handle, chunk, chunk.length, count, null))
-        throw failure("Write native file")
-      const written = count.readUInt32LE()
-      if (!written || written > chunk.length) throw new Error("Incomplete native file write")
-      used += written
-    }
-    if (!api().FlushFileBuffers(handle)) throw failure("Flush native file")
-    let existing = 0n
-    try {
-      existing = openChild(parent.handle, parent.name, {
-        desired: access.attributes,
-        disposition: 1,
-        directory: false,
-        sharing: 7,
-      })
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
-    } finally {
-      if (existing) api().CloseHandle(existing)
-    }
-    rename(handle, parent, replace)
-    committed = true
-  } finally {
-    try {
-      if (!committed) dispose(handle)
-    } finally {
-      api().CloseHandle(handle)
-    }
-  }
-}
-export function lock(handle: bigint) {
-  requireKind(handle, false)
-  if (api().LockFileEx(handle, 3, 0, 1, 0, Buffer.alloc(32))) return true
-  if (api().GetLastError() === 33) return false
-  throw failure("Lock native file")
-}
-
-function entry(bytes: Buffer, used: number): AnchoredEntry | null {
-  if (used < 64 || used > bytes.length) throw new Error("Invalid native directory entry")
-  const length = bytes.readUInt32LE(60)
-  if (length % 2 || length === 0 || length > used - 64)
-    throw new Error("Invalid native directory name")
-  const name = bytes.toString("utf16le", 64, 64 + length)
-  if (name === "." || name === "..") return null
-  windowsRelativeParts(name)
-  const attributes = bytes.readUInt32LE(56)
-  if (attributes & (0x400 | 0x40)) return { name, kind: "other" }
-  return { name, kind: attributes & 0x10 ? "directory" : "file" }
-}
-
-export function listing(handle: bigint, maximum: number) {
-  const entries: AnchoredEntry[] = []
-  let restart = true
-  for (;;) {
-    requireKind(handle, true)
-    const bytes = Buffer.alloc(4096),
-      iosb = Buffer.alloc(16)
-    const status = api().NtQueryDirectoryFile(
-      handle,
-      null,
-      null,
-      null,
-      iosb,
-      bytes,
-      bytes.length,
-      1,
-      1,
-      null,
-      Number(restart),
-    )
-    restart = false
-    if (status >>> 0 === 0x80000006) return entries // STATUS_NO_MORE_FILES
-    checked(status, "Enumerate native directory")
-    const decoded = entry(bytes, Number(iosb.readBigUInt64LE(8)))
-    if (!decoded) continue
-    if (entries.length === maximum) throw new Error("Directory entry cap exceeded")
-    entries.push(decoded)
-  }
 }

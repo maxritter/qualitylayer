@@ -1,125 +1,29 @@
 import { basename, join, relative } from "node:path"
-import type { PilotCandidate } from "../../../pilot-memory-contracts.ts"
-import { hash, MEMORY_KINDS, relativeFile } from "../validation.ts"
+import { hash } from "../validation.ts"
 import { readSource, utf8, walkSources } from "./files.ts"
-import { add, group, invalid, object, observation, strings, words } from "./normalize.ts"
-import {
-  issue,
-  PILOT_DOCUMENT_MAX_BYTES,
-  PILOT_DOCUMENTS_MAX,
-  type PilotSourceData,
-} from "./types.ts"
+import { knowledgeDocument } from "./knowledge-document.ts"
+import { invalid, object, observation, words } from "./normalize.ts"
+import { issue, PILOT_DOCUMENT_MAX_BYTES, type PilotSourceData } from "./types.ts"
 
-function documentMetadata(content: string): { metadata: Record<string, unknown>; body: string } {
-  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content)
-  if (!match || /^(?:<{7}|>{7})(?: |$)/m.test(content) || /[&*!][A-Za-z]/.test(match[1]!))
-    throw new Error("Knowledge frontmatter is invalid or contains unsupported YAML features.")
-  const metadata: unknown = Bun.YAML.parse(match[1]!)
-  if (!object(metadata) || !words(metadata.type).trim())
-    throw new Error("Knowledge type is missing.")
-  return { metadata, body: content.slice(match[0].length).trim() }
-}
-export function knowledgeDocument(
-  data: PilotSourceData,
-  input: {
-    path: string
-    content: string
-    project: string
-    root?: string
-    bundle: string
-    missing?: Set<string>
-    mirrored?: Record<string, unknown>
-  },
-) {
-  const groupId = group(data, input.project, input.root, input.bundle)
-  try {
-    if (!relativeFile(input.path) || !input.path.endsWith(".md"))
-      throw new Error("Knowledge document has an unsafe path.")
-    if (["index.md", "log.md"].includes(basename(input.path))) {
-      data.counts.excluded++
-      return
-    }
-    if (++data.documents > PILOT_DOCUMENTS_MAX)
-      throw new Error("Pilot knowledge exceeds 5,000 documents.")
-    if (Buffer.byteLength(input.content) > PILOT_DOCUMENT_MAX_BYTES)
-      throw new Error("Knowledge document exceeds 2 MiB.")
-    const { metadata, body } = documentMetadata(input.content)
-    const uid = words(metadata.source_uid)
-    const generated = object(metadata.generated) ? metadata.generated : {}
-    const date = words(metadata.createdAt) || words(generated.at)
-    const stale = words(metadata.stale_after)
-    const retired =
-      ["deprecated", "retired"].includes(words(metadata.status)) ||
-      (!!stale && Date.parse(stale) <= Date.now())
-    if (stale && !Number.isFinite(Date.parse(stale)))
-      throw new Error("Knowledge expiry date is invalid.")
-    const removed = !!uid && data.removed.has(uid)
-    const missing =
-      input.missing?.has(input.path) && input.mirrored?.[input.path] === hash(input.content)
-    const declaredId = words(metadata.id)
-    const sourceId =
-      uid ||
-      declaredId ||
-      `knowledge-${hash(JSON.stringify([input.root || input.bundle, input.path]))}`
-    const excluded = removed
-      ? "Removed Pilot memory; historical copy was not restored."
-      : missing
-        ? "The shared knowledge was removed; its old private mirror was not restored."
-        : retired
-          ? "Retired or stale Pilot knowledge."
-          : undefined
-    const type = words(metadata.type)
-    add(data, {
-      sourceId,
-      aliases: [
-        ...new Set(
-          [
-            uid,
-            declaredId,
-            `knowledge-${hash(input.path.includes("/") ? input.path : input.content)}`,
-          ].filter(Boolean),
-        ),
-      ],
-      group: groupId,
-      category: "knowledge",
-      title: words(metadata.title) || basename(input.path, ".md"),
-      content: body,
-      kind: MEMORY_KINDS.has(type) ? (type as PilotCandidate["kind"]) : "discovery",
-      tags: strings(metadata.tags),
-      files: [],
-      ...(words(generated.by) ? { author: words(generated.by) } : {}),
-      ...(date ? { sourceAt: date } : {}),
-      state: retired ? "retired" : "active",
-      metadata: {
-        originalProject: input.project,
-        originalRoot: input.root,
-        concept: input.path,
-        sourceUid: uid || undefined,
-        revision: hash(input.content),
-        status: words(metadata.status),
-        staleAfter: stale || undefined,
-      },
-      ...(excluded ? { excluded } : {}),
-    })
-  } catch (error) {
-    invalid(data, error instanceof Error ? error.message : "Invalid Pilot knowledge.", groupId)
-  }
-}
+export { knowledgeDocument }
+
 function bundleMappings(data: PilotSourceData, value: unknown) {
   if (
     !object(value) ||
     value.version !== 1 ||
     !Array.isArray(value.bundles) ||
     value.bundles.length > 1000
-  )
+  ) {
     throw new Error("Pilot private knowledge mapping is not supported.")
+  }
   for (const entry of value.bundles) {
     if (
       !object(entry) ||
       !/^[a-f0-9]{64}$/.test(words(entry.storageKey)) ||
       !Array.isArray(entry.checkouts)
-    )
+    ) {
       throw new Error("Pilot private knowledge mapping is malformed.")
+    }
     const checkouts = entry.checkouts.flatMap((item) =>
       object(item) &&
       words(item.project) &&
@@ -131,93 +35,136 @@ function bundleMappings(data: PilotSourceData, value: unknown) {
     data.bundles.set(words(entry.storageKey), checkouts)
   }
 }
+
+function seedBundleRoots(data: PilotSourceData): void {
+  for (const [project, roots] of data.roots) {
+    for (const root of roots) {
+      const key = hash(root)
+      const known = data.bundles.get(key) ?? []
+      if (!known.some((item) => item.project === project && item.root === root)) {
+        known.push({ project, root })
+      }
+      data.bundles.set(key, known)
+    }
+  }
+}
+
+async function readBundleSyncState(
+  data: PilotSourceData,
+  memoryFolder: string,
+  storageKey: string,
+  states: Map<string, Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  const cached = states.get(storageKey)
+  if (cached) return cached
+  const bytes = await readSource(
+    data,
+    join(memoryFolder, "knowledge-sync", `${storageKey}.json`),
+    true,
+  )
+  if (bytes && bytes.length > PILOT_DOCUMENT_MAX_BYTES) {
+    throw new Error("Pilot knowledge sync metadata exceeds 2 MiB.")
+  }
+  const parsed: unknown = bytes ? JSON.parse(utf8(bytes)) : {}
+  const state = object(parsed) ? parsed : {}
+  states.set(storageKey, state)
+  return state
+}
+
+async function readPrivateFile(
+  data: PilotSourceData,
+  details: {
+    memoryFolder: string
+    root: string
+    file: string
+    states: Map<string, Record<string, unknown>>
+  },
+): Promise<void> {
+  const { memoryFolder, root, file, states } = details
+  const name = relative(root, file).split(/[\\/]/)
+  const storageKey = name.shift() ?? ""
+  if (!/^[a-f0-9]{64}$/.test(storageKey)) {
+    invalid(data, "Private knowledge bundle name is invalid.")
+    return
+  }
+  const mappings = data.bundles.get(storageKey) ?? []
+  const mapping = mappings.length === 1 ? mappings[0] : undefined
+  const content = await readSource(data, file)
+  if (!content) throw new Error("Pilot source file was not found.")
+  const sync = await readBundleSyncState(data, memoryFolder, storageKey, states)
+  knowledgeDocument(data, {
+    path: name.join("/"),
+    content: utf8(content),
+    project: mapping?.project ?? "",
+    root: mapping?.root,
+    bundle: storageKey,
+    missing: new Set(
+      Array.isArray(sync.missing)
+        ? sync.missing.filter((value): value is string => typeof value === "string")
+        : [],
+    ),
+    mirrored: object(sync.mirrored) ? sync.mirrored : {},
+  })
+}
+
 export async function privateKnowledge(data: PilotSourceData, memoryFolder: string): Promise<void> {
   const manifest = await readSource(data, join(memoryFolder, "knowledge-bundles.json"), true)
   if (manifest) bundleMappings(data, JSON.parse(utf8(manifest)))
-  for (const [project, roots] of data.roots)
-    for (const root of roots) {
-      const key = hash(root),
-        known = data.bundles.get(key) ?? []
-      if (!known.some((item) => item.project === project && item.root === root))
-        known.push({ project, root })
-      data.bundles.set(key, known)
-    }
+  seedBundleRoots(data)
   const root = join(memoryFolder, "knowledge")
   const states = new Map<string, Record<string, unknown>>()
   for (const file of await walkSources(data, root, /\.md$/, true)) {
-    const name = relative(root, file).split(/[\\/]/)
-    const storageKey = name.shift()!
-    if (!/^[a-f0-9]{64}$/.test(storageKey)) {
-      invalid(data, "Private knowledge bundle name is invalid.")
-      continue
-    }
-    const mappings = data.bundles.get(storageKey) ?? []
-    const mapping = mappings.length === 1 ? mappings[0] : undefined
-    const content = await readSource(data, file)
-    if (!states.has(storageKey)) {
-      const bytes = await readSource(
-        data,
-        join(memoryFolder, "knowledge-sync", `${storageKey}.json`),
-        true,
-      )
-      if (bytes && bytes.length > PILOT_DOCUMENT_MAX_BYTES)
-        throw new Error("Pilot knowledge sync metadata exceeds 2 MiB.")
-      const parsed: unknown = bytes ? JSON.parse(utf8(bytes)) : {}
-      states.set(storageKey, object(parsed) ? parsed : {})
-    }
-    const sync = states.get(storageKey)!
-    knowledgeDocument(data, {
-      path: name.join("/"),
-      content: utf8(content!),
-      project: mapping?.project ?? "",
-      root: mapping?.root,
-      bundle: storageKey,
-      missing: new Set(
-        Array.isArray(sync.missing)
-          ? sync.missing.filter((value): value is string => typeof value === "string")
-          : [],
-      ),
-      mirrored: object(sync.mirrored) ? sync.mirrored : {},
-    })
+    await readPrivateFile(data, { memoryFolder, root, file, states })
   }
   data.privateKnowledge = true
 }
+
+function importLegacyJsonl(data: PilotSourceData, text: string): void {
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue
+    try {
+      const row: unknown = JSON.parse(line)
+      if (!object(row) || row.schemaVersion !== 1 || !words(row.uid) || !words(row.project)) {
+        throw new Error("Legacy record is malformed.")
+      }
+      if (data.removed.has(words(row.uid))) {
+        data.counts.excluded++
+        continue
+      }
+      observation(data, row, true)
+    } catch {
+      invalid(data, "A legacy Pilot record could not be read.")
+    }
+  }
+}
+
 export async function projectKnowledge(data: PilotSourceData, checkout: string): Promise<void> {
   const project =
     [...data.roots].find(([, roots]) => roots.includes(checkout))?.[0] ?? basename(checkout)
   const root = join(checkout, ".pilot", "knowledge")
   for (const file of await walkSources(data, root, /\.md$/, true)) {
     const bytes = await readSource(data, file)
+    if (!bytes) throw new Error("Pilot source file was not found.")
     knowledgeDocument(data, {
       path: relative(root, file).split("\\").join("/"),
-      content: utf8(bytes!),
+      content: utf8(bytes),
       project,
       root: checkout,
       bundle: hash(checkout),
     })
   }
-  for (const file of await walkSources(
+  const memoryFiles = await walkSources(
     data,
     join(checkout, ".pilot", "memories"),
     /\.jsonl$/,
     true,
-  )) {
+  )
+  for (const file of memoryFiles) {
     const bytes = await readSource(data, file)
-    for (const line of utf8(bytes!).split("\n")) {
-      if (!line.trim()) continue
-      try {
-        const row: unknown = JSON.parse(line)
-        if (!object(row) || row.schemaVersion !== 1 || !words(row.uid) || !words(row.project))
-          throw new Error("Legacy record is malformed.")
-        if (data.removed.has(words(row.uid))) {
-          data.counts.excluded++
-          continue
-        }
-        observation(data, row, true)
-      } catch {
-        invalid(data, "A legacy Pilot record could not be read.")
-      }
-    }
+    if (!bytes) throw new Error("Pilot source file was not found.")
+    importLegacyJsonl(data, utf8(bytes))
   }
-  if (!data.groups.size) issue(data, "The selected checkout contains no supported Pilot knowledge.")
+  if (!data.groups.size) {
+    issue(data, "The selected checkout contains no supported Pilot knowledge.")
+  }
 }

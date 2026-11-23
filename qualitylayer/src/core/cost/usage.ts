@@ -9,24 +9,14 @@
 // another file. OpenCode keeps its calls in a database, so each of its sessions stands for a file.
 
 import type { Ctx } from "../../ctx.ts"
-import { opencodeDatabase } from "../agents/storage.ts"
 import { USAGE_INDEX_FILES_KEPT, USAGE_INDEX_MAX_BYTES } from "../home-caps.ts"
-import { roots } from "../install/agent-settings.ts"
 import type { Call } from "./transcripts.ts"
-import { type BillingHints, billingOf } from "./usage-billing.ts"
-import {
-  type Indexed,
-  pack,
-  STRIDE,
-  tokensOf,
-  type Usage,
-  usageOf,
-  type Wanted,
-} from "./usage-count.ts"
-import { cursorCoverage } from "./usage-cursor.ts"
+import type { BillingHints } from "./usage-billing.ts"
+import { type Indexed, pack, STRIDE, type Usage, usageOf, type Wanted } from "./usage-count.ts"
 import { type UsagePeriod, usageWindows } from "./usage-days.ts"
 import { type Candidate, chunksOf, DAY_MS } from "./usage-files.ts"
-import { SOURCES, type Source } from "./usage-sources.ts"
+import { type DiscoveredMap, discoverUsageSources, finalizeUsage } from "./usage-finalize.ts"
+import type { Source } from "./usage-sources.ts"
 import { loadStored, pruneStored, saveStored } from "./usage-store.ts"
 
 export type { BillingHints, UsageBilling } from "./usage-billing.ts"
@@ -49,12 +39,23 @@ export const USAGE_CALLS_MAX = 300_000
 /** A file untouched this long is let go of: no period reaches back further. */
 const LONGEST_DAYS = 90
 
+type LoadState = {
+  pending: number
+  skipped: number
+  capped: number
+  read: number
+  failed: Set<string>
+  started: number
+  budget: number
+  clock: () => number
+}
+
 /** What each agent's transcripts have shown; one per server, so the next request reads only what changed. */
 export class UsageIndex {
   private files = new Map<string, Indexed>()
   private calls = 0
   private wrote = true
-  private discovered = new Map<Source["agent"], { base: string; wanted: Wanted[] }>()
+  private discovered: DiscoveredMap = new Map()
   private failedFiles = new Set<string>()
 
   constructor(
@@ -100,58 +101,72 @@ export class UsageIndex {
         this.forget(path)
   }
 
+  private isUnreadChange(file: Candidate): boolean {
+    const held = this.files.get(file.path)
+    return (
+      !this.failedFiles.has(file.path) &&
+      (held?.mtimeMs !== file.mtimeMs || held?.size !== file.size)
+    )
+  }
+
+  private async loadOne(ctx: Ctx, { source, file }: Wanted, state: LoadState): Promise<void> {
+    if (state.failed.has(source.agent) && file.size > 0) {
+      if (this.isUnreadChange(file)) state.pending++
+      return
+    }
+    // Every request attempts at least one file, so a long list is always worked through.
+    const outOfTime =
+      file.size > 0 && state.read > 0 && state.clock() - state.started >= state.budget
+    if (outOfTime && this.failedFiles.has(file.path)) {
+      state.failed.add(source.agent)
+      return
+    }
+    let outcome: Awaited<ReturnType<UsageIndex["take"]>>
+    try {
+      outcome = await this.take(ctx, source, file, outOfTime)
+    } catch {
+      state.read++
+      this.failedFiles.delete(file.path)
+      this.failedFiles.add(file.path)
+      state.failed.add(source.agent)
+      return
+    }
+    if (outcome === "read" || outcome === "full") {
+      state.read++
+      this.failedFiles.delete(file.path)
+    }
+    if (outcome === "skipped") state.skipped++
+    if (outcome === "full" || outcome === "capped") state.capped++
+    if (outcome === "pending") state.pending++
+  }
+
   /** Read what is unread, within the budget; how many files were left for the next request, how many were too large, and how many were read but could not be held. */
   private async load(
     ctx: Ctx,
     wanted: readonly Wanted[],
   ): Promise<{ pending: number; skipped: number; capped: number; failed: Set<string> }> {
     const clock = this.options.clock ?? (() => performance.now())
-    const started = clock()
-    const budget = this.options.budgetMs ?? USAGE_BUDGET_MS
-    let pending = 0
-    let skipped = 0
-    let capped = 0
-    let read = 0
-    const failed = new Set<string>()
+    const state: LoadState = {
+      pending: 0,
+      skipped: 0,
+      capped: 0,
+      read: 0,
+      failed: new Set(),
+      started: clock(),
+      budget: this.options.budgetMs ?? USAGE_BUDGET_MS,
+      clock,
+    }
     const retryOrder = new Map([...this.failedFiles].map((path, order) => [path, order + 1]))
     const ordered = [...wanted].sort(
       (a, b) => (retryOrder.get(a.file.path) ?? 0) - (retryOrder.get(b.file.path) ?? 0),
     )
-    for (const { source, file } of ordered) {
-      if (failed.has(source.agent) && file.size > 0) {
-        const held = this.files.get(file.path)
-        if (
-          !this.failedFiles.has(file.path) &&
-          (held?.mtimeMs !== file.mtimeMs || held?.size !== file.size)
-        )
-          pending++
-        continue
-      }
-      // Every request attempts at least one file, so a long list is always worked through.
-      const outOfTime = file.size > 0 && read > 0 && clock() - started >= budget
-      if (outOfTime && this.failedFiles.has(file.path)) {
-        failed.add(source.agent)
-        continue
-      }
-      let outcome: Awaited<ReturnType<UsageIndex["take"]>>
-      try {
-        outcome = await this.take(ctx, source, file, outOfTime)
-      } catch {
-        read++
-        this.failedFiles.delete(file.path)
-        this.failedFiles.add(file.path)
-        failed.add(source.agent)
-        continue
-      }
-      if (outcome === "read" || outcome === "full") {
-        read++
-        this.failedFiles.delete(file.path)
-      }
-      if (outcome === "skipped") skipped++
-      if (outcome === "full" || outcome === "capped") capped++
-      if (outcome === "pending") pending++
+    for (const entry of ordered) await this.loadOne(ctx, entry, state)
+    return {
+      pending: state.pending,
+      skipped: state.skipped,
+      capped: state.capped,
+      failed: state.failed,
     }
-    return { pending, skipped, capped, failed }
   }
 
   /**
@@ -177,9 +192,7 @@ export class UsageIndex {
       this.forget(file.path)
       return "skipped"
     }
-    if (outOfTime) {
-      return "pending"
-    }
+    if (outOfTime) return "pending"
     const indexed = pack(source, file, await this.callsOf(ctx, source, file))
     this.forget(file.path)
     this.wrote =
@@ -220,34 +233,7 @@ export class UsageIndex {
     const { current, previous } = usageWindows(period, to)
     // Files changed since the earlier of the two stretches hold what either of them counts.
     const from = Math.min(current.from, previous.from)
-    const wanted: Wanted[] = []
-    const discovery = new Map<string, string>()
-    const dirs = roots(ctx)
-    if (dirs !== null)
-      for (const source of SOURCES) {
-        const folder = source.folder(dirs)
-        const base = source.agent === "opencode" ? (opencodeDatabase(ctx) ?? "") : folder
-        if (this.discovered.get(source.agent)?.base !== base) this.discovered.delete(source.agent)
-        try {
-          const files = await source.files(ctx, folder, from)
-          if (files.partial) discovery.set(source.agent, files.partial)
-          const entries = files.map((file) => ({ source, file }))
-          this.discovered.set(source.agent, { base, wanted: entries })
-          wanted.push(...entries)
-        } catch {
-          discovery.set(source.agent, "Usage history could not be read")
-          const old = this.discovered.get(source.agent)
-          if (old?.base === base)
-            for (const { file } of old.wanted) {
-              const held = this.files.get(file.path)
-              if (held)
-                wanted.push({
-                  source,
-                  file: { path: file.path, mtimeMs: held.mtimeMs, size: held.size },
-                })
-            }
-        }
-      }
+    const { wanted, discovery } = await discoverUsageSources(ctx, from, this.discovered, this.files)
     this.evict(to, from, new Set(wanted.map((entry) => entry.file.path)))
     const left = await this.load(ctx, wanted)
     for (const agent of left.failed) discovery.set(agent, "Usage history could not be read")
@@ -259,48 +245,6 @@ export class UsageIndex {
       })
     }
     const usage = usageOf(this.files, wanted, { period, now: to }, left)
-    for (const row of usage.agents)
-      if (discovery.has(row.agent)) {
-        row.partial = discovery.get(row.agent)
-        if (
-          !wanted.some(
-            ({ source, file }) => source.agent === row.agent && this.files.has(file.path),
-          )
-        ) {
-          row.state = "unavailable"
-          row.reason = row.partial ?? null
-        }
-      }
-    for (const row of usage.agents)
-      if (row.state === "counted") {
-        const used = row.models.map((m) => ({ model: m.model, tokens: tokensOf(m.tokens) }))
-        row.billing = await billingOf(ctx, row.agent, used, hints)
-        if (
-          row.accounting &&
-          row.accounting.spendCalls === row.calls &&
-          row.calls > 0 &&
-          row.accounting.unknownCalls === 0
-        )
-          row.billing = "key"
-        if (
-          row.accounting &&
-          row.accounting.planCalls === row.calls &&
-          row.calls > 0 &&
-          row.accounting.unknownCalls === 0
-        )
-          row.billing = "plan"
-      }
-    const cursor = usage.agents.find((agent) => agent.agent === "cursor")
-    if (cursor && !discovery.has("cursor"))
-      try {
-        const coverage = await cursorCoverage(ctx)
-        if (coverage === "Provider usage export required") {
-          cursor.state = "unavailable"
-          cursor.reason = coverage
-        } else if (coverage) cursor.partial = coverage
-      } catch {
-        cursor.partial = "Usage history could not be read"
-      }
-    return usage
+    return finalizeUsage(ctx, usage, { discovery, wanted, files: this.files, hints })
   }
 }

@@ -2,77 +2,108 @@ import "./claude-terminal.css"
 
 type Scene = "questions" | "artifact" | "plan" | "implement"
 
-/** Illustrative task data in Claude Code's transcript and native footer arrangement. */
-export function renderClaudeTerminal(root: HTMLElement, text: string, scene: Scene): void {
-  const node = (tag: string, className: string, value?: string) => {
-    const element = document.createElement(tag)
-    element.className = className
-    if (value !== undefined) element.textContent = value
-    return element
-  }
-  const terminal = node("div", "cc-demo")
-  terminal.setAttribute("aria-label", "Illustrative Claude Code session with QualityLayer")
-  const transcript = node("div", "cc-demo-transcript")
-  const header = node("div", "cc-demo-header")
-  header.append(node("pre", "cc-demo-logo", "▐▛███▜▌\n▝▜█████▛▘\n  ▘▘ ▝▝"))
-  const identity = node("div", "")
-  identity.append(
-    node("div", "cc-demo-name", "Claude Code v2.1.303"),
-    node("div", "cc-demo-muted", "Opus 5.5 · 1M context"),
-    node(
-      "div",
-      "cc-demo-muted",
-      `~/acme/${scene === "questions" ? "notifications" : scene === "artifact" ? "jobs" : "billing"}`,
-    ),
-  )
-  header.append(identity)
-  transcript.append(header)
+type SceneMeta = {
+  repo: string
+  step: string
+  task: string
+  status: string
+  branch: string
+}
+
+const SCENE_META: Record<Scene, SceneMeta> = {
+  questions: {
+    repo: "notifications",
+    step: "Plan",
+    task: "· Webhook delivery",
+    status: "4 items need you",
+    branch: "feat/webhooks",
+  },
+  artifact: {
+    repo: "jobs",
+    step: "Plan",
+    task: "· Queue routing",
+    status: "Waits for your approval",
+    branch: "feat/queue-routing",
+  },
+  plan: {
+    repo: "billing",
+    step: "Plan",
+    task: "· Usage-based billing",
+    status: "Waits for your approval",
+    branch: "feat/usage-billing",
+  },
+  implement: {
+    repo: "billing",
+    step: "Implement",
+    task: "· Usage-based billing",
+    status: "Slice 6 of 11 · T16",
+    branch: "feat/usage-billing",
+  },
+}
+
+function el(tag: string, className: string, value?: string): HTMLElement {
+  const element = document.createElement(tag)
+  element.className = className
+  if (value !== undefined) element.textContent = value
+  return element
+}
+
+function lineTone(line: string): string | null {
+  if (/^(>|❯) /.test(line)) return "cc-demo-prompt"
+  if (/^\s*⎿/.test(line)) return "cc-demo-muted"
+  if (/^● (Read|Update|Bash)/.test(line)) return "cc-demo-tool"
+  if (/^\s*✓/.test(line)) return "cc-demo-green"
+  return null
+}
+
+function appendTranscript(transcript: HTMLElement, text: string): void {
   const lines = text.split("\n")
-  // The fixtures also serve plain terminal fallbacks; this view supplies their native chrome.
   const start = lines.findIndex((line) => /^(>|❯) /.test(line))
   const end = lines.findIndex((line) => /^─{5}/.test(line))
   for (const line of lines.slice(Math.max(0, start), end < 0 ? undefined : end)) {
-    const row = node("div", "cc-demo-line", line === "" ? "\u00a0" : line.replace(/^> /, "❯ "))
-    if (/^(>|❯) /.test(line)) row.classList.add("cc-demo-prompt")
-    else if (/^\s*⎿/.test(line)) row.classList.add("cc-demo-muted")
-    else if (/^● (Read|Update|Bash)/.test(line)) row.classList.add("cc-demo-tool")
-    else if (/^\s*✓/.test(line)) row.classList.add("cc-demo-green")
+    const row = el("div", "cc-demo-line", line === "" ? " " : line.replace(/^> /, "❯ "))
+    const tone = lineTone(line)
+    if (tone) row.classList.add(tone)
     transcript.append(row)
   }
-  const band = node("div", "cc-demo-band")
+}
+
+/** Illustrative task data in Claude Code's transcript and native footer arrangement. */
+export function renderClaudeTerminal(root: HTMLElement, text: string, scene: Scene): void {
+  const meta = SCENE_META[scene]
+  const terminal = el("div", "cc-demo")
+  terminal.setAttribute("aria-label", "Illustrative Claude Code session with QualityLayer")
+
+  const transcript = el("div", "cc-demo-transcript")
+  const header = el("div", "cc-demo-header")
+  header.append(el("pre", "cc-demo-logo", "▐▛███▜▌\n▝▜█████▛▘\n  ▘▘ ▝▝"))
+  const identity = el("div", "")
+  identity.append(
+    el("div", "cc-demo-name", "Claude Code v2.1.303"),
+    el("div", "cc-demo-muted", "Opus 5.5 · 1M context"),
+    el("div", "cc-demo-muted", `~/acme/${meta.repo}`),
+  )
+  header.append(identity)
+  transcript.append(header)
+  appendTranscript(transcript, text)
+
+  const band = el("div", "cc-demo-band")
   band.append(
-    node("b", "", `QL ○ ${scene === "implement" ? "Implement" : "Plan"}`),
-    node(
-      "span",
-      "cc-demo-task",
-      scene === "plan" || scene === "implement"
-        ? "· Usage-based billing"
-        : scene === "questions"
-          ? "· Webhook delivery"
-          : "· Queue routing",
-    ),
-    node(
-      "span",
-      "",
-      scene === "questions"
-        ? "4 items need you"
-        : scene === "implement"
-          ? "Slice 6 of 11 · T16"
-          : "Waits for your approval",
-    ),
-    node("small", "cc-demo-muted", "d: Details"),
+    el("b", "", `QL ○ ${meta.step}`),
+    el("span", "cc-demo-task", meta.task),
+    el("span", "", meta.status),
+    el("small", "cc-demo-muted", "d: Details"),
   )
-  const prompt = node("div", "cc-demo-input")
+
+  const prompt = el("div", "cc-demo-input")
   prompt.append(
-    node("span", "", "❯ "),
-    node("span", "cc-demo-muted", "Ask a question or give feedback"),
+    el("span", "", "❯ "),
+    el("span", "cc-demo-muted", "Ask a question or give feedback"),
   )
-  const status = node("div", "cc-demo-status")
-  for (const [className, value] of [
-    [
-      "cc-demo-cyan",
-      scene === "questions" ? "notifications" : scene === "artifact" ? "jobs" : "billing",
-    ],
+
+  const status = el("div", "cc-demo-status")
+  const parts: [string, string][] = [
+    ["cc-demo-cyan", meta.repo],
     ["", " · "],
     ["cc-demo-yellow", "Opus 5.5"],
     ["cc-demo-orange", " ⚡high"],
@@ -81,22 +112,16 @@ export function renderClaudeTerminal(root: HTMLElement, text: string, scene: Sce
     ["", " · "],
     ["cc-demo-green", "$0.84"],
     ["", " · "],
-    [
-      "cc-demo-purple",
-      scene === "plan" || scene === "implement"
-        ? "feat/usage-billing"
-        : scene === "artifact"
-          ? "feat/queue-routing"
-          : "feat/webhooks",
-    ],
-  ])
-    status.append(node("span", className as string, value))
+    ["cc-demo-purple", meta.branch],
+  ]
+  for (const [className, value] of parts) status.append(el("span", className, value))
+
   terminal.append(
     transcript,
     band,
     prompt,
     status,
-    node("div", "cc-demo-help cc-demo-muted", "? for shortcuts"),
+    el("div", "cc-demo-help cc-demo-muted", "? for shortcuts"),
   )
   root.replaceChildren(terminal)
 }

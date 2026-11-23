@@ -1,28 +1,15 @@
-import { type RefObject, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import type { ItemAnswer } from "../../core/items.ts"
-import { type AnswerKind, answerLabel, type Item } from "../../core/items.ts"
-import type { DeliveryReceipt, TurnSnapshot } from "../../interaction/contracts.ts"
-import { api as defaultApi, interactionApi } from "../api.ts"
+import type { AnswerKind, Item, ItemAnswer } from "../../core/items.ts"
 import { ItemMedia } from "../ItemMedia.tsx"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { Disclosure } from "../kit/Fold.tsx"
 import { pendingGate, personVerify } from "../model.ts"
-import { OutsideDecide } from "../OutsideDecide.tsx"
 import { approvesOutside } from "../outside.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
-import { mutateTurn } from "../turn/actions.ts"
-import { answerBody } from "../turn/answer-body.ts"
 import { clearDraft, draftFor, useQuestionDraft, writeDraft } from "../turn/drafts.ts"
-import { QuestionComposer } from "../turn/QuestionComposer.tsx"
-
-/** What the note box asks for, by the answer that opened it. */
-const NOTE_HINT: Partial<Record<AnswerKind, string>> = {
-  record: "What you saw, or what the agent should check itself",
-  change: "What should change",
-  fix: "What to fix, or what to check again",
-  "ask-why": "What you would like explained",
-}
+import { ItemNote, StepItemButtons } from "./StepItemParts.tsx"
+import { submitStepItemAnswer } from "./step-item-submit.ts"
 
 /** The judge's own words behind a finding's headline, folded until asked for. */
 export function FindingDetails({ text }: { text: string }) {
@@ -82,207 +69,17 @@ export function FoundWhileChecking({ items }: { items: Item[] }) {
   )
 }
 
-function ItemNote({
-  id,
-  chosen,
-  confirm,
-  busy,
-  note,
-  files,
-  error,
-  field,
-  onNote,
-  onFiles,
-  send,
-  cancel,
-}: {
-  id: string
-  chosen: AnswerKind
-  confirm: boolean
-  busy: boolean
-  note: string
-  files: File[]
-  error: string | null
-  field: RefObject<HTMLTextAreaElement | null>
-  onNote(note: string): void
-  onFiles(files: File[]): void
-  send(): void
-  cancel(): void
-}) {
-  return confirm ? (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        send()
-      }}
-    >
-      <label>
-        Your note
-        <textarea
-          ref={field}
-          value={note}
-          onChange={(event) => onNote(event.target.value)}
-          maxLength={4000}
-          placeholder={NOTE_HINT[chosen] ?? "What the agent should know"}
-        />
-      </label>
-      <button type="submit" className="q-btn primary sm" disabled={busy || note.trim() === ""}>
-        Send
-      </button>
-      <button type="button" className="q-link" onClick={cancel}>
-        Cancel
-      </button>
-    </form>
-  ) : (
-    <QuestionComposer
-      id={id}
-      label="Your note"
-      words={note}
-      files={files}
-      onWords={onNote}
-      onFiles={onFiles}
-      field={field}
-      busy={busy}
-      error={error}
-      placeholder={NOTE_HINT[chosen] ?? "What the agent should know"}
-      submit={send}
-      onCancel={cancel}
-    />
-  )
+function initialChosen(
+  draftKind: AnswerKind | null | undefined,
+  initialAnswer: ItemAnswer | undefined,
+): AnswerKind | null {
+  if (draftKind !== undefined) return draftKind
+  return initialAnswer?.note ? initialAnswer.kind : null
 }
 
-export function StepItem({
-  item,
-  props,
-  onAnswered,
-  initialAnswer,
-  onCancelEdit,
-}: {
-  item: Item
-  props: TaskSurfaceProps
-  onAnswered?: (answer: ItemAnswer) => void
-  initialAnswer?: ItemAnswer
-  onCancelEdit?: () => void
-}) {
-  // The agent runs in the terminal: the decision is made there, and the item only reads.
-  const finalConfirmation =
-    item.kind === "confirm" && personVerify(props.task) && pendingGate(props.task) === "final"
-  // A Plan decision or a confirmation is answered where approvals are.
-  const outside = approvesOutside(props.task) && !finalConfirmation
-  const key = `item:${props.task.id}:${item.id}`
-  const draft = useQuestionDraft(key)
-  const chosen =
-    draft.answerKind === undefined
-      ? initialAnswer?.note
-        ? initialAnswer.kind
-        : null
-      : draft.answerKind
-  const note = draft.writing ? draft.words : (initialAnswer?.note ?? "")
-  const files = draft.files
-  const setChosen = (chosen: AnswerKind | null) =>
-    writeDraft(key, { answerKind: chosen, words: note, writing: true })
-  const setNote = (words: string) => writeDraft(key, { words, writing: true })
-  const setFiles = (files: File[]) => writeDraft(key, { files, words: note, writing: true })
-  const [sent, setSent] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const noteInput = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => {
-    if (chosen !== null) noteInput.current?.focus()
-  }, [chosen])
-  const send = async (kind: AnswerKind) => {
-    if (busy) return
-    const attempt = draftFor(key)
-    const answer: ItemAnswer = {
-      kind,
-      at: Date.now(),
-      ...(note.trim() !== "" ? { note: note.trim() } : {}),
-    }
-    const update =
-      (answer: ItemAnswer | null) =>
-      (was: TurnSnapshot): TurnSnapshot => {
-        const map = (items: Item[]): Item[] =>
-          items.map((entry) =>
-            entry.id === item.id
-              ? { ...entry, state: answer ? "sent" : "open", answer: answer ?? undefined }
-              : { ...entry, ...(entry.children ? { children: map(entry.children) } : {}) },
-          )
-        return { ...was, items: map(was.items) }
-      }
-    setBusy(true)
-    setError(null)
-    try {
-      if (props.api !== defaultApi) props.live.answer(item.id, answer)
-      else if (item.kind !== "confirm") {
-        await mutateTurn(
-          props.task.id,
-          "item",
-          { item: item.id, answer, seen: item.digest },
-          files.length ? (was) => was : update(answer),
-          () =>
-            interactionApi.taskRoute(props.task.id, "turn", "item", {
-              method: "POST",
-              body: answerBody({ item: item.id, answer, seen: item.digest }, files),
-            }),
-        )
-        toast("Answer sent", {
-          duration: 5000,
-          action: {
-            label: "Undo",
-            onClick: () =>
-              void mutateTurn(
-                props.task.id,
-                "item",
-                { item: item.id, answer: null, seen: item.digest },
-                update(null),
-              ).then(props.reload, (error) => toast.error(error.message)),
-          },
-        })
-      } else {
-        await mutateTurn<{ item: Item; receipt: DeliveryReceipt }>(
-          props.task.id,
-          "confirm",
-          null,
-          update(answer),
-          () =>
-            interactionApi.taskRoute<{ item: Item; receipt: DeliveryReceipt }>(
-              props.task.id,
-              "steps",
-              "confirm",
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  item: item.id,
-                  seen: item.digest,
-                  kind,
-                  note: note.trim(),
-                  gateId: props.task.gate?.id,
-                }),
-              },
-            ),
-        )
-      }
-      clearDraft(key, attempt)
-      setSent(true)
-      onAnswered?.(answer)
-      props.reload()
-    } catch (cause) {
-      setSent(false)
-      const message = cause instanceof Error ? cause.message : String(cause)
-      setError(message)
-      toast.error(message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  if (sent)
-    return (
-      <p className="ir-step-receipt" role="status">
-        {busy ? "Sending…" : "Saved for the agent."}
-      </p>
-    )
+function StepItemHeader({ item, props }: { item: Item; props: TaskSurfaceProps }) {
   return (
-    <div className="ir-step-item" data-item-id={item.id} tabIndex={-1}>
+    <>
       <div className="ir-step-kind">{item.kindLabel}</div>
       <h3>
         <InlineMarkdown text={item.what} />
@@ -304,37 +101,98 @@ export function StepItem({
           loadEvidence={props.live.loadEvidence}
         />
       ) : null}
-      {outside ? (
-        <div className="ir-step-buttons">
-          <OutsideDecide
-            labels={[
-              ...item.answers.options,
-              ...(item.answers.link !== undefined ? [item.answers.link] : []),
-            ].map((kind) => answerLabel(kind, item.family, item.answers.labels))}
-          />
-        </div>
-      ) : (
-        <div className="ir-step-buttons">
-          {[
-            ...item.answers.options,
-            ...(item.answers.link !== undefined ? [item.answers.link] : []),
-          ].map((kind, index) => (
-            <button
-              key={kind}
-              type="button"
-              className={index === 0 ? "q-btn primary sm" : "q-btn sm"}
-              disabled={busy}
-              onClick={() =>
-                ["change", "fix", "record", "ask-why"].includes(kind)
-                  ? setChosen(kind)
-                  : void send(kind)
-              }
-            >
-              {answerLabel(kind, item.family, item.answers.labels)}
-            </button>
-          ))}
-        </div>
-      )}
+    </>
+  )
+}
+
+function isOutsideItem(item: Item, task: TaskSurfaceProps["task"]): boolean {
+  const finalConfirmation =
+    item.kind === "confirm" && personVerify(task) && pendingGate(task) === "final"
+  return approvesOutside(task) && !finalConfirmation
+}
+
+function useStepItemState(
+  item: Item,
+  props: TaskSurfaceProps,
+  initialAnswer: ItemAnswer | undefined,
+  onAnswered: ((answer: ItemAnswer) => void) | undefined,
+) {
+  const key = `item:${props.task.id}:${item.id}`
+  const draft = useQuestionDraft(key)
+  const chosen = initialChosen(draft.answerKind, initialAnswer)
+  const note = draft.writing ? draft.words : (initialAnswer?.note ?? "")
+  const files = draft.files
+  const setChosen = (next: AnswerKind | null) =>
+    writeDraft(key, { answerKind: next, words: note, writing: true })
+  const setNote = (words: string) => writeDraft(key, { words, writing: true })
+  const setFiles = (next: File[]) => writeDraft(key, { files: next, words: note, writing: true })
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const send = async (kind: AnswerKind) => {
+    if (busy) return
+    const attempt = draftFor(key)
+    setBusy(true)
+    setError(null)
+    try {
+      const answer = await submitStepItemAnswer({ props, item, kind, note, files })
+      clearDraft(key, attempt)
+      setSent(true)
+      onAnswered?.(answer)
+      props.reload()
+    } catch (cause) {
+      setSent(false)
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { chosen, note, files, sent, error, busy, setChosen, setNote, setFiles, send }
+}
+
+export function StepItem({
+  item,
+  props,
+  onAnswered,
+  initialAnswer,
+  onCancelEdit,
+}: {
+  item: Item
+  props: TaskSurfaceProps
+  onAnswered?: (answer: ItemAnswer) => void
+  initialAnswer?: ItemAnswer
+  onCancelEdit?: () => void
+}) {
+  // A Plan decision or a confirmation is answered where approvals are.
+  const outside = isOutsideItem(item, props.task)
+  const { chosen, note, files, sent, error, busy, setChosen, setNote, setFiles, send } =
+    useStepItemState(item, props, initialAnswer, onAnswered)
+  const noteInput = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (chosen !== null) noteInput.current?.focus()
+  }, [chosen])
+
+  if (sent) {
+    return (
+      <p className="ir-step-receipt" role="status">
+        {busy ? "Sending…" : "Saved for the agent."}
+      </p>
+    )
+  }
+  const showError = error !== null && (chosen === null || item.kind === "confirm")
+  return (
+    <div className="ir-step-item" data-item-id={item.id} tabIndex={-1}>
+      <StepItemHeader item={item} props={props} />
+      <StepItemButtons
+        item={item}
+        outside={outside}
+        busy={busy}
+        onOpenNote={setChosen}
+        onSend={(kind) => void send(kind)}
+      />
       {chosen !== null && !outside ? (
         <ItemNote
           id={`item-note-${item.id}`}
@@ -354,9 +212,7 @@ export function StepItem({
           }}
         />
       ) : null}
-      {error !== null && (chosen === null || item.kind === "confirm") ? (
-        <p role="alert">{error}</p>
-      ) : null}
+      {showError ? <p role="alert">{error}</p> : null}
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import { comparisonRows, comparisonSources } from "./comparisons-evidence.ts";
+
 export interface ComparisonSource {
   label: string;
   url: string;
@@ -27,9 +29,9 @@ export interface Comparison {
   kind?: "agent";
 }
 
-const CHECK_RESULT = "Verify records evidence for each agreed outcome. Verify then shows the finished change and its proof.";
+type ComparisonEntry = Omit<Comparison, "rows" | "sources">;
 
-export const COMPARISONS: Comparison[] = [
+const COMPARISON_ENTRIES: ComparisonEntry[] = [
   {
     slug: "superpowers",
     name: "Superpowers",
@@ -40,17 +42,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Superpowers is an open source set of skills that guides your coding agent from design to finished branch. QualityLayer adds an App where you approve a visual Plan and review the evidence. Both keep you in your own agent.",
     strengths: "Superpowers is the most-starred project on GitHub among these tools. Its skills trigger on their own, enforce red-green-refactor test-driven development and refuse completion claims without fresh verification evidence. Subagents review each task for spec compliance, then code quality.",
     agents: "Superpowers installs from the official Claude Code and Codex plugin marketplaces and supports Cursor, Gemini CLI, GitHub Copilot CLI, OpenCode, Pi and Antigravity. QualityLayer also works in Claude Code and Codex; the difference is the App around the agent.",
-    rows: [
-      { topic: "Agree on the change", qualitylayer: "Review architecture diagrams and clickable artifacts, then approve the Plan before code.", other: "Brainstorming proposes two or three approaches, writes a design document and is meant to build nothing until you approve it.", source: 2 },
-      { topic: "Build it", qualitylayer: "Slices are built test first, with the agreed outcomes kept beside each slice.", other: "A plan of two-to-five-minute tasks, each with file paths, code and verification steps, run by subagents.", source: 1 },
-      { topic: "Check the result", qualitylayer: "Verify records output, screenshots or files for each agreed outcome, then brings the finished change to your review.", other: "Code review against the plan blocks on critical issues; finishing a branch verifies tests and offers merge, pull request, keep or discard.", source: 1 },
-    ],
     chooseOther: "Choose Superpowers if you want disciplined, test-first habits as a plugin or skills in the agents you already use.",
     chooseQualityLayer: "Choose QualityLayer if you also want a visual Plan to approve, evidence recorded for each agreed outcome and one place to review the finished change before the pull request.",
-    sources: [
-      { label: "Superpowers repository, skills and supported agents", url: "https://github.com/obra/superpowers" },
-      { label: "Superpowers v7.0.1 release notes", url: "https://github.com/obra/superpowers/releases/tag/v7.0.1" },
-    ],
     checked: "2026-10-23",
     runsInSource: 1,
   },
@@ -64,19 +57,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "GitHub Spec Kit gives your coding agent structured processes and reusable artifacts. QualityLayer adds visual planning and a place to review the result.",
     strengths: "Spec Kit is an open source toolkit with project principles, specifications, technical plans and implementation tasks. Extensions, presets and workflows let teams adapt the process to their own standards.",
     agents: "Spec Kit supports both Claude Code and Codex, alongside other coding agents. QualityLayer also works in those sessions. The decision is about the process you want around the agent.",
-    rows: [
-      { topic: "Define the work", qualitylayer: "Plan visually with diagrams and clickable artifacts; approve the Plan before implementation.", other: "Create a constitution, specification, technical plan and dependency-ordered tasks.", source: 1 },
-      { topic: "Check the artifacts", qualitylayer: "Keep the agreed outcomes with the task through Implement and Verify.", other: "Use clarification, requirements checklists and cross-artifact analysis as quality checks.", source: 2 },
-      { topic: "Check the implementation", qualitylayer: CHECK_RESULT, other: "Converge assesses code against spec, plan and tasks, appending remaining work. The bug-fixing extension records verification too.", source: 1 },
-      { topic: "Adapt the process", qualitylayer: "Use the documented Plan, Implement and Verify flow in the App and your agent.", other: "Customize with extensions, presets, workflows and project-local overrides.", source: 1 },
-    ],
     chooseOther: "Choose Spec Kit if you want a toolkit you can customize around your repository's own specification and review conventions. Its convergence checks deserve credit; it goes beyond generating a plan.",
     chooseQualityLayer: "Choose QualityLayer if you want the App to carry visual planning, human approval and recorded outcome checks into one review flow, including follow-up on the pull request.",
-    sources: [
-      { label: "Spec Kit repository and available processes", url: "https://github.com/github/spec-kit" },
-      { label: "Spec Kit commands, checklists and convergence", url: "https://github.github.io/spec-kit/reference/agentic-sdd.html" },
-      { label: "Spec Kit supported coding agents", url: "https://github.github.io/spec-kit/reference/integrations.html" },
-    ],
     checked: "2026-10-19",
   },
   {
@@ -89,18 +71,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "OpenSpec organizes a change around a proposal, requirements, a design and tasks. QualityLayer puts visual planning and outcome evidence into an approval flow. Both help you agree on the work before implementation.",
     strengths: "OpenSpec is an open source option for evolving an existing codebase. Each change has its own planning artifacts, and archiving folds spec updates into the main specifications. You can revise artifacts as your understanding changes.",
     agents: "OpenSpec supports Claude Code and Codex through tool-specific commands or skills. QualityLayer works with both too. Keeping your agent is a shared capability; compare how each process checks and closes the change.",
-    rows: [
-      { topic: "Plan a change", qualitylayer: "Review diagrams and clickable artifacts in the App, then approve the Plan.", other: "Create a proposal with spec deltas, design and tasks; revise artifacts as needed.", source: 1 },
-      { topic: "Verify the code", qualitylayer: "Record evidence from the running program for each agreed outcome, with independent review enabled by default.", other: "The optional verify skill reports completeness, correctness and coherence against the artifacts.", source: 2 },
-      { topic: "Finish the change", qualitylayer: "Review the evidence and recorded checks; approve locally, or ask QualityLayer to open and follow a pull request.", other: "Archive the change and sync its spec updates. Archive warns about incomplete artifacts or tasks.", source: 2 },
-    ],
     chooseOther: "Choose OpenSpec if maintaining evolving specifications and small change proposals in your repository is the main goal. Its flexible artifact editing fits work where requirements change during implementation.",
     chooseQualityLayer: "Choose QualityLayer if you want explicit human approvals and evidence for the running result in the App. OpenSpec also checks implementation; QualityLayer's emphasis is how that proof reaches your review and pull request.",
-    sources: [
-      { label: "OpenSpec repository and change workflow", url: "https://github.com/Fission-AI/OpenSpec" },
-      { label: "OpenSpec skills, verify and archive behavior", url: "https://openspec.dev/docs/skills" },
-      { label: "OpenSpec supported tools", url: "https://openspec.dev/docs/supported-tools" },
-    ],
     checked: "2026-10-19",
   },
   {
@@ -113,19 +85,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "BMAD Method turns an idea or change request into planning artifacts and working software. QualityLayer turns a request into an approved Plan and recorded proof. Both ask you to decide before the build.",
     strengths: "BMAD is free and open source with a large community. Its planning path scales with the work: what fits one session goes straight to build, larger work gets a PRD, architecture, UX documents and ordered stories. Its review sends several reviewers over the same diff and routes the open questions back to you.",
     agents: "BMAD's stable v6.12 installs with npm; its v7 preview ships plugins for Claude Code and Codex and needs a coding tool that supports skills. QualityLayer also works in Claude Code and Codex; compare the planning depth and the review each one gives you.",
-    rows: [
-      { topic: "Plan the work", qualitylayer: "A visual Plan you approve; Implement cuts it into slices.", other: "Choose a planning path by size: a brief, PRD, architecture, UX documents and stories in tickets.toml.", source: 2 },
-      { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Verify.", other: "Approve the build plan or ask for changes; when the build is done, marking it done is yours.", source: 4 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; failing or blocked checks stay visible in your review.", other: "Several reviewers examine the diff in parallel; findings are sorted into patch, defer and decision needed. A separate skill generates API and end-to-end tests.", source: 3 },
-    ],
     chooseOther: "Choose BMAD Method if you want agile product artifacts such as PRDs and stories, and a planning path that grows with the size of the work.",
     chooseQualityLayer: "Choose QualityLayer if you want a visual Plan, evidence that each agreed outcome works on the running program and an App that follows the pull request.",
-    sources: [
-      { label: "BMAD Method repository", url: "https://github.com/bmad-code-org/BMAD-METHOD" },
-      { label: "BMAD: choose a planning path", url: "https://docs.bmad-method.org/plan/choose-a-planning-path/" },
-      { label: "BMAD: review a change", url: "https://docs.bmad-method.org/build/review-a-change/" },
-      { label: "BMAD: build your first change", url: "https://docs.bmad-method.org/start/build-your-first-change/" },
-    ],
     checked: "2026-10-23",
     runsInSource: 1,
   },
@@ -139,19 +100,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "GSD (Get Shit Done), now developed as GSD Core, runs a Discuss, Plan, Execute, Verify and Ship loop in your coding agent. QualityLayer folds that into three steps, Plan, Implement and Verify, with an App for approvals and review.",
     strengths: "GSD keeps each plan small enough for a fresh context window and checks plans before execution. Its verifier checks requirement and decision coverage, and a user-acceptance walkthrough asks you about each deliverable. A verification report goes stale when the code changes after it.",
     agents: "GSD installs into Claude Code, Codex, Cursor, Copilot, OpenCode and other agents. QualityLayer also works in Claude Code and Codex. The original GSD repository is archived; development continues as GSD Core.",
-    rows: [
-      { topic: "Agree on the change", qualitylayer: "A visual Plan you approve before code.", other: "Discuss captures implementation decisions; a plan checker confirms plans are complete, consistent and in scope.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome on the running program.", other: "A verifier checks requirement coverage; a walkthrough logs issues per deliverable, then plans the fixes.", source: 3 },
-      { topic: "Ship", qualitylayer: "Review the evidence and recorded checks, then approve; QualityLayer can open and follow the pull request.", other: "Ship creates the pull request from the plan and verification status.", source: 3 },
-    ],
     chooseOther: "Choose GSD if you want a light, open source loop with user-acceptance checks that runs in many agents.",
     chooseQualityLayer: "Choose QualityLayer if you want explicit approvals in an App, a visual Plan and evidence you review before approving the change.",
-    sources: [
-      { label: "GSD Core repository and supported agents", url: "https://github.com/open-gsd/gsd-core" },
-      { label: "GSD Core: the phase loop", url: "https://github.com/open-gsd/gsd-core/blob/main/docs/explanation/the-phase-loop.md" },
-      { label: "GSD Core: verify and ship", url: "https://github.com/open-gsd/gsd-core/blob/main/docs/how-to/verify-and-ship.md" },
-      { label: "The archived Get Shit Done repository", url: "https://github.com/gsd-build/get-shit-done" },
-    ],
     checked: "2026-10-23",
     strengthsSources: [2, 3],
     runsInSource: 1,
@@ -166,18 +116,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Kiro integrates specifications into its coding environment. QualityLayer works with your existing coding agent. Compare how each plans and checks a change.",
     strengths: "Kiro turns requirements into technical designs and trackable tasks. Feature Specs support requirements-first and design-first approaches. Its IDE also supports property-based testing that connects specified behavior to executable checks.",
     agents: "Kiro documents its own spec workflow in its IDE, CLI and web surfaces. QualityLayer's workflow runs with your coding agent. Kiro has a CLI too, so describing this as a choice between an IDE and a terminal would miss the point.",
-    rows: [
-      { topic: "Shape the specification", qualitylayer: "Use visual architecture and clickable artifacts, with a human-approved Plan.", other: "Generate requirements, design and tasks; start from requirements or a technical design.", source: 1 },
-      { topic: "Verify behavior", qualitylayer: "Check each agreed outcome on the running program and retain the evidence for your review.", other: "In the IDE, derive executable properties from specs and test generated inputs for counterexamples.", source: 2 },
-      { topic: "Review planning", qualitylayer: "Approve the Plan before code, then inspect outcome evidence at the final review.", other: "Review spec documents with comments on exact passages. Quick Spec can generate artifacts without approval steps.", source: 3 },
-    ],
     chooseOther: "Choose Kiro if you want specifications and task execution integrated into Kiro's environment. Its property-based testing is a substantive verification capability, with availability that varies by surface.",
     chooseQualityLayer: "Choose QualityLayer if you want to keep your coding agent and review an explicit record of outcomes, unresolved checks and approval decisions in the App.",
-    sources: [
-      { label: "Kiro Feature Specs and workflow variants", url: "https://kiro.dev/docs/specs/feature-specs/" },
-      { label: "Kiro correctness and property-based testing", url: "https://kiro.dev/docs/specs/correctness/" },
-      { label: "Kiro specs, supported surfaces and review", url: "https://kiro.dev/docs/specs/" },
-    ],
     checked: "2026-10-19",
     strengthsSources: [1, 2],
   },
@@ -191,20 +131,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Traycer and QualityLayer are both apps around the coding agents you already have. Traycer focuses on running agents in parallel with shared artifacts; QualityLayer on an approved Plan and recorded proof.",
     strengths: "Traycer runs Claude Code, Codex, Cursor and other agents side by side, each able to work in its own worktree. Its artifacts (briefs, flows, tech plans, tickets) can be edited and commented on, with wireframes, diagrams and version history. It is free with your own agents.",
     agents: "Traycer's desktop app drives Claude Code, Codex, Cursor and OpenCode. QualityLayer also starts Claude Code, Codex, Cursor and other agents from its App; the difference is the workflow each one runs.",
-    rows: [
-      { topic: "Plan a feature", qualitylayer: "A visual Plan you approve, then Implement cuts it into slices.", other: "Skills write an epic brief, core flows, a tech plan and a ticket breakdown you approve.", source: 2 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Execution checks each batch against the plan; a review skill writes prioritized findings, and an autobuild mode iterates against a grading rubric with a separate evaluator.", source: 3 },
-      { topic: "Follow the process", qualitylayer: "The steps run in order, each with its approval or recorded check.", other: "The steps are skills you pick yourself; Traycer does not enforce them as an automatic pipeline.", source: 3 },
-    ],
     chooseOther: "Choose Traycer if running several agents in parallel, with shared tickets and artifacts, is the center of your work.",
     chooseQualityLayer: "Choose QualityLayer if you want each change to pass through an approved Plan, recorded verification and a human review, in that order.",
-    sources: [
-      { label: "Traycer docs and supported agents", url: "https://docs.traycer.ai/index.md" },
-      { label: "Traycer: plan a feature", url: "https://docs.traycer.ai/guides/plan-a-feature.md" },
-      { label: "Traycer: artifact workflow", url: "https://docs.traycer.ai/concepts/artifact-workflow.md" },
-      { label: "Traycer pricing", url: "https://docs.traycer.ai/account/pricing.md" },
-      { label: "Traycer artifact version history", url: "https://docs.traycer.ai/panels/artifacts/version-history.md" },
-    ],
     checked: "2026-10-23",
     strengthsSources: [1, 4, 5],
     runsInSource: 1,
@@ -219,18 +147,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Compound Engineering, from Every, structures agent work as brainstorm, plan, build, review and capture what you learned. QualityLayer also plans first and saves lessons, with an App for approvals and recorded proof.",
     strengths: "Compound Engineering puts most of the effort into planning and review. Its multi-agent code review checks the diff against the plan's requirements with severity levels, and what each change teaches is written down for the next plan. A hands-off mode opens the pull request and repairs CI failures within a limit.",
     agents: "Compound Engineering runs on 14 agent hosts, including Claude Code, Codex and Cursor. QualityLayer also works in Claude Code and Codex; compare the approvals and the evidence each gives you.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan, written once your agent has read the code, that you approve before code.", other: "Brainstorm writes requirements; plan turns them into implementation-ready plans, and by default standard and deep plans stop for you to confirm the scope.", source: 2 },
-      { topic: "Review", qualitylayer: "Verify records evidence for each agreed outcome; you approve the result at Verify.", other: "By default, a report-only multi-agent review checks the diff against the plan's requirements, with P0 to P3 findings.", source: 3 },
-      { topic: "Learn", qualitylayer: "Lessons from each task are saved and offered to later tasks.", other: "A compound step writes learnings to docs/solutions for the next plan.", source: 1 },
-    ],
     chooseOther: "Choose Compound Engineering if you want a free plugin that runs in many hosts and gets better at your codebase with every change.",
     chooseQualityLayer: "Choose QualityLayer if you want approvals in an App, a visual Plan and evidence on the running program before you approve.",
-    sources: [
-      { label: "Compound Engineering repository", url: "https://github.com/EveryInc/compound-engineering-plugin" },
-      { label: "Compound Engineering: ce-plan", url: "https://github.com/EveryInc/compound-engineering-plugin/blob/main/docs/guides/ce-plan.md" },
-      { label: "Compound Engineering: ce-code-review", url: "https://github.com/EveryInc/compound-engineering-plugin/blob/main/docs/guides/ce-code-review.md" },
-    ],
     checked: "2026-10-23",
     runsInSource: 1,
   },
@@ -244,17 +162,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Plan mode is built into Claude Code: Claude explores and proposes a plan before editing. QualityLayer runs inside Claude Code too and adds the steps after the plan, from slices to recorded verification and review.",
     strengths: "Plan mode needs no setup. Claude explores, then presents a plan you can edit before approving. Its docs recommend skipping planning for a one-sentence diff. Separate verification tools include evaluator-checked goals, hooks and review subagents.",
     agents: "Plan mode is part of Claude Code. QualityLayer starts and works inside Claude Code as well, and also with Codex and other agents.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code.", other: "Claude explores without editing source, then presents a text plan you can edit.", source: 1 },
-      { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Verify.", other: "Approve and start, approve with manual edit approval, or keep planning.", source: 1 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; then the same page shows the finished change and its proof.", other: "Verification is separate from plan mode: tests, goals, hooks, review subagents and the bundled /verify, which builds and runs your app.", source: 2 },
-    ],
     chooseOther: "Choose plan mode alone for small, well-understood changes where a quick written plan is enough.",
     chooseQualityLayer: "Choose QualityLayer for medium and large changes where you want the plan, the build, verification and review carried through in one flow.",
-    sources: [
-      { label: "Claude Code permission modes (plan mode)", url: "https://code.claude.com/docs/en/permission-modes" },
-      { label: "Claude Code best practices", url: "https://code.claude.com/docs/en/best-practices" },
-    ],
     checked: "2026-10-23",
     runsInSource: 1,
   },
@@ -268,18 +177,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Cursor's plan mode researches your codebase, asks clarifying questions and writes a plan before building. QualityLayer adds a visual Plan you approve, recorded verification and review, and also starts Cursor as one of its agents.",
     strengths: "Plan mode is built into the Cursor editor. The plan is a markdown file you can edit in chat or directly, save to the workspace, or revert to and run again. For larger work, Cursor's Projects beta has a coordinator that plans and sends agents to implement and test parts in parallel.",
     agents: "Plan mode runs with Cursor's own agent. QualityLayer can start Cursor from its App, as well as Claude Code, Codex and other agents.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code.", other: "The agent asks questions, researches the codebase and writes a plan you edit before building.", source: 1 },
-      { topic: "Larger work", qualitylayer: "Implement cuts the approved Plan into slices that agents build test first.", other: "Projects (beta): a coordinator plans and directs agents that implement and test parts in parallel.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; then the same page shows the finished change and its proof before approval.", other: "Bugbot, billed separately by usage, reviews pull requests for bugs, security issues and code quality.", source: 3 },
-    ],
     chooseOther: "Choose Cursor's plan mode if you work in Cursor and want planning built into the editor.",
     chooseQualityLayer: "Choose QualityLayer if you want the same plan-first flow across agents, with evidence for each agreed outcome and an explicit review before the pull request.",
-    sources: [
-      { label: "Cursor plan mode", url: "https://cursor.com/docs/agent/planning" },
-      { label: "Cursor: introducing Projects", url: "https://cursor.com/blog/projects" },
-      { label: "Cursor Bugbot", url: "https://cursor.com/docs/bugbot" },
-    ],
     checked: "2026-10-23",
     runsInSource: 1,
   },
@@ -293,17 +192,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Codex's /plan reads the repository, asks questions and proposes work before editing. QualityLayer adds visual planning, recorded checks and human review in the same agent.",
     strengths: "Plan mode needs no setup beyond Codex itself. Codex explores the code, asks the questions it needs answered and proposes an order of work without changing tracked files. For a change you can describe in one or two sentences, that is often all the planning you need.",
     agents: "Ask Codex in plain words: ‘Using QualityLayer, plan this change.’ Another supported agent can build the resulting Plan.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code, saved as Markdown in your repository.", other: "Codex reads the repository, asks clarifying questions and proposes a plan in the session.", source: 2 },
-      { topic: "Approve", qualitylayer: "Approve the Plan before code and the result at Verify; ask your agent to revise selected passages.", other: "You read the plan in the terminal session and tell Codex to implement it.", source: 1 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Checking the result is up to you, your tests and any review step you add after plan mode.", source: 1 },
-    ],
     chooseOther: "Choose plan mode alone for small, well-understood changes where a short written plan is enough and you review the diff yourself.",
     chooseQualityLayer: "Choose QualityLayer for medium and large changes where you approve a visual plan. You see evidence that each agreed outcome works before the pull request.",
-    sources: [
-      { label: "OpenAI Codex developer commands (/plan)", url: "https://learn.chatgpt.com/docs/developer-commands" },
-      { label: "OpenAI Codex plan mode instructions", url: "https://github.com/openai/codex/blob/main/codex-rs/collaboration-mode-templates/templates/plan.md" },
-    ],
     checked: "2026-10-25",
     runsInSource: 1,
   },
@@ -317,17 +207,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "HumanLayer and QualityLayer both put people into agent planning. If you want a HumanLayer alternative, compare how each handles collaboration and what you review after implementation.",
     strengths: "HumanLayer brings sessions, artifacts and worktrees into a shared workspace. Its design documents support inline team comments that feed back to agents. That makes it a strong option when coordinating people and agent sessions is your main problem.",
     agents: "HumanLayer's portable RPI skill runs in Claude Code and Codex: /rpi in Claude Code and $rpi in Codex. Its app also supports both agents. Working inside these tools is shared ground with QualityLayer.",
-    rows: [
-      { topic: "Agree on the change", qualitylayer: "Review architecture diagrams and clickable artifacts, then approve the Plan before code.", other: "Use structured planning phases and collaborative design documents.", source: 1 },
-      { topic: "Work in your agent", qualitylayer: "Use your coding agent, with the App for planning and review.", other: "Use portable RPI skills in Claude Code or Codex, or work in the HumanLayer app.", source: 2 },
-      { topic: "Check the result", qualitylayer: "Verify records evidence for each agreed outcome; independent review is enabled by default and can be turned off in Settings.", other: "RPI works from local documents, with fresh sessions for its phases by default.", source: 2 },
-    ],
     chooseOther: "Choose HumanLayer if shared workspaces, inline design discussions and managing multiple agent sessions are central to your day.",
     chooseQualityLayer: "Choose QualityLayer if you want an explicit Verify step, with evidence for the approved outcomes and unresolved checks visible before you approve.",
-    sources: [
-      { label: "HumanLayer product, collaboration and agent support", url: "https://www.humanlayer.dev/" },
-      { label: "HumanLayer portable skills and RPI", url: "https://github.com/humanlayer/skills#rpi" },
-    ],
     checked: "2026-10-19",
   },
   {
@@ -340,17 +221,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Task Master turns a product requirements document into ordered tasks for your agent. QualityLayer starts with a conversation and a visual Plan, followed by tests and independent review.",
     strengths: "Task Master is open source and runs as an MCP server or a CLI. It parses a PRD into tasks, each with dependencies, a priority and a test strategy. It scores their complexity, expands the hard ones into subtasks and tells the agent which task comes next. An optional research model can pull in current information while it plans.",
     agents: "Task Master works through MCP in editors such as Cursor, Windsurf and VS Code, and in Claude Code. It can also use Claude Code or the Codex CLI as its model. QualityLayer runs inside Claude Code, Codex and Cursor as well.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code that you approve before code.", other: "Parse a PRD into tasks, analyze their complexity and expand the complex ones into subtasks.", source: 2 },
-      { topic: "Build it", qualitylayer: "Implement cuts the approved Plan into slices built test first, each kept beside its agreed outcomes.", other: "The next command picks a pending task whose dependencies are done, and your agent implements it.", source: 2 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Each task carries a test strategy that describes how to verify it.", source: 2 },
-    ],
     chooseOther: "Choose Task Master if you start from a written PRD and want your agent to work through a task list in dependency order.",
     chooseQualityLayer: "Choose QualityLayer if you want to shape the plan together with the agent, approve it visually and see evidence that each outcome works before the pull request.",
-    sources: [
-      { label: "Task Master repository, setup and supported editors", url: "https://github.com/eyaltoledano/claude-task-master" },
-      { label: "Task Master task structure and commands", url: "https://tryhamster.com/docs/taskmaster/capabilities/task-structure" },
-    ],
     checked: "2026-10-26",
     runsInSource: 1,
     strengthsSources: [1, 2],
@@ -366,17 +238,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Cline plans with you, then edits in Act mode. QualityLayer structures work around your coding agent, with an approved visual Plan and recorded checks before your final review.",
     strengths: "Cline asks before every file edit and terminal command unless you turn on auto-approve, and it shows each change as a diff. Plan mode cannot modify files or run commands, Act mode keeps the context from planning, and each mode can use its own model. It works with many model providers, MCP servers and project rules.",
     agents: "Cline is its own agent with its own model settings. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot natively, and other agents that can run shell commands through a copied prompt.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code that you approve before code.", other: "Plan mode reads the code and discusses the approach. A deep planning command investigates further and writes a plan first.", source: 1 },
-      { topic: "Approve", qualitylayer: "Approve the Plan before code and the finished change at Verify.", other: "Approve each file edit and terminal command as it happens, or turn on auto-approve.", source: 2 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence.", other: "Cline watches linter and compiler errors while it edits, and tracks its changes so you can undo them.", source: 2 },
-    ],
     chooseOther: "Choose Cline if you want an open source agent in your editor and like to approve each step as it happens.",
     chooseQualityLayer: "Choose QualityLayer if you would rather agree on the outcome once, up front, and then review evidence that each agreed outcome works before the pull request.",
-    sources: [
-      { label: "Cline Plan and Act modes", url: "https://docs.cline.bot/features/plan-and-act" },
-      { label: "Cline repository, approvals and where it runs", url: "https://github.com/cline/cline" },
-    ],
     checked: "2026-10-26",
     strengthsSources: [1, 2],
   },
@@ -391,18 +254,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Aider edits files from your terminal chat. QualityLayer adds a visual Plan and recorded verification around your coding agent.",
     strengths: "Aider builds a map of your whole codebase and connects to almost any model, local ones included. It commits each change with a descriptive message, so ordinary git tools can show or undo it. It lints the files it edits by default. With /test or the auto test setting it also runs your tests and tries to fix what fails. Its docs suggest discussing a change in ask mode before switching to code mode.",
     agents: "Aider is its own agent and works with many cloud and local models. QualityLayer runs inside Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code that you approve before code.", other: "Ask mode discusses without editing. Architect mode has one model propose the change and an editor model apply it.", source: 1 },
-      { topic: "Build it", qualitylayer: "Implement cuts the approved Plan into slices built test first.", other: "Aider edits the files in the chat and commits each change to git.", source: 3 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Aider lints edited files by default. Tests run when you use /test or turn on auto test, and Aider tries to fix what fails.", source: 2 },
-    ],
     chooseOther: "Choose Aider if you want a light terminal tool that edits and commits small changes while you talk them through.",
     chooseQualityLayer: "Choose QualityLayer for larger changes where you want to approve the plan first and see evidence that each agreed outcome works before the pull request.",
-    sources: [
-      { label: "Aider chat modes", url: "https://aider.chat/docs/usage/modes.html" },
-      { label: "Aider linting and testing", url: "https://aider.chat/docs/usage/lint-test.html" },
-      { label: "Aider repository and features", url: "https://github.com/Aider-AI/aider" },
-    ],
     checked: "2026-10-26",
     strengthsSources: [3, 2, 1],
   },
@@ -417,16 +270,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "GitHub Copilot cloud agent researches, builds and tests in an ephemeral GitHub environment. QualityLayer runs your agent where you work, with approval at Plan and Verify.",
     strengths: "You hand Copilot a task and keep working while it runs in the background. It creates the branch, commits its work, runs tests and linters and keeps session logs you can follow. It supports custom agents, skills, hooks and MCP servers, so a team can shape how it works in their repositories.",
     agents: "Copilot cloud agent is GitHub's own agent. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot CLI on your computer, in a dev container or on a server.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code that you approve before code.", other: "Researches the repository and makes a plan in the cloud before it changes code.", source: 1 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Runs your tests and linters and keeps session logs. GitHub notes that the logs do not replace your own review and testing.", source: 1 },
-      { topic: "Pull request", qualitylayer: "After you approve at Verify, QualityLayer opens the pull request with gh and follows it through checks.", other: "One repository, one branch and one pull request per task. You review the diff before a pull request is created, or ask for one in the prompt.", source: 1 },
-    ],
     chooseOther: "Choose Copilot cloud agent if your code lives on GitHub and you want to hand off well-scoped tasks that run without your own machine.",
     chooseQualityLayer: "Choose QualityLayer if you want to agree on the plan before any code exists and see evidence for each agreed outcome, with the agent you already use.",
-    sources: [
-      { label: "About GitHub Copilot cloud agent", url: "https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent" },
-    ],
     checked: "2026-10-26",
   },
   {
@@ -440,19 +285,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Devin is an autonomous coding agent that works in its own cloud workspace and opens pull requests. QualityLayer takes a different route. It runs the agent you already use and stops for you at two points: the Plan before code, and Verify before the pull request.",
     strengths: "Devin works from Slack, Teams, its web app or the terminal. A team can hand it bugs and tickets where they already talk. You can follow its shell, IDE and browser and take over at any point. After it opens a pull request it can test the app end to end and send you a screen recording. Devin Review groups the diff and flags likely bugs.",
     agents: "Devin runs Cognition's own agents. QualityLayer runs Claude Code, Codex, Cursor, Grok, Antigravity, Pi, OpenCode and GitHub Copilot where your code already is.",
-    rows: [
-      { topic: "Plan", qualitylayer: "A visual Plan with diagrams and clickable artifacts, written once your agent has read the code that you approve before code.", other: "Ask mode explores the code and scopes the task, then builds a prompt you send to an Agent session.", source: 2 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence.", other: "After the pull request, Devin writes a short test plan for one main flow, runs it in a browser and sends a recording.", source: 3 },
-      { topic: "Review", qualitylayer: "Verify shows the finished change and its evidence, and you approve before the pull request.", other: "Devin Review organizes the diff, flags likely bugs by confidence and syncs comments to GitHub.", source: 4 },
-    ],
     chooseOther: "Choose Devin if you want to hand off a backlog of scoped tasks and review the pull requests later.",
     chooseQualityLayer: "Choose QualityLayer if you want to decide the plan before code exists and approve the change with evidence for every agreed outcome.",
-    sources: [
-      { label: "Introducing Devin", url: "https://docs.devin.ai/get-started/devin-intro" },
-      { label: "Devin: your first session, Ask and Agent modes", url: "https://docs.devin.ai/get-started/first-run" },
-      { label: "Devin testing and video recordings", url: "https://docs.devin.ai/work-with-devin/testing-and-recordings" },
-      { label: "Devin Review", url: "https://docs.devin.ai/work-with-devin/devin-review" },
-    ],
     checked: "2026-10-26",
     runsInSource: 1,
     strengthsSources: [1, 3, 4],
@@ -468,16 +302,8 @@ export const COMPARISONS: Comparison[] = [
     lead: "Claude Squad runs parallel terminal agents in separate git workspaces. QualityLayer structures each change around an approved Plan, recorded checks and human review.",
     strengths: "Each task gets its own isolated git workspace, so parallel agents do not get in each other's way. You switch between sessions, read the diff, and commit and push a branch from one terminal window. Sessions can keep working in the background, also in auto-accept mode.",
     agents: "Claude Squad starts Claude Code by default and can run Codex, Gemini, Aider and other local agents. Claude Code and Codex are agents QualityLayer supports as well.",
-    rows: [
-      { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One session and isolated git workspace per task, managed from a single terminal window.", source: 1 },
-      { topic: "Check the result", qualitylayer: "An agent that did not write the code checks each agreed outcome and records evidence. You approve at Verify.", other: "A diff tab shows each session's changes before you commit and push.", source: 1 },
-      { topic: "Ship it", qualitylayer: "After your approval, QualityLayer opens the pull request with gh and follows it.", other: "Commit and push the branch to GitHub from the menu.", source: 1 },
-    ],
     chooseOther: "Choose Claude Squad if your main need is running and switching between many agent sessions in the terminal.",
     chooseQualityLayer: "Choose QualityLayer if your main need is knowing that one change does what you agreed, with a Plan you approved and evidence you can review.",
-    sources: [
-      { label: "Claude Squad repository", url: "https://github.com/smtg-ai/claude-squad" },
-    ],
     checked: "2026-10-26",
   },
   {
@@ -491,22 +317,19 @@ export const COMPARISONS: Comparison[] = [
     lead: "Conductor runs parallel agents in separate workspaces. QualityLayer structures each change around a visual Plan you approve and evidence you review after the build.",
     strengths: "Conductor treats each workspace as one stream of work, so you can start a new feature while another agent is still busy. It has a diff viewer whose inline comments go back to the agent, an agent review action and a Checks tab for git status, CI, deployments and todos. It can open the pull request, follow its checks and merge it.",
     agents: "Conductor runs Claude Code, Codex, Cursor and OpenCode. QualityLayer supports all of them and more, including Grok, Antigravity, Pi and GitHub Copilot.",
-    rows: [
-      { topic: "Organize the work", qualitylayer: "One task per change, on the current branch, a new branch or a new worktree.", other: "One workspace per shippable unit, each with its own branch, working tree and app processes.", source: 2 },
-      { topic: "Check the result", qualitylayer: CHECK_RESULT, other: "Test in the terminal or the running app, ask an agent to review, and read the Checks tab before merging.", source: 2 },
-      { topic: "Ship it", qualitylayer: "After your approval, QualityLayer opens the pull request with gh and follows it.", other: "Conductor drafts the pull request, follows its GitHub checks, can merge it and then archives the workspace.", source: 2 },
-    ],
     chooseOther: "Choose Conductor if you run many agents at once on a Mac and want one place to review and merge their branches.",
     chooseQualityLayer: "Choose QualityLayer if you want each change agreed before code and checked against those agreed outcomes before you approve it.",
-    sources: [
-      { label: "Conductor documentation", url: "https://docs.conductor.build" },
-      { label: "Conductor workflow", url: "https://docs.conductor.build/workflow" },
-    ],
     checked: "2026-10-26",
     runsInSource: 1,
     strengthsSources: [2],
   },
 ];
+
+export const COMPARISONS: Comparison[] = COMPARISON_ENTRIES.map((entry) => ({
+  ...entry,
+  rows: comparisonRows(entry.slug),
+  sources: comparisonSources(entry.slug),
+}));
 
 /** The spec-driven tools and plan modes, without coding agents and agent managers. */
 export const SPEC_TOOLS = COMPARISONS.filter((c) => c.kind !== "agent");

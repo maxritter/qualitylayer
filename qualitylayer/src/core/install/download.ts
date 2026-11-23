@@ -77,12 +77,12 @@ async function listedReleases(ctx: Ctx): Promise<Result<ListedRelease[]>> {
 }
 
 /** QualityLayer starts at v12; Pilot Shell releases and prereleases on Stable are excluded. */
-const onChannel = (release: ListedRelease, channel: UpdateChannel): boolean =>
-  release.draft !== true &&
-  typeof release.tag_name === "string" &&
-  /^v[1-9]\d*\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(release.tag_name) &&
-  Number(release.tag_name.slice(1).split(".")[0]) >= 12 &&
-  (channel === "beta" || (release.prerelease !== true && !release.tag_name.includes("-")))
+function onChannel(release: ListedRelease, channel: UpdateChannel): boolean {
+  if (release.draft === true || typeof release.tag_name !== "string") return false
+  if (!/^v[1-9]\d*\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(release.tag_name)) return false
+  if (Number(release.tag_name.slice(1).split(".")[0]) < 12) return false
+  return channel === "beta" || (release.prerelease !== true && !release.tag_name.includes("-"))
+}
 
 /** The newest QualityLayer release carrying this platform's binary; Stable never takes a prerelease. */
 export async function latestVersion(

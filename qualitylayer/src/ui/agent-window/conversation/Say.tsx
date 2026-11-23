@@ -91,49 +91,49 @@ function List({ list, opens }: { list: Tokens.List; opens: Opens }) {
   )
 }
 
+function tokenChildren(token: Token, opens: Opens): ReactNode {
+  if ("tokens" in token && token.tokens) return inlineTokens(token.tokens, opens)
+  return "text" in token ? token.text : token.raw
+}
+
+function HeadingBlock({ token, opens }: { token: Tokens.Heading; opens: Opens }) {
+  const Heading = token.depth <= 1 ? "h3" : token.depth === 2 ? "h4" : "h5"
+  return <Heading>{tokenChildren(token, opens)}</Heading>
+}
+
+function QuoteBlock({ token, opens }: { token: Tokens.Blockquote; opens: Opens }) {
+  return (
+    <blockquote>
+      {visible(token.tokens ?? []).map((child, at) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: quoted blocks are in recorded order
+        <Block key={at} token={child} opens={opens} />
+      ))}
+    </blockquote>
+  )
+}
+
+type BlockRenderer = (token: Token, opens: Opens) => ReactNode
+
+const BLOCK_RENDERERS: Record<string, BlockRenderer> = {
+  paragraph: (token, opens) => <p>{tokenChildren(token, opens)}</p>,
+  text: (token, opens) => <>{tokenChildren(token, opens)}</>,
+  heading: (token, opens) => <HeadingBlock token={token as Tokens.Heading} opens={opens} />,
+  table: (token, opens) => <Table table={token as Tokens.Table} opens={opens} />,
+  list: (token, opens) => <List list={token as Tokens.List} opens={opens} />,
+  blockquote: (token, opens) => <QuoteBlock token={token as Tokens.Blockquote} opens={opens} />,
+  code: (token) => (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: wide code must remain keyboard-scrollable
+    <pre className="cv-code" tabIndex={0}>
+      {"text" in token ? token.text : token.raw}
+    </pre>
+  ),
+  hr: () => <hr />,
+  html: (token) => (bareLineBreak(token.raw) ? <br /> : <p>{token.raw}</p>),
+}
+
 function Block({ token, opens }: { token: Token; opens: Opens }): ReactNode {
-  const children = () =>
-    "tokens" in token && token.tokens
-      ? inlineTokens(token.tokens, opens)
-      : "text" in token
-        ? token.text
-        : token.raw
-  switch (token.type) {
-    case "paragraph":
-      return <p>{children()}</p>
-    case "text":
-      return <>{children()}</>
-    case "heading": {
-      const Heading = token.depth <= 1 ? "h3" : token.depth === 2 ? "h4" : "h5"
-      return <Heading>{children()}</Heading>
-    }
-    case "table":
-      return <Table table={token as Tokens.Table} opens={opens} />
-    case "list":
-      return <List list={token as Tokens.List} opens={opens} />
-    case "blockquote":
-      return (
-        <blockquote>
-          {visible(token.tokens ?? []).map((child, at) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: quoted blocks are in recorded order
-            <Block key={at} token={child} opens={opens} />
-          ))}
-        </blockquote>
-      )
-    case "code":
-      return (
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: wide code must remain keyboard-scrollable
-        <pre className="cv-code" tabIndex={0}>
-          {token.text}
-        </pre>
-      )
-    case "hr":
-      return <hr />
-    case "html":
-      return bareLineBreak(token.raw) ? <br /> : <p>{token.raw}</p>
-    default:
-      return <p>{token.raw}</p>
-  }
+  const render = BLOCK_RENDERERS[token.type]
+  return render ? render(token, opens) : <p>{token.raw}</p>
 }
 
 const PieceView = memo(

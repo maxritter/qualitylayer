@@ -64,69 +64,71 @@ function machineRoute(parts: string[]): string | null {
   return routeOf(inner) === inner ? parts.join("/") : null
 }
 
-/**
- * The link route for a task/document/heading, ask, team task, step or project artifact. Artifact
- * documents encode the slashes of their known folder; no other escape or free path is accepted.
- */
-export function routeOf(route: string): string | null {
-  const mark = route.indexOf("?")
-  if (mark !== -1) {
-    const path = route.slice(0, mark)
-    const params = new URLSearchParams(route.slice(mark + 1))
-    const value = params.get("query")
-    const parts = path.split("/")
-    if (
-      value === null ||
-      [...params.keys()].length !== 1 ||
-      artifactQuery(value) === null ||
-      !(parts[0] === "artifact" || (parts[0] === "task" && artifactDocument(parts[2] ?? "", false)))
-    )
-      return null
-    const checked = routeOf(path)
-    return checked ? `${checked}?query=${encodeURIComponent(artifactQuery(value) ?? "")}` : null
+const TASK_OR_TEAM = new Set(["task", "team"])
+
+function hasC1OrControlChar(text: string): boolean {
+  for (const char of text) {
+    const code = char.charCodeAt(0)
+    if (code < 32 || (code >= 127 && code <= 159)) return true
   }
-  const parts = route.split("/")
-  if (parts[0] === "machine") return machineRoute(parts)
-  if (
-    !parts.every((part, index) => {
-      if (
-        index === 3 &&
-        (parts[0] === "artifact" ||
-          (parts[0] === "task" && artifactDocument(parts[2] ?? "", false)))
-      ) {
-        try {
-          const section = decodeURIComponent(part)
-          return (
-            section.length > 0 &&
-            section !== "." &&
-            section !== ".." &&
-            section.length <= 200 &&
-            !Array.from(section).some(
-              (char) =>
-                char.charCodeAt(0) < 32 || (char.charCodeAt(0) >= 127 && char.charCodeAt(0) <= 159),
-            ) &&
-            encodeURIComponent(section).toLowerCase() === part.toLowerCase()
-          )
-        } catch {
-          return false
-        }
-      }
-      if (part.length > 120 || part === "." || part === "..") return false
-      if (index === 2 && parts[0] === "artifact") return artifactDocument(part, true)
-      return (
-        SEGMENT.test(part) ||
-        (index === 2 && ["task", "team"].includes(parts[0] ?? "") && artifactDocument(part, false))
-      )
-    })
-  )
-    return null
+  return false
+}
+
+function isArtifactParts(parts: readonly string[]): boolean {
+  if (parts[0] === "artifact") return true
+  return parts[0] === "task" && artifactDocument(parts[2] ?? "", false)
+}
+
+function isValidSectionSegment(part: string): boolean {
+  try {
+    const section = decodeURIComponent(part)
+    if (section.length === 0 || section.length > 200) return false
+    if (section === "." || section === ".." || hasC1OrControlChar(section)) return false
+    return encodeURIComponent(section).toLowerCase() === part.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+function isValidRoutePart(part: string, index: number, parts: readonly string[]): boolean {
+  if (index === 3 && isArtifactParts(parts)) return isValidSectionSegment(part)
+  if (part.length > 120 || part === "." || part === "..") return false
+  if (index === 2 && parts[0] === "artifact") return artifactDocument(part, true)
+  if (SEGMENT.test(part)) return true
+  return index === 2 && TASK_OR_TEAM.has(parts[0] ?? "") && artifactDocument(part, false)
+}
+
+function routeWithQuery(route: string, mark: number): string | null {
+  const path = route.slice(0, mark)
+  const params = new URLSearchParams(route.slice(mark + 1))
+  const value = params.get("query")
+  const normalized = value === null ? null : artifactQuery(value)
+  if (normalized === null || [...params.keys()].length !== 1) return null
+  if (!isArtifactParts(path.split("/"))) return null
+  const checked = routeOf(path)
+  return checked ? `${checked}?query=${encodeURIComponent(normalized)}` : null
+}
+
+function validateRouteArity(route: string, parts: readonly string[]): string | null {
   if (parts.length === 1) return `task/${route}`
-  if (parts.length > 3 && ["task", "team"].includes(parts[0] ?? "") && parts[2] === "artifacts")
-    return null
+  if (parts.length > 3 && TASK_OR_TEAM.has(parts[0] ?? "") && parts[2] === "artifacts") return null
   if (parts[0] === "step") {
     return parts.length === 3 && FLOW_STEPS.some((step) => step.id === parts[2]) ? route : null
   }
   const arity = ARITY.get(parts[0] ?? "")
   const count = parts.length - 1
   return arity !== undefined && count >= arity[0] && count <= arity[1] ? route : null
+}
+
+/**
+ * The link route for a task/document/heading, ask, team task, step or project artifact. Artifact
+ * documents encode the slashes of their known folder; no other escape or free path is accepted.
+ */
+export function routeOf(route: string): string | null {
+  const mark = route.indexOf("?")
+  if (mark !== -1) return routeWithQuery(route, mark)
+  const parts = route.split("/")
+  if (parts[0] === "machine") return machineRoute(parts)
+  if (!parts.every((part, index) => isValidRoutePart(part, index, parts))) return null
+  return validateRouteArity(route, parts)
 }

@@ -1,443 +1,40 @@
 // Add machine (App Model: machine-add, machine-add-key, machine-add-password, machine-add-progress,
-// machine-add-done, machine-add-container, machine-add-confirm). One field for `user@host`, the computers
-// nearby that announce ssh and the hosts of the ssh config; or a running dev container. Add starts the
-// pairing on this computer's server: one progress view (Reachable, Key, ssh config, System,
-// QualityLayer, Licence, Connect), where a machine that takes no key of this computer gets
-// QualityLayer's own and the password sheet opens by itself. The password goes to ssh once and is
-// never kept; the sheet shows the host key pairing trusts. A failed step says its cause and fix and
-// Try again resumes there. Hide closes the dialog and the pairing goes on.
+// machine-add-done, machine-add-container, machine-add-confirm).
 
 import {
-  ArrowRightIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   CircleCheckIcon,
   ContainerIcon,
-  CopyIcon,
-  CpuIcon,
-  DownloadIcon,
-  EyeIcon,
-  EyeOffIcon,
-  FileTextIcon,
-  KeyRoundIcon,
   LaptopIcon,
-  LinkIcon,
-  LoaderCircleIcon,
-  LockIcon,
-  RotateCwIcon,
   ServerIcon,
-  ShieldCheckIcon,
   TriangleAlertIcon,
-  WifiIcon,
 } from "lucide-react"
-import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
+import { useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Segmented } from "../Segmented.tsx"
-import { SettingsMore } from "../settings/Rows.tsx"
+import { ComputerTargetPick, ContainerList, PairingProgressView } from "./AddMachinePick.tsx"
+import { PairingSheet } from "./AddMachineSheet.tsx"
+import { answerPairing, type Pairing } from "./machines-api.ts"
 import {
-  answerPairing,
-  cancelPairing,
-  type DevContainers,
-  machineHash,
-  type Pairing,
-  type PairingStep,
-  type PairingStepKey,
-  pairAgain,
-  readContainers,
-  readHosts,
-  readNearby,
-  readPairing,
-  startPairing,
-} from "./machines-api.ts"
+  useAddMachineDiscovery,
+  usePairingActions,
+  usePairingPolling,
+} from "./useAddMachineState.ts"
 import "./machines.css"
 
 const ICON = "size-[15px]"
-const SMALL = "size-3.5"
 
-const STEP: Record<PairingStepKey, { label: string; icon: ReactNode }> = {
-  find: { label: "Container", icon: <ContainerIcon className={SMALL} aria-hidden="true" /> },
-  reach: { label: "Reachable", icon: <WifiIcon className={SMALL} aria-hidden="true" /> },
-  key: { label: "Key", icon: <KeyRoundIcon className={SMALL} aria-hidden="true" /> },
-  config: { label: "ssh config", icon: <FileTextIcon className={SMALL} aria-hidden="true" /> },
-  system: { label: "System", icon: <CpuIcon className={SMALL} aria-hidden="true" /> },
-  install: { label: "QualityLayer", icon: <DownloadIcon className={SMALL} aria-hidden="true" /> },
-  licence: { label: "Licence", icon: <KeyRoundIcon className={SMALL} aria-hidden="true" /> },
-  connect: { label: "Connect", icon: <LinkIcon className={SMALL} aria-hidden="true" /> },
-}
-
-async function copy(text: string, said: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(said)
-  } catch {
-    toast.error("Could not copy; select the text instead")
+function addMachineTitleIcon(pairing: Pairing | null, tab: "computer" | "container") {
+  if (pairing?.state === "done") return <CircleCheckIcon className={ICON} aria-hidden="true" />
+  if (pairing?.kind === "container" || (pairing === null && tab === "container")) {
+    return <ContainerIcon className={ICON} aria-hidden="true" />
   }
+  return <ServerIcon className={ICON} aria-hidden="true" />
 }
 
-/** One row of the progress view; a failed one says its cause and fix under it. */
-function StepRow({
-  step,
-  onAgain,
-  trying,
-}: {
-  step: PairingStep
-  onAgain: () => void
-  trying: boolean
-}) {
-  const { label, icon } = STEP[step.key]
-  const shown =
-    step.state === "now" ? (
-      <LoaderCircleIcon className={`${SMALL} ma-spin`} aria-hidden="true" />
-    ) : step.state === "fail" || step.warn ? (
-      <TriangleAlertIcon className={SMALL} aria-hidden="true" />
-    ) : step.state === "done" ? (
-      <CheckIcon className={SMALL} aria-label="Done" />
-    ) : (
-      icon
-    )
-  return (
-    <li
-      className={`mp-row ${step.state}${step.warn ? " warn" : ""}`}
-      aria-current={step.state === "now" ? "step" : undefined}
-      data-step={step.key}
-    >
-      {shown}
-      <b>{label}</b>
-      <span className="mp-d" title={step.detail || undefined}>
-        {step.state === "wait" ? "" : step.detail}
-      </span>
-      {step.fail !== undefined ? (
-        <div className="mp-fix" role="alert">
-          <span className="mp-cause">{step.fail.cause}</span>
-          <span className="mp-how">{step.fail.fix}</span>
-          {step.fail.again ? (
-            <Button type="button" variant="outline" size="sm" disabled={trying} onClick={onAgain}>
-              <RotateCwIcon aria-hidden="true" />
-              Try again
-            </Button>
-          ) : null}
-          {step.fail.said !== undefined && step.fail.said.length > 0 ? (
-            <div className="mp-said">
-              <SettingsMore summary="What the machine said">
-                <code className="mc-code mc-lines">{step.fail.said.join("\n")}</code>
-              </SettingsMore>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </li>
-  )
+function addMachineTitle(pairing: Pairing | null) {
+  if (pairing === null) return "Add machine"
+  return pairing.state === "done" ? `${pairing.name} is paired` : pairing.name
 }
-
-/** The small sheet over the dialog: the password once, a code ssh asks for, or the key to copy by hand. */
-function Sheet({
-  pairing,
-  onAnswer,
-  onCancel,
-}: {
-  pairing: Pairing
-  onAnswer: (text: string) => Promise<void>
-  onCancel: () => void
-}) {
-  const waiting = pairing.waiting
-  const [value, setValue] = useState("")
-  const [see, setSee] = useState(false)
-  const [busy, setBusy] = useState(false)
-  // A new question (the password again after a wrong one) starts empty.
-  const asked = `${waiting?.for}:${waiting?.for === "password" ? waiting.wrong === true : ""}`
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` is the question changing
-  useEffect(() => {
-    setValue("")
-    setBusy(false)
-  }, [asked])
-  if (waiting === undefined) return null
-  const send = async (text: string) => {
-    setBusy(true)
-    try {
-      await onAnswer(text)
-    } catch {
-      setBusy(false)
-    }
-  }
-  const keysOnly = waiting.for === "keys-only"
-  return (
-    <div className="ma-sheet-scrim">
-      <section
-        className="ma-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label={
-          keysOnly ? `${waiting.target} takes keys only` : `Password for ${waiting.target}`
-        }
-        data-testid="pair-sheet"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.stopPropagation()
-            event.preventDefault()
-            onCancel()
-          }
-        }}
-      >
-        <header className="ma-sheet-h">
-          <LockIcon className={ICON} aria-hidden="true" />
-          <h3 className="font-mono" title={waiting.target}>
-            {waiting.target}
-          </h3>
-        </header>
-        {waiting.for === "keys-only" ? (
-          <>
-            <p className="ma-bad" role="alert">
-              <TriangleAlertIcon className={ICON} aria-hidden="true" />
-              <span>
-                <b>{pairing.name} takes keys only</b>
-                <br />
-                Copy the key in a terminal once:
-              </span>
-            </p>
-            <div className="ma-cmd">
-              <code className="mc-code">{waiting.command}</code>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Copy the command"
-                onClick={() => void copy(waiting.command, "Copied")}
-              >
-                <CopyIcon aria-hidden="true" />
-              </Button>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button type="button" disabled={busy} onClick={() => void send("")}>
-                <RotateCwIcon aria-hidden="true" />
-                Done · try again
-              </Button>
-            </div>
-          </>
-        ) : (
-          <form
-            className="contents"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (value !== "" && !busy) void send(value)
-            }}
-          >
-            <div className="ma-pw">
-              <label htmlFor="ma-secret">
-                {waiting.for === "code" ? waiting.prompt : "Password"}
-              </label>
-              <span className="ma-pw-f">
-                <Input
-                  id="ma-secret"
-                  type={see ? "text" : "password"}
-                  // The sheet opens for this one field.
-                  autoFocus
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-describedby={
-                    waiting.for === "password" && waiting.wrong === true ? "ma-wrong" : undefined
-                  }
-                  className={
-                    waiting.for === "password" && waiting.wrong === true
-                      ? "ma-wrong-field"
-                      : undefined
-                  }
-                  value={value}
-                  disabled={busy}
-                  onChange={(event) => setValue(event.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={see ? "Hide password" : "Show password"}
-                  onClick={() => setSee(!see)}
-                >
-                  {see ? <EyeOffIcon aria-hidden="true" /> : <EyeIcon aria-hidden="true" />}
-                </Button>
-              </span>
-            </div>
-            {waiting.for === "password" && waiting.wrong === true ? (
-              <p className="ma-bad" role="alert" id="ma-wrong">
-                <TriangleAlertIcon className={ICON} aria-hidden="true" />
-                <span>Not accepted · try again</span>
-              </p>
-            ) : null}
-            {waiting.for === "password" ? (
-              <>
-                {waiting.hostKey !== null ? (
-                  <p
-                    className="ma-fact ma-fp"
-                    title="The host key this machine showed; pairing trusts it"
-                  >
-                    <ShieldCheckIcon className={SMALL} aria-hidden="true" />
-                    <span className="font-mono">{waiting.hostKey}</span>
-                  </p>
-                ) : null}
-                <p
-                  className="ma-fact"
-                  title="QualityLayer's own key for this machine, made here; the password copies it once"
-                >
-                  <KeyRoundIcon className={SMALL} aria-hidden="true" />
-                  <span className="font-mono">{waiting.key}</span>
-                </p>
-                <p className="ma-fact">
-                  <LockIcon className={SMALL} aria-hidden="true" />
-                  <span>Once, straight to ssh · never stored</span>
-                </p>
-              </>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onCancel}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={value === "" || busy}>
-                {busy ? (
-                  <LoaderCircleIcon className="ma-spin" aria-hidden="true" />
-                ) : (
-                  <KeyRoundIcon aria-hidden="true" />
-                )}
-                {waiting.for === "code" ? "Send" : "Pair"}
-              </Button>
-            </div>
-          </form>
-        )}
-      </section>
-    </div>
-  )
-}
-
-function ContainerList({
-  listed,
-  onAdd,
-  onLook,
-}: {
-  listed: DevContainers | null
-  onAdd: (name: string) => void
-  onLook: () => void
-}) {
-  const [open, setOpen] = useState<string | null>(null)
-  if (listed === null)
-    return (
-      <div className="ma-empty" role="status">
-        <LoaderCircleIcon className={`${ICON} ma-spin`} aria-hidden="true" />
-        <span>Looking for running dev containers…</span>
-      </div>
-    )
-  if (!listed.docker)
-    return (
-      <div className="ma-empty">
-        <ContainerIcon className="size-[18px]" aria-hidden="true" />
-        <b>No Docker found</b>
-        <span>Start Docker or OrbStack</span>
-        <Button type="button" variant="outline" size="sm" onClick={onLook}>
-          <RotateCwIcon aria-hidden="true" />
-          Look again
-        </Button>
-      </div>
-    )
-  const shown = listed.containers.filter((one) => !one.added)
-  if (shown.length === 0)
-    return (
-      <div className="ma-empty">
-        <ContainerIcon className="size-[18px]" aria-hidden="true" />
-        <b>No dev container is running</b>
-        <span>Open one in VS Code · {listed.engine}</span>
-        <Button type="button" variant="outline" size="sm" onClick={onLook}>
-          <RotateCwIcon aria-hidden="true" />
-          Look again
-        </Button>
-      </div>
-    )
-  return (
-    <>
-      <span className="ma-k">
-        <ContainerIcon className="size-3" aria-hidden="true" />
-        Running · {listed.engine}
-      </span>
-      <div className="ma-list">
-        {shown.map((one) => (
-          <Fragment key={one.id}>
-            <div className="ma-host ma-ctr">
-              <ContainerIcon className={ICON} aria-hidden="true" />
-              <span className="ma-who">
-                <span>{one.name}</span>
-                <small className="font-mono" title={one.folder}>
-                  {one.place ?? one.folder}
-                </small>
-              </span>
-              {one.port !== null ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Add ${one.name}`}
-                  onClick={() => onAdd(one.name)}
-                >
-                  Add
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-expanded={open === one.id}
-                  onClick={() => setOpen(open === one.id ? null : one.id)}
-                >
-                  {open === one.id ? (
-                    <ChevronDownIcon aria-hidden="true" />
-                  ) : (
-                    <ChevronRightIcon aria-hidden="true" />
-                  )}
-                  Needs ssh
-                </Button>
-              )}
-            </div>
-            {one.port === null && open === one.id ? (
-              <div className="ma-snip">
-                <div className="ma-snip-h">
-                  <FileTextIcon className="size-3" aria-hidden="true" />
-                  <span className="font-mono">.devcontainer/devcontainer.json</span>
-                  <span className="flex-1" />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      void copy(
-                        listed.snippet.text.replace("web-home", `${one.name}-home`),
-                        `Copied · rebuild ${one.name}, it shows up here`,
-                      )
-                    }
-                  >
-                    <CopyIcon aria-hidden="true" />
-                    Copy
-                  </Button>
-                </div>
-                <pre className="mc-code mc-lines">
-                  {listed.snippet.text.replace("web-home", `${one.name}-home`)}
-                </pre>
-                <span className="ma-k">
-                  <RotateCwIcon className="size-3" aria-hidden="true" />
-                  Rebuild · then Add
-                </span>
-              </div>
-            ) : null}
-          </Fragment>
-        ))}
-      </div>
-    </>
-  )
-}
-
-/** How often the open dialog reads a running pairing. */
-const POLL_MS = 600
 
 export function AddMachine({
   onClose,
@@ -454,128 +51,32 @@ export function AddMachine({
     resume?.kind === "container" ? "container" : "computer",
   )
   const [typed, setTyped] = useState("")
-  const [hosts, setHosts] = useState<string[]>([])
-  const [near, setNear] = useState<{ host: string; user: string }[]>([])
-  const [containers, setContainers] = useState<DevContainers | null>(null)
   const [pairing, setPairing] = useState<Pairing | null>(resume ?? null)
   const [problem, setProblem] = useState<string | null>(null)
-  const [trying, setTrying] = useState(false)
   const alive = useRef(true)
-  const told = useRef<string | null>(null)
 
-  useEffect(() => {
-    alive.current = true
-    const stop = new AbortController()
-    void readHosts(stop.signal).then((names) => alive.current && setHosts(names))
-    void readNearby(stop.signal).then((found) => alive.current && setNear(found))
-    return () => {
-      alive.current = false
-      stop.abort()
-    }
-  }, [])
-
-  const look = useCallback(() => {
-    setContainers(null)
-    void readContainers().then((found) => alive.current && setContainers(found))
-  }, [])
-  // The containers are read each time the tab opens; Look again reads them once more.
-  useEffect(() => {
-    if (tab === "container") look()
-  }, [tab, look])
-
-  // A running pairing is read until it waits for the person, fails or is done.
-  const id = pairing?.id
-  const state = pairing?.state
-  useEffect(() => {
-    if (id === undefined || state !== "running") return
-    const timer = setInterval(() => {
-      void readPairing(id).then(
-        (next) => alive.current && setPairing(next),
-        () => {},
-      )
-    }, POLL_MS)
-    return () => clearInterval(timer)
-  }, [id, state])
-  useEffect(() => {
-    if (pairing?.state === "done" && told.current !== pairing.id) {
-      told.current = pairing.id
-      onAdded(pairing.name)
-    }
-  }, [pairing, onAdded])
-
-  // One start at a time: a second click or Enter while it is sent starts nothing more.
-  const [starting, setStarting] = useState(false)
-  const start = async (what: { target: string } | { container: string }) => {
-    if (starting) return
-    setProblem(null)
-    setStarting(true)
-    try {
-      setPairing(await startPairing(what))
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "The machine could not be added.")
-    } finally {
-      if (alive.current) setStarting(false)
-    }
-  }
-  /** Back or Cancel: the pairing stops; a dialog opened on a pairing (Pair again, Show) closes. */
-  const back = () => {
-    if (pairing !== null && pairing.state !== "done") void cancelPairing(pairing.id).catch(() => {})
-    if (resume !== undefined) onClose()
-    else setPairing(null)
-  }
-  const again = async () => {
-    if (pairing === null) return
-    setTrying(true)
-    try {
-      setPairing(await pairAgain(pairing.id))
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "It could not be tried again.")
-    } finally {
-      setTrying(false)
-    }
-  }
-  const hide = () => {
-    if (pairing !== null && pairing.state !== "done" && pairing.state !== "failed")
-      toast(`Pairing ${pairing.name} goes on · Settings › Machines shows it`)
-    onClose()
-  }
-  const open = () => {
-    if (pairing?.machine !== undefined) window.location.hash = machineHash(pairing.machine.id)
-    onClose()
-  }
-
-  const target = typed.trim()
-  const done = pairing?.state === "done"
-  const failed = pairing?.state === "failed"
-  const title = pairing === null ? "Add machine" : done ? `${pairing.name} is paired` : pairing.name
-  const titleIcon = done ? (
-    <CircleCheckIcon className={ICON} aria-hidden="true" />
-  ) : pairing?.kind === "container" || (pairing === null && tab === "container") ? (
-    <ContainerIcon className={ICON} aria-hidden="true" />
-  ) : (
-    <ServerIcon className={ICON} aria-hidden="true" />
-  )
+  const { hosts, near, containers, look } = useAddMachineDiscovery(tab, alive)
+  usePairingPolling(pairing, alive, setPairing, onAdded)
+  const actions = usePairingActions({ pairing, resume, alive, setPairing, setProblem, onClose })
   const sheet = pairing?.state === "waiting" && pairing.waiting !== undefined
 
   return (
     <Dialog
       open
       onOpenChange={(next) => {
-        if (!next && !sheet) hide()
+        if (!next && !sheet) actions.hide()
       }}
     >
       <DialogContent
-        // The dialog keeps its top edge while its steps change height.
         className="ma-dialog top-[16vh] translate-y-0 sm:max-w-[480px]"
         aria-label="Add machine"
         aria-describedby={undefined}
-        // While the password sheet is up, its Cancel is the way out.
         showCloseButton={!sheet}
       >
         <DialogHeader className={sheet ? "ma-under" : undefined}>
           <DialogTitle className="flex min-w-0 items-center gap-2" data-testid="add-machine-title">
-            {titleIcon}
-            <span className="truncate">{title}</span>
+            {addMachineTitleIcon(pairing, tab)}
+            <span className="truncate">{addMachineTitle(pairing)}</span>
           </DialogTitle>
         </DialogHeader>
         <div className={sheet ? "ma-body under" : "ma-body"} inert={sheet || undefined}>
@@ -599,97 +100,19 @@ export function AddMachine({
                 ]}
               />
               {tab === "computer" ? (
-                <>
-                  <div className="ma-type">
-                    <Input
-                      id="ma-target"
-                      className="font-mono"
-                      aria-label="user@host"
-                      placeholder="user@host"
-                      value={typed}
-                      spellCheck={false}
-                      autoComplete="off"
-                      // The dialog opens for this field.
-                      autoFocus
-                      onChange={(event) => setTyped(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          target !== "" &&
-                          !event.nativeEvent.isComposing
-                        )
-                          void start({ target })
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      aria-label="Add typed machine"
-                      disabled={target === "" || starting}
-                      onClick={() => void start({ target })}
-                    >
-                      Add
-                    </Button>
-                  </div>
-                  {near.length > 0 ? (
-                    <>
-                      <span className="ma-k">
-                        <WifiIcon className="size-3" aria-hidden="true" />
-                        Nearby
-                      </span>
-                      <div className="ma-list">
-                        {near.map((one) => (
-                          <div className="ma-host" key={one.host}>
-                            <ServerIcon className={ICON} aria-hidden="true" />
-                            <span className="ma-who" title={`${one.user}@${one.host}`}>
-                              {one.host}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Add ${one.host}`}
-                              onClick={() => void start({ target: `${one.user}@${one.host}` })}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
-                  {hosts.length > 0 ? (
-                    <>
-                      <span className="ma-k">
-                        <FileTextIcon className="size-3" aria-hidden="true" />
-                        ssh config
-                      </span>
-                      <div className="ma-list">
-                        {hosts.map((host) => (
-                          <div className="ma-host" key={host}>
-                            <ServerIcon className={ICON} aria-hidden="true" />
-                            <span className="ma-who" title={host}>
-                              {host}
-                            </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Add ${host}`}
-                              onClick={() => void start({ target: host })}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
-                </>
+                <ComputerTargetPick
+                  typed={typed}
+                  starting={actions.starting}
+                  near={near}
+                  hosts={hosts}
+                  onTyped={setTyped}
+                  onStart={(target) => void actions.start({ target })}
+                />
               ) : (
                 <ContainerList
                   listed={containers}
                   onLook={look}
-                  onAdd={(name) => void start({ container: name })}
+                  onAdd={(name) => void actions.start({ container: name })}
                 />
               )}
               {problem !== null ? (
@@ -700,52 +123,25 @@ export function AddMachine({
               ) : null}
             </>
           ) : (
-            <>
-              <p className="ma-target font-mono" title={pairing.target}>
-                {pairing.target}
-              </p>
-              <ul className="mp" aria-label={`Pairing ${pairing.name}`} data-testid="pairing">
-                {pairing.steps.map((step) => (
-                  <StepRow
-                    key={step.key}
-                    step={step}
-                    trying={trying}
-                    onAgain={() => void again()}
-                  />
-                ))}
-              </ul>
-              <div className="flex justify-end gap-2">
-                {done ? (
-                  <>
-                    <Button type="button" variant="outline" onClick={onClose}>
-                      Close
-                    </Button>
-                    <Button type="button" onClick={open}>
-                      <ArrowRightIcon aria-hidden="true" />
-                      Open {pairing.name}
-                    </Button>
-                  </>
-                ) : failed ? (
-                  <Button type="button" variant="outline" onClick={back}>
-                    Back
-                  </Button>
-                ) : (
-                  <Button type="button" variant="outline" onClick={hide}>
-                    Hide
-                  </Button>
-                )}
-              </div>
-            </>
+            <PairingProgressView
+              pairing={pairing}
+              trying={actions.trying}
+              onAgain={() => void actions.again()}
+              onClose={onClose}
+              onOpen={actions.open}
+              onBack={actions.back}
+              onHide={actions.hide}
+            />
           )}
         </div>
         {sheet && pairing !== null ? (
-          <Sheet
+          <PairingSheet
             pairing={pairing}
             onAnswer={async (text) => {
               const next = await answerPairing(pairing.id, text)
               if (alive.current) setPairing(next)
             }}
-            onCancel={back}
+            onCancel={actions.back}
           />
         ) : null}
       </DialogContent>

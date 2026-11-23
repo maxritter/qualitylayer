@@ -67,6 +67,139 @@ function LocalWireframeBlock(props: WireframeProps) {
   )
 }
 
+function WireframeBar({
+  kind,
+  title,
+  surfaceOrLens,
+  scale,
+  state,
+  comment,
+  showSource,
+  canPin,
+  canFullscreen,
+  onToggleComment,
+  onToggleSource,
+  onOpenFullscreen,
+}: {
+  kind: FragmentKind
+  title: string
+  surfaceOrLens: string | undefined
+  scale: number
+  state: string | undefined
+  comment: boolean
+  showSource: boolean
+  canPin: boolean
+  canFullscreen: boolean
+  onToggleComment: () => void
+  onToggleSource: () => void
+  onOpenFullscreen: () => void
+}) {
+  return (
+    <div className="visual-bar max-sm:[&_button]:size-11" style={{ flexWrap: "wrap" }}>
+      <span className="visual-kind">{kind}</span>
+      <span>{title}</span>
+      <span>{surfaceOrLens}</span>
+      {scale < 1 ? <span>shown at {Math.round(scale * 100)}%</span> : null}
+      {state ? <span>{state}</span> : null}
+      {comment ? <span>click a box to give feedback</span> : null}
+      <span className="visual-spacer" />
+      {canPin ? (
+        <VisualAction
+          label={`Give feedback on this ${kind}`}
+          pressed={comment}
+          onClick={onToggleComment}
+        >
+          <MessageSquarePlusIcon />
+        </VisualAction>
+      ) : null}
+      <VisualAction label="Show the source" pressed={showSource} onClick={onToggleSource}>
+        <CodeIcon />
+      </VisualAction>
+      <VisualAction
+        label={`Open the ${kind} fullscreen`}
+        disabled={!canFullscreen}
+        onClick={onOpenFullscreen}
+      >
+        <Maximize2Icon />
+      </VisualAction>
+    </div>
+  )
+}
+
+function WireframeFullscreen({
+  open,
+  onClose,
+  kind,
+  title,
+  width,
+  height,
+  comment,
+  canPin,
+  onToggleComment,
+  zoom,
+  frame,
+}: {
+  open: boolean
+  onClose: () => void
+  kind: FragmentKind
+  title: string
+  width: number
+  height: number
+  comment: boolean
+  canPin: boolean
+  onToggleComment: () => void
+  zoom: ReturnType<typeof useDiagramZoom>
+  frame: React.ReactNode
+}) {
+  return (
+    <FullscreenDialog
+      open={open}
+      onClose={onClose}
+      title={`${kind}: ${title}`}
+      testId="fence-fullscreen"
+      onKeyDown={zoom.onKeyDown}
+      bar={
+        <span>
+          {kind} · {title}
+        </span>
+      }
+      actions={
+        <>
+          {kind === "panel" ? (
+            <>
+              <VisualAction label="Zoom out" onClick={zoom.zoomOut}>
+                <ZoomOutIcon />
+              </VisualAction>
+              <span>{Math.round(zoom.zoom * 100)}%</span>
+              <VisualAction label="Zoom in" onClick={zoom.zoomIn}>
+                <ZoomInIcon />
+              </VisualAction>
+              <VisualAction label="Fit" onClick={zoom.fit}>
+                <ScanIcon />
+              </VisualAction>
+            </>
+          ) : null}
+          {canPin ? (
+            <VisualAction
+              label={`Give feedback on this ${kind}`}
+              pressed={comment}
+              onClick={onToggleComment}
+            >
+              <MessageSquarePlusIcon />
+            </VisualAction>
+          ) : null}
+        </>
+      }
+    >
+      <div style={{ width: width * zoom.zoom, height: height * zoom.zoom }}>
+        <div style={{ width, transform: `scale(${zoom.zoom})`, transformOrigin: "top left" }}>
+          {frame}
+        </div>
+      </div>
+    </FullscreenDialog>
+  )
+}
+
 function DrawnWireframe({
   source,
   theme,
@@ -102,8 +235,8 @@ function DrawnWireframe({
     const el = host.current
     if (el === null || typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (width !== undefined && width > 0) setRoom(width)
+      const nextWidth = entries[0]?.contentRect.width
+      if (nextWidth !== undefined && nextWidth > 0) setRoom(nextWidth)
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -128,38 +261,20 @@ function DrawnWireframe({
   )
   return (
     <div className="visual fenced-visual" data-testid={kind}>
-      <div className="visual-bar max-sm:[&_button]:size-11" style={{ flexWrap: "wrap" }}>
-        <span className="visual-kind">{kind}</span>
-        <span>{title}</span>
-        <span>{parsed.header.surface ?? parsed.header.lens}</span>
-        {scale < 1 ? <span>shown at {Math.round(scale * 100)}%</span> : null}
-        {parsed.header.state ? <span>{parsed.header.state}</span> : null}
-        {comment ? <span>click a box to give feedback</span> : null}
-        <span className="visual-spacer" />
-        {onPin !== undefined ? (
-          <VisualAction
-            label={`Give feedback on this ${kind}`}
-            pressed={comment}
-            onClick={() => setComment((v) => !v)}
-          >
-            <MessageSquarePlusIcon />
-          </VisualAction>
-        ) : null}
-        <VisualAction
-          label="Show the source"
-          pressed={showSource}
-          onClick={() => setShowSource((v) => !v)}
-        >
-          <CodeIcon />
-        </VisualAction>
-        <VisualAction
-          label={`Open the ${kind} fullscreen`}
-          disabled={html === null}
-          onClick={() => setFull(true)}
-        >
-          <Maximize2Icon />
-        </VisualAction>
-      </div>
+      <WireframeBar
+        kind={kind}
+        title={title}
+        surfaceOrLens={parsed.header.surface ?? parsed.header.lens}
+        scale={scale}
+        state={parsed.header.state}
+        comment={comment}
+        showSource={showSource}
+        canPin={onPin !== undefined}
+        canFullscreen={html !== null}
+        onToggleComment={() => setComment((v) => !v)}
+        onToggleSource={() => setShowSource((v) => !v)}
+        onOpenFullscreen={() => setFull(true)}
+      />
       {html === null ? (
         <>
           <p className="visual-error">
@@ -193,51 +308,19 @@ function DrawnWireframe({
       ) : null}
       {html !== null && kind === "panel" ? <VisualLegend marks={marks} /> : null}
       {html !== null ? (
-        <FullscreenDialog
+        <WireframeFullscreen
           open={full}
           onClose={() => setFull(false)}
-          title={`${kind}: ${title}`}
-          testId="fence-fullscreen"
-          onKeyDown={zoom.onKeyDown}
-          bar={
-            <span>
-              {kind} · {title}
-            </span>
-          }
-          actions={
-            <>
-              {kind === "panel" ? (
-                <>
-                  <VisualAction label="Zoom out" onClick={zoom.zoomOut}>
-                    <ZoomOutIcon />
-                  </VisualAction>
-                  <span>{Math.round(zoom.zoom * 100)}%</span>
-                  <VisualAction label="Zoom in" onClick={zoom.zoomIn}>
-                    <ZoomInIcon />
-                  </VisualAction>
-                  <VisualAction label="Fit" onClick={zoom.fit}>
-                    <ScanIcon />
-                  </VisualAction>
-                </>
-              ) : null}
-              {onPin !== undefined ? (
-                <VisualAction
-                  label={`Give feedback on this ${kind}`}
-                  pressed={comment}
-                  onClick={() => setComment((v) => !v)}
-                >
-                  <MessageSquarePlusIcon />
-                </VisualAction>
-              ) : null}
-            </>
-          }
-        >
-          <div style={{ width: width * zoom.zoom, height: height * zoom.zoom }}>
-            <div style={{ width, transform: `scale(${zoom.zoom})`, transformOrigin: "top left" }}>
-              {frame}
-            </div>
-          </div>
-        </FullscreenDialog>
+          kind={kind}
+          title={title}
+          width={width}
+          height={height}
+          comment={comment}
+          canPin={onPin !== undefined}
+          onToggleComment={() => setComment((v) => !v)}
+          zoom={zoom}
+          frame={frame}
+        />
       ) : null}
     </div>
   )

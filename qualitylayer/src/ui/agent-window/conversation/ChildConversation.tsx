@@ -1,112 +1,68 @@
-import { ArrowLeftIcon, ChevronRightIcon, Maximize2Icon, Minimize2Icon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ConversationSnapshot, ConversationWorker } from "../../../core/conversation/types.ts"
 import { useNow } from "../../hooks.ts"
-import { WhoMark } from "../../kit/WhoMark.tsx"
 import type { RunWindow } from "../../run-context.tsx"
-import { Log } from "./Blocks.tsx"
-import { buildBlocks, duration, tokens } from "./model.ts"
-import { Usage } from "./Usage.tsx"
+import { ChildFooter, ChildLogBody, ChildNav } from "./ChildConversationParts.tsx"
+import { buildBlocks, type Loaded } from "./model.ts"
 import { type Pulse, useConversation } from "./useConversation.ts"
+import { WorkerTray, workerElapsed } from "./WorkerTray.tsx"
 
-export function workerElapsed(worker: ConversationWorker, now: number): number | undefined {
-  const start = worker.startedAt ? Date.parse(worker.startedAt) : Number.NaN
-  return Number.isFinite(start) && Number.isFinite(now) ? Math.max(0, now - start) : undefined
-}
-
-export function workerTokens(worker: ConversationWorker): string | undefined {
-  const usage = worker.usage
-  return usage
-    ? `${tokens(usage.input + usage.output + usage.cacheRead + usage.cacheWrite)} tokens`
-    : undefined
-}
-
-export function WorkerTray({
-  workers,
-  incomplete,
-  now,
-  onSelect,
-  onShowTerminal,
-}: {
-  workers: readonly ConversationWorker[]
-  incomplete: boolean
-  now: number
-  onSelect(worker: ConversationWorker): void
-  onShowTerminal(): void
-}) {
-  const [all, setAll] = useState(false)
-  if (!workers.length && !incomplete) return null
-  return (
-    <section className="cv-workers" aria-label="Active subagents">
-      {(all ? workers : workers.slice(0, 3)).map((worker) => {
-        const elapsed = workerElapsed(worker, now)
-        const workTokens = workerTokens(worker)
-        return (
-          <button
-            type="button"
-            key={worker.id}
-            className="cv-worker-row"
-            aria-label={`Open ${worker.name} conversation${worker.task ? `: ${worker.task}` : ""}`}
-            aria-description={worker.activity}
-            title={[
-              worker.task,
-              worker.activity,
-              elapsed === undefined ? undefined : duration(elapsed),
-              workTokens,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-            onClick={() => onSelect(worker)}
-          >
-            <WhoMark who="agent" running />
-            {/* The task tells helpers of one role apart; the role and live step sit beneath it. */}
-            <span className="cv-worker-text">
-              <b>{worker.task ?? worker.name}</b>
-              <span className="cv-worker-activity">
-                {worker.task ? `${worker.name} · ` : ""}
-                {worker.activity ?? "Working"}
-              </span>
-            </span>
-            {workTokens ? <span className="cv-worker-tokens">{workTokens}</span> : null}
-            {elapsed !== undefined ? (
-              <span className="cv-worker-time">{duration(elapsed)}</span>
-            ) : null}
-            <ChevronRightIcon size={13} aria-hidden="true" />
-          </button>
-        )
-      })}
-      {workers.length > 3 ? (
-        <button
-          type="button"
-          className="q-link cv-workers-more"
-          aria-expanded={all}
-          onClick={() => setAll(!all)}
-        >
-          {all
-            ? "Show fewer"
-            : incomplete
-              ? "Show all known subagents"
-              : `Show all ${workers.length} subagents`}
-        </button>
-      ) : null}
-      {incomplete ? (
-        <p className="cv-note">
-          Some worker activity is unavailable.{" "}
-          <button type="button" className="q-link" onClick={onShowTerminal}>
-            Open Terminal
-          </button>
-        </p>
-      ) : null}
-    </section>
-  )
-}
+export { WorkerTray, workerElapsed }
 
 /** No input callback exists here: every message must go to the main agent. */
 /** Keys belong to the usage popover or to a dialog above the conversation (the command box), not to this panel. */
 const yieldsKey = (event: KeyboardEvent): boolean =>
   document.querySelector(".cv-usage[data-open]") !== null ||
   (event.target instanceof Element && event.target.closest('[data-slot="dialog-content"]') !== null)
+
+function trapDialogTab(event: KeyboardEvent, host: HTMLElement | null): void {
+  const controls = [...(host?.querySelectorAll<HTMLElement>("button,[tabindex='0']") ?? [])].filter(
+    (node) => !node.hasAttribute("disabled") && node.getClientRects().length,
+  )
+  const first = controls[0]
+  const last = controls.at(-1)
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+function useChildKeys(
+  host: RefObject<HTMLElement | null>,
+  full: boolean,
+  toggleFull: () => void,
+  onBack: (message: boolean) => void,
+) {
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (yieldsKey(event)) return
+      if (event.key === "Escape") {
+        event.preventDefault()
+        event.stopPropagation()
+        if (full) toggleFull()
+        else onBack(false)
+      }
+      if (full && event.key === "Tab") trapDialogTab(event, host.current)
+    }
+    document.addEventListener("keydown", key, true)
+    return () => document.removeEventListener("keydown", key, true)
+  }, [full, host, onBack, toggleFull])
+}
+
+function childStateWord(
+  unavailableRecord: boolean,
+  working: boolean,
+  loaded: Loaded | undefined,
+): string {
+  if (unavailableRecord) return "Unavailable"
+  if (working) return "Working"
+  if (!loaded) return "Connecting"
+  return loaded.state === "idle" ? "Idle" : "Status unavailable"
+}
 
 export function ChildConversation({
   worker,
@@ -164,88 +120,23 @@ export function ChildConversation({
     })
     return () => cancelAnimationFrame(frame)
   }, [full])
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (yieldsKey(event)) return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        event.stopPropagation()
-        if (full) toggleFull()
-        else onBack(false)
-      }
-      if (full && event.key === "Tab") {
-        const controls = [
-          ...(host.current?.querySelectorAll<HTMLElement>("button,[tabindex='0']") ?? []),
-        ].filter((node) => !node.hasAttribute("disabled") && node.getClientRects().length)
-        const first = controls[0],
-          last = controls.at(-1)
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault()
-          last?.focus()
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault()
-          first?.focus()
-        }
-      }
-    }
-    document.addEventListener("keydown", key, true)
-    return () => document.removeEventListener("keydown", key, true)
-  }, [full, onBack, toggleFull])
+  useChildKeys(host, full, toggleFull, onBack)
   const unavailableRecord = unavailable || !load
-  const stateWord = unavailableRecord
-    ? "Unavailable"
-    : working
-      ? "Working"
-      : !loaded
-        ? "Connecting"
-        : loaded.state === "idle"
-          ? "Idle"
-          : "Status unavailable"
+  const stateWord = childStateWord(unavailableRecord, working, loaded)
   const content = (
     <section
       className="cv-child-panel"
       ref={host}
       aria-label={`${worker.name} subagent conversation`}
     >
-      <header className="cv-child-nav">
-        <button type="button" className="q-link cv-child-back" onClick={() => onBack(false)}>
-          <ArrowLeftIcon size={14} aria-hidden="true" />
-          Back to main
-        </button>
-        <span className={`cv-main-attention${mainWaiting ? " waiting" : ""}`}>
-          <WhoMark
-            who={
-              run.status !== "running"
-                ? "stop"
-                : mainWaiting
-                  ? "you"
-                  : mainWorking
-                    ? "agent"
-                    : "todo"
-            }
-            running={!mainWaiting && mainWorking && run.status === "running"}
-          />
-          {run.status !== "running"
-            ? "Main stopped"
-            : mainWaiting
-              ? "Main needs you"
-              : mainWorking
-                ? "Main working"
-                : "Main ready"}
-        </span>
-        <button
-          type="button"
-          className="cv-child-expand"
-          aria-label={full ? "Return to sidebar" : "Expand subagent conversation"}
-          onClick={toggleFull}
-        >
-          {full ? (
-            <Minimize2Icon size={15} aria-hidden="true" />
-          ) : (
-            <Maximize2Icon size={15} aria-hidden="true" />
-          )}
-        </button>
-      </header>
+      <ChildNav
+        runRunning={run.status === "running"}
+        mainWaiting={mainWaiting}
+        mainWorking={mainWorking}
+        full={full}
+        onBack={() => onBack(false)}
+        onToggleFull={toggleFull}
+      />
       <div className="cv-child-task">
         <b>{worker.name}</b>
         {worker.task ? <p>{worker.task}</p> : null}
@@ -258,71 +149,28 @@ export function ChildConversation({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users scroll the read-only child transcript
         tabIndex={0}
       >
-        {unavailableRecord ? (
-          <p className="cv-note">
-            This subagent’s conversation is not available here. Its parent conversation is kept in
-            the main view.
-          </p>
-        ) : !loaded ? (
-          <p className="cv-note" role="status">
-            Reading {worker.name}’s conversation…
-          </p>
-        ) : (
-          <>
-            {failing ? (
-              <p className="cv-note" role="status">
-                Could not refresh this subagent. Its last output is kept.
-              </p>
-            ) : null}
-            {loaded.truncated ? (
-              <p className="cv-note">Earlier subagent output is not shown here.</p>
-            ) : null}
-            {unsupported ? (
-              <p className="cv-note">
-                Some native entries cannot be displayed in this read-only view.
-              </p>
-            ) : null}
-            {blocks.length ? (
-              <Log
-                blocks={blocks}
-                live={working}
-                ctx={{
-                  agentName: worker.name,
-                  userName: "Task",
-                  cwd: run.cwd,
-                  onShowTerminal: () => onBack(false),
-                }}
-              />
-            ) : (
-              <p className="cv-note">No messages have been recorded for this subagent yet.</p>
-            )}
-          </>
-        )}
+        <ChildLogBody
+          workerName={worker.name}
+          unavailableRecord={unavailableRecord}
+          loaded={loaded}
+          failing={failing}
+          unsupported={unsupported}
+          blocks={blocks}
+          working={working}
+          cwd={run.cwd}
+          onBack={() => onBack(false)}
+        />
       </div>
-      <footer className="cv-child-footer">
-        <div className="cv-child-state">
-          <span className="cv-child-status">
-            <WhoMark who={working ? "agent" : "todo"} running={working} />
-            {stateWord}
-            {elapsed !== undefined ? ` · ${duration(elapsed)}` : ""}
-          </span>
-          {loaded?.usage && run.agent !== "other" ? (
-            <Usage
-              usage={loaded.usage}
-              agent={run.agent}
-              agentName={worker.name}
-              model={loaded.usage.model}
-              aboveChild={full}
-            />
-          ) : !loaded && workerTokens(worker) ? (
-            <span>{workerTokens(worker)}</span>
-          ) : null}
-        </div>
-        <p>Read-only · managed by main agent</p>
-        <button type="button" className="q-link" onClick={() => onBack(true)}>
-          Message main instead
-        </button>
-      </footer>
+      <ChildFooter
+        worker={worker}
+        run={run}
+        loaded={loaded}
+        working={working}
+        stateWord={stateWord}
+        elapsed={elapsed}
+        full={full}
+        onMessageMain={() => onBack(true)}
+      />
     </section>
   )
   return full

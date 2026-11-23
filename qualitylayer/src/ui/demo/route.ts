@@ -40,26 +40,35 @@ export function demoTourReturn(href: string): string {
   return `${address.pathname}#/`
 }
 
+function isNonEmptyBoundedString(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max
+}
+
+function isValidArtifactRoute(route: Record<string, unknown>): boolean {
+  if (!isNonEmptyBoundedString(route.project, 256) || !isNonEmptyBoundedString(route.file, 1024))
+    return false
+  const printable = [...(route.project + route.file)].every((ch) => ch.charCodeAt(0) >= 32)
+  if (!printable || route.file.split(/[\\/]/).includes("..")) return false
+  const validAt = route.at === undefined || typeof route.at === "string"
+  const validQuery = route.query === undefined || typeof route.query === "string"
+  return validAt && validQuery
+}
+
+const isValidTaskRoute = (route: Record<string, unknown>): boolean =>
+  typeof route.id === "string" && (route.doc === null || typeof route.doc === "string")
+
+const ROUTE_CHECKERS: Record<string, (route: Record<string, unknown>) => boolean> = {
+  home: () => true,
+  artifacts: () => true,
+  artifact: isValidArtifactRoute,
+  settings: (route) => route.tab === undefined || typeof route.tab === "string",
+  task: isValidTaskRoute,
+  "team-task": isValidTaskRoute,
+}
+
 export function validRoute(value: unknown): value is Route {
   if (!value || typeof value !== "object") return false
   const route = value as Record<string, unknown>
-  const doc = route.doc === null || typeof route.doc === "string"
-  return (
-    route.view === "home" ||
-    route.view === "artifacts" ||
-    (route.view === "artifact" &&
-      typeof route.project === "string" &&
-      route.project.length > 0 &&
-      route.project.length <= 256 &&
-      typeof route.file === "string" &&
-      route.file.length > 0 &&
-      route.file.length <= 1024 &&
-      [...(route.project + route.file)].every((character) => character.charCodeAt(0) >= 32) &&
-      !route.file.split(/[\\/]/).includes("..") &&
-      (route.at === undefined || typeof route.at === "string") &&
-      (route.query === undefined || typeof route.query === "string")) ||
-    (route.view === "settings" && (route.tab === undefined || typeof route.tab === "string")) ||
-    // A task of the visitor's, or one a teammate shared with the illustrative team.
-    ((route.view === "task" || route.view === "team-task") && typeof route.id === "string" && doc)
-  )
+  const check = typeof route.view === "string" ? ROUTE_CHECKERS[route.view] : undefined
+  return check?.(route) === true
 }

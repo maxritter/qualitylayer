@@ -6,8 +6,9 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { roots } from "../install/agent-settings.ts"
+import { copilotWindowsOf, jsonObject } from "./copilot-window.ts"
 import { tailLines } from "./tail.ts"
-import { type LimitWindow, shownWindow, usedShare } from "./window.ts"
+import type { LimitWindow } from "./window.ts"
 
 /**
  * The newest session records searched, and how many sessions are looked at to find them. Headless
@@ -16,66 +17,9 @@ import { type LimitWindow, shownWindow, usedShare } from "./window.ts"
  */
 const FILES = 50
 const SESSIONS = 1000
-const MONTH_MINUTES = 30 * 24 * 60
-const MONTH_LABEL = "This month"
 
 /** `free`: the plan limits chat requests, as only Copilot Free does; paid plans have unlimited chat. */
 export type CopilotReading = { at: number; windows: LimitWindow[]; free: boolean }
-
-type Json = Record<string, unknown>
-const object = (value: unknown): Json | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : null
-
-/** The allowances that count, in the order they are preferred: premium requests, then chat. */
-const QUOTAS = ["premium_interactions", "chat"] as const
-
-/** A month's length in minutes, ending at `reset`: the month before it. */
-function monthMinutes(reset: number): number {
-  const end = new Date(reset)
-  const start = Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 1, end.getUTCDate())
-  const minutes = Math.round((reset - start) / 60_000)
-  return minutes > 0 ? minutes : MONTH_MINUTES
-}
-
-function windowOf(quota: Json, now: number): LimitWindow | null {
-  const remaining = typeof quota.remainingPercentage === "number" ? quota.remainingPercentage : null
-  const entitlement = typeof quota.entitlementRequests === "number" ? quota.entitlementRequests : 0
-  const used = typeof quota.usedRequests === "number" ? quota.usedRequests : Number.NaN
-  const share = usedShare(remaining === null ? (used / entitlement) * 100 : 100 - remaining)
-  if (share === null) return null
-  const reset = typeof quota.resetDate === "string" ? Date.parse(quota.resetDate) : Number.NaN
-  const resetsAt = Number.isNaN(reset) ? null : reset
-  const shown = shownWindow(
-    {
-      minutes: resetsAt === null ? MONTH_MINUTES : monthMinutes(resetsAt),
-      usedPercent: share,
-      resetsAt,
-      label: MONTH_LABEL,
-    },
-    now,
-  )
-  // A used-up allowance that does not run on past its end is out until the reset.
-  const out =
-    share >= 100 && quota.usageAllowedWithExhaustedQuota !== true && shown.usedPercent !== null
-  return out ? { ...shown, usedPercent: null, pacePercent: null, reached: true } : shown
-}
-
-/** The windows one snapshot set shows: the first counted allowance; none when the plan is unlimited. */
-function windowsOf(snapshots: Json, now: number): LimitWindow[] | null {
-  let unlimited = false
-  for (const name of QUOTAS) {
-    const quota = object(snapshots[name])
-    if (quota === null) continue
-    if (quota.isUnlimitedEntitlement === true) {
-      unlimited = true
-      continue
-    }
-    if (typeof quota.entitlementRequests !== "number" || quota.entitlementRequests <= 0) continue
-    const window = windowOf(quota, now)
-    if (window !== null) return [window]
-  }
-  return unlimited ? [] : null
-}
 
 /** The last snapshot set in a record's lines, with the time it was written; null when none has one. */
 export function copilotReading(lines: readonly string[], now: number): CopilotReading | null {
@@ -83,12 +27,12 @@ export function copilotReading(lines: readonly string[], now: number): CopilotRe
     const line = lines[at] as string
     if (!line.includes('"quotaSnapshots"')) continue
     try {
-      const row = object(JSON.parse(line))
-      const snapshots = object(object(row?.data)?.quotaSnapshots)
+      const row = jsonObject(JSON.parse(line))
+      const snapshots = jsonObject(jsonObject(row?.data)?.quotaSnapshots)
       if (row?.type !== "model.model_call_success" || snapshots === null) continue
-      const windows = windowsOf(snapshots, now)
+      const windows = copilotWindowsOf(snapshots, now)
       const stamp = typeof row.timestamp === "string" ? Date.parse(row.timestamp) : Number.NaN
-      const free = object(snapshots.chat)?.isUnlimitedEntitlement === false
+      const free = jsonObject(snapshots.chat)?.isUnlimitedEntitlement === false
       if (windows !== null) return { at: Number.isNaN(stamp) ? now : stamp, windows, free }
     } catch {
       // A torn last line says nothing.

@@ -36,15 +36,16 @@ ul.state b{margin-right:8px}.done{color:var(--accent)}.open{color:var(--amber)}
 `
 
 /** A box with a title and lines of text, at x, y; `lines` are drawn 24 px apart under the title. */
-function box(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  title: string,
-  lines: string[],
-  cls = "box",
-) {
+function box(spec: {
+  x: number
+  y: number
+  w: number
+  h: number
+  title: string
+  lines: string[]
+  cls?: string
+}) {
+  const { x, y, w, h, title, lines, cls = "box" } = spec
   const text = lines
     .map((line, i) => `<text class="s" x="${x + 22}" y="${y + 58 + i * 23}">${line}</text>`)
     .join("")
@@ -64,9 +65,9 @@ const down = (x1: number, y1: number, x2: number, y2: number) =>
 const DIAGRAM = `<svg viewBox="0 0 1220 720" role="img" aria-label="How a request travels through acme/platform">
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--edge)"/></marker></defs>
 <text class="lbl" x="40" y="52">WHO CALLS</text>
-${box(40, 70, 320, 112, "Customer apps and SDKs", ["API key per account", "Retries keep x-request-id"])}
-${box(40, 226, 320, 112, "Admin console", ["Finance and support, SSO", "Billing mode is Finance-only"])}
-${box(40, 382, 320, 112, "Customer portal", ["Plan and limits, usage", "Alerts at 80 % and 100 %"])}
+${box({ x: 40, y: 70, w: 320, h: 112, title: "Customer apps and SDKs", lines: ["API key per account", "Retries keep x-request-id"] })}
+${box({ x: 40, y: 226, w: 320, h: 112, title: "Admin console", lines: ["Finance and support, SSO", "Billing mode is Finance-only"] })}
+${box({ x: 40, y: 382, w: 320, h: 112, title: "Customer portal", lines: ["Plan and limits, usage", "Alerts at 80 % and 100 %"] })}
 <rect class="region" x="420" y="38" width="380" height="476" rx="14"/>
 <text class="lbl" x="444" y="64">AWS · EU-CENTRAL-1 AND US-EAST-1</text>
 <rect class="box" x="440" y="82" width="340" height="412" rx="10"/>
@@ -81,19 +82,19 @@ ${box(40, 382, 320, 112, "Customer portal", ["Plan and limits, usage", "Alerts a
 <rect class="soft risk" x="462" y="380" width="296" height="30" rx="15" fill="none"/><text class="s" x="478" y="400">Risky: every request passes the meter</text>
 ${edge(360, 126, 440, 150)}${edge(360, 282, 440, 270)}${edge(360, 438, 440, 330)}
 <text class="lbl" x="860" y="52">STORES</text>
-${box(860, 70, 340, 132, "Postgres · ledger and accounts", ["41 tables: accounts, plans, invoices,", "usage windows written once, audit log"], "store")}
+${box({ x: 860, y: 70, w: 340, h: 132, title: "Postgres · ledger and accounts", lines: ["41 tables: accounts, plans, invoices,", "usage windows written once, audit log"], cls: "store" })}
 ${chip(882, 160, "EU · eu-central-1")}${chip(1030, 160, "Write-once keys")}
-${box(860, 222, 340, 132, "Kafka · meter events", ["12 partitions per region, kept 7 days;", "a late event becomes a correction"], "store")}
+${box({ x: 860, y: 222, w: 340, h: 132, title: "Kafka · meter events", lines: ["12 partitions per region, kept 7 days;", "a late event becomes a correction"], cls: "store" })}
 ${chip(882, 312, "EU + US")}${chip(966, 312, "Out of order")}
-${box(860, 374, 340, 132, "Redis · what may vanish", ["Plan cache, rate counters, idempotency", "keys for 24 hours, rebuilt on restart"], "store")}
+${box({ x: 860, y: 374, w: 340, h: 132, title: "Redis · what may vanish", lines: ["Plan cache, rate counters, idempotency", "keys for 24 hours, rebuilt on restart"], cls: "store" })}
 ${chip(882, 464, "Per region")}
 ${edge(780, 150, 860, 136)}${edge(780, 240, 860, 288, true)}${edge(780, 300, 860, 440)}
 <text class="lbl" x="40" y="566">OUTSIDE SERVICES</text>
-${box(40, 584, 220, 96, "Stripe", ["Invoices and payments,", "through the outbox"])}${chip(196, 596, "US")}
-${box(280, 584, 220, 96, "Postmark", ["Limit alerts and", "invoice e-mails"])}${chip(436, 596, "US")}
-${box(520, 584, 220, 96, "Slack", ["Finance digest", "each morning"])}${chip(676, 596, "US")}
-${box(760, 584, 220, 96, "Grafana Cloud", ["Traces and p99", "per route"])}${chip(916, 596, "EU")}
-${box(1000, 584, 200, 96, "PagerDuty", ["On-call for the", "gateway and ledger"])}${chip(1136, 596, "US")}
+${box({ x: 40, y: 584, w: 220, h: 96, title: "Stripe", lines: ["Invoices and payments,", "through the outbox"] })}${chip(196, 596, "US")}
+${box({ x: 280, y: 584, w: 220, h: 96, title: "Postmark", lines: ["Limit alerts and", "invoice e-mails"] })}${chip(436, 596, "US")}
+${box({ x: 520, y: 584, w: 220, h: 96, title: "Slack", lines: ["Finance digest", "each morning"] })}${chip(676, 596, "US")}
+${box({ x: 760, y: 584, w: 220, h: 96, title: "Grafana Cloud", lines: ["Traces and p99", "per route"] })}${chip(916, 596, "EU")}
+${box({ x: 1000, y: 584, w: 200, h: 96, title: "PagerDuty", lines: ["On-call for the", "gateway and ledger"] })}${chip(1136, 596, "US")}
 ${down(520, 494, 150, 584)}${down(580, 494, 390, 584)}${down(640, 494, 630, 584)}${down(700, 494, 870, 584)}${down(750, 494, 1100, 584)}
 </svg>`
 

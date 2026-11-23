@@ -38,17 +38,12 @@ export async function resolveRepo(ctx: Ctx): Promise<Result<RepoRef>> {
   return ok({ root, id: repoIdFrom(commonDir), commonDir })
 }
 
-/**
- * The repository a command is about: the checkout it runs in or, run from outside any repository
- * (a scratch folder), the repository of the task this session is bound to.
- */
-export async function resolveBoundRepo(ctx: Ctx): Promise<Result<RepoRef>> {
-  const here = await resolveRepo(ctx)
-  if (here.ok) return here
-  const key = sessionKey(ctx.env)
-  if (key === null) return here
-  const projects = join(ctx.home, "projects")
-  if (!(await ctx.fs.exists(projects))) return here
+async function latestBoundProjectId(
+  ctx: Ctx,
+  projects: string,
+  key: string,
+): Promise<string | null> {
+  if (!(await ctx.fs.exists(projects))) return null
   let best: { id: string; at: number } | null = null
   for (const id of await ctx.fs.readdir(projects)) {
     try {
@@ -61,22 +56,45 @@ export async function resolveBoundRepo(ctx: Ctx): Promise<Result<RepoRef>> {
       /* this project has no binding for the session */
     }
   }
-  if (best === null) return here
+  return best?.id ?? null
+}
+
+async function readExistingProjectRef(
+  ctx: Ctx,
+  projects: string,
+  id: string,
+): Promise<RepoRef | null> {
   try {
-    const project = JSON.parse(await ctx.fs.readFile(join(projects, best.id, "project.json"))) as {
+    const project = JSON.parse(await ctx.fs.readFile(join(projects, id, "project.json"))) as {
       commonDir?: unknown
       paths?: unknown
     }
-    const roots = Array.isArray(project.paths)
-      ? project.paths.filter((p) => typeof p === "string")
-      : []
-    for (const root of roots)
-      if (typeof project.commonDir === "string" && (await ctx.fs.exists(root)))
-        return ok({ root, id: best.id, commonDir: project.commonDir })
+    if (typeof project.commonDir !== "string" || !Array.isArray(project.paths)) return null
+    for (const root of project.paths) {
+      if (typeof root === "string" && (await ctx.fs.exists(root))) {
+        return { root, id, commonDir: project.commonDir }
+      }
+    }
   } catch {
     /* an unreadable project note falls through */
   }
-  return here
+  return null
+}
+
+/**
+ * The repository a command is about: the checkout it runs in or, run from outside any repository
+ * (a scratch folder), the repository of the task this session is bound to.
+ */
+export async function resolveBoundRepo(ctx: Ctx): Promise<Result<RepoRef>> {
+  const here = await resolveRepo(ctx)
+  if (here.ok) return here
+  const key = sessionKey(ctx.env)
+  if (key === null) return here
+  const projects = join(ctx.home, "projects")
+  const bestId = await latestBoundProjectId(ctx, projects, key)
+  if (bestId === null) return here
+  const bound = await readExistingProjectRef(ctx, projects, bestId)
+  return bound === null ? here : ok(bound)
 }
 
 export function plansDir(repoRoot: string): string {

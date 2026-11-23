@@ -123,19 +123,23 @@ function slicesNamed(text: string): number | null {
   return Number.isSafeInteger(n) && n > 0 ? n : null
 }
 
+function keptAsOneTask(
+  answer: Awaited<ReturnType<typeof answeredQuestions>>[number] | undefined,
+): answer is Awaited<ReturnType<typeof answeredQuestions>>[number] {
+  if (!answer || answer.reopened || answer.kind === "unsure") return false
+  const directVia = answer.via === "app" || answer.via === "chat"
+  return (
+    directVia &&
+    /^(?:keep (?:it as )?|continue (?:as )?|no,? )?(?:one|single|1) task\b/i.test(answer.choice)
+  )
+}
+
 async function oneTaskApproved(ctx: Ctx, task: Task, plan: Outline | null): Promise<boolean> {
   if (plan === null) return false
   const answer = (await answeredQuestions(ctx, task)).findLast(
     (a) => /\bsplit\b/i.test(a.question) && /\b(?:one|single|1) task\b/i.test(a.question),
   )
-  if (
-    !answer ||
-    answer.reopened ||
-    answer.kind === "unsure" ||
-    (answer.via !== "app" && answer.via !== "chat") ||
-    !/^(?:keep (?:it as )?|continue (?:as )?|no,? )?(?:one|single|1) task\b/i.test(answer.choice)
-  )
-    return false
+  if (!keptAsOneTask(answer)) return false
   const slices = slicesNamed(answer.choice) ?? slicesNamed(answer.question)
   if (slices === null || codeSlices(plan).length > slices) return false
   return approvalCurrent(ctx, task, folderDoc("plan"))

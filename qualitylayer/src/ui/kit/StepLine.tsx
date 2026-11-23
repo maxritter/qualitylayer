@@ -82,6 +82,80 @@ export function useMainShortcut(main: StepAction | undefined) {
   }, [])
 }
 
+function ActionButton({
+  action,
+  kind,
+  extra,
+}: {
+  action: StepAction
+  kind: "primary" | "quiet" | "plain"
+  extra?: string
+}) {
+  return (
+    <button
+      type="button"
+      className={cn("q-btn", kind !== "plain" && kind, extra)}
+      disabled={action.disabled}
+      title={action.title}
+      onClick={action.onClick}
+      data-testid={kind === "primary" ? "step-main" : undefined}
+    >
+      {action.label}
+    </button>
+  )
+}
+
+function SplitMainButton({
+  main,
+  primaryAction,
+  menu,
+  menuOpen,
+  setMenuOpen,
+}: {
+  main: StepMain
+  primaryAction: StepAction
+  menu: readonly MenuEntry[]
+  menuOpen: boolean
+  setMenuOpen: (open: boolean) => void
+}) {
+  return (
+    <span className="q-split">
+      <ActionButton action={primaryAction} kind="primary" />
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              className="q-btn primary"
+              aria-label="More ways to approve"
+              disabled={main.disabled}
+            />
+          }
+        >
+          <span className="q-caret" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[340px]">
+          {menu.map((entry) => (
+            <Fragment key={entry.label}>
+              {entry.separate === true ? <DropdownMenuSeparator /> : null}
+              <DropdownMenuItem
+                disabled={entry.disabled}
+                onClick={entry.onSelect}
+                className="grid gap-0 px-2.5 py-2"
+              >
+                <b className="text-[13px] font-medium">{entry.label}</b>
+                {entry.hint !== undefined ? (
+                  <span className="text-xs text-muted-foreground">{entry.hint}</span>
+                ) : null}
+              </DropdownMenuItem>
+            </Fragment>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  )
+}
+
 /**
  * A step's buttons: other controls first, the secondary, "Comments · N", then at most one main
  * button (split, with a menu, when it has one). ⌘↵ runs the main button, or opens its menu.
@@ -99,31 +173,20 @@ export function StepButtons({
 }) {
   // A main button that only opens its menu: it opens it for ⌘↵ too, and sends nothing itself.
   const [menuOpen, setMenuOpen] = useState(false)
-  const opens = main?.opensMenu === true && main.menu !== undefined && main.menu.length > 0
-  const hasMenu = main?.menu !== undefined && main.menu.length > 0
-  const pressed: StepMain | undefined =
+  const menu = main?.menu
+  const hasMenu = menu !== undefined && menu.length > 0
+  const opens = main?.opensMenu === true && hasMenu
+  const primaryAction =
     main !== undefined && opens ? { ...main, onClick: () => setMenuOpen(true) } : main
-  useMainShortcut(
+  const shortcutAction =
     main !== undefined && main.keyOpensMenu === true && hasMenu
       ? { ...main, onClick: () => setMenuOpen(true) }
-      : pressed,
-  )
-  const act = (a: StepAction, kind: "primary" | "quiet" | "plain", extra?: string) => (
-    <button
-      type="button"
-      className={cn("q-btn", kind !== "plain" && kind, extra)}
-      disabled={a.disabled}
-      title={a.title}
-      onClick={a.onClick}
-      data-testid={kind === "primary" ? "step-main" : undefined}
-    >
-      {a.label}
-    </button>
-  )
+      : primaryAction
+  useMainShortcut(shortcutAction)
   return (
     <>
       {actions}
-      {secondary ? act(secondary, "quiet") : null}
+      {secondary ? <ActionButton action={secondary} kind="quiet" /> : null}
       {comments ? (
         <button
           type="button"
@@ -135,43 +198,16 @@ export function StepButtons({
           Feedback · {comments.count}
         </button>
       ) : null}
-      {main === undefined ? null : main.menu !== undefined && main.menu.length > 0 ? (
-        <span className="q-split">
-          {act(opens && pressed !== undefined ? pressed : main, "primary")}
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="q-btn primary"
-                  aria-label="More ways to approve"
-                  disabled={main.disabled}
-                />
-              }
-            >
-              <span className="q-caret" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[340px]">
-              {main.menu.map((entry) => (
-                <Fragment key={entry.label}>
-                  {entry.separate === true ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuItem
-                    disabled={entry.disabled}
-                    onClick={entry.onSelect}
-                    className="grid gap-0 px-2.5 py-2"
-                  >
-                    <b className="text-[13px] font-medium">{entry.label}</b>
-                    {entry.hint !== undefined ? (
-                      <span className="text-xs text-muted-foreground">{entry.hint}</span>
-                    ) : null}
-                  </DropdownMenuItem>
-                </Fragment>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
+      {main === undefined ? null : hasMenu && primaryAction !== undefined ? (
+        <SplitMainButton
+          main={main}
+          primaryAction={primaryAction}
+          menu={menu}
+          menuOpen={menuOpen}
+          setMenuOpen={setMenuOpen}
+        />
       ) : (
-        act(main, "primary")
+        <ActionButton action={main} kind="primary" />
       )}
     </>
   )

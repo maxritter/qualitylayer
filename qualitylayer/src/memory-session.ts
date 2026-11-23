@@ -5,99 +5,29 @@
 
 import { realpathSync } from "node:fs"
 import { basename, join } from "node:path"
-import { MEMORY_SESSIONS_KEPT, MEMORY_SESSIONS_MAX_BYTES } from "./core/home-caps.ts"
 import type { MemoryService } from "./core/memory/index.ts"
 import { composeHits } from "./core/memory/ranking.ts"
 import { resolveRepo } from "./core/paths.ts"
 import type { Ctx } from "./ctx.ts"
 import { ANSWER_TAG, type MemoryPreview, PERSONAL_PROJECT } from "./memory-contracts.ts"
 import { memoryService } from "./memory-runtime.ts"
-import { historicalMemories } from "./task-memory.ts"
+import {
+  fitSessionBlock,
+  HINT,
+  MATCHED_MAX,
+  PINNED_MAX,
+  readSessions,
+  SESSION_ID,
+  type SessionEntry,
+  updateSessions,
+} from "./memory-session-store.ts"
 
 export type BlockReason = "first" | "compact"
 export type SessionBlock = { text: string; ids: string[] } | { text: null; issue?: string }
 
-type Entry = { servedAt: number; compactAt?: number; matched: string[]; memory_issue?: string }
-type SessionFile = { sessions: Record<string, Entry> }
-
-const BLOCK_MAX_BYTES = 3 * 1024
 const MESSAGE_MAX_CHARS = 2000
 const LOOKUP_TIMEOUT_MS = 2000
-const PINNED_MAX = 5
-const MATCHED_MAX = 5
-const SESSION_ID = /^[A-Za-z0-9_.-]{1,128}$/
 const ISSUE = "Project memory is unavailable. The message goes on; check Settings → Memory."
-
-/** One line naming the tools an agent has, and the commands for one that has no plugin. */
-const HINT =
-  'Project and personal lessons record what was true when saved. When earlier decisions matter, including after a fresh start or compaction, search with memory_search before relying on them, using repository-relative file paths or code symbols. If a query misses, try a file you just read. Read hits with memory_read and check them against the code. Save one reusable decision, constraint, fix or project term (title: Term: <word>), its reason and files with memory_save; use replaces for corrections and about: "you" for private cross-project preferences. Use memory_keep to confirm, retire with a reason or restore. Without tools, qualitylayer memory --help gives the matching search, read, store, confirm, retire and restore commands.'
-/** What a lesson's line says when a commit touched its files since it was checked. */
-const CHANGED = " · sources changed"
-/** What the line of a lesson about the person ends with. */
-const YOURS = " · yours"
-
-const sessionsPath = (ctx: Ctx) => join(ctx.home, "memory-sessions.json")
-
-async function readSessions(ctx: Ctx): Promise<SessionFile> {
-  const empty: SessionFile = { sessions: {} }
-  const path = sessionsPath(ctx)
-  try {
-    if (!(await ctx.fs.exists(path))) return empty
-    const entry = await ctx.fs.lstat?.(path)
-    if (entry && entry.kind !== "file") return empty
-    if (((await ctx.fs.stat?.(path))?.size ?? 0) > MEMORY_SESSIONS_MAX_BYTES) return empty
-    const text = await ctx.fs.readFile(path)
-    if (Buffer.byteLength(text) > MEMORY_SESSIONS_MAX_BYTES) return empty
-    const saved = (JSON.parse(text) as { sessions?: unknown }).sessions
-    if (saved === null || typeof saved !== "object") return empty
-    const sessions: Record<string, Entry> = {}
-    for (const [id, value] of Object.entries(saved)) {
-      const row = value as Partial<Entry> | null
-      if (!SESSION_ID.test(id) || row === null || typeof row !== "object") continue
-      if (typeof row.servedAt !== "number" || !Number.isFinite(row.servedAt)) continue
-      sessions[id] = {
-        servedAt: row.servedAt,
-        ...(typeof row.compactAt === "number" ? { compactAt: row.compactAt } : {}),
-        matched: Array.isArray(row.matched)
-          ? row.matched.filter((id): id is string => typeof id === "string").slice(0, MATCHED_MAX)
-          : [],
-        ...(typeof row.memory_issue === "string" ? { memory_issue: row.memory_issue } : {}),
-      }
-    }
-    return { sessions }
-  } catch {
-    return empty
-  }
-}
-
-/** Reads, changes and writes the file under its lock, so two sessions at once both keep their entry. */
-async function updateSessions(
-  ctx: Ctx,
-  keep: string,
-  change: (sessions: Record<string, Entry>) => void,
-): Promise<void> {
-  const path = sessionsPath(ctx)
-  await ctx.fs.mkdir(ctx.home)
-  await ctx.fs.withLock(`${path}.lock`, async () => {
-    const file = await readSessions(ctx)
-    change(file.sessions)
-    // Oldest first; the entry just written stays whatever the clock says.
-    const oldest = Object.entries(file.sessions)
-      .filter(([id]) => id !== keep)
-      .sort((a, b) => a[1].servedAt - b[1].servedAt)
-      .map(([id]) => id)
-    let text = JSON.stringify(file)
-    while (
-      oldest.length > 0 &&
-      (Object.keys(file.sessions).length > MEMORY_SESSIONS_KEPT ||
-        Buffer.byteLength(text) > MEMORY_SESSIONS_MAX_BYTES)
-    ) {
-      delete file.sessions[oldest.shift() as string]
-      text = JSON.stringify(file)
-    }
-    await ctx.fs.atomicWrite(path, `${text}\n`)
-  })
-}
 
 /**
  * Marks a session as compacted: the next return point sends it its lessons again. With
@@ -120,65 +50,23 @@ export async function markCompacted(
 type Found = { block: { text: string; ids: string[] } | null; matched: string[] }
 const NOTHING: Found = { block: null, matched: [] }
 
-const bytes = (text: string) => Buffer.byteLength(text)
-
-/**
- * The block within 3 KiB: matched lessons go first, from the end; a pinned one is only shortened.
- * A lesson's marks (sources changed, yours) follow its title after any shortening, so they are
- * never cut.
- */
-function fit(
-  pinned: MemoryPreview[],
-  matched: MemoryPreview[],
-  changed: ReadonlySet<string>,
-): { text: string; ids: string[] } {
-  const render = (rows: MemoryPreview[]) =>
-    `${HINT}\n${historicalMemories(
-      rows.map((row) => {
-        const marks = `${changed.has(row.id) ? CHANGED : ""}${row.project === PERSONAL_PROJECT ? YOURS : ""}`
-        return marks ? { ...row, title: `${row.title}${marks}` } : row
-      }),
-      undefined,
-      PINNED_MAX + MATCHED_MAX,
-    )}`
-  const kept = [...matched]
-  while (kept.length > 0 && bytes(render([...pinned, ...kept])) > BLOCK_MAX_BYTES) kept.pop()
-  let rows = [...pinned, ...kept]
-  for (const [preview, title] of [
-    [120, 200],
-    [60, 100],
-    [0, 50],
-    [0, 20],
-  ] as const) {
-    if (bytes(render(rows)) <= BLOCK_MAX_BYTES) break
-    rows = rows.map((row) => ({
-      ...row,
-      title: row.title.slice(0, title),
-      preview: row.preview.slice(0, preview),
-    }))
-  }
-  return { text: render(rows), ids: rows.map((row) => row.id) }
-}
-
-async function find(
+async function openReadyService(
   ctx: Ctx,
-  input: { message?: string; reason: BlockReason },
-  known: Entry | undefined,
   make: () => MemoryService,
   opened: { service?: MemoryService; abandoned?: boolean },
-): Promise<Found> {
+): Promise<{ service: MemoryService; project: string } | null> {
   const repo = await resolveRepo(ctx)
-  if (!repo.ok || opened.abandoned) return NOTHING
+  if (!repo.ok || opened.abandoned) return null
   // A machine that never saved a lesson has no catalog, and a message does not create one.
   if (!(await ctx.fs.exists(join(ctx.home, "memory", "catalog.sqlite"))) || opened.abandoned)
-    return NOTHING
+    return null
   const service = make()
   opened.service = service
   // The caller gave up while this lookup was still resolving: it has already cleaned up, so a
   // service made now is closed here and nothing more is read.
   if (opened.abandoned) {
     await service.close().catch(() => {})
-    return NOTHING
+    return null
   }
   const project = repo.data.id
   await service.registerProject({
@@ -189,52 +77,80 @@ async function find(
   })
   await service.registerPersonal()
   const settings = await service.settings({})
-  if (!settings.enabled || settings.sessions === false) return NOTHING
+  if (!settings.enabled || settings.sessions === false) return null
+  return { service, project }
+}
+
+async function loadPinnedLessons(
+  service: MemoryService,
+  project: string,
+): Promise<MemoryPreview[]> {
   // This repository's pinned lessons, then the person's, five in all.
   const pinnedOf = async () =>
     [...(await service.pinned(project)), ...(await service.pinned(PERSONAL_PROJECT))].slice(
       0,
       PINNED_MAX,
     )
-  let pinned = await pinnedOf()
+  const pinned = await pinnedOf()
   // A pinned lesson whose files changed long ago retires when its states are read: read them first.
-  if (pinned.length > 0) {
-    await service.sources(project).catch(() => null)
-    pinned = await pinnedOf()
-  }
-  const pins = new Set(pinned.map((lesson) => lesson.id))
+  if (pinned.length === 0) return pinned
+  await service.sources(project).catch(() => null)
+  return pinnedOf()
+}
+
+async function loadMatchedLessons(
+  service: MemoryService,
+  project: string,
+  input: { message?: string; reason: BlockReason },
+  known: SessionEntry | undefined,
+  pins: ReadonlySet<string>,
+): Promise<MemoryPreview[]> {
   // Task answers stay out of automatic matches. Changed files do not invalidate a lesson: include
   // it with its sources-changed mark so the agent can check whether the reason still holds.
-  const current = (lesson: Pick<MemoryPreview, "id" | "sources" | "tags">) =>
+  const eligible = (lesson: Pick<MemoryPreview, "id" | "sources" | "tags">) =>
     !pins.has(lesson.id) && !lesson.tags.includes(ANSWER_TAG)
-  let matched: MemoryPreview[] = []
   if (input.reason === "compact") {
+    const matched: MemoryPreview[] = []
     for (const id of known?.matched ?? []) {
       try {
         const { content, ...rest } = await service.read(id)
-        if (
-          (rest.project === project || rest.project === PERSONAL_PROJECT) &&
-          rest.state === "active" &&
-          current(rest)
-        )
+        const inScope = rest.project === project || rest.project === PERSONAL_PROJECT
+        if (inScope && rest.state === "active" && eligible(rest))
           matched.push({ ...rest, preview: content.slice(0, 240) })
       } catch {
         // A lesson that is gone is simply not sent again.
       }
     }
-  } else if ((input.message ?? "").trim() !== "") {
-    // One search over both, the message embedded once.
-    const found = await service.searchProjects(
-      [project, PERSONAL_PROJECT],
-      (input.message as string).slice(0, MESSAGE_MAX_CHARS),
-      PINNED_MAX + MATCHED_MAX,
-    )
-    matched = composeHits(
-      (found.lessons[0] ?? []).filter(current),
-      (found.lessons[1] ?? []).filter(current),
-      MATCHED_MAX,
-    )
+    return matched
   }
+  const trimmed = (input.message ?? "").trim()
+  if (!trimmed) return []
+  // One search over both, the message embedded once.
+  const found = await service.searchProjects(
+    [project, PERSONAL_PROJECT],
+    (input.message as string).slice(0, MESSAGE_MAX_CHARS),
+    PINNED_MAX + MATCHED_MAX,
+  )
+  return composeHits(
+    (found.lessons[0] ?? []).filter(eligible),
+    (found.lessons[1] ?? []).filter(eligible),
+    MATCHED_MAX,
+  )
+}
+
+async function find(
+  ctx: Ctx,
+  input: { message?: string; reason: BlockReason },
+  known: SessionEntry | undefined,
+  make: () => MemoryService,
+  opened: { service?: MemoryService; abandoned?: boolean },
+): Promise<Found> {
+  const ready = await openReadyService(ctx, make, opened)
+  if (!ready) return NOTHING
+  const { service, project } = ready
+  const pinned = await loadPinnedLessons(service, project)
+  const pins = new Set(pinned.map((lesson) => lesson.id))
+  const matched = await loadMatchedLessons(service, project, input, known, pins)
   const ids = matched.map((lesson) => lesson.id)
   if (pinned.length + matched.length === 0) {
     // Nothing to show, but the agent still learns that lessons exist and how to search them.
@@ -249,7 +165,7 @@ async function find(
       .filter((row) => states?.get(row.id)?.state === "changed")
       .map((row) => row.id),
   )
-  return { block: fit(pinned, matched, changed), matched: ids }
+  return { block: fitSessionBlock(pinned, matched, changed), matched: ids }
 }
 
 /** Fails when the work is still running after `ms`; the timer never keeps a hook process alive. */

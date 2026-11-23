@@ -90,61 +90,59 @@ export function localArtifactCss(
 function portableWebLink(value: string): boolean {
   try {
     const url = new URL(value)
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false
+    if (url.username || url.password) return false
     return (
-      (url.protocol === "https:" || url.protocol === "http:") &&
-      !url.username &&
-      !url.password &&
-      url.hostname !== "localhost" &&
-      url.hostname !== "[::1]" &&
-      !url.hostname.startsWith("127.")
+      url.hostname !== "localhost" && url.hostname !== "[::1]" && !url.hostname.startsWith("127.")
     )
   } catch {
     return false
   }
 }
 
+function keepSharedAttr(
+  tagName: string,
+  attr: { name: string; value: string },
+  allowLinks: boolean,
+): boolean {
+  if (allowLinks && tagName === "a" && attr.name === "href" && portableWebLink(attr.value))
+    return true
+  const lower = attr.name.toLowerCase()
+  if (lower.startsWith("on") || loadingAttributes.has(lower)) return false
+  return lower !== "src" || /^data:image\//i.test(attr.value)
+}
+
+function sanitizeStyleChildren(node: Html.Element): void {
+  const css = node.childNodes
+    .filter((child): child is Html.TextNode => child.nodeName === "#text")
+    .map((child) => child.value)
+    .join("")
+  for (const child of node.childNodes) {
+    if (child.nodeName === "#text" && "value" in child) child.value = localArtifactCss(css)
+  }
+}
+
+function sanitizeSharedTree(parent: Html.ParentNode, allowLinks: boolean): void {
+  parent.childNodes = parent.childNodes.filter(
+    (node) => !("tagName" in node && inertTags.has(node.tagName.toLowerCase())),
+  )
+  for (const node of parent.childNodes) {
+    if (!("tagName" in node)) continue
+    node.attrs = node.attrs
+      .filter((attr) => keepSharedAttr(node.tagName, attr, allowLinks))
+      .map((attr) =>
+        attr.name.toLowerCase() === "style"
+          ? { ...attr, value: localArtifactCss(attr.value, "declarationList") }
+          : attr,
+      )
+    if (node.tagName.toLowerCase() === "style") sanitizeStyleChildren(node)
+    sanitizeSharedTree(node, allowLinks)
+    if ("content" in node) sanitizeSharedTree((node as Html.Template).content, allowLinks)
+  }
+}
+
 export function prepareSharedArtifact(html: string, options: { links?: boolean } = {}): string {
   const tree = parse(html)
-  const visit = (parent: Html.ParentNode): void => {
-    parent.childNodes = parent.childNodes.filter(
-      (node) => !("tagName" in node && inertTags.has(node.tagName.toLowerCase())),
-    )
-    for (const node of parent.childNodes) {
-      if (!("tagName" in node)) continue
-      node.attrs = node.attrs
-        .filter((attr) => {
-          if (
-            options.links &&
-            node.tagName === "a" &&
-            attr.name === "href" &&
-            portableWebLink(attr.value)
-          )
-            return true
-          if (
-            attr.name.toLowerCase().startsWith("on") ||
-            loadingAttributes.has(attr.name.toLowerCase())
-          )
-            return false
-          if (attr.name.toLowerCase() === "src" && !/^data:image\//i.test(attr.value)) return false
-          return true
-        })
-        .map((attr) =>
-          attr.name.toLowerCase() === "style"
-            ? { ...attr, value: localArtifactCss(attr.value, "declarationList") }
-            : attr,
-        )
-      if (node.tagName.toLowerCase() === "style") {
-        const css = node.childNodes
-          .filter((child): child is Html.TextNode => child.nodeName === "#text")
-          .map((child) => child.value)
-          .join("")
-        for (const child of node.childNodes)
-          if (child.nodeName === "#text" && "value" in child) child.value = localArtifactCss(css)
-      }
-      visit(node)
-      if ("content" in node) visit((node as Html.Template).content)
-    }
-  }
-  visit(tree)
+  sanitizeSharedTree(tree, Boolean(options.links))
   return serialize(tree)
 }

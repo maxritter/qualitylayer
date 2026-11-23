@@ -23,6 +23,38 @@ const BRANCH = /^(?:origin|upstream|refs|remotes|heads|feature|feat|fix|bugfix|h
 const covers = (file: string, path: string) =>
   file === path || path.startsWith(file.endsWith("/") ? file : `${file}/`)
 
+async function stalePathProblem(
+  ctx: Ctx,
+  repoRoot: string,
+  files: readonly string[],
+  before: readonly string[] | undefined,
+  path: string,
+): Promise<string | null> {
+  if (/^(~|\/|\$)/.test(path)) return null
+  if (BRANCH.test(path)) {
+    const ref = await ctx.git.run(repoRoot, ["rev-parse", "--verify", "--quiet", path])
+    return ref.code !== 0 ? `names the branch \`${path}\`, which does not exist` : null
+  }
+  const namedThen = before?.some((f) => covers(f, path)) === true
+  const named = files.some((f) => covers(f, path))
+  if (namedThen && !named && !(await ctx.fs.exists(join(repoRoot, path))))
+    return `names \`${path}\`, which no card names and the repository does not hold`
+  return null
+}
+
+function staleSliceProblems(
+  slices: ReadonlySet<number>,
+  stepId: string,
+  text: string,
+): StaleStep[] {
+  const out: StaleStep[] = []
+  for (const match of text.matchAll(/\bslice (\d+)\b/gi)) {
+    if (!slices.has(Number(match[1])))
+      out.push({ step: stepId, problem: `names slice ${match[1]}, which the cards no longer have` })
+  }
+  return out
+}
+
 /**
  * `before` is every card's Files in the baseline the amendment read: a path is flagged only when
  * a card named it then. A path no card ever named (a file the step creates, one in the
@@ -40,22 +72,11 @@ export async function staleSteps(
   const stale: StaleStep[] = []
   for (const step of plan) {
     const text = `${step.action} ${step.expected}`
-    const flag = (problem: string) => stale.push({ step: step.id, problem })
     for (const path of extractPaths(text)) {
-      if (/^(~|\/|\$)/.test(path)) continue
-      if (BRANCH.test(path)) {
-        const ref = await ctx.git.run(task.repoRoot, ["rev-parse", "--verify", "--quiet", path])
-        if (ref.code !== 0) flag(`names the branch \`${path}\`, which does not exist`)
-        continue
-      }
-      const namedThen = before?.some((f) => covers(f, path)) === true
-      const named = files.some((f) => covers(f, path))
-      if (namedThen && !named && !(await ctx.fs.exists(join(task.repoRoot, path))))
-        flag(`names \`${path}\`, which no card names and the repository does not hold`)
+      const problem = await stalePathProblem(ctx, task.repoRoot, files, before, path)
+      if (problem !== null) stale.push({ step: step.id, problem })
     }
-    for (const match of text.matchAll(/\bslice (\d+)\b/gi))
-      if (!slices.has(Number(match[1])))
-        flag(`names slice ${match[1]}, which the cards no longer have`)
+    stale.push(...staleSliceProblems(slices, step.id, text))
   }
   return stale
 }

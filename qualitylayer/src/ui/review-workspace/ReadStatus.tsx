@@ -35,6 +35,57 @@ function Unavailable({
   )
 }
 
+function FileModeStatus({
+  source,
+  onDiff,
+}: {
+  source: { ready: boolean; error: string | undefined; retry: () => void }
+  onDiff: () => void
+}) {
+  if (source.error) return <Unavailable reason={source.error} retry={source.retry} diff={onDiff} />
+  if (!source.ready)
+    return (
+      <p role="status" className="rw-note">
+        Reading the exact file revision…
+      </p>
+    )
+  return null
+}
+
+function DiffModeStatus({
+  state,
+  current,
+  count,
+  loaded,
+  errors,
+  retry,
+}: {
+  state: "loading" | "ready" | "failed"
+  current: string | null
+  count: number
+  loaded: number
+  errors: ReadonlyMap<string, string>
+  retry: (paths: readonly string[]) => void
+}) {
+  const reason = current === null ? undefined : errors.get(current)
+  if (reason !== undefined && current !== null)
+    return (
+      <Unavailable
+        title={errors.size === count && loaded === 0 ? "The diffs could not be read" : undefined}
+        reason={`${current}: ${reason}`}
+        retry={() => retry([current])}
+        {...(errors.size > 1 ? { retryAll: () => retry([...errors.keys()]) } : {})}
+      />
+    )
+  if (state === "loading" || loaded === 0)
+    return (
+      <p role="status" className="rw-note">
+        Reading {count === 1 ? "the file" : `${count} files`}…
+      </p>
+    )
+  return null
+}
+
 export function ReadStatus({
   missing,
   empty,
@@ -86,29 +137,15 @@ export function ReadStatus({
         No changes against the base yet.
       </p>
     )
-  if (mode === "file")
-    return source.error ? (
-      <Unavailable reason={source.error} retry={source.retry} diff={onDiff} />
-    ) : !source.ready ? (
-      <p role="status" className="rw-note">
-        Reading the exact file revision…
-      </p>
-    ) : null
-  const reason = current === null ? undefined : errors.get(current)
-  if (reason !== undefined && current !== null)
-    return (
-      <Unavailable
-        title={errors.size === count && loaded === 0 ? "The diffs could not be read" : undefined}
-        reason={`${current}: ${reason}`}
-        retry={() => retry([current])}
-        {...(errors.size > 1 ? { retryAll: () => retry([...errors.keys()]) } : {})}
-      />
-    )
-  if (state === "loading" || loaded === 0)
-    return (
-      <p role="status" className="rw-note">
-        Reading {count === 1 ? "the file" : `${count} files`}…
-      </p>
-    )
-  return null
+  if (mode === "file") return <FileModeStatus source={source} onDiff={onDiff} />
+  return (
+    <DiffModeStatus
+      state={state}
+      current={current}
+      count={count}
+      loaded={loaded}
+      errors={errors}
+      retry={retry}
+    />
+  )
 }

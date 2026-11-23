@@ -1,19 +1,41 @@
-import { dlopen, FFIType, ptr, read } from "bun:ffi"
-import { createHash } from "node:crypto"
-import {
-  closeSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  readSync,
-  realpathSync,
-  statSync,
-} from "node:fs"
-import { join } from "node:path"
+import { dlopen, FFIType } from "bun:ffi"
+import { readdirSync, readFileSync, readlinkSync, statSync } from "node:fs"
 import { pidAlive } from "../self.ts"
+import {
+  darwinBootSeconds,
+  darwinEnvironment,
+  darwinExecutable,
+  darwinPidList,
+  parseDarwinProcess,
+  queryDarwinProcess,
+  readDarwinProcess,
+} from "./processes-darwin.ts"
+import { procFileHolders } from "./processes-files.ts"
+import {
+  environmentOwnerHash,
+  InvalidOwnershipEnvironment,
+  OWNER_ENV,
+  ownerHash,
+  processOwnerHash,
+  readNativeOwnerHash,
+} from "./processes-owner.ts"
 
-export const OWNER_ENV = "QUALITYLAYER_RUN_OWNER"
+export {
+  darwinEnvironment,
+  environmentOwnerHash,
+  InvalidOwnershipEnvironment,
+  OWNER_ENV,
+  ownerHash,
+  parseDarwinProcess,
+  processOwnerHash,
+  procFileHolders,
+  readDarwinProcess,
+}
+
+export function nativeOwnerHash(pid: number): string | null {
+  return readNativeOwnerHash(pid)
+}
+
 export const PROCESS_LIMITS = { pids: 32768, argumentBytes: 1024 * 1024, scanMs: 2000, owned: 4096 }
 export type NativeProcess = {
   pid: number
@@ -26,13 +48,7 @@ export type NativeProcess = {
   exiting?: boolean
 }
 
-const hashPattern = /^[a-f0-9]{64}$/
-export function ownerHash(secret: string): string {
-  if (!hashPattern.test(secret)) throw new Error("invalid run ownership marker")
-  return createHash("sha256").update(secret).digest("hex")
-}
-
-function utcStart(seconds: number): string {
+export function utcStart(seconds: number): string {
   const date = new Date(Math.floor(seconds) * 1000)
   const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getUTCDay()]
   const month = [
@@ -51,48 +67,6 @@ function utcStart(seconds: number): string {
   ][date.getUTCMonth()]
   const time = date.toISOString().slice(11, 19)
   return `${day} ${month} ${String(date.getUTCDate()).padStart(2, " ")} ${time} ${date.getUTCFullYear()}`
-}
-
-function openDarwin() {
-  return dlopen("/usr/lib/libSystem.B.dylib", {
-    __error: { args: [], returns: FFIType.ptr },
-    proc_listpids: {
-      args: [FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.i32],
-      returns: FFIType.i32,
-    },
-    proc_pidinfo: {
-      args: [FFIType.i32, FFIType.i32, FFIType.u64, FFIType.ptr, FFIType.i32],
-      returns: FFIType.i32,
-    },
-    proc_pidpath: { args: [FFIType.i32, FFIType.ptr, FFIType.u32], returns: FFIType.i32 },
-    sysctl: {
-      args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u64],
-      returns: FFIType.i32,
-    },
-  })
-}
-let darwin: ReturnType<typeof openDarwin> | undefined
-function darwinApi() {
-  darwin ??= openDarwin()
-  return darwin.symbols
-}
-
-/** Public proc_bsdinfo layout from sys/proc_info.h, identical on supported 64-bit macOS targets. */
-export function parseDarwinProcess(bytes: Uint8Array): NativeProcess {
-  if (bytes.byteLength !== 136) throw new Error("invalid native process record")
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  const seconds = view.getBigUint64(120, true)
-  const micros = view.getBigUint64(128, true)
-  return {
-    pid: view.getUint32(12, true),
-    parent: view.getUint32(16, true),
-    uid: view.getUint32(20, true),
-    pgid: view.getUint32(100, true),
-    nativeStart: `darwin:${seconds}:${micros}`,
-    processStart: utcStart(Number(seconds)),
-    zombie: view.getUint32(4, true) === 5,
-    exiting: (view.getUint32(0, true) & 4) !== 0,
-  }
 }
 
 export function parseLinuxStat(text: string) {
@@ -143,15 +117,6 @@ function linuxTimes() {
 /** Wall-clock boot times shift when the clock is set; a live process never looks older than this. */
 export const BOOT_MARGIN_SECONDS = 120
 
-function darwinBootSeconds(): number | null {
-  const mib = new Int32Array([1, 21]) // CTL_KERN, KERN_BOOTTIME.
-  const value = new BigInt64Array(2) // struct timeval
-  const size = new BigUint64Array([BigInt(value.byteLength)])
-  if (darwinApi().sysctl(ptr(mib), 2, ptr(value), ptr(size), null, 0) !== 0) return null
-  const seconds = Number(value[0])
-  return seconds > 0 ? seconds : null
-}
-
 /**
  * A recorded process that started before this machine's current boot is gone, whatever holds its
  * PID now. After a crash or restart the PID often belongs to another user's process that cannot be
@@ -170,69 +135,24 @@ export function startedBeforeBoot(nativeStart: string | undefined): boolean {
   return false
 }
 
-const retryPause = new Int32Array(new SharedArrayBuffer(4))
-
-/** A UID census can catch ps before its setuid exec; a denied live process still needs proof. */
-export function readDarwinProcess(
-  pid: number,
-  query: (bytes: Uint8Array) => { received: number; errno: number },
-  deadline = Date.now() + PROCESS_LIMITS.scanMs,
-  alive: () => boolean = () => pidAlive(pid),
-  pause: (ms: number) => void = (ms) => {
-    Atomics.wait(retryPause, 0, 0, ms)
-  },
-): NativeProcess | null {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (Date.now() > deadline) throw new Error("native process read exceeded its time bound")
-    const bytes = new Uint8Array(136)
-    const { received, errno } = query(bytes)
-    if (Date.now() > deadline) throw new Error("native process read exceeded its time bound")
-    if (received === bytes.byteLength) {
-      const row = parseDarwinProcess(bytes)
-      return row.zombie || row.exiting ? null : row
-    }
-    // libproc reports ESRCH for zombies too, whose PID may remain reserved until reaped.
-    if (errno === 3 || !alive()) return null
-    if (received !== 0 || errno !== 1 || attempt === 2)
-      throw Object.assign(
-        new Error(
-          `native process identity unavailable for ${pid} (errno ${errno}, bytes ${received}/${bytes.byteLength})`,
-        ),
-        { errno, received, attempts: attempt + 1 },
-      )
-    const wait = attempt === 0 ? 1 : 5
-    if (Date.now() + wait > deadline) throw new Error("native process read exceeded its time bound")
-    pause(wait)
+function readLinuxProcess(pid: number): NativeProcess | null {
+  const path = `/proc/${pid}`
+  const row = parseLinuxStat(readFileSync(`${path}/stat`, "utf8"))
+  if (row.zombie) return null
+  const clock = linuxTimes()
+  return {
+    ...row,
+    uid: statSync(path).uid,
+    nativeStart: `linux:${clock.id}:${row.ticks}`,
+    processStart: utcStart(clock.boot + Number(row.ticks) / clock.ticks),
   }
-  throw new Error(`native process identity unavailable for ${pid}`)
 }
 
 export function nativeProcess(pid: number, deadline?: number): NativeProcess | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("invalid process id")
   try {
-    if (process.platform === "darwin") {
-      return readDarwinProcess(
-        pid,
-        (bytes) => {
-          const received = darwinApi().proc_pidinfo(pid, 3, 0, ptr(bytes), bytes.byteLength)
-          const address = received === bytes.byteLength ? null : darwinApi().__error()
-          return { received, errno: address ? read.i32(address) : 0 }
-        },
-        deadline,
-      )
-    }
-    if (process.platform === "linux") {
-      const path = `/proc/${pid}`
-      const row = parseLinuxStat(readFileSync(`${path}/stat`, "utf8"))
-      if (row.zombie) return null
-      const clock = linuxTimes()
-      return {
-        ...row,
-        uid: statSync(path).uid,
-        nativeStart: `linux:${clock.id}:${row.ticks}`,
-        processStart: utcStart(clock.boot + Number(row.ticks) / clock.ticks),
-      }
-    }
+    if (process.platform === "darwin") return queryDarwinProcess(pid, deadline)
+    if (process.platform === "linux") return readLinuxProcess(pid)
     throw new Error("native run ownership is unsupported on this platform")
   } catch (cause) {
     if (!pidAlive(pid)) return null
@@ -245,242 +165,41 @@ export function nativeExecutable(pid: number): string | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null
   try {
     if (process.platform === "linux") return readlinkSync(`/proc/${pid}/exe`)
-    if (process.platform === "darwin") {
-      const bytes = new Uint8Array(4096)
-      const length = darwinApi().proc_pidpath(pid, ptr(bytes), bytes.length)
-      if (length <= 0 || length >= bytes.length) return null
-      return Buffer.from(bytes.subarray(0, length)).toString("utf8").replace(/\0$/, "")
-    }
+    if (process.platform === "darwin") return darwinExecutable(pid)
   } catch {
     // An exited or unreadable process cannot establish native lead authority.
   }
   return null
 }
 
-export function nativeProcesses(): NativeProcess[] {
-  const deadline = Date.now() + PROCESS_LIMITS.scanMs
-  let pids: number[]
-  if (process.platform === "darwin") {
-    // One spare slot makes a full table an explicit overflow instead of a truncated proof.
-    const buffer = new Int32Array(PROCESS_LIMITS.pids + 1)
-    const uid = process.getuid?.()
-    if (uid === undefined) throw new Error("run owner uid unavailable")
-    const count = darwinApi().proc_listpids(4, uid, ptr(buffer), buffer.byteLength)
-    if (count <= 0 || count >= buffer.byteLength)
-      throw new Error("native process table unavailable or full")
-    pids = [...buffer.subarray(0, Math.floor(count / 4))].filter((pid) => pid > 0)
-  } else if (process.platform === "linux") {
-    pids = readdirSync("/proc")
+function linuxOwnedPid(pid: number): boolean {
+  try {
+    return statSync(`/proc/${pid}`).uid === process.getuid?.()
+  } catch (cause) {
+    if (!pidAlive(pid)) return false
+    throw cause
+  }
+}
+
+function platformPidList(): number[] {
+  if (process.platform === "darwin") return darwinPidList()
+  if (process.platform === "linux")
+    return readdirSync("/proc")
       .filter((name) => /^\d+$/.test(name))
       .map(Number)
-  } else throw new Error("native run ownership is unsupported on this platform")
+  throw new Error("native run ownership is unsupported on this platform")
+}
+
+export function nativeProcesses(): NativeProcess[] {
+  const deadline = Date.now() + PROCESS_LIMITS.scanMs
+  const pids = platformPidList()
   if (pids.length > PROCESS_LIMITS.pids) throw new Error("native process table exceeds its bound")
   const rows: NativeProcess[] = []
   for (const pid of pids) {
     if (Date.now() > deadline) throw new Error("native process scan exceeded its time bound")
-    if (process.platform === "linux") {
-      try {
-        if (statSync(`/proc/${pid}`).uid !== process.getuid?.()) continue
-      } catch (cause) {
-        if (!pidAlive(pid)) continue
-        throw cause
-      }
-    }
+    if (process.platform === "linux" && !linuxOwnedPid(pid)) continue
     const row = nativeProcess(pid, deadline)
     if (row) rows.push(row)
   }
   return rows
-}
-
-export class InvalidOwnershipEnvironment extends Error {
-  constructor(readonly candidateHashes: readonly string[]) {
-    super("invalid run ownership environment")
-  }
-}
-
-export function environmentOwnerHash(bytes: Uint8Array): string | null {
-  if (bytes.length > PROCESS_LIMITS.argumentBytes)
-    throw new Error("native process arguments exceed their bound")
-  const prefix = Buffer.from(`${OWNER_ENV}=`)
-  const candidates: string[] = []
-  let entries = 0
-  for (let offset = 0; offset < bytes.length; ) {
-    let end = bytes.indexOf(0, offset)
-    if (end < 0) end = bytes.length
-    const entry = bytes.subarray(offset, end)
-    if (
-      entry.length >= prefix.length &&
-      Buffer.from(entry.subarray(0, prefix.length)).equals(prefix)
-    ) {
-      const secret = Buffer.from(entry.subarray(prefix.length)).toString("ascii")
-      entries++
-      if (hashPattern.test(secret)) candidates.push(ownerHash(secret))
-    }
-    offset = end + 1
-  }
-  if (entries > 1 || entries !== candidates.length)
-    throw new InvalidOwnershipEnvironment(candidates)
-  return candidates[0] ?? null
-}
-
-/** KERN_PROCARGS2: argc, executable path, padding, argc arguments, then the initial environment. */
-export function darwinEnvironment(bytes: Uint8Array): Uint8Array {
-  if (bytes.length > PROCESS_LIMITS.argumentBytes)
-    throw new Error("native process arguments exceed their bound")
-  if (bytes.length < 4) throw new Error("native process arguments unavailable")
-  const argc = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(0, true)
-  if (argc < 0 || argc > PROCESS_LIMITS.argumentBytes)
-    throw new Error("invalid native argument count")
-  let offset = bytes.indexOf(0, 4)
-  if (offset < 0) throw new Error("invalid native executable path")
-  while (bytes[offset] === 0) offset++
-  for (let i = 0; i < argc; i++) {
-    const end = bytes.indexOf(0, offset)
-    if (end < 0) throw new Error("truncated native process arguments")
-    offset = end + 1
-  }
-  return bytes.subarray(offset)
-}
-
-export function nativeOwnerHash(pid: number): string | null {
-  if (process.platform === "darwin") {
-    const mib = new Int32Array([1, 49, pid]) // CTL_KERN, KERN_PROCARGS2.
-    const bytes = argumentScratch()
-    const size = new BigUint64Array([BigInt(bytes.byteLength)])
-    if (darwinApi().sysctl(ptr(mib), 3, ptr(bytes), ptr(size), null, 0) !== 0) {
-      const address = darwinApi().__error()
-      const errno = address ? read.i32(address) : 0
-      throw Object.assign(
-        new Error(`native ownership environment unavailable for ${pid} (errno ${errno})`),
-        {
-          code: errno === 5 ? "EIO" : errno === 22 ? "EINVAL" : errno === 4 ? "EINTR" : "UNKNOWN",
-          errno,
-        },
-      )
-    }
-    if (size[0] === undefined || size[0] > BigInt(PROCESS_LIMITS.argumentBytes))
-      throw new Error("native process arguments exceed their bound")
-    return environmentOwnerHash(darwinEnvironment(bytes.subarray(0, Number(size[0]))))
-  }
-  if (process.platform === "linux") {
-    const fd = openSync(`/proc/${pid}/environ`, "r")
-    try {
-      const bytes = argumentScratch()
-      let length = 0
-      for (;;) {
-        const count = readSync(fd, bytes, length, bytes.length - length, null)
-        if (count === 0) break
-        length += count
-        if (length > PROCESS_LIMITS.argumentBytes)
-          throw new Error("native process arguments exceed their bound")
-      }
-      return environmentOwnerHash(bytes.subarray(0, length))
-    } finally {
-      closeSync(fd)
-    }
-  }
-  throw new Error("native run ownership is unsupported on this platform")
-}
-
-export function processOwnerHash(
-  pid: number,
-  deadline = Date.now() + PROCESS_LIMITS.scanMs,
-): string | null {
-  const snapshot = nativeProcess(pid, deadline)
-  if (!snapshot || snapshot.zombie || snapshot.exiting || snapshot.uid !== process.getuid?.())
-    return null
-  const stillCurrent = (current: NativeProcess | null) =>
-    current &&
-    !current.zombie &&
-    !current.exiting &&
-    current.uid === snapshot.uid &&
-    current.nativeStart === snapshot.nativeStart
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (Date.now() > deadline) throw new Error("native ownership read exceeded its time bound")
-    try {
-      const hash = nativeOwnerHash(pid)
-      const current = nativeProcess(pid, deadline)
-      if (Date.now() > deadline) throw new Error("native ownership read exceeded its time bound")
-      return stillCurrent(current) ? hash : null
-    } catch (cause) {
-      const current = nativeProcess(pid, deadline)
-      if (!stillCurrent(current)) return null
-      // exec/exit can invalidate Darwin's stack-map copy before its BSD record disappears.
-      const code = (cause as NodeJS.ErrnoException).code
-      // Linux refuses another process's environment when it is not dumpable (a credential change,
-      // a CI runner's helpers). QualityLayer's own runs always are, so an unreadable one is not ours.
-      if (process.platform === "linux" && (code === "EACCES" || code === "EPERM")) return null
-      if (attempt === 2 || !["EIO", "EINVAL", "EINTR"].includes(code ?? "")) throw cause
-      const remaining = deadline - Date.now()
-      if (remaining <= 0) throw new Error("native ownership read exceeded its time bound")
-      Atomics.wait(retryPause, 0, 0, Math.min(1, remaining))
-    }
-  }
-  throw new Error(`native ownership environment unavailable for ${pid}`)
-}
-
-let argumentsBuffer: Uint8Array | undefined
-function argumentScratch(): Uint8Array {
-  argumentsBuffer ??= new Uint8Array(PROCESS_LIMITS.argumentBytes + 1)
-  return argumentsBuffer
-}
-
-/**
- * Which of this user's processes whose command name matches hold `paths` open, read from Linux's
- * `/proc` (each process's `comm` and `fd/*` links). A plain Linux server often has no lsof, and
- * without it every Resume of a Codex session was refused while any Codex ran. Keyed by real path,
- * shaped as `lsofHoldersChecked` answers; `verified` is false when a matching process's open files
- * cannot be read. Another user's processes are skipped, as lsof cannot read their files either.
- */
-export function procFileHolders(
-  paths: readonly string[],
-  command: RegExp,
-  proc = "/proc",
-): [Map<string, [number, string][]>, boolean] {
-  const holders = new Map<string, [number, string][]>()
-  const wanted = new Set<string>()
-  for (const path of paths) {
-    try {
-      wanted.add(realpathSync(path))
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") return [holders, false]
-    }
-  }
-  if (wanted.size === 0) return [holders, true]
-  const gone = (cause: unknown) =>
-    ["ENOENT", "ESRCH"].includes((cause as NodeJS.ErrnoException).code ?? "")
-  const pids = readdirSync(proc).filter((name) => /^\d+$/.test(name))
-  if (pids.length > PROCESS_LIMITS.pids) return [holders, false]
-  const uid = process.getuid?.()
-  for (const pid of pids) {
-    let name: string
-    try {
-      if (statSync(join(proc, pid)).uid !== uid) continue
-      name = readFileSync(join(proc, pid, "comm"), "utf8").trim()
-    } catch (cause) {
-      if (gone(cause)) continue
-      return [holders, false]
-    }
-    if (!command.test(name)) continue
-    let fds: string[]
-    try {
-      fds = readdirSync(join(proc, pid, "fd"))
-    } catch (cause) {
-      if (gone(cause)) continue
-      return [holders, false]
-    }
-    for (const fd of fds) {
-      let target: string
-      try {
-        target = readlinkSync(join(proc, pid, "fd", fd))
-      } catch {
-        continue // closed meanwhile
-      }
-      if (!wanted.has(target)) continue
-      const rows = holders.get(target) ?? []
-      rows.push([Number(pid), name])
-      holders.set(target, rows)
-    }
-  }
-  return [holders, true]
 }

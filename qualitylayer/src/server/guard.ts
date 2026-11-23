@@ -60,8 +60,7 @@ const isLoopbackHost = (host: string): boolean => {
   return port >= 1 && port <= 65535
 }
 
-/** Null when the request may proceed. `needsToken` is false for the static shell only. */
-export function refuse(request: Request, config: GuardConfig, needsToken: boolean): Refusal | null {
+function refuseRequestOrigin(request: Request, needsToken: boolean): Refusal | null {
   const host = request.headers.get("host") ?? ""
   if (!isLoopbackHost(host)) return { status: 403, reason: "foreign host" }
 
@@ -77,12 +76,20 @@ export function refuse(request: Request, config: GuardConfig, needsToken: boolea
   const opensThePage =
     !needsToken && request.method === "GET" && request.headers.get("sec-fetch-mode") === "navigate"
   if (crossSite && !opensThePage) return { status: 403, reason: "cross-site request" }
+  return null
+}
 
-  if (!needsToken) return null
-  // The key in a header.
+function hasValidTokenOrSession(request: Request, config: GuardConfig): boolean {
   const key = request.headers.get("x-qualitylayer-token") || ""
-  if (key !== "" && safeEqual(key, config.token)) return null
+  if (key !== "" && safeEqual(key, config.token)) return true
   const session = sessionOf(request, config.token)
-  if (session !== null && config.sessions?.valid(session) === true) return null
+  return session !== null && config.sessions?.valid(session) === true
+}
+
+/** Null when the request may proceed. `needsToken` is false for the static shell only. */
+export function refuse(request: Request, config: GuardConfig, needsToken: boolean): Refusal | null {
+  const originRefusal = refuseRequestOrigin(request, needsToken)
+  if (originRefusal !== null) return originRefusal
+  if (!needsToken || hasValidTokenOrSession(request, config)) return null
   return { status: 401, reason: "missing or wrong token" }
 }

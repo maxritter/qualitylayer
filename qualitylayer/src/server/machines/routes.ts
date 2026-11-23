@@ -1,36 +1,30 @@
 // The routes under `/api/machines`. Reading the list needs what any API call needs; everything that
 // starts ssh or changes the list needs the App or a browser it opened, as the folder routes do.
 
-import { VERSION } from "../../core/version.ts"
 import type { Ctx } from "../../ctx.ts"
-import { type Looked, lookAt } from "./check.ts"
-import { freePort, listContainers, snippetOf } from "./containers.ts"
-import { sshHosts } from "./hosts.ts"
-import { installOn, installPlan } from "./install.ts"
-import {
-  activateOn,
-  computersOf,
-  type LicencePlan,
-  planOf,
-  releaseOn,
-  type ThisLicence,
-  thisLicence,
-} from "./licence.ts"
-import { type LocalRun, runLocal } from "./local.ts"
-import { forgetKeys, lookAtHostKey, trustHostKey } from "./machine-keys.ts"
+import type { ThisLicence } from "./licence.ts"
+import type { LocalRun } from "./local.ts"
 import type { Machines } from "./manager.ts"
-import { nearby } from "./nearby.ts"
-import { pairingsOf } from "./pairing.ts"
-import { qualitylayer, type Ssh } from "./ssh.ts"
-import { type SshFiles, shownPath, sshFilesOf } from "./ssh-files.ts"
 import {
-  addMachine,
-  isTarget,
-  readMachines,
-  refusalBefore,
-  removeMachine,
-  renameMachine,
-} from "./store.ts"
+  containersRoute,
+  hostKeyRoute,
+  listPairingsRoute,
+  nearbyHostsRoute,
+  pairingActRoute,
+  sessionsRoute,
+  startPairingRoute,
+} from "./routes-pairing.ts"
+import {
+  addMachineRoute,
+  checkMachineRoute,
+  hostsRoute,
+  removeMachineRoute,
+  renameMachineRoute,
+  routesJson,
+  routesRefused,
+  updateMachineRoute,
+} from "./routes-setup.ts"
+import type { Ssh } from "./ssh.ts"
 
 const MACHINES_PATH = "/api/machines"
 
@@ -45,385 +39,73 @@ export type MachineRoutes = {
   local?: LocalRun
 }
 
-const NO_STORE = { "cache-control": "no-store" }
-const json = (body: unknown, status = 200): Response =>
-  Response.json(body, { status, headers: NO_STORE })
-const refused = (status: number, error: string): Response => json({ ok: false, error }, status)
+type RouteHandler = () => Promise<Response>
 
-const REFUSALS: Record<string, [number, string]> = {
-  "bad-target": [400, "This is not a name ssh can connect to."],
-  "bad-name": [400, "A machine needs a name."],
-  duplicate: [409, "This machine is already added."],
-  "no-port": [409, "No more machines can be added on this computer."],
+const COLLECTION_ROUTES: Record<
+  string,
+  (routes: MachineRoutes, request: Request) => Promise<Response>
+> = {
+  "POST:": (routes, request) => addMachineRoute(routes, request),
+  "GET:hosts": (routes) => hostsRoute(routes),
+  "POST:check": (routes, request) => checkMachineRoute(routes, request),
+  "GET:containers": (routes) => containersRoute(routes),
+  "GET:nearby": (routes) => nearbyHostsRoute(routes),
 }
 
-async function fields(request: Request): Promise<Record<string, unknown>> {
-  try {
-    const sent: unknown = await request.json()
-    return typeof sent === "object" && sent !== null ? (sent as Record<string, unknown>) : {}
-  } catch {
-    return {}
-  }
-}
-
-const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "")
-
-async function hosts({ ctx }: MachineRoutes): Promise<Response> {
-  const added = new Set((await readMachines(ctx)).map((machine) => machine.target))
-  return json({ ok: true, hosts: await sshHosts(ctx, added) })
-}
-
-type Reached = Extract<Looked, { reach: "ok" }>
-
-/** What adding a machine does about the licence, and how many computers are then in use. */
-async function licenceOf(routes: MachineRoutes, looked: Reached) {
-  const mine = await (routes.thisLicence ?? thisLicence)(routes.ctx)
-  const computers = computersOf(await readMachines(routes.ctx))
-  const plan: LicencePlan = planOf(mine.kind, looked.licence, computers)
-  return { mine, computers, plan }
-}
-
-async function check(routes: MachineRoutes, request: Request): Promise<Response> {
-  const target = text((await fields(request)).target)
-  if (!isTarget(target)) return refused(...(REFUSALS["bad-target"] as [number, string]))
-  if (routes.ssh === null) return refused(503, "ssh is not available on this server.")
-  const looked = await lookAt(routes.ssh, target)
-  if (looked.reach !== "ok" || looked.verdict === "unsupported")
-    return json({ ok: true, target, ...looked })
-  const { computers, plan } = await licenceOf(routes, looked)
-  const channel = (await installPlan(routes.ctx)).channel
-  return json({ ok: true, target, ...looked, plan, channel, thisVersion: VERSION, computers })
-}
-
-/** Setting a machine up stopped: nothing was added, and the page says why. */
-const stopped = (reason: string, error: string, more: Record<string, unknown> = {}): Response =>
-  json({ ok: false, reason, error, ...more }, 422)
-
-const notReached = (looked: Extract<Looked, { reach: "needs-you" | "unknown-host" | "offline" }>) =>
-  stopped(looked.reach, looked.reason)
-
-const unsupported = (looked: Reached) =>
-  stopped("unsupported", `${looked.system} cannot be added yet.`, { system: looked.system })
-
-type Done = { installed: "installed" | "updated" | "none"; version: string | null }
-
-/**
- * Install or update what the check found wanting; a failure is the answer. With `keyFollows` this
- * computer's key is activated there next, so the install starts no trial on the machine.
- */
-async function setUp(
-  { ctx, ssh }: MachineRoutes & { ssh: Ssh },
-  target: string,
-  looked: Reached,
-  keyFollows = false,
-): Promise<Done | Response> {
-  if (looked.verdict === "ready") return { installed: "none", version: looked.version }
-  const installed = await installOn(ssh, target, await installPlan(ctx), keyFollows)
-  if (!installed.ok)
-    return installed.failure !== undefined
-      ? stopped(installed.failure, installed.reason)
-      : stopped("install-failed", installed.reason, { lines: installed.lines })
-  return {
-    installed: looked.verdict === "update" ? "updated" : "installed",
-    version: installed.version,
-  }
-}
-
-/** Activate this computer's key on the machine when the plan says so; null when the add goes on. */
-async function licence(
-  { ssh }: MachineRoutes & { ssh: Ssh },
-  target: string,
-  chosen: Awaited<ReturnType<typeof licenceOf>>,
-): Promise<{ licence: "activated" | "trial" | "kept"; full: boolean } | Response> {
-  const { mine, plan } = chosen
-  if (plan === "kept") return { licence: "kept", full: false }
-  if (plan === "trial") return { licence: "trial", full: false }
-  if (plan === "full" || mine.kind !== "paid") return { licence: "trial", full: true }
-  const activated = await activateOn(ssh, target, mine.key)
-  if (activated.ok) return { licence: "activated", full: false }
-  if (activated.reason === "full") return { licence: "trial", full: true }
-  return stopped("licence-failed", activated.message)
-}
-
-/** Check, install or update, activate and store: the one confirmed add. */
-async function addConfirmed(
-  routes: MachineRoutes,
-  sent: Record<string, unknown>,
-): Promise<Response> {
-  const [name, target] = [text(sent.name), text(sent.target)]
-  if (!isTarget(target)) return refused(...(REFUSALS["bad-target"] as [number, string]))
-  // What the store would refuse is said before anything is installed or activated on the machine.
-  const known = await refusalBefore(routes.ctx, target, [routes.machines.ownPort])
-  if (known !== null) return refused(...(REFUSALS[known] as [number, string]))
-  const { ssh } = routes
-  if (ssh === null) return refused(503, "ssh is not available on this server.")
-  const ready = { ...routes, ssh }
-
-  const looked = await lookAt(ssh, target)
-  if (looked.reach !== "ok") return notReached(looked)
-  if (looked.verdict === "unsupported") return unsupported(looked)
-  // The licence is settled before the install: a machine this computer's key is activated on
-  // next must not start a trial of its own while it installs.
-  const chosen = await licenceOf(routes, looked)
-  const installed = await setUp(ready, target, looked, chosen.plan === "activate")
-  if (installed instanceof Response) return installed
-  const licensed = await licence(ready, target, chosen)
-  if (licensed instanceof Response) return licensed
-
-  const added = await addMachine(
-    routes.ctx,
-    { name, target },
-    { avoid: [routes.machines.ownPort], activated: licensed.licence === "activated" },
-  )
-  if (typeof added === "string") return refused(...(REFUSALS[added] as [number, string]))
-  await routes.machines.reload()
-  return json({
-    ok: true,
-    machine: { id: added.id, name: added.name, target: added.target },
-    ...installed,
-    ...licensed,
-    computers: chosen.computers,
-  })
-}
-
-/**
- * Adding a machine. With `confirmed: true` it is set up first (installed or updated, licence
- * activated) and added only when that worked; without it the machine is only added, to connect to
- * the QualityLayer already there.
- */
-async function add(routes: MachineRoutes, request: Request): Promise<Response> {
-  const sent = await fields(request)
-  if (sent.confirmed === true) return addConfirmed(routes, sent)
-  const added = await addMachine(
-    routes.ctx,
-    { name: text(sent.name), target: text(sent.target) },
-    { avoid: [routes.machines.ownPort] },
-  )
-  if (typeof added === "string") return refused(...(REFUSALS[added] as [number, string]))
-  await routes.machines.reload()
-  return json({ ok: true, machine: { id: added.id, name: added.name, target: added.target } })
-}
-
-/** The same install or update for a machine that is added already. */
-async function update(routes: MachineRoutes, id: string): Promise<Response> {
-  const machine = (await readMachines(routes.ctx)).find((one) => one.id === id)
-  if (machine === undefined) return refused(404, "No such machine.")
-  const { ssh } = routes
-  if (ssh === null) return refused(503, "ssh is not available on this server.")
-  const looked = await lookAt(ssh, machine.target)
-  if (looked.reach !== "ok") return notReached(looked)
-  if (looked.verdict === "unsupported") return unsupported(looked)
-  const done = await setUp({ ...routes, ssh }, machine.target, { ...looked, verdict: "update" })
-  if (done instanceof Response) return done
-  return json({ ok: true, from: looked.version, version: done.version })
-}
-
-async function rename(routes: MachineRoutes, id: string, request: Request): Promise<Response> {
-  const renamed = await renameMachine(routes.ctx, id, text((await fields(request)).name))
-  if (renamed === null) return refused(404, "No such machine.")
-  if (typeof renamed === "string") return refused(...(REFUSALS[renamed] as [number, string]))
-  await routes.machines.reload()
-  return json({ ok: true, machine: { id: renamed.id, name: renamed.name } })
-}
-
-/**
- * Removing a machine forgets the connection and nothing else there. The machine's licence stays
- * unless the request says `release: true`, which deactivates it first (and refuses to remove the
- * machine when that did not work, or when the machine cannot be reached to do it). A reachable
- * machine is told it is no longer served, so its server follows its own idle rule again; its
- * tasks and files are never touched. Unless `keepKey: true`, QualityLayer's key is taken off the
- * machine (when it answers) and the `Host` block pairing wrote here goes.
- */
-async function remove(routes: MachineRoutes, id: string, request: Request): Promise<Response> {
-  const machine = (await readMachines(routes.ctx)).find((one) => one.id === id)
-  if (machine === undefined) return refused(404, "No such machine.")
-  const sent = await fields(request)
-  const release = sent.release === true
-  const { ssh } = routes
-  const reachable =
-    ssh !== null && routes.machines.list().find((one) => one.id === id)?.state === "connected"
-  if (release) {
-    if (!reachable)
-      return stopped(
-        "unreachable",
-        `${machine.name} cannot be reached now, so its activation cannot be released from here.`,
-      )
-    const released = await releaseOn(ssh, machine.target)
-    if (!released.ok) return stopped("release-failed", released.message)
-  }
-  // Best effort: a machine that does not answer keeps its mark, which only keeps its server up.
-  if (reachable)
-    await ssh.run(machine.target, qualitylayer(["app", "ensure", "--not-for-machine", "--json"]), {
-      timeoutMs: 30_000,
-    })
-  const forgot =
-    sent.keepKey === true || ssh === null
-      ? { keyRemoved: false, entryRemoved: false }
-      : await forgetKeys(ssh, filesOf(routes), machine, reachable)
-  if ((await removeMachine(routes.ctx, id)) === null) return refused(404, "No such machine.")
-  await routes.machines.reload()
-  return json({ ok: true, released: release, ...forgot })
-}
-
-const filesOf = (routes: MachineRoutes): SshFiles =>
-  sshFilesOf(routes.ctx.env, routes.ssh?.configFile)
-
-/* ── Pairing: one job per machine being added, polled by the dialog and by `machines add` ── */
-
-const pairingDeps = (routes: MachineRoutes & { ssh: Ssh }) =>
-  pairingsOf({
-    ctx: routes.ctx,
-    ssh: routes.ssh,
-    machines: routes.machines,
-    ...(routes.thisLicence ? { thisLicence: routes.thisLicence } : {}),
-    ...(routes.local ? { local: routes.local } : {}),
-  })
-
-async function startPairing(routes: MachineRoutes, request: Request): Promise<Response> {
-  const { ssh } = routes
-  if (ssh === null) return refused(503, "ssh is not available on this server.")
-  const sent = await fields(request)
-  const input =
-    typeof sent.machine === "string"
-      ? { machine: sent.machine }
-      : typeof sent.container === "string"
-        ? { container: sent.container }
-        : { target: text(sent.target), name: text(sent.name) }
-  const started = await pairingDeps({ ...routes, ssh }).start(input)
-  if ("refused" in started) return refused(409, started.refused)
-  return json({ ok: true, pairing: started })
-}
-
-async function pairingAct(
-  routes: MachineRoutes,
-  request: Request,
-  id: string,
-  act: string | undefined,
-): Promise<Response> {
-  const { ssh } = routes
-  if (ssh === null) return refused(503, "ssh is not available on this server.")
-  const set = pairingDeps({ ...routes, ssh })
-  if (act === undefined && request.method === "GET") {
-    const view = set.get(id)
-    return view === null ? refused(404, "No such pairing.") : json({ ok: true, pairing: view })
-  }
-  if (request.method !== "POST") return refused(405, "Not this way.")
-  const sent = act === "answer" ? await fields(request) : {}
-  const done =
-    act === "answer"
-      ? set.answer(id, typeof sent.text === "string" ? sent.text : "")
-      : act === "again"
-        ? set.again(id)
-        : act === "cancel"
-          ? set.cancel(id)
-          : null
-  if (done === null) return refused(404, "No such pairing route.")
-  if (!done) return refused(409, "The pairing does not wait for this.")
-  return json({ ok: true, pairing: set.get(id) })
-}
-
-async function containers(routes: MachineRoutes): Promise<Response> {
-  const listed = await listContainers(routes.local ?? runLocal)
-  const added = new Set(
-    (await readMachines(routes.ctx)).flatMap((one) =>
-      one.container ? [one.container.folder] : [],
-    ),
-  )
-  if (!listed.docker) return json({ ok: true, docker: false, reason: listed.reason })
-  const port = freePort(listed.containers)
-  return json({
-    ok: true,
-    docker: true,
-    engine: listed.engine,
-    containers: listed.containers.map((one) => ({
-      ...one,
-      added: added.has(one.folder),
-      // The folder as the person reads it: `~/code/api`.
-      place: shownPath(filesOf(routes), one.folder),
-    })),
-    snippet: { port, text: snippetOf(port) },
-  })
-}
-
-async function nearbyHosts(routes: MachineRoutes): Promise<Response> {
-  const added = new Set((await readMachines(routes.ctx)).map((one) => one.target))
-  const found = (await nearby(routes.local ?? runLocal)).filter(
-    (one) => !added.has(`${one.user}@${one.host}`),
-  )
-  return json({ ok: true, nearby: found })
-}
-
-async function hostKey(routes: MachineRoutes, id: string, request: Request): Promise<Response> {
-  const machine = (await readMachines(routes.ctx)).find((one) => one.id === id)
-  if (machine === undefined) return refused(404, "No such machine.")
-  const { ssh } = routes
-  if (ssh === null) return refused(503, "ssh is not available on this server.")
-  const local = routes.local ?? runLocal
-  if (request.method === "GET") {
-    const look = await lookAtHostKey(local, ssh, filesOf(routes), machine)
-    return look.ok
-      ? json({ ok: true, fingerprint: look.fingerprint, changed: look.changed })
-      : refused(422, look.error)
-  }
-  const shown = text((await fields(request)).fingerprint)
-  const trusted = await trustHostKey(local, ssh, filesOf(routes), machine, shown)
-  if (!trusted.ok) return refused(409, trusted.error)
-  routes.machines.retry(id)
-  return json({ ok: true })
-}
-
-/** How many agent sessions run on the machine, for the Remove dialog; `null` when it is not connected or did not say. */
-async function sessions(routes: MachineRoutes, id: string): Promise<Response> {
-  if (!(await readMachines(routes.ctx)).some((one) => one.id === id))
-    return refused(404, "No such machine.")
-  return json({ ok: true, running: await routes.machines.sessions(id) })
-}
-
-/** A route that starts ssh or changes the list; null when the path and method name none. */
-function changing(
+function matchPairingRoute(
   routes: MachineRoutes,
   request: Request,
   rest: string[],
-): (() => Promise<Response>) | null {
-  const [first, second] = rest
-  const method = request.method
-  if (rest.length === 0) return method === "POST" ? () => add(routes, request) : null
-  if (rest.length === 1 && first === "hosts") return method === "GET" ? () => hosts(routes) : null
-  if (rest.length === 1 && first === "check")
-    return method === "POST" ? () => check(routes, request) : null
-  if (rest.length === 1 && first === "containers" && method === "GET")
-    return () => containers(routes)
-  if (rest.length === 1 && first === "nearby" && method === "GET") return () => nearbyHosts(routes)
-  if (first === "pairings") {
-    if (rest.length === 1)
-      return method === "POST"
-        ? () => startPairing(routes, request)
-        : method === "GET"
-          ? async () =>
-              routes.ssh === null
-                ? json({ ok: true, pairings: [] })
-                : json({
-                    ok: true,
-                    pairings: pairingDeps({ ...routes, ssh: routes.ssh }).list(),
-                  })
-          : null
-    const [, id, act] = rest
-    return id !== undefined && rest.length <= 3 ? () => pairingAct(routes, request, id, act) : null
+): RouteHandler | null {
+  if (rest.length === 1) {
+    if (request.method === "POST") return () => startPairingRoute(routes, request)
+    if (request.method === "GET") return () => listPairingsRoute(routes)
+    return null
   }
-  if (first === undefined || rest.length > 2) return null
-  if (rest.length === 2 && second === "host-key" && (method === "GET" || method === "POST"))
-    return () => hostKey(routes, first, request)
-  if (rest.length === 2 && method === "GET" && second === "sessions")
-    return () => sessions(routes, first)
-  if (rest.length === 2 && method === "POST") {
-    if (second === "update") return () => update(routes, first)
-    if (second === "retry")
-      return async () =>
-        routes.machines.retry(first) ? json({ ok: true }) : refused(404, "No such machine.")
+  const [, id, act] = rest
+  return id !== undefined && rest.length <= 3
+    ? () => pairingActRoute(routes, request, id, act)
+    : null
+}
+
+function matchMachineItemSubroute(
+  routes: MachineRoutes,
+  request: Request,
+  id: string,
+  sub: string,
+): RouteHandler | null {
+  const { method } = request
+  if (sub === "host-key" && (method === "GET" || method === "POST"))
+    return () => hostKeyRoute(routes, id, request)
+  if (sub === "sessions" && method === "GET") return () => sessionsRoute(routes, id)
+  if (sub === "update" && method === "POST") return () => updateMachineRoute(routes, id)
+  if (sub === "retry" && method === "POST") {
+    return async () =>
+      routes.machines.retry(id) ? routesJson({ ok: true }) : routesRefused(404, "No such machine.")
   }
-  if (rest.length === 2) return null
-  if (method === "PATCH") return () => rename(routes, first, request)
-  return method === "DELETE" ? () => remove(routes, first, request) : null
+  return null
+}
+
+function matchMachineItemRoute(
+  routes: MachineRoutes,
+  request: Request,
+  rest: string[],
+): RouteHandler | null {
+  const [id, sub] = rest
+  if (id === undefined || rest.length > 2) return null
+  if (sub !== undefined) return matchMachineItemSubroute(routes, request, id, sub)
+  if (request.method === "PATCH") return () => renameMachineRoute(routes, id, request)
+  return request.method === "DELETE" ? () => removeMachineRoute(routes, id, request) : null
+}
+
+/** A route that starts ssh or changes the list; null when the path and method name none. */
+function changing(routes: MachineRoutes, request: Request, rest: string[]): RouteHandler | null {
+  if (rest[0] === "pairings") return matchPairingRoute(routes, request, rest)
+  if (rest.length <= 1) {
+    const direct = COLLECTION_ROUTES[`${request.method}:${rest[0] ?? ""}`]
+    if (direct) return () => direct(routes, request)
+  }
+  return matchMachineItemRoute(routes, request, rest)
 }
 
 /** The answer to a request under `/api/machines`, or null for any other path. */
@@ -435,11 +117,14 @@ export async function machinesRoute(
   const path = new URL(request.url).pathname
   if (path !== MACHINES_PATH && !path.startsWith(`${MACHINES_PATH}/`)) return null
   if (path === MACHINES_PATH && request.method === "GET")
-    return json({ ok: true, machines: routes?.machines.list() ?? [] })
+    return routesJson({ ok: true, machines: routes?.machines.list() ?? [] })
   const rest = path.slice(MACHINES_PATH.length).split("/").filter(Boolean)
   const route = routes === undefined ? null : changing(routes, request, rest)
   if (route === null) return new Response("No such machines route.", { status: 404 })
   if (!keyPaired())
-    return refused(403, "Only the QualityLayer App or a browser it opened may change machines.")
+    return routesRefused(
+      403,
+      "Only the QualityLayer App or a browser it opened may change machines.",
+    )
   return route()
 }

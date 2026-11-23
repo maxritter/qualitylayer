@@ -1,5 +1,7 @@
 import { renameSync } from "node:fs"
 
+const WINDOWS_RETRYABLE_CODES = new Set<string | undefined>(["EPERM", "EBUSY", "EACCES"])
+
 /** Keep the old record intact while a Windows reader temporarily blocks replacement. */
 export function replaceRunRecord(
   from: string,
@@ -21,12 +23,7 @@ export function replaceRunRecord(
       return
     } catch (cause) {
       const code = (cause as NodeJS.ErrnoException).code
-      if (
-        !windows ||
-        (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES") ||
-        remaining === 0
-      )
-        throw cause
+      if (!windows || !WINDOWS_RETRYABLE_CODES.has(code) || remaining === 0) throw cause
       const pause = Math.min(delay, remaining)
       sleep(pause)
       remaining -= pause

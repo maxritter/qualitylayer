@@ -30,14 +30,8 @@ export async function readApprovedPlan(
 /** Over this many lines on a side the diff compares line sets instead of aligning the lines. */
 const ALIGN_LIMIT = 1500
 
-/**
- * The changed lines from `before` to `after`, in document order: `- ` for a line that went, `+ ` for
- * one that came. Lines are compared without trailing space; blank lines are not changes worth showing.
- */
-export function changedLines(before: string, after: string): string[] {
-  const a = before.split(/\r?\n/).map((l) => l.trimEnd())
-  const b = after.split(/\r?\n/).map((l) => l.trimEnd())
-  // Trim the common head and tail first: most edits are small.
+/** Trim identical leading and trailing lines and return the differing middles. */
+function trimCommonBounds(a: string[], b: string[]): [string[], string[]] {
   let head = 0
   while (head < a.length && head < b.length && a[head] === b[head]) head++
   let tail = 0
@@ -47,43 +41,64 @@ export function changedLines(before: string, after: string): string[] {
     a[a.length - 1 - tail] === b[b.length - 1 - tail]
   )
     tail++
-  const x = a.slice(head, a.length - tail)
-  const y = b.slice(head, b.length - tail)
+  return [a.slice(head, a.length - tail), b.slice(head, b.length - tail)]
+}
+
+function diffLineSets(x: string[], y: string[]): string[] {
+  const inY = new Set(y)
+  const inX = new Set(x)
   const out: string[] = []
-  if (x.length > ALIGN_LIMIT || y.length > ALIGN_LIMIT) {
-    const inY = new Set(y)
-    const inX = new Set(x)
-    for (const line of x) if (!inY.has(line)) out.push(`- ${line}`)
-    for (const line of y) if (!inX.has(line)) out.push(`+ ${line}`)
-  } else {
-    // Longest common subsequence of the middle, then the walk that lists what is not in it.
-    const lcs: number[][] = Array.from({ length: x.length + 1 }, () =>
-      new Array<number>(y.length + 1).fill(0),
-    )
-    for (let i = x.length - 1; i >= 0; i--)
-      for (let j = y.length - 1; j >= 0; j--)
-        (lcs[i] as number[])[j] =
-          x[i] === y[j]
-            ? ((lcs[i + 1] as number[])[j + 1] as number) + 1
-            : Math.max((lcs[i + 1] as number[])[j] as number, (lcs[i] as number[])[j + 1] as number)
-    let i = 0
-    let j = 0
-    while (i < x.length || j < y.length) {
-      if (i < x.length && j < y.length && x[i] === y[j]) {
-        i++
-        j++
-      } else if (
-        j >= y.length ||
-        (i < x.length &&
-          ((lcs[i + 1] as number[])[j] as number) >= ((lcs[i] as number[])[j + 1] as number))
-      ) {
-        out.push(`- ${x[i]}`)
-        i++
-      } else {
-        out.push(`+ ${y[j]}`)
-        j++
-      }
+  for (const line of x) if (!inY.has(line)) out.push(`- ${line}`)
+  for (const line of y) if (!inX.has(line)) out.push(`+ ${line}`)
+  return out
+}
+
+function buildLcsTable(x: string[], y: string[]): Uint32Array {
+  const width = y.length + 1
+  const lcs = new Uint32Array((x.length + 1) * width)
+  for (let i = x.length - 1; i >= 0; i--) {
+    for (let j = y.length - 1; j >= 0; j--) {
+      lcs[i * width + j] =
+        x[i] === y[j]
+          ? (lcs[(i + 1) * width + j + 1] ?? 0) + 1
+          : Math.max(lcs[(i + 1) * width + j] ?? 0, lcs[i * width + j + 1] ?? 0)
     }
   }
+  return lcs
+}
+
+function diffLcs(x: string[], y: string[]): string[] {
+  const width = y.length + 1
+  const lcs = buildLcsTable(x, y)
+  const out: string[] = []
+  let i = 0
+  let j = 0
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      i++
+      j++
+    } else if (
+      j >= y.length ||
+      (i < x.length && (lcs[(i + 1) * width + j] ?? 0) >= (lcs[i * width + j + 1] ?? 0))
+    ) {
+      out.push(`- ${x[i]}`)
+      i++
+    } else {
+      out.push(`+ ${y[j]}`)
+      j++
+    }
+  }
+  return out
+}
+
+/**
+ * The changed lines from `before` to `after`, in document order: `- ` for a line that went, `+ ` for
+ * one that came. Lines are compared without trailing space; blank lines are not changes worth showing.
+ */
+export function changedLines(before: string, after: string): string[] {
+  const a = before.split(/\r?\n/).map((l) => l.trimEnd())
+  const b = after.split(/\r?\n/).map((l) => l.trimEnd())
+  const [x, y] = trimCommonBounds(a, b)
+  const out = x.length > ALIGN_LIMIT || y.length > ALIGN_LIMIT ? diffLineSets(x, y) : diffLcs(x, y)
   return out.filter((line) => line.slice(2).trim() !== "")
 }

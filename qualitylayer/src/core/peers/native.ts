@@ -1,27 +1,35 @@
 import { createHash } from "node:crypto"
-import {
-  chmodSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs"
-import { connect } from "node:net"
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { type Env, realCtx } from "../../ctx.ts"
 import { detectAgent, sessionVariables } from "../agents/detect.ts"
 import { NATIVE_PEERS_MAX } from "../home-caps.ts"
 import type { ProcessIdentity } from "../run/contracts.ts"
-import { verifiedNativeParent } from "../run/native-parent.ts"
-import { identityState, processIdentity } from "../run/registry.ts"
+import { identityState } from "../run/registry.ts"
 import { protectWindowsObject } from "../run/windows.ts"
 import { sessionKey } from "../task/binding.ts"
-import { isUuid, nowIso, PeerError, stateDir, unlinkQuiet, writeJsonAtomic } from "./base.ts"
+import { isUuid, PeerError, stateDir, unlinkQuiet } from "./base.ts"
 import { ResolveError, ResolveNotFound } from "./codex.ts"
-import type { OrdinaryDelivery } from "./inbox.ts"
-import { withLock } from "./lock.ts"
+import { resetNativeReplyBudget } from "./native-delivery.ts"
+import { dropHookQueue } from "./native-queue.ts"
+
+export {
+  deliverNative,
+  nativeReplyBudget,
+  peerEnvelope,
+  resetNativeReplyBudget,
+} from "./native-delivery.ts"
+export {
+  isPeerEnvelope,
+  queueHookMessage,
+  takeHookMessages,
+} from "./native-queue.ts"
+export {
+  nativeRegistrationCommand,
+  registerHookPeer,
+  registerNative,
+  unregisterHookPeer,
+} from "./native-register.ts"
 
 /** Pi and OpenCode reach a session through the socket of their in-process plugin. */
 export const SOCKET_KINDS = ["pi", "opencode"] as const
@@ -37,27 +45,27 @@ export const isNativeKind = (kind: unknown): kind is NativeKind =>
   (NATIVE_KINDS as readonly unknown[]).includes(kind)
 export const isHookPeerKind = (kind: unknown): kind is HookPeerKind =>
   (HOOK_PEER_KINDS as readonly unknown[]).includes(kind)
+
 export type NativeRegistration = {
   kind: NativeKind
   uuid: string
   session: string
   name: string
   cwd: string
-  /** A socket kind's listener; hook kinds have none. */
   port?: number
   token?: string
   identity: ProcessIdentity
   status: "busy" | "idle"
   updated: string
-  /** Hook kinds: the terminal pane or session key the agent's commands share with its hooks. */
   key?: string
-  /** Hook kinds: the running turn follows a delivered peer message (the reply budget applies). */
   peerTurn?: boolean
 }
+
 const REGISTRATION_FILE = new RegExp(`^(${NATIVE_KINDS.join("|")})-[a-f0-9-]{36}\\.json$`)
-const MAX_NATIVE = NATIVE_PEERS_MAX
+export const MAX_NATIVE = NATIVE_PEERS_MAX
 let protectedDirectory: string | undefined
-const nativeDir = () => {
+
+export const nativeDir = () => {
   const dir = join(stateDir(), "native")
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   if (protectedDirectory !== dir) {
@@ -74,20 +82,37 @@ const nativeDir = () => {
   }
   return dir
 }
-function nativeStorageAvailable(): void {
+
+export function nativeStorageAvailable(): void {
   if (readdirSync(nativeDir()).length >= MAX_NATIVE * 4)
     throw new PeerError("Native peer storage is full")
 }
+
 export function nativePeerId(kind: NativeKind, session: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(session)) throw new PeerError("Invalid native session id", 2)
   if (kind === "pi" && isUuid(session)) return session.toLowerCase()
   const hash = createHash("sha256").update(`${kind}:${session}`).digest("hex").slice(0, 32)
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`
 }
-const pathOf = (kind: NativeKind, id: string) => {
+
+export const pathOf = (kind: NativeKind, id: string) => {
   if (!isUuid(id)) throw new PeerError("Invalid native peer id", 2)
   return join(nativeDir(), `${kind}-${id}.json`)
 }
+
+function hasValidSocketEndpoint(row: NativeRegistration): boolean {
+  if (isHookPeerKind(row.kind)) return true
+  const validPort =
+    Number.isInteger(row.port) && (row.port as number) >= 1 && (row.port as number) <= 65535
+  return validPort && /^[a-f0-9]{64}$/.test(row.token ?? "")
+}
+
+function isValidRegistrationRow(row: NativeRegistration, path: string): boolean {
+  if (!isNativeKind(row.kind) || row.uuid !== nativePeerId(row.kind, row.session)) return false
+  if (path !== pathOf(row.kind, row.uuid) || !hasValidSocketEndpoint(row)) return false
+  return Boolean(row.identity) && Number.isSafeInteger(row.identity.pid)
+}
+
 export function nativeRegistrations(): NativeRegistration[] {
   return readdirSync(nativeDir())
     .filter((name) => REGISTRATION_FILE.test(name))
@@ -97,19 +122,7 @@ export function nativeRegistrations(): NativeRegistration[] {
       try {
         if (statSync(path).size > 16384) return []
         const row = JSON.parse(readFileSync(path, "utf8")) as NativeRegistration
-        if (
-          !isNativeKind(row.kind) ||
-          row.uuid !== nativePeerId(row.kind, row.session) ||
-          path !== pathOf(row.kind, row.uuid) ||
-          (!isHookPeerKind(row.kind) &&
-            (!Number.isInteger(row.port) ||
-              (row.port as number) < 1 ||
-              (row.port as number) > 65535 ||
-              !/^[a-f0-9]{64}$/.test(row.token ?? ""))) ||
-          !row.identity ||
-          !Number.isSafeInteger(row.identity.pid)
-        )
-          return []
+        if (!isValidRegistrationRow(row, path)) return []
         if (identityState(row.identity) === "dead") {
           unlinkQuiet(path)
           resetNativeReplyBudget(row)
@@ -122,15 +135,15 @@ export function nativeRegistrations(): NativeRegistration[] {
       }
     })
 }
+
+function matchesNativeTarget(row: NativeRegistration, kind: NativeKind, target: string): boolean {
+  if (row.kind !== kind) return false
+  if (row.uuid === target || row.session === target || row.name === target) return true
+  return target.length >= 8 && row.uuid.startsWith(target)
+}
+
 export function resolveNative(kind: NativeKind, target: string): NativeRegistration {
-  const rows = nativeRegistrations().filter(
-    (r) =>
-      r.kind === kind &&
-      (r.uuid === target ||
-        r.session === target ||
-        r.name === target ||
-        (target.length >= 8 && r.uuid.startsWith(target))),
-  )
+  const rows = nativeRegistrations().filter((r) => matchesNativeTarget(r, kind, target))
   if (rows.length === 0)
     throw new ResolveNotFound(`No live ${kind} session matches ${JSON.stringify(target)}`)
   if (rows.length !== 1)
@@ -142,12 +155,7 @@ export function resolveNative(kind: NativeKind, target: string): NativeRegistrat
     throw new ResolveError(`Cannot verify ${kind} session ownership`)
   return row
 }
-/**
- * The native session running a command. Pi and OpenCode hand it their session id. A hook agent
- * hands it the id its own variable or a managed start's `QUALITYLAYER_SESSION` names; Copilot and
- * a terminal-started Grok name none, so the one registered session in the command's terminal pane
- * (the key its hooks stored) stands for it. Null when nothing tells which session asks.
- */
+
 export function nativeCallerOf(env: Pick<Env, "get">): { kind: NativeKind; uuid: string } | null {
   const kind = detectAgent(env)
   if (kind === "pi" || kind === "opencode") {
@@ -165,336 +173,5 @@ export function nativeCallerOf(env: Pick<Env, "get">): { kind: NativeKind; uuid:
   const rows = nativeRegistrations().filter((row) => row.kind === kind && row.key === key)
   return rows.length === 1 ? { kind, uuid: (rows[0] as NativeRegistration).uuid } : null
 }
+
 export const nativeCaller = () => nativeCallerOf(realCtx().env)
-/** Called only by the installed extension, with its private token over stdin. */
-export function registerNative(payload: unknown, parent?: number): { uuid: string } {
-  const p = payload as Partial<NativeRegistration> & {
-    pid?: number
-    action?: string
-    resetBudget?: boolean
-  }
-  const owner = parent ?? verifiedNativeParent(p?.pid)
-  if (
-    !p ||
-    (p.kind !== "pi" && p.kind !== "opencode") ||
-    typeof p.session !== "string" ||
-    p.pid !== owner ||
-    !owner ||
-    typeof p.token !== "string" ||
-    !/^[a-f0-9]{64}$/.test(p.token)
-  )
-    throw new PeerError("Invalid native registration", 2)
-  const uuid = nativePeerId(p.kind, p.session)
-  const kind = p.kind
-  const file = pathOf(kind, uuid)
-  return withLock(join(nativeDir(), ".lock"), () => {
-    const rows = nativeRegistrations()
-    const existing = rows.find((r) => r.kind === p.kind && r.uuid === uuid)
-    if (existing && (existing.token !== p.token || existing.identity.pid !== owner))
-      throw new PeerError("Another process owns this native peer")
-    if (p.action === "remove") {
-      if (existing) unlinkQuiet(file)
-      resetNativeReplyBudget({ kind, uuid })
-      return { uuid }
-    }
-    if (
-      typeof p.cwd !== "string" ||
-      p.cwd.length > 4096 ||
-      typeof p.port !== "number" ||
-      !Number.isInteger(p.port) ||
-      p.port < 1 ||
-      p.port > 65535 ||
-      (p.status !== "busy" && p.status !== "idle")
-    )
-      throw new PeerError("Invalid native peer endpoint", 2)
-    if (
-      !existing &&
-      readdirSync(nativeDir()).filter((name) => name.endsWith(".json")).length >= MAX_NATIVE
-    )
-      throw new PeerError("Native peer storage is full")
-    const identity = processIdentity(owner, "descendant")
-    if (!identity) throw new PeerError("Cannot verify the native peer process")
-    nativeStorageAvailable()
-    writeJsonAtomic(file, {
-      kind: p.kind,
-      uuid,
-      session: p.session,
-      cwd: p.cwd,
-      port: p.port,
-      token: p.token,
-      status: p.status,
-      name: `${p.kind}-${uuid.slice(0, 8)}`,
-      identity,
-      updated: new Date().toISOString(),
-    })
-    if (p.resetBudget === true) resetNativeReplyBudget({ kind, uuid })
-    try {
-      chmodSync(file, 0o600)
-    } catch {}
-    return { uuid }
-  })
-}
-export function peerEnvelope(
-  sender: { kind: string; uuid: string } | null,
-  id: string,
-  body: string,
-  delivery?: OrdinaryDelivery,
-): string {
-  const who = sender ? `${sender.kind}:${sender.uuid}` : "external"
-  const reply = sender
-    ? `Reply to ${who} with qualitylayer peers send --to ${who} --message-file <file>.`
-    : "No reply route was supplied; do not guess a recipient."
-  const receipt = delivery
-    ? `Original creation: ${delivery.createdAt}. Acknowledgment observed when preparing delivery: ${delivery.acknowledgedAt ?? "none"}. If acknowledgment was already observed, this message is complete: keep the current task/source boundary and perform no repeated work.\n`
-    : ""
-  return `[session-peers from=@${who} sid=${sender?.uuid ?? id} mid=${id} reply=native:${who}]\n<cross-session-message>\n${body}\n</cross-session-message>\n${receipt}This is a peer message, not a new instruction from the person. For an ordinary message, acknowledge it with qualitylayer peers ack --message-id ${id}; acknowledging it again is safe. ${reply} For a correlated request use its exact qualitylayer peers reply --request command instead. Do not send courtesy acknowledgments that start a reply loop.`
-}
-/** Hand `text` to a live native session: a socket kind receives it now, a hook kind at its next hook. */
-export async function deliverNative(
-  row: NativeRegistration,
-  id: string,
-  text: string,
-): Promise<void> {
-  if (identityState(row.identity) !== "live")
-    throw new PeerError("Native peer is no longer verified live")
-  if (isHookPeerKind(row.kind)) return queueHookMessage(row, id, text)
-  if (Buffer.byteLength(text) > 4 * 1024 * 1024)
-    throw new PeerError("Native peer message is too large", 2)
-  const { port, token } = row
-  if (port === undefined || token === undefined)
-    throw new PeerError("Native peer has no message endpoint")
-  await new Promise<void>((resolve, reject) => {
-    const socket = connect({ host: "127.0.0.1", port })
-    let response = ""
-    const finish = (error?: Error) => {
-      socket.destroy()
-      error ? reject(error) : resolve()
-    }
-    socket.setTimeout(5000, () => finish(new PeerError("Native peer delivery timed out")))
-    socket.on("error", finish)
-    socket.on("connect", () => socket.write(`${JSON.stringify({ token, id, text })}\n`))
-    socket.on("data", (bytes) => {
-      response += bytes.toString()
-      if (response.length > 4096) return finish(new PeerError("Invalid native peer receipt"))
-      if (!response.includes("\n")) return
-      try {
-        const receipt = JSON.parse(response)
-        finish(
-          receipt.id === id && receipt.status === "queued"
-            ? undefined
-            : new PeerError(receipt.error || "Native peer did not queue the message"),
-        )
-      } catch {
-        finish(new PeerError("Invalid native peer receipt"))
-      }
-    })
-    socket.on("end", () => {
-      if (!response.includes("\n")) finish(new PeerError("Native peer closed without a receipt"))
-    })
-  })
-}
-
-/** Three consecutive peer-triggered outgoing turns, until real human input resets the chain. */
-export function nativeReplyBudget(sender: { kind: NativeKind; uuid: string }): void {
-  // A hook agent cannot mark its turns in the environment: its registration says whether the turn
-  // follows a delivered peer message (set at delivery, cleared by the person's next prompt).
-  const peerTurn =
-    isHookPeerKind(sender.kind) &&
-    nativeRegistrations().some(
-      (row) => row.kind === sender.kind && row.uuid === sender.uuid && row.peerTurn === true,
-    )
-  if (process.env.QUALITYLAYER_PEER_ORIGIN !== "1" && !peerTurn) return
-  const file = join(nativeDir(), `${sender.kind}-${sender.uuid}.budget`)
-  withLock(join(nativeDir(), ".lock"), () => {
-    if (!nativeRegistrations().some((row) => row.kind === sender.kind && row.uuid === sender.uuid))
-      throw new PeerError(
-        "Only a registered lead session can send a peer-triggered message; return the result to your lead",
-      )
-    let previous = { at: 0, count: 0 }
-    try {
-      previous = JSON.parse(readFileSync(file, "utf8"))
-    } catch {}
-    const count = previous.at > Date.now() - 30 * 60_000 ? previous.count : 0
-    if (count >= 3)
-      throw new PeerError("Peer reply budget exhausted; wait for the person's next prompt")
-    nativeStorageAvailable()
-    writeJsonAtomic(file, { at: Date.now(), count: count + 1 })
-  })
-}
-export function resetNativeReplyBudget(sender: { kind: NativeKind; uuid: string }): void {
-  unlinkQuiet(join(nativeDir(), `${sender.kind}-${sender.uuid}.budget`))
-}
-
-// ------------------------------------------------------------------ hook agents
-
-/** The agent's hook, run as a descendant of the agent, registers and refreshes its session. */
-export function registerHookPeer(input: {
-  kind: HookPeerKind
-  session: string
-  cwd: string
-  status: "busy" | "idle"
-  /** The agent's own process, which keeps the registration alive. */
-  pid: number
-  key?: string | null
-  /** The turn follows a delivered peer message; the person's own prompt clears it. */
-  peerTurn?: boolean
-}): { uuid: string } {
-  const { kind, session, cwd, status, pid } = input
-  if (
-    !isHookPeerKind(kind) ||
-    typeof cwd !== "string" ||
-    cwd.length > 4096 ||
-    (status !== "busy" && status !== "idle") ||
-    !Number.isSafeInteger(pid) ||
-    pid < 1
-  )
-    throw new PeerError("Invalid native registration", 2)
-  const uuid = nativePeerId(kind, session)
-  const file = pathOf(kind, uuid)
-  return withLock(join(nativeDir(), ".lock"), () => {
-    const existing = nativeRegistrations().find((r) => r.kind === kind && r.uuid === uuid)
-    if (existing && existing.identity.pid !== pid)
-      throw new PeerError("Another process owns this native peer")
-    if (
-      !existing &&
-      readdirSync(nativeDir()).filter((name) => name.endsWith(".json")).length >= MAX_NATIVE
-    )
-      throw new PeerError("Native peer storage is full")
-    const identity = processIdentity(pid, "descendant")
-    if (!identity) throw new PeerError("Cannot verify the native peer process")
-    nativeStorageAvailable()
-    writeJsonAtomic(file, {
-      kind,
-      uuid,
-      session,
-      cwd,
-      status,
-      name: `${kind}-${uuid.slice(0, 8)}`,
-      identity,
-      updated: nowIso(),
-      ...(input.key ? { key: input.key } : {}),
-      ...(input.peerTurn ? { peerTurn: true } : {}),
-    })
-    try {
-      chmodSync(file, 0o600)
-    } catch {}
-    return { uuid }
-  })
-}
-
-/** The session ended: only the process that registered it removes it, with its queue and budget. */
-export function unregisterHookPeer(kind: HookPeerKind, session: string, pid: number): void {
-  const uuid = nativePeerId(kind, session)
-  withLock(join(nativeDir(), ".lock"), () => {
-    const existing = nativeRegistrations().find((r) => r.kind === kind && r.uuid === uuid)
-    if (!existing || existing.identity.pid !== pid) return
-    unlinkQuiet(pathOf(kind, uuid))
-    resetNativeReplyBudget({ kind, uuid })
-    dropHookQueue({ kind, uuid })
-  })
-}
-
-const QUEUE_MAX_MESSAGES = 32
-const QUEUE_MAX_TEXT = 64 * 1024
-const QUEUE_TAKE_BYTES = 128 * 1024
-const QUEUE_TTL_MS = 24 * 3600_000
-
-const queueRoot = () => {
-  const dir = join(stateDir(), "native-queue")
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  chmodSync(dir, 0o700)
-  return dir
-}
-const queueDir = (row: { kind: string; uuid: string }) => {
-  if (!isHookPeerKind(row.kind) || !isUuid(row.uuid)) throw new PeerError("Invalid native peer", 2)
-  return join(queueRoot(), `${row.kind}-${row.uuid}`)
-}
-export function dropHookQueue(row: { kind: string; uuid: string }): void {
-  if (!isHookPeerKind(row.kind) || !isUuid(row.uuid)) return
-  rmSync(join(queueRoot(), `${row.kind}-${row.uuid}`), { recursive: true, force: true })
-  unlinkQuiet(join(queueRoot(), `${row.kind}-${row.uuid}.lock`))
-}
-
-/** Keep a message for the session's next hook; the same id is kept once. */
-export function queueHookMessage(row: NativeRegistration, id: string, text: string): void {
-  if (!isUuid(id)) throw new PeerError("Invalid message id", 2)
-  if (Buffer.byteLength(text) > QUEUE_MAX_TEXT)
-    throw new PeerError(
-      `A message to ${row.kind} is limited to ${QUEUE_MAX_TEXT / 1024} KiB; put the detail in a file and name its path`,
-      2,
-    )
-  const dir = queueDir(row)
-  withLock(`${dir}.lock`, () => {
-    mkdirSync(dir, { recursive: true, mode: 0o700 })
-    chmodSync(dir, 0o700)
-    const names = readdirSync(dir).filter((name) => name.endsWith(".json"))
-    if (names.some((name) => name.endsWith(`-${id}.json`))) return
-    if (names.length >= QUEUE_MAX_MESSAGES)
-      throw new PeerError(`The ${row.kind} session has ${QUEUE_MAX_MESSAGES} messages waiting`)
-    writeJsonAtomic(join(dir, `${String(Date.now()).padStart(15, "0")}-${id}.json`), {
-      id,
-      text,
-      at: Date.now(),
-    })
-  })
-}
-
-/**
- * Take the queued messages in arrival order, up to a size cap; what is taken is gone (a message is
- * handed over once). Expired ones are dropped. The rest wait for the next hook.
- */
-export function takeHookMessages(row: {
-  kind: string
-  uuid: string
-}): { id: string; text: string }[] {
-  const dir = queueDir(row)
-  if (!readdirSyncQuiet(dir)) return []
-  return withLock(`${dir}.lock`, () => {
-    const taken: { id: string; text: string }[] = []
-    let bytes = 0
-    for (const name of (readdirSyncQuiet(dir) ?? []).filter((n) => n.endsWith(".json")).sort()) {
-      const path = join(dir, name)
-      let entry: { id?: unknown; text?: unknown; at?: unknown } | null = null
-      try {
-        if (statSync(path).size <= QUEUE_MAX_TEXT * 2)
-          entry = JSON.parse(readFileSync(path, "utf8"))
-      } catch {}
-      const fresh = typeof entry?.at === "number" && Date.now() - entry.at < QUEUE_TTL_MS
-      if (
-        entry === null ||
-        !fresh ||
-        typeof entry.id !== "string" ||
-        !isUuid(entry.id) ||
-        typeof entry.text !== "string"
-      ) {
-        unlinkQuiet(path)
-        continue
-      }
-      if (taken.length > 0 && bytes + entry.text.length > QUEUE_TAKE_BYTES) break
-      unlinkQuiet(path)
-      taken.push({ id: entry.id, text: entry.text })
-      bytes += entry.text.length
-    }
-    return taken
-  })
-}
-const readdirSyncQuiet = (dir: string): string[] | null => {
-  try {
-    return readdirSync(dir)
-  } catch {
-    return null
-  }
-}
-
-/** A prompt that is a delivered peer message, not the person's own words. */
-export const isPeerEnvelope = (prompt: string): boolean => /^\s*\[session-peers from=/.test(prompt)
-
-export async function nativeRegistrationCommand(): Promise<number> {
-  let text = ""
-  for await (const chunk of Bun.stdin.stream()) {
-    text += Buffer.from(chunk).toString()
-    if (Buffer.byteLength(text) > 16384) throw new PeerError("Native registration is too large", 2)
-  }
-  process.stdout.write(`${JSON.stringify(registerNative(JSON.parse(text)))}\n`)
-  return 0
-}

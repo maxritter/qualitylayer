@@ -76,19 +76,22 @@ async function readRow(ctx: Ctx, path: string): Promise<TodoRow | null> {
 const writeRow = (ctx: Ctx, path: string, row: TodoRow) =>
   ctx.fs.atomicWrite(path, `${JSON.stringify(row)}\n`)
 
-/**
- * Keep the list a hook reports. Only for an agent and a call that carry one; the rest returns at
- * once. Parallel tool calls of one session take turns; a call that could not take its turn leaves
- * the list incomplete, which shows nothing, rather than a list that silently lacks it. Never throws.
- */
-export async function recordTodo(
+type RecordTodoArgs = [
   ctx: Ctx,
   dir: string,
   now: number,
   agent: string | null,
   event: string,
   payload: Record<string, unknown>,
-): Promise<void> {
+]
+
+/**
+ * Keep the list a hook reports. Only for an agent and a call that carry one; the rest returns at
+ * once. Parallel tool calls of one session take turns; a call that could not take its turn leaves
+ * the list incomplete, which shows nothing, rather than a list that silently lacks it. Never throws.
+ */
+export async function recordTodo(...args: RecordTodoArgs): Promise<void> {
+  const [ctx, dir, now, agent, event, payload] = args
   const source = sourceOf(agent, event, payload)
   if (source === null) return
   const path = join(dir, "todo.json")

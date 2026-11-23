@@ -101,6 +101,38 @@ export async function openablePlace(
   return placeInside(realRoot, file)
 }
 
+function resolveEditorLaunch(
+  selected: Editor,
+  place: { path: string; isFolder: boolean },
+  platform: string,
+  isRoot: boolean,
+  custom?: { program: string; args: string[] },
+): Result<Launch> {
+  if (selected === "custom") {
+    if (!custom?.program.trim())
+      return refuse("Save a custom editor in Settings → Git and editor first.")
+    return ok({ argv: [custom.program, ...custom.args, place.path] })
+  }
+  return ok(editorArgv(selected, place.path, place.isFolder, platform, isRoot))
+}
+
+async function runEditorLaunch(
+  opener: Opener,
+  launch: Launch,
+): Promise<Result<Record<string, never>>> {
+  const { argv, cwd } = launch
+  let code: number
+  try {
+    code = await opener.run(argv, cwd)
+  } catch {
+    return err({ code: "open_failed", message: "The editor could not be started." })
+  }
+  // Explorer exits 1 on success; every editor's own command exits 0 when it started.
+  if (code !== 0 && argv[0] !== "explorer.exe")
+    return err({ code: "open_failed", message: `The editor stopped with exit code ${code}.` })
+  return ok({})
+}
+
 /** Open a file or folder of the checkout in one of the editors Settings › Git and editor lists. */
 export async function openInEditor(
   task: Pick<Task, "repoRoot">,
@@ -113,30 +145,13 @@ export async function openInEditor(
     return refuse(`"${String(editor)}" is not a place to open in`)
   const place = await openablePlace(task, file)
   if (!place.ok) return place
-  const selected = editor as Editor
-  let launch: Launch
-  if (selected === "custom") {
-    if (!custom?.program.trim())
-      return refuse("Save a custom editor in Settings → Git and editor first.")
-    launch = { argv: [custom.program, ...custom.args, place.data.path] }
-  } else {
-    launch = editorArgv(
-      selected,
-      place.data.path,
-      place.data.isFolder,
-      opener.platform,
-      file === ".",
-    )
-  }
-  const { argv, cwd } = launch
-  let code: number
-  try {
-    code = await opener.run(argv, cwd)
-  } catch {
-    return err({ code: "open_failed", message: "The editor could not be started." })
-  }
-  // Explorer exits 1 on success; every editor's own command exits 0 when it started.
-  if (code !== 0 && argv[0] !== "explorer.exe")
-    return err({ code: "open_failed", message: `The editor stopped with exit code ${code}.` })
-  return ok({})
+  const launch = resolveEditorLaunch(
+    editor as Editor,
+    place.data,
+    opener.platform,
+    file === ".",
+    custom,
+  )
+  if (!launch.ok) return launch
+  return runEditorLaunch(opener, launch.data)
 }

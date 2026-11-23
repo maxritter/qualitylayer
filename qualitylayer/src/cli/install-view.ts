@@ -8,122 +8,108 @@ import { realpathSync } from "node:fs"
 import { intro, note, outro, spinner } from "@clack/prompts"
 import type { InstallReport } from "../core/install/install.ts"
 import { VERSION } from "../core/version.ts"
-import type { Ctx, Env } from "../ctx.ts"
-import { WORDMARK } from "./brand-art.ts"
+import type { Ctx } from "../ctx.ts"
 import { installCmd } from "./commands/install.ts"
+import {
+  AMBER,
+  BLUE_LIGHT,
+  badge,
+  bold,
+  counted,
+  dim,
+  fg,
+  GREEN,
+  headerLines,
+  INSTALL_AGENTS,
+  licenceLine,
+  nextLines,
+  styleFor,
+  tilde,
+  type ViewStyle,
+  wrapList,
+  wrapText,
+} from "./install-view-format.ts"
 
-export type ViewStyle = { color: boolean; truecolor: boolean; width: number }
+export { headerLines, nextLines, styleFor, type ViewStyle }
 
-const TAGLINE = "The software factory with you in the loop"
-/** The brand line, in blue before the tagline, as above the slogan on the website. */
-const BRAND_LINE = "Quality by design"
-const FIRST_TASK = "qualitylayer.dev/docs/first-task"
-const AGENTS = ["Claude Code", "Codex", "Pi", "OpenCode"] as const
-// The palette's accent in dark and light mode: the wordmark runs from one to the other.
-const BLUE_LIGHT = "#5da3e5"
-const BLUE = "#2076c5"
-const AMBER = "#f7b23b"
-const GREEN = "#3fb950"
 const LABEL = 13
-/** Below this the wordmark would wrap: one line takes its place, as Pilot Shell's did. */
-const WORDMARK_MIN = Math.max(...WORDMARK.map((line) => [...line].length)) + 4
+type AddItem = (label: string, value: string[], warn?: boolean) => void
 
-const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
-const toHex = (parts: number[]) =>
-  `#${parts.map((p) => Math.round(p).toString(16).padStart(2, "0")).join("")}`
-const mix = (a: string, b: string, t: number) => {
-  const [x, y] = [rgb(a), rgb(b)]
-  return toHex(x.map((v, i) => v + ((y[i] as number) - v) * t))
-}
-
-function code(hex: string, style: ViewStyle, layer: 38 | 48): string {
-  const [r, g, b] = rgb(hex) as [number, number, number]
-  return style.truecolor
-    ? `${layer};2;${r};${g};${b}`
-    : `${layer};5;${16 + 36 * Math.round((r / 255) * 5) + 6 * Math.round((g / 255) * 5) + Math.round((b / 255) * 5)}`
-}
-const fg = (hex: string, text: string, style: ViewStyle) =>
-  style.color ? `\x1b[${code(hex, style, 38)}m${text}\x1b[39m` : text
-const badge = (text: string, style: ViewStyle) =>
-  style.color ? `\x1b[${code(BLUE, style, 48)};97;1m ${text} \x1b[0m` : text
-const bold = (text: string, style: ViewStyle) => (style.color ? `\x1b[1m${text}\x1b[22m` : text)
-const dim = (text: string, style: ViewStyle) => (style.color ? `\x1b[2m${text}\x1b[22m` : text)
-const width = (text: string) => [...text].length
-
-/** Colour for a terminal that shows it; true colour where the terminal says it has it. */
-export function styleFor(env: Env, out: { isTTY?: boolean; columns?: number }): ViewStyle {
-  const force = (env.get("FORCE_COLOR") ?? "") !== "" && env.get("FORCE_COLOR") !== "0"
-  const color =
-    force ||
-    (out.isTTY === true && (env.get("NO_COLOR") ?? "") === "" && env.get("TERM") !== "dumb")
-  const program = env.get("TERM_PROGRAM") ?? ""
-  const truecolor =
-    /^(truecolor|24bit)$/i.test(env.get("COLORTERM") ?? "") ||
-    ["iTerm.app", "WezTerm", "ghostty", "vscode", "zed"].includes(program)
-  return { color, truecolor, width: out.columns ?? 80 }
-}
-
-/** The wordmark in a blue gradient, the brand line, the tagline and the version; one line on a narrow terminal. */
-export function headerLines(version: string, style: ViewStyle): string[] {
-  const tagline = `${bold(fg(BLUE_LIGHT, BRAND_LINE, style), style)} ${dim(`· ${TAGLINE}`, style)}`
-  if (style.width < WORDMARK_MIN) {
-    const name = `${fg(BLUE_LIGHT, "◆", style)} ${bold("qualitylayer", style)} ${dim(version, style)}`
-    return style.width >= 64 ? ["", name, tagline, ""] : ["", name, ""]
+function addSkillItems(item: AddItem, report: InstallReport, home: string, style: ViewStyle): void {
+  for (const agent of INSTALL_AGENTS) {
+    const names = [
+      ...new Set(
+        report.skills
+          .filter((skill) => skill.label === agent && skill.path.endsWith("/SKILL.md"))
+          .map((skill) => skill.path.split("/").at(-2) as string),
+      ),
+    ]
+    if (names.length > 0) item(agent, [names.join(dim(" · ", style))])
   }
-  const art = WORDMARK.map((line, row) =>
-    fg(mix(BLUE_LIGHT, BLUE, row / (WORDMARK.length - 1)), line, style),
-  )
-  return ["", ...art, "", `${tagline}  ${fg(BLUE_LIGHT, version, style)}`, ""]
-}
-
-const tilde = (path: string, home: string) =>
-  path === home ? "~" : path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path
-
-/** A long plain sentence broken at spaces to fit `room`; coloured lines and columns stay whole. */
-function wrapText(line: string, room: number): string[] {
-  if (width(line) <= room || line.includes("\x1b[") || line.includes("  ")) return [line]
-  const lines: string[] = []
-  let current = ""
-  for (const word of line.split(" ")) {
-    if (current !== "" && width(`${current} ${word}`) > room) {
-      lines.push(current)
-      current = word
-    } else current = current === "" ? word : `${current} ${word}`
+  if (report.skills.length === 0) {
+    item(
+      "Agents",
+      [
+        "no supported agent configured",
+        `copy the skill folders from ${tilde(report.skillCopy, home)} into your agent's skills directory`,
+      ],
+      true,
+    )
   }
-  return current === "" ? lines : [...lines, current]
 }
 
-/** Comma-separated names, wrapped to `room`. */
-function wrapList(names: string[], room: number): string[] {
-  const lines: string[] = []
-  let line = ""
-  for (const name of names) {
-    const next = line === "" ? name : `${line}, ${name}`
-    if (width(next) > room && line !== "") {
-      lines.push(`${line},`)
-      line = name
-    } else line = next
+function addSettingsItem(
+  item: AddItem,
+  report: InstallReport,
+  room: number,
+  style: ViewStyle,
+): void {
+  if (report.settings.length === 0) return
+  const groups = INSTALL_AGENTS.map((agent) => ({
+    agent,
+    labels: counted(report.settings.filter((s) => s.agent === agent).map((s) => s.label)),
+  })).filter((group) => group.labels.length > 0)
+  item("Settings", [
+    dim(`${report.settings.length} set for QualityLayer, uninstall puts them back`, style),
+    ...groups.flatMap((group) => {
+      const [first = "", ...more] = wrapList(group.labels, room - 13)
+      return [
+        `${dim(group.agent.padEnd(13), style)}${first}`,
+        ...more.map((line) => `${" ".repeat(13)}${line}`),
+      ]
+    }),
+  ])
+}
+
+function addTailItems(item: AddItem, report: InstallReport, home: string, style: ViewStyle): void {
+  for (const message of report.declined) item("Kept yours", [message])
+  if (report.memoryTools.length > 0)
+    item(
+      "Memory tools",
+      report.memoryTools.map((row) => row.message),
+      report.memoryTools.some((row) => row.state === "skipped" || row.state === "failed"),
+    )
+  if (report.kept.length > 0) {
+    item(
+      "Left alone",
+      ["changed by you, so not replaced:", ...report.kept.map((path) => tilde(path, home))],
+      true,
+    )
   }
-  if (line !== "") lines.push(line)
-  return lines
-}
-
-/** Each name once, in first-seen order: one set several times (a hook per event) carries its count. */
-function counted(names: string[]): string[] {
-  const counts = new Map<string, number>()
-  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
-  return [...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
-}
-
-function licenceLine(licence: string): { text: string; warn: boolean } {
-  const trial = licence.match(/^Trial: (\d+) day/)
-  if (trial !== null) return { text: `Trial, ${trial[1]} days left`, warn: false }
-  const licensed = licence.match(/^Licensed \((\w+)\)/)
-  if (licensed !== null) {
-    const tier = licensed[1] as string
-    return { text: `${tier[0]?.toUpperCase()}${tier.slice(1)} licence`, warn: false }
+  if (report.licence !== "") {
+    const licence = licenceLine(report.licence)
+    item("Licence", [licence.text], licence.warn)
   }
-  return { text: licence.replace(/^No licence yet: /, "").replace(/\.$/, ""), warn: true }
+  if (report.pathLine !== null) {
+    item(
+      "PATH",
+      [
+        "add this line to your shell profile, then open a new terminal:",
+        fg(BLUE_LIGHT, report.pathLine, style),
+      ],
+      true,
+    )
+  }
 }
 
 /**
@@ -134,7 +120,7 @@ export function summaryLines(report: InstallReport, home: string, style: ViewSty
   // The note's frame and the item's own columns take about 22 characters.
   const room = Math.max(28, style.width - LABEL - 10)
   const lines: string[] = []
-  const item = (label: string, value: string[], warn = false) => {
+  const item: AddItem = (label, value, warn = false) => {
     const symbol = warn ? fg(AMBER, "▲", style) : fg(GREEN, "✓", style)
     const [first = "", ...rest] = value.flatMap((line) => wrapText(line, room))
     lines.push(`${symbol} ${bold(label.padEnd(LABEL), style)}${first}`)
@@ -159,85 +145,10 @@ export function summaryLines(report: InstallReport, home: string, style: ViewSty
       true,
     )
   }
-  for (const agent of AGENTS) {
-    const names = [
-      ...new Set(
-        report.skills
-          .filter((skill) => skill.label === agent && skill.path.endsWith("/SKILL.md"))
-          .map((skill) => skill.path.split("/").at(-2) as string),
-      ),
-    ]
-    if (names.length === 0) continue
-    item(agent, [names.join(dim(" · ", style))])
-  }
-  if (report.skills.length === 0) {
-    item(
-      "Agents",
-      [
-        "no supported agent configured",
-        `copy the skill folders from ${tilde(report.skillCopy, home)} into your agent's skills directory`,
-      ],
-      true,
-    )
-  }
-  if (report.settings.length > 0) {
-    const groups = AGENTS.map((agent) => ({
-      agent,
-      labels: counted(report.settings.filter((s) => s.agent === agent).map((s) => s.label)),
-    })).filter((group) => group.labels.length > 0)
-    item("Settings", [
-      dim(`${report.settings.length} set for QualityLayer, uninstall puts them back`, style),
-      ...groups.flatMap((group) => {
-        const [first = "", ...more] = wrapList(group.labels, room - 13)
-        return [
-          `${dim(group.agent.padEnd(13), style)}${first}`,
-          ...more.map((line) => `${" ".repeat(13)}${line}`),
-        ]
-      }),
-    ])
-  }
-  for (const message of report.declined) item("Kept yours", [message])
-  if (report.memoryTools.length > 0)
-    item(
-      "Memory tools",
-      report.memoryTools.map((row) => row.message),
-      report.memoryTools.some((row) => row.state === "skipped" || row.state === "failed"),
-    )
-  const leftAlone = report.kept
-  if (leftAlone.length > 0) {
-    item(
-      "Left alone",
-      ["changed by you, so not replaced:", ...leftAlone.map((path) => tilde(path, home))],
-      true,
-    )
-  }
-  if (report.licence !== "") {
-    const licence = licenceLine(report.licence)
-    item("Licence", [licence.text], licence.warn)
-  }
-  if (report.pathLine !== null) {
-    item(
-      "PATH",
-      [
-        "add this line to your shell profile, then open a new terminal:",
-        fg(BLUE_LIGHT, report.pathLine, style),
-      ],
-      true,
-    )
-  }
+  addSkillItems(item, report, home, style)
+  addSettingsItem(item, report, room, style)
+  addTailItems(item, report, home, style)
   return lines
-}
-
-/** One request works across the supported agents. */
-export function nextLines(report: InstallReport, style: ViewStyle): string[] {
-  const agents = new Set(report.skills.map((skill) => skill.label))
-  const task = dim("<what to build or fix>", style)
-  return [
-    ...(AGENTS.some((agent) => agents.has(agent))
-      ? [`${bold("Using QualityLayer, plan", style)} ${task}`]
-      : []),
-    `${dim("First steps:", style)} ${fg(BLUE_LIGHT, FIRST_TASK, style)}`,
-  ]
 }
 
 /** Each step as it finishes, said the way `npx skills` says it. */

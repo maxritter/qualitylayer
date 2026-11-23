@@ -45,6 +45,162 @@ export function fullPathOf(detail: Pick<TaskDetail, "dir">, name: string): strin
   return `${trimEndCharacters(detail.dir, "\\/")}${sep}${name}`
 }
 
+function loadTaskRecords(
+  open: boolean,
+  onOpen: ((view: string) => void) | undefined,
+  api: Pick<Api, "openFile" | "taskRecords">,
+  taskId: string,
+) {
+  if (!open || !onOpen || !api.taskRecords) return Promise.resolve([])
+  if (api !== liveApi && api.taskRecords === liveApi.taskRecords) return Promise.resolve([])
+  return api.taskRecords(taskId)
+}
+
+function HostFileActions({
+  reading,
+  file,
+  onStart,
+}: {
+  reading: string | null
+  file: TaskFile | undefined
+  onStart: (target: string, how: "open" | "reveal" | "folder", done: string) => void
+}) {
+  const target = reading ?? file?.name ?? ""
+  const openDisabled = reading ? !/\.(md|txt)$/.test(reading) : !file?.exists
+  const revealDisabled = reading === null && !file?.exists
+  return (
+    <>
+      <DropdownMenuItem
+        disabled={openDisabled}
+        onClick={() => onStart(target, "open", `Opened ${target}`)}
+      >
+        <FileCodeIcon aria-hidden="true" />
+        Open file
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        disabled={revealDisabled}
+        onClick={() => onStart(target, "reveal", `Showed ${target} in its folder`)}
+      >
+        <FolderOpenIcon aria-hidden="true" />
+        {showFileInFolderLabel()}
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+    </>
+  )
+}
+
+function MoreAgentRecordsSub({
+  records,
+  onSelect,
+}: {
+  records: { name: string }[]
+  onSelect: (path: string) => void
+}) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <FileTextIcon aria-hidden="true" />
+        More agent records
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent
+        className="w-[330px] max-w-[calc(100vw-32px)] max-sm:w-(--anchor-width) max-sm:data-[side=right]:-translate-x-full max-sm:data-[side=left]:translate-x-full"
+        data-testid="agent-records-menu"
+      >
+        {records.map((entry) => (
+          <DropdownMenuItem key={entry.name} onClick={() => onSelect(entry.name)}>
+            <FileTextIcon aria-hidden="true" />
+            <span className="truncate" title={entry.name}>
+              {entry.name}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
+async function runHostFileAction(
+  api: Pick<Api, "openFile">,
+  taskId: string,
+  target: string,
+  how: "open" | "reveal" | "folder",
+  done: string,
+): Promise<void> {
+  try {
+    await api.openFile(taskId, target, how)
+    toast.success(done)
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+  }
+}
+
+function DocPathMenuContent({
+  full,
+  host,
+  reading,
+  file,
+  slug,
+  otherRecords,
+  onCopy,
+  onStart,
+  onSelectRecord,
+  onDiff,
+}: {
+  full: string | null
+  host: boolean
+  reading: string | null
+  file: TaskFile | undefined
+  slug: string
+  otherRecords: { name: string }[] | null
+  onCopy: (text: string, note: string) => void
+  onStart: (target: string, how: "open" | "reveal" | "folder", done: string) => void
+  onSelectRecord: (path: string) => void
+  onDiff?: () => void
+}) {
+  return (
+    <DropdownMenuContent
+      align="start"
+      className="dg-chipmenu w-[330px] max-w-[calc(100vw-32px)]"
+      data-testid="file-chip-menu"
+    >
+      {full !== null ? (
+        <>
+          <div className="p" data-testid="doc-full-path">
+            {full}
+          </div>
+          <DropdownMenuItem onClick={() => onCopy(full, "Copied the path")}>
+            <CopyIcon aria-hidden="true" />
+            Copy path
+          </DropdownMenuItem>
+        </>
+      ) : null}
+      {host && (file !== undefined || reading !== null) ? (
+        <HostFileActions reading={reading} file={file} onStart={onStart} />
+      ) : null}
+      {host ? (
+        <DropdownMenuItem onClick={() => onStart(".", "folder", "Opened the task folder")}>
+          <FolderOpenIcon aria-hidden="true" />
+          Open the task folder
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem onClick={() => onCopy(slug, "Copied the task's name")}>
+        <CopyIcon aria-hidden="true" />
+        Copy the task's name
+        <span className="k">for QualityLayer</span>
+      </DropdownMenuItem>
+      {otherRecords !== null && otherRecords.length > 0 ? (
+        <MoreAgentRecordsSub records={otherRecords} onSelect={onSelectRecord} />
+      ) : null}
+      {onDiff ? (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onDiff}>What the agent changed in the Plan</DropdownMenuItem>
+        </>
+      ) : null}
+    </DropdownMenuContent>
+  )
+}
+
 /**
  * A file's menu: the full path, Copy
  * path, Open in editor, Reveal in Finder, Open the task folder and Copy the task's name (what
@@ -73,13 +229,7 @@ export function DocPathChip({
 }) {
   const [open, setOpen] = useState(false)
   const records = useQuery(
-    () =>
-      open &&
-      onOpen &&
-      api.taskRecords &&
-      (api === liveApi || api.taskRecords !== liveApi.taskRecords)
-        ? api.taskRecords(detail.id)
-        : Promise.resolve([]),
+    () => loadTaskRecords(open, onOpen, api, detail.id),
     [open, api, detail.id, Boolean(onOpen)],
   )
   const file = viewFile(detail, view)
@@ -88,30 +238,18 @@ export function DocPathChip({
   const page = file === undefined ? detail.showMe.find((p) => p.name === view) : undefined
   const name = reading ?? file?.name ?? page?.title
   if (name === undefined) return null
-  const otherRecords = (records.data ?? []).filter(
-    (entry) => !detail.files.some((file) => file.name === entry.name),
-  )
-  const openRecord = (path: string) => {
-    onOpen?.(view)
-    setDocumentRecord({ taskId: detail.id, path })
-  }
-  const by = (reading ? ["read only"] : [agent !== null ? `by ${agent}` : null])
-    .filter((part) => part !== null)
-    .join(" · ")
+  const otherRecords = onOpen
+    ? (records.data ?? []).filter((entry) => !detail.files.some((item) => item.name === entry.name))
+    : null
+  const by = reading ? "read only" : agent !== null ? `by ${agent}` : ""
   const full = reading
     ? `${detail.dir}/${reading}`
     : file !== undefined
       ? fullPathOf(detail, file.name)
       : null
-  // A machine's page offers nothing that acts on the machine's own screen.
-  const host = offersHostActions()
-  const start = async (target: string, how: "open" | "reveal" | "folder", done: string) => {
-    try {
-      await api.openFile(detail.id, target, how)
-      toast.success(done)
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
-    }
+  const openRecord = (path: string) => {
+    onOpen?.(view)
+    setDocumentRecord({ taskId: detail.id, path })
   }
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -137,88 +275,18 @@ export function DocPathChip({
           </>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="dg-chipmenu w-[330px] max-w-[calc(100vw-32px)]"
-        data-testid="file-chip-menu"
-      >
-        {full !== null ? (
-          <div className="p" data-testid="doc-full-path">
-            {full}
-          </div>
-        ) : null}
-        {full !== null ? (
-          <DropdownMenuItem onClick={() => onCopy(full, "Copied the path")}>
-            <CopyIcon aria-hidden="true" />
-            Copy path
-          </DropdownMenuItem>
-        ) : null}
-        {host && (file !== undefined || reading !== null) ? (
-          <>
-            <DropdownMenuItem
-              disabled={reading ? !/\.(md|txt)$/.test(reading) : !file?.exists}
-              onClick={() =>
-                void start(reading ?? file?.name ?? "", "open", `Opened ${reading ?? file?.name}`)
-              }
-            >
-              <FileCodeIcon aria-hidden="true" />
-              Open file
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={reading === null && !file?.exists}
-              onClick={() =>
-                void start(
-                  reading ?? file?.name ?? "",
-                  "reveal",
-                  `Showed ${reading ?? file?.name} in its folder`,
-                )
-              }
-            >
-              <FolderOpenIcon aria-hidden="true" />
-              {showFileInFolderLabel()}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        {host ? (
-          <DropdownMenuItem onClick={() => void start(".", "folder", "Opened the task folder")}>
-            <FolderOpenIcon aria-hidden="true" />
-            Open the task folder
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem onClick={() => onCopy(detail.slug, "Copied the task's name")}>
-          <CopyIcon aria-hidden="true" />
-          Copy the task's name
-          <span className="k">for QualityLayer</span>
-        </DropdownMenuItem>
-        {onOpen && otherRecords.length > 0 ? (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <FileTextIcon aria-hidden="true" />
-              More agent records
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent
-              className="w-[330px] max-w-[calc(100vw-32px)] max-sm:w-(--anchor-width) max-sm:data-[side=right]:-translate-x-full max-sm:data-[side=left]:translate-x-full"
-              data-testid="agent-records-menu"
-            >
-              {otherRecords.map((entry) => (
-                <DropdownMenuItem key={entry.name} onClick={() => openRecord(entry.name)}>
-                  <FileTextIcon aria-hidden="true" />
-                  <span className="truncate" title={entry.name}>
-                    {entry.name}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        ) : null}
-        {onDiff ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDiff}>What the agent changed in the Plan</DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
+      <DocPathMenuContent
+        full={full}
+        host={offersHostActions()}
+        reading={reading}
+        file={file}
+        slug={detail.slug}
+        otherRecords={otherRecords}
+        onCopy={onCopy}
+        onStart={(target, how, done) => void runHostFileAction(api, detail.id, target, how, done)}
+        onSelectRecord={openRecord}
+        onDiff={onDiff}
+      />
     </DropdownMenu>
   )
 }

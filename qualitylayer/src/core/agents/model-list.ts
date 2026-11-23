@@ -140,12 +140,11 @@ function settled(
     const lastFailure = failed.get(ctx.env)?.get(agent)
     return lastFailure !== undefined && now - lastFailure < MODEL_LIST_RETRY_MS
   }
-  return (
-    held.binary === binary &&
-    (((agent !== "antigravity" || held.labels !== undefined) &&
-      now - held.checkedAt < MODEL_LIST_LIFETIME_MS) ||
-      (held.failedAt !== undefined && now - held.failedAt < MODEL_LIST_RETRY_MS))
-  )
+  if (held.binary !== binary) return false
+  const missingLabels = agent === "antigravity" && held.labels === undefined
+  const fresh = !missingLabels && now - held.checkedAt < MODEL_LIST_LIFETIME_MS
+  const recentlyFailed = held.failedAt !== undefined && now - held.failedAt < MODEL_LIST_RETRY_MS
+  return fresh || recentlyFailed
 }
 
 /** One read at a time per agent: callers that ask meanwhile share it. */

@@ -35,6 +35,47 @@ const programAtStart: Promise<Print | null> = printOf(process.execPath)
 
 const same = (a: Print, b: Print) => a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs
 
+type OrphanState = {
+  print: Print | null
+  lockMissing: number
+  programGone: number
+}
+
+async function checkLock(ctx: Ctx, self: number, state: OrphanState): Promise<string | null> {
+  if (!(await ctx.fs.exists(lockPath(ctx)))) {
+    return ++state.lockMissing >= 2 ? "its lock was removed" : null
+  }
+  state.lockMissing = 0
+  const lock = await readLock(ctx)
+  if (lock !== null && lock.pid !== self && pidAlive(lock.pid))
+    return `the lock names another server (pid ${lock.pid})`
+  return null
+}
+
+async function checkProgram(
+  program: string,
+  ownBuild: string,
+  state: OrphanState,
+): Promise<string | null> {
+  const now = await printOf(program)
+  if (now === null) return ++state.programGone >= 2 ? "its program was deleted" : null
+  state.programGone = 0
+  // No fingerprint at the start (the file was already unreadable): the first sight is the baseline.
+  if (state.print === null) {
+    state.print = now
+    return null
+  }
+  if (same(now, state.print)) return null
+  // A server that could not read its own program at start has nothing to compare the file to.
+  if (
+    ownBuild !== UNREADABLE_BUILD &&
+    (await fileBuildId(program).catch(() => ownBuild)) !== ownBuild
+  )
+    return "its program was replaced by another build"
+  state.print = now
+  return null
+}
+
 /** Why a server no longer belongs to anyone, or null while it does. One call per check. */
 export async function orphanChecker(ctx: Ctx): Promise<() => Promise<string | null>> {
   const self = process.pid
@@ -44,40 +85,17 @@ export async function orphanChecker(ctx: Ctx): Promise<() => Promise<string | nu
   const watchProgram = !script.endsWith(".ts") && !script.endsWith(".js")
   const named = ctx.env.get("QUALITYLAYER_BUILD_ID")
   const ownBuild = await buildId(ctx.env).catch(() => "")
-  let print = watchProgram ? await programAtStart : null
-  let lockMissing = 0
-  let programGone = 0
+  const state: OrphanState = {
+    print: watchProgram ? await programAtStart : null,
+    lockMissing: 0,
+    programGone: 0,
+  }
+  const checkBinary = watchProgram && (named === undefined || named === "")
 
   return async () => {
-    if (!(await ctx.fs.exists(lockPath(ctx)))) {
-      if (++lockMissing >= 2) return "its lock was removed"
-    } else {
-      lockMissing = 0
-      const lock = await readLock(ctx)
-      if (lock !== null && lock.pid !== self && pidAlive(lock.pid))
-        return `the lock names another server (pid ${lock.pid})`
-    }
-    if (!watchProgram || (named !== undefined && named !== "")) return null
-    const now = await printOf(program)
-    if (now === null) {
-      if (++programGone >= 2) return "its program was deleted"
-      return null
-    }
-    programGone = 0
-    // No fingerprint at the start (the file was already unreadable): the first sight is the baseline.
-    if (print === null) {
-      print = now
-      return null
-    }
-    if (same(now, print)) return null
-    // A server that could not read its own program at start has nothing to compare the file to.
-    if (
-      ownBuild !== UNREADABLE_BUILD &&
-      (await fileBuildId(program).catch(() => ownBuild)) !== ownBuild
-    )
-      return "its program was replaced by another build"
-    print = now
-    return null
+    const lockReason = await checkLock(ctx, self, state)
+    if (lockReason !== null) return lockReason
+    return checkBinary ? checkProgram(program, ownBuild, state) : null
   }
 }
 

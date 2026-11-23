@@ -25,25 +25,25 @@ const session = (model: string, usd: number) => ({
   ...line(usd),
 })
 
-const helper = (
-  id: string,
-  kind: CostHelper["kind"],
-  label: string,
-  model: string,
-  step: CostHelper["step"],
-  minutes: number,
-  usd: number,
-  calls: number,
-): CostHelper => ({
-  id,
-  kind,
-  label,
-  model,
-  modelLabel: modelLabel(model),
-  step,
-  ms: minutes * MIN,
-  calls,
-  ...line(usd),
+const helper = (spec: {
+  id: string
+  kind: CostHelper["kind"]
+  label: string
+  model: string
+  step: CostHelper["step"]
+  minutes: number
+  usd: number
+  calls: number
+}): CostHelper => ({
+  id: spec.id,
+  kind: spec.kind,
+  label: spec.label,
+  model: spec.model,
+  modelLabel: modelLabel(spec.model),
+  step: spec.step,
+  ms: spec.minutes * MIN,
+  calls: spec.calls,
+  ...line(spec.usd),
 })
 
 const sum = (values: (number | null)[]) =>
@@ -78,13 +78,76 @@ function total(steps: CostStep[], helpers: CostHelper[], checks: TaskCost["check
 /** Rate-limit the export API: two slices, two checking runs, and the price of the fix it needed. */
 function exportCost(): TaskCost {
   const all: CostHelper[] = [
-    helper("s1-a1", "slice", "Slice 1 · Rate limit per key", sonnet, "implement", 8, 2.2, 61),
-    helper("s2-a1", "slice", "Slice 2 · Export route", sonnet, "implement", 6, 1.35, 38),
-    helper("j1-s1", "judge", "Checking run 1 · part 1 of 2", codex, "verify", 3, 0.55, 18),
-    helper("j1-s2", "judge", "Checking run 1 · part 2 of 2", codex, "verify", 3, 0.45, 16),
-    helper("fx-a1", "fix", "Fix the retry-after rounding", sonnet, "verify", 3, 0.4, 14),
-    helper("j2-s1", "judge", "Checking run 2 · part 1 of 2", codex, "verify", 2, 0.3, 12),
-    helper("j2-s2", "judge", "Checking run 2 · part 2 of 2", codex, "verify", 2, 0.25, 10),
+    helper({
+      id: "s1-a1",
+      kind: "slice",
+      label: "Slice 1 · Rate limit per key",
+      model: sonnet,
+      step: "implement",
+      minutes: 8,
+      usd: 2.2,
+      calls: 61,
+    }),
+    helper({
+      id: "s2-a1",
+      kind: "slice",
+      label: "Slice 2 · Export route",
+      model: sonnet,
+      step: "implement",
+      minutes: 6,
+      usd: 1.35,
+      calls: 38,
+    }),
+    helper({
+      id: "j1-s1",
+      kind: "judge",
+      label: "Checking run 1 · part 1 of 2",
+      model: codex,
+      step: "verify",
+      minutes: 3,
+      usd: 0.55,
+      calls: 18,
+    }),
+    helper({
+      id: "j1-s2",
+      kind: "judge",
+      label: "Checking run 1 · part 2 of 2",
+      model: codex,
+      step: "verify",
+      minutes: 3,
+      usd: 0.45,
+      calls: 16,
+    }),
+    helper({
+      id: "fx-a1",
+      kind: "fix",
+      label: "Fix the retry-after rounding",
+      model: sonnet,
+      step: "verify",
+      minutes: 3,
+      usd: 0.4,
+      calls: 14,
+    }),
+    helper({
+      id: "j2-s1",
+      kind: "judge",
+      label: "Checking run 2 · part 1 of 2",
+      model: codex,
+      step: "verify",
+      minutes: 2,
+      usd: 0.3,
+      calls: 12,
+    }),
+    helper({
+      id: "j2-s2",
+      kind: "judge",
+      label: "Checking run 2 · part 2 of 2",
+      model: codex,
+      step: "verify",
+      minutes: 2,
+      usd: 0.25,
+      calls: 10,
+    }),
   ]
   const steps = [
     step("plan", 21, 3, all),

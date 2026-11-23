@@ -25,7 +25,7 @@ export function currentTool(events: readonly ConversationEvent[]): string | unde
   return undefined
 }
 
-export function composerActivity(input: {
+type ComposerActivityInput = {
   active: boolean
   readOnly: boolean
   /** The run or the record waits for a permission (including the terminal-only permission dialog). */
@@ -43,25 +43,39 @@ export function composerActivity(input: {
   failing: boolean
   working: boolean
   tool?: string | undefined
-}): ComposerActivity | undefined {
-  if (!input.active || input.readOnly) return undefined
+}
+
+function waitingActivity(input: ComposerActivityInput): ComposerActivity | undefined {
   // Waiting wins over working: the agent is stopped on the person.
-  if (input.waiting)
+  if (input.waiting) {
     return input.permission === false
       ? { kind: "waiting", text: "Waiting for you", label: "Waiting for your answer" }
       : { kind: "waiting", text: "Waiting for permission", label: "Waiting for your permission" }
-  if (input.startup)
+  }
+  if (input.startup) {
     return {
       kind: "waiting",
       text: "Waiting in terminal",
       label: "Waiting for you in its terminal",
     }
-  if (input.failing)
+  }
+  return undefined
+}
+
+function connectingActivity(input: ComposerActivityInput): ComposerActivity | undefined {
+  if (input.failing) {
     return { kind: "connecting", text: "Retrying", label: "Retrying to read the conversation" }
-  if (!input.started || (!input.loaded && !input.unavailable))
+  }
+  if (!input.started || (!input.loaded && !input.unavailable)) {
     return { kind: "connecting", text: "Connecting", label: "Connecting to the agent" }
-  if (input.loading)
+  }
+  if (input.loading) {
     return { kind: "connecting", text: "Loading", label: "Loading the conversation" }
+  }
+  return undefined
+}
+
+function workingOrReadyActivity(input: ComposerActivityInput): ComposerActivity | undefined {
   if (input.helpers && input.helpers > 0) {
     const text = `${input.helpers} background ${input.helpers === 1 ? "helper" : "helpers"} working`
     return { kind: "working", text, label: text }
@@ -75,6 +89,12 @@ export function composerActivity(input: {
       label: tool ? `Working, running ${tool}` : "Working",
     }
   }
-  if (input.unavailable) return undefined
-  return { kind: "ready", text: "Ready", label: "Ready for your message" }
+  return input.unavailable
+    ? undefined
+    : { kind: "ready", text: "Ready", label: "Ready for your message" }
+}
+
+export function composerActivity(input: ComposerActivityInput): ComposerActivity | undefined {
+  if (!input.active || input.readOnly) return undefined
+  return waitingActivity(input) ?? connectingActivity(input) ?? workingOrReadyActivity(input)
 }

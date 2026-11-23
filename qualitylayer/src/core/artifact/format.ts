@@ -1,8 +1,21 @@
-import { isLineText, skipWhitespace } from "../text-boundaries.ts"
+import type { ArtifactSection } from "./format-html.ts"
+
 // The artifact format: one self-contained HTML page an agent draws for the person. Its name, purpose
 // and last change are read from the file itself (<title>, the description, `ql:changed`), and the
 // parts the App can jump to are its elements with `data-screen-label` and an id. Free of imports, so
 // the App's browser bundle reads it as it is.
+export {
+  type ArtifactMeta,
+  type ArtifactSection,
+  artifactMeta,
+  fillArtifact,
+  labelParts,
+  metaContent,
+  titleOfName,
+  wireframePage,
+  withMeta,
+  withTitle,
+} from "./format-html.ts"
 
 /** An artifact's name: lower-case letters, digits and dashes. */
 export const ARTIFACT_NAME = /^[a-z0-9][a-z0-9-]*$/
@@ -130,14 +143,11 @@ export function parseDraftOn(content: string): DraftOn | null {
 }
 
 /** A file of an artifact folder as a path from it: no climbing, no dot-files, no backslash. */
-export const plainRel = (rel: string): boolean =>
-  rel !== "" &&
-  rel.length <= 300 &&
-  !rel.includes("\\") &&
-  !rel.includes("\0") &&
-  rel
-    .split("/")
-    .every((part) => part !== "" && part !== "." && part !== ".." && !part.startsWith("."))
+export function plainRel(rel: string): boolean {
+  if (rel === "" || rel.length > 300) return false
+  if (rel.includes("\\") || rel.includes("\0")) return false
+  return rel.split("/").every((part) => part !== "" && !part.startsWith("."))
+}
 
 /** A draft's `draftOn` as `artifact.json` holds it; null for anything that does not read. */
 export function draftOnFrom(value: unknown): DraftOn | null {
@@ -158,23 +168,6 @@ export function draftOnFrom(value: unknown): DraftOn | null {
     found.base = base
   }
   return found
-}
-
-export type ArtifactSection = { label: string; id: string }
-
-export type ArtifactMeta = {
-  title: string
-  /** The one-line purpose, from `<meta name="description">`. */
-  purpose: string
-  /** What the last update changed, from `<meta name="ql:changed">`; null when it says nothing. */
-  changed: string | null
-  sections: ArtifactSection[]
-  /** The width the page is drawn for, from `<meta name="viewport" content="width=…">`; null for none. */
-  width: number | null
-  /** The heading the page picker lists it under, from `<meta name="ql:group">`; null for none. */
-  group?: string | null
-  /** The group is a closed fold in the picker (`<meta name="ql:group-folded" content="true">`). */
-  groupFolded?: boolean
 }
 
 /** One artifact as the App and `artifact list` show it. */
@@ -231,185 +224,6 @@ export type ArtifactPageInfo = {
  * the page of a folder artifact (`settings.html`); a comment without one belongs to the entry page.
  */
 export type ArtifactAnchor = { x: number; y: number; section?: string; page?: string }
-
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  middot: "·",
-  mdash: "—",
-  ndash: "–",
-  hellip: "…",
-}
-
-function decode(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code: string) => {
-    if (code[0] === "#") {
-      const n =
-        code[1] === "x" || code[1] === "X"
-          ? Number.parseInt(code.slice(2), 16)
-          : Number(code.slice(1))
-      return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : whole
-    }
-    return ENTITIES[code.toLowerCase()] ?? whole
-  })
-}
-
-const escapeAttr = (text: string): string =>
-  text
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-
-const escapeText = (text: string): string =>
-  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-
-/** The value of one attribute in a tag's text, or null. */
-function attr(tag: string, name: string): string | null {
-  const match = tag.match(
-    new RegExp(
-      `\\s${name.replace(/[.:]/g, "\\$&")}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
-      "i",
-    ),
-  )
-  if (match === null) return null
-  return decode(match[1] ?? match[2] ?? match[3] ?? "")
-}
-
-/** The head of the page, where the metadata is; the whole text when it has no head. */
-const headOf = (html: string): string => {
-  const end = html.search(/<\/head\s*>|<body[\s>]/i)
-  return end === -1 ? html : html.slice(0, end)
-}
-
-/** The content of `<meta name="<name>">`, or null. */
-export function metaContent(html: string, name: string): string | null {
-  for (const tag of headOf(html).match(/<meta\b[^>]*>/gi) ?? []) {
-    if ((attr(tag, "name") ?? "").toLowerCase() === name.toLowerCase()) return attr(tag, "content")
-  }
-  return null
-}
-
-/** The page's sections the App can jump to: elements with `data-screen-label` and an id, in order. */
-export function artifactSections(html: string): ArtifactSection[] {
-  const sections: ArtifactSection[] = []
-  const seen = new Set<string>()
-  for (const tag of html.match(/<[a-zA-Z][\w-]*\b[^>]*\bdata-screen-label\s*=[^>]*>/g) ?? []) {
-    const label = (attr(tag, "data-screen-label") ?? "").trim()
-    const id = (attr(tag, "id") ?? "").trim()
-    if (label === "" || id === "" || seen.has(id)) continue
-    seen.add(id)
-    sections.push({ label, id })
-  }
-  return sections
-}
-
-/** "settings-page" → "Settings page": the name a new artifact starts with. */
-export function titleOfName(name: string): string {
-  const words = name
-    .replace(/\.html$/, "")
-    .replaceAll("-", " ")
-    .trim()
-  return words === "" ? "Artifact" : words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-export function artifactMeta(html: string, fallbackName = ""): ArtifactMeta {
-  const titled = headOf(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
-  const title = decode((titled ?? "").replace(/\s+/g, " ").trim())
-  const changed = (metaContent(html, "ql:changed") ?? "").trim()
-  const viewport = metaContent(html, "viewport") ?? ""
-  const group = decode((metaContent(html, "ql:group") ?? "").replace(/\s+/g, " ").trim())
-  const width = Number(viewport.match(/(?:^|[\s,])width\s*=\s*(\d{3,5})\b/)?.[1] ?? Number.NaN)
-  return {
-    title: title !== "" ? title : titleOfName(fallbackName),
-    purpose: (metaContent(html, "description") ?? "").replace(/\s+/g, " ").trim(),
-    changed: changed !== "" ? changed : null,
-    sections: artifactSections(html),
-    width: Number.isFinite(width) && width >= 320 && width <= 4000 ? width : null,
-    group: group !== "" ? group : null,
-    groupFolded: group !== "" && (metaContent(html, "ql:group-folded") ?? "").trim() === "true",
-  }
-}
-
-/** Put `tag` into the head: after `<title>…</title>`, else after `<head>`, else at the top. */
-function intoHead(html: string, tag: string): string {
-  const title = html.match(/<\/title\s*>/i)
-  if (title?.index !== undefined) {
-    const at = title.index + title[0].length
-    return `${html.slice(0, at)}\n${tag}${html.slice(at)}`
-  }
-  const head = html.match(/<head\b[^>]*>/i)
-  if (head?.index !== undefined) {
-    const at = head.index + head[0].length
-    return `${html.slice(0, at)}\n${tag}${html.slice(at)}`
-  }
-  return `${tag}\n${html}`
-}
-
-/** The page with `<meta name="<name>" content="<value>">`, replaced or added. */
-export function withMeta(html: string, name: string, value: string): string {
-  const tag = `<meta name="${name}" content="${escapeAttr(value)}">`
-  const head = headOf(html)
-  for (const found of head.match(/<meta\b[^>]*>/gi) ?? []) {
-    if ((attr(found, "name") ?? "").toLowerCase() !== name.toLowerCase()) continue
-    const at = html.indexOf(found)
-    return `${html.slice(0, at)}${tag}${html.slice(at + found.length)}`
-  }
-  return intoHead(html, tag)
-}
-
-/** The page with this `<title>`, replaced or added. */
-export function withTitle(html: string, title: string): string {
-  const found = headOf(html).match(/<title[^>]*>[\s\S]*?<\/title>/i)
-  const tag = `<title>${escapeText(title)}</title>`
-  if (found?.index !== undefined)
-    return `${html.slice(0, found.index)}${tag}${html.slice(found.index + found[0].length)}`
-  const head = html.match(/<head\b[^>]*>/i)
-  if (head?.index !== undefined) {
-    const at = head.index + head[0].length
-    return `${html.slice(0, at)}\n${tag}${html.slice(at)}`
-  }
-  return `${tag}\n${html}`
-}
-
-/** A template filled for a new artifact: its name as the title and its purpose as the description. */
-export function fillArtifact(template: string, title: string, purpose: string): string {
-  const filled = template
-    .replaceAll("{{TITLE}}", escapeText(title))
-    .replaceAll("{{PURPOSE}}", escapeAttr(purpose))
-  const titled = /<title[^>]*>[\s\S]*?<\/title>/i.test(headOf(filled))
-    ? filled
-    : withTitle(filled, title)
-  return metaContent(titled, "description") === null
-    ? withMeta(titled, "description", purpose)
-    : titled
-}
-
-/**
- * The wireframe template for one screen, or for two side by side (`options`): the second screen
- * stands between `options:start` and `options:end` comments, which go either way.
- */
-export function wireframePage(template: string, options: boolean): string {
-  return options
-    ? template.replace(/<!-- options:(?:start|end) -->\n?/g, "")
-    : template.replace(/<!-- options:start -->[\s\S]*?<!-- options:end -->\n?/g, "")
-}
-
-/** The parts of a section's label: "3 Plan · 03-plan.md" is number 3, "Plan · 03-plan.md". */
-export function labelParts(label: string): { n: string | null; text: string } {
-  const prefix = /^\d+[a-z]?/.exec(label)?.[0]
-  if (prefix) {
-    let start = skipWhitespace(label, prefix.length)
-    if (start === label.length && start > prefix.length + 1) start--
-    const text = label.slice(start)
-    if (start > prefix.length && text !== "" && isLineText(text)) return { n: prefix, text }
-  }
-  return { n: null, text: label }
-}
 
 // ---------------------------------------------------------------- what the lasting artifacts' routes answer
 

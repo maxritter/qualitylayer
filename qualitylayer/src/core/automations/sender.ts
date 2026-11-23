@@ -2,14 +2,13 @@
 // whenever something is queued in its own process. Each automation's deliveries go one after the
 // other, oldest first; different automations go side by side, so a slow receiver holds up only itself.
 
-import { randomBytes } from "node:crypto"
-import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { deliverEvent, type Tried } from "./deliver.ts"
+import { deliverEvent } from "./deliver.ts"
 import { appendDelivery, noteProblem, trimDeliveries } from "./log.ts"
-import { type EventPayload, taskLink } from "./payload.ts"
 import { dropQueued, isQueued, onQueued, type Queued, readQueue, writeQueued } from "./queue.ts"
 import { type Automation, readAutomations } from "./store.ts"
+
+export { sendTest } from "./sender-test.ts"
 
 export type SendReport = {
   sent: number
@@ -92,6 +91,80 @@ async function deliver(
   return { outcome: tried.ok ? "sent" : "failed", retryAt }
 }
 
+function recordSoonest(report: SendReport, at: number): void {
+  report.nextAt = report.nextAt === null ? at : Math.min(report.nextAt, at)
+}
+
+function groupByAutomation(queued: readonly Queued[]): Map<string, Queued[]> {
+  const grouped = new Map<string, Queued[]>()
+  for (const entry of queued) {
+    const group = grouped.get(entry.automation) ?? []
+    group.push(entry)
+    grouped.set(entry.automation, group)
+  }
+  return grouped
+}
+
+type SendPassContext = {
+  now: number
+  options: { timeoutMs?: number }
+  waiting: Set<string>
+  report: SendReport
+}
+
+async function processEntry(
+  ctx: Ctx,
+  automation: Automation | undefined,
+  entry: Queued,
+  pass: SendPassContext,
+): Promise<void> {
+  const { now, options, waiting, report } = pass
+  const task = entry.payload.task.id
+  try {
+    // An automation that is gone or off has nothing to receive.
+    if (automation === undefined || !automation.on) {
+      await dropQueued(ctx, entry.id)
+      return
+    }
+    if (inFlight.has(entry.id) || waiting.has(task)) {
+      waiting.add(task)
+      report.left++
+      return
+    }
+    if (entry.next > now) {
+      waiting.add(task)
+      recordSoonest(report, entry.next)
+      report.left++
+      return
+    }
+    // The person may have removed or turned off the automation since this pass began.
+    const current = await standing(ctx, entry)
+    if (current.state === "gone") {
+      await dropQueued(ctx, entry.id)
+      return
+    }
+    if (current.state === "unreadable") {
+      waiting.add(task)
+      report.left++
+      return
+    }
+    inFlight.set(entry.id, task)
+    const { outcome, retryAt } = await deliver(ctx, current.automation, entry, options)
+    if (outcome === "sent") report.sent++
+    else if (outcome === "failed") report.failed++
+    else report.left++
+    if (retryAt !== null) {
+      waiting.add(task)
+      recordSoonest(report, retryAt)
+    }
+  } catch {
+    waiting.add(task)
+    report.left++
+  } finally {
+    inFlight.delete(entry.id)
+  }
+}
+
 /**
  * Try every delivery that is due, once. Never throws. An automation's deliveries go oldest first,
  * and a task's later event waits while an earlier one of that task is still to be tried again:
@@ -99,9 +172,6 @@ async function deliver(
  */
 export async function sendDue(ctx: Ctx, options: { timeoutMs?: number } = {}): Promise<SendReport> {
   const report: SendReport = { sent: 0, failed: 0, left: 0, nextAt: null }
-  const soonest = (at: number) => {
-    report.nextAt = report.nextAt === null ? at : Math.min(report.nextAt, at)
-  }
   try {
     const now = ctx.clock.now()
     const queued = await readQueue(ctx)
@@ -114,62 +184,15 @@ export async function sendDue(ctx: Ctx, options: { timeoutMs?: number } = {}): P
       report.left = queued.length
       return report
     }
-    const byAutomation = new Map<string, Queued[]>()
-    for (const entry of queued) {
-      const group = byAutomation.get(entry.automation) ?? []
-      group.push(entry)
-      byAutomation.set(entry.automation, group)
-    }
+    const byAutomation = groupByAutomation(queued)
     await Promise.all(
       [...byAutomation].map(async ([id, entries]) => {
         const automation = automations.find((candidate) => candidate.id === id)
         // Tasks with an earlier event that has not come to an end.
         const waiting = new Set<string>()
+        const pass: SendPassContext = { now, options, waiting, report }
         for (const entry of entries) {
-          const task = entry.payload.task.id
-          try {
-            // An automation that is gone or off has nothing to receive.
-            if (automation === undefined || !automation.on) {
-              await dropQueued(ctx, entry.id)
-              continue
-            }
-            if (inFlight.has(entry.id) || waiting.has(task)) {
-              waiting.add(task)
-              report.left++
-              continue
-            }
-            if (entry.next > now) {
-              waiting.add(task)
-              soonest(entry.next)
-              report.left++
-              continue
-            }
-            // The person may have removed or turned off the automation since this pass began.
-            const current = await standing(ctx, entry)
-            if (current.state === "gone") {
-              await dropQueued(ctx, entry.id)
-              continue
-            }
-            if (current.state === "unreadable") {
-              waiting.add(task)
-              report.left++
-              continue
-            }
-            inFlight.set(entry.id, task)
-            const { outcome, retryAt } = await deliver(ctx, current.automation, entry, options)
-            if (outcome === "sent") report.sent++
-            else if (outcome === "failed") report.failed++
-            else report.left++
-            if (retryAt !== null) {
-              waiting.add(task)
-              soonest(retryAt)
-            }
-          } catch {
-            waiting.add(task)
-            report.left++
-          } finally {
-            inFlight.delete(entry.id)
-          }
+          await processEntry(ctx, automation, entry, pass)
         }
       }),
     )
@@ -178,147 +201,6 @@ export async function sendDue(ctx: Ctx, options: { timeoutMs?: number } = {}): P
     // A queue that cannot be read waits for the next run.
   }
   return report
-}
-
-type SampleProject = { id: string; name: string; checkout: string }
-
-/**
- * The project a test send is made for, so a command runs where the person's own events would: the
- * automation's first chosen project whose checkout exists, else the most recently seen registered
- * project whose checkout exists. Null when there is none.
- */
-async function sampleProject(
-  ctx: Ctx,
-  automation: Pick<Automation, "projects">,
-): Promise<SampleProject | null> {
-  const dir = join(ctx.home, "projects")
-  let ids: string[]
-  try {
-    ids = await ctx.fs.readdir(dir)
-  } catch {
-    return null
-  }
-  const found: (SampleProject & { seen: number })[] = []
-  for (const id of ids) {
-    try {
-      const note = JSON.parse(await ctx.fs.readFile(join(dir, id, "project.json"))) as {
-        name?: unknown
-        paths?: unknown
-        lastSeen?: unknown
-      }
-      const paths = Array.isArray(note.paths)
-        ? note.paths.filter((path): path is string => typeof path === "string")
-        : []
-      let checkout: string | undefined
-      for (const path of paths)
-        if (await ctx.fs.exists(path)) {
-          checkout = path
-          break
-        }
-      if (checkout === undefined) continue
-      found.push({
-        id,
-        name:
-          typeof note.name === "string" && note.name !== ""
-            ? note.name
-            : id.replace(/-[0-9a-f]{12}$/, ""),
-        checkout,
-        seen: typeof note.lastSeen === "number" ? note.lastSeen : 0,
-      })
-    } catch {
-      // a folder without a readable project file is no project
-    }
-  }
-  for (const id of automation.projects === "all" ? [] : automation.projects) {
-    const chosen = found.find((project) => project.id === id)
-    if (chosen !== undefined) return chosen
-  }
-  return found.sort((a, b) => b.seen - a.seen)[0] ?? null
-}
-
-/** What a test of a command says when no project has a checkout to run it in. */
-const NO_CHECKOUT =
-  "error: no project checkout to run the command in: a command runs in a project's folder, and none is registered on this computer"
-
-/** The sample task a test send carries: no task of the person's, only what a receiver should expect. */
-async function sampleEvent(
-  ctx: Ctx,
-  chosen: Pick<SampleProject, "id" | "name"> | null,
-): Promise<EventPayload> {
-  // Only the id and the name leave the computer: never the checkout's path or when it was seen.
-  const project = chosen
-    ? { id: chosen.id, name: chosen.name }
-    : { id: "sample-0123456789ab", name: "sample" }
-  const id = `${project.id}~sample-task`
-  return {
-    id: `evt_${randomBytes(8).toString("hex")}`,
-    event: "automation.test",
-    at: new Date(ctx.clock.now()).toISOString(),
-    version: 1,
-    project,
-    task: {
-      id,
-      slug: "sample-task",
-      title: "Sample task",
-      type: "feature",
-      step: "plan",
-      link: await taskLink(ctx, id),
-    },
-    data: {},
-  }
-}
-
-export type TestSend = {
-  /** The sample event's id: the delivery id a receiver sees. */
-  id: string
-  event: "automation.test"
-  /** `200`, `exit 0`, `timeout`, `error: <why>`. */
-  result: string
-  delivered: boolean
-  /** A command's last output. */
-  output?: string
-}
-
-/**
- * Send the sample event to one automation now, once, on or off: no queue and no retry, and the try
- * is a line in the delivery log like any other. Never throws. `log: false` is for the App's form,
- * which sends to a target that is not saved yet: it has no automation to put a line under.
- */
-export async function sendTest(
-  ctx: Ctx,
-  automation: Automation,
-  options: { timeoutMs?: number; log?: boolean } = {},
-): Promise<TestSend> {
-  const project = await sampleProject(ctx, automation)
-  const payload = await sampleEvent(ctx, project)
-  // A command runs in a real checkout of a project, never where this process happens to stand.
-  const tried: Tried =
-    automation.kind === "command" && project === null
-      ? { ok: false, result: NO_CHECKOUT }
-      : await deliverEvent(ctx, automation, payload, {
-          ...options,
-          ...(project !== null ? { cwd: project.checkout } : {}),
-        })
-  if (options.log !== false)
-    await appendDelivery(ctx, {
-      at: ctx.clock.now(),
-      automation: automation.id,
-      event: payload.id,
-      name: payload.event,
-      result: tried.result,
-      // One try by the person's hand: no delivery of theirs was given up.
-      gaveUp: false,
-      ...(tried.output !== undefined ? { output: tried.output } : {}),
-    })
-      .then(() => trimDeliveries(ctx))
-      .catch(() => {})
-  return {
-    id: payload.id,
-    event: "automation.test",
-    result: tried.result,
-    delivered: tried.ok,
-    ...(tried.output !== undefined ? { output: tried.output } : {}),
-  }
 }
 
 /** The timer the sender sets for the next retry; a test gives its own. */

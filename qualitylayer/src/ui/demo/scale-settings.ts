@@ -4,288 +4,14 @@
 import { NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
 import type { AgentUsage, Spend, Usage } from "../../core/cost/usage.ts"
 import type { SessionRow, SessionState, StopOutcome } from "../../core/run/sessions-view.ts"
-import {
-  type MemoryApi,
-  type MemoryPage,
-  type MemoryPreview,
-  type MemoryProject,
-  type MemoryRecordView,
-  type MemorySource,
-  PERSONAL_PROJECT,
-} from "../../memory-contracts.ts"
-import type { Api } from "../api.ts"
+import type { Api, TaskDetail } from "../api.ts"
+import { largeMemory } from "./scale-memory.ts"
 import { LARGE_PROJECTS, type LargeTasks } from "./scale-tasks.ts"
 import { demoUsage } from "./usage.ts"
 
 const MB = 1024 * 1024
 const MIN = 60_000
 const HOUR = 60 * MIN
-
-// ---------------------------------------------------------------- memory
-
-const RULES: readonly [string, string][] = [
-  [
-    "Keep payment retries idempotent",
-    "Reuse the payment attempt key when a request is retried. A fresh key can capture the payment twice.",
-  ],
-  [
-    "Bound the database lock timeout",
-    "Keep a short lock timeout during migrations and retry the migration after busy transactions finish.",
-  ],
-  [
-    "Preserve audit filters in the address",
-    "Store the actor and date range in the URL so copied links show the same audit entries.",
-  ],
-  [
-    "Back off webhook delivery",
-    "Retry temporary webhook failures with bounded backoff and keep the original event identifier.",
-  ],
-  [
-    "Validate configuration before saving",
-    "Show invalid configuration values beside the field and retain the last saved configuration.",
-  ],
-  [
-    "Keep browser previews isolated",
-    "Serve shared previews in a sandboxed frame and disable navigation and executable content.",
-  ],
-  [
-    "Handle a cancelled export",
-    "Release temporary export files when the request is cancelled, including failures before the response starts.",
-  ],
-  [
-    "Check phone layouts with long names",
-    "Use realistic long project and task names when checking narrow layouts and keyboard focus.",
-  ],
-  [
-    "Write each ledger window once",
-    "Key a usage window by account, meter, region and start so a replay is a no-op and a closed window changes only through a correction line.",
-  ],
-  [
-    "Keep the gateway fast",
-    "A meter that runs after the response is on its way never delays the customer; measure the p99 before and after.",
-  ],
-  [
-    "Name a failing check by its file",
-    "When a check fails, say which file and which line failed before the command that ran, so a person can open it at once.",
-  ],
-  [
-    "Never log a token",
-    "Redact bearer tokens and signed URLs before a request is written to the log, including the retry line that repeats the header.",
-  ],
-  [
-    "Prefer a worker over a request thread",
-    "Move work that can take longer than a second to a worker with its own retry policy and report progress on the record.",
-  ],
-  [
-    "Test the timezone edges",
-    "Check the day boundary for a customer east of UTC and one west of it, and the hour that does not exist on a daylight saving change.",
-  ],
-  [
-    "Show the empty state first",
-    "Draw a list with no rows before drawing one with many, and say what appears there and who can add the first item.",
-  ],
-]
-
-const CONTEXTS = [
-  "in the billing service",
-  "for the mobile app",
-  "in the admin interface",
-  "across the three regions",
-  "in the nightly jobs",
-  "for enterprise accounts",
-  "in the public API",
-  "when a team has hundreds of members",
-  "for accounts created before the rewrite",
-  "in the reporting warehouse",
-]
-
-const SOURCES: readonly MemorySource[] = ["task", "task", "repository", "task", "session", "manual"]
-
-/** 150 lessons about the projects and 6 about the person, with every source and both visibilities. */
-function lessons(): MemoryRecordView[] {
-  const projects = LARGE_PROJECTS.map((project) => project.id)
-  const project = (at: number) =>
-    at % 23 === 0 ? PERSONAL_PROJECT : (projects[at % projects.length] as string)
-  return Array.from({ length: 150 }, (_, at): MemoryRecordView => {
-    const rule = RULES[at % RULES.length] as readonly [string, string]
-    const context = CONTEXTS[(at + Math.floor(at / RULES.length)) % CONTEXTS.length] as string
-    const source = at % 11 === 4 ? "pilot" : (SOURCES[at % SOURCES.length] as MemorySource)
-    const owned = source === "repository" || source === "task"
-    return {
-      schema: 1,
-      id: `large-lesson-${at + 1}`,
-      project: project(at),
-      origin: "demo-device",
-      revision: 1,
-      kind:
-        (["bugfix", "pattern", "decision", "discovery", "architecture"] as const)[at % 5] ??
-        "pattern",
-      title: `${rule[0]} ${context}`,
-      content:
-        `${rule[1]} ${at % 4 === 0 ? "Check it again when the code it names changes, and retire it when the code goes away." : ""}`.trim(),
-      tags: ["sample"],
-      files:
-        at % 2 === 0
-          ? [`services/${(rule[0] ?? "").split(" ")[0]?.toLowerCase()}/src/index.ts`]
-          : [],
-      source,
-      ...(source === "pilot" ? { author: "Demo author", sourceAt: "2026-09-12" } : {}),
-      evidence: owned
-        ? {
-            task: `2026-10-${String(1 + (at % 28)).padStart(2, "0")}-lesson-${at + 1}`,
-            commit: null,
-            checks: [`tests/lessons/lesson-${at + 1}.test.ts`],
-            recordedAt: 1791446400000 + at * HOUR,
-          }
-        : null,
-      visibility: owned ? "project" : "private",
-      state: at % 17 === 5 ? "retired" : "active",
-      pinned: at % 29 === 0,
-      createdAt: 1791446400000 + at * HOUR,
-      updatedAt: 1791446400000 + at * HOUR,
-    }
-  })
-}
-
-function pageOf<T>(items: T[], cursor?: string, limit = 20): MemoryPage<T> {
-  const offset = Math.max(0, Number(cursor) || 0)
-  const size = Math.max(1, Math.min(20, limit))
-  return {
-    items: structuredClone(items.slice(offset, offset + size)),
-    total: items.length,
-    next: offset + size < items.length ? String(offset + size) : null,
-  }
-}
-
-function previewOf(record: MemoryRecordView): MemoryPreview {
-  const { content, ...metadata } = record
-  return { ...metadata, preview: content.slice(0, 180), pinned: record.pinned === true }
-}
-
-/** The Memory of the large demo: the demo's own settings and imports, with 150 lessons of its own. */
-function largeMemory(base: MemoryApi): MemoryApi {
-  const records = lessons()
-  const projects: MemoryProject[] = [
-    ...LARGE_PROJECTS.map(
-      (project): MemoryProject => ({
-        id: project.id,
-        name: project.name,
-        root: project.paths[0] ?? `/demo/${project.id}`,
-        sharing: project.id === "pay" || project.id === "platform",
-        count: 0,
-        git: true,
-      }),
-    ),
-    ...Array.from(
-      { length: 52 },
-      (_, at): MemoryProject => ({
-        id: `service-${String(at + 13).padStart(2, "0")}`,
-        name: `acme/service-${String(at + 13).padStart(2, "0")}`,
-        root: `/demo/service-${at + 13}`,
-        sharing: false,
-        count: 0,
-        git: true,
-      }),
-    ),
-  ]
-  const byId = (id: string) => {
-    const found = records.find((record) => record.id === id)
-    if (found === undefined) throw new Error("This memory is not in the demonstration.")
-    return found
-  }
-  const sharedOf = (record: MemoryRecordView) =>
-    record.visibility === "project" &&
-    (record.source === "repository" ||
-      projects.find((project) => project.id === record.project)?.sharing === true)
-  const withShared = (record: MemoryRecordView): MemoryRecordView => ({
-    ...record,
-    shared: sharedOf(record),
-  })
-  return {
-    ...base,
-    overview: async (project) => {
-      const seen = await base.overview(project)
-      const scoped = records.filter((record) => !project || record.project === project)
-      return {
-        ...seen,
-        total: scoped.length,
-        shared: scoped.filter(sharedOf).length,
-        imported: scoped.filter((record) => record.source === "pilot").length,
-        projects: projects.length,
-        sharedProjects: {
-          shared: projects.filter((item) => item.sharing).length,
-          total: projects.length,
-        },
-        recent: scoped.slice(0, 3).map(previewOf),
-      }
-    },
-    projects: async (query) => {
-      const words = query?.query?.toLowerCase()
-      const found = projects
-        .filter((project) => !words || project.name.toLowerCase().includes(words))
-        .map((project) => ({
-          ...project,
-          count: records.filter((record) => record.project === project.id).length,
-        }))
-      return pageOf(found, query?.cursor, query?.limit)
-    },
-    sharing: async (id, sharing) => {
-      const project = projects.find((item) => item.id === id)
-      if (project === undefined) throw new Error("This project is not in the demonstration.")
-      project.sharing = sharing
-      return { ...project, count: records.filter((record) => record.project === id).length }
-    },
-    list: async (query) => {
-      const words = query?.query?.toLowerCase() ?? ""
-      const found = records.filter(
-        (record) =>
-          (!query?.project || record.project === query.project) &&
-          (!query?.source || query.source === "all" || query.source === record.source) &&
-          (!query?.scope || query.scope === "all" || query.scope === record.visibility) &&
-          (!words ||
-            `${record.title} ${record.content} ${record.files.join(" ")}`
-              .toLowerCase()
-              .includes(words)),
-      )
-      return pageOf(
-        found.map((record) => ({ ...previewOf(record), shared: sharedOf(record) })),
-        query?.cursor,
-        query?.limit,
-      )
-    },
-    read: async (id) => structuredClone(withShared(byId(id))),
-    retire: async (id, active) => {
-      const record = byId(id)
-      record.state = active ? "active" : "retired"
-      if (!active) record.pinned = false
-      record.revision += 1
-      if (active) delete record.retired
-      else record.retired = { reason: "", by: "you", at: Date.now() }
-      return structuredClone(record)
-    },
-    confirm: async (id, reason) => {
-      const record = byId(id)
-      record.checked = { commit: "0".repeat(40), at: Date.now(), ...(reason ? { reason } : {}) }
-      record.sources = { state: "unchanged" }
-      return structuredClone(record)
-    },
-    pin: async (id, pinned) => {
-      const record = byId(id)
-      if (pinned && record.state !== "active")
-        throw new Error("A retired lesson cannot be pinned. Restore it first.")
-      record.pinned = pinned
-      return structuredClone(withShared(record))
-    },
-    pinned: async (project) =>
-      records
-        .filter(
-          (record) => record.project === project && record.pinned && record.state === "active",
-        )
-        .map(previewOf),
-  }
-}
-
-// ---------------------------------------------------------------- sessions
 
 const AGENT_TASKS = [
   "Replace the nightly reconciliation batch job with an event-driven settlement pipeline",
@@ -296,47 +22,47 @@ const AGENT_TASKS = [
   "Add per-organisation rate limits to the public API",
 ] as const
 
-/** The step a large-demo session stands at: a working one is building, the others wait at a later or earlier step. */
 const sessionStep = (state: SessionState, at: number): string =>
   state === "working" ? "Implement" : (["Plan", "Verify"][at % 2] as string)
+
+const sessionWords = (state: SessionState, at: number): string => {
+  if (state === "working") return `Working · slice ${2 + (at % 9)} of ${11 + (at % 20)}`
+  return state === "needs-you" ? "Waits for you" : "Idle"
+}
+
+const sessionLastTurn = (state: SessionState, at: number, now: number): number => {
+  if (state === "idle") return now - (2 + (at % 6)) * HOUR
+  if (state === "needs-you") return now - (9 + at) * MIN
+  return now - (8 + at * 3) * 1000
+}
+
+function buildSessionRow(task: TaskDetail | undefined, at: number, now: number): SessionRow {
+  const state: SessionState = at % 5 === 4 ? "idle" : at % 4 === 3 ? "needs-you" : "working"
+  const project = LARGE_PROJECTS[at % LARGE_PROJECTS.length]
+  return {
+    run: `demo-run-${at + 1}`,
+    generation: 1,
+    agent: NATIVE_AGENTS[at % NATIVE_AGENTS.length] as NativeAgent,
+    task: task?.title ?? (AGENT_TASKS[at % AGENT_TASKS.length] as string),
+    taskId: at % 3 === 0 ? (task?.id ?? null) : null,
+    project: project === undefined ? null : { id: project.id, name: project.name },
+    step: sessionStep(state, at),
+    state,
+    words: sessionWords(state, at),
+    idle: state === "idle",
+    keptOpen: null,
+    lastTurnAt: sessionLastTurn(state, at, now),
+    memoryBytes: (180 + ((at * 67) % 520)) * MB,
+  }
+}
 
 /** 25 running sessions on 7 agents: most work, a few wait for the person, a few sit idle for hours. */
 function sessionRows(world: LargeTasks, now: number): SessionRow[] {
   const tasks = world.summaries()
-  return Array.from({ length: 25 }, (_, at): SessionRow => {
-    const task = tasks[(at * 3) % tasks.length]
-    const state: SessionState = at % 5 === 4 ? "idle" : at % 4 === 3 ? "needs-you" : "working"
-    const project = LARGE_PROJECTS[at % LARGE_PROJECTS.length]
-    return {
-      run: `demo-run-${at + 1}`,
-      generation: 1,
-      agent: NATIVE_AGENTS[at % NATIVE_AGENTS.length] as NativeAgent,
-      task: task?.title ?? (AGENT_TASKS[at % AGENT_TASKS.length] as string),
-      taskId: at % 3 === 0 ? (task?.id ?? null) : null,
-      project: project === undefined ? null : { id: project.id, name: project.name },
-      step: sessionStep(state, at),
-      state,
-      words:
-        state === "working"
-          ? `Working · slice ${2 + (at % 9)} of ${11 + (at % 20)}`
-          : state === "needs-you"
-            ? "Waits for you"
-            : "Idle",
-      idle: state === "idle",
-      keptOpen: null,
-      lastTurnAt:
-        now -
-        (state === "idle"
-          ? (2 + (at % 6)) * HOUR
-          : state === "needs-you"
-            ? (9 + at) * MIN
-            : (8 + at * 3) * 1000),
-      memoryBytes: (180 + ((at * 67) % 520)) * MB,
-    }
-  })
+  return Array.from({ length: 25 }, (_, at) =>
+    buildSessionRow(tasks[(at * 3) % tasks.length], at, now),
+  )
 }
-
-// ---------------------------------------------------------------- usage
 
 const SPEND_KEYS = [
   "calls",
@@ -360,6 +86,26 @@ function sumSpends(spends: Spend[]): Spend {
   return total
 }
 
+function fillPreviousPeriod(
+  previous: Usage["previous"],
+  agents: AgentUsage[],
+  counted: AgentUsage[],
+): Usage["previous"] {
+  if (previous === null) return null
+  const filled = agents.map((agent, at) => {
+    const known = previous.agents.find((entry) => entry.agent === agent.agent)
+    if (known !== undefined && known.calls > 0) return known
+    const from = previous.agents.find(
+      (entry) => entry.agent === (counted[at % counted.length] as AgentUsage).agent,
+    )
+    return {
+      ...structuredClone(from ?? previous.agents[0] ?? {}),
+      agent: agent.agent,
+    } as (typeof previous.agents)[number]
+  })
+  return { ...previous, agents: filled, totals: sumSpends(filled as Spend[]) }
+}
+
 /** The agents that are not counted in the demo's usage report as the ones that are, scaled down. */
 function everyAgent(usage: Usage): Usage {
   const counted = usage.agents.filter((agent) => agent.state === "counted" && agent.calls > 0)
@@ -376,34 +122,13 @@ function everyAgent(usage: Usage): Usage {
       reason: null,
     }
   })
-  const previous = usage.previous
-  const earlier =
-    previous === null
-      ? null
-      : {
-          ...previous,
-          agents: usage.agents.map((agent, at) => {
-            const known = previous.agents.find((entry) => entry.agent === agent.agent)
-            if (known !== undefined && known.calls > 0) return known
-            const from = previous.agents.find(
-              (entry) => entry.agent === (counted[at % counted.length] as AgentUsage).agent,
-            )
-            return {
-              ...structuredClone(from ?? previous.agents[0] ?? {}),
-              agent: agent.agent,
-            } as (typeof previous.agents)[number]
-          }),
-        }
   return {
     ...usage,
     agents: shown,
     totals: sumSpends(shown),
-    previous:
-      earlier === null ? null : { ...earlier, totals: sumSpends(earlier.agents as Spend[]) },
+    previous: fillPreviousPeriod(usage.previous, usage.agents, counted),
   }
 }
-
-// ---------------------------------------------------------------- agents
 
 const LONG_MODEL = "openrouter/alibaba-token-plan/qwen3.8-coder-plus-20261001-thinking-extended"
 
@@ -416,8 +141,6 @@ function longModels(models: { id: string; name: string }[], agent: string) {
   const all = [...models, ...more]
   return [...all.slice(0, -1), { id: LONG_MODEL, name: LONG_MODEL }]
 }
-
-// ---------------------------------------------------------------- the calls
 
 export function largeSettings(api: Api, world: LargeTasks, now: number): Partial<Api> {
   const rows = sessionRows(world, now)
@@ -441,7 +164,6 @@ export function largeSettings(api: Api, world: LargeTasks, now: number): Partial
       return idle.map((row) => ({ run: row.run, generation: row.generation, stopped: true }))
     },
     usage: async (period) => everyAgent(demoUsage(period, "huge")),
-    // Every agent lists its own long set of models, as OpenCode does: the pickers show them after the catalog's.
     subagents: async () =>
       (await api.subagents()).map((entry) => {
         const models = longModels(entry.models, entry.agent)

@@ -33,6 +33,98 @@ export function sourceRefs(agreement: string): SourceRef[] {
   return refs
 }
 
+function lineRangeLabel(ref: SourceRef) {
+  return ref.from === ref.to ? `line ${ref.from}` : `lines ${ref.from}–${ref.to}`
+}
+
+function useOriginalText(api: Api | undefined, taskId: string, original: TaskDetail["original"]) {
+  const [text, setText] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    if (!original || !api) return
+    const controller = new AbortController()
+    api.doc(taskId, original.file, controller.signal).then(
+      (doc) => setText(doc.markdown),
+      (error) => {
+        if (!controller.signal.aborted)
+          setProblem(error instanceof Error ? error.message : "The original could not be read.")
+      },
+    )
+    return () => controller.abort()
+  }, [api, taskId, original])
+  return { text, problem }
+}
+
+function OriginalRefs({
+  refs,
+  onSelect,
+}: {
+  refs: SourceRef[]
+  onSelect: (ref: SourceRef) => void
+}) {
+  if (refs.length === 0) return null
+  return (
+    <ul className="q-original-refs" aria-label="Where the Plan comes from">
+      {refs.map((ref) => {
+        const range = lineRangeLabel(ref)
+        return (
+          <li key={`${ref.label}-${ref.from}-${ref.to}`}>
+            <span>{ref.label}</span>
+            <button
+              type="button"
+              className="q-original-ref"
+              aria-label={`Show ${range} of your plan`}
+              onClick={() => onSelect({ ...ref })}
+            >
+              ↓ {range}
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function OriginalTextRegion({
+  file,
+  text,
+  focus,
+}: {
+  file: string
+  text: string
+  focus: SourceRef | null
+}) {
+  const region = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!focus || !region.current) return
+    const row = region.current.querySelector<HTMLElement>(`[data-line="${focus.from}"]`)
+    if (row) region.current.scrollTop = row.offsetTop - 24
+    region.current.focus({ preventScroll: true })
+  }, [focus])
+  // Lines split on \n only, so each keeps its own \r: the text reads back exactly as the file holds it.
+  const lines = text.split("\n")
+  return (
+    <section
+      ref={region}
+      className="q-original-text"
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: a bounded region of text is scrolled by keyboard and receives a source jump's focus.
+      tabIndex={0}
+      aria-label={`Full text of ${file}`}
+    >
+      {lines.map((line, index) => {
+        const n = index + 1
+        const on = focus !== null && n >= focus.from && n <= focus.to
+        return (
+          <span key={n} data-line={n} className={on ? "q-original-line on" : "q-original-line"}>
+            {index > 0 ? "\n" : ""}
+            {line}
+          </span>
+        )
+      })}
+    </section>
+  )
+}
+
 /**
  * The person's original plan, as it was handed over: its digest's state, a one-line reminder that it
  * is evidence, the Plan's source-line jumps, then the whole text with numbered lines in a bounded,
@@ -49,32 +141,10 @@ export function OriginalPlan({
   agreement?: string
 }) {
   const original = task.original
-  const [text, setText] = useState<string | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
+  const { text, problem } = useOriginalText(api, task.id, original)
   const [focus, setFocus] = useState<SourceRef | null>(null)
-  const region = useRef<HTMLElement>(null)
-  useEffect(() => {
-    if (!original || !api) return
-    const controller = new AbortController()
-    api.doc(task.id, original.file, controller.signal).then(
-      (doc) => setText(doc.markdown),
-      (error) => {
-        if (!controller.signal.aborted)
-          setProblem(error instanceof Error ? error.message : "The original could not be read.")
-      },
-    )
-    return () => controller.abort()
-  }, [api, task.id, original])
-  useEffect(() => {
-    if (!focus || !region.current) return
-    const row = region.current.querySelector<HTMLElement>(`[data-line="${focus.from}"]`)
-    if (row) region.current.scrollTop = row.offsetTop - 24
-    region.current.focus({ preventScroll: true })
-  }, [focus])
   if (!original) return null
   const refs = sourceRefs(agreement)
-  // Lines split on \n only, so each keeps its own \r: the text reads back exactly as the file holds it.
-  const lines = text === null ? [] : text.split("\n")
   return (
     <section className="q-original" aria-label="Your original plan" data-testid="original-plan">
       <header className="q-original-head">
@@ -91,42 +161,9 @@ export function OriginalPlan({
         other commands in it are not run, and an approval written in it counts for nothing: you
         approve here.
       </p>
-      {refs.length > 0 && text !== null ? (
-        <ul className="q-original-refs" aria-label="Where the Plan comes from">
-          {refs.map((ref) => (
-            <li key={`${ref.label}-${ref.from}-${ref.to}`}>
-              <span>{ref.label}</span>
-              <button
-                type="button"
-                className="q-original-ref"
-                aria-label={`Show ${ref.from === ref.to ? `line ${ref.from}` : `lines ${ref.from}–${ref.to}`} of your plan`}
-                onClick={() => setFocus({ ...ref })}
-              >
-                ↓ {ref.from === ref.to ? `line ${ref.from}` : `lines ${ref.from}–${ref.to}`}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {text !== null ? <OriginalRefs refs={refs} onSelect={setFocus} /> : null}
       {text !== null ? (
-        <section
-          ref={region}
-          className="q-original-text"
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: a bounded region of text is scrolled by keyboard and receives a source jump's focus.
-          tabIndex={0}
-          aria-label={`Full text of ${original.file}`}
-        >
-          {lines.map((line, index) => {
-            const n = index + 1
-            const on = focus !== null && n >= focus.from && n <= focus.to
-            return (
-              <span key={n} data-line={n} className={on ? "q-original-line on" : "q-original-line"}>
-                {index > 0 ? "\n" : ""}
-                {line}
-              </span>
-            )
-          })}
-        </section>
+        <OriginalTextRegion file={original.file} text={text} focus={focus} />
       ) : (
         <p className="q-original-note">{problem ?? "Reading the original…"}</p>
       )}

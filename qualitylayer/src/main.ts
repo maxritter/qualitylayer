@@ -7,7 +7,7 @@ import { agentHostCmd } from "./cli/commands/agent-host.ts"
 import { agentRunsCmd } from "./cli/commands/agent-runs.ts"
 import { agentsCmd } from "./cli/commands/agents.ts"
 import { appCmd } from "./cli/commands/app.ts"
-import { artifactCmd, artifactSubUsage, artifactWorkflowTask } from "./cli/commands/artifact.ts"
+import { artifactCmd } from "./cli/commands/artifact.ts"
 import { automationsCmd } from "./cli/commands/automations.ts"
 import { branchCmd } from "./cli/commands/branch.ts"
 import { briefCmd } from "./cli/commands/brief.ts"
@@ -21,16 +21,13 @@ import { feedbackCmd } from "./cli/commands/feedback.ts"
 import { gateCmd } from "./cli/commands/gate.ts"
 import { heavyCmd } from "./cli/commands/heavy.ts"
 import { helperCmd } from "./cli/commands/helper.ts"
-import { hookCmd } from "./cli/commands/hook.ts"
 import { installCmd, uninstallCmd, updateCmd } from "./cli/commands/install.ts"
 import { instructionsCmd } from "./cli/commands/instructions.ts"
 import { licenceCmd } from "./cli/commands/licence.ts"
 import { limitCmd } from "./cli/commands/limit.ts"
-import { cardCmd, doctorCmd, findCmd, guideText, showCmd, tasksCmd } from "./cli/commands/lookup.ts"
+import { cardCmd, doctorCmd, findCmd, showCmd, tasksCmd } from "./cli/commands/lookup.ts"
 import { machinesCmd } from "./cli/commands/machines.ts"
 import { memoryCmd } from "./cli/commands/memory.ts"
-import { memoryMcpCmd } from "./cli/commands/memory-mcp.ts"
-import { nativeHelperCmd } from "./cli/commands/native-helper.ts"
 import { needCmd } from "./cli/commands/need.ts"
 import { nextCmd } from "./cli/commands/next.ts"
 import { peersCmd } from "./cli/commands/peers.ts"
@@ -46,42 +43,33 @@ import { reviewCmd } from "./cli/commands/review.ts"
 import { settingsCmd } from "./cli/commands/settings.ts"
 import { shipCmd } from "./cli/commands/ship.ts"
 import { statusCmd } from "./cli/commands/status.ts"
-import { statuslineCmd } from "./cli/commands/statusline.ts"
 import { commentsCmd, taskCmd } from "./cli/commands/task.ts"
 import { usageCmd } from "./cli/commands/usage.ts"
 import { validateCmd } from "./cli/commands/validate.ts"
 import { attestCmd, verdictCmd } from "./cli/commands/verdict.ts"
 import { verifyCmd } from "./cli/commands/verify.ts"
 import { waitCmd } from "./cli/commands/wait.ts"
-import { installView } from "./cli/install-view.ts"
 import { emit } from "./cli/output.ts"
 import { wakeServerToSend } from "./core/automations/queue.ts"
 import { FLOW_STEPS } from "./core/flow.ts"
 import { verify } from "./core/licence/verify.ts"
-import { recordCall } from "./core/live/record.ts"
 import { checkThen, takeSetNeeds } from "./core/need/need.ts"
-import { refreshCurrent } from "./core/pages/refresh.ts"
 import { resolveRepo } from "./core/paths.ts"
 import { hideChildWindows } from "./core/platform.ts"
 import { keepAlive, resolveTask } from "./core/task/store.ts"
 import { VERSION } from "./core/version.ts"
-import { rememberWaitReply } from "./core/wait.ts"
 import { type Ctx, err, type Result, realCtx, withoutRepositoryGit } from "./ctx.ts"
+import {
+  applyPostCommandEffects,
+  parseInvocation,
+  resolveWorkflowEffects,
+  runSpecialCommand,
+} from "./main-dispatch.ts"
 import { crashLine } from "./server/crash.ts"
 import { cachingGit } from "./server/git-cache.ts"
-import { withTaskMemory } from "./task-memory.ts"
 import { leadInstructions } from "./workflow/notice.ts"
 
 export { VERSION }
-
-/** The same command with the environment naming the task, as `--task <slug>` does for any command. */
-function forTask(ctx: Ctx, slug: string): Ctx {
-  const inner = ctx.env
-  return {
-    ...ctx,
-    env: { cwd: inner.cwd, get: (name) => (name === "QUALITYLAYER_TASK" ? slug : inner.get(name)) },
-  }
-}
 
 const USAGE = `qualitylayer — ${FLOW_STEPS.map((step) => step.label).join(" → ")}: the planning-first harness for any coding agent
 
@@ -373,129 +361,19 @@ const READS_WORKFLOW = new Set([
   "read",
 ])
 
-export async function run(argv: string[], baseCtx: Ctx): Promise<number> {
-  // Its own flags and plain output, like the status line: argv goes through untouched.
-  if (argv[0] === "peers") return peersCmd(argv.slice(1))
-  const json = argv.includes("--json")
-  let args = argv.filter((arg) => arg !== "--json")
-
-  let ctx: Ctx = { ...baseCtx, invocationTask: undefined }
-  const taskFlag = args.indexOf("--task")
-  if (taskFlag !== -1) {
-    const slug = args[taskFlag + 1]
-    args = args.filter((_, index) => index !== taskFlag && index !== taskFlag + 1)
-    if (slug !== undefined) ctx = { ...forTask(ctx, slug), invocationTask: slug }
-  }
-
-  const [command, ...rest] = args
-  if (ctx.invocationTask !== undefined && command !== undefined && VISITS.has(command))
-    ctx = { ...ctx, visitsTask: true }
-  if (command === undefined || command === "help" || command === "--help") {
-    console.log(USAGE)
-    return command === undefined ? 1 : 0
-  }
-  if (command === "--version" || command === "version") {
-    console.log(VERSION)
-    return 0
-  }
-  // The command was renamed with the designs: say so once, so an agent running on old instructions
-  // corrects itself. This is an error, not an alias: nothing runs.
-  if (command === "design") {
-    const same = argv
-      .slice(argv.indexOf("design") + 1)
-      .filter((arg) => arg !== "--json")
-      .join(" ")
-    return emit(
-      err({
-        code: "bad_args",
-        message: `"design" is now "artifact": run qualitylayer artifact${same === "" ? "" : ` ${same}`}`,
-      }),
-      json,
-    )
-  }
-  // `install --help` must never install: help after a command prints its usage
-  // and runs nothing. `next` and `find` take free text, where `-h` is a word.
-  if (
-    rest.includes("--help") ||
-    (rest.includes("-h") && command !== "next" && command !== "find")
-  ) {
-    // `artifact <sub> --help` prints that subcommand's own usage; `artifact --help` the whole.
-    const subUsage = command === "artifact" ? artifactSubUsage(rest[0]) : null
-    console.log(subUsage === null ? usageOf(command) : `usage:\n  ${subUsage}`)
-    return commands[command] === undefined && command !== "statusline" && command !== "guide"
-      ? 1
-      : 0
-  }
-
-  // Kept for one release for a status line set by hand: prints nothing.
-  if (command === "statusline") return statuslineCmd()
-  // The agents' prompt hook: plain lines for the agent, and it runs on every message.
-  if (command === "hook") return hookCmd(ctx, rest)
-  if (command === "native-helper") return nativeHelperCmd(ctx, rest)
-  // The memory tools as an MCP server: JSON-RPC lines on stdout, so no envelope may follow them.
-  if (command === "memory" && rest[0] === "mcp" && rest.length === 1) return memoryMcpCmd(ctx)
-  // The skill's rules as plain text, for a goal the user started by naming QualityLayer.
-  if (command === "guide") {
-    console.log(guideText())
-    return 0
-  }
-
-  // A person installing sees the install screen; --json and `update`'s --refresh get the envelope.
-  if (command === "install" && !json && !rest.includes("--refresh")) return installView(ctx, rest)
-
-  const handler = commands[command]
-  if (handler === undefined) {
-    return emit(err({ code: "bad_args", message: `unknown command "${command}"` }), json)
-  }
+async function checkCommandAccess(ctx: Ctx, command: string): Promise<Result<unknown> | null> {
   // A command that reads the texts loads them first: that asks qualitylayer.dev, the only one that
   // can vouch for a machine whose clock mark was lost, and checks the entitlement as it goes. A
   // development build has nothing to load, so its check below stays as strict as before.
   if (READS_WORKFLOW.has(command)) {
     const loaded = await loadWorkflow(ctx)
-    if (!loaded.ok) return emit(loaded, json)
+    if (!loaded.ok) return loaded
   }
   if (GATED.has(command)) {
     const entitled = await verify(ctx)
-    if (!entitled.ok) return emit(entitled, json)
+    if (!entitled.ok) return entitled
   }
-  // Passive reads never stand in for agent activity, including the mod's background PR refresh.
-  let workflowEffects = !(
-    (command === "plan" && rest[0] === "export") ||
-    (command === "pr" && rest[0] === "read" && rest.includes("--stale"))
-  )
-  if (command === "artifact") {
-    const task = await artifactWorkflowTask(ctx, rest)
-    workflowEffects = task !== null
-    if (task !== null) ctx = forTask(ctx, task.slug)
-  }
-  // `next` reads only: none of the effects below (a sign of life, a saved reply, a refresh) run for it.
-  if (command === "next") return emit(await handler(ctx, rest), json)
-  if (workflowEffects && KEEPS_ALIVE.has(command)) await keepAlive(ctx, "command")
-  let result = await handler(ctx, rest)
-  // A step's text comes with the lessons the project kept for it.
-  if (command === "brief" || (command === "build" && rest[0] === "start") || command === "ship")
-    result = await withTaskMemory(ctx, result)
-  // Every workflow call is a sign of life for the live status, and a refusal is counted there.
-  if (workflowEffects && (KEEPS_ALIVE.has(command) || SIGNS_OF_LIFE.has(command))) {
-    await recordCall(ctx, command, rest, result)
-    // A need the person set in the App reaches the agent with its next call.
-    if (command !== "need" && command !== "wait") result = await withSetNeeds(ctx, result)
-  }
-  // This saves a prepared reply for Stop and legacy cursors, never proof of native consumption.
-  // Background reads and retention must preserve the last workflow Stop reply.
-  if (
-    workflowEffects &&
-    command !== "status" &&
-    command !== "read" &&
-    command !== "heavy" &&
-    command !== "memory" &&
-    command !== "retention"
-  )
-    await rememberWaitReply(ctx, result).catch(() => {})
-  // A task with one document per step: what the command changed shows in its documents. A refused
-  // command changed nothing, and writes nothing there: the next hand edit meets the text as it was.
-  if (workflowEffects && REFRESHES.has(command) && result.ok) await refreshCurrent(ctx)
-  return emit(result, json)
+  return null
 }
 
 /** The needs the person set since the agent last heard, told once with what to do. */
@@ -503,10 +381,8 @@ async function withSetNeeds(ctx: Ctx, result: Result<unknown>): Promise<Result<u
   if (!result.ok || typeof result.data !== "object" || result.data === null) return result
   try {
     const repo = await resolveRepo(ctx)
-    if (!repo.ok) return result
-    const task = await resolveTask(ctx, repo.data)
-    if (task === null) return result
-    const set = await takeSetNeeds(ctx, task)
+    const task = repo.ok ? await resolveTask(ctx, repo.data) : null
+    const set = task === null ? [] : await takeSetNeeds(ctx, task)
     if (set.length === 0) return result
     const lines = set.map(
       (need) =>
@@ -527,6 +403,47 @@ async function withSetNeeds(ctx: Ctx, result: Result<unknown>): Promise<Result<u
   } catch {
     return result
   }
+}
+
+async function runRegisteredCommand(
+  ctx: Ctx,
+  command: string,
+  rest: string[],
+  json: boolean,
+): Promise<number> {
+  const handler = commands[command]
+  if (handler === undefined) {
+    return emit(err({ code: "bad_args", message: `unknown command "${command}"` }), json)
+  }
+  const denied = await checkCommandAccess(ctx, command)
+  if (denied !== null) return emit(denied, json)
+  const resolved = await resolveWorkflowEffects(ctx, command, rest)
+  // `next` reads only: none of the effects below (a sign of life, a saved reply, a refresh) run for it.
+  if (command === "next") return emit(await handler(resolved.ctx, rest), json)
+  if (resolved.workflowEffects && KEEPS_ALIVE.has(command)) await keepAlive(resolved.ctx, "command")
+  const initial = await handler(resolved.ctx, rest)
+  const result = await applyPostCommandEffects(resolved.ctx, command, rest, initial, {
+    workflowEffects: resolved.workflowEffects,
+    keepsAlive: KEEPS_ALIVE,
+    signsOfLife: SIGNS_OF_LIFE,
+    refreshes: REFRESHES,
+    withSetNeeds,
+  })
+  return emit(result, json)
+}
+
+export async function run(argv: string[], baseCtx: Ctx): Promise<number> {
+  // Its own flags and plain output, like the status line: argv goes through untouched.
+  if (argv[0] === "peers") return peersCmd(argv.slice(1))
+  const { json, ctx, command, rest } = parseInvocation(argv, baseCtx, VISITS)
+  const specialCode = await runSpecialCommand(
+    ctx,
+    argv,
+    { command, rest, json },
+    { usage: USAGE, usageOf, hasCommand: (cmd) => commands[cmd] !== undefined },
+  )
+  if (specialCode !== null) return specialCode
+  return runRegisteredCommand(ctx, command as string, rest, json)
 }
 
 // No top-level await: the binary is compiled to bytecode, which needs a plain module.

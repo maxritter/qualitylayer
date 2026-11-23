@@ -3,6 +3,14 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
 import { projectRuntimeDir } from "../../paths.ts"
 
+export {
+  otherTasksOnly,
+  ownEdits,
+  ownEditTimes,
+  ownRecordSpan,
+  recordedBytes,
+} from "./records-query.ts"
+
 export type SessionEdits = {
   task: string
   files: Record<string, number>
@@ -124,37 +132,6 @@ export async function writeRecord(
   )
 }
 
-/**
- * The digests of the bytes sessions left in `path` when they last edited it, as their edit records
- * hold them: this task's sessions' (`ours`) and other tasks' (`theirs`). This is content evidence:
- * bytes another task's session wrote and recorded are that session's work, wherever they were
- * committed. (A session's record of a commit is not: it says which task's window the commit
- * fell into, not who wrote it.) Read without the three days the records are otherwise read for;
- * a record holds each file's latest edit only.
- */
-export async function recordedBytes(
-  ctx: Ctx,
-  repo: { id: string },
-  task: string,
-  path: string,
-): Promise<{ ours: Set<string>; theirs: Set<string> }> {
-  const found = { ours: new Set<string>(), theirs: new Set<string>() }
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return found
-  }
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    const digest = edits?.contents?.[path]
-    if (edits === null || edits.task === "") continue
-    if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) continue
-    ;(edits.task === task ? found.ours : found.theirs).add(digest)
-  }
-  return found
-}
-
 /** Shell literals are hints, not native file receipts; never retain a path Git cannot identify. */
 export async function recordShellEdits(ctx: Ctx, observation: EditObservation): Promise<string[]> {
   const { repo, cwd, paths } = observation
@@ -215,114 +192,4 @@ export async function readEdits(ctx: Ctx, file: string): Promise<SessionEdits | 
   } catch {
     return null
   }
-}
-
-/**
- * The files sessions building `task` edited in this repository, from `since` on (a time, in the
- * clock's milliseconds). A fix helper's changes are the edits since it was handed out.
- */
-export async function ownEdits(
-  ctx: Ctx,
-  repo: { id: string; root: string },
-  task: string,
-  since = 0,
-): Promise<string[]> {
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return []
-  }
-  const now = ctx.clock.now()
-  const own = new Set<string>()
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits?.task !== task) continue
-    for (const [path, at] of Object.entries(edits.files))
-      if (now - at < KEEP_MS && at >= since) own.add(path)
-  }
-  return [...own].sort()
-}
-
-/** When this task's sessions last edited each file: what the build is touching, read off its hooks. */
-export async function ownEditTimes(
-  ctx: Ctx,
-  repo: { id: string },
-  task: string,
-): Promise<Map<string, number>> {
-  const times = new Map<string, number>()
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return times
-  }
-  const now = ctx.clock.now()
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits?.task !== task) continue
-    for (const [path, at] of Object.entries(edits.files))
-      if (now - at < KEEP_MS && at > (times.get(path) ?? 0)) times.set(path, at)
-  }
-  return times
-}
-
-/**
- * How far this task's sessions' records reach: the commits their shell commands made by hand, and
- * the time of the oldest entry (an edit or a commit) they still hold, or null when they hold none.
- * A pass older than that entry was ruled before anything the records can still say.
- */
-export async function ownRecordSpan(
-  ctx: Ctx,
-  repo: { id: string },
-  task: string,
-): Promise<{ commits: Map<string, number>; oldest: number | null }> {
-  const commits = new Map<string, number>()
-  let oldest: number | null = null
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return { commits, oldest }
-  }
-  const now = ctx.clock.now()
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits?.task !== task) continue
-    const kept = keptRecord(edits, task, now)
-    for (const [sha, at] of Object.entries(kept.commits))
-      commits.set(sha, Math.min(at, commits.get(sha) ?? at))
-    for (const at of [...Object.values(kept.files), ...Object.values(kept.commits)])
-      if (typeof at === "number" && Number.isFinite(at) && (oldest === null || at < oldest))
-        oldest = at
-  }
-  return { commits, oldest }
-}
-
-/**
- * The files sessions of other tasks edited in this repository and no session of `task` ever did:
- * another build's work on the same branch, which this task's review leaves out of its diff. A file
- * both touched stays in, so the review never hides an edit of this task's own.
- */
-export async function otherTasksOnly(
-  ctx: Ctx,
-  repo: { id: string; root: string },
-  task: string,
-): Promise<string[]> {
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return []
-  }
-  const now = ctx.clock.now()
-  const own = new Set<string>()
-  const others = new Set<string>()
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits === null) continue
-    for (const [path, at] of Object.entries(edits.files))
-      if (now - at < KEEP_MS) (edits.task === task ? own : others).add(path)
-  }
-  return [...others].filter((path) => !own.has(path)).sort()
 }

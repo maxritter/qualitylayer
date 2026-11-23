@@ -109,6 +109,30 @@ const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/
 /** The steps before the build runs: after them the branch is no longer the person's to pick here. */
 const BEFORE_BUILD = new Set(["plan", "implement"])
 
+async function validateNewBranch(
+  ctx: Ctx,
+  task: Pick<Task, "repoRoot" | "stage" | "branch">,
+  name: string,
+): Promise<string | null> {
+  if (!BEFORE_BUILD.has(task.stage))
+    return `The build has already started${task.branch !== undefined ? ` on ${task.branch}` : ""}; its branch is chosen before it.`
+  const notAName = `"${name}" is not a name git takes for a branch. Use letters, digits, dots, dashes and slashes.`
+  if (!BRANCH_NAME.test(name)) return notAName
+  if (!(await ctx.fs.exists(task.repoRoot)))
+    return `There is no checkout at ${task.repoRoot} to start a branch in.`
+  const valid = await ctx.git.run(task.repoRoot, ["check-ref-format", "--branch", name])
+  if (valid.code !== 0) return notAName
+  const exists = await ctx.git.run(task.repoRoot, [
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `refs/heads/${name}`,
+  ])
+  return exists.code === 0
+    ? `A branch named ${name} already exists. Pick another name: qualitylayer branch new <name>.`
+    : null
+}
+
 /**
  * Create the branch the build lands on and switch the checkout to it, on the person's click or
  * `qualitylayer branch new`. Work in progress comes along (git carries it); the task's `branch` is
@@ -120,27 +144,8 @@ export async function createBranch(
   task: Pick<Task, "repoRoot" | "dir" | "slug" | "stage" | "branch">,
   name: string = suggestedBranch(task),
 ): Promise<Result<{ branch: string; from: string | null }>> {
-  const refuse = (message: string) => err({ code: "bad_args" as const, message })
-  if (!BEFORE_BUILD.has(task.stage))
-    return refuse(
-      `The build has already started${task.branch !== undefined ? ` on ${task.branch}` : ""}; its branch is chosen before it.`,
-    )
-  const notAName = `"${name}" is not a name git takes for a branch. Use letters, digits, dots, dashes and slashes.`
-  if (!BRANCH_NAME.test(name)) return refuse(notAName)
-  if (!(await ctx.fs.exists(task.repoRoot)))
-    return refuse(`There is no checkout at ${task.repoRoot} to start a branch in.`)
-  const valid = await ctx.git.run(task.repoRoot, ["check-ref-format", "--branch", name])
-  if (valid.code !== 0) return refuse(notAName)
-  const exists = await ctx.git.run(task.repoRoot, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `refs/heads/${name}`,
-  ])
-  if (exists.code === 0)
-    return refuse(
-      `A branch named ${name} already exists. Pick another name: qualitylayer branch new <name>.`,
-    )
+  const refusal = await validateNewBranch(ctx, task, name)
+  if (refusal !== null) return err({ code: "bad_args", message: refusal })
   const from = await currentBranch(ctx, task.repoRoot)
   const switched = await ctx.git.run(task.repoRoot, ["switch", "--quiet", "-c", name])
   if (switched.code !== 0) return gitFailed("cannot start the branch", switched.stderr)

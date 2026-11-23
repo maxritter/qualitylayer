@@ -34,6 +34,40 @@ export type CompareSides = {
 
 const HEIGHT = 480
 
+function useSideHtml(load: (() => Promise<string>) | null) {
+  const [html, setHtml] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // A side is drawn again for another page (its `key`), so it reads its page once.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read once per mount
+  useEffect(() => {
+    if (load === null) return
+    let live = true
+    load().then(
+      (text) => live && setHtml(text),
+      (cause: Error) => live && setError(cause.message),
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+  return { html, error }
+}
+
+function useElementWidth(box: React.RefObject<HTMLDivElement | null>): number {
+  const [room, setRoom] = useState(0)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (el === null) return
+    const measure = () => setRoom(el.clientWidth)
+    measure()
+    if (typeof ResizeObserver === "undefined") return
+    const watcher = new ResizeObserver(measure)
+    watcher.observe(el)
+    return () => watcher.disconnect()
+  }, [box])
+  return room
+}
+
 /** One side: a label and the page in its frame, or why there is none. */
 function Side({
   label,
@@ -50,34 +84,10 @@ function Side({
   empty: string
   onPage: (page: string) => void
 }) {
-  const [html, setHtml] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const { html, error } = useSideHtml(load)
   const [layout, setLayout] = useState<ArtifactLayout | null>(null)
-  const [room, setRoom] = useState(0)
   const box = useRef<HTMLDivElement | null>(null)
-  // A side is drawn again for another page (its `key`), so it reads its page once.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: read once per mount
-  useEffect(() => {
-    if (load === null) return
-    let live = true
-    load().then(
-      (text) => live && setHtml(text),
-      (cause: Error) => live && setError(cause.message),
-    )
-    return () => {
-      live = false
-    }
-  }, [])
-  useLayoutEffect(() => {
-    const el = box.current
-    if (el === null) return
-    const measure = () => setRoom(el.clientWidth)
-    measure()
-    if (typeof ResizeObserver === "undefined") return
-    const watcher = new ResizeObserver(measure)
-    watcher.observe(el)
-    return () => watcher.disconnect()
-  }, [])
+  const room = useElementWidth(box)
   const width = Math.max(DEFAULT_WIDTH, layout?.width ?? 0)
   const scale = room > 0 ? Math.min(1, room / width) : 0.5
   return (

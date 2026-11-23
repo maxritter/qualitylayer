@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { flattenItems } from "../../core/items.ts"
+import { flattenItems, type Item, type ItemAnswer } from "../../core/items.ts"
 import { FocusQuestion } from "../FocusQuestion.tsx"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { Disclosure } from "../kit/Fold.tsx"
@@ -16,12 +16,181 @@ import { StepReceipts } from "./StepReceipts.tsx"
 import { StepsAgentTurn } from "./StepsAgentTurn.tsx"
 import { ReviewDecisionQueue } from "./verify/DecisionQueue.tsx"
 import "./steps.css"
+
 export const STEPS_TURN_READY = true
+
+type SavedAnswerMap = Record<string, { digest: string | undefined; answer: ItemAnswer }>
+
+const isActionableItem = (item: Item): boolean => {
+  if (item.state === "settled" || item.state === "sent") return false
+  if (item.state === "chosen" && item.updated !== true) return false
+  return item.uncounted !== true && item.kind !== "question"
+}
+
+const isItemBlocking = (item: Item, answers: Record<string, ItemAnswer>): boolean => {
+  if (!item.blocking) return false
+  return item.kind === "confirm"
+    ? answers[item.id]?.kind !== "confirm"
+    : answers[item.id] === undefined
+}
+
+const showsAgentTurn = (
+  task: TaskSurfaceProps["task"],
+  autonomous: boolean,
+  waiting: boolean,
+): boolean => {
+  if (autonomous || !waiting || task.archived) return true
+  return task.stage === "shipped" || task.stage === "abandoned"
+}
+
+function mergedAnswers(
+  stepItems: readonly Item[],
+  saved: SavedAnswerMap,
+): Record<string, ItemAnswer> {
+  const entries: [string, ItemAnswer][] = []
+  for (const item of stepItems) {
+    if (item.answer !== undefined && item.state !== "settled") entries.push([item.id, item.answer])
+  }
+  for (const item of stepItems) {
+    const local = saved[item.id]
+    if (local && local.digest === item.digest) entries.push([item.id, local.answer])
+  }
+  return Object.fromEntries(entries)
+}
+
+const taskTitleFor = (task: TaskSurfaceProps["task"], id: string): string | null =>
+  task.slices.flatMap((slice) => slice.tasks).find((entry) => entry.id === id)?.title ?? null
+
+const stepWithApproveDisabled = (
+  step: TaskSurfaceProps["step"],
+  disabled: boolean,
+): TaskSurfaceProps["step"] =>
+  disabled && step.primary?.kind === "approve"
+    ? { ...step, primary: { ...step.primary, disabled: true } }
+    : step
+
+function FinalGateTurn({
+  props,
+  stepItems,
+  answers,
+  notes,
+  needs,
+  outside,
+  blocked,
+  onSaveAnswer,
+}: {
+  props: TaskSurfaceProps
+  stepItems: readonly Item[]
+  answers: Record<string, ItemAnswer>
+  notes: readonly Item[]
+  needs: NonNullable<NonNullable<TaskSurfaceProps["task"]["live"]>["needs"]>
+  outside: boolean
+  blocked: boolean
+  onSaveAnswer: (item: Item, answer: ItemAnswer) => void
+}) {
+  const { task, live } = props
+  const approvalStep = {
+    ...props.step,
+    secondary: { kind: "comment" as const, label: "Give feedback" },
+  }
+  const queue = stepItems.filter(
+    (item) =>
+      item.uncounted !== true && !["question", "done", "asked", "handback"].includes(item.kind),
+  )
+  return (
+    <>
+      {outside ? (
+        <OutsideBar
+          testId="review-approval-outside"
+          label="Agent location"
+          words={`${agentInfo(task.outside?.agent ?? task.session?.agent).name} stays outside the App. You can approve or give feedback here without moving the agent.`}
+        />
+      ) : null}
+      <ReviewDecisionQueue
+        key={`${task.id}:${task.gate?.id ?? "final"}`}
+        items={queue}
+        props={props}
+        onAnswered={onSaveAnswer}
+      >
+        {(itemsReady) => (
+          <StepActions
+            step={stepWithApproveDisabled(approvalStep, blocked || !itemsReady)}
+            busy={live.busy}
+            items={[...stepItems]}
+            answers={answers}
+            onApprove={() => live.decide("approved")}
+            onChanges={() => live.decide("changes")}
+            onComment={() => props.onSidebar("comments")}
+            onOpen={props.onOpen}
+            onCopy={props.onCopy}
+            {...(task.review?.approve
+              ? {
+                  ship: {
+                    choices: task.review.approve,
+                    ready: !blocked && itemsReady,
+                    onShip: live.ship,
+                  },
+                }
+              : {})}
+          />
+        )}
+      </ReviewDecisionQueue>
+      {notes.length ? <FoundWhileChecking items={[...notes]} /> : null}
+      {needs.length ? (
+        <Disclosure
+          className="review-support"
+          head={
+            <>
+              <b>Needs from the build</b>
+              <span>{needs.length} unresolved</span>
+            </>
+          }
+        >
+          {needs.map((need) => (
+            <NeedCard
+              key={need.for}
+              need={need}
+              agent={agentInfo(task.session?.agent).name}
+              taskTitle={taskTitleFor(task, need.for)}
+              last={false}
+              compact
+              review
+              onSet={(note) => live.setNeed(need.for, note)}
+            />
+          ))}
+        </Disclosure>
+      ) : null}
+      <button
+        type="button"
+        className="q-link ir-step-doc"
+        onClick={() => props.onOpenDoc(fileOf(task, "verify"))}
+      >
+        Read the pull request description
+      </button>
+      <Disclosure
+        className="review-support"
+        head={
+          <>
+            <b>Your saved answers</b>
+            <span>Confirmations and feedback kept for the agent</span>
+          </>
+        }
+      >
+        <StepReceipts task={task} />
+      </Disclosure>
+    </>
+  )
+}
+
+const turnHeading = (gate: boolean, itemCount: number): string => {
+  if (!gate) return "What waits for you"
+  if (itemCount === 0) return "Everything is settled"
+  return `${itemCount} ${itemCount === 1 ? "thing" : "things"}, then approve`
+}
+
 export function StepTurn(props: TaskSurfaceProps) {
   const { task, live } = props
-  const [reviewAnswers, saveReviewAnswer] = useState<
-    Record<string, { digest: string | undefined; answer: import("../../core/items.ts").ItemAnswer }>
-  >({})
+  const [reviewAnswers, saveReviewAnswer] = useState<SavedAnswerMap>({})
   const outside = runsOutside(task)
   const step = viewedStep(props.view)
   const autonomous = agentsWork(task) || step === "implement"
@@ -30,30 +199,8 @@ export function StepTurn(props: TaskSurfaceProps) {
       (item.step === step || (step === "verify" && item.step === "implement")) &&
       item.children === undefined,
   )
-  const rawAnswers = Object.fromEntries(
-    stepItems.flatMap((item) =>
-      item.answer !== undefined && item.state !== "settled"
-        ? [[item.id, item.answer] as const]
-        : [],
-    ),
-  )
-  const answers = {
-    ...rawAnswers,
-    ...Object.fromEntries(
-      stepItems.flatMap((item) => {
-        const saved = reviewAnswers[item.id]
-        return saved && saved.digest === item.digest ? [[item.id, saved.answer]] : []
-      }),
-    ),
-  }
-  const items = stepItems.filter(
-    (item) =>
-      item.state !== "settled" &&
-      item.state !== "sent" &&
-      (item.state !== "chosen" || item.updated === true) &&
-      item.uncounted !== true &&
-      item.kind !== "question",
-  )
+  const answers = mergedAnswers(stepItems, reviewAnswers)
+  const items = stepItems.filter(isActionableItem)
   // The judges' notes wait for nobody: folded under the decisions, counted nowhere.
   const notes = stepItems.filter(
     (item) => item.kind === "found" && item.uncounted === true && item.state === "open",
@@ -64,127 +211,24 @@ export function StepTurn(props: TaskSurfaceProps) {
   const gate = pendingGate(task) === "final" && step === "verify"
   // At the final gate only an item that blocks locks Approve: the approval API settles the others
   // with it ("Approving accepts what is still open.").
-  const blocked =
-    gate &&
-    items.some(
-      (item) =>
-        item.blocking &&
-        (item.kind === "confirm"
-          ? answers[item.id]?.kind !== "confirm"
-          : answers[item.id] === undefined),
-    )
-
+  const blocked = gate && items.some((item) => isItemBlocking(item, answers))
   const waiting = items.length > 0 || question !== null || needs.length > 0 || gate
-  if (
-    autonomous ||
-    !waiting ||
-    task.archived ||
-    task.stage === "shipped" ||
-    task.stage === "abandoned"
-  )
-    return <StepsAgentTurn {...props} />
+
+  if (showsAgentTurn(task, autonomous, waiting)) return <StepsAgentTurn {...props} />
   if (gate && question === null) {
-    const approvalStep = {
-      ...props.step,
-      secondary: { kind: "comment" as const, label: "Give feedback" },
-    }
-    const queue = stepItems.filter(
-      (item) =>
-        item.uncounted !== true && !["question", "done", "asked", "handback"].includes(item.kind),
-    )
     return (
-      <>
-        {outside ? (
-          <OutsideBar
-            testId="review-approval-outside"
-            label="Agent location"
-            words={`${agentInfo(task.outside?.agent ?? task.session?.agent).name} stays outside the App. You can approve or give feedback here without moving the agent.`}
-          />
-        ) : null}
-        <ReviewDecisionQueue
-          key={`${task.id}:${task.gate?.id ?? "final"}`}
-          items={queue}
-          props={props}
-          onAnswered={(item, answer) =>
-            saveReviewAnswer((old) => ({ ...old, [item.id]: { digest: item.digest, answer } }))
-          }
-        >
-          {(itemsReady) => (
-            <>
-              <StepActions
-                step={
-                  (blocked || !itemsReady) && approvalStep.primary?.kind === "approve"
-                    ? { ...approvalStep, primary: { ...approvalStep.primary, disabled: true } }
-                    : approvalStep
-                }
-                busy={live.busy}
-                items={stepItems}
-                answers={answers}
-                onApprove={() => live.decide("approved")}
-                onChanges={() => live.decide("changes")}
-                onComment={() => props.onSidebar("comments")}
-                onOpen={props.onOpen}
-                onCopy={props.onCopy}
-                {...(task.review?.approve
-                  ? {
-                      ship: {
-                        choices: task.review.approve,
-                        ready: !blocked && itemsReady,
-                        onShip: live.ship,
-                      },
-                    }
-                  : {})}
-              />
-            </>
-          )}
-        </ReviewDecisionQueue>
-        {notes.length ? <FoundWhileChecking items={notes} /> : null}
-        {needs.length ? (
-          <Disclosure
-            className="review-support"
-            head={
-              <>
-                <b>Needs from the build</b>
-                <span>{needs.length} unresolved</span>
-              </>
-            }
-          >
-            {needs.map((need) => (
-              <NeedCard
-                key={need.for}
-                need={need}
-                agent={agentInfo(task.session?.agent).name}
-                taskTitle={
-                  task.slices.flatMap((slice) => slice.tasks).find((entry) => entry.id === need.for)
-                    ?.title ?? null
-                }
-                last={false}
-                compact
-                review
-                onSet={(note) => live.setNeed(need.for, note)}
-              />
-            ))}
-          </Disclosure>
-        ) : null}
-        <button
-          type="button"
-          className="q-link ir-step-doc"
-          onClick={() => props.onOpenDoc(fileOf(task, "verify"))}
-        >
-          Read the pull request description
-        </button>
-        <Disclosure
-          className="review-support"
-          head={
-            <>
-              <b>Your saved answers</b>
-              <span>Confirmations and feedback kept for the agent</span>
-            </>
-          }
-        >
-          <StepReceipts task={task} />
-        </Disclosure>
-      </>
+      <FinalGateTurn
+        props={props}
+        stepItems={stepItems}
+        answers={answers}
+        notes={notes}
+        needs={needs}
+        outside={outside}
+        blocked={blocked}
+        onSaveAnswer={(item, answer) =>
+          saveReviewAnswer((old) => ({ ...old, [item.id]: { digest: item.digest, answer } }))
+        }
+      />
     )
   }
   const agent = agentInfo(task.session?.agent)
@@ -198,13 +242,7 @@ export function StepTurn(props: TaskSurfaceProps) {
     >
       <TurnLabel />
       <header>
-        <h2>
-          {gate
-            ? items.length > 0
-              ? `${items.length} ${items.length === 1 ? "thing" : "things"}, then approve`
-              : "Everything is settled"
-            : "What waits for you"}
-        </h2>
+        <h2>{turnHeading(gate, items.length)}</h2>
         <p>
           {gate && !blocked
             ? "Each answer is kept for the agent. Approving accepts what is still open."
@@ -235,10 +273,7 @@ export function StepTurn(props: TaskSurfaceProps) {
           key={need.for}
           need={need}
           agent={agent.name}
-          taskTitle={
-            task.slices.flatMap((slice) => slice.tasks).find((entry) => entry.id === need.for)
-              ?.title ?? null
-          }
+          taskTitle={taskTitleFor(task, need.for)}
           last={false}
           compact
           review={step === "verify"}
@@ -247,11 +282,7 @@ export function StepTurn(props: TaskSurfaceProps) {
       ))}
       <footer>
         <StepActions
-          step={
-            blocked && props.step.primary?.kind === "approve"
-              ? { ...props.step, primary: { ...props.step.primary, disabled: true } }
-              : props.step
-          }
+          step={stepWithApproveDisabled(props.step, blocked)}
           busy={live.busy}
           items={stepItems}
           answers={answers}

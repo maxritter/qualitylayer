@@ -9,97 +9,23 @@
 // command it runs (`trees: false`): a verdict check asks the same thirty questions a hundred and
 // fifty times, and it never learns that a file changed, so what reads the working tree always asks git.
 
-import { join, resolve } from "node:path"
 import type { Ctx, Git, GitResult } from "../ctx.ts"
+import {
+  ANSWER_CHARS_EACH,
+  ANSWER_CHARS_KEPT,
+  ANSWERS_KEPT,
+  boundedBlobRead,
+  type CachedAnswer,
+  isAnswerFresh,
+  readKind,
+  readsOnly,
+} from "./git-cache-classify.ts"
+import { createStampTracker, stableMemo } from "./git-cache-stamp.ts"
 
-/** Questions about commits and refs alone: answered the same while HEAD, the refs and the index stand. */
-const REF_READS = new Set([
-  "rev-parse",
-  "cat-file",
-  "merge-base",
-  "log",
-  "rev-list",
-  "show",
-  "for-each-ref",
-  "describe",
-  "name-rev",
-  "ls-tree",
-  "diff-tree",
-  "check-ref-format",
-])
-/** Questions that read the working tree too: kept only until a watched file changes. */
-const TREE_READS = new Set(["status", "diff", "ls-files", "check-ignore", "grep"])
+export { readKind, readsOnly } from "./git-cache-classify.ts"
 
-/**
- * How long an answer is trusted at most, whatever the stamp says: a ref can move without touching
- * what the stamp looks at (a push to a nested remote branch), and an edit outside the watched folders
- * raises no event.
- */
-export const REF_ANSWER_MS = 60_000
-export const TREE_ANSWER_MS = 3_000
 /** The stamp of a repository is looked at again after this long; one burst of reads shares it. */
 const STAMP_MS = 250
-/** At most this many answers, and this many characters of output, are kept. */
-const ANSWERS_KEPT = 2_000
-const ANSWER_CHARS_KEPT = 16 * 1024 * 1024
-/** One answer larger than this (a whole-tree diff of a big change) is used once and not kept. */
-const ANSWER_CHARS_EACH = 2 * 1024 * 1024
-
-function boundedBlobRead(args: readonly string[]): "size" | "filtered" | null {
-  if (args[0] !== "cat-file" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(args.at(-1) ?? ""))
-    return null
-  if (args.length === 3 && args[1] === "-s") return "size"
-  const path = args[2]
-  return args.length === 4 &&
-    args[1] === "--filters" &&
-    path !== undefined &&
-    path.startsWith("--path=") &&
-    path.length > 7
-    ? "filtered"
-    : null
-}
-
-export type ReadKind = "ref" | "tree" | null
-
-/** Whether a git command only reads, and what its answer depends on; null for one that may write. */
-export function readKind(args: readonly string[]): ReadKind {
-  const [command, ...rest] = args
-  if (command === undefined) return null
-  if (REF_READS.has(command)) return "ref"
-  if (TREE_READS.has(command)) return "tree"
-  if (command === "branch")
-    return rest.some((a) => a === "--show-current" || a === "--contains" || a === "--list")
-      ? "ref"
-      : null
-  if (command === "symbolic-ref")
-    return rest.filter((a) => !a.startsWith("-")).length === 1 ? "ref" : null
-  if (command === "config") return rest.includes("--get") ? "ref" : null
-  return null
-}
-
-/**
- * A command that only reads but whose answer the stamp cannot vouch for (it depends on the config
- * file): asked every time, and it does not make what was kept of the repository wrong.
- */
-export function readsOnly(args: readonly string[]): boolean {
-  const [command, ...rest] = args
-  if (command === "config")
-    return rest.some(
-      (a) => a === "--get-all" || a === "--get-regexp" || a === "--list" || a === "-l",
-    )
-  return command === "remote" && rest[0] === "get-url"
-}
-
-type Answer = {
-  kind: "ref" | "tree"
-  stamp: string
-  epoch: number
-  at: number
-  result: Promise<GitResult>
-  chars: number
-  /** The repository's common git folder; what a write in that repository forgets. */
-  common: string | null
-}
 
 export type CachedGit = Git & {
   /** A watched file in a working tree changed: answers that read the working tree are asked again. */
@@ -110,175 +36,95 @@ export type CachedGit = Git & {
   spawns(): number
 }
 
-/**
- * `ctx.git` with the server's cache in front. Without `fs.stat` (a test's file system) nothing can be
- * stamped, and every question goes to git as before.
- */
-export function cachingGit(ctx: Ctx, options: { trees?: boolean } = {}): CachedGit {
-  const keepTrees = options.trees !== false
-  // A command that starts programs of the project (a check, a build) must see a commit one of them
-  // made at once: its stamp is read for every question, a few `stat`s against a git process.
-  const stampMs = keepTrees ? STAMP_MS : 0
-  const inner = ctx.git
-  const fs = ctx.fs
-  const now = () => Date.now()
-  const answers = new Map<string, Answer>()
-  const filteredReads = new Map<string, Promise<GitResult>>()
-  let chars = 0
-  let epoch = 0
-  let spawned = 0
-  const dirs = new Map<string, Promise<{ gitDir: string; common: string } | null>>()
-  const stamps = new Map<string, { at: number; stamp: Promise<string | null> }>()
-  const tops = new Map<string, Promise<string | null>>()
-  const commons = new Map<string, Promise<string | null>>()
+class GitCacheStore {
+  private readonly answers = new Map<string, CachedAnswer>()
+  private readonly filteredReads = new Map<string, Promise<GitResult>>()
+  private readonly tops = new Map<string, Promise<string | null>>()
+  private readonly commons = new Map<string, Promise<string | null>>()
+  private readonly tracker: ReturnType<typeof createStampTracker>
+  private readonly keepTrees: boolean
+  private chars = 0
+  private epoch = 0
+  private spawned = 0
 
-  /** The checkout's git folder and the repository's common one, read from `.git` without git. */
-  const gitDirsOf = (cwd: string) => {
-    let known = dirs.get(cwd)
-    if (known === undefined) {
-      known = (async () => {
-        const dotGit = join(cwd, ".git")
-        const kind = fs.lstat !== undefined ? (await fs.lstat(dotGit))?.kind : undefined
-        if (kind === "directory") return { gitDir: dotGit, common: dotGit }
-        if (kind !== "file") return null
-        const pointer = /^gitdir:\s*(.+)$/m.exec(await fs.readFile(dotGit))?.[1]?.trim()
-        if (pointer === undefined) return null
-        const gitDir = resolve(cwd, pointer)
-        const common = await fs
-          .readFile(join(gitDir, "commondir"))
-          .then((text) => resolve(gitDir, text.trim()))
-          .catch(() => gitDir)
-        return { gitDir, common }
-      })().catch(() => null)
-      if (dirs.size >= 256) dirs.clear()
-      dirs.set(cwd, known)
-    }
-    return known
+  constructor(
+    private readonly inner: Git,
+    fs: Ctx["fs"],
+    keepTrees: boolean,
+  ) {
+    this.keepTrees = keepTrees
+    // A command that starts programs of the project (a check, a build) must see a commit one of them
+    // made at once: its stamp is read for every question, a few `stat`s against a git process.
+    this.tracker = createStampTracker(fs, keepTrees ? STAMP_MS : 0)
   }
 
-  /** What the answers of a checkout depend on: HEAD, the index, the refs, the reflog, the last fetch. */
-  const stampOf = (cwd: string): Promise<string | null> => {
-    const kept = stamps.get(cwd)
-    if (kept !== undefined && now() - kept.at < stampMs) return kept.stamp
-    const stamp = (async () => {
-      const stat = fs.stat
-      if (stat === undefined) return null
-      const found = await gitDirsOf(cwd)
-      if (found === null) return null
-      const { gitDir, common } = found
-      const files = [
-        join(gitDir, "HEAD"),
-        join(gitDir, "index"),
-        join(gitDir, "logs", "HEAD"),
-        join(common, "packed-refs"),
-        join(common, "FETCH_HEAD"),
-        join(common, "refs", "heads"),
-        join(common, "refs", "remotes"),
-        join(common, "refs", "tags"),
-      ]
-      const parts = await Promise.all(
-        files.map((file) =>
-          stat(file).then(
-            (s) => (s === null ? "-" : `${s.mtimeMs}:${s.size}`),
-            () => "-",
-          ),
-        ),
-      )
-      const head = await fs.readFile(join(gitDir, "HEAD")).catch(() => "")
-      return `${head.trim()}|${parts.join("|")}`
-    })().catch(() => null)
-    if (stamps.size >= 256) stamps.clear()
-    stamps.set(cwd, { at: now(), stamp })
-    return stamp
+  private spawn(cwd: string, args: string[], options?: Parameters<Git["run"]>[2]) {
+    this.spawned++
+    return this.inner.run(cwd, args, options)
   }
 
-  const forget = (key: string) => {
-    const answer = answers.get(key)
+  private forget(key: string): void {
+    const answer = this.answers.get(key)
     if (answer === undefined) return
-    answers.delete(key)
-    chars -= answer.chars
+    this.answers.delete(key)
+    this.chars -= answer.chars
   }
-  const forgetAll = () => {
-    answers.clear()
-    stamps.clear()
-    chars = 0
+
+  private forgetAll(): void {
+    this.answers.clear()
+    this.tracker.clearStamps()
+    this.chars = 0
   }
+
   /**
    * After a command that may write: what was kept of the repository it ran in. A clone only writes
    * its destination, and a command in one repository leaves another's answers right; one that names
    * another place itself (`-C`, `--git-dir`) or runs outside any repository cannot be placed, and
    * forgets everything.
    */
-  const forgetAfterWrite = async (cwd: string, args: string[]) => {
+  async forgetAfterWrite(cwd: string, args: string[]): Promise<void> {
     if (args[0] === "clone") return
-    filteredReads.clear()
+    this.filteredReads.clear()
     const placed = !args.some(
       (a) => a === "-C" || a.startsWith("--git-dir") || a.startsWith("--work-tree"),
     )
-    const found = placed ? await gitDirsOf(cwd) : null
-    if (found === null) return forgetAll()
-    stamps.clear()
-    for (const [key, answer] of answers) if (answer.common === found.common) forget(key)
+    const found = placed ? await this.tracker.gitDirsOf(cwd) : null
+    if (found === null) return this.forgetAll()
+    this.tracker.clearStamps()
+    for (const [key, answer] of this.answers) {
+      if (answer.common === found.common) this.forget(key)
+    }
   }
 
-  const spawn = (cwd: string, args: string[], options?: Parameters<Git["run"]>[2]) => {
-    spawned++
-    return inner.run(cwd, args, options)
-  }
-
-  const run: Git["run"] = async (cwd, args, options) => {
-    if (options?.fresh) return spawn(cwd, args, options)
-    const bounded = options?.maxOutputBytes === undefined ? null : boundedBlobRead(args)
-    if (options?.maxOutputBytes !== undefined && bounded === null) return spawn(cwd, args, options)
-    const key = `${options?.childRepository === true ? "child" : ""}\0${cwd}\0${args.join("\0")}\0${options?.maxOutputBytes ?? ""}`
-    if (bounded === "filtered") {
-      const pendingKey = `${epoch}\0${key}`
-      const pending = filteredReads.get(pendingKey)
-      if (pending) return pending
-      const result = spawn(cwd, args, options)
-      if (filteredReads.size < ANSWERS_KEPT) {
-        filteredReads.set(pendingKey, result)
-        const forget = () => {
-          if (filteredReads.get(pendingKey) === result) filteredReads.delete(pendingKey)
-        }
-        void result.then(forget, forget)
+  private dedupeFiltered(
+    key: string,
+    cwd: string,
+    args: string[],
+    options?: Parameters<Git["run"]>[2],
+  ): Promise<GitResult> {
+    const pendingKey = `${this.epoch}\0${key}`
+    const pending = this.filteredReads.get(pendingKey)
+    if (pending) return pending
+    const result = this.spawn(cwd, args, options)
+    if (this.filteredReads.size < ANSWERS_KEPT) {
+      this.filteredReads.set(pendingKey, result)
+      const clear = () => {
+        if (this.filteredReads.get(pendingKey) === result) this.filteredReads.delete(pendingKey)
       }
-      return result
+      void result.then(clear, clear)
     }
-    const kind = readKind(args)
-    if (kind === null && readsOnly(args)) return spawn(cwd, args, options)
-    if (kind === null) {
-      // A command that may write: whatever was kept of that repository may be wrong now.
-      const result = await spawn(cwd, args, options)
-      await forgetAfterWrite(cwd, args)
-      return result
-    }
-    // A read of the working tree, where nothing tells this git that a file changed: always asked.
-    if (kind === "tree" && !keepTrees) return spawn(cwd, args, options)
-    const stamp = await stampOf(cwd)
-    if (stamp === null) return spawn(cwd, args, options)
-    // Before the lookup: from the lookup to keeping the answer nothing may wait.
-    const common = (await gitDirsOf(cwd))?.common ?? null
-    const kept = answers.get(key)
-    const at = now()
-    if (
-      kept !== undefined &&
-      kept.stamp === stamp &&
-      at - kept.at < (kept.kind === "ref" ? REF_ANSWER_MS : TREE_ANSWER_MS) &&
-      (kept.kind === "ref" || kept.epoch === epoch)
-    ) {
-      // Most recently used last, so the oldest answer is the one that goes.
-      answers.delete(key)
-      answers.set(key, kept)
-      return kept.result
-    }
-    forget(key)
-    const result = spawn(cwd, args, options)
-    const answer: Answer = { kind, stamp, epoch, at, result, chars: 0, common }
-    answers.set(key, answer)
-    result.then(
+    return result
+  }
+
+  private storeAnswer(
+    key: string,
+    answer: CachedAnswer,
+    bounded: "size" | "filtered" | null,
+  ): void {
+    this.answers.set(key, answer)
+    answer.result.then(
       (done) => {
-        if (answers.get(key) !== answer) return
+        if (this.answers.get(key) !== answer) return
         const size = done.stdout.length + done.stderr.length
         // A git that could not start is asked again; a large answer is used once.
         if (
@@ -286,61 +132,104 @@ export function cachingGit(ctx: Ctx, options: { trees?: boolean } = {}): CachedG
           (bounded === "size" && done.code !== 0) ||
           size > ANSWER_CHARS_EACH
         ) {
-          forget(key)
+          this.forget(key)
           return
         }
         answer.chars = size
-        chars += size
-        for (const [oldest] of answers) {
-          if (answers.size <= ANSWERS_KEPT && chars <= ANSWER_CHARS_KEPT) break
-          forget(oldest)
+        this.chars += size
+        for (const [oldest] of this.answers) {
+          if (this.answers.size <= ANSWERS_KEPT && this.chars <= ANSWER_CHARS_KEPT) break
+          this.forget(oldest)
         }
       },
-      () => forget(key),
+      () => this.forget(key),
     )
+  }
+
+  private async runStampedRead(
+    key: string,
+    kind: "ref" | "tree",
+    bounded: "size" | "filtered" | null,
+    call: { cwd: string; args: string[]; options?: Parameters<Git["run"]>[2] },
+  ): Promise<GitResult> {
+    const stamp = await this.tracker.stampOf(call.cwd)
+    if (stamp === null) return this.spawn(call.cwd, call.args, call.options)
+    // Before the lookup: from the lookup to keeping the answer nothing may wait.
+    const common = (await this.tracker.gitDirsOf(call.cwd))?.common ?? null
+    const kept = this.answers.get(key)
+    const at = Date.now()
+    if (isAnswerFresh(kept, stamp, at, this.epoch)) {
+      // Most recently used last, so the oldest answer is the one that goes.
+      this.answers.delete(key)
+      this.answers.set(key, kept)
+      return kept.result
+    }
+    this.forget(key)
+    const result = this.spawn(call.cwd, call.args, call.options)
+    this.storeAnswer(key, { kind, stamp, epoch: this.epoch, at, result, chars: 0, common }, bounded)
     return result
   }
 
-  /** A checkout's top level and common folder never move while the server runs; null is asked again. */
-  const stable =
-    (memo: Map<string, Promise<string | null>>, ask: (cwd: string) => Promise<string | null>) =>
-    (cwd: string) => {
-      const known = memo.get(cwd)
-      if (known !== undefined) return known
-      spawned++
-      const asked = ask(cwd)
-      if (memo.size >= 256) memo.clear()
-      memo.set(cwd, asked)
-      asked.then(
-        (value) => {
-          if (value === null) memo.delete(cwd)
-        },
-        () => memo.delete(cwd),
-      )
-      return asked
-    }
-
-  return {
-    run,
-    commitPaths: async (cwd, paths, message, authority) => {
-      try {
-        return await inner.commitPaths(cwd, paths, message, authority)
-      } finally {
-        await forgetAfterWrite(cwd, ["commit"])
-      }
-    },
-    topLevel: stable(tops, (cwd) => inner.topLevel(cwd)),
-    commonDir: stable(commons, (cwd) => inner.commonDir(cwd)),
-    treeChanged: () => {
-      epoch++
-    },
-    dropCaches: () => {
-      forgetAll()
-      filteredReads.clear()
-      dirs.clear()
-      tops.clear()
-      commons.clear()
-    },
-    spawns: () => spawned,
+  run: Git["run"] = async (cwd, args, options) => {
+    if (options?.fresh) return this.spawn(cwd, args, options)
+    const bounded = options?.maxOutputBytes === undefined ? null : boundedBlobRead(args)
+    if (options?.maxOutputBytes !== undefined && bounded === null)
+      return this.spawn(cwd, args, options)
+    const key = `${options?.childRepository === true ? "child" : ""}\0${cwd}\0${args.join("\0")}\0${options?.maxOutputBytes ?? ""}`
+    if (bounded === "filtered") return this.dedupeFiltered(key, cwd, args, options)
+    const kind = readKind(args)
+    if (kind === null) return this.runUncachedOrWrite(cwd, args, options)
+    // A read of the working tree, where nothing tells this git that a file changed: always asked.
+    if (kind === "tree" && !this.keepTrees) return this.spawn(cwd, args, options)
+    return this.runStampedRead(key, kind, bounded, { cwd, args, options })
   }
+
+  private async runUncachedOrWrite(
+    cwd: string,
+    args: string[],
+    options?: Parameters<Git["run"]>[2],
+  ): Promise<GitResult> {
+    if (readsOnly(args)) return this.spawn(cwd, args, options)
+    // A command that may write: whatever was kept of that repository may be wrong now.
+    const result = await this.spawn(cwd, args, options)
+    await this.forgetAfterWrite(cwd, args)
+    return result
+  }
+
+  toCachedGit(): CachedGit {
+    const bump = () => {
+      this.spawned++
+    }
+    return {
+      run: this.run,
+      commitPaths: async (cwd, paths, message, authority) => {
+        try {
+          return await this.inner.commitPaths(cwd, paths, message, authority)
+        } finally {
+          await this.forgetAfterWrite(cwd, ["commit"])
+        }
+      },
+      topLevel: stableMemo(this.tops, (cwd) => this.inner.topLevel(cwd), bump),
+      commonDir: stableMemo(this.commons, (cwd) => this.inner.commonDir(cwd), bump),
+      treeChanged: () => {
+        this.epoch++
+      },
+      dropCaches: () => {
+        this.forgetAll()
+        this.filteredReads.clear()
+        this.tracker.clearAll()
+        this.tops.clear()
+        this.commons.clear()
+      },
+      spawns: () => this.spawned,
+    }
+  }
+}
+
+/**
+ * `ctx.git` with the server's cache in front. Without `fs.stat` (a test's file system) nothing can be
+ * stamped, and every question goes to git as before.
+ */
+export function cachingGit(ctx: Ctx, options: { trees?: boolean } = {}): CachedGit {
+  return new GitCacheStore(ctx.git, ctx.fs, options.trees !== false).toCachedGit()
 }

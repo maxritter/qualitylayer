@@ -11,114 +11,36 @@
 import type { Ctx } from "../../ctx.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import type { RunRecord } from "../run/contracts.ts"
-import { runDir } from "../run/registry.ts"
+import {
+  CONTINUE_MESSAGE,
+  LATE_MS,
+  parseResumeEntry,
+  QUIET_MS,
+  RESUME_AFTER_RESET_MS,
+  type ResumeDeps,
+  type ResumeEntry,
+  realTimers,
+  resumeEntryPath,
+  settledSequence,
+  type Timers,
+} from "./resume-record.ts"
 import { detectLimitStop, type LimitStop } from "./stop.ts"
 import { tailLines } from "./tail.ts"
 
-/** The resume goes this long after the window resets, so the first request meets a window that is open. */
-export const RESUME_AFTER_RESET_MS = 60_000
-/** A run is looked at once its events have been quiet this long; a stopped agent writes none. */
-export const QUIET_MS = 20_000
-/** A reset that passed longer ago than this is left alone: the person has moved on. */
-export const LATE_MS = 6 * 60 * 60_000
+export {
+  CONTINUE_MESSAGE,
+  LATE_MS,
+  QUIET_MS,
+  RESUME_AFTER_RESET_MS,
+  type ResumeDeps,
+  type ResumeEntry,
+  realTimers,
+  settledSequence,
+  type Timers,
+}
+
 /** How much of the end of the session record is read to see the stop. */
 const TAIL_BYTES = 128 * 1024
-/** What the agent is told. */
-export const CONTINUE_MESSAGE = "Your plan limit has reset. Continue where you stopped."
-/** The longest a single timer waits; the plan windows are shorter. */
-const MAX_TIMER_MS = 2 ** 31 - 1
-
-export type ResumeEntry = {
-  version: 1
-  run: string
-  generation: number
-  task: string | null
-  agent: NativeAgent
-  /** The window that ran out ("5 hours", "This week"), when the record says. */
-  window: string | null
-  /** The record row of the stop: the same row is never planned twice. */
-  stopKey: string
-  /** When the plan resets; null when the agent did not say. */
-  resetsAt: number | null
-  /** When the agent is told to go on; null while it is only held (nothing will be sent). */
-  resumeAt: number | null
-  /** When the stop happened, when the record says. */
-  stoppedAt?: number | null
-  /** The run's last settled event when the stop was seen: nothing may have happened since. */
-  sequence: number
-  /** `held`: stopped on the limit, with no resume planned (off in Settings, or no reset time). */
-  state: "scheduled" | "held" | "sent" | "cancelled" | "skipped"
-  /** Why it was not sent, in words for the person. */
-  reason?: string
-  settledAt?: number
-}
-
-export type Timers = {
-  set(ms: number, action: () => void): unknown
-  clear(handle: unknown): void
-}
-
-export const realTimers: Timers = {
-  set: (ms, action) => {
-    const handle = setTimeout(action, Math.min(ms, MAX_TIMER_MS))
-    handle.unref()
-    return handle
-  },
-  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
-
-export type ResumeDeps = {
-  readRun(id: string): RunRecord | null
-  listRuns(): RunRecord[]
-  /** The agent's session record of the run; null when it is not there. */
-  transcript(run: RunRecord): string | null
-  /** Put the message into the run's session as the App's own messages are put. */
-  send(run: RunRecord, message: string): Promise<void>
-  /** Whether the person's setting allows it, read when it matters. */
-  enabled(): Promise<boolean>
-  timers?: Timers
-  /** Tell whoever shows runs that a plan or its outcome changed. */
-  changed?(): void
-}
-
-/**
- * The run's last event, ignoring what a quiet session adds by itself (its idle notification and a
- * subagent ending): what the person or the agent did last.
- */
-export function settledSequence(run: RunRecord): number {
-  const rows = (run.runEvents ?? []).filter((row) => row.generation === run.generation)
-  while (
-    rows.at(-1)?.event === "SubagentStop" ||
-    (rows.at(-1)?.event === "Notification" && rows.at(-1)?.notificationType === "idle_prompt")
-  )
-    rows.pop()
-  return rows.at(-1)?.sequence ?? 0
-}
-
-const entryPath = (ctx: Ctx, run: string) => `${runDir(ctx.home, run)}/limit-resume.json`
-
-const ENTRY_TEXT = ["run", "stopKey", "agent", "state"] as const
-const ENTRY_NUMBERS = ["generation", "sequence"] as const
-const ENTRY_TIMES = ["resetsAt", "resumeAt"] as const
-
-function parseEntry(text: string): ResumeEntry | null {
-  let value: Record<string, unknown> | null
-  try {
-    value = JSON.parse(text) as Record<string, unknown> | null
-  } catch {
-    return null
-  }
-  return value?.version === 1 && wholeEntry(value) ? (value as ResumeEntry) : null
-}
-
-/** Every field of the right kind; a scheduled resume names when it goes. */
-function wholeEntry(value: Record<string, unknown>): boolean {
-  const typed =
-    ENTRY_TEXT.every((key) => typeof value[key] === "string") &&
-    ENTRY_NUMBERS.every((key) => typeof value[key] === "number")
-  const times = ENTRY_TIMES.every((key) => typeof value[key] === "number" || value[key] === null)
-  return typed && times && (value.state !== "scheduled" || typeof value.resumeAt === "number")
-}
 
 /** The one place resumes are planned, armed, guarded and sent. */
 export class LimitResume {
@@ -191,7 +113,7 @@ export class LimitResume {
 
   private async load(runId: string): Promise<ResumeEntry | null> {
     try {
-      const entry = parseEntry(await this.ctx.fs.readFile(entryPath(this.ctx, runId)))
+      const entry = parseResumeEntry(await this.ctx.fs.readFile(resumeEntryPath(this.ctx, runId)))
       if (entry !== null) this.entries.set(runId, entry)
       return entry
     } catch {
@@ -201,7 +123,10 @@ export class LimitResume {
 
   private async save(entry: ResumeEntry): Promise<void> {
     this.entries.set(entry.run, entry)
-    await this.ctx.fs.atomicWrite(entryPath(this.ctx, entry.run), `${JSON.stringify(entry)}\n`)
+    await this.ctx.fs.atomicWrite(
+      resumeEntryPath(this.ctx, entry.run),
+      `${JSON.stringify(entry)}\n`,
+    )
     this.deps.changed?.()
   }
 

@@ -22,38 +22,54 @@ export function clearHistoryCache(): void {
 }
 
 /** How many artifacts' histories are in memory (for the tests). */
+async function resolveGitDirs(
+  ctx: Ctx,
+  root: string,
+): Promise<{ gitDir: string; common: string } | null> {
+  const dotGit = join(root, ".git")
+  const kind = (await ctx.fs.lstat?.(dotGit))?.kind
+  if (kind === "directory") return { gitDir: dotGit, common: dotGit }
+  if (kind !== "file") return null
+  const pointer = /^gitdir:\s*(.+)$/m.exec(await ctx.fs.readFile(dotGit))?.[1]?.trim()
+  if (pointer === undefined) return null
+  const gitDir = resolve(root, pointer)
+  const common = await ctx.fs
+    .readFile(join(gitDir, "commondir"))
+    .then((text) => resolve(gitDir, text.trim()))
+    .catch(() => gitDir)
+  return { gitDir, common }
+}
+
+async function resolveRefSha(
+  ctx: Ctx,
+  gitDir: string,
+  common: string,
+  ref: string,
+): Promise<string> {
+  for (const base of [gitDir, common]) {
+    const loose = await ctx.fs.readFile(join(base, ref)).catch(() => null)
+    if (loose !== null && /^[0-9a-f]{40,64}\s*$/.test(loose)) return `${ref}@${loose.trim()}`
+  }
+  const packed = await ctx.fs.readFile(join(common, "packed-refs")).catch(() => "")
+  for (const line of packed.split("\n")) {
+    const [sha, name] = line.split(" ")
+    if (name?.trim() === ref && sha !== undefined) return `${ref}@${sha}`
+  }
+  return `${ref}@none`
+}
+
 /**
  * What HEAD stands at, read from `.git` without git: the branch it names and that branch's commit.
  * Null when anything about the checkout is not what this expects; the caller then asks git each time.
  */
 export async function headOf(ctx: Ctx, root: string): Promise<string | null> {
   try {
-    const dotGit = join(root, ".git")
-    const kind = (await ctx.fs.lstat?.(dotGit))?.kind
-    let gitDir = dotGit
-    let common = dotGit
-    if (kind === "file") {
-      const pointer = /^gitdir:\s*(.+)$/m.exec(await ctx.fs.readFile(dotGit))?.[1]?.trim()
-      if (pointer === undefined) return null
-      gitDir = resolve(root, pointer)
-      common = await ctx.fs
-        .readFile(join(gitDir, "commondir"))
-        .then((text) => resolve(gitDir, text.trim()))
-        .catch(() => gitDir)
-    } else if (kind !== "directory") return null
-    const head = (await ctx.fs.readFile(join(gitDir, "HEAD"))).trim()
+    const dirs = await resolveGitDirs(ctx, root)
+    if (dirs === null) return null
+    const head = (await ctx.fs.readFile(join(dirs.gitDir, "HEAD"))).trim()
     const ref = head.startsWith("ref:") ? recordLineTail(head, 4, 0) : null
     if (ref === null) return /^[0-9a-f]{40,64}$/.test(head) ? head : null
-    for (const base of [gitDir, common]) {
-      const loose = await ctx.fs.readFile(join(base, ref)).catch(() => null)
-      if (loose !== null && /^[0-9a-f]{40,64}\s*$/.test(loose)) return `${ref}@${loose.trim()}`
-    }
-    const packed = await ctx.fs.readFile(join(common, "packed-refs")).catch(() => "")
-    for (const line of packed.split("\n")) {
-      const [sha, name] = line.split(" ")
-      if (name?.trim() === ref && sha !== undefined) return `${ref}@${sha}`
-    }
-    return `${ref}@none`
+    return await resolveRefSha(ctx, dirs.gitDir, dirs.common, ref)
   } catch {
     return null
   }

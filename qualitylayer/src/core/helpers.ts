@@ -3,182 +3,109 @@
 // id, which is unique across every task on the machine; the CLI finds the task
 // that started it, whatever directory the helper is working in.
 
-import { join } from "node:path"
-import { type Ctx, err, ok, type Result } from "../ctx.ts"
+import type { Ctx } from "../ctx.ts"
 import { type FiledHelper, type Helper, helperMinutes } from "./briefs.ts"
-import type { CheckRecord } from "./checks.ts"
-import { sliceCommands, taskCommands } from "./docs/commands.ts"
-import { RESEARCH_DIR } from "./docs/names.ts"
-import type { Slice } from "./docs/outline.ts"
-import { HELPER_FRESH_MS } from "./estimate.ts"
 import {
-  helperKind,
-  PANEL_REVIEW_KIND,
-  recordDuration,
-  reviewKind,
-  typicalDuration,
-} from "./helper-history.ts"
-import { reviewRuns } from "./review/cross.ts"
-import { helperRoleName } from "./scaling.ts"
+  type Activity,
+  activity,
+  type BuildLine,
+  type BuildReport,
+  buildLine,
+  buildReports,
+  reportBuild,
+  runningNow,
+} from "./helpers-activity.ts"
+import { reportProgress } from "./helpers-progress.ts"
+import {
+  helperResultFile,
+  helperResults,
+  pendingHelperOffers,
+  rememberHelperOffers,
+  saveHelperResult,
+} from "./helpers-results.ts"
+import {
+  archiveSet,
+  currentSet,
+  endSliceHelpers,
+  type HelperFile,
+  type HelperLine,
+  helperLines,
+  helpersLockPath,
+  helpersPath,
+  missingSliceCheck,
+  readHelperFile,
+  readPastSets,
+  rememberSet,
+  unfinishedQualityOffers,
+} from "./helpers-store.ts"
 import { loadTask, type Task } from "./task/store.ts"
 
-/** `done` is set when the helper's last command was `progress <id> done`: it is over. */
-export type HelperLine = {
-  id: string
-  line: string
-  at: number
-  /** First reported work, never the allocation time. Absent until a line reports work. */
-  started?: number
-  done?: true
-}
-type HelperFile = {
-  started: number
-  /** The stage the task was in when these were handed out. */
-  stage?: string
-  /** What the set is for (research, judge, …): the kind its duration is remembered under. */
-  role?: Helper["role"]
-  /** The role of each helper of a set that holds more than one. */
-  roles?: Record<string, Helper["role"]>
-  /** The most minutes any helper of the set was told it has. */
-  minutes?: number
-  /** Its duration is in the machine's history; set once. */
-  recorded?: boolean
-  ids: string[]
-  lines: Record<string, HelperLine>
-  offers?: Record<string, FiledHelper>
-  /** The slice each Chat slice helper builds, and when it was handed out. */
-  slices?: Record<string, SliceEntry>
-  /**
-   * Helpers of a replaced set that had not said `done` (a quality pass still running when an
-   * amendment sends the build back to Implement): their progress is accepted until they do.
-   */
-  retired?: string[]
-}
-
-/** One Chat slice helper's hand-out: its slice and when; a stop releases it. */
-type SliceEntry = {
-  n: number
-  at: number
-  released?: true
-}
-
-const helpersPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "helpers.json")
-const helpersLockPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "helpers.lock")
-
-async function readFile(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<HelperFile | null> {
-  const path = helpersPath(task)
-  if (!(await ctx.fs.exists(path))) return null
-  try {
-    return JSON.parse(await ctx.fs.readFile(path)) as HelperFile
-  } catch {
-    return null
-  }
-}
-
-/** Quality readers keep their dispatch identity until their actual completion report. */
-export async function unfinishedQualityOffers(ctx: Ctx, task: Task): Promise<FiledHelper[]> {
-  const file = await readFile(ctx, task)
-  if (file?.stage !== task.stage || file.recorded === true) return []
-  return file.ids.flatMap((id) => {
-    const offer = file.offers?.[id]
-    return offer && offer.role === "security" && file.lines[id]?.done !== true ? [offer] : []
-  })
-}
-
-/**
- * A set's measured span begins at its first work report. Allocation is not evidence of work;
- * older reports without that first timestamp cannot provide a measured duration.
- */
-function reportedSpan(
-  file: HelperFile,
-  /** Only these helpers' lines count: one role of a set that holds several. */
-  ids?: readonly string[],
-): { started: number; ended: number } | null {
-  const timed = Object.values(file.lines).filter(
-    (line): line is HelperLine & { started: number } =>
-      line.started !== undefined && (ids === undefined || ids.includes(line.id)),
-  )
-  if (timed.length === 0) return null
-  return {
-    started: Math.min(...timed.map((line) => line.started)),
-    ended: Math.max(...timed.map((line) => line.at)),
-  }
-}
-
-/** The role a helper of the set was handed out for. */
-const roleOfHelper = (file: HelperFile, id: string): Helper["role"] | undefined =>
-  file.roles?.[id] ?? (file.slices?.[id] !== undefined ? "slice" : file.role)
-
-async function rememberSet(ctx: Ctx, file: HelperFile): Promise<boolean> {
-  if (file.recorded === true || file.role === undefined) return false
-  // Each role of the set is remembered on its own.
-  const byRole = new Map<Helper["role"], string[]>()
-  for (const id of file.ids) {
-    const role = roleOfHelper(file, id)
-    if (role === undefined) continue
-    byRole.set(role, [...(byRole.get(role) ?? []), id])
-  }
-  for (const [role, ids] of byRole) {
-    const span = reportedSpan(file, ids)
-    if (span !== null && span.ended > span.started)
-      await recordDuration(ctx, helperKind(role), span.ended - span.started)
-  }
-  return Object.keys(file.lines).length > 0
-}
-
-/** One set of helpers that is over, kept for the Verify header's minutes: when it ran and what for. */
-export type PastSet = { role: string; stage: string; started: number; ended: number }
-
-const setsPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "helper-sets.json")
-
-export async function readPastSets(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<PastSet[]> {
-  try {
-    const parsed = JSON.parse(await ctx.fs.readFile(setsPath(task))) as unknown
-    return Array.isArray(parsed) ? (parsed as PastSet[]) : []
-  } catch {
-    return []
-  }
-}
-
-/** A replaced set keeps its measured report span in the task's list of past sets. */
-async function archiveSet(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  file: HelperFile,
-): Promise<void> {
-  if (file.role === undefined || file.stage === undefined) return
-  const span = reportedSpan(file)
-  if (span === null || span.ended <= span.started) return
-  const past = await readPastSets(ctx, task)
-  await ctx.fs.atomicWrite(
-    setsPath(task),
-    `${JSON.stringify([...past, { role: file.role, stage: file.stage, ...span }], null, 2)}\n`,
-  )
-}
-
-/** The current set's measured report span; null without a known first work report. */
-export async function currentSet(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<(PastSet & { running: boolean }) | null> {
-  const file = await readFile(ctx, task)
-  if (file === null || file.role === undefined || file.stage === undefined) return null
-  const span = reportedSpan(file)
-  if (span === null) return null
-  const running = file.ids.some(
-    (id) => file.lines[id] !== undefined && file.lines[id]?.done !== true,
-  )
-  return {
-    role: file.role,
-    stage: file.stage,
-    ...span,
-    running,
-  }
+export {
+  type Activity,
+  activity,
+  type BuildLine,
+  type BuildReport,
+  buildLine,
+  buildReports,
+  currentSet,
+  endSliceHelpers,
+  helperLines,
+  helperResultFile,
+  helperResults,
+  missingSliceCheck,
+  pendingHelperOffers,
+  readPastSets,
+  rememberHelperOffers,
+  reportBuild,
+  reportProgress,
+  runningNow,
+  saveHelperResult,
+  unfinishedQualityOffers,
 }
 
 /** Slice owners remain registered until their commit or explicit restart releases them. */
 const unfinishedSlices = (file: HelperFile) =>
   file.ids.filter((id) => file.slices?.[id] !== undefined && file.slices[id]?.released !== true)
+
+function carriedHelperIds(previous: HelperFile | null, task: Task): string[] {
+  if (previous === null || previous.stage !== task.stage) return []
+  const chatOpen =
+    task.type === "chat" ? previous.ids.filter((id) => previous.lines[id]?.done !== true) : []
+  return [...chatOpen, ...unfinishedSlices(previous)]
+}
+
+function mergeHelperRoles(
+  kept: readonly string[],
+  previous: HelperFile | null,
+  helpers: readonly (Helper | FiledHelper)[],
+  slices: NonNullable<HelperFile["slices"]>,
+): NonNullable<HelperFile["roles"]> {
+  const roles: NonNullable<HelperFile["roles"]> = {}
+  for (const id of kept) {
+    const before = previous?.roles?.[id]
+    if (before !== undefined) roles[id] = before
+  }
+  for (const helper of helpers) {
+    if (helper.id !== undefined && slices[helper.id] === undefined) roles[helper.id] = helper.role
+  }
+  return roles
+}
+
+function mergeHelperOffers(
+  previous: HelperFile | null,
+  current: Set<string>,
+  helpers: readonly (Helper | FiledHelper)[],
+): Record<string, FiledHelper> {
+  const offers = Object.fromEntries(
+    Object.entries(previous?.offers ?? {}).filter(([id]) => current.has(id)),
+  )
+  for (const helper of helpers) {
+    if (!helper.id || !helper.brief_file) continue
+    const { brief: _brief, gaps: _gaps, ...offer } = helper as Helper
+    offers[helper.id] = { ...offer, brief_file: helper.brief_file }
+  }
+  return offers
+}
 
 /**
  * A new set replaces the last one, except unfinished slices and the fix helper of the same
@@ -207,73 +134,41 @@ export async function startHelpers(
   })
 }
 
-async function startHelpersWithin(
-  ctx: Ctx,
-  task: Task,
-  helpers: (Helper | FiledHelper)[],
-  sliceOf: Record<string, number>,
-): Promise<void> {
-  const ids = helpers.map((h) => h.id).filter((id): id is string => id !== undefined)
-  if (ids.length === 0) return
-  const previous = await readFile(ctx, task)
-  const now = ctx.clock.now()
-  const role = helpers[0]?.role
-  const carried =
-    previous !== null && previous.stage === task.stage
-      ? [
-          ...(task.type === "chat"
-            ? previous.ids.filter((id) => previous.lines[id]?.done !== true)
-            : []),
-          ...unfinishedSlices(previous),
-        ]
-      : []
-  // More slices of the same build join the running set; it goes on from where it started.
-  const joins = previous !== null && carried.length > 0
-  if (previous !== null && !joins) {
-    await rememberSet(ctx, previous)
-    await archiveSet(ctx, task, previous)
-  }
+function collectRetired(previous: HelperFile | null, current: Set<string>): string[] {
+  if (previous === null) return []
+  const unfinished = previous.ids.filter((id) => previous.lines[id]?.done !== true)
+  return [...new Set([...(previous.retired ?? []), ...unfinished])].filter((id) => !current.has(id))
+}
+
+function buildHelperFile(input: {
+  task: Task
+  previous: HelperFile | null
+  joins: boolean
+  now: number
+  kept: readonly string[]
+  ids: readonly string[]
+  helpers: readonly (Helper | FiledHelper)[]
+  sliceOf: Record<string, number>
+}): HelperFile {
+  const { task, previous, joins, now, kept, ids, helpers, sliceOf } = input
   const slices: NonNullable<HelperFile["slices"]> = {}
   const lines: Record<string, HelperLine> = {}
-  const kept = joins ? previous.ids : carried
   for (const id of kept) {
-    const entry = previous?.slices?.[id]
-    const line = previous?.lines[id]
-    if (entry !== undefined) slices[id] = entry
-    if (line !== undefined) lines[id] = line
+    if (previous?.slices?.[id] !== undefined) slices[id] = previous.slices[id]
+    if (previous?.lines[id] !== undefined) lines[id] = previous.lines[id]
   }
   for (const [id, n] of Object.entries(sliceOf)) slices[id] = { n, at: now }
+  const current = new Set([...kept, ...ids])
+  const retired = collectRetired(previous, current)
+  const roles = mergeHelperRoles(kept, previous, helpers, slices)
+  const offers = mergeHelperOffers(previous, current, helpers)
+  const role = helpers[0]?.role
   const minutes = Math.max(
     ...helpers.map((h) => helperMinutes(h.role, h.share, h.minutes)),
-    joins ? (previous.minutes ?? 0) : 0,
+    joins ? (previous?.minutes ?? 0) : 0,
   )
-  const current = new Set([...kept, ...ids])
-  // A helper of the replaced set still at work stays registered until it says done.
-  const retired =
-    previous === null
-      ? []
-      : [
-          ...(previous.retired ?? []),
-          ...previous.ids.filter((id) => previous.lines[id]?.done !== true),
-        ].filter((id, i, all) => !current.has(id) && all.indexOf(id) === i)
-  // The role of each helper that is not a slice: a set may hold several roles.
-  const roles: NonNullable<HelperFile["roles"]> = {}
-  for (const id of kept) {
-    const before = previous?.roles?.[id]
-    if (before !== undefined) roles[id] = before
-  }
-  for (const helper of helpers)
-    if (helper.id !== undefined && slices[helper.id] === undefined) roles[helper.id] = helper.role
-  const offers = Object.fromEntries(
-    Object.entries(previous?.offers ?? {}).filter(([id]) => current.has(id)),
-  )
-  for (const helper of helpers) {
-    if (!helper.id || !helper.brief_file) continue
-    const { brief: _brief, gaps: _gaps, ...offer } = helper as Helper
-    offers[helper.id] = { ...offer, brief_file: helper.brief_file }
-  }
-  const file: HelperFile = {
-    started: joins ? previous.started : now,
+  return {
+    started: joins && previous !== null ? previous.started : now,
     stage: task.stage,
     ...(role !== undefined ? { role } : {}),
     ...(Object.keys(roles).length > 0 ? { roles } : {}),
@@ -284,458 +179,33 @@ async function startHelpersWithin(
     ...(Object.keys(slices).length > 0 ? { slices } : {}),
     ...(retired.length > 0 ? { retired } : {}),
   }
-  await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
 }
 
-/**
- * The first recorded check a slice still lacks before it can be committed with others (`commit
- * slices`): the latest run of every command of its cards and of the slice must have run and
- * passed. Null when each has.
- */
-export function missingSliceCheck(
-  records: readonly CheckRecord[],
-  slice: Pick<Slice, "n" | "tasks" | "validation">,
-): { scope: string; command: string; action: string } | null {
-  const required = [
-    ...slice.tasks.flatMap((t) =>
-      taskCommands(t).map((command) => ({
-        scope: t.id,
-        command,
-        action: `check task ${t.id}`,
-      })),
-    ),
-    ...sliceCommands(slice).map((command) => ({
-      scope: `slice ${slice.n}`,
-      command,
-      action: `check slice ${slice.n}`,
-    })),
-  ]
-  for (const need of required) {
-    const last = records.filter((r) => r.scope === need.scope && r.command === need.command).at(-1)
-    if (last?.ran !== true || last.exit !== 0 || last.notRun !== undefined) return need
-  }
-  return null
-}
-
-/**
- * End the Chat helpers handed slice `n` that have not said `done`, as their own `progress <id>
- * done` would, with `line` as their last word. The ids it ended; none when no helper held the slice.
- */
-export async function endSliceHelpers(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  n: number,
-  line: string,
-): Promise<string[]> {
-  return ctx.fs.withLock(helpersLockPath(task), async () => {
-    const file = await readFile(ctx, task)
-    if (file === null) return []
-    const owners = file.ids.filter(
-      (id) =>
-        file.slices?.[id]?.n === n &&
-        file.slices[id]?.released !== true &&
-        file.lines[id]?.done !== true,
-    )
-    if (owners.length === 0) return []
-    const at = ctx.clock.now()
-    for (const id of owners) {
-      const entry = file.slices?.[id]
-      if (entry !== undefined) entry.released = true
-      const previous = file.lines[id]
-      file.lines[id] = {
-        id,
-        line,
-        at,
-        ...(previous?.started !== undefined ? { started: previous.started } : {}),
-        done: true,
-      }
-    }
-    await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
-    return owners
-  })
-}
-
-/**
- * Record a helper's latest line; false when no task started that id. The id is
- * looked up in every project's runtime folders, not in the repository the
- * helper's shell happens to be in: a helper that `cd`s into another checkout
- * keeps its status line alive. When two tasks hold the id, the latest set wins. The line
- * `done` is a helper saying it is over: its row stops running.
- */
-export async function reportProgress(ctx: Ctx, id: string, line: string): Promise<boolean> {
-  const projects = join(ctx.home, "projects")
-  if (!(await ctx.fs.exists(projects))) return false
-  let found: { runtimeDir: string; file: HelperFile } | null = null
-  for (const project of await ctx.fs.readdir(projects)) {
-    const tasks = join(projects, project, "tasks")
-    if (!(await ctx.fs.exists(tasks))) continue
-    for (const slug of await ctx.fs.readdir(tasks)) {
-      const runtimeDir = join(tasks, slug)
-      const file = await readFile(ctx, { runtimeDir })
-      if (file === null || !(file.ids.includes(id) || file.retired?.includes(id))) continue
-      if (found === null || file.started > found.file.started) found = { runtimeDir, file }
-    }
-  }
-  if (found === null) return false
-  const task = { runtimeDir: found.runtimeDir }
-  return ctx.fs.withLock(helpersLockPath(task), () => reportProgressWithin(ctx, task, id, line))
-}
-
-async function reportProgressWithin(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  id: string,
-  line: string,
-): Promise<boolean> {
-  const file = await readFile(ctx, task)
-  if (file === null || !(file.ids.includes(id) || file.retired?.includes(id))) return false
-  const text = line.replace(/\s+/g, " ").trim().slice(0, 80)
-  const done = text.toLowerCase() === "done"
-  // A helper of a replaced set is heard, not shown: its done ends its registration.
-  if (!file.ids.includes(id)) {
-    if (done) {
-      const left = (file.retired ?? []).filter((r) => r !== id)
-      if (left.length > 0) file.retired = left
-      else delete file.retired
-      await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
-    }
-    return true
-  }
-  const previous = file.lines[id]
-  const at = ctx.clock.now()
-  // An old last report gives no evidence of the first report; keep that time unknown.
-  const started = previous === undefined && !done ? at : previous?.started
-  file.lines[id] = {
-    id,
-    line: text,
-    at,
-    ...(started !== undefined ? { started } : {}),
-    ...(done ? { done: true as const } : {}),
-  }
-  await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
-  return true
-}
-
-/** What the build says it is doing: the task it works on, in one line. */
-export type BuildLine = { task: string | null; line: string; at: number; step?: Task["stage"] }
-
-/**
- * The latest report on one task, and when its first one came: slices built side by side each have
- * their own. A report means the task is being built; a passing `check task` makes it verified, a
- * ticked box done.
- */
-export type BuildReport = { line: string; at: number; started: number }
-
-type BuildFile = BuildLine & { reports?: Record<string, BuildReport> }
-
-const buildPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "build-progress.json")
-
-export async function reportBuild(
+async function startHelpersWithin(
   ctx: Ctx,
   task: Task,
-  report: { task?: string; line: string },
-): Promise<BuildLine> {
-  const id = report.task?.toUpperCase() ?? null
-  let line = report.line.replace(/\s+/g, " ").trim()
-  // The task is shown beside the line; an agent that repeats it would show it twice.
-  if (id !== null && line.toUpperCase().startsWith(`${id} `)) line = line.slice(id.length + 1)
-  const entry: BuildLine = {
-    task: id,
-    line: line.slice(0, 120),
-    at: ctx.clock.now(),
-    step: task.stage,
-  }
-  await ctx.fs.mkdir(task.runtimeDir)
-  const reports = await buildReports(ctx, task)
-  if (entry.task !== null) {
-    reports[entry.task] = {
-      line: entry.line,
-      at: entry.at,
-      started: reports[entry.task]?.started ?? entry.at,
-    }
-  }
-  await ctx.fs.atomicWrite(buildPath(task), `${JSON.stringify({ ...entry, reports })}\n`)
-  return entry
-}
-
-async function readBuild(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<BuildFile | null> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(buildPath(task))) as BuildFile
-  } catch {
-    return null
-  }
-}
-
-export async function buildLine(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<BuildLine | null> {
-  const file = await readBuild(ctx, task)
-  return file === null
-    ? null
-    : {
-        task: file.task,
-        line: file.line,
-        at: file.at,
-        ...(file.step ? { step: file.step } : {}),
-      }
-}
-
-/** Every task the build has reported on, by task id. */
-export async function buildReports(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<Record<string, BuildReport>> {
-  return (await readBuild(ctx, task))?.reports ?? {}
-}
-
-/** The running helpers in launch order, with their latest line when they have reported one. */
-export async function helperLines(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<{ id: string; line: string | null; at: number | null; done: boolean }[]> {
-  const file = await readFile(ctx, task)
-  if (file === null) return []
-  return file.ids.map((id) => ({
-    id,
-    line: file.lines[id]?.line ?? null,
-    at: file.lines[id]?.at ?? null,
-    done: file.lines[id]?.done === true,
-  }))
-}
-
-/** One row of the Cockpit's status box: a helper or the other agent's review. */
-export type Activity = {
-  id: string
-  kind: "helper" | "review"
-  role?: Helper["role"]
-  /** The requested dispatch model, never inferred from a later configuration read. */
-  model?: string
-  /** Who, for a review ("Codex review"); a helper is named by its role in the step's view. */
-  label: string | null
-  state: "queued" | "running" | "done" | "failed" | "timed_out"
-  started: number | null
-  line: string | null
-  at: number | null
-  /** Findings in a review that came back. */
-  findings: number | null
-  /** How long earlier runs of this kind took on this machine (median, ms); null on a first run. */
-  typical: number | null
-  /** A helper: the minutes it was told it has, when it began (a Chat slice's own hand-out) and what to call it. */
-  budget?: { ms: number; began: number; name: string }
-}
-
-/**
- * The helpers handed out in the task's current stage and every review the task
- * started, each with its state and start time. Helpers of an earlier stage are
- * over, so they are not listed.
- */
-export async function activity(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir" | "stage">,
-  options: { remember?: boolean } = {},
-): Promise<Activity[]> {
-  const rows: Activity[] = []
-  const file = await readFile(ctx, task)
-  // A recorded set is over, even when the task is still in its stage.
-  const current = file?.stage === task.stage && file?.recorded !== true
-  // A set of an earlier stage is over: it goes into the history the first time anyone looks.
-  if (options.remember !== false && file !== null && !current && (await rememberSet(ctx, file))) {
-    await ctx.fs.withLock(helpersLockPath(task), async () => {
-      const latest = await readFile(ctx, task)
-      if (latest === null || latest.started !== file.started || latest.role !== file.role) return
-      await ctx.fs.atomicWrite(
-        helpersPath(task),
-        `${JSON.stringify({ ...latest, recorded: true }, null, 2)}\n`,
-      )
-    })
-  }
-  // What a row of each role usually takes.
-  const typicals = new Map<string, number | null>()
-  const typicalOfRow = async (role: Helper["role"] | undefined) => {
-    if (role === undefined) return null
-    if (!typicals.has(role)) typicals.set(role, await typicalDuration(ctx, helperKind(role)))
-    return typicals.get(role) ?? null
-  }
-  for (const line of current ? await helperLines(ctx, task) : []) {
-    const slice = file?.slices?.[line.id]
-    const role = slice !== undefined ? "slice" : (file?.roles?.[line.id] ?? file?.role)
-    rows.push({
-      id: line.id,
-      kind: "helper",
-      ...(role !== undefined ? { role } : {}),
-      ...(file?.offers?.[line.id]?.model ? { model: file.offers[line.id]?.model } : {}),
-      label: null,
-      state: line.done ? "done" : line.at === null ? "queued" : "running",
-      started: file?.lines[line.id]?.started ?? null,
-      line: line.line,
-      at: line.at,
-      findings: null,
-      typical: await typicalOfRow(role),
-      ...(role !== undefined && file?.minutes !== undefined
-        ? {
-            budget: {
-              ms: file.minutes * 60_000,
-              began: slice?.at ?? file.started,
-              name: `The ${helperRoleName(role)} helper${slice !== undefined ? ` for slice ${slice.n}` : ""}`,
-            },
-          }
-        : {}),
-    })
-  }
-  for (const run of await reviewRuns(ctx, task)) {
-    rows.push({
-      id: `review-${run.point}`,
-      kind: "review",
-      // A panel is one row naming the reviewers whose review stands; its time left comes from
-      // earlier panels, never from one reviewer's runs.
-      label:
-        run.panel !== undefined
-          ? `Panel review · ${run.panel.members
-              .filter((m) => m.round1 === "running" || m.round1 === "done")
-              .map((m) => m.name)
-              .join(", ")}`
-          : `${run.name} review`,
-      state: run.state,
-      started: run.started,
-      line: run.line ?? null,
-      at: run.at ?? null,
-      findings: run.findings ?? null,
-      typical:
-        run.state === "running"
-          ? await typicalDuration(
-              ctx,
-              run.panel !== undefined ? PANEL_REVIEW_KIND : reviewKind(run.point, run.by),
-            )
-          : null,
-    })
-  }
-  return rows
-}
-
-/**
- * What runs now beside a waiting gate: the other agent's review while its process lives, and
- * helpers that reported a line lately (a set leaves no mark when it ends, so silence ends it).
- */
-export async function runningNow(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir" | "stage">,
-): Promise<Activity[]> {
-  const now = ctx.clock.now()
-  return (await activity(ctx, task)).filter(
-    (row) =>
-      row.state === "running" &&
-      (row.kind === "review" || (row.at !== null && now - row.at < HELPER_FRESH_MS)),
-  )
-}
-
-// ---------------------------------------------------------------- a helper's saved result
-
-/** Where a helper's report is kept, as written: `research/<id>.md` of the task's folder. */
-export const helperResultFile = (id: string): string => `${RESEARCH_DIR}/${id}.md`
-
-const RESULT_MAX_BYTES = 1_000_000
-
-/** Retain effective dispatch metadata so a compacted caller can recover an offered brief. */
-export async function rememberHelperOffers(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  helpers: readonly FiledHelper[],
+  helpers: (Helper | FiledHelper)[],
+  sliceOf: Record<string, number>,
 ): Promise<void> {
-  if (helpers.length === 0) return
-  await ctx.fs.withLock(helpersLockPath(task), async () => {
-    const file = await readFile(ctx, task)
-    if (file === null) return
-    const offers = { ...file.offers }
-    for (const helper of helpers) {
-      if (!helper.id || !file.ids.includes(helper.id)) continue
-      const saved = offers[helper.id]
-      const offer = { ...helper }
-      if (saved && file.lines[helper.id]?.started !== undefined) {
-        if (saved.model === undefined) delete offer.model
-        else offer.model = saved.model
-        if (saved.effort === undefined) delete offer.effort
-        else offer.effort = saved.effort
-      }
-      offers[helper.id] = offer
-    }
-    if (JSON.stringify(offers) === JSON.stringify(file.offers ?? {})) return
-    file.offers = offers
-    await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
-  })
-}
-
-/** No progress/report is a recovery hint, not proof that a native process was never launched. */
-export async function pendingHelperOffers(ctx: Ctx, task: Pick<Task, "runtimeDir" | "dir">) {
-  const file = await readFile(ctx, task)
-  if (file === null) return []
-  const pending = []
-  for (const id of file.ids) {
-    const line = file.lines[id]
-    if (
-      line?.started !== undefined ||
-      line?.done === true ||
-      (await ctx.fs.exists(join(task.dir, helperResultFile(id))))
-    )
-      continue
-    const offer = file.offers?.[id]
-    const brief = offer?.brief_file ?? join(task.runtimeDir, "briefs", `${id}.md`)
-    if (!(await ctx.fs.exists(brief))) continue
-    pending.push({
-      ...offer,
-      id,
-      brief_file: brief,
-      ...(offer ? {} : { metadata: "legacy brief; effective model was not retained" }),
-    })
+  const ids = helpers.map((h) => h.id).filter((id): id is string => id !== undefined)
+  if (ids.length === 0) return
+  const previous = await readHelperFile(ctx, task)
+  const carried = carriedHelperIds(previous, task)
+  // More slices of the same build join the running set; it goes on from where it started.
+  const joins = previous !== null && carried.length > 0
+  if (previous !== null && !joins) {
+    await rememberSet(ctx, previous)
+    await archiveSet(ctx, task, previous)
   }
-  return pending
-}
-
-/** Whether this task handed out helper `id`: in its current set, a replaced one, or a brief file. */
-async function ownsHelper(ctx: Ctx, task: Pick<Task, "runtimeDir">, id: string): Promise<boolean> {
-  const file = await readFile(ctx, task)
-  if (file !== null && (file.ids.includes(id) || file.retired?.includes(id))) return true
-  return ctx.fs.exists(join(task.runtimeDir, "briefs", `${id}.md`))
-}
-
-/**
- * Keep the report a research helper returned, at once: the agent's context may be compacted before
- * Research folds it into the document. A second save of the same id replaces the first.
- */
-export async function saveHelperResult(
-  ctx: Ctx,
-  task: Pick<Task, "dir" | "runtimeDir">,
-  id: string,
-  markdown: string,
-): Promise<Result<{ id: string; file: string; bytes: number }>> {
-  const bad = (message: string) => err({ code: "bad_args" as const, message })
-  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) return bad(`"${id}" is not a helper id`)
-  if (markdown.trim() === "") return bad("the report is empty; save the helper's whole response")
-  const bytes = Buffer.byteLength(markdown)
-  if (bytes > RESULT_MAX_BYTES) return bad("the report is over 1 MB")
-  return ctx.fs.withLock(helpersLockPath(task), async () => {
-    if (!(await ownsHelper(ctx, task, id)))
-      return bad(`no helper ${id} was started for this task: use the id from its brief`)
-    const file = helperResultFile(id)
-    await ctx.fs.mkdir(join(task.dir, RESEARCH_DIR))
-    await ctx.fs.atomicWrite(join(task.dir, file), markdown)
-    // Absolute, as the briefs name their files, so the agent can open it from any directory.
-    return ok({ id, file: join(task.dir, file), bytes })
+  const file = buildHelperFile({
+    task,
+    previous,
+    joins,
+    now: ctx.clock.now(),
+    kept: joins ? previous.ids : carried,
+    ids,
+    helpers,
+    sliceOf,
   })
-}
-
-/** Research and Chat helpers of this task, and whether each report is saved. */
-export async function helperResults(
-  ctx: Ctx,
-  task: Pick<Task, "dir" | "runtimeDir">,
-): Promise<{ id: string; file: string; saved: boolean }[]> {
-  const file = await readFile(ctx, task)
-  const ids = (file?.ids ?? []).filter((id) => /^r\d+-/.test(id) || file?.stage === "chat")
-  return Promise.all(
-    ids.map(async (id) => ({
-      id,
-      file: helperResultFile(id),
-      saved: await ctx.fs.exists(join(task.dir, helperResultFile(id))),
-    })),
-  )
+  await ctx.fs.atomicWrite(helpersPath(task), `${JSON.stringify(file, null, 2)}\n`)
 }

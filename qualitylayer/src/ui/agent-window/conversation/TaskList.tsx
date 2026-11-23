@@ -4,6 +4,30 @@ import type { ConversationChecklist } from "../../../core/conversation/types.ts"
 import { WhoMark } from "../../kit/WhoMark.tsx"
 import "./task-list.css"
 
+type ChecklistItem = ConversationChecklist["items"][number]
+
+function statusIcon(status: ChecklistItem["status"]) {
+  if (status === "completed") return <CheckIcon size={13} />
+  if (status === "in_progress") return <WhoMark who="agent" />
+  return <CircleIcon size={10} />
+}
+
+const STATUS_LABEL: Record<ChecklistItem["status"], string> = {
+  completed: "Done",
+  in_progress: "Running",
+  pending: "Pending",
+}
+
+function TaskItem({ item }: { item: ChecklistItem }) {
+  return (
+    <li data-status={item.status}>
+      <span aria-hidden="true">{statusIcon(item.status)}</span>
+      <span>{item.text}</span>
+      <small>{STATUS_LABEL[item.status]}</small>
+    </li>
+  )
+}
+
 export function TaskList({ checklist }: { checklist: ConversationChecklist | null | undefined }) {
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -12,6 +36,7 @@ export function TaskList({ checklist }: { checklist: ConversationChecklist | nul
   const current =
     checklist.items.find((item) => item.status === "in_progress") ??
     checklist.items.find((item) => item.status === "pending")
+  const hasCoverageGap = checklist.coverage !== "snapshot" && checklist.coverage !== "observed"
   return (
     <section className="cv-tasks" aria-label="The agent’s task list">
       <button
@@ -37,31 +62,11 @@ export function TaskList({ checklist }: { checklist: ConversationChecklist | nul
         <div id={id}>
           <ol className="cv-tasks-list">
             {checklist.items.map((item) => (
-              <li key={item.id} data-status={item.status}>
-                <span aria-hidden="true">
-                  {item.status === "completed" ? (
-                    <CheckIcon size={13} />
-                  ) : item.status === "in_progress" ? (
-                    <WhoMark who="agent" />
-                  ) : (
-                    <CircleIcon size={10} />
-                  )}
-                </span>
-                <span>{item.text}</span>
-                <small>
-                  {item.status === "completed"
-                    ? "Done"
-                    : item.status === "in_progress"
-                      ? "Running"
-                      : "Pending"}
-                </small>
-              </li>
+              <TaskItem key={item.id} item={item} />
             ))}
           </ol>
           {/* Only a gap is worth a line: how the list was read (snapshot or updates) is not. */}
-          {checklist.coverage !== "snapshot" && checklist.coverage !== "observed" ? (
-            <p className="cv-note">Some task updates are unavailable</p>
-          ) : null}
+          {hasCoverageGap ? <p className="cv-note">Some task updates are unavailable</p> : null}
         </div>
       ) : null}
     </section>

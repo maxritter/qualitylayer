@@ -7,21 +7,21 @@ import { PlanWork } from "../docs/PlanWork.tsx"
 import { stepView, viewedStep } from "../model.ts"
 import { StepWork as BuildWork } from "../steps/StepWork.tsx"
 import type { TaskSurfaceProps } from "./props.ts"
+
+function isReadingStepView(props: TaskSurfaceProps, step: ReturnType<typeof viewedStep>): boolean {
+  if (step === null) return false
+  if (props.view === stepView(props.task, step)) return true
+  const file = viewFile(props.task, props.view)
+  return file?.name === props.view && file.role === step
+}
+
 export function StepWork(props: TaskSurfaceProps) {
   const reading = useDocumentFullSize()
-  if (props.api !== liveApi && props.api.currentTurnLayout !== true) return <>{props.children}</>
+  if (props.api !== liveApi && props.api.currentTurnLayout !== true) return props.children
   const step = viewedStep(props.view)
-  const file = viewFile(props.task, props.view)
   if (step === "plan") return <PlanWork {...props} />
-  if (reading) {
-    if (
-      step !== null &&
-      (props.view === stepView(props.task, step) ||
-        (file?.name === props.view && file.role === step))
-    )
-      return <BuildWork {...props} />
-    return <>{props.children}</>
-  }
-  if (step === "implement" || step === "verify") return <BuildWork {...props} />
-  return <>{props.children}</>
+  const showBuild = reading
+    ? isReadingStepView(props, step)
+    : step === "implement" || step === "verify"
+  return showBuild ? <BuildWork {...props} /> : props.children
 }

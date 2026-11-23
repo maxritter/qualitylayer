@@ -8,353 +8,64 @@
 // baseline's authorised tasks and files, and the done-when audit in Verify.
 
 import { extractFences, type Fence } from "./fence-scanner.ts"
+import { cardFacts } from "./outline-cards.ts"
+import { dependsParts } from "./outline-depends.ts"
+import { handleProofLine } from "./outline-proof-order.ts"
+import { fenceAt, parseTree, sliceFilesOf } from "./outline-tree.ts"
+import {
+  allTasks,
+  type CardLine,
+  emptyOutline,
+  type Outline,
+  type OutlineTask,
+  type Slice,
+} from "./outline-types.ts"
 
-export type TestFirst = { kind: "test" | "trivial" | "qualification"; text: string }
-
-export type OutlineTask = {
-  id: string
-  title: string
-  checked: boolean
-  owner?: "User"
-  /** A concrete human action, from Owner's suffix or a separate User action label. */
-  userAction?: string
-  role?: string
-  objective: string
-  files: string[]
-  /** Exact repository paths inspected without changed-file ownership. */
-  readOnly?: string[]
-  /** Raw text of the Files label, "" when the label is missing. */
-  filesRaw: string
-  testFirst: TestFirst | null
-  /** An optional focused failing-test command; normal verification retains its scope. */
-  redCheck?: string
-  /** The card's `**Done when:**` lines. */
-  dod: string[]
-  /** The contract sections it relies on: the Plan's contract headings, from `**Design:**`. */
-  design: string[]
-  /** Labels found on the card, lower-cased. */
-  labels: string[]
-  /** The task as the builder is handed it: its box line, then its card. */
-  text: string
-  /** The line of its box. */
-  line: number
-}
-
-export type Slice = {
-  n: number
-  title: string
-  /** The sentences under the heading: what works afterwards that did not before. */
-  summary: string
-  /** The slice's file-tree `diff`: each file with its mark and note. */
-  tree: TreeFile[]
-  tasks: OutlineTask[]
-  validation: string
-  /**
-   * `**Shared output:** <path>`: a build artifact the slice rebuilds (e.g. `dist/qualitylayer`);
-   * two slices with the same one never run side by side.
-   */
-  sharedOutput: string | null
-  /** Marked `**Release:** yes`: it deploys or publishes and changes no source. */
-  release: boolean
-  /**
-   * The slices named by `**Depends on:**`; null without the line, which means the nearest slice
-   * before it that shares a file, a contract or a shared output, if any.
-   */
-  dependsOn: number[] | null
-  /** The raw value of the Depends on line, null without it. */
-  dependsRaw: string | null
-  /**
-   * The other slices named by `**Commits with:** Slice N`: they cannot compile or pass the hook
-   * alone (one replaces an export the others still use), so they are committed together once every
-   * member passed its checks. Absent without the line.
-   */
-  commitsWith?: number[]
-  /**
-   * The reason a Depends on line gives: the text beyond its slice references, as in
-   * `**Depends on:** Slice 2 (reads the visit field it adds)`. Null without the line or a reason.
-   */
-  dependsReason: string | null
-  dependsReasons?: Record<number, string>
-  dependsError?: string
-  line: number
-}
-
-/**
- * The leading list of a Depends on value: the slices it names before any reason, and the reason's
- * text. Only the leading list names dependencies: `Slice 1 (… slice 1 …)` depends on slice 1 once,
- * and the reason keeps its own words.
- */
-function dependsParts(raw: string): {
-  slices: number[]
-  reason: string | null
-  reasons: Record<number, string>
-  error?: string
-} {
-  const slices: number[] = []
-  const reasons: Record<number, string> = {}
-  let rest = raw
-  let perEntry = false
-  let trailing: string | null = null
-  for (;;) {
-    const next = /^(?:[\s,]|\band\b|&)*\bslice\s+(\d+)\b/i.exec(rest)
-    if (next === null) break
-    const n = Number(next[1])
-    slices.push(n)
-    rest = rest.slice(next[0].length).trimStart()
-    if (!rest.startsWith("(")) continue
-    let depth = 0
-    let end = -1
-    for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === "(") depth++
-      if (rest[i] === ")" && --depth === 0) {
-        end = i
-        break
-      }
-    }
-    if (end < 0) return { slices, reason: null, reasons, error: "unclosed dependency parentheses" }
-    const reason = rest.slice(1, end).trim()
-    rest = rest.slice(end + 1)
-    if (/^(?:[\s,]|\band\b|&)*slice\s+\d+\b/i.test(rest)) {
-      perEntry = true
-      if (/[\p{L}\p{N}]/u.test(reason)) reasons[n] = reason
-    } else {
-      trailing = /[\p{L}\p{N}]/u.test(reason) ? reason : null
-      if (perEntry && trailing !== null) reasons[n] = trailing
-      break
-    }
-  }
-  const leading = rest.replace(/^(?:[\s,;:–—-]|\band\b|&)+/i, "")
-  let end = leading.length
-  while (end > 0 && /[\s,;:–—-]/.test(leading[end - 1] ?? "")) end--
-  const suffix = leading.slice(0, end)
-  if (/[()]/.test(suffix))
-    return { slices, reason: null, reasons, error: "malformed dependency parentheses" }
-  const reason = /[\p{L}\p{N}]/u.test(suffix) ? suffix : trailing
-  return { slices, reasons, reason: perEntry ? null : reason }
-}
-
-/** One file of a slice's tree: `+` new, `~` changed, `-` removed, "" when the note gives none. */
-export type TreeFile = { path: string; mark: "+" | "~" | "-" | ""; note: string }
-
-/** A row of `## Prerequisites`: something a person decides, grants or provides before the build. */
-export type Prerequisite = { n: string; what: string; metBy: string; status: string; line: number }
-
-/**
- * A line the grammar could not read: a malformed task box, a card with no box of its id
- * (`card`), or a Prerequisites table line (`prerequisite-table`).
- */
-export type Malformed = { line: number; text: string; kind?: "prerequisite-table" | "card" }
-
-/** A line of *Proof order*: step `A3` can first run after slice `slice`. */
-export type ProofOrderLine = { id: string; slice: number; line: number }
-
-/** A *Proof order* line that names a step and no slice it could read. */
-export type UnreadProofOrder = { line: number; text: string; ids: string[] }
-
-export type Outline = {
-  slices: Slice[]
-  /** *Proof order*: one entry per step a line names, in the order written (a line may name several). */
-  proofOrder: ProofOrderLine[]
-  /** The *Proof order* lines that name a step and no readable slice. */
-  proofOrderUnread: UnreadProofOrder[]
-  malformed: Malformed[]
-}
+export {
+  contractEntries,
+  designNames,
+  designPage,
+  evidenceIn,
+  extractPaths,
+  isLineReference,
+  isPathLike,
+} from "./outline-paths.ts"
+export { isGrantAtApproval, parsePrerequisites, prerequisiteSettled } from "./outline-prereqs.ts"
+export {
+  allTasks,
+  codeSlices,
+  emptyOutline,
+  type Outline,
+  type OutlineTask,
+  type Prerequisite,
+  type ProofOrderLine,
+  progress,
+  type Slice,
+  type SliceColumn,
+  type TestFirst,
+  type TreeFile,
+} from "./outline-types.ts"
+export {
+  buildWaves,
+  commitGroup,
+  committable,
+  dependenciesOf,
+  sliceColumns,
+  waveWidth,
+} from "./outline-waves.ts"
+export { cardFacts, parseTree, sliceFilesOf }
 
 /** A slice: `### Slice N:` under Task cards, or `## Slice N:` in a Chat's slices file. */
 const SLICE = /^#{2,3} Slice (\d+): (.+)$/
 const CARD = /^#### (T\d+)\b/
 const TASK = /^- \[( |x|X)\] (T\d+)\b(.*)$/
 const BOXISH = /^\s*[-*]\s*\[[^\]]*\]\s*T\d+/
-// The bullet is optional: agents also write a card's labels as plain bold lines.
-const LABEL = /^(\s*)((?:[-*] )?)\*\*([^*:]+):\*\*\s*((?:\S.*)?)$/
 /** The section of Implement's agents' file that holds the slices and cards. */
 const CARDS = "Task cards"
 const SHARED_OUTPUT = /^\*\*Shared output:\*\*\s*((?:\S.*)?)$/i
 const DEPENDS = /^\*\*Depends on:\*\*\s*((?:\S.*)?)$/i
 const COMMITS_WITH = /^\*\*Commits with:\*\*\s*((?:\S.*)?)$/i
 const RELEASE = /^\*\*Release:\*\*\s*((?:\S.*)?)$/i
-const BARE_FILE_EXTENSIONS = new Set([
-  "bat",
-  "bash",
-  "c",
-  "cc",
-  "cfg",
-  "cjs",
-  "conf",
-  "cpp",
-  "cs",
-  "css",
-  "csv",
-  "docx",
-  "ex",
-  "exs",
-  "fish",
-  "fs",
-  "fsx",
-  "go",
-  "gif",
-  "gradle",
-  "h",
-  "hpp",
-  "html",
-  "ini",
-  "java",
-  "jpeg",
-  "jpg",
-  "jl",
-  "js",
-  "json",
-  "jsonc",
-  "jsonl",
-  "jsx",
-  "kt",
-  "lock",
-  "lua",
-  "md",
-  "mdx",
-  "mjs",
-  "mod",
-  "pdf",
-  "php",
-  "png",
-  "proto",
-  "py",
-  "rb",
-  "rs",
-  "rst",
-  "scss",
-  "sh",
-  "sql",
-  "svelte",
-  "sum",
-  "svg",
-  "swift",
-  "toml",
-  "ts",
-  "tsv",
-  "tsx",
-  "txt",
-  "vue",
-  "webp",
-  "woff",
-  "woff2",
-  "xml",
-  "yaml",
-  "yml",
-  "zsh",
-])
-// These Web API members collide with a recognized file extension. Other
-// uppercase basenames (App.tsx, Config.json) remain valid root-level files.
-const DOTTED_API_MEMBERS = new Set(["Response.json", "Request.json"])
-const EXTENSIONLESS_FILES = new Set([
-  "Dockerfile",
-  "Containerfile",
-  "Makefile",
-  "Justfile",
-  "Procfile",
-  "Gemfile",
-  "Rakefile",
-  "LICENSE",
-  "CODEOWNERS",
-])
-
-/** Backticked path-like tokens; a bare dotted API name is not a file. */
-export function extractPaths(text: string): string[] {
-  const paths: string[] = []
-  for (const match of text.matchAll(/`([^`\s]+)`/g)) {
-    const token = match[1] ?? ""
-    if (isPathLike(token)) paths.push(token)
-  }
-  return paths
-}
-
-/** Explicit statements that a quoted evidence path is absent are not citations. */
-const ABSENT_EVIDENCE =
-  /\b(?:no|missing|absent)\s+(?:(?:captured|saved|recorded)\s+)?`(?:evidence|records)\/[^`\s]+`|`(?:evidence|records)\/[^`\s]+`\s+(?:(?:is|are|was|were)\s+(?:missing|absent|not\s+(?:present|found|available))|(?:does|do)\s+not\s+exist)/gi
-
-/** The cited evidence files, without a :line or :line-line suffix, relative to the task folder. */
-export const evidenceIn = (text: string): string[] =>
-  extractPaths(text.replace(ABSENT_EVIDENCE, ""))
-    .filter((p) => p.startsWith("evidence/") || p.startsWith("records/"))
-    .map((p) => p.replace(/:\d+(-\d+)?$/, ""))
-
-export function isPathLike(token: string): boolean {
-  if (/^https?:/.test(token) || token.startsWith("-") || token.includes("(")) return false
-  if (token.includes("/")) return /[A-Za-z0-9]/.test(token)
-  if (
-    EXTENSIONLESS_FILES.has(token) ||
-    /^\.[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/.test(token)
-  )
-    return true
-  const bare = /^[\w.-]+\.([A-Za-z][A-Za-z0-9]{0,7})$/.exec(token)
-  if (bare === null || /^\d/.test(token)) return false
-  // Without a directory, the extension is the only reliable distinction
-  // between `README.md` and `Bun.write` or `console.log`. Unusual files can
-  // be named with their relative directory to remove that ambiguity.
-  if (DOTTED_API_MEMBERS.has(token)) return false
-  return BARE_FILE_EXTENSIONS.has(bare[1]?.toLowerCase() ?? "")
-}
-
-const DESIGN_PAGE = /^page\s+([a-z0-9]+(?:-[a-z0-9]+)*)$/i
-
-/** The page a `**Design:**` entry names (`page level-card`), or null for a contract heading. */
-export function designPage(entry: string): string | null {
-  return DESIGN_PAGE.exec(entry.trim())?.[1] ?? null
-}
-
-/** The contract headings among a card's `**Design:**` entries: the ones that are no page. */
-export const contractEntries = (design: string[]): string[] =>
-  design.filter((entry) => designPage(entry) === null)
-
-/**
- * A closing design quote has only whitespace before the next comma or end, or before a note in
- * parentheses on where the heading lives (`"Heading" (Plan Engineering decisions)`).
- */
-function designQuoteEnds(value: string, at: number): boolean {
-  if (value[at] !== '"' && value[at] !== "”") return false
-  let next = at + 1
-  while (next < value.length && /\s/.test(value[next] ?? "")) next++
-  return next === value.length || value[next] === "," || value[next] === "("
-}
-
-/**
- * The entries of a `**Design:**` value: each quoted contract heading, straight
- * or curly quotes, and each unquoted `page <name>` beside them; without quotes,
- * the comma-separated parts. A heading may hold quotation marks of its own: an
- * entry closes only at a quote followed by a comma, a parenthetical note or the end of the value.
- */
-export function designNames(value: string): string[] {
-  const quoted: string[] = []
-  const outside: string[] = []
-  let open = -1
-  let from = 0
-  for (let at = 0; at < value.length; at++) {
-    const char = value[at]
-    if (char === "\n" || char === "\r" || char === "\u2028" || char === "\u2029") open = -1
-    if (open < 0) {
-      if (char === '"' || char === "“") open = at
-      continue
-    }
-    if (at <= open + 1 || !designQuoteEnds(value, at)) continue
-    quoted.push(value.slice(open + 1, at).trim())
-    outside.push(value.slice(from, open), ",")
-    from = at + 1
-    open = -1
-  }
-  outside.push(value.slice(from))
-  const pages = outside
-    .join("")
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => designPage(part) !== null)
-  const names = quoted.length > 0 ? [...quoted, ...pages] : value.split(",").map((p) => p.trim())
-  return names.filter((name) => name !== "" && !/^none\b/i.test(name))
-}
-
-/** A `path:line` reference is read-only evidence, not a file the task touches. */
-export function isLineReference(token: string): boolean {
-  return /:\d+(-\d+)?$/.test(token)
-}
 
 /** What a `## ` heading opens: a Chat's slice, the Task cards, the Proof order or another section. */
 function sectionOf(heading: string): "slice" | "cards" | "proof" | "other" {
@@ -364,312 +75,17 @@ function sectionOf(heading: string): "slice" | "cards" | "proof" | "other" {
   return name.toLowerCase() === "proof order" ? "proof" : "other"
 }
 
-/** A step id and the ids that follow it (`A1, A2`, `A1 and A2`, `A3-A5`) at the start of a line. */
-const ID_SEPARATOR = /^(?:[\s,&+/]|and\b)+(?=A\d)/i
-const ID_RANGE = /^(?:\s*(?:[-–—]|to\b|\.\.)\s*)A(\d{1,6})\b/i
-
-function leadingIds(text: string): { ids: string[]; rest: string } | null {
-  const ids: string[] = []
-  let rest = text.replace(/^step\s+/i, "")
-  for (;;) {
-    const found = /^A(\d{1,6})\b/i.exec(rest)
-    if (found === null) break
-    rest = rest.slice(found[0].length)
-    const from = Number(found[1])
-    const range = ID_RANGE.exec(rest)
-    const to = range !== null && Number(range[1]) - from < 200 ? Number(range[1]) : from
-    if (range !== null) rest = rest.slice(range[0].length)
-    for (let n = from; n <= to; n++) ids.push(`A${n}`)
-    const more = ID_SEPARATOR.exec(rest)
-    if (more === null) break
-    rest = rest.slice(more[0].length)
-  }
-  return ids.length === 0 ? null : { ids, rest }
-}
-
-/** The slice a line says its steps can first run after; the last one named, since all must be built. */
-function sliceOf(rest: string): number | null {
-  const named = /\bslices?\s+#?(\d+)((?:\s*(?:,|and|&)\s*(?:slice\s+)?#?\d+)*)/i.exec(rest)
-  if (named !== null) {
-    const more = Array.from((named[2] ?? "").matchAll(/\d+/g), (m) => Number(m[0]))
-    return Math.max(Number(named[1]), ...more)
-  }
-  const bare = /^(?:after\s+)?#?(\d+)$/i.exec(rest.trim())
-  return bare === null ? null : Number(bare[1])
-}
-
-/**
- * One line of *Proof order*, read leniently: bold or plain, a bullet, a number or a table row, the
- * ids first (`A1 · after slice 1`, `A1, A2: slice 2`, `A3 -> after slice 3`) or after the slice
- * (`After slice 1: A1, A2`). Null for a line that names no step (prose, a header, a rule).
- */
-function proofOrderLineOf(raw: string): { ids: string[]; slice: number | null } | null {
-  let text = raw.trim()
-  if (text.startsWith("|"))
-    text = text
-      .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((cell) => cell.trim())
-      .join(" · ")
-  text = text
-    .replace(/^(?:[-*+]|\d+[.)])\s+/, "")
-    .replace(/[`*_]/g, "")
-    .trim()
-  const lead = leadingIds(text)
-  if (lead !== null)
-    return { ids: lead.ids, slice: sliceOf(lead.rest.replace(/^[\s·•:–—→|>=-]+/, "")) }
-  const reversed = /^(?:after\s+|runs after\s+)?slice\s+(\d+)[\s·•:–—→|>=-]+(?=A\d)/i.exec(text)
-  const tail = reversed === null ? null : leadingIds(text.slice(reversed[0].length))
-  return reversed === null || tail === null ? null : { ids: tail.ids, slice: Number(reversed[1]) }
-}
-
-type PrerequisiteColumns = {
-  n: number | null
-  what: number
-  metBy: number
-  status: number
-  width: number
-}
-
-function prerequisiteColumns(cells: string[]): PrerequisiteColumns | null {
-  if (cells.length !== 3 && cells.length !== 4) return null
-  const keys = cells.map((cell) => {
-    const heading = cell.toLowerCase().replace(/\s+/g, " ")
-    if (heading === "#") return "n"
-    if (["prerequisite", "step", "what", "requirement"].includes(heading)) return "what"
-    if (["met by", "who"].includes(heading)) return "metBy"
-    if (["status", "state"].includes(heading)) return "status"
-    return null
-  })
-  if (keys.includes(null) || new Set(keys).size !== keys.length) return null
-  const what = keys.indexOf("what")
-  const metBy = keys.indexOf("metBy")
-  const status = keys.indexOf("status")
-  const n = keys.indexOf("n")
-  if (what < 0 || metBy < 0 || status < 0) return null
-  return { n: n < 0 ? null : n, what, metBy, status, width: cells.length }
-}
-
-/** The rows of a document's `## Prerequisites` table (the Plan's), and the lines it could not read. */
-export function parsePrerequisites(markdown: string): {
-  rows: Prerequisite[]
-  malformed: Malformed[]
-} {
-  const rows: Prerequisite[] = []
-  const malformed: Malformed[] = []
-  const fences = extractFences(markdown)
-  let inSection = false
-  let columns: PrerequisiteColumns | null = null
-  let headerSeen = false
-  markdown.split(/\r?\n/).forEach((raw, index) => {
-    const lineNo = index + 1
-    if (fences.some((f) => lineNo >= f.line && lineNo <= f.endLine)) return
-    const line = raw.trimEnd()
-    if (/^## /.test(line)) {
-      inSection = line.replace(/^## /, "").trim() === "Prerequisites"
-      columns = null
-      headerSeen = false
-      return
-    }
-    if (!inSection) return
-    const tableLine = line.trim()
-    if (!tableLine.startsWith("|")) {
-      columns = null
-      headerSeen = false
-      return
-    }
-    const cells = tableLine
-      .slice(1)
-      .replace(/(?<!\\)\|$/, "")
-      .split(/(?<!\\)\|/)
-      .map((cell) => cell.trim().replace(/\\\|/g, "|"))
-    if (cells.every((cell) => /^:?-+:?$/.test(cell))) return
-    const header = prerequisiteColumns(cells)
-    if (!headerSeen || header !== null) {
-      headerSeen = true
-      columns = header
-      if (header === null)
-        malformed.push({ line: lineNo, text: tableLine, kind: "prerequisite-table" })
-      return
-    }
-    if (columns === null) return
-    if (cells.length !== columns.width || cells.some((cell) => cell === "")) {
-      malformed.push({ line: lineNo, text: tableLine, kind: "prerequisite-table" })
-      return
-    }
-    rows.push({
-      n: columns.n === null ? `P${rows.length + 1}` : (cells[columns.n] ?? ""),
-      what: cells[columns.what] ?? "",
-      metBy: cells[columns.metBy] ?? "",
-      status: cells[columns.status] ?? "",
-      line: lineNo,
-    })
-  })
-  return { rows, malformed }
-}
-
-/** A line is inside a fenced block (its fence lines included). */
-const fenceAt = (fences: Fence[], lineNo: number): Fence | undefined =>
-  fences.find((f) => lineNo >= f.line && lineNo <= f.endLine)
-
 /** A card under a slice: the lines under its `#### T1` heading. */
 type CardBlock = { id: string; line: number; body: CardLine[] }
 
-/**
- * The slices and cards of one file, with its Proof order. A slice's own lines (outside its cards)
- * give its takeaway, its lines, its boxes, its file tree and its Validation; each `#### T1` card is
- * joined to the box of its id. Tolerates CRLF and reports malformed boxes and cards without a box
- * instead of silently dropping them.
- */
-export function parseOutline(markdown: string): Outline {
-  const outline: Outline = emptyOutline()
-  const lines = markdown.split(/\r?\n/)
-  const fences = extractFences(markdown)
-
-  let section: ReturnType<typeof sectionOf> = "other"
-  let slice: Slice | null = null
-  let task: OutlineTask | null = null
-  let card: CardBlock | null = null
-  const cards: CardBlock[] = []
-  const own = new Map<Slice, CardLine[]>()
-
-  lines.forEach((raw, index) => {
-    const lineNo = index + 1
-    const line = raw.trimEnd()
-    const fenced = fenceAt(fences, lineNo) !== undefined
-    if (!fenced && section === "cards" && /^#{3,4} /.test(line)) {
-      task = null
-      card = null
-      const id = line.match(CARD)?.[1]
-      if (id !== undefined && slice !== null) {
-        card = { id, line: lineNo, body: [] }
-        cards.push(card)
-        return
-      }
-      if (/^#### /.test(line)) return
-      slice = null
-      const match = line.match(SLICE)
-      if (match !== null) {
-        slice = newSlice(Number(match[1]), (match[2] ?? "").trim(), lineNo)
-        outline.slices.push(slice)
-        own.set(slice, [])
-      }
-      return
-    }
-    if (card !== null && (fenced || !/^## /.test(line))) {
-      card.body.push({ text: line, line: lineNo })
-      return
-    }
-    if (slice !== null && (fenced || !/^## /.test(line)))
-      own.get(slice)?.push({ text: line, line: lineNo })
-    if (fenced) return
-
-    if (/^## /.test(line)) {
-      section = sectionOf(line)
-      task = null
-      card = null
-      slice = null
-      const match = line.match(SLICE)
-      if (section === "slice" && match !== null) {
-        slice = newSlice(Number(match[1]), (match[2] ?? "").trim(), lineNo)
-        outline.slices.push(slice)
-        own.set(slice, [])
-      }
-      return
-    }
-
-    if (slice !== null) {
-      const taskMatch = line.match(TASK)
-      if (taskMatch !== null) {
-        task = {
-          id: taskMatch[2] ?? "",
-          title: (taskMatch[3] ?? "").replace(/^[ :.-]+/, "").trim(),
-          checked: (taskMatch[1] ?? " ").toLowerCase() === "x",
-          objective: "",
-          files: [],
-          filesRaw: "",
-          testFirst: null,
-          dod: [],
-          design: [],
-          labels: [],
-          text: line,
-          line: lineNo,
-        }
-        slice.tasks.push(task)
-        return
-      }
-      if (BOXISH.test(line)) {
-        outline.malformed.push({ line: lineNo, text: line.trim() })
-        task = null
-        return
-      }
-      // A headline wraps onto indented lines; an indented bullet is not part of it.
-      if (task !== null && /^\s+\S/.test(line) && !/^\s*[-*] /.test(line)) {
-        task.title = `${task.title} ${line.trim()}`.trim()
-        task.text = `${task.text}\n${line}`
-        return
-      }
-      task = null
-      const depends = line.match(DEPENDS)
-      if (depends !== null) {
-        slice.dependsRaw = (depends[1] ?? "").trim()
-        const parsed = dependsParts(slice.dependsRaw)
-        slice.dependsOn = parsed.slices
-        slice.dependsReason = parsed.reason
-        slice.dependsReasons = parsed.reasons
-        if (parsed.error !== undefined) slice.dependsError = parsed.error
-        return
-      }
-      const commitsWith = line.match(COMMITS_WITH)
-      if (commitsWith !== null) {
-        slice.commitsWith = [...(commitsWith[1] ?? "").matchAll(/\bslice\s+(\d+)\b/gi)].map((m) =>
-          Number(m[1]),
-        )
-        return
-      }
-      const release = line.match(RELEASE)
-      if (release !== null) {
-        slice.release = /^(yes|true)\b/i.test((release[1] ?? "").trim())
-        return
-      }
-      const shared = line.match(SHARED_OUTPUT)
-      if (shared !== null) {
-        const output = (shared[1] ?? "").replace(/`/g, "").trim()
-        slice.sharedOutput = output === "" || /^none\b/i.test(output) ? null : output
-        return
-      }
-      // The sentences that open the slice, before its first task.
-      if (slice.tasks.length === 0 && line !== "" && !/^(\*\*|[-*|>]|\s)/.test(line))
-        slice.summary = `${slice.summary} ${line.trim()}`.trim()
-      return
-    }
-
-    if (section === "proof") {
-      const mapping = proofOrderLineOf(line)
-      if (mapping === null) return
-      if (mapping.slice === null)
-        outline.proofOrderUnread.push({ line: lineNo, text: line.trim(), ids: mapping.ids })
-      else
-        for (const id of mapping.ids)
-          outline.proofOrder.push({ id, slice: mapping.slice, line: lineNo })
-    }
-  })
-  // A slice's own lines give its file tree and Validation; each card joins the box of its id.
-  for (const [each, body] of own) Object.assign(each, sliceFilesOf(body, fences))
-  const tasks = allTasks(outline)
-  for (const block of cards) {
-    while (block.body.length > 0 && (block.body[block.body.length - 1]?.text ?? "").trim() === "")
-      block.body.pop()
-    const box = tasks.find((t) => t.id === block.id)
-    if (box === undefined) {
-      outline.malformed.push({ line: block.line, text: `#### ${block.id}`, kind: "card" })
-      continue
-    }
-    Object.assign(box, cardFacts(block.body))
-    box.text = [box.text, ...block.body.map((b) => b.text)].join("\n")
-  }
-  return outline
+type OutlineParseState = {
+  outline: Outline
+  section: ReturnType<typeof sectionOf>
+  slice: Slice | null
+  task: OutlineTask | null
+  card: CardBlock | null
+  cards: CardBlock[]
+  own: Map<Slice, CardLine[]>
 }
 
 function newSlice(n: number, title: string, line: number): Slice {
@@ -689,423 +105,174 @@ function newSlice(n: number, title: string, line: number): Slice {
   }
 }
 
-export type CardLine = { text: string; line: number }
+function openSlice(state: OutlineParseState, match: RegExpMatchArray, lineNo: number): void {
+  state.slice = newSlice(Number(match[1]), (match[2] ?? "").trim(), lineNo)
+  state.outline.slices.push(state.slice)
+  state.own.set(state.slice, [])
+}
 
-/** One label of a task card: `- **Files:** …`, its value and the bullets nested under it. */
-type CardField = { name: string; value: string; items: string[] }
+function handleCardHeading(state: OutlineParseState, line: string, lineNo: number): void {
+  state.task = null
+  state.card = null
+  const id = line.match(CARD)?.[1]
+  if (id !== undefined && state.slice !== null) {
+    state.card = { id, line: lineNo, body: [] }
+    state.cards.push(state.card)
+    return
+  }
+  if (/^#### /.test(line)) return
+  state.slice = null
+  const match = line.match(SLICE)
+  if (match !== null) openSlice(state, match, lineNo)
+}
 
-/**
- * The labels of a card. A label starts at the card's label indent; a deeper bullet belongs to the
- * label above it, and a deeper line that is neither a label nor a bullet continues the text above it.
- * Under a label written without a bullet, a bullet at the label's own indent belongs to it too.
- */
-function cardFields(lines: CardLine[]): CardField[] {
-  const fields: CardField[] = []
-  let labelIndent: number | null = null
-  let last: CardField | null = null
-  let plain = false
-  for (const { text } of lines) {
-    if (text.trim() === "") continue
-    const indent = text.length - text.trimStart().length
-    const label = text.match(LABEL)
-    if (label !== null && (labelIndent === null || indent <= labelIndent)) {
-      labelIndent = indent
-      plain = label[2] === ""
-      last = {
-        name: (label[3] ?? "").trim().toLowerCase(),
-        value: (label[4] ?? "").trim(),
-        items: [],
-      }
-      fields.push(last)
-      continue
-    }
-    if (last === null) continue
-    if (
-      indent <= (labelIndent ?? 0) &&
-      !(plain && indent === labelIndent && /^\s*[-*] /.test(text))
+function handleSliceMeta(slice: Slice, line: string): boolean {
+  const depends = line.match(DEPENDS)
+  if (depends !== null) {
+    slice.dependsRaw = (depends[1] ?? "").trim()
+    const parsed = dependsParts(slice.dependsRaw)
+    slice.dependsOn = parsed.slices
+    slice.dependsReason = parsed.reason
+    slice.dependsReasons = parsed.reasons
+    if (parsed.error !== undefined) slice.dependsError = parsed.error
+    return true
+  }
+  const commitsWith = line.match(COMMITS_WITH)
+  if (commitsWith !== null) {
+    slice.commitsWith = [...(commitsWith[1] ?? "").matchAll(/\bslice\s+(\d+)\b/gi)].map((m) =>
+      Number(m[1]),
     )
-      continue
-    const bullet = text.match(/^\s*[-*] (.+)$/)
-    if (bullet !== null) {
-      last.items.push((bullet[1] ?? "").trim())
-      continue
-    }
-    const more = text.trim()
-    if (last.items.length > 0) last.items[last.items.length - 1] += ` ${more}`
-    else last.value = `${last.value} ${more}`.trim()
+    return true
   }
-  return fields
+  const release = line.match(RELEASE)
+  if (release !== null) {
+    slice.release = /^(yes|true)\b/i.test((release[1] ?? "").trim())
+    return true
+  }
+  const shared = line.match(SHARED_OUTPUT)
+  if (shared !== null) {
+    const output = (shared[1] ?? "").replace(/`/g, "").trim()
+    slice.sharedOutput = output === "" || /^none\b/i.test(output) ? null : output
+    return true
+  }
+  return false
 }
 
-/** What a card says, as an `OutlineTask` holds it: the fields of every label found. */
-type CardFacts = Pick<
-  OutlineTask,
-  | "objective"
-  | "files"
-  | "filesRaw"
-  | "testFirst"
-  | "dod"
-  | "design"
-  | "labels"
-  | "owner"
-  | "userAction"
-  | "role"
-  | "readOnly"
-  | "redCheck"
->
-
-export function cardFacts(lines: CardLine[]): CardFacts {
-  const card: CardFacts = {
-    objective: "",
-    files: [],
-    filesRaw: "",
-    testFirst: null,
-    dod: [],
-    design: [],
-    labels: [],
+function handleSliceLine(state: OutlineParseState, line: string, lineNo: number): void {
+  const slice = state.slice
+  if (slice === null) return
+  const taskMatch = line.match(TASK)
+  if (taskMatch !== null) {
+    state.task = {
+      id: taskMatch[2] ?? "",
+      title: (taskMatch[3] ?? "").replace(/^[ :.-]+/, "").trim(),
+      checked: (taskMatch[1] ?? " ").toLowerCase() === "x",
+      objective: "",
+      files: [],
+      filesRaw: "",
+      testFirst: null,
+      dod: [],
+      design: [],
+      labels: [],
+      text: line,
+      line: lineNo,
+    }
+    slice.tasks.push(state.task)
+    return
   }
-  for (const field of cardFields(lines)) {
-    const { name, value, items } = field
-    const joined = [value, ...items].filter((part) => part !== "").join(" ")
-    card.labels.push(name)
-    if (name === "objective") card.objective = value
-    else if (name === "files") {
-      card.filesRaw = joined
-      card.files = extractPaths(joined)
-    } else if (name === "read only") card.readOnly = extractPaths(joined)
-    else if (name === "test first") {
-      // `**Test first:** **Trivial:** …` is the exemption written twice: a Trivial card.
-      const nested = joined.match(/^\*\*(Trivial|Qualification):\*\*\s*((?:\S.*)?)$/i)
-      card.testFirst =
-        nested === null
-          ? { kind: "test", text: joined }
-          : {
-              kind: (nested[1] ?? "").toLowerCase() === "trivial" ? "trivial" : "qualification",
-              text: (nested[2] ?? "").trim(),
-            }
-    } else if (name === "trivial") card.testFirst = { kind: "trivial", text: joined }
-    else if (name === "qualification") card.testFirst = { kind: "qualification", text: joined }
-    else if (name === "red check") card.redCheck = value
-    else if (name === "owner" && /^user\b/i.test(value)) {
-      card.owner = "User"
-      const action = value.replace(/^user\b[\s:—–-]*/i, "").trim()
-      if (action !== "") card.userAction = action
-    } else if (name === "user action") card.userAction = value
-    else if (name === "role") card.role = value.toLowerCase().split(/\s/)[0] ?? ""
-    else if (name === "design") card.design = designNames(joined)
-    else if (name === "done when") card.dod = [value, ...items].filter((d) => d !== "")
+  if (BOXISH.test(line)) {
+    state.outline.malformed.push({ line: lineNo, text: line.trim() })
+    state.task = null
+    return
   }
-  return card
+  // A headline wraps onto indented lines; an indented bullet is not part of it.
+  if (state.task !== null && /^\s+\S/.test(line) && !/^\s*[-*] /.test(line)) {
+    state.task.title = `${state.task.title} ${line.trim()}`.trim()
+    state.task.text = `${state.task.text}\n${line}`
+    return
+  }
+  state.task = null
+  if (handleSliceMeta(slice, line)) return
+  // The sentences that open the slice, before its first task.
+  if (slice.tasks.length === 0 && line !== "" && !/^(\*\*|[-*|>]|\s)/.test(line))
+    slice.summary = `${slice.summary} ${line.trim()}`.trim()
 }
 
-/** A slice's own lines: the first `diff` fence is its file tree; `**Validation:**` may wrap until a blank line. */
-export function sliceFilesOf(
-  body: CardLine[],
-  fences: Fence[],
-): { tree: TreeFile[]; validation: string } {
-  let tree: TreeFile[] = []
-  let validation = ""
-  let inValidation = false
-  for (const { text, line } of body) {
-    const fence = fenceAt(fences, line)
-    if (fence !== undefined) {
-      if (line === fence.line && fence.lang === "diff" && tree.length === 0)
-        tree = parseTree(fence.body.split("\n"))
-      inValidation = false
-      continue
-    }
-    if (inValidation) {
-      if (text === "" || /^(#|\*\*|\s*- \[)/.test(text)) inValidation = false
-      else {
-        validation = `${validation} ${text.trim()}`.trim()
-        continue
-      }
-    }
-    if (/^\*\*Validation:\*\*/.test(text)) {
-      validation = text.replace(/^\*\*Validation:\*\*\s*/, "")
-      inValidation = true
-    }
+function processOutlineLine(
+  state: OutlineParseState,
+  line: string,
+  lineNo: number,
+  fenced: boolean,
+): void {
+  if (!fenced && state.section === "cards" && /^#{3,4} /.test(line)) {
+    handleCardHeading(state, line, lineNo)
+    return
   }
-  return { tree, validation }
+  if (state.card !== null && (fenced || !/^## /.test(line))) {
+    state.card.body.push({ text: line, line: lineNo })
+    return
+  }
+  if (state.slice !== null && (fenced || !/^## /.test(line)))
+    state.own.get(state.slice)?.push({ text: line, line: lineNo })
+  if (fenced) return
+
+  if (/^## /.test(line)) {
+    state.section = sectionOf(line)
+    state.task = null
+    state.card = null
+    state.slice = null
+    const match = line.match(SLICE)
+    if (state.section === "slice" && match !== null) openSlice(state, match, lineNo)
+    return
+  }
+  if (state.slice !== null) handleSliceLine(state, line, lineNo)
+  else if (state.section === "proof") handleProofLine(state.outline, line, lineNo)
 }
 
-/**
- * A slice's file-tree `diff`: ` src/`, `+├── export.ts   + builds the CSV`,
- * ` └── routes.ts   ~ adds a route`, or a flat `src/main.ts   ~ one line`.
- * Directories give their children a prefix; the mark comes from the note
- * (`+`, `~`, `-`), else from the diff's own `+`/`-` column.
- */
-export function parseTree(lines: string[]): TreeFile[] {
-  const files: TreeFile[] = []
-  const dirs: string[] = []
-  for (const raw of lines) {
-    if (raw.trim() === "") continue
-    const column = /^[+\- ]/.test(raw) ? (raw[0] as string) : " "
-    const body = /^[+\- ]/.test(raw) ? raw.slice(1) : raw
-    const match = body.match(/^((?:[│|] {2,3}| {4})*)([├└]──\s*|[|`]--\s*)?(\S.*)$/)
-    if (match === null) continue
-    const indent = Math.round((match[1] ?? "").length / 4)
-    const depth = match[2] !== undefined ? indent + 1 : indent
-    const [name = "", ...rest] = (match[3] ?? "").split(/\s{2,}/)
-    const trimmed = name.trim()
-    if (trimmed === "" || /^[│|]$/.test(trimmed)) continue
-    dirs.length = depth
-    if (trimmed.endsWith("/") && rest.length === 0) {
-      dirs[depth] = trimmed
+function finalizeOutline(state: OutlineParseState, fences: Fence[]): void {
+  // A slice's own lines give its file tree and Validation; each card joins the box of its id.
+  for (const [each, body] of state.own) Object.assign(each, sliceFilesOf(body, fences))
+  const tasks = allTasks(state.outline)
+  for (const block of state.cards) {
+    while (block.body.length > 0 && (block.body[block.body.length - 1]?.text ?? "").trim() === "")
+      block.body.pop()
+    const box = tasks.find((t) => t.id === block.id)
+    if (box === undefined) {
+      state.outline.malformed.push({ line: block.line, text: `#### ${block.id}`, kind: "card" })
       continue
     }
-    const note = rest.join("  ").trim()
-    const marked = note.match(/^([+~-])\s+((?:\S.*)?)$/)
-    const mark: TreeFile["mark"] =
-      marked !== null
-        ? (marked[1] as TreeFile["mark"])
-        : column === "+"
-          ? "+"
-          : column === "-"
-            ? "-"
-            : ""
-    files.push({
-      path: `${dirs.slice(0, depth).join("")}${trimmed}`,
-      mark,
-      note: marked !== null ? (marked[2] ?? "").trim() : note,
-    })
+    Object.assign(box, cardFacts(block.body))
+    box.text = [box.text, ...block.body.map((b) => b.text)].join("\n")
   }
-  return files
-}
-
-/** Task cards with nothing in them: the build has none yet. */
-export const emptyOutline = (): Outline => ({
-  slices: [],
-  proofOrder: [],
-  proofOrderUnread: [],
-  malformed: [],
-})
-
-export function allTasks(outline: Outline): OutlineTask[] {
-  return outline.slices.flatMap((s) => s.tasks)
-}
-
-export function progress(outline: Outline): {
-  total: number
-  checked: number
-  next: OutlineTask | null
-} {
-  const tasks = allTasks(outline)
-  return {
-    total: tasks.length,
-    checked: tasks.filter((t) => t.checked).length,
-    next: tasks.find((t) => !t.checked) ?? null,
-  }
-}
-
-/** The slices that build the change itself: not a release slice. */
-export const codeSlices = (outline: Outline): Slice[] =>
-  outline.slices.filter((slice) => !slice.release)
-
-/** What a slice holds that another slice may also hold: its files, its contracts, its shared output. */
-function holdings(slice: Slice): Set<string> {
-  return new Set([
-    ...slice.tasks.flatMap((t) => t.files.map((file) => `file:${file}`)),
-    ...slice.tasks.flatMap((t) =>
-      contractEntries(t.design).map((name) => `contract:${name.toLowerCase()}`),
-    ),
-    ...(slice.sharedOutput !== null ? [`output:${slice.sharedOutput}`] : []),
-  ])
 }
 
 /**
- * The slices a slice needs done first: the ones its `Depends on` line names; without the line,
- * the nearest slice before it that shares a file, a contract or a shared output with it. A slice
- * that shares nothing with any earlier slice needs nothing first and is built side by side.
+ * The slices and cards of one file, with its Proof order. A slice's own lines (outside its cards)
+ * give its takeaway, its lines, its boxes, its file tree and its Validation; each `#### T1` card is
+ * joined to the box of its id. Tolerates CRLF and reports malformed boxes and cards without a box
+ * instead of silently dropping them.
  */
-export function dependenciesOf(outline: Outline, slice: Slice): number[] {
-  if (slice.dependsOn !== null) return slice.dependsOn
-  const mine = holdings(slice)
-  const index = outline.slices.indexOf(slice)
-  for (let i = index - 1; i >= 0; i--) {
-    const before = outline.slices[i] as Slice
-    if ([...holdings(before)].some((held) => mine.has(held))) return [before.n]
+export function parseOutline(markdown: string): Outline {
+  const lines = markdown.split(/\r?\n/)
+  const fences = extractFences(markdown)
+  const state: OutlineParseState = {
+    outline: emptyOutline(),
+    section: "other",
+    slice: null,
+    task: null,
+    card: null,
+    cards: [],
+    own: new Map(),
   }
-  return []
-}
-
-const SETTLED = /\b(met|granted|checked)\b/i
-const UNSETTLED =
-  /\b(unmet|ungranted|open|pending|todo)\b|\bnot\s+(yet\s+)?(met|granted|checked)\b/i
-
-/**
- * A prerequisite's status says it is settled: a word of met, granted or checked, not negated and
- * not beside an unsettled word. A "not" elsewhere in the note ("values not read") changes nothing.
- * A markdown link is no words of the status: a record called `p3-open-claude.txt` never decides.
- */
-function withoutStatusLinks(status: string): string {
-  const parts: string[] = []
-  let copied = 0
-  let scan = 0
-  while (scan < status.length) {
-    const open = status.indexOf("[", scan)
-    if (open < 0) break
-    const close = status.indexOf("]", open + 1)
-    if (close < 0) break
-    scan = close + 1
-    if (status[scan] !== "(") continue
-    const end = status.indexOf(")", scan + 1)
-    if (end < 0) break
-    parts.push(status.slice(copied, open))
-    copied = end + 1
-    scan = copied
+  for (let index = 0; index < lines.length; index++) {
+    const lineNo = index + 1
+    processOutlineLine(
+      state,
+      (lines[index] ?? "").trimEnd(),
+      lineNo,
+      fenceAt(fences, lineNo) !== undefined,
+    )
   }
-  return parts.join("") + status.slice(copied)
-}
-
-export function prerequisiteSettled(status: string): boolean {
-  const words = withoutStatusLinks(status)
-  return SETTLED.test(words) && !UNSETTLED.test(words)
-}
-
-/**
- * P1, the Plan's permission to run the agreed build, waits for the Plan's approval: QualityLayer
- * writes `granted` into it then. No other row may wait this way.
- */
-export function isGrantAtApproval(p: Pick<Prerequisite, "n" | "status">): boolean {
-  return /^P1$/i.test(p.n.trim()) && /^at approval\b/i.test(p.status.trim())
-}
-
-/**
- * The waves of the build: each wave the slices that need only what earlier waves built and share no
- * file and no shared output with each other, so they run side by side.
- */
-export function buildWaves(outline: Outline): Slice[][] {
-  const held = (slice: Slice) => [
-    ...slice.tasks.flatMap((t) => t.files.map((file) => `file:${file}`)),
-    ...(slice.sharedOutput !== null ? [`output:${slice.sharedOutput}`] : []),
-  ]
-  const placed = new Set<number>()
-  const waves: Slice[][] = []
-  while (placed.size < outline.slices.length) {
-    const wave: Slice[] = []
-    const taken = new Set<string>()
-    for (const slice of outline.slices) {
-      if (placed.has(slice.n) || !dependenciesOf(outline, slice).every((n) => placed.has(n)))
-        continue
-      const mine = held(slice)
-      if (mine.some((h) => taken.has(h))) continue
-      wave.push(slice)
-      for (const h of mine) taken.add(h)
-    }
-    if (wave.length === 0) break
-    for (const slice of wave) placed.add(slice.n)
-    waves.push(wave)
-  }
-  return waves
-}
-
-/**
- * How wide the build runs: the number of waves, the heaviest chain of slices through their
- * dependencies (weighed by task count: the tasks that cannot run side by side), and every task.
- */
-export function waveWidth(outline: Outline): { waves: number; longest: number; tasks: number } {
-  const heaviest = new Map<number, number>()
-  const chain = (slice: Slice, path: ReadonlySet<number>): number => {
-    const known = heaviest.get(slice.n)
-    if (known !== undefined) return known
-    const before = dependenciesOf(outline, slice)
-      .filter((n) => !path.has(n))
-      .map((n) => outline.slices.find((s) => s.n === n))
-      .filter((s): s is Slice => s !== undefined)
-      .map((s) => chain(s, new Set([...path, slice.n])))
-    const weight = slice.tasks.length + Math.max(0, ...before)
-    heaviest.set(slice.n, weight)
-    return weight
-  }
-  return {
-    waves: buildWaves(outline).length,
-    longest: Math.max(0, ...outline.slices.map((slice) => chain(slice, new Set()))),
-    tasks: allTasks(outline).length,
-  }
-}
-
-/** A slice in a column of the build order; `after` names the slice it hangs under, when it does. */
-export type SliceColumn = { n: number; after: number | null }
-
-/**
- * The slices in the order they can be built, column by column: the slices that
- * need only what earlier columns built and share no file stand side by side.
- * A lone slice that waits for just one slice of the column before it, by its
- * own `Depends on` line, and shares no file with that column, hangs under that
- * slice: it starts as soon as it is built, beside the rest of the column.
- */
-export function sliceColumns(outline: Outline): SliceColumn[][] {
-  const filesOf = (slice: Slice) => new Set(slice.tasks.flatMap((t) => t.files))
-  const placed = new Set<number>()
-  const waves: Slice[][] = []
-  while (placed.size < outline.slices.length) {
-    const wave: Slice[] = []
-    const taken = new Set<string>()
-    for (const slice of outline.slices) {
-      if (placed.has(slice.n) || !dependenciesOf(outline, slice).every((n) => placed.has(n)))
-        continue
-      const files = filesOf(slice)
-      if ([...files].some((file) => taken.has(file))) continue
-      wave.push(slice)
-      for (const file of files) taken.add(file)
-    }
-    if (wave.length === 0) break
-    for (const slice of wave) placed.add(slice.n)
-    waves.push(wave)
-  }
-  const columns: SliceColumn[][] = []
-  for (const [index, wave] of waves.entries()) {
-    const before = waves[index - 1]
-    const [only] = wave
-    const under =
-      wave.length === 1 && only !== undefined && only.dependsOn?.length === 1
-        ? before?.find((s) => s.n === only.dependsOn?.[0])
-        : undefined
-    const column = columns[columns.length - 1]
-    if (
-      under !== undefined &&
-      only !== undefined &&
-      column !== undefined &&
-      before !== undefined &&
-      before.length > 1 &&
-      !before.some((s) => [...filesOf(s)].some((file) => filesOf(only).has(file)))
-    ) {
-      column.splice(column.findIndex((c) => c.n === under.n) + 1, 0, { n: only.n, after: under.n })
-      continue
-    }
-    columns.push(wave.map((s) => ({ n: s.n, after: null })))
-  }
-  return columns
-}
-
-/**
- * The slices that commit together with `n`: the ones its `Commits with` line names and the ones
- * naming it, straight or through others, `n` included. A slice with no such line is a group of one.
- */
-export function commitGroup(outline: Outline, n: number): number[] {
-  const group = new Set([n])
-  let grew = true
-  while (grew) {
-    grew = false
-    for (const slice of outline.slices) {
-      const linked = (slice.commitsWith ?? []).some((m) => group.has(m))
-      const naming = [...group].some((m) =>
-        outline.slices.find((s) => s.n === m)?.commitsWith?.includes(slice.n),
-      )
-      if (!group.has(slice.n) && (linked || naming)) {
-        group.add(slice.n)
-        grew = true
-      }
-    }
-  }
-  return [...group].sort((a, b) => a - b)
-}
-
-/**
- * From the finished slices, those that may be committed now: a slice whose group has an unfinished
- * member waits, so a group is never split.
- */
-export function committable(outline: Outline, finished: readonly number[]): number[] {
-  return finished.filter((n) => commitGroup(outline, n).every((m) => finished.includes(m)))
+  finalizeOutline(state, fences)
+  return state.outline
 }

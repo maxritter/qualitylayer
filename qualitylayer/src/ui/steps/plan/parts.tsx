@@ -147,6 +147,54 @@ export function ReviewedBy({ marker }: PartProps) {
 
 const LETTERS = ["A", "B"] as const
 
+function pickedIndex(card: ItemCard, recommended: number): number | null {
+  if (card.answer === undefined) return null
+  const letter = card.answer.note
+    ?.trim()
+    .match(/^([AB])\b/i)?.[1]
+    ?.toUpperCase()
+  if (letter === "A") return 0
+  if (letter === "B") return 1
+  return card.answer.kind === "change" ? 1 : recommended
+}
+
+function CallFooter({
+  outside,
+  open,
+  picked,
+  card,
+  acts,
+}: {
+  outside: boolean
+  open: boolean
+  picked: number | null
+  card: ItemCard
+  acts: PartProps["live"]
+}) {
+  return (
+    <>
+      {outside && open ? (
+        <div className="pl-call-f">
+          <OutsideDecide labels={[]} />
+        </div>
+      ) : null}
+      {picked !== null && acts !== undefined ? (
+        <div className="pl-call-f">
+          <span>
+            You chose {LETTERS[picked]}.
+            {card.answer?.kind === "change"
+              ? ` Send changes: the planner folds ${LETTERS[picked]} into the Plan.`
+              : ""}
+          </span>
+          <button type="button" className="q-link" onClick={() => acts.answer(card.id, null)}>
+            Undo
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 /**
  * A Your call: a choice that only showed up once the design was drawn. Two options and the one the
  * agent recommends. Agreement accepts that recommendation; either letter can be an explicit
@@ -165,20 +213,7 @@ export function YourCall({
   const outside = useOutside() && mode === "live"
   const call = card.call
   if (call === undefined) return null
-  const letter = card.answer?.note
-    ?.trim()
-    .match(/^([AB])\b/i)?.[1]
-    ?.toUpperCase()
-  const picked =
-    card.answer === undefined
-      ? null
-      : letter === "A"
-        ? 0
-        : letter === "B"
-          ? 1
-          : card.answer.kind === "change"
-            ? 1
-            : call.recommended
+  const picked = pickedIndex(card, call.recommended)
   const open = card.state === "open"
   const acts = mode === "live" && !outside ? live : undefined
   return (
@@ -222,24 +257,7 @@ export function YourCall({
           </button>
         ))}
       </fieldset>
-      {outside && open ? (
-        <div className="pl-call-f">
-          <OutsideDecide labels={[]} />
-        </div>
-      ) : null}
-      {picked !== null && acts !== undefined ? (
-        <div className="pl-call-f">
-          <span>
-            You chose {LETTERS[picked]}.
-            {card.answer?.kind === "change"
-              ? ` Send changes: the planner folds ${LETTERS[picked]} into the Plan.`
-              : ""}
-          </span>
-          <button type="button" className="q-link" onClick={() => acts.answer(card.id, null)}>
-            Undo
-          </button>
-        </div>
-      ) : null}
+      <CallFooter outside={outside} open={open} picked={picked} card={card} acts={acts} />
     </div>
   )
 }

@@ -20,6 +20,11 @@ export function historyAt(
   return Number.isNaN(shipped) ? task.created : shipped
 }
 
+function hasUnsettledFinalApproval(task: Pick<TaskSummary, "stage" | "gate">): boolean {
+  if (task.stage === "abandoned") return false
+  return task.gate?.target === "final" && task.gate.decision === "approved" && !task.gate.settled
+}
+
 /**
  * The person's final approval is saved: the task shipped, or its final approval waits to be
  * applied (in Verify, also while it rechecks). From that moment nothing of the task
@@ -27,11 +32,7 @@ export function historyAt(
  * that is not shipped belongs to an earlier round of a reopened task.
  */
 export const finalApproved = (task: Pick<TaskSummary, "stage" | "gate">): boolean =>
-  task.stage === "shipped" ||
-  (task.stage !== "abandoned" &&
-    task.gate?.target === "final" &&
-    task.gate.decision === "approved" &&
-    !task.gate.settled)
+  task.stage === "shipped" || hasUnsettledFinalApproval(task)
 
 /**
  * The chip of the pull request an approval chose: "Opening pull request" from the click until
@@ -184,22 +185,25 @@ export function openMove(task: Parameters<typeof landingWaits>[0]): string {
   return task.pullRequest !== undefined ? "Open the pull request" : "Open the task"
 }
 
+function activeStatusWords(task: TaskSummary, status: AgentStatus): string {
+  const waitingPlanQuestions =
+    status.state !== "stopped" &&
+    status.openItems > 0 &&
+    task.stage === "plan" &&
+    (task.gate === null || task.gate.settled || task.gate.decision !== "pending")
+  if (waitingPlanQuestions) return plural(status.openItems, "question", "questions")
+  if (status.state === "working" && task.action === "implement") return "start the build"
+  const needs = openNeeds(task)
+  if (status.state === "working" && task.stage === "implement" && needs > 0) {
+    return `${plural(needs, "thing", "things")} only you can set`
+  }
+  return status.doing
+}
+
 export function statusWords(task: TaskSummary, status: AgentStatus): string {
   const pr = openLine(task)
   if (pr !== null) return pr
   // Held by its plan limit: the agent asks and does nothing until it resets.
   if (status.signals?.limit != null) return status.doing
-  // Questions that wait are what the line says, whether or not the agent reads on meanwhile.
-  if (status.state !== "stopped" && status.openItems > 0) {
-    if (
-      task.stage === "plan" &&
-      (task.gate === null || task.gate.settled || task.gate.decision !== "pending")
-    )
-      return plural(status.openItems, "question", "questions")
-  }
-  if (status.state === "working" && task.action === "implement") return "start the build"
-  const needs = openNeeds(task)
-  if (status.state === "working" && task.stage === "implement" && needs > 0)
-    return plural(needs, "thing", "things") + " only you can set"
-  return status.doing
+  return activeStatusWords(task, status)
 }

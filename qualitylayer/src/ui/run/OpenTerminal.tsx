@@ -5,6 +5,84 @@ import { useOptionalRuns } from "../run-context.tsx"
 import { runColors } from "../runs-api.ts"
 import "./open-terminal.css"
 
+type AttemptRef = { current: { identity: string; key: string } | null }
+
+async function launchTerminalSession({
+  runs,
+  context,
+  attempt,
+  mounted,
+  onStarted,
+}: {
+  runs: NonNullable<ReturnType<typeof useOptionalRuns>>
+  context: () => Promise<TerminalContext>
+  attempt: AttemptRef
+  mounted: { current: boolean }
+  onStarted?: () => void
+}) {
+  const scope = await context()
+  if (!mounted.current) return
+  const identity = JSON.stringify(scope)
+  if (attempt.current?.identity !== identity) {
+    attempt.current = { identity, key: crypto.randomUUID() }
+  }
+  const run = await runs.start({
+    agent: "other",
+    purpose: { kind: "terminal", shell: true, context: scope },
+    idempotencyKey: attempt.current.key,
+    colors: runColors(),
+  })
+  if (mounted.current) {
+    runs.select(run.id)
+    onStarted?.()
+  }
+}
+
+function useOpenTerminalLauncher({
+  runs,
+  available,
+  disabled,
+  context,
+  onStarted,
+}: {
+  runs: ReturnType<typeof useOptionalRuns>
+  available: boolean
+  disabled: boolean
+  context: () => Promise<TerminalContext>
+  onStarted?: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string>()
+  const starting = useRef(false)
+  const attempt = useRef<{ identity: string; key: string } | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const open = useCallback(async () => {
+    if (!runs || !available || disabled || starting.current) return
+    starting.current = true
+    setBusy(true)
+    setProblem(undefined)
+    try {
+      await launchTerminalSession({ runs, context, attempt, mounted, onStarted })
+    } catch (cause) {
+      if (mounted.current) {
+        setProblem(
+          cause instanceof Error ? cause.message : "The terminal could not open. Try again.",
+        )
+      }
+    } finally {
+      starting.current = false
+      if (mounted.current) setBusy(false)
+    }
+  }, [runs, available, disabled, context, onStarted])
+  return { busy, problem, open }
+}
+
 export function OpenTerminal({
   context,
   disabled = false,
@@ -17,49 +95,14 @@ export function OpenTerminal({
   autoStart?: boolean
 }) {
   const runs = useOptionalRuns()
-  const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string>()
-  const starting = useRef(false)
-  const attempt = useRef<{ identity: string; key: string } | null>(null)
-  const mounted = useRef(true)
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-    }
-  }, [])
   const available = runs?.support?.supported === true && runs.support.canStart === true
-  const open = useCallback(async () => {
-    if (!runs || !available || disabled || starting.current) return
-    starting.current = true
-    setBusy(true)
-    setProblem(undefined)
-    try {
-      const scope = await context()
-      if (!mounted.current) return
-      const identity = JSON.stringify(scope)
-      if (attempt.current?.identity !== identity)
-        attempt.current = { identity, key: crypto.randomUUID() }
-      const run = await runs.start({
-        agent: "other",
-        purpose: { kind: "terminal", shell: true, context: scope },
-        idempotencyKey: attempt.current.key,
-        colors: runColors(),
-      })
-      if (mounted.current) {
-        runs.select(run.id)
-        onStarted?.()
-      }
-    } catch (cause) {
-      if (mounted.current)
-        setProblem(
-          cause instanceof Error ? cause.message : "The terminal could not open. Try again.",
-        )
-    } finally {
-      starting.current = false
-      if (mounted.current) setBusy(false)
-    }
-  }, [runs, available, disabled, context, onStarted])
+  const { busy, problem, open } = useOpenTerminalLauncher({
+    runs,
+    available,
+    disabled,
+    context,
+    onStarted,
+  })
   const attempted = useRef(false)
   useEffect(() => {
     if (autoStart && available && !attempted.current) {

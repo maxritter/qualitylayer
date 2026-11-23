@@ -310,6 +310,37 @@ function RunningNow({
   )
 }
 
+const SESSION_RULE_OPTIONS = {
+  idleStop: [
+    { id: "never", name: "Never" },
+    { id: "2h", name: "After 2 hours" },
+    { id: "8h", name: "After 8 hours", note: DEFAULT_NOTE },
+    { id: "24h", name: "After a day" },
+  ],
+  typeFrom: [
+    {
+      id: "keyPaired",
+      name: "The App and its browsers",
+      note: DEFAULT_NOTE,
+      icon: <AppWindowIcon className="size-3.5" />,
+    },
+    {
+      id: "anyPaired",
+      name: "Also other paired browsers",
+      icon: <GlobeIcon className="size-3.5" />,
+    },
+  ],
+  onQuit: [
+    {
+      id: "keep",
+      name: "Agents keep running",
+      note: DEFAULT_NOTE,
+      icon: <CirclePlayIcon className="size-3.5" />,
+    },
+    { id: "stop", name: "Stop agents", icon: <CircleStopIcon className="size-3.5" /> },
+  ],
+}
+
 export function SessionsTab({
   config,
   onChange,
@@ -322,71 +353,46 @@ export function SessionsTab({
   /** Opens a session's task, or its agent window when it has no task. */
   onOpen?: (row: SessionRow) => void
 }) {
+  const rules = [
+    {
+      label: "Stop agents that sit idle",
+      hint: "A stopped agent keeps its conversation; Continue resumes it. Never while a question, approval, turn or helper is open.",
+      icon: <TimerIcon className="size-[15px]" />,
+      value: config.sessions.idleStop,
+      options: SESSION_RULE_OPTIONS.idleStop,
+      onPick: (idleStop: string) => onChange({ sessions: { idleStop } }),
+    },
+    {
+      label: "Who can type in a session",
+      hint: "Every paired browser can stop a run. Typing and starting stay with the App unless you allow more.",
+      icon: <KeyboardIcon className="size-[15px]" />,
+      value: config.typeFrom,
+      options: SESSION_RULE_OPTIONS.typeFrom,
+      onPick: (typeFrom: string) => onChange({ typeFrom }),
+    },
+    {
+      label: "When you quit the App",
+      hint: "What happens to agents that are running.",
+      icon: <LogOutIcon className="size-[15px]" />,
+      value: config.onQuit,
+      options: SESSION_RULE_OPTIONS.onQuit,
+      onPick: (onQuit: string) => onChange({ onQuit }),
+    },
+  ]
   return (
     <div className="q-sgs">
       <RunningNow api={api} onOpen={onOpen} />
       <SettingsGroup title="Session rules" testId="session-rules">
-        <SettingRow
-          label="Stop agents that sit idle"
-          hint="A stopped agent keeps its conversation; Continue resumes it. Never while a question, approval, turn or helper is open."
-          icon={<TimerIcon className="size-[15px]" />}
-        >
-          <Picker
-            label="Stop agents that sit idle"
-            value={config.sessions.idleStop}
-            options={[
-              { id: "never", name: "Never" },
-              { id: "2h", name: "After 2 hours" },
-              { id: "8h", name: "After 8 hours", note: DEFAULT_NOTE },
-              { id: "24h", name: "After a day" },
-            ]}
-            onChange={(idleStop) => onChange({ sessions: { idleStop } })}
-          />
-        </SettingRow>
-        <SettingRow
-          label="Who can type in a session"
-          hint="Every paired browser can stop a run. Typing and starting stay with the App unless you allow more."
-          icon={<KeyboardIcon className="size-[15px]" />}
-        >
-          <Picker
-            label="Who can type in a session"
-            value={config.typeFrom}
-            options={[
-              {
-                id: "keyPaired",
-                name: "The App and its browsers",
-                note: DEFAULT_NOTE,
-                icon: <AppWindowIcon className="size-3.5" />,
-              },
-              {
-                id: "anyPaired",
-                name: "Also other paired browsers",
-                icon: <GlobeIcon className="size-3.5" />,
-              },
-            ]}
-            onChange={(typeFrom) => onChange({ typeFrom })}
-          />
-        </SettingRow>
-        <SettingRow
-          label="When you quit the App"
-          hint="What happens to agents that are running."
-          icon={<LogOutIcon className="size-[15px]" />}
-        >
-          <Picker
-            label="When you quit the App"
-            value={config.onQuit}
-            options={[
-              {
-                id: "keep",
-                name: "Agents keep running",
-                note: DEFAULT_NOTE,
-                icon: <CirclePlayIcon className="size-3.5" />,
-              },
-              { id: "stop", name: "Stop agents", icon: <CircleStopIcon className="size-3.5" /> },
-            ]}
-            onChange={(onQuit) => onChange({ onQuit })}
-          />
-        </SettingRow>
+        {rules.map((rule) => (
+          <SettingRow key={rule.label} label={rule.label} hint={rule.hint} icon={rule.icon}>
+            <Picker
+              label={rule.label}
+              value={rule.value}
+              options={rule.options}
+              onChange={rule.onPick}
+            />
+          </SettingRow>
+        ))}
       </SettingsGroup>
     </div>
   )

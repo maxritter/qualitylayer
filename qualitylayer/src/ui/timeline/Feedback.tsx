@@ -55,22 +55,19 @@ const keyOf = (a: BuildAnchor) => `${a.kind}:${a.id}:${a.line ?? ""}`
 export const stateOf = (c: BuildComment): "answered" | "picked up" | "sent" =>
   c.answer !== undefined ? "answered" : c.delivered === true ? "picked up" : "sent"
 
+const FIXED_PLACES: Partial<Record<BuildAnchor["kind"], string>> = {
+  picture: "a picture",
+  run: "a running task",
+  deviation: "a choice the build made",
+}
+
 /** Where a comment was made, in a few words: "T7", "slice 3", "checkpoint 2". */
 export function placeOf(anchor: BuildAnchor): string {
-  switch (anchor.kind) {
-    case "task":
-      return anchor.id
-    case "slice":
-      return `slice ${anchor.id}`
-    case "picture":
-      return "a picture"
-    case "run":
-      return "a running task"
-    case "deviation":
-      return "a choice the build made"
-    case "diff":
-      return anchor.id.split("/").pop() ?? anchor.id
-  }
+  const fixed = FIXED_PLACES[anchor.kind]
+  if (fixed !== undefined) return fixed
+  if (anchor.kind === "slice") return `slice ${anchor.id}`
+  if (anchor.kind === "diff") return anchor.id.split("/").pop() ?? anchor.id
+  return anchor.id
 }
 
 /** The words under a comment: sent, picked up after the task the build had reported, answered. */
@@ -81,6 +78,75 @@ export function standing(c: BuildComment): string {
   return state === "answered"
     ? `Picked up by the build${after} · answered`
     : `Picked up by the build${after}`
+}
+
+function commentWho(state: ReturnType<typeof stateOf>): "todo" | "done" | "agent" {
+  if (state === "sent") return "todo"
+  return state === "answered" ? "done" : "agent"
+}
+
+function ThreadComposer({
+  anchorKey,
+  label,
+  textRef,
+  error,
+  onSend,
+  onCancel,
+}: {
+  anchorKey: string
+  label: string
+  textRef: React.RefObject<HTMLTextAreaElement | null>
+  error: string | null
+  onSend: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="q-says-compose">
+      <label className="sr-only" htmlFor={`fb-${anchorKey}`}>
+        Give feedback on {label}
+      </label>
+      <textarea
+        id={`fb-${anchorKey}`}
+        ref={textRef}
+        rows={3}
+        className="q-hint"
+        placeholder="What should change? The build reads it after its current task."
+      />
+      {error !== null ? (
+        <p role="alert" className="q-dim m-0 text-[13px]">
+          {error}
+        </p>
+      ) : null}
+      <div className="row">
+        <button type="button" className="q-btn sm" onClick={onSend}>
+          Send to the build
+        </button>
+        <button type="button" className="q-btn quiet sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ThreadComment({ comment, initials }: { comment: BuildComment; initials: string }) {
+  const state = stateOf(comment)
+  const elapsed = ago(comment.created)
+  return (
+    <div className="q-says" id={`bv-cm-${comment.id}`} data-testid="build-comment">
+      <div className="who">
+        <span className="q-av">{initials}</span>
+        You, on {placeOf(comment.build)} · {elapsed}
+        {elapsed === "just now" ? "" : " ago"}
+      </div>
+      <p>{comment.remark}</p>
+      <div className="who gap" data-testid="build-comment-state" data-state={state}>
+        <WhoMark who={commentWho(state)} />
+        {standing(comment)}
+      </div>
+      {comment.answer !== undefined ? <p>{comment.answer}</p> : null}
+    </div>
+  )
 }
 
 /** Under an item: the composer when it is open, then each comment with where it stands. */
@@ -118,51 +184,21 @@ export function Thread({
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+  const initials = initialsOf(feedback.me)
   return (
     <div className={`grid gap-0 ${className}`} data-testid="thread">
       {composing ? (
-        <div className="q-says-compose">
-          <label className="sr-only" htmlFor={`fb-${key}`}>
-            Give feedback on {label}
-          </label>
-          <textarea
-            id={`fb-${key}`}
-            ref={text}
-            rows={3}
-            className="q-hint"
-            placeholder="What should change? The build reads it after its current task."
-          />
-          {error !== null ? (
-            <p role="alert" className="q-dim m-0 text-[13px]">
-              {error}
-            </p>
-          ) : null}
-          <div className="row">
-            <button type="button" className="q-btn sm" onClick={() => void send()}>
-              Send to the build
-            </button>
-            <button type="button" className="q-btn quiet sm" onClick={() => feedback.compose(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
+        <ThreadComposer
+          anchorKey={key}
+          label={label}
+          textRef={text}
+          error={error}
+          onSend={() => void send()}
+          onCancel={() => feedback.compose(null)}
+        />
       ) : null}
       {notes.map((c) => (
-        <div className="q-says" key={c.id} id={`bv-cm-${c.id}`} data-testid="build-comment">
-          <div className="who">
-            <span className="q-av">{initialsOf(feedback.me)}</span>
-            You, on {placeOf(c.build)} · {ago(c.created)}
-            {ago(c.created) === "just now" ? "" : " ago"}
-          </div>
-          <p>{c.remark}</p>
-          <div className="who gap" data-testid="build-comment-state" data-state={stateOf(c)}>
-            <WhoMark
-              who={stateOf(c) === "sent" ? "todo" : stateOf(c) === "answered" ? "done" : "agent"}
-            />
-            {standing(c)}
-          </div>
-          {c.answer !== undefined ? <p>{c.answer}</p> : null}
-        </div>
+        <ThreadComment key={c.id} comment={c} initials={initials} />
       ))}
     </div>
   )

@@ -1,130 +1,95 @@
-import { readdir, realpath, stat } from "node:fs/promises"
-import { dirname, isAbsolute, join } from "node:path"
-import { currentBranch } from "../core/git/repo.ts"
-import { resolveRepo } from "../core/paths.ts"
-import { registerProject } from "../core/task/store.ts"
 import { type Ctx, err } from "../ctx.ts"
-import { listProjects, registeredProjects } from "./api.ts"
 import { type FolderPicker, FolderPickerError } from "./folder-picker.ts"
 import { type GuardConfig, hasKeyHeader, sessionAuthority } from "./guard.ts"
+import {
+  browseProjectFolder,
+  chooseProjectFolder,
+  type FolderPick,
+  knownProjectFolders,
+  projectDirectory,
+} from "./projects-folders.ts"
 
-export type ProjectFolder = {
-  path: string
-  parent: string | null
-  directories: { name: string; path: string }[]
-  truncated: boolean
-  checkout: string | null
-  /** The checked-out branch; absent for a detached HEAD or a folder outside Git. */
-  branch?: string
-  canInitialize: boolean
+export {
+  browseProjectFolder,
+  chooseProjectFolder,
+  type FolderPick,
+  KNOWN_PROJECT_FOLDERS_MAX,
+  type KnownProjectFolders,
+  knownProjectFolders,
+  type ProjectFolder,
+} from "./projects-folders.ts"
+
+const NO_STORE = { headers: { "cache-control": "no-store" } }
+
+function isAuthorized(request: Request, guard: GuardConfig): boolean {
+  return hasKeyHeader(request, guard) || sessionAuthority(request, guard)?.keyPaired === true
 }
 
-export type FolderPick =
-  | { kind: "cancelled" }
-  | { kind: "selected"; folder: Pick<ProjectFolder, "path" | "checkout" | "canInitialize"> }
-
-export type KnownProjectFolders = {
-  folders: { path: string; available: boolean }[]
-  truncated: boolean
+async function readFolderJson<T>(request: Request): Promise<T> {
+  const text = await request.text()
+  if (text.length > 8192) throw new Error("The folder request is too large.")
+  return JSON.parse(text) as T
 }
-export const KNOWN_PROJECT_FOLDERS_MAX = 256
 
-/** Inspect registered paths only; this never discovers folders, runs Git or changes registration. */
-export async function knownProjectFolders(ctx: Ctx): Promise<KnownProjectFolders> {
-  const paths = new Set<string>()
-  let truncated = false
-  collect: for (const project of await registeredProjects(ctx)) {
-    for (const path of Array.isArray(project.paths) ? project.paths : []) {
-      if (typeof path !== "string" || paths.has(path)) continue
-      if (paths.size >= KNOWN_PROJECT_FOLDERS_MAX) {
-        truncated = true
-        break collect
-      }
-      paths.add(path)
-    }
-  }
-  const folders: KnownProjectFolders["folders"] = []
-  const unique = [...paths]
-  for (let offset = 0; offset < unique.length; offset += 8) {
-    folders.push(
-      ...(await Promise.all(
-        unique.slice(offset, offset + 8).map(async (path) => {
-          let available = false
-          if (path.length <= 4096 && !path.includes("\0") && isAbsolute(path)) {
-            try {
-              available = (await stat(path)).isDirectory()
-            } catch {
-              // A stale or temporarily disconnected folder is not a launch target.
-            }
-          }
-          return { path, available }
-        }),
-      )),
+async function handlePickFolder(
+  ctx: Ctx,
+  guard: GuardConfig,
+  request: Request,
+  picker?: FolderPicker,
+): Promise<Response> {
+  if (request.method !== "POST")
+    return new Response("Use POST to choose a folder.", { status: 405 })
+  const input = await readFolderJson<{ path?: unknown }>(request)
+  const initial = await projectDirectory(input.path ?? ctx.env.get("HOME") ?? ctx.env.cwd())
+  if (!picker) {
+    throw new FolderPickerError(
+      "picker_unavailable",
+      "The native folder picker is unavailable. Enter an absolute folder path.",
     )
   }
-  return { folders, truncated }
-}
-
-async function directory(value: unknown): Promise<string> {
-  if (
-    typeof value !== "string" ||
-    value.length > 4096 ||
-    value.includes("\0") ||
-    !isAbsolute(value)
-  )
-    throw new Error("Enter an absolute folder path.")
-  const path = await realpath(value)
-  if (!(await stat(path)).isDirectory()) throw new Error("Choose a folder, rather than a file.")
-  return path
-}
-
-const inFolder = (ctx: Ctx, path: string): Ctx => ({
-  ...ctx,
-  env: { ...ctx.env, cwd: () => path },
-})
-
-export async function browseProjectFolder(ctx: Ctx, value: unknown): Promise<ProjectFolder> {
-  const path = await directory(value ?? ctx.env.get("HOME") ?? ctx.env.cwd())
-  const entries = await readdir(path, { withFileTypes: true })
-  const directories = entries
-    .filter((entry) => entry.isDirectory() && entry.name !== ".git")
-    .sort((a, b) => a.name.localeCompare(b.name))
-  const repo = await resolveRepo(inFolder(ctx, path))
-  const branch = repo.ok ? await currentBranch(ctx, path) : null
-  return {
-    path,
-    parent: dirname(path) === path ? null : dirname(path),
-    directories: directories
-      .slice(0, 100)
-      .map((entry) => ({ name: entry.name, path: join(path, entry.name) })),
-    truncated: directories.length > 100,
-    checkout: repo.ok ? await realpath(repo.data.root) : null,
-    ...(branch ? { branch } : {}),
-    canInitialize: !repo.ok && entries.length === 0,
+  const selected = await picker.pick(initial, request.signal)
+  if (!isAuthorized(request, guard))
+    return new Response("Folder access was revoked.", { status: 403 })
+  if (selected === null) {
+    const result: FolderPick = { kind: "cancelled" }
+    return Response.json({ ok: true, ...result }, NO_STORE)
   }
+  const { path, checkout, canInitialize } = await browseProjectFolder(ctx, selected)
+  const result: FolderPick = { kind: "selected", folder: { path, checkout, canInitialize } }
+  return Response.json({ ok: true, ...result }, NO_STORE)
 }
 
-export async function chooseProjectFolder(ctx: Ctx, value: unknown, initialize: boolean) {
-  const path = await directory(value)
-  const selected = inFolder(ctx, path)
-  let repo = await resolveRepo(selected)
-  if (!repo.ok) {
-    if (!initialize)
-      throw new Error(
-        "This folder has no Git repository. Choose a checkout or explicitly initialize an empty folder.",
-      )
-    if ((await readdir(path)).length !== 0)
-      throw new Error("Git can be initialized here only when the selected folder is empty.")
-    const result = await ctx.git.run(path, ["init"])
-    if (result.code !== 0) throw new Error("Git could not initialize this folder.")
-    repo = await resolveRepo(selected)
-    if (!repo.ok) throw new Error("The new Git repository could not be read.")
+async function handleFolderAction(ctx: Ctx, request: Request, url: URL): Promise<Response> {
+  if (request.method === "GET") {
+    const folder = await browseProjectFolder(ctx, url.searchParams.get("path") ?? undefined)
+    return Response.json({ ok: true, ...folder }, NO_STORE)
   }
-  const root = await realpath(repo.data.root)
-  await registerProject(ctx, { ...repo.data, root })
-  const project = (await listProjects(ctx)).find((item) => item.id === repo.data.id)
-  if (!project) throw new Error("The selected project could not be registered. Try again.")
-  return { project, path: root }
+  const input = await readFolderJson<{ path?: unknown; initialize?: unknown }>(request)
+  const chosen = await chooseProjectFolder(ctx, input.path, input.initialize === true)
+  return Response.json({ ok: true, ...chosen }, NO_STORE)
+}
+
+const FOLDER_ROUTES = new Set([
+  "/api/projects/folders",
+  "/api/projects/folders/pick",
+  "/api/projects/folders/known",
+])
+
+async function dispatchFolderRoute(
+  ctx: Ctx,
+  guard: GuardConfig,
+  request: Request,
+  url: URL,
+  picker?: FolderPicker,
+): Promise<Response> {
+  if (url.pathname === "/api/projects/folders/known") {
+    return request.method === "GET"
+      ? Response.json({ ok: true, ...(await knownProjectFolders(ctx)) }, NO_STORE)
+      : new Response("Use GET to inspect known folders.", { status: 405 })
+  }
+  if (url.pathname === "/api/projects/folders/pick")
+    return handlePickFolder(ctx, guard, request, picker)
+  return handleFolderAction(ctx, request, url)
 }
 
 export async function projectFolderRoute(
@@ -134,64 +99,11 @@ export async function projectFolderRoute(
   picker?: FolderPicker,
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  const picking = url.pathname === "/api/projects/folders/pick"
-  const known = url.pathname === "/api/projects/folders/known"
-  if (
-    (!picking && !known && url.pathname !== "/api/projects/folders") ||
-    !["GET", "POST"].includes(request.method)
-  )
-    return null
-  if (!hasKeyHeader(request, guard) && sessionAuthority(request, guard)?.keyPaired !== true)
+  if (!FOLDER_ROUTES.has(url.pathname) || !["GET", "POST"].includes(request.method)) return null
+  if (!isAuthorized(request, guard))
     return new Response("Folder access requires the App or a browser it opened.", { status: 403 })
   try {
-    if (known) {
-      if (request.method !== "GET")
-        return new Response("Use GET to inspect known folders.", { status: 405 })
-      return Response.json(
-        { ok: true, ...(await knownProjectFolders(ctx)) },
-        { headers: { "cache-control": "no-store" } },
-      )
-    }
-    if (picking) {
-      if (request.method !== "POST")
-        return new Response("Use POST to choose a folder.", { status: 405 })
-      const text = await request.text()
-      if (text.length > 8192) throw new Error("The folder request is too large.")
-      const input = JSON.parse(text) as { path?: unknown }
-      const initial = await directory(input.path ?? ctx.env.get("HOME") ?? ctx.env.cwd())
-      if (!picker)
-        throw new FolderPickerError(
-          "picker_unavailable",
-          "The native folder picker is unavailable. Enter an absolute folder path.",
-        )
-      const selected = await picker.pick(initial, request.signal)
-      if (!hasKeyHeader(request, guard) && sessionAuthority(request, guard)?.keyPaired !== true)
-        return new Response("Folder access was revoked.", { status: 403 })
-      const result: FolderPick =
-        selected === null
-          ? { kind: "cancelled" }
-          : { kind: "selected", folder: await browseProjectFolder(ctx, selected) }
-      if (result.kind === "selected") {
-        const { path, checkout, canInitialize } = result.folder
-        result.folder = { path, checkout, canInitialize }
-      }
-      return Response.json({ ok: true, ...result }, { headers: { "cache-control": "no-store" } })
-    }
-    if (request.method === "GET")
-      return Response.json(
-        {
-          ok: true,
-          ...(await browseProjectFolder(ctx, url.searchParams.get("path") ?? undefined)),
-        },
-        { headers: { "cache-control": "no-store" } },
-      )
-    const text = await request.text()
-    if (text.length > 8192) throw new Error("The folder request is too large.")
-    const input = JSON.parse(text) as { path?: unknown; initialize?: unknown }
-    return Response.json(
-      { ok: true, ...(await chooseProjectFolder(ctx, input.path, input.initialize === true)) },
-      { headers: { "cache-control": "no-store" } },
-    )
+    return await dispatchFolderRoute(ctx, guard, request, url, picker)
   } catch (cause) {
     if (cause instanceof FolderPickerError)
       return Response.json({ ok: false, error: { code: cause.code, message: cause.message } })

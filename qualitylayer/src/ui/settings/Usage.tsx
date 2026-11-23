@@ -4,8 +4,8 @@
 // are never summed. Every block says what it is waiting for or why it has nothing: loading, unreadable,
 // empty, still counting, or not counted by an agent.
 
-import { CircleAlertIcon, HourglassIcon } from "lucide-react"
-import { type ReactNode, useEffect, useMemo, useState } from "react"
+import { HourglassIcon } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { usageForMoney } from "../../core/cost/display.ts"
 import type { UsagePeriod } from "../../core/cost/usage.ts"
@@ -15,31 +15,12 @@ import { anyUnread, hasLimitRows, LimitsPanel, UnreportedLimits } from "../kit/L
 import { isKeyed } from "../usage/facts.ts"
 import { SettingRow, SettingsGroup } from "./Rows.tsx"
 import { UsageDisplaySettings } from "./UsageDisplay.tsx"
+import { UsageHistorySection, UsageNote } from "./UsageHistorySection.tsx"
 import { agoText } from "./usage-model.ts"
-import { BreakdownGroup } from "./usage-page/BreakdownGroup.tsx"
-import { HistoryGroup, PeriodChoice, periodWords } from "./usage-page/HistoryGroup.tsx"
-import { KindsGroup } from "./usage-page/KindsGroup.tsx"
 import { type Measure, usageView } from "./usage-view.ts"
 import { usePlanLimits, useUsage } from "./use-readings.ts"
 import "../usage/usage.css"
 import "./usage.css"
-
-/** A line of a block that has nothing else to say: what it waits for, or what went wrong, with a way to try again. */
-function Note({ children, retry }: { children: string; retry?: () => void }) {
-  return (
-    <p className="q-us-note" role="status">
-      {children}
-      {retry !== undefined ? (
-        <>
-          {" "}
-          <button type="button" className="q-link" onClick={retry}>
-            Try again
-          </button>
-        </>
-      ) : null}
-    </p>
-  )
-}
 
 /**
  * When the numbers were read: the oldest reading of the agents that report, and each agent's own in the
@@ -55,6 +36,31 @@ function checkedLine(limits: readonly AgentLimits[], now: number) {
   }
 }
 
+function PlanLimitsBody({
+  limits,
+  reload,
+  status,
+  now,
+}: {
+  limits: readonly AgentLimits[]
+  reload: () => void
+  status: "loading" | "failed" | "ready"
+  now: number
+}) {
+  if (status === "loading") return <UsageNote>Reading plan limits…</UsageNote>
+  if (status === "failed")
+    return <UsageNote retry={reload}>Plan limits could not be read.</UsageNote>
+  return (
+    <>
+      <div className="q-us-limits">
+        <LimitsPanel limits={limits} now={now} onRetry={reload} />
+        <UnreportedLimits limits={limits} />
+      </div>
+      {hasLimitRows(limits) ? null : <UsageNote>No agent has reported plan limits yet.</UsageNote>}
+    </>
+  )
+}
+
 function PlanLimitsGroup({
   limits,
   reload,
@@ -66,19 +72,6 @@ function PlanLimitsGroup({
 }) {
   const now = Date.now()
   const checked = status === "ready" ? checkedLine(limits, now) : null
-  const body = (() => {
-    if (status === "loading") return <Note>Reading plan limits…</Note>
-    if (status === "failed") return <Note retry={reload}>Plan limits could not be read.</Note>
-    return (
-      <>
-        <div className="q-us-limits">
-          <LimitsPanel limits={limits} now={now} onRetry={reload} />
-          <UnreportedLimits limits={limits} />
-        </div>
-        {hasLimitRows(limits) ? null : <Note>No agent has reported plan limits yet.</Note>}
-      </>
-    )
-  })()
   return (
     <SettingsGroup
       title="Plan limits"
@@ -93,7 +86,7 @@ function PlanLimitsGroup({
         Visible plan readings refresh every five minutes. Copilot depends on its latest local
         session snapshot.
       </p>
-      {body}
+      <PlanLimitsBody limits={limits} reload={reload} status={status} now={now} />
     </SettingsGroup>
   )
 }
@@ -128,17 +121,11 @@ function WhenUsedUpGroup({
 /** The page's lead line: with no agent on a plan there are no plan limits to name. */
 export const USAGE_LEAD_BILLED = "What your agents used, and its estimated cost."
 
-function Failed({ retry }: { retry: () => void }): ReactNode {
-  return (
-    <SettingsGroup title="What your agents used" testId="usage-history">
-      <div className="q-ug-failed" role="alert">
-        <CircleAlertIcon className="size-[15px]" aria-hidden="true" />
-        <span>Couldn't read your agents' records. Nothing was counted.</span>
-        <button type="button" className="q-btn" onClick={retry}>
-          Try again
-        </button>
-      </div>
-    </SettingsGroup>
+function planNamesOf(limits: readonly AgentLimits[]): Map<string, string> {
+  return new Map(
+    limits.flatMap((agent) =>
+      agent.state === "reported" && agent.plan !== null ? [[agent.agent, agent.plan] as const] : [],
+    ),
   )
 }
 
@@ -167,7 +154,6 @@ export function UsageTab({
     [rawUsage, config.usage.money],
   )
   const view = useMemo(() => (usage === null ? null : usageView(usage)), [usage])
-  // An agent billed by use has no plan limits to show: it is left out of the limits and counted in dollars.
   const keyed = useMemo(
     () => new Set(usage?.agents.filter(isKeyed).map((agent) => agent.agent) ?? []),
     [usage],
@@ -179,29 +165,20 @@ export function UsageTab({
         : [],
     [limitsReading.reading, keyed],
   )
-  const plans = useMemo(
-    () =>
-      new Map(
-        limitsShown.flatMap((agent) =>
-          agent.state === "reported" && agent.plan !== null
-            ? [[agent.agent, agent.plan] as const]
-            : [],
-        ),
-      ),
-    [limitsShown],
-  )
-  // With only agents billed by use (and nothing of the others to report) there is no plan to limit.
+  const plans = useMemo(() => planNamesOf(limitsShown), [limitsShown])
   const onlyBilled = view !== null && view.keyed.length > 0 && view.plan.length === 0
   const showLimits = !(onlyBilled && !hasLimitRows(limitsShown))
+
   useEffect(() => {
     onLead?.(onlyBilled ? USAGE_LEAD_BILLED : null)
     return () => onLead?.(null)
   }, [onlyBilled, onLead])
+
   return (
     <div className="q-sgs q-ug" data-testid="usage-page">
       <UsageDisplaySettings
         value={config.usage}
-        onChange={(usage) => onChange({ usage })}
+        onChange={(nextUsage) => onChange({ usage: nextUsage })}
         limits={limitsShown}
         usage={rawUsage}
       />
@@ -215,49 +192,19 @@ export function UsageTab({
           <WhenUsedUpGroup config={config} onChange={onChange} />
         </>
       ) : null}
-      {reading.status === "loading" ? (
-        <SettingsGroup title="What your agents used" testId="usage-history">
-          <div className="q-ug-top">
-            <Note>Reading the agents' session files…</Note>
-            <PeriodChoice period={period} onPeriod={setPeriod} />
-          </div>
-        </SettingsGroup>
-      ) : reading.status === "failed" ? (
-        <Failed retry={reload} />
-      ) : usage !== null && view !== null ? (
-        <>
-          <HistoryGroup
-            usage={usage}
-            view={view}
-            period={period}
-            onPeriod={setPeriod}
-            measure={measure}
-            onMeasure={setMeasure}
-            showValue={config.usage.money === "value"}
-            onShowValue={(on) => onChange({ usage: { money: on ? "value" : "spend" } })}
-            plans={plans}
-            counting={
-              reading.status === "counting" || reading.status === "stalled"
-                ? {
-                    files: usage.pendingFiles,
-                    ...(reading.status === "stalled" ? { retry: reload } : {}),
-                  }
-                : null
-            }
-          />
-          {view.used.length > 0 ? (
-            <>
-              <KindsGroup view={view} period={periodWords(period)} />
-              <BreakdownGroup
-                usage={usage}
-                view={view}
-                showCost={view.keyed.length > 0 || config.usage.money === "value"}
-                showValue={config.usage.money === "value"}
-              />
-            </>
-          ) : null}
-        </>
-      ) : null}
+      <UsageHistorySection
+        reading={reading}
+        usage={usage}
+        view={view}
+        period={period}
+        onPeriod={setPeriod}
+        measure={measure}
+        onMeasure={setMeasure}
+        money={config.usage.money}
+        plans={plans}
+        onShowValue={(on) => onChange({ usage: { money: on ? "value" : "spend" } })}
+        reload={reload}
+      />
     </div>
   )
 }

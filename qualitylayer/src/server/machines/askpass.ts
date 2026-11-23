@@ -64,6 +64,101 @@ async function answer(pipe: string, text: string): Promise<void> {
   }
 }
 
+type PromptWatchState = {
+  asked: number
+  ended: boolean
+  stopped: boolean
+  wrongAgain: boolean
+}
+
+function buildSshArgs(request: CopyRequest, known: string): string[] {
+  return [
+    request.program,
+    ...(request.configFile ? ["-F", request.configFile] : []),
+    "-o",
+    "BatchMode=no",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    ...(request.knownHosts === undefined
+      ? []
+      : ["-o", `UserKnownHostsFile=${known}`, "-o", "GlobalKnownHostsFile=/dev/null"]),
+    "-o",
+    "PubkeyAuthentication=no",
+    "-o",
+    "PreferredAuthentications=keyboard-interactive,password",
+    "-o",
+    "NumberOfPasswordPrompts=1",
+    "-o",
+    "ConnectTimeout=10",
+    "-p",
+    String(request.port),
+    "-T",
+    request.target,
+    "sh",
+    "-s",
+  ]
+}
+
+type PromptWatchContext = {
+  folder: string
+  pipe: string
+  child: { kill(): void }
+  request: CopyRequest
+  state: PromptWatchState
+}
+
+async function handlePromptFile(watch: PromptWatchContext, name: string): Promise<boolean> {
+  let prompt = ""
+  try {
+    prompt = plain(readFileSync(join(watch.folder, name), "utf8"))
+  } catch {
+    return true
+  }
+  watch.state.asked += 1
+  // A second password prompt is ssh trying its next way after a refused password
+  // (keyboard-interactive, then password): the password was wrong.
+  if (watch.state.asked > 1 && /password/i.test(prompt)) {
+    watch.state.wrongAgain = true
+    watch.child.kill()
+    return false
+  }
+  const reply =
+    watch.state.asked === 1 && /pass/i.test(prompt)
+      ? watch.request.password
+      : await watch.request.ask(prompt)
+  if (reply === null) {
+    watch.state.stopped = true
+    watch.child.kill()
+    return false
+  }
+  await answer(watch.pipe, reply)
+  return true
+}
+
+async function watchAskpassPrompts(watch: PromptWatchContext): Promise<void> {
+  const seen = new Set<string>()
+  while (!watch.state.ended) {
+    const names = readdirSync(watch.folder).filter(
+      (one) => one.startsWith("prompt.") && !seen.has(one),
+    )
+    for (const name of names) {
+      seen.add(name)
+      const keepGoing = await handlePromptFile(watch, name)
+      if (!keepGoing) return
+    }
+    await Bun.sleep(80)
+  }
+}
+
+function classifyCopyOutcome(code: number, state: PromptWatchState, said: string): Copied {
+  if (code === 0) return { ok: true }
+  if (state.wrongAgain) return { ok: false, why: "wrong", said: "Permission denied" }
+  if (state.stopped) return { ok: false, why: "failed", said: "Stopped" }
+  if (/permission denied/i.test(said))
+    return { ok: false, why: state.asked === 0 ? "keys-only" : "wrong", said }
+  return { ok: false, why: "failed", said: said.split("\n").at(-1) ?? said }
+}
+
 export async function copyKeyWithPassword(
   local: LocalRun,
   request: CopyRequest,
@@ -84,85 +179,24 @@ export async function copyKeyWithPassword(
       `#!/bin/sh\nprintf '%s' "$1" > "${folder}/prompt.$$"\nexec cat "${pipe}"\n`,
       { mode: 0o700 },
     )
-    const child = spawn(
-      [
-        request.program,
-        ...(request.configFile ? ["-F", request.configFile] : []),
-        "-o",
-        "BatchMode=no",
-        "-o",
-        "StrictHostKeyChecking=yes",
-        ...(request.knownHosts === undefined
-          ? []
-          : ["-o", `UserKnownHostsFile=${known}`, "-o", "GlobalKnownHostsFile=/dev/null"]),
-        "-o",
-        "PubkeyAuthentication=no",
-        "-o",
-        "PreferredAuthentications=keyboard-interactive,password",
-        "-o",
-        "NumberOfPasswordPrompts=1",
-        "-o",
-        "ConnectTimeout=10",
-        "-p",
-        String(request.port),
-        "-T",
-        request.target,
-        "sh",
-        "-s",
-      ],
-      {
-        stdin: new TextEncoder().encode(request.script),
-        stdout: "pipe",
-        stderr: "pipe",
-        env: {
-          ...process.env,
-          SSH_ASKPASS: script,
-          SSH_ASKPASS_REQUIRE: "force",
-          DISPLAY: process.env.DISPLAY ?? ":0",
-        },
+    const child = spawn(buildSshArgs(request, known), {
+      stdin: new TextEncoder().encode(request.script),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        SSH_ASKPASS: script,
+        SSH_ASKPASS_REQUIRE: "force",
+        DISPLAY: process.env.DISPLAY ?? ":0",
       },
-    )
-    let asked = 0
-    let ended = false
-    let stopped = false
-    let wrongAgain = false
+    })
+    const state: PromptWatchState = { asked: 0, ended: false, stopped: false, wrongAgain: false }
     const exited = child.exited.then((code) => {
-      ended = true
+      state.ended = true
       return code
     })
     // ssh's prompts, one file each, answered in turn: the first password one with the password.
-    const watch = (async () => {
-      const seen = new Set<string>()
-      while (!ended) {
-        for (const name of readdirSync(folder).filter((one) => one.startsWith("prompt."))) {
-          if (seen.has(name)) continue
-          seen.add(name)
-          let prompt = ""
-          try {
-            prompt = plain(readFileSync(join(folder, name), "utf8"))
-          } catch {
-            continue
-          }
-          asked += 1
-          // A second password prompt is ssh trying its next way after a refused password
-          // (keyboard-interactive, then password): the password was wrong.
-          if (asked > 1 && /password/i.test(prompt)) {
-            wrongAgain = true
-            child.kill()
-            return
-          }
-          const reply =
-            asked === 1 && /pass/i.test(prompt) ? request.password : await request.ask(prompt)
-          if (reply === null) {
-            stopped = true
-            child.kill()
-            return
-          }
-          await answer(pipe, reply)
-        }
-        await Bun.sleep(80)
-      }
-    })()
+    const watch = watchAskpassPrompts({ folder, pipe, child, request, state })
     const timer = setTimeout(() => child.kill(), 5 * 60_000)
     const code = await exited
     clearTimeout(timer)
@@ -175,12 +209,7 @@ export async function copyKeyWithPassword(
         Bun.sleep(3000).then(() => ""),
       ]),
     )
-    if (code === 0) return { ok: true }
-    if (wrongAgain) return { ok: false, why: "wrong", said: "Permission denied" }
-    if (stopped) return { ok: false, why: "failed", said: "Stopped" }
-    if (/permission denied/i.test(said))
-      return { ok: false, why: asked === 0 ? "keys-only" : "wrong", said }
-    return { ok: false, why: "failed", said: said.split("\n").at(-1) ?? said }
+    return classifyCopyOutcome(code, state, said)
   } finally {
     // A reader still waiting on the pipe gets its end of input, then the folder goes.
     await answer(pipe, "").catch(() => {})

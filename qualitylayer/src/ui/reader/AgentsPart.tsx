@@ -31,6 +31,105 @@ const lower = (html: string) =>
     (_all, slash: string, level: string) => `<${slash}h${Number(level) + 1}`,
   )
 
+function AgentsBlock({
+  block,
+  theme,
+  renderMermaid,
+}: {
+  block: PlainBlock
+  theme: string
+  renderMermaid: Renderer
+}) {
+  if (block.kind === "mermaid") {
+    return (
+      <MermaidBlock
+        source={block.source}
+        theme={theme}
+        render={renderMermaid}
+        {...(block.lens !== undefined ? { kind: block.lens } : {})}
+      />
+    )
+  }
+  if (block.kind === "html" || block.kind === "added") {
+    return (
+      <div
+        className={block.kind === "html" && block.table === true ? "table-scroll" : undefined}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in toBlocks
+        dangerouslySetInnerHTML={{ __html: lower(block.html) }}
+      />
+    )
+  }
+  return (
+    <pre>
+      <code>{block.kind === "artifact" ? block.path : block.source}</code>
+    </pre>
+  )
+}
+
+function AgentsBody({
+  read,
+  theme,
+  renderMermaid,
+}: {
+  read: Read
+  theme: string
+  renderMermaid: Renderer
+}) {
+  if (read.kind === "loading") {
+    return <p className="text-[13px] text-muted-foreground">Reading the agents' file…</p>
+  }
+  if (read.kind === "missing") {
+    return (
+      <p className="text-[13px] text-muted-foreground" role="status">
+        {read.why}
+      </p>
+    )
+  }
+  if (read.kind !== "ready") return null
+  return (
+    <>
+      <p className="m-0 mt-2 text-[13px] text-muted-foreground">
+        Changes nothing agreed; where it differs from the step file above, the step file wins.
+      </p>
+      {read.blocks.map((block) => (
+        <AgentsBlock key={block.key} block={block} theme={theme} renderMermaid={renderMermaid} />
+      ))}
+    </>
+  )
+}
+
+function useAgentsRead(load: () => Promise<string>, parse: (markdown: string) => PlainBlock[]) {
+  const [read, setRead] = useState<Read>({ kind: "closed" })
+  const loader = useRef(load)
+  loader.current = load
+  const generation = useRef(0)
+  useEffect(
+    () => () => {
+      generation.current++
+    },
+    [],
+  )
+  const show = () => {
+    const current = ++generation.current
+    setRead({ kind: "loading" })
+    loader.current().then(
+      (markdown) => {
+        if (generation.current === current)
+          setRead({ kind: "ready", blocks: withoutTitle(parse(markdown)) })
+      },
+      (cause: unknown) => {
+        if (generation.current === current)
+          setRead({ kind: "missing", why: cause instanceof Error ? cause.message : String(cause) })
+      },
+    )
+  }
+  const hide = () => {
+    generation.current++
+    setRead({ kind: "closed" })
+  }
+  return { read, open: read.kind !== "closed", show, hide }
+}
+
 export function AgentsPart({
   step,
   load,
@@ -50,37 +149,8 @@ export function AgentsPart({
   jump?: number | undefined
 }) {
   const path = agentsPathOf(step)
-  const [read, setRead] = useState<Read>({ kind: "closed" })
   const own = useRef<HTMLElement | null>(null)
-  const loader = useRef(load)
-  loader.current = load
-  const open = read.kind !== "closed"
-  const generation = useRef(0)
-  useEffect(
-    () => () => {
-      generation.current++
-    },
-    [],
-  )
-
-  const show = () => {
-    const current = ++generation.current
-    setRead({ kind: "loading" })
-    loader.current().then(
-      (markdown) => {
-        if (generation.current === current)
-          setRead({ kind: "ready", blocks: withoutTitle(parse(markdown)) })
-      },
-      (cause: unknown) => {
-        if (generation.current === current)
-          setRead({ kind: "missing", why: cause instanceof Error ? cause.message : String(cause) })
-      },
-    )
-  }
-  const hide = () => {
-    generation.current++
-    setRead({ kind: "closed" })
-  }
+  const { read, open, show, hide } = useAgentsRead(load, parse)
   // biome-ignore lint/correctness/useExhaustiveDependencies: a jump (its counter) opens the section
   useEffect(() => {
     if (jump === undefined) return
@@ -124,45 +194,7 @@ export function AgentsPart({
         {path}
       </p>
       <div id="reader-agents-body" aria-live="polite">
-        {read.kind === "loading" ? (
-          <p className="text-[13px] text-muted-foreground">Reading the agents' file…</p>
-        ) : null}
-        {read.kind === "missing" ? (
-          <p className="text-[13px] text-muted-foreground" role="status">
-            {read.why}
-          </p>
-        ) : null}
-        {read.kind === "ready" ? (
-          <>
-            <p className="m-0 mt-2 text-[13px] text-muted-foreground">
-              Changes nothing agreed; where it differs from the step file above, the step file wins.
-            </p>
-            {read.blocks.map((block) =>
-              block.kind === "mermaid" ? (
-                <MermaidBlock
-                  key={block.key}
-                  source={block.source}
-                  theme={theme}
-                  render={renderMermaid}
-                  {...(block.lens !== undefined ? { kind: block.lens } : {})}
-                />
-              ) : block.kind === "html" || block.kind === "added" ? (
-                <div
-                  key={block.key}
-                  className={
-                    block.kind === "html" && block.table === true ? "table-scroll" : undefined
-                  }
-                  // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in toBlocks
-                  dangerouslySetInnerHTML={{ __html: lower(block.html) }}
-                />
-              ) : (
-                <pre key={block.key}>
-                  <code>{block.kind === "artifact" ? block.path : block.source}</code>
-                </pre>
-              ),
-            )}
-          </>
-        ) : null}
+        <AgentsBody read={read} theme={theme} renderMermaid={renderMermaid} />
       </div>
     </section>
   )

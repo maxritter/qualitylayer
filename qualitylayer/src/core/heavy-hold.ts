@@ -42,20 +42,21 @@ export function defaultHolder(ctx: Ctx): string {
   return identity === null ? "this session" : `${identity.agent} ${identity.id.slice(0, 8)}`
 }
 
+function isValidHold(value: Partial<HeavyHold>): value is HeavyHold {
+  const validStrings =
+    typeof value.holder === "string" &&
+    typeof value.reason === "string" &&
+    typeof value.lease === "string" &&
+    value.lease !== ""
+  const validUntil = value.until === null || typeof value.until === "number"
+  const validPid = typeof value.pid === "number" && Number.isInteger(value.pid)
+  return validStrings && typeof value.since === "number" && validUntil && validPid
+}
+
 function parseHold(text: string): HeavyHold | null {
   try {
     const value = JSON.parse(text) as Partial<HeavyHold>
-    if (
-      typeof value.holder !== "string" ||
-      typeof value.reason !== "string" ||
-      typeof value.since !== "number" ||
-      !(value.until === null || typeof value.until === "number") ||
-      typeof value.pid !== "number" ||
-      !Number.isInteger(value.pid) ||
-      typeof value.lease !== "string" ||
-      value.lease === ""
-    )
-      return null
+    if (!isValidHold(value)) return null
     return {
       holder: value.holder,
       reason: value.reason,

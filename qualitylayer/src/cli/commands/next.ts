@@ -71,58 +71,52 @@ export async function readPlanStdin(stream: ReadableStream<Uint8Array>): Promise
   }
 }
 
-/** What every verb's reply about a task carries: waiting person comments, and the App's link. */
-export async function withTaskExtras(
+type LoadedTask = Awaited<ReturnType<typeof requireTask>> extends Result<infer T> ? T : never
+
+function commentsSurfaceNow(gate: Awaited<ReturnType<typeof readGate>>): boolean {
+  // A Plan gate hands the person's comments over with its decision; at the final review they
+  // are the agents' to apply while the person reads, so the reply names them.
+  return (
+    gate === null || gate.decision !== "pending" || gate.settled === true || gate.target === FINAL
+  )
+}
+
+async function attachLocalComments(
   ctx: Ctx,
-  asked: Result<NextPayload>,
-): Promise<Result<NextPayload>> {
-  if (!asked.ok) return asked
-  let result = asked
-  const { task, done } = result.data
-  let terminalAnswers = false
-  if (typeof task === "string") {
-    const current = await requireTask(ctx)
-    terminalAnswers =
-      current.ok && current.data.slug === task && current.data.answers === "terminal"
-    if (current.ok && current.data.slug === task && done !== true) {
-      const gate = await readGate(ctx, current.data)
-      // A Plan gate hands the person's comments over with its decision; at the final review they
-      // are the agents' to apply while the person reads, so the reply names them.
-      if (
-        gate === null ||
-        gate.decision !== "pending" ||
-        gate.settled === true ||
-        gate.target === FINAL
-      ) {
-        const local = (await readComments(ctx, current.data)).filter(
-          (c) => c.source === undefined && agentActionable(c) && c.remark.trim() !== "",
-        ).length
-        if (local > 0) {
-          const line = `${local} ${local === 1 ? "comment from the person waits" : "comments from the person wait"}: run \`qualitylayer comments take\`, apply each request, and answer it with \`qualitylayer comments resolve <id> --answer "<what changed>"\` before continuing.`
-          result = {
-            ok: true,
-            data: {
-              ...result.data,
-              local_comments: local,
-              ...(typeof result.data.instructions === "string"
-                ? { instructions: leadInstructions(result.data.instructions, line) }
-                : { message: `${String(result.data.message ?? "")}\n\n${line}` }),
-            },
-          }
-        }
-      }
-    }
+  current: LoadedTask,
+  data: NextPayload,
+): Promise<NextPayload> {
+  const gate = await readGate(ctx, current)
+  if (!commentsSurfaceNow(gate)) return data
+  const local = (await readComments(ctx, current)).filter(
+    (c) => c.source === undefined && agentActionable(c) && c.remark.trim() !== "",
+  ).length
+  if (local === 0) return data
+  const line = `${local} ${local === 1 ? "comment from the person waits" : "comments from the person wait"}: run \`qualitylayer comments take\`, apply each request, and answer it with \`qualitylayer comments resolve <id> --answer "<what changed>"\` before continuing.`
+  return {
+    ...data,
+    local_comments: local,
+    ...(typeof data.instructions === "string"
+      ? { instructions: leadInstructions(data.instructions, line) }
+      : { message: `${String(data.message ?? "")}\n\n${line}` }),
   }
-  if (typeof task !== "string" || done === true) return result
+}
+
+async function attachAppExtras(
+  ctx: Ctx,
+  task: string,
+  base: NextPayload,
+  terminalAnswers: boolean,
+): Promise<NextPayload> {
   // Autostart and QUALITYLAYER_NO_COCKPIT decide; an App that cannot start never fails a verb.
   const cockpit = await taskCockpitUrl(ctx, task)
-  if (cockpit === undefined) return result
-  const data: NextPayload = { ...result.data, app: cockpit }
-  if (terminalAnswers) return { ok: true, data }
+  if (cockpit === undefined) return base
+  const data: NextPayload = { ...base, app: cockpit }
+  if (terminalAnswers) return data
   // At the Implement stop the App's Implement page holds the setup and the command: the chat points there.
   if (data.stop === "implement") {
     data.message = `${String(data.message)}\n\nThe QualityLayer App's Implement page has the setup and the command that starts the build.`
-    return { ok: true, data }
+    return data
   }
   // The first time, name the App in the instructions; its local address stays in structured fields.
   if (typeof data.instructions === "string" && (await firstMention(ctx, cockpit))) {
@@ -133,5 +127,24 @@ export async function withTaskExtras(
       "**The user can follow and review this task in the QualityLayer App.** Name the task on the App's Home when they need to answer. Never print its local address or a localhost link in the chat.",
     )
   }
-  return { ok: true, data }
+  return data
+}
+
+/** What every verb's reply about a task carries: waiting person comments, and the App's link. */
+export async function withTaskExtras(
+  ctx: Ctx,
+  asked: Result<NextPayload>,
+): Promise<Result<NextPayload>> {
+  if (!asked.ok) return asked
+  const { task, done } = asked.data
+  if (typeof task !== "string") return asked
+  let data = asked.data
+  const current = await requireTask(ctx)
+  const matchesTask = current.ok && current.data.slug === task
+  const terminalAnswers = matchesTask && current.data.answers === "terminal"
+  if (matchesTask && done !== true) {
+    data = await attachLocalComments(ctx, current.data, data)
+  }
+  if (done === true) return { ok: true, data }
+  return { ok: true, data: await attachAppExtras(ctx, task, data, terminalAnswers) }
 }

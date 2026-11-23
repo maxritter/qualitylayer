@@ -5,22 +5,22 @@ import type { RunAdapter, RunWindow } from "../run-context.tsx"
 import { runTaskId } from "../runs-api.ts"
 import { taskPlanningLaunch } from "./task-launch.ts"
 
-export function canSwitchTaskAgent(task: TaskDetail, run: RunWindow): boolean {
+function isSwitchableTask(task: TaskDetail) {
+  if (task.archived || task.earlier || task.stage === "abandoned") return false
+  return task.type !== "chat" && task.outside === undefined
+}
+
+function isSwitchableRun(task: TaskDetail, run: RunWindow) {
+  if (run.agent === "other" || run.cwd.length === 0 || runTaskId(run) !== task.id) return false
+  if (run.purpose.kind !== "task" && run.purpose.kind !== "new-task") return false
   const planning =
     run.purpose.kind === "new-task" ||
     (run.purpose.kind === "task" && run.purpose.phase === "planning")
-  return (
-    !task.archived &&
-    !task.earlier &&
-    task.stage !== "abandoned" &&
-    task.type !== "chat" &&
-    task.outside === undefined &&
-    run.agent !== "other" &&
-    run.cwd.length > 0 &&
-    runTaskId(run) === task.id &&
-    (run.purpose.kind === "task" || run.purpose.kind === "new-task") &&
-    (!planning || taskPlanningLaunch(task))
-  )
+  return !planning || taskPlanningLaunch(task)
+}
+
+export function canSwitchTaskAgent(task: TaskDetail, run: RunWindow): boolean {
+  return isSwitchableTask(task) && isSwitchableRun(task, run)
 }
 
 export async function continueInAnotherAgent({

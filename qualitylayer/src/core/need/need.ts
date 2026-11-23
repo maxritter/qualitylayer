@@ -8,20 +8,21 @@
 //
 //   needs.json   every need of the task, in the order they were recorded
 
-import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { isAutonomousBuildStage } from "../flow.ts"
-import { chatQuestions, matchesChatQuestion, TERMINAL_YOUR_TURN } from "../task/chat-questions.ts"
-import { consumePickedCall } from "../task/picked-calls.ts"
-import { openQuestion, showQuestion } from "../task/question.ts"
-import { answerFromApp } from "../task/question-app.ts"
-import { pickedBatchAnswer } from "../task/question-batch.ts"
-import type { SessionProof } from "../task/session-proof.ts"
 import type { Task } from "../task/store.ts"
-import { readVerifyMode } from "../task/verify-mode.ts"
-import { takeEvent, waitFor } from "../wait.ts"
 import { KEY_REFUSED, looksLikeKey } from "./key.ts"
+import { defaultSteps, secretPlace, validateNeedInput } from "./need-input.ts"
+
+export { needQuestionText, recordPickedNeed, terminalNeed } from "./need-terminal.ts"
+export {
+  NEED_HEARTBEAT_MS,
+  NEED_UNTIL_EVENT_MS,
+  NEED_WAIT_SLICE_MS,
+  needSlackDue,
+  waitForNeed,
+} from "./need-wait.ts"
+export { KEY_REFUSED, looksLikeKey, secretPlace }
 
 export const NEED_KINDS = ["secret", "login", "account", "service", "permission"] as const
 export type NeedKind = (typeof NEED_KINDS)[number]
@@ -64,9 +65,6 @@ export type Need = {
 }
 
 const MAX_STEPS = 2
-/** Text that names QualityLayer's own job: a `qualitylayer` command, `commit slice`, `check slice`, a slice or a commit. */
-const OWN_JOB =
-  /\bqualitylayer\b|\b(?:commit|check)\s+slices?\b|\bslices?\b|\bcommit(?:s|ted|ting)?\b/i
 const path = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, "needs.json")
 
 export async function readNeeds(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<Need[]> {
@@ -78,86 +76,11 @@ export async function readNeeds(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promi
   }
 }
 
-export const needQuestionText = (need: Need) => `Have you set this: ${need.what}?`
-
-export async function terminalNeed(ctx: Ctx, task: Task, need: Need, refresh = false) {
-  const current = await openQuestion(ctx, task)
-  const shown =
-    !refresh &&
-    current?.id.startsWith(`need-${need.for}-`) &&
-    current.question === needQuestionText(need) &&
-    current.asked >= Math.max(need.opened, need.reopened?.at ?? 0)
-      ? ok(current)
-      : await showQuestion(ctx, task, {
-          id: `need-${need.for}-${randomUUID()}`,
-          question: needQuestionText(need),
-          choices: [{ label: "Done, it's set" }, { label: "Not yet" }],
-          recommended: 1,
-          why: [need.why, ...need.steps, "Never paste a key or secret into the chat."]
-            .filter(Boolean)
-            .join(" "),
-        })
-  if (!shown.ok) return shown
-  return ok({
-    your_turn: TERMINAL_YOUR_TURN,
-    chat_questions: await chatQuestions(ctx, [shown.data]),
-    instructions: `Ask the person in the chat. Never ask for a secret value or print it. After their answer, check the prerequisite and run qualitylayer need resolved ${need.for}. Not yet or cancellation leaves the need open; continue available work.`,
-  })
-}
-
-export async function recordPickedNeed(
+export async function writeNeeds(
   ctx: Ctx,
-  task: Task,
-  input: { session: string; question: string; answer: string; proof: SessionProof },
-): Promise<boolean> {
-  if (task.answers !== "terminal") return false
-  if (
-    !input.proof.answers.some(
-      (answer) => answer.question === input.question && answer.answer === input.answer,
-    )
-  )
-    return false
-  const q = await openQuestion(ctx, task)
-  const need = (await readNeeds(ctx, task)).find(
-    (n) =>
-      n.state === "open" &&
-      q?.id.startsWith(`need-${n.for}-`) &&
-      q.question === needQuestionText(n),
-  )
-  if (
-    !q ||
-    !need ||
-    q.session !== input.session ||
-    !(await matchesChatQuestion(ctx, q, input.question, input.proof.agent))
-  )
-    return false
-  return consumePickedCall(ctx, task, input.proof, {
-    target: async () => {
-      const current = await openQuestion(ctx, task)
-      const active = (await readNeeds(ctx, task)).find(
-        (n) =>
-          n.for === need.for &&
-          n.opened === need.opened &&
-          n.reopened?.at === need.reopened?.at &&
-          n.state === "open",
-      )
-      return current?.id === q.id && current.asked === q.asked && active
-        ? {
-            id: q.id,
-            question: input.question,
-            session: input.session,
-            openedAt: Math.max(q.asked, need.opened, need.reopened?.at ?? 0),
-          }
-        : null
-    },
-    apply: async (answer) => {
-      const { batch: _batch, ...selection } = pickedBatchAnswer(q, "", answer)
-      return (await answerFromApp(ctx, task, selection, { via: "chat", expected: q })).ok
-    },
-  })
-}
-
-async function writeNeeds(ctx: Ctx, task: Pick<Task, "runtimeDir">, needs: Need[]): Promise<void> {
+  task: Pick<Task, "runtimeDir">,
+  needs: Need[],
+): Promise<void> {
   await ctx.fs.mkdir(task.runtimeDir)
   await ctx.fs.atomicWrite(path(task), `${JSON.stringify({ needs }, null, 2)}\n`)
 }
@@ -170,55 +93,9 @@ export const openNeeds = (needs: readonly Need[]): Need[] =>
 export const neededTasks = (needs: readonly Need[]): Set<string> =>
   new Set(openNeeds(needs).map((n) => n.for.toUpperCase()))
 
-const taskId = (word: string): string | null => {
+export const parseNeedTaskId = (word: string): string | null => {
   const match = /^t?(\d+)$/i.exec(word.trim())
   return match !== null ? `T${match[1]}` : null
-}
-
-export { KEY_REFUSED, looksLikeKey }
-
-/** Where a secret goes in this worktree: the place the project already uses, else `.env.local`. */
-export async function secretPlace(
-  ctx: Ctx,
-  root: string,
-): Promise<{ place: string; ignored: boolean }> {
-  const candidates = [".env.local", ".env.development.local", ".dev.vars", ".envrc", ".env"]
-  let place = ".env.local"
-  for (const name of candidates) {
-    if (await ctx.fs.exists(join(root, name))) {
-      place = name
-      break
-    }
-  }
-  const check = await ctx.git.run(root, ["check-ignore", "-q", place])
-  return { place, ignored: check.code === 0 }
-}
-
-/** The steps a kind takes when the agent named none: at most two, in plain words. */
-function defaultSteps(
-  kind: NeedKind,
-  check: string | null,
-  place: string | null,
-  ignored: boolean,
-): string[] {
-  if (kind === "secret") {
-    const where = place ?? ".env.local"
-    return [
-      `Add it to \`${where}\` in this worktree${check !== null ? ` as \`${check}=…\`` : ""}.${ignored ? " Git ignores that file." : ""}`,
-    ]
-  }
-  if (kind === "login") return ["Sign in where the agent's command runs, in your own terminal."]
-  if (kind === "account" || kind === "service")
-    return ["Make it, then say where it is in the note below, without any key."]
-  return ["Allow it in the agent's window, or in its settings."]
-}
-
-/** The first sentence is what is needed; the rest is why. */
-function split(words: string): { what: string; why: string } {
-  const flat = words.replace(/\s+/g, " ").trim()
-  const match = /^(.+?[.!?])\s+(.+)$/.exec(flat)
-  if (match === null) return { what: flat.replace(/[.]$/, ""), why: "" }
-  return { what: (match[1] as string).replace(/[.]$/, ""), why: match[2] as string }
 }
 
 export type NeedInput = {
@@ -235,30 +112,9 @@ export async function recordNeed(
   task: Pick<Task, "runtimeDir" | "repoRoot">,
   input: NeedInput,
 ): Promise<Result<Need>> {
-  const id = taskId(input.for)
-  if (id === null)
-    return err({
-      code: "bad_args",
-      message: `--for names the task that waits for it, like T14 (not "${input.for}")`,
-    })
-  const kind = (input.kind ?? "secret") as NeedKind
-  if (!NEED_KINDS.includes(kind))
-    return err({ code: "bad_args", message: `--kind is one of ${NEED_KINDS.join(", ")}` })
-  const { what, why } = split(input.words)
-  if (what === "")
-    return err({
-      code: "bad_args",
-      message: 'say what is needed and why: need "<what>. <why>" --for T14',
-    })
-  if (looksLikeKey(input.words))
-    return err({ code: "bad_args", message: "a need never carries a key: name it, never paste it" })
-  if (kind === "permission" && OWN_JOB.test(input.words))
-    return err({
-      code: "bad_args",
-      message:
-        "a permission need is for what only the person can allow, never for QualityLayer's own work (a qualitylayer command, a slice, a commit): the person has nothing to allow there. Fix it yourself: a slice you committed by hand is released with `qualitylayer commit slice N --commit <hash>`; a file that overlaps another session's edits is taken with `--take-staged <file>` or dropped from the card with `qualitylayer plan amend`; a refused check is fixed in the code, then rerun. A commit that cannot be taken cleanly never stops the build: `qualitylayer next` carries it and hands out the rest.",
-    })
-  const check = input.check?.trim() || null
+  const validated = validateNeedInput(input)
+  if (!validated.ok) return validated
+  const { id, kind, what, why, check } = validated.data
   const { place, ignored } =
     kind === "secret" ? await secretPlace(ctx, task.repoRoot) : { place: null, ignored: false }
   const steps = (input.steps ?? []).map((s) => s.trim()).filter((s) => s !== "")
@@ -302,13 +158,13 @@ export async function recordNeed(
   return ok(need)
 }
 
-async function update(
+export async function updateNeed(
   ctx: Ctx,
   task: Pick<Task, "runtimeDir">,
   word: string,
   change: (need: Need) => Need | string,
 ): Promise<Result<Need>> {
-  const id = taskId(word)
+  const id = parseNeedTaskId(word)
   if (id === null)
     return err({ code: "bad_args", message: `name the task, like T14 (not "${word}")` })
   const needs = await readNeeds(ctx, task)
@@ -330,7 +186,7 @@ async function update(
 export function markSet(ctx: Ctx, task: Pick<Task, "runtimeDir">, word: string, note: string) {
   const said = note.replace(/\s+/g, " ").trim().slice(0, 300)
   if (looksLikeKey(said)) return Promise.resolve(err({ code: "bad_args", message: KEY_REFUSED }))
-  return update(ctx, task, word, (need) =>
+  return updateNeed(ctx, task, word, (need) =>
     need.state === "resolved"
       ? "the agent found it already"
       : { ...need, state: "set", set: { at: ctx.clock.now(), note: said }, told: false },
@@ -339,7 +195,7 @@ export function markSet(ctx: Ctx, task: Pick<Task, "runtimeDir">, word: string, 
 
 /** The agent found the variable or the file. */
 export const markResolved = (ctx: Ctx, task: Pick<Task, "runtimeDir">, word: string) =>
-  update(ctx, task, word, (need) => ({
+  updateNeed(ctx, task, word, (need) => ({
     ...need,
     state: "resolved",
     resolved: ctx.clock.now(),
@@ -348,7 +204,7 @@ export const markResolved = (ctx: Ctx, task: Pick<Task, "runtimeDir">, word: str
 
 /** The agent did not find it: the need is open again, with why. */
 export const markReopened = (ctx: Ctx, task: Pick<Task, "runtimeDir">, word: string, why: string) =>
-  update(ctx, task, word, (need) => {
+  updateNeed(ctx, task, word, (need) => {
     const said = why.replace(/\s+/g, " ").trim()
     if (said === "") return 'say why: need reopen T14 "<what you did not find>"'
     if (looksLikeKey(said)) return "a need never carries a key: name it, never paste it"
@@ -387,137 +243,4 @@ export async function takeSetNeeds(ctx: Ctx, task: Pick<Task, "runtimeDir">): Pr
     needs.map((n) => (fresh.includes(n) ? { ...n, told: true } : n)),
   )
   return fresh
-}
-
-/** How long one `need wait` blocks before it says "wait again": short enough for any tool limit. */
-export const NEED_WAIT_SLICE_MS = 100_000
-/** The slice a wait uses; a test that waits for it to run out shortens it with this variable. */
-function needSliceMs(ctx: Ctx, untilEvent = false): number {
-  const override = Number(ctx.env.get("QUALITYLAYER_NEED_SLICE_MS"))
-  if (Number.isFinite(override) && override > 0) return override
-  return untilEvent ? NEED_UNTIL_EVENT_MS : NEED_WAIT_SLICE_MS
-}
-/** `need wait --until-event` holds this long (as `wait --until-event` does) for a background run. */
-export const NEED_UNTIL_EVENT_MS = 1_800_000
-/** The wait touches the task's heartbeat this often, so the App shows the agent waiting, not quiet. */
-export const NEED_HEARTBEAT_MS = 20_000
-
-export type WaitOutcome =
-  | { state: "deferred"; need: Need; until: "verify"; then: string }
-  | { state: "set"; need: Need; then: string }
-  | { state: "resolved"; need: Need }
-  /** `--until-event`: the need was reopened (by another command) while this wait held. */
-  | { state: "reopened"; need: Need; then: string }
-  /** `--until-event`: a comment arrived; it is delivered as `wait` delivers it. */
-  | { state: "comment"; need: Need; event: unknown; then: string }
-  | { state: "waiting"; need: Need; again: true; then: string }
-
-/**
- * Block until the person says the need is set, in slices, with a heartbeat. Marks the need as the
- * one the build waits for, so the App leads with "The build waits". With `untilEvent` the slice is
- * 1,800 s and the wait also ends when the need is reopened or a comment arrives (`host`, the task,
- * is needed to read comments).
- */
-export async function waitForNeed(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir" | "stage">,
-  word: string,
-  beat: () => Promise<void>,
-  options: { untilEvent?: boolean; host?: Task } = {},
-): Promise<Result<WaitOutcome>> {
-  if (isAutonomousBuildStage(task.stage, (await readVerifyMode(ctx, task as Task)) ?? undefined)) {
-    const id = taskId(word)
-    const need = (await readNeeds(ctx, task)).findLast((entry) => entry.for === id)
-    if (need === undefined)
-      return err({ code: "bad_args", message: `the need for ${word} is not recorded` })
-    if (need.state === "resolved") return ok({ state: "resolved", need })
-    if (need.state === "set") {
-      const told = await update(ctx, task, need.for, (entry) => ({
-        ...entry,
-        told: true,
-        waiting: null,
-      }))
-      return told.ok ? ok({ state: "set", need: told.data, then: checkThen(told.data) }) : told
-    }
-    const kept =
-      need.waiting === null
-        ? ok(need)
-        : await update(ctx, task, need.for, (entry) => ({ ...entry, waiting: null }))
-    if (!kept.ok) return kept
-    return ok({
-      state: "deferred",
-      need: kept.data,
-      until: "verify",
-      then: `Keep ${need.for} unverified for the person's review in Verify. Continue available work with \`qualitylayer next\`; the person is not asked while the agents build and check.`,
-    })
-  }
-  const start = ctx.clock.now()
-  const untilEvent = options.untilEvent === true
-  const sliceMs = needSliceMs(ctx, untilEvent)
-  const again = (id: string) =>
-    `Still not set. Run \`qualitylayer wait${untilEvent ? " --until-event" : ""}\` again for ${id}; build nothing that waits for it.`
-  const marked = await update(ctx, task, word, (need) =>
-    need.state === "open" ? { ...need, waiting: need.waiting ?? start } : need,
-  )
-  if (!marked.ok) return marked
-  let last = start
-  return waitFor<Result<WaitOutcome>>(ctx, task, {
-    seconds: sliceMs / 1000,
-    kinds: ["need"],
-    pending: () =>
-      ok({
-        state: "waiting",
-        need: marked.data,
-        again: true,
-        then: again(marked.data.for),
-      }),
-    poll: async () => {
-      const need = (await readNeeds(ctx, task)).findLast((n) => n.for === marked.data.for)
-      if (need === undefined)
-        return err({ code: "bad_args", message: `the need for ${marked.data.for} is gone` })
-      if (need.state === "resolved") return ok({ state: "resolved", need })
-      if (untilEvent && need.state === "open" && (need.reopened?.at ?? 0) >= start)
-        return ok({
-          state: "reopened",
-          need,
-          then: `Reopened: ${need.reopened?.why ?? ""}. The person is asked again in the App; build what does not wait for ${need.for} and run \`qualitylayer wait --until-event\` once nothing else is left.`,
-        })
-      if (untilEvent && options.host !== undefined) {
-        const heard = await takeEvent(ctx, options.host, ["comment"])
-        if (heard !== null)
-          return ok({
-            state: "comment",
-            need,
-            event: heard,
-            then: `A comment arrived: apply it (qualitylayer comments take), then run \`qualitylayer wait --until-event\` again.`,
-          })
-      }
-      if (need.state === "set") {
-        await writeNeeds(
-          ctx,
-          task,
-          (await readNeeds(ctx, task)).map((n) =>
-            n.for === need.for && n.state === "set" ? { ...n, told: true } : n,
-          ),
-        )
-        return ok({ state: "set", need, then: checkThen(need) })
-      }
-      const now = ctx.clock.now()
-      if (now - start >= sliceMs)
-        return ok({ state: "waiting", need, again: true, then: again(need.for) })
-      if (now - last >= NEED_HEARTBEAT_MS) {
-        last = now
-        await beat()
-      }
-      return null
-    },
-  })
-}
-
-/** Slack hears of a need only when the build really waits for it, and at most once every 4 hours. */
-export const NEED_SLACK_EVERY_MS = 4 * 3_600_000
-
-export function needSlackDue(need: Need, lastSent: number | null, now: number): boolean {
-  if (need.state !== "open" || need.waiting === null) return false
-  return lastSent === null || now - lastSent >= NEED_SLACK_EVERY_MS
 }

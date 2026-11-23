@@ -1,149 +1,87 @@
 import { join } from "node:path"
-import { parseDoc } from "../../core/docs/frontmatter.ts"
 import { agentFileOf, agentRoleOf, NAMES, roleOf, STEPS } from "../../core/docs/names.ts"
-import { sectionRanges } from "../../core/docs/rules/types.ts"
-import {
-  type DocFacts,
-  docTypeOf,
-  schemaForDoc,
-  sectionMatches,
-  sectionShow,
-  sectionWriter,
-} from "../../core/docs/schema.ts"
 import { renderTerminal, textFence } from "../../core/terminal/render.ts"
 import { sketch } from "../../core/terminal/sketch.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { readArtifactPage } from "./artifact.ts"
+import { factsOf, readStructure } from "./read-structure.ts"
 import { parseArgs, requireTask } from "./shared.ts"
 
 const USAGE =
   "usage: qualitylayer read <document | step | artifact <name>> [--page <page>] [--width <columns, default 100>] [--lead | --structure]"
 const badArgs = (message: string): Result<never> => err({ code: "bad_args", message })
+const ALLOWED_FLAGS = new Set(["width", "page", "lead", "structure"])
 
-type StructureRow = {
-  heading: string
-  required: boolean
-  show: string
-  writer: string
-  /** The lines the section holds in the file; absent while the file lacks it. */
-  lines?: [number, number]
-}
-type FileStructure = {
-  file: string
-  for: "people" | "agents"
-  exists: boolean
-  sections: StructureRow[]
-  /** Headings in the file that the schema does not name. */
-  other: string[]
+type ParsedRead = {
+  target: string
+  name: string | undefined
+  width: number
+  flags: Record<string, string | true>
 }
 
-/** One file's sections as its schema names them, with where each stands in the file now. */
-function structureOf(file: string, facts: DocFacts, markdown: string | null): FileStructure | null {
-  const schema = schemaForDoc(file, facts)
-  if (schema === undefined) return null
-  const ranges = markdown === null ? [] : sectionRanges(markdown)
-  const sections: StructureRow[] = []
-  for (const spec of schema.sections) {
-    const row = { required: spec.required, show: sectionShow(spec), writer: sectionWriter(spec) }
-    const found = ranges.filter((range) => sectionMatches(spec, range.heading))
-    if (found.length === 0) sections.push({ heading: spec.heading, ...row })
-    for (const range of found)
-      sections.push({ heading: range.heading, ...row, lines: [range.start, range.end - 1] })
-  }
-  const other = ranges
-    .filter((range) => !schema.sections.some((spec) => sectionMatches(spec, range.heading)))
-    .map((range) => range.heading)
-  return {
-    file,
-    for: agentRoleOf(file) === null ? "people" : "agents",
-    exists: markdown !== null,
-    sections,
-    other,
-  }
-}
-
-/** The task's kind and origin, from its Plan file: what resolves a document's schema. */
-async function factsOf(ctx: Ctx, dir: string): Promise<DocFacts> {
-  const plan = join(dir, NAMES.plan)
-  const { frontmatter } = parseDoc((await ctx.fs.exists(plan)) ? await ctx.fs.readFile(plan) : "")
-  return {
-    type: docTypeOf(frontmatter?.type),
-    ...(frontmatter?.origin === "existing-plan" ? { origin: "existing-plan" as const } : {}),
-  }
-}
-
-function structureText(files: FileStructure[]): string {
-  return files
-    .map((each) =>
-      [
-        `${each.file} (${each.for}${each.exists ? "" : ", not written yet"})`,
-        ...each.sections.map(
-          (row) =>
-            `  ${row.heading}: ${row.required ? "required" : "optional"} · ${row.show} · ${row.writer} · ${row.lines ? `lines ${row.lines[0]}-${row.lines[1]}` : "missing"}`,
-        ),
-        ...(each.other.length > 0 ? [`  not in the schema: ${each.other.join(", ")}`] : []),
-      ].join("\n"),
-    )
-    .join("\n\n")
-}
-
-export async function readCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+function parseReadArgs(args: string[]): Result<ParsedRead> {
   const { positional, flags } = parseArgs(args, ["width", "page"])
   const [target, name, ...extra] = positional
-  if (Object.keys(flags).some((key) => !["width", "page", "lead", "structure"].includes(key)))
-    return badArgs(USAGE)
+  if (Object.keys(flags).some((key) => !ALLOWED_FLAGS.has(key))) return badArgs(USAGE)
   const width = flags.width === undefined ? 100 : Number(flags.width)
   if (flags.width === true || !Number.isSafeInteger(width) || width < 1)
     return badArgs("--width needs a positive whole number of terminal columns")
-  if (
-    !target ||
-    extra.length ||
-    (target !== "artifact" && (name !== undefined || flags.page !== undefined)) ||
-    (flags.structure !== undefined && (flags.lead !== undefined || target === "artifact"))
-  )
-    return badArgs(USAGE)
-  if (target === "artifact") {
-    if (!name) return badArgs(USAGE)
-    if (flags.page === true) return badArgs("--page needs a page name")
-    const inspected = await readArtifactPage(ctx, name, flags.page)
-    if (!inspected.ok) return inspected
-    const source = inspected.data
-    const output = sketch(source.html, width)
-    return ok({
-      file: source.file,
-      path: source.path,
-      printed: textFence(output),
-    })
-  }
+  const badNonArtifact = target !== "artifact" && (name !== undefined || flags.page !== undefined)
+  const badStructure =
+    flags.structure !== undefined && (flags.lead !== undefined || target === "artifact")
+  if (!target || extra.length || badNonArtifact || badStructure) return badArgs(USAGE)
+  return ok({ target, name, width, flags })
+}
+
+async function readArtifactSketch(
+  ctx: Ctx,
+  name: string | undefined,
+  page: string | true | undefined,
+  width: number,
+): Promise<Result<unknown>> {
+  if (!name) return badArgs(USAGE)
+  if (page === true) return badArgs("--page needs a page name")
+  const inspected = await readArtifactPage(ctx, name, page)
+  if (!inspected.ok) return inspected
+  const source = inspected.data
+  return ok({
+    file: source.file,
+    path: source.path,
+    printed: textFence(sketch(source.html, width)),
+  })
+}
+
+function resolveDocRole(
+  target: string,
+  hasStructure: boolean,
+): Result<{
+  step: (typeof STEPS)[number] | undefined
+  role: (typeof STEPS)[number]
+  forAgents: boolean
+}> {
   const step = STEPS.find((role) => role === target)
   const forAgents = agentRoleOf(target) !== null
-  if (roleOf(target) === null && !forAgents && step === undefined)
+  const role = step ?? agentRoleOf(target) ?? roleOf(target)
+  if (role === null)
     return badArgs(
       `${USAGE}; use a task document name such as ${NAMES.plan}, or its agents' file ${agentFileOf("plan")}`,
     )
-  if (step !== undefined && flags.structure === undefined)
-    return badArgs(`${USAGE}; a step name needs --structure`)
+  if (step !== undefined && !hasStructure) return badArgs(`${USAGE}; a step name needs --structure`)
+  return ok({ step, role, forAgents })
+}
+
+async function readTaskDoc(
+  ctx: Ctx,
+  target: string,
+  width: number,
+  flags: Record<string, string | true>,
+): Promise<Result<unknown>> {
+  const resolved = resolveDocRole(target, flags.structure !== undefined)
+  if (!resolved.ok) return resolved
   const task = await requireTask(ctx)
   if (!task.ok) return task
-  if (flags.structure !== undefined) {
-    const role = step ?? agentRoleOf(target) ?? roleOf(target)
-    if (role === null) return badArgs(USAGE)
-    const facts = await factsOf(ctx, task.data.dir)
-    if (facts.type === "chat") return badArgs("this is a Chat; Convert to task first")
-    // A step name gives both of its files; a file name gives that file.
-    const names = step !== undefined ? [NAMES[role], agentFileOf(role)] : [target]
-    const files: FileStructure[] = []
-    for (const file of names) {
-      const path = join(task.data.dir, file)
-      const found = structureOf(
-        file,
-        facts,
-        (await ctx.fs.exists(path)) ? await ctx.fs.readFile(path) : null,
-      )
-      if (found !== null) files.push(found)
-    }
-    return ok({ files, printed: structureText(files) })
-  }
+  const { step, role, forAgents } = resolved.data
+  if (flags.structure !== undefined) return readStructure(ctx, task.data.dir, target, step, role)
   const path = join(task.data.dir, target)
   if (!(await ctx.fs.exists(path))) return badArgs(`The task has no ${target} yet`)
   const markdown = await ctx.fs.readFile(path)
@@ -158,4 +96,12 @@ export async function readCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
       facts: await factsOf(ctx, task.data.dir),
     }),
   })
+}
+
+export async function readCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const parsed = parseReadArgs(args)
+  if (!parsed.ok) return parsed
+  const { target, name, width, flags } = parsed.data
+  if (target === "artifact") return readArtifactSketch(ctx, name, flags.page, width)
+  return readTaskDoc(ctx, target, width, flags)
 }

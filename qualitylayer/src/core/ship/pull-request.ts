@@ -3,74 +3,44 @@
 // or to look.
 
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { baseWhenOn } from "../git/branch.ts"
 import { currentBranch } from "../git/repo.ts"
 import type { PullRequestView } from "../review/summary.ts"
-import { shellQuote } from "../shell.ts"
 import type { Task } from "../task/store.ts"
 import { ensureDraftDescription } from "./closing-record.ts"
-import { readRecord } from "./landing-record.ts"
-import { bodyFilePath, pullRequestBody, pullRequestBodyFile, writeBodyFile } from "./pr-body.ts"
+import { bodyFilePath, pullRequestBody, writeBodyFile } from "./pr-body.ts"
 import { recordSeen } from "./pr-life.ts"
 // pr-notes posts and pr-threads reads through this module's `run`: they only call each other, never at load.
 import { postPullRequestNotes } from "./pr-notes.ts"
-import {
-  checkOf,
-  checkRunId,
-  type GhCheck,
-  type PrCheck,
-  type PrReviewer,
-  type PrReviewerState,
-  type PrStats,
-  type PullRequestRecord,
-  readPullRequestRecord,
-  recordPath,
-  writePullRequestRecord,
-} from "./pr-record.ts"
+import { checkOf, readPullRequestRecord, recordPath, writePullRequestRecord } from "./pr-record.ts"
 import { readConversation, remarkRowOf, rowOf } from "./pr-threads.ts"
+import { approvedPush, branchHolds, wrongBranch } from "./pull-request-commands.ts"
+import {
+  beforeTask,
+  changesReviewOf,
+  FIELDS,
+  type GhPull,
+  PULL_URL,
+  reviewersOf,
+  stateOf,
+  statsOf,
+  viewOf,
+  withRunOutput,
+} from "./pull-request-gh.ts"
+import { ghInstalled, run } from "./pull-request-run.ts"
 
-const GH_TIMEOUT_MS = 30_000
+export {
+  branchPushed,
+  commandsFor,
+  manualCommands,
+  pullRequestPossible,
+  wrongBranch,
+} from "./pull-request-commands.ts"
+export { ghInstalled, run } from "./pull-request-run.ts"
+
 /** Looking is cheap for the Cockpit to ask for often, and slow for GitHub to answer. */
 const LOOK_EVERY_MS = 30_000
 
-type Run = { code: number; stdout: string; stderr: string }
-
-/** Run a command in the checkout; null when the program is not installed. */
-export async function run(ctx: Ctx, cwd: string, cmd: string[]): Promise<Run | null> {
-  const path = ctx.env.get("PATH") ?? ""
-  const program = Bun.which(cmd[0] as string, { PATH: path })
-  if (program === null) return null
-  const proc = Bun.spawn([program, ...cmd.slice(1)], {
-    cwd,
-    env: {
-      ...Object.fromEntries(
-        Object.keys(process.env).flatMap((key) => {
-          const value = ctx.env.get(key)
-          return value === undefined ? [] : [[key, value]]
-        }),
-      ),
-      PATH: path,
-      HOME: ctx.env.get("HOME") ?? "",
-      GH_PROMPT_DISABLED: "1",
-    },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    signal: AbortSignal.timeout(GH_TIMEOUT_MS),
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  return { code, stdout, stderr }
-}
-
-/** The same call for `pr watch`, which reads the pull request and its failed logs itself. */
-export const runIn = run
-
-export const ghInstalled = (ctx: Ctx): boolean =>
-  Bun.which("gh", { PATH: ctx.env.get("PATH") ?? "" }) !== null
+const bad = (message: string) => err({ code: "bad_args" as const, message })
 
 export async function storedUrl(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<string | null> {
   return (await readPullRequestRecord(ctx, task))?.url ?? null
@@ -80,200 +50,6 @@ async function remember(ctx: Ctx, task: Task, url: string): Promise<void> {
   await ctx.fs.mkdir(task.runtimeDir)
   await ctx.fs.atomicWrite(recordPath(task), `${JSON.stringify({ url })}\n`)
   looked.delete(task.dir)
-}
-
-/** The branch's head is on a remote: a teammate can read it there. */
-export async function branchPushed(ctx: Ctx, task: Pick<Task, "repoRoot">): Promise<boolean> {
-  const remote = await ctx.git.run(task.repoRoot, ["branch", "-r", "--contains", "HEAD"])
-  return remote.code === 0 && remote.stdout.trim() !== ""
-}
-
-const PULL_URL = /^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+\/pull\/(\d+)\/?$/
-
-type GhPull = {
-  number: number
-  title: string
-  url: string
-  state: string
-  isDraft?: boolean
-  headRefName?: string
-  headRefOid?: string
-  createdAt?: string
-  baseRefName?: string
-  reviewDecision?: string | null
-  mergedAt?: string | null
-  closedAt?: string | null
-  statusCheckRollup?: GhCheck[]
-  /** People (or teams) asked to review who have not reviewed since. */
-  reviewRequests?: { login?: string; name?: string; slug?: string }[]
-  /** The latest review of each person who reviewed. */
-  latestReviews?: { id?: string; author?: { login?: string } | null; state?: string }[]
-  /** GitHub's merge verdict: CONFLICTING when the branch cannot merge into its base as it is. */
-  mergeable?: string
-  commits?: unknown[]
-  changedFiles?: number
-  additions?: number
-  deletions?: number
-}
-
-/**
- * A pull request `gh` found for the branch that was opened before the task began belongs to an
- * earlier change: a long-lived branch such as `dev` keeps answering with one merged months ago.
- */
-function beforeTask(pull: GhPull, task: Pick<Task, "created">): boolean {
-  const opened = pull.createdAt === undefined ? Number.NaN : Date.parse(pull.createdAt)
-  return task.created > 0 && Number.isFinite(opened) && opened < task.created
-}
-
-function checksOf(rollup: GhPull["statusCheckRollup"]): string {
-  const checks = rollup ?? []
-  if (checks.length === 0) return "no checks"
-  const outcome = (c: { status?: string; conclusion?: string; state?: string }) =>
-    (c.conclusion ?? c.state ?? "").toUpperCase()
-  const failing = checks.filter((c) =>
-    ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED"].includes(outcome(c)),
-  )
-  const running = checks.filter(
-    (c) => outcome(c) === "" || ["PENDING", "EXPECTED"].includes(outcome(c)),
-  )
-  const word = (n: number) => `${n} ${n === 1 ? "check" : "checks"}`
-  if (failing.length > 0) return `${word(failing.length)} failing`
-  if (running.length > 0) return `${word(running.length)} running`
-  return `${word(checks.length)} passing`
-}
-
-const FIELDS =
-  "number,title,url,state,isDraft,headRefName,headRefOid,baseRefName,createdAt,reviewDecision,mergedAt,closedAt,statusCheckRollup,reviewRequests,latestReviews,mergeable,commits,changedFiles,additions,deletions"
-
-function viewOf(pull: GhPull, branch: string): PullRequestView {
-  const state = pull.state.toUpperCase()
-  return {
-    number: pull.number,
-    title: pull.title,
-    url: pull.url,
-    state:
-      state === "MERGED"
-        ? "merged"
-        : state === "CLOSED"
-          ? "closed"
-          : pull.isDraft
-            ? "draft"
-            : "open",
-    checks: checksOf(pull.statusCheckRollup),
-    branch: pull.headRefName ?? branch,
-    ...(pull.headRefOid !== undefined
-      ? {
-          head: pull.headRefOid,
-          failingChecks: (pull.statusCheckRollup ?? [])
-            .filter((c) =>
-              ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED"].includes(
-                (c.conclusion ?? c.state ?? "").toUpperCase(),
-              ),
-            )
-            .map((c) => c.name ?? c.context ?? "unnamed check"),
-        }
-      : {}),
-  }
-}
-
-const stateOf = (pull: GhPull): PullRequestRecord["state"] => {
-  const state = pull.state.toUpperCase()
-  return state === "MERGED" ? "merged" : state === "CLOSED" ? "closed" : "open"
-}
-
-/** The id of the review that asked for changes (the last of them when several people did); none when nobody did. */
-const changesReviewOf = (pull: GhPull): string | undefined =>
-  (pull.latestReviews ?? [])
-    .filter((review) => (review.state ?? "").toUpperCase() === "CHANGES_REQUESTED")
-    .map((review) => review.id)
-    .filter((id): id is string => typeof id === "string" && id !== "")
-    .at(-1)
-
-/** Who was asked and who reviewed, one entry per person: a person asked again is asked, not what they said before. */
-function reviewersOf(pull: GhPull): PrReviewer[] {
-  const states: Record<string, PrReviewerState> = {
-    APPROVED: "approved",
-    CHANGES_REQUESTED: "changes",
-    COMMENTED: "commented",
-    DISMISSED: "dismissed",
-  }
-  const people = new Map<string, PrReviewerState>()
-  for (const review of pull.latestReviews ?? []) {
-    const name = review.author?.login
-    const state = states[(review.state ?? "").toUpperCase()]
-    if (name !== undefined && name !== "" && state !== undefined) people.set(name, state)
-  }
-  for (const request of pull.reviewRequests ?? []) {
-    const name = request.login || request.name || request.slug
-    if (name) people.set(name, "asked")
-  }
-  return [...people].map(([name, state]) => ({ name, state }))
-}
-
-function statsOf(pull: GhPull): PrStats | null {
-  const { changedFiles: files, additions, deletions } = pull
-  if (!Array.isArray(pull.commits)) return null
-  return typeof files === "number" && typeof additions === "number" && typeof deletions === "number"
-    ? { commits: pull.commits.length, files, additions, deletions }
-    : null
-}
-
-/** What a check run's output says in one line: its title, unless that is only the check's name, else the first line of its summary. */
-function outputLine(name: string, output: { title?: unknown; summary?: unknown }): string {
-  const title = typeof output.title === "string" ? output.title.trim() : ""
-  if (title !== "" && title.toLowerCase() !== name.toLowerCase()) return title.slice(0, 200)
-  const summary = typeof output.summary === "string" ? output.summary : ""
-  const line = summary
-    .split("\n")
-    .map((l) => l.replace(/^[\s#>*_`-]+/, "").trim())
-    .find((l) => l !== "")
-  return (line ?? "").slice(0, 200)
-}
-
-/**
- * The failed checks with what their run says of them. Each check run is asked once: a check that
- * failed at the same address as in the last record keeps what it had, and a run GitHub gave no
- * output for (or could not be read) keeps an empty note, so it is not asked again.
- */
-async function withRunOutput(
-  ctx: Ctx,
-  task: Task,
-  url: string,
-  checks: PrCheck[],
-  earlier: PrCheck[],
-): Promise<PrCheck[]> {
-  const where = url.match(/^https:\/\/[^/]+\/([^/]+)\/([^/]+)\/pull\/\d+/)
-  const out: PrCheck[] = []
-  for (const check of checks) {
-    const id = check.result === "failed" ? checkRunId(check.detail) : null
-    if (id === null || where === null) {
-      out.push(check)
-      continue
-    }
-    const known = earlier.find((c) => c.name === check.name && c.detail === check.detail)
-    if (known?.summary !== undefined) {
-      out.push({ ...check, summary: known.summary })
-      continue
-    }
-    const asked = await run(ctx, task.repoRoot, [
-      "gh",
-      "api",
-      `repos/${where[1]}/${where[2]}/check-runs/${id}`,
-    ])
-    let summary = ""
-    if (asked !== null && asked.code === 0) {
-      try {
-        const answer = JSON.parse(asked.stdout) as {
-          output?: { title?: unknown; summary?: unknown }
-        }
-        summary = outputLine(check.name, answer.output ?? {})
-      } catch {
-        // an unreadable answer is as good as none
-      }
-    }
-    out.push({ ...check, summary })
-  }
-  return out
 }
 
 /**
@@ -386,90 +162,6 @@ export async function pullRequestOf(
   return pr
 }
 
-/** The address that opens a pull request for `branch` on the origin's host, when the host is GitHub. */
-export async function compareUrl(
-  ctx: Ctx,
-  task: Pick<Task, "repoRoot">,
-  branch: string,
-): Promise<string | null> {
-  const remote = await ctx.git.run(task.repoRoot, ["remote", "get-url", "origin"])
-  if (remote.code !== 0) return null
-  const found = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(remote.stdout.trim())
-  if (found === null) return null
-  const ref = branch.split("/").map(encodeURIComponent).join("/")
-  return `https://github.com/${found[1]}/${found[2]}/compare/${ref}?expand=1`
-}
-
-/**
- * What the author runs by hand: push the branch, then open the pull request with the description's
- * file. Without `gh` the second line is the host's address to open it at, and where the file is.
- */
-export function manualCommands(
-  task: Pick<Task, "title">,
-  branch: string,
-  how: {
-    gh: boolean
-    descriptionFile: string
-    compare: string | null
-    /** The approved commit the branch still holds: it is pushed by its id, not the branch's tip. */
-    approved?: string
-  },
-): string[] {
-  const push =
-    how.approved !== undefined
-      ? `git push origin ${shellQuote(`${how.approved}:refs/heads/${branch}`)}`
-      : `git push -u origin -- ${shellQuote(branch)}`
-  if (how.gh) {
-    return [
-      push,
-      `gh pr create --title ${shellQuote(task.title)} --body-file ${shellQuote(how.descriptionFile)}${how.approved !== undefined ? ` --head ${shellQuote(branch)}` : ""}`,
-    ]
-  }
-  return [
-    push,
-    how.compare !== null
-      ? `# Open ${how.compare} and paste the description from ${how.descriptionFile}`
-      : `# Open a pull request for ${branch} on your host and paste the description from ${how.descriptionFile}`,
-  ]
-}
-
-/** The commands for this task, read from the checkout: `gh`, the description's file, the origin's address. */
-export async function commandsFor(ctx: Ctx, task: Task, branch: string): Promise<string[]> {
-  const gh = ghInstalled(ctx)
-  // The approved commit as the closing bound it. While the branch holds it, the push names it; on
-  // a branch rewritten since, the commands push the branch as it is, for the person to decide.
-  const approved = (await readRecord(ctx, task).catch(() => null))?.approvedHead
-  const held = approved !== undefined && (await branchHolds(ctx, task, branch, approved)) === true
-  return manualCommands(task, branch, {
-    gh,
-    descriptionFile: await pullRequestBodyFile(ctx, task),
-    compare: gh ? null : await compareUrl(ctx, task, branch),
-    ...(held ? { approved } : {}),
-  })
-}
-
-/**
- * Why this checkout cannot open the task's pull request, or null: the push sends the checkout's
- * HEAD, so HEAD must be the branch the task was started on.
- */
-export function wrongBranch(task: Pick<Task, "branch">, branch: string | null): string | null {
-  if (task.branch === undefined || branch === task.branch) return null
-  return `This task was started on ${task.branch}; the checkout is ${branch === null ? "on no branch" : `on ${branch}`}`
-}
-
-/**
- * Whether the approval can open the pull request here, as the Review card's Approve menu decides
- * it: `gh` is installed and the checkout is on the task's own branch, which is not the base.
- */
-export async function pullRequestPossible(ctx: Ctx, task: Task): Promise<boolean> {
-  if (!ghInstalled(ctx)) return false
-  const branch = await currentBranch(ctx, task.repoRoot)
-  if (branch === null || wrongBranch(task, branch) !== null) return false
-  return (await baseWhenOn(ctx, task)) === null
-}
-
-const bad = (message: string) => err({ code: "bad_args" as const, message })
-
 /** The body of a task's pull request as it goes out: the Review document's export. */
 async function sevenBody(ctx: Ctx, task: Task): Promise<string> {
   return pullRequestBody(await ensureDraftDescription(ctx, task))
@@ -519,35 +211,24 @@ async function whereToOpen(
     : ok({ branch })
 }
 
-/**
- * Whether the branch still holds the commit the person approved: true, false (it was amended or
- * rebased since), or null when git cannot say.
- */
-async function branchHolds(
+async function verifyApprovedCommit(
   ctx: Ctx,
-  task: Pick<Task, "repoRoot">,
+  task: Task,
   branch: string,
   approved: string,
-): Promise<boolean | null> {
-  if (!/^[0-9a-f]{7,64}$/.test(approved)) return null
-  try {
-    const held = await ctx.git.run(
-      task.repoRoot,
-      ["merge-base", "--is-ancestor", approved, `refs/heads/${branch}`],
-      { fresh: true },
+): Promise<Result<true>> {
+  const held = await branchHolds(ctx, task, branch, approved)
+  const short = approved.slice(0, 7)
+  if (held === false)
+    return bad(
+      `${branch} no longer holds the commit you approved (${short}): it was amended or rebased after your approval. Nothing was pushed.`,
     )
-    return held.code === 0 ? true : held.code === 1 ? false : null
-  } catch {
-    return null
-  }
+  if (held === null)
+    return bad(
+      `git could not tell whether ${branch} still holds the commit you approved (${short}). Nothing was pushed.`,
+    )
+  return ok(true)
 }
-
-/** The push of exactly the approved commit to the task's remote branch, as a command says it. */
-const approvedPush = (approved: string, branch: string): string[] => [
-  "push",
-  "origin",
-  `${approved}:refs/heads/${branch}`,
-]
 
 /**
  * Push what the person approved and open its pull request with this body: the address `gh` gives.
@@ -566,16 +247,8 @@ async function pushAndOpen(
 ): Promise<Result<string>> {
   const approved = approvedHead === undefined || approvedHead === "" ? null : approvedHead
   if (approved !== null) {
-    const held = await branchHolds(ctx, task, branch, approved)
-    const short = approved.slice(0, 7)
-    if (held === false)
-      return bad(
-        `${branch} no longer holds the commit you approved (${short}): it was amended or rebased after your approval. Nothing was pushed.`,
-      )
-    if (held === null)
-      return bad(
-        `git could not tell whether ${branch} still holds the commit you approved (${short}). Nothing was pushed.`,
-      )
+    const verified = await verifyApprovedCommit(ctx, task, branch, approved)
+    if (!verified.ok) return verified
   }
   const pushed = await ctx.git.run(
     task.repoRoot,

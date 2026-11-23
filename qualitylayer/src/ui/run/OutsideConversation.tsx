@@ -13,6 +13,42 @@ export type OutsideQuestionStatus = { session: string | null; pending: boolean }
 const pendingQuestion = (question: ConversationSnapshot["question"]) =>
   question != null && question.availability !== "expired"
 
+type OutsideLeadRecord = NonNullable<TaskDetail["outside"]> & { agent: NativeAgent }
+
+function fallbackOutsideRun(task: TaskDetail, lead: OutsideLeadRecord): RunWindow {
+  return {
+    id: `outside:${task.id}:${lead.sessionId}`,
+    generation: 1,
+    agent: lead.agent,
+    purpose: { kind: "task", task: task.id },
+    task: task.id,
+    cwd: lead.folder,
+    status: "running",
+    startedAt: new Date(lead.since).toISOString(),
+    updatedAt: "",
+    idempotencyKey: "",
+    startPhase: "ready",
+    title: task.title,
+    resumeLine: "",
+  }
+}
+
+async function sendOutsidePickerAnswer(
+  taskId: string,
+  sessionId: string | null,
+  value: NativeAnswer,
+) {
+  const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/picker`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...value, session: sessionId }),
+  })
+  const result = await response.json()
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error?.message ?? "The answer could not be sent. Your choices are kept.")
+  }
+}
+
 /** The native record stays read-only; only Claude's waiting hook accepts a picker answer. */
 export function OutsideConversation({
   task,
@@ -21,7 +57,7 @@ export function OutsideConversation({
   onQuestion,
 }: {
   task: TaskDetail
-  lead: NonNullable<TaskDetail["outside"]> & { agent: NativeAgent }
+  lead: OutsideLeadRecord
   name: string
   onQuestion?(status: OutsideQuestionStatus): void
 }) {
@@ -44,8 +80,9 @@ export function OutsideConversation({
       const response = await fetch(
         `/api/agent-sessions/outside/${encodeURIComponent(task.id)}${query}`,
       )
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error("The outside conversation could not be read. Reopen this task to retry.")
+      }
       const body = (await response.json()) as { run: RunWindow; snapshot: ConversationSnapshot }
       setRecord({ run: body.run, question: body.snapshot.question })
       onQuestion?.({ session: lead.sessionId, pending: pendingQuestion(body.snapshot.question) })
@@ -54,37 +91,12 @@ export function OutsideConversation({
     [task.id, lead.sessionId, onQuestion],
   )
   const answer = async (value: NativeAnswer) => {
-    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/picker`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...value, session: lead.sessionId }),
-    })
-    const result = await response.json()
-    if (!response.ok || !result.ok)
-      throw new Error(
-        result.error?.message ?? "The answer could not be sent. Your choices are kept.",
-      )
+    await sendOutsidePickerAnswer(task.id, lead.sessionId, value)
     setRecord((before) => (before ? { ...before, question: null } : before))
     onQuestion?.({ session: lead.sessionId, pending: false })
     return { status: "submitted" as const }
   }
-  const run =
-    record?.run ??
-    ({
-      id: `outside:${task.id}:${lead.sessionId}`,
-      generation: 1,
-      agent: lead.agent,
-      purpose: { kind: "task", task: task.id },
-      task: task.id,
-      cwd: lead.folder,
-      status: "running",
-      startedAt: new Date(lead.since).toISOString(),
-      updatedAt: "",
-      idempotencyKey: "",
-      startPhase: "ready",
-      title: task.title,
-      resumeLine: "",
-    } satisfies RunWindow)
+  const run = record?.run ?? fallbackOutsideRun(task, lead)
   const canAnswer =
     record?.question?.agent === "claude-code" && record.question.answerable && !task.archived
   return (

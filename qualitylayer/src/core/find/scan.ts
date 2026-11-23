@@ -71,6 +71,78 @@ function snippet(text: string, query: string): string | undefined {
     .trim()
 }
 
+async function collectTasksFromRoot(
+  ctx: Ctx,
+  repo: RepoRef,
+  root: string,
+  entries: Map<string, Entry>,
+  texts: Map<string, string>,
+): Promise<void> {
+  for (const task of await listTasks(ctx, { ...repo, root })) {
+    if (entries.has(task.slug)) continue
+    const frontmatter = parseDoc(await ctx.fs.readFile(readmePath(task))).frontmatter ?? {}
+    entries.set(task.slug, {
+      answers: task.answers,
+      task: task.slug,
+      id: `${repo.id}~${task.slug}`,
+      step: task.stage,
+      title: task.title,
+      flow: "current",
+      status: typeof frontmatter.status === "string" ? frontmatter.status : task.stage,
+      shipped: frontmatter.shipped != null ? String(frontmatter.shipped) : null,
+      path: task.dir,
+      touched: Array.isArray(frontmatter.touched) ? frontmatter.touched.map(String) : [],
+      created: task.created,
+      readonly: false,
+    })
+    texts.set(task.slug, await docsText(ctx, task.dir))
+  }
+}
+
+async function collectV11FromRoot(
+  ctx: Ctx,
+  repo: RepoRef,
+  root: string,
+  entries: Map<string, Entry>,
+  texts: Map<string, string>,
+): Promise<void> {
+  const plans = plansDir(root)
+  if (!(await ctx.fs.exists(plans))) return
+  for (const name of await ctx.fs.readdir(plans)) {
+    if (!name.endsWith(".md")) continue
+    const path = join(plans, name)
+    const markdown = await ctx.fs.readFile(path)
+    const entry = v11Entry(repo, name, path, markdown)
+    if (entry !== null && !entries.has(entry.task)) {
+      entries.set(entry.task, entry)
+      texts.set(entry.task, markdown)
+    }
+  }
+}
+
+function filterScannedEntries(
+  ctx: Ctx,
+  entries: Map<string, Entry>,
+  texts: Map<string, string>,
+  options: ScanOptions,
+): Entry[] {
+  let list = [...entries.values()]
+  if (options.status !== undefined) list = list.filter((e) => e.status === options.status)
+  if (options.sinceMs !== undefined) {
+    const from = ctx.clock.now() - options.sinceMs
+    list = list.filter((e) => e.created >= from)
+  }
+  const query = options.query?.trim() ?? ""
+  if (query !== "") {
+    list = list.flatMap((e) => {
+      const haystack = `${e.title}\n${e.touched.join(" ")}\n${texts.get(e.task) ?? ""}`
+      const match = snippet(haystack, query)
+      return match !== undefined ? [{ ...e, match }] : []
+    })
+  }
+  return list.sort((a, b) => b.created - a.created || b.task.localeCompare(a.task))
+}
+
 export type ScanOptions = { query?: string; status?: string; sinceMs?: number }
 
 export async function scan(ctx: Ctx, repo: RepoRef, options: ScanOptions = {}): Promise<Entry[]> {
@@ -81,54 +153,10 @@ export async function scan(ctx: Ctx, repo: RepoRef, options: ScanOptions = {}): 
 
   for (const root of roots) {
     if (!(await ctx.fs.exists(root))) continue
-    for (const task of await listTasks(ctx, { ...repo, root })) {
-      if (entries.has(task.slug)) continue
-      const frontmatter = parseDoc(await ctx.fs.readFile(readmePath(task))).frontmatter ?? {}
-      entries.set(task.slug, {
-        answers: task.answers,
-        task: task.slug,
-        id: `${repo.id}~${task.slug}`,
-        step: task.stage,
-        title: task.title,
-        flow: "current",
-        status: typeof frontmatter.status === "string" ? frontmatter.status : task.stage,
-        shipped: frontmatter.shipped != null ? String(frontmatter.shipped) : null,
-        path: task.dir,
-        touched: Array.isArray(frontmatter.touched) ? frontmatter.touched.map(String) : [],
-        created: task.created,
-        readonly: false,
-      })
-      texts.set(task.slug, await docsText(ctx, task.dir))
-    }
-    const plans = plansDir(root)
-    if (!(await ctx.fs.exists(plans))) continue
-    for (const name of await ctx.fs.readdir(plans)) {
-      if (!name.endsWith(".md")) continue
-      const path = join(plans, name)
-      const markdown = await ctx.fs.readFile(path)
-      const entry = v11Entry(repo, name, path, markdown)
-      if (entry !== null && !entries.has(entry.task)) {
-        entries.set(entry.task, entry)
-        texts.set(entry.task, markdown)
-      }
-    }
+    await collectTasksFromRoot(ctx, repo, root, entries, texts)
+    await collectV11FromRoot(ctx, repo, root, entries, texts)
   }
-
-  let list = [...entries.values()]
-  if (options.status !== undefined) list = list.filter((e) => e.status === options.status)
-  if (options.sinceMs !== undefined) {
-    const from = ctx.clock.now() - options.sinceMs
-    list = list.filter((e) => e.created >= from)
-  }
-  if (options.query !== undefined && options.query.trim() !== "") {
-    const query = options.query.trim()
-    list = list.flatMap((e) => {
-      const haystack = `${e.title}\n${e.touched.join(" ")}\n${texts.get(e.task) ?? ""}`
-      const match = snippet(haystack, query)
-      return match !== undefined ? [{ ...e, match }] : []
-    })
-  }
-  return list.sort((a, b) => b.created - a.created || b.task.localeCompare(a.task))
+  return filterScannedEntries(ctx, entries, texts, options)
 }
 
 /** "30d", "12h", "2w" → milliseconds. */

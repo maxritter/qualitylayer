@@ -18,15 +18,11 @@ import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { draftsOf } from "../../review-workspace/line-drafts.ts"
 import { publishCodeSummary, useWorkspaceShown } from "../../review-workspace/open.ts"
 import { readableFiles, viewedCount } from "../../review-workspace/ReviewWorkspace.tsx"
-import { finalApproved } from "../../shell/lines.ts"
 import { Bands } from "../../step-page/bands/Bands.tsx"
-import type { Fact } from "../../step-page/bands/FactRow.tsx"
-import { metaLine } from "../../step-page/bands/Gist.tsx"
 import { SummaryPart } from "../../step-page/bands/SummaryPart.tsx"
 import { CommentBlock } from "../../step-page/DocMarkdown.tsx"
 import { FileRow } from "../../step-page/kit/FileRow.tsx"
 import { readWholeFile } from "../../step-page/kit/read-file.ts"
-import { TICKS_UP_TO } from "../../step-page/proof.ts"
 import { useSelectionMark } from "../../step-page/StepPage.tsx"
 import { StepTools } from "../../step-page/StepTools.tsx"
 import { STEP_TITLES } from "../../step-page/titles.ts"
@@ -35,13 +31,12 @@ import { PageSection } from "../PageSection.tsx"
 import type { StepPageProps } from "../page-props.ts"
 import { RunKindMark } from "../plan/Pictures.tsx"
 import { runKindsOf } from "../plan/plan-model.ts"
-import { recheckLine } from "./approval-line.ts"
 import { CodeRow } from "./CodeRow.tsx"
 import { LandingCard } from "./LandingCard.tsx"
 import { PullRequestCard } from "./PullRequestCard.tsx"
-import { checkedWords } from "./progress.ts"
 import { ReviewFolds } from "./ReviewFolds.tsx"
 import { reviewRecord } from "./record.ts"
+import { reviewHeaderState } from "./review-header.ts"
 import { AcceptanceTabs, ChangedTabs, ScreenTabs } from "./Sections.tsx"
 import { useWalkthrough } from "./use-walkthrough.ts"
 
@@ -66,17 +61,11 @@ export function ReviewStepPage(props: StepPageProps) {
   return <ReviewPage {...props} afterHeader={after} />
 }
 
-const short = (revision: string): string => revision.slice(0, 7)
-
-function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
-  const { task, document: doc, sections, api, state, mode } = props
-  const live = state.closed || mode !== "live" ? undefined : props.live
-  const root = useRef<HTMLDivElement | null>(null)
-  // Selected words open the quick field here as on the other step pages.
-  useSelectionMark(root, live)
-  const stamp = JSON.stringify([doc.markdown, task.gate?.revision])
-  const view = useWalkthrough(mode === "live" ? api : undefined, task.id, stamp)
-  const walk = view.data
+function useCodeSummarySync(
+  task: StepPageProps["task"],
+  mode: StepPageProps["mode"],
+  walk: ReturnType<typeof useWalkthrough>["data"],
+) {
   const workspace = useWorkspaceShown(task.id)
   const drafts = draftsOf(task).length
   useEffect(() => {
@@ -93,77 +82,26 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
     )
   }, [walk, task.id, drafts, workspace, mode])
   useEffect(() => (mode === "live" ? () => publishCodeSummary(null) : undefined), [mode])
+}
+
+function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
+  const { task, document: doc, sections, api, state, mode } = props
+  const live = state.closed || mode !== "live" ? undefined : props.live
+  const root = useRef<HTMLDivElement | null>(null)
+  // Selected words open the quick field here as on the other step pages.
+  useSelectionMark(root, live)
+  const stamp = JSON.stringify([doc.markdown, task.gate?.revision])
+  const view = useWalkthrough(mode === "live" ? api : undefined, task.id, stamp)
+  const walk = view.data
+  useCodeSummarySync(task, mode, walk)
 
   const record = useMemo(() => reviewRecord(sections, walk?.why.sentence), [sections, walk?.why])
-  const points = walk?.points ?? []
-  const passed = points.filter(
-    (point) => point.status === "passed" || point.status === "confirmed by you",
-  ).length
-  // The Plan lists its Acceptance test by Done means point: the header says so, the test is grouped by point.
-  const byPoint = walk?.acceptance.points !== undefined
-  const merged = task.stage === "shipped" && task.pullRequest?.state === "merged"
-  // From the moment the approval is saved: the header says Approved and nothing offers Approve again.
-  const approved = finalApproved(task)
-  // An approval the agents had not finished checking says what they had checked, and no more.
-  const recheck = approved ? recheckLine(task.closing?.pass) : null
-  const checked = task.reviewEvidence
-  // What turned up while reviewing goes to a fix round: the header says it is being rechecked.
-  const fixing = !approved && (task.reviewFix !== undefined || checked?.current === false)
-  const writing = state.review?.ship.phase === "writing"
-  const branch = walk?.ship.branch ?? task.branch
-  const base = walk?.ship.base
-  const where =
-    branch !== null && branch !== undefined
-      ? `branch ${branch}${base ? `, to ${base}` : ""}`
-      : undefined
-  const meta = approved
-    ? // The mark beside the title says Approved: the line keeps the header's facts.
-      (recheck ??
-      metaLine(merged ? "in main" : undefined, branch ? `branch ${branch}` : undefined, undefined))
-    : fixing
-      ? metaLine("rechecking", where, "changed since the review")
-      : writing
-        ? metaLine("being written", where, "Approve opens when the review is ready")
-        : metaLine("ready for your review", checkedWords(task.events) ?? undefined, where)
-  const facts: Fact[] = []
-  if (points.length > 0)
-    facts.push(
-      fixing && checked?.checkedCode
-        ? {
-            value: `${passed} of ${points.length}`,
-            label: `passed at ${short(checked.checkedCode)}`,
-          }
-        : byPoint
-          ? {
-              // The Plan lists its test by Done means point: the same words and ticks as Verify.
-              value: `${passed} of ${points.length}`,
-              label: "Done means proven",
-              ...(points.length <= TICKS_UP_TO
-                ? {
-                    ticks: points.map((point) =>
-                      point.status === "passed" || point.status === "confirmed by you"
-                        ? ("done" as const)
-                        : ("todo" as const),
-                    ),
-                  }
-                : { bar: { done: passed, total: points.length } }),
-            }
-          : {
-              value: `${passed} of ${points.length}`,
-              label: "points pass",
-              bar: { done: passed, total: points.length },
-            },
-    )
-  if (!fixing && walk !== null && walk.totals.commits > 0)
-    facts.push({
-      value: walk.totals.commits,
-      label: walk.totals.commits === 1 ? "commit" : "commits",
-    })
+  const header = reviewHeaderState(task, state, walk)
   const gist = {
     title: STEP_TITLES.verify,
     actions: (
       <>
-        {approved ? (
+        {header.approved ? (
           <span className="bd-read rvw-approved" data-testid="review-approved">
             <CheckIcon aria-hidden="true" />
             Approved
@@ -172,9 +110,9 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
         <StepTools doc={doc} cut={sections} live={live} />
       </>
     ),
-    meta,
-    facts,
-    ...(fixing
+    meta: header.meta,
+    facts: header.facts,
+    ...(header.fixing
       ? {
           now: {
             id: "Fixing",
@@ -188,10 +126,9 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
   // One run can mix scripted steps and real sessions: the heading never names one mode for both.
   const runKinds = acceptance ? runKindsOf(acceptance) : null
   const loadEvidence = live?.loadEvidence
-  const walked = walk !== null
   const shown = {
     // Once merged the code stays in the pull request: no row to open it.
-    code: mode === "live" && !merged && (walked || view.error !== null),
+    code: mode === "live" && !header.merged && (walk !== null || view.error !== null),
     changed: record.diagrams.length > 0 || (walk !== null && walk.slices.length >= 2),
     screens: screens.length > 0,
     acceptance: (acceptance?.steps.length ?? 0) > 0,
@@ -263,7 +200,7 @@ function ReviewPage(props: StepPageProps & { afterHeader: ReactNode }) {
               >
                 <AcceptanceTabs
                   acceptance={acceptance}
-                  pointsProven={points.length > 0 && passed === points.length}
+                  pointsProven={header.points.length > 0 && header.passed === header.points.length}
                   bug={task.type === "bugfix"}
                   loadEvidence={loadEvidence}
                   api={api}

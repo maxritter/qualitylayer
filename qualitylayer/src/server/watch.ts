@@ -2,181 +2,23 @@
 // folders and on every registered project's docs/plans. No polling timers
 // reach the browser; the page refetches when an event arrives.
 
-import { closeSync, constants, type FSWatcher, lstatSync, openSync, readSync, watch } from "node:fs"
-import { join, sep } from "node:path"
-import { LASTING_ARTIFACTS } from "../core/artifact/format.ts"
-import { listLasting } from "../core/artifact/lasting.ts"
+import type { FSWatcher } from "node:fs"
+import { join } from "node:path"
 import { logFile } from "../core/automations/log.ts"
 import { automationsDir, automationsFile } from "../core/paths.ts"
 import type { Ctx } from "../ctx.ts"
-import { listProjects } from "./api.ts"
-import { docCache } from "./doc-cache.ts"
 import { Pace } from "./resource-guard.ts"
-import {
-  atomicStaging,
-  PUBLICATION_CHECK_MS,
-  PublicationRecovery,
-  recoveryStride,
-} from "./watch-publications.ts"
+import { emitWatchEvent, type WatchState } from "./watch-emit.ts"
+import type { Hub, StreamEvent } from "./watch-hub.ts"
+import { PUBLICATION_CHECK_MS, PublicationRecovery, recoveryStride } from "./watch-publications.ts"
+import { refreshWatchRoots, stopWatchState } from "./watch-refresh.ts"
 
-export type StreamEvent = {
-  type:
-    | "task-changed"
-    | "gate-opened"
-    | "session-heartbeat"
-    | "hello"
-    /** The desktop shell wrote update.json: a check ended, a download finished, an install began. */
-    | "update-changed"
-    /** An agent's hook left a sign of life (core/live): at most one every few seconds. */
-    | "live-changed"
-    /** An artifact's page, `artifact show`'s note or an artifact's picture changed: the Artifacts tab reads again. */
-    | "artifact-changed"
-    | "run-changed"
-    /** The run host recorded what a finished turn changed (`runs/<id>/turn-snapshots.json`): the Conversation reads it. */
-    | "turn-recorded"
-    | "memory-changed"
-    | "usage-changed"
-    /** A bounded aggregate snapshot changed; all readers refresh from the actual watched root. */
-    | "publication-changed"
-    /** A machine was added, renamed or removed, or its connection changed state: pages read the list again. */
-    | "machines-changed"
-    /** `automations.json` or the delivery log changed (the command line, a delivery's result): Settings › Automations reads again. */
-    | "automations-changed"
-  path?: string
-  revision?: number
-}
-
-/**
- * An artifact's file (any file of an artifact that is a folder, in a task's plan folder or the project's
- * `docs/artifacts/`), `artifact show`'s note or an artifact's picture.
- */
-const ARTIFACT_FILES =
-  /[\\/](?:artifacts|design|docs[\\/](?:artifacts|designs))[\\/][a-z0-9][a-z0-9-]*\.html$|[\\/]docs[\\/](?:plans[\\/][^\\/]+[\\/](?:artifacts|design)|artifacts|designs)[\\/][a-z0-9][a-z0-9-]*[\\/][^\\/]+(?:[\\/].+)?$|[\\/]artifacts[\\/](?:shown\.json|thumbs[\\/][0-9a-f]+\.png)$/
-
-type Client<E> = (event: E) => void
-
-/** The pages holding an event stream. The main stream carries `StreamEvent`; setup has its own. */
-export class Hub<E extends { type: string } = StreamEvent> {
-  private clients = new Set<Client<E>>()
-  private observers = new Set<Client<E>>()
-  private endings = new Map<Client<E>, () => void>()
-  lastActivity = Date.now()
-
-  subscribe(client: Client<E>, end?: () => void): () => void {
-    this.clients.add(client)
-    if (end !== undefined) this.endings.set(client, end)
-    this.lastActivity = Date.now()
-    return () => {
-      this.clients.delete(client)
-      this.endings.delete(client)
-      this.lastActivity = Date.now()
-    }
-  }
-
-  get size(): number {
-    return this.clients.size
-  }
-
-  /** Server-side work hears file changes without counting as an open App window. */
-  observe(client: Client<E>): () => void {
-    this.observers.add(client)
-    return () => {
-      this.observers.delete(client)
-    }
-  }
-
-  publish(event: E): void {
-    this.publishClients(event)
-    this.notifyObservers(event)
-  }
-
-  /** Watchers already notified server observers before pacing the page's delivery. */
-  publishClients(event: E): void {
-    for (const client of this.clients) client(event)
-  }
-
-  /** File-sensitive server work needs every path, even when the App's events are batched. */
-  notifyObservers(event: E): void {
-    for (const observer of this.observers) observer(event)
-  }
-
-  /** Finish HTTP streams before stopping the server, so a restart never truncates their bodies. */
-  close(): void {
-    for (const end of this.endings.values()) end()
-    this.endings.clear()
-    this.clients.clear()
-  }
-}
-
-/** The live status's files: every tool call writes one, so the page hears of them in a slower beat. */
-const LIVE_FILES = /[\\/]tasks[\\/][^\\/]+[\\/]live[\\/]/
-/**
- * A permission request an agent's hook left for the Conversation view, its beat or its answer. The
- * waiting hook writes its beat every few seconds, so a visible view hears it and reads: a read is what
- * renews the view's lease (core/conversation/approvals.ts).
- */
-const APPROVAL_FILES =
-  /[\\/](?:approvals|pickers)[\\/][^\\/]+[\\/](?:pending|beats|decisions)[\\/][^\\/]+\.json$/
-/** How often at most the page hears that an agent showed a sign of life. */
-export const LIVE_EVENT_MS = 3_000
-/** A first change reaches the page this soon: editors and the CLI write in bursts. */
-export const FIRST_EVENT_MS = 120
-/**
- * While files keep changing, the page hears of them at most this often. Each event makes the page
- * read the list and the open task again; an agent at work writes several files a second, and pages
- * that read again at that pace kept the server's core busy for as long as the agent worked.
- */
-export const PAGE_EVENT_GAP_MS = 1_000
-
-const isFolder = (path: string): boolean => {
-  try {
-    return lstatSync(path).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-function catalogFingerprint(file: string): string | null {
-  let descriptor: number | undefined
-  try {
-    const entry = lstatSync(file)
-    if (!entry.isFile() || entry.size < 100) return null
-    descriptor = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-    const header = Buffer.alloc(100)
-    if (readSync(descriptor, header, 0, header.length, 0) !== header.length) return null
-    if (header.subarray(0, 16).toString() !== "SQLite format 3\0") return null
-    // File identity plus the header, which holds the commit counter: a new revision or a replaced file.
-    return `${entry.dev}:${entry.ino}:${entry.size}:${header.toString("hex")}`
-  } catch {
-    return null
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor)
-  }
-}
-
-/**
- * macOS can hold a native file event back for seconds when the system is busy, so the memory catalog's
- * header is also read this often. Only that one file is read, and only its first 100 bytes.
- */
-export const MEMORY_CHECK_MS = 500
-
-/** The automations file and the delivery log, and nothing in `automations/queue/`: that changes with every task event. */
-const AUTOMATIONS_FILES = /[\\/]automations\.json$|[\\/]automations[\\/]deliveries\.ndjson$/
-
-export function classify(path: string): StreamEvent["type"] {
-  if (/[\\/]memory[\\/]catalog\.sqlite$/.test(path)) return "memory-changed"
-  if (AUTOMATIONS_FILES.test(path)) return "automations-changed"
-  if (/[\\/]runs[\\/][^\\/]+[\\/](?:host|run|events|request-state)\.(?:json|jsonl)$/.test(path))
-    return "run-changed"
-  if (/[\\/]runs[\\/][^\\/]+[\\/]turn-snapshots\.json$/.test(path)) return "turn-recorded"
-  if (/[\\/]\.qualitylayer[\\/]artifacts[\\/]/.test(path)) return "artifact-changed"
-  if (ARTIFACT_FILES.test(path)) return "artifact-changed"
-  if (APPROVAL_FILES.test(path)) return "live-changed"
-  if (LIVE_FILES.test(path) || /[\\/]question-heartbeat$/.test(path)) return "live-changed"
-  if (path.endsWith("gate.json")) return "gate-opened"
-  if (path.endsWith("session.json")) return "session-heartbeat"
-  return "task-changed"
-}
+export {
+  classify,
+  Hub,
+  LIVE_EVENT_MS,
+  type StreamEvent,
+} from "./watch-hub.ts"
 
 /**
  * Watch the runtime root and each project's plans; returns a stop function once every folder is
@@ -218,291 +60,57 @@ export async function watchRuntime(
   pace: Pace = new Pace(),
   options: { deferred?: boolean } = {},
 ): Promise<Watching> {
-  const watchers = new Map<string, FSWatcher>()
-  /** One header check per memory folder, alive exactly as long as its native watcher. */
-  const memoryChecks = new Map<string, ReturnType<typeof setInterval>>()
-  const endCheck = (dir: string) => {
-    clearInterval(memoryChecks.get(dir))
-    memoryChecks.delete(dir)
-  }
-  let live: ReturnType<typeof setTimeout> | undefined
-  let livePath: string | undefined
-  let flush: ReturnType<typeof setTimeout> | undefined
-  /** The kinds changed since the page last heard, each with its last path. */
-  const changed = new Map<StreamEvent["type"], string>()
-  let lastFlush = Number.NEGATIVE_INFINITY
-  /** When a native file event last arrived or a publication last went out: a quiet server walks less often. */
-  let lastHeard = Date.now()
-  let sourceFolders = new Set<string>()
-  let projectFolders: Set<string> | undefined
-  let wanted: Set<string> | undefined
-  let recoveryRoots: Set<string> | undefined
-  const runtimeRoots = ["projects", "runs"].map((name) => join(ctx.home, name))
-  const approvals = join(ctx.home, "approvals")
-  const pickers = join(ctx.home, "pickers")
-  const automations = automationsDir(ctx)
-  const automationFiles = new Set([automationsFile(ctx), logFile(ctx)])
-  let stopped = false
-  let refreshing: Promise<void> | undefined
-
-  const emit = (path: string, aggregate = false) => {
-    if (stopped) return
-    lastHeard = Date.now()
-    if (atomicStaging(path)) return
-    // Only the requests and answers are news; the view's lease marker changes on every read.
-    const inApprovals = path.startsWith(`${approvals}${sep}`) || path.startsWith(`${pickers}${sep}`)
-    if (!aggregate && inApprovals && !APPROVAL_FILES.test(path)) return
-    if (aggregate || path.endsWith("project.json") || path.endsWith("artifact.json"))
-      void refresh().catch(() => {})
-    // Replay, sockets and PTY output are private terminal traffic, not page documents.
-    const runs = join(ctx.home, "runs")
-    if (
-      !aggregate &&
-      (path === runs || path.startsWith(`${runs}${sep}`)) &&
-      !["run-changed", "turn-recorded"].includes(classify(path))
-    )
-      return
-    // A document the server kept parsed is forgotten at once, before any pacing.
-    const type = aggregate
-      ? "publication-changed"
-      : [...sourceFolders].some((folder) => path === folder || path.startsWith(`${folder}${sep}`))
-        ? "artifact-changed"
-        : classify(path)
-    if (aggregate) docCache.clear()
-    else if (type !== "run-changed") docCache.drop(path)
-    // Server-side work hears every path at once; only the page's events are paced.
-    hub.notifyObservers({ type, path })
-    if (type === "live-changed" && !inApprovals) {
-      // One sign of life every few seconds.
-      if (livePath === undefined || LIVE_FILES.test(path)) livePath = path
-      live ??= setTimeout(() => {
-        live = undefined
-        const path = livePath
-        livePath = undefined
-        hub.publishClients({ type, path })
-      }, LIVE_EVENT_MS * pace.factor)
-      return
-    }
-    changed.set(type, path)
-    if (flush !== undefined) return
-    // The first change of a quiet moment goes out at once; the rest of a burst waits for the gap.
-    const wait = Math.max(FIRST_EVENT_MS, lastFlush + PAGE_EVENT_GAP_MS * pace.factor - Date.now())
-    flush = setTimeout(() => {
-      flush = undefined
-      lastFlush = Date.now()
-      const kinds = [...changed]
-      changed.clear()
-      for (const [kind, last] of kinds) hub.publishClients({ type: kind, path: last })
-    }, wait)
-  }
-
-  const recovery = new PublicationRecovery(join(ctx.home, "runs"), emit)
-
-  const add = (dir: string, memoryOnly = false, runtime = false) => {
-    if (stopped) return
-    // Darwin starts one native stream for these roots; recovery still sees only their exact trees.
-    const sharedHome = runtime && process.platform === "darwin"
-    const nativeDir = sharedHome ? ctx.home : dir
-    wanted?.add(nativeDir)
-    if (!memoryOnly) recoveryRoots?.add(dir)
-    if (watchers.has(nativeDir)) return
-    try {
-      const catalog = join(dir, "catalog.sqlite")
-      let memoryFingerprint = memoryOnly ? catalogFingerprint(catalog) : null
-      // The native event and the header check share this, so one revision is never published twice.
-      const checkCatalog = () => {
-        if (stopped) return
-        const current = catalogFingerprint(catalog)
-        if (current === memoryFingerprint) return
-        memoryFingerprint = current
-        emit(catalog)
-      }
-      const watcher = watch(nativeDir, { recursive: !memoryOnly }, (event, file) => {
-        if (stopped || watchers.get(nativeDir) !== watcher) return
-        lastHeard = Date.now()
-        const name = typeof file === "string" ? file : ""
-        if (memoryOnly) {
-          // macOS may report only the journal; the header distinguishes commits from empty transactions.
-          if (name === "catalog.sqlite" || name === "catalog.sqlite-journal") checkCatalog()
-          return
-        }
-        const path = join(nativeDir, name)
-        if (sharedHome) {
-          if (name === "") {
-            // No filename identifies which logical root changed; invalidate only those roots.
-            for (const root of runtimeRoots) emit(root, true)
-            return
-          }
-          // The two automations paths are the only ones of the home outside those roots that are news.
-          if (automationFiles.has(path)) {
-            emit(path)
-            return
-          }
-          if (
-            ![...runtimeRoots, approvals, pickers].some(
-              (root) => path === root || path.startsWith(`${root}${sep}`),
-            )
-          )
-            return
-        }
-        // A folder's own change is its times or attributes; what changed inside it names itself.
-        // Windows reports it apart, and late: an idle server must not wake the page for it.
-        if (event === "change" && name !== "" && isFolder(path)) return
-        // An event that names no file could have changed any of them.
-        if (name === "") docCache.clear()
-        recovery.notice(path)
-      })
-      watcher.on("error", () => {
-        // A late error from a replaced watcher must not remove its successor or the successor's check.
-        if (watchers.get(nativeDir) !== watcher) return
-        watchers.delete(nativeDir)
-        endCheck(dir)
-      })
-      watchers.set(nativeDir, watcher)
-      if (memoryOnly) {
-        const check = setInterval(checkCatalog, MEMORY_CHECK_MS)
-        check.unref?.()
-        memoryChecks.set(dir, check)
-      }
-    } catch {
-      // A folder that cannot be watched only costs live updates for that folder.
-    }
-  }
-
-  /**
-   * Where there is no shared stream of the home (Linux, Windows), the automations file and the delivery log
-   * are heard by a flat watcher of the folder each lies in. A flat watcher sees its folder's own entries only,
-   * so `automations/queue/` (a folder deeper, changing with every task event) never reaches it.
-   */
-  const addFlat = (dir: string) => {
-    if (stopped) return
-    wanted?.add(dir)
-    if (watchers.has(dir)) return
-    try {
-      const watcher = watch(dir, { recursive: false }, (_event, file) => {
-        if (stopped || watchers.get(dir) !== watcher || typeof file !== "string") return
-        const path = join(dir, file)
-        if (automationFiles.has(path)) emit(path)
-      })
-      watcher.on("error", () => {
-        if (watchers.get(dir) === watcher) watchers.delete(dir)
-      })
-      watchers.set(dir, watcher)
-    } catch {
-      // A folder that cannot be watched only costs live updates for it.
-    }
-  }
-
-  /** `runtimeOnly`: the runtime root and nothing else, the first look at start-up (see `watchRuntime`). */
-  const refreshWork = async (runtimeOnly: boolean, cooperative: boolean) => {
-    // True when the watcher was stopped while the loop was handed back: nothing more is watched then.
-    const turn = async () => {
-      if (cooperative) await new Promise<void>((done) => setImmediate(done))
-      return stopped
-    }
-    wanted = new Set<string>()
-    recoveryRoots = new Set<string>()
-    const sources = new Set<string>()
-    await ctx.fs.mkdir(join(ctx.home, "projects"))
-    add(join(ctx.home, "projects"), false, true)
-    // The runtime folders, owner-only. Made only when missing: making one sets its mode again, and on
-    // Linux that change is itself a watched event, so every rescan woke an idle page into reading
-    // everything. A watcher stopped meanwhile makes nothing more: its home may be gone on purpose by then.
-    const make = async (dir: string) => {
-      if (!(await ctx.fs.exists(dir)) && !stopped) await ctx.fs.mkdir(dir, { mode: 0o700 })
-    }
-    const runs = join(ctx.home, "runs")
-    await make(runs)
-    add(runs, false, true)
-    // Where the approve hook leaves its requests; owner-only, as the hook makes it, and made only when missing.
-    await make(approvals)
-    add(approvals, false, true)
-    await make(pickers)
-    add(pickers, false, true)
-    if (runtimeOnly) {
-      // Nothing was watched before, so there is nothing to let go of yet.
-      recovery.setRoots([...recoveryRoots])
-      wanted = undefined
-      recoveryRoots = undefined
-      return
-    }
-    const memory = join(ctx.home, "memory")
-    await make(memory)
-    if (await turn()) return
-    if (isFolder(memory)) add(memory, true)
-    if (process.platform !== "darwin") {
-      await make(automations)
-      if (await turn()) return
-      addFlat(ctx.home)
-      addFlat(automations)
-    }
-    const available = new Set<string>()
-    for (const project of await listProjects(ctx)) {
-      for (const root of project.paths) {
-        available.add(root)
-        const plans = join(root, "docs", "plans")
-        if (await ctx.fs.exists(plans)) {
-          if (await turn()) return
-          add(plans)
-        }
-        // The project's artifacts outside any task.
-        const artifacts = join(root, "docs", "artifacts")
-        if (await ctx.fs.exists(artifacts)) {
-          if (await turn()) return
-          add(artifacts)
-        }
-        const registry = join(root, LASTING_ARTIFACTS)
-        if (isFolder(registry)) {
-          if (await turn()) return
-          add(registry)
-        }
-        for (const entry of await listLasting(root)) {
-          if (!entry.ok || entry.read.config.source === undefined) continue
-          sources.add(entry.read.dir)
-          sourceFolders.add(entry.read.dir)
-          if (await turn()) return
-          add(entry.read.dir)
-        }
-      }
-    }
-    const availabilityChanged =
-      projectFolders !== undefined &&
-      (projectFolders.size !== available.size ||
-        [...projectFolders].some((root) => !available.has(root)))
-    projectFolders = available
-    sourceFolders = sources
-    recovery.setRoots([...recoveryRoots])
-    for (const [dir, watcher] of watchers)
-      if (!wanted.has(dir)) {
-        watcher.close()
-        watchers.delete(dir)
-        endCheck(dir)
-      }
-    wanted = undefined
-    recoveryRoots = undefined
-    if (availabilityChanged) emit(join(ctx.home, "projects"), true)
-  }
   const refresh = async (runtimeOnly = false, cooperative = false) => {
-    if (stopped) return
-    if (refreshing) return refreshing
-    const pending = refreshWork(runtimeOnly, cooperative)
-    refreshing = pending
+    if (state.stopped) return
+    if (state.refreshing) return state.refreshing
+    const pending = refreshWatchRoots(state, runtimeOnly, cooperative)
+    state.refreshing = pending
     try {
       await pending
     } finally {
-      if (refreshing === pending) refreshing = undefined
+      if (state.refreshing === pending) state.refreshing = undefined
     }
   }
+
+  const state: WatchState = {
+    ctx,
+    hub,
+    pace,
+    watchers: new Map<string, FSWatcher>(),
+    memoryChecks: new Map<string, ReturnType<typeof setInterval>>(),
+    changed: new Map<StreamEvent["type"], string>(),
+    live: undefined,
+    livePath: undefined,
+    flush: undefined,
+    lastFlush: Number.NEGATIVE_INFINITY,
+    lastHeard: Date.now(),
+    sourceFolders: new Set<string>(),
+    projectFolders: undefined,
+    wanted: undefined,
+    recoveryRoots: undefined,
+    runtimeRoots: ["projects", "runs"].map((name) => join(ctx.home, name)),
+    approvals: join(ctx.home, "approvals"),
+    pickers: join(ctx.home, "pickers"),
+    automations: automationsDir(ctx),
+    automationFiles: new Set([automationsFile(ctx), logFile(ctx)]),
+    stopped: false,
+    refreshing: undefined,
+    recovery: undefined as unknown as PublicationRecovery,
+    triggerRefresh: () => void refresh().catch(() => {}),
+  }
+  state.recovery = new PublicationRecovery(join(ctx.home, "runs"), (path, aggregate) =>
+    emitWatchEvent(state, path, aggregate),
+  )
 
   // A folder that cannot be made or listed costs live updates for it, never the server.
   const deferred = options.deferred !== false
   await refresh(deferred).catch(() => {})
-  await recovery.seed()
+  await state.recovery.seed()
   let recoveryBeat = 0
   const recover = setInterval(() => {
-    if (++recoveryBeat < recoveryStride(Date.now() - lastHeard, pace.factor)) return
+    if (++recoveryBeat < recoveryStride(Date.now() - state.lastHeard, pace.factor)) return
     recoveryBeat = 0
-    recovery.tick()
+    state.recovery.tick()
   }, PUBLICATION_CHECK_MS)
   recover.unref?.()
   // New plans folders appear after a project's first task; re-scan at a slow, server-side pace.
@@ -510,19 +118,14 @@ export async function watchRuntime(
 
   return {
     stop: () => {
-      stopped = true
       clearInterval(rescan)
       clearInterval(recover)
-      recovery.stop()
-      clearTimeout(live)
-      clearTimeout(flush)
-      for (const watcher of watchers.values()) watcher.close()
-      for (const dir of [...memoryChecks.keys()]) endCheck(dir)
+      stopWatchState(state)
     },
     settle: async () => {
       await refresh(false, true).catch(() => {})
-      if (stopped) return
-      await recovery.seed()
+      if (state.stopped) return
+      await state.recovery.seed()
     },
   }
 }

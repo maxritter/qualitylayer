@@ -69,40 +69,74 @@ export function Decide({ marker, state, mode, live }: PartProps) {
 const clock = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
 
+type PlanApproval = NonNullable<NonNullable<StepState["plan"]>["approve"]>
+
+const jumpToTarget = (target: string) => {
+  const el = document.getElementById(target)
+  el?.scrollIntoView?.({ block: "center", behavior: "smooth" })
+  el?.focus?.({ preventScroll: true })
+}
+
+function DecidedApproval({ approval }: { approval: PlanApproval }) {
+  return (
+    <div className="sp-ap done" id={jumpId("approve")} data-testid="approve-plan">
+      <div className="sp-ap-h">
+        <WhoMark who="done" />
+        <b>{approval.decided?.decision === "changes" ? "Changes sent" : "Plan approved"}</b>
+        {approval.decided?.at !== undefined ? (
+          <span className="s">{clock(approval.decided.at)}</span>
+        ) : null}
+      </div>
+      {approval.amends.length > 0 ? (
+        <div className="sp-ap-b" data-testid="changed-after-approval">
+          <b className="sp-ap-sub">What changed after your approval</b>
+          <ul className="sp-ap-amends">
+            {approval.amends.map((amend) => (
+              <li key={`${amend.at}-${amend.note}`}>
+                {amend.note}
+                <span className="s">{clock(amend.at)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ApprovalRows({ rows }: { rows: PlanApproval["rows"] }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="sp-ap-b">
+      {rows.map((row) => (
+        <div className="sp-ap-r" key={row.id}>
+          <WhoMark who={row.open ? "you" : "done"} />
+          <span>{row.label}</span>
+          {row.open ? (
+            <button type="button" className="r y" onClick={() => jumpToTarget(row.target)}>
+              open ↑
+            </button>
+          ) : (
+            <span className="r">{row.answer}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const approvalHint = (approval: PlanApproval, agent: string): string =>
+  approval.phase === "writing"
+    ? `${agent} is still writing the Plan. Approve opens when it asks for your review.`
+    : (approval.locked ??
+      "Approving takes the open ones as they are. A Change turns this into Send N changes.")
+
 /** "Approve the Plan?": what you answered, what is open, and the one main button. */
 export function ApprovePlan({ state, mode, live }: PartProps) {
   const a = state.plan?.approve
   if (a === undefined) return null
-  if (a.phase === "decided") {
-    return (
-      <div className="sp-ap done" id={jumpId("approve")} data-testid="approve-plan">
-        <div className="sp-ap-h">
-          <WhoMark who="done" />
-          <b>{a.decided?.decision === "changes" ? "Changes sent" : "Plan approved"}</b>
-          {a.decided?.at !== undefined ? <span className="s">{clock(a.decided.at)}</span> : null}
-        </div>
-        {a.amends.length > 0 ? (
-          <div className="sp-ap-b" data-testid="changed-after-approval">
-            <b className="sp-ap-sub">What changed after your approval</b>
-            <ul className="sp-ap-amends">
-              {a.amends.map((amend) => (
-                <li key={`${amend.at}-${amend.note}`}>
-                  {amend.note}
-                  <span className="s">{clock(amend.at)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-    )
-  }
+  if (a.phase === "decided") return <DecidedApproval approval={a} />
   const acts = mode === "live" && a.phase === "open" ? live : undefined
-  const jump = (target: string) => {
-    const el = document.getElementById(target)
-    el?.scrollIntoView?.({ block: "center", behavior: "smooth" })
-    el?.focus?.({ preventScroll: true })
-  }
   return (
     <div className="sp-ap" id={jumpId("approve")} tabIndex={-1} data-testid="approve-plan">
       <div className="sp-ap-h">
@@ -112,30 +146,9 @@ export function ApprovePlan({ state, mode, live }: PartProps) {
           {a.rows.length > 0 ? `${a.answered} of ${a.rows.length} answered` : ""}
         </span>
       </div>
-      {a.rows.length > 0 ? (
-        <div className="sp-ap-b">
-          {a.rows.map((row) => (
-            <div className="sp-ap-r" key={row.id}>
-              <WhoMark who={row.open ? "you" : "done"} />
-              <span>{row.label}</span>
-              {row.open ? (
-                <button type="button" className="r y" onClick={() => jump(row.target)}>
-                  open ↑
-                </button>
-              ) : (
-                <span className="r">{row.answer}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <ApprovalRows rows={a.rows} />
       <div className="sp-ap-f">
-        <span>
-          {a.phase === "writing"
-            ? `${state.agent} is still writing the Plan. Approve opens when it asks for your review.`
-            : (a.locked ??
-              "Approving takes the open ones as they are. A Change turns this into Send N changes.")}
-        </span>
+        <span>{approvalHint(a, state.agent)}</span>
         <span className="sp" />
         {mode === "live" ? (
           <button

@@ -9,50 +9,75 @@ import { newLastingArtifact } from "../core/artifact/lasting-new.ts"
 import { type Ctx, err, type Result } from "../ctx.ts"
 import { findProject, projectHomes } from "./artifacts.ts"
 
+const bad = (message: string) => err({ code: "bad_args", message })
+
+type NewLastingInput = { name: string; title: string; purpose: string; checkout?: string }
+
+function parseNewLastingBody(body: Record<string, unknown>): Result<NewLastingInput> {
+  if (typeof body.name !== "string" || typeof body.title !== "string")
+    return bad("name and title are needed")
+  if (body.purpose !== undefined && typeof body.purpose !== "string")
+    return bad("purpose is a sentence")
+  const invalidCheckout =
+    body.checkout !== undefined && (typeof body.checkout !== "string" || !isAbsolute(body.checkout))
+  if (invalidCheckout) return bad("Choose a registered project checkout")
+  return {
+    ok: true,
+    data: {
+      name: body.name,
+      title: body.title,
+      purpose: typeof body.purpose === "string" ? body.purpose : "",
+      checkout: typeof body.checkout === "string" ? body.checkout : undefined,
+    },
+  }
+}
+
+async function selectHome(
+  homes: { root: string }[],
+  checkout: string | undefined,
+): Promise<Result<{ root: string }>> {
+  if (checkout === undefined) {
+    return homes[0] ? { ok: true, data: homes[0] } : bad("The project's checkout is not on disk")
+  }
+  const wanted = await realpath(checkout).catch(() => null)
+  if (wanted === null) return bad("Choose a registered project checkout")
+  for (const candidate of homes) {
+    if ((await realpath(candidate.root).catch(() => null)) === wanted)
+      return { ok: true, data: candidate }
+  }
+  return bad("Choose a registered project checkout")
+}
+
+async function hasDuplicateInOtherCheckout(
+  homes: { root: string }[],
+  selectedRoot: string,
+  name: string,
+): Promise<boolean> {
+  for (const candidate of homes) {
+    if (candidate.root !== selectedRoot && (await readLasting(candidate.root, name)).ok) return true
+  }
+  return false
+}
+
 export async function newLasting(
   ctx: Ctx,
   projectId: string,
   body: Record<string, unknown>,
 ): Promise<Result<KeepResult>> {
-  const bad = (message: string) => err({ code: "bad_args", message })
   const project = await findProject(ctx, projectId)
   if (!project.ok) return project
-  if (typeof body.name !== "string" || typeof body.title !== "string")
-    return bad("name and title are needed")
-  if (body.purpose !== undefined && typeof body.purpose !== "string")
-    return bad("purpose is a sentence")
-  const name = body.name
-  const title = body.title
-  const purpose = typeof body.purpose === "string" ? body.purpose : ""
-  if (
-    body.checkout !== undefined &&
-    (typeof body.checkout !== "string" || !isAbsolute(body.checkout))
-  )
-    return bad("Choose a registered project checkout")
+  const parsed = parseNewLastingBody(body)
+  if (!parsed.ok) return parsed
+  const { name, title, purpose, checkout } = parsed.data
   return ctx.fs.withLock(
     join(ctx.home, "projects", project.data.id, "artifact-new.lock"),
     async () => {
       const homes = (await projectHomes(ctx, project.data)) as { root: string }[]
-      let home = homes[0]
-      if (typeof body.checkout === "string") {
-        const wanted = await realpath(body.checkout).catch(() => null)
-        home = undefined
-        for (const candidate of homes)
-          if (wanted !== null && (await realpath(candidate.root).catch(() => null)) === wanted) {
-            home = candidate
-            break
-          }
-        if (!home) return bad("Choose a registered project checkout")
-      }
-      if (home === undefined) return bad("The project's checkout is not on disk")
-      for (const candidate of homes)
-        if (candidate.root !== home.root && (await readLasting(candidate.root, name)).ok)
-          return bad(`Artifact ${name} already exists in another checkout of this project`)
-      return newLastingArtifact(ctx, home.root, {
-        name,
-        title,
-        purpose,
-      })
+      const selected = await selectHome(homes, checkout)
+      if (!selected.ok) return selected
+      if (await hasDuplicateInOtherCheckout(homes, selected.data.root, name))
+        return bad(`Artifact ${name} already exists in another checkout of this project`)
+      return newLastingArtifact(ctx, selected.data.root, { name, title, purpose })
     },
   )
 }

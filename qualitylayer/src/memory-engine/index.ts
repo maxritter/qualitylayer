@@ -1,18 +1,20 @@
-import { Database } from "bun:sqlite"
-import { createHash } from "node:crypto"
-import { chmod, lstat } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import type { MemoryEngine } from "../memory-contracts.ts"
+import { materializeMemoryEngine } from "./extract.ts"
 import {
-  MEMORY_ENGINE_DB_MAX_BYTES,
-  MEMORY_IDENTITY_MAX_BYTES,
-  MEMORY_INDEX_MAX_BYTES,
-  MEMORY_INDEXES_MAX_BYTES,
-} from "../core/home-caps.ts"
-import type { MemoryEngine, MemoryEngineHit } from "../memory-contracts.ts"
-import { materializeMemoryEngine, privateDirectory } from "./extract.ts"
+  runNeighbours,
+  runPin,
+  runRemove,
+  runSearch,
+  runUpsert,
+  validateUpsertRecord,
+} from "./operations.ts"
 import { embeddedMemoryEngine, type MemoryEnginePayload } from "./payload.ts"
-import { MemoryStdio } from "./stdio.ts"
-import { indexStorageLock, indexStorageUsage } from "./storage.ts"
+import {
+  type EngineSessionState,
+  resolveEngineConfig,
+  runSerializedEngineTask,
+  validateIdentifier,
+} from "./storage-db.ts"
 
 export type MemoryEngineOptions = {
   home: string
@@ -21,19 +23,6 @@ export type MemoryEngineOptions = {
   maxPending?: number
   maxProjectBytes?: number
   maxTotalBytes?: number
-}
-
-type Mapping = { id: string; observation: number; revision: number }
-const queues = new Map<string, { tail: Promise<unknown>; count: number }>()
-
-function identifier(value: string, name: string): void {
-  if (
-    typeof value !== "string" ||
-    !value.trim() ||
-    value.length > 256 ||
-    Array.from(value).some((character) => character.charCodeAt(0) < 32)
-  )
-    throw new Error(`Invalid memory ${name}`)
 }
 
 /**
@@ -54,278 +43,77 @@ export function timelineObservations(result: unknown): number[] {
   return out
 }
 
-export function createMemoryEngine(options: MemoryEngineOptions): MemoryEngine {
-  const home = resolve(options.home)
-  if (options.timeoutMs !== undefined && !Number.isFinite(options.timeoutMs))
-    throw new Error("Invalid memory engine timeout")
-  if (options.maxPending !== undefined && !Number.isSafeInteger(options.maxPending))
-    throw new Error("Invalid memory engine queue limit")
-  const timeout = Math.max(100, Math.min(30000, options.timeoutMs ?? 5000))
-  const maximum = Math.max(1, Math.min(32, options.maxPending ?? 16))
-  const projectBytes = options.maxProjectBytes ?? MEMORY_INDEX_MAX_BYTES
-  const totalBytes = options.maxTotalBytes ?? MEMORY_INDEXES_MAX_BYTES
-  if (
-    !Number.isSafeInteger(projectBytes) ||
-    projectBytes < 1024 * 1024 ||
-    projectBytes > MEMORY_INDEX_MAX_BYTES ||
-    !Number.isSafeInteger(totalBytes) ||
-    totalBytes < projectBytes ||
-    totalBytes > MEMORY_INDEXES_MAX_BYTES
-  )
-    throw new Error("Invalid memory index storage limits")
-  const databaseBytes = Math.min(MEMORY_ENGINE_DB_MAX_BYTES, Math.floor(projectBytes / 4))
-  const identityBytes = Math.min(MEMORY_IDENTITY_MAX_BYTES, Math.floor(projectBytes / 8))
-  let closed = false
-  let active: MemoryStdio | null = null
-  const own = new Set<Promise<unknown>>()
-
-  const run = <T>(
-    project: string,
-    operation: (engine: MemoryStdio, map: Database) => Promise<T>,
-  ): Promise<T> => {
-    try {
-      identifier(project, "project")
-      if (closed) throw new Error("Project memory engine is closed")
-      const queue = queues.get(home) ?? { tail: Promise.resolve(), count: 0 }
-      if (queue.count >= maximum) throw new Error("Project memory engine is busy")
-      queue.count++
-      queues.set(home, queue)
-      const result = queue.tail
-        .catch(() => {})
-        .then(async () => {
-          if (closed) throw new Error("Project memory engine is closed")
-          const payload = options.payload ?? embeddedMemoryEngine()
-          const binary = await materializeMemoryEngine(home, payload)
-          if (closed) throw new Error("Project memory engine is closed")
-          const memory = join(home, "memory")
-          const isolated = join(memory, "runtime")
-          await privateDirectory(isolated)
-          const stores = join(memory, "indexes")
-          await privateDirectory(stores)
-          const release = await indexStorageLock(memory, timeout)
-          try {
-            const key = createHash("sha256").update(project).digest("hex")
-            const data = join(stores, key)
-            await privateDirectory(data)
-            const before = await indexStorageUsage(stores)
-            const currentBytes = before.projects.get(key) ?? 0
-            if (
-              currentBytes > projectBytes ||
-              before.total > totalBytes ||
-              before.total + projectBytes - currentBytes > totalBytes
-            )
-              throw new Error(
-                "Project memory index exceeds its storage limit; saved records are preserved",
-              )
-            const mapPath = join(data, "identity.db")
-            try {
-              const info = await lstat(mapPath)
-              if (!info.isFile() || info.isSymbolicLink())
-                throw new Error("Linked memory identity index is refused")
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-            }
-            const map = new Database(mapPath, { create: true })
-            try {
-              await chmod(mapPath, 0o600)
-              const pageSize =
-                map.query<{ page_size: number }, []>("PRAGMA page_size").get()?.page_size ?? 4096
-              const pages = Math.floor(identityBytes / pageSize)
-              const actual = map
-                .query<{ max_page_count: number }, []>(`PRAGMA max_page_count=${pages}`)
-                .get()?.max_page_count
-              if (actual === undefined || actual > pages)
-                throw new Error("Memory identity index exceeds its storage limit")
-              map.exec(
-                "PRAGMA busy_timeout = 3000; PRAGMA journal_size_limit=0; PRAGMA temp_store=MEMORY; CREATE TABLE IF NOT EXISTS identity (id TEXT PRIMARY KEY, observation INTEGER NOT NULL UNIQUE, revision INTEGER NOT NULL);",
-              )
-              if (closed) throw new Error("Project memory engine is closed")
-              const engine = new MemoryStdio(binary, isolated, data, key, timeout, databaseBytes)
-              active = engine
-              let value: T
-              try {
-                await engine.initialize(payload.version)
-                value = await operation(engine, map)
-              } finally {
-                await engine.close()
-                active = null
-              }
-              const after = await indexStorageUsage(stores)
-              if (after.total > totalBytes || (after.projects.get(key) ?? 0) > projectBytes)
-                throw new Error(
-                  "Project memory index exceeds its storage limit; saved records are preserved",
-                )
-              return value
-            } finally {
-              map.close()
-            }
-          } finally {
-            release()
-          }
-        })
-      queue.tail = result
-      own.add(result)
-      void result
-        .finally(() => {
-          own.delete(result)
-          queue.count--
-          if (queue.count === 0) queues.delete(home)
-        })
-        .catch(() => {})
-      return result
-    } catch (error) {
-      return Promise.reject(error)
-    }
+function checked<T>(validate: () => void, action: () => Promise<T>): Promise<T> {
+  try {
+    validate()
+  } catch (error) {
+    return Promise.reject(error)
   }
+  return action()
+}
 
-  const engineProject = (project: string) => createHash("sha256").update(project).digest("hex")
+export function createMemoryEngine(options: MemoryEngineOptions): MemoryEngine {
+  const state: EngineSessionState = {
+    config: resolveEngineConfig(options),
+    closed: false,
+    active: null,
+    own: new Set<Promise<unknown>>(),
+  }
   return {
     upsert(project, record) {
-      try {
-        identifier(record.id, "record ID")
-        if (
-          record.project !== project ||
-          !Number.isSafeInteger(record.revision) ||
-          record.revision < 1
-        )
-          throw new Error("Invalid memory record owner or revision")
-        if (
-          typeof record.content !== "string" ||
-          typeof record.title !== "string" ||
-          Buffer.byteLength(record.content) > 48000 ||
-          Buffer.byteLength(record.title) > 1024
-        )
-          throw new Error("Memory record exceeds engine input limits")
-      } catch (error) {
-        return Promise.reject(error)
-      }
-      return run(project, async (engine, map) => {
-        const current = map
-          .query<Mapping, [string]>("SELECT * FROM identity WHERE id = ?")
-          .get(record.id)
-        if (current && current.revision >= record.revision) return
-        const common = {
-          title: record.title,
-          content: `${record.content}\n\nQualityLayer record: ${record.id}`,
-          type: record.kind,
-          scope: "project",
-          topic_key: `qualitylayer/${record.id}`,
-        }
-        let observation = current?.observation
-        if (observation !== undefined) {
-          await engine.call("mem_update", {
-            ...common,
-            id: observation,
-            expected_project: engineProject(project),
-          })
-        } else {
-          const saved = await engine.call("mem_save", {
-            ...common,
-            project: engineProject(project),
-            capture_prompt: false,
-            session_id: "qualitylayer-index",
-          })
-          if (!Number.isSafeInteger(saved.id) || (saved.id as number) < 1)
-            throw new Error("Invalid project memory engine identity")
-          observation = saved.id as number
-        }
-        map
-          .query(
-            "INSERT INTO identity(id, observation, revision) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET observation=excluded.observation, revision=excluded.revision",
-          )
-          .run(record.id, observation, record.revision)
-      })
+      return checked(
+        () => validateUpsertRecord(project, record),
+        () =>
+          runSerializedEngineTask(state, project, (engine, map) =>
+            runUpsert(engine, map, project, record),
+          ),
+      )
     },
     search(project, query, limit) {
       if (typeof query !== "string" || Buffer.byteLength(query) > 2048 || !query.trim())
         return Promise.reject(new Error("Invalid memory search query"))
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
         return Promise.reject(new Error("Invalid memory search limit"))
-      return run(project, async (engine, map) => {
-        const found = await engine.call("mem_search", {
-          query,
-          project: engineProject(project),
-          scope: "project",
-          limit,
-          match_mode: "any",
-          response_format: "compact",
-        })
-        if (found.results === undefined) return []
-        if (!Array.isArray(found.results) || found.results.length > limit)
-          throw new Error("Invalid project memory search results")
-        const hits: MemoryEngineHit[] = []
-        const lookup = map.query<Mapping, [number]>("SELECT * FROM identity WHERE observation = ?")
-        for (const item of found.results as Record<string, unknown>[]) {
-          if (item.project !== engineProject(project) || item.scope !== "project") continue
-          if (!Number.isSafeInteger(item.id) || typeof item.preview !== "string")
-            throw new Error("Invalid project memory search hit")
-          const record = lookup.get(item.id as number)
-          if (record) hits.push({ id: record.id, preview: item.preview.slice(0, 512) })
-        }
-        return hits
-      })
+      return runSerializedEngineTask(state, project, (engine, map) =>
+        runSearch(engine, map, project, query, limit),
+      )
     },
     pin(project, id, pinned) {
-      try {
-        identifier(id, "record ID")
-        if (typeof pinned !== "boolean") throw new Error("Invalid memory pin")
-      } catch (error) {
-        return Promise.reject(error)
-      }
-      return run(project, async (engine, map) => {
-        const current = map.query<Mapping, [string]>("SELECT * FROM identity WHERE id = ?").get(id)
-        if (!current) throw new Error("Memory is not indexed yet")
-        await engine.call(pinned ? "mem_pin" : "mem_unpin", { id: current.observation })
-      })
+      return checked(
+        () => {
+          validateIdentifier(id, "record ID")
+          if (typeof pinned !== "boolean") throw new Error("Invalid memory pin")
+        },
+        () =>
+          runSerializedEngineTask(state, project, (engine, map) => runPin(engine, map, id, pinned)),
+      )
     },
     neighbours(project, id, around) {
-      try {
-        identifier(id, "record ID")
-        if (!Number.isSafeInteger(around) || around < 1 || around > 3)
-          throw new Error("Invalid memory neighbourhood")
-      } catch (error) {
-        return Promise.reject(error)
-      }
-      return run(project, async (engine, map) => {
-        const current = map.query<Mapping, [string]>("SELECT * FROM identity WHERE id = ?").get(id)
-        if (!current) return []
-        const found = await engine.call("mem_timeline", {
-          observation_id: current.observation,
-          project: engineProject(project),
-          before: around,
-          after: around,
-        })
-        const lookup = map.query<Mapping, [number]>("SELECT * FROM identity WHERE observation = ?")
-        const ids: string[] = []
-        for (const observation of timelineObservations(found.result)) {
-          if (observation === current.observation) continue
-          const record = lookup.get(observation)
-          if (record && !ids.includes(record.id)) ids.push(record.id)
-        }
-        return ids.slice(0, around * 2)
-      })
+      return checked(
+        () => {
+          validateIdentifier(id, "record ID")
+          if (!Number.isSafeInteger(around) || around < 1 || around > 3)
+            throw new Error("Invalid memory neighbourhood")
+        },
+        () =>
+          runSerializedEngineTask(state, project, (engine, map) =>
+            runNeighbours(engine, map, { project, id, around }, timelineObservations),
+          ),
+      )
     },
     remove(project, id) {
-      try {
-        identifier(id, "record ID")
-      } catch (error) {
-        return Promise.reject(error)
-      }
-      return run(project, async (engine, map) => {
-        const current = map.query<Mapping, [string]>("SELECT * FROM identity WHERE id = ?").get(id)
-        if (!current) return
-        await engine.call("mem_delete", {
-          id: current.observation,
-          expected_project: engineProject(project),
-          hard_delete: true,
-        })
-        map.query("DELETE FROM identity WHERE id = ?").run(id)
-      })
+      return checked(
+        () => validateIdentifier(id, "record ID"),
+        () =>
+          runSerializedEngineTask(state, project, (engine, map) =>
+            runRemove(engine, map, project, id),
+          ),
+      )
     },
     async close() {
-      closed = true
-      active?.abort()
-      await Promise.allSettled([...own])
+      state.closed = true
+      state.active?.abort()
+      await Promise.allSettled([...state.own])
     },
   }
 }

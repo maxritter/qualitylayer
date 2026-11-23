@@ -1,7 +1,6 @@
 // Metadata-only discovery for the exact managed run. No skill body, extension or command is executed.
-import { createHash } from "node:crypto"
-import { open, opendir, realpath, stat } from "node:fs/promises"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { realpath } from "node:fs/promises"
+import { dirname } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
 import type { NativeAgent } from "../../agents/ids.ts"
 import { roots } from "../../install/agent-settings.ts"
@@ -9,228 +8,59 @@ import { homeVariable } from "../../platform.ts"
 import type { RunRecord } from "../../run/contracts.ts"
 import { readLaunch } from "../../run/registry.ts"
 import {
-  type CatalogIssue,
-  type CommandCatalog,
-  CATALOG_LIMITS as MAX,
-  type SkillEntry,
-  skillInvocation,
-} from "./types.ts"
+  type CollectorContext,
+  type CollectorState,
+  collectClaudeCode,
+  collectCodex,
+  collectFolderAgent,
+  collectOpencode,
+  collectPi,
+  filterDiscoveredSkills,
+} from "./catalog-agents.ts"
+import { isUnder, SkillDiscovery } from "./catalog-discovery.ts"
+import { type CommandCatalog, CATALOG_LIMITS as MAX } from "./types.ts"
 
-type ObjectValue = Record<string, unknown>
-const record = (value: unknown): ObjectValue =>
-  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as ObjectValue) : {}
-const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
-const identifier = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)
-const expand = (path: string, base: string, home: string) =>
-  resolve(
-    path.startsWith("~/") ? join(home, path.slice(2)) : isAbsolute(path) ? path : join(base, path),
+const COLLECTORS: Record<NativeAgent, (c: CollectorContext) => Promise<void>> = {
+  "claude-code": collectClaudeCode,
+  codex: collectCodex,
+  pi: collectPi,
+  opencode: collectOpencode,
+  cursor: (c) => collectFolderAgent(c, "cursor"),
+  grok: (c) => collectFolderAgent(c, "grok"),
+  antigravity: (c) => collectFolderAgent(c, "antigravity"),
+  copilot: (c) => collectFolderAgent(c, "copilot"),
+}
+
+function buildDirectoryChain(cwd: string, top: string): string[] {
+  const chain: string[] = []
+  for (let at = cwd; isUnder(at, top) && chain.length < 16; at = dirname(at)) {
+    chain.push(at)
+    if (at === top || dirname(at) === at) break
+  }
+  return chain
+}
+
+async function applyExclusions(d: SkillDiscovery, state: CollectorState): Promise<void> {
+  for (const path of [...state.excluded].slice(0, MAX.skills)) {
+    try {
+      d.excluded.add(await realpath(path))
+    } catch {
+      d.excluded.add(path)
+    }
+  }
+  for (const pattern of state.patterns.slice(0, MAX.skills)) {
+    try {
+      d.patterns.push(new Bun.Glob(pattern))
+    } catch {
+      d.issues.add("configuration")
+    }
+  }
+  if (
+    state.excluded.size > MAX.skills ||
+    state.patterns.length > MAX.skills ||
+    state.sources.length > MAX.skills
   )
-const under = (path: string, root: string) => {
-  const rel = relative(root, path)
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
-}
-
-type Source = { path: string; scope: SkillEntry["source"]; namespace?: string; flat?: boolean }
-class Discovery {
-  bytes = 0
-  files = 0
-  entries = 0
-  issues = new Set<CatalogIssue>(["native-state"])
-  visited = new Set<string>()
-  found = new Map<string, SkillEntry>()
-  excluded = new Set<string>()
-  patterns: Bun.Glob[] = []
-  constructor(
-    readonly agent: NativeAgent,
-    readonly firstWins: boolean,
-  ) {}
-  async read(path: string, limit: number): Promise<string | null> {
-    if (this.files >= MAX.files || this.bytes >= MAX.totalBytes) {
-      this.issues.add("limit")
-      return null
-    }
-    let file: Awaited<ReturnType<typeof open>> | undefined
-    try {
-      file = await open(path, "r")
-      const info = await file.stat()
-      if (!info.isFile()) return null
-      const size = Math.min(info.size, limit, MAX.totalBytes - this.bytes)
-      this.files++
-      this.bytes += size
-      const bytes = Buffer.alloc(size)
-      const { bytesRead } = await file.read(bytes, 0, size, 0)
-      return bytes.subarray(0, bytesRead).toString("utf8")
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "ENOENT") this.issues.add("configuration")
-      return null
-    } finally {
-      await file?.close()
-    }
-  }
-  async config(path: string, format: "json" | "toml" = "json"): Promise<ObjectValue> {
-    const text = await this.read(path, MAX.configBytes + 1)
-    if (text === null) return {}
-    if (Buffer.byteLength(text) > MAX.configBytes) {
-      this.issues.add("limit")
-      this.issues.add("configuration")
-      return {}
-    }
-    try {
-      return record(format === "toml" ? Bun.TOML.parse(text) : Bun.JSONC.parse(text))
-    } catch {
-      this.issues.add("configuration")
-      return {}
-    }
-  }
-  async skill(path: string, source: Source): Promise<void> {
-    if (
-      [...this.excluded].some((root) => under(path, root)) ||
-      this.patterns.some((pattern) => pattern.match(path))
-    )
-      return
-    const text = await this.read(path, MAX.metadataBytes)
-    if (text === null) return
-    const matter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1]
-    if (matter === undefined || /(?:^|\s)[&*][A-Za-z0-9_-]+/m.test(matter)) {
-      this.issues.add("metadata")
-      return
-    }
-    let meta: ObjectValue
-    try {
-      meta = record(Bun.YAML.parse(matter))
-    } catch {
-      this.issues.add("metadata")
-      return
-    }
-    if (this.agent === "claude-code" && meta["user-invocable"] === false) return
-    const fileName = basename(path).replace(/\.md$/i, "")
-    const pathName = fileName === "SKILL" ? basename(dirname(path)) : fileName
-    const name =
-      this.agent === "opencode" || source.flat
-        ? pathName
-        : typeof meta.name === "string"
-          ? meta.name
-          : pathName
-    const id = source.namespace ? `${source.namespace}:${name}` : name
-    if (
-      !identifier(id) ||
-      (this.agent === "claude-code" && id.toLowerCase() === "synced") ||
-      (this.agent === "claude-code" && !source.namespace && /^anthropic-skills(?::|$)/.test(id))
-    ) {
-      this.issues.add("metadata")
-      return
-    }
-    if (typeof meta.description !== "string" || !meta.description.trim()) {
-      this.issues.add("metadata")
-      return
-    }
-    if (this.found.has(id) && this.firstWins) return
-    if (!this.found.has(id) && this.found.size >= MAX.skills) {
-      this.issues.add("limit")
-      return
-    }
-    this.found.set(id, {
-      id: createHash("sha256").update(`${this.agent}\0${path}`).digest("hex").slice(0, 24),
-      name: id,
-      description: meta.description.replace(/\s+/g, " ").trim().slice(0, 1024),
-      invocation: skillInvocation(this.agent, id),
-      source: source.scope,
-    })
-  }
-  async scan(source: Source, level = 0): Promise<void> {
-    if (level > MAX.depth || this.entries >= MAX.entries || this.found.size >= MAX.skills) {
-      this.issues.add("limit")
-      return
-    }
-    let canonical: string
-    try {
-      canonical = await realpath(source.path)
-    } catch {
-      return
-    }
-    if (
-      [...this.excluded].some((root) => under(canonical, root)) ||
-      this.patterns.some((pattern) => pattern.match(canonical))
-    )
-      return
-    const visit = `${source.namespace ?? ""}\0${canonical}`
-    if (this.visited.has(visit)) return
-    this.visited.add(visit)
-    try {
-      if ((await stat(canonical)).isFile()) {
-        await this.skill(canonical, source)
-        return
-      }
-      const own = join(canonical, "SKILL.md")
-      try {
-        if ((await stat(own)).isFile()) {
-          await this.skill(own, source)
-          return
-        }
-      } catch {}
-      const dir = await opendir(canonical)
-      try {
-        while (this.entries < MAX.entries) {
-          const entry = await dir.read()
-          if (entry === null) break
-          this.entries++
-          if (
-            entry.name === "node_modules" ||
-            (entry.name.startsWith(".") && !(this.agent === "codex" && entry.name === ".system"))
-          )
-            continue
-          const path = join(canonical, entry.name)
-          if (entry.isDirectory() || entry.isSymbolicLink())
-            await this.scan({ ...source, path }, level + 1)
-          else if (
-            entry.isFile() &&
-            level === 0 &&
-            /\.md$/i.test(entry.name) &&
-            (this.agent === "opencode" || source.flat)
-          )
-            await this.skill(path, source)
-        }
-        if (this.entries >= MAX.entries) this.issues.add("limit")
-      } finally {
-        await dir.close()
-      }
-    } catch {
-      this.issues.add("configuration")
-    }
-  }
-}
-
-type Roots = NonNullable<ReturnType<typeof roots>>
-/** Skill folders of the agents that keep a plain folder of skills; invocation is `/name` for all. */
-const SKILL_FOLDERS: Record<
-  "cursor" | "grok" | "antigravity" | "copilot",
-  { project: string[]; user: (dirs: Roots, home: string) => string[] }
-> = {
-  cursor: {
-    project: [".cursor/skills", ".agents/skills", ".claude/skills"],
-    user: (dirs, home) => [
-      join(dirs.cursor, "skills"),
-      join(home, ".agents", "skills"),
-      join(home, ".claude", "skills"),
-    ],
-  },
-  grok: {
-    project: [".grok/skills", ".agents/skills", ".claude/skills"],
-    user: (dirs, home) => [
-      join(dirs.grok, "skills"),
-      join(home, ".agents", "skills"),
-      join(home, ".claude", "skills"),
-    ],
-  },
-  antigravity: {
-    project: [".agents/skills"],
-    user: (dirs) => [join(dirs.antigravity, "config", "skills")],
-  },
-  copilot: {
-    project: [".github/skills", ".agents/skills", ".claude/skills"],
-    user: (dirs, home) => [join(dirs.copilot, "skills"), join(home, ".agents", "skills")],
-  },
+    d.issues.add("limit")
 }
 
 /** Trusted server configuration chooses these roots; the HTTP caller supplies neither paths nor agent IDs. */
@@ -241,211 +71,42 @@ export async function discoverSkills(
 ): Promise<CommandCatalog> {
   if (run.agent === "other") throw new Error("This agent has no native skill catalog")
   const agent = run.agent
-  const d = new Discovery(agent, agent !== "opencode")
+  const d = new SkillDiscovery(agent, agent !== "opencode")
   const launch = readLaunch(ctx.home, run.id)
   const env = { ...ctx.env, get: (name: string) => launch?.env[name] ?? ctx.env.get(name) }
-  const nativeCtx = { ...ctx, env }
-  const dirs = roots(nativeCtx)
+  const dirs = roots({ ...ctx, env })
   const home = homeVariable(env)
   if (!dirs || !home) return { agent, skills: [], complete: false, issues: ["configuration"] }
   const top = (await ctx.git.topLevel(run.cwd)) ?? run.cwd
-  const chain: string[] = []
-  for (let at = run.cwd; under(at, top) && chain.length < 16; at = dirname(at)) {
-    chain.push(at)
-    if (at === top || dirname(at) === at) break
-  }
+  const chain = buildDirectoryChain(run.cwd, top)
   if (chain.at(-1) !== top) d.issues.add("limit")
-  const sources: Source[] = []
-  const excluded = new Set<string>()
-  const patterns: string[] = []
-  let overrides: ObjectValue = {}
-  const policies: ObjectValue[] = []
-  const add = (path: string, scope: Source["scope"], extra: Partial<Source> = {}) =>
-    sources.push({ path, scope, ...extra })
-  const extra = (items: unknown, base: string, scope: Source["scope"]) => {
-    if (strings(items).length > MAX.skills) d.issues.add("limit")
-    for (const raw of strings(items).slice(0, MAX.skills)) {
-      const prefix = raw[0]
-      const path = expand(/[+!-]/.test(prefix ?? "") ? raw.slice(1) : raw, base, home)
-      if (prefix === "-") excluded.add(path)
-      else if (prefix === "!") patterns.push(path)
-      else if (/^https?:/.test(raw)) d.issues.add("remote")
-      else add(path, scope)
-    }
+  const state: CollectorState = {
+    sources: [],
+    excluded: new Set(),
+    patterns: [],
+    overrides: {},
+    policies: [],
   }
-  if (agent === "claude-code") {
-    const managed =
-      options.managedDirectory ??
-      (process.platform === "darwin"
-        ? "/Library/Application Support/ClaudeCode"
-        : process.platform === "win32"
-          ? join(env.get("ProgramFiles") ?? "C:\\Program Files", "ClaudeCode")
-          : "/etc/claude-code")
-    const configs: ObjectValue[] = [await d.config(join(dirs.claude, "settings.json"))]
-    for (const base of [...chain].reverse())
-      for (const name of ["settings.json", "settings.local.json"])
-        configs.push(await d.config(join(base, ".claude", name)))
-    configs.push(await d.config(join(managed, "managed-settings.json")))
-    for (const config of configs) overrides = { ...overrides, ...record(config.skillOverrides) }
-    add(join(managed, ".claude", "skills"), "system")
-    add(join(dirs.claude, "skills"), "user")
-    for (const base of [...chain].reverse()) add(join(base, ".claude", "skills"), "project")
-    add(join(dirs.claude, "commands"), "user", { flat: true })
-    for (const base of [...chain].reverse())
-      add(join(base, ".claude", "commands"), "project", { flat: true })
-    let enabled: ObjectValue = {}
-    for (const config of configs) enabled = { ...enabled, ...record(config.enabledPlugins) }
-    const installed = record(
-      (await d.config(join(dirs.claude, "plugins", "installed_plugins.json"))).plugins,
-    )
-    for (const [id, on] of Object.entries(enabled)) {
-      if (on !== true) continue
-      const candidates = Array.isArray(installed[id]) ? (installed[id] as unknown[]) : []
-      const matching = candidates
-        .map(record)
-        .filter(
-          (item) =>
-            typeof item.installPath === "string" &&
-            (item.scope === "user" ||
-              item.scope === "managed" ||
-              (typeof item.projectPath === "string" && under(run.cwd, item.projectPath))),
-        )
-      const paths = new Set(matching.map((item) => item.installPath))
-      const own = matching[0]
-      if (paths.size !== 1 || !own || typeof own.installPath !== "string") {
-        d.issues.add("plugins")
-        continue
-      }
-      const name = id.split("@")[0] ?? ""
-      if (!identifier(name)) {
-        d.issues.add("plugins")
-        continue
-      }
-      add(join(own.installPath, "skills"), "plugin", { namespace: name })
-      add(join(own.installPath, "commands"), "plugin", { namespace: name, flat: true })
-    }
-    if (configs.some((config) => config.strictPluginOnlyCustomization === true))
-      sources.splice(0, sources.length, ...sources.filter((source) => source.scope === "plugin"))
-  } else if (agent === "codex") {
-    const configs = [await d.config(join(dirs.codex, "config.toml"), "toml")]
-    for (const base of [...chain].reverse())
-      configs.push(await d.config(join(base, ".codex", "config.toml"), "toml"))
-    for (const config of configs)
-      for (const item of Array.isArray(record(config.skills).config)
-        ? (record(config.skills).config as unknown[])
-        : []) {
-        const value = record(item)
-        if (value.enabled === false && typeof value.path === "string")
-          excluded.add(expand(value.path, run.cwd, home))
-      }
-    for (const base of chain) add(join(base, ".agents", "skills"), "project")
-    add(join(home, ".agents", "skills"), "user")
-    add(join(dirs.codex, "skills"), "system")
-    if (configs.some((config) => Object.keys(record(config.plugins)).length))
-      d.issues.add("plugins")
-  } else if (agent === "pi") {
-    const configs = [
-      {
-        value: await d.config(join(dirs.pi, "settings.json")),
-        base: dirs.pi,
-        scope: "user" as const,
-      },
-      ...chain.map((base) => ({
-        base: join(base, ".pi"),
-        scope: "project" as const,
-        value: {} as ObjectValue,
-      })),
-    ]
-    for (const config of configs.slice(1))
-      config.value = await d.config(join(config.base, "settings.json"))
-    if (configs.some((config) => config.value.enableSkillCommands === false))
-      return { agent, skills: [], complete: false, issues: ["native-state"] }
-    add(join(dirs.pi, "skills"), "user")
-    for (const base of chain) add(join(base, ".pi", "skills"), "project")
-    add(join(home, ".agents", "skills"), "user")
-    for (const base of chain) add(join(base, ".agents", "skills"), "project")
-    for (const config of configs) {
-      extra(config.value.skills, config.base, config.scope)
-      if (Array.isArray(config.value.packages) && config.value.packages.length)
-        d.issues.add("plugins")
-    }
-  } else if (
-    agent === "cursor" ||
-    agent === "grok" ||
-    agent === "antigravity" ||
-    agent === "copilot"
-  ) {
-    // The folders each agent reads, as `src/core/install/skills.ts` and `agents/detect.ts` know them.
-    const where = SKILL_FOLDERS[agent]
-    for (const folder of where.project) for (const base of chain) add(join(base, folder), "project")
-    for (const folder of where.user(dirs, home)) add(folder, "user")
-  } else {
-    const configs = [
-      await d.config(join(dirs.opencode, "opencode.json")),
-      await d.config(join(dirs.opencode, "opencode.jsonc")),
-    ]
-    for (const base of [...chain].reverse())
-      for (const name of ["opencode.json", "opencode.jsonc"]) {
-        configs.push(await d.config(join(base, name)))
-        configs.push(await d.config(join(base, ".opencode", name)))
-      }
-    add(join(home, ".claude", "skills"), "user")
-    for (const base of [...chain].reverse()) add(join(base, ".claude", "skills"), "project")
-    add(join(home, ".agents", "skills"), "user")
-    for (const base of [...chain].reverse()) add(join(base, ".agents", "skills"), "project")
-    add(join(dirs.opencode, "skills"), "user")
-    for (const base of [...chain].reverse()) add(join(base, ".opencode", "skills"), "project")
-    for (const config of configs) {
-      extra(config.skills, run.cwd, "project")
-      policies.push(config)
-      for (const value of Object.values(record(config.agents))) {
-        policies.push(record(value))
-        d.issues.add("native-state")
-      }
-    }
-  }
-  for (const path of [...excluded].slice(0, MAX.skills)) {
-    try {
-      d.excluded.add(await realpath(path))
-    } catch {
-      d.excluded.add(path)
-    }
-  }
-  for (const pattern of patterns.slice(0, MAX.skills)) {
-    try {
-      d.patterns.push(new Bun.Glob(pattern))
-    } catch {
-      d.issues.add("configuration")
-    }
-  }
-  if (excluded.size > MAX.skills || patterns.length > MAX.skills || sources.length > MAX.skills)
-    d.issues.add("limit")
-  for (const source of sources.slice(0, MAX.skills)) await d.scan(source)
+  await COLLECTORS[agent]({
+    d,
+    env,
+    dirs,
+    home,
+    cwd: run.cwd,
+    chain,
+    managedDirectory: options.managedDirectory,
+    state,
+  })
+  if (state.disabled) return { agent, skills: [], complete: false, issues: ["native-state"] }
+  await applyExclusions(d, state)
+  for (const source of state.sources.slice(0, MAX.skills)) await d.scan(source)
   if (d.issues.has("configuration"))
     return { agent, skills: [], complete: false, issues: [...d.issues] }
-  const skills: SkillEntry[] = []
-  for (const [name, entry] of d.found) {
-    // Native invocation remains authoritative; a partial catalog never makes a hidden skill executable.
-    if (agent === "claude-code" && entry.source !== "plugin" && overrides[name] === "off") continue
-    if (agent === "opencode") {
-      const denied = policies.some((policy) => {
-        let effect: unknown
-        for (const rule of Array.isArray(policy.permissions) ? policy.permissions : []) {
-          const value = record(rule)
-          if (
-            typeof value.action === "string" &&
-            new Bun.Glob(value.action).match("skill") &&
-            typeof value.resource === "string" &&
-            new Bun.Glob(value.resource).match(name)
-          )
-            effect = value.effect
-        }
-        return effect === "deny"
-      })
-      if (denied) continue
-    }
-    skills.push(entry)
-  }
   // The PTY can hold live extension/remote state which this metadata reader cannot prove complete.
-  return { agent, skills, complete: false, issues: [...d.issues] }
+  return {
+    agent,
+    skills: filterDiscoveredSkills(agent, d.found, state),
+    complete: false,
+    issues: [...d.issues],
+  }
 }

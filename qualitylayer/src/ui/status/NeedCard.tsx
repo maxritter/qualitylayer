@@ -5,15 +5,18 @@
 // need stays open and the build goes on without it. Once the agent found it, a one-line receipt;
 // when it did not, the same card says what it did not find.
 
-import { CheckIcon, HourglassIcon, LockIcon, TriangleAlertIcon } from "lucide-react"
+import { CheckIcon } from "lucide-react"
 import { useState } from "react"
-import { KEY_REFUSED, looksLikeKey } from "../../core/need/key.ts"
+import { looksLikeKey } from "../../core/need/key.ts"
 import type { Need } from "../../core/need/need.ts"
 import { withoutNeedScope } from "../live-status.ts"
-import { InlineMarkdown } from "../reader/DocReader.tsx"
-
-const clock = (at: number) =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+import {
+  formatNeedClock,
+  NeedCardBanner,
+  NeedCardDetails,
+  NeedCardForm,
+  NeedCardLater,
+} from "./NeedCardParts.tsx"
 
 const KIND_WORD: Record<Need["kind"], string> = {
   secret: "a secret",
@@ -38,6 +41,96 @@ type Props = {
   /** Deferred external work is addressed in the person's review; saving a note is not check evidence. */
   review?: boolean
   evidence?: boolean
+}
+
+function NeedWhoStatus({
+  review,
+  waiting,
+  agent,
+}: {
+  review: boolean
+  waiting: boolean
+  agent: string
+}) {
+  if (review) return "Check unverified"
+  if (waiting) {
+    return (
+      <>
+        <span className="q-need-live" aria-hidden="true" />
+        {agent} waits
+      </>
+    )
+  }
+  return (
+    <>
+      <span className="q-st-spin" aria-hidden="true" />
+      {agent} keeps building
+    </>
+  )
+}
+
+function NeedCardHeader({
+  need,
+  agent,
+  compact,
+  review,
+  waiting,
+}: {
+  need: Need
+  agent: string
+  compact: boolean
+  review: boolean
+  waiting: boolean
+}) {
+  return (
+    <div className="q-need-h">
+      <i className="q-m q-m-you" aria-hidden="true" />
+      <span className="q-need-ht">
+        <span className="q-need-lead">
+          {review
+            ? "Queued from the build · unverified"
+            : "Only you can set this · the build goes on"}
+        </span>
+        <span className="t">{need.what}</span>
+      </span>
+      {compact ? null : (
+        <span className="n">
+          {need.for} · {KIND_WORD[need.kind]}
+        </span>
+      )}
+      <span className="q-need-who">
+        <NeedWhoStatus review={review} waiting={waiting} agent={agent} />
+      </span>
+    </div>
+  )
+}
+
+function NeedCardFooter({
+  need,
+  taskTitle,
+  compact,
+  waiting,
+  last,
+}: {
+  need: Need
+  taskTitle: string | null
+  compact: boolean
+  waiting: boolean
+  last: boolean
+}) {
+  if (compact && waiting) return null
+  return (
+    <div className="q-need-foot">
+      <span>Waits for it</span>
+      <span className="on">
+        {need.for}
+        {taskTitle !== null ? ` · ${taskTitle}` : ""}
+      </span>
+      {compact ? null : (
+        <span className="in">{last ? "Then Verify starts" : "The rest of the build goes on"}</span>
+      )}
+    </div>
+  )
 }
 
 export function NeedCard({
@@ -66,37 +159,20 @@ export function NeedCard({
     setSending(false)
     if (done) setNote("")
   }
-  if (later && need.state === "open" && need.reopened === null)
+  if (later && need.state === "open" && need.reopened === null) {
     return (
-      <section
-        className="q-need q-need-later"
-        data-testid="need-card"
-        data-state="later"
-        data-need={need.for}
-        aria-label={need.what}
-        id={`need-${need.for}`}
-      >
-        <i className="q-m q-m-you" aria-hidden="true" />
-        <span>
-          <b>{need.what}</b>
-          {review
-            ? " remains unverified for your review"
-            : ` waits for you; ${inline} builds on without it`}
-          {taskTitle !== null ? ` (${need.for} · ${taskTitle})` : ` (${need.for})`}.
-          {review
-            ? " Your work and its evidence remain visible."
-            : " It stays in the sidebar until you set it."}
-        </span>
-        <button
-          type="button"
-          className="q-btn quiet sm"
-          data-testid="need-set-now"
-          onClick={() => setLater(false)}
-        >
-          Set it now
-        </button>
-      </section>
+      <NeedCardLater
+        need={need}
+        inline={inline}
+        taskTitle={taskTitle}
+        review={review}
+        onExpand={() => setLater(false)}
+      />
     )
+  }
+  const sentMessage = review
+    ? `Note saved at ${formatNeedClock(need.set?.at ?? 0)}. The check remains unverified until the agent checks it.`
+    : `Sent at ${formatNeedClock(need.set?.at ?? 0)}. ${agent} checks for it now.`
   return (
     <section
       className="q-need"
@@ -105,158 +181,48 @@ export function NeedCard({
       aria-label={need.what}
       id={`need-${need.for}`}
     >
-      <div className="q-need-h">
-        <i className="q-m q-m-you" aria-hidden="true" />
-        <span className="q-need-ht">
-          <span className="q-need-lead">
-            {review
-              ? "Queued from the build · unverified"
-              : "Only you can set this · the build goes on"}
-          </span>
-          <span className="t">{need.what}</span>
-        </span>
-        {compact ? null : (
-          <span className="n">
-            {need.for} · {KIND_WORD[need.kind]}
-          </span>
-        )}
-        <span className="q-need-who">
-          {review ? (
-            "Check unverified"
-          ) : waiting ? (
-            <>
-              <span className="q-need-live" aria-hidden="true" />
-              {agent} waits
-            </>
-          ) : (
-            <>
-              <span className="q-st-spin" aria-hidden="true" />
-              {agent} keeps building
-            </>
-          )}
-        </span>
-      </div>
-      {need.reopened !== null && need.state === "open" ? (
-        <div className="q-need-wait" data-testid="need-reopened">
-          <TriangleAlertIcon className="q-need-i" aria-hidden="true" />
-          <b>{agent} did not find it</b>
-          <span>{need.reopened.why}</span>
-        </div>
-      ) : waiting && !review ? (
-        <div className="q-need-wait" data-testid="need-waiting">
-          <HourglassIcon className="q-need-i" aria-hidden="true" />
-          <b>The build waits for this</b>
-          <span>
-            {last ? "Everything else is built. " : ""}Waiting since {clock(need.waiting ?? 0)}.
-          </span>
-        </div>
-      ) : null}
+      <NeedCardHeader
+        need={need}
+        agent={agent}
+        compact={compact}
+        review={review}
+        waiting={waiting}
+      />
+      <NeedCardBanner need={need} agent={agent} waiting={waiting} review={review} last={last} />
       <div className="q-need-body">
-        {need.why !== "" && !(compact && waiting) ? <p className="q-need-why">{need.why}</p> : null}
-        {need.check !== null ? (
-          <p className="q-need-check" data-testid="need-check">
-            <span>Checked with</span> <code>{need.check}</code>
-            <span>
-              {review
-                ? " · your note is saved; the agent must still check it"
-                : ` · ${inline} checks it once you say it is set`}
-            </span>
-          </p>
-        ) : null}
-        {need.steps.length > 0 ? (
-          <ol className="q-need-steps">
-            {need.steps.map((step) => (
-              <li key={step}>
-                <InlineMarkdown text={step} />
-              </li>
-            ))}
-          </ol>
-        ) : null}
-        {need.kind === "secret" ? (
-          <div className="q-need-safe">
-            <LockIcon className="q-need-i" aria-hidden="true" />
-            Don't paste the key here. The App never takes secrets
-            {compact ? "." : `; ${inline} reads it from your environment.`}
-          </div>
-        ) : null}
+        <NeedCardDetails
+          need={need}
+          inline={inline}
+          compact={compact}
+          waiting={waiting}
+          review={review}
+        />
         {sent ? (
           <p className="q-need-why text-muted-foreground" data-testid="need-sent">
-            {review
-              ? `Note saved at ${clock(need.set?.at ?? 0)}. The check remains unverified until the agent checks it.`
-              : `Sent at ${clock(need.set?.at ?? 0)}. ${agent} checks for it now.`}
+            {sentMessage}
           </p>
         ) : (
-          <form
-            className="q-need-act"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void send()
-            }}
-          >
-            <input
-              type="text"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
-                  void send()
-                }
-              }}
-              placeholder={
-                evidence
-                  ? "Paste relevant error lines or an evidence link"
-                  : `A note for ${inline}, not the key (optional)`
-              }
-              aria-label={evidence ? "Evidence or link" : `A note for ${inline}, not the key`}
-              aria-invalid={keyLike}
-              aria-describedby={keyLike ? `need-key-${need.for}` : undefined}
-              autoComplete="off"
-              spellCheck={false}
-              data-testid="need-note"
-            />
-            <button
-              type="submit"
-              className="q-btn primary"
-              disabled={keyLike || sending || (evidence && note.trim() === "")}
-              data-testid="need-done"
-            >
-              {evidence ? "Save evidence" : "It's set"}
-              {compact ? null : <span className="q-need-kbd">⌘↵</span>}
-            </button>
-            {need.reopened === null ? (
-              <button
-                type="button"
-                className="q-btn quiet"
-                disabled={sending}
-                data-testid="need-later"
-                onClick={() => setLater(true)}
-              >
-                Later
-              </button>
-            ) : null}
-          </form>
+          <NeedCardForm
+            need={need}
+            inline={inline}
+            note={note}
+            keyLike={keyLike}
+            sending={sending}
+            compact={compact}
+            evidence={evidence}
+            onNote={setNote}
+            onSend={() => void send()}
+            onLater={() => setLater(true)}
+          />
         )}
-        {keyLike ? (
-          <p className="q-need-key" id={`need-key-${need.for}`} role="alert" data-testid="need-key">
-            {KEY_REFUSED.replace(".env.local", need.place ?? ".env.local")}.
-          </p>
-        ) : null}
       </div>
-      {compact && waiting ? null : (
-        <div className="q-need-foot">
-          <span>Waits for it</span>
-          <span className="on">
-            {need.for}
-            {taskTitle !== null ? ` · ${taskTitle}` : ""}
-          </span>
-          {compact ? null : (
-            <span className="in">
-              {last ? "Then Verify starts" : "The rest of the build goes on"}
-            </span>
-          )}
-        </div>
-      )}
+      <NeedCardFooter
+        need={need}
+        taskTitle={taskTitle}
+        compact={compact}
+        waiting={waiting}
+        last={last}
+      />
     </section>
   )
 }
@@ -268,7 +234,7 @@ export function NeedReceipt({ need, agent }: { need: Need; agent: string }) {
       <CheckIcon className="q-need-i" aria-hidden="true" />
       <span>
         {withoutNeedScope(need.what)}
-        {need.set !== null ? ` · set by you at ${clock(need.set.at)}` : ""}
+        {need.set !== null ? ` · set by you at ${formatNeedClock(need.set.at)}` : ""}
       </span>
       <b>
         {agent} found {need.check ?? "it"}

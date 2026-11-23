@@ -10,22 +10,20 @@ import { realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { phaseText } from "#workflow"
 import type { Ctx } from "../ctx.ts"
-import type { ReaderPackage } from "./build-package.ts"
 import {
-  type Iteration,
-  implementAgentsPath,
-  readBuildRecord,
-  sectionText,
-  verifyLogPath,
-} from "./docs/build-log.ts"
+  type ArtifactReview,
+  artifactCheckHelper,
+  artifactReviewBrief as renderArtifactReviewBrief,
+} from "./briefs-artifact.ts"
+import { judgeHelper, judgeParts } from "./briefs-judge.ts"
+import type { ReaderPackage } from "./build-package.ts"
+import { implementAgentsPath, sectionText, verifyLogPath } from "./docs/build-log.ts"
 import { agentFileOf, CHECKS_RECORD, RESEARCH_DIR, RESEARCH_QUESTIONS } from "./docs/names.ts"
-import { allTasks, type Outline } from "./docs/outline.ts"
-import { describeShare, type JudgeShare, stepsAreProved } from "./docs/rules/judge-shares.ts"
+import type { JudgeShare } from "./docs/rules/judge-shares.ts"
 import { templateFrom } from "./docs/schema.ts"
 import type { FlowStepId } from "./flow.ts"
 import { agentEntry, appPointer } from "./install/where.ts"
 import { instructionsSection } from "./instructions.ts"
-import { recheckOf } from "./recheck.ts"
 import {
   researchAreaGroups,
   researchPointers,
@@ -34,9 +32,13 @@ import {
 import { writeGeneratedBrief } from "./run/bind.ts"
 import type { HelperRole } from "./scaling.ts"
 import { selfCommand } from "./self.ts"
-import { shellQuote } from "./shell.ts"
 import type { Task } from "./task/store.ts"
-import { type Assignment, codeDiff, evidenceExists, readAssignment } from "./verification.ts"
+
+export { type ArtifactReview, artifactCheckHelper, judgeHelper }
+
+export function artifactReviewBrief(review: ArtifactReview): string {
+  return renderArtifactReviewBrief(review, commandSection())
+}
 
 export type Helper = {
   role: HelperRole
@@ -115,76 +117,8 @@ export async function withBriefFiles(
   )
 }
 
-/** The parts of the Implement agents' file a reviewer is pasted instead of reading the whole file. */
-const BUILD_PARTS = ["For Verify", "Environment"] as const
-
-/**
- * What a reviewer's brief holds beyond the shared text: the build's *For Verify* and *Environment*
- * (a part the build did not write is left out), and on a later round the verdict lines of the
- * previous round that did not pass, each under its own heading. The files themselves stay on demand.
- */
-async function judgeParts(ctx: Ctx, task: Task, rechecks: number | undefined): Promise<string[]> {
-  const build = implementAgentsPath(task)
-  const notes = (await ctx.fs.exists(build)) ? await ctx.fs.readFile(build) : ""
-  const parts = BUILD_PARTS.flatMap((heading) => {
-    const body = sectionText(notes, heading)
-    return body === "" ? [] : [`## The build's ${heading}\n\n${body}`]
-  })
-  if (rechecks === undefined) return parts
-  const record = await readBuildRecord(ctx, task)
-  const steps = await recordedSteps(ctx, task, rechecks, record.verification)
-  if (steps !== null) parts.push(steps)
-  const previous = record.verification.find((i) => i.n === rechecks)
-  const failed = (previous?.verdicts ?? []).filter(
-    (v) => v.verdict === "FAIL" || v.verdict === "MISSING",
-  )
-  if (failed.length > 0) {
-    const lines = failed.map(
-      (v) => `- [${v.verdict}] ${v.kind}${v.subject === "" ? "" : ` ${v.subject}`}: ${v.text}`,
-    )
-    parts.push(`## Iteration ${rechecks}: the lines that did not pass\n\n${lines.join("\n")}`)
-  }
-  return parts
-}
-
-/**
- * A recheck of a Plan listed by Done means point: the steps the round must record, with why, and
- * the ones QualityLayer carries from earlier rounds. Null for any other round.
- */
-async function recordedSteps(
-  ctx: Ctx,
-  task: Task,
-  rechecks: number,
-  rounds: Iteration[],
-): Promise<string | null> {
-  const assignment = await readAssignment(ctx, task)
-  if (assignment === null || assignment.after?.iteration !== rechecks) return null
-  const recheck = await recheckOf(
-    ctx,
-    task.runtimeDir,
-    assignment,
-    rounds,
-    evidenceExists(ctx, task),
-  )
-  if (recheck === null) return null
-  const lines = [...recheck.again].map(([id, why]) => `- \`acceptance ${id}\` — ${why}`)
-  const carried = [...recheck.carried.values()].map((s) => `${s.id} (iteration ${s.iteration})`)
-  return [
-    "## Steps this round records",
-    "",
-    lines.length > 0
-      ? `Record these, and \`review\` for the change:\n\n${lines.join("\n")}`
-      : "Every step stands. Record `review` for the change, and any step you choose to run again.",
-    ...(carried.length > 0
-      ? [
-          "",
-          `Carried by QualityLayer with its evidence, so you record nothing for it unless you run it again: ${carried.join(", ")}.`,
-        ]
-      : []),
-  ].join("\n")
-}
-
-const text = (key: string) => phaseText(key) ?? ""
+export const briefText = (key: string) => phaseText(key) ?? ""
+const text = briefText
 
 async function briefInvocation(ctx: Ctx): Promise<string[]> {
   const self = selfCommand([])
@@ -210,7 +144,7 @@ function commandSection(invocation = selfCommand([])): string {
 }
 
 /** Said of the diff a helper reviews when the task recorded no base commit. */
-const NO_BASE = " (no recorded base: diff the task branch against where it started)"
+export const NO_BASE = " (no recorded base: diff the task branch against where it started)"
 
 /** How many leading path segments name an area of the repository. */
 const AREA_DEPTH = 3
@@ -232,7 +166,7 @@ export function changedAreas(files: readonly string[]): string[] {
 }
 
 /** Minutes a helper is told it has, by role; the App never shows them. */
-const BUDGET_MINUTES = {
+export const BUDGET_MINUTES = {
   research: 8,
   "plan-review": 10,
   "artifact-check": 8,
@@ -248,7 +182,7 @@ export function helperMinutes(role: HelperRole, share?: JudgeShare, minutes?: nu
   return role === "judge" && share !== undefined ? share.minutes : BUDGET_MINUTES[role]
 }
 
-const clamp = (n: number, low: number, high: number) => Math.min(high, Math.max(low, n))
+export const clamp = (n: number, low: number, high: number) => Math.min(high, Math.max(low, n))
 
 /** A Chat slice has 12 minutes a card, never under 45 and never over 150: a large slice is not cut short. */
 export const sliceMinutes = (cards: number) => clamp(12 * cards, BUDGET_MINUTES.slice, 150)
@@ -262,9 +196,10 @@ const FINISHED = (id: string) =>
   `Your last command is \`qualitylayer progress done --agent ${id}\`.`
 
 /** The progress section every helper with an id ends with. */
-const progressSection = (id: string, what: string) =>
+export const briefProgressSection = (id: string, what: string) =>
   `## Progress\n\nAs you start ${what}, run ` +
   `\`qualitylayer progress "<what you do now, under 60 characters>" --agent ${id}\`. ${FINISHED(id)}`
+const progressSection = briefProgressSection
 
 /** The one rule every helper carries about messages: the session reads only the final report. */
 const MESSAGES = "- Messages: none while you work; your last message is your report."
@@ -298,7 +233,7 @@ const RESTARTED =
  * The one `## Rules` section of a brief: temporary files, processes and messages for every helper,
  * and, by role, how it edits, that `next` is not its to run, and what a restart means.
  */
-function rules({
+export function briefRules({
   edit = false,
   next = false,
   restart = false,
@@ -316,6 +251,7 @@ function rules({
     ...(restart ? [RESTARTED] : []),
   ].join("\n")
 }
+const rules = briefRules
 
 function fileList(paths: string[]): string {
   return paths.map((p) => `- \`${p}\``).join("\n")
@@ -325,7 +261,7 @@ const FOR_AGENTS =
   "Files under `agents/` are for agents: they change nothing agreed, and where one differs from its step file the step file wins."
 
 /** What a reader reads first, and what it may open when its job needs it. */
-function documents(pkg: ReaderPackage): string[] {
+export function briefDocuments(pkg: ReaderPackage): string[] {
   const forAgents = [...pkg.read, ...pkg.onDemand].some((path) => /[\\/]agents[\\/]/.test(path))
   return [
     ...(pkg.read.length > 0 ? [`## Your documents\n\n${fileList(pkg.read)}`] : []),
@@ -333,6 +269,7 @@ function documents(pkg: ReaderPackage): string[] {
     ...(forAgents ? [FOR_AGENTS] : []),
   ]
 }
+const documents = briefDocuments
 
 export { numberedItems, researchAreaGroups, researchPointers } from "./research-questions.ts"
 
@@ -423,128 +360,10 @@ export async function researchHelpers(ctx: Ctx, task: Task): Promise<Helper[]> {
   })
 }
 
-/** One artifact handed to a fresh check: its page, the four pictures to take of it, and what was asked for. */
-export type ArtifactCheck = {
-  id: string
-  /** The page's name: the key of its pictures and review, the artifact's own name for a single page. */
-  name: string
-  /** The artifact `artifact shot` takes, when the page belongs to a folder draft; absent: `name`. */
-  artifact?: string
-  /** The page of that folder draft, as `artifact shot --page` takes it; absent for a single page. */
-  page?: string
-  /** The page on disk. */
-  file: string
-  /** Each picture to take, where it goes. */
-  shots: { width: number; theme: "light" | "dark"; out: string }[]
-  /**
-   * Every page of a folder draft the check covers, when it covers more than one: one report for the
-   * draft. The fields above then describe the first page and are not read.
-   */
-  pages?: { page: string; file: string; shots: ArtifactCheck["shots"] }[]
-  /** The Plan's Done means, as written. */
-  doneMeans: string
-}
-
-/**
- * A fresh agent looks at one artifact the way the person will: the pictures at wide and phone width in
- * both themes, held against the Done means. Read-only; the session writes its report to the
- * artifact's review file.
- */
-export function artifactCheckHelper(task: Task, check: ArtifactCheck): Helper {
-  const artifact = check.artifact ?? check.name
-  const covered =
-    check.pages !== undefined && check.pages.length > 1
-      ? check.pages
-      : [{ page: check.page, file: check.file, shots: check.shots }]
-  const shots = covered.flatMap((one) =>
-    one.shots.map(
-      (s) =>
-        `- \`qualitylayer artifact shot ${shotTarget(artifact, one.page)} --width ${s.width} --theme ${s.theme} --out ${shellQuote(s.out)} --task ${task.slug}\``,
-    ),
-  )
-  const renders = covered.map(
-    (one) =>
-      `Run \`qualitylayer artifact check ${shotTarget(artifact, one.page)} --render --task ${task.slug}\`.`,
-  )
-  const named =
-    check.page !== undefined
-      ? `page \`${check.page}\` of the artifact \`${artifact}\``
-      : `named \`${check.name}\``
-  const yours =
-    covered.length > 1
-      ? `The draft is the artifact \`${artifact}\`, and one report covers its ${covered.length} pages: ${covered.map((one) => `\`${one.page}\` (${one.file})`).join(", ")}.`
-      : `The page is \`${check.file}\`, ${named}.`
-  return {
-    role: "artifact-check",
-    id: check.id,
-    when: "after-draft",
-    brief: [
-      text("artifact-check"),
-      `## Your artifact\n\n${yours} The repository is \`${task.repoRoot}\`; change no file in it.`,
-      `## The Done means\n\n${check.doneMeans !== "" ? check.doneMeans : "The Plan has no Done means yet: judge the artifact against its own first part."}`,
-      `## The pictures\n\nThe capture commands:\n\n${shots.join("\n")}`,
-      `## The render check\n\n${renders.join("\n")}`,
-      progressSection(check.id, "each picture"),
-      rules(),
-    ].join("\n\n"),
-    fallback:
-      "Look at the artifact again from the top as the person will, with no memory of how it was " +
-      "drawn: take the four pictures, hold them against the Done means, and list the same findings yourself.",
-  }
-}
-
-/** An artifact outside a task, handed to a fresh check: its page, the pictures to take and what was asked for. */
-export type ArtifactReview = {
-  /** The artifact's name, as `artifact shot` takes it. */
-  artifact: string
-  /** The page of a folder artifact, as `artifact shot --page` takes it; absent for a single page. */
-  page?: string
-  /** The page on disk. */
-  file: string
-  repoRoot: string
-  /** The workflow task whose draft this is, for the capture commands; absent for a project artifact. */
-  task?: string
-  /** Each picture to take: the artifact's width, then a phone's, light and dark. */
-  views: { width: number; theme: "light" | "dark" }[]
-  /** What the person asked for, else the artifact's purpose: the acceptance points. Empty when neither is known. */
-  asked: string
-}
-
-/**
- * The same fresh look as the Plan step's, for the calling agent to hand to a fresh subagent: the
- * pictures at the artifact's width and a phone's in both themes, held against what was asked for.
- * Read-only; the subagent's last message is its report.
- */
-export function artifactReviewBrief(review: ArtifactReview): string {
-  const target = shotTarget(review.artifact, review.page)
-  const scope = review.task !== undefined ? ` --task ${review.task}` : ""
-  const pictures = review.views.map(
-    (v) =>
-      `- \`qualitylayer artifact shot ${target} --width ${v.width} --theme ${v.theme}${scope}\``,
-  )
-  const named =
-    review.page !== undefined
-      ? `page \`${review.page}\` of the artifact \`${review.artifact}\``
-      : `named \`${review.artifact}\``
-  return [
-    commandSection(),
-    text("artifact-check"),
-    `## Your artifact\n\nThe page is \`${review.file}\`, ${named}. The repository is \`${review.repoRoot}\`; change no file in it.`,
-    `## The acceptance points\n\n${review.asked !== "" ? review.asked : "Nobody wrote down what was asked for: judge the artifact against its own first part."}`,
-    `## The pictures\n\nThe capture commands print where each picture is saved:\n\n${pictures.join("\n")}`,
-    `## The render check\n\nRun \`qualitylayer artifact check ${target} --render${scope}\`.`,
-    rules(),
-  ].join("\n\n")
-}
-
-/** What `artifact shot` is told to draw: the artifact, and its page when it is a folder's. */
-const shotTarget = (artifact: string, page: string | undefined): string =>
-  page !== undefined ? `${artifact} --page ${page}` : artifact
-
 const CARD_BREAK = "\n\n---\n\n"
 
 /** Captured proof keeps the path chosen by the evidence command. */
-function saveProof(task: Task): string {
+export function saveProof(task: Task): string {
   return `capture proof for \`${task.slug}\` with \`qualitylayer evidence add\` or \`qualitylayer evidence shot\`, and use the exact returned \`file\` path unchanged (text under \`records/\`, pictures under \`evidence/\`)`
 }
 
@@ -637,220 +456,5 @@ export function qualityHelper(
     fallback: rechecking
       ? `Check ${recheck.join(", ")} again yourself under the brief's rules, and write ${NOT_HELPED} in the block.`
       : `Review the change for severe security problems yourself under the brief's rules: one pass, read only. Write ${NOT_HELPED} in the block so a reviewer can tell.`,
-  }
-}
-
-/**
- * What a judge of a large build is told about its share. It replaces the single judge's "one
- * block" record: each judge appends its own part, beside the others, to the same iteration.
- */
-function shareSection(share: JudgeShare, iteration: number, byStep: boolean): string {
-  const part = `### Iteration ${iteration} · share ${share.n}`
-  const evidence = `it${iteration}-s${share.n}-…`
-  const intro =
-    `## Your share: ${describeShare(share)}\n\nThis build is too large for one judge: ${share.of} ` +
-    "judges work at the same time, each on its own share. Do not wait for them. " +
-    "Where the rules above say to judge everything, they mean your share."
-  const record =
-    `Name your evidence files \`${evidence}\`. When all your verdicts are recorded with \`qualitylayer verdict\`, ` +
-    `run \`qualitylayer verdict finish <assignment> --share ${share.n}\` to write and validate \`${part}\` safely ` +
-    "without racing the other shares (it appends or replaces only your share block). " +
-    "If you write it by hand, read the end of `## Verification` first, add or replace only your block with an exact-text edit, " +
-    "include Assignment, Judge (no Revision line: QualityLayer stamps it), your verdicts and `**Result:**` (`pass` only when every line is `[PASS]`, `[NOTE]` or `[USER]`)."
-  // A points Plan's build splits its steps: a share runs its steps, the diff-wide share the diff.
-  if (byStep && share.kind === "diff") {
-    return [
-      intro,
-      "Review the integrated change on its assigned source and check the recorded evidence yourself. The acceptance helpers run their assigned steps and record their own verdicts.",
-      "- **Review of the whole diff:** the `review` line and its findings, including files changed outside every Files block (Verify's own lanes and the fix helpers are in scope), and each card's done lines against the code.",
-      "Record no `acceptance`, `done`, `dod`, `scenario` or `check` line.",
-      record,
-    ].join("\n\n")
-  }
-  if (byStep) {
-    return [
-      intro,
-      `Run these steps of the Plan's Acceptance test:\n\n- **Steps:** ${share.steps.join(", ")}. Run each as written, then probe one or two inputs past it (empty, invalid, boundary). A step that needs the person's own account, device or an app you cannot run is \`[USER]\`, opened with the question they are asked.`,
-      "Record one `acceptance A<n>` line per step of your share. Record no `check`, `done` line and no clean " +
-        "`review` line: the diff-wide judge records the `review`; a defect you meet is a `[FAIL] review:` " +
-        "line. Run whatever you need to prove your lines, once.",
-      record,
-    ].join("\n\n")
-  }
-  if (share.kind === "diff") {
-    return [
-      intro,
-      "Review the integrated change on its assigned source and check the recorded evidence yourself. The acceptance helpers check each task's definition of done and the scenarios.",
-      `- **The checks:** cite the CLI's \`${CHECKS_RECORD}\`, or \`## Checks\` in \`${agentFileOf("implement")}\` for earlier runs. Record one \`check\` line per command.\n` +
-        "- **The acceptance test:** one `acceptance A<n>` line per step of the Plan's Acceptance test, run as it says.\n" +
-        "- **Done means:** one `done <n>` line per item of *Done means*.\n" +
-        "- **Review of the whole diff:** the `review` line and its findings, including files changed outside every Files block (Verify's own lanes and the fix helpers are in scope).",
-      "Record no `dod` or `scenario` line.",
-      record,
-    ].join("\n\n")
-  }
-  return [
-    intro,
-    `Judge these:\n\n- **Definition of done:** every bullet of ${share.tasks.join(", ")}.\n` +
-      `- **Scenarios:** ${share.scenarios.length > 0 ? `${share.scenarios.join(", ")}, step by step and probed past the script, as above` : "none"}.\n` +
-      "- **Review:** the diff of the files in those tasks' Files blocks and the deviations that name them.",
-    "Record one `dod T<n>` line per task and one `scenario <n>` line per scenario of your share. " +
-      "Record no `check`, `acceptance`, `done` line and no clean `review` line: the diff-wide judge " +
-      "records those. Run whatever you need to prove your lines, once.",
-    record,
-  ].join("\n\n")
-}
-
-/** What the judge is told about the items of its assignment: how to record each, and what not to judge. */
-/** What a reviewer of a Plan with numbered steps (a bug's Plan too) records besides the Acceptance test and the diff. */
-function itemSections(assignment: Assignment, share: JudgeShare | undefined): string[] {
-  const out: string[] = []
-  const finishFlags = share !== undefined ? ` --share ${share.n}` : ""
-  out.push(
-    "## Record and finish\n\n" +
-      `Record each item as you finish it with \`qualitylayer verdict ${assignment.id} "<item>" pass|fail|missing|user|note "<evidence>" [--evidence <returned file>]${finishFlags}\` ` +
-      "(use `check` for each recorded command, not `check all`; acceptance passes require `--evidence` with the exact returned `file`). " +
-      "This command saves a receipt. " +
-      `When done, run \`qualitylayer verdict finish ${assignment.id}${finishFlags}\` to write and validate your assigned Verify iteration or share block in one step.`,
-  )
-  if (assignment.ignored !== undefined && assignment.ignored.length > 0) {
-    out.push(
-      "## Ignored by git\n\nThe Plan names these paths, but git ignores them (generated or local-only " +
-        `files): ${assignment.ignored.map((p) => `\`${p}\``).join(", ")}. Record no \`[MISSING]\` for ` +
-        "them and never judge a card bullet against them; judge what generates them instead.",
-    )
-  }
-  // The diff-wide judge (or the only judge) records these; a judge of slices does not repeat them.
-  if (share?.kind !== "slices") {
-    const exempt = (assignment.outline === undefined ? [] : allTasks(assignment.outline))
-      .filter((c) => c.testFirst?.kind === "trivial" || c.testFirst?.kind === "qualification")
-      .map((c) => c.id)
-    if (exempt.length > 0) {
-      out.push(
-        "## Cards that need no failing test\n\n" +
-          `${exempt.join(", ")}: marked \`**Trivial:**\` or \`**Qualification:**\`, the Plan's approved ` +
-          "exemption from a failing test. Their missing red run is no finding: write no `[NOTE]` and no " +
-          "other line about it, and judge their verify command as their proof.",
-      )
-    }
-  }
-  return out
-}
-
-/**
- * A judge's minutes grow with what it must judge: each task's bullets take time. Ten minutes for 27
- * tasks left it no time for the definition-of-done lines.
- */
-export function judgeMinutes(outline: Outline | undefined): number {
-  if (outline === undefined) return BUDGET_MINUTES.judge
-  const tasks = allTasks(outline).length
-  return clamp(Math.ceil(tasks * 0.75), BUDGET_MINUTES.judge, 60)
-}
-
-/** What a lone judge's record needs to be accepted, and the step that proves it before the report. */
-function recordMustValidate(): string {
-  return (
-    "## Your record must validate\n\n`qualitylayer verdict finish` writes and validates your block automatically. " +
-    `If you edit \`${agentFileOf("verify")}\` directly, cite each proof file in backticks and run \`qualitylayer validate ${agentFileOf("verify")}\` before reporting.`
-  )
-}
-
-/** The judge sees what its job needs and the diff, never the build's conversation. */
-export function judgeHelper(
-  task: Task,
-  iteration: number,
-  base: string | null,
-  diff: string,
-  pkg: ReaderPackage,
-  assignment?: Assignment,
-  options: {
-    progress?: string
-    share?: JudgeShare
-    committedDiff?: boolean
-  } = {},
-): Helper {
-  const label = "build session, no helpers available"
-  const bugfix = task.type === "bugfix" ? `\n\n${text("judge-bugfix")}` : ""
-  const { share } = options
-  const record = verifyLogPath(task)
-  const minutes = share?.minutes ?? judgeMinutes(assignment?.outline)
-  const treeNote = options.committedDiff
-    ? assignment?.note?.replace(
-        "The diff against the effective base includes tracked working edits with the normal exclusions; inspect untracked files directly.",
-        "The diff above shows committed changes. Inspect local inputs recorded for your assignment separately.",
-      )
-    : assignment?.note
-  return {
-    role: "judge",
-    when: "start",
-    ...(options.progress !== undefined ? { id: options.progress } : {}),
-    ...(share !== undefined ? { share } : { minutes }),
-    ...(assignment?.after !== undefined ? { rechecks: assignment.after.iteration } : {}),
-    brief: [
-      `${text("judge")}${bugfix}`,
-      ...documents(pkg),
-      `## Your assignment\n\nThe repository is \`${task.repoRoot}\`. The change is ` +
-        `\`${diff}\`${base === null ? NO_BASE : ""}. ` +
-        (share === undefined
-          ? `Record your verdicts as \`### Iteration ${iteration}\` at the end of the ` +
-            `\`## Verification\` section of \`${record}\`, and ${saveProof(task)}.`
-          : `Record your part at the end of the \`## Verification\` section of \`${record}\`, ` +
-            `and ${saveProof(task)}.`),
-      ...(share !== undefined
-        ? [
-            shareSection(
-              share,
-              iteration,
-              share.steps.length > 0 ||
-                (assignment?.outline !== undefined && stepsAreProved(assignment.outline)),
-            ),
-          ]
-        : [recordMustValidate()]),
-      ...(treeNote !== undefined ? [`## The tree you judge\n\n${treeNote}`] : []),
-      ...(assignment
-        ? [
-            ...(assignment.head !== undefined
-              ? [
-                  assignment.recovery !== undefined
-                    ? `Selected review commit: \`${assignment.head}\`. Review it in the selected checkout.`
-                    : `Working-tree HEAD at assignment: \`${assignment.head}\`. Follow the assigned working-tree scope, including its local inputs, and report what you execute.`,
-                ]
-              : []),
-            `Record this field verbatim in ${share === undefined ? "this iteration" : "your part"}:\n\n**Assignment:** ${assignment.id}\n\nWrite no revision or commit hash: QualityLayer records it.`,
-          ]
-        : []),
-      ...(assignment !== undefined ? itemSections(assignment, share) : []),
-      ...(assignment?.after !== undefined
-        ? [
-            text("judge-rerun")
-              .replaceAll("{previous}", String(assignment.after.iteration))
-              .replaceAll(
-                "{fix}",
-                codeDiff(
-                  shellQuote(
-                    assignment.head === undefined
-                      ? assignment.after.head
-                      : `${assignment.after.head}..${assignment.head}`,
-                  ),
-                ),
-              ),
-          ]
-        : []),
-      ...(options.progress !== undefined
-        ? [
-            progressSection(
-              options.progress,
-              "each check, scenario, acceptance step and review area",
-            ),
-          ]
-        : []),
-      rules({ next: true }),
-    ].join("\n\n"),
-    fallback:
-      share === undefined
-        ? `Judge the build yourself under the brief's rules, and write \`**Judge:** ${label}\` in the ` +
-          "iteration so a reviewer can tell."
-        : "Judge every share of the build yourself, one after another, under the briefs' rules, and " +
-          `write each part as its brief says with \`**Judge:** ${label}\` so a reviewer can tell.`,
   }
 }

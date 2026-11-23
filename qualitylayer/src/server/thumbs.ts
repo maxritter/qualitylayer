@@ -5,44 +5,27 @@
 
 import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises"
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { artifactMeta } from "../core/artifact/format.ts"
 import { projectArtifactsRuntime } from "../core/artifact/store.ts"
-import {
-  THUMB_CACHE_BYTES,
-  THUMB_FILES_KEPT,
-  THUMB_MAX_BYTES,
-  THUMB_QUEUE_KEPT,
-} from "../core/home-caps.ts"
+import { THUMB_FILES_KEPT, THUMB_MAX_BYTES, THUMB_QUEUE_KEPT } from "../core/home-caps.ts"
 import type { Ctx } from "../ctx.ts"
 import { renderArtifacts, writePicture } from "./render.ts"
+import {
+  identityOf,
+  pruneThumbFolder,
+  readThumbBatch,
+  thumbRenderInputs,
+  trimMap,
+  trimSet,
+} from "./thumbs-io.ts"
+
+export { oldThumbnails } from "./thumbs-io.ts"
 
 /** Bumped when the pictures are drawn differently, so the old ones are not used again. */
 const DRAWING = "1"
 /** How many artifacts one browser draws before it ends. */
 const BATCH = 8
-const identityOf = (repo: string, path: string) =>
-  `${repo}:${path.replaceAll("\\", "/").replace(/(\/shared-artifacts\/[^/]+)\/v\d+\//, "$1/")}`
-export function oldThumbnails(
-  entries: { name: string; bytes: number; at: number }[],
-  protectedKeys: ReadonlySet<string>,
-  files = THUMB_FILES_KEPT,
-  bytes = THUMB_CACHE_BYTES,
-): string[] {
-  let total = entries.reduce((sum, entry) => sum + entry.bytes, 0)
-  let count = entries.length
-  const drop: string[] = []
-  for (const entry of [...entries].sort(
-    (a, b) => Number(protectedKeys.has(a.name)) - Number(protectedKeys.has(b.name)) || a.at - b.at,
-  )) {
-    if (count <= files && total <= bytes) break
-    drop.push(entry.name)
-    count--
-    total -= entry.bytes
-  }
-  return drop
-}
 
 export type ThumbJob = {
   repoId: string
@@ -89,10 +72,7 @@ export class Thumbs {
     const identity = identityOf(repoId, path)
     this.latest.delete(identity)
     this.latest.set(identity, { repo: repoId, key })
-    for (const oldest of this.latest.keys()) {
-      if (this.latest.size <= THUMB_FILES_KEPT) break
-      this.latest.delete(oldest)
-    }
+    trimMap(this.latest, THUMB_FILES_KEPT)
     if (existsSync(this.file(repoId, key))) return key
     if (this.rendered.delete(key)) this.asked.delete(key)
     if (this.asked.has(key) || this.chrome() === null) return null
@@ -104,10 +84,7 @@ export class Thumbs {
     })
     this.queue.push({ repoId, key, path, identity, ...(render !== undefined ? { render } : {}) })
     while (this.queue.length > THUMB_QUEUE_KEPT) this.asked.delete(this.queue.shift()?.key ?? "")
-    for (const oldest of this.asked) {
-      if (this.asked.size <= THUMB_FILES_KEPT) break
-      this.asked.delete(oldest)
-    }
+    trimSet(this.asked, THUMB_FILES_KEPT)
     this.running ??= this.drain()
       .catch(() => {
         this.queue = []
@@ -127,79 +104,47 @@ export class Thumbs {
   }
   private async prune(repoId: string) {
     const folder = join(this.file(repoId, ""), "..")
-    const entries = await readdir(folder, { withFileTypes: true })
-    const rows = await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && /^[a-f0-9]{20}\.png$/.test(entry.name))
-        .map(async (entry) => {
-          const info = await lstat(join(folder, entry.name)).catch(() => null)
-          return info?.isFile() ? { name: entry.name, bytes: info.size, at: info.mtimeMs } : null
-        }),
-    )
     const pinned = new Set(
       [...this.latest.values()]
         .filter((entry) => entry.repo === repoId)
         .map((entry) => `${entry.key}.png`),
     )
-    for (const name of oldThumbnails(
-      rows.filter((row) => row !== null),
-      pinned,
-    ))
-      await rm(join(folder, name), { force: true })
+    await pruneThumbFolder(folder, pinned)
+  }
+
+  private async persistPictures(
+    jobs: { job: ThumbJob; html: string }[],
+    pictures: (Uint8Array | Error)[],
+  ): Promise<Set<string>> {
+    const updated = new Set<string>()
+    for (const [index, picture] of pictures.entries()) {
+      const job = jobs[index]?.job
+      if (job === undefined || picture instanceof Error) continue
+      const isLatest = this.latest.get(identityOf(job.repoId, job.path))?.key === job.key
+      if (picture.byteLength > THUMB_MAX_BYTES || !isLatest) continue
+      const out = this.file(job.repoId, job.key)
+      await mkdir(join(out, ".."), { recursive: true })
+      await writePicture(out, picture)
+      this.rendered.add(job.key)
+      trimSet(this.rendered, THUMB_FILES_KEPT)
+      updated.add(job.repoId)
+    }
+    return updated
   }
 
   private async drain(): Promise<void> {
     const chrome = this.chrome()
     if (chrome === null) return
     while (this.queue.length > 0) {
-      const batch = this.queue.splice(0, BATCH)
-      const jobs: { job: ThumbJob; html: string }[] = []
-      for (const job of batch) {
-        try {
-          const html =
-            job.render !== undefined ? await job.render() : await readFile(job.path, "utf8")
-          if (html !== null) jobs.push({ job, html })
-        } catch {
-          // an artifact removed meanwhile has no picture to draw
-        }
-      }
+      const jobs = await readThumbBatch(this.queue.splice(0, BATCH))
       if (jobs.length === 0) continue
       let pictures: (Uint8Array | Error)[]
       try {
-        pictures = await this.draw(
-          chrome,
-          jobs.map(({ html }) => ({
-            html,
-            spec: {
-              width: Math.max(320, Math.min(1600, artifactMeta(html).width ?? 1280)),
-              theme: "light",
-              height: 880,
-              scale: 0.25,
-            },
-          })),
-        )
+        pictures = await this.draw(chrome, thumbRenderInputs(jobs))
       } catch {
         return
       }
-      const updated = new Set<string>()
-      for (const [index, picture] of pictures.entries()) {
-        const job = jobs[index]?.job
-        if (job === undefined || picture instanceof Error) continue
-        if (
-          picture.byteLength > THUMB_MAX_BYTES ||
-          this.latest.get(identityOf(job.repoId, job.path))?.key !== job.key
-        )
-          continue
-        const out = this.file(job.repoId, job.key)
-        await mkdir(join(out, ".."), { recursive: true })
-        await writePicture(out, picture)
-        this.rendered.add(job.key)
-        for (const oldest of this.rendered) {
-          if (this.rendered.size <= THUMB_FILES_KEPT) break
-          this.rendered.delete(oldest)
-        }
-        updated.add(job.repoId)
-      }
+      const updated = await this.persistPictures(jobs, pictures)
       for (const repoId of updated) await this.prune(repoId)
     }
   }

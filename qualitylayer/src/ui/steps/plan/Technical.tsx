@@ -255,6 +255,42 @@ export function TechnicalPart({
   )
 }
 
+function DecidedFold({
+  title,
+  testId,
+  icon: Icon,
+  count,
+  children,
+}: {
+  title: string
+  testId: string
+  icon: LucideIcon
+  count: number
+  children: ReactNode
+}) {
+  return (
+    <Disclosure
+      className="pl-tf pl-decided"
+      summaryProps={{
+        id: sectionId(title),
+        tabIndex: -1,
+        "data-passage-section": headingSlug(title),
+      }}
+      data-fold={title}
+      data-testid={testId}
+      count={count}
+      head={
+        <>
+          <Icon className="size-3.5 pl-tf-icon" aria-hidden="true" />
+          <b>{title}</b>
+        </>
+      }
+    >
+      <div className="pl-tf-body">{children}</div>
+    </Disclosure>
+  )
+}
+
 /** Decisions made for you: what the agent settled itself, a closed fold beside Decided with you. */
 export function MadeForYou({
   section,
@@ -268,27 +304,14 @@ export function MadeForYou({
   const rows = reasonRowsOf(section.markdown)
   if (rows === null || rows.length === 0) return null
   return (
-    <Disclosure
-      className="pl-tf pl-decided"
-      summaryProps={{
-        id: sectionId("Decisions made for you"),
-        tabIndex: -1,
-        "data-passage-section": headingSlug("Decisions made for you"),
-      }}
-      data-fold="Decisions made for you"
-      data-testid="made-for-you"
+    <DecidedFold
+      title="Decisions made for you"
+      testId="made-for-you"
+      icon={BotIcon}
       count={rows.length}
-      head={
-        <>
-          <BotIcon className="size-3.5 pl-tf-icon" aria-hidden="true" />
-          <b>Decisions made for you</b>
-        </>
-      }
     >
-      <div className="pl-tf-body">
-        <ReasonRows rows={rows} taskId={taskId} active={active} />
-      </div>
-    </Disclosure>
+      <ReasonRows rows={rows} taskId={taskId} active={active} />
+    </DecidedFold>
   )
 }
 
@@ -314,61 +337,48 @@ export function DecidedWithYou({
   const rows = byYouRows(bodyOf(section.markdown))
   if (rows === null) return null
   return (
-    <Disclosure
-      className="pl-tf pl-decided"
-      summaryProps={{
-        id: sectionId("Decided with you"),
-        tabIndex: -1,
-        "data-passage-section": headingSlug("Decided with you"),
-      }}
-      data-fold="Decided with you"
-      data-testid="decided-with-you"
+    <DecidedFold
+      title="Decided with you"
+      testId="decided-with-you"
+      icon={UserCheckIcon}
       count={rows.length}
-      head={
-        <>
-          <UserCheckIcon className="size-3.5 pl-tf-icon" aria-hidden="true" />
-          <b>Decided with you</b>
-        </>
-      }
     >
-      <div className="pl-tf-body">
-        <DecidedBullets
-          testId="decided-rows"
-          rows={rows.map((row, at) => {
-            const card = callFor(row, state)
-            return {
-              // an answer can repeat; the rows are fixed in document order
-              key: `${at}:${row.what}`,
-              question: row.what,
-              answer: row.answer.includes("\n") ? "" : row.answer,
-              ...(row.answer.includes("\n")
-                ? {
-                    block: (
-                      <DocMarkdown
-                        markdown={row.answer}
-                        state={state}
-                        first={false}
-                        live={undefined}
-                        bare
-                      />
-                    ),
-                  }
-                : {}),
-              ...(card !== undefined && reopen !== undefined
-                ? {
-                    trailing: (
-                      <button type="button" className="q-btn quiet xs" onClick={() => reopen(card)}>
-                        <PenIcon className="size-3" aria-hidden="true" />
-                        Change
-                      </button>
-                    ),
-                  }
-                : {}),
-            }
-          })}
-        />
-      </div>
-    </Disclosure>
+      <DecidedBullets
+        testId="decided-rows"
+        rows={rows.map((row, at) => {
+          const card = callFor(row, state)
+          return {
+            // an answer can repeat; the rows are fixed in document order
+            key: `${at}:${row.what}`,
+            question: row.what,
+            answer: row.answer.includes("\n") ? "" : row.answer,
+            ...(row.answer.includes("\n")
+              ? {
+                  block: (
+                    <DocMarkdown
+                      markdown={row.answer}
+                      state={state}
+                      first={false}
+                      live={undefined}
+                      bare
+                    />
+                  ),
+                }
+              : {}),
+            ...(card !== undefined && reopen !== undefined
+              ? {
+                  trailing: (
+                    <button type="button" className="q-btn quiet xs" onClick={() => reopen(card)}>
+                      <PenIcon className="size-3" aria-hidden="true" />
+                      Change
+                    </button>
+                  ),
+                }
+              : {}),
+          }
+        })}
+      />
+    </DecidedFold>
   )
 }
 

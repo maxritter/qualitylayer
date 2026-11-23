@@ -5,33 +5,36 @@ import type { DemoLocalSource } from "./artifact-feedback.ts"
 import { FLAGSHIP_ARTIFACTS } from "./flagship.ts"
 import { DEMO_TASK_ID } from "./task/index.ts"
 
-/** Resolve registered demo identities only, so one page names its whole artifact. */
-export async function demoArtifactSource(
+const pageNameOf = (file: string) => file.split("/").at(-1) ?? file
+
+async function projectArtifactSource(
   api: Api,
   address: ArtifactFeedbackAddress,
 ): Promise<DemoLocalSource> {
-  if (address.scope === "project") {
-    const project = (await api.artifactsOverview()).projects.find((row) => row.id === address.id)
-    if (!project) throw new Error("This illustrative project is unavailable.")
-    const named = lastingDocOf(address.file)
-    const artifact = named
-      ? project.lasting.find((row) => !("broken" in row) && row.name === named.name)
-      : project.personal.find((row) => row.file === address.file)
-    if (
-      !artifact ||
-      "broken" in artifact ||
-      ("deletedAt" in artifact && artifact.deletedAt !== undefined)
-    )
-      throw new Error("This illustrative artifact is unavailable.")
-    const pages = artifact.pages?.map((page) => page.page) ?? [
-      address.file.split("/").at(-1) ?? address.file,
-    ]
-    if (!pages.includes(address.file.split("/").at(-1) ?? ""))
-      throw new Error("This illustrative artifact page is unavailable.")
-    const recorded =
-      artifact.revision ?? ("managerRevision" in artifact ? artifact.managerRevision : undefined)
-    return { title: artifact.title, pages, revision: await revision(api, address, recorded) }
-  }
+  const project = (await api.artifactsOverview()).projects.find((row) => row.id === address.id)
+  if (!project) throw new Error("This illustrative project is unavailable.")
+  const named = lastingDocOf(address.file)
+  const artifact = named
+    ? project.lasting.find((row) => !("broken" in row) && row.name === named.name)
+    : project.personal.find((row) => row.file === address.file)
+  if (
+    !artifact ||
+    "broken" in artifact ||
+    ("deletedAt" in artifact && artifact.deletedAt !== undefined)
+  )
+    throw new Error("This illustrative artifact is unavailable.")
+  const pages = artifact.pages?.map((page) => page.page) ?? [pageNameOf(address.file)]
+  if (!pages.includes(address.file.split("/").at(-1) ?? ""))
+    throw new Error("This illustrative artifact page is unavailable.")
+  const recorded =
+    artifact.revision ?? ("managerRevision" in artifact ? artifact.managerRevision : undefined)
+  return { title: artifact.title, pages, revision: await revision(api, address, recorded) }
+}
+
+async function taskArtifactSource(
+  api: Api,
+  address: ArtifactFeedbackAddress,
+): Promise<DemoLocalSource> {
   const artifacts = (await api.taskArtifacts(address.id)).task
   const artifact = artifacts.find(
     (row) => row.file === address.file || row.pages?.some((page) => page.file === address.file),
@@ -41,17 +44,24 @@ export async function demoArtifactSource(
       throw new Error("This illustrative task artifact is unavailable.")
     return {
       title: "Task artifact",
-      pages: [address.file.split("/").at(-1) ?? address.file],
+      pages: [pageNameOf(address.file)],
       revision: await revision(api, address, undefined),
     }
   }
   return {
     title: artifact.title,
-    pages: artifact.pages?.map((page) => page.page) ?? [
-      address.file.split("/").at(-1) ?? address.file,
-    ],
+    pages: artifact.pages?.map((page) => page.page) ?? [pageNameOf(address.file)],
     revision: await revision(api, address, artifact.revision),
   }
+}
+
+/** Resolve registered demo identities only, so one page names its whole artifact. */
+export async function demoArtifactSource(
+  api: Api,
+  address: ArtifactFeedbackAddress,
+): Promise<DemoLocalSource> {
+  if (address.scope === "project") return projectArtifactSource(api, address)
+  return taskArtifactSource(api, address)
 }
 
 async function revision(

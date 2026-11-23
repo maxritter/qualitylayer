@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs"
-import { runnableFile } from "../core/agents/binary.ts"
-import { AGENT_NAMES } from "../core/agents/ids.ts"
 import { knownFrom, storedModelLists } from "../core/agents/model-list-store.ts"
 import { AGENT_OWN, canSetBuildWorkers, renamedProvider } from "../core/agents/model-values.ts"
 import {
@@ -12,7 +9,6 @@ import {
 import type { RunRecord, RunSettings, StartRequest } from "../core/run/contracts.ts"
 import { acceptedFreshPermission } from "../core/run/fresh.ts"
 import {
-  chosenNativeSession,
   defaultPermissionChoice,
   ownPermissionOnly,
   permissionChoice,
@@ -23,11 +19,14 @@ import type { Task } from "../core/task/store.ts"
 import { taskFlow } from "../core/task-flow.ts"
 import type { Ctx } from "../ctx.ts"
 
-/** A new run's native session id when the agent takes one QualityLayer chooses; none for an agent that picks or creates its own. */
-export function chosenSession(agent: RunRecord["agent"]): { nativeSession?: string } {
-  const nativeSession = chosenNativeSession(agent)
-  return nativeSession === undefined ? {} : { nativeSession }
-}
+export {
+  agentArgs,
+  assertEnabled,
+  availableShells,
+  chosenSession,
+  loginShell,
+  terminalShell,
+} from "./run-launch-settings-shell.ts"
 
 function rememberedLaunch(
   config: Config,
@@ -133,40 +132,6 @@ function agentPermission(
   return mode === "" || named
     ? {}
     : permissionChoice(agent, mode === "own" ? { perm: "own" } : { permMode: mode })
-}
-/** An agent turned off in Settings is never started. */
-export function assertEnabled(agent: RunRecord["agent"], config: Config): void {
-  if (agent !== "other" && !config.agents[agent].enabled)
-    throw new Error(`${AGENT_NAMES[agent]} is turned off in Settings`)
-}
-/** The extra arguments Settings › Agents adds to every start of a native agent. */
-export function agentArgs(agent: RunRecord["agent"], config: Config): string[] | undefined {
-  return agent === "other" ? undefined : config.agents[agent].args
-}
-/** The shells this computer lists, for New terminal's choice; at most 32. */
-export function availableShells(): string[] {
-  if (process.platform === "win32") return []
-  try {
-    return readFileSync("/etc/shells", "utf8")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("/") && runnableFile(line))
-      .slice(0, 32)
-  } catch {
-    return []
-  }
-}
-export function loginShell(ctx: Ctx): string {
-  return (
-    ctx.env.get("SHELL") ||
-    (process.platform === "win32" ? ctx.env.get("COMSPEC") || "cmd.exe" : "/bin/sh")
-  )
-}
-const LOGIN_ARGS = process.platform === "win32" ? [] : ["-l"]
-/** A shell tab's program: the chosen shell or the login shell, with its arguments or `-l`. */
-export function terminalShell(ctx: Ctx, config: Config): { program: string; args: string[] } {
-  const { program, args } = config.terminal.shell
-  return { program: program || loginShell(ctx), args: args.length > 0 ? args : [...LOGIN_ARGS] }
 }
 
 async function smallBuild(ctx: Ctx, task: Task | undefined, input: StartRequest): Promise<boolean> {

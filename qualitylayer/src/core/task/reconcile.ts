@@ -10,22 +10,14 @@ import { agentFileOf, type DocRole, folderDoc } from "../docs/names.ts"
 import { agentsTemplateFor, schemaForDoc, templateFrom, verifyTemplate } from "../docs/schema.ts"
 import { movedSinceApproval } from "../gate/plan-moved.ts"
 import { approvalCurrent, driftedDocuments } from "../gate/revision.ts"
-import { removeDuplicateSliceCommits, sliceCommits } from "../git/build-start.ts"
-import { duplicateReceipts, duplicateReceiptsText } from "../git/commit-receipts.ts"
-import { judgeInputs, RecordedHistoryRewritten } from "../git/judge-inputs.ts"
 import { modFolder } from "../install/agent-settings.ts"
 import { realDir } from "../install/manifest.ts"
 import { agentEntry } from "../install/where.ts"
 import { environmentOnly } from "../judge-environment.ts"
 import type { Stage } from "./machine.ts"
-import {
-  appendEvent,
-  EARLIER_LAYOUT_REASON,
-  isCurrentLayout,
-  patchReadme,
-  readEvents,
-  type Task,
-} from "./store.ts"
+import { appendEvent, isCurrentLayout, patchReadme, readEvents, type Task } from "./store.ts"
+
+export { doctor } from "./doctor.ts"
 
 /** The stages that need the approved Plan: everything after its gate. */
 const BUILD_STAGES: Stage[] = ["implement", "verify"]
@@ -55,7 +47,7 @@ export type Finding = {
   elsewhere?: true
 }
 
-const AMEND_HINT =
+export const AMEND_HINT =
   "If the change is yours to make (no user decision changes), run " +
   '`qualitylayer plan amend --by agent --note "<what changed and why>"`; if it touches Done means, ' +
   "the scope or a decision the user made, ask the user, then run it with --by user and their words."
@@ -97,7 +89,7 @@ export async function inspect(ctx: Ctx, task: Task): Promise<Finding | null> {
 }
 
 /** The refusal for a build this home never admitted, with the move that settles it. */
-const ELSEWHERE_HINT =
+export const ELSEWHERE_HINT =
   "Run QualityLayer from the home that planned and approved this task (the same HOME and QUALITYLAYER_HOME), or start a new task here."
 
 /**
@@ -193,143 +185,4 @@ export async function reconcile(ctx: Ctx, task: Task): Promise<Result<Task>> {
     found: finding.found,
     fix: "qualitylayer doctor",
   })
-}
-
-export type DoctorReport = {
-  task: string
-  consistent: boolean
-  stored: Stage
-  found?: string
-  implied?: Stage
-  repaired: boolean
-  message: string
-  /** Commit receipts that repeat work another receipt holds; removed when `repaired`. */
-  duplicate_receipts?: { drop: string; keep: string }[]
-}
-
-/** The receipts a reworded, re-registered commit left beside its original (see `commit-receipts`). */
-async function receiptRepeats(ctx: Ctx, task: Task, repair: boolean) {
-  try {
-    if (repair) {
-      const removed = await removeDuplicateSliceCommits(ctx, task)
-      return removed.length > 0 ? { duplicates: removed, repaired: true } : null
-    }
-    const saved = await sliceCommits(ctx, task)
-    if (saved.length < 2) return null
-    const resolved: string[] = []
-    for (const value of saved) {
-      const result = await ctx.git.run(task.repoRoot, [
-        "rev-parse",
-        "--verify",
-        `${value}^{commit}`,
-      ])
-      if (result.code !== 0) return null
-      resolved.push(result.stdout.trim())
-    }
-    const { duplicates } = await duplicateReceipts(ctx, task, resolved)
-    return duplicates.length > 0 ? { duplicates, repaired: false } : null
-  } catch {
-    return null
-  }
-}
-
-/** Explain a mismatch; with `repair`, set the stage the documents imply. */
-export async function doctor(ctx: Ctx, task: Task, repair: boolean): Promise<DoctorReport> {
-  // An earlier task is read, never repaired.
-  if (!isCurrentLayout(task))
-    return {
-      task: task.slug,
-      consistent: true,
-      stored: task.stage,
-      repaired: false,
-      message: `${task.slug}: ${EARLIER_LAYOUT_REASON}`,
-    }
-  const report = await doctorStage(ctx, task, repair)
-  const repeats = await receiptRepeats(ctx, task, repair)
-  if (repeats === null) {
-    if (report.consistent && task.stage === "verify") {
-      try {
-        await judgeInputs(ctx, task)
-      } catch (cause) {
-        const found = cause instanceof Error ? cause.message : String(cause)
-        return {
-          ...report,
-          consistent: false,
-          found,
-          message: `${task.slug}: ${found.replace(/[.!?]$/, "")}.${
-            cause instanceof RecordedHistoryRewritten
-              ? " Run `qualitylayer verify judge` for that full working-tree review; receipts stay unchanged."
-              : " Inspect the named receipts and recorded branch; no receipt or commit was changed."
-          }`,
-        }
-      }
-    }
-    return report
-  }
-  const text = duplicateReceiptsText(repeats.duplicates, repeats.repaired)
-  return {
-    ...report,
-    consistent: false,
-    repaired: report.repaired || repeats.repaired,
-    duplicate_receipts: repeats.duplicates.map(({ drop, keep }) => ({ drop, keep })),
-    // A task whose stage agrees with its documents has nothing else to say besides the receipts.
-    message: report.consistent ? `${task.slug}: ${text}` : [report.message, text].join("\n"),
-  }
-}
-
-async function doctorStage(ctx: Ctx, task: Task, repair: boolean): Promise<DoctorReport> {
-  const finding = await inspect(ctx, task)
-  if (finding === null) {
-    return {
-      task: task.slug,
-      consistent: true,
-      stored: task.stage,
-      repaired: false,
-      message: `${task.slug} is consistent at stage "${task.stage}"; nothing to repair.`,
-    }
-  }
-  // Another home's build is never repaired from here: its stage is right where it was approved.
-  if (finding.elsewhere === true)
-    return {
-      task: task.slug,
-      consistent: false,
-      ...finding,
-      repaired: false,
-      message: `${task.slug}: ${finding.found}. ${ELSEWHERE_HINT}`,
-    }
-  // A plan amended during the build keeps its stage: the amendment rebinds the approval.
-  if (finding.amend === true) {
-    return {
-      task: task.slug,
-      consistent: false,
-      ...finding,
-      repaired: false,
-      message: `${task.slug} is building, but ${finding.found}. ${AMEND_HINT}`,
-    }
-  }
-  if (!repair) {
-    return {
-      task: task.slug,
-      consistent: false,
-      ...finding,
-      repaired: false,
-      message:
-        `${task.slug} is stored at "${finding.stored}", but ${finding.found}. ` +
-        `The documents imply stage "${finding.implied}". Run \`qualitylayer doctor --repair\` to set it.`,
-    }
-  }
-  // The one sanctioned stage write outside advance(): a repair is not a transition.
-  await patchReadme(ctx, task, { stage: finding.implied, gate: null })
-  await appendEvent(ctx, task, {
-    event: "doctor_repaired",
-    from: finding.stored,
-    to: finding.implied,
-  })
-  return {
-    task: task.slug,
-    consistent: false,
-    ...finding,
-    repaired: true,
-    message: `${task.slug} was moved from "${finding.stored}" to "${finding.implied}".`,
-  }
 }

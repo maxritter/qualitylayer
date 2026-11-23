@@ -7,27 +7,7 @@
 // preview and the scroll position survive opening an artifact and coming back. Archived ends with a
 // folded Recently deleted, where a deleted artifact opens on its Restore or is restored at once.
 
-import {
-  ArchiveIcon,
-  ArrowUpDownIcon,
-  ChevronRightIcon,
-  FileIcon,
-  FolderIcon,
-  GitBranchIcon,
-  LayersIcon,
-  LayoutGridIcon,
-  ListIcon,
-  MonitorIcon,
-  PlusIcon,
-  SearchIcon,
-  ShapesIcon,
-  SlidersHorizontalIcon,
-  Trash2Icon,
-} from "lucide-react"
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
-import { fullText } from "@/components/ui/cut-text"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { type ArtifactsOverview, lastingDoc } from "../../core/artifact/format.ts"
 import type { Config } from "../../core/config-values.ts"
 import type { ProjectLooks } from "../../core/project-look.ts"
@@ -39,102 +19,40 @@ import type {
   SubagentModels,
   TaskSummary,
 } from "../api.ts"
-import { DEFAULT_WIDTH } from "../artifact/ArtifactPage.tsx"
-import { ArtifactPageFrame } from "../artifact/ArtifactPageFrame.tsx"
 import type { ArtifactFeedbackApi } from "../artifact/feedback-api.ts"
-import { agoPhrase, type Query, type Route, useNow } from "../hooks.ts"
-import { InfoHint } from "../kit/InfoHint.tsx"
+import { type Query, type Route, useNow } from "../hooks.ts"
 import { LoadingState } from "../kit/LoadingState.tsx"
-import { ModelPick } from "../ModelPick.tsx"
 import { useOptionalRuns } from "../run-context.tsx"
-import { ProjectTile } from "../sidebar/ProjectTile.tsx"
-import { ArtifactCard, Changing } from "./ArtifactCard.tsx"
-import { FavoriteButton, FavoriteFeedback } from "./FavoriteButton.tsx"
+import { FavoriteFeedback } from "./FavoriteButton.tsx"
 import { favoriteRows, rowFavoriteKey, useArtifactFavorites } from "./favorites.ts"
-import { LibraryActions, type LibraryProject } from "./LibraryActions.tsx"
+import type { LibraryProject } from "./LibraryActions.tsx"
+import { RecentlyDeleted } from "./LibraryDeleted.tsx"
+import {
+  LibraryEmptyState,
+  LibraryFavoritesSection,
+  LibraryGroupSection,
+} from "./LibraryGroupSection.tsx"
+import { LibraryHeader } from "./LibraryHeader.tsx"
+import {
+  getKeptLibraryState,
+  type LibraryState,
+  restoreLibraryFocus,
+  saveLibraryScroll,
+  useLibraryState,
+} from "./library-state.ts"
 import {
   type DeletedRow,
   deletedRows,
   LIBRARY_FIRST,
   LIBRARY_MORE,
-  LIBRARY_SORTS,
   type LibraryGroup,
   type LibraryRow,
-  type LibrarySort,
-  type LibraryView,
-  lastingTime,
   libraryCounts,
   libraryGroups,
-  pagesWord,
 } from "./model.ts"
 import { NewArtifactDialog } from "./NewArtifactDialog.tsx"
-import { type Layout, readViewState, writeViewState } from "./view-state.ts"
 
-/** Kept with the screen for this session: what the person set up before opening an artifact. */
-type LibraryState = {
-  view: LibraryView
-  /** How the artifacts are drawn; the browser remembers it (view-state.ts). */
-  layout: Layout
-  query: string
-  project: string
-  sort: LibrarySort
-  /** The person's own folds; null until they fold or unfold one (then the default no longer applies). */
-  folded: Record<string, boolean> | null
-  /** Folds while a search is on; cleared with the search, so the person's own come back. */
-  searchFolded: Record<string, boolean>
-  shown: Record<string, number>
-  preview: string | null
-  scroll: number
-  /** The row to give focus back to on return. */
-  focus: string | null
-  focusArea: string | null
-  favoriteShown: number
-  /** Rows renamed during this search: they stay listed until the search changes. */
-  pinned: string[]
-  /** Recently deleted, under Archived, is open. */
-  deletedOpen: boolean
-  deletedShown: number
-}
-
-const initialState = (): LibraryState => {
-  const saved = readViewState()
-  return {
-    view: "library",
-    layout: saved.layout,
-    query: "",
-    project: "",
-    sort: "changed",
-    folded: null,
-    searchFolded: {},
-    shown: {},
-    preview: null,
-    scroll: 0,
-    focus: null,
-    focusArea: null,
-    favoriteShown: LIBRARY_FIRST,
-    pinned: [],
-    deletedOpen: false,
-    deletedShown: LIBRARY_FIRST,
-  }
-}
-
-let kept: LibraryState = initialState()
-/** For tests: start each with a fresh Library screen. */
-export function resetLibraryState(): void {
-  kept = initialState()
-}
-
-function useLibraryState(): [LibraryState, (patch: Partial<LibraryState>) => void] {
-  const [state, setState] = useState<LibraryState>(kept)
-  const set = (patch: Partial<LibraryState>) =>
-    setState((was) => {
-      const next = { ...was, ...patch }
-      kept = next
-      if (next.layout !== was.layout) writeViewState({ layout: next.layout })
-      return next
-    })
-  return [state, set]
-}
+export { resetLibraryState } from "./library-state.ts"
 
 type Props = {
   api: Api
@@ -148,445 +66,13 @@ type Props = {
   contextApi?: Pick<ArtifactFeedbackApi, "context">
 }
 
-/** The artifact's own page, drawn small in the sandboxed frame; read only when the preview opens. */
-function LivePreview({
-  api,
-  owner,
-  file,
-  title,
-}: {
-  api: Api
-  owner: string
-  file: string
-  title: string
-}) {
-  const [html, setHtml] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    let live = true
-    api
-      .artifactPage({ scope: "project", id: owner }, file)
-      .then((text) => live && setHtml(text))
-      .catch((cause: Error) => live && setError(cause.message))
-    return () => {
-      live = false
-    }
-  }, [api, owner, file])
-  const scale = PREVIEW_WIDTH / DEFAULT_WIDTH
-  return (
-    <span className="lib-pv-thumb" data-testid="library-preview-frame">
-      {error !== null ? (
-        <span className="lib-pv-note" role="status">
-          The page could not be drawn: {error}
-        </span>
-      ) : html === null ? (
-        <span className="lib-pv-note" role="status" aria-busy="true">
-          Drawing the page…
-        </span>
-      ) : (
-        <ArtifactPageFrame
-          html={html}
-          title={`${title}, a preview`}
-          width={DEFAULT_WIDTH}
-          height={Math.ceil(PREVIEW_HEIGHT / scale)}
-          scale={scale}
-          className="lib-pv-frame"
-        />
-      )}
-    </span>
-  )
-}
-const PREVIEW_WIDTH = 280
-const PREVIEW_HEIGHT = 175
-
-/** The project picker's stand-in for no project filter (a picker option needs a non-empty id). */
-const ALL_PROJECTS = "__all"
-
-const words = (n: number) => `${n} ${n === 1 ? "artifact" : "artifacts"}`
-
-/** A group's count as a mark and a number; its sentence is the tooltip and the accessible name. */
-function Count({
-  n,
-  tip,
-  icon: Icon = ShapesIcon,
-  tone,
-}: {
-  n: number | string
-  tip: string
-  icon?: typeof ShapesIcon
-  tone?: "quiet" | "you"
-}) {
-  return (
-    <span
-      className={tone === "you" ? "lib-pc lib-pb you" : "lib-pc"}
-      data-tone={tone}
-      role="img"
-      aria-label={tip}
-      title={tip}
-    >
-      <Icon aria-hidden="true" className="size-3" />
-      {n}
-    </span>
-  )
-}
-
-/** The two views, each with its meaning-map mark: the Library's active artifacts and the archived ones. */
-const VIEWS = [
-  { view: "library", word: "Active", Icon: ShapesIcon },
-  { view: "archived", word: "Archived", Icon: ArchiveIcon },
-] as const
-
-function Row({
-  row,
-  group,
-  state,
-  set,
-  now,
-  api,
-  choices,
-  reload,
-  go,
-  open,
-  favorite = false,
-}: {
-  row: LibraryRow
-  group: LibraryGroup
-  state: LibraryState
-  set: (patch: Partial<LibraryState>) => void
-  now: number
-  api: Api
-  choices: LibraryProject[]
-  reload: () => void
-  go: Props["go"]
-  open: (row: LibraryRow) => void
-  favorite?: boolean
-}) {
-  const location = favorite ? "favorites" : group.facts.id
-  const previewKey = `${row.key}@${location}`
-  const previewing = state.preview === previewKey
-  const previewId = `lib-preview-${previewKey.replace(/[^a-z0-9]/gi, "-")}`
-  if (row.kind === "broken")
-    return (
-      <li className="lib-row" data-testid="broken-artifact">
-        <div className="lib-grid lib-broken">
-          <span />
-          <span className="lib-main">
-            <b>{row.artifact.name}</b>
-            <span className="lib-purpose">It cannot be read: {row.artifact.reason}</span>
-          </span>
-        </div>
-      </li>
-    )
-  const title = row.artifact.title
-  const purpose = row.artifact.purpose
-  const when =
-    row.kind === "lasting"
-      ? row.artifact.archivedAt !== undefined && state.view === "archived"
-        ? `archived ${agoPhrase(row.artifact.archivedAt, now)}`
-        : agoPhrase(lastingTime(row.artifact), now)
-      : agoPhrase(row.artifact.updated, now)
-  const purposeLine = `${
-    favorite ? `${choices.find((p) => p.id === row.owner)?.label ?? row.owner} · ` : ""
-  }${purpose || "No description yet."}`
-  const pages = row.kind === "lasting" ? row.artifact.pages : []
-  const thumbFile =
-    row.kind === "lasting"
-      ? (row.artifact.pages[0]?.file ?? lastingDoc(row.artifact.name, row.artifact.entry))
-      : row.artifact.file
-  return (
-    <li
-      className="lib-row"
-      data-open={previewing ? "true" : undefined}
-      data-testid="library-row"
-      data-library-location={location}
-      data-favorite-shortcut={favorite ? "true" : undefined}
-    >
-      <div className="lib-grid">
-        <button
-          type="button"
-          className="lib-prev"
-          aria-expanded={previewing}
-          aria-controls={previewId}
-          aria-label={`${previewing ? "Hide the preview of" : "Preview"} ${title}`}
-          onClick={() => set({ preview: previewing ? null : previewKey })}
-        >
-          <ChevronRightIcon aria-hidden="true" className="size-[14px]" />
-        </button>
-        <span className="lib-main">
-          <button
-            type="button"
-            className="lib-title"
-            data-lib={row.key}
-            {...fullText(title)}
-            onClick={() => open(row)}
-          >
-            {title}
-          </button>
-          <span className="lib-purpose" {...fullText(purposeLine)}>
-            {purposeLine}
-          </span>
-          {group.kept.includes(row.key) ? (
-            <span className="lib-kept" data-testid="library-row-kept">
-              Renamed: it no longer matches your search, and stays here until you change it.
-            </span>
-          ) : null}
-        </span>
-        <span className="lib-pages">{row.kind === "lasting" ? pagesWord(pages.length) : ""}</span>
-        <span className="lib-when">{when}</span>
-        <span className="lib-ctx">
-          {row.kind === "personal" ? (
-            <span className="lib-dim">
-              <MonitorIcon aria-hidden="true" className="size-3" />
-              only on this computer
-            </span>
-          ) : row.artifact.archivedAt !== undefined ? (
-            <span className="lib-dim">
-              <ArchiveIcon aria-hidden="true" className="size-3" />
-              archived
-            </span>
-          ) : row.artifact.changing.length > 0 ? (
-            <Changing row={row} go={go} />
-          ) : !row.own ? (
-            <span className="lib-dim">
-              from{" "}
-              <ProjectTile
-                letters={row.alsoIn[0]?.letters ?? ""}
-                color={row.alsoIn[0]?.color ?? "gray"}
-                size="row"
-                label={row.alsoIn[0]?.label}
-              />
-              {row.alsoIn[0]?.label}
-            </span>
-          ) : row.alsoIn.length > 0 ? (
-            <span className="lib-dim">
-              also in{" "}
-              {row.alsoIn.map((p) => (
-                <span key={p.id} className="lib-also">
-                  <ProjectTile letters={p.letters} color={p.color} size="row" />
-                  {p.label}
-                </span>
-              ))}
-            </span>
-          ) : null}
-        </span>
-        <FavoriteButton id={rowFavoriteKey(row)} title={title} />
-        <span className="lib-act">
-          {row.kind === "lasting" ? (
-            <LibraryActions
-              api={api}
-              artifact={row.artifact}
-              owner={row.owner}
-              projects={choices}
-              reload={reload}
-              go={go}
-              {...(!row.own && !favorite ? { listedIn: group.facts.id } : {})}
-              onRenamed={() =>
-                set({
-                  pinned: state.pinned.includes(row.key)
-                    ? state.pinned
-                    : [...state.pinned, row.key],
-                })
-              }
-            />
-          ) : null}
-        </span>
-      </div>
-      {previewing ? (
-        <div className="lib-preview" id={previewId}>
-          <LivePreview api={api} owner={row.owner} file={thumbFile} title={title} />
-          <div className="lib-pv-body">
-            {pages.length > 0 ? (
-              <div className="lib-pv-pages">
-                <FileIcon aria-label="Pages" role="img" className="lib-pv-mark" />
-                {pages.map((p) => (
-                  <button
-                    key={p.file}
-                    type="button"
-                    className="lib-pg"
-                    onClick={() => {
-                      set({ focus: row.key, focusArea: location })
-                      go({ view: "artifact", project: row.owner, file: p.file })
-                    }}
-                  >
-                    {p.title}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="lib-pv-path" title="Lives in">
-              <FolderIcon aria-hidden="true" className="size-[14px]" />
-              <code>{row.kind === "lasting" ? row.artifact.folder : row.artifact.file}</code>
-            </div>
-            <div className="lib-pv-acts">
-              <button type="button" className="q-btn sm primary" onClick={() => open(row)}>
-                Open artifact
-              </button>
-              {row.kind === "lasting" && !row.own ? (
-                <span className="lib-dim">
-                  Opens the {row.alsoIn[0]?.label ?? row.owner} artifact; it is only listed here.
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </li>
-  )
-}
-
-/**
- * Recently deleted, folded under Archived: each deleted artifact under its owner, opening on its viewer's
- * Restore or restored here. Its folder, pages, comments and history were kept, so nothing is lost.
- */
-function RecentlyDeleted({
-  rows,
-  open,
-  onToggle,
-  shown,
-  onMore,
-  now,
-  api,
-  reload,
-  onOpen,
-}: {
-  rows: DeletedRow[]
-  open: boolean
-  onToggle: () => void
-  shown: number
-  onMore: () => void
-  now: number
-  api: Api
-  reload: () => void
-  onOpen: (row: DeletedRow) => void
-}) {
-  const id = "lib-deleted-list"
-  return (
-    <section className="lib-deleted" data-testid="recently-deleted" aria-label="Recently deleted">
-      <h2 className="lib-ph">
-        <button
-          type="button"
-          className="lib-pt"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={onToggle}
-        >
-          <ChevronRightIcon aria-hidden="true" className="lib-chev size-[14px]" />
-          <Trash2Icon aria-hidden="true" className="size-[14px]" />
-          <span className="lib-pn">Recently deleted</span>
-          <span className="lib-pc">{rows.length}</span>
-        </button>
-      </h2>
-      {open ? (
-        <div id={id}>
-          <p className="lib-dim lib-deleted-note">
-            A deleted artifact keeps its folder, pages, feedback and history. Restore brings it back
-            to its project's Library as it was.
-          </p>
-          <ul className="lib-rows">
-            {rows.slice(0, shown).map((row) => (
-              <DeletedLine
-                key={row.key}
-                row={row}
-                now={now}
-                api={api}
-                reload={reload}
-                onOpen={onOpen}
-              />
-            ))}
-          </ul>
-          {shown < rows.length ? (
-            <button type="button" className="q-btn sm" onClick={onMore}>
-              Show {Math.min(LIBRARY_MORE, rows.length - shown)} more deleted artifacts
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-function DeletedLine({
-  row,
-  now,
-  api,
-  reload,
-  onOpen,
-}: {
-  row: DeletedRow
-  now: number
-  api: Api
-  reload: () => void
-  onOpen: (row: DeletedRow) => void
-}) {
-  const [busy, setBusy] = useState(false)
-  const restore = async () => {
-    if (busy || row.artifact.managerRevision === undefined) return
-    setBusy(true)
-    try {
-      await api.manageLibraryArtifact(row.owner, row.artifact.name, {
-        action: "restore",
-        expected: row.artifact.managerRevision,
-      })
-      toast.success(`Restored “${row.artifact.title}” to the ${row.facts.label} Library.`)
-      reload()
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
-      reload()
-      setBusy(false)
-    }
-  }
-  return (
-    <li className="lib-row" data-testid="deleted-row">
-      <div className="lib-grid lib-deleted-grid">
-        <span />
-        <span className="lib-main">
-          <button
-            type="button"
-            className="lib-title"
-            data-lib={`deleted:${row.key}`}
-            {...fullText(row.artifact.title)}
-            onClick={() => onOpen(row)}
-          >
-            {row.artifact.title}
-          </button>
-          <span className="lib-purpose">
-            {row.facts.label} · deleted {agoPhrase(row.artifact.deletedAt ?? now, now)}
-          </span>
-        </span>
-        <span className="lib-act">
-          <button
-            type="button"
-            className="q-btn sm"
-            disabled={busy || row.artifact.managerRevision === undefined}
-            onClick={() => void restore()}
-          >
-            {busy ? "Restoring…" : "Restore"}
-          </button>
-        </span>
-      </div>
-    </li>
-  )
-}
-
-export function ArtifactsPage({
-  api,
-  overview,
-  projects,
-  tasks,
-  looks,
-  go,
-  config,
-  installed,
-  contextApi,
-}: Props) {
-  const runs = useOptionalRuns()
-  const [state, set] = useLibraryState()
-  const savedFavorites = useArtifactFavorites()
-  const [making, setMaking] = useState<string | null>(null)
-  const layoutName = useId()
-  const body = useRef<HTMLDivElement | null>(null)
-  const now = useNow(true, 60_000)
-  const data = overview.data
+function useLibraryDerived(
+  data: ArtifactsOverview | null,
+  projects: Project[],
+  tasks: TaskSummary[],
+  looks: ProjectLooks,
+  state: LibraryState,
+) {
   const query = state.query.trim()
   const groups = useMemo(
     () =>
@@ -609,7 +95,6 @@ export function ArtifactsPage({
     () => (data === null ? { library: 0, archived: 0 } : libraryCounts(data, looks)),
     [data, looks],
   )
-  // Recently deleted lives in Archived only, under the archived groups.
   const deleted = useMemo(
     () =>
       data === null || state.view !== "archived"
@@ -617,7 +102,6 @@ export function ArtifactsPage({
         : deletedRows({ overview: data, projects, tasks, looks, query, project: state.project }),
     [data, projects, tasks, looks, state.view, query, state.project],
   )
-  // Every project the person can choose: in New artifact, the project filter and Copy to.
   const choices: LibraryProject[] = useMemo(
     () =>
       data === null
@@ -634,26 +118,55 @@ export function ArtifactsPage({
           }).map((g) => ({ id: g.facts.id, label: g.facts.label })),
     [data, projects, tasks, looks],
   )
+  return { query, groups, counts, deleted, choices }
+}
+
+const folderApiFor = (api: Api) =>
+  api.projectFolder && api.chooseProjectFolder
+    ? {
+        projectFolder: api.projectFolder,
+        chooseProjectFolder: api.chooseProjectFolder,
+        pickProjectFolder: api.pickProjectFolder,
+      }
+    : undefined
+
+function openRowRoute(row: LibraryRow, go: (route: Route) => void) {
+  if (row.kind === "lasting") {
+    go({
+      view: "artifact",
+      project: row.owner,
+      file: row.artifact.pages[0]?.file ?? lastingDoc(row.artifact.name, row.artifact.entry),
+    })
+  } else if (row.kind === "personal") {
+    go({ view: "artifact", project: row.owner, file: row.artifact.file })
+  }
+}
+
+function useLibraryFolds(
+  state: LibraryState,
+  set: (patch: Partial<LibraryState>) => void,
+  groups: LibraryGroup[],
+  query: string,
+  libraryCount: number,
+) {
   const nonEmpty = groups.filter((g) => g.total > 0)
-  const favorites = useMemo(
-    () => favoriteRows(savedFavorites.ids, groups),
-    [savedFavorites.ids, groups],
-  )
-  const many = counts.library > 24
-  const defaultFolded = (id: string) => many && nonEmpty[0]?.facts.id !== id
+  const many = libraryCount > 24
   const isFolded = (g: LibraryGroup) =>
     query !== ""
       ? state.searchFolded[g.facts.id] === true
-      : (state.folded?.[g.facts.id] ?? defaultFolded(g.facts.id))
+      : (state.folded?.[g.facts.id] ?? (many && nonEmpty[0]?.facts.id !== g.facts.id))
   const toggle = (g: LibraryGroup) => {
-    if (query !== "") set({ searchFolded: { ...state.searchFolded, [g.facts.id]: !isFolded(g) } })
-    else {
-      const base = Object.fromEntries(nonEmpty.map((x) => [x.facts.id, isFolded(x)]))
-      set({ folded: { ...base, [g.facts.id]: !isFolded(g) } })
+    if (query !== "") {
+      set({ searchFolded: { ...state.searchFolded, [g.facts.id]: !isFolded(g) } })
+      return
     }
+    const base = Object.fromEntries(nonEmpty.map((x) => [x.facts.id, isFolded(x)]))
+    set({ folded: { ...base, [g.facts.id]: !isFolded(g) } })
   }
   const shownKey = (g: LibraryGroup) => `${query !== "" ? "q:" : ""}${state.view}:${g.facts.id}`
   const shown = (g: LibraryGroup) => state.shown[shownKey(g)] ?? LIBRARY_FIRST
+  const showMore = (g: LibraryGroup) =>
+    set({ shown: { ...state.shown, [shownKey(g)]: shown(g) + LIBRARY_MORE } })
   const setQuery = (next: string) =>
     set({
       query: next,
@@ -662,37 +175,154 @@ export function ArtifactsPage({
       searchFolded: {},
       shown: Object.fromEntries(Object.entries(state.shown).filter(([k]) => !k.startsWith("q:"))),
     })
+  return { isFolded, toggle, shown, showMore, setQuery }
+}
 
-  // Back from an artifact: the scroll position and the focus come back with the list.
+function LibraryContent({
+  data,
+  overview,
+  groups,
+  showEmpty,
+  query,
+  state,
+  set,
+  now,
+  api,
+  choices,
+  go,
+  open,
+  isFolded,
+  shown,
+  toggle,
+  showMore,
+  setQuery,
+  setMaking,
+}: {
+  data: ArtifactsOverview | null
+  overview: Query<ArtifactsOverview | null>
+  groups: LibraryGroup[]
+  showEmpty: boolean
+  query: string
+  state: LibraryState
+  set: (patch: Partial<LibraryState>) => void
+  now: number
+  api: Api
+  choices: LibraryProject[]
+  go: (route: Route) => void
+  open: (row: LibraryRow, location: string) => void
+  isFolded: (g: LibraryGroup) => boolean
+  shown: (g: LibraryGroup) => number
+  toggle: (g: LibraryGroup) => void
+  showMore: (g: LibraryGroup) => void
+  setQuery: (next: string) => void
+  setMaking: (project: string) => void
+}) {
+  if (data === null)
+    return (
+      <LoadingState
+        kind="library"
+        what="Opening Artifacts"
+        error={overview.error}
+        failedTitle="The Artifacts list didn't open"
+        onRetry={overview.reload}
+        back={{ label: "Home", onClick: () => go({ view: "home" }) }}
+        slowNote={
+          <>
+            A large library takes a moment. You can keep working:{" "}
+            <button type="button" className="q-link" onClick={() => go({ view: "home" })}>
+              Home
+            </button>
+          </>
+        }
+      />
+    )
+  if (showEmpty)
+    return <LibraryEmptyState query={query} view={state.view} onClearQuery={() => setQuery("")} />
+  return (
+    <>
+      {groups.map((g) => (
+        <LibraryGroupSection
+          key={g.facts.id}
+          group={g}
+          folded={isFolded(g)}
+          limit={shown(g)}
+          query={query}
+          state={state}
+          set={set}
+          now={now}
+          api={api}
+          choices={choices}
+          reload={overview.reload}
+          go={go}
+          open={open}
+          onToggle={() => toggle(g)}
+          onShowMore={() => showMore(g)}
+          onNew={() => setMaking(g.facts.id)}
+        />
+      ))}
+    </>
+  )
+}
+
+export function ArtifactsPage({
+  api,
+  overview,
+  projects,
+  tasks,
+  looks,
+  go,
+  config,
+  installed,
+  contextApi,
+}: Props) {
+  const runs = useOptionalRuns()
+  const [state, set] = useLibraryState()
+  const savedFavorites = useArtifactFavorites()
+  const [making, setMaking] = useState<string | null>(null)
+  const body = useRef<HTMLDivElement | null>(null)
+  const now = useNow(true, 60_000)
+  const data = overview.data
+  const { query, groups, counts, deleted, choices } = useLibraryDerived(
+    data,
+    projects,
+    tasks,
+    looks,
+    state,
+  )
+  const favorites = useMemo(
+    () => favoriteRows(savedFavorites.ids, groups),
+    [savedFavorites.ids, groups],
+  )
+  const { isFolded, toggle, shown, showMore, setQuery } = useLibraryFolds(
+    state,
+    set,
+    groups,
+    query,
+    counts.library,
+  )
+
   useLayoutEffect(() => {
-    if (body.current && kept.scroll > 0) body.current.scrollTop = kept.scroll
+    const saved = getKeptLibraryState()
+    if (body.current && saved.scroll > 0) body.current.scrollTop = saved.scroll
   }, [])
   const focusDone = useRef(false)
   useEffect(() => {
-    if (focusDone.current || data === null || kept.focus === null) return
+    if (focusDone.current || data === null) return
     focusDone.current = true
-    const el =
-      document.querySelector<HTMLElement>(
-        `[data-library-location="${CSS.escape(kept.focusArea ?? "")}"] .lib-title[data-lib="${CSS.escape(kept.focus)}"]`,
-      ) ?? document.querySelector<HTMLElement>(`.lib-title[data-lib="${CSS.escape(kept.focus)}"]`)
-    if (el) el.focus({ preventScroll: true })
-    else
-      body.current
-        ?.closest('[data-testid="artifacts-page"]')
-        ?.querySelector<HTMLElement>('.lib-views button[aria-pressed="true"]')
-        ?.focus({ preventScroll: true })
+    restoreLibraryFocus(body.current)
   }, [data])
 
   const open = (row: LibraryRow, location: string) => {
     set({ focus: row.key, focusArea: location, scroll: body.current?.scrollTop ?? 0 })
-    if (row.kind === "lasting")
-      go({
-        view: "artifact",
-        project: row.owner,
-        file: row.artifact.pages[0]?.file ?? lastingDoc(row.artifact.name, row.artifact.entry),
-      })
-    else if (row.kind === "personal")
-      go({ view: "artifact", project: row.owner, file: row.artifact.file })
+    openRowRoute(row, go)
+  }
+  const openDeleted = (row: DeletedRow) => {
+    set({ focus: `deleted:${row.key}`, scroll: body.current?.scrollTop ?? 0 })
+    go({
+      view: "artifact",
+      project: row.owner,
+      file: row.artifact.pages[0]?.file ?? lastingDoc(row.artifact.name, row.artifact.entry),
+    })
   }
   const create = async (project: string, request: NewArtifactRequest): Promise<KeepResult> => {
     const made = await api.newArtifact(project, request)
@@ -703,59 +333,36 @@ export function ArtifactsPage({
     setMaking(null)
     go({ view: "artifact", project, file: lastingDoc(made.name, "index.html") })
   }
-  const gallery = state.layout === "gallery"
   const resultCount = new Set(
     groups.flatMap((group) =>
       group.rows.map((row) => (row.kind === "broken" ? row.key : rowFavoriteKey(row))),
     ),
   ).size
-  const filterCount = Number(state.project !== "") + Number(state.sort !== "changed")
-  /** The rows of one group (or of Favorites) in the layout the person chose: lines, or cards in a grid. */
-  const list = (
-    items: { row: LibraryRow; group: LibraryGroup }[],
-    location: string,
-    favorite = false,
-  ) =>
-    gallery ? (
-      <ul className="lib-cards" aria-label={favorite ? "Favorites as cards" : "Artifacts as cards"}>
-        {items.map(({ row, group }) => (
-          <ArtifactCard
-            key={`${row.key}@${location}`}
-            row={row}
-            projectLabel={
-              favorite
-                ? (choices.find((p) => p.id === row.owner)?.label ?? group.facts.label)
-                : row.kind === "lasting" && !row.own
-                  ? (row.alsoIn[0]?.label ?? row.owner)
-                  : group.facts.label
-            }
-            listed={row.kind === "lasting" && !row.own && !favorite}
-            listedIn={group.facts.id}
-            favorite={favorite}
-            location={location}
-            archivedView={state.view === "archived"}
-            kept={group.kept.includes(row.key)}
-            now={now}
-            api={api}
-            choices={choices}
-            reload={overview.reload}
-            go={go}
-            open={(r) => open(r, location)}
-            onRenamed={() =>
-              set({
-                pinned: state.pinned.includes(row.key) ? state.pinned : [...state.pinned, row.key],
-              })
-            }
-          />
-        ))}
-      </ul>
-    ) : (
-      <ul className="lib-rows">
-        {items.map(({ row, group }) => (
-          <Row
-            key={`${row.key}@${location}`}
-            row={row}
-            group={group}
+  const showEmpty = groups.length === 0 && !(query !== "" && deleted.length > 0)
+  const showFavorites = data !== null && state.view === "library" && favorites.length > 0
+
+  return (
+    <main className="ds-page lib" data-testid="artifacts-page" aria-label="Artifacts">
+      <LibraryHeader
+        hasData={data !== null}
+        resultCount={resultCount}
+        query={query}
+        state={state}
+        set={set}
+        setQuery={setQuery}
+        choices={choices}
+        onNew={() => setMaking(state.project)}
+      />
+      <div
+        className="ds-body lib-body"
+        data-scroll-root
+        ref={body}
+        onScroll={(e) => saveLibraryScroll(e.currentTarget.scrollTop)}
+      >
+        <FavoriteFeedback />
+        {showFavorites ? (
+          <LibraryFavoritesSection
+            favorites={favorites}
             state={state}
             set={set}
             now={now}
@@ -763,327 +370,29 @@ export function ArtifactsPage({
             choices={choices}
             reload={overview.reload}
             go={go}
-            open={(r) => open(r, location)}
-            favorite={favorite}
+            open={open}
           />
-        ))}
-      </ul>
-    )
-
-  return (
-    <main className="ds-page lib" data-testid="artifacts-page" aria-label="Artifacts">
-      <div className="ds-head lib-head">
-        <h1 className="ds-crumb">Artifacts</h1>
-        <span
-          className="lib-sum"
-          role="status"
-          aria-label={`${resultCount} ${resultCount === 1 ? "artifact" : "artifacts"}${query ? " matching your search" : ""}`}
-        >
-          {data === null ? null : resultCount}
-        </span>
-        <fieldset className="ds-seg lib-views" aria-label="Show">
-          {VIEWS.map(({ view, word, Icon }) => (
-            <button
-              key={view}
-              type="button"
-              aria-label={word}
-              title={word}
-              aria-pressed={state.view === view}
-              onClick={() => set({ view })}
-            >
-              <Icon aria-hidden="true" />
-              <span className="lib-view-w">{word}</span>
-            </button>
-          ))}
-        </fieldset>
-        <label className="lib-find">
-          <SearchIcon aria-hidden="true" className="size-[14px]" />
-          <input
-            type="search"
-            aria-label="Find an artifact"
-            placeholder="Names, pages, projects…"
-            value={state.query}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Escape" || state.query === "") return
-              e.preventDefault()
-              e.stopPropagation()
-              setQuery("")
-            }}
-          />
-          {query ? (
-            <button
-              type="button"
-              className="q-link"
-              aria-label="Clear search"
-              onClick={() => setQuery("")}
-            >
-              ×
-            </button>
-          ) : null}
-        </label>
-        <Popover>
-          <PopoverTrigger
-            render={
-              <button
-                type="button"
-                className="q-btn sm lib-filter-trigger"
-                data-active={filterCount > 0 || undefined}
-                aria-label={filterCount > 0 ? `Filters, ${filterCount} on` : "Filters"}
-                title={filterCount > 0 ? `Filters, ${filterCount} on` : "Filters"}
-              />
-            }
-          >
-            <SlidersHorizontalIcon aria-hidden="true" size={13} />
-            <span className="lib-filter-w">Filters</span>
-            {filterCount > 0 ? <span className="lib-filter-dot" aria-hidden="true" /> : null}
-          </PopoverTrigger>
-          <PopoverContent align="end" className="lib-filter-panel">
-            <fieldset aria-label="Artifact filters">
-              <div className="lib-filter-heading">
-                <strong>Filters</strong>
-                <button
-                  type="button"
-                  className="q-link"
-                  disabled={!filterCount}
-                  onClick={() => set({ project: "", sort: "changed" })}
-                >
-                  Reset
-                </button>
-              </div>
-              <div className="lib-filter-field">
-                <span>Project</span>
-                <ModelPick
-                  look="row"
-                  label="Project"
-                  value={state.project === "" ? ALL_PROJECTS : state.project}
-                  onChange={(id) => set({ project: id === ALL_PROJECTS ? "" : id })}
-                  options={[
-                    { id: ALL_PROJECTS, name: "All projects", icon: <ShapesIcon /> },
-                    ...choices.map((p) => ({ id: p.id, name: p.label, icon: <ShapesIcon /> })),
-                  ]}
-                />
-              </div>
-              <div className="lib-filter-field">
-                <span>Sort</span>
-                <ModelPick
-                  look="row"
-                  label="Sort"
-                  value={state.sort}
-                  onChange={(id) => set({ sort: id as LibrarySort })}
-                  options={LIBRARY_SORTS.map(([value, label]) => ({
-                    id: value,
-                    name: label,
-                    icon: <ArrowUpDownIcon />,
-                  }))}
-                />
-              </div>
-            </fieldset>
-          </PopoverContent>
-        </Popover>
-        <fieldset className="ds-seg lib-layout" aria-label="Layout">
-          {(["list", "gallery"] as const).map((layout) => (
-            <label
-              key={layout}
-              data-on={state.layout === layout || undefined}
-              title={layout === "list" ? "List" : "Gallery"}
-            >
-              <input
-                type="radio"
-                className="lib-layout-input"
-                name={layoutName}
-                value={layout}
-                aria-label={layout === "list" ? "List" : "Gallery"}
-                checked={state.layout === layout}
-                aria-checked={state.layout === layout}
-                onChange={() => set({ layout })}
-              />
-              {layout === "list" ? (
-                <ListIcon aria-hidden="true" />
-              ) : (
-                <LayoutGridIcon aria-hidden="true" />
-              )}
-            </label>
-          ))}
-        </fieldset>
-        <button type="button" className="q-btn sm" onClick={() => setMaking(state.project)}>
-          <PlusIcon aria-hidden="true" size={13} />
-          New artifact
-        </button>
-      </div>
-      <div
-        className="ds-body lib-body"
-        data-scroll-root
-        ref={body}
-        onScroll={(e) => {
-          kept = { ...kept, scroll: e.currentTarget.scrollTop }
-        }}
-      >
-        <FavoriteFeedback />
-        {data !== null && state.view === "library" && favorites.length > 0 ? (
-          <section className="lib-favorites" aria-label="Favorites">
-            <div className="lib-favorites-head">
-              <h2 id="library-favorites-heading" tabIndex={-1}>
-                Favorites
-              </h2>
-              <span>Only you</span>
-            </div>
-            {list(favorites.slice(0, state.favoriteShown), "favorites", true)}
-            {favorites.length > state.favoriteShown ? (
-              <div className="lib-more-row">
-                <button
-                  type="button"
-                  className="q-btn sm"
-                  onClick={() => set({ favoriteShown: state.favoriteShown + LIBRARY_MORE })}
-                >
-                  Show {Math.min(LIBRARY_MORE, favorites.length - state.favoriteShown)} more
-                  favorites
-                </button>
-              </div>
-            ) : null}
-          </section>
         ) : null}
-        {data === null ? (
-          <LoadingState
-            kind="library"
-            what="Opening Artifacts"
-            error={overview.error}
-            failedTitle="The Artifacts list didn't open"
-            onRetry={overview.reload}
-            back={{ label: "Home", onClick: () => go({ view: "home" }) }}
-            slowNote={
-              <>
-                A large library takes a moment. You can keep working:{" "}
-                <button type="button" className="q-link" onClick={() => go({ view: "home" })}>
-                  Home
-                </button>
-              </>
-            }
-          />
-        ) : groups.length === 0 && !(query !== "" && deleted.length > 0) ? (
-          <div className="lib-empty" data-testid="artifacts-nothing">
-            {query !== "" ? (
-              <>
-                <SearchIcon aria-hidden="true" className="size-4" />
-                <h2>No artifact matches “{query}”</h2>
-                <button type="button" className="q-btn sm" onClick={() => setQuery("")}>
-                  Clear search
-                </button>
-              </>
-            ) : state.view === "archived" ? (
-              <>
-                <ArchiveIcon aria-hidden="true" className="size-4" />
-                <h2>Nothing archived</h2>
-              </>
-            ) : (
-              <>
-                <ShapesIcon aria-hidden="true" className="size-4" />
-                <h2>No artifacts in the Library yet</h2>
-                <InfoHint text="Save a draft from a task's Files to the Library, or start one here. Drafts stay with their task until then." />
-              </>
-            )}
-          </div>
-        ) : (
-          groups.map((g) => {
-            const folded = isFolded(g)
-            const limit = shown(g)
-            return (
-              <section
-                key={g.facts.id}
-                className="lib-prj"
-                data-project={g.facts.id}
-                data-testid="artifacts-group"
-                aria-label={g.facts.label}
-              >
-                <h2 className="lib-ph">
-                  {g.total > 0 ? (
-                    <button
-                      type="button"
-                      className="lib-pt"
-                      aria-expanded={!folded}
-                      onClick={() => toggle(g)}
-                    >
-                      <ChevronRightIcon aria-hidden="true" className="lib-chev size-[14px]" />
-                      <ProjectTile letters={g.facts.letters} color={g.facts.color} />
-                      <span className="lib-pn">{g.facts.label}</span>
-                      {query !== "" ? (
-                        <Count
-                          n={`${g.rows.length} of ${g.total}`}
-                          tip={`${g.rows.length} of ${words(g.total)} match`}
-                        />
-                      ) : (
-                        <Count n={g.total} tip={words(g.total)} />
-                      )}
-                      {query === "" && g.busy > 0 ? (
-                        <Count
-                          n={g.busy}
-                          tip={`${g.busy} being changed`}
-                          icon={GitBranchIcon}
-                          tone="quiet"
-                        />
-                      ) : null}
-                      {query === "" && g.conflicts > 0 ? (
-                        <Count
-                          n={`${g.conflicts} ${g.conflicts === 1 ? "conflict" : "conflicts"}`}
-                          tip={`${g.conflicts} page ${g.conflicts === 1 ? "conflict" : "conflicts"}`}
-                          icon={GitBranchIcon}
-                          tone="you"
-                        />
-                      ) : null}
-                    </button>
-                  ) : (
-                    <span className="lib-pt off">
-                      <LayersIcon aria-hidden="true" className="lib-chev size-[14px]" />
-                      <ProjectTile letters={g.facts.letters} color={g.facts.color} />
-                      <span className="lib-pn">{g.facts.label}</span>
-                      <span className="lib-pc">no artifacts yet</span>
-                    </span>
-                  )}
-                  {g.updated > 0 && state.view === "library" ? (
-                    <span className="lib-plast">changed {agoPhrase(g.updated, now)}</span>
-                  ) : null}
-                  {state.view === "library" ? (
-                    <button
-                      type="button"
-                      className="lib-plus"
-                      aria-label={`New artifact in ${g.facts.label}`}
-                      title={`New artifact in ${g.facts.label}`}
-                      onClick={() => setMaking(g.facts.id)}
-                    >
-                      <PlusIcon aria-hidden="true" className="size-[14px]" />
-                    </button>
-                  ) : null}
-                </h2>
-                {!folded && g.rows.length > 0 ? (
-                  <>
-                    {list(
-                      g.rows.slice(0, limit).map((row) => ({ row, group: g })),
-                      g.facts.id,
-                    )}
-                    {g.rows.length > limit ? (
-                      <div className="lib-more-row">
-                        <button
-                          type="button"
-                          className="q-btn sm"
-                          onClick={() =>
-                            set({ shown: { ...state.shown, [shownKey(g)]: limit + LIBRARY_MORE } })
-                          }
-                        >
-                          Show {Math.min(LIBRARY_MORE, g.rows.length - limit)} more
-                        </button>
-                        <span className="lib-dim">
-                          Showing {limit} of {g.rows.length}
-                        </span>
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-              </section>
-            )
-          })
-        )}
+        <LibraryContent
+          data={data}
+          overview={overview}
+          groups={groups}
+          showEmpty={showEmpty}
+          query={query}
+          state={state}
+          set={set}
+          now={now}
+          api={api}
+          choices={choices}
+          go={go}
+          open={open}
+          isFolded={isFolded}
+          shown={shown}
+          toggle={toggle}
+          showMore={showMore}
+          setQuery={setQuery}
+          setMaking={setMaking}
+        />
         {deleted.length > 0 ? (
           <RecentlyDeleted
             rows={deleted}
@@ -1094,15 +403,7 @@ export function ArtifactsPage({
             now={now}
             api={api}
             reload={overview.reload}
-            onOpen={(row) => {
-              set({ focus: `deleted:${row.key}`, scroll: body.current?.scrollTop ?? 0 })
-              go({
-                view: "artifact",
-                project: row.owner,
-                file:
-                  row.artifact.pages[0]?.file ?? lastingDoc(row.artifact.name, row.artifact.entry),
-              })
-            }}
+            onOpen={openDeleted}
           />
         ) : null}
       </div>
@@ -1113,15 +414,7 @@ export function ArtifactsPage({
           config={config}
           installed={installed}
           contextApi={contextApi}
-          folderApi={
-            api.projectFolder && api.chooseProjectFolder
-              ? {
-                  projectFolder: api.projectFolder,
-                  chooseProjectFolder: api.chooseProjectFolder,
-                  pickProjectFolder: api.pickProjectFolder,
-                }
-              : undefined
-          }
+          folderApi={folderApiFor(api)}
           canChoose={runs?.support?.canConfigure === true}
           onCreate={create}
           onOpen={openCreated}

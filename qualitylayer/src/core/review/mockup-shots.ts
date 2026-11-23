@@ -60,6 +60,52 @@ async function artifactsNamed(ctx: Ctx, task: Task): Promise<string[]> {
 
 const regexSafe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
+async function readShotFiles(ctx: Ctx, folder: string | null): Promise<string[]> {
+  if (folder === null || !(await ctx.fs.exists(folder))) return []
+  try {
+    return await ctx.fs.readdir(folder)
+  } catch {
+    return []
+  }
+}
+
+async function latestArtifactShot(
+  ctx: Ctx,
+  folder: string | null,
+  files: readonly string[],
+  artifact: string,
+): Promise<MockupShots> {
+  const pattern = new RegExp(`^${regexSafe(artifact)}-light-(\\d+)\\.png$`)
+  let desktop: { path: string; at: number } | null = null
+  let phone: { path: string; at: number } | null = null
+  for (const file of files) {
+    const width = Number(pattern.exec(file)?.[1])
+    if (!Number.isFinite(width) || folder === null) continue
+    const path = join(folder, file)
+    const at = (await ctx.fs.stat?.(path))?.mtimeMs
+    if (at === undefined) continue
+    if (width >= DESKTOP_MIN && (desktop === null || at > desktop.at)) desktop = { path, at }
+    if (width <= PHONE_MAX && (phone === null || at > phone.at)) phone = { path, at }
+  }
+  return { artifact, desktop: desktop?.path ?? null, phone: phone?.path ?? null }
+}
+
+function fenceShot(
+  folder: string | null,
+  files: readonly string[],
+  fence: ReturnType<typeof namedPlanFences>[number],
+): MockupShots {
+  const file = `${fence.prefix}${fence.width}.png`
+  const path = folder !== null && files.includes(file) ? join(folder, file) : null
+  return {
+    artifact: fence.name,
+    fence: true,
+    width: fence.width,
+    desktop: fence.width > PHONE_MAX ? path : null,
+    phone: fence.width <= PHONE_MAX ? path : null,
+  }
+}
+
 /** The shots on disk for each artifact the Plan names; an artifact with none has both fields null. */
 export async function mockupShots(ctx: Ctx, task: Task): Promise<MockupShots[]> {
   const names = await artifactsNamed(ctx, task)
@@ -72,41 +118,10 @@ export async function mockupShots(ctx: Ctx, task: Task): Promise<MockupShots[]> 
     typeof task.repoId === "string"
       ? join(projectArtifactsRuntime(ctx, task.repoId), "shots")
       : null
-  let files: string[] = []
-  if (folder !== null && (await ctx.fs.exists(folder))) {
-    try {
-      files = await ctx.fs.readdir(folder)
-    } catch {
-      files = []
-    }
-  }
+  const files = await readShotFiles(ctx, folder)
   const out: MockupShots[] = []
-  for (const artifact of names) {
-    const pattern = new RegExp(`^${regexSafe(artifact)}-light-(\\d+)\\.png$`)
-    let desktop: { path: string; at: number } | null = null
-    let phone: { path: string; at: number } | null = null
-    for (const file of files) {
-      const width = Number(pattern.exec(file)?.[1])
-      if (!Number.isFinite(width) || folder === null) continue
-      const path = join(folder, file)
-      const at = (await ctx.fs.stat?.(path))?.mtimeMs
-      if (at === undefined) continue
-      if (width >= DESKTOP_MIN && (desktop === null || at > desktop.at)) desktop = { path, at }
-      if (width <= PHONE_MAX && (phone === null || at > phone.at)) phone = { path, at }
-    }
-    out.push({ artifact, desktop: desktop?.path ?? null, phone: phone?.path ?? null })
-  }
-  for (const fence of fences) {
-    const file = `${fence.prefix}${fence.width}.png`
-    const path = folder !== null && files.includes(file) ? join(folder, file) : null
-    out.push({
-      artifact: fence.name,
-      fence: true,
-      width: fence.width,
-      desktop: fence.width > PHONE_MAX ? path : null,
-      phone: fence.width <= PHONE_MAX ? path : null,
-    })
-  }
+  for (const artifact of names) out.push(await latestArtifactShot(ctx, folder, files, artifact))
+  for (const fence of fences) out.push(fenceShot(folder, files, fence))
   return out
 }
 
@@ -114,41 +129,4 @@ export async function mockupShots(ctx: Ctx, task: Task): Promise<MockupShots[]> 
 export const shotPaths = (shots: readonly MockupShots[]): string[] =>
   shots.flatMap((s) => [s.desktop, s.phone].filter((p): p is string => p !== null))
 
-/**
- * The brief's section on the rendered mockups. With pictures it lists their paths and tells the
- * reviewer to look at them; without, it says so, so the review's *Not checked* stays honest.
- */
-export function mockupSection(shots: readonly MockupShots[]): string | null {
-  if (shots.length === 0) return null
-  const lines: string[] = []
-  const missing: string[] = []
-  for (const s of shots) {
-    if (s.desktop === null && s.phone === null) {
-      missing.push(s.fence ? `${s.artifact}: no picture; read the fence source` : s.artifact)
-      continue
-    }
-    if (s.fence) {
-      lines.push(`- ${s.artifact}: wireframe (${s.width} px) \`${s.desktop ?? s.phone}\``)
-      continue
-    }
-    lines.push(
-      `- ${s.artifact}: ${s.desktop !== null ? `desktop \`${s.desktop}\`` : "no desktop picture"}; ${
-        s.phone !== null ? `phone (390 px) \`${s.phone}\`` : "no phone picture"
-      }`,
-    )
-  }
-  if (lines.length === 0 && shots.every((shot) => shot.fence))
-    return `## Rendered mockups\n\nno rendered mockups: ${missing.join("; ")}. Say under *Not checked* that you did not see the fences rendered.`
-  if (lines.length === 0)
-    return `## Rendered mockups\n\nno rendered mockups: \`artifact shot\` has not drawn the Plan's artifacts yet, so you only have their HTML source. Say under *Not checked* that you did not see them rendered.${shots.some((s) => s.fence) ? `\n\n${missing.join("; ")}` : ""}`
-  return [
-    "## Rendered mockups",
-    "Look at these pictures (open each image file) as well as the mockup sources: they are what the artifacts look like drawn, light theme.",
-    lines.join("\n"),
-    ...(missing.length > 0
-      ? [
-          `no rendered mockups for ${missing.join(", ")}: name them under *Not checked*, or any artifact or width above that shows no picture.`,
-        ]
-      : []),
-  ].join("\n\n")
-}
+export { mockupSection } from "./mockup-section.ts"

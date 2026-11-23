@@ -146,23 +146,106 @@ function footer(life: PullRequestLife): string | null {
   return "QualityLayer follows the pull request and never merges it. Merge in your own process; the task closes by itself when the pull request is merged."
 }
 
-export function PullRequestCard({ life }: { life: PullRequestLife }) {
-  const [all, setAll] = useState(false)
-  const checks = [...life.checks].sort((a, b) => ORDER[a.result] - ORDER[b.result])
-  const shown = all ? checks : checks.slice(0, SHOWN)
+function MergedChecks({ life }: { life: PullRequestLife }) {
   const passed = life.checks.length > 0 && life.checks.every((c) => c.result === "passed")
+  const outcome = outcomeWords(life)
+  return (
+    <ul className="pr-list">
+      <li className="pr-row" data-kind="merged">
+        <WhoMark who="check" />
+        <span className="pr-what">
+          Merged into <code>{life.base}</code>
+        </span>
+        <span className="pr-side" />
+      </li>
+      {passed ? (
+        <li className="pr-row">
+          <WhoMark who="check" />
+          <span className="pr-what">All checks passed</span>
+          <span className="pr-side">
+            {life.checks.length} {life.checks.length === 1 ? "check" : "checks"}
+          </span>
+        </li>
+      ) : null}
+      {outcome !== null ? (
+        <li className="pr-row" data-kind="outcome">
+          <WhoMark who="check" />
+          <span className="pr-what">{outcome}</span>
+          <span className="pr-side" />
+        </li>
+      ) : null}
+    </ul>
+  )
+}
+
+function ChecksList({ checks, yourTurn }: { checks: readonly PrCheck[]; yourTurn: boolean }) {
+  const [all, setAll] = useState(false)
+  if (checks.length === 0) return <p className="pr-none">GitHub has reported no checks yet.</p>
+  const sorted = [...checks].sort((a, b) => ORDER[a.result] - ORDER[b.result])
+  const shown = all ? sorted : sorted.slice(0, SHOWN)
+  return (
+    <>
+      <ul className="pr-list">
+        {shown.map((check) => (
+          <CheckRow key={check.name} check={check} why={!yourTurn} />
+        ))}
+      </ul>
+      {sorted.length > SHOWN ? (
+        <button type="button" className="q-link pr-more" onClick={() => setAll(!all)}>
+          {all ? "Show fewer checks" : `Show all ${sorted.length} checks`}
+        </button>
+      ) : null}
+    </>
+  )
+}
+
+function ReviewsSection({ life, yourTurn }: { life: PullRequestLife; yourTurn: boolean }) {
+  if (life.state !== "open") return null
+  const reviews = life.threads.filter(
+    (thread) => !(yourTurn && life.waiting.threadIds.includes(thread.id)),
+  )
+  const people = reviewerLines(life.reviewers)
+  // A reviewer who asked for changes has a line of their own: the general one would say it twice.
+  const unnamedChanges = life.changesRequested && !people.some((p) => p.kind === "changes")
+  if (reviews.length === 0 && people.length === 0 && !unnamedChanges) return null
+  return (
+    <>
+      <h3 className="pr-k">Reviews</h3>
+      <ul className="pr-list">
+        {people.map((line) => (
+          <li className="pr-row" data-kind="reviewer" data-state={line.kind} key={line.text}>
+            <WhoMark who={REVIEW_MARK[line.kind]} />
+            <span className="pr-what">{line.text}</span>
+            <span className="pr-side" />
+          </li>
+        ))}
+        {reviews.map((thread) => (
+          <ThreadRow
+            key={thread.id}
+            thread={thread}
+            settled={!life.waiting.left && !life.waiting.threadIds.includes(thread.id)}
+          />
+        ))}
+        {unnamedChanges ? (
+          <li className="pr-row" data-kind="changes">
+            <WhoMark who="stop" />
+            <span className="pr-what">A reviewer asked for changes</span>
+            <span className="pr-side" />
+          </li>
+        ) : null}
+      </ul>
+    </>
+  )
+}
+
+export function PullRequestCard({ life }: { life: PullRequestLife }) {
   const open = life.state === "open"
   // What waits on the person stands in the Your turn card above: its threads are not listed twice.
   const yourTurn = open && isWaiting(life.waiting)
-  const reviews = open
-    ? life.threads.filter((thread) => !(yourTurn && life.waiting.threadIds.includes(thread.id)))
-    : []
-  const people = open ? reviewerLines(life.reviewers) : []
-  // A reviewer who asked for changes has a line of their own: the general one would say it twice.
-  const unnamedChanges = open && life.changesRequested && !people.some((p) => p.kind === "changes")
   const stats = statsWords(life.stats)
-  // A merged pull request keeps what the reviewers said: who approved, how many threads were settled.
-  const outcome = life.state === "merged" ? outcomeWords(life) : null
+  const foot = footer(life)
+  const branchText =
+    life.branch !== "" && life.base !== "" ? `${life.branch} → ${life.base}` : life.state
   return (
     <section
       className="pr-card"
@@ -174,7 +257,7 @@ export function PullRequestCard({ life }: { life: PullRequestLife }) {
         <GitPullRequestIcon aria-hidden="true" className="pr-icon" data-state={life.state} />
         <h2>Pull request{life.number !== null ? ` #${life.number}` : ""}</h2>
         <span className="pr-n">
-          {life.branch !== "" && life.base !== "" ? `${life.branch} → ${life.base}` : life.state}
+          {branchText}
           {stats !== null ? ` · ${stats}` : ""}
         </span>
         <a className="pr-link" href={life.url} target="_blank" rel="noreferrer">
@@ -186,78 +269,14 @@ export function PullRequestCard({ life }: { life: PullRequestLife }) {
         <h3 className="pr-k">{life.state === "merged" ? "Merged" : "Checks"}</h3>
         <div>
           {life.state === "merged" ? (
-            <ul className="pr-list">
-              <li className="pr-row" data-kind="merged">
-                <WhoMark who="check" />
-                <span className="pr-what">
-                  Merged into <code>{life.base}</code>
-                </span>
-                <span className="pr-side" />
-              </li>
-              {passed ? (
-                <li className="pr-row">
-                  <WhoMark who="check" />
-                  <span className="pr-what">All checks passed</span>
-                  <span className="pr-side">
-                    {life.checks.length} {life.checks.length === 1 ? "check" : "checks"}
-                  </span>
-                </li>
-              ) : null}
-              {outcome !== null ? (
-                <li className="pr-row" data-kind="outcome">
-                  <WhoMark who="check" />
-                  <span className="pr-what">{outcome}</span>
-                  <span className="pr-side" />
-                </li>
-              ) : null}
-            </ul>
-          ) : life.checks.length === 0 ? (
-            <p className="pr-none">GitHub has reported no checks yet.</p>
+            <MergedChecks life={life} />
           ) : (
-            <>
-              <ul className="pr-list">
-                {shown.map((check) => (
-                  <CheckRow key={check.name} check={check} why={!yourTurn} />
-                ))}
-              </ul>
-              {checks.length > SHOWN ? (
-                <button type="button" className="q-link pr-more" onClick={() => setAll(!all)}>
-                  {all ? "Show fewer checks" : `Show all ${checks.length} checks`}
-                </button>
-              ) : null}
-            </>
+            <ChecksList checks={life.checks} yourTurn={yourTurn} />
           )}
         </div>
-        {reviews.length > 0 || people.length > 0 || unnamedChanges ? (
-          <>
-            <h3 className="pr-k">Reviews</h3>
-            <ul className="pr-list">
-              {people.map((line) => (
-                <li className="pr-row" data-kind="reviewer" data-state={line.kind} key={line.text}>
-                  <WhoMark who={REVIEW_MARK[line.kind]} />
-                  <span className="pr-what">{line.text}</span>
-                  <span className="pr-side" />
-                </li>
-              ))}
-              {reviews.map((thread) => (
-                <ThreadRow
-                  key={thread.id}
-                  thread={thread}
-                  settled={!life.waiting.left && !life.waiting.threadIds.includes(thread.id)}
-                />
-              ))}
-              {unnamedChanges ? (
-                <li className="pr-row" data-kind="changes">
-                  <WhoMark who="stop" />
-                  <span className="pr-what">A reviewer asked for changes</span>
-                  <span className="pr-side" />
-                </li>
-              ) : null}
-            </ul>
-          </>
-        ) : null}
+        <ReviewsSection life={life} yourTurn={yourTurn} />
       </div>
-      {footer(life) !== null ? <p className="pr-foot">{footer(life)}</p> : null}
+      {foot !== null ? <p className="pr-foot">{foot}</p> : null}
     </section>
   )
 }

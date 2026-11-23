@@ -91,6 +91,14 @@ export async function updatePlanFromFeedback(
 
 export type PlannerRelease = "released" | "active"
 
+function snapshotBlocksRelease(snapshot: ConversationSnapshot | undefined): boolean {
+  if (!snapshot || snapshot.source === "none" || snapshot.state === undefined) return true
+  if (snapshot.state === "working" || snapshot.question) return true
+  const hasApprovals = (snapshot.approvals?.length ?? 0) > 0
+  const hasWorkers = (snapshot.workers?.length ?? 0) > 0 || Boolean(snapshot.workersIncomplete)
+  return hasApprovals || hasWorkers
+}
+
 /**
  * Approve and build here (12.9): the planning run ends at a turn boundary so its own native
  * conversation can continue as the build. A planner still in its turn, asking, or with helpers
@@ -116,17 +124,7 @@ export async function releasePlannerForBuild(
   // What changed while the snapshot was read counts too: new words, a permission, a new turn.
   if (now.hasDraft || now.attention !== "clear" || now.status !== "running" || now.busy)
     return "active"
-  if (
-    !snapshot ||
-    snapshot.source === "none" ||
-    snapshot.state === undefined ||
-    snapshot.state === "working" ||
-    snapshot.question ||
-    (snapshot.approvals?.length ?? 0) > 0 ||
-    (snapshot.workers?.length ?? 0) > 0 ||
-    snapshot.workersIncomplete
-  )
-    return "active"
+  if (snapshotBlocksRelease(snapshot)) return "active"
   if ((await stop()) !== true)
     throw new Error("The planning session did not stop. Your approval is kept; try again.")
   return "released"

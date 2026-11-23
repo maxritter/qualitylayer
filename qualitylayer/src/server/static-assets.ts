@@ -23,90 +23,126 @@ function acceptsGzip(header: string | null): boolean {
   return (values.get("gzip") ?? values.get("*") ?? 0) > 0
 }
 
+type CacheLimits = { entries: number; bytes: number }
+type CacheState = {
+  limits: CacheLimits
+  cache: Map<string, Entry>
+  pending: Map<string, Promise<Entry>>
+  bytes: number
+}
+
+function rememberEntry(state: CacheState, key: string, entry: Entry) {
+  state.bytes -= state.cache.get(key)?.encoded?.byteLength ?? 0
+  state.cache.delete(key)
+  if ((entry.encoded?.byteLength ?? 0) > state.limits.bytes) return
+  state.cache.set(key, entry)
+  state.bytes += entry.encoded?.byteLength ?? 0
+  while (state.cache.size > state.limits.entries || state.bytes > state.limits.bytes) {
+    const oldest = state.cache.keys().next().value
+    if (oldest === undefined) break
+    state.bytes -= state.cache.get(oldest)?.encoded?.byteLength ?? 0
+    state.cache.delete(oldest)
+  }
+}
+
+async function prepareEntry(
+  state: CacheState,
+  key: string,
+  file: ReturnType<typeof Bun.file>,
+  zip: boolean,
+  heldTag?: string,
+): Promise<Entry> {
+  const raw = new Uint8Array(await file.arrayBuffer())
+  const tag = heldTag ?? createHash("sha256").update(raw).digest("hex").slice(0, 32)
+  let output: Uint8Array<ArrayBuffer> | undefined
+  if (zip) {
+    try {
+      output = new Uint8Array(await compress(raw))
+    } catch {
+      /* Identity remains usable if compression is unavailable. */
+    }
+  }
+  const entry: Entry = {
+    tag,
+    attempted: zip,
+    ...(output && output.length < raw.length ? { encoded: output } : {}),
+  }
+  rememberEntry(state, key, entry)
+  return entry
+}
+
+async function waitForPendingSlot(pending: Map<string, Promise<Entry>>) {
+  await Promise.race(
+    [...pending.values()].map((work) =>
+      work.then(
+        () => undefined,
+        () => undefined,
+      ),
+    ),
+  )
+}
+
+async function loadAssetEntry(
+  state: CacheState,
+  key: string,
+  file: ReturnType<typeof Bun.file>,
+  encoded: boolean,
+): Promise<Entry> {
+  const held = state.cache.get(key)
+  if (held && (!encoded || held.attempted)) {
+    rememberEntry(state, key, held)
+    return held
+  }
+  const inFlight = state.pending.get(key)
+  if (inFlight) {
+    await inFlight
+    return loadAssetEntry(state, key, file, encoded)
+  }
+  // Only two file buffers/compression jobs are live, even during parallel cold asset requests.
+  if (state.pending.size >= 2) {
+    await waitForPendingSlot(state.pending)
+    return loadAssetEntry(state, key, file, encoded)
+  }
+  const work = prepareEntry(state, key, file, encoded, held?.tag)
+  state.pending.set(key, work)
+  try {
+    return await work
+  } finally {
+    state.pending.delete(key)
+  }
+}
+
+function etagMatches(header: string | null, tag: string): boolean {
+  return (header ?? "")
+    .split(",")
+    .some((value) => value.trim() === "*" || value.trim().replace(/^W\//, "") === tag)
+}
+
+function shouldCompressAsset(request: Request, type: string, size: number): boolean {
+  const text = /^(?:text\/(?:javascript|css)|application\/javascript)(?:;|$)/i.test(type)
+  return (
+    text &&
+    size >= 1024 &&
+    size <= MAX_RAW_BYTES &&
+    acceptsGzip(request.headers.get("accept-encoding"))
+  )
+}
+
 /** Only the public, immutable application assets use this cache; task and API responses do not. */
 export function createStaticAssets(limits = { entries: 16, bytes: 8 * 1024 * 1024 }) {
-  const cache = new Map<string, Entry>()
-  const pending = new Map<string, Promise<Entry>>()
-  let bytes = 0
-  const remember = (key: string, entry: Entry) => {
-    bytes -= cache.get(key)?.encoded?.byteLength ?? 0
-    cache.delete(key)
-    if ((entry.encoded?.byteLength ?? 0) > limits.bytes) return
-    cache.set(key, entry)
-    bytes += entry.encoded?.byteLength ?? 0
-    while (cache.size > limits.entries || bytes > limits.bytes) {
-      const oldest = cache.keys().next().value
-      if (oldest === undefined) break
-      bytes -= cache.get(oldest)?.encoded?.byteLength ?? 0
-      cache.delete(oldest)
-    }
-  }
-  const load = async (
-    key: string,
-    file: ReturnType<typeof Bun.file>,
-    encoded: boolean,
-  ): Promise<Entry> => {
-    const held = cache.get(key)
-    if (held && (!encoded || held.attempted)) {
-      remember(key, held)
-      return held
-    }
-    const inFlight = pending.get(key)
-    if (inFlight) {
-      await inFlight
-      return load(key, file, encoded)
-    }
-    const prepare = async (zip: boolean) => {
-      const raw = new Uint8Array(await file.arrayBuffer())
-      const tag = held?.tag ?? createHash("sha256").update(raw).digest("hex").slice(0, 32)
-      let output: Uint8Array<ArrayBuffer> | undefined
-      if (zip) {
-        try {
-          output = new Uint8Array(await compress(raw))
-        } catch {
-          /* Identity remains usable if compression is unavailable. */
-        }
-      }
-      const entry: Entry = {
-        tag,
-        attempted: zip,
-        ...(output && output.length < raw.length ? { encoded: output } : {}),
-      }
-      remember(key, entry)
-      return entry
-    }
-    // Only two file buffers/compression jobs are live, even during parallel cold asset requests.
-    if (pending.size >= 2) {
-      await Promise.race(
-        [...pending.values()].map((work) =>
-          work.then(
-            () => undefined,
-            () => undefined,
-          ),
-        ),
-      )
-      return load(key, file, encoded)
-    }
-    const work = prepare(encoded)
-    pending.set(key, work)
-    try {
-      return await work
-    } finally {
-      pending.delete(key)
-    }
+  const state: CacheState = {
+    limits,
+    cache: new Map<string, Entry>(),
+    pending: new Map<string, Promise<Entry>>(),
+    bytes: 0,
   }
   return {
-    stats: () => ({ entries: cache.size, bytes, pending: pending.size }),
+    stats: () => ({ entries: state.cache.size, bytes: state.bytes, pending: state.pending.size }),
     async serve(request: Request, path: string, type: string): Promise<Response> {
       const file = Bun.file(path)
       const key = `${path}:${file.size}:${file.lastModified}`
-      const text = /^(?:text\/(?:javascript|css)|application\/javascript)(?:;|$)/i.test(type)
-      const zip =
-        text &&
-        file.size >= 1024 &&
-        file.size <= MAX_RAW_BYTES &&
-        acceptsGzip(request.headers.get("accept-encoding"))
-      const entry = await load(key, file, zip)
+      const zip = shouldCompressAsset(request, type, file.size)
+      const entry = await loadAssetEntry(state, key, file, zip)
       const encoded = zip ? entry.encoded : undefined
       const tag = `"${entry.tag}${encoded ? "-gzip" : ""}"`
       const headers = new Headers({
@@ -117,9 +153,7 @@ export function createStaticAssets(limits = { entries: 16, bytes: 8 * 1024 * 102
         "content-length": String(encoded?.byteLength ?? file.size),
       })
       if (encoded) headers.set("content-encoding", "gzip")
-      const matches = (request.headers.get("if-none-match") ?? "")
-        .split(",")
-        .some((value) => value.trim() === "*" || value.trim().replace(/^W\//, "") === tag)
+      const matches = etagMatches(request.headers.get("if-none-match"), tag)
       return new Response(matches || request.method === "HEAD" ? null : (encoded ?? file), {
         status: matches ? 304 : 200,
         headers,

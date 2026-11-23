@@ -2,19 +2,17 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { validModelId } from "../agents/ids.ts"
-import { readConversation } from "../conversation/service.ts"
-import type { ConversationWorker } from "../conversation/types.ts"
-import { acceptedTurnBoundary, permissionChangeBoundary } from "./bind.ts"
-import type { ControlRequest, HostRecord, RunRecord, SettingsWait } from "./contracts.ts"
-import { type ControlOptions, controlRun, validateControl } from "./control.ts"
+import type { ControlRequest, HostRecord, RunRecord } from "./contracts.ts"
+import { validateControl } from "./control.ts"
 import {
   assertNativePermissionChange,
   effectiveNativeSettings,
-  NativeSettingsUnknownError,
   observedNativeSettings,
 } from "./effective-native-settings.ts"
 import { withPermission } from "./launch-spec.ts"
 import { readHost, readRun, runDir, updateRun } from "./registry.ts"
+
+export { applyQueuedSettings } from "./settings-intent-apply.ts"
 
 const NOT_READY = "This native session is not ready for a settings change"
 
@@ -72,126 +70,4 @@ export async function queueSettings(
       },
     })
   })
-}
-
-/** Driven by the existing run-change events/list reads; no timer or new polling loop. */
-export async function applyQueuedSettings(
-  ctx: Ctx,
-  run: RunRecord,
-  options: ControlOptions & {
-    authorized(proof: string): boolean
-  },
-): Promise<RunRecord> {
-  const pending = run.pendingSettings
-  if (!pending || pending.error) return run
-  const fail = (message: string, missing?: ("model" | "effort")[]) =>
-    updateRun(ctx.home, run.id, run.generation, (current) => {
-      if (current.pendingSettings?.id !== pending.id) return current
-      const { waiting: _waiting, ...asked } = pending
-      return {
-        ...current,
-        pendingSettings: { ...asked, error: message, ...(missing ? { missing } : {}) },
-      }
-    })
-  // The record names what the change waits for, so the App never shows a request that looks ignored.
-  // It is written only when the reason changes: a write is a run event, and the next event must not rewrite it.
-  const wait = (waiting: SettingsWait): RunRecord => {
-    if (pending.waiting === waiting) return run
-    try {
-      return updateRun(ctx.home, run.id, run.generation, (current) =>
-        current.pendingSettings?.id === pending.id && current.pendingSettings.waiting !== waiting
-          ? { pendingSettings: { ...current.pendingSettings, waiting } }
-          : null,
-      )
-    } catch (cause) {
-      // The run moved on (stopped, restarted) while the record was read: there is nothing left to say.
-      const moved = readRun(ctx.home, run.id)
-      if (moved?.generation !== run.generation) return moved ?? run
-      throw cause
-    }
-  }
-  if (pending.generation !== run.generation || pending.nativeSession !== run.nativeSession)
-    return fail("The native session changed; choose the settings again")
-  if (!options.authorized(pending.authorityProof))
-    return fail("The browser's authority ended; apply the change again from the App")
-  if (pending.requestedStatus === "running" && run.status !== "running")
-    return fail("The session stopped before this change; apply again when you want to resume")
-  if (run.status === "running") {
-    const permissionOnly = Object.keys(pending.settings).every(
-      (key) => key === "perm" || key === "permMode",
-    )
-    if (!acceptedTurnBoundary(run) && !(permissionOnly && permissionChangeBoundary(run)))
-      return wait("turn")
-    if (run.agent === "other") return fail("This agent has no native settings control")
-    const blocked = await restartBlock(ctx, { ...run, agent: run.agent })
-    if (blocked) return wait(blocked)
-  }
-  try {
-    return await controlRun(
-      ctx,
-      run,
-      {
-        action: run.status === "running" ? "restart" : "resume",
-        generation: run.generation,
-        settings: pending.settings,
-        ...(pending.confirmBypass ? { confirmBypass: true } : {}),
-        ...(run.status !== "running" ? { mode: "continue" as const } : {}),
-      },
-      {
-        ...options,
-        settingsChange: {
-          id: pending.id,
-          authorized: () => options.authorized(pending.authorityProof),
-        },
-      },
-    )
-  } catch (cause) {
-    const current = readRun(ctx.home, run.id)
-    if (!current || current.generation !== run.generation) return current ?? run
-    // A boundary that moved is retried at the next real boundary; preparation failures stay visible.
-    if (
-      run.status === "running" &&
-      !acceptedTurnBoundary(current) &&
-      !permissionChangeBoundary(current)
-    )
-      return wait("turn")
-    return fail(
-      cause instanceof Error ? cause.message : "The settings change could not be applied",
-      cause instanceof NativeSettingsUnknownError ? cause.fields : undefined,
-    )
-  }
-}
-
-/** Reads one long record takes: each read is one bounded step, so a long session needs a few. */
-const CATCH_UP_READS = 24
-
-/**
- * Subagents that this session's process can still be running. A restart ends the process and with it
- * its subagents, so it waits for them. A subagent started before this process began (the session was
- * resumed since) is gone with its old process, though its record never says it ended.
- */
-function liveWorkers(run: RunRecord, workers: readonly ConversationWorker[]): number {
-  const began = Date.parse(run.generationStartedAt ?? run.startedAt)
-  return workers.filter((worker) => {
-    const started = Date.parse(worker.startedAt ?? "")
-    return Number.isNaN(began) || Number.isNaN(started) || started >= began
-  }).length
-}
-
-/**
- * What stops a restart now: subagents that would end with it, or a record not read to its end (they
- * are known only from the whole record). A long record is read on here, a step at a time.
- */
-async function restartBlock(
-  ctx: Ctx,
-  run: RunRecord & { agent: Exclude<RunRecord["agent"], "other"> },
-): Promise<SettingsWait | null> {
-  let conversation = readConversation(ctx, run)
-  for (let reads = 1; conversation.hasMore && reads < CATCH_UP_READS; reads++) {
-    await Bun.sleep(0)
-    conversation = readConversation(ctx, run)
-  }
-  if (conversation.source === "none" || conversation.hasMore) return "record"
-  if (conversation.workersIncomplete) return "subagents"
-  return liveWorkers(run, conversation.workers ?? []) > 0 ? "subagents" : null
 }

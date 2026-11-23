@@ -1,6 +1,4 @@
-import { createHash, randomUUID } from "node:crypto"
-import { constants } from "node:fs"
-import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { lstat } from "node:fs/promises"
 import { join } from "node:path"
 import {
   type Attachment,
@@ -8,12 +6,19 @@ import {
   type Incoming,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
-  saveAttachments,
 } from "../core/interaction-docs/attachments.ts"
 import type { RunRecord } from "../core/run/contracts.ts"
 import { runDir } from "../core/run/registry.ts"
 import type { Ctx } from "../ctx.ts"
 import { readArtifactBody } from "./request-body.ts"
+import {
+  assertSafeLaunchDirs,
+  boundedLaunchFile,
+  fileDigest,
+  hasSafeFileName,
+  verifyExistingLaunchFiles,
+  writeTemporaryLaunchFiles,
+} from "./run-launch-files-io.ts"
 
 /** Client fields contain no file paths: only bounded uploaded bytes can create launch attachments. */
 export async function readLaunchBody(
@@ -46,11 +51,37 @@ export async function readLaunchBody(
   return { input: JSON.parse(values[0]), files }
 }
 
-const fileDigest = (files: Incoming[]) => {
-  const hash = createHash("sha256")
-  for (const file of files)
-    hash.update(JSON.stringify([file.name, file.bytes.length])).update(file.bytes)
-  return hash.digest("hex")
+function matchesRegisteredFile(
+  folder: string,
+  saved: Attachment,
+  registered: Attachment | undefined,
+): boolean {
+  if (!registered || !hasSafeFileName(saved.name)) return false
+  return (
+    saved.path === join(folder, "files", saved.name) &&
+    JSON.stringify(saved) === JSON.stringify(registered)
+  )
+}
+
+async function readRegisteredLaunchEntries(
+  folder: string,
+  receiptFiles: Attachment[],
+  registeredFiles: Attachment[],
+): Promise<Incoming[]> {
+  const files: Incoming[] = []
+  for (const [index, saved] of receiptFiles.entries()) {
+    if (!matchesRegisteredFile(folder, saved, registeredFiles[index]))
+      throw new Error(
+        "The original launch file receipt changed. The previous conversation is kept.",
+      )
+    const bytes = await boundedLaunchFile(saved.path, MAX_ATTACHMENT_BYTES)
+    if (bytes.length !== saved.size || saved.missing)
+      throw new Error(
+        "An original launch file is missing or changed. The previous conversation is kept.",
+      )
+    files.push({ name: saved.name, bytes })
+  }
+  return files
 }
 
 /** Reads only registered launch files with an intact, bounded receipt; never a caller-supplied path. */
@@ -73,63 +104,18 @@ export async function readLaunchFiles(
   if (run.launchFiles.length > MAX_ATTACHMENTS)
     throw new Error("Too many original launch files. The previous conversation is kept.")
   await ctx.fs.assertSafeDirectory?.(runDir(ctx.home, run.id))
-  for (const path of [folder, join(folder, "files")]) {
-    const info = await lstat(path)
-    if (!info.isDirectory() || info.isSymbolicLink())
-      throw new Error("Unsafe original launch file folder. The previous conversation is kept.")
-  }
-  async function boundedFile(path: string, max: number): Promise<Buffer> {
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
-    try {
-      const info = await handle.stat()
-      if (!info.isFile() || info.size > max)
-        throw new Error(
-          "An original launch file exceeds its limit. The previous conversation is kept.",
-        )
-      const bytes = Buffer.alloc(info.size + 1)
-      let count = 0
-      while (count < bytes.length) {
-        const result = await handle.read(bytes, count, bytes.length - count, count)
-        if (!result.bytesRead) break
-        count += result.bytesRead
-      }
-      if (count !== info.size)
-        throw new Error("An original launch file changed. The previous conversation is kept.")
-      return bytes.subarray(0, count)
-    } finally {
-      await handle.close()
-    }
-  }
+  await assertSafeLaunchDirs(
+    folder,
+    "Unsafe original launch file folder. The previous conversation is kept.",
+  )
   const receipt = JSON.parse(
-    (await boundedFile(join(folder, "receipt.json"), 4096)).toString("utf8"),
+    (await boundedLaunchFile(join(folder, "receipt.json"), 4096)).toString("utf8"),
   ) as { hash?: string; contentHash?: string; files?: Attachment[] }
   if (!Array.isArray(receipt.files) || receipt.files.length !== run.launchFiles.length)
     throw new Error(
       "The original launch file receipt is incomplete. The previous conversation is kept.",
     )
-  const files: Incoming[] = []
-  for (const [index, saved] of receipt.files.entries()) {
-    const registered = run.launchFiles[index]
-    if (
-      !registered ||
-      !saved.name ||
-      saved.name.includes("/") ||
-      saved.name.includes("\\") ||
-      saved.name === "." ||
-      saved.name === ".." ||
-      saved.path !== join(folder, "files", saved.name) ||
-      JSON.stringify(saved) !== JSON.stringify(registered)
-    )
-      throw new Error(
-        "The original launch file receipt changed. The previous conversation is kept.",
-      )
-    const bytes = await boundedFile(saved.path, MAX_ATTACHMENT_BYTES)
-    if (bytes.length !== saved.size || saved.missing)
-      throw new Error(
-        "An original launch file is missing or changed. The previous conversation is kept.",
-      )
-    files.push({ name: saved.name, bytes })
-  }
+  const files = await readRegisteredLaunchEntries(folder, receipt.files, run.launchFiles)
   const hash = fileDigest(files)
   if (hash !== (receipt.contentHash ?? receipt.hash) || attachmentProblem(files))
     throw new Error(
@@ -152,68 +138,7 @@ export async function keepLaunchFiles(
   const problem = attachmentProblem(files)
   if (problem) throw new Error(problem.replace("to a comment", "to this launch"))
   const hash = fileDigest(files)
-  if (exists) {
-    if (!exists.isDirectory() || exists.isSymbolicLink())
-      throw new Error("Unsafe launch file folder")
-    const keptDirectory = await lstat(join(folder, "files"))
-    if (!keptDirectory.isDirectory() || keptDirectory.isSymbolicLink())
-      throw new Error("Unsafe launch file folder")
-    const receipt = join(folder, "receipt.json")
-    const stat = await lstat(receipt)
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096)
-      throw new Error("Unsafe launch file receipt")
-    const saved = JSON.parse(await readFile(receipt, "utf8")) as {
-      hash: string
-      files: Attachment[]
-    }
-    if (saved.hash !== hash || !Array.isArray(saved.files) || saved.files.length !== files.length)
-      throw new Error(
-        "This launch already has different attachments. Start again with a new request.",
-      )
-    for (const [index, file] of saved.files.entries()) {
-      const source = files[index]
-      if (!source) throw new Error("Missing launch attachment")
-      if (
-        !file.name ||
-        file.name.includes("/") ||
-        file.name.includes("\\") ||
-        file.path !== join(folder, "files", file.name)
-      )
-        throw new Error("Unsafe launch file path")
-      const stat = await lstat(file.path)
-      if (
-        !stat.isFile() ||
-        stat.isSymbolicLink() ||
-        stat.size !== source.bytes.length ||
-        !(await readFile(file.path)).equals(source.bytes)
-      )
-        throw new Error("An attached launch file changed. Start again with a new request.")
-    }
-    return saved.files
-  }
+  if (exists) return verifyExistingLaunchFiles(folder, hash, files)
   if (!files.length) return []
-  const temporary = join(directory, `.launch-files-${randomUUID()}`)
-  await mkdir(temporary, { mode: 0o700 })
-  try {
-    const saved = await saveAttachments(ctx, { runtimeDir: temporary }, "files", files)
-    // saveAttachments nests under attachments; the final folder is intentionally self-contained.
-    await rename(join(temporary, "attachments", "files"), join(temporary, "files"))
-    await rm(join(temporary, "attachments"), { recursive: true })
-    const described = saved.map((file) => ({ ...file, path: join(folder, "files", file.name) }))
-    const contentHash = fileDigest(
-      saved.map((file, index) => ({ name: file.name, bytes: (files[index] as Incoming).bytes })),
-    )
-    await writeFile(
-      join(temporary, "receipt.json"),
-      JSON.stringify({ hash, contentHash, files: described }),
-      {
-        flag: "wx",
-        mode: 0o600,
-      },
-    )
-    await rename(temporary, folder)
-    return described
-  } finally {
-    await rm(temporary, { recursive: true, force: true })
-  }
+  return writeTemporaryLaunchFiles(ctx, directory, folder, hash, files)
 }

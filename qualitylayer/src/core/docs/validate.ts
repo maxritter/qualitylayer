@@ -10,152 +10,11 @@ import { agentFileOf, agentRoleOf, folderDoc, IDENTITY_FILE, roleOf } from "./na
 import { type Outline, parseOutline } from "./outline.ts"
 import { repoFiles } from "./repo-files.ts"
 import { type RuleInput, rules } from "./rules/index.ts"
-import { proseLines } from "./rules/types.ts"
-import {
-  type DocSchema,
-  docTypeOf,
-  GUIDANCE_PREFIX,
-  type SectionSpec,
-  schemaForDoc,
-  sectionMatches,
-} from "./schema.ts"
-import { OPTIONAL_SLOT_LINE } from "./slots.ts"
+import { type DocSchema, docTypeOf, schemaForDoc } from "./schema.ts"
+import { validateContent, validationError } from "./validate-content.ts"
 import { extractFences, type Fence } from "./visuals.ts"
 
-const error = (line: number, rule: string, message: string, fix_hint: string): ValidationError => ({
-  line,
-  rule,
-  message,
-  fix_hint,
-  severity: "error",
-})
-
-type Heading = { text: string; line: number }
-
-function collectHeadings(body: string, bodyStart: number): Heading[] {
-  const headings: Heading[] = []
-  proseLines(body).forEach(({ text: raw, line: number }) => {
-    const line = raw.trimEnd()
-    const match = line.match(/^## (.+)$/)
-    if (match?.[1] !== undefined)
-      headings.push({ text: match[1].trim(), line: bodyStart + number - 1 })
-  })
-  return headings
-}
-
-/** A section of the step's other file: its heading in this file is in the wrong place. */
-export type OtherFile = { file: string; sections: SectionSpec[] }
-
-/** Validate one file's text against the sections its schema names; `other` is the step's other file. */
-export function validateContent(
-  markdown: string,
-  schema: DocSchema,
-  other?: OtherFile,
-): ValidationError[] {
-  const errors: ValidationError[] = []
-  const { frontmatter, body, bodyStart } = parseDoc(markdown)
-
-  if (schema.frontmatter.none === true) {
-    if (frontmatter !== null)
-      errors.push(
-        error(
-          1,
-          "frontmatter-none",
-          "this document has no frontmatter, and starts with a --- block",
-          "remove the --- block at the top: the file is read as it is",
-        ),
-      )
-  } else if (frontmatter === null) {
-    errors.push(
-      error(
-        1,
-        "frontmatter-missing",
-        "the document has no frontmatter block",
-        `start the file with ---, the fields ${schema.frontmatter.required.join(", ")}, and ---`,
-      ),
-    )
-  } else {
-    const missing = schema.frontmatter.required.filter(
-      (key) => frontmatter[key] === undefined || frontmatter[key] === null,
-    )
-    if (missing.length > 0) {
-      errors.push(
-        error(
-          1,
-          "frontmatter-complete",
-          `frontmatter is missing ${missing.join(", ")}`,
-          `add the missing field(s) to the frontmatter block: ${missing.join(", ")}`,
-        ),
-      )
-    }
-  }
-
-  const bodyLines = body.split(/\r?\n/)
-
-  const headings = collectHeadings(body, bodyStart)
-  const specIndex = (text: string) => schema.sections.findIndex((s) => sectionMatches(s, text))
-  const present = headings.filter((h) => specIndex(h.text) !== -1)
-  const lastLine = bodyStart + bodyLines.length - 1
-
-  for (const section of schema.sections) {
-    if (!section.required) continue
-    if (!present.some((h) => sectionMatches(section, h.text))) {
-      errors.push(
-        error(
-          lastLine,
-          "section-missing",
-          `required section "## ${section.heading}" is missing`,
-          `add "## ${section.heading}": ${section.hint ?? "see the template"}`,
-        ),
-      )
-    }
-  }
-
-  // A heading that belongs to the step's other file is in the wrong place.
-  if (other !== undefined) {
-    for (const heading of headings) {
-      if (specIndex(heading.text) !== -1) continue
-      if (!other.sections.some((section) => sectionMatches(section, heading.text))) continue
-      errors.push(
-        error(
-          heading.line,
-          "section-wrong-file",
-          `section "## ${heading.text}" belongs in ${other.file}`,
-          `move "## ${heading.text}" to ${other.file}`,
-        ),
-      )
-    }
-  }
-
-  // A required section that is present must have content before the next heading.
-  for (const heading of present) {
-    const section = schema.sections[specIndex(heading.text)]
-    if (section === undefined || !section.required || section.allowEmpty === true) continue
-    const startIndex = heading.line - bodyStart + 1
-    let hasContent = false
-    for (let i = startIndex; i < bodyLines.length; i++) {
-      const line = (bodyLines[i] ?? "").trim()
-      if (/^#{1,2} /.test(line)) break
-      // The template's guidance and its slots for optional sections are not content.
-      if (line !== "" && !line.startsWith(GUIDANCE_PREFIX) && !OPTIONAL_SLOT_LINE.test(line)) {
-        hasContent = true
-        break
-      }
-    }
-    if (!hasContent) {
-      errors.push(
-        error(
-          heading.line,
-          "section-empty",
-          `section "## ${section.heading}" has no content`,
-          `write the section: ${section.hint ?? section.heading}`,
-        ),
-      )
-    }
-  }
-
-  return errors
-}
+export { validateContent }
 
 export type ValidationReport = { valid: boolean; doc: string; errors: ValidationError[] }
 
@@ -176,32 +35,145 @@ export async function validateDoc(
   return withPagesLock(ctx, options.runtimeDir, validate)
 }
 
+function resolveDocName(ctx: Ctx, taskDir: string, docName: string): string {
+  // The directory distinguishes the person's step from the agents' record with the same basename.
+  return (
+    [taskDir, ctx.env.cwd(), repoRootOf(taskDir) ?? taskDir]
+      .map((base) => relative(taskDir, resolve(base, docName)).split(sep).join("/"))
+      .find((candidate) => roleOf(candidate) !== null || agentRoleOf(candidate) !== null) ?? docName
+  )
+}
+
+function buildRuleInput(params: {
+  ctx: Ctx
+  taskDir: string
+  name: string
+  markdown: string
+  schema: DocSchema
+  task: RuleInput["task"]
+  runtimeDir: string | null
+  released: Set<number> | undefined
+}): RuleInput {
+  let outline: Outline | null = null
+  let fences: Fence[] | null = null
+  let listing: Promise<string[] | null> | null = null
+  const root = repoRootOf(params.taskDir)
+  return {
+    ctx: params.ctx,
+    taskDir: params.taskDir,
+    repoRoot: root,
+    docName: params.name,
+    markdown: params.markdown,
+    schema: params.schema,
+    task: params.task,
+    runtimeDir: params.runtimeDir,
+    ...(params.released === undefined ? {} : { committedSlices: params.released }),
+    outline: () => {
+      outline ??= parseOutline(params.markdown)
+      return outline
+    },
+    fences: () => {
+      fences ??= extractFences(params.markdown)
+      return fences
+    },
+    repoFiles: () => {
+      listing ??= root === null ? Promise.resolve(null) : repoFiles(params.ctx, root)
+      return listing
+    },
+  }
+}
+
+async function releasedSlicesFor(
+  ctx: Ctx,
+  name: string,
+  task: RuleInput["task"],
+  runtimeDir: string | undefined,
+): Promise<Set<number> | undefined> {
+  const cards = name === agentFileOf("implement")
+  if (!cards || runtimeDir === undefined || !["implement", "verify"].includes(task.stage ?? ""))
+    return undefined
+  return new Set(await committedSlices(ctx, { runtimeDir }))
+}
+
+async function runValidationRules(
+  schema: DocSchema,
+  input: RuleInput,
+  errors: ValidationError[],
+): Promise<void> {
+  for (const ruleName of schema.rules) {
+    const rule = rules[ruleName]
+    if (rule !== undefined) errors.push(...(await rule(input)))
+  }
+}
+
+async function validateExistingDoc(params: {
+  ctx: Ctx
+  taskDir: string
+  name: string
+  schema: DocSchema
+  task: RuleInput["task"]
+  runtimeDir: string | undefined
+}): Promise<Result<ValidationReport>> {
+  const { ctx, taskDir, name, schema, task, runtimeDir } = params
+  const forAgents = agentRoleOf(name) !== null
+  const markdown = await ctx.fs.readFile(join(taskDir, name))
+  const role = agentRoleOf(name) ?? roleOf(name)
+  // The step's other file, for a heading that is in the wrong one.
+  const otherName = role === null ? undefined : forAgents ? folderDoc(role) : agentFileOf(role)
+  const otherSchema = otherName === undefined ? undefined : schemaForDoc(otherName, task)
+  const other =
+    otherName === undefined || otherSchema === undefined
+      ? undefined
+      : { file: otherName, sections: otherSchema.sections }
+  const errors = validateContent(markdown, schema, other)
+  // A step file is validated with its agents' file, each against its own sections.
+  if (!forAgents && otherName !== undefined && otherSchema !== undefined) {
+    errors.push(
+      ...(await validateAgentsFile({
+        ctx,
+        taskDir,
+        agentsName: otherName,
+        agentsSchema: otherSchema,
+        stepSchema: schema,
+        stepName: name,
+      })),
+    )
+  }
+  const released = await releasedSlicesFor(ctx, name, task, runtimeDir)
+  const input = buildRuleInput({
+    ctx,
+    taskDir,
+    name,
+    markdown,
+    schema,
+    task,
+    runtimeDir: runtimeDir ?? null,
+    released,
+  })
+  await runValidationRules(schema, input, errors)
+  errors.sort((a, b) => a.line - b.line)
+  return ok({ valid: errors.every((e) => e.severity !== "error"), doc: name, errors })
+}
+
 async function validateSnapshot(
   ctx: Ctx,
   taskDir: string,
   docName: string,
   options: { runtimeDir?: string },
 ): Promise<Result<ValidationReport>> {
-  // The directory distinguishes the person's step from the agents' record with the same basename.
-  const name =
-    [taskDir, ctx.env.cwd(), repoRootOf(taskDir) ?? taskDir]
-      .map((base) => relative(taskDir, resolve(base, docName)).split(sep).join("/"))
-      .find((candidate) => roleOf(candidate) !== null || agentRoleOf(candidate) !== null) ?? docName
-  const forAgents = agentRoleOf(name) !== null
+  const name = resolveDocName(ctx, taskDir, docName)
   const task = await taskFacts(ctx, taskDir)
   if (task.type === "chat")
     return err({ code: "bad_args", message: "this is a Chat; Convert to task first" })
   const schema = schemaForDoc(name, task)
-  if (schema === undefined) {
+  if (schema === undefined)
     return err({ code: "bad_args", message: `no schema for document "${name}"` })
-  }
-  const path = join(taskDir, name)
-  if (!(await ctx.fs.exists(path))) {
+  if (!(await ctx.fs.exists(join(taskDir, name)))) {
     return ok({
       valid: false,
       doc: name,
       errors: [
-        error(
+        validationError(
           1,
           "document-missing",
           `${name} does not exist yet`,
@@ -210,79 +182,35 @@ async function validateSnapshot(
       ],
     })
   }
-  const markdown = await ctx.fs.readFile(path)
-  const role = agentRoleOf(name) ?? roleOf(name)
-  // The step's other file, for a heading that is in the wrong one.
-  const otherName = role === null ? undefined : forAgents ? folderDoc(role) : agentFileOf(role)
-  const otherSchema = otherName === undefined ? undefined : schemaForDoc(otherName, task)
-  const errors = validateContent(
-    markdown,
-    schema,
-    otherName === undefined || otherSchema === undefined
-      ? undefined
-      : { file: otherName, sections: otherSchema.sections },
-  )
-  // A step file is validated with its agents' file, each against its own sections.
-  if (!forAgents && otherName !== undefined && otherSchema !== undefined)
-    errors.push(...(await validateAgentsFile(ctx, taskDir, otherName, otherSchema, schema, name)))
-
-  let outline: Outline | null = null
-  let fences: Fence[] | null = null
-  let listing: Promise<string[] | null> | null = null
-  const cards = name === agentFileOf("implement")
-  const released =
-    cards && options.runtimeDir !== undefined && ["implement", "verify"].includes(task.stage ?? "")
-      ? new Set(await committedSlices(ctx, { runtimeDir: options.runtimeDir }))
-      : undefined
-  const input: RuleInput = {
+  return validateExistingDoc({
     ctx,
     taskDir,
-    repoRoot: repoRootOf(taskDir),
-    docName: name,
-    markdown,
+    name,
     schema,
     task,
-    runtimeDir: options.runtimeDir ?? null,
-    ...(released === undefined ? {} : { committedSlices: released }),
-    outline: () => {
-      outline ??= parseOutline(markdown)
-      return outline
-    },
-    fences: () => {
-      fences ??= extractFences(markdown)
-      return fences
-    },
-    repoFiles: () => {
-      const root = input.repoRoot
-      listing ??= root === null ? Promise.resolve(null) : repoFiles(ctx, root)
-      return listing
-    },
-  }
-  for (const ruleName of schema.rules) {
-    const rule = rules[ruleName]
-    if (rule === undefined) continue
-    errors.push(...(await rule(input)))
-  }
-  errors.sort((a, b) => a.line - b.line)
-  return ok({ valid: errors.every((e) => e.severity !== "error"), doc: name, errors })
+    runtimeDir: options.runtimeDir,
+  })
+}
+
+type AgentsFileCheck = {
+  ctx: Ctx
+  taskDir: string
+  agentsName: string
+  agentsSchema: DocSchema
+  stepSchema: DocSchema
+  stepName: string
 }
 
 /** The agents' file of a step, against the sections that name it; its errors say which file they are in. */
-async function validateAgentsFile(
-  ctx: Ctx,
-  taskDir: string,
-  agentsName: string,
-  agentsSchema: DocSchema,
-  stepSchema: DocSchema,
-  stepName: string,
-): Promise<ValidationError[]> {
+async function validateAgentsFile(check: AgentsFileCheck): Promise<ValidationError[]> {
+  const { ctx, taskDir, agentsName, agentsSchema, stepSchema, stepName } = check
   if (agentsSchema.sections.length === 0) return []
   const path = join(taskDir, agentsName)
   if (!(await ctx.fs.exists(path))) {
     const required = agentsSchema.sections.filter((s) => s.required)
     if (required.length === 0) return []
     return [
-      error(
+      validationError(
         1,
         "agents-file-missing",
         `${agentsName} does not exist yet`,

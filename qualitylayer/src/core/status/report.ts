@@ -2,9 +2,7 @@
 // gives the Claude Code mod. Nothing here writes task state. It runs every few seconds in every
 // session, so a read makes exactly one git call; everything else is a file read.
 
-import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path"
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { taskSummary } from "../../server/api.ts"
 import { cockpitUrl, liveLock } from "../../server/lock.ts"
@@ -13,8 +11,8 @@ import { statusOf } from "../../ui/live-status.ts"
 import { homeNeedsYou } from "../../ui/model.ts"
 import type { Answers } from "../config-values.ts"
 import { FLOW_STEPS, flowStepOf, isAutonomousBuildStage } from "../flow.ts"
-import { readGate } from "../gate/gate.ts"
-import { activity } from "../helpers.ts"
+import { type GateFile, readGate } from "../gate/gate.ts"
+import { type Activity, activity } from "../helpers.ts"
 import { openCount } from "../items.ts"
 import {
   type BuildProgress,
@@ -24,25 +22,19 @@ import {
 } from "../live/progress.ts"
 import { readLimit, readRefusal } from "../live/read.ts"
 import { openNeeds, readNeeds } from "../need/need.ts"
-import { type RepoRef, repoIdFrom } from "../paths.ts"
-import { canonicalPath } from "../platform.ts"
 import { passRoles, type QualityRow, qualityRowsFor } from "../polish.ts"
 import { readRun } from "../review/cross.ts"
 import type { AnswerModeInfo } from "../task/answer-mode.ts"
-import { isArchived } from "../task/archive.ts"
-import { boundSlug, keyOf, sessionKey } from "../task/binding.ts"
 import { taskItems } from "../task/items.ts"
 import type { Stage } from "../task/machine.ts"
 import { approvalsOf } from "../task/sides.ts"
-import { isTerminal, listTasks, readSession, type Session, type Task } from "../task/store.ts"
+import type { Task } from "../task/store.ts"
 import { readVerifyMode } from "../task/verify-mode.ts"
 import { taskFlow } from "../task-flow.ts"
-import {
-  awaitingBuildStart,
-  type DecisionSummary,
-  managerStatus,
-  type WaitingOn,
-} from "./manager.ts"
+import { attentionFor, type Checkout, liveTaskFor, probeCheckout } from "./checkout.ts"
+import { type DecisionSummary, managerStatus, type WaitingOn } from "./manager.ts"
+
+export { attentionFor, type Checkout, liveTaskFor, probeCheckout }
 
 /** One step of the flow on a task's track: done, the one it stands on, or still to come. */
 export type TrackStage = {
@@ -70,132 +62,6 @@ export function trackOf(stage: Stage): TrackStage[] {
     group: GROUPS[step.id] ?? "Plan",
     state: stage === "shipped" || i < at ? "done" : i === at ? "now" : "todo",
   }))
-}
-
-/** A task nobody touched for a day stops taking a line, unless it waits for the user. */
-const LIVE_MS = 24 * 60 * 60_000
-const UNSETTLED_MS = 5_000
-
-/** `raw` keeps the output as git wrote it: porcelain lines start with a meaningful space. */
-export function git(
-  cwd: string,
-  args: string[],
-  options: { raw?: boolean; timeout?: number } = {},
-) {
-  const searchPath = (process.env.PATH ?? (process.platform === "win32" ? "" : "/usr/bin:/bin"))
-    .split(delimiter)
-    .map((entry) => (process.platform === "win32" ? entry.replace(/^"(.*)"$/, "$1") : entry))
-    .filter(isAbsolute)
-    .join(delimiter)
-  const executable = Bun.which("git", { PATH: searchPath, cwd: dirname(process.execPath) })
-  if (!executable || !isAbsolute(executable)) return null
-  const run = spawnSync(executable, ["-C", cwd, "--no-optional-locks", ...args], {
-    encoding: "utf8",
-    timeout: options.timeout ?? 2000,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-  })
-  if (run.status !== 0) return null
-  return options.raw === true ? run.stdout : run.stdout.trim()
-}
-
-/** The checkout at `cwd`, from one git call; its branch is read from HEAD itself. */
-export type Checkout = { repo: RepoRef; branch: string | null }
-
-export function probeCheckout(cwd: string): Checkout | null {
-  const out = git(cwd, ["rev-parse", "--show-toplevel", "--git-common-dir", "--git-dir"])
-  if (out === null) return null
-  const [top, common, own] = out.split("\n")
-  if (top === undefined || common === undefined || own === undefined) return null
-  // The same resolution as resolveRepo, so the repository id matches the CLI's.
-  const commonDir = canonicalPath(isAbsolute(common) ? resolve(common) : resolve(cwd, common))
-  const gitDir = isAbsolute(own) ? own : resolve(cwd, own)
-  let branch: string | null = null
-  try {
-    const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim()
-    branch = head.startsWith("ref: ")
-      ? head.slice(5).replace(/^refs\/heads\//, "")
-      : head.slice(0, 7) || null
-  } catch {
-    branch = null
-  }
-  return {
-    repo: { root: canonicalPath(resolve(top)), id: repoIdFrom(commonDir), commonDir },
-    branch,
-  }
-}
-
-/** What the user has to do for the task, if anything. */
-export type Attention =
-  | { kind: "review"; doc: string }
-  | { kind: "final" }
-  /** The Plan is approved: the user starts Implement in a fresh session. */
-  | { kind: "implement" }
-  /** Decided in the App after the agent stopped waiting: the agent needs a nudge. */
-  | { kind: "continue" }
-
-export async function attentionFor(ctx: Ctx, task: Task): Promise<Attention | null> {
-  const gate = await readGate(ctx, task)
-  if (gate !== null && gate.settled !== true) {
-    if (gate.decision === "pending") {
-      if (gate.target === "final") return { kind: "final" }
-      return { kind: "review", doc: gate.target }
-    }
-    // A waiting agent settles a decision within a poll; one still unsettled after
-    // a few seconds was made after the agent stopped waiting.
-    if (ctx.clock.now() - (gate.decided ?? gate.opened) > UNSETTLED_MS) return { kind: "continue" }
-  }
-  // Approved, and no build started yet: the user's next move is the Implement prompt.
-  if (await awaitingBuildStart(ctx, task)) {
-    return { kind: "implement" }
-  }
-  return null
-}
-
-/**
- * The task this session works on, or null when none is live: no open task, or one nobody touched
- * for a day that does not wait for the user and whose branch is not checked out. A session known
- * by its id sees only its own open, unarchived task: never another session's.
- * With `boundOnly` (the mod, which names its session) only the task the session is bound to: a
- * session that never ran QualityLayer sees none, whatever the branch.
- */
-export async function liveTaskFor(
-  ctx: Ctx,
-  checkout: Checkout,
-  sessionId: string,
-  options: { boundOnly?: boolean } = {},
-): Promise<{
-  task: Task
-  tasks: Task[]
-  attention: Attention | null
-  session: Session | null
-} | null> {
-  const { repo, branch } = checkout
-  const tasks: Task[] = []
-  for (const task of await listTasks(ctx, repo)) {
-    if (!isTerminal(task.stage) && !(await isArchived(ctx, task))) tasks.push(task)
-  }
-  if (tasks.length === 0) return null
-  const key = sessionId !== "" ? keyOf(sessionId) : sessionKey(ctx.env)
-  const bound = key !== null ? boundSlug(ctx, repo.id, key) : null
-  // A branch names a task only when that task alone started on it.
-  const onBranch = tasks.filter((t) => branch !== null && t.branch === branch)
-  const branchTask = onBranch.length === 1 ? onBranch[0] : undefined
-  // A named session has no branch or newest-task fallback. Plain terminal status
-  // without a session keeps those choices.
-  const task =
-    tasks.find((t) => t.slug === bound) ??
-    (options.boundOnly === true || key !== null
-      ? undefined
-      : (branchTask ??
-        [...tasks].sort((a, b) => b.created - a.created || b.slug.localeCompare(a.slug))[0]))
-  if (task === undefined) return null
-
-  const attention = await attentionFor(ctx, task)
-  const session = await readSession(ctx, task)
-  const touched = session?.heartbeat ?? task.created
-  const checkedOut = branchTask !== undefined && branchTask.slug === task.slug
-  if (attention === null && !checkedOut && ctx.clock.now() - touched > LIVE_MS) return null
-  return { task, tasks, attention, session }
 }
 
 /** A helper that has not reported for longer than this is no longer shown. */
@@ -271,6 +137,67 @@ async function helperRole(ctx: Ctx, task: Task): Promise<string | null> {
   }
 }
 
+async function pendingGateReport(
+  ctx: Ctx,
+  task: Task,
+  gateFile: GateFile | null,
+  now: number,
+): Promise<StatusReport["gate"]> {
+  if (gateFile?.decision !== "pending") return null
+  const lock = appLinkOpensHere(ctx.home) ? await liveLock(ctx) : null
+  return {
+    target: gateFile.target,
+    minutes: Math.round((now - gateFile.opened) / 60_000),
+    cockpit: lock !== null ? cockpitUrl(lock, `${task.repoId}~${task.slug}`) : null,
+  }
+}
+
+function helpersReport(
+  running: Activity[],
+  role: string | null,
+  now: number,
+): StatusReport["helpers"] {
+  return running.flatMap((row) =>
+    row.at !== null && row.line !== null && now - row.at < HELPER_SHOWN_MS
+      ? [
+          {
+            id: row.id,
+            role: row.role ?? role,
+            state: row.state,
+            model: row.model ?? null,
+            model_source: row.model ? ("requested" as const) : ("unknown" as const),
+            line: row.line,
+            minutes: Math.round((now - row.at) / 60_000),
+          },
+        ]
+      : [],
+  )
+}
+
+async function reviewReport(ctx: Ctx, task: Task): Promise<StatusReport["review"]> {
+  const run = (await readRun(ctx, task, "verify")) ?? (await readRun(ctx, task, "plan"))
+  if (run === null) return null
+  return {
+    name: run.name,
+    model: run.model,
+    state: run.state,
+    findings: run.findings ?? null,
+    line: run.state === "running" ? (run.line ?? null) : null,
+  }
+}
+
+function taskSummaryHeader(task: Task, kind: string): StatusReport["task"] {
+  return {
+    answers: task.answers,
+    approvals: approvalsOf(task),
+    id: `${task.repoId}~${task.slug}`,
+    slug: task.slug,
+    title: task.title,
+    kind,
+    stage: task.stage,
+  }
+}
+
 /**
  * The report for the task this session works on, or null when none is live. Reads only, from the
  * task files and one git call.
@@ -289,17 +216,9 @@ export async function statusFor(
   const gateFile = await readGate(ctx, task)
   const activities = await activity(ctx, task, { remember: false })
   const management = await managerStatus(ctx, task, activities, gateFile)
-  if (task.type === "chat")
+  if (task.type === "chat") {
     return {
-      task: {
-        answers: task.answers,
-        approvals: approvalsOf(task),
-        id: `${task.repoId}~${task.slug}`,
-        slug: task.slug,
-        title: task.title,
-        kind: "Chat",
-        stage: task.stage,
-      },
+      task: taskSummaryHeader(task, "Chat"),
       track: [],
       gate: null,
       build: null,
@@ -311,20 +230,8 @@ export async function statusFor(
       ...management,
       ...(await liveFields(ctx, task)),
     }
+  }
   const now = ctx.clock.now()
-  const minutesSince = (at: number) => Math.round((now - at) / 60_000)
-
-  const lock =
-    gateFile?.decision === "pending" && appLinkOpensHere(ctx.home) ? await liveLock(ctx) : null
-  const gate =
-    gateFile?.decision === "pending"
-      ? {
-          target: gateFile.target,
-          minutes: minutesSince(gateFile.opened),
-          cockpit: lock !== null ? cockpitUrl(lock, `${task.repoId}~${task.slug}`) : null,
-        }
-      : null
-
   const { flow, plan: outline } = await taskFlow(ctx, task)
   const build =
     outline !== null
@@ -337,58 +244,20 @@ export async function statusFor(
           })),
         }
       : null
-
   const running = activities.filter((row) => row.kind === "helper")
-  const role = await helperRole(ctx, task)
-  const helpers = running.flatMap((row) =>
-    row.at !== null && row.line !== null && now - row.at < HELPER_SHOWN_MS
-      ? [
-          {
-            id: row.id,
-            role: row.role ?? role,
-            state: row.state,
-            model: row.model ?? null,
-            model_source: row.model ? ("requested" as const) : ("unknown" as const),
-            line: row.line,
-            minutes: minutesSince(row.at),
-          },
-        ]
-      : [],
-  )
-
-  const quality = await qualityRowsFor(
-    ctx,
-    task,
-    passRoles(flow),
-    running.map((row) => row.id),
-  )
-
-  const run = (await readRun(ctx, task, "verify")) ?? (await readRun(ctx, task, "plan"))
   return {
-    task: {
-      answers: task.answers,
-      approvals: approvalsOf(task),
-      id: `${task.repoId}~${task.slug}`,
-      slug: task.slug,
-      title: task.title,
-      kind: task.type === "bugfix" ? "Bug fix" : "Feature",
-      stage: task.stage,
-    },
+    task: taskSummaryHeader(task, task.type === "bugfix" ? "Bug fix" : "Feature"),
     track: trackOf(task.stage),
-    gate,
+    gate: await pendingGateReport(ctx, task, gateFile, now),
     build,
-    quality,
-    helpers,
-    review:
-      run === null
-        ? null
-        : {
-            name: run.name,
-            model: run.model,
-            state: run.state,
-            findings: run.findings ?? null,
-            line: run.state === "running" ? (run.line ?? null) : null,
-          },
+    quality: await qualityRowsFor(
+      ctx,
+      task,
+      passRoles(flow),
+      running.map((row) => row.id),
+    ),
+    helpers: helpersReport(running, await helperRole(ctx, task), now),
+    review: await reviewReport(ctx, task),
     open_items: await openItemsOf(ctx, task, gateFile),
     needs_you: await needsYouOf(ctx, task),
     ...management,

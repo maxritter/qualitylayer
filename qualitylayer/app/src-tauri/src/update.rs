@@ -16,7 +16,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-#[cfg(any(test, not(target_os = "linux")))]
+#[cfg(test)]
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -114,82 +114,12 @@ pub fn take_lock(lock: &Path, pid: u32) -> std::io::Result<bool> {
     Ok(false)
 }
 
-/// Pids of the lines `ps -axo pid=,comm=` printed whose program is `cli`.
-#[cfg(any(test, all(unix, not(target_os = "linux"))))]
-pub fn parse_ps(output: &str, cli: &Path) -> Vec<u32> {
-    let canonical = fs::canonicalize(cli).unwrap_or_else(|_| cli.to_path_buf());
-    output
-        .lines()
-        .filter_map(|line| {
-            let (pid, program) = line.trim_start().split_once(char::is_whitespace)?;
-            let program = Path::new(program.trim());
-            (program == cli || program == canonical).then(|| pid.parse().ok())?
-        })
-        .collect()
-}
+#[path = "update_process.rs"]
+mod process;
 
-/// The pids of processes running the App's CLI, apart from the server `exclude`.
-fn running_cli(cli: &Path, exclude: Option<u32>) -> Vec<u32> {
-    let found = processes_running(cli);
-    found
-        .into_iter()
-        .filter(|pid| Some(*pid) != exclude && *pid != std::process::id())
-        .collect()
-}
-
-#[cfg(target_os = "linux")]
-fn processes_running(cli: &Path) -> Vec<u32> {
-    let canonical = fs::canonicalize(cli).unwrap_or_else(|_| cli.to_path_buf());
-    let Ok(entries) = fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|entry| {
-            let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
-            let exe = fs::read_link(entry.path().join("exe")).ok()?;
-            (exe == cli || exe == canonical).then_some(pid)
-        })
-        .collect()
-}
-
-#[cfg(all(unix, not(target_os = "linux")))]
-fn processes_running(cli: &Path) -> Vec<u32> {
-    Command::new("ps")
-        .args(["-axo", "pid=,comm="])
-        .stdin(Stdio::null())
-        .output()
-        .map(|out| parse_ps(&String::from_utf8_lossy(&out.stdout), cli))
-        .unwrap_or_default()
-}
-
-#[cfg(windows)]
-fn processes_running(cli: &Path) -> Vec<u32> {
-    use std::os::windows::process::CommandExt;
-    let path = cli.display().to_string().replace('\'', "''");
-    let script = format!(
-        "Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq '{path}' }} | ForEach-Object {{ $_.ProcessId }}"
-    );
-    Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script.as_str()])
-        .stdin(Stdio::null())
-        .creation_flags(0x0800_0000)
-        .output()
-        .map(|out| {
-            String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .filter_map(|line| line.trim().parse().ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The pid of the local server, so a wait does not count it as an agent command.
-fn server_pid(home: &Path) -> Option<u32> {
-    let text = fs::read_to_string(home.join("cockpit.lock")).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-    json["pid"].as_u64().and_then(|pid| u32::try_from(pid).ok())
-}
+#[cfg(test)]
+use process::parse_ps;
+use process::{running_cli, server_pid};
 
 /// The feed of the Beta channel: it also offers prereleases, and the newest release wins. Stable
 /// keeps the feed `tauri.conf.json` names, which offers stable releases only.
@@ -349,11 +279,13 @@ pub fn setup(app: &AppHandle, relaunch: Vec<String>) -> Result<(), String> {
             relaunch,
             update: None,
         },
-        home,
-        state,
-        WAITS_FOR_AGENTS,
-        POLL,
-        now_ms,
+        crate::update_flow::EngineConfig {
+            home,
+            state,
+            waits_for_agents: WAITS_FOR_AGENTS,
+            poll: POLL,
+            now: now_ms,
+        },
     );
     app.manage(Runtime {
         engine: Mutex::new(engine),
@@ -407,6 +339,55 @@ pub fn install_now(app: &AppHandle) -> Result<bool, String> {
     }
 }
 
+fn handle_watch_tick(
+    app: &AppHandle,
+    home: &Path,
+    started: Instant,
+    told: &mut bool,
+    last_try: &mut Option<Instant>,
+) {
+    let requests = take_requests(home, now_ms());
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        // No updater here: a request is answered, not left for ever.
+        if requests.install || requests.check {
+            let version = app.package_info().version.to_string();
+            let state = State::updates_off(read_state(home).as_ref(), &version);
+            let _ = write_state(home, &state);
+        }
+        return;
+    };
+    // A start that updated the App has said so to the page by now.
+    if !*told && started.elapsed() >= UPDATED_NOTE_FOR {
+        if let Ok(mut engine) = runtime.engine.try_lock() {
+            engine.done_telling();
+            *told = true;
+        }
+    }
+    // A cancel is for a wait that is going on, and for nothing else.
+    if requests.cancel && read_state(home).is_some_and(|s| s.phase == Phase::Waiting) {
+        runtime.cancel.store(true, Ordering::SeqCst);
+    }
+    if requests.install {
+        crate::install_update(app);
+    } else if requests.check {
+        crate::check_for_updates(app, false);
+    } else {
+        maybe_schedule_auto_check(app, &runtime, last_try);
+    }
+}
+
+fn maybe_schedule_auto_check(app: &AppHandle, runtime: &Runtime, last_try: &mut Option<Instant>) {
+    let checked = runtime.checked_at.load(Ordering::SeqCst);
+    let due = check_due((checked != 0).then_some(checked), now_ms());
+    if due && last_try.is_none_or(|at| at.elapsed() >= RETRY_AFTER) {
+        *last_try = Some(Instant::now());
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            check(&handle, false);
+        });
+    }
+}
+
 /// What the page asks for through its request files, and the automatic check. Looks every second, so
 /// a click on "Restart and update" starts at once; the work itself runs on threads of its own.
 pub fn watch(app: AppHandle) {
@@ -419,42 +400,7 @@ pub fn watch(app: AppHandle) {
         let mut last_try: Option<Instant> = None;
         loop {
             std::thread::sleep(WATCH_TICK);
-            let requests = take_requests(&home, now_ms());
-            let Some(runtime) = app.try_state::<Runtime>() else {
-                // No updater here: a request is answered, not left for ever.
-                if requests.install || requests.check {
-                    let version = app.package_info().version.to_string();
-                    let state = State::updates_off(read_state(&home).as_ref(), &version);
-                    let _ = write_state(&home, &state);
-                }
-                continue;
-            };
-            // A start that updated the App has said so to the page by now.
-            if !told && started.elapsed() >= UPDATED_NOTE_FOR {
-                if let Ok(mut engine) = runtime.engine.try_lock() {
-                    engine.done_telling();
-                    told = true;
-                }
-            }
-            // A cancel is for a wait that is going on, and for nothing else.
-            if requests.cancel && read_state(&home).is_some_and(|s| s.phase == Phase::Waiting) {
-                runtime.cancel.store(true, Ordering::SeqCst);
-            }
-            if requests.install {
-                crate::install_update(&app);
-            } else if requests.check {
-                crate::check_for_updates(&app, false);
-            } else {
-                let checked = runtime.checked_at.load(Ordering::SeqCst);
-                let due = check_due((checked != 0).then_some(checked), now_ms());
-                if due && last_try.is_none_or(|at| at.elapsed() >= RETRY_AFTER) {
-                    last_try = Some(Instant::now());
-                    let handle = app.clone();
-                    std::thread::spawn(move || {
-                        check(&handle, false);
-                    });
-                }
-            }
+            handle_watch_tick(&app, &home, started, &mut told, &mut last_try);
         }
     });
 }
@@ -569,72 +515,13 @@ pub fn is_restart_by_installer(app: &AppHandle) -> bool {
     restarted_by_installer(read_pointer(&home).as_ref(), &version, cfg!(windows))
 }
 
-/// What the App that starts the Windows installer leaves for the App the installer starts: the home
-/// it runs in. The installer starts the new App as the signed-in user, with that user's own
-/// environment and not the old App's, so a `QUALITYLAYER_HOME` the person (or a test) set would be
-/// gone: the new App would look for the install, the update lock and the server in the default home
-/// and leave the old home with no server. The file sits beside the App's programs, where both Apps
-/// are; the installer replaces files and leaves this one.
-const HANDOVER_FILE: &str = ".restart-home";
+#[path = "update_handover.rs"]
+mod handover;
 
-fn handover_path() -> Option<PathBuf> {
-    Some(std::env::current_exe().ok()?.parent()?.join(HANDOVER_FILE))
-}
-
-/// Write the home this App runs in (`QUALITYLAYER_HOME`, when one was set) into `file`, or remove a
-/// note an earlier update left when none is set.
-pub fn leave_home(file: &Path, home: Option<&std::ffi::OsStr>) -> std::io::Result<()> {
-    match home.map(PathBuf::from).filter(|home| home.is_absolute()) {
-        Some(home) => fs::write(file, home.to_string_lossy().as_bytes()),
-        None => match fs::remove_file(file) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
-            _ => Ok(()),
-        },
-    }
-}
-
-/// The home an earlier App left in `file`, which is then removed: none when the environment names a
-/// home already (that one wins), when there is no note, or when it does not hold an absolute path.
-pub fn take_home(file: &Path, environment: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
-    let text = fs::read_to_string(file).ok();
-    let _ = fs::remove_file(file);
-    if environment.is_some_and(|set| !set.is_empty()) {
-        return None;
-    }
-    let home = PathBuf::from(text?.trim());
-    home.is_absolute().then_some(home)
-}
-
-/// `leave_home` for this App, before the installer replaces it.
-fn leave_home_for_installer() {
-    let Some(file) = handover_path() else {
-        return;
-    };
-    if let Err(error) = leave_home(&file, std::env::var_os("QUALITYLAYER_HOME").as_deref()) {
-        say_err!("QualityLayer: cannot note the home for the new App: {error}");
-    }
-}
-
-/// The note taken back out, since the update did not go through.
-fn forget_home_for_installer() {
-    if let Some(file) = handover_path() {
-        let _ = fs::remove_file(file);
-    }
-}
-
-/// First thing a Windows start does: run in the home the App before it ran in, when the installer
-/// started this one. Must come before anything reads the home.
-pub fn adopt_home_of_installer() {
-    if !cfg!(windows) {
-        return;
-    }
-    let Some(file) = handover_path() else {
-        return;
-    };
-    if let Some(home) = take_home(&file, std::env::var_os("QUALITYLAYER_HOME").as_deref()) {
-        std::env::set_var("QUALITYLAYER_HOME", home);
-    }
-}
+pub use handover::adopt_home_of_installer;
+use handover::{forget_home_for_installer, leave_home_for_installer};
+#[cfg(test)]
+use handover::{leave_home, take_home, HANDOVER_FILE};
 
 /// The version a start has just updated to: the install pointed at another version of the App.
 pub fn updated_to(pointer: Option<&Pointer>, version: &str) -> Option<String> {

@@ -31,6 +31,27 @@ export type ChangesRequested = {
 
 const COMMIT = /\b[0-9a-f]{7,12}\b/
 
+function isRequestedChangeComment(c: Comment, before: number, at: number): boolean {
+  const isLocalFinal = c.doc === "final" && c.delivered === true && c.build === undefined
+  const inWindow = c.source === undefined && c.created > before && c.created <= at + 5_000
+  return isLocalFinal && inWindow && (c.kind === undefined || asksForChange(c.kind))
+}
+
+function toChangeNote(c: Comment): ChangeNote {
+  const said = c.answer ?? ""
+  const commit = said.match(COMMIT)?.[0]
+  const state = c.answer !== undefined ? "done" : c.pickedAt !== undefined ? "picked" : "sent"
+  return {
+    id: c.id,
+    ...(c.item !== undefined ? { item: c.item } : {}),
+    label: c.kind !== undefined ? ANSWER_LABEL[c.kind] : "Your comment",
+    what: c.quote.trim() !== "" ? c.quote : c.remark,
+    state,
+    ...(commit !== undefined ? { commit } : {}),
+    ...(said !== "" ? { reply: said } : {}),
+  }
+}
+
 /**
  * What the person asked for on the last final review. Null when they asked for nothing.
  */
@@ -48,29 +69,7 @@ export async function changesRequested(
   if (last === undefined || last.decision !== "changes") return null
   const at = last.ts as number
   const before = decisions.length > 1 ? (decisions[decisions.length - 2]?.ts as number) : 0
-  const notes = (comments ?? (await readComments(ctx, task)))
-    .filter(
-      (c) =>
-        c.doc === "final" &&
-        c.delivered === true &&
-        c.build === undefined &&
-        c.source === undefined &&
-        c.created > before &&
-        c.created <= at + 5_000 &&
-        (c.kind === undefined || asksForChange(c.kind)),
-    )
-    .map<ChangeNote>((c) => {
-      const said = c.answer ?? ""
-      const commit = said.match(COMMIT)?.[0]
-      return {
-        id: c.id,
-        ...(c.item !== undefined ? { item: c.item } : {}),
-        label: c.kind !== undefined ? ANSWER_LABEL[c.kind] : "Your comment",
-        what: c.quote.trim() !== "" ? c.quote : c.remark,
-        state: c.answer !== undefined ? "done" : c.pickedAt !== undefined ? "picked" : "sent",
-        ...(commit !== undefined ? { commit } : {}),
-        ...(said !== "" ? { reply: said } : {}),
-      }
-    })
+  const all = comments ?? (await readComments(ctx, task))
+  const notes = all.filter((c) => isRequestedChangeComment(c, before, at)).map(toChangeNote)
   return notes.length > 0 ? { at, notes } : null
 }

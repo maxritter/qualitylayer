@@ -1,123 +1,15 @@
-import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { USAGE_IMPORT_ACCOUNT_MAX_BYTES, USAGE_IMPORT_ACCOUNTS_MAX } from "../home-caps.ts"
 import { zeroTokens } from "./prices.ts"
 import type { Call } from "./transcripts.ts"
+import { CURSOR_EXPORT_MAX_BYTES, cursorExportCalls, cursorHash } from "./usage-cursor-csv.ts"
 import { type Candidate, listed, transcriptsIn } from "./usage-files.ts"
 import type { ChunkParser } from "./usage-parsers.ts"
 
-export const CURSOR_EXPORT_MAX_BYTES = 5 * 1024 * 1024
-const ROWS_MAX = 50_000
+export { CURSOR_EXPORT_MAX_BYTES, cursorExportCalls }
+
 const folder = (ctx: Ctx) => join(ctx.home, "usage-imports")
-const hash = (text: string) => createHash("sha256").update(text).digest("hex")
-
-/** CSV quoting is parsed as data; cells are never interpreted as formulae or commands. */
-function csvRows(text: string): string[][] {
-  const rows: string[][] = []
-  let row: string[] = [],
-    cell = "",
-    quoted = false
-  for (let at = 0; at < text.length; at++) {
-    const char = text[at]
-    if (char === '"') {
-      if (quoted && text[at + 1] === '"') {
-        cell += '"'
-        at++
-      } else quoted = !quoted
-    } else if (!quoted && (char === "," || char === "\n")) {
-      row.push(cell.replace(/\r$/, ""))
-      cell = ""
-      if (char === "\n") {
-        if (row.some(Boolean)) rows.push(row)
-        row = []
-      }
-    } else cell += char
-    if (rows.length > ROWS_MAX) throw new Error("Cursor export exceeds 50,000 rows")
-  }
-  if (quoted) throw new Error("Cursor export has an unfinished quoted cell")
-  if (cell || row.length) {
-    row.push(cell.replace(/\r$/, ""))
-    if (row.some(Boolean)) rows.push(row)
-  }
-  return rows
-}
-
-export function cursorExportCalls(text: string, account: string): Call[] {
-  if (Buffer.byteLength(text) > CURSOR_EXPORT_MAX_BYTES)
-    throw new Error("Cursor export exceeds 5 MiB")
-  const [header, ...rows] = csvRows(text.replace(/^\uFEFF/, ""))
-  if (!header) throw new Error("Cursor export is empty")
-  const columns = header.map((name) => name.trim().toLowerCase())
-  const column = (...names: string[]) =>
-    names.map((name) => columns.indexOf(name.toLowerCase())).find((index) => index >= 0) ?? -1
-  const date = column("Date", "Timestamp"),
-    model = column("Model"),
-    cost = column("Cost", "Cost (USD)")
-  const input = column("Input (w/o Cache Write)", "Input Tokens"),
-    output = column("Output Tokens")
-  const write = column("Input (w/ Cache Write)", "Cache Write Tokens"),
-    read = column("Cache Read", "Cache Read Tokens")
-  const request = column("Request ID", "RequestId")
-  const kind = column("Kind", "Type")
-  const total = column("Total Tokens")
-  if ([date, model, cost, input, output].some((index) => index < 0))
-    throw new Error(
-      "Use Cursor's token-usage CSV export with Date, Model, Cost, Input and Output columns",
-    )
-  const numeric = (cell: string | undefined) => {
-    const n = cell?.trim() ? Number(cell.replaceAll(",", "")) : 0
-    if (!Number.isSafeInteger(n) || n < 0)
-      throw new Error("Cursor export contains an invalid token count")
-    return n
-  }
-  const calls = new Map<string, Call>()
-  for (const [index, row] of rows.entries()) {
-    const at = Date.parse(row[date] ?? "")
-    const modelName = row[model]
-    if (!Number.isFinite(at) || !modelName?.trim())
-      throw new Error("Cursor export contains an invalid date or model")
-    const value = (row[cost] ?? "").trim()
-    const native = /^\$?\s*(\d+(?:\.\d+)?)$/.exec(value.replaceAll(",", ""))
-    const reportedUsd = native ? Number(native[1]) : undefined
-    if (reportedUsd !== undefined && !Number.isFinite(reportedUsd))
-      throw new Error("Cursor export contains an invalid dollar amount")
-    const type = kind < 0 ? "" : (row[kind] ?? "")
-    const included = /included|subscription|free/i.test(type) || /^(?:included|free)$/i.test(value)
-    const uncharged = /errored|not charged/i.test(type)
-    const requestId = request < 0 ? undefined : row[request]
-    const id = `${account}:${hash(requestId || `${JSON.stringify(row)}:${index}`)}`
-    if (modelName.length > 256) throw new Error("Cursor export model name is too long")
-    const tokens = {
-      ...zeroTokens(),
-      input: numeric(row[input]),
-      output: numeric(row[output]),
-      cacheRead: read < 0 ? 0 : numeric(row[read]),
-      cacheWrite5m: write < 0 ? 0 : numeric(row[write]),
-    }
-    if (
-      total >= 0 &&
-      row[total]?.trim() &&
-      numeric(row[total]) !== Object.values(tokens).reduce((sum, n) => sum + n, 0)
-    )
-      throw new Error("Cursor export total tokens do not match the token columns")
-    calls.set(id, {
-      id,
-      at,
-      model: modelName.trim(),
-      tokens,
-      ...(included
-        ? { billing: "plan" as const }
-        : uncharged
-          ? { billing: "key" as const, reportedUsd: 0 }
-          : native
-            ? { reportedUsd, billing: "key" as const }
-            : { billing: "unknown" as const }),
-      missingTokens: !row[input]?.trim() || !row[output]?.trim(),
-    })
-  }
-  return [...calls.values()]
-}
 
 export async function importCursorExport(
   ctx: Ctx,
@@ -131,6 +23,34 @@ export async function importCursorExport(
   )
 }
 
+async function readTextLimited(ctx: Ctx, file: string, maxBytes: number): Promise<string> {
+  return ctx.fs.readRegularFile
+    ? Buffer.from(await ctx.fs.readRegularFile(file, maxBytes)).toString("utf8")
+    : ctx.fs.readFile(file)
+}
+
+async function readRetainedCursorCalls(
+  ctx: Ctx,
+  destination: string,
+  from: number,
+  to: number,
+): Promise<Call[]> {
+  if (!(await ctx.fs.exists(destination))) return []
+  const old = await readTextLimited(ctx, destination, USAGE_IMPORT_ACCOUNT_MAX_BYTES)
+  const rows = old
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+  if (rows[0]?.type !== "cursor-export" || rows[0]?.schema !== 1)
+    throw new Error("Retained Cursor export is damaged; it was not replaced")
+  const parser = cursorUsageParser()
+  parser.chunk(old)
+  const parsed = parser.finish()
+  if (parsed.length !== rows.length - 1)
+    throw new Error("Retained Cursor export is damaged; it was not replaced")
+  return parsed.filter((call) => call.at !== null && (call.at < from || call.at > to))
+}
+
 async function importCursorRows(
   ctx: Ctx,
   file: string,
@@ -140,56 +60,33 @@ async function importCursorRows(
 ): Promise<number> {
   if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to - from > 91 * 86400_000)
     throw new Error("Cursor export range must be at most 91 days")
-  const text = ctx.fs.readRegularFile
-    ? Buffer.from(await ctx.fs.readRegularFile(file, CURSOR_EXPORT_MAX_BYTES)).toString("utf8")
-    : await ctx.fs.readFile(file)
-  const accountId = hash(account)
+  const text = await readTextLimited(ctx, file, CURSOR_EXPORT_MAX_BYTES)
+  const accountId = cursorHash(account)
   const calls = cursorExportCalls(text, accountId)
   if (calls.some((call) => call.at === null || call.at < from || call.at > to))
     throw new Error("Cursor export contains events outside the requested range")
-  const destination = join(folder(ctx), `${accountId}-cursor.jsonl`)
+  const fileName = `${accountId}-cursor.jsonl`
+  const destination = join(folder(ctx), fileName)
   const entries = (await listed(ctx, folder(ctx))).filter(
     (entry) => entry.kind === "file" && entry.name.endsWith("-cursor.jsonl"),
   )
-  if (
-    entries.length >= USAGE_IMPORT_ACCOUNTS_MAX &&
-    !entries.some((entry) => entry.name === `${accountId}-cursor.jsonl`)
-  )
+  if (entries.length >= USAGE_IMPORT_ACCOUNTS_MAX && !entries.some((e) => e.name === fileName))
     throw new Error("At most 16 Cursor account exports may be retained")
   const previous = await ctx.fs.stat?.(destination)
-  const kept: Call[] = []
-  if (await ctx.fs.exists(destination)) {
-    const old = ctx.fs.readRegularFile
-      ? Buffer.from(
-          await ctx.fs.readRegularFile(destination, USAGE_IMPORT_ACCOUNT_MAX_BYTES),
-        ).toString("utf8")
-      : await ctx.fs.readFile(destination)
-    const rows = old
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line))
-    if (rows[0]?.type !== "cursor-export" || rows[0]?.schema !== 1)
-      throw new Error("Retained Cursor export is damaged; it was not replaced")
-    const parser = cursorUsageParser()
-    parser.chunk(old)
-    const parsed = parser.finish()
-    if (parsed.length !== rows.length - 1)
-      throw new Error("Retained Cursor export is damaged; it was not replaced")
-    kept.push(...parsed.filter((call) => call.at !== null && (call.at < from || call.at > to)))
-  }
+  const kept = await readRetainedCursorCalls(ctx, destination, from, to)
   const merged = new Map(kept.concat(calls).map((call) => [call.id, call]))
   const capturedAt = ctx.clock.now()
-  const output =
-    [
-      JSON.stringify({
-        type: "cursor-export",
-        schema: 1,
-        capturedAt,
-        from,
-        to: Math.min(to, capturedAt),
-      }),
-      ...[...merged.values()].map((call) => JSON.stringify({ type: "cursor.usage", call })),
-    ].join("\n") + "\n"
+  const lines = [
+    JSON.stringify({
+      type: "cursor-export",
+      schema: 1,
+      capturedAt,
+      from,
+      to: Math.min(to, capturedAt),
+    }),
+    ...[...merged.values()].map((call) => JSON.stringify({ type: "cursor.usage", call })),
+  ]
+  const output = `${lines.join("\n")}\n`
   if (Buffer.byteLength(output) > USAGE_IMPORT_ACCOUNT_MAX_BYTES)
     throw new Error("Retained Cursor export exceeds 8 MiB; import a shorter range")
   await ctx.fs.mkdir(folder(ctx), { mode: 0o700 })
@@ -200,6 +97,19 @@ async function importCursorRows(
   return calls.length
 }
 
+const TOKEN_KEYS = Object.keys(zeroTokens()) as (keyof Call["tokens"])[]
+
+function validCursorCall(call: Call | undefined): call is Call & { id: string } {
+  if (!call || typeof call.id !== "string" || call.id.length > 256) return false
+  if (typeof call.at !== "number" || !Number.isFinite(call.at)) return false
+  if (typeof call.model !== "string" || call.model.length > 256) return false
+  if (!call.tokens) return false
+  return TOKEN_KEYS.every((key) => {
+    const n = call.tokens[key]
+    return typeof n === "number" && Number.isFinite(n) && n >= 0
+  })
+}
+
 export function cursorUsageParser(): ChunkParser {
   const calls = new Map<string, Call>()
   return {
@@ -208,21 +118,7 @@ export function cursorUsageParser(): ChunkParser {
         try {
           const row = JSON.parse(line)
           const call = row.call as Call | undefined
-          if (
-            row.type === "cursor.usage" &&
-            typeof call?.id === "string" &&
-            call.id.length <= 256 &&
-            typeof call.at === "number" &&
-            Number.isFinite(call.at) &&
-            typeof call.model === "string" &&
-            call.model.length <= 256 &&
-            call.tokens &&
-            Object.keys(zeroTokens()).every((key) => {
-              const n = call.tokens[key as keyof Call["tokens"]]
-              return typeof n === "number" && Number.isFinite(n) && n >= 0
-            })
-          )
-            calls.set(call.id, call)
+          if (row.type === "cursor.usage" && validCursorCall(call)) calls.set(call.id, call)
         } catch {
           /* Skip torn records. */
         }

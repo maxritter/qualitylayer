@@ -73,6 +73,162 @@ async function sharedLive(ctx: Ctx, root: string, name: string): Promise<boolean
   )
 }
 
+const STALE_MESSAGE =
+  "The artifact changed since you opened it. Reload its saved details and try again; your input is kept."
+
+async function readCurrentLibraryRevision(root: string, name: string): Promise<Result<string>> {
+  const now = await readLasting(root, name, { includeDeleted: true })
+  return now.ok ? libraryRevision(now.data) : now
+}
+
+async function adoptStoredIfNeeded(
+  ctx: Ctx,
+  root: string,
+  name: string,
+  change: LibraryMutation,
+): Promise<Result<LibraryMutation>> {
+  const initial = await readLasting(root, name, { includeDeleted: true })
+  if (!initial.ok) return initial
+  if (initial.data.stored !== true) return ok(change)
+  // A design stored before the rename: this change was made against it; the save goes to the artifact folder.
+  const before = await libraryRevision(initial.data)
+  if (!before.ok || before.data !== change.expected) return before.ok ? bad(STALE_MESSAGE) : before
+  const adopted = await adoptStored(root, name, ctx)
+  if (!adopted.ok) return adopted
+  const revision = await readCurrentLibraryRevision(root, name)
+  return revision.ok ? ok({ ...change, expected: revision.data }) : revision
+}
+
+async function copyLibraryArtifact(
+  ctx: Ctx,
+  sourceDir: string,
+  change: Extract<LibraryMutation, { action: "copy" }>,
+  destination: string | undefined,
+): Promise<Result<LibraryResult>> {
+  if (destination === undefined) return bad("Choose an available destination project")
+  if (await titleTaken(destination, change.title))
+    return bad("An artifact with that title already exists in the destination project")
+  const copied = await keepArtifact(ctx, destination, sourceDir, {
+    name: change.name,
+    title: change.title,
+    purpose: change.purpose,
+    where: "repository",
+  })
+  if (!copied.ok) return copied
+  const target = await readLasting(destination, change.name)
+  if (!target.ok) return target
+  const revision = await libraryRevision(target.data)
+  return revision.ok
+    ? ok({ name: change.name, revision: revision.data, result: copied.data })
+    : revision
+}
+
+type MetadataMutationContext = {
+  ctx: Ctx
+  root: string
+  name: string
+  config: Record<string, unknown>
+  change: Exclude<LibraryMutation, { action: "copy" }>
+  inUse: string[] | undefined
+}
+
+async function applyMetadataChange({
+  ctx,
+  root,
+  name,
+  config,
+  change,
+  inUse,
+}: MetadataMutationContext): Promise<Result<void>> {
+  if (change.action === "rename") {
+    const checked = parseLastingConfig(
+      JSON.stringify({ ...config, title: change.title, purpose: change.purpose }),
+    )
+    if (!checked.ok) return checked
+    if (await titleTaken(root, checked.data.title, name))
+      return bad("An artifact with that title already exists; choose another title")
+    config.title = checked.data.title
+    config.purpose = checked.data.purpose
+  } else if (change.action === "archive") {
+    config.archivedAt ??= ctx.clock.now()
+  } else if (change.action === "restore") {
+    delete config.archivedAt
+    delete config.deletedAt
+  } else {
+    if (inUse?.length && !change.confirmInUse)
+      return bad(
+        `This artifact has active drafts in ${inUse.join(", ")}. Archive it instead, or confirm deletion.`,
+      )
+    config.deletedAt = ctx.clock.now()
+  }
+  return ok(undefined)
+}
+
+async function loadExpectedLibraryEntry(
+  root: string,
+  name: string,
+  expected: string,
+): Promise<Result<{ found: LastingRead; config: Record<string, unknown> }>> {
+  const found = await readLasting(root, name, { includeDeleted: true })
+  if (!found.ok) return found
+  const current = await libraryRevision(found.data)
+  if (!current.ok) return current
+  if (current.data !== expected) return bad(STALE_MESSAGE)
+  const config = {
+    ...(JSON.parse(await readFile(join(found.data.configDir, LASTING_CONFIG), "utf8")) as Record<
+      string,
+      unknown
+    >),
+    ...found.data.config,
+  }
+  return ok({ found: found.data, config })
+}
+
+async function saveLibraryConfig(
+  ctx: Ctx,
+  root: string,
+  name: string,
+  configDir: string,
+  config: Record<string, unknown>,
+): Promise<Result<LibraryResult>> {
+  const serialized = `${JSON.stringify(config, null, 2)}\n`
+  if (Buffer.byteLength(serialized) > LASTING_CONFIG_MAX_BYTES)
+    return bad("The artifact's metadata is too large. Shorten its description before saving.")
+  await ctx.fs.atomicWrite(join(configDir, LASTING_CONFIG), serialized)
+  const revision = await readCurrentLibraryRevision(root, name)
+  return revision.ok ? ok({ name, revision: revision.data }) : revision
+}
+
+async function executeLockedMutation(
+  ctx: Ctx,
+  root: string,
+  name: string,
+  change: LibraryMutation,
+  options: { inUse?: string[]; destination?: string },
+): Promise<Result<LibraryResult>> {
+  const loaded = await loadExpectedLibraryEntry(root, name, change.expected)
+  if (!loaded.ok) return loaded
+  const { found, config } = loaded.data
+  if (config.deletedAt !== undefined && change.action !== "restore")
+    return bad("This artifact was deleted. Restore it before changing it.")
+  if (
+    (change.action === "delete" || change.action === "archive") &&
+    (await sharedLive(ctx, root, name))
+  )
+    return bad("Stop sharing first: teammates can still open and edit it.")
+  if (change.action === "copy")
+    return copyLibraryArtifact(ctx, found.dir, change, options.destination)
+  const mutated = await applyMetadataChange({
+    ctx,
+    root,
+    name,
+    config,
+    change,
+    inUse: options.inUse,
+  })
+  return mutated.ok ? saveLibraryConfig(ctx, root, name, found.configDir, config) : mutated
+}
+
 /** Library writes never move the identity folder or delete its source. The registry is the recovery record. */
 export async function manageLibrary(
   ctx: Ctx,
@@ -83,98 +239,15 @@ export async function manageLibrary(
 ): Promise<Result<LibraryResult>> {
   if (!/^[a-f0-9]{64}$/.test(change.expected))
     return bad("Read the Library artifact before changing it")
-  const initial = await readLasting(root, name, { includeDeleted: true })
-  if (!initial.ok) return initial
-  if (initial.data.stored === true) {
-    // A design stored before the rename: this change was made against it; the save goes to the artifact folder.
-    const before = await libraryRevision(initial.data)
-    if (!before.ok) return before
-    if (before.data !== change.expected)
-      return bad(
-        "The artifact changed since you opened it. Reload its saved details and try again; your input is kept.",
-      )
-    const adopted = await adoptStored(root, name, ctx)
-    if (!adopted.ok) return adopted
-    const now = await readLasting(root, name, { includeDeleted: true })
-    if (!now.ok) return now
-    const revision = await libraryRevision(now.data)
-    if (!revision.ok) return revision
-    change = { ...change, expected: revision.data }
-  }
-  const registry = join(root, LASTING_ARTIFACTS)
-  const lock = join(registry, ".library-lock")
+  const prepared = await adoptStoredIfNeeded(ctx, root, name, change)
+  if (!prepared.ok) return prepared
+  const lock = join(root, LASTING_ARTIFACTS, ".library-lock")
   const lockInfo = await lstat(lock).catch(() => null)
   if (lockInfo?.isSymbolicLink()) return bad("The library lock cannot be a symbolic link")
   try {
-    return await ctx.fs.withLock(lock, async () => {
-      const found = await readLasting(root, name, { includeDeleted: true })
-      if (!found.ok) return found
-      const current = await libraryRevision(found.data)
-      if (!current.ok) return current
-      if (current.data !== change.expected)
-        return bad(
-          "The artifact changed since you opened it. Reload its saved details and try again; your input is kept.",
-        )
-      const config = {
-        ...(JSON.parse(
-          await readFile(join(found.data.configDir, LASTING_CONFIG), "utf8"),
-        ) as Record<string, unknown>),
-        ...found.data.config,
-      }
-      if (config.deletedAt !== undefined && change.action !== "restore")
-        return bad("This artifact was deleted. Restore it before changing it.")
-      if (
-        (change.action === "delete" || change.action === "archive") &&
-        (await sharedLive(ctx, root, name))
-      )
-        return bad("Stop sharing first: teammates can still open and edit it.")
-      if (change.action === "copy") {
-        if (options.destination === undefined) return bad("Choose an available destination project")
-        if (await titleTaken(options.destination, change.title))
-          return bad("An artifact with that title already exists in the destination project")
-        const copied = await keepArtifact(ctx, options.destination, found.data.dir, {
-          name: change.name,
-          title: change.title,
-          purpose: change.purpose,
-          where: "repository",
-        })
-        if (!copied.ok) return copied
-        const target = await readLasting(options.destination, change.name)
-        if (!target.ok) return target
-        const revision = await libraryRevision(target.data)
-        return revision.ok
-          ? ok({ name: change.name, revision: revision.data, result: copied.data })
-          : revision
-      }
-      if (change.action === "rename") {
-        const checked = parseLastingConfig(
-          JSON.stringify({ ...config, title: change.title, purpose: change.purpose }),
-        )
-        if (!checked.ok) return checked
-        if (await titleTaken(root, checked.data.title, name))
-          return bad("An artifact with that title already exists; choose another title")
-        config.title = checked.data.title
-        config.purpose = checked.data.purpose
-      } else if (change.action === "archive") config.archivedAt ??= ctx.clock.now()
-      else if (change.action === "restore") {
-        delete config.archivedAt
-        delete config.deletedAt
-      } else if (change.action === "delete") {
-        if (options.inUse?.length && !change.confirmInUse)
-          return bad(
-            `This artifact has active drafts in ${options.inUse.join(", ")}. Archive it instead, or confirm deletion.`,
-          )
-        config.deletedAt = ctx.clock.now()
-      }
-      const serialized = `${JSON.stringify(config, null, 2)}\n`
-      if (Buffer.byteLength(serialized) > LASTING_CONFIG_MAX_BYTES)
-        return bad("The artifact's metadata is too large. Shorten its description before saving.")
-      await ctx.fs.atomicWrite(join(found.data.configDir, LASTING_CONFIG), serialized)
-      const saved = await readLasting(root, name, { includeDeleted: true })
-      if (!saved.ok) return saved
-      const revision = await libraryRevision(saved.data)
-      return revision.ok ? ok({ name, revision: revision.data }) : revision
-    })
+    return await ctx.fs.withLock(lock, () =>
+      executeLockedMutation(ctx, root, name, prepared.data, options),
+    )
   } catch (cause) {
     return bad(cause instanceof Error ? cause.message : "Could not save the Library change")
   }

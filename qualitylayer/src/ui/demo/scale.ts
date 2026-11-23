@@ -7,11 +7,6 @@
 // the library, the settings lists) and, for the demo task (`demo`), the
 // calls that return its documents and records, by cloning the demo's own records and multiplying
 // their list fields. The records keep the shapes the App reads; no field is invented.
-//
-// What it scales, in numbers (`LARGE`): 12 projects and about 90 tasks in every state, 15 projects with 30+ artifacts each in the Library, 150
-// lessons, 25 running sessions, 8 agents with usage, and a long list of notifications; see
-// `scale-demo-task.ts` for the task at every moment, `scale-settings.ts` for the Settings lists and
-// `scale-artifacts.ts` for the Library.
 
 import type { Api } from "../api.ts"
 import type { WalkthroughApi } from "../timeline/walkthrough-api.ts"
@@ -19,48 +14,31 @@ import { largeArtifacts } from "./scale-artifacts.ts"
 import { LARGE, largeAsked } from "./scale-counts.ts"
 import { largeDemoTask } from "./scale-demo-task.ts"
 import { largeSettings } from "./scale-settings.ts"
-import { LARGE_PROJECTS, largeTasks } from "./scale-tasks.ts"
+import { LARGE_PROJECTS, type LargeTasks, largeTasks } from "./scale-tasks.ts"
 import { DEMO_TASK_ID } from "./task/index.ts"
 
-/**
- * The API with the large data of `?scale=large`; the API itself when the address does not ask for it.
- * Calls it does not list go to the demo's own API, so every other part of the demo works as before.
- */
-export function withLargeData(api: Api, search: string): Api {
-  if (!largeAsked(search)) return api
-  const now = Date.now()
-  const world = largeTasks(now)
-  const large = largeDemoTask(api)
-  const settings = largeSettings(api, world, now)
-  const artifacts = largeArtifacts(api, now)
-  const scaled: Api & Pick<WalkthroughApi, "walkthrough"> = {
-    ...api,
+type ScaledApi = Api & Pick<WalkthroughApi, "walkthrough">
+
+function buildScaledTasks(
+  api: Api,
+  world: LargeTasks,
+  large: ReturnType<typeof largeDemoTask>,
+): Pick<Api, "projects" | "tasks" | "task" | "doc" | "sections"> {
+  return {
     projects: async () => structuredClone(LARGE_PROJECTS),
     tasks: async () => {
       const own = await api.tasks()
       return [...own.map((task) => large.summary(task)), ...world.summaries()]
     },
-    task: async (id, signal) => {
-      const generated = world.detail(id)
-      if (generated !== undefined) return generated
-      return large.task(await api.task(id, signal))
-    },
-    doc: async (id, name, signal) => {
-      const generated = world.doc(id, name)
-      if (generated !== undefined) return generated
-      return large.doc(id, name, () => api.doc(id, name, signal))
-    },
-    sections: async (id, name) => {
-      const generated = world.sections(id, name)
-      if (generated !== undefined) return generated
-      return large.sections(id, name, () => api.sections(id, name))
-    },
-    ...large.calls(),
-    ...settings,
-    ...artifacts,
+    task: async (id, signal) => world.detail(id) ?? large.task(await api.task(id, signal)),
+    doc: async (id, name, signal) =>
+      world.doc(id, name) ?? large.doc(id, name, () => api.doc(id, name, signal)),
+    sections: async (id, name) =>
+      world.sections(id, name) ?? large.sections(id, name, () => api.sections(id, name)),
   }
-  // A generated task is the demo's one task under another name: its pictures, records and change
-  // are that task's, as scaled above.
+}
+
+function lendTaskCalls(scaled: ScaledApi, world: LargeTasks): Api {
   const lend = <A extends unknown[], R>(call: ((id: string, ...rest: A) => R) | undefined) =>
     call === undefined
       ? undefined
@@ -77,6 +55,25 @@ export function withLargeData(api: Api, search: string): Api {
     ...(scaled.fileDiff && { fileDiff: lend(scaled.fileDiff) }),
     ...(scaled.walkthrough && { walkthrough: lend(scaled.walkthrough) }),
   } as Api
+}
+
+/**
+ * The API with the large data of `?scale=large`; the API itself when the address does not ask for it.
+ * Calls it does not list go to the demo's own API, so every other part of the demo works as before.
+ */
+export function withLargeData(api: Api, search: string): Api {
+  if (!largeAsked(search)) return api
+  const now = Date.now()
+  const world = largeTasks(now)
+  const large = largeDemoTask(api)
+  const scaled: ScaledApi = {
+    ...api,
+    ...buildScaledTasks(api, world, large),
+    ...large.calls(),
+    ...largeSettings(api, world, now),
+    ...largeArtifacts(api, now),
+  }
+  return lendTaskCalls(scaled, world)
 }
 
 export { LARGE, largeAsked }

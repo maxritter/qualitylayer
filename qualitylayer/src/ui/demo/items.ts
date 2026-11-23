@@ -77,9 +77,9 @@ const BUG_ITEMS = (): Item[] => [
     "plan:asked:1",
     "plan",
     "asked",
-    "decide",
     "An export of more than 100,000 rows times out after 30 seconds",
     {
+      family: "decide",
       kindLabel: "Is this the bug?",
       answers: { options: ["agree", "change"], labels: { agree: "Yes", change: "Not quite" } },
       media: {
@@ -99,7 +99,8 @@ const BUG_ITEMS = (): Item[] => [
       },
     },
   ),
-  item("plan:done:1", "plan", "done", "decide", "The checks the fix must pass", {
+  item("plan:done:1", "plan", "done", "The checks the fix must pass", {
+    family: "decide",
     kindLabel: `${KIND_LABEL.done} · 3`,
     count: 3,
     answers: { options: ["agree"] },
@@ -108,7 +109,8 @@ const BUG_ITEMS = (): Item[] => [
       "A test reproduces the timeout first and passes after the fix",
       "A 50-row export is as fast as before",
     ].map((outcome, index) =>
-      item(`plan:done:1:${index + 1}`, "plan", "done", "decide", outcome, {
+      item(`plan:done:1:${index + 1}`, "plan", "done", outcome, {
+        family: "decide",
         answers: { options: [] },
       }),
     ),
@@ -157,9 +159,9 @@ const STOP_ITEMS: Record<string, () => Item> = {
       "verify:open:sso",
       "verify",
       "found",
-      "fix",
       "A removed group still grants access after two checking runs",
       {
+        family: "fix",
         kindLabel: "Still open after checking twice",
         why: "First check: the session cache still holds the removed group for an hour · Recheck: the cache is cleared on sync, but a user with two groups keeps the removed one. The build session fixed it between the two.",
         blocking: true,
@@ -177,17 +179,16 @@ const EXPORT_ITEMS = (): Item[] => [
     "verify:confirm:done:2",
     "verify",
     "confirm",
-    "confirm",
     "A refused export shows the wait in seconds on the real page",
-    { blocking: true },
+    { family: "confirm", blocking: true },
   ),
   item(
     "verify:found:1",
     "verify",
     "found",
-    "fix",
     "A retry-after under one second reads 0 in the export dialog",
     {
+      family: "fix",
       why: "`export/dialog.tsx:48` · the header says 0.4 s; the dialog rounds it down to 0.",
     },
   ),
@@ -201,9 +202,9 @@ const SMALL_ITEMS = (): Item[] => [
     "plan:handback:1",
     "plan",
     "handback",
-    "answer",
     "Rename the heading 'Links' to 'Opening links' in docs/app.md",
     {
+      family: "answer",
       why: "One heading in one file: a plain request to your agent is faster and cheaper than a plan.",
       answers: { options: [] },
       media: {

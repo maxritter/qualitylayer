@@ -1,67 +1,26 @@
 import { createHash } from "node:crypto"
-import { cp, mkdir } from "node:fs/promises"
-import { dirname, join, sep } from "node:path"
+import { dirname } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { sessionIdentity } from "../agents/detect.ts"
-import { isNativeAgent, type NativeAgent } from "../agents/ids.ts"
-import { moveCommentDocs, readComments } from "../gate/comments.ts"
-import {
-  ARTIFACT_HISTORY_MAX_BYTES,
-  ARTIFACT_REVISIONS_KEPT,
-  ARTIFACT_SOURCE_MAX_BYTES,
-  ARTIFACT_SOURCE_TOO_LARGE,
-  capFolder,
-} from "../home-caps.ts"
-import { registeredRecordRoots } from "../records/owner.ts"
-import {
-  adoptArtifactWithRecords,
-  artifactAliasWrite,
-  moveArtifactWithRecords,
-} from "../records/record-aliases.ts"
-import { registerProject } from "../task/store.ts"
-import { readTeamComments } from "../team/comments.ts"
-import { artifactRecordOwnerAtRoot } from "./annotation-upgrade.ts"
+import { ARTIFACT_SOURCE_MAX_BYTES, ARTIFACT_SOURCE_TOO_LARGE } from "../home-caps.ts"
 import {
   ARTIFACT_NAME,
   ARTIFACT_PAGE_NAME,
   type ArtifactMeta,
   artifactMeta,
   folderArtifactOf,
-  PROJECT_ARTIFACTS,
-  STORED_PROJECT_DESIGNS,
-  STORED_TASK_DESIGNS,
-  TASK_ARTIFACTS,
-  withMeta,
-  withTitle,
 } from "./format.ts"
-import {
-  type ArtifactHome,
-  artifactFolder,
-  artifactPath,
-  artifactsInPlan,
-  commentsHolder,
-} from "./store.ts"
+import { type ArtifactHome, artifactPath } from "./store.ts"
+
+export {
+  type ArtifactAttribution,
+  type ArtifactHistory,
+  type ArtifactRevision,
+  artifactHistory,
+  keepArtifactRevision,
+} from "./workspace-history.ts"
+export { mutateArtifact } from "./workspace-mutate.ts"
 
 export type ArtifactSource = { file: string; html: string; revision: string; meta: ArtifactMeta }
-export type ArtifactAttribution = {
-  task?: { id: string; title: string }
-  session?: { id: string; agent: NativeAgent | "other" }
-}
-export type ArtifactRevision = {
-  id: string
-  file: string
-  revision: string
-  at: number
-  action: string
-  title: string
-  /** Who recorded this snapshot, not an inferred author of externally edited source. */
-  recordedBy?: ArtifactAttribution
-}
-export type ArtifactHistory = {
-  revisions: ArtifactRevision[]
-  current?: { revision: string; updated: number }
-}
-type Saved = ArtifactRevision & { html: string }
 /** Another file of the same folder artifact written with the page, guarded by the sha256 it was read with. */
 export type SiblingWrite = { path: string; expectedSha: string; content: string }
 export type ArtifactMutation =
@@ -109,7 +68,7 @@ export async function safeArtifactPath(ctx: Ctx, anchor: string, path: string): 
   }
 }
 
-async function checkedPath(ctx: Ctx, home: ArtifactHome, file: string): Promise<string> {
+export async function checkedPath(ctx: Ctx, home: ArtifactHome, file: string): Promise<string> {
   const path = artifactPath(home, file)
   // A page of a folder artifact has been checked as one by `artifactPath`; a single page's name is too.
   if (
@@ -117,18 +76,14 @@ async function checkedPath(ctx: Ctx, home: ArtifactHome, file: string): Promise<
     (folderArtifactOf(file) === null && !workspaceFile(home, file.split("/").at(-1) ?? ""))
   )
     throw new Error("Use a lower-case artifact name with letters, digits and dashes")
-  const anchor =
-    home.scope === "task" ? (home.root ?? dirname(dirname(dirname(home.dir)))) : home.root
-  await safeArtifactPath(ctx, anchor, path)
+  await safeArtifactPath(ctx, artifactAnchor(home), path)
   return path
 }
 
-const historyDir = (ctx: Ctx, home: ArtifactHome) =>
-  join(commentsHolder(ctx, home).runtimeDir, "revisions")
-const failure = (cause: unknown) =>
+export const failure = (cause: unknown) =>
   err({ code: "bad_args", message: cause instanceof Error ? cause.message : String(cause) })
 
-async function boundedRead(
+export async function boundedRead(
   ctx: Ctx,
   path: string,
   limit = ARTIFACT_SOURCE_MAX_BYTES,
@@ -148,416 +103,6 @@ export async function readArtifactSource(
   try {
     const html = await boundedRead(ctx, await checkedPath(ctx, home, file))
     return ok({ file, html, revision: sourceRevision(html), meta: artifactMeta(html) })
-  } catch (cause) {
-    return failure(cause)
-  }
-}
-
-async function history(ctx: Ctx, home: ArtifactHome): Promise<ArtifactRevision[]> {
-  const dir = historyDir(ctx, home)
-  await safeArtifactPath(ctx, ctx.home, dir)
-  const all: ArtifactRevision[] = []
-  for (const name of (await ctx.fs.readdir(dir).catch(() => [])).filter((n) =>
-    /^\d{13}-[0-9a-f]{64}\.json$/.test(n),
-  )) {
-    const path = join(dir, name)
-    await safeArtifactPath(ctx, ctx.home, path)
-    const text = await boundedRead(ctx, path, ARTIFACT_SOURCE_MAX_BYTES * 6 + 4096).catch(() => "")
-    try {
-      const saved = JSON.parse(text) as Saved
-      if (
-        typeof saved.html === "string" &&
-        typeof saved.file === "string" &&
-        typeof saved.title === "string" &&
-        typeof saved.action === "string" &&
-        saved.id === name.slice(0, -5) &&
-        saved.revision === sourceRevision(saved.html) &&
-        Number.isFinite(saved.at)
-      ) {
-        const { html: _html, recordedBy: _recordedBy, ...metadata } = saved
-        const recordedBy = validAttribution(saved.recordedBy)
-        all.push({ ...metadata, ...(recordedBy ? { recordedBy } : {}) })
-      }
-    } catch {
-      /* A malformed record does not erase the remaining history. */
-    }
-  }
-  return all.sort((a, b) => b.at - a.at || b.id.localeCompare(a.id))
-}
-
-export async function artifactHistory(
-  ctx: Ctx,
-  home: ArtifactHome,
-  file: string,
-): Promise<Result<ArtifactHistory>> {
-  try {
-    const path = await checkedPath(ctx, home, file)
-    const current = await readArtifactSource(ctx, home, file)
-    const stamp = current.ok ? await ctx.fs.stat?.(path) : null
-    return ok({
-      revisions: (await history(ctx, home)).filter((r) => r.file === file),
-      ...(current.ok
-        ? { current: { revision: current.data.revision, updated: stamp?.mtimeMs ?? 0 } }
-        : {}),
-    })
-  } catch (cause) {
-    return failure(cause)
-  }
-}
-
-export async function keepArtifactRevision(
-  ctx: Ctx,
-  home: ArtifactHome,
-  file: string,
-): Promise<Result<ArtifactSource>> {
-  const source = await readArtifactSource(ctx, home, file)
-  if (!source.ok) return source
-  try {
-    await remember(ctx, home, file, source.data.html, "shown")
-    return source
-  } catch (cause) {
-    return failure(cause)
-  }
-}
-
-async function remember(
-  ctx: Ctx,
-  home: ArtifactHome,
-  file: string,
-  html: string,
-  action: string,
-  attribute = true,
-): Promise<void> {
-  const dir = historyDir(ctx, home)
-  await safeArtifactPath(ctx, ctx.home, dir)
-  await ctx.fs.mkdir(dir)
-  const revision = sourceRevision(html)
-  const at = ctx.clock.now()
-  const id = `${at}-${sourceRevision(`${file}\n${action}\n${revision}`)}`
-  const recordedBy = attribute ? attribution(ctx, home) : undefined
-  const saved: Saved = {
-    id,
-    file,
-    revision,
-    html,
-    at,
-    action,
-    title: artifactMeta(html).title,
-    ...(recordedBy ? { recordedBy } : {}),
-  }
-  const path = join(dir, `${id}.json`)
-  await safeArtifactPath(ctx, ctx.home, path)
-  await ctx.fs.atomicWrite(path, `${JSON.stringify(saved)}\n`)
-  const saves = (n: string) => /^\d{13}-[0-9a-f]{64}\.json$/.test(n)
-  await capFolder(ctx, dir, ARTIFACT_REVISIONS_KEPT, saves)
-  // Large pages: the oldest revisions go once the folder holds more than its byte budget. The names
-  // start with their time, so they sort oldest first; the revision just written always stays.
-  const stat = ctx.fs.stat
-  if (stat === undefined) return
-  const kept = (await ctx.fs.readdir(dir).catch(() => [])).filter(saves).sort()
-  const sizes = await Promise.all(
-    kept.map(async (name) => (await stat(join(dir, name)).catch(() => null))?.size ?? 0),
-  )
-  let total = sizes.reduce((sum, size) => sum + size, 0)
-  for (let i = 0; i < kept.length - 1 && total > ARTIFACT_HISTORY_MAX_BYTES; i++) {
-    await ctx.fs.remove(join(dir, kept[i] as string)).catch(() => {})
-    total -= sizes[i] as number
-  }
-}
-
-function validAttribution(value: unknown): ArtifactAttribution | undefined {
-  if (!value || typeof value !== "object") return undefined
-  const candidate = value as ArtifactAttribution
-  const task =
-    candidate.task &&
-    typeof candidate.task.id === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}~[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(candidate.task.id) &&
-    typeof candidate.task.title === "string" &&
-    candidate.task.title.length <= 300
-      ? candidate.task
-      : undefined
-  const session =
-    candidate.session &&
-    typeof candidate.session.id === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(candidate.session.id) &&
-    (isNativeAgent(candidate.session.agent) || candidate.session.agent === "other")
-      ? candidate.session
-      : undefined
-  return task || session
-    ? { ...(task ? { task } : {}), ...(session ? { session } : {}) }
-    : undefined
-}
-
-function attribution(ctx: Ctx, home: ArtifactHome): ArtifactAttribution | undefined {
-  const task = home.provenance?.task
-  let session: ArtifactAttribution["session"]
-  if (home.provenance?.captureSession) {
-    const native = sessionIdentity(ctx.env, () => null)
-    if (native && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(native.id)) session = native
-    for (const [name, agent] of session
-      ? []
-      : ([
-          ["CODEX_SESSION_ID", "codex"],
-          ["QUALITYLAYER_SESSION", "other"],
-        ] as const)) {
-      const id = ctx.env.get(name)?.trim()
-      if (id && /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(id)) {
-        session = { id, agent }
-        break
-      }
-    }
-  }
-  return validAttribution({ task, session })
-}
-
-async function requireUnreferenced(ctx: Ctx, home: ArtifactHome, file: string): Promise<void> {
-  if (home.scope !== "task") return
-  for (const name of await ctx.fs.readdir(home.dir)) {
-    if (!/^\d{2}-[^/]+\.md$/.test(name)) continue
-    if (artifactsInPlan(await ctx.fs.readFile(join(home.dir, name))).has(file))
-      throw new Error(
-        `${file} is shown in ${name}; remove that reference before deleting or renaming it`,
-      )
-  }
-}
-
-const STORED_ROOTS: [string, string][] = [
-  [`${STORED_TASK_DESIGNS}/`, `${TASK_ARTIFACTS}/`],
-  [`${STORED_PROJECT_DESIGNS}/`, `${PROJECT_ARTIFACTS}/`],
-]
-
-/** The old root a file sits in, and the artifact root that replaces it; null for a file already in the new one. */
-function storedRoot(file: string): [string, string] | null {
-  return STORED_ROOTS.find(([old]) => file.startsWith(old)) ?? null
-}
-
-/**
- * A project artifact's records belong to its registered project: a repository no task or App has
- * registered yet is registered by its first artifact change, before anything is written.
- */
-async function ensureProjectRegistered(
-  ctx: Ctx,
-  home: Extract<ArtifactHome, { scope: "project" }>,
-): Promise<void> {
-  try {
-    await registeredRecordRoots(ctx, home.repoId)
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
-    const commonDir = await ctx.git.commonDir(home.root)
-    if (!commonDir) throw new Error("A project artifact needs a git repository")
-    await registerProject(ctx, { root: home.root, id: home.repoId, commonDir })
-  }
-}
-
-async function workspaceRecordOwner(
-  ctx: Ctx,
-  home: Extract<ArtifactHome, { scope: "project" }>,
-  file: string,
-) {
-  const selected = await artifactRecordOwnerAtRoot(ctx, home.repoId, home.root, file)
-  if (selected.fault) throw new Error("Artifact record authority is unavailable")
-  return selected.owner
-}
-
-/**
- * A design stored before the rename gets its artifact copy before a save: the file, or the whole folder
- * of a folder artifact, with its comments. The old files stay where they are. Returns the new name of
- * the file, or null when there is nothing to copy.
- */
-async function adoptStoredArtifact(
-  ctx: Ctx,
-  home: ArtifactHome,
-  file: string,
-  [old, current]: [string, string],
-  expected: string,
-): Promise<string | null> {
-  const named = folderArtifactOf(file)
-  const target = `${current}${file.slice(old.length)}`
-  const from = artifactPath(home, file)
-  const to = artifactPath(home, target)
-  if (from === null || to === null) return null
-  if (home.scope === "project") {
-    if (!(await ctx.fs.exists(from))) return null
-    await ctx.fs.mkdir(commentsHolder(ctx, home).runtimeDir)
-    await adoptArtifactWithRecords(
-      ctx,
-      await workspaceRecordOwner(ctx, home, file),
-      target,
-      expected,
-    )
-    return target
-  }
-  if (await ctx.fs.exists(to)) return target
-  if (!(await ctx.fs.exists(from))) return null
-  if (named === null) {
-    await ctx.fs.mkdir(dirname(to))
-    await ctx.fs.atomicWrite(to, await ctx.fs.readFile(from))
-  } else {
-    // A folder holds fonts and pictures: it is copied as bytes, with its times.
-    const anchor = home.dir
-    const targetDir = join(anchor, current, named.name)
-    await mkdir(dirname(targetDir), { recursive: true })
-    await cp(join(anchor, old, named.name), targetDir, {
-      recursive: true,
-      preserveTimestamps: true,
-      errorOnExist: true,
-    })
-  }
-  await moveCommentDocs(
-    ctx,
-    commentsHolder(ctx, home),
-    named === null ? file : `${old}${named.name}`,
-    named === null ? target : `${current}${named.name}`,
-  )
-  return target
-}
-
-export async function mutateArtifact(
-  ctx: Ctx,
-  home: ArtifactHome,
-  file: string,
-  change: ArtifactMutation,
-): Promise<Result<{ file: string; revision: string; deleted?: true }>> {
-  try {
-    if (home.scope === "project") await ensureProjectRegistered(ctx, home)
-    const stored = storedRoot(file)
-    if (stored !== null) {
-      // A design stored before the rename: the save goes to the artifact folder, copied from it first
-      // (its comments come along); the old files stay where they are.
-      const adopted = await adoptStoredArtifact(ctx, home, file, stored, change.expected)
-      if (adopted !== null) return mutateArtifact(ctx, home, adopted, change)
-    }
-    const path = await checkedPath(ctx, home, file)
-    const folder = artifactFolder(home)
-    await ctx.fs.mkdir(folder)
-    const lock = join(folder, ".workspace-lock")
-    await safeArtifactPath(
-      ctx,
-      home.scope === "task" ? (home.root ?? dirname(dirname(dirname(home.dir)))) : home.root,
-      lock,
-    )
-    return await ctx.fs.withLock(lock, async () => {
-      await checkedPath(ctx, home, file)
-      const old = (await ctx.fs.exists(path)) ? await boundedRead(ctx, path) : null
-      const current = old === null ? "0" : sourceRevision(old)
-      if (change.expected !== current)
-        return err({
-          code: "bad_args",
-          message:
-            "The artifact changed since it was read. Read its source and revision again before writing.",
-        })
-      if (old === null && change.action !== "write" && change.action !== "restore")
-        return err({ code: "bad_args", message: "This artifact does not exist" })
-      let nextFile = file
-      let html = old ?? ""
-      if (change.action === "write") html = change.html
-      if (change.action === "metadata") {
-        if (change.title !== undefined) html = withTitle(html, change.title)
-        if (change.purpose !== undefined) html = withMeta(html, "description", change.purpose)
-      }
-      if (change.action === "restore") {
-        if (!/^\d{13}-[0-9a-f]{64}$/.test(change.id))
-          return err({ code: "bad_args", message: "No such revision for this artifact" })
-        const stored = join(historyDir(ctx, home), `${change.id}.json`)
-        await safeArtifactPath(ctx, ctx.home, stored)
-        const saved = JSON.parse(
-          await boundedRead(ctx, stored, ARTIFACT_SOURCE_MAX_BYTES * 6 + 4096),
-        ) as Saved
-        if (
-          saved.file !== file ||
-          saved.id !== change.id ||
-          typeof saved.html !== "string" ||
-          saved.revision !== sourceRevision(saved.html)
-        )
-          return err({ code: "bad_args", message: "No such revision for this artifact" })
-        html = saved.html
-      }
-      if (change.action === "copy" || change.action === "rename") {
-        // A page of a folder artifact is copied or renamed beside itself, in its folder.
-        const target =
-          folderArtifactOf(file) !== null
-            ? siblingPage(file, change.name)
-            : workspaceFile(home, change.name)
-        if (!target)
-          return err({
-            code: "bad_args",
-            message:
-              folderArtifactOf(file) !== null
-                ? "Use a page name of letters, digits, dots and dashes, ending in .html"
-                : "Use a lower-case artifact name with letters, digits and dashes",
-          })
-        const destination = await checkedPath(ctx, home, target)
-        if (await ctx.fs.exists(destination))
-          return err({ code: "bad_args", message: "That artifact already exists" })
-        nextFile = target
-      }
-      if (Buffer.byteLength(html) > ARTIFACT_SOURCE_MAX_BYTES)
-        return err({ code: "bad_args", message: ARTIFACT_SOURCE_TOO_LARGE })
-      if (change.action !== "delete" && !/<html\b/i.test(html))
-        return err({ code: "bad_args", message: "An artifact must be a complete HTML page" })
-      if (change.action === "delete" || change.action === "rename")
-        await requireUnreferenced(ctx, home, file)
-      if (change.action === "rename" && home.scope === "task") {
-        const own = await readComments(ctx, commentsHolder(ctx, home))
-        const team = await readTeamComments(ctx, home)
-        if ([...own, ...team].some((comment) => comment.doc === file))
-          return err({
-            code: "bad_args",
-            message:
-              "Comments refer to this filename. Change the title instead, or duplicate the artifact and keep the original.",
-          })
-      }
-      // Files written with the page: all are checked against what they were read as before any is written.
-      const siblings = change.action === "write" ? (change.siblings ?? []) : []
-      for (const sibling of siblings) {
-        if (!sibling.path.startsWith(`${dirname(path)}${sep}`))
-          return err({
-            code: "bad_args",
-            message: "A linked file must sit in the artifact's folder",
-          })
-        await safeArtifactPath(
-          ctx,
-          home.scope === "task" ? (home.root ?? dirname(dirname(dirname(home.dir)))) : home.root,
-          sibling.path,
-        )
-        const now = await boundedRead(ctx, sibling.path, 4 * 1024 * 1024).catch(() => null)
-        if (now === null || sourceRevision(now) !== sibling.expectedSha)
-          return err({
-            code: "bad_args",
-            message: `${sibling.path.slice(dirname(path).length + 1)} changed since it was read. Nothing was written; check the tokens again.`,
-          })
-      }
-      if (old !== null) await remember(ctx, home, file, old, change.action, false)
-      for (const sibling of siblings) await ctx.fs.atomicWrite(sibling.path, sibling.content)
-      if (change.action === "delete") {
-        await ctx.fs.remove(path)
-        return ok({ file, revision: "0", deleted: true as const })
-      }
-      const destination = await checkedPath(ctx, home, nextFile)
-      if (folderArtifactOf(nextFile) !== null) await ctx.fs.mkdir(dirname(destination))
-      if (change.action === "rename" && home.scope === "project") {
-        await moveArtifactWithRecords(
-          ctx,
-          await workspaceRecordOwner(ctx, home, file),
-          nextFile,
-          current,
-        )
-      } else {
-        const write = () => ctx.fs.atomicWrite(destination, html)
-        if (home.scope === "project" && old !== null && nextFile === file)
-          await artifactAliasWrite(ctx, await workspaceRecordOwner(ctx, home, file), {
-            content: html,
-            expected: current,
-            write,
-          })
-        else await write()
-        if (change.action === "rename") await ctx.fs.remove(path)
-      }
-      await remember(ctx, home, nextFile, html, change.action === "restore" ? "restored" : "saved")
-      const written = await boundedRead(ctx, destination)
-      if (written !== html) throw new Error("The artifact could not be verified after writing")
-      return ok({ file: nextFile, revision: sourceRevision(written) })
-    })
   } catch (cause) {
     return failure(cause)
   }

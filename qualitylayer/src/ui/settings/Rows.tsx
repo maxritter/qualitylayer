@@ -140,6 +140,49 @@ export function SettingsMore({
   )
 }
 
+type ChoiceOption<T extends string> = {
+  id: T
+  name: string
+  recommended?: boolean
+  icon?: ReactNode
+  disabled?: boolean
+  why?: string
+  /** What the option means, as its hover title. */
+  hint?: string
+  /** A font family to draw this option in (Settings › Appearance › Font shows each face). */
+  font?: string
+}
+
+const CHOICE_STEPS: Record<string, 1 | -1> = {
+  ArrowRight: 1,
+  ArrowDown: 1,
+  ArrowLeft: -1,
+  ArrowUp: -1,
+}
+
+function nextChoiceIndex<T extends string>(
+  options: ChoiceOption<T>[],
+  from: number,
+  key: string,
+): number | null {
+  const can = (i: number) => options[i]?.disabled !== true
+  if (key === "Home") return options.findIndex((_, i) => can(i))
+  if (key === "End") return options.findLastIndex((_, i) => can(i))
+  const step = CHOICE_STEPS[key]
+  if (step === undefined) return null
+  const count = options.length
+  for (let n = 1; n <= count; n++) {
+    const i = (((from + step * n) % count) + count) % count
+    if (can(i)) return i
+  }
+  return null
+}
+
+function choiceTitle<T extends string>(option: ChoiceOption<T>): string | undefined {
+  if (option.disabled) return option.why
+  return option.hint ?? (option.recommended ? DEFAULT_NOTE : undefined)
+}
+
 /**
  * A few options of which one is on, saved at once: a radio group whose arrow keys move and pick,
  * with Tab stopping on the chosen one only.
@@ -156,18 +199,7 @@ export function Choice<T extends string>({
   /** Null: nothing is chosen yet, so no option is on. */
   value: T | null
   /** A `disabled` option stays visible and is never picked; `why` is its reason for the hover title. */
-  options: {
-    id: T
-    name: string
-    recommended?: boolean
-    icon?: ReactNode
-    disabled?: boolean
-    why?: string
-    /** What the option means, as its hover title. */
-    hint?: string
-    /** A font family to draw this option in (Settings › Appearance › Font shows each face). */
-    font?: string
-  }[]
+  options: ChoiceOption<T>[]
   onChange: (value: T) => void
   testId?: string
   harness?: boolean
@@ -175,25 +207,7 @@ export function Choice<T extends string>({
   const buttons = useRef<(HTMLButtonElement | null)[]>([])
   const stop = tabStop(options, value)
   const move = (event: KeyboardEvent<HTMLButtonElement>, from: number) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
-    const can = (i: number) => options[i]?.disabled !== true
-    const count = options.length
-    // The arrows pass over a disabled option and land on the next one that can be picked.
-    const walk = (by: number) => {
-      for (let n = 1; n <= count; n++) {
-        const i = (((from + by * n) % count) + count) % count
-        if (can(i)) return i
-      }
-      return null
-    }
-    const at =
-      event.key === "Home"
-        ? options.findIndex((_, i) => can(i))
-        : event.key === "End"
-          ? options.findLastIndex((_, i) => can(i))
-          : step === undefined
-            ? null
-            : walk(step)
+    const at = nextChoiceIndex(options, from, event.key)
     if (at === null || at < 0) return
     event.preventDefault()
     const next = options[at]
@@ -220,11 +234,7 @@ export function Choice<T extends string>({
           data-secondary={(harness && (option.id === "other" || option.id === "auto")) || undefined}
           aria-checked={value === option.id}
           aria-disabled={option.disabled || undefined}
-          title={
-            option.disabled
-              ? option.why
-              : (option.hint ?? (option.recommended ? DEFAULT_NOTE : undefined))
-          }
+          title={choiceTitle(option)}
           tabIndex={stop === option.id ? 0 : -1}
           style={option.font === undefined ? undefined : { fontFamily: option.font }}
           onClick={() => {

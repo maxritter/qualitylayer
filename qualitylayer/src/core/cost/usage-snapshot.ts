@@ -1,6 +1,12 @@
 import type { AgentLimits } from "../limits/index.ts"
 import type { UsageDisplay } from "../usage-display.ts"
-import { dailyMoney, readingOptions, readingText, selectedReadings } from "./display.ts"
+import {
+  dailyMoney,
+  type ReadingOption,
+  readingOptions,
+  readingText,
+  selectedReadings,
+} from "./display.ts"
 import type { Usage } from "./usage.ts"
 import { limitsAtTime, type UsageMenu, usageMenu } from "./usage-menu.ts"
 
@@ -12,6 +18,24 @@ export type UsageSnapshot = {
   checkedAt: number | null
   partial: boolean
   menu: UsageMenu | null
+}
+
+function trayItemForChoice(choice: ReadingOption, preferences: UsageDisplay): UsageTrayItem {
+  const text = readingText(choice, preferences)
+  const suffix = choice.kind === "limit" && text !== "credits" ? ` ${preferences.percent}` : ""
+  const reset = choice.window?.resetsAt
+  const resetPart =
+    reset !== undefined && reset !== null ? ` · resets ${new Date(reset).toLocaleString()}` : ""
+  const description = `${choice.name} · ${choice.label} · ${text}${suffix}${resetPart}`
+  return { icon: choice.agent, text, description }
+}
+
+function oldestCheckedAt(shown: readonly AgentLimits[], usage: Usage | null): number | null {
+  const times = shown.flatMap((agent) =>
+    agent.state === "reported" && agent.at !== null ? [agent.at] : [],
+  )
+  if (usage) times.push(usage.to)
+  return times.length ? Math.min(...times) : null
 }
 
 export function usageSnapshot(
@@ -34,29 +58,23 @@ export function usageSnapshot(
     }
   const shown = limitsAtTime(limits, now)
   const choices = selectedReadings(preferences, readingOptions(shown, usage, now))
-  const items = choices.map((choice): UsageTrayItem => {
-    const text = readingText(choice, preferences)
-    const reset = choice.window?.resetsAt
-    const description = `${choice.name} · ${choice.label} · ${text}${choice.kind === "limit" && text !== "credits" ? ` ${preferences.percent}` : ""}${reset !== undefined && reset !== null ? ` · resets ${new Date(reset).toLocaleString()}` : ""}`
-    return { icon: choice.agent, text, description }
-  })
+  const choiceItems = choices.map((choice) => trayItemForChoice(choice, preferences))
   const money = dailyMoney(usage, preferences.money, now)
   const totalText = money.usd === null ? "?" : `$${money.usd.toFixed(2)}`
-  const totalDescription = `Today · ${preferences.money === "value" ? "all priced usage at API prices, not a bill" : "API spend"} · ${totalText}`
-  if (preferences.total)
-    items.unshift({ icon: "coins", text: totalText, description: totalDescription })
-  const times = shown.flatMap((agent) =>
-    agent.state === "reported" && agent.at !== null ? [agent.at] : [],
-  )
-  if (usage) times.push(usage.to)
+  const totalLabel =
+    preferences.money === "value" ? "all priced usage at API prices, not a bill" : "API spend"
+  const totalDescription = `Today · ${totalLabel} · ${totalText}`
+  const items = preferences.total
+    ? [{ icon: "coins", text: totalText, description: totalDescription }, ...choiceItems]
+    : choiceItems
   return {
     enabled: true,
     items,
     details: [
-      ...choices.map((_, index) => items[index + (preferences.total ? 1 : 0)]!.description),
+      ...choiceItems.map((item) => item.description),
       ...(preferences.total ? [totalDescription] : []),
     ],
-    checkedAt: times.length ? Math.min(...times) : null,
+    checkedAt: oldestCheckedAt(shown, usage),
     partial: preferences.total && money.partial,
     menu,
   }

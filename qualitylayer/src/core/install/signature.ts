@@ -72,6 +72,39 @@ function rawKeyOf(line: string): Uint8Array {
   return raw
 }
 
+type ParsedSshSig = {
+  signedBy: Uint8Array
+  namespace: Uint8Array
+  reserved: Uint8Array
+  algorithm: "sha256" | "sha512"
+  rawSig: Uint8Array
+}
+
+function parseSshSig(armoredSignature: string): ParsedSshSig | null {
+  const match =
+    /^-----BEGIN SSH SIGNATURE-----\r?\n([A-Za-z0-9+/=\r\n]+?)\r?\n-----END SSH SIGNATURE-----\s*$/.exec(
+      armoredSignature.trim(),
+    )
+  if (match?.[1] === undefined) return null
+  const blob = new Wire(Buffer.from(match[1].replace(/\s+/g, ""), "base64"))
+  if (text(blob.take(6)) !== "SSHSIG" || blob.uint32() !== 1) return null
+  const signedBy = blob.string()
+  const namespace = blob.string()
+  const reserved = blob.string()
+  const algorithm = text(blob.string())
+  const signature = new Wire(blob.string())
+  const validOuter =
+    blob.done &&
+    text(namespace) === RELEASE_NAMESPACE &&
+    reserved.length === 0 &&
+    (algorithm === "sha256" || algorithm === "sha512")
+  if (!validOuter || text(signature.string()) !== "ssh-ed25519") return null
+  const rawSig = signature.string()
+  return rawSig.length === 64 && signature.done
+    ? { signedBy, namespace, reserved, algorithm, rawSig }
+    : null
+}
+
 /**
  * Whether `armoredSignature` (the contents of a `.sig` file) is `publicKey`'s SSHSIG over
  * `message` in the release namespace. A malformed signature or key is a plain false.
@@ -82,35 +115,18 @@ export function verifyReleaseSignature(
   publicKey: string = RELEASE_SIGNER,
 ): boolean {
   try {
-    const match =
-      /^-----BEGIN SSH SIGNATURE-----\r?\n([A-Za-z0-9+/=\r\n]+?)\r?\n-----END SSH SIGNATURE-----\s*$/.exec(
-        armoredSignature.trim(),
-      )
-    if (match?.[1] === undefined) return false
-    const blob = new Wire(Buffer.from(match[1].replace(/\s+/g, ""), "base64"))
-    if (text(blob.take(6)) !== "SSHSIG" || blob.uint32() !== 1) return false
-    const signedBy = blob.string()
-    const namespace = blob.string()
-    const reserved = blob.string()
-    const algorithm = text(blob.string())
-    const signature = new Wire(blob.string())
-    if (!blob.done) return false
-
+    const parsed = parseSshSig(armoredSignature)
+    if (parsed === null) return false
     const allowed = rawKeyOf(publicKey)
-    if (!Buffer.from(signedBy).equals(wire(Buffer.from("ssh-ed25519"), allowed))) return false
-    if (text(namespace) !== RELEASE_NAMESPACE || reserved.length !== 0) return false
-    if (algorithm !== "sha256" && algorithm !== "sha512") return false
-    if (text(signature.string()) !== "ssh-ed25519") return false
-    const raw = signature.string()
-    if (raw.length !== 64 || !signature.done) return false
-
+    if (!Buffer.from(parsed.signedBy).equals(wire(Buffer.from("ssh-ed25519"), allowed)))
+      return false
     const signed = Buffer.concat([
       MAGIC,
       wire(
-        namespace,
-        reserved,
-        Buffer.from(algorithm),
-        createHash(algorithm).update(message).digest(),
+        parsed.namespace,
+        parsed.reserved,
+        Buffer.from(parsed.algorithm),
+        createHash(parsed.algorithm).update(message).digest(),
       ),
     ])
     const key = createPublicKey({
@@ -118,7 +134,7 @@ export function verifyReleaseSignature(
       format: "der",
       type: "spki",
     })
-    return verify(null, signed, key, raw)
+    return verify(null, signed, key, parsed.rawSig)
   } catch {
     return false
   }

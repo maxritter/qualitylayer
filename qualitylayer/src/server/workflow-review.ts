@@ -52,6 +52,41 @@ export function ownsWorkflowAnchor(projection: WorkflowProjection, anchor: DiffA
   return part !== null && (anchor.side === "old" ? part.before : part.after) !== null
 }
 
+async function readVerifiedSource(
+  ctx: Ctx,
+  task: Task,
+  request: SourceRequest,
+  options: Parameters<typeof workflowChanges>[2],
+  source: NonNullable<ReturnType<typeof ownedPartOf>>["before" | "after"],
+): Promise<Result<ReviewFileSource>> {
+  if (!source) {
+    return err({
+      code: "bad_args",
+      message: "This side of the file does not exist. Read its diff instead.",
+    })
+  }
+  try {
+    const content =
+      source.kind === "git"
+        ? await committedSource(ctx, task, source)
+        : await workingSource(ctx, source.hash)
+    const current = await workflowProjection(ctx, task, options)
+    if (!current.ok) return current
+    if (!ownedPartOf(current.data, request.path, request.stamp)) {
+      return err({
+        code: "bad_args",
+        message: "This file version changed while it was read. Refresh the change.",
+      })
+    }
+    return ok({ ...request, content })
+  } catch {
+    return err({
+      code: "bad_args",
+      message: "This source is unavailable or exceeds the file reading limit.",
+    })
+  }
+}
+
 /** Historical source is authorized by its workflow record, never by an arbitrary object hash. */
 export async function workflowReviewSource(
   ctx: Ctx,
@@ -69,28 +104,5 @@ export async function workflowReviewSource(
       message: "This file version is not available in this workflow. Refresh the change.",
     })
   const source = request.side === "old" ? part.before : part.after
-  if (!source)
-    return err({
-      code: "bad_args",
-      message: "This side of the file does not exist. Read its diff instead.",
-    })
-  try {
-    const content =
-      source.kind === "git"
-        ? await committedSource(ctx, task, source)
-        : await workingSource(ctx, source.hash)
-    const current = await workflowProjection(ctx, task, options)
-    if (!current.ok) return current
-    if (!ownedPartOf(current.data, request.path, request.stamp))
-      return err({
-        code: "bad_args",
-        message: "This file version changed while it was read. Refresh the change.",
-      })
-    return ok({ ...request, content })
-  } catch {
-    return err({
-      code: "bad_args",
-      message: "This source is unavailable or exceeds the file reading limit.",
-    })
-  }
+  return readVerifiedSource(ctx, task, request, options, source)
 }

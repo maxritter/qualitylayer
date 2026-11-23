@@ -137,6 +137,48 @@ function rowOf(props: AgentRowsProps, agent: NativeAgent, health: AgentHealth | 
   return { state, status }
 }
 
+function exceptionPhrase(status: Standing): string {
+  if (status.missing) return "is not installed"
+  return status.outOfDate ? "is out of date" : "needs attention"
+}
+
+function AgentExceptionLine({
+  agent,
+  name,
+  status,
+  repairing,
+  onRepair,
+  onCopy,
+}: {
+  agent: NativeAgent
+  name: string
+  status: Standing
+  repairing?: NativeAgent | null
+  onRepair?: (agent: NativeAgent) => void
+  onCopy?: (text: string) => unknown
+}) {
+  return (
+    <p className="q-onb-agent-ex" data-warn={status.warn || undefined}>
+      {status.warn ? <TriangleAlertIcon className="size-3.5" aria-hidden="true" /> : null}
+      <span>
+        {name} {exceptionPhrase(status)}
+      </span>
+      {status.missing ? <InstallAction agent={agent} onCopy={onCopy ?? (() => undefined)} /> : null}
+      {status.outOfDate && onRepair !== undefined ? (
+        <button
+          type="button"
+          className="q-link"
+          disabled={repairing === agent}
+          aria-label={`Repair ${name}`}
+          onClick={() => onRepair(agent)}
+        >
+          {repairing === agent ? "Repairing…" : "Repair"}
+        </button>
+      ) : null}
+    </p>
+  )
+}
+
 /**
  * One agent: a tile with its brand mark alone, an amber dot while it needs the person, dimmed while it is
  * not installed. Its name and where it stands are the tile's accessible name, tooltip and screen-reader
@@ -187,31 +229,14 @@ function AgentRow({
         <RowHelp agent={agent} health={health} status={status} note={state.detail} />
       </Popover>
       {exception ? (
-        <p className="q-onb-agent-ex" data-warn={status.warn || undefined}>
-          {status.warn ? <TriangleAlertIcon className="size-3.5" aria-hidden="true" /> : null}
-          <span>
-            {name}{" "}
-            {status.missing
-              ? "is not installed"
-              : status.outOfDate
-                ? "is out of date"
-                : "needs attention"}
-          </span>
-          {status.missing ? (
-            <InstallAction agent={agent} onCopy={onCopy ?? (() => undefined)} />
-          ) : null}
-          {status.outOfDate && onRepair !== undefined ? (
-            <button
-              type="button"
-              className="q-link"
-              disabled={repairing === agent}
-              aria-label={`Repair ${name}`}
-              onClick={() => onRepair(agent)}
-            >
-              {repairing === agent ? "Repairing…" : "Repair"}
-            </button>
-          ) : null}
-        </p>
+        <AgentExceptionLine
+          agent={agent}
+          name={name}
+          status={status}
+          repairing={repairing}
+          onRepair={onRepair}
+          onCopy={onCopy}
+        />
       ) : null}
     </div>
   )

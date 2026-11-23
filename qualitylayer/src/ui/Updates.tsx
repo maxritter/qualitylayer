@@ -6,16 +6,15 @@
 // App installs only on Restart and update.
 
 import { DownloadIcon } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { type ReactNode, useCallback, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { RELEASE_REPO, type Release } from "../core/update/notes.ts"
 import { releaseOf } from "../core/update/versions.ts"
-import { releasedWords, type UpdateWait, updateWait } from "../core/update/wait.ts"
+import { updateWait } from "../core/update/wait.ts"
 import type { Api, UpdateInfo } from "./api.ts"
 import { useQuery } from "./hooks.ts"
-import { WhoMark } from "./kit/WhoMark.tsx"
-import { ReleaseNotes } from "./ReleaseNotes.tsx"
+import { useUpdatedToast, useUpdateStateTracking } from "./updates-effects.ts"
+import { releasesWord, UpdateBar, UpdateSheet } from "./updates-sheet.tsx"
 
 export const RELEASES_URL = `https://github.com/${RELEASE_REPO}/releases/tag`
 export const DOWNLOAD_URL = "https://qualitylayer.dev/download"
@@ -23,23 +22,23 @@ export const DOWNLOAD_URL = "https://qualitylayer.dev/download"
 /** `12.0.0-beta.14` is `beta.14` in a line that has little room; a release keeps its number. */
 export const shortVersion = (version: string): string => version.replace(/^\d+\.\d+\.\d+-/, "")
 
+const FAILURE_REASONS: Record<string, string> = {
+  signature:
+    "The download could not be checked against QualityLayer's signature, so nothing was changed.",
+  network: "The network stopped before the download finished, so nothing was changed.",
+  download: "The download did not finish, so nothing was changed.",
+  install: "The App could not be replaced, so nothing was changed.",
+}
+
 /** What the failure code says happened; only a failed restart comes after a change. */
 export function failureSentence(code: string | undefined, current: string): string {
-  const kept = `You still have ${current}.`
-  switch (code) {
-    case "signature":
-      return `The download could not be checked against QualityLayer's signature, so nothing was changed. ${kept}`
-    case "network":
-      return `The network stopped before the download finished, so nothing was changed. ${kept}`
-    case "download":
-      return `The download did not finish, so nothing was changed. ${kept}`
-    case "restart":
-      return "The update was installed, but QualityLayer could not restart. Quit and open it again to finish."
-    case "install":
-      return `The App could not be replaced, so nothing was changed. ${kept}`
-    default:
-      return `Something went wrong while updating, so nothing was changed. ${kept}`
+  if (code === "restart") {
+    return "The update was installed, but QualityLayer could not restart. Quit and open it again to finish."
   }
+  const prefix =
+    (code !== undefined ? FAILURE_REASONS[code] : undefined) ??
+    "Something went wrong while updating, so nothing was changed."
+  return `${prefix} You still have ${current}.`
 }
 
 /** "Waiting for 2 agent commands to finish"; without a count, the commands are still running. */
@@ -73,8 +72,6 @@ export type ReportUpdate = {
   managed: boolean
   restart: () => void
 }
-
-const releasesWord = (count: number) => `${count} ${count === 1 ? "release" : "releases"}`
 
 export type Updates = {
   info: UpdateInfo | null
@@ -123,8 +120,6 @@ export function useUpdates({
     [version],
   )
   const info = query.data
-  // How old the release is and how far behind the person is: read once an update is ready, from the release list
-  // (a local copy answers offline). Without a date the update stays a quiet line.
   const releases = useQuery<Release[]>(
     () =>
       lineShows(info) && typeof api.releases === "function"
@@ -140,55 +135,19 @@ export function useUpdates({
   const [checking, setChecking] = useState(false)
   const [checkStalled, setCheckStalled] = useState(false)
   const checkedAt = useRef<number | null>(null)
-  const state = useRef<string | null>(null)
-  const told = useRef(new Set<string>())
 
-  // A failure the person sees happen shows its sheet; an old one in update.json does not pop up on every start.
-  useEffect(() => {
-    const was = state.current
-    const now = info?.state ?? null
-    state.current = now
-    const running = was === "waiting" || was === "installing"
-    if (now === "failed" && (running || asked)) {
-      setOpen(true)
-      if (running) setAsked(false)
-    }
-    if ((now === "ready" || now === "idle") && (running || was === "failed")) setAsked(false)
-    if (info?.available === null) setAsked(false)
-  }, [info?.state, info?.available, asked])
-
-  useEffect(() => {
-    if (info === null || !checking) return
-    if (info.checkedAt !== checkedAt.current) setChecking(false)
-  }, [info, checking])
-
-  // A Check now the shell never reads (the App is closed, this is a browser tab) must not wait forever.
-  useEffect(() => {
-    if (!checking) return
-    const timer = setTimeout(() => {
-      setChecking(false)
-      setCheckStalled(true)
-    }, answerWaitMs)
-    return () => clearTimeout(timer)
-  }, [checking, answerWaitMs])
-
-  // Back where you were: the shell opens the page with ?updated=<version> and notes it in update.json.
-  useEffect(() => {
-    const url = new URL(window.location.href)
-    const named = url.searchParams.get("updated")
-    const updated = named ?? info?.updated
-    if (updated === undefined || updated === null || told.current.has(updated)) return
-    if (named === null && info === null) return
-    told.current.add(updated)
-    if (named !== null) {
-      url.searchParams.delete("updated")
-      window.history.replaceState(null, "", url.toString())
-    }
-    toast.success(`Updated to ${updated}. You are back where you were.`, {
-      duration: 10_000,
-      action: { label: "What's new", onClick: openAbout },
-    })
-  }, [info, openAbout])
+  useUpdateStateTracking({
+    info,
+    asked,
+    checking,
+    checkedAt,
+    answerWaitMs,
+    setOpen,
+    setAsked,
+    setChecking,
+    setCheckStalled,
+  })
+  useUpdatedToast(info, openAbout)
 
   const reload = query.reload
   const act = useCallback(
@@ -216,8 +175,6 @@ export function useUpdates({
     void act("check")
   }
 
-  // The quiet line while the release is fresh (or its age is unknown); the bar once it has waited.
-  // A waiting, installing or failed update keeps the line, so its sheet can be reopened.
   const wait = lineShows(info)
     ? updateWait(info.current, info.available, releases.data ?? [], now())
     : null
@@ -269,7 +226,6 @@ export function useUpdates({
         answerWaitMs={answerWaitMs}
         onOpenChange={(next) => {
           setOpen(next)
-          // A sheet put away is no longer waiting for the shell's answer.
           if (!next) setAsked(false)
         }}
         onRestart={restart}
@@ -296,63 +252,6 @@ export function useUpdates({
   }
 }
 
-/** The bar above the page: which version is ready, how far behind the person is, and the two ways forward. */
-function UpdateBar({
-  info,
-  wait,
-  onWhatsNew,
-  onLater,
-  onRestart,
-}: {
-  info: UpdateInfo & { available: string }
-  wait: UpdateWait
-  onWhatsNew: () => void
-  onLater: () => void
-  onRestart: () => void
-}) {
-  const facts = [
-    `You have ${releaseOf(info.current)}`,
-    wait.behind === null ? null : `${releasesWord(wait.behind)} behind`,
-    wait.days === null ? null : releasedWords(wait.days),
-  ]
-    .filter((part) => part !== null)
-    .join(" · ")
-  return (
-    <section
-      className="q-upbar"
-      data-level={wait.level}
-      aria-label="Update ready"
-      data-testid="update-bar"
-    >
-      <DownloadIcon className="q-upbar-ic" aria-hidden="true" />
-      <div className="q-upbar-text">
-        <b className="q-upbar-title">
-          QualityLayer {info.available} is {info.managed ? "ready" : "out"}
-        </b>
-        <span className="q-upbar-facts">{facts}</span>
-      </div>
-      <div className="q-upbar-act">
-        <button type="button" className="q-link" onClick={onWhatsNew}>
-          What's new
-        </button>
-        <button type="button" className="q-btn sm" onClick={onLater}>
-          Later
-        </button>
-        {info.managed ? (
-          <button
-            type="button"
-            className="q-btn sm primary"
-            onClick={onRestart}
-            data-testid="update-bar-restart"
-          >
-            Restart and update
-          </button>
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
 /** What a bug report says when a newer version is ready; the sheet shows it above the form. */
 export function ReportUpdateNote({ update }: { update: ReportUpdate }) {
   const since = update.behind === null ? "" : `${releasesWord(update.behind)} since yours. `
@@ -376,234 +275,5 @@ export function ReportUpdateNote({ update }: { update: ReportUpdate }) {
         </button>
       ) : null}
     </div>
-  )
-}
-
-function Step({ who, children }: { who: "done" | "agent" | "todo"; children: ReactNode }) {
-  return (
-    <li className="flex items-start gap-2.5">
-      <WhoMark who={who} running={who === "agent"} className="mt-[5px]" />
-      <span>{children}</span>
-    </li>
-  )
-}
-
-function Head({ title, line }: { title: string; line: string }) {
-  return (
-    <header className="grid gap-1 border-b border-line px-5 pt-5 pb-3.5">
-      <DialogTitle className="m-0 text-[17px] leading-snug font-semibold">{title}</DialogTitle>
-      <DialogDescription className="m-0 text-[13.5px] text-muted-foreground">
-        {line}
-      </DialogDescription>
-    </header>
-  )
-}
-
-function UpdateSheet({
-  info,
-  open,
-  asked,
-  askToken,
-  answerWaitMs,
-  onOpenChange,
-  onRestart,
-  onLater,
-  onCancel,
-  onTryAgain,
-}: {
-  info: UpdateInfo & { available: string }
-  open: boolean
-  asked: boolean
-  askToken: number
-  answerWaitMs: number
-  onOpenChange: (open: boolean) => void
-  onRestart: () => void
-  onLater: () => void
-  onCancel: () => void
-  onTryAgain: () => void
-}) {
-  const [notes, setNotes] = useState(false)
-  const release = `${RELEASES_URL}/v${info.available}`
-  // The request is only a file the shell reads: until it moves the state on, the shell has not answered.
-  const installing = info.state === "installing"
-  const pending =
-    asked && (info.state === "ready" || info.state === "idle" || info.state === "failed")
-  const waiting = info.state === "waiting"
-  const failed = info.state === "failed" && !asked
-  const width = installing || pending ? "sm:max-w-[440px]" : "sm:max-w-[560px]"
-  const [silent, setSilent] = useState(false)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new request (askToken) restarts the wait
-  useEffect(() => {
-    setSilent(false)
-    if (!pending) return
-    const timer = setTimeout(() => setSilent(true), answerWaitMs)
-    return () => clearTimeout(timer)
-  }, [pending, askToken, answerWaitMs])
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className={`top-[max(24px,8vh)] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 ${width}`}
-        showCloseButton={false}
-        data-testid="update-sheet"
-      >
-        {failed ? (
-          <>
-            <header className="grid gap-1.5 px-5 pt-5 pb-3.5">
-              <DialogTitle className="m-0 text-[17px] leading-snug font-semibold">
-                The update did not finish
-              </DialogTitle>
-              <DialogDescription
-                className="m-0 text-[13.5px] text-muted-foreground"
-                data-testid="update-failure"
-              >
-                {failureSentence(info.error, info.current)}
-              </DialogDescription>
-            </header>
-            <footer className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-              <a className="q-link" href={DOWNLOAD_URL} target="_blank" rel="noopener noreferrer">
-                Download from qualitylayer.dev
-              </a>
-              <div className="flex gap-2">
-                <button type="button" className="q-btn quiet" onClick={() => onOpenChange(false)}>
-                  Close
-                </button>
-                <button type="button" className="q-btn primary" onClick={onTryAgain}>
-                  Try again
-                </button>
-              </div>
-            </footer>
-          </>
-        ) : pending && silent ? (
-          <>
-            <Head title="The App did not answer" line="Open the QualityLayer App and try again." />
-            <footer
-              className="flex items-center justify-end gap-2 border-t border-line bg-sunken px-5 py-3"
-              data-testid="update-silent"
-            >
-              <button type="button" className="q-btn quiet" onClick={() => onOpenChange(false)}>
-                Close
-              </button>
-              <button type="button" className="q-btn primary" onClick={onTryAgain}>
-                Try again
-              </button>
-            </footer>
-          </>
-        ) : pending ? (
-          <>
-            <Head title={`Updating to ${info.available}`} line="Asking the App to update…" />
-            <ul
-              className="m-0 grid list-none gap-2.5 px-5 py-4 text-[13.5px]"
-              data-testid="update-asking"
-            >
-              <Step who="agent">Asking the App to update</Step>
-            </ul>
-          </>
-        ) : installing ? (
-          <>
-            <Head
-              title={`Updating to ${info.available}`}
-              line="The App closes in a moment and opens again here."
-            />
-            <ul
-              className="m-0 grid list-none gap-2.5 px-5 py-4 text-[13.5px]"
-              data-testid="update-steps"
-            >
-              <Step who="done">Downloaded and signature checked</Step>
-              <Step who="done">New agent commands wait a few seconds</Step>
-              <Step who="agent">Replacing the App</Step>
-              <Step who="todo">Opening {info.available}</Step>
-            </ul>
-          </>
-        ) : waiting ? (
-          <>
-            <Head
-              title={`QualityLayer ${info.available} is ready`}
-              line="On Windows a running command keeps its program file, so the update waits for them."
-            />
-            <div className="grid gap-3 px-5 py-4 text-[13.5px]">
-              <ul className="m-0 grid list-none gap-2.5" data-testid="update-waiting">
-                <li className="flex items-center gap-2.5">
-                  <WhoMark who="agent" running />
-                  <span>{waitingWords(info.waitingFor)}</span>
-                  <span className="q-dim ml-auto text-[13px]">checked every 30 s</span>
-                </li>
-                <Step who="todo">Then the App closes and opens again by itself</Step>
-              </ul>
-              <p className="q-dim m-0 text-[13px]">
-                Nothing is stopped for the update. You can keep using the App meanwhile.
-              </p>
-              {notes && info.notes !== null ? <ReleaseNotes notes={info.notes} /> : null}
-            </div>
-            <footer className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-              <button type="button" className="q-link" onClick={() => setNotes((was) => !was)}>
-                {notes ? "Hide what's new" : "What's new"}
-              </button>
-              <button type="button" className="q-btn quiet" onClick={onCancel}>
-                Cancel the update
-              </button>
-            </footer>
-          </>
-        ) : (
-          <>
-            <Head
-              title={`QualityLayer ${info.available} is ready`}
-              line={
-                info.managed
-                  ? `You have ${info.current}. Downloaded and checked; installing takes a few seconds.`
-                  : `You have ${info.current}.`
-              }
-            />
-            <div className="grid max-h-[min(60vh,520px)] gap-4 overflow-y-auto px-5 py-4">
-              {info.notes !== null ? <ReleaseNotes notes={info.notes} /> : null}
-              {info.managed ? (
-                <ul
-                  className="m-0 grid list-none gap-2 rounded-lg border border-line px-3.5 py-3 text-[13.5px]"
-                  data-testid="update-happens"
-                >
-                  <Step who="done">The App closes and opens again by itself, on this page.</Step>
-                  <Step who="agent">
-                    Your agents keep working. Running commands finish on {info.current}; the next
-                    ones use {info.available}.
-                  </Step>
-                  <Step who="todo">
-                    Nothing to set up again: skills, hooks and the Claude Code band update with it.
-                  </Step>
-                </ul>
-              ) : (
-                <p className="m-0 text-[13.5px]" data-testid="update-command">
-                  Run{" "}
-                  <code className="rounded bg-sunken px-1 py-px font-mono">
-                    qualitylayer update
-                  </code>{" "}
-                  in a terminal. Running agent commands finish on {info.current}; the next ones use{" "}
-                  {info.available}.
-                </p>
-              )}
-            </div>
-            <footer className="flex items-center justify-between gap-2 border-t border-line bg-sunken px-5 py-3">
-              <a className="q-link" href={release} target="_blank" rel="noopener noreferrer">
-                Full release notes
-              </a>
-              <div className="flex gap-2">
-                <button type="button" className="q-btn quiet" onClick={onLater}>
-                  Later
-                </button>
-                {info.managed ? (
-                  <button
-                    type="button"
-                    className="q-btn primary"
-                    onClick={onRestart}
-                    data-testid="update-restart"
-                  >
-                    Restart and update
-                  </button>
-                ) : null}
-              </div>
-            </footer>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
   )
 }

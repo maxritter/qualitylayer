@@ -6,37 +6,29 @@
 // rows, ←/→ fold and unfold, ⌥↑/⌥↓ move the focused project.
 
 import { cn } from "cn"
-import {
-  ChevronRightIcon,
-  EllipsisIcon,
-  FolderPlusIcon,
-  GripVerticalIcon,
-  PlusIcon,
-} from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import type { LookPatch, ProjectColor } from "../../core/project-look.ts"
 import type { TaskSummary } from "../api.ts"
 import type { Route } from "../hooks.ts"
 import type { RunWindow } from "../run-context.tsx"
-import { runTaskId } from "../runs-api.ts"
-import { FoldRow } from "./FoldRow.tsx"
-import { type MenuProject, useProjectMenu } from "./ProjectMenu.tsx"
-import { ProjectTile } from "./ProjectTile.tsx"
 import {
-  droppedOrder,
-  movedOrder,
-  type ProjectFacts,
-  type ProjectGroup,
-  type ProjectRow,
-  type ProjectView,
-  type RowGroup,
-} from "./project-model.ts"
-import { RunRow, TaskRow } from "./TaskRow.tsx"
-
-/** A project lists this many open tasks at first, and this many more each time the person asks. */
-const ROWS_PAGE = 8
-const ROWS_MORE = 25
+  EmptyProjectsCard,
+  HiddenProjectsList,
+  ProjectGroupBody,
+  ProjectHeader,
+  RenameRow,
+  type RowRenderOptions,
+} from "./ProjectListParts.tsx"
+import { type MenuProject, useProjectMenu } from "./ProjectMenu.tsx"
+import {
+  copyFolderPath,
+  handleProjectListKeyDown,
+  strayRunsOf,
+  toggleOf,
+} from "./project-list-keys.ts"
+import { droppedOrder, movedOrder, type ProjectGroup, type ProjectView } from "./project-model.ts"
+import { RunRow } from "./TaskRow.tsx"
 
 type Props = {
   view: ProjectView
@@ -77,194 +69,184 @@ type Props = {
   unread?: ReadonlySet<string>
 }
 
-/** The count a folded header keeps: amber for what waits on the person, a ring at work, else the open count. */
-function FoldedSign({ group }: { group: ProjectGroup }) {
-  const sign = group.sign
-  if (!group.folded || sign === null) return null
-  if (sign.kind === "you")
-    return (
-      <span
-        className="pj-you"
-        title="Waiting for you"
-        role="img"
-        aria-label={`${sign.n} waiting for you`}
-      >
-        {sign.n}
-      </span>
-    )
-  if (sign.kind === "working")
-    return (
-      <i
-        className="q-m q-m-agent"
-        data-running="true"
-        title="An agent is working"
-        role="img"
-        aria-label="An agent is working"
-      />
-    )
-  return (
-    <span title="Open tasks" role="img" aria-label={`${sign.n} open`}>
-      {sign.n}
-    </span>
-  )
+function dropLineClass(
+  drag: string | null,
+  dropOn: string | null,
+  groupId: string,
+  shown: readonly string[],
+): string | null {
+  if (drag === null || dropOn !== groupId || drag === groupId) return null
+  return shown.indexOf(drag) < shown.indexOf(groupId) ? "drop-after" : "drop-before"
 }
 
-function Header({
+function ProjectSection({
   group,
-  onToggle,
+  shown,
+  drag,
+  dropOn,
+  draggable,
+  renaming,
+  limit,
+  rowOptions,
+  onToggleFold,
+  onToggleDone,
   onNewTaskIn,
   onProjectMenu,
-  draggable,
+  onRenameDone,
   onDragStart,
+  onDragOver,
   onDragEnd,
+  onDrop,
+  onRevealMore,
 }: {
   group: ProjectGroup
-  onToggle: () => void
+  shown: readonly string[]
+  drag: string | null
+  dropOn: string | null
+  draggable: boolean
+  renaming: boolean
+  limit: number | undefined
+  rowOptions: RowRenderOptions
+  onToggleFold: () => void
+  onToggleDone: (projectId: string) => void
   onNewTaskIn?: Props["onNewTaskIn"]
   onProjectMenu?: Props["onProjectMenu"]
-  draggable: boolean
+  onRenameDone: (label: string | null | undefined) => void
   onDragStart: (event: React.DragEvent) => void
+  onDragOver: (event: React.DragEvent) => void
   onDragEnd: () => void
+  onDrop: (event: React.DragEvent) => void
+  onRevealMore: (nextLimit: number) => void
 }) {
-  const hasActions = onNewTaskIn !== undefined || onProjectMenu !== undefined
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: right-click is the header's second way to the menu its ⋯ button opens; dragging is its pointer way to reorder, ⌥↑/⌥↓ its keys
-    <div
-      className={cn("pj-head", hasActions && "has-actions", draggable && "can-drag")}
-      onContextMenu={onProjectMenu ? (event) => onProjectMenu(group.id, event) : undefined}
-      draggable={draggable}
-      onDragStart={draggable ? onDragStart : undefined}
-      onDragEnd={draggable ? onDragEnd : undefined}
-      data-testid="project-head"
+    // biome-ignore lint/a11y/noStaticElementInteractions: the group is where a dragged header lands; the keys do the same moves
+    <section
+      className={cn(
+        "pj",
+        !group.folded && "open",
+        group.quiet && "quiet",
+        drag === group.id && "dragging",
+        dropLineClass(drag, dropOn, group.id, shown),
+      )}
+      data-testid="project-group"
+      data-project={group.id}
+      onDragOver={drag === null ? undefined : onDragOver}
+      onDrop={drag === null ? undefined : onDrop}
     >
-      <button
-        type="button"
-        className="pj-toggle"
-        aria-expanded={!group.folded}
-        title={[group.label, group.folder, group.folded ? "unfold" : "fold"]
-          .filter((part) => part !== "")
-          .join(" · ")}
-        onClick={onToggle}
-        data-nav="1"
-        data-proj={group.id}
-      >
-        <ChevronRightIcon className="pj-chev size-3.5" aria-hidden="true" />
-        <span className="pj-tilebox">
-          <ProjectTile letters={group.letters} color={group.color} />
-          {draggable ? <GripVerticalIcon className="pj-grip" aria-hidden="true" /> : null}
-        </span>
-        <span className="pj-name">{group.label}</span>
-        <span className="pj-count">
-          <FoldedSign group={group} />
-        </span>
-      </button>
-      {onNewTaskIn !== undefined ? (
-        <button
-          type="button"
-          className="pj-act"
-          aria-label={`New task in ${group.label}`}
-          title={`New task in ${group.label}`}
-          onClick={(event) => onNewTaskIn(group.id, event.currentTarget)}
-        >
-          <PlusIcon className="size-3.5" aria-hidden="true" />
-        </button>
-      ) : null}
-      {onProjectMenu !== undefined ? (
-        <button
-          type="button"
-          className="pj-act"
-          aria-label={`${group.label} options`}
-          title={`${group.label} options`}
-          onClick={(event) => onProjectMenu(group.id, event)}
-        >
-          <EllipsisIcon className="size-3.5" aria-hidden="true" />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-/**
- * The header while its name is edited: Enter or leaving the field saves (an empty name goes back to
- * the folder's), Escape cancels. `done` gets the new name, `null` for the folder's own, or undefined
- * for no change.
- */
-/** How long after it appears a rename field keeps the focus a closing menu takes away. */
-const SETTLE_MS = 300
-
-function RenameRow({
-  group,
-  onDone,
-}: {
-  group: ProjectGroup
-  onDone: (label: string | null | undefined) => void
-}) {
-  const [text, setText] = useState(group.label)
-  const started = useRef(group.label)
-  const field = useRef<HTMLInputElement | null>(null)
-  // The menu that started the rename gives the focus back as it closes: a blur just after the field
-  // appears, before anything was typed, is not the person leaving it.
-  const opened = useRef(0)
-  const settled = useRef(false)
-  const settle = (label: string | null | undefined) => {
-    if (settled.current) return
-    settled.current = true
-    onDone(label)
-  }
-  const commit = () => {
-    const name = text.replace(/\s+/g, " ").trim()
-    if (name === group.label) return settle(undefined)
-    settle(name === "" ? null : name)
-  }
-  // The field takes the focus as it appears, and once more when the menu that started the rename is
-  // gone from the page (a closing menu holds the focus until then). The one timer fetches nothing.
-  useEffect(() => {
-    const input = field.current
-    if (input === null) return
-    opened.current = Date.now()
-    input.focus()
-    input.select()
-    const later = setTimeout(() => {
-      if (document.activeElement === input || input.value !== started.current) return
-      input.focus()
-      input.select()
-    }, 0)
-    return () => clearTimeout(later)
-  }, [])
-  return (
-    <div className="pj-ren" data-testid="project-rename">
-      <ProjectTile letters={group.letters} color={group.color} />
-      <input
-        ref={field}
-        className="pj-ren-input"
-        aria-label="Project name"
-        value={text}
-        maxLength={40}
-        spellCheck={false}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault()
-            commit()
-          } else if (event.key === "Escape") {
-            event.preventDefault()
-            event.stopPropagation()
-            settle(undefined)
-          }
-        }}
-        onBlur={() => {
-          if (text === group.label && Date.now() - opened.current < SETTLE_MS) return
-          commit()
-        }}
+      {renaming ? (
+        <RenameRow group={group} onDone={onRenameDone} />
+      ) : (
+        <ProjectHeader
+          group={group}
+          onToggle={onToggleFold}
+          onNewTaskIn={onNewTaskIn}
+          onProjectMenu={onProjectMenu}
+          draggable={draggable}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+        />
+      )}
+      <ProjectGroupBody
+        group={group}
+        limit={limit}
+        onRevealMore={onRevealMore}
+        onNewTaskIn={onNewTaskIn}
+        onToggleDone={onToggleDone}
+        rowOptions={rowOptions}
       />
-    </div>
+    </section>
   )
 }
 
-/** The element for one project's header toggle, in the list `root`. */
-function toggleOf(root: HTMLElement | null, id: string): HTMLElement | null {
-  const all = root?.querySelectorAll<HTMLElement>("[data-proj]") ?? []
-  return Array.from(all).find((el) => el.getAttribute("data-proj") === id) ?? null
+function startProjectDrag(event: React.DragEvent, id: string): void {
+  try {
+    event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("text/plain", id)
+  } catch {
+    // a drag without a data transfer still reorders: the list knows what is dragged
+  }
+}
+
+function useProjectListMenu(args: {
+  props: Props
+  root: React.RefObject<HTMLDivElement | null>
+  move: (id: string, step: -1 | 1) => void
+  setRenaming: (id: string | null) => void
+}) {
+  const { props, root, move, setRenaming } = args
+  const { view, onLook } = props
+  const menuProjects: MenuProject[] = view.groups.map((g, i) => ({
+    id: g.id,
+    label: g.label,
+    letters: g.letters,
+    color: g.color,
+    folder: g.folder,
+    first: i === 0,
+    last: i === view.groups.length - 1,
+  }))
+  return useProjectMenu({
+    projects: menuProjects,
+    focusHeader: (id) => toggleOf(root.current, id)?.focus(),
+    actions: {
+      newTask:
+        props.onNewTaskIn === undefined
+          ? undefined
+          : (id) => {
+              const anchor = toggleOf(root.current, id)
+              if (anchor !== null) props.onNewTaskIn?.(id, anchor)
+            },
+      rename: (id) => setRenaming(id),
+      color: (id, color: ProjectColor) => onLook?.(id, { color }),
+      move,
+      foldOthers: (id) => {
+        for (const g of view.groups) if (g.folded !== (g.id !== id)) props.onToggleFold(g.id)
+      },
+      reveal: props.onReveal,
+      copyPath: (id) => copyFolderPath(view.groups, id),
+      hide: (id) => {
+        const label = view.groups.find((g) => g.id === id)?.label ?? ""
+        onLook?.(id, { hidden: true })
+        toast.success(`${label} is hidden. Hidden projects at the bottom bring it back.`)
+      },
+    },
+  })
+}
+
+function useProjectDrag(args: {
+  full: string[]
+  shown: string[]
+  onOrder?: (ids: string[]) => void
+  refocus: React.RefObject<string | null>
+}) {
+  const { full, shown, onOrder, refocus } = args
+  const [drag, setDrag] = useState<string | null>(null)
+  const [dropOn, setDropOn] = useState<string | null>(null)
+  const clear = () => {
+    setDrag(null)
+    setDropOn(null)
+  }
+  const start = (event: React.DragEvent, id: string) => {
+    startProjectDrag(event, id)
+    setDrag(id)
+    setDropOn(null)
+  }
+  const over = (event: React.DragEvent, id: string) => {
+    if (drag === id) return
+    event.preventDefault()
+    if (dropOn !== id) setDropOn(id)
+  }
+  const drop = (event: React.DragEvent, targetId: string) => {
+    event.preventDefault()
+    if (drag === null) return
+    const next = droppedOrder(full, shown, drag, targetId)
+    const id = drag
+    clear()
+    if (next !== null && onOrder !== undefined) {
+      refocus.current = id
+      onOrder(next)
+    }
+  }
+  return { drag, dropOn, start, over, drop, clear }
 }
 
 export function ProjectList(props: Props) {
@@ -272,11 +254,7 @@ export function ProjectList(props: Props) {
   const [hiddenOpen, setHiddenOpen] = useState(false)
   const root = useRef<HTMLDivElement | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
-  // How many open tasks each project lists: a first page, then more on demand.
   const [revealed, setRevealed] = useState<Record<string, number>>({})
-  const [drag, setDrag] = useState<string | null>(null)
-  const [dropOn, setDropOn] = useState<string | null>(null)
-  // The project whose header takes the focus back once the list has drawn its new order.
   const refocus = useRef<string | null>(null)
   useEffect(() => {
     const id = refocus.current
@@ -294,313 +272,68 @@ export function ProjectList(props: Props) {
     refocus.current = id
     onOrder(next)
   }
-  const foldOthers = (id: string) => {
-    for (const g of view.groups) if (g.folded !== (g.id !== id)) props.onToggleFold(g.id)
-  }
-  const copyPath = (id: string) => {
-    const folder = view.groups.find((g) => g.id === id)?.folder ?? ""
-    if (folder === "") return
-    const done = navigator.clipboard?.writeText(folder)
-    if (done === undefined) return void toast.error("Could not copy. Press ⌘C instead.")
-    done.then(
-      () => toast.success(`Copied ${folder}`),
-      () => toast.error("Could not copy. Press ⌘C instead."),
-    )
-  }
-  const menuProjects: MenuProject[] = view.groups.map((g, i) => ({
-    id: g.id,
-    label: g.label,
-    letters: g.letters,
-    color: g.color,
-    folder: g.folder,
-    first: i === 0,
-    last: i === view.groups.length - 1,
-  }))
-  const menu = useProjectMenu({
-    projects: menuProjects,
-    focusHeader: (id) => toggleOf(root.current, id)?.focus(),
-    actions: {
-      newTask:
-        props.onNewTaskIn === undefined
-          ? undefined
-          : (id) => {
-              const anchor = toggleOf(root.current, id)
-              if (anchor !== null) props.onNewTaskIn?.(id, anchor)
-            },
-      rename: (id) => setRenaming(id),
-      color: (id, color: ProjectColor) => onLook?.(id, { color }),
-      move,
-      foldOthers,
-      reveal: props.onReveal,
-      copyPath,
-      hide: (id) => {
-        const label = view.groups.find((g) => g.id === id)?.label ?? ""
-        onLook?.(id, { hidden: true })
-        toast.success(`${label} is hidden. Hidden projects at the bottom bring it back.`)
-      },
-    },
-  })
+  const menu = useProjectListMenu({ props, root, move, setRenaming })
+  const dnd = useProjectDrag({ full, shown, onOrder, refocus })
   const onProjectMenu = props.onProjectMenu ?? (onLook !== undefined ? menu.open : undefined)
-
-  const keys = (event: React.KeyboardEvent) => {
-    const list = root.current
-    const target = event.target as HTMLElement
-    // The menus are drawn elsewhere in the page but belong to this tree: only the list's own keys count.
-    if (list === null || !list.contains(target) || target.closest("input, textarea")) return
-    if (event.metaKey || event.ctrlKey || event.shiftKey) return
-    const project = target.getAttribute("data-proj")
-    const vertical = event.key === "ArrowUp" || event.key === "ArrowDown"
-    if (event.altKey) {
-      if (vertical && project !== null) {
-        event.preventDefault()
-        move(project, event.key === "ArrowUp" ? -1 : 1)
-      }
-      return
-    }
-    if (vertical) {
-      const items = Array.from(list.querySelectorAll<HTMLElement>("[data-nav]"))
-      // An outer [data-nav] (the App's grid) is not a row of this list.
-      const nav = target.closest<HTMLElement>("[data-nav]")
-      const here =
-        (nav && list.contains(nav) ? nav : null) ??
-        // The task toggle of a live row sits beside its row: arrows move on from the row.
-        target.closest(".ses-card")?.querySelector<HTMLElement>("[data-nav]") ??
-        target.closest(".pj-head")?.querySelector<HTMLElement>("[data-nav]")
-      const at = here === null || here === undefined ? -1 : items.indexOf(here)
-      if (at === -1) return
-      const next =
-        items[Math.max(0, Math.min(items.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)))]
-      event.preventDefault()
-      next?.focus()
-      return
-    }
-    if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && project !== null) {
-      const group = view.groups.find((g) => g.id === project)
-      if (group === undefined) return
-      event.preventDefault()
-      // ← folds, → unfolds; the key never undoes itself.
-      if (group.folded !== (event.key === "ArrowLeft")) props.onToggleFold(project)
-    }
+  const strays = strayRunsOf(props.runs, tasks, props.showRuns)
+  const rowOptions: RowRenderOptions = {
+    route,
+    go,
+    now,
+    interaction,
+    onTaskMenu,
+    oneLine: props.oneLine,
+    detailed: props.detailed,
+    unread: props.unread,
   }
-
-  const taskProject = new Map(tasks.map((t) => [t.id, t.project]))
-  // Named tasks keep their own navigation row; only windows without one need a separate row.
-  const strays = props.showRuns
-    ? props.runs.filter((run) => {
-        if (
-          run.taskLifecycle?.archived ||
-          ["shipped", "abandoned", "deleted"].includes(run.taskLifecycle?.stage ?? "")
-        )
-          return false
-        const task = runTaskId(run)
-        return task === undefined || !taskProject.has(task)
-      })
-    : []
-
-  const row = (r: ProjectRow, key?: string) => (
-    <TaskRow
-      key={key ?? r.task.id}
-      task={r.task}
-      group={r.group as RowGroup}
-      route={route}
-      go={go}
-      now={now}
-      interaction={interaction}
-      onMenu={onTaskMenu}
-      nested
-      oneLine={props.oneLine}
-      detailed={props.detailed}
-      unread={props.unread?.has(r.task.id)}
-    />
-  )
-
-  const body = (group: ProjectGroup) => {
-    const limit = revealed[group.id] ?? ROWS_PAGE
-    const openId = route.view === "task" ? route.id : null
-    // The task on screen stays listed whatever the page says.
-    const listed =
-      group.rows.length <= limit
-        ? group.rows
-        : group.rows.filter((r, i) => i < limit || r.task.id === openId)
-    const left = group.rows.length - listed.length
-    return (
-      <>
-        {listed.map((r) => row(r))}
-        {left > 0 ? (
-          <button
-            type="button"
-            className="pj-fold"
-            onClick={() => setRevealed((was) => ({ ...was, [group.id]: limit + ROWS_MORE }))}
-            data-nav="1"
-            data-testid="project-more"
-          >
-            Show {Math.min(left, ROWS_MORE)} more
-            {left > ROWS_MORE ? ` · ${left} left` : ""}
-          </button>
-        ) : null}
-        {group.empty !== null ? (
-          <p className="pj-empty" data-testid="project-empty">
-            {group.empty}
-            {props.onNewTaskIn !== undefined ? (
-              <>
-                {" · "}
-                <button
-                  type="button"
-                  className="q-link"
-                  onClick={(event) => props.onNewTaskIn?.(group.id, event.currentTarget)}
-                >
-                  New task
-                </button>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        {group.foldLabel !== null ? (
-          <FoldRow
-            parts={group.foldParts}
-            open={group.foldOpen}
-            onToggle={() => props.onToggleDone(group.id)}
-          />
-        ) : null}
-        {group.pastRows.map((r) => row(r))}
-        {group.pastMore > 0 ? (
-          <p className="q-smore m-0 pj-more" data-testid="shipped-more">
-            {group.pastMore} more. Search finds them.
-          </p>
-        ) : null}
-      </>
-    )
-  }
-
-  const hidden = (project: ProjectFacts) => (
-    <div className="pj-hrow" key={project.id} data-testid="hidden-project">
-      <ProjectTile letters={project.letters} color={project.color} />
-      <span className="pj-name">{project.label}</span>
-      {props.onLook !== undefined ? (
-        <button
-          type="button"
-          className="q-link pj-show"
-          aria-label={`Show ${project.label} again`}
-          onClick={() => props.onLook?.(project.id, { hidden: false })}
-        >
-          Show again
-        </button>
-      ) : null}
-    </div>
-  )
-
+  const draggable = onOrder !== undefined && view.groups.length > 1
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the list's keys (↑ ↓ ← → ⌥↑ ⌥↓) act on the buttons inside it
-    <div ref={root} className="pj-list" data-testid="project-list" onKeyDown={keys}>
+    <div
+      ref={root}
+      className="pj-list"
+      data-testid="project-list"
+      onKeyDown={(event) =>
+        handleProjectListKeyDown({
+          event,
+          list: root.current,
+          groups: view.groups,
+          onMove: move,
+          onToggleFold: props.onToggleFold,
+        })
+      }
+    >
       {strays.map((run) => (
         <RunRow key={run.id} run={run} onOpen={props.onOpenRun} oneLine={props.oneLine} />
       ))}
-      {view.empty ? (
-        <div className="pj-first" data-testid="projects-empty">
-          <FolderPlusIcon className="size-7" aria-hidden="true" strokeWidth={1.5} />
-          <p className="pj-first-title">No projects yet</p>
-          <p
-            className="pj-first-lead"
-            title="A project is a repository on this computer. Add one, or start a task with your agent inside a repository and it shows up here."
-          >
-            A repository on this computer.
-          </p>
-          {/* The page's one filled button is Start your first task; this is the default outline button. */}
-          <div className="pj-first-actions">
-            {props.onAddProject !== undefined ? (
-              <button
-                type="button"
-                className="q-btn sm"
-                data-add-project-toggle
-                onClick={(event) => props.onAddProject?.(event.currentTarget)}
-              >
-                Add a project
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {view.groups.map((group) => {
-        const dropLine =
-          drag !== null && dropOn === group.id && drag !== group.id
-            ? shown.indexOf(drag) < shown.indexOf(group.id)
-              ? "drop-after"
-              : "drop-before"
-            : null
-        return (
-          // biome-ignore lint/a11y/noStaticElementInteractions: the group is where a dragged header lands; the keys do the same moves
-          <section
-            key={group.id}
-            className={cn(
-              "pj",
-              !group.folded && "open",
-              group.quiet && "quiet",
-              drag === group.id && "dragging",
-              dropLine,
-            )}
-            data-testid="project-group"
-            data-project={group.id}
-            onDragOver={
-              drag === null
-                ? undefined
-                : (event) => {
-                    if (drag === group.id) return
-                    event.preventDefault()
-                    if (dropOn !== group.id) setDropOn(group.id)
-                  }
-            }
-            onDrop={
-              drag === null
-                ? undefined
-                : (event) => {
-                    event.preventDefault()
-                    const next = droppedOrder(full, shown, drag, group.id)
-                    const id = drag
-                    setDrag(null)
-                    setDropOn(null)
-                    if (next !== null && onOrder !== undefined) {
-                      refocus.current = id
-                      onOrder(next)
-                    }
-                  }
-            }
-          >
-            {renaming === group.id ? (
-              <RenameRow
-                group={group}
-                onDone={(label) => {
-                  refocus.current = group.id
-                  setRenaming(null)
-                  if (label !== undefined) onLook?.(group.id, { label })
-                }}
-              />
-            ) : (
-              <Header
-                group={group}
-                onToggle={() => props.onToggleFold(group.id)}
-                onNewTaskIn={props.onNewTaskIn}
-                onProjectMenu={onProjectMenu}
-                draggable={onOrder !== undefined && view.groups.length > 1}
-                onDragStart={(event) => {
-                  try {
-                    event.dataTransfer.effectAllowed = "move"
-                    event.dataTransfer.setData("text/plain", group.id)
-                  } catch {
-                    // a drag without a data transfer still reorders: the list knows what is dragged
-                  }
-                  setDrag(group.id)
-                  setDropOn(null)
-                }}
-                onDragEnd={() => {
-                  setDrag(null)
-                  setDropOn(null)
-                }}
-              />
-            )}
-            {body(group)}
-          </section>
-        )
-      })}
+      {view.empty ? <EmptyProjectsCard onAddProject={props.onAddProject} /> : null}
+      {view.groups.map((group) => (
+        <ProjectSection
+          key={group.id}
+          group={group}
+          shown={shown}
+          drag={dnd.drag}
+          dropOn={dnd.dropOn}
+          draggable={draggable}
+          renaming={renaming === group.id}
+          limit={revealed[group.id]}
+          rowOptions={rowOptions}
+          onToggleFold={() => props.onToggleFold(group.id)}
+          onToggleDone={props.onToggleDone}
+          onNewTaskIn={props.onNewTaskIn}
+          onProjectMenu={onProjectMenu}
+          onRenameDone={(label) => {
+            refocus.current = group.id
+            setRenaming(null)
+            if (label !== undefined) onLook?.(group.id, { label })
+          }}
+          onDragStart={(event) => dnd.start(event, group.id)}
+          onDragOver={(event) => dnd.over(event, group.id)}
+          onDragEnd={dnd.clear}
+          onDrop={(event) => dnd.drop(event, group.id)}
+          onRevealMore={(nextLimit) => setRevealed((was) => ({ ...was, [group.id]: nextLimit }))}
+        />
+      ))}
       {view.quietNote !== null ? (
         <p className="pj-quiet-note" data-testid="project-quiet-note">
           {view.quietNote}{" "}
@@ -609,21 +342,12 @@ export function ProjectList(props: Props) {
           </button>
         </p>
       ) : null}
-      {view.hidden.length > 0 ? (
-        <div className="pj-hid" data-testid="hidden-projects">
-          <button
-            type="button"
-            className="pj-fold pj-hid-toggle"
-            aria-expanded={hiddenOpen}
-            onClick={() => setHiddenOpen((was) => !was)}
-            data-nav="1"
-          >
-            <ChevronRightIcon className="pj-chev size-3" aria-hidden="true" />
-            Hidden projects · {view.hidden.length}
-          </button>
-          {hiddenOpen ? view.hidden.map(hidden) : null}
-        </div>
-      ) : null}
+      <HiddenProjectsList
+        hidden={view.hidden}
+        open={hiddenOpen}
+        onToggle={() => setHiddenOpen((was) => !was)}
+        onLook={onLook}
+      />
       {onLook !== undefined ? menu.node : null}
     </div>
   )

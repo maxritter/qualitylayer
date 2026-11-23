@@ -5,62 +5,42 @@
 // cancelled, lines) while the request is open, `found` and `earlier` after the agent answered.
 // As the App Model shows it: artifacts/app/app-model/task.jsx (MorePick, MoreStatus).
 
-import { CheckIcon } from "lucide-react"
-import { type KeyboardEvent, useEffect, useRef, useState } from "react"
+import { type KeyboardEvent, type RefObject, useEffect, useRef, useState } from "react"
 import { type LiveSignals, livenessOf } from "../../core/live/liveness.ts"
-import type { MoreRequest, Question } from "../../core/task/question.ts"
-import { useNow } from "../hooks.ts"
+import type { Question } from "../../core/task/question.ts"
 import { Disclosure } from "../kit/Fold.tsx"
-import { WhoMark } from "../kit/WhoMark.tsx"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
-import { ContinueCommand } from "./ContinueCommand.tsx"
-import { EXPLAIN_REQUEST, type MoreKind, moreKind, PLAIN_REQUEST } from "./more-words.ts"
+import {
+  type Gone,
+  MoreStatus,
+  type MoreUpdate,
+  moreOpen,
+  reveal,
+  UpdatedBar,
+  useMoreUpdates,
+} from "./MoreStatus.tsx"
+import { EXPLAIN_REQUEST, PLAIN_REQUEST } from "./more-words.ts"
 import "./more-request.css"
 
-export { EXPLAIN_REQUEST, type MoreKind, moreKind, PLAIN_REQUEST }
-/** A request nobody has picked up for this long is called late. */
-export const NOT_PICKED_UP_MS = 20_000
-/** The Updated confirmation stays this long, unless it is dismissed. */
-export const UPDATED_STAYS_MS = 10_000
+export {
+  EXPLAIN_REQUEST,
+  type Gone,
+  MoreStatus,
+  type MoreUpdate,
+  moreOpen,
+  PLAIN_REQUEST,
+  reveal,
+  UpdatedBar,
+  useMoreUpdates,
+}
 
-/** An open request: asked, and not cancelled. */
-export const moreOpen = (more: MoreRequest | undefined): more is MoreRequest =>
-  more !== undefined && more.cancelled === undefined
-
-/** The agent has stopped (its session ended or it was interrupted): a request waits for the next session. */
-export type Gone = { at: number; interrupted: boolean }
 export function goneOf(signals: LiveSignals | null | undefined, now: number): Gone | null {
   if (signals == null) return null
   const life = livenessOf(signals, now)
   return life.state === "stopped" ? { at: life.at, interrupted: life.why === "interrupted" } : null
 }
 
-/**
- * Bring an element into view where the person is: nothing moves when it already is. The move is
- * instant, as the App Model's is, so it is the same with reduced motion and never fights the page's
- * own scroll.
- */
-export function reveal(el: Element | null | undefined, block: ScrollLogicalPosition = "nearest") {
-  el?.scrollIntoView?.({ block })
-}
-
-// ---------------------------------------------------------------- the choice
-
-/** Step 1: what would help, one click each; own words in a short field. */
-export function MorePick({
-  onSend,
-  onCancel,
-  busy = false,
-}: {
-  onSend: (request: string) => void
-  onCancel: () => void
-  busy?: boolean
-}) {
-  const [text, setText] = useState("")
-  const box = useRef<HTMLFieldSetElement | null>(null)
-  // Opened where the person is: in view, with the first option ready for a keypress. A diagram that
-  // draws a moment later pushes it down, so it is brought back for the first seconds, until the
-  // person scrolls themselves.
+function useKeepPickVisible(box: RefObject<HTMLFieldSetElement | null>) {
   useEffect(() => {
     const el = box.current
     if (el === null) return
@@ -83,7 +63,22 @@ export function MorePick({
       watch?.disconnect()
       for (const event of ["wheel", "touchmove", "keydown"]) window.removeEventListener(event, halt)
     }
-  }, [])
+  }, [box])
+}
+
+/** Step 1: what would help, one click each; own words in a short field. */
+export function MorePick({
+  onSend,
+  onCancel,
+  busy = false,
+}: {
+  onSend: (request: string) => void
+  onCancel: () => void
+  busy?: boolean
+}) {
+  const [text, setText] = useState("")
+  const box = useRef<HTMLFieldSetElement | null>(null)
+  useKeepPickVisible(box)
   const asked = text.trim()
   const ask = () => {
     if (asked !== "" && !busy) onSend(asked)
@@ -150,218 +145,6 @@ export function MorePick({
     </fieldset>
   )
 }
-
-// ---------------------------------------------------------------- the status
-
-const DOING: Record<MoreKind, string> = {
-  plain: "is rewriting this question in plainer words.",
-  explain: "is adding more context to this question.",
-  ask: "is answering your question here.",
-}
-
-/**
- * Step 2: the request, seen at the top of the question until the question changes. Amber, because it
- * is a thing the person should not miss; the choices below stay live ("You can still answer").
- */
-export function MoreStatus({
-  more,
-  agent,
-  now,
-  gone = null,
-  resume,
-  onCancel,
-  cancelling = false,
-  testId = "more-status",
-  progressId,
-}: {
-  more: MoreRequest
-  agent: string
-  now: number
-  gone?: Gone | null
-  /** The command that continues the task, shown when the agent has stopped. */
-  resume?: string | undefined
-  onCancel?: (() => void) | undefined
-  /** Cancel was pressed and the server has not answered yet: the panel stays, pending. */
-  cancelling?: boolean
-  testId?: string
-  progressId?: string
-}) {
-  const taken = more.taken !== undefined
-  const late = !taken && gone === null && now - more.at >= NOT_PICKED_UP_MS
-  const box = useRef<HTMLDivElement | null>(null)
-  const phase = gone !== null ? "gone" : late ? "late" : taken ? "taken" : "sent"
-  // Where the person is: brought into view when it appears and when its state changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the phase is the trigger
-  useEffect(() => {
-    reveal(box.current)
-  }, [phase])
-  const kind = moreKind(more.request)
-  const steps: [string, boolean][] = [
-    ["Sent", true],
-    [`${agent} picked it up`, taken],
-    ["Updated", false],
-  ]
-  const current = taken ? 2 : 1
-  const last = more.lines?.at(-1)
-  return (
-    <div
-      ref={box}
-      className={phase === "late" || phase === "gone" ? "more-st late" : "more-st"}
-      role="status"
-      aria-live="polite"
-      data-testid={testId}
-      data-phase={phase}
-      data-cancelling={cancelling ? "true" : undefined}
-    >
-      <WhoMark who={phase === "late" ? "you" : "agent"} running={phase !== "gone"} />
-      <div className="more-b">
-        {phase === "gone" ? (
-          <div className="more-t">
-            <b>{agent} has stopped.</b> Your request is saved, and {agent} reads it first when you
-            continue the task.
-          </div>
-        ) : phase === "late" ? (
-          <div className="more-t">
-            <b>{agent} hasn't picked it up yet.</b> It may be finishing something else; your request
-            is queued.
-          </div>
-        ) : (
-          <div className="more-t">
-            <b>
-              {agent} {DOING[kind]}
-            </b>{" "}
-            It updates here in a few seconds.
-          </div>
-        )}
-        <ol className="more-steps" aria-label="Progress">
-          {steps.map(([label, done], index) => (
-            <li
-              key={label}
-              className={done ? "done" : index === current ? "cur" : ""}
-              aria-current={!done && index === current ? "step" : undefined}
-            >
-              {done ? <CheckIcon aria-hidden="true" /> : <i className="dot" aria-hidden="true" />}
-              {label}
-            </li>
-          ))}
-        </ol>
-        {phase === "gone" && resume !== undefined ? <ContinueCommand command={resume} /> : null}
-        {last !== undefined && phase !== "late" && phase !== "gone" ? (
-          <div className="more-p" data-testid={progressId}>
-            Latest: {last}
-          </div>
-        ) : null}
-        {kind === "ask" ? <div className="more-p">You asked: “{more.request}”</div> : null}
-      </div>
-      <div className="more-r">
-        <span>You can still answer</span>
-        {onCancel !== undefined ? (
-          <button type="button" className="q-link" disabled={cancelling} onClick={onCancel}>
-            {cancelling ? "Cancelling…" : "Cancel"}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------- the update
-
-/** The agent answered a request: what to confirm, and whether the wording changed. */
-export type MoreUpdate = { id: string; kind: MoreKind; reworded: boolean; at: number }
-
-const updatedWords = (update: MoreUpdate) =>
-  update.kind === "explain"
-    ? "each choice explained below the reason"
-    : update.kind === "ask"
-      ? "answered below the reason"
-      : update.reworded
-        ? "rewritten in plainer words"
-        : "more context added"
-
-/** The panel turned into a short confirmation. */
-export function UpdatedBar({
-  update,
-  onDismiss,
-  testId = "more-status",
-}: {
-  update: MoreUpdate
-  onDismiss: () => void
-  testId?: string
-}) {
-  return (
-    <div className="more-st done" role="status" data-testid={testId} data-phase="updated">
-      <CheckIcon aria-hidden="true" />
-      <span>
-        <b>Updated</b> · {updatedWords(update)}
-      </span>
-      <button type="button" className="q-link" onClick={onDismiss}>
-        Dismiss
-      </button>
-    </div>
-  )
-}
-
-type Tracked = Pick<Question, "id" | "more" | "found" | "earlier">
-
-/**
- * Watches the questions for a request the agent answered: its `more` closed and a `found` newer than
- * the request arrived. The update stays a few seconds (or until dismissed), keyed by question; the
- * clock that ends it is `useNow`'s, so nothing here sets a timer of its own.
- */
-export function useMoreUpdates(questions: Tracked[]): {
-  updates: Record<string, MoreUpdate>
-  dismiss: (id: string) => void
-} {
-  const open = useRef(new Map<string, { at: number; request: string; earlier: number }>())
-  const [all, setAll] = useState<Record<string, MoreUpdate>>({})
-  const now = useNow(Object.keys(all).length > 0)
-  const dismiss = (id: string) =>
-    setAll((was) => {
-      if (was[id] === undefined) return was
-      const { [id]: _gone, ...rest } = was
-      return rest
-    })
-  // The questions change on every render; the effect keeps the book of what is open.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: run on every change of the questions
-  useEffect(() => {
-    for (const q of questions) {
-      const was = open.current.get(q.id)
-      if (moreOpen(q.more)) {
-        if (was?.at !== q.more.at)
-          open.current.set(q.id, {
-            at: q.more.at,
-            request: q.more.request,
-            earlier: q.earlier?.length ?? 0,
-          })
-        continue
-      }
-      if (was === undefined) continue
-      open.current.delete(q.id)
-      if (q.more !== undefined || q.found === undefined || q.found.at < was.at) continue
-      const update: MoreUpdate = {
-        id: q.id,
-        kind: moreKind(was.request),
-        reworded: (q.earlier?.length ?? 0) > was.earlier,
-        at: Date.now(),
-      }
-      setAll((had) => ({ ...had, [q.id]: update }))
-    }
-    // An update past its time is forgotten, so the clock stops.
-    if (Object.values(all).some((one) => now - one.at >= UPDATED_STAYS_MS))
-      setAll((had) =>
-        Object.fromEntries(
-          Object.entries(had).filter(([, one]) => now - one.at < UPDATED_STAYS_MS),
-        ),
-      )
-  })
-  const updates: Record<string, MoreUpdate> = {}
-  for (const [id, update] of Object.entries(all))
-    if (now - update.at < UPDATED_STAYS_MS) updates[id] = update
-  return { updates, dismiss }
-}
-
-// ---------------------------------------------------------------- earlier wording
 
 /** The question as it was before the agent reworded it, folded: the question and its choices. */
 export function EarlierWording({ earlier }: { earlier: NonNullable<Question["earlier"]> }) {

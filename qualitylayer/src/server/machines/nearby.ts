@@ -12,27 +12,43 @@ export type Nearby = { host: string; user: string }
 
 const BROWSE_MS = 1500
 
+function lastBreakBefore(line: string, end: number): number {
+  return Math.max(
+    line.lastIndexOf("\r", end - 1),
+    line.lastIndexOf("\n", end - 1),
+    line.lastIndexOf("\u2028", end - 1),
+    line.lastIndexOf("\u2029", end - 1),
+  )
+}
+
+function trailingLineChar(line: string, after: number): string | null {
+  for (let at = line.length - 1; at > after; at--) {
+    if (isLineText(line.charAt(at))) return line.charAt(at)
+  }
+  return null
+}
+
+function instanceInLine(line: string): string | null {
+  const end = line.trimEnd().length
+  const lastBreak = lastBreakBefore(line, end)
+  for (const prefix of line.matchAll(/\sAdd\s+\d+\s+\d+\s+local\.\s+_ssh\._tcp\./g)) {
+    const after = prefix.index + prefix[0].length
+    const start = skipWhitespace(line, after)
+    if (start === after) continue
+    if (start < end && start > lastBreak) return line.slice(start, end)
+    if (start === line.length) {
+      const char = trailingLineChar(line, after)
+      if (char !== null) return char
+    }
+  }
+  return null
+}
+
 /** The instance names `dns-sd -B` printed. */
 export function instancesIn(out: string): string[] {
   const names = out.split("\n").flatMap((line) => {
-    const end = line.trimEnd().length
-    const lastBreak = Math.max(
-      line.lastIndexOf("\r", end - 1),
-      line.lastIndexOf("\n", end - 1),
-      line.lastIndexOf("\u2028", end - 1),
-      line.lastIndexOf("\u2029", end - 1),
-    )
-    const prefixes = line.matchAll(/\sAdd\s+\d+\s+\d+\s+local\.\s+_ssh\._tcp\./g)
-    for (const prefix of prefixes) {
-      const after = prefix.index + prefix[0].length
-      const start = skipWhitespace(line, after)
-      if (start === after) continue
-      if (start < end && start > lastBreak) return [line.slice(start, end)]
-      if (start === line.length)
-        for (let at = line.length - 1; at > after; at--)
-          if (isLineText(line.charAt(at))) return [line.charAt(at)]
-    }
-    return []
+    const found = instanceInLine(line)
+    return found === null ? [] : [found]
   })
   return [...new Set(names)]
 }

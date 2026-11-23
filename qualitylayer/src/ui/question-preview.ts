@@ -2,32 +2,41 @@ import { flattenItems, type Item, type ItemAnswer, openCount } from "../core/ite
 import type { AnsweredQuestion } from "../core/task/question.ts"
 import type { TaskDetail, TaskSummary } from "./api.ts"
 
+function itemAnswerPatch(item: Item, answer: ItemAnswer | undefined): Partial<Item> {
+  if (answer !== undefined) {
+    return {
+      state: "chosen",
+      answer,
+      ...(answer.at !== item.answer?.at ? { updated: false } : {}),
+    }
+  }
+  return item.state === "chosen" ? { state: "open", answer: undefined } : {}
+}
+
+function applyItemAnswers(
+  items: readonly Item[],
+  answers: Readonly<Record<string, ItemAnswer>>,
+): Item[] {
+  return items.map((item) => {
+    const children =
+      item.children !== undefined ? applyItemAnswers(item.children, answers) : undefined
+    return {
+      ...item,
+      ...(children !== undefined ? { children } : {}),
+      ...itemAnswerPatch(item, answers[item.id]),
+    }
+  })
+}
+
 /** Native item picks drive the same immediate counts as question answers, while drafts save. */
 export function itemPreview(
   task: TaskDetail,
   answers: Readonly<Record<string, ItemAnswer>>,
   countLeaves = false,
 ): TaskDetail {
-  const picked = (items: readonly Item[]): Item[] =>
-    items.map((item) => {
-      const answer = answers[item.id]
-      const children = item.children !== undefined ? picked(item.children) : undefined
-      return {
-        ...item,
-        ...(children !== undefined ? { children } : {}),
-        ...(answer !== undefined
-          ? {
-              state: "chosen" as const,
-              answer,
-              ...(answer.at !== item.answer?.at ? { updated: false } : {}),
-            }
-          : item.state === "chosen"
-            ? { state: "open" as const, answer: undefined }
-            : {}),
-      }
-    })
-  const items = picked(task.items ?? [])
-  const openItems = openCount(countLeaves ? flattenItems(items).filter((i) => !i.children) : items)
+  const items = applyItemAnswers(task.items ?? [], answers)
+  const counted = countLeaves ? flattenItems(items).filter((i) => !i.children) : items
+  const openItems = openCount(counted)
   return { ...task, items, openItems, ...(openItems === 0 ? { needs: [] } : {}) }
 }
 

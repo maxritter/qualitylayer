@@ -196,6 +196,26 @@ const placement = {
   rail: { side: "right", align: "end" },
 } as const
 
+function PopoverMeta({
+  keyedCount,
+  hasPlan,
+  failed,
+  counting,
+  checked,
+}: {
+  keyedCount: number
+  hasPlan: boolean
+  failed: boolean
+  counting: boolean
+  checked: string | undefined
+}) {
+  if (keyedCount > 0 && !hasPlan) {
+    return <span>{failed ? "" : counting ? "counting…" : "updated now"}</span>
+  }
+  if (hasPlan && keyedCount > 0) return null
+  return checked === undefined ? null : <span>checked {checked}</span>
+}
+
 export function UsageFoot({
   go,
   now,
@@ -219,11 +239,9 @@ export function UsageFoot({
   const billed = new Set(keyed.map((agent) => agent.agent))
   const planLimits: readonly AgentLimits[] = limits.filter((agent) => !billed.has(agent.agent))
   const hasPlan = foot.cells.some((cell) => cell.kind === "limit")
-  const both = hasPlan && keyed.length > 0
   const running = windows?.runs.filter(listedRun).length ?? 0
   // One time for all only while every agent with a row was read: else each says its own.
   const checked = anyUnread(planLimits) ? undefined : agoText(oldestReading(planLimits), now)
-  const counting = usage !== null && !usage.complete
   const leave = (tab: "usage" | "sessions") => () => {
     setOpen(false)
     go({ view: "settings", tab })
@@ -250,11 +268,13 @@ export function UsageFoot({
       >
         <div className="q-limpop-h">
           <b>{foot.title}</b>
-          {keyed.length > 0 && !hasPlan ? (
-            <span>{usageRead.failed ? "" : counting ? "counting…" : "updated now"}</span>
-          ) : both || checked === undefined ? null : (
-            <span>checked {checked}</span>
-          )}
+          <PopoverMeta
+            keyedCount={keyed.length}
+            hasPlan={hasPlan}
+            failed={usageRead.failed}
+            counting={usage !== null && !usage.complete}
+            checked={checked}
+          />
         </div>
         <UsageQuickLook limits={planLimits} usage={usage} now={now} />
         {usageRead.failed ? <Failed onRetry={usageRead.reload} /> : null}

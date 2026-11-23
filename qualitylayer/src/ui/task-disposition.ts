@@ -26,14 +26,12 @@ const scopes = new WeakMap<
 const originals = new WeakMap<Api, Api>()
 export const originalTaskApi = (api: Api): Api => originals.get(api) ?? api
 
-/** Successful local mutations outrank older reads, but never a new task that reuses the same ID. */
-export function taskDispositionScope(source: Api, preserveIdentity = false) {
-  const original = originalTaskApi(source)
-  const known = scopes.get(original)
-  if (known) return preserveIdentity ? { ...known, api: original } : known
+type DispositionPublish = (id: string, state: Disposition, target?: TaskDispositionTarget) => void
+
+function createDispositionStore(): { store: TaskDispositionStore; publish: DispositionPublish } {
   let snapshot: Snapshot = EMPTY
   const listeners = new Set<() => void>()
-  const publish = (id: string, state: Disposition, target?: TaskDispositionTarget) => {
+  const publish: DispositionPublish = (id, state, target) => {
     const next = new Map(snapshot)
     next.delete(id)
     const keys = target
@@ -56,23 +54,38 @@ export function taskDispositionScope(source: Api, preserveIdentity = false) {
       }
     },
   }
-  const api = new Proxy(original, {
+  return { store, publish }
+}
+
+function wrapDispositionApi(original: Api, publish: DispositionPublish): Api {
+  return new Proxy(original, {
     get(target, key, receiver) {
-      if (key === "archive")
+      if (key === "archive") {
         return async (id: string, archived: boolean) => {
           const result = await target.archive(id, archived)
           publish(id, archived ? "archived" : "restored", result.disposition)
           return result
         }
-      if (key === "deleteTask")
+      }
+      if (key === "deleteTask") {
         return async (id: string) => {
           const result = await target.deleteTask(id)
           publish(id, "deleted", result.disposition)
           return result
         }
+      }
       return Reflect.get(target, key, receiver)
     },
   })
+}
+
+/** Successful local mutations outrank older reads, but never a new task that reuses the same ID. */
+export function taskDispositionScope(source: Api, preserveIdentity = false) {
+  const original = originalTaskApi(source)
+  const known = scopes.get(original)
+  if (known) return preserveIdentity ? { ...known, api: original } : known
+  const { store, publish } = createDispositionStore()
+  const api = wrapDispositionApi(original, publish)
   const scope = { api, store, publish }
   originals.set(api, original)
   scopes.set(original, scope)

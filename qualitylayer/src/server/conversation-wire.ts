@@ -16,87 +16,21 @@ import type {
   ConversationPage,
   ConversationSnapshot,
 } from "../core/conversation/types.ts"
-
-const WIRE = {
-  /** Turns in a first read or a reset. */
-  turns: 8,
-  /** Bytes of events in a first read, a reset or an older page, and in one update. */
-  bytes: 160 * 1024,
-  /** Events in the same, however small they are. */
-  events: 400,
-  /** Characters kept of a long text before "Show more". */
-  thinkingChars: 2_000,
-  outputChars: 2_000,
-  inputChars: 1_000,
-  patchChars: 3_000,
-} as const
+import {
+  small,
+  tailCount,
+  total,
+  type Weighed,
+  WIRE,
+  weigh,
+  wireEvent,
+} from "./conversation-wire-events.ts"
 
 /** Longest id a request may name; the readers' ids are far shorter. */
 export const WIRE_ID_CHARS = 512
 
 const isTurnStart = (event: ConversationEvent) =>
   event.kind === "user" && event.parent === undefined
-
-/** `text` up to `limit` characters, never ending inside a surrogate pair. */
-function cut(text: string, limit: number): string {
-  if (text.length <= limit) return text
-  const end = text.charCodeAt(limit - 1)
-  return text.slice(0, end >= 0xd800 && end <= 0xdbff ? limit - 1 : limit)
-}
-
-const longer = (text: string | undefined, limit: number) =>
-  text !== undefined && text.length > limit
-
-/** The event as the wire carries it: its long texts cut, and marked so the view can offer the rest. */
-function wireEvent(event: ConversationEvent): ConversationEvent {
-  switch (event.kind) {
-    case "thinking":
-      return longer(event.text, WIRE.thinkingChars)
-        ? { ...event, text: cut(event.text, WIRE.thinkingChars), more: true }
-        : event
-    case "tool":
-      return longer(event.input, WIRE.inputChars)
-        ? { ...event, input: cut(event.input ?? "", WIRE.inputChars), more: true }
-        : event
-    case "tool-result": {
-      const output = longer(event.output, WIRE.outputChars)
-      const patch = longer(event.diff?.patch, WIRE.patchChars)
-      if (!output && !patch) return event
-      return {
-        ...event,
-        ...(output ? { output: cut(event.output ?? "", WIRE.outputChars) } : {}),
-        ...(event.diff && patch
-          ? { diff: { ...event.diff, patch: cut(event.diff.patch ?? "", WIRE.patchChars) } }
-          : {}),
-        more: true,
-      }
-    }
-    default:
-      return event
-  }
-}
-
-type Weighed = { events: ConversationEvent[]; sizes: number[] }
-
-function weigh(events: readonly ConversationEvent[], start: number, end: number): Weighed {
-  const shown = events.slice(start, end).map(wireEvent)
-  return { events: shown, sizes: shown.map((event) => JSON.stringify(event).length) }
-}
-
-const total = (sizes: readonly number[]) => sizes.reduce((sum, size) => sum + size, 0)
-
-/** How many of the last events fit the limits, at least one. */
-function tailCount(sizes: readonly number[]): number {
-  let bytes = 0
-  let count = 0
-  for (let index = sizes.length - 1; index >= 0 && count < WIRE.events; index--) {
-    const size = sizes[index] ?? 0
-    if (count > 0 && bytes + size > WIRE.bytes) break
-    bytes += size
-    count++
-  }
-  return count
-}
 
 const isMessage = (event: ConversationEvent) =>
   event.parent === undefined && (event.kind === "user" || event.kind === "assistant")
@@ -160,17 +94,6 @@ export function earlierPage(
 /** One event whole, as the readers produced it. */
 export const wholeEvent = (events: readonly ConversationEvent[], id: string) =>
   events.find((event) => event.id === id)
-
-/** Whether these events are few and small enough for one update. */
-function small(events: readonly ConversationEvent[]): boolean {
-  if (events.length > WIRE.events) return false
-  let bytes = 0
-  for (const event of events) {
-    bytes += JSON.stringify(wireEvent(event)).length
-    if (bytes > WIRE.bytes) return false
-  }
-  return true
-}
 
 /** File cards are hydrated only after selection, then their final URLs must fit the same page. */
 export function boundedAttachmentPage<T extends ConversationPage>(page: T): T {

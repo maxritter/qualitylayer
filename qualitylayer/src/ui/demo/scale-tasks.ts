@@ -356,61 +356,84 @@ export type LargeTasks = {
   shared(): TaskDetail[]
 }
 
+function cachedSummary(light: Map<string, TaskDetail>, spot: Spot): TaskDetail {
+  let kept = light.get(spot.id)
+  if (kept === undefined) {
+    kept = summaryOf(build(spot))
+    light.set(spot.id, kept)
+  }
+  return kept
+}
+
+function cachedDetail(
+  byId: Map<string, Spot>,
+  full: Map<string, TaskDetail>,
+  id: string,
+): TaskDetail | undefined {
+  const spot = byId.get(id)
+  if (spot === undefined) return undefined
+  let kept = full.get(id)
+  if (kept === undefined) {
+    kept = build(spot)
+    full.set(id, kept)
+  }
+  const task = structuredClone(kept)
+  return AT_WORK.has(spot.moment) ? alive(task, Date.now()) : task
+}
+
+function taskMarkdownFor(
+  byId: Map<string, Spot>,
+  full: Map<string, TaskDetail>,
+  id: string,
+  name: string,
+): string | undefined {
+  const spot = byId.get(id)
+  const known = cachedDetail(byId, full, id)
+  if (spot === undefined || known === undefined) return undefined
+  if (!(Object.values(TASK_FILES) as string[]).includes(name)) return undefined
+  if (known.files.some((file) => file.name === name && !file.exists)) return undefined
+  return taskDocument(name)
+    ?.replaceAll("usage-based-billing", spot.slug)
+    .replaceAll("Usage-based billing", spot.title)
+}
+
+function requireMarkdown(
+  byId: Map<string, Spot>,
+  full: Map<string, TaskDetail>,
+  id: string,
+  name: string,
+): string | undefined {
+  if (!byId.has(id)) return undefined
+  const markdown = taskMarkdownFor(byId, full, id, name)
+  if (markdown === undefined) throw new Error(`${name} does not exist yet`)
+  return markdown
+}
+
 export function largeTasks(now: number): LargeTasks {
   const spots = spotsOf(now)
   const byId = new Map(spots.map((spot) => [spot.id, spot]))
   const light = new Map<string, TaskDetail>()
   const full = new Map<string, TaskDetail>()
-  const summary = (spot: Spot): TaskDetail => {
-    let kept = light.get(spot.id)
-    if (kept === undefined) {
-      kept = summaryOf(build(spot))
-      light.set(spot.id, kept)
-    }
-    return kept
-  }
-  const detail = (id: string): TaskDetail | undefined => {
-    const spot = byId.get(id)
-    if (spot === undefined) return undefined
-    let kept = full.get(id)
-    if (kept === undefined) {
-      kept = build(spot)
-      full.set(id, kept)
-    }
-    const task = structuredClone(kept)
-    return AT_WORK.has(spot.moment) ? alive(task, Date.now()) : task
-  }
-  const textOf = (id: string, name: string): string | undefined => {
-    const spot = byId.get(id)
-    const known = detail(id)
-    if (spot === undefined || known === undefined) return undefined
-    if (!(Object.values(TASK_FILES) as string[]).includes(name)) return undefined
-    if (known.files.some((file) => file.name === name && !file.exists)) return undefined
-    return taskDocument(name)
-      ?.replaceAll("usage-based-billing", spot.slug)
-      .replaceAll("Usage-based billing", spot.title)
-  }
+  const detail = (id: string) => cachedDetail(byId, full, id)
   return {
     projects: LARGE_PROJECTS,
     summaries: () =>
       spots.map((spot) => {
-        const task = structuredClone(summary(spot))
+        const task = structuredClone(cachedSummary(light, spot))
         return AT_WORK.has(spot.moment) ? alive(task, Date.now()) : task
       }),
     has: (id) => byId.has(id),
     detail,
     doc: (id, name) => {
-      if (!byId.has(id)) return undefined
-      const markdown = textOf(id, name)
-      if (markdown === undefined) throw new Error(`${name} does not exist yet`)
-      return { name, markdown, validation: { valid: true, errors: [] } }
+      const markdown = requireMarkdown(byId, full, id, name)
+      return markdown === undefined
+        ? undefined
+        : { name, markdown, validation: { valid: true, errors: [] } }
     },
     sections: (id, name) => {
-      if (!byId.has(id)) return undefined
-      const markdown = textOf(id, name)
-      if (markdown === undefined) throw new Error(`${name} does not exist yet`)
-      return taskSections(name, markdown, detail(id)?.type)
+      const markdown = requireMarkdown(byId, full, id, name)
+      return markdown === undefined ? undefined : taskSections(name, markdown, detail(id)?.type)
     },
-    shared: () => spots.filter((spot) => spot.shared).map((spot) => summary(spot)),
+    shared: () => spots.filter((spot) => spot.shared).map((spot) => cachedSummary(light, spot)),
   }
 }

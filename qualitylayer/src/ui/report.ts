@@ -127,22 +127,27 @@ const TAB_WORD: Record<string, string> = {
 
 type Panel = (typeof PANELS)[number]
 
+const PANEL_SELECTORS: readonly (readonly [string, Panel])[] = [
+  // The overlays first: they sit over whatever else is open.
+  ['[data-testid="command-box"]', "Command box"],
+  ['[data-testid="update-sheet"]', "Update sheet"],
+  ['[data-testid^="share-"]', "Share"],
+  ['[data-testid="comments-panel"]', "Comments panel"],
+  ['[data-testid="cost-panel"]', "Cost panel"],
+]
+
+const APPROVE_MENU_SELECTOR =
+  '.review-approval-menu[role="menu"], button[aria-expanded="true"][aria-label="More ways to approve"]'
+
 /** The panel that is open on the page now, found by the marks the panels carry. */
 export function openPanel(root: ParentNode = document): Panel | undefined {
-  // The overlays first: they sit over whatever else is open.
-  if (root.querySelector('[data-testid="command-box"]') !== null) return "Command box"
-  if (root.querySelector('[data-testid="update-sheet"]') !== null) return "Update sheet"
-  if (root.querySelector('[data-testid^="share-"]') !== null) return "Share"
-  if (root.querySelector('[data-testid="comments-panel"]') !== null) return "Comments panel"
-  if (root.querySelector('[data-testid="cost-panel"]') !== null) return "Cost panel"
-  if (
+  for (const [selector, panel] of PANEL_SELECTORS) {
+    if (root.querySelector(selector) !== null) return panel
+  }
+  const hasApproveMenu =
     root.querySelector('[role="menu"]') !== null &&
-    root.querySelector(
-      '.review-approval-menu[role="menu"], button[aria-expanded="true"][aria-label="More ways to approve"]',
-    ) !== null
-  )
-    return "Approve menu"
-  return undefined
+    root.querySelector(APPROVE_MENU_SELECTOR) !== null
+  return hasApproveMenu ? "Approve menu" : undefined
 }
 
 /**

@@ -1,6 +1,14 @@
 import { realpathSync } from "node:fs"
 import { nativeEffort } from "./types.ts"
 
+function stdoutSettingsFields(content: string): ("model" | "effort")[] {
+  const stdout = /<local-command-stdout>([\s\S]*)<\/local-command-stdout>/.exec(content)?.[1]
+  if (!stdout) return []
+  if (/^\s*(?:Kept|Set|Changed|Switched)\s+model\s+(?:as|to)\b/i.test(stdout))
+    return ["model", "effort"]
+  return /^\s*(?:Kept|Set|Changed|Switched)\s+effort\s+(?:as|to)\b/i.test(stdout) ? ["effort"] : []
+}
+
 /** Only native local-command metadata can withdraw an older assistant selection. */
 export function claudeSettingsCommand(row: Record<string, unknown>): ("model" | "effort")[] {
   if (row.type !== "system" || row.subtype !== "local_command" || row.isSidechain === true)
@@ -8,14 +16,8 @@ export function claudeSettingsCommand(row: Record<string, unknown>): ("model" | 
   if (typeof row.content !== "string") return []
   if (row.content.length > 16_384) return ["model", "effort"]
   const command = /<command-name>\s*\/(model|effort)\s*<\/command-name>/.exec(row.content)?.[1]
-  if (command === "model") return ["model", "effort"]
-  if (command === "effort") return ["effort"]
-  const stdout = /<local-command-stdout>([\s\S]*)<\/local-command-stdout>/.exec(row.content)?.[1]
-  if (stdout && /^\s*(?:Kept|Set|Changed|Switched)\s+model\s+(?:as|to)\b/i.test(stdout))
-    return ["model", "effort"]
-  return stdout && /^\s*(?:Kept|Set|Changed|Switched)\s+effort\s+(?:as|to)\b/i.test(stdout)
-    ? ["effort"]
-    : []
+  if (command) return command === "model" ? ["model", "effort"] : ["effort"]
+  return stdoutSettingsFields(row.content)
 }
 
 export type ClaudeSettingsScope = { session: string; cwd: string }
@@ -56,32 +58,27 @@ const MODELS = new Map([
   ["Opus 5.5", "claude-opus-5-5"],
 ])
 
-function frame(row: Record<string, unknown>, scope: ClaudeSettingsCursor["scope"]) {
-  if (
-    !scope ||
-    row.type !== "user" ||
-    row.isSidechain !== false ||
-    row.sessionId !== scope.session ||
-    typeof row.cwd !== "string" ||
-    !scope.aliases.includes(row.cwd) ||
-    row.userType !== "external" ||
-    row.entrypoint !== "cli"
-  )
-    return undefined
-  const message = row.message as { role?: unknown; content?: unknown } | undefined
-  if (
-    message?.role !== "user" ||
-    typeof message.content !== "string" ||
-    message.content.length > 16_384
-  )
-    return undefined
-  if (
-    typeof row.uuid !== "string" ||
-    !UUID.test(row.uuid) ||
-    typeof row.promptId !== "string" ||
-    !UUID.test(row.promptId)
-  )
-    return undefined
+type SettingsFrame = {
+  id: string
+  parent: unknown
+  prompt: string
+  version: string
+  at: number
+  text: string
+}
+
+function matchesScope(row: Record<string, unknown>, scope: ClaudeSettingsCursor["scope"]): boolean {
+  if (!scope || row.type !== "user" || row.isSidechain !== false) return false
+  if (row.sessionId !== scope.session || row.userType !== "external" || row.entrypoint !== "cli")
+    return false
+  return typeof row.cwd === "string" && scope.aliases.includes(row.cwd)
+}
+
+function parseFrameMeta(
+  row: Record<string, unknown>,
+): { id: string; prompt: string; version: string; at: number } | undefined {
+  if (typeof row.uuid !== "string" || !UUID.test(row.uuid)) return undefined
+  if (typeof row.promptId !== "string" || !UUID.test(row.promptId)) return undefined
   if (
     typeof row.version !== "string" ||
     row.version.length > 64 ||
@@ -89,63 +86,46 @@ function frame(row: Record<string, unknown>, scope: ClaudeSettingsCursor["scope"
   )
     return undefined
   const at = typeof row.timestamp === "string" ? Date.parse(row.timestamp) : Number.NaN
-  if (!Number.isFinite(at)) return undefined
-  return {
-    id: row.uuid,
-    parent: row.parentUuid,
-    prompt: row.promptId,
-    version: row.version,
-    at,
-    text: message.content,
-  }
+  return Number.isFinite(at)
+    ? { id: row.uuid, prompt: row.promptId, version: row.version, at }
+    : undefined
 }
 
-/** A native caveat authorizes only its two immediately following, correlated command records. */
-export function readClaudeSettingsChange(
+function frame(
   row: Record<string, unknown>,
-  cursor: ClaudeSettingsCursor,
-): ClaudeSettingsChange | undefined {
-  const current = frame(row, cursor.scope),
-    pending = cursor.pending
-  cursor.pending = undefined
-  if (!current) return undefined
-  if (row.isMeta === true && current.text === CAVEAT) {
-    if (cursor.last && (current.prompt === cursor.last.prompt || current.at < cursor.last.at - 5))
-      return undefined
-    cursor.pending = {
-      id: current.id,
-      prompt: current.prompt,
-      version: current.version,
-      at: current.at,
-      stage: "command",
-    }
-    return undefined
-  }
+  scope: ClaudeSettingsCursor["scope"],
+): SettingsFrame | undefined {
+  if (!matchesScope(row, scope)) return undefined
+  const message = row.message as { role?: unknown; content?: unknown } | undefined
   if (
-    !pending ||
-    row.isMeta === true ||
-    current.prompt !== pending.prompt ||
-    current.version !== pending.version ||
-    current.parent !== pending.id ||
-    current.id === pending.id ||
-    Math.abs(current.at - pending.at) > 5_000
+    message?.role !== "user" ||
+    typeof message.content !== "string" ||
+    message.content.length > 16_384
   )
     return undefined
-  if (pending.stage === "command") {
-    const field = SETTINGS_COMMAND.exec(current.text)?.[1]
-    if (field !== "model" && field !== "effort") return undefined
-    cursor.pending = {
-      id: current.id,
-      prompt: current.prompt,
-      version: current.version,
-      at: current.at,
-      stage: "stdout",
-      field,
-    }
-    return { withdrawn: field === "effort" ? ["effort"] : ["model", "effort"] }
-  }
-  cursor.last = { prompt: current.prompt, at: current.at }
-  if (pending.field === "effort") {
+  const meta = parseFrameMeta(row)
+  return meta ? { ...meta, parent: row.parentUuid, text: message.content } : undefined
+}
+
+function isCorrelated(
+  row: Record<string, unknown>,
+  current: SettingsFrame,
+  pending: Pending | undefined,
+): pending is Pending {
+  if (!pending || row.isMeta === true) return false
+  if (current.prompt !== pending.prompt || current.version !== pending.version) return false
+  return (
+    current.parent === pending.id &&
+    current.id !== pending.id &&
+    Math.abs(current.at - pending.at) <= 5_000
+  )
+}
+
+function parseStdoutChange(
+  current: SettingsFrame,
+  field: Field | undefined,
+): ClaudeSettingsChange | undefined {
+  if (field === "effort") {
     const level =
       /^<local-command-stdout>Set effort level to ([a-z]+) \(saved as your default for new sessions\): [^<>]+<\/local-command-stdout>$/.exec(
         current.text,
@@ -153,11 +133,54 @@ export function readClaudeSettingsChange(
     const effort = nativeEffort(level)
     return { withdrawn: ["effort"], ...(effort ? { values: { effort } } : {}) }
   }
-  if (pending.field !== "model") return undefined
+  if (field !== "model") return undefined
   const name =
     /^<local-command-stdout>Set model to `([^`]+)` for this session only<\/local-command-stdout>$/.exec(
       current.text,
     )?.[1]
   const model = name === undefined ? undefined : MODELS.get(name)
   return { withdrawn: ["model", "effort"], ...(model ? { values: { model } } : {}) }
+}
+
+function handleCommandStage(
+  current: SettingsFrame,
+  cursor: ClaudeSettingsCursor,
+): ClaudeSettingsChange | undefined {
+  const field = SETTINGS_COMMAND.exec(current.text)?.[1]
+  if (field !== "model" && field !== "effort") return undefined
+  cursor.pending = {
+    id: current.id,
+    prompt: current.prompt,
+    version: current.version,
+    at: current.at,
+    stage: "stdout",
+    field,
+  }
+  return { withdrawn: field === "effort" ? ["effort"] : ["model", "effort"] }
+}
+
+/** A native caveat authorizes only its two immediately following, correlated command records. */
+export function readClaudeSettingsChange(
+  row: Record<string, unknown>,
+  cursor: ClaudeSettingsCursor,
+): ClaudeSettingsChange | undefined {
+  const current = frame(row, cursor.scope)
+  const pending = cursor.pending
+  cursor.pending = undefined
+  if (!current) return undefined
+  if (row.isMeta === true && current.text === CAVEAT) {
+    if (!cursor.last || (current.prompt !== cursor.last.prompt && current.at >= cursor.last.at - 5))
+      cursor.pending = {
+        id: current.id,
+        prompt: current.prompt,
+        version: current.version,
+        at: current.at,
+        stage: "command",
+      }
+    return undefined
+  }
+  if (!isCorrelated(row, current, pending)) return undefined
+  if (pending.stage === "command") return handleCommandStage(current, cursor)
+  cursor.last = { prompt: current.prompt, at: current.at }
+  return parseStdoutChange(current, pending.field)
 }

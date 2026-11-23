@@ -7,37 +7,34 @@
 import { basename } from "node:path"
 import { composeHits } from "./core/memory/ranking.ts"
 import { MEMORY_KINDS } from "./core/memory/validation.ts"
-import { recordKept, recordMemoryActivity } from "./core/memory-activity.ts"
 import { resolveRepo } from "./core/paths.ts"
-import { inPersonReview } from "./core/review/in-review.ts"
 import { resolveBoundTask } from "./core/task/store.ts"
-import { type Ctx, err, ok, type Result } from "./ctx.ts"
-import {
-  type MemoryKind,
-  type MemoryPreview,
-  type MemorySemantic,
-  PERSONAL_PROJECT,
-} from "./memory-contracts.ts"
+import { type Ctx, err, type Result } from "./ctx.ts"
+import { type MemoryPreview, type MemorySemantic, PERSONAL_PROJECT } from "./memory-contracts.ts"
 import { memoryService } from "./memory-runtime.ts"
-import { historicalMemories, untrustedMemoryBlock } from "./task-memory.ts"
+import {
+  handleReadTool,
+  handleSearchTool,
+  type MemoryToolService,
+  QUERY_MAX,
+  SCOPES,
+  SEARCH_LIMIT_MAX,
+  type ToolContext,
+} from "./memory-tools-read.ts"
+import {
+  ABOUT,
+  handleKeepTool,
+  handleSaveTool,
+  KEEP_ACTIONS,
+  REASON_MAX,
+  RESTS_ON_MAX,
+} from "./memory-tools-write.ts"
 
 export const MEMORY_NOT_A_REPO = "This folder is not a memory repository."
 
-type Service = ReturnType<typeof memoryService>
 export type MemoryToolName = "memory_search" | "memory_read" | "memory_save" | "memory_keep"
 export type MemoryTool = { name: MemoryToolName; description: string; inputSchema: object }
-
-const SEARCH_LIMIT_DEFAULT = 5
-/** The most hits one search returns; each project is asked for this many before the page is composed. */
-const SEARCH_LIMIT_MAX = 8
-const SIMILAR_MAX = 3
-const SCOPES = ["all", "repo", "you"] as const
 export type MemorySearchScope = (typeof SCOPES)[number]
-const ABOUT = ["repo", "you"] as const
-const QUERY_MAX = 500
-const RESTS_ON_MAX = 200
-const REASON_MAX = 300
-const KEEP_ACTIONS = ["confirm", "retire", "restore"] as const
 const kinds = [...MEMORY_KINDS]
 /** Reviewers only read: the plugins refuse their writes, and so does every path through here. */
 export const REVIEWERS_READ_ONLY = "Reviewers do not save or keep lessons."
@@ -128,26 +125,8 @@ function only(args: Record<string, unknown>, names: string[]): string | null {
   return stray === undefined ? null : `Unknown argument: ${stray}.`
 }
 
-const text = (value: unknown, label: string, max: number): string => {
-  if (typeof value !== "string" || !value.trim() || value.length > max)
-    throw new Error(`${label} must be text of 1 to ${max} characters.`)
-  return value
-}
-
-const whole = (value: unknown, label: string, low: number, high: number): number | undefined => {
-  if (value === undefined) return undefined
-  if (typeof value !== "number" || !Number.isInteger(value) || value < low || value > high)
-    throw new Error(`${label} must be a whole number from ${low} to ${high}.`)
-  return value
-}
-
-const day = (at: number) => new Date(at).toISOString().slice(0, 10)
 export const scopeOf = (project: string): "repo" | "you" =>
   project === PERSONAL_PROJECT ? "you" : "repo"
-
-/** A teammate's name is shown outside the lesson block only when it reads as a plain name. */
-const plainName = (author: string | undefined) =>
-  author !== undefined && /^[\p{L}\p{N} .'_-]{1,80}$/u.test(author) ? author : undefined
 
 /**
  * An agent's search of this repository and the lessons about the person, the query embedded once.
@@ -155,7 +134,7 @@ const plainName = (author: string | undefined) =>
  * two slots of the page.
  */
 export async function searchLessons(
-  service: Service,
+  service: MemoryToolService,
   project: string,
   query: string,
   limit: number,
@@ -176,21 +155,32 @@ export async function searchLessons(
   return { lessons, semantic: found.semantic, ...(found.issue ? { issue: found.issue } : {}) }
 }
 
-/** What a search hit says about a lesson outside the data block: no title, no text. */
-function hitFacts(lesson: MemoryPreview) {
-  const checkedAt = lesson.checked?.at ?? lesson.evidence?.recordedAt
-  const author = plainName(lesson.author)
-  return {
-    id: lesson.id,
-    scope: scopeOf(lesson.project),
-    source: lesson.source,
-    pinned: !!lesson.pinned,
-    ...(lesson.sources ? { sources: lesson.sources.state } : {}),
-    ...(lesson.sources?.commits ? { changed_commits: lesson.sources.commits } : {}),
-    saved: day(lesson.createdAt),
-    ...(checkedAt === undefined ? {} : { checked: day(checkedAt) }),
-    ...(author ? { author } : {}),
-  }
+const TOOL_HANDLERS: Record<
+  MemoryToolName,
+  (toolCtx: ToolContext, given: Record<string, unknown>) => Promise<Result<unknown>>
+> = {
+  memory_search: handleSearchTool,
+  memory_read: handleReadTool,
+  memory_keep: handleKeepTool,
+  memory_save: handleSaveTool,
+}
+
+function validateToolCall(
+  ctx: Ctx,
+  name: string,
+  args: unknown,
+): { toolName: MemoryToolName; given: Record<string, unknown> } | { error: Result<unknown> } {
+  const tool = MEMORY_TOOLS.find((entry) => entry.name === name)
+  if (!tool) return { error: bad(`Unknown memory tool: ${name}.`) }
+  const given = object(args)
+  if (!given) return { error: bad("Tool arguments must be an object.") }
+  const names = Object.keys((tool.inputSchema as { properties: object }).properties)
+  const stray = only(given, names)
+  if (stray) return { error: bad(stray) }
+  const isWrite = tool.name === "memory_save" || tool.name === "memory_keep"
+  if (isWrite && ctx.env.get("QUALITYLAYER_REVIEW_READ_ONLY") === "1")
+    return { error: bad(REVIEWERS_READ_ONLY) }
+  return { toolName: tool.name, given }
 }
 
 /**
@@ -202,20 +192,10 @@ export async function runMemoryTool(
   ctx: Ctx,
   name: string,
   args: unknown,
-  make: () => Service = () => memoryService(ctx),
+  make: () => MemoryToolService = () => memoryService(ctx),
 ): Promise<Result<unknown>> {
-  const tool = MEMORY_TOOLS.find((entry) => entry.name === name)
-  if (!tool) return bad(`Unknown memory tool: ${name}.`)
-  const given = object(args)
-  if (!given) return bad("Tool arguments must be an object.")
-  const names = Object.keys((tool.inputSchema as { properties: object }).properties)
-  const stray = only(given, names)
-  if (stray) return bad(stray)
-  if (
-    (name === "memory_save" || name === "memory_keep") &&
-    ctx.env.get("QUALITYLAYER_REVIEW_READ_ONLY") === "1"
-  )
-    return bad(REVIEWERS_READ_ONLY)
+  const validated = validateToolCall(ctx, name, args)
+  if ("error" in validated) return validated.error
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return err({ code: "not_a_repo", message: MEMORY_NOT_A_REPO })
   const service = make()
@@ -228,193 +208,7 @@ export async function runMemoryTool(
     })
     await service.registerPersonal()
     const task = await resolveBoundTask(ctx, repo.data)
-    if (name === "memory_search") {
-      const query = text(given.query, "query", QUERY_MAX)
-      const limit = whole(given.limit, "limit", 1, SEARCH_LIMIT_MAX) ?? SEARCH_LIMIT_DEFAULT
-      const scope = given.scope ?? "all"
-      if (typeof scope !== "string" || !(SCOPES as readonly string[]).includes(scope))
-        throw new Error(`scope must be one of: ${SCOPES.join(", ")}.`)
-      const found = await searchLessons(service, project, query, limit, scope as MemorySearchScope)
-      if (task)
-        await recordMemoryActivity(
-          ctx,
-          task,
-          "reads",
-          found.lessons.length,
-          found.lessons.map(({ id }) => id),
-        )
-      return ok({
-        lessons: found.lessons.map(hitFacts),
-        semantic: found.semantic,
-        ...(found.lessons.length === 0
-          ? {
-              message:
-                "No lesson matches this query. Try a repository-relative path of a file you just read, or a code symbol from it.",
-            }
-          : {}),
-        untrusted: found.lessons.length ? historicalMemories(found.lessons) : "",
-        ...(found.issue ? { memory_issue: found.issue } : {}),
-      })
-    }
-    if (name === "memory_read") {
-      const id = text(given.id, "id", 128)
-      const around = whole(given.around, "around", 0, 3) ?? 0
-      const lesson = await service.read(id)
-      if (lesson.project !== project && lesson.project !== PERSONAL_PROJECT)
-        throw new Error("This memory belongs to another project.")
-      if (task) await recordMemoryActivity(ctx, task, "reads", 1, [lesson.id])
-      const neighbours = around ? await service.neighbours(lesson.id, around) : []
-      return ok({
-        lesson: {
-          id: lesson.id,
-          revision: lesson.revision,
-          scope: scopeOf(lesson.project),
-          kind: lesson.kind,
-          source: lesson.source,
-          ...(plainName(lesson.author) ? { author: plainName(lesson.author) } : {}),
-          ...(lesson.sourceId ? { source_id: lesson.sourceId } : {}),
-          state: lesson.state,
-          pinned: !!lesson.pinned,
-          updatedAt: lesson.updatedAt,
-          saved: day(lesson.createdAt),
-          ...(lesson.sources ? { sources: lesson.sources.state } : {}),
-          ...(lesson.sources?.commits ? { changed_by: lesson.sources.commits } : {}),
-          ...(lesson.checked
-            ? { checked: lesson.checked.commit, checked_on: day(lesson.checked.at) }
-            : {}),
-          ...(lesson.retired
-            ? { retired_by: lesson.retired.by, retired_at: lesson.retired.at }
-            : {}),
-        },
-        neighbours: neighbours.map(({ id }) => ({ id })),
-        untrusted: untrustedMemoryBlock({
-          title: lesson.title,
-          content: lesson.content,
-          tags: lesson.tags,
-          files: lesson.files,
-          ...(lesson.sources?.latest ? { latest_change: lesson.sources.latest.subject } : {}),
-          ...(lesson.sources?.reason ? { sources_reason: lesson.sources.reason } : {}),
-          ...(lesson.retired?.reason ? { retired_reason: lesson.retired.reason } : {}),
-          neighbours: neighbours.map(({ id, title }) => ({ id, title })),
-        }),
-      })
-    }
-    if (name === "memory_keep") {
-      const id = text(given.id, "id", 128)
-      const action = given.action
-      if (typeof action !== "string" || !(KEEP_ACTIONS as readonly string[]).includes(action))
-        throw new Error(`action must be one of: ${KEEP_ACTIONS.join(", ")}.`)
-      const reason =
-        given.reason === undefined ? undefined : text(given.reason, "reason", REASON_MAX)
-      if (action === "retire" && reason === undefined)
-        throw new Error("Give the reason this lesson no longer holds.")
-      const lesson = await service.read(id)
-      if (lesson.project !== project && lesson.project !== PERSONAL_PROJECT)
-        throw new Error("This memory belongs to another project.")
-      const kept =
-        action === "confirm"
-          ? await service.confirm(id, reason)
-          : await service.retire(
-              id,
-              action === "restore",
-              action === "retire"
-                ? {
-                    reason: reason as string,
-                    by: task && (await inPersonReview(ctx, task)) ? "review" : "agent",
-                  }
-                : undefined,
-            )
-      if (task && action !== "restore")
-        await recordKept(ctx, task, action === "confirm" ? "confirmed" : "retired", id)
-      // A retirement or restore updates the opted-in project's export; it never imports.
-      const exchanged =
-        action === "confirm" || lesson.project === PERSONAL_PROJECT
-          ? null
-          : await service.exchange(project).catch((cause: unknown) => ({
-              issues: [cause instanceof Error ? cause.message : "Could not write shared lessons"],
-            }))
-      return ok({
-        id,
-        action,
-        state: kept.state,
-        ...(exchanged?.issues.length
-          ? { memory_issue: `${exchanged.issues[0]} Run memory export to retry.` }
-          : {}),
-      })
-    }
-    if (given.rests_on !== undefined) text(given.rests_on, "rests_on", RESTS_ON_MAX)
-    const files = given.files
-    if (
-      files !== undefined &&
-      (!Array.isArray(files) || files.some((file) => typeof file !== "string"))
-    )
-      throw new Error("files must be a list of repository-relative paths.")
-    const kind = given.kind
-    if (kind !== undefined && (typeof kind !== "string" || !MEMORY_KINDS.has(kind)))
-      throw new Error(`Unknown memory kind. Use one of: ${kinds.join(", ")}.`)
-    const content = text(given.content, "content", 24000)
-    const about = given.about ?? "repo"
-    if (typeof about !== "string" || !(ABOUT as readonly string[]).includes(about))
-      throw new Error(`about must be one of: ${ABOUT.join(", ")}.`)
-    const personal = about === "you"
-    if (personal && files?.length) throw new Error("A lesson about the person takes no files.")
-    const title = text(given.title, "title", 200)
-    const record = await service.store({
-      project: personal ? PERSONAL_PROJECT : project,
-      ...(given.id === undefined ? {} : { id: text(given.id, "id", 128) }),
-      ...(given.revision === undefined ? {} : { expectedRevision: given.revision as number }),
-      title,
-      content: withRestsOn(content, given.rests_on as string | undefined),
-      ...(kind === undefined ? {} : { kind: kind as MemoryKind }),
-      ...(files === undefined ? {} : { files: files as string[] }),
-      ...(given.replaces === undefined
-        ? {}
-        : {
-            replaces: text(given.replaces, "replaces", 128),
-            retiredBy:
-              task && (await inPersonReview(ctx, task)) ? ("review" as const) : ("agent" as const),
-          }),
-      ...(task && !personal ? { task: task.slug } : {}),
-    })
-    if (task) await recordMemoryActivity(ctx, task, "saves", 1, [record.id])
-    // A correction that keeps its title updates the same lesson: it is a revision all the same.
-    if (task && typeof given.replaces === "string")
-      await recordKept(ctx, task, "revised", given.replaces)
-    // The lesson that was found similar while saving: only when the agent did not name one to replace.
-    const similar =
-      given.replaces === undefined
-        ? (await service.search(record.project, title, SIMILAR_MAX + 1).catch(() => null))?.lessons
-            .filter((lesson) => lesson.id !== record.id)
-            .slice(0, SIMILAR_MAX)
-        : undefined
-    if (personal)
-      return ok({
-        id: record.id,
-        revision: record.revision,
-        scope: "you",
-        sharing: "never (about you)",
-        ...(similar?.length
-          ? { similar: similar.map(({ id }) => ({ id })), untrusted: historicalMemories(similar) }
-          : {}),
-      })
-    // Local saves stand even if the opted-in project export cannot finish now.
-    await service.exchange(project).catch(() => {})
-    // Export eligibility and this project's local consent decide whether the lesson can leave here.
-    const sharing = await service.sharingEnabled(project)
-    return ok({
-      id: record.id,
-      revision: record.revision,
-      scope: "repo",
-      sharing:
-        record.visibility !== "project"
-          ? "this computer only"
-          : sharing
-            ? "with your next commit"
-            : "off in this repository",
-      ...(similar?.length
-        ? { similar: similar.map(({ id }) => ({ id })), untrusted: historicalMemories(similar) }
-        : {}),
-    })
+    return await TOOL_HANDLERS[validated.toolName]({ ctx, service, project, task }, validated.given)
   } catch (cause) {
     return bad(cause instanceof Error ? cause.message : "Memory tool could not finish.")
   } finally {

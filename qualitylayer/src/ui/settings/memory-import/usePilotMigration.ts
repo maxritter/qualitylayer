@@ -7,10 +7,65 @@ import type {
   PilotSelection,
   PilotSourceInput,
 } from "../../../pilot-memory-contracts.ts"
-import { releasePreview } from "./preview.ts"
+import {
+  type MigrationRefs,
+  type MigrationSetters,
+  runPilotApply,
+  runPilotBack,
+  runPilotScan,
+  runPilotStop,
+} from "./pilot-migration-actions.ts"
 import { importError } from "./Source.tsx"
 
 export type PilotDestination = { id: string; name: string }
+
+function cleanupMigrationOnUnmount(
+  refs: Pick<MigrationRefs, "live" | "scanId" | "controller">,
+  callbacks: { cancel: PilotMigrationApi["cancel"]; completed: () => void },
+): void {
+  refs.live.current = false
+  const transport = refs.controller.current
+  if (!refs.scanId.current) {
+    transport?.abort()
+    return
+  }
+  void callbacks
+    .cancel(refs.scanId.current)
+    .then((result) => {
+      if (result.receipt) callbacks.completed()
+    })
+    .catch(() => {})
+    .finally(() => transport?.abort())
+}
+
+function subscribePilotReview(params: {
+  api: PilotMigrationApi
+  selection: PilotSelection
+  selectionKey: string
+  setReviewing: (value: boolean) => void
+  setReviewError: (value: string | null) => void
+  setReview: (value: { key: string; result: PilotReview } | null) => void
+}): () => void {
+  let current = true
+  params.setReviewing(true)
+  params.setReviewError(null)
+  params.setReview(null)
+  void params.api
+    .review(params.selection)
+    .then((result) => {
+      if (current) params.setReview({ key: params.selectionKey, result })
+    })
+    .catch((cause) => {
+      if (current) params.setReviewError(importError(cause))
+    })
+    .finally(() => {
+      if (current) params.setReviewing(false)
+    })
+  return () => {
+    current = false
+  }
+}
+
 export function usePilotMigration(api: PilotMigrationApi, completed: () => void) {
   const [input, setInput] = useState<PilotSourceInput>({ kind: "folder" })
   const [scannedInput, setScannedInput] = useState<PilotSourceInput | null>(null)
@@ -34,23 +89,28 @@ export function usePilotMigration(api: PilotMigrationApi, completed: () => void)
   const recovered = useRef(false)
   const callbacks = useRef({ cancel: api.cancel, completed })
   callbacks.current = { cancel: api.cancel, completed }
+
+  const refs: MigrationRefs = { live, scanId, controller, operation, stopInFlight, recovered }
+  const setters: MigrationSetters = {
+    setScan,
+    setDestinations,
+    setScannedInput,
+    setReview,
+    setReceipt,
+    setBusy,
+    setReviewing,
+    setStopping,
+    setStopped,
+    setError,
+    setReviewError,
+    bumpRevision: () => setRevision((value) => value + 1),
+  }
+
   useEffect(() => {
     live.current = true
-    return () => {
-      live.current = false
-      const transport = controller.current
-      if (scanId.current) {
-        // Owned cancellation stops the writer even when its apply connection has gone away.
-        void callbacks.current
-          .cancel(scanId.current)
-          .then((result) => {
-            if (result.receipt) callbacks.current.completed()
-          })
-          .catch(() => {})
-          .finally(() => transport?.abort())
-      } else transport?.abort()
-    }
+    return () => cleanupMigrationOnUnmount({ live, scanId, controller }, callbacks.current)
   }, [])
+
   const selection = useMemo<PilotSelection | null>(
     () =>
       scan
@@ -68,140 +128,26 @@ export function usePilotMigration(api: PilotMigrationApi, completed: () => void)
   const selectionKey = JSON.stringify(selection)
   const sourceChanged = input !== scannedInput
   const selected = selection?.mappings.some((mapping) => mapping.project !== null) ?? false
+  const reviewBlocked = Boolean(busy || receipt || sourceChanged || stopping)
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: explicit retry rereads current selected destinations
   useEffect(() => {
-    if (!selection || busy || receipt || sourceChanged || stopping) return
-    let current = true
-    setReviewing(true)
-    setReviewError(null)
-    setReview(null)
-    void api
-      .review(selection)
-      .then((result) => {
-        if (current) setReview({ key: selectionKey, result })
-      })
-      .catch((cause) => {
-        if (current) setReviewError(importError(cause))
-      })
-      .finally(() => {
-        if (current) setReviewing(false)
-      })
-    return () => {
-      current = false
-    }
-  }, [api, selection, selectionKey, busy, receipt, sourceChanged, stopping, revision])
+    if (!selection || reviewBlocked) return
+    return subscribePilotReview({
+      api,
+      selection,
+      selectionKey,
+      setReviewing,
+      setReviewError,
+      setReview,
+    })
+  }, [api, selection, selectionKey, reviewBlocked, revision])
+
   const currentReview = review?.key === selectionKey && !sourceChanged ? review.result : null
-  const scanSource = async () => {
-    if (operation.current || stopping) return
-    const control = new AbortController()
-    controller.current = control
-    operation.current = "scan"
-    setBusy("scan")
-    setError(null)
-    setReviewError(null)
-    try {
-      if (scanId.current) await releasePreview(api, scanId.current)
-      scanId.current = null
-      setScan(null)
-      const result = await api.scan(input, control.signal)
-      if (!live.current || control.signal.aborted) {
-        void api.cancel(result.id).catch(() => {})
-      } else {
-        scanId.current = result.id
-        setScan(result)
-        setDestinations({})
-        setScannedInput(input)
-        setReceipt(null)
-        setReview(null)
-        setStopped(false)
-      }
-    } catch (cause) {
-      if (live.current && !control.signal.aborted) setError(importError(cause))
-    } finally {
-      operation.current = null
-      if (live.current) setBusy(null)
-    }
-  }
-  const stop = async () => {
-    if (!scanId.current || stopInFlight.current) return
-    stopInFlight.current = true
-    setStopping(true)
-    try {
-      const result = await api.cancel(scanId.current)
-      if (live.current && result.receipt) {
-        recovered.current = true
-        setReceipt(result.receipt)
-        setStopped(result.state === "stopped")
-        setError(null)
-        completed()
-        controller.current?.abort()
-      } else if (live.current && result.state === "cancelled") {
-        scanId.current = null
-        setScan(null)
-        setReview(null)
-        setReviewError(null)
-        setReviewing(false)
-      }
-    } catch (cause) {
-      if (live.current)
-        setError(`${importError(cause)} You can retry Stop import or close this dialog.`)
-    } finally {
-      stopInFlight.current = false
-      if (live.current) setStopping(false)
-    }
-  }
-  const apply = async () => {
-    if (operation.current || stopping || !selection || sourceChanged || !selected) return
-    const control = new AbortController()
-    controller.current = control
-    operation.current = "apply"
-    recovered.current = false
-    setBusy("apply")
-    setReceipt(null)
-    setStopped(false)
-    setError(null)
-    try {
-      const result = await api.apply(selection, control.signal)
-      completed()
-      if (live.current) setReceipt(result)
-    } catch (cause) {
-      if (live.current && !recovered.current) {
-        setError(importError(cause))
-        // A lost response does not prove nothing was saved: stop and retrieve its receipt.
-        await stop()
-      }
-    } finally {
-      operation.current = null
-      if (live.current) {
-        setBusy(null)
-        setReview(null)
-        setRevision((value) => value + 1)
-      }
-    }
-  }
-  const back = async () => {
-    if (operation.current || stopping) return
-    if (scanId.current) {
-      try {
-        await releasePreview(api, scanId.current)
-      } catch (cause) {
-        setError(importError(cause))
-        return
-      }
-    }
-    scanId.current = null
-    setScan(null)
-    setReview(null)
-    setError(null)
-  }
-  const canImport =
-    !busy &&
-    !stopping &&
-    !reviewing &&
-    selected &&
-    !!currentReview &&
-    !reviewError &&
-    !sourceChanged
+  const idle = !busy && !stopping && !reviewing
+  const reviewReady = selected && Boolean(currentReview) && !reviewError
+  const canImport = idle && reviewReady && !sourceChanged
+
   return {
     input,
     setInput,
@@ -220,10 +166,20 @@ export function usePilotMigration(api: PilotMigrationApi, completed: () => void)
     currentReview,
     sourceChanged,
     canImport,
-    scanSource,
-    apply,
-    stop,
-    back,
-    retryReview: () => setRevision((value) => value + 1),
+    scanSource: () => runPilotScan(api, input, stopping, refs, setters),
+    apply: () =>
+      runPilotApply({
+        api,
+        selection,
+        selected,
+        sourceChanged,
+        stopping,
+        completed,
+        refs,
+        set: setters,
+      }),
+    stop: () => runPilotStop(api, completed, refs, setters),
+    back: () => runPilotBack(api, stopping, refs, setters),
+    retryReview: setters.bumpRevision,
   }
 }

@@ -32,7 +32,8 @@ function patchMetadata(state: PatchState, line: string): boolean {
   }
   if (!line.startsWith("@@")) return false
   state.hunk = { before: [], after: [] }
-  current.hunks!.push(state.hunk)
+  current.hunks ??= []
+  current.hunks.push(state.hunk)
   return true
 }
 
@@ -55,7 +56,7 @@ function patchEdits(patch: string): NativeEdit[] {
     if (line === "*** End Patch") break
     const named = /^\*\*\* (Add|Update|Delete) File: (.+)$/.exec(line)
     if (named) {
-      state.current = patchFile(named[1]!, named[2]!)
+      state.current = patchFile(named[1] ?? "", named[2] ?? "")
       state.hunk = undefined
       edits.push(state.current)
     } else if (
@@ -102,43 +103,4 @@ export function nativeEdits(tool: unknown, input: unknown): NativeEdit[] {
   return fileEdits(name, args)
 }
 
-function replayReplacements(content: string, replacements: NativeEdit["replacements"]) {
-  for (const change of replacements ?? []) {
-    const at = content.indexOf(change.before)
-    if (at < 0 || (!change.all && content.indexOf(change.before, at + change.before.length) >= 0))
-      return undefined
-    content = change.all
-      ? content.split(change.before).join(change.after)
-      : content.slice(0, at) + change.after + content.slice(at + change.before.length)
-  }
-  return content
-}
-
-function replayHunks(content: string, hunks: NativeEdit["hunks"]) {
-  let cursor = 0
-  for (const hunk of hunks ?? []) {
-    if (hunk.before.length === 0) return undefined
-    const lines = content.split("\n")
-    const positions: number[] = []
-    for (let at = cursor; at <= lines.length - hunk.before.length; at++)
-      if (hunk.before.every((line, index) => lines[at + index] === line)) positions.push(at)
-    if (positions.length !== 1) return undefined
-    const at = positions[0]!
-    lines.splice(at, hunk.before.length, ...hunk.after)
-    cursor = at + hunk.after.length
-    content = lines.join("\n")
-  }
-  return content
-}
-
-/** Exact replay, refusing an ambiguous replacement rather than guessing where the tool edited. */
-export function replayNativeEdit(
-  edit: NativeEdit,
-  before: string | null,
-): string | null | undefined {
-  if (edit.kind === "write") return edit.content
-  if (edit.kind === "delete") return before === null ? undefined : null
-  if (before === null) return undefined
-  const content = replayReplacements(before, edit.replacements)
-  return content === undefined ? undefined : replayHunks(content, edit.hunks)
-}
+export { replayNativeEdit } from "./native-edit-replay.ts"

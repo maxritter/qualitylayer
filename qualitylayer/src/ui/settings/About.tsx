@@ -12,45 +12,26 @@ import {
   RefreshCwIcon,
   RouteIcon,
 } from "lucide-react"
-import { type ComponentProps, useState } from "react"
+import { type ComponentProps, type ReactNode, useState } from "react"
 import type { UpdateChannel } from "../../core/config-values.ts"
 import { sizeWords } from "../../core/size-words.ts"
-import { CHANGELOG_URL } from "../../core/update/render.ts"
 import { compareVersions } from "../../core/update/versions.ts"
 import type { Api, Release } from "../api.ts"
 import { showFileInFolderLabel } from "../file-action-labels.ts"
 import { useQuery } from "../hooks.ts"
-import { Fold } from "../kit/Fold.tsx"
 import { offersHostActions } from "../machines/framed.ts"
-import { ReleaseNotes } from "../ReleaseNotes.tsx"
 import { requestFeedback } from "../report.ts"
 import { tourLocation } from "../tour/location.ts"
 import { pausedTour } from "../tour/session.ts"
-import { type Updates, waitingWords } from "../Updates.tsx"
+import type { Updates } from "../Updates.tsx"
+import { AboutReleaseNotes, describeUpdateStatus } from "./AboutReleaseNotes.tsx"
 import { Choice, SettingRow, SettingsGroup } from "./Rows.tsx"
 import { ServerPortGroup } from "./ServerPort.tsx"
 
+export { checkedWords, whenWords } from "./AboutReleaseNotes.tsx"
+
 export const DOCS_URL = "https://qualitylayer.dev/docs/"
 export const PRIVACY_URL = "https://qualitylayer.dev/docs/reference/files#privacy"
-
-const pad = (n: number) => String(n).padStart(2, "0")
-
-/** "today at 09:12", "yesterday at 09:12", "Oct 3 at 09:12"; the clock is a parameter so it can be tested. */
-export function checkedWords(at: number | null, now: number = Date.now()): string {
-  return at === null ? "not checked yet" : `checked ${whenWords(at, now)}`
-}
-
-/** "today at 09:12", "yesterday at 09:12", "Oct 3 at 09:12". */
-export function whenWords(at: number, now: number = Date.now()): string {
-  const then = new Date(at)
-  const time = `${pad(then.getHours())}:${pad(then.getMinutes())}`
-  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const apart = Math.round((day(new Date(now)) - day(then)) / 86_400_000)
-  if (apart === 0) return `today at ${time}`
-  if (apart === 1) return `yesterday at ${time}`
-  const date = then.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-  return `${date} at ${time}`
-}
 
 /** What the channel row says it does: Beta also offers prereleases, and a newer stable replaces a beta. */
 const CHANNEL_SAYS: Record<UpdateChannel, string> = {
@@ -65,7 +46,7 @@ function DiskUseRow({ api }: { api: Pick<Api, "diskUse" | "revealHome"> }) {
   const measured = useQuery(() => Promise.resolve().then(() => api.diskUse?.() ?? null), [])
   const [refused, setRefused] = useState<string | null>(null)
   const size = measured.data
-  let hint: React.ReactNode
+  let hint: ReactNode
   if (refused !== null) hint = refused
   else if (measured.loading) hint = "Measuring…"
   else if (size === null || measured.error !== null) hint = "The size could not be measured."
@@ -174,47 +155,14 @@ export function About({
     [channel, info?.available],
   )
   const all = releases.data ?? []
-
   const running = info?.current ?? ""
   const localRelease = /^(\d+\.\d+\.\d+(?:-beta\.\d+)?)\.\d+$/.exec(running)?.[1]
   const ready = info !== null && info.available !== null
   const shown = ready ? (info.available as string) : running
   const notes = all.find((r) => r.version === shown)?.notes ?? (ready ? info.notes : null)
   const earlier = all.filter((release) => compareVersions(release.version, shown) < 0)
-
-  let line: string
-  let button: { label: string; onClick: () => void; busy?: boolean } | null = null
-  if (info === null) {
-    line = "Reading the version…"
-  } else if (!info.managed) {
-    line = ready
-      ? `${info.available} is out. Run qualitylayer update in a terminal.`
-      : "Updates come with the App. On the command line, run qualitylayer update."
-  } else if (info.state === "downloading" || (ready && !info.downloaded && info.state === "idle")) {
-    line = `Downloading ${info.available ?? "the new version"}…`
-  } else if (info.state === "installing") {
-    line = `Updating to ${info.available ?? ""}…`
-  } else if (info.state === "waiting") {
-    line = `${info.available} is ready · ${waitingWords(info.waitingFor).replace(/^W/, "w")}`
-    button = { label: "Restart and update", onClick: updates.openSheet }
-  } else if (info.state === "failed") {
-    line = `The last update to ${info.available ?? "the new version"} did not finish · ${checkedWords(info.checkedAt)}`
-    button = { label: "See why", onClick: updates.openSheet }
-  } else if (ready) {
-    line = `${info.available} is ready · ${checkedWords(info.checkedAt)}`
-    button = { label: "Restart and update", onClick: updates.restart }
-  } else {
-    line = updates.checkStalled
-      ? "The App did not answer. Open the QualityLayer App and try again."
-      : localRelease
-        ? `Local build of ${localRelease} · ${checkedWords(info.checkedAt)} · only newer releases are offered`
-        : `Up to date · ${checkedWords(info.checkedAt)}`
-    button = {
-      label: updates.checking ? "Checking…" : "Check now",
-      onClick: updates.check,
-      busy: updates.checking,
-    }
-  }
+  const { line, button } = describeUpdateStatus(updates, localRelease)
+  const primaryUpdate = ready && info?.managed && info.state === "ready"
 
   return (
     <div className="q-sgs">
@@ -231,9 +179,7 @@ export function About({
           {button !== null ? (
             <button
               type="button"
-              className={
-                ready && info?.managed && info.state === "ready" ? "q-btn primary" : "q-btn"
-              }
+              className={primaryUpdate ? "q-btn primary" : "q-btn"}
               disabled={button.busy === true}
               onClick={button.onClick}
             >
@@ -260,49 +206,13 @@ export function About({
         {api?.diskUse !== undefined ? <DiskUseRow api={api} /> : null}
       </SettingsGroup>
 
-      <SettingsGroup
-        testId="about-new"
-        title={notes !== null ? <>What&apos;s new in {shown}</> : <>Release notes</>}
-        end={
-          <a className="q-link" href={CHANGELOG_URL} target="_blank" rel="noopener noreferrer">
-            GitHub Releases
-          </a>
-        }
-      >
-        <div className="px-4 py-3.5">
-          {notes !== null ? (
-            <ReleaseNotes notes={notes} />
-          ) : (
-            <p className="m-0 text-[13px] text-muted-foreground" role="status">
-              {releases.loading
-                ? "Loading release notes…"
-                : releases.error !== null
-                  ? "Release notes could not be loaded. You can read them on GitHub."
-                  : "Read all published release notes on GitHub."}
-            </p>
-          )}
-        </div>
-      </SettingsGroup>
-
-      {earlier.length > 0 ? (
-        <Fold
-          plain
-          name="Earlier releases"
-          line={earlier
-            .slice(0, 3)
-            .map((r) => r.label)
-            .join(" · ")}
-        >
-          <div className="grid gap-5 px-4 py-3.5" data-testid="about-earlier">
-            {earlier.map((release) => (
-              <section key={release.version} className="grid gap-2">
-                <h3 className="m-0 text-[14px] font-semibold">{release.label}</h3>
-                <ReleaseNotes notes={release.notes} />
-              </section>
-            ))}
-          </div>
-        </Fold>
-      ) : null}
+      <AboutReleaseNotes
+        shown={shown}
+        notes={notes}
+        loading={releases.loading}
+        error={releases.error}
+        earlier={earlier}
+      />
 
       <HelpGroup />
 

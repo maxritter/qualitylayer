@@ -10,19 +10,18 @@ import { openQuestion } from "../task/question.ts"
 import { readBatch } from "../task/question-batch.ts"
 import type { Task } from "../task/store.ts"
 import { readVerifyMode } from "../task/verify-mode.ts"
-import { HELPER_STALE_MS, helperRunning } from "../wait-rules.ts"
+import { helperRunning } from "../wait-rules.ts"
 import { INTENT_NO_PROGRESS, type RunIntent, type RunRecord } from "./contracts.ts"
 import { taskHelperWait } from "./helper-wait.ts"
+import {
+  INTENT_HELPER_STALE,
+  INTENT_HELPER_WAIT,
+  INTENT_PROCESS_ENDED,
+  intentWaitStatus,
+} from "./intent-wait.ts"
 
 export { taskHelperWait } from "./helper-wait.ts"
-
-export const INTENT_HELPER_WAIT = "Waiting for the native helper's completion event."
-export const INTENT_HELPER_STALE =
-  "The helper wait is no longer fresh. Inspect the agent session before resuming."
-export const INTENT_PROCESS_ENDED =
-  "The agent process ended while waiting for its helper. Open the session and resume it explicitly."
-export const INTENT_PROCESS_UNVERIFIED =
-  "The agent process cannot be verified. Inspect the session before resuming."
+export { INTENT_HELPER_STALE, INTENT_HELPER_WAIT, INTENT_PROCESS_ENDED, intentWaitStatus }
 
 export type IntentFacts = {
   task: string
@@ -44,29 +43,46 @@ export const armIntent = (task: string, nativeSession: string, armedAt: string):
   ...(!nativeSession ? { reason: "Waiting for native lead binding." } : {}),
 })
 
+function resolveAllowDecision(
+  intent: RunIntent,
+  facts: IntentFacts,
+): { state: RunIntent["state"]; reason: string } | null {
+  if (facts.interrupted)
+    return { state: "paused", reason: "Interrupted by you. Resume explicitly to continue." }
+  if (intent.task !== facts.task || intent.nativeSession !== facts.session)
+    return {
+      state: "blocked",
+      reason: "The task or native lead changed. Continuation was refused.",
+    }
+  if (facts.boundary === "review")
+    return { state: "complete", reason: "The change is ready for your Review." }
+  if (facts.boundary !== "none")
+    return {
+      state: facts.boundary === "error" ? "blocked" : "waiting",
+      reason: facts.reason ?? "Waiting at a recorded boundary.",
+    }
+  return null
+}
+
 export function decideIntent(
   intent: RunIntent,
   facts: IntentFacts,
 ): { intent: RunIntent; action: "continue" | "allow" } {
-  const allow = (state: RunIntent["state"], reason: string) => ({
-    intent: { ...intent, state, reason },
-    action: "allow" as const,
-  })
-  if (facts.interrupted)
-    return allow("paused", "Interrupted by you. Resume explicitly to continue.")
-  if (intent.state === "paused" || intent.state === "complete") return { intent, action: "allow" }
-  if (intent.task !== facts.task || intent.nativeSession !== facts.session)
-    return allow("blocked", "The task or native lead changed. Continuation was refused.")
-  if (facts.boundary === "review") return allow("complete", "The change is ready for your Review.")
-  if (facts.boundary !== "none")
-    return allow(
-      facts.boundary === "error" ? "blocked" : "waiting",
-      facts.reason ?? "Waiting at a recorded boundary.",
-    )
+  if (!facts.interrupted && (intent.state === "paused" || intent.state === "complete"))
+    return { intent, action: "allow" }
+  const stop = resolveAllowDecision(intent, facts)
+  if (stop) return { intent: { ...intent, ...stop }, action: "allow" }
   if (facts.stage !== "implement" && facts.stage !== "verify")
-    return allow("waiting", "The approved build is not active. Waiting for its human boundary.")
+    return {
+      intent: {
+        ...intent,
+        state: "waiting",
+        reason: "The approved build is not active. Waiting for its human boundary.",
+      },
+      action: "allow",
+    }
   if (!facts.progress || intent.attemptedProgress === facts.progress)
-    return allow("blocked", INTENT_NO_PROGRESS)
+    return { intent: { ...intent, state: "blocked", reason: INTENT_NO_PROGRESS }, action: "allow" }
   return {
     intent: { ...intent, state: "active", reason: undefined, attemptedProgress: facts.progress },
     action: "continue",
@@ -96,46 +112,62 @@ export async function intentProgress(ctx: Ctx, task: Task): Promise<string> {
   return digest.digest("hex")
 }
 
+type HumanBoundaryInput = {
+  task: Task
+  autonomous: boolean
+  gate: Awaited<ReturnType<typeof readGate>>
+  question: Awaited<ReturnType<typeof openQuestion>>
+  batch: Awaited<ReturnType<typeof readBatch>>
+  needs: Awaited<ReturnType<typeof readNeeds>>
+}
+
+function resolveHumanBoundary(
+  input: HumanBoundaryInput,
+): { kind: IntentFacts["boundary"]; reason: string } | null {
+  const { task, autonomous, gate, question, batch, needs } = input
+  if (task.stage === "verify" && gate?.target === FINAL && gate.decision === "pending")
+    return { kind: "review", reason: "The change is ready for your review." }
+  if (!autonomous && (question || batch?.questions.length))
+    return { kind: "human", reason: "Waiting for your answer in QualityLayer." }
+  if (gate?.decision === "pending")
+    return { kind: "human", reason: "Waiting for your approval in QualityLayer." }
+  if (
+    !autonomous &&
+    needs.some((need) => need.state === "open" && typeof need.waiting === "number")
+  )
+    return { kind: "human", reason: "Waiting for the access or information only you can provide." }
+  return null
+}
+
 export async function intentFacts(
   ctx: Ctx,
   task: Task,
   run: RunRecord,
   waiting = false,
 ): Promise<IntentFacts> {
-  const [gate, question, batch, needs] = await Promise.all([
+  const [gate, question, batch, needs, verifyMode] = await Promise.all([
     readGate(ctx, task),
     openQuestion(ctx, task),
     readBatch(ctx, task),
     readNeeds(ctx, task),
+    readVerifyMode(ctx, task),
   ])
-  const boundary = (kind: IntentFacts["boundary"], reason: string): IntentFacts => ({
+  const base = (kind: IntentFacts["boundary"], reason: string, progress = ""): IntentFacts => ({
     task: `${task.repoId}~${task.slug}`,
     session: run.nativeSession ?? "",
     stage: task.stage,
-    progress: "",
+    progress,
     boundary: kind,
     reason,
   })
-  if (task.stage === "verify" && gate?.target === FINAL && gate.decision === "pending")
-    return boundary("review", "The change is ready for your review.")
-  const autonomous = isAutonomousBuildStage(
-    task.stage,
-    (await readVerifyMode(ctx, task)) ?? undefined,
-  )
-  if (!autonomous && (question || batch?.questions.length))
-    return boundary("human", "Waiting for your answer in QualityLayer.")
-  if (gate?.decision === "pending")
-    return boundary("human", "Waiting for your approval in QualityLayer.")
-  if (
-    !autonomous &&
-    needs.some((need) => need.state === "open" && typeof need.waiting === "number")
-  )
-    return boundary("human", "Waiting for the access or information only you can provide.")
+  const autonomous = isAutonomousBuildStage(task.stage, verifyMode ?? undefined)
+  const human = resolveHumanBoundary({ task, autonomous, gate, question, batch, needs })
+  if (human) return base(human.kind, human.reason)
   if (run.intent?.state === "waiting" && run.intent.reason === "Permission required in the agent.")
-    return boundary("permission", "Permission required in the agent.")
-  if (waiting) return boundary("wait", "An existing wait owns the next event.")
-  if (await intentHelperRunning(ctx, task, run)) return boundary("wait", INTENT_HELPER_WAIT)
-  return { ...boundary("none", ""), progress: await intentProgress(ctx, task) }
+    return base("permission", "Permission required in the agent.")
+  if (waiting) return base("wait", "An existing wait owns the next event.")
+  if (await intentHelperRunning(ctx, task, run)) return base("wait", INTENT_HELPER_WAIT)
+  return base("none", "", await intentProgress(ctx, task))
 }
 
 export async function intentHelperRunning(
@@ -150,63 +182,4 @@ export async function intentHelperRunning(
     task.stage !== undefined &&
     (await taskHelperWait(ctx, { runtimeDir: task.runtimeDir, stage: task.stage })) !== null
   )
-}
-
-const waitExpiry = new Map<string, number>()
-
-/** Existing status reads may expire a wait; they never schedule another model turn. */
-export async function intentWaitStatus(
-  ctx: Ctx,
-  run: RunRecord,
-  processState: "live" | "dead" | "unverified",
-): Promise<RunIntent | undefined> {
-  const intent = run.intent
-  if (intent?.state !== "waiting" || intent.reason !== INTENT_HELPER_WAIT) return intent
-  const blocked = (reason: string): RunIntent => ({ ...intent, state: "blocked", reason })
-  if (
-    intent.nativeSession !== run.nativeSession ||
-    run.purpose.kind !== "task" ||
-    !run.taskRuntimeDir ||
-    !run.firstPromptAt
-  )
-    return blocked(INTENT_PROCESS_UNVERIFIED)
-  if (processState !== "live")
-    return blocked(processState === "dead" ? INTENT_PROCESS_ENDED : INTENT_PROCESS_UNVERIFIED)
-  const key = JSON.stringify([
-    ctx.home,
-    run.id,
-    run.generation,
-    run.nativeSession,
-    run.firstPromptAt,
-    intent.waitSince,
-  ])
-  const now = ctx.clock.now()
-  const cached = waitExpiry.get(key)
-  if (cached !== undefined && now < cached) return intent
-  const since = Date.parse(run.firstPromptAt)
-  const dir = join(run.taskRuntimeDir, "live", keyOf(run.nativeSession ?? ""), "agents")
-  let expires = 0
-  for (const name of await ctx.fs.readdir(dir).catch(() => [] as string[])) {
-    if (!name.endsWith(".json")) continue
-    try {
-      const row = JSON.parse(await ctx.fs.readFile(join(dir, name))) as { started?: unknown }
-      if (
-        typeof row.started === "number" &&
-        Number.isFinite(row.started) &&
-        row.started >= since &&
-        row.started <= now
-      )
-        expires = Math.max(expires, row.started + HELPER_STALE_MS)
-    } catch {
-      /* An invalid row supplies no helper witness. */
-    }
-  }
-  if (!expires) expires = Date.parse(intent.waitSince ?? intent.armedAt) + HELPER_STALE_MS
-  if (!Number.isFinite(expires) || now >= expires) {
-    waitExpiry.delete(key)
-    return blocked(INTENT_HELPER_STALE)
-  }
-  waitExpiry.set(key, expires)
-  if (waitExpiry.size > 128) waitExpiry.delete(waitExpiry.keys().next().value ?? "")
-  return intent
 }

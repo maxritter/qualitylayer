@@ -5,16 +5,20 @@
 // replies and reminded once when the step is left. Its recorded outcome never becomes a fake pass.
 
 import { join } from "node:path"
-import { type Ctx, err, ok, type Result, type ValidationError } from "../ctx.ts"
-import { type CheckRecord, readCheckRecords } from "./checks.ts"
-import { projectChecks } from "./docs/commands.ts"
+import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { FLOW_STEPS, type FlowStepId, flowStepOf } from "./flow.ts"
 import { readPersonal, readTeamCopy } from "./instructions.ts"
-import type { Limit } from "./limits-text.ts"
+import { checkStatesOf, validateRequiredLineNote } from "./required-lines-checks.ts"
 import { isProjectCheck, type RequiredLine, requiredLines, stepLabel } from "./required-parse.ts"
 import { requiredLinesPath } from "./required-skips.ts"
-import { appendEvent, planDetailsText, type Task } from "./task/store.ts"
+import { appendEvent, type Task } from "./task/store.ts"
 
+export {
+  missingCheckError,
+  missingFromPlan,
+  requiredLimits,
+} from "./required-lines-checks.ts"
+export { requiredJudgeSection, requiredReply } from "./required-lines-text.ts"
 export type { RequiredLine } from "./required-parse.ts"
 
 type Recorded = { state: "done" | "skipped"; note: string; at: number }
@@ -56,7 +60,6 @@ export type RequiredView = {
   since: { added: string[]; removed: string[] }
 }
 
-const NOTE_MAX = 280
 const path = requiredLinesPath
 const seenPath = (ctx: Ctx) => join(ctx.home, "required-runs-seen.json")
 const key = (step: FlowStepId, n: number) => `${step} ${n}`
@@ -68,15 +71,19 @@ export async function currentLines(ctx: Ctx): Promise<RequiredLine[]> {
   return requiredLines(team?.text ?? null, you?.text ?? null)
 }
 
-async function readStored(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<Stored | null> {
+export async function readStoredRequiredLines(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+): Promise<Stored | null> {
   try {
     const parsed = JSON.parse(await ctx.fs.readFile(path(task))) as Partial<Stored>
     if (!Array.isArray(parsed.lines)) return null
+    const records = parsed.records && typeof parsed.records === "object" ? parsed.records : {}
     return {
       taken: typeof parsed.taken === "number" ? parsed.taken : 0,
       lines: parsed.lines,
       newRuns: Array.isArray(parsed.newRuns) ? parsed.newRuns : [],
-      records: parsed.records !== null && typeof parsed.records === "object" ? parsed.records : {},
+      records,
       reminded: Array.isArray(parsed.reminded) ? parsed.reminded : [],
       ...(typeof parsed.from === "string" ? { from: parsed.from } : {}),
     }
@@ -85,24 +92,33 @@ async function readStored(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<Sto
   }
 }
 
+const readStored = readStoredRequiredLines
+
 const write = async (ctx: Ctx, task: Pick<Task, "runtimeDir">, stored: Stored) => {
   await ctx.fs.mkdir(task.runtimeDir)
   await ctx.fs.atomicWrite(path(task), `${JSON.stringify(stored, null, 2)}\n`)
 }
 
+function parseSeenRuns(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? parsed.filter((r): r is string => typeof r === "string") : []
+  } catch {
+    return []
+  }
+}
+
 /** Project-check commands this computer's previous task did not have; the list is then updated. */
 async function newRunsOf(ctx: Ctx, lines: RequiredLine[]): Promise<string[]> {
   const runs = lines.filter(isProjectCheck).map((line) => line.run as string)
-  let seen: string[] = []
-  try {
-    const parsed = JSON.parse(await ctx.fs.readFile(seenPath(ctx))) as unknown
-    if (Array.isArray(parsed)) seen = parsed.filter((r): r is string => typeof r === "string")
-  } catch {
+  const raw = await ctx.fs.readFile(seenPath(ctx)).catch(() => null)
+  if (raw === null) {
     // First task on this computer: nothing to compare with, nothing marked.
     await ctx.fs.mkdir(ctx.home)
     await ctx.fs.atomicWrite(seenPath(ctx), `${JSON.stringify(runs)}\n`)
     return []
   }
+  const seen = parseSeenRuns(raw)
   if (runs.length > 0 || seen.length > 0)
     await ctx.fs.atomicWrite(seenPath(ctx), `${JSON.stringify(runs)}\n`)
   return runs.filter((run) => !seen.includes(run))
@@ -143,30 +159,6 @@ export async function taskLines(ctx: Ctx, task: Task): Promise<Stored> {
 const stepIndexOf = (task: Pick<Task, "stage">): number =>
   task.stage === "shipped" ? FLOW_STEPS.length : order(flowStepOf(task.stage) ?? "plan")
 
-/** What a check record says of its command, in the words the pages show. */
-function checkNote(record: CheckRecord): string {
-  if (!record.ran) return "not run: changed after the Plan's approval"
-  if (record.notRun !== undefined) return `did none of its work: ${record.notRun}`
-  if (record.timedOut) return "timed out"
-  if (record.exit === 127) return "not installed on this computer (exit 127, command not found)"
-  return `exit ${record.exit ?? "none"}`
-}
-
-/** The last Project-check record of each command, as `check all` wrote it. */
-async function checkStates(
-  ctx: Ctx,
-  task: Task,
-): Promise<Map<string, { passed: boolean; note: string }>> {
-  const out = new Map<string, { passed: boolean; note: string }>()
-  // The revision it ran on: a pass recorded before later commits says so.
-  for (const record of (await readCheckRecords(ctx, task)).filter((r) => r.scope === "all"))
-    out.set(record.command, {
-      passed: record.ran && record.exit === 0 && record.notRun === undefined,
-      note: `${checkNote(record)} at ${record.revision.slice(0, 7)}`,
-    })
-  return out
-}
-
 type LineFacts = {
   stored: Stored
   /** The step index the task is in now. */
@@ -192,7 +184,7 @@ export async function requiredView(ctx: Ctx, task: Task): Promise<RequiredView> 
   const facts: LineFacts = {
     stored,
     now: stepIndexOf(task),
-    checks: stored.lines.some(isProjectCheck) ? await checkStates(ctx, task) : new Map(),
+    checks: stored.lines.some(isProjectCheck) ? await checkStatesOf(ctx, task) : new Map(),
   }
   const lines = stored.lines.map(
     (line): RequiredStatus => ({
@@ -230,16 +222,9 @@ export async function recordLine(
   task: Task,
   input: { step: string; n: number; state: "done" | "skipped"; note: string },
 ): Promise<Result<RequiredStatus>> {
-  const note = input.note.replace(/\s+/g, " ").trim()
-  const verb = input.state === "done" ? "done" : "skip"
-  const flag = input.state === "done" ? "--note" : "--reason"
-  if (note === "")
-    return err({
-      code: "bad_args",
-      message: `say what happened: qualitylayer instructions ${verb} ${input.step} ${input.n} ${flag} "<one sentence>"`,
-    })
-  if (note.length > NOTE_MAX)
-    return err({ code: "bad_args", message: `keep it to ${NOTE_MAX} characters: one sentence` })
+  const checkedNote = validateRequiredLineNote(input)
+  if (!checkedNote.ok) return checkedNote
+  const note = checkedNote.data
   // The lines are taken before the lock: taking them holds the same lock.
   const taken = await taskLines(ctx, task)
   return ctx.fs.withLock(`${path(task)}.lock`, async () => {
@@ -271,22 +256,8 @@ export async function recordLine(
   })
 }
 
-const sourceWord = (line: RequiredLine) => (line.source === "team" ? "team" : "yours")
-
-function lineText(line: RequiredStatus, here: FlowStepId | null): string {
-  const id = `${line.step} ${line.n}`
-  if (isProjectCheck(line)) {
-    const where =
-      here === "plan"
-        ? `put \`${line.run}\` on the Plan's **Project checks:** line; approving the Plan covers running it${line.source === "team" ? ". It is the team's rule: skip it only when it cannot apply to this task, and the person sees the skip on the Plan before approving" : ""}`
-        : "it runs with the Project checks: `qualitylayer check all` records it. If its tool is not installed on this computer (command not found), skip the line with that reason instead of installing or fixing it"
-    return `${line.n}. \`${line.run}\` (${sourceWord(line)}): ${where}. Cannot apply: \`qualitylayer instructions skip ${id} --reason "<why>"\``
-  }
-  return `${line.n}. ${line.text} (${sourceWord(line)}). Then \`qualitylayer instructions done ${id} --note "<what you did and found>"\`, or \`qualitylayer instructions skip ${id} --reason "<why it cannot apply>"\``
-}
-
 /** The earlier steps reminded now, claimed under the lock so two replies never both remind one. */
-async function claimReminders(
+export async function claimRequiredReminders(
   ctx: Ctx,
   task: Task,
   stored: Stored,
@@ -301,142 +272,5 @@ async function claimReminders(
     if (fresh.length > 0)
       await write(ctx, task, { ...latest, reminded: [...latest.reminded, ...fresh] })
     return fresh
-  })
-}
-
-const one = (lines: unknown[], single: string, many: string) => (lines.length === 1 ? single : many)
-
-/** The once-only reminder of a step left with lines unrecorded. */
-const leftText = (gone: FlowStepId, lines: RequiredStatus[], here: FlowStepId) =>
-  [
-    `## Record from ${stepLabel(gone)}`,
-    `${stepLabel(gone)} ended with ${one(lines, "this step check", "these step checks")} unrecorded. Record ${one(lines, "it", "each")} now, with what you did or why it cannot apply. Resolve failed or unavailable checks before presenting the finished change for the person's review; ask a question when only the person can settle one. Unrun work stays unrun. This reminder comes once.`,
-    ...lines.map((line) => lineText(line, here)),
-  ].join("\n")
-
-/** This step's open lines; in the Plan also the later steps' Project checks. */
-/** The command a step's lines come before: the step's last move, after which the person reads. */
-const BEFORE: Partial<Record<FlowStepId, string>> = {
-  plan: "qualitylayer plan draft",
-  verify: "qualitylayer gate open final",
-}
-
-const openText = (here: FlowStepId, open: RequiredStatus[]) =>
-  [
-    `## Step checks in ${stepLabel(here)}`,
-    `Your and your team's instructions require ${one(open, "this", "these")} for this task. Do each your own way and record it before you run \`${BEFORE[here] ?? "qualitylayer next"}\`${here === "verify" ? ": the person reviews as soon as it opens" : ""}; if one cannot apply here, skip it with the reason. Keep each outcome in the instruction record; missing evidence is never a pass.`,
-    ...open.map(
-      (line) => `${line.step === here ? "" : `(${stepLabel(line.step)}) `}${lineText(line, here)}`,
-    ),
-  ].join("\n")
-
-/**
- * The text a step's reply starts with: the earlier steps' lines left open (once per step) and this
- * step's open lines; in the Plan, the later steps' Project checks the Plan must name. Null when none.
- */
-export async function requiredReply(
-  ctx: Ctx,
-  task: Task,
-  step: FlowStepId,
-): Promise<string | null> {
-  if (task.type === "chat" || task.stage === "shipped") return null
-  const stored = await taskLines(ctx, task)
-  if (stored.lines.length === 0) return null
-  const view = await requiredView(ctx, task)
-  const unrecorded = view.lines.filter(
-    (line) =>
-      order(line.step) < order(step) && (line.state === "not-done" || line.state === "open"),
-  )
-  const claimed = await claimReminders(ctx, task, stored, unrecorded)
-  const parts = claimed.map((gone) =>
-    leftText(
-      gone,
-      unrecorded.filter((line) => line.step === gone),
-      step,
-    ),
-  )
-  const open = view.lines.filter(
-    (line) =>
-      (line.step === step && (line.state === "open" || line.state === "waiting")) ||
-      (step === "plan" && isProjectCheck(line) && line.state === "waiting"),
-  )
-  if (open.length > 0) parts.push(openText(step, open))
-  return parts.length === 0 ? null : parts.join("\n\n")
-}
-
-/** The Independent review's section on Verify's required lines and the build session's records. */
-export async function requiredJudgeSection(ctx: Ctx, task: Task): Promise<string | null> {
-  // The judge may start before the reply that takes the lines: it takes them itself.
-  if ((await taskLines(ctx, task)).lines.length === 0) return null
-  const lines = (await requiredView(ctx, task)).lines.filter((line) => line.step === "verify")
-  if (lines.length === 0) return null
-  const what = (line: RequiredStatus) => {
-    const name = isProjectCheck(line) ? `\`${line.run}\` (Project check)` : line.text
-    const note = line.note !== undefined ? `: “${line.note}”` : ""
-    return `- ${name}, ${sourceWord(line)}: ${line.state}${note}`
-  }
-  return [
-    "## Step checks in Verify",
-    "The person's and the team's instructions required these in Verify; the build session records each done with a note or skipped with a reason. They are not Done means points and take no verdict. Where the change or its evidence does not support a note or a reason, say so as a finding.",
-    ...lines.map(what),
-  ].join("\n")
-}
-
-/**
- * The Project-check commands the Plan must name before its draft: each `run:` line of Implement or
- * Verify not on the **Project checks:** line and not skipped.
- */
-export async function missingFromPlan(ctx: Ctx, task: Task): Promise<RequiredLine[]> {
-  if (task.type === "chat") return []
-  const stored = await taskLines(ctx, task)
-  const wanted = stored.lines.filter(
-    (line) => isProjectCheck(line) && stored.records[key(line.step, line.n)]?.state !== "skipped",
-  )
-  if (wanted.length === 0) return []
-  const named = projectChecks((await planDetailsText(ctx, task)) ?? "")
-  return wanted.filter((line) => !named.includes(line.run as string))
-}
-
-/** The validation error for a required Project check the Plan does not name, with both ways on. */
-export const missingCheckError = (line: RequiredLine): ValidationError => ({
-  line: 0,
-  rule: "required-project-check",
-  message: `The ${line.source === "team" ? "team's" : "person's"} instructions require \`${line.run}\` as a Project check.`,
-  fix_hint: `Add \`${line.run}\` to the Plan's **Project checks:** line; if it cannot apply to this task, run \`qualitylayer instructions skip ${line.step} ${line.n} --reason "<why>"\`${line.source === "team" ? " (the person sees a skipped team line on the Plan before approving)" : ""}.`,
-  severity: "error",
-})
-
-/**
- * What the final approval's *Known limits* adds for the lines: each one skipped, not done or
- * failed, and in Verify each line still open, so the person sees it before approving.
- */
-export async function requiredLimits(ctx: Ctx, task: Task): Promise<Limit[]> {
-  if (!(await ctx.fs.exists(path(task)))) return []
-  const view = await requiredView(ctx, task)
-  const at = (await readStored(ctx, task))?.taken ?? 0
-  const atReview = task.stage === "verify" || task.stage === "shipped"
-  const word: Partial<Record<RequiredState, string>> = {
-    skipped: "skipped",
-    "not-done": "not done",
-    failed: "failed",
-    ...(atReview ? { open: "not recorded yet", waiting: "not run" } : {}),
-  }
-  // The team's lines first: they are the team's rule, skipped or missed in this task.
-  const ordered = [
-    ...view.lines.filter((line) => line.source === "team"),
-    ...view.lines.filter((line) => line.source !== "team"),
-  ]
-  return ordered.flatMap((line) => {
-    const how = word[line.state]
-    if (how === undefined) return []
-    const what = line.run !== undefined && isProjectCheck(line) ? `\`${line.run}\`` : line.text
-    const why = line.note !== undefined ? `: ${line.note}` : ""
-    return [
-      {
-        for: null,
-        text: `Step check ${how} (${stepLabel(line.step)}, ${line.source === "team" ? "team" : "yours"}): ${what}${why}`,
-        at,
-      },
-    ]
   })
 }

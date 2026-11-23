@@ -30,6 +30,59 @@ export type ReleaseWait = {
   exhausted: boolean
 }
 
+type CheckRecordEntry = Awaited<ReturnType<typeof readCheckRecords>>[number]
+type PlanSlice = NonNullable<Awaited<ReturnType<typeof taskFlow>>["plan"]>["slices"][number]
+type OpenNeed = ReturnType<typeof openNeeds>[number]
+
+function checkPassedAtRevision(record: CheckRecordEntry | undefined, revision: string): boolean {
+  if (record?.revision !== revision) return false
+  return record.ran && record.exit === 0 && record.notRun === undefined
+}
+
+function checkFailedAtRevision(record: CheckRecordEntry | undefined, revision: string): boolean {
+  if (record?.revision !== revision) return false
+  return !record.ran || record.exit !== 0 || record.notRun !== undefined
+}
+
+function releaseWaitForSlice(
+  slice: PlanSlice,
+  head: string,
+  revision: string,
+  records: readonly CheckRecordEntry[],
+  needs: readonly OpenNeed[],
+): ReleaseWait | null {
+  const commands = sliceCommands(slice)
+  const latest = new Map(
+    records.filter((r) => r.scope === `slice ${slice.n}`).map((r) => [r.command, r]),
+  )
+  // Current while the build's code is: a commit of the task's own records leaves the deployed
+  // proof standing, and the release's check compares the deployed version itself.
+  if (
+    commands.length > 0 &&
+    commands.every((command) => checkPassedAtRevision(latest.get(command), revision))
+  )
+    return null
+  if (commands.length === 0)
+    return {
+      instructions: `Release slice ${slice.n} has not passed validation at ${head}. Add an automated deployed-version check to its Validation and amend the Plan.`,
+      then: "qualitylayer plan amend",
+      exhausted: false,
+    }
+  const ids = slice.tasks.map((t) => t.id)
+  const deployTask = ids[0] ?? `slice ${slice.n}'s task`
+  const failedHere = commands.some((command) =>
+    checkFailedAtRevision(latest.get(command), revision),
+  )
+  const why = failedHere
+    ? "its validation already failed at this commit, so the deploy did not reach it"
+    : "the code changed after the last deploy, so the deployed version is stale"
+  return {
+    instructions: `Release slice ${slice.n} has not passed validation at ${head}: ${why}. If the approved Plan explicitly grants this verification deploy, redeploy this commit only to the target named by ${deployTask}. A release label or a validation result is not a grant. When that exact granted target is a preview built by pushing the task branch, push only that branch and open no pull request; never main, a merge, a pull request merge or production. Wait until it is live (a queued deploy is not ready for judges), then run qualitylayer check slice ${slice.n}. Without that grant, or if access is missing, deployment fails or the person declines, do not deploy: record qualitylayer need --kind permission "<what the person must allow or do, and where>. <why the live checks need it>" --for ${deployTask}, then run qualitylayer next. Review shows the blocked live checks as unverified.`,
+    then: `qualitylayer check slice ${slice.n}`,
+    exhausted: needs.some((need) => ids.includes(need.for)),
+  }
+}
+
 /**
  * Only recorded validation of the release at this commit unlocks live judging. Every commit after the
  * last deploy (a fix round, Review's fixes) makes the deployed version stale, so the lead
@@ -48,43 +101,9 @@ export async function releaseWaiting(ctx: Ctx, task: Task): Promise<ReleaseWait 
   // A release a person must unblock waits only when no other release can still be validated here.
   let blocked: ReleaseWait | null = null
   for (const slice of releases) {
-    const commands = sliceCommands(slice)
-    const latest = new Map(
-      records.filter((r) => r.scope === `slice ${slice.n}`).map((r) => [r.command, r]),
-    )
-    // Current while the build's code is: a commit of the task's own records leaves the deployed
-    // proof standing, and the release's check compares the deployed version itself.
-    const atHead = (command: string) => latest.get(command)?.revision === revision
-    if (
-      commands.length > 0 &&
-      commands.every((command) => {
-        const r = latest.get(command)
-        return atHead(command) && r?.ran === true && r.exit === 0 && r.notRun === undefined
-      })
-    )
-      continue
-    if (commands.length === 0)
-      return {
-        instructions: `Release slice ${slice.n} has not passed validation at ${head}. Add an automated deployed-version check to its Validation and amend the Plan.`,
-        then: "qualitylayer plan amend",
-        exhausted: false,
-      }
-    const ids = slice.tasks.map((t) => t.id)
-    const deployTask = ids[0] ?? `slice ${slice.n}'s task`
-    const failedHere = commands.some((command) => {
-      const r = latest.get(command)
-      return atHead(command) && (r?.ran !== true || r.exit !== 0 || r.notRun !== undefined)
-    })
-    const asked = needs.some((need) => ids.includes(need.for))
-    const why = failedHere
-      ? "its validation already failed at this commit, so the deploy did not reach it"
-      : "the code changed after the last deploy, so the deployed version is stale"
-    const wait: ReleaseWait = {
-      instructions: `Release slice ${slice.n} has not passed validation at ${head}: ${why}. If the approved Plan explicitly grants this verification deploy, redeploy this commit only to the target named by ${deployTask}. A release label or a validation result is not a grant. When that exact granted target is a preview built by pushing the task branch, push only that branch and open no pull request; never main, a merge, a pull request merge or production. Wait until it is live (a queued deploy is not ready for judges), then run qualitylayer check slice ${slice.n}. Without that grant, or if access is missing, deployment fails or the person declines, do not deploy: record qualitylayer need --kind permission "<what the person must allow or do, and where>. <why the live checks need it>" --for ${deployTask}, then run qualitylayer next. Review shows the blocked live checks as unverified.`,
-      then: `qualitylayer check slice ${slice.n}`,
-      exhausted: asked,
-    }
-    if (!asked) return wait
+    const wait = releaseWaitForSlice(slice, head, revision, records, needs)
+    if (wait === null) continue
+    if (!wait.exhausted) return wait
     blocked ??= wait
   }
   return blocked

@@ -5,9 +5,11 @@
 // so the App page imports it like config-values.ts.
 
 import type { Result } from "../ctx.ts"
-import { allTasks, codeSlices, type Outline, waveWidth } from "./docs/outline.ts"
+import { allTasks, codeSlices, type Outline } from "./docs/outline.ts"
 import { smallBounds } from "./small-change.ts"
 import type { Task } from "./task/store.ts"
+
+export { flowLine } from "./scaling-line.ts"
 
 /** The switches `task override` accepts: the only words the scaling rules read. */
 export const OVERRIDES = [
@@ -121,6 +123,13 @@ export function risksNameRisk(text: string | null | undefined): boolean {
 export const riskyPlan = (_plan: Outline | null, signals: FlowSignals): boolean =>
   crossesBoundary(signals.trustBoundary) || risksNameRisk(signals.risks)
 
+function fitsLightSize(plan: Outline | null, signals: FlowSignals): boolean {
+  const slices = signals.plannedSlices
+  if (slices === null || slices === undefined || slices < 1 || slices > LIGHT_SLICES) return false
+  if (signals.trustBoundary === null || crossesBoundary(signals.trustBoundary)) return false
+  return !riskyPlan(plan, signals) && (plan === null || codeSlices(plan).length <= LIGHT_SLICES)
+}
+
 /**
  * A small change: the task's first look proposed it (`profile: small`) or the person asked for it
  * (`+small`). Known risk and trust-boundary records keep their review behavior. The Plan and
@@ -132,22 +141,10 @@ export function lightPlan(
   plan: Outline | null,
   signals: FlowSignals,
 ): boolean {
-  if (has(task, "-small")) return false
-  if (task.profile !== "small" && !has(task, "+small")) return false
-  if (signals.untraced) return false
-  if (signals.firstLookFiles === undefined) return false
+  const requested = !has(task, "-small") && (task.profile === "small" || has(task, "+small"))
+  if (!requested || signals.untraced || signals.firstLookFiles === undefined) return false
   if (!smallBounds({ files: signals.firstLookFiles, untraced: false }).ok) return false
-  const slices = signals.plannedSlices
-  return (
-    slices !== null &&
-    slices !== undefined &&
-    slices >= 1 &&
-    slices <= LIGHT_SLICES &&
-    signals.trustBoundary !== null &&
-    !crossesBoundary(signals.trustBoundary) &&
-    !riskyPlan(plan, signals) &&
-    (plan === null || codeSlices(plan).length <= LIGHT_SLICES)
-  )
+  return fitsLightSize(plan, signals)
 }
 
 /**
@@ -216,71 +213,6 @@ export function flowFor(
       !signals.oneTaskApproved &&
       (slices.length > SPLIT_SLICES || (plan !== null && allTasks(plan).length > SPLIT_TASKS)),
   }
-}
-
-/**
- * The one line the agent says when Implement starts: "4 slices in 3 waves, longest path 5 tasks,
- * built in this session, security review (the Plan names a trust boundary), …".
- * It names the facts only; the Plan's trust-boundary line stays in the Plan, and the
- * second opinion's reason is "risky Plan".
- * In a task (`change` given) the line also says whether the other agent's second opinion
- * reviews the built change: on when the Plan is risky or Settings ask for it, else "no second
- * opinion on the change" with the reason (`off`: Settings or the task's own words switched it off;
- * `otherAgentMissing`: it would run, but the other vendor's agent is not installed).
- */
-export function flowLine(
-  flow: Flow,
-  plan: Outline | null,
-  signals: FlowSignals = NO_SIGNALS,
-  change?: { off: boolean; otherAgentMissing?: boolean },
-): string {
-  const parts: string[] = []
-  if (plan !== null) {
-    const slices = codeSlices(plan)
-    const release = plan.slices.length - slices.length
-    const width = waveWidth(plan)
-    const count =
-      `${slices.length} ${slices.length === 1 ? "slice" : "slices"}` +
-      (release > 0 ? ` and ${release} release ${release === 1 ? "slice" : "slices"}` : "")
-    const shape = `${count} in ${width.waves} ${width.waves === 1 ? "wave" : "waves"}, longest path ${width.longest} ${width.longest === 1 ? "task" : "tasks"}`
-    parts.push(
-      flow.light === true ? "one build step in this session" : `${shape}, built in this session`,
-    )
-  }
-  if (flow.security)
-    parts.push(
-      crossesBoundary(signals.trustBoundary)
-        ? "security review (the Plan names a trust boundary)"
-        : "security review",
-    )
-  if (change !== undefined) {
-    const risky = riskyPlan(plan, signals)
-    parts.push(
-      flow.changeSecondOpinion && change.otherAgentMissing !== true
-        ? `second opinion on the change${risky ? " (risky Plan)" : ""}`
-        : `no second opinion on the change (${
-            flow.changeSecondOpinion
-              ? "other agent not installed"
-              : change.off
-                ? "switched off"
-                : "not risky"
-          })`,
-    )
-  } else if (flow.changeSecondOpinion)
-    parts.push(riskyPlan(plan, signals) ? "second opinion (risky Plan)" : "second opinion")
-  // Who checks the change: one fresh agent adds the missing tests and judges it.
-  const review =
-    flow.combinedReview === true
-      ? "the independent reviewer also adds the missing tests"
-      : "no independent reviewer (Settings)"
-  if (flow.light === true)
-    parts.push(
-      `small change: ${[...(flow.planReview === "none" ? ["no Plan review"] : []), review].join(", ")}`,
-    )
-  else parts.push(review)
-  if (flow.splitProposal) parts.push("too big for one task: propose a split")
-  const line = parts.join(", ")
-  return line === "" ? "" : `${line.charAt(0).toUpperCase()}${line.slice(1)}.`
 }
 
 /**

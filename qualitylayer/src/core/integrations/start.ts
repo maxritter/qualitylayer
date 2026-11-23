@@ -81,39 +81,81 @@ export async function taskFromLink(ctx: Ctx, repo: RepoRef, from: string): Promi
   return null
 }
 
+type ScriptTaskInput = { request?: string; from?: string; type?: TaskType; title?: string }
+
+type ResolvedScriptInput =
+  | { existing: Record<string, unknown> }
+  | { existing?: undefined; linked?: LinkedRequest; words: string }
+
+async function resolveScriptInput(
+  ctx: Ctx,
+  repo: RepoRef,
+  input: ScriptTaskInput,
+): Promise<Result<ResolvedScriptInput>> {
+  const words = input.request?.trim() ?? ""
+  if (input.from === undefined) {
+    if (words === "") {
+      return refused("A task starts from a request or a ticket link.", [
+        {
+          what: "the request",
+          move: 'POST /api/tasks {"request": "<words>"} or {"from": "<link>"}',
+        },
+      ])
+    }
+    return ok({ words })
+  }
+  const read = await linkedRequest(ctx, input.from, words, {
+    ...(input.type !== undefined ? { type: input.type } : {}),
+    ...(input.title !== undefined ? { title: input.title } : {}),
+  })
+  if (!read.ok) return read
+  const existing = await taskFromLink(ctx, repo, read.data.from)
+  if (existing !== null) {
+    return ok({
+      existing: {
+        task: existing.slug,
+        id: `${existing.repoId}~${existing.slug}`,
+        title: existing.title,
+        step: existing.stage,
+        from: read.data.from,
+        created: false,
+      },
+    })
+  }
+  return ok({ linked: read.data, words })
+}
+
+function scriptTaskReply(
+  startedData: Record<string, unknown>,
+  linked: LinkedRequest | undefined,
+): Record<string, unknown> {
+  return {
+    ...startedData,
+    created: true,
+    ...(linked
+      ? {
+          from: linked.from,
+          ...(linked.ticket ? { ticket: linked.ticket } : {}),
+          ...(linked.unread ? { unread: linked.unread } : {}),
+        }
+      : {}),
+  }
+}
+
 /**
  * A script's start (`POST /api/tasks`, the App's "From a link"): the task waits on Home and no agent
  * session takes it. With `from`, the ticket gives the request and one link starts one task.
  */
 export async function startScriptTask(
   ctx: Ctx,
-  input: { request?: string; from?: string; type?: TaskType; title?: string },
+  input: ScriptTaskInput,
 ): Promise<Result<Record<string, unknown>>> {
   const repo = await resolveRepo(ctx)
   if (!repo.ok) return repo
-  const words = input.request?.trim() ?? ""
-  let linked: LinkedRequest | undefined
-  if (input.from !== undefined) {
-    const read = await linkedRequest(ctx, input.from, words, {
-      ...(input.type !== undefined ? { type: input.type } : {}),
-      ...(input.title !== undefined ? { title: input.title } : {}),
-    })
-    if (!read.ok) return read
-    linked = read.data
-    const existing = await taskFromLink(ctx, repo.data, linked.from)
-    if (existing !== null)
-      return ok({
-        task: existing.slug,
-        id: `${existing.repoId}~${existing.slug}`,
-        title: existing.title,
-        step: existing.stage,
-        from: linked.from,
-        created: false,
-      })
-  } else if (words === "")
-    return refused("A task starts from a request or a ticket link.", [
-      { what: "the request", move: 'POST /api/tasks {"request": "<words>"} or {"from": "<link>"}' },
-    ])
+  const resolved = await resolveScriptInput(ctx, repo.data, input)
+  if (!resolved.ok) return resolved
+  if (resolved.data.existing !== undefined) return ok(resolved.data.existing)
+  const { linked, words } = resolved.data
   const title = input.title ?? linked?.title
   const started = await taskStart(ctx, linked?.request ?? words, {
     type: linked?.type ?? input.type ?? "feature",
@@ -124,17 +166,7 @@ export async function startScriptTask(
   const slug = String(started.data.task ?? "")
   const task = (await listTasks(ctx, repo.data)).find((t) => t.slug === slug)
   if (task !== undefined && linked !== undefined) await keepLink(ctx, task, linked.from)
-  return ok({
-    ...started.data,
-    created: true,
-    ...(linked
-      ? {
-          from: linked.from,
-          ...(linked.ticket ? { ticket: linked.ticket } : {}),
-          ...(linked.unread ? { unread: linked.unread } : {}),
-        }
-      : {}),
-  })
+  return ok(scriptTaskReply(started.data, linked))
 }
 
 /** Keep the link in the task's frontmatter. */

@@ -1,56 +1,26 @@
 import { folderDoc } from "../docs/names.ts"
-import { ANSWER_KINDS, type AnswerKind, type Item, type ItemAnswer, pointText } from "../items.ts"
+import { type Item, type ItemAnswer, pointText } from "../items.ts"
+import { jsonBytes, recordHash } from "../records/contract.ts"
 import {
-  ANNOTATION_RECORDS,
-  choice,
-  count,
-  fields,
-  jsonBytes,
-  list,
-  nonempty,
-  optional,
-  type RuntimeAttachment,
-  recordHash,
-  text,
-} from "../records/contract.ts"
+  type CurrentAnswerItem,
+  currentItemAnswer,
+  type ItemAnswerRecord,
+  type RetainedItemAnswer,
+  sameNativeAnswer,
+} from "./item-answers-authority.ts"
 
-export type NativeAnswerIdentity = { id: string; number: number; pick: string; receipt: string }
-export type ItemAnswerRecord = Record<string, unknown> & {
-  id: string
-  doc: string
-  quote: string
-  remark: string
-  created: number
-  item: string
-  kind: AnswerKind
-  seen?: string
-  immediate?: true
-  delivered?: boolean
-  pickedAt?: number
-  answer?: string
-  answered?: number
-  resolved?: number
-  originQuestion?: NativeAnswerIdentity
-}
-export type CurrentAnswerItem = { item: string; doc: string; digest: string }
-export type NativeAnswerReceipt = NativeAnswerIdentity & {
-  item: string
-  doc: string
-  kind: AnswerKind
-  /** Only a digest independently preserved with this exact native question/gate revision. */
-  digest?: string
-}
-export type AnswerAuthority = { items: CurrentAnswerItem[]; receipts: NativeAnswerReceipt[] }
-export type RetainedItemAnswer = {
-  record: ItemAnswerRecord
-  actionId?: string
-  archiveEntry?: string
-  attachments?: RuntimeAttachment[]
-  handoff?: { session: string; id: string }
-  binding:
-    | { state: "current"; digest: string; origin?: NativeAnswerIdentity }
-    | { state: "historical"; reason: "unbound" | "changed" | "external" | "replaced" }
-}
+export {
+  type AnswerAuthority,
+  answerAuthorityHash,
+  type CurrentAnswerItem,
+  type ItemAnswerRecord,
+  itemAnswerRecord,
+  nativeAnswerIdentity,
+  type RetainedItemAnswer,
+  retainItemAnswer,
+  sameNativeAnswer,
+} from "./item-answers-authority.ts"
+
 export const itemAnswerDeliveryId = (record: ItemAnswerRecord) =>
   `item:${record.id}:${record.created}`
 export type ItemAnswerRecipient = { session: string; receivedIds: readonly string[] }
@@ -188,141 +158,4 @@ export function itemAnswerHandoff(
     changed: true,
     picked: [record],
   }
-}
-
-export function answerAuthorityHash(authority: AnswerAuthority) {
-  const item = (value: unknown) => fields(value, { item: nonempty, doc: text, digest: nonempty })
-  const receipt = (value: unknown) =>
-    nativeAnswerIdentity(value) &&
-    fields(value, {
-      item: nonempty,
-      doc: text,
-      kind: choice(...ANSWER_KINDS),
-      digest: optional(nonempty),
-    })
-  if (
-    !fields(authority, {
-      items: list(item, ANNOTATION_RECORDS),
-      receipts: list(receipt, ANNOTATION_RECORDS),
-    })
-  )
-    throw new Error("Invalid independent answer bindings")
-  if (
-    new Set(authority.items.map((item) => `${item.doc}\0${item.item}`)).size !==
-    authority.items.length
-  )
-    throw new Error("Conflicting independent item bindings")
-  const identity = (receipt: NativeAnswerReceipt) =>
-    JSON.stringify([
-      receipt.item,
-      receipt.doc,
-      receipt.kind,
-      receipt.id,
-      receipt.number,
-      receipt.pick,
-      receipt.receipt,
-    ])
-  if (new Set(authority.receipts.map(identity)).size !== authority.receipts.length)
-    throw new Error("Conflicting independent native receipts")
-  const items = authority.items.map(({ item, doc, digest }) => ({ item, doc, digest }))
-  const receipts = authority.receipts.map(
-    ({ id, number, pick, receipt, item, doc, kind, digest }) => ({
-      id,
-      number,
-      pick,
-      receipt,
-      item,
-      doc,
-      kind,
-      ...(digest ? { digest } : {}),
-    }),
-  )
-  const byContent = (a: unknown, b: unknown) => jsonBytes(a).localeCompare(jsonBytes(b), "en")
-  return recordHash(
-    jsonBytes({ items: items.toSorted(byContent), receipts: receipts.toSorted(byContent) }),
-  )
-}
-
-export function nativeAnswerIdentity(raw: unknown): raw is NativeAnswerIdentity {
-  return fields(raw, {
-    id: nonempty,
-    number: count(1, Number.MAX_SAFE_INTEGER),
-    pick: text,
-    receipt: nonempty,
-  })
-}
-
-export function itemAnswerRecord(raw: unknown): ItemAnswerRecord {
-  if (
-    !fields(raw, {
-      id: nonempty,
-      doc: text,
-      quote: text,
-      remark: text,
-      created: Number.isFinite,
-      item: nonempty,
-      kind: choice(...ANSWER_KINDS),
-      seen: optional(text),
-      immediate: optional(choice(true)),
-      delivered: optional(choice(true, false)),
-      originQuestion: optional(nativeAnswerIdentity),
-      pickedAt: optional(Number.isFinite),
-      answered: optional(Number.isFinite),
-      resolved: optional(Number.isFinite),
-      answer: optional(text),
-    })
-  )
-    throw new Error("Invalid retained item answer; originals were kept")
-  return raw as ItemAnswerRecord
-}
-
-export function sameNativeAnswer(a: NativeAnswerIdentity, b: NativeAnswerIdentity) {
-  return a.id === b.id && a.number === b.number && a.pick === b.pick && a.receipt === b.receipt
-}
-
-export function retainItemAnswer(
-  record: ItemAnswerRecord,
-  authority: AnswerAuthority,
-): RetainedItemAnswer {
-  const item = authority.items.find((it) => it.item === record.item && it.doc === record.doc)
-  const native = record.originQuestion
-  const receipts = authority.receipts.filter(
-    (receipt) =>
-      receipt.item === record.item && receipt.doc === record.doc && receipt.kind === record.kind,
-  )
-  const materialized =
-    native !== undefined && receipts.some((receipt) => sameNativeAnswer(receipt, native))
-  const preserved = native
-    ? receipts.find((receipt) => sameNativeAnswer(receipt, native))
-    : undefined
-  const reviewed = record.seen ?? preserved?.digest
-  const external = record.source !== undefined && !materialized
-  const reason =
-    record.for === "person" || external
-      ? "external"
-      : !item || !reviewed
-        ? "unbound"
-        : item.digest !== reviewed
-          ? "changed"
-          : null
-  return {
-    record,
-    binding: reason
-      ? { state: "historical", reason }
-      : {
-          state: "current",
-          digest: reviewed as string,
-          ...(record.seen === undefined && native ? { origin: native } : {}),
-        },
-  }
-}
-
-/** Binding is checked again at pickup; a migration-time match cannot bless a later revision. */
-export function currentItemAnswer(answer: RetainedItemAnswer, items: CurrentAnswerItem[]) {
-  if (answer.binding.state !== "current") return false
-  const digest = answer.binding.digest
-  return items.some(
-    (item) =>
-      item.item === answer.record.item && item.doc === answer.record.doc && item.digest === digest,
-  )
 }

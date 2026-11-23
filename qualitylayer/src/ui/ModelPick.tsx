@@ -138,6 +138,55 @@ type PickProps = {
   placeholder?: string
 }
 
+function triggerTitle(
+  look: keyof typeof TRIGGER_CLASS,
+  label: string,
+  value: string,
+  picked: PickOption | undefined,
+): string | undefined {
+  if (picked?.technicalId !== undefined) return picked.technicalId
+  if (look === "pill" || look === "row") return `${label}: ${picked?.name ?? value}`
+  return undefined
+}
+
+function PickOptionList({
+  options,
+  lead,
+  footer,
+}: {
+  options: PickOption[]
+  lead: boolean
+  footer?: ReactNode
+}) {
+  return (
+    <Select.List>
+      {options.map((o, at) => {
+        const before = options[at - 1]
+        // A grouped menu: a heading opens each family; an ungrouped row after a group is set apart.
+        const heads = o.group !== undefined && o.group !== before?.group
+        const leaves = o.group === undefined && before?.group !== undefined && !o.apart
+        return (
+          <Fragment key={o.id}>
+            {o.apart === true || leaves ? <Select.Separator className="q-start-msep" /> : null}
+            {heads ? (
+              <div className="q-start-mgroup" role="presentation">
+                {o.group}
+              </div>
+            ) : null}
+            <PickItem option={o} lead={lead} />
+          </Fragment>
+        )
+      })}
+      {footer !== undefined ? (
+        <>
+          <Select.Separator className="q-start-msep" />
+          <div className="q-start-mfoot">{footer}</div>
+        </>
+      ) : null}
+    </Select.List>
+  )
+}
+
 function PlainPick({
   label,
   value,
@@ -154,10 +203,8 @@ function PlainPick({
   const row = look === "row" || look === "setting"
   const picked = options.find((o) => o.id === value)
   const lead = options.some((o) => o.icon !== undefined)
-  const changed =
-    look === "setting" &&
-    options.some((o) => o.note === DEFAULT_NOTE) &&
-    picked?.note !== DEFAULT_NOTE
+  const hasDefault = options.some((o) => o.note === DEFAULT_NOTE)
+  const changed = look === "setting" && hasDefault && picked?.note !== DEFAULT_NOTE
   return (
     <Select.Root
       value={value}
@@ -175,10 +222,7 @@ function PlainPick({
         data-changed={changed || undefined}
         aria-label={changed ? `${label} (changed from default)` : label}
         // A pill, and a row whose long model name is cut, name their whole value on hover.
-        title={
-          picked?.technicalId ??
-          (look === "pill" || look === "row" ? `${label}: ${picked?.name ?? value}` : undefined)
-        }
+        title={triggerTitle(look, label, value, picked)}
       >
         {picked?.icon !== undefined ? (
           <span className="q-pick-icon" aria-hidden="true">
@@ -205,33 +249,7 @@ function PlainPick({
           className="isolate z-(--ql-z-overlay)"
         >
           <Select.Popup className="q-start-menu" data-look={look}>
-            <Select.List>
-              {options.map((o, at) => {
-                const before = options[at - 1]
-                // A grouped menu: a heading opens each family; an ungrouped row after a group is set apart.
-                const heads = o.group !== undefined && o.group !== before?.group
-                const leaves = o.group === undefined && before?.group !== undefined && !o.apart
-                return (
-                  <Fragment key={o.id}>
-                    {o.apart === true || leaves ? (
-                      <Select.Separator className="q-start-msep" />
-                    ) : null}
-                    {heads ? (
-                      <div className="q-start-mgroup" role="presentation">
-                        {o.group}
-                      </div>
-                    ) : null}
-                    <PickItem option={o} lead={lead} />
-                  </Fragment>
-                )
-              })}
-              {footer !== undefined ? (
-                <>
-                  <Select.Separator className="q-start-msep" />
-                  <div className="q-start-mfoot">{footer}</div>
-                </>
-              ) : null}
-            </Select.List>
+            <PickOptionList options={options} lead={lead} footer={footer} />
           </Select.Popup>
         </Select.Positioner>
       </Select.Portal>

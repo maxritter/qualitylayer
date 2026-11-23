@@ -97,13 +97,70 @@ const trimBlank = (lines: string[]): string[] => {
   return lines.slice(start, end)
 }
 
+type OpenMarker = { name: string; args: string[]; line: number; section: string | null }
+
+function validateMarkerOpen(
+  name: string,
+  args: string[],
+  lineNo: number,
+  problems: MarkerProblem[],
+): void {
+  const allowed = MARKER_ARGS[name]
+  if (allowed === undefined) {
+    problems.push({
+      line: lineNo,
+      message: `\`ql:${name}\` is not a marker QualityLayer fills`,
+      fix: `use one of ${Object.keys(MARKER_ARGS)
+        .map((n) => `ql:${n}`)
+        .join(", ")}, or remove the comment`,
+    })
+  } else if (!allowed.test(args.join(" "))) {
+    problems.push({
+      line: lineNo,
+      message: `\`ql:${name}\` does not take \`${args.join(" ") || "(nothing)"}\``,
+      fix: MARKER_HINT[name] ?? `write it as \`<!-- ql:${name} -->\``,
+    })
+  }
+}
+
+type MarkerParseOut = { lines: string[]; markers: Marker[]; problems: MarkerProblem[] }
+
+function handleMarkerClose(
+  name: string,
+  open: OpenMarker | null,
+  index: number,
+  out: MarkerParseOut,
+): OpenMarker | null {
+  const lineNo = index + 1
+  if (open === null || open.name !== name) {
+    out.problems.push({
+      line: lineNo,
+      message: `\`/ql:${name}\` closes no open \`ql:${name}\``,
+      fix:
+        open === null
+          ? `add \`<!-- ql:${name} -->\` above it, or remove it`
+          : `close \`ql:${open.name}\` here instead`,
+    })
+    return open
+  }
+  out.markers.push({
+    name,
+    args: open.args,
+    fallback: trimBlank(out.lines.slice(open.line, index)).join("\n"),
+    line: open.line,
+    endLine: lineNo,
+    section: open.section,
+  })
+  return null
+}
+
 /** Every marked section of a document, in order, and what is wrong with the markers as written. */
 export function parseMarkers(markdown: string): { markers: Marker[]; problems: MarkerProblem[] } {
   const lines = markdown.split(/\r?\n/)
   const markers: Marker[] = []
   const problems: MarkerProblem[] = []
   let section: string | null = null
-  let open: { name: string; args: string[]; line: number; section: string | null } | null = null
+  let open: OpenMarker | null = null
   outsideFences(lines, (raw, index) => {
     const lineNo = index + 1
     const heading = raw.match(/^## (.+)$/)
@@ -120,47 +177,13 @@ export function parseMarkers(markdown: string): { markers: Marker[]; problems: M
         })
         return
       }
-      const allowed = MARKER_ARGS[name]
-      if (allowed === undefined)
-        problems.push({
-          line: lineNo,
-          message: `\`ql:${name}\` is not a marker QualityLayer fills`,
-          fix: `use one of ${Object.keys(MARKER_ARGS)
-            .map((n) => `ql:${n}`)
-            .join(", ")}, or remove the comment`,
-        })
-      else if (!allowed.test(args.join(" ")))
-        problems.push({
-          line: lineNo,
-          message: `\`ql:${name}\` does not take \`${args.join(" ") || "(nothing)"}\``,
-          fix: MARKER_HINT[name] ?? `write it as \`<!-- ql:${name} -->\``,
-        })
+      validateMarkerOpen(name, args, lineNo, problems)
       open = { name, args, line: lineNo, section }
       return
     }
     const closed = raw.match(CLOSE)
     if (closed !== null) {
-      const name = markerName(closed[1])
-      if (open === null || open.name !== name) {
-        problems.push({
-          line: lineNo,
-          message: `\`/ql:${name}\` closes no open \`ql:${name}\``,
-          fix:
-            open === null
-              ? `add \`<!-- ql:${name} -->\` above it, or remove it`
-              : `close \`ql:${open.name}\` here instead`,
-        })
-        return
-      }
-      markers.push({
-        name,
-        args: open.args,
-        fallback: trimBlank(lines.slice(open.line, index)).join("\n"),
-        line: open.line,
-        endLine: lineNo,
-        section: open.section,
-      })
-      open = null
+      open = handleMarkerClose(markerName(closed[1]), open, index, { lines, markers, problems })
     }
   })
   if (open !== null) {

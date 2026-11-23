@@ -21,6 +21,107 @@ function folderName(path: string, fallback: string): string {
   return last ?? fallback
 }
 
+function useDismissAddProject(card: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
+  // Esc closes it; so does a press outside it and outside the Add buttons.
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return
+      if (document.querySelector('[data-slot$="-positioner"][data-open]')) return
+      onClose()
+    }
+    const press = (event: PointerEvent) => {
+      const at = event.target as Element | null
+      if (at === null || card.current?.contains(at)) return
+      if (at.closest('[data-add-project-toggle], [data-slot$="-positioner"][data-open]')) return
+      onClose()
+    }
+    document.addEventListener("keydown", key)
+    document.addEventListener("pointerdown", press)
+    return () => {
+      document.removeEventListener("keydown", key)
+      document.removeEventListener("pointerdown", press)
+    }
+  }, [card, onClose])
+}
+
+function addProjectCardStyle(anchor: HTMLElement | null, compact: boolean): React.CSSProperties {
+  const box = anchor?.getBoundingClientRect() ?? null
+  const top = box === null ? 60 : Math.round(box.bottom + 6)
+  const base: React.CSSProperties = compact
+    ? { top, left: 8, right: 8 }
+    : {
+        top,
+        left: Math.max(16, Math.min(Math.round(box?.left ?? 16), window.innerWidth - 436)),
+        width: 420,
+      }
+  return { ...base, maxHeight: `calc(100dvh - ${top + 16}px)` }
+}
+
+function AddProjectNameForm({
+  path,
+  nameId,
+  name,
+  setName,
+  color,
+  setColor,
+  problem,
+  saving,
+  onClose,
+  onSave,
+}: {
+  path: string
+  nameId: string
+  name: string
+  setName: (name: string) => void
+  color: ProjectColor
+  setColor: (color: ProjectColor) => void
+  problem: string | null
+  saving: boolean
+  onClose: () => void
+  onSave: () => void
+}) {
+  return (
+    <form
+      className="pj-add-form"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSave()
+      }}
+    >
+      <p className="pj-add-folder" title={path}>
+        {path}
+      </p>
+      <label className="pj-add-field" htmlFor={nameId}>
+        Name in the list
+        <input
+          id={nameId}
+          className="q-input pj-add-name"
+          value={name}
+          maxLength={40}
+          spellCheck={false}
+          // biome-ignore lint/a11y/noAutofocus: the second step starts at its one text field
+          autoFocus
+          onChange={(event) => setName(event.target.value)}
+        />
+      </label>
+      <ColorSwatches color={color} onPick={setColor} />
+      {problem !== null ? (
+        <p role="alert" className="q-run-error">
+          {problem}
+        </p>
+      ) : null}
+      <div className="pj-add-actions">
+        <button type="button" className="q-btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="submit" className="q-btn primary" disabled={saving || name.trim() === ""}>
+          Add project
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export function AddProject({
   projects,
   folderApi,
@@ -53,26 +154,7 @@ export function AddProject({
   const titleId = useId()
   const nameId = useId()
 
-  // Esc closes it; so does a press outside it and outside the Add buttons.
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return
-      if (document.querySelector('[data-slot$="-positioner"][data-open]')) return
-      onClose()
-    }
-    const press = (event: PointerEvent) => {
-      const at = event.target as Element | null
-      if (at === null || card.current?.contains(at)) return
-      if (at.closest('[data-add-project-toggle], [data-slot$="-positioner"][data-open]')) return
-      onClose()
-    }
-    document.addEventListener("keydown", key)
-    document.addEventListener("pointerdown", press)
-    return () => {
-      document.removeEventListener("keydown", key)
-      document.removeEventListener("pointerdown", press)
-    }
-  }, [onClose])
+  useDismissAddProject(card, onClose)
 
   const choose = (picked: ProjectTarget) => {
     setTarget(picked)
@@ -99,17 +181,6 @@ export function AddProject({
     }
   }
 
-  const box = anchor?.getBoundingClientRect() ?? null
-  const top = box === null ? 60 : Math.round(box.bottom + 6)
-  const style: React.CSSProperties = compact
-    ? { top, left: 8, right: 8 }
-    : {
-        top,
-        left: Math.max(16, Math.min(Math.round(box?.left ?? 16), window.innerWidth - 436)),
-        width: 420,
-      }
-  style.maxHeight = `calc(100dvh - ${top + 16}px)`
-
   return (
     <div
       ref={card}
@@ -119,7 +190,7 @@ export function AddProject({
       aria-labelledby={titleId}
       data-testid="add-project"
       data-step={target === null ? "folder" : "name"}
-      style={style}
+      style={addProjectCardStyle(anchor, compact)}
     >
       <div className="pj-add-h">
         <b id={titleId}>Add a project</b>
@@ -151,44 +222,18 @@ export function AddProject({
           </div>
         </>
       ) : (
-        <form
-          className="pj-add-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void save()
-          }}
-        >
-          <p className="pj-add-folder" title={target.path}>
-            {target.path}
-          </p>
-          <label className="pj-add-field" htmlFor={nameId}>
-            Name in the list
-            <input
-              id={nameId}
-              className="q-input pj-add-name"
-              value={name}
-              maxLength={40}
-              spellCheck={false}
-              // biome-ignore lint/a11y/noAutofocus: the second step starts at its one text field
-              autoFocus
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <ColorSwatches color={color} onPick={setColor} />
-          {problem !== null ? (
-            <p role="alert" className="q-run-error">
-              {problem}
-            </p>
-          ) : null}
-          <div className="pj-add-actions">
-            <button type="button" className="q-btn" onClick={onClose}>
-              Cancel
-            </button>
-            <button type="submit" className="q-btn primary" disabled={saving || name.trim() === ""}>
-              Add project
-            </button>
-          </div>
-        </form>
+        <AddProjectNameForm
+          path={target.path}
+          nameId={nameId}
+          name={name}
+          setName={setName}
+          color={color}
+          setColor={setColor}
+          problem={problem}
+          saving={saving}
+          onClose={onClose}
+          onSave={() => void save()}
+        />
       )}
     </div>
   )

@@ -6,7 +6,7 @@
 // starts twice.
 
 import type { ConversationSnapshot } from "../core/conversation/types.ts"
-import { type PlanFeedbackActor, releasePlannerForBuild } from "./agent-window/plan-feedback.ts"
+import { releaseActivePlanner } from "./build-here-intent-helpers.ts"
 import type { RunStart, RunWindow } from "./run-context.tsx"
 
 /**
@@ -61,43 +61,49 @@ export function subscribeIntents(listener: () => void): () => void {
  * waits. `stage` and `decision` are known where the task is open; elsewhere the server's own start
  * check refuses a task that is no longer approved.
  */
+type ContinuationFacts = {
+  task: string
+  stage?: string
+  decision?: string | undefined
+  buildRunning: boolean
+  runsLoaded: boolean
+  planner: { nativeSession?: string | undefined; status: string } | null
+}
+
+function isDisarmedBeforePlanner(
+  intent: BuildHereIntent | null,
+  facts: ContinuationFacts,
+): boolean {
+  if (intent === null || intent.task !== facts.task || facts.buildRunning) return true
+  if (facts.stage !== undefined && !["plan", "implement"].includes(facts.stage)) return true
+  return facts.decision === "changes"
+}
+
 export function continuation(
   intent: BuildHereIntent | null,
-  facts: {
-    task: string
-    stage?: string
-    decision?: string | undefined
-    buildRunning: boolean
-    runsLoaded: boolean
-    planner: { nativeSession?: string | undefined; status: string } | null
-  },
+  facts: ContinuationFacts,
 ): Continuation {
-  if (intent === null || intent.task !== facts.task) return "disarm"
-  if (facts.buildRunning) return "disarm"
-  if (facts.stage !== undefined && !["plan", "implement"].includes(facts.stage)) return "disarm"
-  // The approval was recorded before the intent; a view that has not reloaded yet still says
-  // pending. Only changes the person asked for end it.
-  if (facts.decision === "changes") return "disarm"
+  if (intent === null || isDisarmedBeforePlanner(intent, facts)) return "disarm"
   if (!facts.runsLoaded) return "wait"
   if (facts.planner === null || facts.planner.nativeSession !== intent.nativeSession)
     return "disarm"
   const ended = facts.planner.status === "stopped" || facts.planner.status === "failed"
-  if (ended && intent.releasing !== true) return "stopped"
-  return "start"
+  return ended && intent.releasing !== true ? "stopped" : "start"
+}
+
+function isIntentPlannerRun(run: RunWindow, intent: BuildHereIntent): boolean {
+  if (run.nativeSession !== intent.nativeSession) return false
+  if (run.purpose.kind === "new-task") return run.task === intent.task
+  return (
+    run.purpose.kind === "task" &&
+    run.purpose.phase === "planning" &&
+    run.purpose.task === intent.task
+  )
 }
 
 /** This task's App planning run of the intent's conversation, among the App's runs. */
 export function intentPlanner(intent: BuildHereIntent, runs: readonly RunWindow[]) {
-  return (
-    runs.find(
-      (run) =>
-        run.nativeSession === intent.nativeSession &&
-        ((run.purpose.kind === "task" &&
-          run.purpose.phase === "planning" &&
-          run.purpose.task === intent.task) ||
-          (run.purpose.kind === "new-task" && run.task === intent.task)),
-    ) ?? null
-  )
+  return runs.find((run) => isIntentPlannerRun(run, intent)) ?? null
 }
 
 /** What one attempt needs from the App: its live run stream and controls, and the planner's draft. */
@@ -133,28 +139,51 @@ function withChosenSettings(request: RunStart, run: RunWindow | null): RunStart 
 }
 
 const inFlight = new Set<string>()
-const cancelled = new Error("The kept build request was replaced or withdrawn")
 
-/**
- * One attempt at the intent: start the build when the planner is stopped by the App's own release
- * (or by the person's explicit click on a stopped, resumable session), or release it at a verified
- * turn boundary first; wait while the planner is in its turn, asks, waits for a permission, runs
- * helpers or holds an unsent draft. After every await the exact intent must still be the live one:
- * a withdrawn or replaced request is never written back or started. A failed start ends the intent
- * and rethrows; an unrelated stop ends it as `stopped`. Never two attempts at once for one task;
- * every finished attempt tells the intent's readers, so a boundary that arrived meanwhile is
- * evaluated again.
- */
+type AdvanceOutcome = "started" | "wait" | "disarm" | "stopped" | "busy"
+
+async function executeStartIntent(
+  task: string,
+  intent: BuildHereIntent,
+  planner: RunWindow,
+  deps: IntentDeps,
+): Promise<AdvanceOutcome> {
+  let live: BuildHereIntent = intent
+  const stillLive = () => readIntent(task) === live
+  let chosen: RunWindow | null = planner
+  if (planner.status !== "stopped" && planner.status !== "failed") {
+    const release = await releaseActivePlanner({
+      intent,
+      planner,
+      deps,
+      latest: () => intentPlanner(intent, deps.runs()),
+      stillLive,
+      onMarkReleasing: (marked, run) => {
+        writeIntent(marked)
+        live = marked
+        chosen = run
+      },
+    })
+    if (release !== "released") return release
+  }
+  if (!stillLive()) return "disarm"
+  try {
+    await deps.start(withChosenSettings(intent.request, chosen))
+  } finally {
+    if (stillLive()) clearIntent(task)
+  }
+  return "started"
+}
+
 export async function advanceIntent(
   task: string,
   deps: IntentDeps,
   facts: { stage?: string; decision?: string } = {},
-): Promise<"started" | "wait" | "disarm" | "stopped" | "busy"> {
+): Promise<AdvanceOutcome> {
   const intent = readIntent(task)
   if (intent === null) return "disarm"
   if (inFlight.has(task)) return "busy"
-  const latest = () => intentPlanner(intent, deps.runs())
-  const planner = latest()
+  const planner = intentPlanner(intent, deps.runs())
   const next = continuation(intent, {
     task,
     ...facts,
@@ -168,66 +197,8 @@ export async function advanceIntent(
   }
   if (next !== "start" || planner === null) return "wait"
   inFlight.add(task)
-  let live: BuildHereIntent = intent
-  const stillLive = () => readIntent(task) === live
-  let chosen: RunWindow | null = planner
   try {
-    if (planner.status !== "stopped" && planner.status !== "failed") {
-      // The turn this attempt judged: a new prompt or another accepted stop means another turn,
-      // even when the run still reads running and clear, so it is not this boundary.
-      const turnOf = (run: RunWindow) =>
-        [
-          run.generation,
-          run.lastPrompt?.generation,
-          run.lastPrompt?.sequence,
-          run.lastPrompt?.turn,
-          run.acceptedStopSequence,
-        ].join("|")
-      const judged = turnOf(planner)
-      const actor = (): PlanFeedbackActor => {
-        const run = latest()
-        // Fail closed: a planner that is gone or in another turn is never stopped on old evidence.
-        if (run === null || turnOf(run) !== judged)
-          throw new Error("The planner changed. Try again with its current session.")
-        return {
-          run,
-          status: run.status,
-          attention: run.attention ?? "clear",
-          viewer: undefined,
-          readOnly: run.canStart === false,
-          busy: run.status !== "running",
-          hasDraft: deps.hasDraft(run),
-          load: () => deps.conversation?.(run) ?? Promise.resolve(undefined),
-          send: () => false,
-          resume: async () => false,
-        }
-      }
-      const released = await releasePlannerForBuild(actor, async () => {
-        if (!stillLive()) throw cancelled
-        const current = actor()
-        const marked: BuildHereIntent = { ...intent, releasing: true }
-        writeIntent(marked)
-        live = marked
-        chosen = current.run
-        const settled = await deps.stop(current.run)
-        return settled?.status === "stopped" || settled?.status === "failed"
-      }).catch((cause) => {
-        if (cause === cancelled) return "cancelled" as const
-        // A draft appeared or the planner changed: not a boundary yet, the next one may be.
-        if (cause instanceof Error && /unsent message|planner changed/.test(cause.message))
-          return "active" as const
-        throw cause
-      })
-      if (released === "cancelled") return "disarm"
-      if (released !== "released") return stillLive() ? "wait" : "disarm"
-    }
-    if (!stillLive()) return "disarm"
-    try {
-      await deps.start(withChosenSettings(intent.request, chosen))
-    } finally {
-      if (stillLive()) clearIntent(task)
-    }
-    return "started"
+    return await executeStartIntent(task, intent, planner, deps)
   } finally {
     inFlight.delete(task)
     changed()

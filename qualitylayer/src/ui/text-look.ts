@@ -32,6 +32,12 @@ export function useUiFont(choice: unknown): UiFont {
   return font
 }
 
+function isSingleTextSizePatch(patch: unknown): patch is { textSize: TextSize } {
+  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return false
+  if (Object.keys(patch).length !== 1 || !("textSize" in patch)) return false
+  return TEXT_SIZES.includes(patch.textSize as TextSize)
+}
+
 /** Relative shortcuts and absolute Settings choices share one ordered text-size writer. */
 export function useTextSize(
   value: unknown,
@@ -73,15 +79,8 @@ export function useTextSize(
   )
   const save = useCallback(
     (patch: unknown): Promise<string | null> => {
-      if (
-        typeof patch === "object" &&
-        patch !== null &&
-        !Array.isArray(patch) &&
-        Object.keys(patch).length === 1 &&
-        "textSize" in patch &&
-        TEXT_SIZES.includes(patch.textSize as TextSize)
-      ) {
-        const size = patch.textSize as TextSize
+      if (isSingleTextSizePatch(patch)) {
+        const size = patch.textSize
         return enqueue(() => size)
       }
       return writer.current(patch)

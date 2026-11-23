@@ -7,7 +7,7 @@
 // makes a separate artifact. Saved into the task's own project, a new draft is then recorded as a draft
 // on what it became, so the Files row says so. Cancel changes nothing.
 
-import { GitBranchIcon, MonitorIcon, PinIcon, PlusIcon, ShapesIcon } from "lucide-react"
+import { PinIcon } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 import {
   Dialog,
@@ -17,18 +17,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import type { Artifact } from "../../core/artifact/format.ts"
-import type { Api, KeepResult, Project, ProjectArtifacts, TaskDetail } from "../api.ts"
-import { FieldSelect } from "../kit/FieldSelect.tsx"
-import { InfoHint } from "../kit/InfoHint.tsx"
-import { Segmented } from "../Segmented.tsx"
+import type { KeepResult, Project, ProjectArtifacts, TaskDetail } from "../api.ts"
+import {
+  type KeepApi,
+  KeepBaseNotice,
+  KeepLinkField,
+  KeepPagesField,
+  KeepProjectField,
+  KeepWhereField,
+  runKeepSubmit,
+} from "./KeepDialogFields.tsx"
 import { type DraftLine, linkProblem, slugOf } from "./task-lasting.ts"
 import "./task-lasting.css"
-
-type KeepApi = Pick<Api, "keepArtifact"> &
-  Partial<Pick<Api, "projects" | "draftOnArtifact" | "alsoShowArtifact">>
-
-/** The draft is one page (a folder has several); a one-page draft is kept as `index.html`. */
-const isSinglePage = (draft: Artifact) => draft.pages === undefined
 
 export function KeepDialog({
   api,
@@ -41,14 +41,10 @@ export function KeepDialog({
 }: {
   api: KeepApi
   task: Pick<TaskDetail, "id" | "project" | "projectName">
-  /** The draft to save; null: closed. */
   draft: Artifact | null
-  /** What the draft builds on, when it builds on a Library artifact. */
   base?: DraftLine | null
-  /** Every project the overview knows: where it can go, and the names already taken there. */
   projects?: ProjectArtifacts[]
   onClose: () => void
-  /** Saved: the result, the names of other projects it could not be listed under, and where it went. */
   onKept: (result: KeepResult, notShown: string[], projectName: string) => void
 }) {
   return (
@@ -67,6 +63,184 @@ export function KeepDialog({
       ) : null}
     </Dialog>
   )
+}
+
+function isKeepBlocked(args: {
+  busy: boolean
+  slug: string
+  title: string
+  linkNote: string | null
+  taken: boolean
+  noPages: boolean
+}): boolean {
+  const { busy, slug, title, linkNote, taken, noPages } = args
+  if (busy || slug === "" || title.trim() === "") return true
+  return linkNote !== null || taken || noPages
+}
+
+function useKeepOthers(api: KeepApi, asking: boolean) {
+  const [others, setOthers] = useState<Project[] | null>(null)
+  useEffect(() => {
+    if (!asking || others !== null || api.projects === undefined) return
+    let live = true
+    api
+      .projects()
+      .then((all) => live && setOthers(all))
+      .catch(() => live && setOthers([]))
+    return () => {
+      live = false
+    }
+  }, [asking, others, api])
+  return others
+}
+
+function KeepNamePurposeFields({
+  titleId,
+  purposeId,
+  takenId,
+  title,
+  purpose,
+  taken,
+  destinationName,
+  slug,
+  onTitle,
+  onPurpose,
+}: {
+  titleId: string
+  purposeId: string
+  takenId: string
+  title: string
+  purpose: string
+  taken: boolean
+  destinationName: string
+  slug: string
+  onTitle: (next: string) => void
+  onPurpose: (next: string) => void
+}) {
+  return (
+    <>
+      <label className="kd-field" htmlFor={titleId}>
+        Name
+        <input
+          id={titleId}
+          className="kd-input"
+          value={title}
+          maxLength={120}
+          autoComplete="off"
+          aria-invalid={taken}
+          aria-describedby={taken ? takenId : undefined}
+          onChange={(event) => onTitle(event.target.value)}
+        />
+        {taken ? (
+          <span id={takenId} className="kd-bad" role="alert">
+            {destinationName}'s Library already has an artifact named {slug}. Choose another name.
+          </span>
+        ) : null}
+      </label>
+      <label className="kd-field" htmlFor={purposeId}>
+        What it shows
+        <input
+          id={purposeId}
+          className="kd-input"
+          value={purpose}
+          maxLength={600}
+          autoComplete="off"
+          onChange={(event) => onPurpose(event.target.value)}
+        />
+      </label>
+    </>
+  )
+}
+
+function KeepFormActions({
+  problem,
+  busy,
+  blocked,
+  failed,
+  onClose,
+}: {
+  problem: string | null
+  busy: boolean
+  blocked: boolean
+  failed: boolean
+  onClose: () => void
+}) {
+  const label = busy ? "Saving…" : failed ? "Try again" : "Save to library"
+  return (
+    <>
+      {problem !== null ? (
+        <p className="kd-bad" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      <div className="kd-actions">
+        <button type="button" className="q-btn quiet" disabled={busy} onClick={onClose}>
+          Cancel
+        </button>
+        <button type="submit" className="q-btn primary" disabled={blocked}>
+          {label}
+        </button>
+      </div>
+    </>
+  )
+}
+
+function useKeepDerived(args: {
+  task: Pick<TaskDetail, "id" | "project" | "projectName">
+  draft: Artifact
+  base: DraftLine | null
+  projects: ProjectArtifacts[]
+  title: string
+  where: "repository" | "mac"
+  link: string
+  linking: boolean
+  destination: string
+  pages: readonly string[]
+  busy: boolean
+}) {
+  const { task, draft, base, projects, title, where, link, linking, destination, pages, busy } =
+    args
+  const slug = slugOf(title)
+  const linkNote = where === "repository" ? linkProblem(link) : null
+  const nameOf = (id: string) =>
+    id === task.project ? task.projectName : (projects.find((p) => p.id === id)?.name ?? id)
+  const destinationName = nameOf(destination)
+  const existing = projects.find((p) => p.id === destination)?.lasting ?? []
+  const taken = where === "repository" && slug !== "" && existing.some((each) => each.name === slug)
+  const folder = (draft.pages?.length ?? 0) > 1
+  const noPages = folder && pages.length === 0
+  const blocked = isKeepBlocked({ busy, slug, title, linkNote, taken, noPages })
+  const savedIn =
+    where === "repository" ? `.qualitylayer/artifacts/${slug || "name"}/` : "docs/artifacts/"
+  const crossBase = base !== null && base.owner !== null && base.owner !== task.project
+  const linkShown = where === "repository" && (linking || link !== "")
+  return {
+    slug,
+    linkNote,
+    nameOf,
+    destinationName,
+    taken,
+    folder,
+    noPages,
+    blocked,
+    savedIn,
+    crossBase,
+    linkShown,
+  }
+}
+
+function toggleOrderedPage(
+  allPages: Artifact["pages"],
+  was: string[],
+  page: string,
+  checked: boolean,
+): string[] {
+  if (!checked) return was.filter((p) => p !== page)
+  return (allPages ?? []).map((p) => p.page).filter((p) => p === page || was.includes(p))
+}
+
+function toggleStringMember(was: string[], id: string, checked: boolean): string[] {
+  return checked ? [...was, id] : was.filter((each) => each !== id)
 }
 
 function KeepForm({
@@ -90,11 +264,9 @@ function KeepForm({
   const [purpose, setPurpose] = useState(draft.purpose)
   const [where, setWhere] = useState<"repository" | "mac">("repository")
   const [link, setLink] = useState("")
-  // The Claude Design link is one quiet button until it is used.
   const [linking, setLinking] = useState(false)
   const [destination, setDestination] = useState(task.project)
   const [pages, setPages] = useState<string[]>(() => (draft.pages ?? []).map((p) => p.page))
-  const [others, setOthers] = useState<Project[] | null>(null)
   const [asking, setAsking] = useState(false)
   const [also, setAlso] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -109,86 +281,48 @@ function KeepForm({
     taken: useId(),
     consequence: useId(),
   }
-  const slug = slugOf(title)
-  // An artifact only on this computer has no link; whatever was typed stays unsent.
-  const linkNote = where === "repository" ? linkProblem(link) : null
-  const nameOf = (id: string) =>
-    id === task.project ? task.projectName : (projects.find((p) => p.id === id)?.name ?? id)
-  const destinationName = nameOf(destination)
-  // A name already in the destination's Library is refused before it is sent.
-  const taken =
-    where === "repository" &&
-    slug !== "" &&
-    (projects.find((p) => p.id === destination)?.lasting ?? []).some((each) => each.name === slug)
-  // Pages are chosen only when there is a choice: a draft of one page saves that page.
-  const folder = (draft.pages?.length ?? 0) > 1
-  const noPages = folder && pages.length === 0
-  const blocked =
-    busy || slug === "" || title.trim() === "" || linkNote !== null || taken || noPages
-  const savedIn =
-    where === "repository" ? `.qualitylayer/artifacts/${slug || "name"}/` : "docs/artifacts/"
-  const crossBase = base !== null && base.owner !== null && base.owner !== task.project
+  const others = useKeepOthers(api, asking)
+  const state = useKeepDerived({
+    task,
+    draft,
+    base,
+    projects,
+    title,
+    where,
+    link,
+    linking,
+    destination,
+    pages,
+    busy,
+  })
 
-  // The person just asked for the link field: it takes the focus when it appears.
-  const linkShown = where === "repository" && (linking || link !== "")
   useEffect(() => {
-    const field = linkField.current
-    if (linkShown && field) field.focus()
-  }, [linkShown])
-
-  // The other projects are read when the person asks to list the artifact under them.
-  useEffect(() => {
-    if (!asking || others !== null || api.projects === undefined) return
-    let live = true
-    api
-      .projects()
-      .then((all) => live && setOthers(all))
-      .catch(() => live && setOthers([]))
-    return () => {
-      live = false
-    }
-  }, [asking, others, api])
+    if (state.linkShown) linkField.current?.focus()
+  }, [state.linkShown])
 
   const submit = async () => {
-    if (blocked) return
+    if (state.blocked) return
     setBusy(true)
     setProblem(null)
     try {
-      const result = await api.keepArtifact(destination, {
-        name: slug,
-        title: title.trim(),
-        purpose: purpose.trim(),
+      const { result, notShown } = await runKeepSubmit({
+        api,
+        task,
+        draft,
+        destination,
+        slug: state.slug,
+        title,
+        purpose,
         where,
-        ...(where === "repository" && link.trim() !== "" ? { claudeDesign: link.trim() } : {}),
-        ...(folder ? { pages } : {}),
-        from: { task: task.id, draft: draft.name },
+        link,
+        folder: state.folder,
+        pages,
+        also,
+        others,
       })
-      const notShown: string[] = []
-      if (result.where === "repository") {
-        // A new draft saved into its own project now begins from what it became: later changes to it
-        // fold back in at Verify. A draft that already has a base keeps it, and Verify cannot fold into
-        // another project, so neither is moved onto the copy.
-        if (
-          destination === task.project &&
-          draft.draftOn === undefined &&
-          api.draftOnArtifact !== undefined
-        )
-          await api
-            .draftOnArtifact(task.id, {
-              draft: draft.name,
-              artifact: result.name,
-              ...(isSinglePage(draft) ? { page: "index.html" } : {}),
-            })
-            .catch(() => undefined)
-        for (const id of also.filter((each) => each !== destination))
-          await api
-            .alsoShowArtifact?.(id, `${destination}:${result.name}`)
-            .catch(() => notShown.push(others?.find((each) => each.id === id)?.name ?? id))
-      }
-      onKept(result, notShown, destinationName)
+      onKept(result, notShown, state.destinationName)
       onClose()
     } catch (cause) {
-      // The words stay as they were, so trying again is one click.
       setProblem(cause instanceof Error ? cause.message : "The artifact could not be saved.")
       setFailed(true)
       setBusy(false)
@@ -214,230 +348,75 @@ function KeepForm({
         }}
       >
         {base !== null ? (
-          <p className="kd-base" data-testid="keep-base">
-            {base.state === "deleted" || base.state === "missing" ? (
-              <>
-                It built on <b>{base.title}</b>, which is no longer in the Library. Saving makes a
-                new, separate artifact.
-              </>
-            ) : crossBase ? (
-              <>
-                It builds on <b>{base.title}</b> from {nameOf(base.owner ?? "")}. Review cannot
-                change another project's artifact, so its changes stay in this task. Save a separate
-                copy here, or copy {base.title} into this project from its Library menu first.
-              </>
-            ) : (
-              <>
-                It builds on <b>{base.title}</b>. Its changes go into {base.title} at Verify, where
-                you compare them and settle conflicts. Saving here makes a separate artifact;{" "}
-                {base.title} is not changed.
-              </>
-            )}
-          </p>
-        ) : null}
-        <label className="kd-field" htmlFor={ids.title}>
-          Name
-          <input
-            id={ids.title}
-            className="kd-input"
-            value={title}
-            maxLength={120}
-            autoComplete="off"
-            aria-invalid={taken}
-            aria-describedby={taken ? ids.taken : undefined}
-            onChange={(event) => setTitle(event.target.value)}
+          <KeepBaseNotice
+            base={base}
+            crossBase={state.crossBase}
+            ownerName={state.nameOf(base.owner ?? "")}
           />
-          {taken ? (
-            <span id={ids.taken} className="kd-bad" role="alert">
-              {destinationName}'s Library already has an artifact named {slug}. Choose another name.
-            </span>
-          ) : null}
-        </label>
-        <label className="kd-field" htmlFor={ids.purpose}>
-          What it shows
-          <input
-            id={ids.purpose}
-            className="kd-input"
-            value={purpose}
-            maxLength={600}
-            autoComplete="off"
-            onChange={(event) => setPurpose(event.target.value)}
-          />
-        </label>
-
-        {folder ? (
-          <fieldset className="kd-field kd-pages" data-testid="keep-pages">
-            <legend>Pages</legend>
-            {(draft.pages ?? []).map((each) => (
-              <label key={each.page} className="kd-check">
-                <input
-                  type="checkbox"
-                  checked={pages.includes(each.page)}
-                  onChange={(event) =>
-                    setPages((was) =>
-                      event.target.checked
-                        ? (draft.pages ?? [])
-                            .map((p) => p.page)
-                            .filter((p) => p === each.page || was.includes(p))
-                        : was.filter((p) => p !== each.page),
-                    )
-                  }
-                />
-                {each.title}
-              </label>
-            ))}
-            {noPages ? (
-              <span className="kd-bad" role="alert">
-                Choose at least one page.
-              </span>
-            ) : (
-              <span className="kd-note">
-                The pages take what they use with them: styles, scripts and pictures.
-              </span>
-            )}
-          </fieldset>
         ) : null}
-
-        <div className="kd-field">
-          <span>Project</span>
-          {projects.length > 1 ? (
-            <FieldSelect
-              label="Project"
-              icon={<ShapesIcon aria-hidden="true" />}
-              testId="keep-destination"
-              value={destination}
-              options={projects.map((each) => ({ value: each.id, label: nameOf(each.id) }))}
-              onChange={(next) => {
-                setDestination(next)
-                setAlso((was) => was.filter((id) => id !== next))
-              }}
-            />
-          ) : (
-            <div className="kd-chips">
-              <span className="kd-chip" data-testid="keep-project">
-                {destinationName}
-              </span>
-            </div>
-          )}
-          {api.projects !== undefined && api.alsoShowArtifact !== undefined ? (
-            <div className="kd-chips">
-              <button
-                type="button"
-                className="q-btn sm"
-                aria-expanded={asking}
-                disabled={where === "mac"}
-                onClick={() => setAsking((on) => !on)}
-              >
-                Also show in another project
-              </button>
-            </div>
-          ) : null}
-          {asking && where === "repository" ? (
-            others === null ? (
-              <p className="kd-note" role="status">
-                Reading your projects…
-              </p>
-            ) : others.filter((each) => each.id !== destination).length === 0 ? (
-              <p className="kd-note">There is no other project on this computer.</p>
-            ) : (
-              <fieldset className="kd-also" aria-label="Also show in these projects">
-                {others
-                  .filter((each) => each.id !== destination)
-                  .map((each) => (
-                    <label key={each.id} className="kd-check">
-                      <input
-                        type="checkbox"
-                        checked={also.includes(each.id)}
-                        onChange={(event) =>
-                          setAlso((was) =>
-                            event.target.checked
-                              ? [...was, each.id]
-                              : was.filter((id) => id !== each.id),
-                          )
-                        }
-                      />
-                      {each.name}
-                    </label>
-                  ))}
-              </fieldset>
-            )
-          ) : null}
-        </div>
-
-        <div className="kd-field kd-where">
-          <Segmented
-            label="Where it lives"
-            value={where}
-            onChange={setWhere}
-            options={[
-              {
-                id: "repository",
-                label: "In the repository",
-                icon: <GitBranchIcon aria-hidden="true" />,
-              },
-              {
-                id: "mac",
-                label: "Only on this computer",
-                icon: <MonitorIcon aria-hidden="true" />,
-              },
-            ]}
+        <KeepNamePurposeFields
+          titleId={ids.title}
+          purposeId={ids.purpose}
+          takenId={ids.taken}
+          title={title}
+          purpose={purpose}
+          taken={state.taken}
+          destinationName={state.destinationName}
+          slug={state.slug}
+          onTitle={setTitle}
+          onPurpose={setPurpose}
+        />
+        {state.folder ? (
+          <KeepPagesField
+            draftPages={draft.pages ?? []}
+            pages={pages}
+            noPages={state.noPages}
+            onTogglePage={(page, checked) =>
+              setPages((was) => toggleOrderedPage(draft.pages, was, page, checked))
+            }
           />
-          <p className="kd-consequence" id={ids.consequence}>
-            {where === "repository"
-              ? "Goes into your pull requests; anyone who can read the repository can read it."
-              : "Kept out of git. Share it with the team when you want them to see it."}
-            <InfoHint text={`Saved in ${savedIn}`} label="Where" />
-          </p>
-        </div>
-
-        {linkShown ? (
-          <label className="kd-field" htmlFor={ids.link}>
-            Claude Design link
-            <input
-              id={ids.link}
-              className="kd-input"
-              type="url"
-              value={link}
-              placeholder="https://claude.ai/design/…"
-              autoComplete="off"
-              ref={linkField}
-              aria-invalid={linkNote !== null}
-              aria-describedby={linkNote !== null ? ids.linkNote : undefined}
-              onChange={(event) => setLink(event.target.value)}
-            />
-            {linkNote !== null ? (
-              <span id={ids.linkNote} className="kd-bad" role="alert">
-                {linkNote}
-              </span>
-            ) : null}
-          </label>
-        ) : (
-          <div className="kd-chips">
-            <button
-              type="button"
-              className="q-btn sm quiet"
-              disabled={where === "mac"}
-              onClick={() => setLinking(true)}
-            >
-              <PlusIcon aria-hidden="true" size={13} />
-              Claude Design link
-            </button>
-          </div>
-        )}
-
-        {problem !== null ? (
-          <p className="kd-bad" role="alert">
-            {problem}
-          </p>
         ) : null}
-        <div className="kd-actions">
-          <button type="button" className="q-btn quiet" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="q-btn primary" disabled={blocked}>
-            {busy ? "Saving…" : failed ? "Try again" : "Save to library"}
-          </button>
-        </div>
+        <KeepProjectField
+          projects={projects}
+          destination={destination}
+          destinationName={state.destinationName}
+          nameOf={state.nameOf}
+          onDestination={(next) => {
+            setDestination(next)
+            setAlso((was) => was.filter((id) => id !== next))
+          }}
+          canAlsoShow={api.projects !== undefined && api.alsoShowArtifact !== undefined}
+          where={where}
+          asking={asking}
+          onToggleAsking={() => setAsking((on) => !on)}
+          others={others}
+          also={also}
+          onToggleAlso={(id, checked) => setAlso((was) => toggleStringMember(was, id, checked))}
+        />
+        <KeepWhereField
+          where={where}
+          onWhere={setWhere}
+          savedIn={state.savedIn}
+          consequenceId={ids.consequence}
+        />
+        <KeepLinkField
+          linkShown={state.linkShown}
+          linkId={ids.link}
+          linkNoteId={ids.linkNote}
+          link={link}
+          linkNote={state.linkNote}
+          linkField={linkField}
+          where={where}
+          onLink={setLink}
+          onStartLink={() => setLinking(true)}
+        />
+        <KeepFormActions
+          problem={problem}
+          busy={busy}
+          blocked={state.blocked}
+          failed={failed}
+          onClose={onClose}
+        />
       </form>
     </DialogContent>
   )

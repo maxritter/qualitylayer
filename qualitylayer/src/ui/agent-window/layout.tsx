@@ -56,6 +56,82 @@ const TerminalLayout = createContext<Layout | null>(null)
 export function useTerminalLayout() {
   return useContext(TerminalLayout)
 }
+function sameRect(a: Rect | null, b: Rect | null): boolean {
+  return (
+    a?.left === b?.left && a?.top === b?.top && a?.width === b?.width && a?.height === b?.height
+  )
+}
+
+function measureRect(node: HTMLElement | null): Rect | null {
+  const rect = node?.getBoundingClientRect()
+  return rect && rect.width > 0 && rect.height > 0
+    ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    : null
+}
+
+function useLayoutPreference() {
+  const [preference, setPreference] = useState(() =>
+    terminalLayoutPreference(stored(TERMINAL_LAYOUT_KEY, "")),
+  )
+  const keep = useCallback((patch: Partial<Preference>) => {
+    setPreference((before) => {
+      const unchanged = Object.entries(patch).every(
+        ([key, value]) => before[key as keyof Preference] === value,
+      )
+      if (unchanged) return before
+      const next = { ...before, ...patch }
+      store(TERMINAL_LAYOUT_KEY, JSON.stringify(next))
+      return next
+    })
+  }, [])
+  return { preference, keep }
+}
+
+function observeTargets(targets: readonly (HTMLElement | null)[], measure: () => void) {
+  const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null
+  for (const target of targets) {
+    if (target) observer?.observe(target)
+  }
+  window.addEventListener("resize", measure)
+  measure()
+  return () => {
+    observer?.disconnect()
+    window.removeEventListener("resize", measure)
+  }
+}
+
+function useMeasuredNodes(initialWidth: number) {
+  const [available, setAvailable] = useState(initialWidth)
+  const [sidebarRect, setRect] = useState<Rect | null>(null)
+  const [sidebarTabId, setSidebarTabId] = useState<string>()
+  const [sidebarSheetHost, setSidebarSheetHost] = useState<HTMLElement | null>(null)
+  const sidebarNode = useRef<HTMLElement | null>(null)
+  const workspaceNode = useRef<HTMLElement | null>(null)
+  const [nodes, changedNodes] = useState(0)
+  const sidebarBody = useCallback((node: HTMLElement | null) => {
+    if (sidebarNode.current === node) return
+    sidebarNode.current = node
+    setSidebarSheetHost(node?.closest('[role="dialog"]') ? node.parentElement : null)
+    setSidebarTabId(node?.dataset.terminalTab)
+    changedNodes((n) => n + 1)
+  }, [])
+  const workspace = useCallback((node: HTMLElement | null) => {
+    if (workspaceNode.current === node) return
+    workspaceNode.current = node
+    changedNodes((n) => n + 1)
+  }, [])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: nodes changes when a ref target changes; the observer must follow that target
+  useLayoutEffect(() => {
+    const measure = () => {
+      setAvailable(workspaceNode.current?.clientWidth || window.innerWidth)
+      const next = measureRect(sidebarSheetHost ?? sidebarNode.current)
+      setRect((before) => (sameRect(before, next) ? before : next))
+    }
+    return observeTargets([sidebarNode.current, sidebarSheetHost, workspaceNode.current], measure)
+  }, [nodes, sidebarSheetHost])
+  return { available, sidebarRect, sidebarTabId, sidebarSheetHost, sidebarBody, workspace }
+}
+
 export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
   const [taskAgent, setTaskAgent] = useState<string>()
   const [agentControls, setControls] = useState<WeakRef<HTMLElement> | null>(null)
@@ -67,10 +143,7 @@ export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
     setViews(node === null ? null : new WeakRef(node))
   }, [])
   const viewportWidth = useViewportWidth()
-  const [available, setAvailable] = useState(viewportWidth)
-  const [preference, setPreference] = useState(() =>
-    terminalLayoutPreference(stored(TERMINAL_LAYOUT_KEY, "")),
-  )
+  const { preference, keep } = useLayoutPreference()
   const [panel, setPanel] = useState<TerminalPanel>("terminal")
   const runOpener = useRef<((id: string) => void) | null>(null)
   const setRunOpener = useCallback((open: ((id: string) => void) | null) => {
@@ -81,67 +154,10 @@ export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
   const rememberSidebar = useCallback((next: Exclude<TerminalPanel, "terminal">) => {
     lastSidebar.current = next
   }, [])
-  const [sidebarRect, setRect] = useState<Rect | null>(null)
-  const [sidebarTabId, setSidebarTabId] = useState<string>()
-  const [sidebarSheetHost, setSidebarSheetHost] = useState<HTMLElement | null>(null)
-  const sidebarNode = useRef<HTMLElement | null>(null)
-  const workspaceNode = useRef<HTMLElement | null>(null)
-  const [nodes, changedNodes] = useState(0)
-  const sidebarBody = useCallback((node: HTMLElement | null) => {
-    if (sidebarNode.current !== node) {
-      sidebarNode.current = node
-      setSidebarSheetHost(node?.closest('[role="dialog"]') ? node.parentElement : null)
-      setSidebarTabId(node?.dataset.terminalTab)
-      changedNodes((n) => n + 1)
-    }
-  }, [])
-  const workspace = useCallback((node: HTMLElement | null) => {
-    if (workspaceNode.current !== node) {
-      workspaceNode.current = node
-      changedNodes((n) => n + 1)
-    }
-  }, [])
+  const measured = useMeasuredNodes(viewportWidth)
   const rightActive = taskAgent !== undefined
-  const maxWidth = Math.max(320, Math.min(760, available - 360))
+  const maxWidth = Math.max(320, Math.min(760, measured.available - 360))
   const width = Math.min(preference.width, maxWidth)
-  const keep = useCallback((patch: Partial<Preference>) => {
-    setPreference((before) => {
-      if (Object.entries(patch).every(([key, value]) => before[key as keyof Preference] === value))
-        return before
-      const next = { ...before, ...patch }
-      store(TERMINAL_LAYOUT_KEY, JSON.stringify(next))
-      return next
-    })
-  }, [])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: nodes changes when a ref target changes; the observer must follow that target
-  useLayoutEffect(() => {
-    const measure = () => {
-      setAvailable(workspaceNode.current?.clientWidth || window.innerWidth)
-      const rect = (sidebarSheetHost ?? sidebarNode.current)?.getBoundingClientRect()
-      const next =
-        rect && rect.width > 0 && rect.height > 0
-          ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-          : null
-      setRect((before) =>
-        before?.left === next?.left &&
-        before?.top === next?.top &&
-        before?.width === next?.width &&
-        before?.height === next?.height
-          ? before
-          : next,
-      )
-    }
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null
-    if (sidebarNode.current) observer?.observe(sidebarNode.current)
-    if (sidebarSheetHost) observer?.observe(sidebarSheetHost)
-    if (workspaceNode.current) observer?.observe(workspaceNode.current)
-    window.addEventListener("resize", measure)
-    measure()
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener("resize", measure)
-    }
-  }, [nodes, sidebarSheetHost])
   const value = useMemo<Layout>(
     () => ({
       taskAgent,
@@ -158,9 +174,9 @@ export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
       width,
       maxWidth,
       panel,
-      sidebarRect,
-      sidebarSheetHost,
-      sidebarTabId,
+      sidebarRect: measured.sidebarRect,
+      sidebarSheetHost: measured.sidebarSheetHost,
+      sidebarTabId: measured.sidebarTabId,
       openRun,
       setRunOpener,
       setPanel(next) {
@@ -177,8 +193,8 @@ export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
       reset() {
         keep({ width: defaults.width })
       },
-      sidebarBody,
-      workspace,
+      sidebarBody: measured.sidebarBody,
+      workspace: measured.workspace,
     }),
     [
       rightActive,
@@ -190,12 +206,12 @@ export function TerminalLayoutProvider({ children }: { children: ReactNode }) {
       width,
       maxWidth,
       panel,
-      sidebarRect,
-      sidebarSheetHost,
-      sidebarTabId,
+      measured.sidebarRect,
+      measured.sidebarSheetHost,
+      measured.sidebarTabId,
       keep,
-      sidebarBody,
-      workspace,
+      measured.sidebarBody,
+      measured.workspace,
       rememberSidebar,
       openRun,
       setRunOpener,

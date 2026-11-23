@@ -3,21 +3,23 @@
 
 import { modelName } from "../../../core/agents/model-values.ts"
 import type { RunSettings, SettingsWait } from "../../../core/run/contracts.ts"
-import {
-  AGENT_CAPABILITIES,
-  ownPermissionNote,
-  type PermissionMode,
-} from "../../../core/run/launch-spec.ts"
+import { AGENT_CAPABILITIES } from "../../../core/run/launch-spec.ts"
 import type { NativeSettingField } from "../../native-settings-error.ts"
 import type { RunWindow } from "../../run-context.tsx"
+import {
+  currentPermission,
+  OWN_MODE,
+  type PermissionChoice,
+  permissionChoices,
+  permissionLabel,
+  sessionPermissionLabel,
+} from "./permission-values.ts"
 import { sessionEffort, sessionModelId } from "./session-values.ts"
+
+export { type PermissionChoice, permissionChoices, permissionLabel, sessionPermissionLabel }
 
 type Agent = RunWindow["agent"]
 
-/** The id of the row that means "the agent's own setting": no mode is named for it. */
-const OWN_MODE = "own"
-const separateNativeMode = (agent: Agent) =>
-  agent === "claude-code" || agent === "codex" || agent === "copilot"
 /** How the agent takes an effort: its own list, inside the model name, or not at all. */
 export function effortKind(agent: Agent): "separate" | "in-model" | null {
   return AGENT_CAPABILITIES[agent].effort
@@ -29,110 +31,6 @@ export function effortLabel(effort: string): string {
 
 /** The effort levels the agent lists, lowest first. */
 export const effortChoices = (agent: Agent): string[] => [...AGENT_CAPABILITIES[agent].efforts]
-
-type PermissionIcon = "sliders" | "hand" | "pencil" | "sparkles" | "shield"
-
-/** The picture of a mode: the agent's own setting, asking first, editing freely, deciding itself, or no checks. */
-function iconOf(mode: PermissionMode): PermissionIcon {
-  if (mode.level === "bypass") return "shield"
-  if (mode.id.includes("edit")) return "pencil"
-  if (mode.level === "fewer") return "sparkles"
-  return mode.id === "ask" ? "hand" : "sliders"
-}
-
-export type PermissionChoice = {
-  id: string
-  icon: PermissionIcon
-  label: string
-  hint: string
-  /** Choosing it takes the agent past its own prompts, and so needs a confirmation. */
-  bypass: boolean
-}
-
-/** The mode the agent reported by name, when one of its modes starts it with that name. */
-function reportedMode(
-  modes: readonly PermissionMode[],
-  reported: string | undefined,
-): PermissionMode | undefined {
-  if (reported === undefined) return undefined
-  const word = reported.toLowerCase().replace(/[ _-]+/g, "")
-  const copilot = modes.some((mode) => mode.label === "Assisted Permissions")
-  const nativeId = copilot
-    ? ({ manual: "ask", assisted: "allow-tools", allowall: "bypass" } as Record<string, string>)[
-        word
-      ]
-    : undefined
-  return modes.find(
-    (mode) =>
-      mode.id === nativeId ||
-      [mode.id, mode.label, mode.args.at(-1)].some(
-        (value) => value?.toLowerCase().replace(/[ _-]+/g, "") === word,
-      ),
-  )
-}
-
-/**
- * The mode that is the agent's own setting: the own-level mode that adds no argument, else the first
- * mode the catalog lists. It becomes the first row, so no mode is listed twice.
- */
-function ownMode(modes: readonly PermissionMode[]): PermissionMode | undefined {
-  return modes.find((mode) => mode.level === "own" && mode.args.length === 0) ?? modes[0]
-}
-
-/** The agent's own setting first, then every other mode the agent lists, in its order. */
-export function permissionChoices(agent: Agent, reported?: string): PermissionChoice[] {
-  const modes = AGENT_CAPABILITIES[agent].permissionModes
-  const own = ownMode(modes)
-  if (own === undefined) return []
-  return [
-    {
-      id: OWN_MODE,
-      icon: "sliders",
-      label: separateNativeMode(agent) ? "Agent settings" : own.label,
-      hint: ownPermissionNote(
-        agent,
-        separateNativeMode(agent) ? undefined : reportedMode(modes, reported)?.label,
-      ),
-      bypass: false,
-    },
-    ...modes
-      .filter((mode) => separateNativeMode(agent) || mode !== own)
-      .map((mode) => ({
-        id: mode.id,
-        icon: iconOf(mode),
-        label: mode.label,
-        hint: mode.hint,
-        bypass: mode.level === "bypass",
-      })),
-  ]
-}
-
-/**
- * The choice a run is in: the mode the agent last reported when it names one of its modes (a person
- * may have switched it inside the session), else its launch mode, the first mode of its level, or the
- * agent's own setting.
- */
-function currentPermission(
-  agent: Agent,
-  settings: RunWindow["settings"],
-  reported?: string,
-): string {
-  if (agent === "pi" && settings?.perm === "bypass") return "bypass"
-  const modes = AGENT_CAPABILITIES[agent].permissionModes
-  const own = ownMode(modes)
-  const live = reportedMode(modes, reported)?.id
-  const named = modes.some((mode) => mode.id === settings?.permMode)
-    ? settings?.permMode
-    : undefined
-  const level = settings?.perm ?? OWN_MODE
-  const id =
-    live ??
-    named ??
-    (level === OWN_MODE
-      ? OWN_MODE
-      : (modes.find((mode) => mode.level === level)?.id ?? reportedMode(modes, reported)?.id))
-  return id === undefined || (!separateNativeMode(agent) && id === own?.id) ? OWN_MODE : id
-}
 
 /** What the session runs with now, as the footer names it and as a change is measured against. */
 export type SessionSource = {
@@ -150,14 +48,14 @@ export function sessionSource(
 ): SessionSource {
   const agent = run.agent === "other" ? undefined : run.agent
   const model = unknown.includes("model") ? undefined : (observed.model ?? run.settings?.model)
-  const effort = sessionEffort(
+  const effort = sessionEffort({
     agent,
-    observed.model,
-    run.settings?.model,
-    observed.effort,
-    run.settings?.effort,
+    observedModel: observed.model,
+    launchModel: run.settings?.model,
+    observedEffort: observed.effort,
+    launchEffort: run.settings?.effort,
     unknown,
-  )
+  })
   const id = sessionModelId(agent, model)
   return {
     model,
@@ -229,26 +127,6 @@ export function pendingChange(run: RunWindow, source: SessionSource): PendingCha
   if (fields.has("perm") && perm !== undefined) shown.perm = perm
   return { source: shown, fields, note: `Applies ${waitPhrase(pending.waiting)}`, failed: false }
 }
-
-/** The label the permission chip shows: the named mode, or for the agent's own setting the mode it reported. */
-export function permissionLabel(agent: Agent, id: string, reported?: string): string {
-  if (agent === "pi" && id === "bypass") return "Bypass · Pi has no approval switch"
-  const modes = AGENT_CAPABILITIES[agent].permissionModes
-  const own = ownMode(modes)
-  const named =
-    id === OWN_MODE ? reportedMode(modes, reported) : modes.find((mode) => mode.id === id)
-  if (id === OWN_MODE && named === undefined && separateNativeMode(agent)) return "Agent settings"
-  const mode = named ?? own
-  return mode ? mode.label : "Agent settings"
-}
-
-/** What a run's permission is called wherever the App names it. */
-export const sessionPermissionLabel = (run: RunWindow): string =>
-  permissionLabel(
-    run.agent,
-    currentPermission(run.agent, run.settings, run.permissionMode),
-    run.permissionMode,
-  )
 
 export type Draft = { model?: string | undefined; effort?: string | undefined; perm: string }
 export type DraftField = keyof Draft

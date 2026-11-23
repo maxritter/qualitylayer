@@ -1,289 +1,32 @@
 import type { ResttyHeadlessTerminal } from "restty/headless"
+import { BoundaryTracker } from "./restore-boundary.ts"
+import { CursorStateTracker } from "./restore-cursor.ts"
+import { rebuild } from "./restore-rebuild.ts"
 
-const MODES = [
+export { BoundaryTracker, CursorStateTracker, rebuild }
+
+export const MODES = [
   1, 6, 7, 25, 45, 66, 69, 1000, 1002, 1003, 1004, 1005, 1006, 1007, 1015, 1016, 2004, 2026, 2027,
   2031, 1049,
 ]
-function query(t: ResttyHeadlessTerminal, sequence: string) {
+
+export function query(t: ResttyHeadlessTerminal, sequence: string) {
   t.drainOutput()
   t.write(sequence, { recordReplay: false })
   return t.drainOutput()
 }
-function modesOf(t: ResttyHeadlessTerminal) {
+
+export function modesOf(t: ResttyHeadlessTerminal) {
   return Object.fromEntries(
     MODES.map((mode) => [mode, Number(/;(\d)\$y/.exec(query(t, `\x1b[?${mode}$p`))?.[1] ?? -1)]),
   )
 }
-function dcs(t: ResttyHeadlessTerminal, request: string) {
+
+export function dcs(t: ResttyHeadlessTerminal, request: string) {
   const answer = query(t, `\x1bP$q${request}\x1b\\`)
   return answer.startsWith("\x1bP1$r") && answer.endsWith("\x1b\\") ? answer.slice(5, -2) : null
 }
-const cursorStates = new WeakMap<ResttyHeadlessTerminal, CursorStateTracker>()
-let segmenter: Intl.Segmenter | undefined
-/** Built on first use: making one costs a millisecond of every `qualitylayer` call that never draws a terminal. */
-const graphemes = () => (segmenter ??= new Intl.Segmenter("en", { granularity: "grapheme" }))
-export class CursorStateTracker {
-  pendingWrap = false
-  private wrap = true
-  private state: "text" | "esc" | "csi" | "str" | "strEsc" = "text"
-  private csi = ""
-  private margins = false
-  private rightMargin: number | undefined
-  resize() {
-    this.pendingWrap = false
-  }
-  apply(t: ResttyHeadlessTerminal, text: string) {
-    let offset = 0
-    while (offset < text.length) {
-      if (
-        this.state === "text" &&
-        text.charCodeAt(offset) >= 0x20 &&
-        text.charCodeAt(offset) !== 0x7f
-      ) {
-        let end = offset + 1
-        while (end < text.length && text.charCodeAt(end) >= 0x20 && text.charCodeAt(end) !== 0x7f)
-          end++
-        const printable = text.slice(offset, end)
-        let last = printable.length - 1
-        if (/[^\x20-\x7e]/.test(printable))
-          for (const segment of graphemes().segment(printable)) last = segment.index
-        const prefix = printable.slice(0, last)
-        const final = printable.slice(last)
-        if (prefix) t.write(prefix)
-        const before = t.snapshot()?.cursor
-        t.write(final)
-        const after = t.snapshot()?.cursor
-        const right = this.margins ? (this.rightMargin ?? t.cols - 1) : t.cols - 1
-        if (!/^\p{Mark}/u.test(final) && !final.startsWith("\u200d") && !final.startsWith("\ufe0f"))
-          this.pendingWrap =
-            this.wrap && after?.col === right && (before?.col === right || after?.wideTail === 1)
-        offset = end
-      } else {
-        let end = offset
-        do {
-          this.write(text[end] ?? "", t)
-          end++
-        } while (end < text.length && this.state !== "text")
-        t.write(text.slice(offset, end))
-        offset = end
-      }
-    }
-    cursorStates.set(t, this)
-  }
-  write(text: string, t: ResttyHeadlessTerminal) {
-    let action: "print" | "reset" | undefined
-    for (const char of text) {
-      if (this.state === "str") {
-        if (char === "\x07") this.state = "text"
-        else if (char === "\x1b") this.state = "strEsc"
-        continue
-      }
-      if (this.state === "strEsc") {
-        this.state = char === "\\" ? "text" : "str"
-        continue
-      }
-      if (this.state === "esc") {
-        if (char === "[") {
-          this.state = "csi"
-          this.csi = ""
-        } else if (["]", "P", "_", "^"].includes(char)) this.state = "str"
-        else if (char.charCodeAt(0) >= 0x20 && char.charCodeAt(0) <= 0x2f) continue
-        else {
-          this.state = "text"
-          if (["c", "D", "E", "M", "8"].includes(char)) action = "reset"
-        }
-        continue
-      }
-      if (this.state === "csi") {
-        this.csi += char
-        if (char.charCodeAt(0) >= 0x40 && char.charCodeAt(0) <= 0x7e) {
-          this.state = "text"
-          if (/[ABCDEFGHIZ`adefJKLMPSTXr]/.test(char)) action = "reset"
-          if (char === "s" && this.margins && !this.csi.startsWith("?")) {
-            const values = this.csi.slice(0, -1).split(";").map(Number)
-            this.rightMargin = values[1] ? values[1] - 1 : undefined
-            action = "reset"
-          }
-          if ((char === "h" || char === "l") && this.csi.startsWith("?")) {
-            const modes = this.csi.slice(1, -1).split(";").map(Number)
-            if (modes.includes(7)) {
-              this.wrap = char === "h"
-              if (!this.wrap) action = "reset"
-            }
-            if (modes.includes(69)) {
-              this.margins = char === "h"
-              if (!this.margins) this.rightMargin = undefined
-            }
-            if (modes.some((m) => [6, 47, 1047, 1049].includes(m))) action = "reset"
-          }
-        }
-        continue
-      }
-      if (char === "\x1b") this.state = "esc"
-      else if (["\r", "\n", "\b", "\t", "\v", "\f"].includes(char)) action = "reset"
-      else if ((char.codePointAt(0) ?? 0) >= 0x20 && char !== "\x7f") action = "print"
-    }
-    if (action === "reset") this.pendingWrap = false
-    else if (action === "print")
-      this.pendingWrap = this.wrap && t.snapshot()?.cursor?.col === t.cols - 1
-  }
-}
-export function rebuild(t: ResttyHeadlessTerminal, pendingWrap?: boolean): string {
-  const modes = modesOf(t)
-  const snap = t.snapshot()
-  if (!snap?.codepoints) throw new Error("terminal has no snapshot")
-  const pen = dcs(t, "m")
-  const scroll = dcs(t, "r")
-  const margins = modes[69] === 1 ? dcs(t, "s") : null
-  const cursorStyle = dcs(t, " q")
-  const background = /rgb:([0-9a-f]+)\/([0-9a-f]+)\/([0-9a-f]+)/i.exec(query(t, "\x1b]11;?\x07"))
-  const defaultBg = background
-    ? background.slice(1).map((component) => Number.parseInt(component.slice(0, 2), 16))
-    : [0, 0, 0]
-  if (pendingWrap === undefined && cursorStates.has(t))
-    pendingWrap = cursorStates.get(t)?.pendingWrap
-  if (pendingWrap === undefined) {
-    const tracker = new CursorStateTracker()
-    for (const event of t.createReplay().events) {
-      if (event.type === "resize") tracker.resize()
-      else tracker.write(event.data, t)
-    }
-    pendingWrap = tracker.pendingWrap
-  }
-  const cellSgr = (i: number) => {
-    const flags = snap.styleFlags?.[i] ?? 0
-    const parts = ["0"]
-    for (const [bit, sgr] of [
-      [1, 1],
-      [2, 3],
-      [4, 2],
-      [8, 5],
-      [16, 7],
-      [32, 8],
-      [64, 9],
-      [128, 53],
-    ])
-      if (flags & (bit ?? 0)) parts.push(String(sgr))
-    const underline = (flags & 1792) >> 8
-    if (underline) parts.push(`4:${underline}`)
-    for (const [bytes, code] of [
-      [snap.fgBytes, 38],
-      [snap.bgBytes, 48],
-    ] as const) {
-      if (bytes?.[i * 4 + 3])
-        parts.push(`${code};2;${bytes[i * 4]};${bytes[i * 4 + 1]};${bytes[i * 4 + 2]}`)
-    }
-    return `\x1b[${parts.join(";")}m`
-  }
-  let out = `\x1bc${modes[1049] === 1 ? "\x1b[?1049h" : ""}\x1b[?69l\x1b[r\x1b[?6l\x1b[?7l`
-  for (let row = 0; row < snap.rows; row++) {
-    out += `\x1b[${row + 1};1H`
-    let lastSgr = ""
-    for (let col = 0; col < snap.cols; col++) {
-      const i = row * snap.cols + col
-      if (snap.wide?.[i] === 2) continue
-      const sgr = cellSgr(i)
-      if (sgr !== lastSgr) {
-        out += sgr
-        lastSgr = sgr
-      }
-      const codepoint = snap.codepoints[i] ?? 0
-      const coloredEmpty =
-        !codepoint &&
-        [0, 1, 2].some((channel) => snap.bgBytes?.[i * 4 + channel] !== defaultBg[channel])
-      out += codepoint ? String.fromCodePoint(codepoint) : `${coloredEmpty ? "\x1b[X" : ""}\x1b[C`
-      const length = snap.graphemeLen?.[i] ?? 0
-      const offset = snap.graphemeOffset?.[i] ?? 0
-      for (let g = 0; g < length; g++)
-        out += String.fromCodePoint(snap.graphemeBuffer?.[offset + g] ?? 32)
-    }
-  }
-  const cellText = (i: number) => {
-    let text = String.fromCodePoint(snap.codepoints?.[i] || 32)
-    for (let g = 0; g < (snap.graphemeLen?.[i] ?? 0); g++)
-      text += String.fromCodePoint(snap.graphemeBuffer?.[(snap.graphemeOffset?.[i] ?? 0) + g] ?? 32)
-    return text
-  }
-  for (let row = 0; row < snap.rows - 1; row++) {
-    if (t.wasm.getSelectionText(t.handle, row, 0, row + 1, 0).includes("\n")) continue
-    let last = row * snap.cols + snap.cols - 1
-    if (snap.wide?.[last] === 2) last--
-    const next = (row + 1) * snap.cols
-    out += `\x1b[?7h\x1b[${row + 1};${(last % snap.cols) + 1}H${cellSgr(last)}${cellText(last)}${cellSgr(next)}${cellText(next)}\x1b[?7l`
-  }
-  if (scroll) out += `\x1b[${scroll}`
-  // Mouse encodings share one setting in xterm: resetting inactive pixel mode after enabling
-  // SGR clears SGR too. Clear modes before restoring the enabled ones.
-  for (const state of [2, 1])
-    for (const mode of MODES)
-      if (mode !== 1049 && mode !== 25 && modes[mode] === state)
-        out += `\x1b[?${mode}${state === 1 ? "h" : "l"}`
-  if (margins) out += `\x1b[${margins}`
-  out += `\x1b[>${t.getKittyKeyboardFlags()}u`
-  if (cursorStyle) out += `\x1b[${cursorStyle}`
-  const cursor = snap.cursor
-  out += "\x1b[?6l"
-  const top = Number(scroll?.split(";")[0] ?? 1) - 1
-  const left = modes[69] === 1 ? Number(margins?.split(";")[0] ?? 1) - 1 : 0
-  if (modes[6] === 1)
-    out += `\x1b[?6h\x1b[${(cursor?.row ?? 0) - top + 1};${(cursor?.col ?? 0) - left + 1}H`
-  else out += `\x1b[${(cursor?.row ?? 0) + 1};${(cursor?.col ?? 0) + 1}H`
-  if (pendingWrap && modes[7] === 1) {
-    let i = (cursor?.row ?? 0) * snap.cols + (cursor?.col ?? 0)
-    if (snap.wide?.[i] === 2) i--
-    out += `\x1b[${(cursor?.row ?? 0) - (modes[6] === 1 ? top : 0) + 1};${(i % snap.cols) - (modes[6] === 1 ? left : 0) + 1}H${cellSgr(i)}${cellText(i)}`
-  }
-  out += `\x1b[${pen ?? "0m"}\x1b[?25${cursor?.visible ? "h" : "l"}`
-  return out
-}
-export class BoundaryTracker {
-  private state: "text" | "esc" | "csi" | "str" | "strEsc" = "text"
-  private utf = 0
-  get safe() {
-    return this.state === "text" && this.utf === 0
-  }
-  private byte(x: number) {
-    if (this.state === "text") {
-      if (this.utf > 0) {
-        if (x >= 0x80 && x <= 0xbf) {
-          this.utf--
-          return
-        }
-        this.utf = 0
-      }
-      if (x === 0x1b) this.state = "esc"
-      else if (x >= 0xf0 && x <= 0xf4) this.utf = 3
-      else if (x >= 0xe0 && x <= 0xef) this.utf = 2
-      else if (x >= 0xc2 && x <= 0xdf) this.utf = 1
-    } else if (this.state === "esc") {
-      this.state =
-        x === 0x5b
-          ? "csi"
-          : [0x5d, 0x50, 0x5f, 0x5e].includes(x)
-            ? "str"
-            : x >= 0x20 && x <= 0x2f
-              ? "esc"
-              : "text"
-    } else if (this.state === "csi") {
-      if (x >= 0x40 && x <= 0x7e) this.state = "text"
-      else if (x === 0x1b) this.state = "esc"
-    } else if (this.state === "str") {
-      if (x === 0x07) this.state = "text"
-      else if (x === 0x1b) this.state = "strEsc"
-    } else this.state = x === 0x5c ? "text" : x === 0x1b ? "strEsc" : "str"
-  }
-  push(bytes: Uint8Array) {
-    for (const byte of bytes) this.byte(byte)
-  }
-  nextBoundary(bytes: Uint8Array): number | null {
-    if (this.safe) return 0
-    for (let i = 0; i < bytes.length; i++) {
-      this.byte(bytes[i] ?? 0)
-      if (this.safe) return i + 1
-    }
-    return null
-  }
-}
+
 export function screenText(t: ResttyHeadlessTerminal): string {
   const s = t.snapshot()
   if (!s?.codepoints) return ""
@@ -301,6 +44,7 @@ export function screenText(t: ResttyHeadlessTerminal): string {
     .join("\n")
     .trimEnd()
 }
+
 export function terminalState(t: ResttyHeadlessTerminal) {
   const s = t.snapshot()
   if (!s?.codepoints) throw new Error("terminal has no snapshot")

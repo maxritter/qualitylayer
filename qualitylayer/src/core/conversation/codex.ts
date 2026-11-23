@@ -3,14 +3,12 @@
 // Messages, reasoning and tool calls come from the response items; command runs, file changes and MCP
 // results come from the finished items of the event stream, which is where Codex 0.16 reports them.
 
-import { conversationAttachments, imageMessageText } from "./attachments.ts"
-import { type ChecklistState, checklistCall, checklistResult, checklistState } from "./checklist.ts"
+import { type ChecklistState, checklistState } from "./checklist.ts"
+import { codexEventMsg, codexResponseItem } from "./codex-events.ts"
+import { type CodexCtx, type CodexJson, codexClean, codexObj, codexStr } from "./codex-helpers.ts"
 import { estimatedUsd } from "./estimate.ts"
-import { type QuestionState, questionCall, questionResult, questionState } from "./questions.ts"
-import { editDiff, firstText, inputJson, linesLabel, patchDiffs, shellKind } from "./tools.ts"
+import { type QuestionState, questionState } from "./questions.ts"
 import {
-  bounded,
-  CONVERSATION_LIMITS,
   type ConversationEvent,
   type ConversationUsage,
   type DiffSummary,
@@ -18,8 +16,6 @@ import {
   nativeEffort,
   type ToolKind,
 } from "./types.ts"
-
-type Json = Record<string, unknown>
 
 /** Input (cached included), cached input, cache writes and output tokens, as Codex counts them. */
 type Totals = { input: number; cached: number; written: number; output: number }
@@ -63,26 +59,7 @@ export function codexState(): CodexState {
   }
 }
 
-const OPEN_CALLS = 400
-
-const obj = (value: unknown): Json | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : undefined
-const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined)
-const count = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-const oneLine = (text: string, limit = 300): string => {
-  const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length <= limit ? flat : `${flat.slice(0, limit)}…`
-}
-
-/** Drop the keys an event has no value for, so events compare and serialize cleanly. */
-function clean<T extends object>(event: T): T {
-  const record = event as Record<string, unknown>
-  for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key]
-  return event
-}
-
-function* records(lines: string): Generator<{ record: Json; start: number; end: number }> {
+function* records(lines: string): Generator<{ record: CodexJson; start: number; end: number }> {
   const rows = lines.split("\n")
   let position = 0
   for (let index = 0; index < rows.length; index++) {
@@ -91,7 +68,7 @@ function* records(lines: string): Generator<{ record: Json; start: number; end: 
     position += Buffer.byteLength(line) + (index < rows.length - 1 ? 1 : 0)
     if (line.trim() === "") continue
     try {
-      const record = obj(JSON.parse(line))
+      const record = codexObj(JSON.parse(line))
       if (record) yield { record, start, end: position }
     } catch {
       // a torn or damaged line is skipped
@@ -99,81 +76,39 @@ function* records(lines: string): Generator<{ record: Json; start: number; end: 
   }
 }
 
-export function mapCodex(
-  lines: string,
-  state: CodexState,
-  sourceOffset?: number,
-): MapResult<CodexState> {
-  const events: ConversationEvent[] = []
-  for (const row of records(lines)) {
-    state.line++
-    try {
-      mapRecord(
-        row.record,
-        state,
-        events,
-        sourceOffset === undefined
-          ? undefined
-          : {
-              start: sourceOffset + row.start,
-              end: sourceOffset + row.end,
-            },
-      )
-    } catch {
-      // a record shaped unlike any known one is skipped, never fatal
-    }
-  }
-  return {
-    events,
-    usage: usageOf(state),
-    checklist: state.checklist.value,
-    question: state.question.value,
-    state,
-  }
-}
-
-/** A drawing context for one record. */
-type Ctx = {
-  at?: string
-  seq: string
-  state: CodexState
-  out: ConversationEvent[]
-  source?: { start: number; end: number }
-}
-
 function mapRecord(
-  rec: Json,
+  rec: CodexJson,
   state: CodexState,
   out: ConversationEvent[],
-  source?: Ctx["source"],
+  source?: CodexCtx["source"],
 ): void {
-  const payload = obj(rec.payload)
+  const payload = codexObj(rec.payload)
   if (!payload) return
   const ordinal = typeof rec.ordinal === "number" ? rec.ordinal : undefined
-  const ctx: Ctx = {
-    at: str(rec.timestamp),
+  const ctx: CodexCtx = {
+    at: codexStr(rec.timestamp),
     seq: String(ordinal ?? `l${state.line}`),
     state,
     out,
     source,
   }
-  switch (str(rec.type)) {
+  switch (codexStr(rec.type)) {
     case "turn_context": {
-      const model = str(payload.model)
+      const model = codexStr(payload.model)
       if (model) state.model = model
       state.effort = nativeEffort(payload.effort ?? payload.reasoning_effort)
       return
     }
     case "response_item":
-      responseItem(payload, ctx)
+      codexResponseItem(payload, ctx)
       return
     case "event_msg":
-      eventMsg(payload, ctx)
+      codexEventMsg(payload, ctx)
       return
     case "compacted": {
       state.compactedAt = ctx.at ? Date.parse(ctx.at) : Date.now()
       out.push(
-        clean({
+        codexClean({
           id: `compaction:${ctx.seq}`,
           at: ctx.at,
           kind: "compaction" as const,
@@ -182,651 +117,6 @@ function mapRecord(
       )
       return
     }
-    // session_meta, world_state, token_usage_record and the agent-message markers are bookkeeping.
-  }
-}
-
-/** The text of message parts or tool output: a string, or a list of text parts. */
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .map((part) => {
-      const p = obj(part)
-      return p && typeof p.text === "string" ? p.text : ""
-    })
-    .filter((text) => text !== "")
-    .join("\n")
-}
-
-/** Context Codex puts in a user message that the person did not write. */
-const INJECTED_START = [
-  "# AGENTS.md instructions",
-  "[session-peers",
-  "The following is the Codex agent history",
-]
-
-function isInjected(text: string): boolean {
-  const trimmed = text.trim()
-  if (INJECTED_START.some((start) => trimmed.startsWith(start))) return true
-  // A message that is one tagged block, like <environment_context> or <hook_prompt>, is Codex's own.
-  const tag = trimmed.match(/^<([a-z][a-z0-9]*(?:_[a-z0-9]+)+|skill)(?:\s[^>]*)?>/)?.[1]
-  return tag !== undefined && trimmed.endsWith(`</${tag}>`)
-}
-
-function responseItem(p: Json, ctx: Ctx): void {
-  const type = str(p.type)
-  const { state, out } = ctx
-  const id = str(p.id) ?? `${type}:${ctx.seq}`
-  switch (type) {
-    case "message": {
-      if (state.said[id]) return
-      const role = str(p.role)
-      if (role === "assistant") {
-        const text = textOf(p.content).trim()
-        if (!text) return
-        state.said[id] = true
-        out.push({
-          id,
-          ...(ctx.at ? { at: ctx.at } : {}),
-          kind: "assistant",
-          text: bounded(text, CONVERSATION_LIMITS.textChars),
-        })
-      } else if (role === "user") {
-        const parts = Array.isArray(p.content) ? p.content : []
-        const attachments = conversationAttachments(parts)
-        const text = imageMessageText(
-          parts
-            .map((part) => str(obj(part)?.text) ?? "")
-            // <image …> and </image> are only the markers around an attached picture
-            .filter((piece) => !/^\s*<\/?image(\s[^>]*)?>\s*$/.test(piece))
-            .join("\n")
-            .trim(),
-          attachments,
-        )
-        if ((!text && !attachments.length) || isInjected(text)) return
-        state.said[id] = true
-        state.prompts[id] = true
-        out.push({
-          id,
-          ...(ctx.at ? { at: ctx.at } : {}),
-          kind: "user",
-          text: bounded(text, CONVERSATION_LIMITS.textChars),
-          ...(attachments.length ? { attachments: attachments } : {}),
-        })
-      }
-      return
-    }
-    case "reasoning": {
-      if (state.said[id]) return
-      const summary = Array.isArray(p.summary) ? p.summary : []
-      const text = summary
-        .map((part) => str(obj(part)?.text) ?? "")
-        .filter((piece) => piece.trim() !== "")
-        .join("\n\n")
-        .trim()
-      if (!text) return
-      state.said[id] = true
-      out.push({
-        id,
-        ...(ctx.at ? { at: ctx.at } : {}),
-        kind: "thinking",
-        text: bounded(text, CONVERSATION_LIMITS.textChars),
-      })
-      return
-    }
-    case "function_call":
-    case "custom_tool_call":
-    case "local_shell_call":
-      toolCall(p, type, ctx)
-      return
-    case "function_call_output":
-    case "custom_tool_call_output":
-      toolOutput(p, ctx)
-      return
-    case "web_search_call": {
-      const action = obj(p.action)
-      const query = str(action?.query) ?? str(obj(action?.queries)?.[0])
-      pair(ctx, id, {
-        name: "web_search",
-        tool: "web",
-        target: query ? oneLine(query) : undefined,
-        ok: p.status !== "failed",
-      })
-      return
-    }
-    // agent_message only wraps a notice between agents ("Task name … Message Type …"); the body is not in it.
-    case "agent_message":
-    case "additional_tools":
-    case "ghost_snapshot":
-    case "compaction":
-      return
-    default:
-      out.push(
-        clean({
-          id,
-          at: ctx.at,
-          kind: "unknown" as const,
-          label: `response item: ${type ?? "unknown"}`,
-        }),
-      )
-  }
-}
-
-/** A call and its result in one go, for items that only report once finished. */
-function pair(
-  ctx: Ctx,
-  callId: string,
-  call: {
-    name: string
-    tool: ToolKind
-    target?: string
-    detail?: string
-    input?: unknown
-    ok: boolean
-    summary?: string
-    output?: string
-    diff?: DiffSummary
-  },
-): void {
-  const { state, out } = ctx
-  if (!state.calls[callId] && !state.resulted[callId])
-    out.push(
-      clean({
-        id: `tool:${callId}`,
-        at: ctx.at,
-        kind: "tool" as const,
-        callId,
-        name: call.name,
-        tool: call.tool,
-        target: call.target,
-        detail: call.detail,
-        input: call.input === undefined ? undefined : inputJson(call.input),
-      }),
-    )
-  delete state.calls[callId]
-  if (state.resulted[callId]) return
-  state.resulted[callId] = true
-  out.push(
-    clean({
-      id: `result:${callId}`,
-      at: ctx.at,
-      kind: "tool-result" as const,
-      callId,
-      ok: call.ok,
-      summary: call.summary,
-      output: call.output?.trim()
-        ? bounded(call.output, CONVERSATION_LIMITS.outputChars)
-        : undefined,
-      diff: call.diff,
-    }),
-  )
-}
-
-/** The command line a shell call runs: Codex hands over a string or an argv list. */
-function commandOf(value: unknown): string | undefined {
-  if (typeof value === "string") return value
-  if (!Array.isArray(value)) return undefined
-  const argv = value.filter((part): part is string => typeof part === "string")
-  const shell = argv[0]?.split("/").pop() ?? ""
-  if (argv.length === 3 && /^(?:ba|z|da|k)?sh$/.test(shell) && /^-\w*c$/.test(argv[1] ?? ""))
-    return argv[2]
-  return argv.length ? argv.join(" ") : undefined
-}
-
-const SHELL_TOOLS = new Set(["exec_command", "shell", "shell_command", "container.exec", "bash"])
-
-/** Polling and sleeping calls are how Codex waits; they never get a row. */
-const POLLING = new Set(["wait", "write_stdin", "sleep", "get_goal", "wait_agent", "list_agents"])
-
-const FIRST_ARGUMENTS = [
-  "path",
-  "pattern",
-  "query",
-  "url",
-  "task_name",
-  "target",
-  "title",
-  "description",
-  "name",
-  "message",
-  "code",
-]
-
-function genericTarget(input: Json): string | undefined {
-  for (const key of FIRST_ARGUMENTS) {
-    const value = str(input[key])
-    if (value) return oneLine(value)
-  }
-  const first = firstText(input)
-  return first ? oneLine(first) : undefined
-}
-
-function toolCall(p: Json, type: string, ctx: Ctx): void {
-  const { state, out } = ctx
-  const callId = str(p.call_id) ?? str(p.id)
-  // A resumed or forked rollout can repeat a call; it is drawn once.
-  if (!callId || state.calls[callId] || state.resulted[callId]) return
-  const namespace = str(p.namespace)
-  const name = str(p.name) ?? (type === "local_shell_call" ? "shell" : "unknown")
-  if (type === "custom_tool_call" && name === "exec") {
-    // Code mode: one JavaScript cell whose own tool calls arrive as finished items of their own.
-    state.quiet[callId] = "wrapper"
-    return
-  }
-  if (POLLING.has(name) || (namespace === "clock" && name === "sleep")) {
-    state.quiet[callId] = "poll"
-    return
-  }
-
-  let args: Json = {}
-  if (type === "local_shell_call") args = obj(p.action) ?? {}
-  else if (type === "custom_tool_call") args = { input: str(p.input) ?? "" }
-  else {
-    try {
-      args = obj(JSON.parse(str(p.arguments) ?? "{}")) ?? {}
-    } catch {
-      args = {}
-    }
-  }
-
-  let tool: ToolKind = "other"
-  if (name === "update_plan" && (namespace === undefined || namespace === "functions"))
-    checklistCall(state.checklist, callId, name, args)
-  if (name === "request_user_input" && (namespace === undefined || namespace === "functions"))
-    questionCall(state.question, callId, "codex", args)
-  let target: string | undefined
-  let detail: string | undefined
-  let diffs: DiffSummary[] | undefined
-  let shown = name
-  if (type === "local_shell_call" || SHELL_TOOLS.has(name)) {
-    const command = commandOf(args.cmd ?? args.command)
-    ;({ tool, detail } = shellKind(command ?? ""))
-    target = command ? oneLine(command) : undefined
-  } else if (name === "apply_patch") {
-    const patch = str(args.input) ?? str(args.patch) ?? commandOf(args.command) ?? ""
-    diffs = patchDiffs(patch)
-    tool = diffs.length > 0 && diffs.every((diff) => diff.removed === 0) ? "write" : "edit"
-  } else if (name === "update_plan") {
-    tool = "todo"
-    target = Array.isArray(args.plan) ? `${args.plan.length} steps` : undefined
-  } else if (name === "view_image") {
-    tool = "read"
-    target = genericTarget(args)
-  } else if (name === "web_search" || name === "web.run" || name === "web__run") {
-    tool = "web"
-    target = genericTarget(args)
-  } else if (namespace === "collaboration") {
-    tool = "subagent"
-    target = genericTarget(args)
-  } else if (namespace?.startsWith("mcp__")) {
-    tool = "mcp"
-    shown = `${namespace}__${name}`
-    target = genericTarget(args)
-  } else {
-    target = genericTarget(args)
-  }
-
-  if (diffs && diffs.length > 0) {
-    // One row per file: a result carries a single diff.
-    diffs.forEach((diff, index) => {
-      const id = index === 0 ? callId : `${callId}#${index}`
-      out.push(
-        clean({
-          id: `tool:${id}`,
-          at: ctx.at,
-          kind: "tool" as const,
-          callId: id,
-          name: shown,
-          tool,
-          target: diff.path,
-        }),
-      )
-    })
-    state.calls[callId] = { name: shown, tool, diffs }
-  } else {
-    out.push(
-      clean({
-        id: `tool:${callId}`,
-        at: ctx.at,
-        kind: "tool" as const,
-        callId,
-        name: shown,
-        tool,
-        target,
-        detail,
-        input: type === "custom_tool_call" ? undefined : inputJson(args),
-      }),
-    )
-    state.calls[callId] = {
-      name: shown,
-      tool,
-      ...(name === "update_plan" && ctx.source ? { planStart: ctx.source.start } : {}),
-    }
-  }
-  const open = Object.keys(state.calls)
-  for (const old of open.slice(0, Math.max(0, open.length - OPEN_CALLS))) delete state.calls[old]
-}
-
-function toolOutput(p: Json, ctx: Ctx): void {
-  const { state, out } = ctx
-  const callId = str(p.call_id)
-  if (!callId) return
-  questionResult(state.question, callId)
-  const output = p.output
-  const raw = typeof output === "string" ? output : textOf(output)
-  const quiet = state.quiet[callId]
-  if (quiet) {
-    // A failed code-mode cell has no row of its own to hang the failure on.
-    if (quiet === "wrapper" && /^Script failed/.test(raw)) {
-      const id = `result:${callId}`
-      if (!state.resulted[id]) {
-        state.resulted[id] = true
-        out.push(
-          clean({
-            id,
-            at: ctx.at,
-            kind: "error" as const,
-            text: bounded(raw.trim(), CONVERSATION_LIMITS.outputChars),
-          }),
-        )
-      }
-    }
-    return
-  }
-  const call = state.calls[callId]
-  delete state.calls[callId]
-  if (state.resulted[callId]) return
-  state.resulted[callId] = true
-
-  // Older Codex wraps command output as JSON: {"output": …, "metadata": {"exit_code": 0}}.
-  let text = raw
-  let exit: number | undefined
-  try {
-    const wrapped = obj(JSON.parse(raw))
-    if (wrapped && typeof wrapped.output === "string") {
-      text = wrapped.output
-      const code = obj(wrapped.metadata)?.exit_code
-      if (typeof code === "number") exit = code
-    }
-  } catch {
-    // plain text
-  }
-  const reported = text.match(/Process exited with code (-?\d+)/)?.[1]
-  if (exit === undefined && reported !== undefined) exit = Number(reported)
-
-  const shell = call?.tool === "shell" || call?.tool === "qualitylayer"
-  const patch = call?.diffs !== undefined
-  const ok = patch
-    ? !/^(?:apply_patch )?(?:verification )?failed|^error/i.test(text.trim())
-    : exit === undefined || exit === 0
-  const summary = shell && exit !== undefined ? `exit ${exit}` : undefined
-  if (call?.name === "update_plan") {
-    const before = state.checklist.value?.revision
-    checklistResult(
-      state.checklist,
-      callId,
-      ok &&
-        p.is_error !== true &&
-        p.status !== "failed" &&
-        p.status !== "cancelled" &&
-        p.status !== "canceled" &&
-        obj(output)?.isError !== true &&
-        !/^(?:error|cancelled|canceled|failed)\b/i.test(text.trim()) &&
-        !/"(?:isError|error)"\s*:\s*(?:true|"|\{)/.test(text),
-      text,
-    )
-    if (state.checklist.value?.revision !== before) {
-      if (call.planStart !== undefined && ctx.source)
-        state.planObservation = { callId, start: call.planStart, end: ctx.source.end }
-      else delete state.planObservation
-    }
-  }
-  if (call?.diffs && call.diffs.length > 0) {
-    call.diffs.forEach((diff, index) => {
-      const id = index === 0 ? callId : `${callId}#${index}`
-      out.push(
-        clean({
-          id: `result:${id}`,
-          at: ctx.at,
-          kind: "tool-result" as const,
-          callId: id,
-          ok,
-          summary: `+${diff.added} -${diff.removed}`,
-          output:
-            index === 0 && text.trim() ? bounded(text, CONVERSATION_LIMITS.outputChars) : undefined,
-          diff: ok ? diff : undefined,
-        }),
-      )
-    })
-    return
-  }
-  out.push(
-    clean({
-      id: `result:${callId}`,
-      at: ctx.at,
-      kind: "tool-result" as const,
-      callId,
-      ok,
-      summary,
-      output: text.trim() ? bounded(text, CONVERSATION_LIMITS.outputChars) : undefined,
-    }),
-  )
-}
-
-function eventMsg(p: Json, ctx: Ctx): void {
-  const { state, out } = ctx
-  switch (str(p.type)) {
-    case "item_completed":
-      finishedItem(obj(p.item), ctx)
-      return
-    case "token_count": {
-      const info = obj(p.info)
-      if (!info) return
-      const total = obj(info.total_token_usage)
-      if (total)
-        state.total = {
-          input: count(total.input_tokens),
-          cached: count(total.cached_input_tokens),
-          written: count(total.cache_write_input_tokens),
-          output: count(total.output_tokens),
-        }
-      const last = obj(info.last_token_usage)
-      if (last) state.contextUsed = count(last.input_tokens)
-      const window = count(info.model_context_window)
-      if (window > 0) state.contextWindow = window
-      return
-    }
-    case "task_started": {
-      const window = count(p.model_context_window)
-      if (window > 0) state.contextWindow = window
-      return
-    }
-    case "task_complete":
-    case "turn_aborted": {
-      const turn = str(p.turn_id) ?? ctx.seq
-      out.push(
-        clean({
-          id: `turn-end:${turn}`,
-          at: ctx.at,
-          kind: "turn-end" as const,
-          durationMs: count(p.duration_ms) || undefined,
-        }),
-      )
-      return
-    }
-    case "context_compacted": {
-      state.compactedAt = ctx.at ? Date.parse(ctx.at) : Date.now()
-      out.push(
-        clean({
-          id: `compaction:${ctx.seq}`,
-          at: ctx.at,
-          kind: "compaction" as const,
-          before: state.contextUsed,
-        }),
-      )
-      return
-    }
-    case "error": {
-      const text = (str(p.message) ?? "").trim()
-      out.push(
-        clean({
-          id: `error:${ctx.seq}`,
-          at: ctx.at,
-          kind: "error" as const,
-          text: bounded(text || "error", CONVERSATION_LIMITS.textChars),
-        }),
-      )
-      return
-    }
-    // Messages and reasoning repeat the response items; settings, goals and the like are bookkeeping.
-  }
-}
-
-/** Files named by a Codex `FileChange` item: edited ones carry hunks, added and deleted ones the whole text. */
-function changeDiff(path: string, change: Json): DiffSummary {
-  const kind = str(change.type)
-  if (kind === "add") return editDiff(path, "", str(change.content) ?? "")
-  if (kind === "delete") return editDiff(path, str(change.content) ?? "", "")
-  const hunks = str(change.unified_diff) ?? ""
-  const counted = patchDiffs(`+++ ${path}\n${hunks}`)[0]
-  return counted ? { ...counted, path } : { path, added: 0, removed: 0 }
-}
-
-function finishedItem(item: Json | undefined, ctx: Ctx): void {
-  if (!item) return
-  const { state, out } = ctx
-  const type = str(item.type)
-  const id = str(item.id) ?? `${type}:${ctx.seq}`
-  switch (type) {
-    case "CommandExecution": {
-      const command = commandOf(item.command) ?? ""
-      const parsed = (Array.isArray(item.parsed_cmd) ? item.parsed_cmd : []).map(
-        (entry) => obj(entry) ?? {},
-      )
-      const only = parsed.length === 1 ? parsed[0] : undefined
-      const kinds: Record<string, ToolKind> = { read: "read", search: "search", list_files: "list" }
-      const mapped: ToolKind | undefined = only ? kinds[str(only.type) ?? ""] : undefined
-      const shell = shellKind(command)
-      const tool: ToolKind = shell.tool === "qualitylayer" ? "qualitylayer" : (mapped ?? "shell")
-      const target =
-        tool === "read"
-          ? (str(only?.path) ?? str(only?.name))
-          : tool === "search"
-            ? (str(only?.query) ?? str(only?.path))
-            : tool === "list"
-              ? str(only?.path)
-              : undefined
-      const output = str(item.aggregated_output) ?? ""
-      const exit = typeof item.exit_code === "number" ? item.exit_code : undefined
-      const declined = item.status === "declined"
-      const ok = !declined && (exit === undefined ? item.status !== "failed" : exit === 0)
-      const lines = output.split("\n").filter((l) => l.trim() !== "").length
-      pair(ctx, id, {
-        name: "exec_command",
-        tool,
-        target: oneLine(target ?? command),
-        detail: shell.detail,
-        ok,
-        summary: declined
-          ? "declined"
-          : tool === "read" && ok
-            ? linesLabel(lines)
-            : tool === "search" && ok
-              ? `${lines} matches`
-              : exit !== undefined
-                ? `exit ${exit}`
-                : undefined,
-        output,
-      })
-      return
-    }
-    case "FileChange": {
-      const changes = obj(item.changes) ?? {}
-      const ok = item.status === "completed" || item.status === undefined
-      const out2 = [str(item.stdout), str(item.stderr)].filter(Boolean).join("\n")
-      Object.entries(changes).forEach(([path, change], index) => {
-        const diff = changeDiff(path, obj(change) ?? {})
-        const callId = index === 0 ? id : `${id}#${index}`
-        pair(ctx, callId, {
-          name: "apply_patch",
-          tool: str(obj(change)?.type) === "add" ? "write" : "edit",
-          target: path,
-          ok,
-          summary: `+${diff.added} -${diff.removed}`,
-          output: index === 0 ? out2 : undefined,
-          diff: ok ? diff : undefined,
-        })
-      })
-      return
-    }
-    case "McpToolCall": {
-      const result = obj(item.result)
-      const failed = item.status === "failed" || result?.isError === true
-      const args = obj(item.arguments) ?? {}
-      const name = `mcp__${str(item.server) ?? "mcp"}__${str(item.tool) ?? "tool"}`
-      const seconds = obj(item.duration)?.secs
-      pair(ctx, id, {
-        name,
-        tool: "mcp",
-        target: genericTarget(args),
-        input: Object.keys(args).length ? args : undefined,
-        ok: !failed,
-        summary: failed
-          ? "failed"
-          : typeof seconds === "number" && seconds >= 1
-            ? `${seconds}s`
-            : undefined,
-        output: textOf(result?.content) || str(obj(item.error)?.message),
-      })
-      return
-    }
-    case "ImageView":
-      pair(ctx, id, {
-        name: "view_image",
-        tool: "read",
-        target: str(item.path),
-        ok: true,
-        summary: "image",
-      })
-      return
-    case "Extension": {
-      const kind = str(item.kind)
-      if (kind === "clock.sleep") return
-      pair(ctx, id, {
-        name: kind ?? "extension",
-        tool: kind?.startsWith("web.") ? "web" : "other",
-        ok: true,
-      })
-      return
-    }
-    case "ContextCompaction": {
-      // The `compacted` record a moment earlier already drew this one.
-      const at = ctx.at ? Date.parse(ctx.at) : Number.NaN
-      if (state.compactedAt !== undefined && Math.abs(at - state.compactedAt) < 10_000) return
-      out.push(
-        clean({
-          id: `compaction:${id}`,
-          at: ctx.at,
-          kind: "compaction" as const,
-          before: state.contextUsed,
-        }),
-      )
-      return
-    }
-    // Reasoning, user and agent messages repeat the response items; hooks, subagent activity and
-    // agent waits repeat the collaboration calls.
-    case "Reasoning":
-    case "UserMessage":
-    case "AgentMessage":
-    case "HookPrompt":
-    case "SubAgentActivity":
-    case "CollabAgentToolCall":
-      return
-    default:
-      out.push(
-        clean({ id, at: ctx.at, kind: "unknown" as const, label: `item: ${type ?? "unknown"}` }),
-      )
   }
 }
 
@@ -834,9 +124,8 @@ function usageOf(state: CodexState): ConversationUsage | undefined {
   const turns = Object.keys(state.prompts).length
   if (!state.total && turns === 0 && !state.model && !state.effort) return undefined
   const total = state.total ?? { input: 0, cached: 0, written: 0, output: 0 }
-  // Codex counts cached input inside input_tokens.
   const input = Math.max(0, total.input - total.cached)
-  return clean({
+  return codexClean({
     model: state.model,
     effort: state.effort,
     contextWindow: state.contextWindow,
@@ -854,4 +143,34 @@ function usageOf(state: CodexState): ConversationUsage | undefined {
     }),
     turns,
   })
+}
+
+export function mapCodex(
+  lines: string,
+  state: CodexState,
+  sourceOffset?: number,
+): MapResult<CodexState> {
+  const events: ConversationEvent[] = []
+  for (const row of records(lines)) {
+    state.line++
+    try {
+      mapRecord(
+        row.record,
+        state,
+        events,
+        sourceOffset === undefined
+          ? undefined
+          : { start: sourceOffset + row.start, end: sourceOffset + row.end },
+      )
+    } catch {
+      // a record shaped unlike any known one is skipped, never fatal
+    }
+  }
+  return {
+    events,
+    usage: usageOf(state),
+    checklist: state.checklist.value,
+    question: state.question.value,
+    state,
+  }
 }

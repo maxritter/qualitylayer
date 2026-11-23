@@ -1,31 +1,62 @@
-import { Database } from "bun:sqlite"
 import { createHash } from "node:crypto"
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs"
-import { inlineImageData } from "../core/conversation/attachments.ts"
-import { locateRecord } from "../core/conversation/locate.ts"
 import { cachedEvents, type NativeRun, readConversation } from "../core/conversation/service.ts"
-import type {
-  ConversationAttachment,
-  ConversationAttachmentSource,
-  ConversationEvent,
-} from "../core/conversation/types.ts"
-import {
-  MAX_ATTACHMENT_BYTES,
-  messageAttachmentType,
-} from "../core/interaction-docs/attachments.ts"
+import type { ConversationAttachment, ConversationEvent } from "../core/conversation/types.ts"
+import { messageAttachmentType } from "../core/interaction-docs/attachments.ts"
 import type { Ctx } from "../ctx.ts"
-import { prepareAttachmentEvents, runAttachmentBytes } from "./conversation-files.ts"
+import { prepareAttachmentEvents } from "./conversation-files.ts"
+import { conversationImageBytes } from "./conversation-images-source.ts"
 
-const RECORD_BYTES = 16 * 1024 * 1024
 const revision = (image: ConversationAttachment) =>
   createHash("sha256")
     .update(JSON.stringify(image.source ?? null))
     .digest("hex")
+
 const unavailable = () =>
   new Response("This attachment is unavailable.", {
     status: 404,
     headers: { "cache-control": "no-store" },
   })
+
+function canLinkAttachment(
+  recordId: unknown,
+  pathname: string,
+  run: NativeRun,
+  available: boolean,
+): boolean {
+  if (!available || pathname.length > 2048) return false
+  return String(recordId).length <= 512 && (run.nativeSession?.length ?? 0) <= 512
+}
+
+function wireSingleAttachment(
+  image: ConversationAttachment,
+  index: number,
+  options: {
+    recordId: unknown
+    pathname: string
+    run: NativeRun
+    available: boolean
+    keepSource: boolean
+  },
+): ConversationAttachment {
+  const { source, url: _url, ...metadata } = image
+  if (
+    !source ||
+    !canLinkAttachment(options.recordId, options.pathname, options.run, options.available)
+  )
+    return metadata
+  const query = new URLSearchParams({
+    attachment: String(options.recordId),
+    index: String(index),
+    generation: String(options.run.generation),
+    session: options.run.nativeSession ?? "",
+    version: revision(image),
+  })
+  return {
+    ...metadata,
+    ...(options.keepSource ? { source } : {}),
+    url: `${options.pathname}?${query}`,
+  }
+}
 
 /** A wire event never contains the source path, record locator or encoded pixels. */
 export function wireAttachmentEvents<T>(
@@ -44,25 +75,15 @@ export function wireAttachmentEvents<T>(
   if (record.kind === "user" && Array.isArray(record.attachments)) {
     return {
       ...record,
-      attachments: record.attachments.map((image: ConversationAttachment, index: number) => {
-        const { source, url: _url, ...metadata } = image
-        if (
-          !source ||
-          !available ||
-          String(record.id).length > 512 ||
-          (run.nativeSession?.length ?? 0) > 512 ||
-          pathname.length > 2048
-        )
-          return metadata
-        const query = new URLSearchParams({
-          attachment: String(record.id),
-          index: String(index),
-          generation: String(run.generation),
-          session: run.nativeSession ?? "",
-          version: revision(image),
-        })
-        return { ...metadata, ...(keepSource ? { source } : {}), url: `${pathname}?${query}` }
-      }),
+      attachments: record.attachments.map((image: ConversationAttachment, index: number) =>
+        wireSingleAttachment(image, index, {
+          recordId: record.id,
+          pathname,
+          run,
+          available,
+          keepSource,
+        }),
+      ),
     } as T
   }
   return Object.fromEntries(
@@ -73,96 +94,30 @@ export function wireAttachmentEvents<T>(
   ) as T
 }
 
-function sourceRecord(path: string, offset: number): unknown {
-  if (!Number.isSafeInteger(offset) || offset < 0 || lstatSync(path).isSymbolicLink()) return
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-  try {
-    if (!fstatSync(fd).isFile()) return
-    if (offset > 0) {
-      const before = Buffer.alloc(1)
-      if (readSync(fd, before, 0, 1, offset - 1) !== 1 || before[0] !== 10) return
-    }
-    const parts: Buffer[] = []
-    let total = 0
-    while (total < RECORD_BYTES) {
-      const block = Buffer.allocUnsafe(Math.min(64 * 1024, RECORD_BYTES - total))
-      const got = readSync(fd, block, 0, block.length, offset + total)
-      if (!got) break
-      const end = block.subarray(0, got).indexOf(10)
-      if (end >= 0) {
-        parts.push(block.subarray(0, end))
-        return JSON.parse(Buffer.concat(parts).toString("utf8"))
-      }
-      parts.push(block.subarray(0, got))
-      total += got
-    }
-  } finally {
-    closeSync(fd)
-  }
-}
-
-function databaseRecord(
-  path: string,
-  source: Extract<ConversationAttachmentSource, { kind: "database" }>,
-): unknown {
-  if (lstatSync(path).isSymbolicLink()) return
-  const db = new Database(path, { readonly: true })
-  try {
-    const row = db
-      .query(
-        "SELECT CASE WHEN length(CAST(data AS BLOB)) <= ? THEN data ELSE NULL END AS data FROM session_message WHERE session_id = ? AND seq = ? AND type = 'user'",
-      )
-      .get(RECORD_BYTES, source.session, source.seq) as { data: string | null } | null
-    return row?.data ? JSON.parse(row.data) : undefined
-  } finally {
-    db.close()
-  }
-}
-
-function nativeImageRecord(
+async function resolveTargetAttachment(
   ctx: Ctx,
   run: NativeRun,
-  source: Exclude<ConversationAttachmentSource, { kind: "file" }>,
-): unknown {
-  const location = locateRecord(ctx, run)
-  if (!location) return
+  params: URLSearchParams,
+): Promise<ConversationAttachment | null> {
+  const id = params.get("attachment")
+  const rawIndex = params.get("index") ?? ""
+  const index = Number(rawIndex)
   if (
-    source.kind === "inline" &&
-    location.kind === "jsonl" &&
-    source.offset !== undefined &&
-    source.pointer
+    params.get("generation") !== String(run.generation) ||
+    params.get("session") !== run.nativeSession
   )
-    return sourceRecord(location.path, source.offset)
-  if (
-    source.kind === "database" &&
-    location.kind === "sqlite" &&
-    source.session === location.session
+    return null
+  if (!id || id.length > 512 || !/^\d$/.test(rawIndex) || index >= 6) return null
+  readConversation(ctx, run)
+  const event = cachedEvents(run).find(
+    (entry): entry is Extract<ConversationEvent, { kind: "user" }> =>
+      entry.kind === "user" && entry.id === id,
   )
-    return databaseRecord(location.path, source)
-}
-
-async function imageBytes(
-  ctx: Ctx,
-  run: NativeRun,
-  image: ConversationAttachment,
-): Promise<Uint8Array | undefined> {
-  const source = image.source
-  if (!source) return
-  if (source.kind === "file") {
-    const bytes = await runAttachmentBytes(ctx, run, source.path)
-    return bytes &&
-      (!source.digest || createHash("sha256").update(bytes).digest("hex") === source.digest)
-      ? bytes
-      : undefined
-  }
-  const encoded = inlineImageData(
-    nativeImageRecord(ctx, run, source),
-    { kind: "inline", digest: source.digest, pointer: source.pointer },
-    image.type,
-  )
-  if (!encoded) return
-  const bytes = Buffer.from(encoded, "base64")
-  return bytes.length > 0 && bytes.length <= MAX_ATTACHMENT_BYTES ? bytes : undefined
+  const prepared = event ? (await prepareAttachmentEvents(ctx, run, [event]))[0] : undefined
+  const image = prepared?.kind === "user" ? prepared.attachments?.[index] : undefined
+  if (!image) return null
+  if (params.has("version") && params.get("version") !== revision(image)) return null
+  return image
 }
 
 /** Caller already applied the Conversation's paired-session and native-run binding checks. */
@@ -171,26 +126,10 @@ export async function conversationAttachmentResponse(
   run: NativeRun,
   params: URLSearchParams,
 ): Promise<Response> {
-  const id = params.get("attachment"),
-    index = Number(params.get("index"))
-  if (
-    params.get("generation") !== String(run.generation) ||
-    params.get("session") !== run.nativeSession
-  )
-    return unavailable()
-  if (!id || id.length > 512 || !/^\d$/.test(params.get("index") ?? "") || index >= 6)
-    return unavailable()
-  readConversation(ctx, run)
-  const event = cachedEvents(run).find(
-    (event): event is Extract<ConversationEvent, { kind: "user" }> =>
-      event.kind === "user" && event.id === id,
-  )
-  const prepared = event ? (await prepareAttachmentEvents(ctx, run, [event]))[0] : undefined
-  const image = prepared?.kind === "user" ? prepared.attachments?.[index] : undefined
+  const image = await resolveTargetAttachment(ctx, run, params)
   if (!image) return unavailable()
-  if (params.has("version") && params.get("version") !== revision(image)) return unavailable()
   try {
-    const bytes = await imageBytes(ctx, run, image)
+    const bytes = await conversationImageBytes(ctx, run, image)
     const type = bytes ? messageAttachmentType(image.name, bytes) : null
     if (!bytes || !type) return unavailable()
     return new Response(new Uint8Array(bytes).buffer, {

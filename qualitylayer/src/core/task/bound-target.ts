@@ -25,6 +25,28 @@ function registeredRepo(found: RepoRef, repoId: string, commonDir: string): Repo
   return { ...found, id: repoId, commonDir }
 }
 
+async function readLegacyAssignments(ctx: Ctx, path: string): Promise<BindingTarget[]> {
+  try {
+    const text = ctx.fs.readRegularFile
+      ? new TextDecoder().decode(await ctx.fs.readRegularFile(path, 128 * 1024))
+      : await ctx.fs.readFile(path)
+    if (Buffer.byteLength(text) > 128 * 1024) return []
+    const found: BindingTarget[] = []
+    for (const line of text.split("\n")) {
+      try {
+        const target = bindingTargetOf(JSON.parse(line))
+        if (target) found.push(target)
+      } catch {
+        // An append in flight is not another assignment.
+      }
+    }
+    return found
+  } catch {
+    // An unreadable history grants no task authority.
+    return []
+  }
+}
+
 /** Legacy sessions already have exact per-agent assignment histories; no project inventory is needed. */
 async function legacyTarget(
   ctx: Ctx,
@@ -36,27 +58,46 @@ async function legacyTarget(
     const path = join(ctx.home, "cost-sessions", `${agent}-${key}.ndjson`)
     if (!(await ctx.fs.exists(path))) continue
     present = true
-    try {
-      const text = ctx.fs.readRegularFile
-        ? new TextDecoder().decode(await ctx.fs.readRegularFile(path, 128 * 1024))
-        : await ctx.fs.readFile(path)
-      if (Buffer.byteLength(text) > 128 * 1024) continue
-      for (const line of text.split("\n")) {
-        try {
-          const target = bindingTargetOf(JSON.parse(line))
-          if (target) assignments.push(target)
-        } catch {
-          // An append in flight is not another assignment.
-        }
-      }
-    } catch {
-      // An unreadable history grants no task authority.
-    }
+    assignments.push(...(await readLegacyAssignments(ctx, path)))
   }
   const newest = Math.max(...assignments.map((row) => row.at))
   const latest = assignments.filter((row) => row.at === newest)
   const targets = new Set(latest.map((row) => `${row.repoId}\0${row.slug}`))
   return { present, at: newest, target: targets.size === 1 ? (latest[0] ?? null) : null }
+}
+
+async function candidateTargetPaths(
+  ctx: Ctx,
+  target: BindingTarget,
+  projectPaths: unknown,
+): Promise<string[]> {
+  const session = (await readBindingJson(
+    ctx,
+    join(ctx.home, "projects", target.repoId, "tasks", target.slug, "session.json"),
+  )) as { checkout?: unknown } | null
+  if (typeof session?.checkout === "string" && isAbsolute(session.checkout))
+    return [session.checkout]
+  if (!Array.isArray(projectPaths)) return []
+  return projectPaths
+    .filter((path): path is string => typeof path === "string" && isAbsolute(path))
+    .slice(0, 8)
+}
+
+async function matchingRepoInPaths(
+  ctx: Ctx,
+  paths: readonly string[],
+  repoId: string,
+  commonDir: string,
+): Promise<RepoRef | null> {
+  for (const root of paths) {
+    if (!(await ctx.fs.exists(root))) continue
+    const found = await resolveRepo({ ...ctx, env: { ...ctx.env, cwd: () => root } }).catch(
+      () => null,
+    )
+    const repo = found?.ok ? registeredRepo(found.data, repoId, commonDir) : null
+    if (repo !== null) return repo
+  }
+  return null
 }
 
 async function resolveTarget(
@@ -75,41 +116,17 @@ async function resolveTarget(
     join(ctx.home, "projects", target.repoId, "project.json"),
     64 * 1024,
   )) as { commonDir?: unknown; paths?: unknown } | null
-  if (
-    !project ||
-    typeof project.commonDir !== "string" ||
-    !isAbsolute(project.commonDir) ||
-    repoIdFrom(project.commonDir) !== target.repoId
-  )
-    return { kind: "blocked" }
-  const session = (await readBindingJson(
-    ctx,
-    join(ctx.home, "projects", target.repoId, "tasks", target.slug, "session.json"),
-  )) as { checkout?: unknown } | null
-  const checkout =
-    typeof session?.checkout === "string" && isAbsolute(session.checkout) ? session.checkout : null
-  const paths = checkout
-    ? [checkout]
-    : Array.isArray(project.paths)
-      ? project.paths
-          .filter((path): path is string => typeof path === "string" && isAbsolute(path))
-          .slice(0, 8)
-      : []
-  for (const root of paths) {
-    if (!(await ctx.fs.exists(root))) continue
-    const found = await resolveRepo({ ...ctx, env: { ...ctx.env, cwd: () => root } }).catch(
-      () => null,
-    )
-    const repo = found?.ok ? registeredRepo(found.data, target.repoId, project.commonDir) : null
-    if (repo !== null)
-      return {
-        kind: "bound",
-        repo,
-        slug: target.slug,
-        generation: binding.at,
-      }
-  }
-  return { kind: "blocked" }
+  const validProject =
+    project &&
+    typeof project.commonDir === "string" &&
+    isAbsolute(project.commonDir) &&
+    repoIdFrom(project.commonDir) === target.repoId
+  if (!validProject) return { kind: "blocked" }
+  const paths = await candidateTargetPaths(ctx, target, project.paths)
+  const repo = await matchingRepoInPaths(ctx, paths, target.repoId, project.commonDir as string)
+  return repo
+    ? { kind: "bound", repo, slug: target.slug, generation: binding.at }
+    : { kind: "blocked" }
 }
 
 /** A session's explicit assignment selects observation; native cwd remains tool-path context. */

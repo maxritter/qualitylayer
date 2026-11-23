@@ -60,6 +60,45 @@ export const factsFor = (facts: readonly Fact[] | undefined): Fact[] =>
 export const hasFacts = (facts: readonly Fact[] | undefined, now?: NowChip): boolean =>
   factsFor(facts).length > 0 || now !== undefined
 
+function FactBar({ bar }: { bar: NonNullable<Fact["bar"]> }) {
+  const width = bar.total > 0 ? Math.round((100 * bar.done) / bar.total) : 0
+  return (
+    <i className="bd-fbar" role="img" aria-label={`${bar.done} of ${bar.total}`}>
+      <i style={{ width: `${width}%` }} />
+    </i>
+  )
+}
+
+function FactTicks({ ticks }: { ticks: NonNullable<Fact["ticks"]> }) {
+  return (
+    <i className="bd-ticks" role="img" aria-label={ticksWords(ticks)} data-testid="fact-ticks">
+      {ticks.map((tick, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the ticks are a fixed row, one per point
+        <i key={index} className={tick === "done" ? undefined : tick} />
+      ))}
+    </i>
+  )
+}
+
+function FactItem({ fact }: { fact: Fact }) {
+  const Icon = fact.icon !== undefined ? FACT_ICONS[fact.icon] : null
+  const subs = fact.sub === undefined ? [] : typeof fact.sub === "string" ? [fact.sub] : fact.sub
+  return (
+    <li className={fact.tone} {...(fact.tip !== undefined ? { title: fact.tip } : {})}>
+      {Icon !== null ? <Icon aria-hidden="true" /> : null}
+      <b>{fact.value}</b>
+      {fact.label !== "" ? <span>{fact.label}</span> : null}
+      {fact.bar !== undefined ? <FactBar bar={fact.bar} /> : null}
+      {fact.ticks !== undefined ? <FactTicks ticks={fact.ticks} /> : null}
+      {subs.map((sub) => (
+        <span key={sub} className="bd-fsub">
+          {sub}
+        </span>
+      ))}
+    </li>
+  )
+}
+
 export function FactRow({
   facts,
   now,
@@ -71,53 +110,12 @@ export function FactRow({
   if (!hasFacts(facts, now)) return null
   return (
     <ul className="bd-facts" aria-label="Counts" data-testid="fact-row">
-      {shown.map((fact) => {
-        const Icon = fact.icon !== undefined ? FACT_ICONS[fact.icon] : null
-        return (
-          <li
-            key={`${fact.icon ?? ""}${fact.label}${typeof fact.value === "string" ? fact.value : ""}`}
-            className={fact.tone}
-            {...(fact.tip !== undefined ? { title: fact.tip } : {})}
-          >
-            {Icon !== null ? <Icon aria-hidden="true" /> : null}
-            <b>{fact.value}</b>
-            {fact.label !== "" ? <span>{fact.label}</span> : null}
-            {fact.bar !== undefined ? (
-              <i
-                className="bd-fbar"
-                role="img"
-                aria-label={`${fact.bar.done} of ${fact.bar.total}`}
-              >
-                <i
-                  style={{
-                    width: `${fact.bar.total > 0 ? Math.round((100 * fact.bar.done) / fact.bar.total) : 0}%`,
-                  }}
-                />
-              </i>
-            ) : null}
-            {fact.ticks !== undefined ? (
-              <i
-                className="bd-ticks"
-                role="img"
-                aria-label={ticksWords(fact.ticks)}
-                data-testid="fact-ticks"
-              >
-                {fact.ticks.map((tick, index) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: the ticks are a fixed row, one per point
-                  <i key={index} className={tick === "done" ? undefined : tick} />
-                ))}
-              </i>
-            ) : null}
-            {fact.sub !== undefined
-              ? (typeof fact.sub === "string" ? [fact.sub] : fact.sub).map((sub) => (
-                  <span key={sub} className="bd-fsub">
-                    {sub}
-                  </span>
-                ))
-              : null}
-          </li>
-        )
-      })}
+      {shown.map((fact) => (
+        <FactItem
+          key={`${fact.icon ?? ""}${fact.label}${typeof fact.value === "string" ? fact.value : ""}`}
+          fact={fact}
+        />
+      ))}
       {now !== undefined ? (
         <li className="now" data-testid="fact-now">
           <ChipBody

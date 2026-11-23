@@ -51,6 +51,21 @@ export async function pickedCallComplete(
   }
 }
 
+function isValidMember(member: unknown): boolean {
+  const m = object(member)
+  return m !== null && typeof m.id === "string" && typeof m.question === "string"
+}
+
+function isValidConsumedCall(entry: unknown): boolean {
+  const call = object(entry)
+  if (!call || !isNativeAgent(call.agent)) return false
+  if (typeof call.session !== "string" || typeof call.callId !== "string") return false
+  if (typeof call.recordedAt !== "number" || !Number.isFinite(call.recordedAt)) return false
+  return (
+    Array.isArray(call.members) && call.members.length <= 100 && call.members.every(isValidMember)
+  )
+}
+
 async function readLedger(ctx: Ctx, file: string): Promise<Ledger | null> {
   if (!(await ctx.fs.exists(file))) return { version: 1, calls: [] }
   const info = await ctx.fs.stat?.(file)
@@ -58,30 +73,89 @@ async function readLedger(ctx: Ctx, file: string): Promise<Ledger | null> {
   const text = await ctx.fs.readFile(file)
   if (Buffer.byteLength(text) > MAX_BYTES) return null
   const value = object(JSON.parse(text))
-  if (value?.version !== 1 || !Array.isArray(value.calls) || value.calls.length > MAX_CALLS)
-    return null
-  for (const entry of value.calls) {
-    const call = object(entry)
-    if (
-      !call ||
-      !isNativeAgent(call.agent) ||
-      typeof call.session !== "string" ||
-      typeof call.callId !== "string" ||
-      typeof call.recordedAt !== "number" ||
-      !Number.isFinite(call.recordedAt) ||
-      !Array.isArray(call.members) ||
-      call.members.length > 100
-    )
-      return null
-    if (
-      call.members.some((member) => {
-        const m = object(member)
-        return !m || typeof m.id !== "string" || typeof m.question !== "string"
-      })
-    )
-      return null
+  const valid =
+    value?.version === 1 &&
+    Array.isArray(value.calls) &&
+    value.calls.length <= MAX_CALLS &&
+    value.calls.every(isValidConsumedCall)
+  return valid ? (value as Ledger) : null
+}
+
+function validPickedTarget(
+  target: PickedTarget | null,
+  proof: SessionProof,
+): target is PickedTarget {
+  if (!target?.id || target.session !== proof.session) return false
+  if (!Number.isFinite(target.openedAt) || proof.recordedAt <= target.openedAt) return false
+  if (target.gateOpenedAt === undefined) return true
+  return Number.isFinite(target.gateOpenedAt) && proof.recordedAt > target.gateOpenedAt
+}
+
+function reserveLedgerCall(ledger: Ledger, proof: SessionProof, target: PickedTarget): boolean {
+  const known = ledger.calls.find(
+    (call) =>
+      call.agent === proof.agent && call.session === proof.session && call.callId === proof.callId,
+  )
+  const alreadyConsumed = known?.members.some(
+    (member) => member.id === target.id || same(member.question, target.question),
+  )
+  if (alreadyConsumed) return false
+  if (known) {
+    if (known.recordedAt !== proof.recordedAt || known.members.length >= 100) return false
+    known.members.push({ id: target.id, question: target.question })
+    return true
   }
-  return value as Ledger
+  if (ledger.calls.length >= MAX_CALLS) return false
+  ledger.calls.push({
+    agent: proof.agent,
+    session: proof.session,
+    callId: proof.callId,
+    recordedAt: proof.recordedAt,
+    members: [{ id: target.id, question: target.question }],
+  })
+  return true
+}
+
+async function writeReservedCall(
+  ctx: Ctx,
+  file: string,
+  proof: SessionProof,
+  target: PickedTarget,
+): Promise<string | null> {
+  const ledger = await readLedger(ctx, file)
+  if (!ledger) return null
+  const before = `${JSON.stringify(ledger)}\n`
+  if (!reserveLedgerCall(ledger, proof, target)) return null
+  const serialized = `${JSON.stringify(ledger)}\n`
+  if (Buffer.byteLength(serialized) > MAX_BYTES) return null
+  await ctx.fs.atomicWrite(file, serialized)
+  return before
+}
+
+async function consumeLockedCall(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  proof: SessionProof,
+  consumer: {
+    target: () => Promise<PickedTarget | null>
+    apply: (answer: SessionAnswer, target: PickedTarget) => Promise<boolean>
+  },
+): Promise<boolean> {
+  const target = await consumer.target()
+  if (!validPickedTarget(target, proof)) return false
+  const answers = proof.answers.filter((answer) => same(answer.question, target.question))
+  const answer = answers.length === 1 ? answers[0] : undefined
+  if (!answer) return false
+  const file = join(task.runtimeDir, "picked-calls.json")
+  const before = await writeReservedCall(ctx, file, proof, target)
+  if (before === null) return false
+  try {
+    if (await consumer.apply(answer, target)) return true
+  } catch {
+    // A normal application failure is retryable; a process crash leaves the reservation.
+  }
+  await ctx.fs.atomicWrite(file, before)
+  return false
 }
 
 /** A native call can answer each of its members once; the current target is read inside the lock. */
@@ -97,60 +171,9 @@ export async function consumePickedCall(
   if (!isSessionProof(proof)) return false
   try {
     await ctx.fs.mkdir(task.runtimeDir)
-    return await ctx.fs.withLock(join(task.runtimeDir, "picked-calls.lock"), async () => {
-      if (!isSessionProof(proof)) return false
-      const target = await consumer.target()
-      if (
-        !target?.id ||
-        target.session !== proof.session ||
-        !Number.isFinite(target.openedAt) ||
-        proof.recordedAt <= target.openedAt ||
-        (target.gateOpenedAt !== undefined &&
-          (!Number.isFinite(target.gateOpenedAt) || proof.recordedAt <= target.gateOpenedAt))
-      )
-        return false
-      const answers = proof.answers.filter((answer) => same(answer.question, target.question))
-      const answer = answers[0]
-      if (!answer || answers.length !== 1) return false
-      const file = join(task.runtimeDir, "picked-calls.json")
-      const ledger = await readLedger(ctx, file)
-      if (!ledger) return false
-      const before = `${JSON.stringify(ledger)}\n`
-      const known = ledger.calls.find(
-        (call) =>
-          call.agent === proof.agent &&
-          call.session === proof.session &&
-          call.callId === proof.callId,
-      )
-      if (
-        known?.members.some(
-          (member) => member.id === target.id || same(member.question, target.question),
-        )
-      )
-        return false
-      if (known && (known.recordedAt !== proof.recordedAt || known.members.length >= 100))
-        return false
-      if (!known && ledger.calls.length >= MAX_CALLS) return false
-      if (known) known.members.push({ id: target.id, question: target.question })
-      else
-        ledger.calls.push({
-          agent: proof.agent,
-          session: proof.session,
-          callId: proof.callId,
-          recordedAt: proof.recordedAt,
-          members: [{ id: target.id, question: target.question }],
-        })
-      const serialized = `${JSON.stringify(ledger)}\n`
-      if (Buffer.byteLength(serialized) > MAX_BYTES) return false
-      await ctx.fs.atomicWrite(file, serialized)
-      try {
-        if (await consumer.apply(answer, target)) return true
-      } catch {
-        // A normal application failure is retryable; a process crash leaves the reservation.
-      }
-      await ctx.fs.atomicWrite(file, before)
-      return false
-    })
+    return await ctx.fs.withLock(join(task.runtimeDir, "picked-calls.lock"), () =>
+      consumeLockedCall(ctx, task, proof, consumer),
+    )
   } catch {
     return false
   }

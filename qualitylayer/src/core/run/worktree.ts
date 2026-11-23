@@ -1,48 +1,21 @@
-import { constants } from "node:fs"
-import { cp, lstat, mkdir, open, opendir, realpath } from "node:fs/promises"
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path"
+import { cp, mkdir, realpath } from "node:fs/promises"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { publicationContext } from "../../publication-fs.ts"
-import { folderDoc } from "../docs/names.ts"
-import { approvalCurrent } from "../gate/revision.ts"
-import { currentBranch } from "../git/repo.ts"
-import { taskDir } from "../paths.ts"
-import type { Task } from "../task/store.ts"
 import { runDir } from "./registry.ts"
+import {
+  copyApprovedTaskToWorktree,
+  directories,
+  entry,
+  gitIdentity,
+  inside,
+  regularBytes,
+} from "./worktree-copy.ts"
 import { worktreeName, worktreePlan } from "./worktree-plan.ts"
 
+export { copyApprovedTaskToWorktree }
 export type WorktreeChoices = { branch?: string; worktreePath?: string }
-const COPY_LIMITS = {
-  depth: 16,
-  entries: 4096,
-  files: 1024,
-  fileBytes: 16 * 1024 * 1024,
-  bytes: 64 * 1024 * 1024,
-}
 const RECEIPT_BYTES = 4096
-const inside = (root: string, path: string) => {
-  const rest = relative(root, path)
-  return rest !== "" && rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest)
-}
-async function entry(path: string) {
-  try {
-    return await lstat(path)
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null
-    throw cause
-  }
-}
-/** Check existing directory components before any mkdir/Git write; missing suffixes are allowed. */
-async function directories(path: string): Promise<void> {
-  let at = parse(path).root
-  for (const part of relative(at, path).split(sep).filter(Boolean)) {
-    at = join(at, part)
-    const seen = await entry(at)
-    if (!seen) return
-    if (!seen.isDirectory() || seen.isSymbolicLink())
-      throw new Error(`Workspace directories cannot be files or symbolic links: ${at}`)
-  }
-}
+
 async function canonicalMissing(path: string): Promise<string> {
   const missing: string[] = []
   let at = resolve(path)
@@ -51,51 +24,6 @@ async function canonicalMissing(path: string): Promise<string> {
     at = dirname(at)
   }
   return join(await realpath(at), ...missing)
-}
-async function regularBytes(path: string, limit: number): Promise<Buffer> {
-  const file = await open(
-    path,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-  )
-  try {
-    const before = await file.stat()
-    if (!before.isFile() || before.nlink !== 1 || before.size > limit)
-      throw new Error(`Workspace input is not a bounded regular file: ${path}`)
-    const buffer = Buffer.alloc(before.size + 1)
-    let size = 0
-    while (size < buffer.length) {
-      const part = await file.read(buffer, size, buffer.length - size, size)
-      if (!part.bytesRead) break
-      size += part.bytesRead
-    }
-    const after = await file.stat(),
-      named = await lstat(path)
-    if (
-      size !== before.size ||
-      after.size !== before.size ||
-      after.mtimeMs !== before.mtimeMs ||
-      named.isSymbolicLink() ||
-      named.dev !== before.dev ||
-      named.ino !== before.ino
-    )
-      throw new Error(`Workspace input changed while reading: ${path}`)
-    return buffer.subarray(0, size)
-  } finally {
-    await file.close()
-  }
-}
-async function identity(ctx: Ctx, cwd: string) {
-  const [common, top, branch] = await Promise.all([
-    ctx.git.run(cwd, ["rev-parse", "--git-common-dir"]),
-    ctx.git.run(cwd, ["rev-parse", "--show-toplevel"]),
-    currentBranch(ctx, cwd),
-  ])
-  if (common.code !== 0 || top.code !== 0) throw new Error("The workspace is not a Git checkout")
-  return {
-    commonDir: await realpath(resolve(cwd, common.stdout.trim())),
-    cwd: await realpath(top.stdout.trim()),
-    branch,
-  }
 }
 
 const gitCryptKeys = (commonDir: string) => join(commonDir, "git-crypt", "keys")
@@ -106,23 +34,34 @@ async function hasGitCryptKeys(commonDir: string): Promise<boolean> {
 /** Whether the checkout's repository holds git-crypt keys, so a new worktree needs them copied in. */
 export async function usesGitCrypt(ctx: Ctx, checkout: string): Promise<boolean> {
   try {
-    return await hasGitCryptKeys((await identity(ctx, checkout)).commonDir)
+    return await hasGitCryptKeys((await gitIdentity(ctx, checkout)).commonDir)
   } catch {
     return false
   }
 }
 
-/** Every native agent uses the same explicit Git worktree creation, without an agent-specific flag. */
-async function worktree(
-  ctx: Ctx,
-  checkout: string,
-  run: string,
-  request: string,
-  choices: WorktreeChoices = {},
-  create = true,
-): Promise<{ cwd: string; branch: string }> {
+type WorktreeSpec = {
+  ctx: Ctx
+  checkout: string
+  run: string
+  request: string
+  choices: WorktreeChoices
+  create: boolean
+}
+
+type ResolvedWorktreeTarget = {
+  source: Awaited<ReturnType<typeof gitIdentity>>
+  branch: string
+  cwd: string
+  receiptPath: string
+  wanted: { version: number; run: string; branch: string; commonDir: string; cwd: string }
+  encoded: string
+}
+
+async function resolveWorktreeTarget(spec: WorktreeSpec): Promise<ResolvedWorktreeTarget> {
+  const { ctx, checkout, run, request, choices } = spec
   const receiptPath = join(runDir(await canonicalMissing(ctx.home), run), "workspace.json")
-  const source = await identity(ctx, checkout)
+  const source = await gitIdentity(ctx, checkout)
   const name = `${worktreeName(request)}-${run.slice(0, 8)}`
   const branch = choices.branch ?? `ql/${name}`
   const checked = await ctx.git.run(checkout, ["check-ref-format", "--branch", branch])
@@ -146,24 +85,34 @@ async function worktree(
   const encoded = JSON.stringify(wanted)
   if (Buffer.byteLength(encoded) > RECEIPT_BYTES)
     throw new Error("Workspace identity exceeds its metadata limit")
-  const receipt = (await entry(receiptPath))
-    ? JSON.parse((await regularBytes(receiptPath, RECEIPT_BYTES)).toString("utf8"))
-    : null
-  const exists = await entry(cwd)
-  if (exists) {
-    if (!exists.isDirectory() || exists.isSymbolicLink())
-      throw new Error("The requested worktree path is already held by another checkout")
-    if (!receipt || Object.entries(wanted).some(([key, value]) => receipt[key] !== value))
-      throw new Error(
-        "The requested worktree path is already held without this run's ownership receipt",
-      )
-    const actual = await identity(ctx, cwd)
-    if (actual.commonDir !== source.commonDir || actual.cwd !== cwd || actual.branch !== branch)
-      throw new Error("The requested worktree no longer matches its recorded Git identity")
-    return { cwd, branch }
-  }
-  if (receipt) throw new Error("The recorded worktree is missing or these start choices changed")
-  if (!create) throw new Error("This run has no verified kept worktree")
+  return { source, branch, cwd, receiptPath, wanted, encoded }
+}
+
+async function verifyExistingWorktree(
+  ctx: Ctx,
+  target: ResolvedWorktreeTarget,
+  receipt: Record<string, unknown> | null,
+): Promise<{ cwd: string; branch: string }> {
+  if (!receipt || Object.entries(target.wanted).some(([key, value]) => receipt[key] !== value))
+    throw new Error(
+      "The requested worktree path is already held without this run's ownership receipt",
+    )
+  const actual = await gitIdentity(ctx, target.cwd)
+  if (
+    actual.commonDir !== target.source.commonDir ||
+    actual.cwd !== target.cwd ||
+    actual.branch !== target.branch
+  )
+    throw new Error("The requested worktree no longer matches its recorded Git identity")
+  return { cwd: target.cwd, branch: target.branch }
+}
+
+async function createWorktreeWithReceipt(
+  ctx: Ctx,
+  checkout: string,
+  target: ResolvedWorktreeTarget,
+): Promise<{ cwd: string; branch: string }> {
+  const { source, branch, cwd, receiptPath, encoded } = target
   const held = await ctx.git.run(checkout, [
     "show-ref",
     "--verify",
@@ -194,7 +143,7 @@ async function worktree(
     throw new Error(`Could not create the requested worktree: ${made.stderr.trim()}`)
   await directories(cwd)
   if (locked) await unlockWorktree(ctx, checkout, cwd, branch, keys)
-  const actual = await identity(ctx, cwd)
+  const actual = await gitIdentity(ctx, cwd)
   if (actual.commonDir !== source.commonDir || actual.cwd !== cwd || actual.branch !== branch)
     throw new Error("The new worktree does not match the requested Git identity")
   try {
@@ -207,6 +156,25 @@ async function worktree(
     )
   }
   return { cwd, branch }
+}
+
+/** Every native agent uses the same explicit Git worktree creation, without an agent-specific flag. */
+async function worktree(spec: WorktreeSpec): Promise<{ cwd: string; branch: string }> {
+  const target = await resolveWorktreeTarget(spec)
+  const receipt = (await entry(target.receiptPath))
+    ? (JSON.parse(
+        (await regularBytes(target.receiptPath, RECEIPT_BYTES)).toString("utf8"),
+      ) as Record<string, unknown>)
+    : null
+  const exists = await entry(target.cwd)
+  if (exists) {
+    if (!exists.isDirectory() || exists.isSymbolicLink())
+      throw new Error("The requested worktree path is already held by another checkout")
+    return verifyExistingWorktree(spec.ctx, target, receipt)
+  }
+  if (receipt) throw new Error("The recorded worktree is missing or these start choices changed")
+  if (!spec.create) throw new Error("This run has no verified kept worktree")
+  return createWorktreeWithReceipt(spec.ctx, spec.checkout, target)
 }
 
 /** Copy the keys into the worktree's git directory, then check it out; a failure removes what was made. */
@@ -244,7 +212,7 @@ export function nativeWorktree(
   request: string,
   choices: WorktreeChoices = {},
 ) {
-  return worktree(ctx, checkout, run, request, choices)
+  return worktree({ ctx, checkout, run, request, choices, create: true })
 }
 
 /** Receipt/Git identity validation only: this path never creates a branch, folder or receipt. */
@@ -255,108 +223,12 @@ export function validateNativeWorktree(
   branch: string,
   cwd: string,
 ) {
-  return worktree(ctx, checkout, run, "", { branch, worktreePath: cwd }, false)
-}
-
-/** Copy only this approved task's folder into a worktree already admitted by nativeWorktree. */
-export async function copyApprovedTaskToWorktree(
-  ctx: Ctx,
-  task: Task,
-  worktree: string,
-): Promise<Task> {
-  if (
-    !task.slug ||
-    task.slug !== basename(task.slug) ||
-    task.slug === "." ||
-    task.slug === ".." ||
-    task.slug.includes("\\") ||
-    !isAbsolute(task.repoRoot) ||
-    !isAbsolute(task.dir) ||
-    !isAbsolute(worktree) ||
-    resolve(task.dir) !== taskDir(resolve(task.repoRoot), task.slug)
-  )
-    throw new Error("The task documents are outside their recorded task folder")
-  const source = await identity(ctx, task.repoRoot),
-    target = await identity(ctx, worktree)
-  const cwd = resolve(worktree)
-  if (
-    source.cwd !== (await realpath(task.repoRoot)) ||
-    source.commonDir !== target.commonDir ||
-    target.cwd !== cwd ||
-    source.cwd === cwd
-  )
-    throw new Error("Task documents need a different worktree of the same repository")
-  const sourceDir = join(source.cwd, relative(task.repoRoot, task.dir))
-  const targetDir = join(cwd, relative(task.repoRoot, task.dir))
-  if (!inside(source.cwd, sourceDir) || !inside(cwd, targetDir))
-    throw new Error("The task documents escape their checkout")
-  await directories(sourceDir)
-  await directories(cwd)
-  const snapshots: { relative: string; bytes: Buffer }[] = []
-  let entries = 0,
-    total = 0
-  const walk = async (folder: string, depth: number) => {
-    if (depth > COPY_LIMITS.depth) throw new Error("The task folder exceeds the copy depth limit")
-    for await (const item of await opendir(folder)) {
-      if (++entries > COPY_LIMITS.entries) throw new Error("The task folder has too many entries")
-      const path = join(folder, item.name)
-      if (item.isSymbolicLink()) throw new Error("Task documents cannot contain symbolic links")
-      if (item.isDirectory()) {
-        await directories(path)
-        await walk(path, depth + 1)
-      } else if (item.isFile()) {
-        if (snapshots.length >= COPY_LIMITS.files)
-          throw new Error("The task folder has too many files")
-        await directories(dirname(path))
-        const bytes = await regularBytes(
-          path,
-          Math.min(COPY_LIMITS.fileBytes, COPY_LIMITS.bytes - total),
-        )
-        total += bytes.length
-        snapshots.push({ relative: relative(sourceDir, path), bytes })
-      } else throw new Error("Task documents must be regular files")
-    }
-  }
-  await walk(sourceDir, 0)
-  const checkedTask = { ...task, repoRoot: source.cwd, dir: sourceDir }
-  const safe = publicationContext(ctx, checkedTask)
-  if (!(await approvalCurrent(safe, checkedTask, folderDoc("plan"))))
-    throw new Error("The task's Plan approval is missing or stale")
-  const missing: typeof snapshots = []
-  for (const file of snapshots) {
-    const path = join(targetDir, file.relative)
-    await directories(dirname(path))
-    const existing = await entry(path)
-    if (!existing) missing.push(file)
-    else if (
-      existing.isSymbolicLink() ||
-      !existing.isFile() ||
-      !(await regularBytes(path, COPY_LIMITS.fileBytes)).equals(file.bytes)
-    )
-      throw new Error(`The worktree already contains a conflicting task document: ${file.relative}`)
-  }
-  if (!(await approvalCurrent(safe, checkedTask, folderDoc("plan"))))
-    throw new Error("The task's Plan changed before its documents could be copied")
-  for (const file of snapshots) {
-    const path = join(sourceDir, file.relative)
-    await directories(dirname(path))
-    if (!(await regularBytes(path, COPY_LIMITS.fileBytes)).equals(file.bytes))
-      throw new Error("The task documents changed during copy preparation")
-  }
-  for (const file of missing) {
-    const path = join(targetDir, file.relative)
-    await directories(dirname(path))
-    await mkdir(dirname(path), { recursive: true })
-    await directories(dirname(path))
-    const output = await open(path, "wx", 0o600)
-    try {
-      await output.writeFile(file.bytes)
-    } finally {
-      await output.close()
-    }
-  }
-  const rebound = { ...task, repoRoot: cwd, dir: targetDir }
-  if (!(await approvalCurrent(publicationContext(ctx, rebound), rebound, folderDoc("plan"))))
-    throw new Error("The copied task does not match its approved Plan in this worktree")
-  return rebound
+  return worktree({
+    ctx,
+    checkout,
+    run,
+    request: "",
+    choices: { branch, worktreePath: cwd },
+    create: false,
+  })
 }

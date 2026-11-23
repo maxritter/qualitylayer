@@ -45,38 +45,62 @@ export function passageBlocks(
     }))
 }
 
+const FRAGMENT_IDENTITY_RE = /^`{3,}(?:wireframe|panel)\s+[a-z0-9][a-z0-9-]*/i
+
+type QuoteQuery = { quote: string; identity: string | undefined; before: string; after: string }
+type QuoteMatches = { matches: number[]; contextual: number[] }
+
+function collectTextMatches(
+  text: string,
+  index: number,
+  query: QuoteQuery,
+  out: QuoteMatches,
+): boolean {
+  let at = text.indexOf(query.quote)
+  const found = at !== -1
+  while (at !== -1) {
+    out.matches.push(index)
+    if (
+      text.slice(0, at).endsWith(query.before) &&
+      text.slice(at + query.quote.length).startsWith(query.after)
+    )
+      out.contextual.push(index)
+    at = text.indexOf(query.quote, at + Math.max(1, query.quote.length))
+  }
+  return found
+}
+
+function matchBlock(
+  block: PassageBlock,
+  index: number,
+  query: QuoteQuery,
+  out: QuoteMatches,
+): void {
+  const texts = new Set([block.text, ...(block.also ?? [])].map(passageText))
+  for (const text of texts) {
+    if (query.identity && FRAGMENT_IDENTITY_RE.exec(text.trim())?.[0] !== query.identity) continue
+    if (collectTextMatches(text, index, query, out)) break
+  }
+}
+
 /** Context selects occurrences, never a nearest-word guess. */
 export function placeQuote(blocks: readonly PassageBlock[], passage: Passage) {
-  const identity = /^`{3,}(?:wireframe|panel)\s+[a-z0-9][a-z0-9-]*/i.exec(passage.quote.trim())?.[0]
+  const identity = FRAGMENT_IDENTITY_RE.exec(passage.quote.trim())?.[0]
   const quote = identity ?? passageText(passage.quote).trim()
   const before = passageText(passage.before ?? "")
   const after = passageText(passage.after ?? "")
-  const matches: number[] = []
-  const contextual: number[] = []
-  if (quote !== "")
+  const out: QuoteMatches = { matches: [], contextual: [] }
+  if (quote !== "") {
+    const query: QuoteQuery = { quote, identity, before, after }
     blocks.forEach((block, index) => {
-      const texts = new Set([block.text, ...(block.also ?? [])].map(passageText))
-      for (const text of texts) {
-        if (
-          identity &&
-          /^`{3,}(?:wireframe|panel)\s+[a-z0-9][a-z0-9-]*/i.exec(text.trim())?.[0] !== identity
-        )
-          continue
-        let at = text.indexOf(quote)
-        const found = at !== -1
-        while (at !== -1) {
-          matches.push(index)
-          if (text.slice(0, at).endsWith(before) && text.slice(at + quote.length).startsWith(after))
-            contextual.push(index)
-          at = text.indexOf(quote, at + Math.max(1, quote.length))
-        }
-        if (found) break
-      }
+      matchBlock(block, index, query, out)
     })
-  const candidates = matches.length > 1 && (before !== "" || after !== "") ? contextual : matches
+  }
+  const candidates =
+    out.matches.length > 1 && (before !== "" || after !== "") ? out.contextual : out.matches
   return {
     index: candidates.length === 1 ? (candidates[0] as number) : null,
-    ambiguous: matches.length > 0 && candidates.length !== 1,
-    moved: matches.length === 0,
+    ambiguous: out.matches.length > 0 && candidates.length !== 1,
+    moved: out.matches.length === 0,
   }
 }

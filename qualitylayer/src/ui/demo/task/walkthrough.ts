@@ -41,8 +41,13 @@ function builtBillingMode(): string {
   const amber = "#f7b23b"
   const box = (x: number, y: number, w: number, h: number, extra = "") =>
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${panel}" stroke="${line}"${extra}/>`
-  const text = (x: number, y: number, s: string, size = 11, fill = muted, more = "") =>
-    `<text x="${x}" y="${y}" font-size="${size}" fill="${fill}"${more}>${s}</text>`
+  const text = (
+    x: number,
+    y: number,
+    s: string,
+    opts?: { size?: number; fill?: string; more?: string },
+  ) =>
+    `<text x="${x}" y="${y}" font-size="${opts?.size ?? 11}" fill="${opts?.fill ?? muted}"${opts?.more ?? ""}>${s}</text>`
   const bold = ' font-weight="600"'
   const end = ' text-anchor="end"'
   const kpis = [
@@ -53,7 +58,7 @@ function builtBillingMode(): string {
   ]
     .map(([k, v, d], i) => {
       const x = 24 + i * 201
-      return `${box(x, 104, 189, 62)}${text(x + 14, 122, k ?? "")}${text(x + 14, 146, v ?? "", 18, ink, bold)}${text(x + 14, 160, d ?? "", 10, i === 0 || i === 3 ? green : muted)}`
+      return `${box(x, 104, 189, 62)}${text(x + 14, 122, k ?? "")}${text(x + 14, 146, v ?? "", { size: 18, fill: ink, more: bold })}${text(x + 14, 160, d ?? "", { size: 10, fill: i === 0 || i === 3 ? green : muted })}`
     })
     .join("")
   // October's bars over a 120-high plot whose top is 8,000 requests a day.
@@ -67,7 +72,7 @@ function builtBillingMode(): string {
   const grid = [2000, 4000, 6000, 8000]
     .map((s) => {
       const y = (baseline - scale(s)).toFixed(1)
-      return `<line x1="60" x2="512" y1="${y}" y2="${y}" stroke="${line}" stroke-dasharray="3 3"/>${text(52, Number(y) + 3, `${s / 1000}k`, 9, muted, end)}`
+      return `<line x1="60" x2="512" y1="${y}" y2="${y}" stroke="${line}" stroke-dasharray="3 3"/>${text(52, Number(y) + 3, `${s / 1000}k`, { size: 9, fill: muted, more: end })}`
     })
     .join("")
   const avg = (baseline - scale(OCTOBER_AVERAGE)).toFixed(1)
@@ -78,22 +83,22 @@ function builtBillingMode(): string {
   ]
     .map(([who, what, when], i) => {
       const y = 444 + i * 28
-      return `<circle cx="572" cy="${y}" r="10" fill="#1f2b38"/>${text(572, y + 3, who ?? "", 8, ink, `${bold} text-anchor="middle"`)}${text(590, y - 1, what ?? "", 10.5, ink, bold)}${text(590, y + 12, when ?? "", 9.5)}`
+      return `<circle cx="572" cy="${y}" r="10" fill="#1f2b38"/>${text(572, y + 3, who ?? "", { size: 8, fill: ink, more: `${bold} text-anchor="middle"` })}${text(590, y - 1, what ?? "", { size: 10.5, fill: ink, more: bold })}${text(590, y + 12, when ?? "", { size: 9.5 })}`
     })
     .join("")
   return `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="552" viewBox="0 0 840 552"><rect width="840" height="552" fill="#0a0a0a"/><g font-family="system-ui,sans-serif">
-<rect width="840" height="36" fill="${panel}"/><line x1="0" x2="840" y1="36" y2="36" stroke="${line}"/><rect x="24" y="11" width="14" height="14" rx="4" fill="${blue}"/>${text(46, 22, "Acme admin", 11.5, ink, bold)}${text(132, 22, "Accounts")}<rect x="190" y="9" width="50" height="19" rx="5" fill="#0a0a0a" stroke="${line}"/>${text(200, 22, "Billing", 11, ink)}${text(252, 22, "Invoices")}${text(306, 22, "Refunds")}${text(364, 22, "Audit log")}${text(790, 22, "Priya Shah · Finance", 10.5, muted, end)}<circle cx="806" cy="18" r="10" fill="#1f2b38"/>${text(806, 21, "PS", 8, ink, `${bold} text-anchor="middle"`)}
-<rect x="24" y="52" width="36" height="36" rx="8" fill="#14202c" stroke="${line}"/>${text(42, 74, "NT", 12, blue, `${bold} text-anchor="middle"`)}${text(70, 68, "Northwind Traders", 16, ink, bold)}${text(70, 84, "Account 42 · Growth tier · on seats since 2 August", 10.5)}
+<rect width="840" height="36" fill="${panel}"/><line x1="0" x2="840" y1="36" y2="36" stroke="${line}"/><rect x="24" y="11" width="14" height="14" rx="4" fill="${blue}"/>${text(46, 22, "Acme admin", { size: 11.5, fill: ink, more: bold })}${text(132, 22, "Accounts")}<rect x="190" y="9" width="50" height="19" rx="5" fill="#0a0a0a" stroke="${line}"/>${text(200, 22, "Billing", { size: 11, fill: ink })}${text(252, 22, "Invoices")}${text(306, 22, "Refunds")}${text(364, 22, "Audit log")}${text(790, 22, "Priya Shah · Finance", { size: 10.5, fill: muted, more: end })}<circle cx="806" cy="18" r="10" fill="#1f2b38"/>${text(806, 21, "PS", { size: 8, fill: ink, more: `${bold} text-anchor="middle"` })}
+<rect x="24" y="52" width="36" height="36" rx="8" fill="#14202c" stroke="${line}"/>${text(42, 74, "NT", { size: 12, fill: blue, more: `${bold} text-anchor="middle"` })}${text(70, 68, "Northwind Traders", { size: 16, fill: ink, more: bold })}${text(70, 84, "Account 42 · Growth tier · on seats since 2 August", { size: 10.5 })}
 ${kpis}
-${box(24, 178, 508, 178)}${text(40, 198, "Requests per day", 12, ink, bold)}${text(516, 198, "4,462 a day on average", 10, amber, end)}${grid}${bars}<line x1="60" x2="512" y1="${avg}" y2="${avg}" stroke="${amber}" stroke-width="1.5" stroke-dasharray="5 4"/><line x1="60" x2="512" y1="${baseline}" y2="${baseline}" stroke="${line}"/>
-${box(24, 368, 508, 140)}${text(40, 388, "November, both ways", 12, ink, bold)}${text(516, 388, "priced at October's volume", 10, muted, end)}
-<rect x="40" y="400" width="230" height="94" rx="7" fill="#0a0a0a" stroke="${line}"/>${text(54, 418, "Seats", 11, ink, bold)}${text(54, 442, "$826.00", 17, ink, bold)}<rect x="54" y="452" width="202" height="5" rx="2.5" fill="${line}"/><rect x="54" y="452" width="141" height="5" rx="2.5" fill="${muted}"/>${text(54, 478, "14 seats × $59")}${text(256, 478, "$826.00", 11, muted, end)}
-<rect x="286" y="400" width="230" height="94" rx="7" fill="#0a0a0a" stroke="${blue}" stroke-width="1.5"/>${text(300, 418, "Usage", 11, ink, bold)}${text(502, 418, "from 1 November", 9.5, blue, end)}${text(300, 442, "$1,184.40", 17, ink, bold)}<rect x="300" y="452" width="202" height="5" rx="2.5" fill="${blue}"/>${text(300, 472, "Growth, 138,320 × $0.0080", 10)}${text(502, 472, "$1,106.56", 10, muted, end)}${text(300, 486, "Starter and platform fee", 10)}${text(502, 486, "$77.84", 10, muted, end)}
-${box(544, 178, 272, 214)}${text(560, 198, "Billing mode", 12, ink, bold)}${text(800, 198, "Finance only", 10, muted, end)}<rect x="560" y="210" width="240" height="28" rx="6" fill="#0a0a0a" stroke="${line}"/><rect x="680" y="210" width="120" height="28" rx="6" fill="#16222e"/>${text(620, 228, "Seats", 11, ink, ' text-anchor="middle"')}${text(740, 228, "Usage", 11, blue, ' text-anchor="middle"')}
-<line x1="566" x2="566" y1="252" y2="292" stroke="${line}" stroke-width="2"/><circle cx="566" cy="254" r="4" fill="${line}"/><circle cx="566" cy="284" r="4" fill="${blue}"/>${text(578, 258, "Until 31 October", 11, ink, bold)}${text(686, 258, "seats, as today", 10)}${text(578, 288, "From 1 November", 11, ink, bold)}${text(686, 288, "usage, priced by tier", 10)}
-<rect x="560" y="306" width="240" height="28" rx="6" fill="#0a0a0a" stroke="${line}"/>${text(570, 324, "The customer moves to the API plan", 10.5, ink)}<rect x="560" y="344" width="104" height="28" rx="6" fill="${blue}"/>${text(612, 362, "Switch to usage", 10.5, "#0a0a0a", `${bold} text-anchor="middle"`)}${text(672, 355, "Every switch is audited:", 9.5)}${text(672, 367, "who, when and why.", 9.5)}
-${box(544, 404, 272, 116)}${text(560, 422, "Audit log", 12, ink, bold)}${log}
-${text(24, 540, "Illustrative built screen · demo data", 10, "#6b7079")}</g></svg>`
+${box(24, 178, 508, 178)}${text(40, 198, "Requests per day", { size: 12, fill: ink, more: bold })}${text(516, 198, "4,462 a day on average", { size: 10, fill: amber, more: end })}${grid}${bars}<line x1="60" x2="512" y1="${avg}" y2="${avg}" stroke="${amber}" stroke-width="1.5" stroke-dasharray="5 4"/><line x1="60" x2="512" y1="${baseline}" y2="${baseline}" stroke="${line}"/>
+${box(24, 368, 508, 140)}${text(40, 388, "November, both ways", { size: 12, fill: ink, more: bold })}${text(516, 388, "priced at October's volume", { size: 10, fill: muted, more: end })}
+<rect x="40" y="400" width="230" height="94" rx="7" fill="#0a0a0a" stroke="${line}"/>${text(54, 418, "Seats", { size: 11, fill: ink, more: bold })}${text(54, 442, "$826.00", { size: 17, fill: ink, more: bold })}<rect x="54" y="452" width="202" height="5" rx="2.5" fill="${line}"/><rect x="54" y="452" width="141" height="5" rx="2.5" fill="${muted}"/>${text(54, 478, "14 seats × $59")}${text(256, 478, "$826.00", { size: 11, fill: muted, more: end })}
+<rect x="286" y="400" width="230" height="94" rx="7" fill="#0a0a0a" stroke="${blue}" stroke-width="1.5"/>${text(300, 418, "Usage", { size: 11, fill: ink, more: bold })}${text(502, 418, "from 1 November", { size: 9.5, fill: blue, more: end })}${text(300, 442, "$1,184.40", { size: 17, fill: ink, more: bold })}<rect x="300" y="452" width="202" height="5" rx="2.5" fill="${blue}"/>${text(300, 472, "Growth, 138,320 × $0.0080", { size: 10 })}${text(502, 472, "$1,106.56", { size: 10, fill: muted, more: end })}${text(300, 486, "Starter and platform fee", { size: 10 })}${text(502, 486, "$77.84", { size: 10, fill: muted, more: end })}
+${box(544, 178, 272, 214)}${text(560, 198, "Billing mode", { size: 12, fill: ink, more: bold })}${text(800, 198, "Finance only", { size: 10, fill: muted, more: end })}<rect x="560" y="210" width="240" height="28" rx="6" fill="#0a0a0a" stroke="${line}"/><rect x="680" y="210" width="120" height="28" rx="6" fill="#16222e"/>${text(620, 228, "Seats", { size: 11, fill: ink, more: ' text-anchor="middle"' })}${text(740, 228, "Usage", { size: 11, fill: blue, more: ' text-anchor="middle"' })}
+<line x1="566" x2="566" y1="252" y2="292" stroke="${line}" stroke-width="2"/><circle cx="566" cy="254" r="4" fill="${line}"/><circle cx="566" cy="284" r="4" fill="${blue}"/>${text(578, 258, "Until 31 October", { size: 11, fill: ink, more: bold })}${text(686, 258, "seats, as today", { size: 10 })}${text(578, 288, "From 1 November", { size: 11, fill: ink, more: bold })}${text(686, 288, "usage, priced by tier", { size: 10 })}
+<rect x="560" y="306" width="240" height="28" rx="6" fill="#0a0a0a" stroke="${line}"/>${text(570, 324, "The customer moves to the API plan", { size: 10.5, fill: ink })}<rect x="560" y="344" width="104" height="28" rx="6" fill="${blue}"/>${text(612, 362, "Switch to usage", { size: 10.5, fill: "#0a0a0a", more: `${bold} text-anchor="middle"` })}${text(672, 355, "Every switch is audited:", { size: 9.5 })}${text(672, 367, "who, when and why.", { size: 9.5 })}
+${box(544, 404, 272, 116)}${text(560, 422, "Audit log", { size: 12, fill: ink, more: bold })}${log}
+${text(24, 540, "Illustrative built screen · demo data", { size: 10, fill: "#6b7079" })}</g></svg>`
 }
 
 /** The agent's *Why the change* and *What a reviewer must know*, as the demo's 03-verify.md has them. */

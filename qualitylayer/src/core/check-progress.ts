@@ -126,6 +126,53 @@ function finishedProgress(progress: CheckProgress, records: CheckRecord[]): Chec
   return { ...progress, exit: failed === -1 ? 0 : (records[failed]?.exit ?? null), results }
 }
 
+async function finalizeStaleProgress(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  filePath: string,
+  progress: CheckProgress,
+  isStale: (entry: CheckProgress) => boolean,
+): Promise<void> {
+  await ctx.fs.withLock(`${checkProgressPath(task, progress.check)}.lock`, async () => {
+    const current = JSON.parse(await ctx.fs.readFile(filePath)) as CheckProgress
+    if (!isStale(current)) {
+      Object.assign(progress, current)
+      return
+    }
+    const stopped = {
+      ...current,
+      running: false,
+      exit: null,
+      ended: ctx.clock.now(),
+    }
+    // A worker that stopped while it waited for the lock ran no command: nothing to record.
+    const receipt = current.queued ? null : await recoverCommands(ctx, task, stopped)
+    const terminal =
+      receipt === null
+        ? { ...stopped, notRun: "worker stopped" }
+        : finishedProgress(stopped, receipt)
+    // Terminal progress is visible only after its command record is durable.
+    await writeCheckProgress(ctx, task, terminal)
+    Object.assign(progress, terminal)
+  })
+}
+
+async function readProgressFile(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  filePath: string,
+  isStale: (entry: CheckProgress) => boolean,
+): Promise<CheckProgress | null> {
+  try {
+    const progress = JSON.parse(await ctx.fs.readFile(filePath)) as CheckProgress
+    if (isStale(progress)) await finalizeStaleProgress(ctx, task, filePath, progress, isStale)
+    return progress
+  } catch {
+    /* a partial or obsolete record cannot hold a turn open */
+    return null
+  }
+}
+
 /** A worker, rather than its starter, keeps a check alive. Dead and stale workers are terminal. */
 export async function readCheckProgress(
   ctx: Ctx,
@@ -134,41 +181,13 @@ export async function readCheckProgress(
 ): Promise<CheckProgress[]> {
   const dir = join(task.runtimeDir, "checks")
   if (!(await ctx.fs.exists(dir))) return []
-  const stale = (progress: CheckProgress) =>
+  const isStale = (progress: CheckProgress) =>
     progress.running && (!alive(progress.pid) || ctx.clock.now() - progress.heartbeat > 30_000)
   const rows: CheckProgress[] = []
   for (const file of await ctx.fs.readdir(dir)) {
     if (!file.endsWith(".progress.json")) continue
-    try {
-      const progress = JSON.parse(await ctx.fs.readFile(join(dir, file))) as CheckProgress
-      if (stale(progress)) {
-        await ctx.fs.withLock(`${checkProgressPath(task, progress.check)}.lock`, async () => {
-          const current = JSON.parse(await ctx.fs.readFile(join(dir, file))) as CheckProgress
-          if (!stale(current)) {
-            Object.assign(progress, current)
-            return
-          }
-          const stopped = {
-            ...current,
-            running: false,
-            exit: null,
-            ended: ctx.clock.now(),
-          }
-          // A worker that stopped while it waited for the lock ran no command: nothing to record.
-          const receipt = current.queued ? null : await recoverCommands(ctx, task, stopped)
-          const terminal =
-            receipt === null
-              ? { ...stopped, notRun: "worker stopped" }
-              : finishedProgress(stopped, receipt)
-          // Terminal progress is visible only after its command record is durable.
-          await writeCheckProgress(ctx, task, terminal)
-          Object.assign(progress, terminal)
-        })
-      }
-      rows.push(progress)
-    } catch {
-      /* a partial or obsolete record cannot hold a turn open */
-    }
+    const entry = await readProgressFile(ctx, task, join(dir, file), isStale)
+    if (entry !== null) rows.push(entry)
   }
   return rows.sort((a, b) => a.started - b.started)
 }

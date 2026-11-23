@@ -3,7 +3,13 @@ import type { Ctx } from "../../ctx.ts"
 import type { Incoming } from "../interaction-docs/attachments.ts"
 import { acceptedStopSequence } from "./bind.ts"
 import type { RunRecord, StartRequest } from "./contracts.ts"
-import { effectiveNativeSettings } from "./effective-native-settings.ts"
+import {
+  acceptedFreshPermission,
+  assertValidPreparedRequest,
+  freshPermission,
+  isGuardedStopped,
+  linked,
+} from "./fresh-checks.ts"
 import {
   type FreshJournal,
   freshDestination,
@@ -11,8 +17,9 @@ import {
   freshPath,
   readFreshJournal,
 } from "./fresh-state.ts"
-import { permissionChoice } from "./launch-spec.ts"
 import { listRuns, readRun, runDir, updateRun } from "./registry.ts"
+
+export { acceptedFreshPermission, freshPermission }
 
 export type FreshPreparation = {
   request: StartRequest
@@ -34,103 +41,234 @@ export type FreshDependencies = {
   failed?(destination: RunRecord): Promise<void>
 }
 
-function samePurpose(source: RunRecord, request: Pick<StartRequest, "purpose">) {
-  const purpose = request.purpose
-  if (source.purpose.kind === "new-task" || source.purpose.kind === "task")
-    return (
-      purpose.kind === "task" &&
-      purpose.task ===
-        (source.task ?? (source.purpose.kind === "task" ? source.purpose.task : undefined))
-    )
-  if (source.purpose.kind === "artifact")
-    return (
-      purpose.kind === "artifact" &&
-      purpose.scope === source.purpose.scope &&
-      purpose.id === source.purpose.id &&
-      purpose.file === source.purpose.file
-    )
-  return (
-    source.purpose.kind === "terminal" &&
-    purpose.kind === "terminal" &&
-    JSON.stringify(purpose) === JSON.stringify(source.purpose)
-  )
-}
-function linked(source: RunRecord, destination: RunRecord, key: string) {
-  return (
-    destination.id !== source.id &&
-    destination.idempotencyKey === key &&
-    destination.agent === source.agent &&
-    destination.cwd === source.cwd &&
-    destination.previousRun?.id === source.id &&
-    destination.previousRun.generation === source.generation &&
-    destination.previousRun.nativeSession === source.nativeSession
-  )
+type FreshContext = {
+  ctx: Ctx
+  id: string
+  generation: number
+  sequence: number
+  deps: FreshDependencies
+  authorize: () => Promise<void>
+  persist: (value: FreshJournal) => Promise<void>
 }
 
-/** No saved or admitted source choice means Own, regardless of later global defaults. */
-export function freshPermission(ctx: Ctx, source: RunRecord) {
-  const settings = effectiveNativeSettings(ctx, source)
-  return permissionChoice(source.agent, {
-    perm: settings.perm ?? "own",
-    permMode: settings.permMode,
-  })
-}
-
-function samePermission(
+function assertSourceBoundary(
   source: RunRecord,
-  expected: ReturnType<typeof freshPermission>,
-  settings: StartRequest["settings"],
-) {
-  if (settings?.perm === undefined) return false
-  const choice = permissionChoice(source.agent, settings)
-  return choice.perm === expected.perm && choice.permMode === expected.permMode
+  journal: FreshJournal | null,
+  sequence: number,
+  stopped: boolean,
+): void {
+  if (stopped) {
+    const validStopped =
+      journal?.sequence === sequence &&
+      source.guardedRestart?.sequence === sequence &&
+      source.guardedRestart.valid === true &&
+      source.cleanup?.complete === true
+    if (!validStopped)
+      throw new Error(
+        "The previous session’s guarded cleanup is not verified. Resume it explicitly.",
+      )
+  } else if (acceptedStopSequence(source) !== sequence) {
+    throw new Error("The agent is no longer at that idle boundary. Wait for its turn to finish.")
+  }
 }
 
-/** Only a server-allocated, guarded fresh destination can continue an already accepted Bypass. */
-export async function acceptedFreshPermission(
+async function reuseReadyDestination(
+  fc: FreshContext,
+  source: RunRecord,
+  existing: RunRecord,
+  journal: FreshJournal | null,
+): Promise<RunRecord> {
+  const stopped = source.status === "stopped" || source.status === "failed"
+  if (!stopped || source.cleanup?.complete !== true || journal?.sequence !== fc.sequence)
+    throw new Error("The previous conversation’s cleanup is not verified.")
+  if (!journal) throw new Error("The newer conversation has no matching fresh request.")
+  await fc.authorize()
+  await fc.persist({ ...journal, state: "started", destination: existing.id })
+  return existing
+}
+
+async function prepareFreshRequest(
+  fc: FreshContext,
+  source: RunRecord,
+  key: string,
+): Promise<FreshPreparation> {
+  const prepared = await fc.deps.prepare(source, key)
+  assertValidPreparedRequest(fc.ctx, source, readRun(fc.ctx.home, fc.id), prepared.request, key)
+  const collision = listRuns(fc.ctx.home).find((candidate) => candidate.idempotencyKey === key)
+  if (collision && !linked(source, collision, key))
+    throw new Error(
+      "The fresh conversation key belongs to an unverified destination. The previous session is kept.",
+    )
+  await fc.authorize()
+  if (!(await fc.deps.unchanged(prepared)))
+    throw new Error("The task changed during preparation. The previous conversation is kept.")
+  return prepared
+}
+
+async function stopActiveSource(
+  fc: FreshContext,
+  source: RunRecord,
+  prepared: FreshPreparation,
+  key: string,
+): Promise<RunRecord> {
+  if (!(await fc.deps.childrenIdle(source)))
+    throw new Error("Active or unknown subagents must finish before starting fresh.")
+  await fc.authorize()
+  await fc.persist({
+    version: 1,
+    generation: fc.generation,
+    sequence: fc.sequence,
+    key,
+    state: "prepared",
+    context: prepared.context,
+    sourceSession: source.nativeSession as string,
+  })
+  const stopped = await fc.deps.stop(source)
+  if (!isGuardedStopped(stopped, fc.generation, fc.sequence))
+    throw new Error(
+      "The old session has not finished guarded cleanup. No new conversation was started.",
+    )
+  return stopped
+}
+
+async function launchFreshDestination(
+  fc: FreshContext,
+  source: RunRecord,
+  prepared: FreshPreparation,
+  journal: FreshJournal,
+  existing: RunRecord | undefined,
+): Promise<RunRecord> {
+  await fc.persist({ ...journal, state: "source-stopped" })
+  let destination = existing
+  try {
+    await fc.authorize()
+    if (!(await fc.deps.unchanged(prepared)))
+      throw new Error(
+        "The task changed. Resume the previous conversation or explicitly try fresh again.",
+      )
+    if (!destination) {
+      destination = await fc.deps.allocate(prepared, source)
+      if (!linked(source, destination, journal.key))
+        throw new Error("The new conversation identity could not be verified.")
+      await fc.persist({ ...journal, state: "source-stopped", destination: destination.id })
+    }
+    await fc.authorize()
+    destination = await fc.deps.start(destination, prepared)
+    if (!(await fc.deps.ready(destination, source)))
+      throw new Error(
+        "The new native conversation has not confirmed its binding. Its history is kept; retry explicitly.",
+      )
+    await fc.persist({ ...journal, state: "started", destination: destination.id })
+    return destination
+  } catch (cause) {
+    if (destination) {
+      try {
+        await fc.deps.failed?.(destination)
+      } catch {
+        // The kept destination stays explicit; an uncertain process never grants Resume old.
+      }
+    }
+    await fc.persist({
+      ...journal,
+      state: "failed",
+      ...(destination ? { destination: destination.id } : {}),
+    })
+    throw cause
+  }
+}
+
+async function loadFreshSourceAndJournal(
   ctx: Ctx,
-  destination: RunRecord,
-  settings: StartRequest["settings"],
-): Promise<boolean> {
-  const previous = destination.previousRun
-  let source = previous && readRun(ctx.home, previous.id)
+  id: string,
+  generation: number,
+): Promise<{ source: RunRecord; journal: FreshJournal | null }> {
+  const source = readRun(ctx.home, id)
   if (
     !source ||
-    !linked(source, destination, freshKey(source.id, source.generation)) ||
-    !["stopped", "failed"].includes(source.status) ||
-    source.cleanup?.complete !== true
+    source.generation !== generation ||
+    source.agent === "other" ||
+    !source.nativeSession
   )
-    return false
-  const journal = await readFreshJournal(ctx, source)
-  source = readRun(ctx.home, source.id)
-  if (
-    !source ||
-    !linked(source, destination, freshKey(source.id, source.generation)) ||
-    !samePurpose(source, destination) ||
-    !["stopped", "failed"].includes(source.status) ||
-    source.cleanup?.complete !== true
-  )
-    return false
-  if (
-    !journal ||
-    journal.generation !== source.generation ||
-    journal.sourceSession !== source.nativeSession ||
-    journal.destination !== destination.id ||
-    !["source-stopped", "started"].includes(journal.state) ||
-    source.fresh?.destination !== destination.id ||
-    source.fresh.key !== journal.key ||
-    source.fresh.state !== journal.state ||
-    source.fresh.sequence !== journal.sequence ||
-    source.fresh.generation !== source.generation ||
-    source.guardedRestart?.valid !== true ||
-    source.guardedRestart.sequence !== journal.sequence
-  )
-    return false
-  const permission = freshPermission(ctx, source)
-  return (
-    samePermission(source, permission, destination.settings) &&
-    samePermission(source, permission, settings)
-  )
+    throw new Error("This conversation changed. Open its current window again.")
+  let journal = await readFreshJournal(ctx, source)
+  if (journal && journal.generation !== generation) journal = null
+  if (journal && journal.sourceSession !== source.nativeSession)
+    throw new Error(
+      "The fresh request belongs to another native session. The previous session is kept.",
+    )
+  return { source, journal }
+}
+
+function createFreshContext(input: {
+  ctx: Ctx
+  id: string
+  generation: number
+  sequence: number
+  deps: FreshDependencies
+  onJournal: (value: FreshJournal) => void
+}): FreshContext {
+  const { ctx, id, generation, sequence, deps, onJournal } = input
+  return {
+    ctx,
+    id,
+    generation,
+    sequence,
+    deps,
+    authorize: async () => {
+      if (!(await deps.authorized()))
+        throw new Error(
+          "This window no longer controls the conversation. The previous session is kept.",
+        )
+    },
+    persist: async (value: FreshJournal) => {
+      await ctx.fs.atomicWrite(freshPath(ctx, { id }), JSON.stringify(value))
+      const {
+        version: _version,
+        context: _context,
+        sourceSession: _sourceSession,
+        ...state
+      } = value
+      updateRun(ctx.home, id, generation, { fresh: state })
+      onJournal(value)
+    },
+  }
+}
+
+async function runFreshLocked(
+  ctx: Ctx,
+  id: string,
+  generation: number,
+  sequence: number,
+  deps: FreshDependencies,
+): Promise<RunRecord> {
+  let journal: FreshJournal | null = null
+  const fc = createFreshContext({
+    ctx,
+    id,
+    generation,
+    sequence,
+    deps,
+    onJournal: (value) => {
+      journal = value
+    },
+  })
+  await fc.authorize()
+  const loaded = await loadFreshSourceAndJournal(ctx, id, generation)
+  let source = loaded.source
+  journal = loaded.journal
+  const existing = freshDestination(ctx, source)
+  if (existing && (await deps.ready(existing, source)))
+    return reuseReadyDestination(fc, source, existing, journal)
+  const stopped = source.status === "stopped" || source.status === "failed"
+  assertSourceBoundary(source, journal, sequence, stopped)
+  if (!stopped && !(await deps.childrenIdle(source)))
+    throw new Error("Active or unknown subagents must finish before starting fresh.")
+  const key = freshKey(id, generation)
+  const prepared = await prepareFreshRequest(fc, source, key)
+  if (!stopped) source = await stopActiveSource(fc, source, prepared, key)
+  if (!journal)
+    throw new Error("The fresh request could not be saved. The previous conversation is kept.")
+  return launchFreshDestination(fc, source, prepared, journal, existing)
 }
 
 /** Only an explicit, currently controlling request invokes this transaction; startup never does. */
@@ -142,166 +280,8 @@ export async function freshConversation(
   deps: FreshDependencies,
 ): Promise<RunRecord> {
   return ctx.fs.withLock(join(runDir(ctx.home, id), ".bind.lock"), () =>
-    ctx.fs.withLock(join(runDir(ctx.home, id), "control.lock"), async () => {
-      const authorize = async () => {
-        if (!(await deps.authorized()))
-          throw new Error(
-            "This window no longer controls the conversation. The previous session is kept.",
-          )
-      }
-      await authorize()
-      const initial = readRun(ctx.home, id)
-      let source = initial
-      if (
-        !source ||
-        source.generation !== generation ||
-        source.agent === "other" ||
-        !source.nativeSession
-      )
-        throw new Error("This conversation changed. Open its current window again.")
-      let journal = await readFreshJournal(ctx, source)
-      if (journal && journal.generation !== generation) journal = null
-      if (journal && journal.sourceSession !== source.nativeSession)
-        throw new Error(
-          "The fresh request belongs to another native session. The previous session is kept.",
-        )
-      const persist = async (value: FreshJournal) => {
-        await ctx.fs.atomicWrite(freshPath(ctx, { id }), JSON.stringify(value))
-        const {
-          version: _version,
-          context: _context,
-          sourceSession: _sourceSession,
-          ...state
-        } = value
-        updateRun(ctx.home, id, generation, { fresh: state })
-        journal = value
-      }
-      const existing = freshDestination(ctx, source)
-      if (existing && (await deps.ready(existing, source))) {
-        if (
-          !["stopped", "failed"].includes(source.status) ||
-          source.cleanup?.complete !== true ||
-          journal?.sequence !== sequence
-        )
-          throw new Error("The previous conversation’s cleanup is not verified.")
-        if (!journal) throw new Error("The newer conversation has no matching fresh request.")
-        await authorize()
-        await persist({ ...journal, state: "started", destination: existing.id })
-        return existing
-      }
-      const stopped = ["stopped", "failed"].includes(source.status)
-      if (stopped) {
-        if (
-          !journal ||
-          journal.sequence !== sequence ||
-          source.guardedRestart?.sequence !== sequence ||
-          source.guardedRestart.valid !== true ||
-          source.cleanup?.complete !== true
-        )
-          throw new Error(
-            "The previous session’s guarded cleanup is not verified. Resume it explicitly.",
-          )
-      } else if (acceptedStopSequence(source) !== sequence)
-        throw new Error(
-          "The agent is no longer at that idle boundary. Wait for its turn to finish.",
-        )
-      if (!stopped && !(await deps.childrenIdle(source)))
-        throw new Error("Active or unknown subagents must finish before starting fresh.")
-      const key = freshKey(id, generation)
-      const prepared = await deps.prepare(source, key)
-      const request = prepared.request
-      const current = readRun(ctx.home, id)
-      if (
-        !current ||
-        current.generation !== generation ||
-        current.nativeSession !== source.nativeSession ||
-        request.idempotencyKey !== key ||
-        request.agent !== source.agent ||
-        request.cwd !== source.cwd ||
-        !samePurpose(source, request) ||
-        request.purpose.kind === "new-task" ||
-        request.allocateTask === true ||
-        request.works !== "checkout" ||
-        request.branch !== undefined ||
-        request.worktreePath !== undefined ||
-        !samePermission(current, freshPermission(ctx, current), request.settings) ||
-        request.confirmBypass === true
-      )
-        throw new Error(
-          "A fresh conversation must preserve this task, checkout and accepted permissions.",
-        )
-      const collision = listRuns(ctx.home).find((candidate) => candidate.idempotencyKey === key)
-      if (collision && !linked(source, collision, key))
-        throw new Error(
-          "The fresh conversation key belongs to an unverified destination. The previous session is kept.",
-        )
-      await authorize()
-      if (!(await deps.unchanged(prepared)))
-        throw new Error("The task changed during preparation. The previous conversation is kept.")
-      if (!stopped) {
-        if (!(await deps.childrenIdle(source)))
-          throw new Error("Active or unknown subagents must finish before starting fresh.")
-        await authorize()
-        await persist({
-          version: 1,
-          generation,
-          sequence,
-          key,
-          state: "prepared",
-          context: prepared.context,
-          sourceSession: source.nativeSession,
-        })
-        source = await deps.stop(source)
-        if (
-          source.generation !== generation ||
-          source.status !== "stopped" ||
-          source.cleanup?.complete !== true ||
-          source.guardedRestart?.sequence !== sequence ||
-          source.guardedRestart.valid !== true
-        )
-          throw new Error(
-            "The old session has not finished guarded cleanup. No new conversation was started.",
-          )
-      }
-      if (!journal)
-        throw new Error("The fresh request could not be saved. The previous conversation is kept.")
-      await persist({ ...journal, state: "source-stopped" })
-      let destination = existing
-      try {
-        await authorize()
-        if (!(await deps.unchanged(prepared)))
-          throw new Error(
-            "The task changed. Resume the previous conversation or explicitly try fresh again.",
-          )
-        if (!destination) {
-          destination = await deps.allocate(prepared, source)
-          if (!linked(source, destination, key))
-            throw new Error("The new conversation identity could not be verified.")
-          await persist({ ...journal, state: "source-stopped", destination: destination.id })
-        }
-        await authorize()
-        destination = await deps.start(destination, prepared)
-        if (!(await deps.ready(destination, source)))
-          throw new Error(
-            "The new native conversation has not confirmed its binding. Its history is kept; retry explicitly.",
-          )
-        await persist({ ...journal, state: "started", destination: destination.id })
-        return destination
-      } catch (cause) {
-        if (destination) {
-          try {
-            await deps.failed?.(destination)
-          } catch {
-            // The kept destination stays explicit; an uncertain process never grants Resume old.
-          }
-        }
-        await persist({
-          ...journal,
-          state: "failed",
-          ...(destination ? { destination: destination.id } : {}),
-        })
-        throw cause
-      }
-    }),
+    ctx.fs.withLock(join(runDir(ctx.home, id), "control.lock"), () =>
+      runFreshLocked(ctx, id, generation, sequence, deps),
+    ),
   )
 }

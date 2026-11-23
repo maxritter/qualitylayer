@@ -43,22 +43,14 @@ export async function previewBytes(file: ShownFile, limit: number, signal: Abort
   return bytes
 }
 
-export function AttachmentPreview({
-  file,
-  close,
-  returnFocus,
-}: {
-  file: ShownFile
-  close: () => void
-  returnFocus: RefObject<HTMLElement | null>
-}) {
-  const kind = attachmentPreviewKind(file)
-  const [result, setResult] = useState<{
-    text?: string
-    clipped?: boolean
-    error?: string
-  }>()
-  const [actual, setActual] = useState(false)
+type PreviewResult = {
+  text?: string
+  clipped?: boolean
+  error?: string
+}
+
+function useTextPreview(file: ShownFile, kind: ReturnType<typeof attachmentPreviewKind>) {
+  const [result, setResult] = useState<PreviewResult>()
   useEffect(() => {
     if (kind !== "text") return
     const abort = new AbortController()
@@ -85,6 +77,64 @@ export function AttachmentPreview({
       abort.abort()
     }
   }, [file, kind])
+  return { result, setResult }
+}
+
+function PreviewBody({
+  file,
+  kind,
+  actual,
+  result,
+  onImageError,
+}: {
+  file: ShownFile
+  kind: ReturnType<typeof attachmentPreviewKind>
+  actual: boolean
+  result: PreviewResult | undefined
+  onImageError: () => void
+}) {
+  return (
+    <div className="cm-preview-body" data-kind={kind} data-actual={actual}>
+      {kind === "image" && !result?.error ? (
+        <img src={file.url ?? undefined} alt={file.name} onError={onImageError} />
+      ) : null}
+      {result?.error ? <p role="alert">{result.error}</p> : null}
+      {kind === "pdf" ? (
+        <p>PDF preview is unavailable in this view. Download the file to inspect it.</p>
+      ) : null}
+      {kind === "text" && result?.text !== undefined ? (
+        <>
+          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll long file contents */}
+          <section tabIndex={0} aria-label={`Contents of ${file.name}`}>
+            <pre>{result.text}</pre>
+          </section>
+          {result.clipped ? (
+            <p className="cm-preview-note">
+              Showing the first 128 KB. Download the file to read all of it.
+            </p>
+          ) : null}
+        </>
+      ) : null}
+      {kind === "text" && !result ? <p role="status">Reading attachment…</p> : null}
+      {kind === "other" ? (
+        <p>This file type has no preview. Download the file to inspect it.</p>
+      ) : null}
+    </div>
+  )
+}
+
+export function AttachmentPreview({
+  file,
+  close,
+  returnFocus,
+}: {
+  file: ShownFile
+  close: () => void
+  returnFocus: RefObject<HTMLElement | null>
+}) {
+  const kind = attachmentPreviewKind(file)
+  const { result, setResult } = useTextPreview(file, kind)
+  const [actual, setActual] = useState(false)
   return (
     <FullscreenDialog
       open
@@ -118,38 +168,15 @@ export function AttachmentPreview({
         </>
       }
     >
-      <div className="cm-preview-body" data-kind={kind} data-actual={actual}>
-        {kind === "image" && !result?.error ? (
-          <img
-            src={file.url ?? undefined}
-            alt={file.name}
-            onError={() =>
-              setResult({ error: "Could not display this image. Download it to inspect it." })
-            }
-          />
-        ) : null}
-        {result?.error ? <p role="alert">{result.error}</p> : null}
-        {kind === "pdf" ? (
-          <p>PDF preview is unavailable in this view. Download the file to inspect it.</p>
-        ) : null}
-        {kind === "text" && result?.text !== undefined ? (
-          <>
-            {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll long file contents */}
-            <section tabIndex={0} aria-label={`Contents of ${file.name}`}>
-              <pre>{result.text}</pre>
-            </section>
-            {result.clipped ? (
-              <p className="cm-preview-note">
-                Showing the first 128 KB. Download the file to read all of it.
-              </p>
-            ) : null}
-          </>
-        ) : null}
-        {kind === "text" && !result ? <p role="status">Reading attachment…</p> : null}
-        {kind === "other" ? (
-          <p>This file type has no preview. Download the file to inspect it.</p>
-        ) : null}
-      </div>
+      <PreviewBody
+        file={file}
+        kind={kind}
+        actual={actual}
+        result={result}
+        onImageError={() =>
+          setResult({ error: "Could not display this image. Download it to inspect it." })
+        }
+      />
     </FullscreenDialog>
   )
 }

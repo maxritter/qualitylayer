@@ -90,6 +90,12 @@ export async function sourceDirectory(
 ): Promise<string[]> {
   return (await sourceEntries(data, path, optional)).map((entry) => entry.name)
 }
+const STAMP_FIELDS = ["kind", "digest", "identity", "version", "rootPath", "rootIdentity"] as const
+
+function stampMatches(actual: SourceStamp | undefined, expected: SourceStamp): boolean {
+  return actual !== undefined && STAMP_FIELDS.every((field) => actual[field] === expected[field])
+}
+
 export async function verifySources(
   stamps: Map<string, SourceStamp>,
   signal?: AbortSignal,
@@ -109,16 +115,7 @@ export async function verifySources(
       else if (expected.kind === "missing" && expected.directory)
         await sourceDirectory(current, expected.path, true)
       else await readSource(current, expected.path, expected.kind === "missing")
-      const actual = current.stamps.get(expected.path)
-      if (
-        !actual ||
-        actual.kind !== expected.kind ||
-        actual.digest !== expected.digest ||
-        actual.identity !== expected.identity ||
-        actual.version !== expected.version ||
-        actual.rootPath !== expected.rootPath ||
-        actual.rootIdentity !== expected.rootIdentity
-      )
+      if (!stampMatches(current.stamps.get(expected.path), expected))
         throw new Error("Pilot source changed since the preview. Scan it again before importing.")
     }
   } finally {

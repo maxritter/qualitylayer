@@ -46,6 +46,28 @@ export function fragmentsReady(): Promise<FragmentsModule> {
   return pending
 }
 
+function subscribeFragments(
+  onReady: (next: FragmentsModule) => void,
+  onError: (message: string) => void,
+): () => void {
+  let live = true
+  const done = (next: FragmentsModule) => {
+    if (live) onReady(next)
+  }
+  if (loaded !== null) {
+    done(loaded)
+  } else {
+    waiting.add(done)
+    fragmentsReady().catch((cause: unknown) => {
+      if (live) onError(cause instanceof Error ? cause.message : String(cause))
+    })
+  }
+  return () => {
+    live = false
+    waiting.delete(done)
+  }
+}
+
 /**
  * The parsers, null until they have arrived (the component draws again when they do), or why they
  * could not be fetched. A failed fetch is not kept: the next component that asks fetches again.
@@ -55,21 +77,7 @@ export function useFragments(): { fragments: FragmentsModule | null; error: stri
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     if (module !== null) return
-    let live = true
-    const done = (next: FragmentsModule) => {
-      if (live) setModule(next)
-    }
-    if (loaded !== null) done(loaded)
-    else {
-      waiting.add(done)
-      fragmentsReady().catch((cause: unknown) => {
-        if (live) setError(cause instanceof Error ? cause.message : String(cause))
-      })
-    }
-    return () => {
-      live = false
-      waiting.delete(done)
-    }
+    return subscribeFragments(setModule, setError)
   }, [module])
   return { fragments: module, error: module === null ? error : null }
 }

@@ -1,86 +1,22 @@
 import { existsSync } from "node:fs"
-import { win32 } from "node:path"
 import { stopOwnedSubprocess } from "../core/platform.ts"
+import { boundedText, FolderPickerError, folderPickerCommand } from "./folder-picker-command.ts"
+
+export { FolderPickerError, folderPickerCommand } from "./folder-picker-command.ts"
 
 /** Human selection may stay open; idle servers never start a chooser. */
 export const FOLDER_PICK_MS = 5 * 60_000
-const OUTPUT_LIMIT = 8192
-
-export class FolderPickerError extends Error {
-  constructor(
-    public code: "picker_unavailable" | "picker_busy" | "picker_failed",
-    message: string,
-  ) {
-    super(message)
-  }
-}
 
 export type FolderPicker = {
   pick(path: string, signal?: AbortSignal): Promise<string | null>
   close(): Promise<void>
 }
 
-const MAC =
-  'function run(argv) { var app = Application.currentApplication(); app.includeStandardAdditions = true; return JSON.stringify({path: app.chooseFolder({withPrompt: "Choose a project folder", defaultLocation: Path(argv[0])}).toString()}); }'
-const WINDOWS =
-  '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; try { $dialog.Description = "Choose a project folder"; $dialog.SelectedPath = $env:QUALITYLAYER_PICKER_PATH; if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { @{path=$dialog.SelectedPath} | ConvertTo-Json -Compress } else { @{path=$null} | ConvertTo-Json -Compress } } finally { $dialog.Dispose() }'
-
-export function folderPickerCommand(
-  platform: string,
-  path: string,
-  env: NodeJS.ProcessEnv,
-  exists: (path: string) => boolean = existsSync,
-): { argv: string[]; json: boolean } {
-  if (platform === "darwin" && exists("/usr/bin/osascript"))
-    return { argv: ["/usr/bin/osascript", "-l", "JavaScript", "-e", MAC, path], json: true }
-  if (platform === "win32") {
-    const program = win32.join(
-      env.SystemRoot ?? "C:\\Windows",
-      "System32",
-      "WindowsPowerShell",
-      "v1.0",
-      "powershell.exe",
-    )
-    if (exists(program))
-      return {
-        argv: [program, "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", WINDOWS],
-        json: true,
-      }
-  }
-  if (platform === "linux" && (env.DISPLAY || env.WAYLAND_DISPLAY)) {
-    if (exists("/usr/bin/zenity"))
-      return {
-        argv: [
-          "/usr/bin/zenity",
-          "--file-selection",
-          "--directory",
-          "--title=Choose a project folder",
-          `--filename=${path.endsWith("/") ? path : `${path}/`}`,
-        ],
-        json: false,
-      }
-    if (exists("/usr/bin/kdialog"))
-      return {
-        argv: [
-          "/usr/bin/kdialog",
-          "--getexistingdirectory",
-          path,
-          "--title",
-          "Choose a project folder",
-        ],
-        json: false,
-      }
-  }
-  throw new FolderPickerError(
-    "picker_unavailable",
-    "The native folder picker is unavailable. Enter an absolute folder path.",
-  )
-}
-
 type Child = Pick<Bun.Subprocess, "exited" | "kill"> & {
   stdout: ReadableStream<Uint8Array>
   stderr: ReadableStream<Uint8Array>
 }
+
 type PickerHost = {
   platform: string
   env: NodeJS.ProcessEnv
@@ -89,26 +25,14 @@ type PickerHost = {
   lifetimeMs?: number
 }
 
-async function boundedText(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-  let bytes = 0
-  let text = ""
-  try {
-    for (;;) {
-      const chunk = await reader.read()
-      if (chunk.done) return text + decoder.decode()
-      bytes += chunk.value.byteLength
-      if (bytes > OUTPUT_LIMIT) throw new Error("The folder picker returned too much output.")
-      text += decoder.decode(chunk.value, { stream: true })
-    }
-  } finally {
-    reader.releaseLock()
-  }
+type ActiveSlot = {
+  abort: AbortController
+  done: Promise<string | null>
+  cleanupError: Error | null
 }
 
-export function systemFolderPicker(host?: PickerHost): FolderPicker {
-  const own: PickerHost = host ?? {
+function defaultPickerHost(): PickerHost {
+  return {
     platform: process.platform,
     env: process.env,
     exists: existsSync,
@@ -121,11 +45,79 @@ export function systemFolderPicker(host?: PickerHost): FolderPicker {
         windowsHide: true,
       }),
   }
-  let active: {
-    abort: AbortController
-    done: Promise<string | null>
-    cleanupError: Error | null
-  } | null = null
+}
+
+function wasPickerCancelled(platform: string, code: number, stderr: string): boolean {
+  if (platform === "linux" && code === 1 && stderr.trim() === "") return true
+  return platform === "darwin" && /\(-128\)\s*$/.test(stderr)
+}
+
+function parsePickerOutput(
+  platform: string,
+  json: boolean,
+  result: [string, string, number],
+): string | null {
+  const [stdout, stderr, code] = result
+  if (code !== 0) {
+    if (wasPickerCancelled(platform, code, stderr)) return null
+    throw new Error(
+      "The native folder picker could not select a folder. Try again or enter a path.",
+    )
+  }
+  const value = json
+    ? (JSON.parse(stdout) as { path?: unknown }).path
+    : stdout.replace(/\r?\n$/, "")
+  if (value === null) return null
+  if (typeof value !== "string" || value === "")
+    throw new Error("The folder picker returned no folder.")
+  return value
+}
+
+async function runPickerSlot(
+  own: PickerHost,
+  slot: ActiveSlot,
+  path: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  let child: Child | undefined
+  let reading: Promise<unknown> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cancel = () => slot.abort.abort(new Error("Folder selection was cancelled."))
+  let rejectAbort = (_cause: unknown) => {}
+  const aborted = new Promise<never>((_, reject) => {
+    rejectAbort = reject
+  })
+  const onAbort = () => rejectAbort(slot.abort.signal.reason)
+  slot.abort.signal.addEventListener("abort", onAbort, { once: true })
+  signal?.addEventListener("abort", cancel, { once: true })
+  try {
+    const command = folderPickerCommand(own.platform, path, own.env, own.exists)
+    child = own.spawn(command.argv, path)
+    timer = setTimeout(
+      () => slot.abort.abort(new Error("Folder selection timed out. Try again.")),
+      own.lifetimeMs ?? FOLDER_PICK_MS,
+    )
+    const io = Promise.all([boundedText(child.stdout), boundedText(child.stderr), child.exited])
+    reading = io
+    return parsePickerOutput(own.platform, command.json, await Promise.race([io, aborted]))
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener("abort", cancel)
+    slot.abort.signal.removeEventListener("abort", onAbort)
+    if (child) {
+      await stopOwnedSubprocess(child).catch((cause) => {
+        slot.cleanupError =
+          cause instanceof Error ? cause : new Error("The folder picker could not be stopped.")
+        throw slot.cleanupError
+      })
+    }
+    await reading?.catch(() => {})
+  }
+}
+
+export function systemFolderPicker(host?: PickerHost): FolderPicker {
+  const own = host ?? defaultPickerHost()
+  let active: ActiveSlot | null = null
   return {
     pick(path, signal) {
       if (active)
@@ -133,74 +125,15 @@ export function systemFolderPicker(host?: PickerHost): FolderPicker {
           new FolderPickerError("picker_busy", "A folder picker is already open."),
         )
       if (signal?.aborted) return Promise.reject(new Error("Folder selection was cancelled."))
-      const abort = new AbortController()
-      const slot = {
-        abort,
+      const slot: ActiveSlot = {
+        abort: new AbortController(),
         done: Promise.resolve<string | null>(null),
-        cleanupError: null as Error | null,
+        cleanupError: null,
       }
       active = slot
-      slot.done = (async () => {
-        let child: Child | undefined
-        let reading: Promise<unknown> | undefined
-        let timer: ReturnType<typeof setTimeout> | undefined
-        const reap = async () => {
-          try {
-            if (child) await stopOwnedSubprocess(child)
-          } catch (cause) {
-            slot.cleanupError =
-              cause instanceof Error ? cause : new Error("The folder picker could not be stopped.")
-            throw slot.cleanupError
-          }
-        }
-        const cancel = () => abort.abort(new Error("Folder selection was cancelled."))
-        let rejectAbort = (_cause: unknown) => {}
-        const aborted = new Promise<never>((_, reject) => {
-          rejectAbort = reject
-        })
-        const onAbort = () => rejectAbort(abort.signal.reason)
-        abort.signal.addEventListener("abort", onAbort, { once: true })
-        signal?.addEventListener("abort", cancel, { once: true })
-        try {
-          const command = folderPickerCommand(own.platform, path, own.env, own.exists)
-          child = own.spawn(command.argv, path)
-          timer = setTimeout(
-            () => abort.abort(new Error("Folder selection timed out. Try again.")),
-            own.lifetimeMs ?? FOLDER_PICK_MS,
-          )
-          const io = Promise.all([
-            boundedText(child.stdout),
-            boundedText(child.stderr),
-            child.exited,
-          ])
-          reading = io
-          const [stdout, stderr, code] = await Promise.race([io, aborted])
-          if (code !== 0) {
-            if (
-              (own.platform === "linux" && code === 1 && stderr.trim() === "") ||
-              (own.platform === "darwin" && /\(-128\)\s*$/.test(stderr))
-            )
-              return null
-            throw new Error(
-              "The native folder picker could not select a folder. Try again or enter a path.",
-            )
-          }
-          const value = command.json
-            ? (JSON.parse(stdout) as { path?: unknown }).path
-            : stdout.replace(/\r?\n$/, "")
-          if (value === null) return null
-          if (typeof value !== "string" || value === "")
-            throw new Error("The folder picker returned no folder.")
-          return value
-        } finally {
-          clearTimeout(timer)
-          signal?.removeEventListener("abort", cancel)
-          abort.signal.removeEventListener("abort", onAbort)
-          await reap()
-          await reading?.catch(() => {})
-          if (active === slot) active = null
-        }
-      })()
+      slot.done = runPickerSlot(own, slot, path, signal).finally(() => {
+        if (active === slot && !slot.cleanupError) active = null
+      })
       return slot.done
     },
     async close() {

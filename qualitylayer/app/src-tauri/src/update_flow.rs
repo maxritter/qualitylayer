@@ -295,22 +295,23 @@ pub struct Engine<B: Backend> {
     ready: Option<(Found, B::Payload)>,
 }
 
+pub struct EngineConfig {
+    pub home: PathBuf,
+    pub state: State,
+    pub waits_for_agents: bool,
+    pub poll: Duration,
+    pub now: fn() -> u64,
+}
+
 impl<B: Backend> Engine<B> {
-    pub fn new(
-        backend: B,
-        home: PathBuf,
-        state: State,
-        waits_for_agents: bool,
-        poll: Duration,
-        now: fn() -> u64,
-    ) -> Self {
+    pub fn new(backend: B, config: EngineConfig) -> Self {
         Engine {
             backend,
-            home,
-            waits_for_agents,
-            poll,
-            now,
-            state,
+            home: config.home,
+            waits_for_agents: config.waits_for_agents,
+            poll: config.poll,
+            now: config.now,
+            state: config.state,
             ready: None,
         }
     }
@@ -445,6 +446,76 @@ impl<B: Backend> Engine<B> {
         }
     }
 
+    fn ensure_ready(&mut self) -> Result<(), Installed> {
+        if self.ready.is_some() {
+            return Ok(());
+        }
+        match self.check(true) {
+            Checked::Ready(_) => Ok(()),
+            Checked::UpToDate => Err(Installed::UpToDate),
+            Checked::Failed => Err(Installed::Failed),
+        }
+    }
+
+    fn wait_for_running_agents(&mut self, cancel: &AtomicBool) -> Result<bool, Installed> {
+        let running = self.backend.running();
+        if !self.waits_for_agents || running == 0 {
+            return Ok(false);
+        }
+        say_err!("QualityLayer: waiting for {}", agent_commands(running));
+        self.put(|state| {
+            state.phase = Phase::Waiting;
+            state.waiting_for = Some(running);
+        });
+        if self.nap(cancel) {
+            self.back_to_ready();
+            return Err(Installed::Cancelled);
+        }
+        Ok(true)
+    }
+
+    fn acquire_update_lock(&mut self, lock: &Path) -> Result<bool, Installed> {
+        match take_lock(lock, std::process::id()) {
+            Ok(true) => {
+                if self.waits_for_agents && self.backend.running() > 0 {
+                    let _ = fs::remove_file(lock);
+                    return Ok(false);
+                }
+                Ok(true)
+            }
+            Ok(false) => {
+                std::thread::sleep(self.poll);
+                Ok(false)
+            }
+            Err(error) => {
+                self.fail(&Failure {
+                    code: "install",
+                    message: format!("cannot take the update lock: {error}"),
+                });
+                Err(Installed::Failed)
+            }
+        }
+    }
+
+    fn run_locked_install(&mut self, lock: &Path) -> Installed {
+        self.put(|state| {
+            state.phase = Phase::Installing;
+            state.waiting_for = None;
+        });
+        let Some((found, payload)) = self.ready.as_ref() else {
+            let _ = fs::remove_file(lock);
+            return Installed::UpToDate;
+        };
+        match self.backend.install(payload, lock) {
+            Ok(()) => Installed::Replaced(found.version.clone()),
+            Err(failure) => {
+                let _ = fs::remove_file(lock);
+                self.fail(&failure);
+                Installed::Failed
+            }
+        }
+    }
+
     /// Install the update, as the person asked. With none downloaded yet it is looked for and
     /// downloaded first. Where running agent commands hold their program file (Windows) it waits for
     /// them, until `cancel` is set while it waits (a cancel from before is forgotten). Elsewhere
@@ -452,63 +523,21 @@ impl<B: Backend> Engine<B> {
     /// replaced.
     pub fn install(&mut self, cancel: &AtomicBool) -> Installed {
         cancel.store(false, Ordering::SeqCst);
-        if self.ready.is_none() {
-            match self.check(true) {
-                Checked::Ready(_) => {}
-                Checked::UpToDate => return Installed::UpToDate,
-                Checked::Failed => return Installed::Failed,
-            }
+        if let Err(outcome) = self.ensure_ready() {
+            return outcome;
         }
         let lock = update_lock::path(&self.home);
         loop {
-            let running = self.backend.running();
-            if self.waits_for_agents && running > 0 {
-                say_err!("QualityLayer: waiting for {}", agent_commands(running));
-                self.put(|state| {
-                    state.phase = Phase::Waiting;
-                    state.waiting_for = Some(running);
-                });
-                if self.nap(cancel) {
-                    self.back_to_ready();
-                    return Installed::Cancelled;
-                }
-                continue;
+            match self.wait_for_running_agents(cancel) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(outcome) => return outcome,
             }
-            // No new command starts from here; look once more, now that nothing can.
-            match take_lock(&lock, std::process::id()) {
-                Ok(true) => {}
-                Ok(false) => {
-                    std::thread::sleep(self.poll);
-                    continue;
-                }
-                Err(error) => {
-                    self.fail(&Failure {
-                        code: "install",
-                        message: format!("cannot take the update lock: {error}"),
-                    });
-                    return Installed::Failed;
-                }
+            match self.acquire_update_lock(&lock) {
+                Ok(true) => return self.run_locked_install(&lock),
+                Ok(false) => continue,
+                Err(outcome) => return outcome,
             }
-            if self.waits_for_agents && self.backend.running() > 0 {
-                let _ = fs::remove_file(&lock);
-                continue;
-            }
-            self.put(|state| {
-                state.phase = Phase::Installing;
-                state.waiting_for = None;
-            });
-            let Some((found, payload)) = self.ready.as_ref() else {
-                let _ = fs::remove_file(&lock);
-                return Installed::UpToDate;
-            };
-            return match self.backend.install(payload, &lock) {
-                Ok(()) => Installed::Replaced(found.version.clone()),
-                Err(failure) => {
-                    let _ = fs::remove_file(&lock);
-                    self.fail(&failure);
-                    Installed::Failed
-                }
-            };
         }
     }
 
@@ -660,11 +689,13 @@ mod tests {
     fn build_engine(home: &Path, backend: Fake, waits: bool) -> Engine<Fake> {
         Engine::new(
             backend,
-            home.to_path_buf(),
-            State::idle("12.0.0-beta.13"),
-            waits,
-            Duration::ZERO,
-            clock,
+            EngineConfig {
+                home: home.to_path_buf(),
+                state: State::idle("12.0.0-beta.13"),
+                waits_for_agents: waits,
+                poll: Duration::ZERO,
+                now: clock,
+            },
         )
     }
 
@@ -782,11 +813,13 @@ mod tests {
         write_state(&home, &state).unwrap();
         let mut engine = Engine::new(
             fake(&home, &log),
-            home.clone(),
-            state,
-            false,
-            Duration::ZERO,
-            clock,
+            EngineConfig {
+                home: home.clone(),
+                state,
+                waits_for_agents: false,
+                poll: Duration::ZERO,
+                now: clock,
+            },
         );
         assert_eq!(
             read_state(&home).unwrap().updated.as_deref(),

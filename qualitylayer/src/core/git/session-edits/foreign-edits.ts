@@ -1,165 +1,69 @@
-import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
-import {
-  asObject,
-  CONTENT_LIMIT,
-  editContent,
-  editsDir,
-  KEEP_MS,
-  readEdits,
-  type SessionEdits,
-} from "./records.ts"
+import { claimTime, ForeignMatcher, type ForeignWitness } from "./foreign-matcher.ts"
+import { editsDir, KEEP_MS, readEdits, type SessionEdits } from "./records.ts"
 
-type ForeignWitness = { task: string; digest: string }
-type LatestEdit = { edits: SessionEdits[]; latest: SessionEdits; digest: string }
-
-/** Receipt ownership is evidence only with an explicit owner and a possible observation time. */
-function claimTime(row: SessionEdits, path: string, now: number): number | null {
-  if (!Object.hasOwn(row.files, path) || row.task.trim() === "") return null
-  const at = row.files[path]
-  return typeof at === "number" && Number.isFinite(at) && at <= now ? at : null
-}
-
-/** One attribution pass shares its read allowance across receipt metadata and current files. */
-class ForeignMatcher {
-  private readonly records: SessionEdits[] = []
-  private budget = 4 * CONTENT_LIMIT
-
-  constructor(
-    private readonly ctx: Ctx,
-    private readonly repo: { id: string; root: string },
-    private readonly task: string,
-    private readonly lasting: boolean,
-  ) {}
-
-  private async load(): Promise<boolean> {
-    try {
-      const names = await this.ctx.fs.readdir(editsDir(this.ctx, this.repo.id))
-      if (names.length > 128 || !this.ctx.fs.readRegularFile) return false
-      for (const name of names.filter((name) => name.endsWith(".json"))) {
-        const path = join(editsDir(this.ctx, this.repo.id), name)
-        const bytes = await this.ctx.fs.readRegularFile(path, Math.min(this.budget, CONTENT_LIMIT))
-        this.budget -= bytes.length
-        const edits = JSON.parse(
-          new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-        ) as SessionEdits
-        if (typeof edits.task !== "string" || asObject(edits.files) === null) return false
-        this.records.push(edits)
-      }
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  private latest(path: string, now: number): LatestEdit | null {
-    const invalid = this.records.some(
-      (row) => Object.hasOwn(row.files, path) && claimTime(row, path, now) === null,
-    )
-    if (invalid) return null
-    const edits = this.records
-      .filter((row) => {
-        const at = claimTime(row, path, now)
-        return at !== null && (this.lasting || now - at < KEEP_MS)
-      })
-      .sort((a, b) => (b.files[path] as number) - (a.files[path] as number))
-    const latest = edits[0]
-    const digest = latest?.contents?.[path]
-    if (!latest || latest.task === this.task || latest.task === "") return null
-    if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return null
-    // Different tasks observed at the same time cannot establish a unique owner.
-    if (
-      edits.some(
-        (row) =>
-          row !== latest && row.files[path] === latest.files[path] && row.task !== latest.task,
-      )
-    )
-      return null
-    return { edits, latest, digest }
-  }
-
-  private async ownEditsCommitted(path: string, own: SessionEdits[]): Promise<boolean> {
-    if (own.length === 0) return true
-    if (own.some((row) => typeof row.contents?.[path] !== "string")) return false
-    const size = await this.ctx.git.run(this.repo.root, ["cat-file", "-s", `HEAD:${path}`])
-    if (
-      size.code !== 0 ||
-      !/^\d+$/.test(size.stdout.trim()) ||
-      Number(size.stdout.trim()) > CONTENT_LIMIT
-    )
-      return false
-    const head = await this.ctx.git.run(this.repo.root, ["cat-file", "--filters", `HEAD:${path}`])
-    if (head.code !== 0 || head.stdout.includes("\uFFFD")) return false
-    const digest = createHash("sha256").update(head.stdout).digest("hex")
-    return own.every((row) => row.contents?.[path] === digest)
-  }
-
-  private async witness(path: string, candidate: LatestEdit): Promise<ForeignWitness | null> {
-    const { edits, latest, digest } = candidate
-    const committed = await this.ctx.git.run(this.repo.root, [
-      "log",
-      "-1",
-      "--format=%ct",
-      "--",
-      path,
-    ])
-    const committedAt = Number(committed.stdout.trim()) * 1000
-    if (
-      committed.code !== 0 ||
-      !Number.isFinite(committedAt) ||
-      (latest.files[path] as number) <= committedAt
-    )
-      return null
-    const own = edits.filter(
-      (row) => row.task === this.task && (row.files[path] as number) > committedAt,
-    )
-    if (!(await this.ownEditsCommitted(path, own))) return null
-    const size = await this.ctx.fs.stat?.(join(this.repo.root, path))
-    if (!size || size.size > Math.min(this.budget, CONTENT_LIMIT)) return null
-    const content = await editContent(this.ctx, join(this.repo.root, path), this.budget)
-    this.budget -= content.charged
-    return content.digest === digest ? { task: latest.task, digest } : null
-  }
-
-  async match(paths: string[]): Promise<Record<string, ForeignWitness>> {
-    const found: Record<string, ForeignWitness> = Object.create(null)
-    if (paths.length === 0 || paths.length > 32 || !this.ctx.fs.readRegularFile) return found
-    if (!(await this.load())) return found
-    const now = this.ctx.clock.now()
-    for (const path of paths) {
-      if (this.budget <= 0) break
-      const candidate = this.latest(path, now)
-      if (candidate === null) continue
-      const witness = await this.witness(path, candidate)
-      if (witness !== null) found[path] = witness
-    }
-    return found
-  }
-}
-
-/** Exact current bytes last observed in another task, with no later or ambiguous own edit. */
+/**
+ * Exact current bytes last observed in another task, with no later or ambiguous own edit.
+ * When `lasting` is true (a standing pass), bytes that are still exactly the other task's stay its,
+ * however old.
+ */
 export async function matchingForeignEdits(
   ctx: Ctx,
   repo: { id: string; root: string },
   task: string,
   paths: string[],
-  /** A standing pass asks: bytes that are still exactly the other task's stay its, however old. */
   lasting = false,
 ): Promise<Record<string, ForeignWitness>> {
   return new ForeignMatcher(ctx, repo, task, lasting).match(paths)
 }
 
+async function lastCommitTime(
+  ctx: Ctx,
+  root: string,
+  path: string,
+  cache: Map<string, number>,
+): Promise<number> {
+  const known = cache.get(path)
+  if (known !== undefined) return known
+  const log = await ctx.git.run(root, ["log", "-1", "--format=%ct", "--", path])
+  const at = log.code === 0 ? Number(log.stdout.trim() || 0) * 1000 : 0
+  cache.set(path, at)
+  return at
+}
+
+async function collectForeignPaths(
+  ctx: Ctx,
+  root: string,
+  edits: SessionEdits,
+  state: {
+    paths: string[]
+    now: number
+    lasting: boolean
+    committedAt: Map<string, number>
+    found: Record<string, string>
+  },
+): Promise<void> {
+  for (const path of state.paths) {
+    const at = claimTime(edits, path, state.now)
+    if (at === null || state.found[path] !== undefined) continue
+    if (!state.lasting && state.now - at >= KEEP_MS) continue
+    if (at > (await lastCommitTime(ctx, root, path, state.committedAt)))
+      state.found[path] = edits.task
+  }
+}
+
 /**
  * Of `paths`, those a session building another task changed after the file's latest commit: its
  * edits are likely still uncommitted in the shared checkout. Each maps to that task's slug.
+ * When `lasting` is true (a standing pass), an edit still uncommitted stays the other task's,
+ * however old.
  */
 export async function foreignEdits(
   ctx: Ctx,
   repo: { id: string; root: string },
   task: string,
   paths: string[],
-  /** A standing pass asks: an edit still uncommitted stays the other task's, however old. */
   lasting = false,
 ): Promise<Record<string, string>> {
   const found: Record<string, string> = {}
@@ -169,21 +73,11 @@ export async function foreignEdits(
   } catch {
     return found
   }
-  const now = ctx.clock.now()
-  const committedAt = new Map<string, number>()
+  const state = { paths, now: ctx.clock.now(), lasting, committedAt: new Map(), found }
   for (const name of names.filter((n) => n.endsWith(".json"))) {
     const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits === null || edits.task === task) continue
-    for (const path of paths) {
-      const at = claimTime(edits, path, now)
-      if (at === null || found[path] !== undefined) continue
-      if (!lasting && now - at >= KEEP_MS) continue
-      if (!committedAt.has(path)) {
-        const log = await ctx.git.run(repo.root, ["log", "-1", "--format=%ct", "--", path])
-        committedAt.set(path, log.code === 0 ? Number(log.stdout.trim() || 0) * 1000 : 0)
-      }
-      if (at > (committedAt.get(path) ?? 0)) found[path] = edits.task
-    }
+    if (edits !== null && edits.task !== task)
+      await collectForeignPaths(ctx, repo.root, edits, state)
   }
   return found
 }

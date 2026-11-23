@@ -2,23 +2,28 @@ import type { Ctx } from "../../ctx.ts"
 import type { MemoryRecord } from "../../memory-contracts.ts"
 import { PERSONAL_PROJECT } from "../../memory-contracts.ts"
 import type { PilotCandidate, PilotReceipt, PilotReview } from "../../pilot-memory-contracts.ts"
+import type { MemoryCatalogAdapter } from "./index.ts"
+import { planPilotRecords, requirePilotCapacity } from "./pilot-identities.ts"
 import {
-  bindPilotAliases,
-  pilotIdentity,
-  planPilotRecords,
-  requirePilotCapacity,
-} from "./pilot-identities.ts"
+  EMBED_BATCH_SIZE,
+  flushEmbeddings,
+  indexMigratedRecord,
+  pushIssue,
+  receiptGroup,
+  saveMigratedItem,
+} from "./pilot-migration-helpers.ts"
 import type { MemoryProjects } from "./projects.ts"
 import type { MemoryRuntime } from "./runtime.ts"
-import { validateRecord } from "./validation.ts"
 
 export type MappedPilotRecord = { record: PilotCandidate; project: string }
+
 export class PilotMigrationWriter {
   constructor(
     private readonly ctx: Ctx,
     private readonly runtime: MemoryRuntime,
     private readonly projects: MemoryProjects,
   ) {}
+
   async review(input: MappedPilotRecord[], leftOut: number): Promise<PilotReview> {
     const db = await this.runtime.catalog()
     for (const { record, project } of input) {
@@ -29,13 +34,47 @@ export class PilotMigrationWriter {
     requirePilotCapacity(db, result)
     return result
   }
+
+  private async applyItem(
+    db: MemoryCatalogAdapter,
+    item: MappedPilotRecord,
+    receipt: PilotReceipt,
+    vectors: MemoryRecord[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const group = receiptGroup(receipt, item.record.group, item.project)
+    try {
+      const outcome = saveMigratedItem(db, this.projects, item, this.ctx.clock.now())
+      if (outcome.state === "same") {
+        receipt.alreadyImported++
+        group.alreadyImported++
+        return
+      }
+      receipt.imported++
+      group.imported++
+      await indexMigratedRecord(this.runtime, outcome.record, receipt, signal)
+      vectors.push(outcome.record)
+      if (vectors.length === EMBED_BATCH_SIZE) {
+        await flushEmbeddings(this.runtime, db, vectors, receipt, signal)
+      }
+    } catch (error) {
+      receipt.failed++
+      group.failed++
+      pushIssue(
+        receipt,
+        error instanceof Error ? error.message : "A Pilot memory could not be imported.",
+      )
+    }
+  }
+
   async apply(
     input: MappedPilotRecord[],
     leftOut: number,
     signal?: AbortSignal,
   ): Promise<PilotReceipt> {
-    if (input.some((item) => item.project === PERSONAL_PROJECT))
+    if (input.some((item) => item.project === PERSONAL_PROJECT)) {
       await this.projects.registerPersonal()
+    }
     return await this.runtime.mutate(async (db) => {
       if (!this.projects.enabled(db)) throw new Error("Local memory is paused")
       for (const item of input) this.projects.get(db, item.project)
@@ -58,109 +97,14 @@ export class PilotMigrationWriter {
           )
           break
         }
-        const item = input[at]!
-        if (item.record.excluded || item.record.state !== "active") {
+        const item = input[at]
+        if (!item || item.record.excluded || item.record.state !== "active") {
           receipt.leftOut++
           continue
         }
-        let group = receipt.groups.find(
-          (group) => group.group === item.record.group && group.project === item.project,
-        )
-        if (!group) {
-          group = {
-            group: item.record.group,
-            project: item.project,
-            imported: 0,
-            alreadyImported: 0,
-            failed: 0,
-          }
-          receipt.groups.push(group)
-        }
-        try {
-          const status = pilotIdentity(db, item.project, item.record)
-          if (status.verified)
-            db.atomic(() => bindPilotAliases(db, item.project, item.record, status.id))
-          if (status.state === "same") {
-            receipt.alreadyImported++
-            group.alreadyImported++
-            continue
-          }
-          if (status.state === "conflict")
-            throw new Error(
-              "An existing Pilot lesson has changed or was retired. It was kept unchanged.",
-            )
-          const now = this.ctx.clock.now()
-          const record = validateRecord({
-            schema: 1,
-            id: status.id,
-            project: item.project,
-            origin: db.meta("origin"),
-            revision: 1,
-            kind: item.record.kind,
-            title: item.record.title,
-            content: item.record.content,
-            tags: item.record.tags,
-            files: item.record.files,
-            source: "pilot",
-            sourceId: item.record.sourceId,
-            ...(item.record.author ? { author: item.record.author } : {}),
-            ...(item.record.sourceAt ? { sourceAt: item.record.sourceAt } : {}),
-            evidence: null,
-            visibility: "private",
-            state: "active",
-            createdAt: now,
-            updatedAt: now,
-          })
-          db.atomic(() => {
-            this.projects.promote(db, item.project)
-            db.save(record, undefined, { pilotMetadata: JSON.stringify(item.record.metadata) })
-            bindPilotAliases(db, item.project, item.record, record.id)
-          })
-          receipt.imported++
-          group.imported++
-          if (!signal?.aborted) {
-            try {
-              await this.runtime.index(record)
-            } catch {
-              if (receipt.issues.length < 100)
-                receipt.issues.push(
-                  "A saved memory could not be indexed yet. It remains available in the local catalog.",
-                )
-            }
-          }
-          vectors.push(record)
-          if (vectors.length === 32) {
-            if (!signal?.aborted) {
-              try {
-                await this.runtime.embedRows(db, vectors)
-              } catch {
-                if (receipt.issues.length < 100)
-                  receipt.issues.push(
-                    "Saved memories are available; their meaning index could not be updated yet.",
-                  )
-              }
-            }
-            vectors.length = 0
-          }
-        } catch (error) {
-          receipt.failed++
-          group.failed++
-          if (receipt.issues.length < 100)
-            receipt.issues.push(
-              error instanceof Error ? error.message : "A Pilot memory could not be imported.",
-            )
-        }
+        await this.applyItem(db, item, receipt, vectors, signal)
       }
-      if (vectors.length && !signal?.aborted) {
-        try {
-          await this.runtime.embedRows(db, vectors)
-        } catch {
-          if (receipt.issues.length < 100)
-            receipt.issues.push(
-              "Saved memories are available; their meaning index could not be updated yet.",
-            )
-        }
-      }
+      await flushEmbeddings(this.runtime, db, vectors, receipt, signal)
       return receipt
     })
   }

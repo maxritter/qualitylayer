@@ -1,138 +1,33 @@
-import { createHash } from "node:crypto"
 import { realpath } from "node:fs/promises"
-import { isAbsolute, join, relative, resolve, sep } from "node:path"
+import { join, resolve } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { detectAgent } from "../agents/detect.ts"
 import { editedPaths, shellPatchedPaths } from "../git/session-edits.ts"
 import { capFolder, QUALITY_HOOK_PENDING_MAX, QUALITY_HOOK_SESSIONS_KEPT } from "../home-caps.ts"
-import { checkProjectQuality, qualityProject, qualityStatus, qualitySummary } from "./project.ts"
-import { scanChanges } from "./scanners/scan.ts"
-import { scanSettings } from "./scanners/settings.ts"
-
-type Payload = Record<string, unknown>
-type Pending = { path: string; version: number; attempted?: number }
-type Queue = {
-  sequence: number
-  pending: Pending[]
-  overflow: boolean
-  overflowTold: boolean
-  notice: string
-  feedback: string
-}
-
-const BATCH = 25
-const MAX_PATH = 2048
-const QUEUE_BYTES = 1024 * 1024
-const LOCK = { waitMs: 100, staleMs: 10_000 }
-const digest = (text: string) => createHash("sha256").update(text).digest("hex")
-const object = (value: unknown): Payload | null =>
-  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Payload) : null
-
-function identity(ctx: Ctx, payload: Payload): string | null {
-  if (ctx.env.get("QUALITYLAYER_REVIEW_READ_ONLY") === "1") return null
-  const session = payload.session_id
-  if (typeof session !== "string" || !session.trim() || session.length > 256) return null
-  const known = detectAgent(ctx.env, () => null)
-  const agent =
-    known !== "unknown"
-      ? known
-      : typeof payload.turn_id === "string"
-        ? "codex"
-        : typeof payload.permission_mode === "string"
-          ? "claude-code"
-          : "unknown"
-  if (agent === "unknown") return null
-  const child = typeof payload.agent_id === "string" ? payload.agent_id.slice(0, 256) : ""
-  return digest(`${agent}\0${session}\0${child}`)
-}
-
-function cleanPath(root: string, cwd: string, path: string): string | null {
-  if (
-    !path ||
-    Buffer.byteLength(path) > MAX_PATH ||
-    [...path].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
-  )
-    return null
-  const local = relative(root, resolve(cwd, path))
-  if (
-    !local ||
-    Buffer.byteLength(local) > MAX_PATH ||
-    local === ".." ||
-    local.startsWith(`..${sep}`) ||
-    isAbsolute(local)
-  )
-    return null
-  return local.split(sep).join("/")
-}
-
-async function readQueue(ctx: Ctx, file: string): Promise<Queue> {
-  const empty: Queue = {
-    sequence: 0,
-    pending: [],
-    overflow: false,
-    overflowTold: false,
-    notice: "",
-    feedback: "",
-  }
-  try {
-    if (((await ctx.fs.stat?.(file))?.size ?? 0) > QUEUE_BYTES) return empty
-    const text = await ctx.fs.readFile(file)
-    if (Buffer.byteLength(text) > QUEUE_BYTES) return empty
-    const row = object(JSON.parse(text))
-    if (!row || !Array.isArray(row.pending)) return empty
-    const pending = row.pending
-      .flatMap((item): Pending[] => {
-        const entry = object(item)
-        if (
-          !entry ||
-          typeof entry.path !== "string" ||
-          Buffer.byteLength(entry.path) > MAX_PATH ||
-          !Number.isSafeInteger(entry.version)
-        )
-          return []
-        return [
-          {
-            path: entry.path,
-            version: entry.version as number,
-            ...(entry.attempted === entry.version ? { attempted: entry.version as number } : {}),
-          },
-        ]
-      })
-      .slice(0, QUALITY_HOOK_PENDING_MAX)
-    return {
-      sequence: Number.isSafeInteger(row.sequence) ? (row.sequence as number) : 0,
-      pending,
-      overflow: row.overflow === true,
-      overflowTold: row.overflowTold === true,
-      // Older Stop output did not prove delivery; its hash must not silence the first durable note.
-      notice: row.schema === 2 && typeof row.notice === "string" ? row.notice.slice(0, 64) : "",
-      feedback:
-        row.schema === 2 &&
-        typeof row.feedback === "string" &&
-        Buffer.byteLength(row.feedback) <= 1024
-          ? row.feedback
-          : "",
-    }
-  } catch {
-    return empty
-  }
-}
-
-const writeQueue = (ctx: Ctx, file: string, queue: Queue) =>
-  ctx.fs.atomicWrite(file, `${JSON.stringify({ schema: 2, ...queue })}\n`)
+import { claimPendingBatch, recordBatchOutcome, runBatchChecks } from "./hook-batch.ts"
+import {
+  asObject,
+  cleanHookPath,
+  HOOK_LOCK,
+  hookIdentity,
+  type Payload,
+  readQueue,
+  writeQueue,
+} from "./hook-queue.ts"
+import { qualityProject, qualityStatus } from "./project.ts"
 
 /** Records only named writes from this native session; no checker runs on a tool event. */
 export async function recordQualityEdit(ctx: Ctx, raw: unknown): Promise<void> {
-  const payload = object(raw)
-  if (!payload || payload.is_error === true || object(payload.tool_response)?.isError === true)
+  const payload = asObject(raw)
+  if (!payload || payload.is_error === true || asObject(payload.tool_response)?.isError === true)
     return
-  const key = identity(ctx, payload)
-  if (!key) return
-  const paths = [
-    ...editedPaths(payload.tool_name, payload.tool_input),
-    ...shellPatchedPaths(payload.tool_name, payload.tool_input),
-  ]
-  if (!paths.length) return
+  const key = hookIdentity(ctx, payload)
+  const paths = key
+    ? [
+        ...editedPaths(payload.tool_name, payload.tool_input),
+        ...shellPatchedPaths(payload.tool_name, payload.tool_input),
+      ]
+    : []
+  if (!key || !paths.length) return
   const project = await qualityProject(ctx)
   if (!project) return
   const givenCwd = typeof payload.cwd === "string" ? payload.cwd : ctx.env.cwd()
@@ -140,9 +35,17 @@ export async function recordQualityEdit(ctx: Ctx, raw: unknown): Promise<void> {
   const canonical = await Promise.all(
     paths.map((path) => realpath(resolve(cwd, path)).catch(() => path)),
   )
-  const local = canonical.flatMap((path) => cleanPath(project.root, cwd, path) ?? [])
+  const local = canonical.flatMap((path) => cleanHookPath(project.root, cwd, path) ?? [])
   if (!local.length) return
-  const folder = join(project.folder, "hooks")
+  await enqueueHookEdits(ctx, join(project.folder, "hooks"), key, local)
+}
+
+async function enqueueHookEdits(
+  ctx: Ctx,
+  folder: string,
+  key: string,
+  local: string[],
+): Promise<void> {
   const file = join(folder, `${key}.json`)
   await ctx.fs.mkdir(folder)
   const first = !(await ctx.fs.exists(file))
@@ -162,7 +65,7 @@ export async function recordQualityEdit(ctx: Ctx, raw: unknown): Promise<void> {
       queue.pending = [...pending.values()]
       await writeQueue(ctx, file, queue)
     },
-    LOCK,
+    HOOK_LOCK,
   )
   if (first)
     await ctx.fs.withLock(
@@ -174,155 +77,61 @@ export async function recordQualityEdit(ctx: Ctx, raw: unknown): Promise<void> {
           QUALITY_HOOK_SESSIONS_KEPT - 1,
           (name) => name !== `${key}.json` && /^[a-f0-9]{64}\.json$/.test(name),
         ),
-      LOCK,
+      HOOK_LOCK,
     )
 }
 
-function bounded(text: string): string {
-  let result = "",
-    bytes = 0
-  for (const char of text) {
-    bytes += Buffer.byteLength(char)
-    if (bytes > 1024) break
-    result += char
-  }
-  return result
+async function existingHookTarget(
+  ctx: Ctx,
+  payload: Payload,
+): Promise<{ root: string; file: string } | null> {
+  const key = hookIdentity(ctx, payload)
+  const project = key ? await qualityProject(ctx, { existingHook: key }) : null
+  if (!key || !project) return null
+  const file = join(project.folder, "hooks", `${key}.json`)
+  return (await ctx.fs.exists(file)) ? { root: project.root, file } : null
 }
 
 /** Only prompt/tool context can deliver an advisory without continuing the finished turn. */
 export async function takeQualityFeedback(ctx: Ctx, raw: unknown): Promise<string | null> {
-  const payload = object(raw)
-  if (
-    !payload ||
-    (payload.hook_event_name !== "UserPromptSubmit" && payload.hook_event_name !== "PostToolUse")
-  )
-    return null
-  const key = identity(ctx, payload)
-  if (!key) return null
-  const project = await qualityProject(ctx, { existingHook: key })
-  if (!project) return null
-  const file = join(project.folder, "hooks", `${key}.json`)
-  if (!(await ctx.fs.exists(file))) return null
-  if ((await qualityStatus(ctx)).enabled !== true) return null
+  const payload = asObject(raw)
+  const allowed =
+    payload !== null &&
+    (payload.hook_event_name === "UserPromptSubmit" || payload.hook_event_name === "PostToolUse")
+  if (!allowed) return null
+  const target = await existingHookTarget(ctx, payload)
+  if (!target || (await qualityStatus(ctx)).enabled !== true) return null
   return ctx.fs.withLock(
-    `${file}.lock`,
+    `${target.file}.lock`,
     async () => {
-      const queue = await readQueue(ctx, file)
+      const queue = await readQueue(ctx, target.file)
       if (!queue.feedback) return null
       const feedback = queue.feedback
       queue.feedback = ""
-      await writeQueue(ctx, file, queue)
+      await writeQueue(ctx, target.file, queue)
       return feedback
     },
-    LOCK,
+    HOOK_LOCK,
   )
 }
 
-/**
- * The secrets scan of the turn's edited files, in one or two lines; empty when nothing was found or
- * scans are off. A scan that could not run says nothing here: Verify records it as not checked.
- */
-async function secretsSummary(ctx: Ctx, root: string, paths: string[]): Promise<string> {
-  try {
-    const settings = await scanSettings(ctx)
-    if (!settings.enabled) return ""
-    const [result] = await scanChanges(ctx, root, paths, { only: ["secrets"] })
-    if (result === undefined || result.findings.length === 0) return ""
-    const where = result.findings
-      .slice(0, 3)
-      .map((f) => `${f.path}:${f.line} (${f.rule})`)
-      .join(", ")
-    const more = result.findings.length > 3 ? ` and ${result.findings.length - 3} more` : ""
-    return `Possible secrets: ${where}${more}. If one is real, move it out of the file and rotate it; Verify's security scans record the rest.`
-  } catch {
-    return ""
-  }
+function isInterruptedTurn(payload: Payload | null): boolean {
+  if (!payload || payload.stop_hook_active === true) return true
+  return payload.reason === "interrupted" || payload.reason === "user_interrupt"
 }
 
 /** A completed turn checks one batch; failed batches stay queued without retrying the same edit. */
 export async function qualityTurnFeedback(ctx: Ctx, raw: unknown): Promise<string | null> {
-  const payload = object(raw)
-  if (
-    !payload ||
-    payload.stop_hook_active === true ||
-    payload.reason === "interrupted" ||
-    payload.reason === "user_interrupt"
-  )
-    return null
-  const key = identity(ctx, payload)
-  if (!key) return null
-  const project = await qualityProject(ctx, { existingHook: key })
-  if (!project) return null
-  const folder = join(project.folder, "hooks")
-  const file = join(folder, `${key}.json`)
-  if (!(await ctx.fs.exists(file))) return null
-  const batch = await ctx.fs.withLock(
-    `${file}.lock`,
-    async () => {
-      const queue = await readQueue(ctx, file)
-      const batch = queue.pending
-        .filter((entry) => entry.attempted !== entry.version)
-        .slice(0, BATCH)
-      if (!batch.length) return []
-      // Claim before releasing the queue lock; a simultaneous Stop cannot launch the same batch.
-      for (const entry of batch) entry.attempted = entry.version
-      await writeQueue(ctx, file, queue)
-      return batch
-    },
-    LOCK,
-  )
+  const payload = asObject(raw)
+  if (isInterruptedTurn(payload)) return null
+  const target = await existingHookTarget(ctx, payload as Payload)
+  if (!target) return null
+  const batch = await claimPendingBatch(ctx, target.file)
   if (!batch.length) return null
-  let summary: string,
-    complete = false
-  try {
-    const report = await checkProjectQuality(ctx, {
-      paths: batch.map((entry) => entry.path),
-      mode: "structure",
-      timeoutMs: 3000,
-      limitFiles: BATCH,
-    })
-    complete = report.status === "complete" || report.status === "no_files"
-    summary =
-      report.status === "disabled" || report.status === "no_files" ? "" : qualitySummary(report, 3)
-  } catch {
-    summary =
-      "QualityLayer quality check was incomplete. Run an explicit project quality check for details; no passing result was recorded."
-  }
-  const secrets = await secretsSummary(
+  const outcome = await runBatchChecks(
     ctx,
-    project.root,
+    target.root,
     batch.map((entry) => entry.path),
   )
-  if (secrets) summary = [secrets, summary].filter(Boolean).join("\n")
-  return ctx.fs.withLock(
-    `${file}.lock`,
-    async () => {
-      const queue = await readQueue(ctx, file)
-      if (complete) {
-        const checked = new Map(batch.map((entry) => [entry.path, entry.version]))
-        queue.pending = queue.pending.filter((entry) => checked.get(entry.path) !== entry.version)
-      }
-      const overflow =
-        queue.overflow && !queue.overflowTold
-          ? `QualityLayer quality check: pending edit scope exceeded ${QUALITY_HOOK_PENDING_MAX} files. Run an explicit project quality check to cover the overflow.`
-          : ""
-      if (overflow) queue.overflowTold = true
-      const notice = summary ? digest(summary) : ""
-      const text = bounded(
-        [overflow, notice && notice !== queue.notice ? summary : ""].filter(Boolean).join("\n"),
-      )
-      if (notice) queue.notice = notice
-      if (text)
-        queue.feedback = bounded(
-          `QualityLayer code health from the previous completed turn (edited-file scope; verify current source):\n${text}`,
-        )
-      if (!queue.pending.length) {
-        queue.overflow = false
-        queue.overflowTold = false
-      }
-      await writeQueue(ctx, file, queue)
-      return text || null
-    },
-    LOCK,
-  )
+  return recordBatchOutcome(ctx, target.file, batch, outcome)
 }

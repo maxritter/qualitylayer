@@ -48,16 +48,18 @@ export type NewTaskCommand = {
   hint?: string
 }
 
+function hasInvalidAgentArgs(choice: NewTaskChoice): boolean {
+  if (choice.agent === "other") return false
+  if (choice.model.includes("\0")) return true
+  const checksEffort = choice.agent !== "opencode" || Boolean(choice.model)
+  return checksEffort && choice.effort.includes("\0")
+}
+
 /** The command for a prompt and the planning picks. */
 export function newTaskCommand(choice: NewTaskChoice, typed: string): NewTaskCommand {
   // Throws for a permission override the agent does not support.
   resolvePermission(choice.agent, choice.perm)
-  if (
-    choice.agent !== "other" &&
-    (choice.model.includes("\0") ||
-      ((choice.agent !== "opencode" || choice.model) && choice.effort.includes("\0")))
-  )
-    throw new Error("Invalid agent program or arguments")
+  if (hasInvalidAgentArgs(choice)) throw new Error("Invalid agent program or arguments")
   const type = choice.type ?? "feature"
   const request = typed.trim()
   // An existing plan is handed over as its file, kept exactly as given: the agent starts the task with

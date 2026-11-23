@@ -19,45 +19,71 @@ import type { Ctx } from "../ctx.ts"
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
 const descriptors = new Map<string, { signature: string; file: ConversationAttachment }>()
 
-/** Ownership is established before any file read; a transcript path alone grants no access. */
-async function ownedFile(ctx: Ctx, run: NativeRun, value: string) {
-  if (value.length > 4096 || /[\r\n\0]/.test(value) || /(^|[/\\])\.\.([/\\]|$)/.test(value)) return
-  if (/^[a-z]+:/i.test(value) && !/^[A-Za-z]:[/\\]/.test(value)) return
+function isSafeAttachmentToken(value: string): boolean {
+  if (value.length > 4096 || /[\r\n\0]/.test(value) || /(^|[/\\])\.\.([/\\]|$)/.test(value))
+    return false
+  return !(/^[a-z]+:/i.test(value) && !/^[A-Za-z]:[/\\]/.test(value))
+}
+
+function isValidReceiptHash(value: unknown): boolean {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value)
+}
+
+function isValidReceiptGeneration(value: unknown, maxGeneration: number): boolean {
+  return (
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= maxGeneration
+  )
+}
+
+async function hasValidMessageReceipt(
+  ctx: Ctx,
+  dir: string,
+  maxGeneration: number,
+): Promise<boolean> {
+  const bytes = await ctx.fs.readRegularFile?.(resolve(dir, "receipt.json"), 1024)
+  if (!bytes) return false
+  const receipt = JSON.parse(Buffer.from(bytes).toString("utf8")) as {
+    hash?: unknown
+    generation?: unknown
+  }
+  return (
+    isValidReceiptHash(receipt.hash) && isValidReceiptGeneration(receipt.generation, maxGeneration)
+  )
+}
+
+function ownedPathTarget(ctx: Ctx, run: NativeRun, value: string) {
+  if (!isSafeAttachmentToken(value)) return
   const path = resolve(run.cwd, value)
   const root = runDir(ctx.home, run.id)
   const launch = run.launchFiles?.find((file) => file.path === path && !file.missing)
-  const inside = relative(resolve(root, "message-files"), path)
   if (launch) {
-    if (path !== resolve(root, "launch-files", "files", launch.name)) return
-  } else if (!/^[a-f0-9-]{36}[/\\][^/\\]+$/.test(inside) || basename(path) === "receipt.json")
-    return
-  await ctx.fs.assertSafeDirectory?.(dirname(path))
-  if (!launch) {
-    const bytes = await ctx.fs.readRegularFile?.(resolve(dirname(path), "receipt.json"), 1024)
-    if (!bytes) return
-    const receipt = JSON.parse(Buffer.from(bytes).toString("utf8")) as {
-      hash?: unknown
-      generation?: unknown
-    }
-    if (
-      typeof receipt.hash !== "string" ||
-      !/^[a-f0-9]{64}$/.test(receipt.hash) ||
-      typeof receipt.generation !== "number" ||
-      !Number.isSafeInteger(receipt.generation) ||
-      receipt.generation < 1 ||
-      receipt.generation > run.generation
-    )
-      return
+    return path === resolve(root, "launch-files", "files", launch.name)
+      ? { path, isLaunch: true }
+      : undefined
   }
-  const info = await lstat(path)
+  const inside = relative(resolve(root, "message-files"), path)
+  const validMessageFile =
+    /^[a-f0-9-]{36}[/\\][^/\\]+$/.test(inside) && basename(path) !== "receipt.json"
+  return validMessageFile ? { path, isLaunch: false } : undefined
+}
+
+/** Ownership is established before any file read; a transcript path alone grants no access. */
+async function ownedFile(ctx: Ctx, run: NativeRun, value: string) {
+  const target = ownedPathTarget(ctx, run, value)
+  if (!target) return
+  await ctx.fs.assertSafeDirectory?.(dirname(target.path))
   if (
-    !info.isFile() ||
-    info.isSymbolicLink() ||
-    info.size === 0 ||
-    info.size > MAX_ATTACHMENT_BYTES
+    !target.isLaunch &&
+    !(await hasValidMessageReceipt(ctx, dirname(target.path), run.generation))
   )
     return
-  return { path, signature: `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}` }
+  const info = await lstat(target.path)
+  const validSize = info.size > 0 && info.size <= MAX_ATTACHMENT_BYTES
+  if (!info.isFile() || info.isSymbolicLink() || !validSize) return
+  return {
+    path: target.path,
+    signature: `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`,
+  }
 }
 
 export async function runAttachmentBytes(
@@ -90,7 +116,11 @@ async function describeFile(
       source: { kind: "file", path: owned.path, digest: digest(bytes) },
     }
     descriptors.set(key, { signature: owned.signature, file })
-    while (descriptors.size > 256) descriptors.delete(descriptors.keys().next().value!)
+    while (descriptors.size > 256) {
+      const oldest = descriptors.keys().next().value
+      if (oldest === undefined) break
+      descriptors.delete(oldest)
+    }
     return file
   } catch {
     return
@@ -137,7 +167,7 @@ async function pastedFiles(
   for (const token of tokens) {
     if (attachments.length >= MAX_ATTACHMENTS && !paths.has(token.path)) break
     const file = await describeFile(ctx, run, token.path)
-    if (!file || file.source?.kind !== "file") continue
+    if (file?.source?.kind !== "file") continue
     if (!paths.has(file.source.path)) attachments.push(file)
     paths.add(file.source.path)
     removed.push(token)

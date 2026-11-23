@@ -2,17 +2,44 @@ import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { RUNS_RECONCILE_BATCH } from "../home-caps.ts"
 import { launchOwnerState, reconcileAbandonedStarts } from "./abandoned.ts"
-import { canRecoverRun, type RunRecord } from "./contracts.ts"
-import { type ControlOptions, controlRun, nativeSessionFile } from "./control.ts"
+import type { RunRecord } from "./contracts.ts"
+import type { ControlOptions } from "./control.ts"
 import {
-  identityState,
-  listRuns,
-  readHost,
-  readRun,
-  reconcileRuns,
-  runDir,
-  updateRun,
-} from "./registry.ts"
+  isEligibleForAutoRecovery,
+  isPendingRecovery,
+  markRecoveryAttempted,
+  markRecoveryPending,
+  resumeRecoveredRun,
+  shouldInspectForRecovery,
+  verifyDeadOwnedHost,
+} from "./recovery-helpers.ts"
+import { listRuns, readRun, reconcileRuns, runDir } from "./registry.ts"
+
+const ACTIVE_OR_STOPPING = new Set(["running", "starting", "stopping"])
+
+async function reconcileLockedCandidate(ctx: Ctx, saved: RunRecord): Promise<boolean> {
+  let run = readRun(ctx.home, saved.id)
+  if (!run || run.generation !== saved.generation) return false
+  const pending = isPendingRecovery(run)
+  const inspectable =
+    (run.status !== "starting" || launchOwnerState(run) !== "live") &&
+    (pending || ACTIVE_OR_STOPPING.has(run.status))
+  const host = inspectable ? verifyDeadOwnedHost(ctx, run) : null
+  if (!host) return false
+  const eligible = isEligibleForAutoRecovery(run, host, pending)
+  if (eligible && !pending) run = markRecoveryPending(ctx, run)
+  if (run.status !== "stopped") await reconcileRuns(ctx.home, [run])
+  const current = readRun(ctx.home, run.id)
+  return eligible && current?.generation === run.generation
+    ? markRecoveryAttempted(ctx, run)
+    : false
+}
+
+async function reconcileSingleCandidate(ctx: Ctx, saved: RunRecord): Promise<boolean> {
+  return ctx.fs.withLock(join(runDir(ctx.home, saved.id), ".bind.lock"), () =>
+    reconcileLockedCandidate(ctx, saved),
+  )
+}
 
 /** Called once by an authorized App startup, never by a watcher or an unpaired reader. */
 export async function recoverInterruptedRuns(ctx: Ctx, options: ControlOptions): Promise<void> {
@@ -20,116 +47,13 @@ export async function recoverInterruptedRuns(ctx: Ctx, options: ControlOptions):
   await ctx.fs.withLock(join(ctx.home, "runs", "recovery.lock"), async () => {
     const abandoned = await reconcileAbandonedStarts(ctx)
     const blocked = new Set(abandoned.blocked.map((run) => run.run))
-    const snapshot = listRuns(ctx.home).filter(
-      (run) =>
-        !blocked.has(run.id) &&
-        // A cleanup a crash or an unreadable process left unfinished is retried, never left for good.
-        (["running", "stopping"].includes(run.status) ||
-          (run.status === "starting" && launchOwnerState(run) !== "live") ||
-          (run.recovery?.generation === run.generation && run.recovery.state === "pending")),
-    )
+    const snapshot = listRuns(ctx.home).filter((run) => shouldInspectForRecovery(run, blocked))
     for (const [index, saved] of snapshot.entries()) {
       if (index > 0 && index % RUNS_RECONCILE_BATCH === 0)
         await new Promise<void>((resolve) => setImmediate(resolve))
-      let interrupted = false
-      await ctx.fs.withLock(join(runDir(ctx.home, saved.id), ".bind.lock"), async () => {
-        let run = readRun(ctx.home, saved.id)
-        if (!run || run.generation !== saved.generation) return
-        if (run.status === "starting" && launchOwnerState(run) === "live") return
-        const pending =
-          run.recovery?.generation === run.generation && run.recovery.state === "pending"
-        if (!pending && !["running", "starting", "stopping"].includes(run.status)) return
-        const host = readHost(ctx.home, run.id)
-        const owned =
-          host &&
-          host.run === run.id &&
-          host.generation === run.generation &&
-          run.host?.knownBy === "host" &&
-          run.host.pid === host.pid &&
-          run.host.processStart === host.processStart &&
-          run.host.pidDomain === host.pidDomain
-        if (!owned) {
-          updateRun(ctx.home, run.id, run.generation, {
-            error: "Host process ownership could not be confirmed; automatic recovery was refused",
-          })
-          return
-        }
-        const state = identityState(run.host as NonNullable<RunRecord["host"]>)
-        if (state !== "dead") {
-          if (state === "unverified")
-            updateRun(ctx.home, run.id, run.generation, {
-              error:
-                "Host process ownership could not be confirmed; automatic recovery was refused",
-            })
-          return
-        }
-        const eligible =
-          (pending || run.status !== "stopping") &&
-          canRecoverRun(run) &&
-          (pending || ["running", "starting"].includes(host.status)) &&
-          (pending || run.recovery?.generation !== run.generation)
-        if (eligible && !pending)
-          run = updateRun(ctx.home, run.id, run.generation, (latest) => {
-            if (
-              latest.recovery?.generation === latest.generation ||
-              !["running", "starting"].includes(latest.status) ||
-              !canRecoverRun(latest)
-            )
-              return null
-            return {
-              recovery: {
-                generation: latest.generation,
-                state: "pending",
-                at: new Date().toISOString(),
-              },
-            }
-          })
-        if (run.status !== "stopped") await reconcileRuns(ctx.home, [run])
-        const current = readRun(ctx.home, run.id)
-        if (!eligible || !current || current.generation !== run.generation) return
-        updateRun(ctx.home, run.id, run.generation, (latest) => {
-          if (
-            latest.recovery?.generation !== latest.generation ||
-            latest.recovery.state !== "pending" ||
-            !canRecoverRun(latest)
-          )
-            return null
-          interrupted = latest.status === "stopped" && latest.cleanup?.complete === true
-          return {
-            recovery: {
-              generation: latest.generation,
-              state: "attempted",
-              at: new Date().toISOString(),
-            },
-            error: interrupted
-              ? "The agent was interrupted. Resuming its saved native session…"
-              : "Owned-process cleanup is incomplete; automatic recovery was refused. Resume explicitly after cleanup.",
-          }
-        })
-      })
-      if (!interrupted) continue
+      if (!(await reconcileSingleCandidate(ctx, saved))) continue
       const current = readRun(ctx.home, saved.id)
-      if (!current || current.generation !== saved.generation) continue
-      try {
-        if (!nativeSessionFile(ctx, current))
-          throw new Error("The native session is gone. Start a fresh run instead.")
-        await controlRun(
-          ctx,
-          current,
-          { action: "resume", generation: current.generation, mode: "continue" },
-          { ...options, automaticRecovery: true },
-        )
-      } catch (cause) {
-        const latest = readRun(ctx.home, current.id)
-        if (latest?.generation === current.generation)
-          updateRun(ctx.home, latest.id, latest.generation, (saved) =>
-            saved.recovery?.generation === saved.generation && saved.recovery.state === "cancelled"
-              ? null
-              : {
-                  error: `Automatic recovery could not resume this session: ${cause instanceof Error ? cause.message : String(cause)} Resume explicitly when ready.`,
-                },
-          )
-      }
+      if (current?.generation === saved.generation) await resumeRecoveredRun(ctx, current, options)
     }
   })
 }

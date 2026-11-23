@@ -32,9 +32,9 @@ export function opencodeReviewEnvironment(
   const directory = join(temporary, "config")
   mkdirSync(directory, { mode: 0o700 })
   try {
-    const personal =
-      env.OPENCODE_CONFIG_DIR ||
-      join(env.XDG_CONFIG_HOME || join(env.HOME || env.USERPROFILE || "", ".config"), "opencode")
+    const home = env.HOME || env.USERPROFILE || ""
+    const configRoot = env.XDG_CONFIG_HOME || join(home, ".config")
+    const personal = env.OPENCODE_CONFIG_DIR || join(configRoot, "opencode")
     let config: Record<string, unknown> = {}
     for (const name of ["opencode.json", "opencode.jsonc"]) {
       const path = join(personal, name)

@@ -32,10 +32,14 @@ const startPath = (task: Pick<Task, "runtimeDir">) => join(task.runtimeDir, FILE
 
 const bad = (message: string) => err({ code: "bad_args", message })
 
-/** The record a start choice makes, or what is wrong with it. */
-export function parseStart(input: unknown, at: number): Result<StartRecord> {
-  if (typeof input !== "object" || input === null) return bad("a start choice is an object")
-  const raw = input as Record<string, unknown>
+type StartBasics = {
+  agent: StartAgent
+  where: StartWhere
+  goal: boolean
+  answers?: "app" | "terminal"
+}
+
+function parseStartBasics(raw: Record<string, unknown>): Result<StartBasics> {
   const agent = raw.agent as StartAgent
   if (!AGENTS.includes(agent)) return bad(`unknown agent "${String(raw.agent)}"`)
   const where = raw.where as StartWhere
@@ -43,38 +47,56 @@ export function parseStart(input: unknown, at: number): Result<StartRecord> {
   if (typeof raw.goal !== "boolean") return bad("goal is true or false")
   if (raw.answers !== undefined && raw.answers !== "app" && raw.answers !== "terminal")
     return bad("answers is app or terminal")
-  const route = parseRoute(raw, where)
-  if (!route.ok) return route
-  const model = (name: "orchestrator" | "workers"): Result<string | null> => {
-    const value = raw[name]
-    if (agent === "other") return ok(null)
-    if (value !== AGENT_OWN && !validModelId(agent, value)) return bad(`${name} names a model`)
-    return ok(value)
-  }
-  const orchestrator = model("orchestrator")
-  if (!orchestrator.ok) return orchestrator
-  const workers = model("workers")
-  if (!workers.ok) return workers
-  let effort: StartEffort | null = null
-  if (agent !== "other") {
-    if (raw.effort !== AGENT_OWN && !allowedEfforts(agent).includes(raw.effort as StartEffort))
-      return bad(`unknown effort "${String(raw.effort)}"`)
-    effort = raw.effort as StartEffort
-  }
   return ok({
     agent,
-    orchestrator: orchestrator.data,
-    workers: workers.data,
-    effort,
-    goal: raw.goal,
     where,
+    goal: raw.goal,
+    ...(raw.answers === undefined ? {} : { answers: raw.answers }),
+  })
+}
+
+function parseAgentModels(
+  raw: Record<string, unknown>,
+  agent: StartAgent,
+): Result<{ orchestrator: string | null; workers: string | null; effort: StartEffort | null }> {
+  if (agent === "other") return ok({ orchestrator: null, workers: null, effort: null })
+  const orchestrator = raw.orchestrator
+  if (orchestrator !== AGENT_OWN && !validModelId(agent, orchestrator))
+    return bad("orchestrator names a model")
+  const workers = raw.workers
+  if (workers !== AGENT_OWN && !validModelId(agent, workers)) return bad("workers names a model")
+  if (raw.effort !== AGENT_OWN && !allowedEfforts(agent).includes(raw.effort as StartEffort))
+    return bad(`unknown effort "${String(raw.effort)}"`)
+  return ok({ orchestrator, workers, effort: raw.effort as StartEffort })
+}
+
+/** The record a start choice makes, or what is wrong with it. */
+export function parseStart(input: unknown, at: number): Result<StartRecord> {
+  if (typeof input !== "object" || input === null) return bad("a start choice is an object")
+  const raw = input as Record<string, unknown>
+  const basics = parseStartBasics(raw)
+  if (!basics.ok) return basics
+  const route = parseRoute(raw, basics.data.where)
+  if (!route.ok) return route
+  const models = parseAgentModels(raw, basics.data.agent)
+  if (!models.ok) return models
+  return ok({
+    ...basics.data,
+    ...models.data,
     ...route.data,
-    ...(raw.answers === undefined ? {} : { answers: raw.answers as "app" | "terminal" }),
     at,
   })
 }
 
 type Route = Pick<StartRecord, "session" | "gate" | "compact">
+
+function routeError(raw: Record<string, unknown>, where: StartWhere): string | null {
+  const { session, gate, compact } = raw
+  if (where !== "here") return "a planner's session is named only for a build here"
+  if (typeof session !== "string" || session === "") return "session names the planner's session"
+  if (typeof gate !== "string" || gate === "") return "gate names the Plan gate"
+  return compact !== undefined && typeof compact !== "boolean" ? "compact is true or false" : null
+}
 
 /**
  * The planner the person chose to build in, from the App: its session key and the Plan gate the
@@ -83,12 +105,13 @@ type Route = Pick<StartRecord, "session" | "gate" | "compact">
 function parseRoute(raw: Record<string, unknown>, where: StartWhere): Result<Route> {
   const { session, gate, compact } = raw
   if (session === undefined && gate === undefined && compact === undefined) return ok({})
-  if (where !== "here") return bad("a planner's session is named only for a build here")
-  if (typeof session !== "string" || session === "")
-    return bad("session names the planner's session")
-  if (typeof gate !== "string" || gate === "") return bad("gate names the Plan gate")
-  if (compact !== undefined && typeof compact !== "boolean") return bad("compact is true or false")
-  return ok({ session, gate, ...(compact === undefined ? {} : { compact }) })
+  const error = routeError(raw, where)
+  if (error !== null) return bad(error)
+  return ok({
+    session: session as string,
+    gate: gate as string,
+    ...(compact === undefined ? {} : { compact: compact as boolean }),
+  })
 }
 
 /** Record the start the person copied. Only an approved Plan waiting for its build takes one. */
@@ -154,6 +177,12 @@ export async function readStart(
   }
 }
 
+function isApprovedPlanGateForSession(gate: GateFile, session: string): boolean {
+  if (gate.target !== folderDoc("plan") || gate.decision !== "approved") return false
+  if (gate.settled !== true || !gate.session) return false
+  return keyOf(gate.session) === session
+}
+
 /** The App's existing choice belongs only to its approved Plan and the waiting planner. */
 export function matchingStartRoute(
   start: StartRecord | null,
@@ -162,13 +191,5 @@ export function matchingStartRoute(
 ): StartRecord | null {
   if (start === null || gate === null || session === null) return null
   if (start.where !== "here" || start.session !== session || start.gate !== gate.id) return null
-  if (
-    gate.target !== folderDoc("plan") ||
-    gate.decision !== "approved" ||
-    gate.settled !== true ||
-    !gate.session ||
-    keyOf(gate.session) !== session
-  )
-    return null
-  return start
+  return isApprovedPlanGateForSession(gate, session) ? start : null
 }

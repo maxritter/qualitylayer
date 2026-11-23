@@ -82,6 +82,25 @@ function namesOf(names: string[]): string {
   return rest.length === 0 ? first : `${first} and ${rest.length} more`
 }
 
+const WATCH_WORDS: Record<PrWatchState, (watch: PrWatch) => string | null> = {
+  watching: () => "Agent is watching checks",
+  fixing: (watch) =>
+    watch.failing.length > 0
+      ? `Fixing ${namesOf(watch.failing)} · attempt ${watch.attempt} of ${watch.max}`
+      : `Fixing checks · attempt ${watch.attempt} of ${watch.max}`,
+  resolving: () => "Resolving conflicts",
+  green: () => "Checks pass",
+  "gave-up": (watch) => {
+    const what =
+      watch.failing.length > 0
+        ? `${namesOf(watch.failing)} still ${watch.failing.length === 1 ? "fails" : "fail"}`
+        : "conflicts still remain"
+    return `Stopped after ${watch.max} attempts: ${what}`
+  },
+  "timed-out": () => "Stopped waiting: checks still running",
+  "no-checks": () => null,
+}
+
 /**
  * What the agent's watch says, in the words of the card and (after "Pull request · ") of the sidebar:
  * "Agent is watching checks", "Fixing test · attempt 2 of 3", "Resolving conflicts", "Checks pass",
@@ -89,29 +108,7 @@ function namesOf(names: string[]): string {
  */
 export function watchWords(watch: PrWatch | null | undefined): string | null {
   if (watch === null || watch === undefined) return null
-  switch (watch.state) {
-    case "watching":
-      return "Agent is watching checks"
-    case "fixing":
-      return watch.failing.length > 0
-        ? `Fixing ${namesOf(watch.failing)} · attempt ${watch.attempt} of ${watch.max}`
-        : `Fixing checks · attempt ${watch.attempt} of ${watch.max}`
-    case "resolving":
-      return "Resolving conflicts"
-    case "green":
-      return "Checks pass"
-    case "gave-up": {
-      const what =
-        watch.failing.length > 0
-          ? `${namesOf(watch.failing)} still ${watch.failing.length === 1 ? "fails" : "fail"}`
-          : "conflicts still remain"
-      return `Stopped after ${watch.max} attempts: ${what}`
-    }
-    case "timed-out":
-      return "Stopped waiting: checks still running"
-    default:
-      return null
-  }
+  return WATCH_WORDS[watch.state]?.(watch) ?? null
 }
 
 /** The watch's words after "Pull request · ", their first letter lowered as the sidebar's other lines are. */
@@ -152,8 +149,10 @@ export function waitingWords(
 }
 
 /** Something waits on the person: a thread, a failing check, a request, or a fix to push. */
-export const isWaiting = (w: PrWaiting): boolean =>
-  w.threads > 0 || w.failing > 0 || w.changes || w.conflict === true || w.fixReady
+export function isWaiting(w: PrWaiting): boolean {
+  if (w.threads > 0 || w.failing > 0) return true
+  return w.changes || w.conflict === true || w.fixReady
+}
 
 /** One line of the card's Reviews: who, and what they did or were asked. */
 export type ReviewerLine = { kind: PrReviewerState; text: string }
@@ -220,6 +219,18 @@ export function statsWords(stats: PrStats | null | undefined): string | null {
   ].join(" · ")
 }
 
+const CLOSED_LIFE_WORDS: Partial<Record<PullRequestRecord["state"], string>> = {
+  merged: "Shipped · merged",
+  closed: "Shipped · pull request closed",
+}
+
+function openChecksLine(checks: PullRequestRecord["checks"]): string {
+  if (checks.some((c) => c.result === "running")) return "Pull request · open · checks running"
+  if (checks.length > 0 && checks.every((c) => c.result === "passed"))
+    return "Pull request · open · checks passed"
+  return "Pull request · open"
+}
+
 /** The line of a pull request nothing waits on: its state and its checks, in the words the sidebar uses. */
 export function lifeWords(
   life:
@@ -228,12 +239,9 @@ export function lifeWords(
     | undefined,
 ): string | null {
   if (life === null || life === undefined) return null
-  if (life.state === "merged") return "Shipped · merged"
-  if (life.state === "closed") return "Shipped · pull request closed"
+  const closed = CLOSED_LIFE_WORDS[life.state]
+  if (closed !== undefined) return closed
   const watching = watchWords(life.watch)
   if (watching !== null) return `Pull request · ${lowered(watching)}`
-  if (life.checks.some((c) => c.result === "running")) return "Pull request · open · checks running"
-  if (life.checks.length > 0 && life.checks.every((c) => c.result === "passed"))
-    return "Pull request · open · checks passed"
-  return "Pull request · open"
+  return openChecksLine(life.checks)
 }

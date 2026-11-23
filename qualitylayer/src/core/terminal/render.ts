@@ -4,6 +4,7 @@ import { parseFence } from "../docs/fragments.ts"
 import { withoutMarks } from "../docs/mermaid-style.ts"
 import { sectionRanges } from "../docs/rules/types.ts"
 import { type DocFacts, schemaForDoc, sectionMatches, sectionShow } from "../docs/schema.ts"
+import { renderMindmap } from "./mindmap.ts"
 import { sketch } from "./sketch.ts"
 
 /** `lead` filters the sections of the document `file` names, as its `facts` resolve its schema. */
@@ -29,40 +30,10 @@ export function textFence(text: string): string {
   return `${marker}text\n${text}\n${marker}`
 }
 
-function mindmap(source: string): string {
-  type Branch = { label: string; indent: number; children: Branch[] }
-  const root: Branch = { label: "", indent: -1, children: [] }
-  const stack = [root]
-  for (const line of source.split(/\r?\n/).slice(1)) {
-    if (!line.trim() || line.trimStart().startsWith("%%")) continue
-    const indent = line.match(/^\s*/)?.[0].replaceAll("\t", "  ").length ?? 0
-    const text = line.trim()
-    const shape =
-      /^(?:[\p{L}\p{N}_-]+)?(?:\(\((.*)\)\)|\((.*)\)|\[\[(.*)\]\]|\[(.*)\]|\{\{(.*)\}\}|\{(.*)\})$/u.exec(
-        text,
-      )
-    const label = shape?.slice(1).find((value) => value !== undefined) ?? text
-    const node: Branch = { label, indent, children: [] }
-    while (stack.length > 1 && (stack.at(-1)?.indent ?? -1) >= indent) stack.pop()
-    stack.at(-1)?.children.push(node)
-    stack.push(node)
-  }
-  const lines: string[] = []
-  const draw = (nodes: Branch[], prefix: string, top: boolean) => {
-    for (const [index, node] of nodes.entries()) {
-      const last = index === nodes.length - 1
-      lines.push(`${prefix}${top ? "" : last ? "└─ " : "├─ "}${node.label}`)
-      draw(node.children, `${prefix}${top ? "" : last ? "   " : "│  "}`, false)
-    }
-  }
-  draw(root.children, "", true)
-  return lines.join("\n")
-}
-
 function diagram(source: string, width: number): string {
   const safe = visibleControls(source)
   if (/^\s*mindmap(?:\s|$)/.test(safe)) {
-    const tree = mindmap(safe.trimStart())
+    const tree = renderMindmap(safe.trimStart())
     return tree.length > 0 && tree.split("\n").every((line) => Bun.stringWidth(line) <= width)
       ? tree
       : sourceBox(source, width)

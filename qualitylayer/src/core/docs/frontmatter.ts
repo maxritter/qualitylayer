@@ -12,6 +12,14 @@ export type ParsedDoc = {
   bodyStart: number
 }
 
+function advanceQuote(inner: string, i: number, quote: string): { quote: string; skip: number } {
+  const char = inner[i] ?? ""
+  if (quote === '"' && char === "\\") return { quote, skip: 1 }
+  if (char !== quote) return { quote, skip: 0 }
+  if (quote === "'" && inner[i + 1] === "'") return { quote, skip: 1 }
+  return { quote: "", skip: 0 }
+}
+
 /** Split YAML-style inline arrays without splitting quoted commas or nested arrays. */
 function arrayItems(inner: string): string[] {
   const items: string[] = []
@@ -21,12 +29,12 @@ function arrayItems(inner: string): string[] {
   for (let i = 0; i < inner.length; i++) {
     const char = inner[i] ?? ""
     if (quote !== "") {
-      if (quote === '"' && char === "\\") i++
-      else if (char === quote) {
-        if (quote === "'" && inner[i + 1] === "'") i++
-        else quote = ""
-      }
-    } else if (char === '"' || char === "'") quote = char
+      const next = advanceQuote(inner, i, quote)
+      quote = next.quote
+      i += next.skip
+      continue
+    }
+    if (char === '"' || char === "'") quote = char
     else if (char === "[") depth++
     else if (char === "]") depth--
     else if (char === "," && depth === 0) {
@@ -38,17 +46,15 @@ function arrayItems(inner: string): string[] {
   return items
 }
 
-function parseScalar(raw: string): FrontmatterValue {
-  const value = raw.trim()
-  if (value === "" || value === "null" || value === "~") return null
-  if (value === "true") return true
-  if (value === "false") return false
-  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
-  if (value.startsWith("[") && value.endsWith("]")) {
-    const inner = value.slice(1, -1).trim()
-    if (inner === "") return []
-    return arrayItems(inner).map((item) => parseScalar(item))
-  }
+const SCALAR_LITERALS: Record<string, FrontmatterValue> = {
+  "": null,
+  null: null,
+  "~": null,
+  true: true,
+  false: false,
+}
+
+function parseQuotedString(value: string): string | undefined {
   if (value.startsWith('"') && value.endsWith('"')) {
     try {
       return JSON.parse(value) as string
@@ -60,7 +66,18 @@ function parseScalar(raw: string): FrontmatterValue {
   if (value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1).replaceAll("''", "'")
   }
-  return value
+  return undefined
+}
+
+function parseScalar(raw: string): FrontmatterValue {
+  const value = raw.trim()
+  if (Object.hasOwn(SCALAR_LITERALS, value)) return SCALAR_LITERALS[value] ?? null
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim()
+    return inner === "" ? [] : arrayItems(inner).map((item) => parseScalar(item))
+  }
+  return parseQuotedString(value) ?? value
 }
 
 function stringifyScalar(value: FrontmatterValue): string {

@@ -1,24 +1,60 @@
 import { ArchiveIcon } from "lucide-react"
-import { useContext, useEffect, useRef, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useContext, useEffect, useState } from "react"
 import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import { ConversationActionsContext } from "../agent-window/conversation/actions.ts"
 import { taskDocumentOf } from "../agent-window/conversation/model.ts"
 import { RunDock, type TaskAgentControls } from "../agent-window/Dock.tsx"
 import { useTerminalLayout } from "../agent-window/layout.tsx"
-import type { Api, Config, SubagentModels, TaskDetail } from "../api.ts"
-import { DocReader } from "../reader/DocReader.tsx"
+import type { Api, TaskDetail } from "../api.ts"
 import { ReviewWorkspaceHost } from "../review-workspace/Host.tsx"
 import type { AgentLaunchValue } from "../run/AgentLaunchFields.tsx"
 import type { AgentTabTerminal } from "../run/AgentTab.tsx"
 import { taskAgentEmpty } from "../run/OutsideLead.tsx"
 import { TaskAgentLaunch } from "../run/TaskAgentLaunch.tsx"
 import { useOptionalRuns, type WorkflowController } from "../run-context.tsx"
-import { runTaskId } from "../runs-api.ts"
 import { ChatHeader } from "./ChatHeader.tsx"
-import { StartWorkflow } from "./StartWorkflow.tsx"
+import { ArchiveConfirmDialog, ChatDocumentDialog, ChatPromoteDialog } from "./ChatPageDialogs.tsx"
 import { useChatArchive } from "./use-chat-archive.ts"
+import { useChatDocument, useChatLaunchConfig, usePendingChatArchive } from "./use-chat-page.ts"
 import "./chat.css"
+
+function openConversationFile({
+  id,
+  path,
+  task,
+  api,
+  openDocument,
+  onError,
+  fallback,
+}: {
+  id: string
+  path: string
+  task: TaskDetail
+  api: Api
+  openDocument: (id: string, name: string) => Promise<void>
+  onError: (message: string) => void
+  fallback?: (id: string, path: string) => void
+}) {
+  const name = taskDocumentOf(path, id)
+  if (name) {
+    void openDocument(id, name)
+    return
+  }
+  const ref = path.includes("/") ? parseArtifactReference(path) : null
+  if (!ref) {
+    fallback?.(id, path)
+    return
+  }
+  const scopeId = ref.scope === "task" ? task.id : task.project
+  void api
+    .artifactOpen({ scope: ref.scope, id: scopeId }, ref.file, "browser", {
+      viewer: true,
+      section: ref.section,
+    })
+    .catch((error) =>
+      onError(error instanceof Error ? error.message : "Could not open this artifact. Try again."),
+    )
+}
 
 export function ChatPage({
   task,
@@ -52,55 +88,14 @@ export function ChatPage({
   const layout = useTerminalLayout()
   const runs = useOptionalRuns()
   const actions = useContext(ConversationActionsContext)
-  const documentRead = useRef(0)
   const [problem, setProblem] = useState<string>()
   const [sessionControls, setSessionControls] = useState<TaskAgentControls>()
   const [promote, setPromote] = useState(false)
   const [workflowController, setWorkflowController] = useState<WorkflowController>()
-  const [config, setConfig] = useState<Config | null>(null)
-  const [installed, setInstalled] = useState<SubagentModels[] | null>(null)
   const [choice, setChoice] = useState<AgentLaunchValue>()
   const [outside, setOutside] = useState(false)
-  const hasRuns = runs !== null
-  useEffect(() => {
-    if (!hasRuns) return
-    let live = true
-    void Promise.all([api.config(), api.subagents()]).then(
-      ([config, installed]) => {
-        if (live) {
-          setConfig(config)
-          setInstalled(installed)
-        }
-      },
-      (error) => {
-        if (live)
-          setProblem(
-            error instanceof Error
-              ? error.message
-              : "Could not load agent choices. Reopen this task to retry.",
-          )
-      },
-    )
-    return () => {
-      live = false
-    }
-  }, [api, hasRuns])
-  const [document, setDocument] = useState<{ name: string; markdown?: string; error?: string }>()
-  const openDocument = async (_task: string, name: string) => {
-    if (_task !== task.id) return
-    const request = ++documentRead.current
-    setDocument({ name })
-    try {
-      const found = await api.doc(task.id, name)
-      if (documentRead.current === request) setDocument({ name, markdown: found.markdown })
-    } catch (error) {
-      if (documentRead.current === request)
-        setDocument({
-          name,
-          error: error instanceof Error ? error.message : "Could not open this document.",
-        })
-    }
-  }
+  const { config, installed } = useChatLaunchConfig(api, runs !== null, setProblem)
+  const { document, openDocument, closeDocument } = useChatDocument(api, task.id)
   useEffect(() => {
     layout?.setPanel("terminal")
   }, [layout?.setPanel])
@@ -111,26 +106,14 @@ export function ChatPage({
     controls: sessionControls,
     reload,
   })
-  const handledArchive = useRef<number | undefined>(undefined)
-  useEffect(() => {
-    if (archiveRequest === undefined || handledArchive.current === archiveRequest || !runs?.loaded)
-      return
-    if (
-      !task.archived &&
-      archive.live &&
-      !runs.runs.some(
-        (run) =>
-          runTaskId(run) === task.id &&
-          run.id === sessionControls?.run &&
-          run.generation === sessionControls.generation &&
-          run.nativeSession === sessionControls.nativeSession,
-      )
-    )
-      return
-    handledArchive.current = archiveRequest
-    onArchiveRequested?.(archiveRequest)
-    if (!task.archived) void archive.request()
-  }, [archiveRequest, onArchiveRequested, archive, runs, task.id, task.archived, sessionControls])
+  usePendingChatArchive({
+    archiveRequest,
+    onArchiveRequested,
+    archive,
+    runs,
+    task,
+    sessionControls,
+  })
   const shownProblem = archive.problem ?? problem
   return (
     <section
@@ -183,27 +166,16 @@ export function ChatPage({
       <ConversationActionsContext
         value={{
           ...actions,
-          openFile: (id, path) => {
-            const name = taskDocumentOf(path, id)
-            const ref = path.includes("/") ? parseArtifactReference(path) : null
-            if (name) void openDocument(id, name)
-            else if (ref) {
-              void api
-                .artifactOpen(
-                  { scope: ref.scope, id: ref.scope === "task" ? task.id : task.project },
-                  ref.file,
-                  "browser",
-                  { viewer: true, section: ref.section },
-                )
-                .catch((error) =>
-                  setProblem(
-                    error instanceof Error
-                      ? error.message
-                      : "Could not open this artifact. Try again.",
-                  ),
-                )
-            } else actions.openFile?.(id, path)
-          },
+          openFile: (id, path) =>
+            openConversationFile({
+              id,
+              path,
+              task,
+              api,
+              openDocument,
+              onError: setProblem,
+              fallback: actions.openFile,
+            }),
         }}
       >
         {!plainTerminalShown ? (
@@ -241,139 +213,33 @@ export function ChatPage({
         ) : null}
       </ConversationActionsContext>
       <ReviewWorkspaceHost task={task} api={api} live={undefined} reload={reload} />
-      <Dialog
+      <ArchiveConfirmDialog
         open={archive.confirm}
-        onOpenChange={(open) => {
-          archive.close(open)
+        busy={archive.busy}
+        problem={archive.problem}
+        onClose={(open) => archive.close(open)}
+        onAccept={archive.accept}
+      />
+      <ChatPromoteDialog
+        open={promote}
+        task={task}
+        api={api}
+        runs={runs}
+        workflowController={workflowController}
+        onHandoffFlight={onHandoffFlight}
+        onClose={() => setPromote(false)}
+        onPromoted={() => {
+          setPromote(false)
+          reload()
         }}
-      >
-        <DialogContent aria-describedby="chat-archive-detail">
-          <DialogHeader>
-            <DialogTitle>Stop and archive?</DialogTitle>
-          </DialogHeader>
-          <p id="chat-archive-detail">The agent is still running.</p>
-          {archive.problem ? <p role="alert">{archive.problem}</p> : null}
-          <div className="q-chat-dialog-actions">
-            <button
-              type="button"
-              className="q-btn"
-              disabled={archive.busy}
-              onClick={() => archive.close(false)}
-            >
-              Keep chatting
-            </button>
-            <button
-              type="button"
-              className="q-btn primary"
-              disabled={archive.busy}
-              onClick={() => void archive.accept()}
-            >
-              {archive.busy ? "Stopping…" : "Stop and archive"}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {promote ? (
-        <StartWorkflow
-          task={task.id}
-          api={api}
-          detail={task}
-          onStart={
-            runs && !task.outside
-              ? async (type, fromSavedPlan) => {
-                  const selected =
-                    workflowController &&
-                    runs.runs.find(
-                      (run) =>
-                        run.id === workflowController.run &&
-                        run.generation === workflowController.generation &&
-                        run.nativeSession === workflowController.nativeSession &&
-                        runTaskId(run) === task.id,
-                    )
-                  // Adopting the saved plan needs no agent window: without a bound one, the App records it
-                  // and the agent continues at the Plan on its next run.
-                  if (
-                    fromSavedPlan &&
-                    (!selected || !workflowController || !runs.adapter.handoffWorkflow)
-                  ) {
-                    await api.promoteChat(task.id, type, true)
-                    return
-                  }
-                  if (!selected || !workflowController || !runs.adapter.handoffWorkflow)
-                    throw new Error(
-                      "Take control of the existing agent window before starting the Plan. No new session will be started.",
-                    )
-                  onHandoffFlight?.(true)
-                  try {
-                    await runs.adapter.handoffWorkflow(
-                      selected,
-                      type,
-                      workflowController.proof,
-                      false,
-                      fromSavedPlan,
-                    )
-                    await runs.refresh()
-                  } finally {
-                    onHandoffFlight?.(false)
-                  }
-                }
-              : undefined
-          }
-          onClose={() => setPromote(false)}
-          onPromoted={() => {
-            setPromote(false)
-            reload()
-          }}
-        />
-      ) : null}
-      {document ? (
-        <Dialog
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              ++documentRead.current
-              setDocument(undefined)
-            }
-          }}
-        >
-          <DialogContent className="q-chat-reader sm:max-w-[960px]" aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle>{document.name}</DialogTitle>
-              <button
-                type="button"
-                className="q-btn sm"
-                onClick={() => {
-                  ++documentRead.current
-                  setDocument(undefined)
-                }}
-              >
-                Back to conversation
-              </button>
-            </DialogHeader>
-            {document.error ? (
-              <p role="alert">{document.error}</p>
-            ) : document.markdown === undefined ? (
-              <p role="status">Opening document…</p>
-            ) : (
-              <DocReader
-                markdown={document.markdown}
-                theme={theme}
-                unfolded
-                loadArtifact={(name) => {
-                  const ref = parseArtifactReference(name)
-                  return api.artifactPage(
-                    {
-                      scope: ref?.scope ?? "task",
-                      id: ref?.scope === "project" ? task.project : task.id,
-                    },
-                    ref?.file ?? name,
-                  )
-                }}
-              />
-            )}
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      />
+      <ChatDocumentDialog
+        document={document}
+        task={task}
+        api={api}
+        theme={theme}
+        onClose={closeDocument}
+      />
     </section>
   )
 }

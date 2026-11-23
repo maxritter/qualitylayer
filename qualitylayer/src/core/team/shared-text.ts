@@ -1,15 +1,20 @@
 // The plaintext rules of the team-copy boundary (publication.ts), without the HTML and CSS
 // validators: the caller says which wireframe and panel fences stay. publication.ts keeps a fence
 // only when it validates; the App's first script reads copies the server already passed through it.
-import { marked, type Token, type Tokens } from "marked"
-import { parseArtifactReference } from "../artifact/reference.ts"
+import { marked } from "marked"
 import { sharedArtifactSources } from "../artifact/sharing.ts"
 import { extractFences } from "../docs/fence-scanner.ts"
-import { MARKER_ARGS } from "../docs/markers.ts"
 import { NAMES, type Step } from "../docs/names.ts"
 import { FLOW_STEPS, flowStepOf } from "../flow.ts"
-import { isPictureFile } from "../review/screen-evidence.ts"
-export type PlanStill = { title: string; image: string; built?: string; outcome?: "omitted: size" }
+import { blocks, type FenceCheck } from "./shared-markdown.ts"
+import { isPlanStill, PLAN_STILL, SCREEN_STILLS, screenStillsFromDocs } from "./shared-stills.ts"
+
+export type { FenceCheck } from "./shared-markdown.ts"
+export {
+  isPlanStill,
+  PLAN_STILL,
+  type PlanStill,
+} from "./shared-stills.ts"
 
 /** The file a shared copy holds for each step. */
 export const STEP_DOCS: Record<Step, readonly string[]> = {
@@ -18,219 +23,65 @@ export const STEP_DOCS: Record<Step, readonly string[]> = {
   verify: [NAMES.verify],
 }
 
-export const PLAN_STILL = "plan-artifact.png"
-export const SCREEN_STILLS = "screen-pairs.json"
-export const SCREEN_STILL_KEY =
-  /^screen\/[a-z0-9][a-z0-9-]*(?:\/[\w.-]+\.html)?\/\d+(?:x\d+)?\/(?:light|dark)$/
+const CODE_TAGS = new Set([
+  "pre",
+  "code",
+  "script",
+  "style",
+  "textarea",
+  "xmp",
+  "iframe",
+  "object",
+  "svg",
+  "math",
+  "template",
+])
 
-export function isBuiltStill(image: unknown): image is string {
-  if (!isPlanStill(image)) return false
-  const bytes = atob(image.slice("data:image/png;base64,".length))
-  const width =
-    ((bytes.charCodeAt(16) << 24) >>> 0) +
-    (bytes.charCodeAt(17) << 16) +
-    (bytes.charCodeAt(18) << 8) +
-    bytes.charCodeAt(19)
-  return width > 0 && width <= 1280
+const HTML_TAG_PATTERN =
+  /<!--[\s\S]*?(?:-->|$)|<\/?([a-z][a-z0-9]*)\b(?:[^<>"']|"[^"]*"|'[^']*')*(?:>|$)/gi
+
+type Range = { start: number; end: number }
+
+function findFenceRanges(markdown: string): Range[] {
+  const offsets = [0]
+  for (const line of markdown.matchAll(/\n/g)) offsets.push(line.index + 1)
+  // Markdown containers add quote/list prefixes; remove their width only for locating fence lines.
+  const unwrapped = markdown.replace(
+    /^(?:[ \t]*(?:>|(?:[-+*]|\d+[.)])(?=[ \t])))+[ \t]*(?=[`~]{3})/gm,
+    (prefix) => " ".repeat(prefix.length),
+  )
+  return extractFences(unwrapped).map((fence) => ({
+    start: offsets[fence.line - 1] ?? 0,
+    end: offsets[fence.endLine] ?? markdown.length,
+  }))
 }
 
-/** Apply the picture budget again when opening an untrusted publication. */
-export function sharedScreenStills(value: unknown): Record<string, PlanStill> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
-  const out: Record<string, PlanStill> = {}
-  let used = 0,
-    count = 0
-  for (const [key, raw] of Object.entries(value).slice(0, 60)) {
-    if (!SCREEN_STILL_KEY.test(key) || typeof raw !== "object" || raw === null) continue
-    const still = raw as Partial<PlanStill>
-    if (typeof still.title !== "string") continue
-    const title = still.title.slice(0, 160)
-    const omitted = () => {
-      out[key] = { title, image: "", outcome: "omitted: size" }
-    }
-    if (still.outcome === "omitted: size") {
-      omitted()
-      continue
-    }
-    const size = (still.image?.length ?? 0) + (still.built?.length ?? 0)
-    if (count >= 6 || used + size > 400_000) {
-      omitted()
-      continue
-    }
-    if (!isBuiltStill(still.image) || (still.built !== undefined && !isBuiltStill(still.built)))
-      continue
-    out[key] = {
-      title: still.title.slice(0, 160),
-      image: still.image,
-      ...(still.built ? { built: still.built } : {}),
-    }
-    used += size
-    count++
+function updateCodeTagStack(stack: string[], rawTag: string, name: string): void {
+  if (rawTag.startsWith("</")) {
+    const at = stack.lastIndexOf(name)
+    if (at >= 0) stack.splice(at)
+    return
   }
-  return out
+  const selfClosing = rawTag.endsWith("/>") && (name === "svg" || name === "math")
+  if (!selfClosing) stack.push(name)
 }
 
-export function screenStillsFromDocs(docs: Record<string, unknown>): Record<string, PlanStill> {
-  try {
-    return sharedScreenStills(JSON.parse(String(docs[SCREEN_STILLS] ?? "{}")))
-  } catch {
-    return {}
+function stripHtmlCodeRegions(markdown: string, fences: Range[]): string {
+  const stack: string[] = []
+  let plain = ""
+  let cursor = 0
+  // Quoted attributes and nested code elements must not end a region early.
+  for (const tag of markdown.matchAll(HTML_TAG_PATTERN)) {
+    // Validate original fences before HTML stripping could turn hostile source into safe source.
+    if (fences.some((fence) => tag.index >= fence.start && tag.index < fence.end)) continue
+    if (stack.length === 0) plain += markdown.slice(cursor, tag.index)
+    const name = tag[1]?.toLowerCase() ?? ""
+    if (CODE_TAGS.has(name)) updateCodeTagStack(stack, tag[0], name)
+    else if (stack.length === 0) plain += tag[0]
+    cursor = tag.index + tag[0].length
   }
-}
-
-/**
- * The sections of a Review that QualityLayer writes from the records: the screens with their approved
- * pictures and the acceptance test with the pictures and outputs of the run that passed. Their file
- * names say which picture is which, so they stay; the rest of the document, and every other
- * document, loses its code.
- */
-const NAMED_SECTIONS = new Set(["Screens", "Acceptance test"])
-
-/** Where a document is written: the Review keeps file names inside `NAMED_SECTIONS`. */
-type Keep = {
-  review: boolean
-  names: boolean
-  planInline: boolean
-  valid: FenceCheck
-  layout: boolean
-}
-
-/** Whether a wireframe or panel fence stays in a team copy. */
-export type FenceCheck = (kind: "wireframe" | "panel", text: string) => boolean
-
-/** A file path as the writers print it: no spaces, no code punctuation, a folder or an extension. */
-const isFileName = (text: string) =>
-  text.length <= 300 &&
-  /^[\w@.+~-]+(?:\/[\w@.+~-]+)*$/.test(text) &&
-  (text.includes("/") || /\.[A-Za-z][\w-]{0,9}$/.test(text))
-
-function inline(tokens: Token[], keep: Keep): string {
-  return tokens
-    .map((token): string => {
-      switch (token.type) {
-        case "codespan": {
-          const text = (token as Tokens.Codespan).text
-          if (keep.planInline) return token.raw
-          return keep.names && isFileName(text) ? `\`${text}\`` : ""
-        }
-        case "image": {
-          const image = token as Tokens.Image
-          return keep.layout && isPictureFile(image.href) ? image.raw : ""
-        }
-        case "html":
-          return ""
-        // A loose task item holds its box in its first paragraph; the list writes it once.
-        case "checkbox":
-          return ""
-        case "strong":
-          return `**${inline((token as Tokens.Strong).tokens, keep)}**`
-        case "em":
-          return `*${inline((token as Tokens.Em).tokens, keep)}*`
-        case "del":
-          return `~~${inline((token as Tokens.Del).tokens, keep)}~~`
-        case "link": {
-          const link = token as Tokens.Link
-          const label = inline(link.tokens, keep)
-          return /^(https?:\/\/|#)/.test(link.href) && !/[`<>\s]/.test(link.href)
-            ? `[${label}](${link.href})`
-            : label
-        }
-        default:
-          return token.raw
-      }
-    })
-    .join("")
-}
-
-function blocks(tokens: Token[], keep: Keep): string {
-  return tokens
-    .map((token): string => {
-      switch (token.type) {
-        case "code": {
-          const code = token as Tokens.Code
-          const kind = (code.lang ?? "").trim()
-          if (kind === "mermaid") return `${code.raw.trimEnd()}\n\n`
-          if (keep.layout && kind === "artifact") {
-            const reference = parseArtifactReference(code.text.trim())
-            return reference
-              ? `\`\`\`artifact\n${reference.file}${reference.section ? `#${reference.section}` : ""}\n\`\`\`\n\n`
-              : ""
-          }
-          if (kind !== "wireframe" && kind !== "panel") return ""
-          return keep.valid(kind, code.text) ? `${code.raw.trimEnd()}\n\n` : ""
-        }
-        case "html":
-          return keep.layout && safeLayoutComment(token.raw) ? `${token.raw.trim()}\n\n` : ""
-        case "heading": {
-          const heading = token as Tokens.Heading
-          // A top-level heading of the Review opens the section whose name decides the file names.
-          if (heading.depth <= 2 && keep.review)
-            keep.names = NAMED_SECTIONS.has(heading.text.trim())
-          return `${"#".repeat(heading.depth)} ${inline(heading.tokens, keep)}\n\n`
-        }
-        case "paragraph":
-        case "text": {
-          const text = token as Tokens.Paragraph
-          return `${inline(text.tokens ?? marked.Lexer.lexInline(text.text), keep)}\n\n`
-        }
-        case "checkbox":
-          // The box of a task item is written once, by the list; its own text would add one per pass.
-          return ""
-        case "blockquote":
-          return `${blocks((token as Tokens.Blockquote).tokens, keep)
-            .trim()
-            .split("\n")
-            .map((line) => `> ${line}`)
-            .join("\n")}\n\n`
-        case "list": {
-          const list = token as Tokens.List
-          return `${list.items
-            .map((item, i) => {
-              const marker = list.ordered ? `${Number(list.start) + i}.` : "-"
-              // Nested blocks sit under the text, past the marker. A blank line stays empty and an
-              // empty item has no trailing space: either would grow with every pass.
-              const body = blocks(item.tokens, keep)
-                .trim()
-                .split("\n")
-                .map((line, at) =>
-                  at === 0 || line === "" ? line : `${" ".repeat(marker.length + 1)}${line}`,
-                )
-                .join("\n")
-              const text = `${item.task ? `[${item.checked ? "x" : " "}]${body === "" ? "" : " "}` : ""}${body}`
-              return text === "" ? marker : `${marker} ${text}`
-            })
-            .join("\n")}\n\n`
-        }
-        case "table": {
-          const table = token as Tokens.Table
-          const row = (cells: Tokens.TableCell[]) =>
-            `| ${cells.map((cell) => inline(cell.tokens, keep).trim().replaceAll("|", "\\|")).join(" | ")} |`
-          return `${row(table.header)}\n| ${table.header.map(() => "---").join(" | ")} |\n${table.rows.map(row).join("\n")}\n\n`
-        }
-        default:
-          return token.raw
-      }
-    })
-    .join("")
-}
-
-/** A complete, known layout comment, outside a code fence; no arbitrary HTML is preserved. */
-function safeLayoutComment(raw: string): boolean {
-  const lines = raw.trim().split(/\r?\n/)
-  if (lines.length === 0 || lines.length > 256) return false
-  return lines.every((rawLine) => {
-    const line = rawLine.trim()
-    if (!line.startsWith("<!--") || !line.endsWith("-->")) return false
-    const body = line.slice(4, -3).trim()
-    const close = /^\/ql:([a-z][a-z-]*)$/.exec(body)
-    if (close) return Object.hasOwn(MARKER_ARGS, close[1] ?? "")
-    const open = /^ql:([a-z][a-z-]*)(?:\s|$)/.exec(body)
-    const args = open === null ? "" : body.slice(open[0].length).trim()
-    if (/[<>]/.test(args)) return false
-    const rule =
-      open && Object.hasOwn(MARKER_ARGS, open[1] ?? "") ? MARKER_ARGS[open[1] ?? ""] : undefined
-    return rule?.test(args) === true
-  })
+  if (stack.length === 0) plain += markdown.slice(cursor)
+  return plain
 }
 
 /**
@@ -258,50 +109,7 @@ export function stripSharedCodeWith(
 }
 
 function stripOnce(valid: FenceCheck, markdown: string, docName?: string, layout = false): string {
-  const offsets = [0]
-  for (const line of markdown.matchAll(/\n/g)) offsets.push(line.index + 1)
-  // Markdown containers add quote/list prefixes; remove their width only for locating fence lines.
-  const unwrapped = markdown.replace(
-    /^(?:[ \t]*(?:>|(?:[-+*]|\d+[.)])(?=[ \t])))+[ \t]*(?=[`~]{3})/gm,
-    (prefix) => " ".repeat(prefix.length),
-  )
-  const fences = extractFences(unwrapped).map((fence) => ({
-    start: offsets[fence.line - 1] ?? 0,
-    end: offsets[fence.endLine] ?? markdown.length,
-  }))
-  const codeTags = new Set([
-    "pre",
-    "code",
-    "script",
-    "style",
-    "textarea",
-    "xmp",
-    "iframe",
-    "object",
-    "svg",
-    "math",
-    "template",
-  ])
-  const stack: string[] = []
-  let plain = "",
-    cursor = 0
-  // Quoted attributes and nested code elements must not end a region early.
-  for (const tag of markdown.matchAll(
-    /<!--[\s\S]*?(?:-->|$)|<\/?([a-z][a-z0-9]*)\b(?:[^<>"']|"[^"]*"|'[^']*')*(?:>|$)/gi,
-  )) {
-    // Validate original fences before HTML stripping could turn hostile source into safe source.
-    if (fences.some((fence) => tag.index >= fence.start && tag.index < fence.end)) continue
-    if (stack.length === 0) plain += markdown.slice(cursor, tag.index)
-    const name = tag[1]?.toLowerCase() ?? ""
-    if (codeTags.has(name)) {
-      if (tag[0].startsWith("</")) {
-        const at = stack.lastIndexOf(name)
-        if (at >= 0) stack.splice(at)
-      } else if (!tag[0].endsWith("/>") || !["svg", "math"].includes(name)) stack.push(name)
-    } else if (stack.length === 0) plain += tag[0]
-    cursor = tag.index + tag[0].length
-  }
-  if (stack.length === 0) plain += markdown.slice(cursor)
+  const plain = stripHtmlCodeRegions(markdown, findFenceRanges(markdown))
   return blocks(marked.lexer(plain), {
     review: docName === NAMES.verify,
     names: false,
@@ -311,26 +119,6 @@ function stripOnce(valid: FenceCheck, markdown: string, docName?: string, layout
   })
     .replace(/\n{3,}/g, "\n\n")
     .trim()
-}
-
-/** A PNG, not HTML/SVG or an arbitrary data URL. Only generated raster bytes are admitted. */
-export function isPlanStill(value: unknown): value is string {
-  if (
-    typeof value !== "string" ||
-    !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value) ||
-    value.length > 600_000
-  )
-    return false
-  try {
-    const bytes = atob(value.slice("data:image/png;base64,".length))
-    return (
-      bytes.startsWith("\x89PNG\r\n\x1a\n") &&
-      bytes.slice(12, 16) === "IHDR" &&
-      bytes.includes("IEND")
-    )
-  } catch {
-    return false
-  }
 }
 
 export function sharedDocumentsWith(

@@ -14,15 +14,32 @@ export type ManagedRunGroups = {
   blocked?: ReadonlySet<string>
 }
 
+function hasOpenTaskNeeds(task: TaskSummary): boolean {
+  if (task.needs?.some((need) => need.state === "open" || need.state === "chosen")) return true
+  if ((task.openItems ?? 0) > 0 || task.live?.question != null) return true
+  return task.live?.needs.some((need) => need.state === "open") ?? false
+}
+
 function explicitAttention(task: TaskSummary): boolean {
   if (autonomous(task)) return false
+  if (hasOpenTaskNeeds(task)) return true
+  return task.gate?.decision === "pending" && !task.gate.settled
+}
+
+function isInactiveOrAttached(task: TaskSummary, now: number): boolean {
+  if (task.archived || task.stage === "shipped" || task.stage === "abandoned" || task.handedBack)
+    return true
+  if (agentIdOf(task) !== null || task.action !== null) return true
   return (
-    (task.needs?.some((need) => need.state === "open" || need.state === "chosen") ?? false) ||
-    (task.openItems ?? 0) > 0 ||
-    task.live?.question != null ||
-    (task.live?.needs.some((need) => need.state === "open") ?? false) ||
-    (task.gate?.decision === "pending" && !task.gate.settled)
+    explicitAttention(task) || askingYou(task, now) || shellStatus(task, now).state === "stopped"
   )
+}
+
+function isActivePlanningRun(run: RunWindow, taskId: string): boolean {
+  if (runTaskId(run) !== taskId || run.attention === "waiting") return false
+  if (!["validated", "starting", "running"].includes(run.status)) return false
+  if (run.purpose.kind === "new-task") return true
+  return run.purpose.kind === "task" && run.purpose.phase === "planning"
 }
 
 /** The allocated task exists before its native planner has attached a task session. */
@@ -31,27 +48,9 @@ export function startingPlanningRun(
   task: TaskSummary,
   now = Date.now(),
 ): RunWindow | undefined {
-  if (
-    task.archived ||
-    task.stage === "shipped" ||
-    task.stage === "abandoned" ||
-    task.handedBack ||
-    agentIdOf(task) !== null ||
-    task.action !== null ||
-    explicitAttention(task) ||
-    askingYou(task, now) ||
-    shellStatus(task, now).state === "stopped"
-  )
-    return undefined
+  if (isInactiveOrAttached(task, now)) return undefined
   return runs
-    .filter(
-      (run) =>
-        runTaskId(run) === task.id &&
-        (run.purpose.kind === "new-task" ||
-          (run.purpose.kind === "task" && run.purpose.phase === "planning")) &&
-        run.attention !== "waiting" &&
-        ["validated", "starting", "running"].includes(run.status),
-    )
+    .filter((run) => isActivePlanningRun(run, task.id))
     .sort(
       (a, b) =>
         (Date.parse(b.startedAt) || 0) - (Date.parse(a.startedAt) || 0) ||
@@ -115,17 +114,12 @@ export function projectBuildGroups(groups: ShellGroups, managed?: ManagedRunGrou
   }
 }
 
-export function runAttention(input: Parameters<typeof forYouIn>[0], runs: readonly RunWindow[]) {
-  const base = forYouIn(input)
-  const blocked = new Map(
-    base.shell.open.flatMap((task) => {
-      if (task.stage === "shipped" || task.stage === "abandoned" || task.handedBack !== undefined)
-        return []
-      const run = blockedBuildRun(runs, task.id)
-      return run ? [[task.id, run] as const] : []
-    }),
-  )
-  const recovery = (task: TaskSummary, run: RunWindow): ForYouItem => ({
+function isLiveTaskStage(task: TaskSummary): boolean {
+  return task.stage !== "shipped" && task.stage !== "abandoned" && task.handedBack === undefined
+}
+
+function blockedRecoveryItem(task: TaskSummary, run: RunWindow): ForYouItem {
+  return {
     key: `task:${task.id}`,
     kind: "task",
     task: task.id,
@@ -139,20 +133,45 @@ export function runAttention(input: Parameters<typeof forYouIn>[0], runs: readon
       generation: run.generation,
       reason: blockedRunReason(run),
     },
-  })
-  const items = base.items.flatMap((item) => {
-    const task = item.own.task
-    if (startingPlanningRun(runs, task, input.now)) return []
-    const issue = blocked.get(task.id)
-    if (issue && !explicitAttention(task)) return [recovery(task, issue)]
-    if (!preferredBuildRun(runs, task.id) && !issue) return [item]
-    if (task.action !== "implement") return [item]
-    return explicitAttention(task) ? [{ ...item, action: { ...item.action, label: "Open" } }] : []
-  })
+  }
+}
+
+function resolveAttentionItem(
+  item: ForYouItem,
+  blocked: Map<string, RunWindow>,
+  runs: readonly RunWindow[],
+  now: number | undefined,
+): ForYouItem[] {
+  const { task } = item.own
+  if (startingPlanningRun(runs, task, now)) return []
+  const issue = blocked.get(task.id)
+  if (issue && !explicitAttention(task)) return [blockedRecoveryItem(task, issue)]
+  if ((!preferredBuildRun(runs, task.id) && !issue) || task.action !== "implement") return [item]
+  return explicitAttention(task) ? [{ ...item, action: { ...item.action, label: "Open" } }] : []
+}
+
+function collectBlockedMap(
+  openTasks: readonly TaskSummary[],
+  runs: readonly RunWindow[],
+): Map<string, RunWindow> {
+  const blocked = new Map<string, RunWindow>()
+  for (const task of openTasks) {
+    if (!isLiveTaskStage(task)) continue
+    const run = blockedBuildRun(runs, task.id)
+    if (run) blocked.set(task.id, run)
+  }
+  return blocked
+}
+
+export function runAttention(input: Parameters<typeof forYouIn>[0], runs: readonly RunWindow[]) {
+  const base = forYouIn(input)
+  const blocked = collectBlockedMap(base.shell.open, runs)
+  const items = base.items.flatMap((item) => resolveAttentionItem(item, blocked, runs, input.now))
   for (const task of base.shell.open) {
     const issue = blocked.get(task.id)
-    if (issue && !items.some((item) => item.own.task.id === task.id))
-      items.push(recovery(task, issue))
+    if (issue && !items.some((item) => item.own.task.id === task.id)) {
+      items.push(blockedRecoveryItem(task, issue))
+    }
   }
   items.sort((a, b) => a.since - b.since)
   const managed: ManagedRunGroups = {
@@ -165,10 +184,7 @@ export function runAttention(input: Parameters<typeof forYouIn>[0], runs: readon
       base.shell.open
         .filter(
           (task) =>
-            task.stage !== "shipped" &&
-            task.stage !== "abandoned" &&
-            task.handedBack === undefined &&
-            (preferredBuildRun(runs, task.id) || blocked.has(task.id)),
+            isLiveTaskStage(task) && (preferredBuildRun(runs, task.id) || blocked.has(task.id)),
         )
         .map((t) => t.id),
     ),

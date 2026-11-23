@@ -5,22 +5,37 @@ import type {
   Artifact,
   ArtifactsOverview,
   BrokenArtifact,
-  Changing,
   DraftEntry,
   LastingArtifact,
   ProjectArtifacts,
-  TaskMark,
 } from "../../core/artifact/format.ts"
 import type { ProjectLooks } from "../../core/project-look.ts"
 import type { Project, TaskSummary } from "../api.ts"
-import { agoPhrase } from "../hooks.ts"
-import {
-  knownProjects,
-  matchesQuery,
-  orderProjects,
-  type ProjectFacts,
-  projectFacts,
-} from "../sidebar/project-model.ts"
+import { matchesQuery, type ProjectFacts, projectFacts } from "../sidebar/project-model.ts"
+import { countsLine } from "./model-helpers.ts"
+import { visibleProjectEntries } from "./model-rows.ts"
+
+export { type DeletedRow, deletedRows, libraryCounts } from "./model-deleted.ts"
+export {
+  changingByTask,
+  changingLine,
+  countsLine,
+  draftBase,
+  lastChangeLine,
+  pagesWord,
+  stepWord,
+} from "./model-helpers.ts"
+export {
+  LIBRARY_FIRST,
+  LIBRARY_MORE,
+  LIBRARY_SORTS,
+  type LibraryGroup,
+  type LibraryRow,
+  type LibrarySort,
+  type LibraryView,
+  libraryGroups,
+} from "./model-library.ts"
+export { conflictPages, lastingTime } from "./model-rows.ts"
 
 export type Show = "all" | "lasting" | "drafts"
 
@@ -48,79 +63,6 @@ export type ArtifactGroup = {
   empty: boolean
 }
 
-export const lastingKey = (project: string, name: string): string => `${project}:${name}`
-
-export function countsLine(lasting: number, drafts: number): string {
-  if (lasting === 0 && drafts === 0) return "no artifacts"
-  const parts: string[] = []
-  parts.push(`${lasting} lasting`)
-  if (drafts > 0) parts.push(`${drafts} ${drafts === 1 ? "draft" : "drafts"}`)
-  return parts.join(" · ")
-}
-
-export function changingLine(changing: Changing[]): string {
-  if (changing.length === 0) return "No task is changing it"
-  return `Changing in ${changing.length} open ${changing.length === 1 ? "task" : "tasks"}`
-}
-
-/** One open task and what it changes in an artifact: the pages, and a draft to open for each of its drafts. */
-export type TaskChanges = {
-  task: TaskMark
-  pages: string[]
-  drafts: { name: string; file: string }[]
-}
-
-/** The open tasks changing an artifact, each once, in the order they first appear. */
-export function changingByTask(changing: Changing[]): TaskChanges[] {
-  const byTask = new Map<string, TaskChanges>()
-  for (const c of changing) {
-    const entry = byTask.get(c.task.id) ?? { task: c.task, pages: [], drafts: [] }
-    byTask.set(c.task.id, entry)
-    for (const page of c.pages) if (!entry.pages.includes(page)) entry.pages.push(page)
-    if (c.file !== "") entry.drafts.push({ name: c.draft, file: c.file })
-  }
-  return [...byTask.values()]
-}
-
-export function pagesWord(n: number): string {
-  return `${n} ${n === 1 ? "page" : "pages"}`
-}
-
-/** "24 pages · changed 1 h ago by Document header", else "24 pages · updated 3 d ago". */
-export function lastChangeLine(artifact: LastingArtifact, now = Date.now()): string {
-  const pages = pagesWord(artifact.pages.length)
-  const change = artifact.lastChange
-  if (change === null || artifact.updated > change.at)
-    return `${pages} · updated ${agoPhrase(lastingTime(artifact), now)}`.trimEnd()
-  const by = change.task !== undefined ? ` by ${change.task.title}` : ""
-  return `${pages} · changed ${agoPhrase(change.at, now)}${by}`
-}
-
-export const stepWord = (step: string): string => step.charAt(0).toUpperCase() + step.slice(1)
-
-const pageTitle = (artifact: LastingArtifact, page: string): string =>
-  artifact.pages.find((p) => p.page === page)?.title ?? page
-
-/** "builds on App Model › Sidebar, Home", or that it is new. `byKey` is `lastingKey(project, name)` to artifact. */
-export function draftBase(
-  draft: DraftEntry,
-  project: string,
-  byKey: ReadonlyMap<string, LastingArtifact>,
-): string {
-  const on = draft.draftOn
-  if (on === undefined) return "new, not part of a lasting artifact yet"
-  const artifact = byKey.get(lastingKey(on.project ?? project, on.artifact))
-  if (artifact === undefined) return `builds on ${on.artifact}`
-  const changing = artifact.changing.find(
-    (c) => c.draft === draft.name && c.task.id === draft.task.id,
-  )
-  const pages =
-    changing !== undefined && changing.pages.length > 0 ? changing.pages : on.page ? [on.page] : []
-  return pages.length === 0
-    ? `builds on ${artifact.title}`
-    : `builds on ${artifact.title} › ${pages.map((p) => pageTitle(artifact, p)).join(", ")}`
-}
-
 type Input = {
   overview: ArtifactsOverview
   projects: Project[]
@@ -130,304 +72,77 @@ type Input = {
   query: string
 }
 
-export function artifactGroups(input: Input): ArtifactGroup[] {
-  const { overview, looks, show } = input
-  const query = input.query.trim()
-  const byId = new Map(overview.projects.map((p) => [p.id, p]))
-  const ordered = orderProjects(knownProjects(input.projects, input.tasks), input.tasks, looks)
-  const factsOf = (id: string, name = id) => projectFacts({ id, name }, looks)
-  const groups: ArtifactGroup[] = []
-  for (const ref of ordered) {
-    if (looks.projects[ref.id]?.hidden === true) continue
-    const data: ProjectArtifacts | undefined = byId.get(ref.id)
-    if (data === undefined) continue
-    const facts = projectFacts(ref, looks)
-    const lasting: LastingItem[] = []
-    const broken: BrokenArtifact[] = []
-    for (const entry of data.lasting) {
-      if ("broken" in entry) broken.push(entry)
-      else
-        lasting.push({
-          artifact: entry,
-          owner: ref.id,
-          own: true,
-          alsoIn: entry.alsoIn.map((id) => factsOf(id, byId.get(id)?.name ?? id)),
-        })
-    }
-    for (const other of data.also)
+function collectProjectItems(
+  projectId: string,
+  data: ProjectArtifacts,
+  factsOf: (id: string) => ProjectFacts,
+): { lasting: LastingItem[]; broken: BrokenArtifact[] } {
+  const lasting: LastingItem[] = []
+  const broken: BrokenArtifact[] = []
+  for (const entry of data.lasting) {
+    if ("broken" in entry) broken.push(entry)
+    else
       lasting.push({
-        artifact: other.artifact,
-        owner: other.project,
-        own: false,
-        alsoIn: [factsOf(other.project, byId.get(other.project)?.name ?? other.project)],
+        artifact: entry,
+        owner: projectId,
+        own: true,
+        alsoIn: entry.alsoIn.map(factsOf),
       })
-    const everything = {
-      lasting: lasting.length,
-      drafts: data.drafts.length,
-      personal: data.personal.length,
-      broken: broken.length,
-    }
-    const empty =
-      everything.lasting + everything.drafts + everything.personal + everything.broken === 0
-    const projectHit = query !== "" && matchesQuery(`${facts.label} ${ref.name}`, query)
-    const keep = (text: string) => query === "" || projectHit || matchesQuery(text, query)
-    const group: ArtifactGroup = {
-      facts,
-      lasting:
-        show === "drafts"
-          ? []
-          : lasting.filter((l) => keep(`${l.artifact.title} ${l.artifact.name}`)),
-      broken: show === "drafts" ? [] : broken.filter((b) => keep(b.name)),
-      drafts:
-        show === "lasting"
-          ? []
-          : data.drafts.filter((d) => keep(`${d.title} ${d.name} ${d.task.title}`)),
-      personal: show === "drafts" ? [] : data.personal.filter((d) => keep(`${d.title} ${d.name}`)),
-      counts: countsLine(everything.lasting, everything.drafts),
-      empty,
-    }
-    const shown =
-      group.lasting.length + group.broken.length + group.drafts.length + group.personal.length
-    if (query !== "") {
-      if (shown === 0 && !projectHit) continue
-      if (show === "drafts" && group.drafts.length === 0) continue
-    } else if (show === "drafts" && group.drafts.length === 0) continue
-    groups.push(group)
   }
-  return groups
-}
-
-// ---------------------------------------------------------------- the Library
-
-/** Library: the active reusable artifacts; Archived: the archived ones, each once under its owner. */
-export type LibraryView = "library" | "archived"
-export type LibrarySort = "changed" | "name" | "pages" | "busy"
-export const LIBRARY_SORTS: readonly [LibrarySort, string][] = [
-  ["changed", "Recently changed"],
-  ["name", "Name A–Z"],
-  ["pages", "Most pages"],
-  ["busy", "Being changed first"],
-]
-/** Rows a project shows before Show more, and how many more each press adds. */
-export const LIBRARY_FIRST = 8
-export const LIBRARY_MORE = 25
-
-/** One row of the Library: a registered artifact (by owner and folder name) or an artifact only on this computer. */
-export type LibraryRow =
-  | {
-      kind: "lasting"
-      key: string
-      artifact: LastingArtifact
-      owner: string
-      /** False when this project only lists another project's artifact. */
-      own: boolean
-      alsoIn: ProjectFacts[]
-    }
-  | { kind: "personal"; key: string; artifact: Artifact; owner: string }
-  | { kind: "broken"; key: string; artifact: BrokenArtifact; owner: string }
-
-export type LibraryGroup = {
-  facts: ProjectFacts
-  rows: LibraryRow[]
-  /** Rows shown only because they changed during this search (see `keep`). */
-  kept: string[]
-  /** Everything the project holds in this view, before the search. */
-  total: number
-  /** Artifacts an open task is changing, and those two tasks change on the same page. */
-  busy: number
-  conflicts: number
-  /** The newest change of its artifacts, for the folded header. */
-  updated: number
-}
-
-export const lastingTime = (artifact: LastingArtifact) =>
-  Math.max(artifact.lastChange?.at ?? 0, artifact.updated)
-
-/** Pages two or more open tasks change at once: they will meet at Verify. */
-export function conflictPages(artifact: LastingArtifact): string[] {
-  const seen = new Map<string, number>()
-  for (const c of artifact.changing)
-    for (const page of c.pages) seen.set(page, (seen.get(page) ?? 0) + 1)
-  return [...seen].filter(([, n]) => n > 1).map(([page]) => page)
-}
-
-/** What a search reads: name, folder, what it shows, its pages and its project. */
-export function rowText(row: LibraryRow, project: string): string {
-  if (row.kind === "broken") return `${row.artifact.name} ${project}`
-  if (row.kind === "personal")
-    return `${row.artifact.title} ${row.artifact.name} ${row.artifact.purpose} ${project}`
-  const d = row.artifact
-  return `${d.title} ${d.name} ${d.purpose} ${d.pages.map((p) => `${p.title} ${p.page}`).join(" ")} ${project}`
-}
-
-function sortRows(rows: LibraryRow[], sort: LibrarySort): LibraryRow[] {
-  const title = (r: LibraryRow) => ("title" in r.artifact ? r.artifact.title : r.artifact.name)
-  const time = (r: LibraryRow) =>
-    r.kind === "lasting" ? lastingTime(r.artifact) : r.kind === "personal" ? r.artifact.updated : 0
-  const pages = (r: LibraryRow) =>
-    r.kind === "lasting" ? r.artifact.pages.length : r.kind === "personal" ? 1 : 0
-  const busy = (r: LibraryRow) => (r.kind === "lasting" ? r.artifact.changing.length : 0)
-  const by: Record<LibrarySort, (a: LibraryRow, b: LibraryRow) => number> = {
-    changed: (a, b) => time(b) - time(a),
-    name: (a, b) => title(a).localeCompare(title(b)),
-    pages: (a, b) => pages(b) - pages(a) || time(b) - time(a),
-    busy: (a, b) => busy(b) - busy(a) || time(b) - time(a),
-  }
-  return [...rows].sort(by[sort])
-}
-
-type LibraryInput = {
-  overview: ArtifactsOverview
-  projects: Project[]
-  tasks: TaskSummary[]
-  looks: ProjectLooks
-  view: LibraryView
-  query: string
-  /** One project's id, or "" for all of them. */
-  project: string
-  sort: LibrarySort
-  /**
-   * Rows (by key) changed during this search: a rename can take a row out of what the search
-   * matches, and the row stays, with its menu and focus, until the search changes.
-   */
-  keep?: ReadonlySet<string>
-}
-
-/**
- * The Library by project in the sidebar's order. A deleted artifact never lists; an archived one lists
- * only in Archived, once, under its owner. An artifact another project lists shows there too, opening its
- * owner's. Artifacts only on this computer stay in the Library with their own guarded management.
- */
-export function libraryGroups(input: LibraryInput): LibraryGroup[] {
-  const { overview, looks, view } = input
-  const query = input.query.trim()
-  const byId = new Map(overview.projects.map((p) => [p.id, p]))
-  const ordered = orderProjects(knownProjects(input.projects, input.tasks), input.tasks, looks)
-  const factsOf = (id: string) => projectFacts({ id, name: byId.get(id)?.name ?? id }, looks)
-  const groups: LibraryGroup[] = []
-  for (const ref of ordered) {
-    if (looks.projects[ref.id]?.hidden === true) continue
-    if (input.project !== "" && ref.id !== input.project) continue
-    const data = byId.get(ref.id)
-    if (data === undefined) continue
-    const facts = projectFacts(ref, looks)
-    const live = (d: LastingArtifact) =>
-      d.deletedAt === undefined &&
-      (view === "archived" ? d.archivedAt !== undefined : d.archivedAt === undefined)
-    const all: LibraryRow[] = []
-    for (const entry of data.lasting) {
-      if ("broken" in entry) {
-        if (view === "library")
-          all.push({
-            kind: "broken",
-            key: `${ref.id}:${entry.name}`,
-            artifact: entry,
-            owner: ref.id,
-          })
-      } else if (live(entry))
-        all.push({
-          kind: "lasting",
-          key: `${ref.id}:${entry.name}`,
-          artifact: entry,
-          owner: ref.id,
-          own: true,
-          alsoIn: entry.alsoIn.map(factsOf),
-        })
-    }
-    if (view === "library") {
-      for (const other of data.also)
-        if (live(other.artifact))
-          all.push({
-            kind: "lasting",
-            key: `${other.project}:${other.artifact.name}@${ref.id}`,
-            artifact: other.artifact,
-            owner: other.project,
-            own: false,
-            alsoIn: [factsOf(other.project)],
-          })
-      for (const artifact of data.personal)
-        all.push({ kind: "personal", key: `${ref.id}:${artifact.file}`, artifact, owner: ref.id })
-    }
-    const matches = (row: LibraryRow) => matchesQuery(rowText(row, facts.label), query)
-    const rows = sortRows(
-      query === "" ? all : all.filter((row) => matches(row) || input.keep?.has(row.key) === true),
-      input.sort,
-    )
-    if (query !== "" && rows.length === 0) continue
-    if (view === "archived" && all.length === 0) continue
-    const lasting = all.flatMap((r) => (r.kind === "lasting" ? [r.artifact] : []))
-    groups.push({
-      facts,
-      rows,
-      kept: query === "" ? [] : rows.filter((row) => !matches(row)).map((row) => row.key),
-      total: all.length,
-      busy: lasting.filter((d) => d.changing.length > 0).length,
-      conflicts: lasting.filter((d) => conflictPages(d).length > 0).length,
-      updated: lasting.reduce((at, d) => Math.max(at, lastingTime(d)), 0),
+  for (const other of data.also) {
+    lasting.push({
+      artifact: other.artifact,
+      owner: other.project,
+      own: false,
+      alsoIn: [factsOf(other.project)],
     })
   }
-  return groups
+  return { lasting, broken }
 }
 
-/** A deleted artifact under its owner, for Recently deleted in Archived. Never a listed copy. */
-export type DeletedRow = {
-  key: string
-  artifact: LastingArtifact
-  owner: string
+function buildArtifactGroup(params: {
+  ref: { id: string; name: string }
+  data: ProjectArtifacts
   facts: ProjectFacts
+  factsOf: (id: string) => ProjectFacts
+  show: Show
+  query: string
+}): ArtifactGroup | null {
+  const { ref, data, facts, factsOf, show, query } = params
+  const { lasting, broken } = collectProjectItems(ref.id, data, factsOf)
+  const empty = lasting.length + data.drafts.length + data.personal.length + broken.length === 0
+  const projectHit = query !== "" && matchesQuery(`${facts.label} ${ref.name}`, query)
+  const keep = (text: string) => query === "" || projectHit || matchesQuery(text, query)
+  const group: ArtifactGroup = {
+    facts,
+    lasting:
+      show === "drafts"
+        ? []
+        : lasting.filter((l) => keep(`${l.artifact.title} ${l.artifact.name}`)),
+    broken: show === "drafts" ? [] : broken.filter((b) => keep(b.name)),
+    drafts:
+      show === "lasting"
+        ? []
+        : data.drafts.filter((d) => keep(`${d.title} ${d.name} ${d.task.title}`)),
+    personal: show === "drafts" ? [] : data.personal.filter((d) => keep(`${d.title} ${d.name}`)),
+    counts: countsLine(lasting.length, data.drafts.length),
+    empty,
+  }
+  const shown =
+    group.lasting.length + group.broken.length + group.drafts.length + group.personal.length
+  if (show === "drafts" && group.drafts.length === 0) return null
+  if (query !== "" && shown === 0 && !projectHit) return null
+  return group
 }
 
-/**
- * Recently deleted, newest first: every visible project's own deleted artifacts (a listing in another
- * project is not repeated), narrowed by the search and the project filter as the Library is. Their
- * files and history are kept, so each one can be restored.
- */
-export function deletedRows(
-  input: Pick<LibraryInput, "overview" | "projects" | "tasks" | "looks" | "query" | "project">,
-): DeletedRow[] {
-  const { overview, looks } = input
+export function artifactGroups(input: Input): ArtifactGroup[] {
   const query = input.query.trim()
-  const byId = new Map(overview.projects.map((p) => [p.id, p]))
-  const out: DeletedRow[] = []
-  for (const ref of orderProjects(knownProjects(input.projects, input.tasks), input.tasks, looks)) {
-    if (looks.projects[ref.id]?.hidden === true) continue
-    if (input.project !== "" && ref.id !== input.project) continue
-    const data = byId.get(ref.id)
-    if (data === undefined) continue
-    const facts = projectFacts(ref, looks)
-    for (const entry of data.lasting) {
-      if ("broken" in entry || entry.deletedAt === undefined) continue
-      const row: LibraryRow = {
-        kind: "lasting",
-        key: `${ref.id}:${entry.name}`,
-        artifact: entry,
-        owner: ref.id,
-        own: true,
-        alsoIn: [],
-      }
-      if (query !== "" && !matchesQuery(rowText(row, facts.label), query)) continue
-      out.push({ key: row.key, artifact: entry, owner: ref.id, facts })
-    }
+  const groups: ArtifactGroup[] = []
+  for (const { ref, data, facts, byId } of visibleProjectEntries(input)) {
+    const factsOf = (id: string) =>
+      projectFacts({ id, name: byId.get(id)?.name ?? id }, input.looks)
+    const group = buildArtifactGroup({ ref, data, facts, factsOf, show: input.show, query })
+    if (group !== null) groups.push(group)
   }
-  return out.sort((a, b) => (b.artifact.deletedAt ?? 0) - (a.artifact.deletedAt ?? 0))
-}
-
-/** How many artifacts each view holds, across the visible projects (a listed copy counts once). */
-export function libraryCounts(
-  overview: ArtifactsOverview,
-  looks: ProjectLooks,
-): Record<LibraryView, number> {
-  let library = 0
-  let archived = 0
-  for (const project of overview.projects) {
-    if (looks.projects[project.id]?.hidden === true) continue
-    library += project.personal.length
-    for (const entry of project.lasting) {
-      if ("broken" in entry) continue
-      if (entry.deletedAt !== undefined) continue
-      if (entry.archivedAt !== undefined) archived += 1
-      else library += 1
-    }
-  }
-  return { library, archived }
+  return groups
 }

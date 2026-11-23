@@ -1,404 +1,44 @@
 // Timestamped, stable call revisions and incremental transcript parser state.
-import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { compressedLines, isCompressedRollout } from "../agents/codex-rollout.ts"
-import type { NativeAgent } from "../agents/ids.ts"
 import type { Task } from "../task/store.ts"
-import { nativeUsageUsd } from "./grok-pricing.ts"
 import { taskCost } from "./index.ts"
-import type { HelperKind } from "./labels.ts"
-import { type PricingContext, pricedCost, priceOf, zeroTokens } from "./prices.ts"
+import { addTotals, archiveMonths, readArchive } from "./ledger-archive.ts"
 import {
-  type Brief,
-  type Call,
-  type CodexParserState,
-  claudeCalls,
-  codexCalls,
-  mergeNativeCredits,
-  piCalls,
-} from "./transcripts.ts"
+  bytesRevision,
+  type LedgerCall,
+  ledgerFiles,
+  ledgerFolder,
+  lineKey,
+  readJsonFile,
+  type TaskCostTotal,
+  walkLedger,
+} from "./ledger-bytes.ts"
+import { readLedger, readTaskLedger } from "./ledger-scan.ts"
+import { indexedTranscript, offsetFile } from "./ledger-transcript.ts"
+import { upsertLedger } from "./ledger-upsert.ts"
 
-type Parsed = ReturnType<typeof codexCalls>
-type Offset = {
-  offset: number
-  size: number
-  mtimeMs: number
-  parsed: Parsed
-  codex: CodexParserState
-}
-export type LedgerCall = {
-  revision?: number
-  call: string
-  legacyCalls?: string[]
-  at: number | null
-  task: string
-  taskId: string
-  title: string
-  session: string
-  agent: NativeAgent
-  role: "session" | "review" | HelperKind
-  label: string | null
-  model: string
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-  cacheWrite5m: number
-  cacheWrite1h: number
-  usd: number | null
-  reportedCreditValueUsd?: number
-  nativeCredits?: Call["nativeCredits"]
-  pricing?: PricingContext
-  helper: {
-    brief: Brief
-    description: string | null
-    fallback: string
-    first: number | null
-    last: number | null
-    missing?: true
-  } | null
-}
-const folder = (ctx: Ctx) => join(ctx.home, "cost")
-async function json<T>(ctx: Ctx, path: string, fallback: T): Promise<T> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(path)) as T
-  } catch {
-    return fallback
-  }
+export type { LedgerCall, TaskCostTotal }
+export {
+  addTotals,
+  archiveMonths,
+  indexedTranscript,
+  offsetFile,
+  readArchive,
+  readLedger,
+  readTaskLedger,
+  upsertLedger,
 }
 
-// ---------------------------------------------------------------------------- the archive
-
-/**
- * What a task cost in months whose detail is gone: usd, tokens, calls and the models that had no
- * price. `cacheWrite` counts both holds, `cacheWrite1h` is the hour-long part of it, and `sessions`
- * names the agent sessions the calls came from, so a session whose transcript is gone is still known.
- */
-export type TaskCostTotal = {
-  reportedCreditValueUsd?: number
-  nativeCredits?: Call["nativeCredits"]
-  estimateUsd?: number
-  usd: number
-  tokens: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-    cacheWrite1h: number
-  }
-  calls: number
-  unpriced: { model: string; tokens: number }[]
-  sessions: string[]
-}
-export type CostArchive = {
-  version: 1
-  archivedThrough: string | null
-  months: string[]
-  tasks: Record<string, TaskCostTotal>
-}
-
-const archiveFile = (ctx: Ctx) => join(folder(ctx), "archive.json")
-
-/**
- * Whether the home is still there. The ledger's writes create their folders, so one that lands after
- * the home was moved or deleted would bring an empty cost folder back: every write checks first.
- */
-const homeThere = (ctx: Ctx) => ctx.fs.exists(ctx.home)
-
-/** The cost folder, made only while the home exists. False when the home is gone: nothing is written. */
-async function openFolder(ctx: Ctx): Promise<boolean> {
-  if (!(await homeThere(ctx))) return false
-  await ctx.fs.mkdir(folder(ctx), { mode: 0o700 })
-  return true
-}
-const emptyArchive = (): CostArchive => ({
-  version: 1,
-  archivedThrough: null,
-  months: [],
-  tasks: {},
-})
-const emptyTotal = (): TaskCostTotal => ({
-  usd: 0,
-  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 },
-  calls: 0,
-  unpriced: [],
-  sessions: [],
-})
-
-/** The archive, or an empty one when none was written. An unreadable file reads as empty. */
-export async function readArchive(ctx: Ctx): Promise<CostArchive> {
-  const found = await json<Partial<CostArchive> | null>(ctx, archiveFile(ctx), null)
-  return found?.version === 1 && Array.isArray(found.months) && typeof found.tasks === "object"
-    ? { ...emptyArchive(), ...found }
-    : emptyArchive()
-}
-
-export function addTotals(a: TaskCostTotal, b: TaskCostTotal): TaskCostTotal {
-  const unpriced = new Map(a.unpriced.map((u) => [u.model, u.tokens]))
-  for (const u of b.unpriced) unpriced.set(u.model, (unpriced.get(u.model) ?? 0) + u.tokens)
-  return {
-    usd: a.usd + b.usd,
-    ...(a.nativeCredits || b.nativeCredits
-      ? { nativeCredits: mergeNativeCredits(a.nativeCredits, b.nativeCredits) }
-      : {}),
-    ...(a.reportedCreditValueUsd !== undefined || b.reportedCreditValueUsd !== undefined
-      ? {
-          reportedCreditValueUsd: (a.reportedCreditValueUsd ?? 0) + (b.reportedCreditValueUsd ?? 0),
-        }
-      : {}),
-    ...(a.estimateUsd !== undefined || b.estimateUsd !== undefined
-      ? { estimateUsd: (a.estimateUsd ?? 0) + (b.estimateUsd ?? 0) }
-      : {}),
-    tokens: {
-      input: a.tokens.input + b.tokens.input,
-      output: a.tokens.output + b.tokens.output,
-      cacheRead: a.tokens.cacheRead + b.tokens.cacheRead,
-      cacheWrite: a.tokens.cacheWrite + b.tokens.cacheWrite,
-      cacheWrite1h: a.tokens.cacheWrite1h + b.tokens.cacheWrite1h,
-    },
-    calls: a.calls + b.calls,
-    unpriced: [...unpriced].map(([model, tokens]) => ({ model, tokens })),
-    sessions: [...new Set([...a.sessions, ...b.sessions])],
-  }
-}
-
-/** One call as a total: priced the way a task's cost prices it, so the sum does not move. */
-function totalOf(row: LedgerCall): TaskCostTotal {
-  const cacheWrite5m = row.cacheWrite5m ?? row.cacheWrite
-  const cacheWrite1h = row.cacheWrite1h ?? 0
-  const pricing = pricingOf(row)
-  const priced = pricedCost(
-    {
-      [row.model]: {
-        input: row.input,
-        output: row.output,
-        cacheRead: row.cacheRead,
-        cacheWrite5m,
-        cacheWrite1h,
-      },
-    },
-    pricing ?? {},
-  )
-  return {
-    usd: row.reportedCreditValueUsd ?? priced.usd,
-    ...(row.nativeCredits ? { nativeCredits: row.nativeCredits } : {}),
-    ...(row.reportedCreditValueUsd !== undefined
-      ? { reportedCreditValueUsd: row.reportedCreditValueUsd }
-      : priced.unpriced.length === 0 && pricing?.grokAggregate?.source !== "native"
-        ? { estimateUsd: priced.usd }
-        : {}),
-    tokens: {
-      input: row.input,
-      output: row.output,
-      cacheRead: row.cacheRead,
-      cacheWrite: cacheWrite5m + cacheWrite1h,
-      cacheWrite1h,
-    },
-    calls: 1,
-    unpriced: row.reportedCreditValueUsd !== undefined ? [] : priced.unpriced,
-    sessions: [`${row.agent}:${row.session}`],
-  }
-}
-
-/** The calendar month a row is filed under: where it is appended, and what the archive's cutoff compares. */
-function monthOf(ctx: Ctx, row: LedgerCall): string {
-  const at = new Date(row.at ?? ctx.clock.now())
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}`
-}
-
-/**
- * The last revision of each call in one month's file, handed to `fold` one row at a time in file
- * order. The file is read twice, a chunk of whole lines at a time: the first read keys every line and
- * marks the winners, the second parses only those. A month is tens of megabytes, and neither it nor
- * its rows are ever held whole.
- */
-async function foldFinalRows(
-  ctx: Ctx,
-  path: string,
-  fold: (row: LedgerCall) => void,
-): Promise<void> {
-  const last = new Map<string, { revision: number; line: number }>()
-  let lines = 0
-  await walkLedger(ctx, path, null, (bytes, from, end) => {
-    const line = lines++
-    const key = bytesKey(bytes, from, end) ?? lineKey(bytes.toString("utf8", from, end))
-    if (key !== null && (last.get(key.call)?.revision ?? -1) <= key.revision)
-      last.set(key.call, { revision: key.revision, line })
-  })
-  const wins = new Uint8Array(lines)
-  for (const { line } of last.values()) wins[line] = 1
-  last.clear()
-  let at = 0
-  await walkLedger(ctx, path, null, (bytes, from, end) => {
-    const line = at++
-    if (line >= lines || wins[line] !== 1) return
-    const row = parseRow(bytes.toString("utf8", from, end))
-    if (row !== null) fold(row)
-  })
-}
-
-/**
- * Fold months of the ledger into per-task totals and delete their files, under the ledger's lock.
- * The archive is written first (atomically) and lists the month; a month already listed whose file
- * is still there (a crash between the two) is deleted without being added again. Returns the months
- * archived or finished.
- */
-export async function archiveMonths(ctx: Ctx, months: string[]): Promise<string[]> {
-  const root = folder(ctx)
-  if (!(await openFolder(ctx))) return []
-  return ctx.fs.withLock(join(root, "ledger.lock"), async () => {
-    const done: string[] = []
-    for (const month of [...new Set(months)].filter((m) => /^\d{4}-\d{2}$/.test(m)).sort()) {
-      if (!(await homeThere(ctx))) break
-      const path = join(root, `${month}.ndjson`)
-      const archive = await readArchive(ctx)
-      if (archive.months.includes(month)) {
-        if (await ctx.fs.exists(path)) await ctx.fs.remove(path)
-        done.push(month)
-        continue
-      }
-      if (!(await ctx.fs.exists(path))) continue
-      // A home moved away mid-run ends the archive quietly: its file reads fail and nothing is written.
-      const folded = await foldFinalRows(ctx, path, (row) => {
-        archive.tasks[row.task] = addTotals(archive.tasks[row.task] ?? emptyTotal(), totalOf(row))
-      }).then(
-        () => true,
-        async (cause) => {
-          if (await homeThere(ctx)) throw cause
-          return false
-        },
-      )
-      if (!folded || !(await homeThere(ctx))) break
-      archive.months = [...archive.months, month].sort()
-      archive.archivedThrough = archive.months.at(-1) ?? null
-      await ctx.fs.atomicWrite(archiveFile(ctx), `${JSON.stringify(archive)}\n`)
-      await ctx.fs.remove(path)
-      done.push(month)
-    }
-    return done
-  })
-}
-
-/**
- * Each transcript's parser state is a small file of its own. One offsets.json for all of them grew
- * to megabytes, and every transcript of every cost read parsed it whole and wrote it back: hundreds
- * of megabytes of garbage for one task's cost, and a rewrite of the whole index per changed file.
- */
-const offsetsFolder = (ctx: Ctx) => join(folder(ctx), "offsets")
-export const offsetFile = (ctx: Ctx, path: string) =>
-  join(offsetsFolder(ctx), `${createHash("sha256").update(path).digest("hex").slice(0, 40)}.json`)
-type StoredOffset = Offset & { path: string }
-
-/** Read this much of a transcript at a time: a rollout of hundreds of megabytes is never one string. */
-const TRANSCRIPT_CHUNK = 8 * 1024 * 1024
-/** A ledger file is read this much at a time: small, so a read's own copies stay a few megabytes. */
-const LEDGER_CHUNK = 2 * 1024 * 1024
-
-/** Text read later in the same transcript, folded into what was read before it. */
-function mergeParsed(prior: Parsed, parsed: Parsed): Parsed {
-  parsed.id ??= prior.id
-  parsed.parent ??= prior.parent
-  parsed.cwd ??= prior.cwd
-  parsed.prompt = prior.prompt ?? parsed.prompt
-  parsed.ownHelper = prior.ownHelper ?? parsed.ownHelper
-  parsed.brief.helper = parsed.ownHelper ?? prior.brief.helper ?? parsed.brief.helper
-  const calls = new Map(prior.calls.map((call) => [call.id, call]))
-  for (const call of parsed.calls)
-    calls.set(call.id, { ...call, at: calls.get(call.id)?.at ?? call.at })
-  parsed.calls = [...calls.values()]
-  return parsed
-}
-
-/** Persist complete parser state, including cumulative totals and revised message usage. */
-export async function indexedTranscript(
-  ctx: Ctx,
-  path: string,
-  agent: "claude-code" | "codex" | "pi" | "opencode",
-): Promise<Parsed> {
-  const root = folder(ctx)
-  await ctx.fs.mkdir(root, { mode: 0o700 })
-  return ctx.fs.withLock(join(root, "offsets.lock"), async () => {
-    const file = offsetFile(ctx, path)
-    const stored = await json<StoredOffset | null>(ctx, file, null)
-    let prior: Offset | undefined = stored?.path === path ? stored : undefined
-    const stat = await ctx.fs.stat?.(path)
-    if (prior && stat && stat.size === prior.size && stat.mtimeMs === prior.mtimeMs)
-      return prior.parsed
-    if (
-      prior &&
-      stat &&
-      (stat.size < prior.size ||
-        (stat.size === prior.size && stat.mtimeMs !== prior.mtimeMs) ||
-        isCompressedRollout(path))
-    )
-      prior = undefined
-    const start = prior?.offset ?? 0
-    const codex = prior?.codex ?? { model: "unknown", before: zeroTokens(), turn: 0 }
-    let parsed: Parsed | null = prior?.parsed ?? null
-    let offset = start
-    let end = start
-    let window = TRANSCRIPT_CHUNK
-    // A compressed Codex rollout is a finished one: read whole, a changed one again from its start.
-    const compressed = agent === "codex" && isCompressedRollout(path)
-    if (compressed)
-      for await (const text of compressedLines(path, TRANSCRIPT_CHUNK)) {
-        const piece = codexCalls(text, codex)
-        parsed = parsed === null ? piece : mergeParsed(parsed, piece)
-        offset += Buffer.byteLength(text)
-      }
-    // Whole lines, a chunk at a time; a torn last line waits for the next read.
-    for (; !compressed; ) {
-      const raw = ctx.fs.readRange
-        ? await ctx.fs.readRange(path, offset, window)
-        : Buffer.from(await ctx.fs.readFile(path))
-            .subarray(offset)
-            .toString("utf8")
-      const read = Buffer.byteLength(raw)
-      end = offset + read
-      // A chunk cut inside a character decodes it as one replacement mark: never fewer bytes.
-      const full = ctx.fs.readRange !== undefined && read >= window - 4
-      const cut = raw.lastIndexOf("\n") + 1
-      // One line longer than the window: read it again from the same place with a larger one.
-      if (cut === 0 && full) {
-        window *= 2
-        continue
-      }
-      const text = raw.slice(0, cut)
-      const piece: Parsed =
-        agent === "codex"
-          ? codexCalls(text, codex)
-          : agent === "pi"
-            ? piCalls(text)
-            : { id: null, parent: null, ...claudeCalls(text) }
-      parsed = parsed === null ? piece : mergeParsed(parsed, piece)
-      offset += Buffer.byteLength(text)
-      if (!full) break
-      window = TRANSCRIPT_CHUNK
-    }
-    parsed ??= codexCalls("", codex)
-    const entry: StoredOffset = {
-      offset,
-      size: stat?.size ?? end,
-      mtimeMs: stat?.mtimeMs ?? 0,
-      parsed,
-      codex,
-      path,
-    }
-    await ctx.fs.mkdir(offsetsFolder(ctx), { mode: 0o700 })
-    await ctx.fs.atomicWrite(file, `${JSON.stringify(entry)}\n`)
-    return parsed
-  })
-}
 export async function rememberTask(
   ctx: Ctx,
   task: Partial<Task> & { runtimeDir: string },
 ): Promise<void> {
-  const root = folder(ctx)
+  const root = ledgerFolder(ctx)
   await ctx.fs.mkdir(root, { mode: 0o700 })
   await ctx.fs.withLock(join(root, "tasks.lock"), async () => {
     const path = join(root, "tasks.json")
-    const tasks = await json<Record<string, Partial<Task>>>(ctx, path, {})
+    const tasks = await readJsonFile<Record<string, Partial<Task>>>(ctx, path, {})
     const details = {
       runtimeDir: task.runtimeDir,
       repoId: task.repoId,
@@ -414,13 +54,14 @@ export async function rememberTask(
     await ctx.fs.atomicWrite(path, `${JSON.stringify(tasks)}\n`)
   })
 }
+
 /** Drop the task index's entries whose task folder is gone; how many went. */
 export async function forgetDeadTasks(ctx: Ctx): Promise<number> {
-  const root = folder(ctx)
+  const root = ledgerFolder(ctx)
   const path = join(root, "tasks.json")
   if (!(await ctx.fs.exists(path))) return 0
   return ctx.fs.withLock(join(root, "tasks.lock"), async () => {
-    const tasks = await json<Record<string, Partial<Task>>>(ctx, path, {})
+    const tasks = await readJsonFile<Record<string, Partial<Task>>>(ctx, path, {})
     const alive: Record<string, Partial<Task>> = {}
     for (const [dir, task] of Object.entries(tasks)) if (await ctx.fs.exists(dir)) alive[dir] = task
     const gone = Object.keys(tasks).length - Object.keys(alive).length
@@ -428,481 +69,10 @@ export async function forgetDeadTasks(ctx: Ctx): Promise<number> {
     return gone
   })
 }
-/** The lines of a ledger file, one at a time: a month of calls is tens of megabytes. */
-function* linesOf(text: string): Generator<string> {
-  let start = 0
-  while (start < text.length) {
-    let end = text.indexOf("\n", start)
-    if (end < 0) end = text.length
-    if (end > start) yield text.slice(start, end)
-    start = end + 1
-  }
-}
-function parseRow(line: string): LedgerCall | null {
-  try {
-    const row = JSON.parse(line) as LedgerCall
-    return typeof row?.call === "string" ? row : null
-  } catch {
-    return null /* torn append */
-  }
-}
-function* ledgerRows(text: string): Generator<LedgerCall> {
-  for (const line of linesOf(text)) {
-    const row = parseRow(line)
-    if (row !== null) yield row
-  }
-}
-
-const NEWLINE = 10
-const CALL_OPEN = Buffer.from('{"call":"')
-const REVISION_TAIL = Buffer.from(',"revision":')
-/**
- * A row's call and revision read from the line's bytes, without decoding or parsing the row: every
- * row is written by JSON.stringify with `call` first and `revision` last. Null for a line in any
- * other shape (an escaped call), which is then parsed.
- */
-function bytesKey(
-  bytes: Buffer,
-  from: number,
-  end: number,
-): { call: string; revision: number } | null {
-  const open = from + CALL_OPEN.length
-  if (end - from < CALL_OPEN.length + REVISION_TAIL.length || bytes[end - 1] !== 0x7d) return null
-  if (bytes.compare(CALL_OPEN, 0, CALL_OPEN.length, from, open) !== 0) return null
-  let close = open
-  while (close < end && bytes[close] !== 0x22) {
-    if (bytes[close] === 0x5c) return null
-    close++
-  }
-  const at = bytes.lastIndexOf(REVISION_TAIL, end - 1)
-  if (close >= end || at < close) return null
-  const digits = at + REVISION_TAIL.length
-  if (digits >= end - 1) return null
-  for (let i = digits; i < end - 1; i++) {
-    const byte = bytes[i] ?? 0
-    if (byte < 0x30 || byte > 0x39) return null
-  }
-  return {
-    call: bytes.toString("utf8", open, close),
-    revision: Number(bytes.toString("latin1", digits, end - 1)),
-  }
-}
-/** The call and revision of a line by parsing it; null for a torn line. */
-function lineKey(line: string): { call: string; revision: number } | null {
-  const row = parseRow(line)
-  return row === null ? null : { call: row.call, revision: row.revision ?? 0 }
-}
-
-async function readLedgerBytes(ctx: Ctx, path: string): Promise<Buffer> {
-  if (ctx.fs.readBytes === undefined) return Buffer.from(await ctx.fs.readFile(path), "utf8")
-  const bytes = await ctx.fs.readBytes(path)
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-}
-
-/**
- * A ledger file as chunks of whole lines, as bytes (the last chunk also holds a torn last line). A
- * month is tens of megabytes: only one chunk of it is held at a time, where the file system can read
- * a range, and a file system that cannot hands over the whole file as one chunk.
- */
-async function* ledgerChunks(ctx: Ctx, path: string): AsyncGenerator<Buffer> {
-  if (ctx.fs.readByteRange === undefined) {
-    yield await readLedgerBytes(ctx, path)
-    return
-  }
-  let offset = 0
-  let window = LEDGER_CHUNK
-  for (;;) {
-    // Bytes, never decoded here: a torn row cut inside a character keeps every offset exact.
-    const raw = await ctx.fs.readByteRange(path, offset, window)
-    const full = raw.byteLength >= window
-    const cut = raw.lastIndexOf(NEWLINE) + 1
-    if (cut === 0 && full) {
-      window *= 2
-      continue
-    }
-    yield full ? raw.subarray(0, cut) : raw
-    if (!full) return
-    offset += cut
-    window = LEDGER_CHUNK
-  }
-}
-
-/**
- * Each non-empty line of a ledger file in file order, with whether the needle (when given) occurs in
- * it; the file's size and whether it ends a line come back.
- */
-async function walkLedger(
-  ctx: Ctx,
-  path: string,
-  needle: Buffer | null,
-  visit: (bytes: Buffer, from: number, end: number, hit: boolean) => void,
-): Promise<{ chars: number; endsLine: boolean }> {
-  let chars = 0
-  let endsLine = false
-  for await (const bytes of ledgerChunks(ctx, path)) {
-    chars += bytes.byteLength
-    if (bytes.byteLength > 0) endsLine = bytes[bytes.byteLength - 1] === NEWLINE
-    let match = needle === null ? -1 : bytes.indexOf(needle)
-    for (let start = 0; start < bytes.byteLength; ) {
-      let end = bytes.indexOf(NEWLINE, start)
-      if (end < 0) end = bytes.byteLength
-      const from = start
-      start = end + 1
-      if (end === from) continue
-      while (needle !== null && match >= 0 && match < from) match = bytes.indexOf(needle, from)
-      visit(bytes, from, end, needle !== null && match >= from && match < end)
-    }
-  }
-  return { chars, endsLine }
-}
-
-/** The month files still to read: months in the archive are in its totals, whatever is left of their files. */
-async function ledgerFiles(ctx: Ctx, archived: string[]): Promise<string[]> {
-  return (await ctx.fs.readdir(folder(ctx)).catch(() => []))
-    .filter((name) => /^\d{4}-\d{2}\.ndjson$/.test(name) && !archived.includes(name.slice(0, 7)))
-    .sort()
-    .map((name) => join(folder(ctx), name))
-}
-
-/** Old Grok rows contain turn totals, not proof that the whole total was one request. */
-function pricingOf(row: LedgerCall): PricingContext | undefined {
-  const held = row.pricing
-  if (
-    row.agent !== "grok" ||
-    held?.grokAggregate !== undefined ||
-    (typeof held?.promptTokens === "number" &&
-      Number.isFinite(held.promptTokens) &&
-      held.promptTokens >= 0)
-  )
-    return held
-  const usd = nativeUsageUsd((row as LedgerCall & { reportedUsd?: unknown }).reportedUsd)
-  return {
-    ...held,
-    grokAggregate: usd === undefined ? { source: "unknown" } : { source: "native", usd },
-  }
-}
-
-/** New rates fill unpriced calls; Grok's old aggregate estimate is never kept as request context. */
-function priced(row: LedgerCall): LedgerCall {
-  const pricing = pricingOf(row)
-  return row.agent !== "grok" && row.usd !== null
-    ? row
-    : {
-        ...row,
-        ...(pricing ? { pricing } : {}),
-        usd: priceOf(
-          row.model,
-          {
-            input: row.input,
-            output: row.output,
-            cacheRead: row.cacheRead,
-            cacheWrite5m: row.cacheWrite5m ?? row.cacheWrite,
-            cacheWrite1h: row.cacheWrite1h ?? 0,
-          },
-          pricing,
-        ),
-      }
-}
-
-/**
- * The last revision of each call. `task`: only the calls whose last revision is that task's. Its
- * rows are found by their text before any is parsed, so one task's cost never parses the whole
- * ledger (tens of thousands of calls, hundreds of megabytes once parsed).
- */
-export async function readLedger(ctx: Ctx, options: { task?: string } = {}): Promise<LedgerCall[]> {
-  return (await scanLedger(ctx, options.task)).rows
-}
-
-/** A task's rows from the months still kept, and its total from the months archived. */
-export async function readTaskLedger(
-  ctx: Ctx,
-  task: string,
-): Promise<{ rows: LedgerCall[]; archived: TaskCostTotal | null }> {
-  const scan = await scanLedger(ctx, task)
-  return { rows: scan.rows, archived: scan.archive.tasks[task] ?? null }
-}
-
-/** What a month's file holds, for appending to it and for deciding when to compact it. */
-type MonthFacts = { chars: number; endsLine: boolean; lines: number; calls: number }
-type Scan = {
-  rows: LedgerCall[]
-  /** The highest revision in the whole ledger. */
-  revision: number
-  months: Map<string, MonthFacts>
-  /** The archive the scan was made against: its months were left out of `rows`. */
-  archive: CostArchive
-}
-
-/**
- * One task's scan is kept while the ledger files are unchanged (same sizes and times): a task's cost
- * reads its rows before and after writing, and the App reads every task's cost again and again.
- * Bounded by rows, and dropped soon when nobody asks.
- */
-const SCANNED_ROWS_KEPT = 20_000
-const SCAN_KEPT_MS = 2 * 60_000
-const scans = new Map<string, { stamp: string; scan: Scan; at: number }>()
-let scansDrop: ReturnType<typeof setTimeout> | undefined
-
-async function ledgerStamp(ctx: Ctx, files: string[]): Promise<string | null> {
-  const stat = ctx.fs.stat
-  if (stat === undefined) return null
-  const parts: string[] = []
-  for (const file of files) {
-    const s = await stat(file).catch(() => null)
-    if (s === null) return null
-    parts.push(`${file}:${s.size}:${s.mtimeMs}`)
-  }
-  return parts.join("|")
-}
-
-function keepScan(key: string, stamp: string, scan: Scan, now: number): void {
-  scans.delete(key)
-  scans.set(key, { stamp, scan, at: now })
-  let rows = 0
-  for (const kept of scans.values()) rows += kept.scan.rows.length
-  for (const [oldest, kept] of scans) {
-    if (rows <= SCANNED_ROWS_KEPT || oldest === key) break
-    scans.delete(oldest)
-    rows -= kept.scan.rows.length
-  }
-  if (scan.rows.length > SCANNED_ROWS_KEPT) scans.delete(key)
-  clearTimeout(scansDrop)
-  scansDrop = setTimeout(() => scans.clear(), SCAN_KEPT_MS)
-  scansDrop.unref?.()
-}
-
-/**
- * The last revision of each call, the ledger's highest revision and each month's facts, reading
- * every file once. `task`: only the calls whose last revision is that task's; its rows are found by
- * their text before any is parsed, and the rest are read for their call and revision alone.
- */
-async function scanLedger(ctx: Ctx, task: string | undefined): Promise<Scan> {
-  // The archive is read before the files and again after: a month archived in between would be in
-  // neither, so the scan is made again against the newer archive.
-  for (let attempt = 0; ; attempt++) {
-    const archive = await readArchive(ctx)
-    const scan = await scanFiles(ctx, task, archive)
-    const later = await readArchive(ctx)
-    if (attempt >= 3 || later.months.join() === archive.months.join())
-      return { ...scan, archive: later }
-  }
-}
-
-async function scanFiles(ctx: Ctx, task: string | undefined, archive: CostArchive): Promise<Scan> {
-  const files = await ledgerFiles(ctx, archive.months)
-  const filesStamp = task === undefined ? null : await ledgerStamp(ctx, files)
-  const stamp = filesStamp === null ? null : `${filesStamp}|archived:${archive.months.join()}`
-  const key = `${folder(ctx)}\0${task}`
-  const now = Date.now()
-  const kept = scans.get(key)
-  if (stamp !== null && kept?.stamp === stamp && now - kept.at < SCAN_KEPT_MS) return kept.scan
-  const needle = task !== undefined ? `"task":${JSON.stringify(task)}` : null
-  const needleBytes = needle === null ? null : Buffer.from(needle, "utf8")
-  const last = new Map<string, { row: LedgerCall; revision: number; line: number }>()
-  // Filtering: the newest revision of each call among other tasks' rows, which outranks this task's.
-  const elsewhere = new Map<string, { revision: number; line: number }>()
-  const months = new Map<string, MonthFacts>()
-  let revision = 0
-  // A file that changed between the two reads of it (a compaction) is read again from the start.
-  for (let attempt = 0; ; attempt++) {
-    last.clear()
-    elsewhere.clear()
-    months.clear()
-    revision = 0
-    let line = 0
-    /** The lines of this task's rows, and a short hash of the call of every other row. */
-    const own = new Set<number>()
-    const others = new Set<number>()
-    for (const path of files) {
-      // A chunk of whole lines at a time, as bytes: no month is ever held whole, and only the rows
-      // of this task are decoded. A call is remembered as a 32-bit hash, never as text.
-      const calls = new Set<number>()
-      let lines = 0
-      const facts = await walkLedger(ctx, path, needleBytes, (bytes, from, end, hit) => {
-        line++
-        let row: LedgerCall | null = null
-        if (needleBytes === null || hit) row = parseRow(bytes.toString("utf8", from, end))
-        const key =
-          row !== null
-            ? { call: row.call, revision: row.revision ?? 0 }
-            : (bytesKey(bytes, from, end) ?? lineKey(bytes.toString("utf8", from, end)))
-        if (key === null) return
-        lines++
-        const hash = Bun.hash.murmur32v3(key.call)
-        calls.add(hash)
-        revision = Math.max(revision, key.revision)
-        if (row !== null && (needle === null || row.task === task)) {
-          if ((last.get(row.call)?.revision ?? 0) <= key.revision)
-            last.set(row.call, { row, revision: key.revision, line })
-          if (needle !== null) own.add(line)
-        } else others.add(hash)
-      })
-      months.set(path, { chars: facts.chars, endsLine: facts.endsLine, lines, calls: calls.size })
-    }
-    // Only a call this task holds that another row shares needs the other row's revision. The hashes
-    // rule that out for nearly every task; the second read settles the rest (a hash can collide).
-    let shared = false
-    for (const call of last.keys()) if (others.has(Bun.hash.murmur32v3(call))) shared = true
-    if (!shared) break
-    let at = 0
-    let same = true
-    for (const path of files) {
-      const facts = await walkLedger(ctx, path, null, (bytes, from, end) => {
-        at++
-        if (own.has(at) || at > line) return
-        const key = bytesKey(bytes, from, end) ?? lineKey(bytes.toString("utf8", from, end))
-        if (key === null || !last.has(key.call)) return
-        const known = elsewhere.get(key.call)
-        if (known === undefined || known.revision <= key.revision)
-          elsewhere.set(key.call, { revision: key.revision, line: at })
-      })
-      if (facts.chars !== months.get(path)?.chars) same = false
-    }
-    if (same || attempt >= 2) break
-  }
-  const rows: LedgerCall[] = []
-  for (const [call, own] of last) {
-    const other = elsewhere.get(call)
-    // The same order the whole read keeps: the higher revision, and on a tie the later line.
-    if (
-      other !== undefined &&
-      (other.revision > own.revision || (other.revision === own.revision && other.line > own.line))
-    )
-      continue
-    rows.push(priced(own.row))
-  }
-  const scan: Scan = { rows, revision, months, archive }
-  if (stamp !== null) keepScan(key, stamp, scan, now)
-  return scan
-}
-
-/** Rows a compaction may drop before a month's file is rewritten: a quarter of its lines. */
-const COMPACT_SUPERSEDED = 0.25
-const COMPACT_BYTES = 2_000_000
-
-export async function upsertLedger(ctx: Ctx, allRows: LedgerCall[]): Promise<number> {
-  const root = folder(ctx)
-  if (!(await openFolder(ctx))) return 0
-  return ctx.fs
-    .withLock(join(root, "ledger.lock"), async () => {
-      // A call dated in an archived month is in the archive's totals: re-reading an old transcript
-      // never brings it back.
-      const through = (await readArchive(ctx)).archivedThrough
-      const rows = through === null ? allRows : allRows.filter((row) => monthOf(ctx, row) > through)
-      // Each call is compared with its last revision. A call whose last revision is another task's
-      // differs from the row in its task, so a row is compared with its own task's calls only: one
-      // scan of the rows' task, usually the one its cost has just read.
-      const last = new Map<string, LedgerCall>()
-      let revision = 0
-      let months = new Map<string, MonthFacts>()
-      for (const task of new Set(rows.map((row) => row.task))) {
-        const scan = await scanLedger(ctx, task)
-        for (const row of scan.rows) last.set(row.call, row)
-        revision = Math.max(revision, scan.revision)
-        months = scan.months
-      }
-      const replaced = new Map<string, Set<string>>()
-      for (const row of rows) {
-        for (const alias of row.legacyCalls ?? []) {
-          const before = last.get(alias)
-          if (
-            !before ||
-            alias === row.call ||
-            before.task !== row.task ||
-            before.agent !== row.agent ||
-            before.session !== row.session
-          )
-            continue
-          const path = join(root, `${monthOf(ctx, before)}.ndjson`)
-          const aliases = replaced.get(path) ?? new Set<string>()
-          aliases.add(alias)
-          replaced.set(path, aliases)
-        }
-      }
-      const existing = new Set(last.keys())
-      let count = 0
-      const batches = new Map<string, LedgerCall[]>()
-      for (const row of rows) {
-        const before = last.get(row.call)
-        if (
-          before?.task === row.task &&
-          JSON.stringify({ ...before, revision: undefined }) ===
-            JSON.stringify({ ...row, revision: undefined })
-        )
-          continue
-        const updated = { ...row, revision: ++revision }
-        const path = join(root, `${monthOf(ctx, row)}.ndjson`)
-        const batch = batches.get(path) ?? []
-        batch.push(updated)
-        batches.set(path, batch)
-        last.set(row.call, updated)
-        count++
-      }
-      for (const path of replaced.keys()) if (!batches.has(path)) batches.set(path, [])
-      for (const [path, batch] of batches) {
-        const file = months.get(path)
-        const appended = `${file !== undefined && file.chars > 0 && !file.endsLine ? "\n" : ""}${batch.map((row) => JSON.stringify(row)).join("\n")}\n`
-        if (!(await homeThere(ctx))) return 0
-        const aliases = replaced.get(path)
-        if (aliases) {
-          const retained = (await ctx.fs.readFile(path))
-            .split("\n")
-            .filter((line) => {
-              try {
-                return !aliases.has((JSON.parse(line) as LedgerCall).call)
-              } catch {
-                return true
-              }
-            })
-            .join("\n")
-          await ctx.fs.atomicWrite(path, `${retained}${appended}`)
-        } else await ctx.fs.append(path, appended)
-        // Periodic compaction keeps only the last durable revision, under the same lock: only when a
-        // good share of the file is superseded rows, never on every append to a large month. A row
-        // of a call the ledger already holds supersedes one (counted as if in this month).
-        const lines = (file?.lines ?? 0) + batch.length
-        const calls = (file?.calls ?? 0) + batch.filter((row) => !existing.has(row.call)).length
-        if (
-          (file?.chars ?? 0) + appended.length > COMPACT_BYTES &&
-          lines - calls >= lines * COMPACT_SUPERSEDED
-        ) {
-          const compact = new Map<string, LedgerCall>()
-          for (const row of ledgerRows(await ctx.fs.readFile(path))) compact.set(row.call, row)
-          if (!(await homeThere(ctx))) return 0
-          await ctx.fs.atomicWrite(
-            path,
-            `${[...compact.values()].map((row) => JSON.stringify(row)).join("\n")}\n`,
-          )
-        }
-      }
-      return count
-    })
-    .catch(async (cause) => {
-      // A read that failed because the home is gone ends the call quietly.
-      if (await homeThere(ctx)) throw cause
-      return 0
-    })
-}
-
-/** The revision a ledger line ends with, read from its bytes without decoding it; null for another shape. */
-function bytesRevision(bytes: Buffer, from: number, end: number): number | null {
-  if (bytes[end - 1] !== 0x7d) return null
-  const at = bytes.lastIndexOf(REVISION_TAIL, end - 1)
-  if (at < from) return null
-  let value = 0
-  for (let i = at + REVISION_TAIL.length; i < end - 1; i++) {
-    const digit = (bytes[i] ?? 0) - 0x30
-    if (digit < 0 || digit > 9) return null
-    value = value * 10 + digit
-  }
-  return value
-}
 
 /**
  * The highest revision in the months still kept. Every write to the ledger takes the next revision,
- * so the difference between two reads is the number of rows written between them. The files are read
- * a chunk of whole lines at a time and no row is decoded: this is what the sweep needs of the ledger
- * before and after it indexes the transcripts, and the ledger is hundreds of megabytes.
+ * so the difference between two reads is the number of rows written between them.
  */
 async function highestRevision(ctx: Ctx): Promise<number> {
   const archive = await readArchive(ctx)
@@ -925,20 +95,25 @@ async function highestRevision(ctx: Ctx): Promise<number> {
 
 /**
  * Read every known task's transcripts into the ledger, one task and one session at a time (a task's
- * cost read does exactly that), and say how many rows that wrote. Nothing but the highest revision is
- * kept of the ledger itself, so the footprint stays that of one task's read however long the ledger is.
+ * cost read does exactly that), and say how many rows that wrote.
  */
 export async function indexSessions(ctx: Ctx): Promise<number> {
   const before = await highestRevision(ctx)
-  const tasks = await json<Record<string, Task>>(ctx, join(folder(ctx), "tasks.json"), {})
+  const tasks = await readJsonFile<Record<string, Task>>(
+    ctx,
+    join(ledgerFolder(ctx), "tasks.json"),
+    {},
+  )
   for (const task of Object.values(tasks)) await taskCost(ctx, task)
   return Math.max(0, (await highestRevision(ctx)) - before)
 }
+
 export type Spent = {
   usd: number
   unpriced: { model: string; tokens: number }[]
   tasks: { id: string; title: string; usd: number; unpricedTokens?: number }[]
 }
+
 export function spentIn(rows: LedgerCall[], from: number, to: number): Spent {
   const tasks = new Map<string, Spent["tasks"][number]>()
   const unpriced = new Map<string, number>()

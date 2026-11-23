@@ -72,8 +72,11 @@ export async function draftPlan(ctx: Ctx, task: Task): Promise<Result<Drafted>> 
   return ctx.fs.withLock(lockPath(task), () => draftUnlocked(ctx, task))
 }
 
-async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
-  const document = folderDoc("plan")
+async function validateDraftPlan(
+  ctx: Ctx,
+  task: Task,
+  document: string,
+): Promise<Result<ValidationError[]>> {
   if (task.stage !== "plan")
     return err({
       code: "bad_args",
@@ -100,13 +103,20 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
     })
   // The design check of each artifact runs beside the draft and never holds it back: what it has not
   // reported, and each finding still without an answer, come back as warnings.
-  const warnings: ValidationError[] = [
+  return ok([
     ...report.data.errors.filter((e) => e.severity === "warning"),
     ...[
       ...(await pendingArtifactChecks(ctx, task)),
       ...(await unansweredArtifactFindings(ctx, task)),
     ].map((e): ValidationError => ({ ...e, severity: "warning" })),
-  ]
+  ])
+}
+
+async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
+  const document = folderDoc("plan")
+  const validated = await validateDraftPlan(ctx, task, document)
+  if (!validated.ok) return validated
+  const warnings = validated.data
   const step = await crossReviewStep(ctx, task, "plan")
   const run = step !== null ? await startReview(ctx, task, step) : null
   await ctx.fs.mkdir(task.runtimeDir)

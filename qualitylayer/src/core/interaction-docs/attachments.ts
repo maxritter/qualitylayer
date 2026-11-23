@@ -36,35 +36,37 @@ export type Incoming = { name: string; bytes: Uint8Array }
 const at = (bytes: Uint8Array, offset: number, ...expected: number[]) =>
   expected.every((value, index) => bytes[offset + index] === value)
 
-/** The type the file's own bytes name, or null: its name or the browser's type is not believed. */
-export function attachmentType(name: string, bytes: Uint8Array): AttachmentType | null {
+function isUtf8Text(bytes: Uint8Array): boolean {
+  if (bytes.includes(0)) return false
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function sniffBinaryAttachment(bytes: Uint8Array): AttachmentType | null {
   const image = sniffImage(bytes)
   if (image !== null) return image
   if (at(bytes, 0, 0x47, 0x49, 0x46, 0x38)) return "image/gif"
   if (at(bytes, 0, 0x25, 0x50, 0x44, 0x46, 0x2d)) return "application/pdf"
-  if (!(TEXT_EXTENSIONS as readonly string[]).includes(extname(name).toLowerCase())) return null
-  if (bytes.includes(0)) return null
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-    return "text/plain"
-  } catch {
-    return null
-  }
+  return null
+}
+
+/** The type the file's own bytes name, or null: its name or the browser's type is not believed. */
+export function attachmentType(name: string, bytes: Uint8Array): AttachmentType | null {
+  const binary = sniffBinaryAttachment(bytes)
+  if (binary !== null) return binary
+  const hasTextExt = (TEXT_EXTENSIONS as readonly string[]).includes(extname(name).toLowerCase())
+  return hasTextExt && isUtf8Text(bytes) ? "text/plain" : null
 }
 
 /** Local native-agent message files may be any format; unknown bytes remain inert downloads. */
 export function messageAttachmentType(name: string, bytes: Uint8Array): AttachmentType {
   const known = attachmentType(name, bytes)
   if (known) return known
-  if (!bytes.includes(0)) {
-    try {
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-      return "text/plain"
-    } catch {
-      // Binary formats are handed to the native agent as files, without interpreting their content.
-    }
-  }
-  return "application/octet-stream"
+  return isUtf8Text(bytes) ? "text/plain" : "application/octet-stream"
 }
 
 /** A file name that stays one plain name in the comment's folder, whatever the person's file was called. */

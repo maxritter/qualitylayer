@@ -86,13 +86,12 @@ export const item = (
   id: string,
   step: Item["step"],
   kind: Item["kind"],
-  family: Item["family"],
   what: string,
   patch: Partial<Item> = {},
 ): Item => ({
   id,
   step,
-  family: family ?? FAMILY_OF[kind],
+  family: patch.family ?? FAMILY_OF[kind],
   kind,
   kindLabel: KIND_LABEL[kind],
   what,
@@ -108,9 +107,9 @@ export const REVIEW_BASE = (): Item[] => [
     `verify:confirm:done:${REVIEW_CONFIRM_DONE}`,
     "verify",
     "confirm",
-    "confirm",
     "One replayed day matches to the cent on the staging ledger",
     {
+      family: "confirm",
       why: `Done ${REVIEW_CONFIRM_DONE} asks for 90 days rebuilt and one replayed day compared to the cent. The agents saved the parity report (evidence/it${FINAL_RUN}-scenario-8.txt); only you can compare the replayed day on the staging ledger.`,
       blocking: true,
     },
@@ -119,9 +118,9 @@ export const REVIEW_BASE = (): Item[] => [
     "verify:result:1",
     "verify",
     "result",
-    "look",
     "Plan and limits page, as built: this month's use, and an invalid limit shows its error",
     {
+      family: "look",
       media: {
         kind: "screenshot",
         name: `it${FINAL_RUN}-usage-1280.png`,
@@ -134,13 +133,14 @@ export const REVIEW_BASE = (): Item[] => [
     "verify:found:1",
     "verify",
     "found",
-    "fix",
     "The Plan and limits page keeps Save enabled with an empty limit",
     {
+      family: "fix",
       why: "After a limit is cleared, Save should stay disabled until it holds a number.",
     },
   ),
-  item("verify:found:2", "verify", "found", "fix", FOUND_EMPTY, {
+  item("verify:found:2", "verify", "found", FOUND_EMPTY, {
+    family: "fix",
     why: "`invoicing/usage-lines.ts:7` · a customer may read it as an error. A one-line change with two test strings.",
   }),
 ]

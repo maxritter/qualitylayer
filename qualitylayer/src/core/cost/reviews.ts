@@ -3,9 +3,11 @@ import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { NativeAgent } from "../agents/ids.ts"
 import { opencodeSessions } from "./native.ts"
-import { recordedPricing } from "./prices.ts"
-import { hasHeadlessUsage, headlessCalls } from "./review-headless.ts"
-import { type Call, claudeCalls, piCalls } from "./transcripts.ts"
+import { finalClaudeCalls, reviewCalls } from "./review-calls.ts"
+import { hasHeadlessUsage } from "./review-headless.ts"
+import type { Call } from "./transcripts.ts"
+
+export { reviewCalls }
 
 export type ReviewCost = {
   type: "qualitylayer-review-cost"
@@ -32,125 +34,31 @@ export type ReviewCost = {
    */
   seat?: string
 }
+
 const path = (task: { runtimeDir: string }) => join(task.runtimeDir, "review-costs.ndjson")
+const REVIEW_POINTS = new Set<string>(["plan", "build", "verify", "question", "another"])
+
 export const reviewCostId = (run: Pick<ReviewCost, "point" | "started" | "seat">) =>
   `cross-${run.point}-${run.started}${run.seat === undefined ? "" : `-${run.seat}`}`
 
-function finalClaudeCalls(text: string, at: number): Call[] | null {
-  const preliminary = claudeCalls(text).calls
-  let result: Call[] | null = null
-  for (const line of text.split("\n")) {
-    try {
-      const row = JSON.parse(line)
-      if (row.type !== "result" || !row.modelUsage || typeof row.modelUsage !== "object") continue
-      const models = Object.entries(row.modelUsage)
-      const calls: Call[] = []
-      for (const [model, value] of models) {
-        const usage = value as Record<string, unknown>
-        const numbers = [
-          usage.inputTokens,
-          usage.outputTokens,
-          usage.cacheReadInputTokens,
-          usage.cacheCreationInputTokens,
-        ]
-        if (
-          !numbers.every(
-            (value) => typeof value === "number" && Number.isFinite(value) && value >= 0,
-          )
-        )
-          continue
-        const writes = usage.cacheCreationInputTokens as number
-        const knownHour = preliminary
-          .filter((call) => call.model === model)
-          .reduce((sum, call) => sum + call.tokens.cacheWrite1h, 0)
-        const finalHour =
-          models.length === 1 ? row.usage?.cache_creation?.ephemeral_1h_input_tokens : undefined
-        const hour = Math.min(
-          writes,
-          typeof finalHour === "number" ? Math.max(0, finalHour) : knownHour,
-        )
-        calls.push({
-          at,
-          model,
-          tokens: {
-            input: usage.inputTokens as number,
-            output: usage.outputTokens as number,
-            cacheRead: usage.cacheReadInputTokens as number,
-            cacheWrite5m: writes - hour,
-            cacheWrite1h: hour,
-          },
-        })
-      }
-      if (calls.length === models.length && calls.length > 0) result = calls
-    } catch {
-      /* An incomplete event has no authoritative totals. */
-    }
-  }
-  return result
+function isReviewCostRow(row: ReviewCost): boolean {
+  return (
+    row.type === "qualitylayer-review-cost" &&
+    typeof row.id === "string" &&
+    REVIEW_POINTS.has(row.point) &&
+    Array.isArray(row.calls)
+  )
 }
 
-/** The call an OpenCode `step_finish` row reports, or null for any other row. */
-type OpencodeRow = {
-  type?: unknown
-  timestamp?: unknown
-  part?: {
-    tokens?: { input?: unknown; output?: unknown; cache?: { read?: number; write?: number } }
+function hydrateReviewRow(ctx: Ctx, row: ReviewCost): ReviewCost {
+  if (row.by === "opencode" && row.nativeSession && !row.finalized) {
+    const native = opencodeSessions(ctx, [row.nativeSession])?.find(
+      (session) => session.id === row.nativeSession,
+    )
+    return native?.complete ? { ...row, calls: native.calls, finalized: true, missing: false } : row
   }
-}
-
-function opencodeCall(row: OpencodeRow, model: string, at: number): Call | null {
-  if (row.type !== "step_finish" || !row.part?.tokens) return null
-  const u = row.part.tokens
-  if (typeof u.input !== "number" || typeof u.output !== "number") return null
-  return {
-    at: typeof row.timestamp === "number" ? row.timestamp : at,
-    model: model.split("/").slice(1).join("/").split("#")[0] || model,
-    tokens: {
-      input: u.input,
-      output: u.output,
-      cacheRead: u.cache?.read ?? 0,
-      cacheWrite5m: u.cache?.write ?? 0,
-      cacheWrite1h: 0,
-    },
-  }
-}
-
-export function reviewCalls(by: ReviewCost["by"], model: string, text: string, at: number): Call[] {
-  if (by === "claude-code") return finalClaudeCalls(text, at) ?? claudeCalls(text).calls
-  if (by === "pi") return piCalls(text).calls
-  if (hasHeadlessUsage(by)) return headlessCalls(by, model, text, at)
-  const calls: Call[] = []
-  for (const line of text.split("\n")) {
-    try {
-      const row = JSON.parse(line)
-      if (by === "opencode") {
-        const call = opencodeCall(row, model, at)
-        if (call !== null) calls.push(call)
-        continue
-      }
-      if (row.type !== "turn.completed" || !row.usage) continue
-      const u = row.usage
-      if (typeof u.input_tokens !== "number" || typeof u.output_tokens !== "number") continue
-      const cached = typeof u.cached_input_tokens === "number" ? u.cached_input_tokens : 0
-      // One aggregate CLI turn, not an invented count of its internal model calls.
-      calls.push({
-        at,
-        model,
-        // Final CLI usage is an aggregate turn, not a single long-context request.
-        pricing: { ...recordedPricing({ ...row, ...u }), promptTokens: 0 },
-        tokens: {
-          input: Math.max(0, u.input_tokens - cached),
-          output: u.output_tokens,
-          cacheRead: cached,
-          cacheWrite5m: u.cache_write_input_tokens ?? 0,
-          cacheWrite1h: 0,
-        },
-      })
-    } catch {
-      /* A partial event or a non-JSON diagnostic carries no usage. */
-    }
-  }
-  return calls
+  if (row.by === "claude-code" && row.finalized !== true) return { ...row, missing: true }
+  return row
 }
 
 export async function readReviewCosts(
@@ -162,35 +70,36 @@ export async function readReviewCosts(
   for (const line of text.split("\n")) {
     try {
       const row = JSON.parse(line) as ReviewCost
-      if (
-        row.type === "qualitylayer-review-cost" &&
-        typeof row.id === "string" &&
-        (row.point === "plan" ||
-          row.point === "build" ||
-          row.point === "verify" ||
-          row.point === "question" ||
-          row.point === "another") &&
-        Array.isArray(row.calls)
-      )
-        rows.push(
-          row.by === "opencode" && row.nativeSession && !row.finalized
-            ? (() => {
-                const native = opencodeSessions(ctx, [row.nativeSession ?? ""])?.find(
-                  (session) => session.id === row.nativeSession,
-                )
-                return native?.complete
-                  ? { ...row, calls: native.calls, finalized: true, missing: false }
-                  : row
-              })()
-            : row.by === "claude-code" && row.finalized !== true
-              ? { ...row, missing: true }
-              : row,
-        )
+      if (isReviewCostRow(row)) rows.push(hydrateReviewRow(ctx, row))
     } catch {
       /* A torn final line is retried at the next read. */
     }
   }
   return rows
+}
+
+function opencodeSessionFromStdout(stdout: string): string | undefined {
+  for (const line of stdout.split("\n")) {
+    try {
+      const event = JSON.parse(line)
+      if (typeof event.sessionID === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(event.sessionID))
+        return event.sessionID
+    } catch {
+      /* Native diagnostics contain no session. */
+    }
+  }
+  return undefined
+}
+
+function isFinalizedReview(
+  by: ReviewCost["by"],
+  calls: readonly Call[],
+  stdout: string,
+  ended: number,
+): boolean {
+  if (by === "codex" || by === "pi" || hasHeadlessUsage(by)) return calls.length > 0
+  if (by === "opencode") return false
+  return finalClaudeCalls(stdout, ended) !== null
 }
 
 export async function recordReviewCost(
@@ -200,33 +109,16 @@ export async function recordReviewCost(
   stdout: string,
 ): Promise<void> {
   let calls = reviewCalls(run.by, run.model, stdout, run.ended)
-  let finalized =
-    run.by === "codex" || run.by === "pi" || hasHeadlessUsage(run.by)
-      ? calls.length > 0
-      : run.by === "opencode"
-        ? false
-        : finalClaudeCalls(stdout, run.ended) !== null
+  let finalized = isFinalizedReview(run.by, calls, stdout, run.ended)
   let nativeSession: string | undefined
   if (run.by === "opencode") {
-    for (const line of stdout.split("\n")) {
-      try {
-        const event = JSON.parse(line)
-        if (typeof event.sessionID === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(event.sessionID)) {
-          nativeSession = event.sessionID
-          break
-        }
-      } catch {
-        /* Native diagnostics contain no session. */
-      }
-    }
-    if (nativeSession) {
-      const native = opencodeSessions(ctx, [nativeSession])?.find(
-        (session) => session.id === nativeSession,
-      )
-      if (native?.complete) {
-        calls = native.calls
-        finalized = true
-      }
+    nativeSession = opencodeSessionFromStdout(stdout)
+    const native = nativeSession
+      ? opencodeSessions(ctx, [nativeSession])?.find((session) => session.id === nativeSession)
+      : undefined
+    if (native?.complete) {
+      calls = native.calls
+      finalized = true
     }
   }
   const row: ReviewCost = {

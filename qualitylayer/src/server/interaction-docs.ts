@@ -1,68 +1,17 @@
 // DOCS owns this adapter and /interaction/docs/*; existing guarded document/artifact APIs stay.
 
-import { join } from "node:path"
-import { isArtifactDoc } from "../core/artifact/format.ts"
-import { headingSlug } from "../core/docs/anchor.ts"
-import { proseLines } from "../core/docs/rules/types.ts"
-import { readComments, requestHelperNow } from "../core/gate/comments.ts"
-import {
-  attachmentDir,
-  type Incoming,
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENTS,
-} from "../core/interaction-docs/attachments.ts"
-import { readRecord, recordIndex } from "../core/interaction-docs/records.ts"
-import { addThread, readThreads, resolveThread } from "../core/interaction-docs/threads.ts"
-import { startAnswering } from "../core/review/answers.ts"
+import { readThreads } from "../core/interaction-docs/threads.ts"
 import { isArchived } from "../core/task/archive.ts"
-import { asComment, readTeamComments } from "../core/team/comments.ts"
 import type { Ctx } from "../ctx.ts"
 import type { DocsSnapshot } from "../interaction/contracts.ts"
-import { type PublicationReadReason, publicationReadRefusal } from "../publication-fs.ts"
 import type { TaskDetail } from "./api.ts"
 import { locate } from "./api.ts"
 import { taskArtifacts } from "./artifacts.ts"
-import { tellOutsideAgent } from "./comment-wake.ts"
+import { docsPostRoute } from "./interaction-docs-post.ts"
+import { docsGetRoute, failDocs } from "./interaction-docs-read.ts"
 import type { InteractionRoute } from "./interaction-route.ts"
+
 export const docsCapabilities = { threads: true }
-
-type DocumentReadContext = { doc: string; artifact: boolean; thread: unknown }
-type DocumentReadFailure = {
-  kind: "document_read_refused"
-  reason: PublicationReadReason
-  commentSaved: false
-  recovery?: {
-    kind: "new_general_comment"
-    doc: string
-    clear: readonly string[]
-    requiresExplicitSend: true
-  }
-}
-
-function documentReadFailure(
-  cause: unknown,
-  context: DocumentReadContext | null,
-): DocumentReadFailure | undefined {
-  if (context === null) return undefined
-  const refused = publicationReadRefusal(cause)
-  if (refused === null) return undefined
-  const { doc, artifact, thread } = context
-  return {
-    kind: "document_read_refused",
-    reason: refused.reason,
-    commentSaved: false,
-    ...(!artifact && doc !== "final" && thread === undefined
-      ? {
-          recovery: {
-            kind: "new_general_comment" as const,
-            doc,
-            clear: ["quote", "before", "after", "section", "item", "pin", "thread"],
-            requiresExplicitSend: true as const,
-          },
-        }
-      : {}),
-  }
-}
 
 export async function docsSnapshot(task: TaskDetail, ctx: Ctx): Promise<DocsSnapshot> {
   const found = await locate(ctx, task.id)
@@ -73,200 +22,28 @@ export async function docsSnapshot(task: TaskDetail, ctx: Ctx): Promise<DocsSnap
     artifacts: artifacts.ok ? artifacts.data.task : [],
   }
 }
+
+const POST_ACTIONS = new Set(["thread", "resolve", "reopen", "helper"])
+
+async function handleWritableDocsPost(
+  ctx: Ctx,
+  task: Extract<Awaited<ReturnType<typeof locate>>, { ok: true }>["data"]["task"],
+  action: string,
+  request: Request,
+): Promise<Response> {
+  if (request.method !== "POST" || !POST_ACTIONS.has(action))
+    return failDocs("Unknown document action.", 404)
+  if (await isArchived(ctx, task)) return failDocs("Restore this task before commenting.")
+  if (task.stage === "shipped" || task.stage === "abandoned")
+    return failDocs("This task is closed; its comments are kept.")
+  return docsPostRoute(ctx, task, action as "thread" | "resolve" | "reopen" | "helper", request)
+}
+
 export const docsRoute: InteractionRoute = async (ctx, id, path, request) => {
   if (path[0] !== "docs") return null
-  const fail = (message: string, status = 400, detail?: DocumentReadFailure) =>
-    Response.json({ ok: false, error: { code: "bad_args", message, ...detail } }, { status })
-  if (id === null) return fail("A task is required.")
+  if (id === null) return failDocs("A task is required.")
   const found = await locate(ctx, id)
   if (!found.ok) return Response.json(found, { status: 404 })
-  const task = found.data.task
-  if (path[1] === "files" && request.method === "GET")
-    return Response.json({ ok: true, documents: await recordIndex(ctx, task) })
-  if (path[1] === "record" && request.method === "GET") {
-    try {
-      return Response.json({
-        ok: true,
-        text: await readRecord(ctx, task, new URL(request.url).searchParams.get("path") ?? ""),
-      })
-    } catch {
-      return fail("This record is missing or outside the task.", 404)
-    }
-  }
-  if (path[1] === "threads" && request.method === "GET")
-    return Response.json({ ok: true, threads: await readThreads(ctx, task) })
-  // One file of a comment, for its thumbnail or to open it: named by the comment and its name, so
-  // only what a comment lists is ever read.
-  if (path[1] === "attachment" && request.method === "GET") {
-    const url = new URL(request.url)
-    const wanted = url.searchParams.get("comment")
-    // Own comments, then a teammate's: its files were fetched into the same kind of folder.
-    const comment = [
-      ...(await readComments(ctx, task)),
-      ...(await readTeamComments(ctx, task)).map(asComment),
-    ].find((c) => c.id === wanted)
-    const file = comment?.files?.find((f) => f.name === url.searchParams.get("name"))
-    // The comments file is the person's own, but a path in it is still only read from its folder.
-    if (
-      comment === undefined ||
-      file === undefined ||
-      file.path !== join(attachmentDir(task, comment.id), file.name) ||
-      ctx.fs.readBytes === undefined
-    )
-      return fail("This file is no longer attached.", 404)
-    try {
-      const bytes = await ctx.fs.readBytes(file.path)
-      return new Response(new Blob([new Uint8Array(bytes)]), {
-        headers: {
-          "content-type": file.type === "text/plain" ? "text/plain; charset=utf-8" : file.type,
-          "content-disposition": `${file.type.startsWith("image/") ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
-          "x-content-type-options": "nosniff",
-          "content-security-policy": "default-src 'none'; sandbox",
-          "cache-control": "private, max-age=3600",
-        },
-      })
-    } catch {
-      return fail("This file is no longer attached.", 404)
-    }
-  }
-  if (
-    request.method !== "POST" ||
-    !["thread", "resolve", "reopen", "helper"].includes(path[1] ?? "")
-  )
-    return fail("Unknown document action.", 404)
-  if (await isArchived(ctx, task)) return fail("Restore this task before commenting.")
-  if (task.stage === "shipped" || task.stage === "abandoned")
-    return fail("This task is closed; its comments are kept.")
-  let validatingDocument: DocumentReadContext | null = null
-  try {
-    // A comment with files comes as a form: its words in the `comment` part, each file a `file` part.
-    const files: Incoming[] = []
-    let text: string
-    if (
-      path[1] === "thread" &&
-      request.headers.get("content-type")?.startsWith("multipart/form-data")
-    ) {
-      const form = await request.formData()
-      const part = form.get("comment")
-      if (typeof part !== "string") return fail("The comment part is missing.")
-      text = part
-      const parts = form.getAll("file")
-      if (parts.length > MAX_ATTACHMENTS)
-        return fail(`Attach at most ${MAX_ATTACHMENTS} files to a comment.`)
-      for (const file of parts) {
-        if (typeof file === "string") return fail("Each attachment must be a file.")
-        if (file.size > MAX_ATTACHMENT_BYTES) return fail(`${file.name} is larger than 10 MB.`)
-        files.push({ name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
-      }
-    } else text = await request.text()
-    if (text.length > 24000) return fail("The comment is too long.")
-    const body = JSON.parse(text) as Record<string, unknown>
-    if (body === null || typeof body !== "object" || Array.isArray(body))
-      return fail("Expected a comment object.")
-    // "Answer now with a helper": the thread's unanswered comments go to a fresh helper at once.
-    if (path[1] === "helper") {
-      if (typeof body.thread !== "string" || body.thread.length > 200)
-        return fail("Name the thread to answer.")
-      if ((await requestHelperNow(ctx, task, body.thread)) === 0)
-        return fail("Nothing on this thread waits for an answer.")
-      await startAnswering(ctx, task).catch(() => {})
-      return Response.json({
-        ok: true,
-        thread: (await readThreads(ctx, task)).find((t) => t.id === body.thread),
-      })
-    }
-    if (path[1] === "resolve" || path[1] === "reopen") {
-      if (typeof body.thread !== "string" || body.thread.length > 200)
-        return fail(`Name the thread to ${path[1]}.`)
-      const thread = await resolveThread(ctx, task, body.thread, path[1] === "reopen")
-      return Response.json({ ok: true, thread })
-    }
-    const { doc, quote, remark, item, thread, pin, before, after, section } = body
-    if (body.for !== undefined && body.for !== "agent" && body.for !== "person")
-      return fail("Unknown comment recipient.")
-    for (const context of [before, after]) {
-      if (
-        context !== undefined &&
-        (typeof context !== "string" || context.length > 48 || /\p{Cc}/u.test(context))
-      )
-        return fail("Passage context must be at most 48 characters without controls.")
-    }
-    if (
-      section !== undefined &&
-      (typeof section !== "string" ||
-        section.length > 80 ||
-        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(section))
-    )
-      return fail("Invalid document section.")
-    if (
-      typeof doc !== "string" ||
-      typeof quote !== "string" ||
-      typeof remark !== "string" ||
-      remark.trim() === "" ||
-      remark.length > 10000 ||
-      quote.length > 2000
-    )
-      return fail("Expected doc, quote and a comment of at most 10000 characters.")
-    if (item !== undefined && (typeof item !== "string" || item.length > 200))
-      return fail("Invalid item.")
-    if (thread !== undefined && (typeof thread !== "string" || thread.length > 200))
-      return fail("Invalid thread.")
-    if (pin !== undefined && (typeof pin !== "string" || pin.length > 1000))
-      return fail("Invalid diagram pin.")
-    const { folderDoc, STEPS: names } = await import("../core/docs/names.ts")
-    const artifact = isArtifactDoc(doc) && !doc.startsWith("docs/") && !doc.includes("..")
-    validatingDocument = { doc, artifact, thread }
-    if (
-      artifact &&
-      !(await (ctx.fs.forPublication?.(task.repoRoot, task.dir) ?? ctx.fs).exists(
-        join(task.dir, doc),
-      ))
-    )
-      return fail("This artifact no longer exists.")
-    if (doc !== "final" && !artifact && !names.some((role) => folderDoc(role) === doc))
-      return fail("This is not a document of this task.")
-    // A phase note is the person's input; commentPlaces independently locates its supplied quote.
-    if (artifact && typeof section === "string") {
-      const fs = ctx.fs.forPublication?.(task.repoRoot, task.dir) ?? ctx.fs
-      const markdown = await fs.readFile(join(task.dir, doc))
-      if (
-        !proseLines(markdown).some(({ text }) => {
-          const heading = /^#{1,6} (.+)$/.exec(text)?.[1]
-          return heading !== undefined && headingSlug(heading) === section
-        })
-      )
-        return fail("This section is not in the document. Select the passage again.")
-    }
-    validatingDocument = null
-    const added = await addThread(ctx, task, {
-      doc,
-      quote,
-      remark,
-      ...(body.for === "person" || body.for === "agent" ? { for: body.for } : {}),
-      ...(typeof before === "string" ? { before } : {}),
-      ...(typeof after === "string" ? { after } : {}),
-      ...(typeof section === "string" ? { section } : {}),
-      ...(typeof item === "string" ? { item } : {}),
-      ...(typeof thread === "string" ? { thread } : {}),
-      ...(typeof pin === "string" ? { pin } : {}),
-      ...(files.length > 0 ? { files } : {}),
-    })
-    // The backstop: a comment the agent does not read in time goes to a helper (review/answers.ts).
-    if (added.handling !== undefined) {
-      await startAnswering(ctx, task).catch(() => {})
-      const fresh = added.comments.at(-1)
-      if (fresh !== undefined) await tellOutsideAgent(ctx, task, [fresh.id], doc)
-    }
-    return Response.json({ ok: true, thread: added })
-  } catch (cause) {
-    return fail(
-      cause instanceof SyntaxError
-        ? "The comment is not valid JSON."
-        : cause instanceof Error
-          ? cause.message
-          : "The comment could not be saved.",
-      400,
-      documentReadFailure(cause, validatingDocument),
-    )
-  }
+  const getResponse = await docsGetRoute(ctx, found.data.task, path[1], request)
+  return getResponse ?? handleWritableDocsPost(ctx, found.data.task, path[1] ?? "", request)
 }

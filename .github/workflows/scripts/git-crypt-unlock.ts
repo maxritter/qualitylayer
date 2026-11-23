@@ -16,51 +16,75 @@ const HEADER = Buffer.from("\0GITCRYPT\0", "latin1")
 const NONCE_LEN = 12
 
 type Key = { aes: Buffer; hmac: Buffer }
+type KeyEntry = Key & { version: number }
+type KeyEntryDraft = { version: number; aes: Buffer | null; hmac: Buffer | null }
+
+function ensure(ok: unknown, message: string): asserts ok {
+  if (!ok) throw new Error(message)
+}
+
+class KeyReader {
+  at = 0
+  constructor(readonly data: Buffer) {}
+  get done(): boolean {
+    return this.at >= this.data.length
+  }
+  take(length: number): Buffer {
+    ensure(this.at + length <= this.data.length, "truncated git-crypt key file")
+    const value = this.data.subarray(this.at, this.at + length)
+    this.at += length
+    return value
+  }
+  u32(): number {
+    return this.take(4).readUInt32BE(0)
+  }
+}
+
+const KEY_FIELD_HANDLERS: Record<number, [number, (entry: KeyEntryDraft, raw: Buffer) => void]> = {
+  1: [4, (entry, raw) => { entry.version = raw.readUInt32BE(0) }],
+  3: [32, (entry, raw) => { entry.aes = Buffer.from(raw) }],
+  5: [64, (entry, raw) => { entry.hmac = Buffer.from(raw) }],
+}
+
+function skipKeyHeaderFields(reader: KeyReader): void {
+  for (let field = reader.u32(); field !== 0; field = reader.u32()) {
+    const length = reader.u32()
+    ensure(field === 1 || (field & 1) !== 1, `unknown critical key header field ${field}`)
+    reader.take(length)
+  }
+}
+
+function applyKeyField(entry: KeyEntryDraft, field: number, length: number, reader: KeyReader): void {
+  const handler = KEY_FIELD_HANDLERS[field]
+  if (handler && handler[0] === length) {
+    handler[1](entry, reader.take(length))
+    return
+  }
+  ensure((field & 1) !== 1, `unknown critical key entry field ${field}`)
+  reader.take(length)
+}
+
+function readKeyEntry(reader: KeyReader): KeyEntry {
+  const entry: KeyEntryDraft = { version: 0, aes: null, hmac: null }
+  for (let field = reader.u32(); field !== 0; field = reader.u32()) {
+    applyKeyField(entry, field, reader.u32(), reader)
+  }
+  ensure(entry.aes !== null && entry.hmac !== null, "incomplete git-crypt key entry")
+  return { version: entry.version, aes: entry.aes, hmac: entry.hmac }
+}
 
 /** The newest key entry of a git-crypt key file (format version 2). */
 function loadKey(path: string): Key {
-  const data = readFileSync(path)
-  let at = 0
-  const u32 = () => {
-    if (at + 4 > data.length) throw new Error("truncated git-crypt key file")
-    const value = data.readUInt32BE(at)
-    at += 4
-    return value
+  const reader = new KeyReader(readFileSync(path))
+  ensure(reader.take(12).equals(Buffer.from("\0GITCRYPTKEY", "latin1")), "not a git-crypt key file")
+  ensure(reader.u32() === 2, "unsupported git-crypt key file version")
+  skipKeyHeaderFields(reader)
+  let newest: KeyEntry | null = null
+  while (!reader.done) {
+    const entry = readKeyEntry(reader)
+    if (newest === null || entry.version > newest.version) newest = entry
   }
-  const take = (length: number) => {
-    if (at + length > data.length) throw new Error("truncated git-crypt key file")
-    const value = data.subarray(at, at + length)
-    at += length
-    return value
-  }
-  if (!take(12).equals(Buffer.from("\0GITCRYPTKEY", "latin1"))) throw new Error("not a git-crypt key file")
-  if (u32() !== 2) throw new Error("unsupported git-crypt key file version")
-  for (;;) {
-    const field = u32()
-    if (field === 0) break
-    const length = u32()
-    if (field !== 1 && (field & 1) === 1) throw new Error(`unknown critical key header field ${field}`)
-    take(length)
-  }
-  let newest: (Key & { version: number }) | null = null
-  while (at < data.length) {
-    let version = 0
-    let aes: Buffer | null = null
-    let hmac: Buffer | null = null
-    for (;;) {
-      const field = u32()
-      if (field === 0) break
-      const length = u32()
-      if (field === 1 && length === 4) version = take(4).readUInt32BE(0)
-      else if (field === 3 && length === 32) aes = Buffer.from(take(32))
-      else if (field === 5 && length === 64) hmac = Buffer.from(take(64))
-      else if ((field & 1) === 1) throw new Error(`unknown critical key entry field ${field}`)
-      else take(length)
-    }
-    if (aes === null || hmac === null) throw new Error("incomplete git-crypt key entry")
-    if (newest === null || version > newest.version) newest = { version, aes, hmac }
-  }
-  if (newest === null) throw new Error("the git-crypt key file holds no key")
+  ensure(newest !== null, "the git-crypt key file holds no key")
   return newest
 }
 
@@ -83,7 +107,7 @@ function decrypt(key: Key, stored: Buffer, path: string): Buffer {
   const decipher = ctr(key, nonce, true)
   const plain = Buffer.concat([decipher.update(stored.subarray(HEADER.length + NONCE_LEN)), decipher.final()])
   const check = createHmac("sha1", key.hmac).update(plain).digest().subarray(0, NONCE_LEN)
-  if (!timingSafeEqual(check, nonce)) throw new Error(`${path}: the git-crypt key does not match`)
+  ensure(timingSafeEqual(check, nonce), `${path}: the git-crypt key does not match`)
   return plain
 }
 
@@ -108,28 +132,26 @@ class Packets {
       this.buffer = this.buffer.subarray(4)
       return null
     }
-    if (!(await this.fill(length))) throw new Error("truncated packet")
+    ensure(await this.fill(length), "truncated packet")
     const payload = this.buffer.subarray(4, length)
     this.buffer = this.buffer.subarray(length)
     return payload
   }
   async lines(): Promise<string[] | undefined> {
     const lines: string[] = []
-    for (;;) {
-      const packet = await this.read()
-      if (packet === undefined) return lines.length === 0 ? undefined : lines
-      if (packet === null) return lines
-      lines.push(packet.toString("utf8").replace(/\n$/, ""))
+    for (let pkt = await this.read(); pkt !== null; pkt = await this.read()) {
+      if (pkt === undefined) return lines.length ? lines : undefined
+      lines.push(pkt.toString("utf8").replace(/\n$/, ""))
     }
+    return lines
   }
   async content(): Promise<Buffer> {
     const parts: Buffer[] = []
-    for (;;) {
-      const packet = await this.read()
-      if (packet === undefined) throw new Error("content ended without a flush packet")
-      if (packet === null) return Buffer.concat(parts)
-      parts.push(Buffer.from(packet))
+    for (let pkt = await this.read(); pkt !== null; pkt = await this.read()) {
+      ensure(pkt !== undefined, "content ended without a flush packet")
+      parts.push(Buffer.from(pkt))
     }
+    return Buffer.concat(parts)
   }
 }
 
@@ -144,52 +166,66 @@ async function send(): Promise<void> {
   await Bun.write(Bun.stdout, data)
 }
 
-async function filter(key: Key): Promise<void> {
-  const input = new Packets()
+async function negotiateFilter(input: Packets): Promise<void> {
   const hello = await input.lines()
-  if (hello?.[0] !== "git-filter-client" || !hello.includes("version=2")) throw new Error("not a git filter client")
+  ensure(hello?.[0] === "git-filter-client" && hello.includes("version=2"), "not a git filter client")
   packet("git-filter-server\n")
   packet("version=2\n")
   flush()
   await send()
   const offered = (await input.lines()) ?? []
-  for (const capability of ["clean", "smudge"])
-    if (offered.includes(`capability=${capability}`)) packet(`capability=${capability}\n`)
+  for (const cap of ["clean", "smudge"].filter((name) => offered.includes(`capability=${name}`)))
+    packet(`capability=${cap}\n`)
   flush()
   await send()
-  for (;;) {
-    const request = await input.lines()
-    if (request === undefined) return
-    const command = request.find((line) => line.startsWith("command="))?.slice(8)
-    const path = request.find((line) => line.startsWith("pathname="))?.slice(9) ?? "?"
-    const content = await input.content()
-    let result: Buffer
-    try {
-      result = command === "smudge" ? decrypt(key, content, path) : encrypt(key, content)
-    } catch (error) {
-      console.error(String(error))
-      packet("status=error\n")
-      flush()
-      await send()
-      continue
-    }
-    packet("status=success\n")
-    flush()
-    for (let at = 0; at < result.length; at += 65516) packet(result.subarray(at, at + 65516))
-    flush()
+}
+
+async function handleFilterRequest(key: Key, request: string[], content: Buffer): Promise<void> {
+  const command = request.find((line) => line.startsWith("command="))?.slice(8)
+  const path = request.find((line) => line.startsWith("pathname="))?.slice(9) ?? "?"
+  let result: Buffer
+  try {
+    result = command === "smudge" ? decrypt(key, content, path) : encrypt(key, content)
+  } catch (error) {
+    console.error(String(error))
+    packet("status=error\n")
     flush()
     await send()
+    return
+  }
+  packet("status=success\n")
+  flush()
+  for (let at = 0; at < result.length; at += 65516) packet(result.subarray(at, at + 65516))
+  flush()
+  flush()
+  await send()
+}
+
+async function filter(key: Key): Promise<void> {
+  const input = new Packets()
+  await negotiateFilter(input)
+  for (let request = await input.lines(); request !== undefined; request = await input.lines()) {
+    await handleFilterRequest(key, request, await input.content())
   }
 }
 
 function git(args: string[], input?: string): string {
   const run = Bun.spawnSync(["git", ...args], { stdin: input === undefined ? "ignore" : Buffer.from(input), stderr: "inherit" })
-  if (run.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed`)
+  ensure(run.exitCode === 0, `git ${args.join(" ")} failed`)
   return run.stdout.toString()
 }
 
+function listEncryptedFiles(): string[] {
+  const files = git(["ls-files", "-z"]).split("\0").filter(Boolean)
+  const attributes = git(["check-attr", "-z", "--stdin", "filter"], `${files.join("\0")}\0`).split("\0")
+  const encrypted: string[] = []
+  for (let i = 0; i + 2 < attributes.length; i += 3)
+    if (attributes[i + 2] === "git-crypt") encrypted.push(attributes[i] as string)
+  return encrypted
+}
+
 async function unlock(keyPath: string): Promise<void> {
-  const key = loadKey(keyPath)
+  loadKey(keyPath)
   const gitDir = resolve(git(["rev-parse", "--git-dir"]).trim())
   mkdirSync(join(gitDir, "git-crypt", "keys"), { recursive: true })
   const stored = join(gitDir, "git-crypt", "keys", "default")
@@ -198,20 +234,16 @@ async function unlock(keyPath: string): Promise<void> {
   const bun = process.execPath.replaceAll("\\", "/")
   git(["config", "filter.git-crypt.process", `"${bun}" "${script}" filter "${stored.replaceAll("\\", "/")}"`])
   git(["config", "filter.git-crypt.required", "true"])
-  const files = git(["ls-files", "-z"]).split("\0").filter(Boolean)
-  const attributes = git(["check-attr", "-z", "--stdin", "filter"], `${files.join("\0")}\0`).split("\0")
-  const encrypted: string[] = []
-  for (let i = 0; i + 2 < attributes.length; i += 3)
-    if (attributes[i + 2] === "git-crypt") encrypted.push(attributes[i] as string)
-  for (const file of encrypted) rmSync(file, { force: true })
+  const encrypted = listEncryptedFiles()
+  encrypted.forEach((file) => rmSync(file, { force: true }))
   const list = join(gitDir, "git-crypt", "unlock-paths")
   writeFileSync(list, `${encrypted.join("\0")}\0`)
   git(["checkout", "--pathspec-from-file", list, "--pathspec-file-nul", "--"])
   rmSync(list)
-  for (const file of encrypted)
-    if (readFileSync(file).subarray(0, HEADER.length).equals(HEADER)) throw new Error(`${file} is still encrypted`)
+  const stillEncrypted = encrypted.find((file) => readFileSync(file).subarray(0, HEADER.length).equals(HEADER))
+  ensure(!stillEncrypted, `${stillEncrypted} is still encrypted`)
   const dirty = git(["status", "--porcelain"]).trim()
-  if (dirty !== "") throw new Error(`the checkout is not clean after unlocking:\n${dirty}`)
+  ensure(dirty === "", `the checkout is not clean after unlocking:\n${dirty}`)
   console.log(`Repository unlocked: ${encrypted.length} encrypted files`)
 }
 

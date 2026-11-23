@@ -129,6 +129,25 @@ const LOCATED_FOR_MS = 20_000
 type Located = { at: number; path: string | null }
 const located = new WeakMap<Ctx["env"], Map<Reviewer, Located | Promise<string | null>>>()
 
+function cachedBinarySearch(
+  ctx: Ctx,
+  agent: Reviewer,
+  kept: Map<Reviewer, Located | Promise<string | null>>,
+): Promise<string | null> {
+  const search = findAgentBinary(ctx, agent).then(
+    (path) => {
+      kept.set(agent, { at: ctx.clock.now(), path })
+      return path
+    },
+    () => {
+      kept.delete(agent)
+      return null
+    },
+  )
+  kept.set(agent, search)
+  return search
+}
+
 /**
  * Whether the agent is on this computer, for a list that names what can start: `agentBinary`, then
  * the same search the executable check makes (login shell, the folders agents install to, npm's
@@ -143,18 +162,7 @@ export async function installedBinary(ctx: Ctx, agent: Reviewer): Promise<string
   const known = kept.get(agent)
   if (known instanceof Promise) return known
   if (known !== undefined && ctx.clock.now() - known.at < LOCATED_FOR_MS) return known.path
-  const search = findAgentBinary(ctx, agent).then(
-    (path) => {
-      kept.set(agent, { at: ctx.clock.now(), path })
-      return path
-    },
-    () => {
-      kept.delete(agent)
-      return null
-    },
-  )
-  kept.set(agent, search)
-  return search
+  return cachedBinarySearch(ctx, agent, kept)
 }
 
 /** The oldest version of Pi and OpenCode that has native sessions; null for an agent with no minimum. */

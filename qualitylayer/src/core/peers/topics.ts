@@ -62,11 +62,18 @@ function paths(topic: string): { log: string; meta: string; lock: string } {
   return { log: `${base}.jsonl`, meta: `${base}.meta.json`, lock: `${base}.lock` }
 }
 
+function positiveLimit(name: string, fallback: number, integer = true): number {
+  const raw = envNumber(name, fallback)
+  const value = integer ? Math.floor(raw) : raw
+  return value > 0 ? value : fallback
+}
+
 function limits(): [number, number, number] {
-  const ttl = envNumber("QUALITYLAYER_PEERS_TOPIC_TTL_DAYS", 7)
-  const entries = Math.floor(envNumber("QUALITYLAYER_PEERS_TOPIC_MAX_ENTRIES", 1000))
-  const bytes = Math.floor(envNumber("QUALITYLAYER_PEERS_TOPIC_MAX_BYTES", 16 * 1024 * 1024))
-  return [ttl > 0 ? ttl : 7, entries > 0 ? entries : 1000, bytes > 0 ? bytes : 16 * 1024 * 1024]
+  return [
+    positiveLimit("QUALITYLAYER_PEERS_TOPIC_TTL_DAYS", 7, false),
+    positiveLimit("QUALITYLAYER_PEERS_TOPIC_MAX_ENTRIES", 1000),
+    positiveLimit("QUALITYLAYER_PEERS_TOPIC_MAX_BYTES", 16 * 1024 * 1024),
+  ]
 }
 
 function readLines(logPath: string): [Entry, number][] {
@@ -180,15 +187,8 @@ export function topicTail(topic: string, since: number | null, limit = TOPIC_TAI
     chosen = entries.filter((e) => e.seq > since).slice(0, limit)
   }
   const last = chosen[chosen.length - 1]
-  const next =
-    last !== undefined
-      ? last.seq
-      : since === null
-        ? lastSeq
-        : gap !== null
-          ? Math.max(since, gap.to)
-          : since
-  return { topic, entries: chosen, next, gap }
+  const fallbackNext = since === null ? lastSeq : Math.max(since, gap?.to ?? since)
+  return { topic, entries: chosen, next: last?.seq ?? fallbackNext, gap }
 }
 
 export function topicList(): { topic: string; last_seq: number | null; last_ts: string | null }[] {

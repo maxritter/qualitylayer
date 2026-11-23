@@ -43,37 +43,47 @@ export function verdictWords(verdict: string | null): string | null {
   return text
 }
 
-/** The reviewer, its verdict and each finding with its answer, from reviews/plan.md. */
-export function reviewedByText(state: PageState): string | null {
-  const review = state.planReview
-  if (review === undefined) return null
-  if (review.state === "running" && review.round !== undefined)
-    return `**${review.label}** · round ${review.round} of 2, ${review.round === 1 ? "reading the Plan" : "answering each other's findings"}.`
-  if (review.state === "running") return `**${review.label}** · reading the Plan now.`
+type PlanReview = NonNullable<PageState["planReview"]>
+
+function pendingReviewText(review: PlanReview): string | null {
+  if (review.state === "running") {
+    return review.round !== undefined
+      ? `**${review.label}** · round ${review.round} of 2, ${review.round === 1 ? "reading the Plan" : "answering each other's findings"}.`
+      : `**${review.label}** · reading the Plan now.`
+  }
   if (review.state === "timed_out") return `**${review.label}** · ran out of time; no findings.`
   // A review that could not run is said plainly, never passed over (D19); the details stay in reviews/plan.md.
   if (review.state === "failed")
     return `**${review.subject ?? "The Plan review"} could not run:** ${review.reason ?? "the reviewer stopped before it answered"}.`
+  return null
+}
+
+function completedReviewText(review: PlanReview): string {
   const taken = review.findings.filter((f) => f.stance === "taken").length
   const kept = review.findings.filter((f) => f.stance === "kept").length
   const asked = review.findings.filter((f) => f.stance === "ask").length
   const count = review.findings.length
+  const askedText = asked > 0 ? `, ${asked} asked of you` : ""
   const tally =
     count === 0
       ? "nothing to change"
-      : `${count} ${count === 1 ? "finding" : "findings"}: ${taken} taken, ${kept} kept${asked > 0 ? `, ${asked} asked of you` : ""}`
+      : `${count} ${count === 1 ? "finding" : "findings"}: ${taken} taken, ${kept} kept${askedText}`
   const verdict = verdictWords(review.verdict)
   const head = `**${review.label}** · ${verdict !== null ? `${verdict} · ` : ""}${tally}.`
-  return count === 0
-    ? head
-    : [
-        head,
-        // A panel's finding says who backs it before the planner's answer, as its review file does.
-        ...review.findings.map(
-          (f) =>
-            `- ${f.what} · ${f.panel !== undefined ? `Panel: ${f.panel.backing} · ${f.panel.who} · ` : ""}${answerWords(f)}`,
-        ),
-      ].join("\n")
+  if (count === 0) return head
+  // A panel's finding says who backs it before the planner's answer, as its review file does.
+  const lines = review.findings.map((f) => {
+    const panel = f.panel !== undefined ? `Panel: ${f.panel.backing} · ${f.panel.who} · ` : ""
+    return `- ${f.what} · ${panel}${answerWords(f)}`
+  })
+  return [head, ...lines].join("\n")
+}
+
+/** The reviewer, its verdict and each finding with its answer, from reviews/plan.md. */
+export function reviewedByText(state: PageState): string | null {
+  const review = state.planReview
+  if (review === undefined) return null
+  return pendingReviewText(review) ?? completedReviewText(review)
 }
 
 /** The fresh check of the Plan's designs in one line: how many findings were fixed, kept or are still open. */

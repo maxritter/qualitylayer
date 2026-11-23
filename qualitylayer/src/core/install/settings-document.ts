@@ -49,6 +49,36 @@ export function tomlGet(text: string, table: string | null, key: string): string
   return null
 }
 
+function removeTomlKey(
+  lines: string[],
+  at: number,
+  table: string | null,
+  dropTableIfEmpty: boolean,
+): void {
+  if (at !== -1) lines.splice(at, 1)
+  if (!dropTableIfEmpty || table === null) return
+  const again = tomlRange(lines, table)
+  if (again === null) return
+  if (lines.slice(again.start, again.end).every((l) => l.trim() === ""))
+    lines.splice(again.start - 1, again.end - again.start + 1)
+}
+
+function insertTomlKey(
+  lines: string[],
+  range: { start: number; end: number },
+  table: string | null,
+  line: string,
+): void {
+  if (table !== null) {
+    lines.splice(range.start, 0, line)
+    return
+  }
+  // After the last top-level key, before the first table.
+  let insert = range.end
+  while (insert > 0 && (lines[insert - 1] ?? "").trim() === "") insert--
+  lines.splice(insert, 0, line)
+}
+
 /** Set (or with value null, remove) one key; returns the new text and whether a table was created. */
 export function tomlSet(
   text: string,
@@ -69,25 +99,9 @@ export function tomlSet(
     range = { start: lines.length, end: lines.length }
   }
   const at = lines.findIndex((l, i) => i >= range.start && i < range.end && pattern.test(l))
-  if (value === null) {
-    if (at !== -1) lines.splice(at, 1)
-    if (dropTableIfEmpty && table !== null) {
-      const again = tomlRange(lines, table)
-      const body = again === null ? [] : lines.slice(again.start, again.end)
-      if (again !== null && body.every((l) => l.trim() === "")) {
-        lines.splice(again.start - 1, again.end - again.start + 1)
-      }
-    }
-  } else if (at !== -1) {
-    lines[at] = `${key} = ${value}`
-  } else if (table === null) {
-    // After the last top-level key, before the first table.
-    let insert = range.end
-    while (insert > 0 && (lines[insert - 1] ?? "").trim() === "") insert--
-    lines.splice(insert, 0, `${key} = ${value}`)
-  } else {
-    lines.splice(range.start, 0, `${key} = ${value}`)
-  }
+  if (value === null) removeTomlKey(lines, at, table, dropTableIfEmpty)
+  else if (at !== -1) lines[at] = `${key} = ${value}`
+  else insertTomlKey(lines, range, table, `${key} = ${value}`)
   const joined = lines
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")

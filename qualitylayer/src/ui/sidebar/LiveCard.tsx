@@ -97,15 +97,10 @@ function OpenList({ row, id }: { row: LiveRow; id: string }) {
   )
 }
 
-/**
- * Wraps the task's row: the toggle sits on its third line, the opened list follows the row. Under
- * 260 px of sidebar the bars and the helpers drop and the count stays (live-card.css).
- */
-export function LiveCard({ row, children }: { row: LiveRow; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const card = useRef<HTMLDivElement>(null)
-  const sum = useRef<HTMLButtonElement>(null)
+function useTogglePadding(
+  card: React.RefObject<HTMLDivElement | null>,
+  sum: React.RefObject<HTMLButtonElement | null>,
+) {
   // The row's third line leaves exactly the toggle's width (and its 20 px of offset and gap) free.
   useLayoutEffect(() => {
     const host = card.current
@@ -121,8 +116,41 @@ export function LiveCard({ row, children }: { row: LiveRow; children: React.Reac
     const watch = new ResizeObserver(apply)
     watch.observe(toggle)
     return () => watch.disconnect()
-  }, [])
-  const done = row.todo?.filter((i) => i.state === "done").length ?? 0
+  }, [card, sum])
+}
+
+function TodoSummary({ todo, tone }: { todo: Todo; tone: RowTone }) {
+  const done = todo.filter((i) => i.state === "done").length
+  return (
+    <>
+      <ListTodoIcon className="size-3" aria-hidden="true" />
+      <span className="tm-strip ses-strip" data-droppable="bars" aria-hidden="true">
+        {todo.map((item, i) => (
+          <i
+            // biome-ignore lint/suspicious/noArrayIndexKey: bars are positions in the agent's list
+            key={i}
+            data-s={item.state === "done" ? "past" : item.state}
+            data-tone={item.state === "now" ? tone : undefined}
+          />
+        ))}
+      </span>
+      <span className="ses-n">
+        {done}/{todo.length}
+      </span>
+    </>
+  )
+}
+
+/**
+ * Wraps the task's row: the toggle sits on its third line, the opened list follows the row. Under
+ * 260 px of sidebar the bars and the helpers drop and the count stays (live-card.css).
+ */
+export function LiveCard({ row, children }: { row: LiveRow; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const card = useRef<HTMLDivElement>(null)
+  const sum = useRef<HTMLButtonElement>(null)
+  useTogglePadding(card, sum)
   const helpers = row.helpers.reduce((n, h) => n + h.n, 0)
   const summary = words(row)
   const label = row.todo !== null ? "tasks" : "helpers"
@@ -144,24 +172,7 @@ export function LiveCard({ row, children }: { row: LiveRow; children: React.Reac
           title={open ? `Hide ${label}` : `Show ${label}`}
           onClick={() => setOpen(!open)}
         >
-          {row.todo !== null ? <ListTodoIcon className="size-3" aria-hidden="true" /> : null}
-          {row.todo !== null ? (
-            <span className="tm-strip ses-strip" data-droppable="bars" aria-hidden="true">
-              {row.todo.map((item, i) => (
-                <i
-                  // biome-ignore lint/suspicious/noArrayIndexKey: bars are positions in the agent's list
-                  key={i}
-                  data-s={item.state === "done" ? "past" : item.state}
-                  data-tone={item.state === "now" ? TONE[row.state] : undefined}
-                />
-              ))}
-            </span>
-          ) : null}
-          {row.todo !== null ? (
-            <span className="ses-n">
-              {done}/{row.todo.length}
-            </span>
-          ) : null}
+          {row.todo !== null ? <TodoSummary todo={row.todo} tone={TONE[row.state]} /> : null}
           {helpers > 0 ? (
             <span className="ses-bots">
               <BotIcon className="size-3" aria-hidden="true" />

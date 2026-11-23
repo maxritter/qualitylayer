@@ -17,15 +17,17 @@ import type {
   ConversationSnapshot,
 } from "../../../core/conversation/types.ts"
 import { subscribeEventCount } from "../../hooks.ts"
-import { addEarlier, applySnapshot, fillEvent, type Loaded } from "./model.ts"
+import {
+  CATCHUP_MAX_READS,
+  type ConversationState,
+  createGate,
+  type Gate,
+  OUTPUT_READ_MS,
+  requestRead,
+} from "./conversation-gate.ts"
+import { addEarlier, fillEvent, type Loaded } from "./model.ts"
 
-/** The least time between the starts of two reads that the terminal's output asked for. */
-export const OUTPUT_READ_MS = 1000
-export const CATCHUP_BATCH_READS = 4
-export const CATCHUP_MAX_READS = 32
-export const CATCHUP_GAP_MS = 250
-/** After this many failed reads in a row the view says it is retrying. */
-const FAILURES_SHOWN = 2
+export { CATCHUP_MAX_READS, type ConversationState, OUTPUT_READ_MS }
 
 /** A signal without a payload, for the many small things that say "look again" (the terminal's output). */
 export type Pulse = {
@@ -51,30 +53,6 @@ export function createPulse(): Pulse {
 export type ConversationMore = {
   earlier(before: string): Promise<ConversationPage | undefined>
   whole(id: string): Promise<ConversationEvent | undefined>
-}
-
-export type ConversationState = {
-  loaded: Loaded | undefined
-  /** The record cannot be read for this run (the server has no conversation for it). */
-  unavailable: boolean
-  /** Reads are failing; the last good conversation stays on screen. */
-  failing: boolean
-  /** More records remain after the finite automatic read budget. */
-  catchupLimited: boolean
-}
-
-type Gate = {
-  /** The view is on screen and the page visible: triggers read. */
-  open: boolean
-  busy: boolean
-  again: boolean
-  /** Terminal output came while a read ran. */
-  late: boolean
-  startedAt: number
-  failures: number
-  flight: Promise<void> | undefined
-  catchupReads: number
-  catchupTimer?: ReturnType<typeof setTimeout>
 }
 
 type ConversationReader = {
@@ -142,6 +120,18 @@ export function useMore(
   return { loadEarlier, showMore: more ? showMore : undefined }
 }
 
+function usePageVisible(): boolean {
+  const [seen, setSeen] = useState(
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  )
+  useEffect(() => {
+    const update = () => setSeen(document.visibilityState !== "hidden")
+    document.addEventListener("visibilitychange", update)
+    return () => document.removeEventListener("visibilitychange", update)
+  }, [])
+  return seen
+}
+
 export function useConversation(
   load: ((after?: string) => Promise<ConversationSnapshot | undefined>) | undefined,
   on: boolean,
@@ -160,97 +150,12 @@ export function useConversation(
   loader.current = load
   const closer = useRef(closed)
   closer.current = closed
-  const gate = useRef<Gate>({
-    open: false,
-    busy: false,
-    again: false,
-    late: false,
-    startedAt: Number.NEGATIVE_INFINITY,
-    failures: 0,
-    flight: undefined,
-    catchupReads: 0,
-  })
-  const [seen, setSeen] = useState(
-    typeof document === "undefined" || document.visibilityState !== "hidden",
-  )
-  useEffect(() => {
-    const update = () => setSeen(document.visibilityState !== "hidden")
-    document.addEventListener("visibilitychange", update)
-    return () => document.removeEventListener("visibilitychange", update)
-  }, [])
+  const gate = useRef<Gate>(createGate())
+  const seen = usePageVisible()
   const reading = on && seen && load !== undefined
-
-  // One read: the cursor goes along, and a failure is counted, never retried by itself.
-  const once = useCallback(async () => {
-    const g = gate.current
-    try {
-      const snapshot = await loader.current?.(cursor.current)
-      if (!g.open) return false
-      g.failures = 0
-      if (snapshot === undefined) {
-        setState((before) => ({ ...before, unavailable: true, failing: false }))
-        return false
-      }
-      cursor.current = snapshot.cursor
-      setState((before) => ({
-        loaded: applySnapshot(before.loaded, snapshot),
-        unavailable: false,
-        failing: false,
-        catchupLimited: snapshot.hasMore === true && before.catchupLimited,
-      }))
-      return snapshot.hasMore === true
-    } catch {
-      g.failures++
-      if (g.failures >= FAILURES_SHOWN) setState((before) => ({ ...before, failing: true }))
-      return false
-    }
-  }, [])
-  const cycle = useCallback(async () => {
-    const g = gate.current
-    g.busy = true
-    let reads = 0
-    try {
-      for (;;) {
-        g.again = false
-        g.late = false
-        g.startedAt = Date.now()
-        const more = await once()
-        if (!g.open) return
-        if (more) {
-          if (++g.catchupReads >= CATCHUP_MAX_READS) {
-            setState((before) => ({ ...before, catchupLimited: true }))
-            return
-          }
-          if (++reads >= CATCHUP_BATCH_READS) {
-            g.catchupTimer = setTimeout(() => {
-              g.catchupTimer = undefined
-              if (g.open && !g.busy) g.flight = cycle()
-            }, CATCHUP_GAP_MS)
-            return
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 0))
-          continue
-        }
-        g.catchupReads = 0
-        if (!g.again && !(g.late && Date.now() - g.startedAt >= OUTPUT_READ_MS)) return
-      }
-    } finally {
-      g.busy = false
-    }
-  }, [once])
   const ask = useCallback(
-    (paced: boolean) => {
-      const g = gate.current
-      if (!g.open) return
-      if (g.busy) {
-        if (paced) g.late = true
-        else g.again = true
-        return
-      }
-      if (paced && Date.now() - g.startedAt < OUTPUT_READ_MS) return
-      g.flight = cycle()
-    },
-    [cycle],
+    (paced: boolean) => requestRead({ gate: gate.current, cursor, loader, setState }, paced),
+    [],
   )
 
   // Opening, and the page coming back, read at once; the triggers below read while it stays open.

@@ -3,22 +3,35 @@
 // tools/list and tools/call, and exits when its input closes. Nothing here polls or waits: an idle
 // server holds no timer, and its service opens on the first call.
 
-import { VERSION } from "../../core/version.ts"
 import type { Ctx } from "../../ctx.ts"
 import { memoryService } from "../../memory-runtime.ts"
-import { MEMORY_TOOLS, runMemoryTool } from "../../memory-tools.ts"
+import { handleMcpLine, type MemoryMcpService, mcpFailure } from "./memory-mcp-protocol.ts"
 
-type Service = ReturnType<typeof memoryService>
-type Id = string | number | null
-
-const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 const LINE_MAX = 1024 * 1024
 
-const failure = (id: Id, code: number, message: string) => ({
-  jsonrpc: "2.0",
-  id,
-  error: { code, message },
-})
+type StreamState = { pending: string; skipping: boolean }
+
+function consumeChunk(
+  state: StreamState,
+  text: string,
+  enqueue: (task: () => Promise<void> | void) => void,
+  handle: (line: string) => Promise<void>,
+  reply: (message: object) => void,
+): void {
+  state.pending += text
+  for (let at = state.pending.indexOf("\n"); at !== -1; at = state.pending.indexOf("\n")) {
+    const line = state.pending.slice(0, at)
+    state.pending = state.pending.slice(at + 1)
+    if (state.skipping) state.skipping = false
+    else enqueue(() => handle(line))
+  }
+  if (state.pending.length > LINE_MAX) {
+    // A line this long is no request: say so once, then drop the rest of it.
+    state.pending = ""
+    if (!state.skipping) enqueue(() => reply(mcpFailure(null, -32600, "Line too long")))
+    state.skipping = true
+  }
+}
 
 /**
  * Serves lines from `input` until it ends, writing one JSON line per reply with `write`. Requests
@@ -29,101 +42,28 @@ export async function serveMemoryMcp(
   ctx: Ctx,
   input: AsyncIterable<string | Uint8Array>,
   write: (line: string) => void,
-  open: () => Service = () => memoryService(ctx),
+  open: () => MemoryMcpService = () => memoryService(ctx),
 ): Promise<void> {
   // One service for the server's life keeps the loaded embedder; each call gets it with close muted.
-  let shared: Service | undefined
-  const make = (): Service => {
+  let shared: MemoryMcpService | undefined
+  const make = (): MemoryMcpService => {
     shared ??= open()
     return { ...shared, close: async () => {} }
   }
   const reply = (message: object) => write(JSON.stringify(message))
-
-  async function handle(line: string): Promise<void> {
-    if (!line.trim()) return
-    let message: unknown
-    try {
-      message = JSON.parse(line)
-    } catch {
-      return reply(failure(null, -32700, "Parse error"))
-    }
-    if (message === null || typeof message !== "object" || Array.isArray(message))
-      return reply(failure(null, -32600, "Invalid request"))
-    const { id, method, params } = message as { id?: unknown; method?: unknown; params?: unknown }
-    const request = id !== undefined
-    if (request && id !== null && typeof id !== "string" && typeof id !== "number")
-      return reply(failure(null, -32600, "Invalid request"))
-    if (typeof method !== "string")
-      return request ? reply(failure(id as Id, -32600, "Invalid request")) : undefined
-    // A notification is never answered, whatever it names.
-    if (!request) return
-    const asked = (params ?? {}) as {
-      protocolVersion?: unknown
-      name?: unknown
-      arguments?: unknown
-    }
-    try {
-      if (method === "initialize") {
-        const protocolVersion = PROTOCOLS.includes(String(asked.protocolVersion))
-          ? asked.protocolVersion
-          : PROTOCOLS[0]
-        return reply({
-          jsonrpc: "2.0",
-          id,
-          result: {
-            protocolVersion,
-            capabilities: { tools: {} },
-            serverInfo: { name: "qualitylayer-memory", version: VERSION },
-          },
-        })
-      }
-      if (method === "ping") return reply({ jsonrpc: "2.0", id, result: {} })
-      if (method === "tools/list")
-        return reply({ jsonrpc: "2.0", id, result: { tools: MEMORY_TOOLS } })
-      if (method === "tools/call") {
-        if (
-          typeof asked.name !== "string" ||
-          !MEMORY_TOOLS.some((tool) => tool.name === asked.name)
-        )
-          return reply(failure(id as Id, -32602, `Unknown tool: ${String(asked.name)}`))
-        const result = await runMemoryTool(ctx, asked.name, asked.arguments, make)
-        return reply({
-          jsonrpc: "2.0",
-          id,
-          result: result.ok
-            ? { content: [{ type: "text", text: JSON.stringify(result.data) }] }
-            : { isError: true, content: [{ type: "text", text: result.error.message }] },
-        })
-      }
-      return reply(failure(id as Id, -32601, `Method not found: ${method}`))
-    } catch {
-      return reply(failure(id as Id, -32603, "Internal error"))
-    }
-  }
+  const handle = (line: string) => handleMcpLine(ctx, line, make, reply)
 
   const decoder = new TextDecoder()
-  let pending = "",
-    skipping = false,
-    queue: Promise<void> = Promise.resolve()
+  const state: StreamState = { pending: "", skipping: false }
+  let queue: Promise<void> = Promise.resolve()
   const enqueue = (task: () => Promise<void> | void) => {
     queue = queue.then(task)
   }
   for await (const chunk of input) {
-    pending += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true })
-    for (let at = pending.indexOf("\n"); at !== -1; at = pending.indexOf("\n")) {
-      const line = pending.slice(0, at)
-      pending = pending.slice(at + 1)
-      if (skipping) skipping = false
-      else enqueue(() => handle(line))
-    }
-    if (pending.length > LINE_MAX) {
-      // A line this long is no request: say so once, then drop the rest of it.
-      pending = ""
-      if (!skipping) enqueue(() => reply(failure(null, -32600, "Line too long")))
-      skipping = true
-    }
+    const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true })
+    consumeChunk(state, text, enqueue, handle, reply)
   }
-  if (pending.trim() && !skipping) enqueue(() => handle(pending))
+  if (state.pending.trim() && !state.skipping) enqueue(() => handle(state.pending))
   await queue
   await shared?.close()
 }

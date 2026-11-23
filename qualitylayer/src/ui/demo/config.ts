@@ -33,15 +33,8 @@ export function withDemoConfig(api: Api, search: string): Api {
     present === null
       ? null
       : new Set(present.split(",").flatMap((name) => asAgent(name.trim()) ?? []))
-  if (
-    Object.keys(asked).length === 0 &&
-    !notified &&
-    !terminal &&
-    !second &&
-    !scansOff &&
-    installed === null
-  )
-    return api
+  const hasFlags = notified || terminal || second || scansOff
+  if (Object.keys(asked).length === 0 && !hasFlags && installed === null) return api
   const apply = (config: Config): Config => ({
     ...config,
     ...asked,

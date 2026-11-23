@@ -5,20 +5,20 @@
 // sent), sent (the agent's reply shows when there is one), settled (a filled dot).
 
 import { cn } from "cn"
-import { CheckIcon } from "lucide-react"
 import { type ReactNode, useState } from "react"
-import {
-  type AnswerKind,
-  answeredWhere,
-  answerLabel,
-  type Item,
-  type ItemAnswer,
-} from "../../core/items.ts"
+import { answerLabel, type Item, type ItemAnswer } from "../../core/items.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
+import {
+  Chosen,
+  ItemChatAnswer,
+  ItemOpenOptions,
+  ItemReply,
+  Members,
+  Points,
+  resultWord,
+  say,
+} from "./ItemRowParts.tsx"
 import { WhoMark } from "./WhoMark.tsx"
-
-/** The first members of a group that show; the rest wait behind "Show N more". */
-const SHOWN_MEMBERS = 4
 
 export type RowState = "open" | "chosen" | "sent" | "settled"
 
@@ -47,119 +47,70 @@ type RowProps = {
   tabIndex?: number
 }
 
-const say = (kind: AnswerKind): ItemAnswer => ({ kind, at: Date.now() })
-
-/** What a settled item of the final review says on its right: what was decided, in plain words. */
-function resultWord(item: Item): string | null {
-  const kind = item.answer?.kind
-  if (kind === undefined) return null
-  if (kind === "confirm") return "Confirmed by you"
-  if (kind === "record") return "Recorded"
-  if (kind === "agree") return "Looks right"
-  if (kind === "fine") return "Accepted by you"
-  if (kind === "accept") return "Accepted"
-  if (kind === "fix") {
-    const said = item.reply?.text
-    return said === undefined ? "Fixed" : /^fixed/i.test(said) ? said : `Fixed · ${said}`
-  }
-  return answerLabel(kind, item.family, item.answers.labels)
-}
-
-/** The reviews a person may add to the checks, by the words that switch each on (record() reads them). */
-const REVIEWS = ["security", "second opinion"] as const
-
-function Chosen({
+function ItemActions({
   item,
-  answer,
-  onUndo,
-}: {
-  item: Item
-  answer: ItemAnswer
-  /** Missing once the answer was sent: nothing can be undone then. */
-  onUndo?: () => void
-}) {
-  return (
-    <>
-      <span className="q-chosen" data-testid="chosen">
-        <CheckIcon className="size-3" aria-hidden="true" />
-        {answerLabel(answer.kind, item.family, item.answers.labels)}
-        {answer.kind === "add-review" && answer.note !== undefined ? ` · ${answer.note}` : ""}
-      </span>
-      {onUndo !== undefined ? (
-        <button type="button" className="q-link" onClick={onUndo}>
-          Undo
-        </button>
-      ) : null}
-    </>
-  )
-}
-
-/** Done means, every point in full: its number, the outcome and how it shows. */
-function Points({ item }: { item: Item }) {
-  return (
-    <div className="q-points" data-testid="points">
-      {(item.children ?? []).map((point, index) => (
-        <div className="q-point" key={point.id} data-member={point.id}>
-          <span className="no">{index + 1}</span>
-          <span className="t">
-            <InlineMarkdown text={point.what} />
-          </span>
-          {point.why !== undefined ? (
-            <span className="d">
-              <InlineMarkdown text={point.why} />
-            </span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/** The members of a group: each with its own link answer, the first few shown. */
-function Members({
-  item,
-  childAnswers,
+  state,
+  picked,
+  foldable,
+  pointsOpen,
+  setPointsOpen,
+  choosing,
+  setChoosing,
   onAnswer,
 }: {
   item: Item
-  childAnswers: Readonly<Record<string, ItemAnswer>>
+  state: RowState
+  picked: ItemAnswer | undefined
+  foldable: boolean
+  pointsOpen: boolean
+  setPointsOpen: (fn: (was: boolean) => boolean) => void
+  choosing: boolean
+  setChoosing: (v: boolean) => void
   onAnswer: (item: Item, answer: ItemAnswer | null) => void
 }) {
-  const [all, setAll] = useState(false)
-  const members = item.children ?? []
-  const shown = all ? members : members.slice(0, SHOWN_MEMBERS)
-  const hidden = members.length - shown.length
+  const settled = state === "settled"
+  const link = item.answers.link
+  const result = settled && item.step === "verify" ? resultWord(item) : null
+  const linkButton =
+    link !== undefined ? (
+      <button type="button" className="q-link" onClick={() => onAnswer(item, say(link))}>
+        {answerLabel(link, item.family, item.answers.labels)}
+      </button>
+    ) : null
   return (
-    <div className="q-sub-rows" data-testid="members">
-      {shown.map((member) => {
-        const picked = childAnswers[member.id]
-        const kind = member.answers.link ?? member.answers.options[0]
-        return (
-          <div className="q-sub-row" key={member.id} data-member={member.id}>
-            <span>
-              <b>{member.what}</b>
-            </span>
-            {picked !== undefined ? (
-              <span className="flex items-center gap-2">
-                <Chosen item={member} answer={picked} onUndo={() => onAnswer(member, null)} />
-              </span>
-            ) : kind !== undefined ? (
-              <button type="button" className="q-link" onClick={() => onAnswer(member, say(kind))}>
-                {answerLabel(kind, member.family, member.answers.labels)}
-              </button>
-            ) : null}
-            {member.why !== undefined ? <span className="d">{member.why}</span> : null}
-          </div>
-        )
-      })}
-      {hidden > 0 ? (
-        <div className="q-sub-row more">
-          <span>{hidden} more</span>
-          <button type="button" className="q-link" onClick={() => setAll(true)}>
-            Show {hidden} more
-          </button>
-        </div>
+    <div className="acts">
+      {state === "open" ? (
+        <ItemOpenOptions
+          item={item}
+          choosing={choosing}
+          setChoosing={setChoosing}
+          onAnswer={onAnswer}
+        />
       ) : null}
+      {foldable && state !== "sent" ? (
+        <button
+          type="button"
+          className="q-btn quiet sm"
+          aria-expanded={pointsOpen}
+          onClick={() => setPointsOpen((was) => !was)}
+        >
+          {pointsOpen ? "Close" : "Open"}
+        </button>
+      ) : null}
+      {state === "open" ? linkButton : null}
+      {state === "chosen" && picked !== undefined ? (
+        <Chosen item={item} answer={picked} onUndo={() => onAnswer(item, null)} />
+      ) : null}
+      <ItemChatAnswer item={item} state={state} />
+      {state === "sent" && item.answer !== undefined ? (
+        <Chosen item={item} answer={item.answer} />
+      ) : null}
+      {result !== null ? (
+        <span className="q-dim rp-word" data-testid="result-word">
+          {result}
+        </span>
+      ) : null}
+      {settled ? linkButton : null}
     </div>
   )
 }
@@ -176,13 +127,15 @@ export function ItemRow({
   const state = rowState(item, picked)
   const settled = state === "settled"
   const mark = state === "settled" ? "done" : state === "sent" ? "agent" : "you"
-  const options = item.answers.options.slice(0, 2)
-  const link = item.answers.link
   // The Plan only summarises Done means: its points open in place, beside the answer.
   const foldable = item.kind === "done" && item.step === "plan" && (item.children ?? []).length > 0
   const [pointsOpen, setPointsOpen] = useState(false)
   // Adding a review asks which one: the person picks, and the choice rides as the answer's words.
   const [choosing, setChoosing] = useState(false)
+  const showChildren =
+    item.children !== undefined && item.children.length > 0 && (!foldable || pointsOpen)
+  const asPoints =
+    item.kind === "done" && (item.children ?? []).every((c) => c.answers.options.length === 0)
   return (
     <li
       className={cn("q-item", settled && "settled")}
@@ -206,107 +159,33 @@ export function ItemRow({
           <InlineMarkdown text={item.what} />
         </div>
       </div>
-      <div className="acts">
-        {state === "open"
-          ? options.map((kind, index) =>
-              kind === "add-review" && choosing ? (
-                <span className="flex flex-wrap gap-1.5" key={kind} data-testid="review-choices">
-                  {REVIEWS.map((review) => (
-                    <button
-                      key={review}
-                      type="button"
-                      className="q-btn quiet sm"
-                      onClick={() => {
-                        setChoosing(false)
-                        onAnswer(item, { kind, note: review, at: Date.now() })
-                      }}
-                    >
-                      {review === "security" ? "Security review" : "Second opinion"}
-                    </button>
-                  ))}
-                </span>
-              ) : (
-                <button
-                  key={kind}
-                  type="button"
-                  className={cn("q-btn sm", index > 0 && "quiet")}
-                  onClick={() =>
-                    kind === "add-review" ? setChoosing(true) : onAnswer(item, say(kind))
-                  }
-                >
-                  {answerLabel(kind, item.family, item.answers.labels)}
-                </button>
-              ),
-            )
-          : null}
-        {foldable && state !== "sent" ? (
-          <button
-            type="button"
-            className="q-btn quiet sm"
-            aria-expanded={pointsOpen}
-            onClick={() => setPointsOpen((was) => !was)}
-          >
-            {pointsOpen ? "Close" : "Open"}
-          </button>
-        ) : null}
-        {state === "open" && link !== undefined ? (
-          <button type="button" className="q-link" onClick={() => onAnswer(item, say(link))}>
-            {answerLabel(link, item.family, item.answers.labels)}
-          </button>
-        ) : null}
-        {state === "chosen" && picked !== undefined ? (
-          <Chosen item={item} answer={picked} onUndo={() => onAnswer(item, null)} />
-        ) : null}
-        {state === "open" && item.answer?.via === "chat" ? (
-          <span className="q-dim" data-testid="chat-answer">
-            {answeredWhere(item.answer)}
-            {item.answer.note !== undefined ? ` · ${item.answer.note}` : ""}
-          </span>
-        ) : null}
-        {state === "sent" && item.answer !== undefined ? (
-          <Chosen item={item} answer={item.answer} />
-        ) : null}
-        {settled && item.step === "verify" && resultWord(item) !== null ? (
-          <span className="q-dim rp-word" data-testid="result-word">
-            {resultWord(item)}
-          </span>
-        ) : null}
-        {settled && link !== undefined ? (
-          <button type="button" className="q-link" onClick={() => onAnswer(item, say(link))}>
-            {answerLabel(link, item.family, item.answers.labels)}
-          </button>
-        ) : null}
-      </div>
+      <ItemActions
+        item={item}
+        state={state}
+        picked={picked}
+        foldable={foldable}
+        pointsOpen={pointsOpen}
+        setPointsOpen={setPointsOpen}
+        choosing={choosing}
+        setChoosing={setChoosing}
+        onAnswer={onAnswer}
+      />
       {item.why !== undefined && !(settled && item.step === "verify") ? (
         <div className="why">
           <InlineMarkdown text={item.why} />
         </div>
       ) : null}
       {media !== undefined ? <div className="full">{media}</div> : null}
-      {item.children !== undefined && item.children.length > 0 && (!foldable || pointsOpen) ? (
+      {showChildren ? (
         <div className="full">
-          {item.kind === "done" && item.children.every((c) => c.answers.options.length === 0) ? (
+          {asPoints ? (
             <Points item={item} />
           ) : (
             <Members item={item} childAnswers={childAnswers} onAnswer={onAnswer} />
           )}
         </div>
       ) : null}
-      {(state === "sent" || state === "open" || item.changedSinceReview === true) &&
-      item.reply !== undefined ? (
-        <div className="reply">
-          <div className="who">
-            <WhoMark who="agent" />
-            The agent
-          </div>
-          <p className="m-0">{item.reply.text}</p>
-          {item.answer !== undefined && item.answer.note !== undefined && state !== "chosen" ? (
-            <p className="m-0 text-muted-foreground" data-testid="you-asked">
-              You asked: “{item.answer.note}”
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      <ItemReply item={item} state={state} />
     </li>
   )
 }

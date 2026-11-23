@@ -9,8 +9,6 @@
 // few seconds.
 
 import type { Ctx } from "../../ctx.ts"
-import { runCmd } from "../peers/base.ts"
-import { windowsProcessMemory } from "../windows-processes.ts"
 import { runAttention } from "./bind.ts"
 import type { AgentKind, RunRecord } from "./contracts.ts"
 import { nativeSessionFile } from "./control.ts"
@@ -23,8 +21,17 @@ import {
 } from "./idle.ts"
 import { releaseRunLeases } from "./lease.ts"
 import { listedRun } from "./listed-run.ts"
+import {
+  MemoryTable,
+  type ProcessMemory,
+  parsePsMemory,
+  processMemory,
+  treeBytes,
+} from "./process-memory.ts"
 import { type connectHost, listRuns, readHost, readRun } from "./registry.ts"
 import { connectOrRevive } from "./settle.ts"
+
+export { MemoryTable, type ProcessMemory, parsePsMemory, processMemory, treeBytes }
 
 export type SessionState = "working" | "needs-you" | "idle"
 const STATE_WORDS: Record<SessionState, string> = {
@@ -60,76 +67,6 @@ export type SessionsView = {
   totalBytes: number
   idleCount: number
 }
-
-export type ProcessMemory = { pid: number; ppid: number; bytes: number }
-
-/** The rows of `ps -axo pid=,ppid=,rss=`; `rss` is in KiB. */
-export function parsePsMemory(output: string): ProcessMemory[] {
-  const rows: ProcessMemory[] = []
-  for (const line of output.split("\n")) {
-    const [pid, ppid, rss] = line.trim().split(/\s+/).map(Number)
-    if (Number.isSafeInteger(pid) && Number.isSafeInteger(ppid) && Number.isFinite(rss))
-      rows.push({ pid: pid as number, ppid: ppid as number, bytes: (rss as number) * 1024 })
-  }
-  return rows
-}
-
-/**
- * The bytes of `root` and every process below it, each process once; null when `root` is not in
- * the table. A process whose parent ended is no descendant: it is not counted.
- */
-export function treeBytes(rows: readonly ProcessMemory[], root: number): number | null {
-  const byPid = new Map(rows.map((row) => [row.pid, row]))
-  if (!byPid.has(root)) return null
-  const children = new Map<number, number[]>()
-  for (const row of rows) {
-    const siblings = children.get(row.ppid)
-    if (siblings) siblings.push(row.pid)
-    else children.set(row.ppid, [row.pid])
-  }
-  const seen = new Set<number>()
-  const queue = [root]
-  let total = 0
-  for (let pid = queue.pop(); pid !== undefined; pid = queue.pop()) {
-    if (seen.has(pid)) continue
-    seen.add(pid)
-    total += byPid.get(pid)?.bytes ?? 0
-    queue.push(...(children.get(pid) ?? []))
-  }
-  return total
-}
-
-/** One read of every process's size: the Windows process query there, one `ps` elsewhere. */
-export function readProcessMemory(): ProcessMemory[] | null {
-  if (process.platform === "win32") {
-    const [rows, error] = windowsProcessMemory()
-    return error === null ? rows : null
-  }
-  const [code, out] = runCmd(["ps", "-axo", "pid=,ppid=,rss="], { timeoutMs: 5000 })
-  return code === 0 ? parsePsMemory(out) : null
-}
-
-/** How long one process table answers every session's memory. */
-export const MEMORY_TABLE_MS = 5000
-
-/** The process table, read only when asked and kept a few seconds so a page reload reads it once. */
-export class MemoryTable {
-  private held: { at: number; rows: ProcessMemory[] | null } | null = null
-  constructor(
-    private read: () => ProcessMemory[] | null = readProcessMemory,
-    private ttlMs = MEMORY_TABLE_MS,
-  ) {}
-  rows(now: number): ProcessMemory[] | null {
-    if (this.held === null || now < this.held.at || now - this.held.at >= this.ttlMs)
-      this.held = { at: now, rows: this.read() }
-    return this.held.rows
-  }
-  drop(): void {
-    this.held = null
-  }
-}
-
-export const processMemory = new MemoryTable()
 
 function lastTurnAt(run: RunRecord): number | null {
   const stop = (run.runEvents ?? [])

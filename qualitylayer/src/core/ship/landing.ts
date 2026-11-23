@@ -6,60 +6,36 @@
 // cherry-pick merges), or the pull request record says merged, or the person says so.
 
 import { randomUUID } from "node:crypto"
-import { basename, dirname } from "node:path"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { branchState } from "../git/branch.ts"
-import { sliceCommits } from "../git/build-start.ts"
 import { headSha } from "../git/repo.ts"
-import type { RepoRef } from "../paths.ts"
-import { listTasks, type Task } from "../task/store.ts"
-import {
-  baseTips,
-  commitOf,
-  commitsSince,
-  describeCommits,
-  isAncestor,
-  type LandingCommit,
-  mergedBy,
-} from "./landing-git.ts"
+import { commitOf, type LandingCommit } from "./landing-git.ts"
 import {
   approvalOf,
-  type LandedHow,
   type LandingRecord,
   landingPath,
   landingScope,
   markUnknown,
   noteOwnCommit,
-  onBase,
-  pendingOwn,
   readRecord,
   recordUnreadable,
   unknownPath,
   updateRecord,
 } from "./landing-record.ts"
-import { readPullRequestRecord } from "./pr-record.ts"
+import {
+  branchTip,
+  detect,
+  type LandingState,
+  legacyState,
+  type Scope,
+  type Shipped,
+  settle,
+  stateOf,
+  withoutRecord,
+} from "./landing-state.ts"
 
-export type { LandedHow, LandingCommit }
+export type { LandingCommit, LandingState }
 export { landingPath, noteOwnCommit }
-
-export type LandingState = {
-  scope?: string
-  state: "landing" | "landed"
-  how?: LandedHow
-  at?: number
-  base: string | null
-  branch: string | null
-  /** Null only for a `legacy` task. */
-  approvedHead: string | null
-  /** Commits on the branch after the approved head, newest first, at most 50. */
-  since: LandingCommit[]
-  /** The branch was rewritten after the approval (amend, rebase, force-push); `tip` is its head now. */
-  rewritten?: true
-  tip?: string
-}
-
-type Scope = Pick<Task, "runtimeDir" | "repoRoot" | "dir" | "slug">
-type Shipped = Scope & Pick<Task, "stage" | "branch">
 
 /**
  * The closing record calls this after saving the final decision: current HEAD is what the approval
@@ -90,166 +66,6 @@ export async function recordApproval(ctx: Ctx, task: Scope, branch: string | nul
 }
 
 /**
- * The head of the task's own work after the approval. On a branch, the branch's head. Built on the
- * base, later commits there belong to whoever made them: only the task's own `commit fix` commits
- * count, so the newest of those (or none) is its head.
- */
-const branchTip = async (
-  ctx: Ctx,
-  task: Scope,
-  record: Pick<LandingRecord, "branch" | "base" | "own" | "approvedHead">,
-): Promise<string | null> => {
-  if (onBase(record)) return pendingOwn(record).at(-1) ?? null
-  if (record.branch === null) return null
-  const tip = await ctx.git.run(
-    task.repoRoot,
-    ["rev-parse", "--verify", "--quiet", `refs/heads/${record.branch}^{commit}`],
-    { fresh: true },
-  )
-  return tip.code === 0 ? tip.stdout.trim() || null : null
-}
-
-/** The merged pull request's head contains the approved head and the branch's current tip. */
-async function mergedHolds(
-  ctx: Ctx,
-  cwd: string,
-  head: string,
-  record: LandingRecord,
-  tip: string | null,
-): Promise<boolean> {
-  const merged = /^[0-9a-f]{7,64}$/i.test(head) ? await commitOf(ctx, cwd, head) : null
-  if (merged === null || !(await isAncestor(ctx, cwd, record.approvedHead, merged))) return false
-  return tip === null || (await isAncestor(ctx, cwd, tip, merged))
-}
-
-/**
- * How the work landed, or null. Git is asked only when the base tips or the branch tip moved since the
- * last answer (`checked`), so a task that never lands costs a few `rev-parse` calls per round.
- */
-async function detect(
-  ctx: Ctx,
-  task: Scope,
-  record: LandingRecord,
-  tip: string | null,
-): Promise<{ how: Exclude<LandedHow, "legacy" | "person"> | null; key: string | null }> {
-  // A merged pull request lands the task only when its head holds what was approved and everything on
-  // the branch since: a record kept from an earlier approval, or commits pushed after the merge, fall
-  // through to what git shows.
-  // A pull request merged into another branch (staging, a release) has not landed in this base.
-  const pull = await readPullRequestRecord(ctx, task)
-  if (
-    pull?.state === "merged" &&
-    (record.base === null || pull.base === record.base) &&
-    (await mergedHolds(ctx, task.repoRoot, pull.head, record, tip))
-  )
-    return { how: "pull-request", key: null }
-  const targets = await baseTips(ctx, task.repoRoot, record)
-  // The key names what was approved too: Approve change moves the approved head, so it asks again.
-  const key = `${record.approvedHead}|${targets.join(",")}|${tip ?? ""}`
-  if (record.checked === key) return { how: null, key: null }
-  const how = await mergedBy(ctx, task.repoRoot, record, tip, targets)
-  // Git could not answer: nothing is kept as a "no", and the next round asks again.
-  return how === "unknown" ? { how: null, key: null } : { how, key }
-}
-
-async function stateOf(
-  ctx: Ctx,
-  task: Scope,
-  record: LandingRecord,
-  tip: string | null,
-): Promise<LandingState> {
-  const base = {
-    scope: await landingScope(ctx, task, record),
-    base: record.base,
-    branch: record.branch,
-    approvedHead: record.approvedHead,
-  }
-  if (record.landed !== null)
-    return { state: "landed", how: record.landed.how, at: record.landed.at, ...base, since: [] }
-  if (onBase(record))
-    return {
-      state: "landing",
-      ...base,
-      since: await describeCommits(ctx, task.repoRoot, pendingOwn(record).reverse()),
-    }
-  // A branch rewritten after the approval (amend, rebase, force-push) has no commits "since" to
-  // list, but its head is still a change the person has not seen: it is flagged, never hidden.
-  const rewritten =
-    tip !== null &&
-    tip !== record.approvedHead &&
-    !(await isAncestor(ctx, task.repoRoot, record.approvedHead, tip))
-  return {
-    state: "landing",
-    ...base,
-    since: rewritten ? [] : await ownSince(ctx, task, record, tip),
-    ...(rewritten ? { rewritten: true as const, tip } : {}),
-  }
-}
-
-/**
- * The commits after the approved head that are this task's own: the ones it registered (`commit
- * slice`, `commit fix`, also with `--commit` for a commit made by hand). On a branch several
- * sessions commit to, everyone else's commits are not changes to this task's approval and never
- * bring "changes since your approval" back (Max, 10 November 2026: four approvals of other
- * sessions' commits on one finished task).
- */
-async function ownSince(
-  ctx: Ctx,
-  task: Scope,
-  record: LandingRecord,
-  tip: string | null,
-): Promise<LandingCommit[]> {
-  const after = await commitsSince(ctx, task.repoRoot, record.approvedHead, tip)
-  if (after.length === 0) return after
-  const own = new Set([...(record.own ?? []), ...(await sliceCommits(ctx, task))])
-  if (after.every((commit) => own.has(commit.sha))) return after
-  // A branch of the task's own: every commit on it is a change to what was approved, whoever made it.
-  if (!(await branchShared(ctx, task, record.branch))) return after
-  return after.filter((commit) => own.has(commit.sha))
-}
-
-/** Another task of this project works on the same branch: it is not this task's own. */
-async function branchShared(ctx: Ctx, task: Scope, branch: string | null): Promise<boolean> {
-  if (branch === null) return false
-  try {
-    // The project's id is the folder the task's records live under: …/projects/<id>/tasks/<slug>.
-    const id = basename(dirname(dirname(task.runtimeDir)))
-    const others = await listTasks(ctx, { root: task.repoRoot, id } as RepoRef)
-    return others.some((other) => other.slug !== task.slug && other.branch === branch)
-  } catch {
-    return false
-  }
-}
-
-/** A task shipped before this record was closed at its approval and stays so: history does not change. */
-function legacyState(task: Shipped): LandingState {
-  return {
-    state: "landed",
-    how: "legacy",
-    base: null,
-    branch: task.branch ?? null,
-    approvedHead: null,
-    since: [],
-  }
-}
-
-/**
- * No readable record: an older task (closed, as before), or a record that failed to be written or
- * cannot be read, which is still landing with its approved head unknown. Mark as merged ends it.
- */
-async function withoutRecord(ctx: Ctx, task: Shipped): Promise<LandingState> {
-  if (!(await recordUnreadable(ctx, task))) return legacyState(task)
-  return {
-    state: "landing",
-    scope: await landingScope(ctx, task, null),
-    base: null,
-    branch: task.branch ?? null,
-    approvedHead: null,
-    since: [],
-  }
-}
-
-/**
  * What the App shows of a shipped task: its record as it stands, no detection. A landed or older task
  * costs one small file read; a landing one adds the branch tip and the commits since the approval.
  */
@@ -275,33 +91,6 @@ export async function landingState(ctx: Ctx, task: Shipped): Promise<LandingStat
 }
 
 /**
- * Asks git outside the lock; what it found is kept only if the record still speaks of the same
- * approval and nobody (Mark as merged, Approve change, a new approval) settled it meanwhile.
- */
-async function settle(
-  ctx: Ctx,
-  task: Scope,
-  record: LandingRecord,
-  tip: string | null,
-): Promise<LandingRecord> {
-  const expected = await landingScope(ctx, task, record)
-  const found = await detect(ctx, task, record, tip)
-  if (found.how === null && found.key === null) return record
-  const kept = await updateRecord(ctx, task, async (fresh) => {
-    if (
-      fresh === null ||
-      fresh.landed !== null ||
-      (await landingScope(ctx, task, fresh)) !== expected
-    )
-      return null
-    return found.how !== null
-      ? { ...fresh, landed: { how: found.how, at: ctx.clock.now() } }
-      : { ...fresh, checked: found.key ?? undefined }
-  })
-  return kept ?? record
-}
-
-/**
  * The record with the person's word in it. A record that could not be read (`head` is the head now)
  * is replaced by one holding just that word; a landed one stays as it is (null: nothing to write).
  */
@@ -317,14 +106,38 @@ function personSaid(
   return fresh !== null && fresh.landed === null ? { ...fresh, landed } : null
 }
 
+const refuse = (message: string) => err({ code: "bad_args" as const, message })
+
+async function nextMergedRecord(
+  ctx: Ctx,
+  task: Shipped,
+  fresh: LandingRecord | null,
+  expected: string,
+  head: string | null,
+): Promise<{ next: LandingRecord | null; stale: boolean }> {
+  const scope = await landingScope(ctx, task, fresh)
+  if (scope !== expected) {
+    const repeated =
+      fresh?.landed?.how === "person" &&
+      fresh.markedFrom?.from === expected &&
+      fresh.markedFrom.to === scope
+    return { next: null, stale: !repeated }
+  }
+  const next = personSaid(fresh, head, task.branch ?? null, ctx.clock.now())
+  if (next) {
+    await ctx.fs.remove(unknownPath(task)).catch(() => undefined)
+    next.markedFrom = { from: expected, to: await landingScope(ctx, task, next) }
+  }
+  return { next, stale: false }
+}
+
 /** The person says it landed (Mark as merged): for a merge git cannot see. Landed stays landed. */
 export async function markMerged(
   ctx: Ctx,
   task: Shipped,
   observed?: string,
 ): Promise<Result<LandingState>> {
-  if (task.stage !== "shipped")
-    return err({ code: "bad_args", message: "Only a shipped task can be marked as merged." })
+  if (task.stage !== "shipped") return refuse("Only a shipped task can be marked as merged.")
   const before = await readRecord(ctx, task)
   const expected = observed ?? (await landingScope(ctx, task, before))
   const unreadable = before === null
@@ -333,22 +146,9 @@ export async function markMerged(
   const head = unreadable ? ((await headSha(ctx, task.repoRoot)) ?? "unknown") : null
   let stale = false
   const record = await updateRecord(ctx, task, async (fresh) => {
-    if ((await landingScope(ctx, task, fresh)) !== expected) {
-      if (
-        fresh?.landed?.how === "person" &&
-        fresh.markedFrom?.from === expected &&
-        fresh.markedFrom.to === (await landingScope(ctx, task, fresh))
-      )
-        return null
-      stale = true
-      return null
-    }
-    const next = personSaid(fresh, head, task.branch ?? null, ctx.clock.now())
-    if (next) {
-      await ctx.fs.remove(unknownPath(task)).catch(() => undefined)
-      next.markedFrom = { from: expected, to: await landingScope(ctx, task, next) }
-    }
-    return next
+    const step = await nextMergedRecord(ctx, task, fresh, expected, head)
+    stale = step.stale
+    return step.next
   })
   if (stale) return refuse("The approval changed. Refresh Review before marking it as merged.")
   const state =
@@ -358,7 +158,46 @@ export async function markMerged(
   return ok(state)
 }
 
-const refuse = (message: string) => err({ code: "bad_args" as const, message })
+function isRepeatedApproval(
+  record: LandingRecord | null,
+  full: string,
+  expected: string,
+  scope: string,
+): boolean {
+  return (
+    record?.approvedHead === full &&
+    record.approvals.some(
+      (entry) => entry.sha === full && entry.scope?.from === expected && entry.scope.to === scope,
+    )
+  )
+}
+
+async function nextApprovedRecord(
+  ctx: Ctx,
+  task: Shipped,
+  fresh: LandingRecord | null,
+  full: string,
+  expected: string,
+): Promise<{ next: LandingRecord | null; tip: string | null; why: string | null }> {
+  const scope = await landingScope(ctx, task, fresh)
+  if (scope !== expected) {
+    const why = isRepeatedApproval(fresh, full, expected, scope)
+      ? null
+      : "The approval changed. Refresh Review before approving this change."
+    return { next: null, tip: null, why }
+  }
+  const tip = fresh === null ? null : await branchTip(ctx, task, fresh)
+  if (fresh !== null && fresh.landed === null && (await detect(ctx, task, fresh, tip)).how !== null)
+    return {
+      next: null,
+      tip,
+      why: "This change has landed. Further changes go in a follow-up task.",
+    }
+  const to =
+    fresh === null ? scope : await landingScope(ctx, task, { ...fresh, approvedHead: full })
+  const step = approvalOf(fresh, full, tip, ctx.clock.now(), { from: expected, to })
+  return { next: step.next, tip, why: step.why }
+}
 
 /**
  * The person approves a change made after the approval: `sha` must be the branch's current head and
@@ -380,43 +219,15 @@ export async function approveChange(
     )
   const full = /^[0-9a-f]{4,64}$/i.test(sha) ? await commitOf(ctx, task.repoRoot, sha) : null
   if (full === null) return refuse(`${sha.slice(0, 40)} is not a commit in this repository.`)
-  const expected = observed ?? (await landingScope(ctx, task, record))
   const viewed = await landingScope(ctx, task, record)
-  const repeated =
-    record.approvedHead === full &&
-    record.approvals.some(
-      (entry) => entry.sha === full && entry.scope?.from === expected && entry.scope.to === viewed,
-    )
-  if (viewed !== expected && !repeated)
+  const expected = observed ?? viewed
+  if (viewed !== expected && !isRepeatedApproval(record, full, expected, viewed))
     return refuse("The approval changed. Refresh Review before approving this change.")
   let tip: string | null = null
   let why: string | null = null
   const kept = await updateRecord(ctx, task, async (fresh) => {
-    const scope = await landingScope(ctx, task, fresh)
-    if (scope !== expected) {
-      if (
-        fresh?.approvedHead === full &&
-        fresh.approvals.some(
-          (entry) =>
-            entry.sha === full && entry.scope?.from === expected && entry.scope.to === scope,
-        )
-      )
-        return null
-      why = "The approval changed. Refresh Review before approving this change."
-      return null
-    }
-    tip = fresh === null ? null : await branchTip(ctx, task, fresh)
-    if (
-      fresh !== null &&
-      fresh.landed === null &&
-      (await detect(ctx, task, fresh, tip)).how !== null
-    ) {
-      why = "This change has landed. Further changes go in a follow-up task."
-      return null
-    }
-    const to =
-      fresh === null ? scope : await landingScope(ctx, task, { ...fresh, approvedHead: full })
-    const step = approvalOf(fresh, full, tip, ctx.clock.now(), { from: expected, to })
+    const step = await nextApprovedRecord(ctx, task, fresh, full, expected)
+    tip = step.tip
     why = step.why
     return step.next
   })

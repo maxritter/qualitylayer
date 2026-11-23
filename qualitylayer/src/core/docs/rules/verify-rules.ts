@@ -12,102 +12,8 @@ import { parseDoc } from "../frontmatter.ts"
 import { folderDoc } from "../names.ts"
 import { emptyOutline, evidenceIn, type Outline } from "../outline.ts"
 import { readCards } from "../outline-files.ts"
-import { describeShare, judgeShares } from "./judge-shares.ts"
 import { type Rule, verr } from "./types.ts"
-
-/**
- * An iteration several judges recorded side by side: each expected share has a part, once, bound
- * to the same assignment. Returns the errors, and what the shares without a part leave unjudged.
- */
-function partsComplete(
-  outline: Outline,
-  iteration: Iteration,
-): {
-  errors: ValidationError[]
-  unjudged: { tasks: Set<string>; scenarios: Set<number>; steps: Set<string>; diff: boolean }
-  /** The parts were checked against the build's shares. */
-  checked: boolean
-  /** The shares hold steps (a points Plan's build), not tasks and scenarios. */
-  byStep: boolean
-} {
-  const errors: ValidationError[] = []
-  const unjudged = {
-    tasks: new Set<string>(),
-    scenarios: new Set<number>(),
-    steps: new Set<string>(),
-    diff: false,
-  }
-  const parts = iteration.parts ?? []
-  const shares = judgeShares(outline, iteration.n)
-  const byStep = shares.some((share) => share.steps.length > 0)
-  if (parts.length === 0) return { errors, unjudged, checked: false, byStep }
-  const first = parts[0]
-  for (const part of parts) {
-    const share = shares.find((s) => s.n === part.share)
-    if (shares.length > 0 && share === undefined) {
-      errors.push(
-        verr(
-          part.line,
-          "verdicts-complete",
-          `share ${part.share} is not one of this build's ${shares.length} judge shares`,
-          `the parts are \`### Iteration ${iteration.n} · share 1\` to \`share ${shares.length}\``,
-        ),
-      )
-    }
-    if (
-      parts.some((other) => other !== part && other.share === part.share && other.line < part.line)
-    )
-      errors.push(
-        verr(
-          part.line,
-          "verdicts-complete",
-          `share ${part.share} is recorded twice`,
-          "keep one part per share: replace a stale part, do not add a second",
-        ),
-      )
-    // The share that differs from most of the others is the one named, never simply the first.
-    const key = (p: { assignment?: string; revision?: string }) => `${p.assignment}\0${p.revision}`
-    const agree = (p: (typeof parts)[number]) => parts.filter((o) => key(o) === key(p)).length
-    const usual = parts.reduce((best, p) => (agree(p) > agree(best) ? p : best), first ?? part)
-    if (key(part) !== key(usual))
-      errors.push(
-        verr(
-          part.line,
-          "verdicts-complete",
-          `share ${part.share} records another ${part.assignment !== usual.assignment ? "Assignment" : "Revision"} than share ${usual.share}`,
-          part.assignment !== usual.assignment
-            ? "copy the assignment id from your brief, verbatim"
-            : "leave the Revision line out of your part: QualityLayer stamps it; run `qualitylayer next` again",
-        ),
-      )
-    if (part.result === null)
-      errors.push(
-        verr(
-          part.line,
-          "verdicts-complete",
-          `share ${part.share} has no **Result:** line`,
-          "end the part with `**Result:** pass` or `**Result:** fail`",
-        ),
-      )
-  }
-  for (const share of shares) {
-    if (parts.some((part) => part.share === share.n)) continue
-    errors.push(
-      verr(
-        iteration.line,
-        "verdicts-complete",
-        `no part from ${describeShare(share)}`,
-        `start that judge again with its brief; it records \`### Iteration ${iteration.n} · share ${share.n}\``,
-      ),
-    )
-    for (const id of share.tasks) unjudged.tasks.add(id)
-    for (const n of share.scenarios) unjudged.scenarios.add(n)
-    for (const id of share.steps) unjudged.steps.add(id)
-    if (share.kind === "diff") unjudged.diff = true
-  }
-  // Rechecks staff one judge, but an already-running split record still binds every part to its source.
-  return { errors, unjudged, checked: shares.length > 0, byStep }
-}
+import { type PartsCheckResult, partsComplete } from "./verify-parts.ts"
 
 /**
  * What a round is held to, from the Plan's Done means: the step ids (`A1`…). A round is complete
@@ -139,64 +45,44 @@ export async function acceptanceBasis(ctx: Ctx, taskDir: string): Promise<Accept
   }
 }
 
-/**
- * The verdicts a round holds: a verdict per step of the Plan's Done means and one for the diff. A
- * line that is not required is accepted when a reviewer writes it, and fails the round when it is
- * `[FAIL]` or `[MISSING]`.
- */
-export function verdictsComplete(
-  outline: Outline,
-  iteration: Iteration,
-  basis: readonly string[] | AcceptanceBasis = [],
-): ValidationError[] {
-  const { ids: acceptance, recheck } = basisOf(basis)
-  const errors: ValidationError[] = []
-  const split = partsComplete(outline, iteration)
-  const { unjudged } = split
-  errors.push(...split.errors)
-  for (const verdict of iteration.verdicts) {
-    if (verdict.text.trim() === "")
-      errors.push(
-        verr(
-          verdict.line,
-          "evidence-required",
-          "A verdict has no evidence",
-          "Record the command/output, observation or source evidence behind this verdict",
-        ),
-      )
-  }
-  const has = (kind: string, subject: string) =>
-    iteration.verdicts.some(
-      (v) => v.kind === kind && v.subject.toLowerCase() === subject.toLowerCase(),
-    )
-  /** The exact line a missing verdict is recorded with. */
-  const line = (words: string, item: string) =>
-    `add a verdict line to the iteration: \`- [${words}] ${item}: <${item.startsWith("acceptance") ? "what you ran and saw" : "evidence"}>\``
+/** The exact line a missing verdict is recorded with. */
+const verdictHint = (words: string, item: string) =>
+  `add a verdict line to the iteration: \`- [${words}] ${item}: <${item.startsWith("acceptance") ? "what you ran and saw" : "evidence"}>\``
 
-  // The round holds no recorded check: QualityLayer's own record of the commands gates the
-  // review, and a card is judged in the review of the diff.
+function checkAcceptanceVerdicts(
+  iteration: Iteration,
+  acceptance: readonly string[],
+  recheck: AcceptanceBasis["recheck"],
+  split: PartsCheckResult,
+  errors: ValidationError[],
+): void {
+  const hasAcceptance = (id: string) =>
+    iteration.verdicts.some(
+      (v) => v.kind === "acceptance" && v.subject.toLowerCase() === id.toLowerCase(),
+    )
   for (const id of acceptance) {
     // Step shares hold steps; otherwise the diff-wide share holds the Done means steps.
-    const unjudgedStep = split.byStep ? unjudged.steps.has(id) : unjudged.diff
-    // A recheck carries the passes it can: only the steps that did not pass, or were not carried,
-    // are asked for.
-    if (recheck?.carried.has(id) === true) continue
-    if (!unjudgedStep && !has("acceptance", id)) {
-      const why = recheck?.again.get(id)
-      errors.push(
-        verr(
-          iteration.line,
-          "verdicts-complete",
-          `no verdict for acceptance step ${id}${why === undefined ? "" : ` (${why})`}`,
-          `${line("PASS|FAIL|MISSING|USER", `acceptance ${id}`)}; a pass cites the file under evidence/ or records/ in backticks, and [USER] is for a step only the person can check`,
-        ),
-      )
-    }
+    const unjudgedStep = split.byStep ? split.unjudged.steps.has(id) : split.unjudged.diff
+    if (recheck?.carried.has(id) === true || unjudgedStep || hasAcceptance(id)) continue
+    const why = recheck?.again.get(id)
+    errors.push(
+      verr(
+        iteration.line,
+        "verdicts-complete",
+        `no verdict for acceptance step ${id}${why === undefined ? "" : ` (${why})`}`,
+        `${verdictHint("PASS|FAIL|MISSING|USER", `acceptance ${id}`)}; a pass cites the file under evidence/ or records/ in backticks, and [USER] is for a step only the person can check`,
+      ),
+    )
   }
-  const reviews = iteration.verdicts.filter((v) => v.kind === "review")
-  if (unjudged.diff) {
-    // The diff-wide share is missing and named above; its review has nothing to add.
-  } else if (reviews.length === 0) {
+}
+
+function checkIterationMeta(
+  iteration: Iteration,
+  split: PartsCheckResult,
+  errors: ValidationError[],
+): void {
+  const hasReview = iteration.verdicts.some((v) => v.kind === "review")
+  if (!split.unjudged.diff && !hasReview) {
     errors.push(
       verr(
         iteration.line,
@@ -227,9 +113,22 @@ export function verdictsComplete(
       ),
     )
   }
-  // [USER] is the person's: a Done means point or a step of it can be; a judge never moves a
-  // check it can run.
+}
+
+function checkVerdictEntries(iteration: Iteration, errors: ValidationError[]): void {
   for (const v of iteration.verdicts) {
+    if (v.text.trim() === "") {
+      errors.push(
+        verr(
+          v.line,
+          "evidence-required",
+          "A verdict has no evidence",
+          "Record the command/output, observation or source evidence behind this verdict",
+        ),
+      )
+    }
+    // [USER] is the person's: a Done means point or a step of it can be; a judge never moves a
+    // check it can run.
     if (v.verdict === "USER" && v.kind !== "done" && v.kind !== "acceptance") {
       errors.push(
         verr(
@@ -244,16 +143,33 @@ export function verdictsComplete(
   // A NOTE is reported, never failed: the build passes with it.
   const failing = iteration.verdicts.filter((v) => v.verdict === "FAIL" || v.verdict === "MISSING")
   if (iteration.result === "pass" && failing.length > 0) {
-    const first = failing[0]
     errors.push(
       verr(
-        first?.line ?? iteration.line,
+        failing[0]?.line ?? iteration.line,
         "verdicts-complete",
         `the result says pass but ${failing.length} verdict(s) are FAIL or MISSING`,
         '"mostly" is fail: set `**Result:** fail`, or fix the gaps and verify again',
       ),
     )
   }
+}
+
+/**
+ * The verdicts a round holds: a verdict per step of the Plan's Done means and one for the diff. A
+ * line that is not required is accepted when a reviewer writes it, and fails the round when it is
+ * `[FAIL]` or `[MISSING]`.
+ */
+export function verdictsComplete(
+  outline: Outline,
+  iteration: Iteration,
+  basis: readonly string[] | AcceptanceBasis = [],
+): ValidationError[] {
+  const { ids: acceptance, recheck } = basisOf(basis)
+  const split = partsComplete(outline, iteration)
+  const errors: ValidationError[] = [...split.errors]
+  checkVerdictEntries(iteration, errors)
+  checkAcceptanceVerdicts(iteration, acceptance, recheck, split, errors)
+  checkIterationMeta(iteration, split, errors)
   return errors
 }
 

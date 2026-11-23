@@ -1,9 +1,17 @@
 import { dlopen, ptr } from "bun:ffi"
 import { randomBytes } from "node:crypto"
-import { realpathSync } from "node:fs"
 import { pidDomain } from "../peers/claude.ts"
 import { windowsUserSid } from "../platform.ts"
-import type { CleanupResult, ProcessIdentity } from "./contracts.ts"
+import type { ProcessIdentity } from "./contracts.ts"
+
+export {
+  cleanupWindowsJob,
+  protectWindowsObject,
+  terminateWindowsMember,
+  type WindowsProcessWitness,
+  windowsJobContains,
+  windowsRunCapability,
+} from "./windows-job-ops.ts"
 
 // HANDLEs and FILETIMEs are 64-bit integers on both native Windows targets.
 function loadKernel() {
@@ -27,24 +35,30 @@ function loadKernel() {
   })
 }
 let library: ReturnType<typeof loadKernel> | undefined
-const kernel = () => {
+export const windowsKernel = () => {
   if (process.platform !== "win32") throw new Error("Windows run ownership requires native Windows")
   library ??= loadKernel()
   return library.symbols
 }
-const wide = (value: string) => Buffer.from(`${value}\0`, "utf16le")
-const failed = (operation: string) =>
-  new Error(`${operation} failed (Win32 ${kernel().GetLastError()})`)
-function birth(handle: number | bigint): string {
+export const windowsWide = (value: string) => Buffer.from(`${value}\0`, "utf16le")
+export const windowsFailed = (operation: string) =>
+  new Error(`${operation} failed (Win32 ${windowsKernel().GetLastError()})`)
+export function windowsBirth(handle: number | bigint): string {
   const times = new BigUint64Array(4)
   if (
-    !kernel().GetProcessTimes(handle, ptr(times), ptr(times) + 8, ptr(times) + 16, ptr(times) + 24)
+    !windowsKernel().GetProcessTimes(
+      handle,
+      ptr(times),
+      ptr(times) + 8,
+      ptr(times) + 16,
+      ptr(times) + 24,
+    )
   )
-    throw failed("GetProcessTimes")
+    throw windowsFailed("GetProcessTimes")
   return new DataView(times.buffer).getBigUint64(0, true).toString()
 }
 export function windowsProcessBirth(pid: number): string | null {
-  const api = kernel(),
+  const api = windowsKernel(),
     handle = BigInt(api.OpenProcess(0x1000, 0, pid))
   if (!handle) {
     const code = api.GetLastError()
@@ -60,8 +74,8 @@ export function windowsProcessBirth(pid: number): string | null {
   }
   try {
     const code = new Uint32Array(1)
-    if (!api.GetExitCodeProcess(handle, ptr(code))) throw failed("GetExitCodeProcess")
-    return code[0] === 259 ? birth(handle) : null
+    if (!api.GetExitCodeProcess(handle, ptr(code))) throw windowsFailed("GetExitCodeProcess")
+    return code[0] === 259 ? windowsBirth(handle) : null
   } finally {
     api.CloseHandle(handle)
   }
@@ -70,7 +84,7 @@ export function windowsProcessBirth(pid: number): string | null {
 export function windowsStartedBeforeBoot(processStart: string, marginSeconds: number): boolean {
   try {
     if (!/^\d+$/.test(processStart)) return false
-    const uptimeMs = Number(kernel().GetTickCount64())
+    const uptimeMs = Number(windowsKernel().GetTickCount64())
     // FILETIME counts 100 ns intervals since 1601; the Unix epoch is 11644473600 s later.
     const bootMs = Date.now() - uptimeMs + 11_644_473_600_000
     return BigInt(processStart) < BigInt(Math.floor(bootMs - marginSeconds * 1000)) * 10_000n
@@ -79,11 +93,11 @@ export function windowsStartedBeforeBoot(processStart: string, marginSeconds: nu
   }
 }
 let ownJob: { name: string; handle: number | bigint } | undefined
-function killOnClose(job: number | bigint): void {
+export function windowsKillOnClose(job: number | bigint): void {
   const limits = new Uint8Array(144)
   new DataView(limits.buffer).setUint32(16, 0x2000, true)
-  if (!kernel().SetInformationJobObject(job, 9, ptr(limits), limits.length))
-    throw failed("SetInformationJobObject")
+  if (!windowsKernel().SetInformationJobObject(job, 9, ptr(limits), limits.length))
+    throw windowsFailed("SetInformationJobObject")
 }
 /**
  * The host has finished: a later host in this process may own a Job. Only a process that hosts runs
@@ -95,7 +109,7 @@ export function releaseOwnWindowsJob(): void {
 }
 export function ownWindowsJob(run: string, generation: number): string {
   if (ownJob) throw new Error("This host already owns a Windows Job")
-  const api = kernel()
+  const api = windowsKernel()
   const name = `Local\\QualityLayer-${process.pid}-${run}-${generation}-${randomBytes(24).toString("hex")}`
   const security = dlopen("advapi32.dll", {
     ConvertStringSecurityDescriptorToSecurityDescriptorW: {
@@ -105,7 +119,7 @@ export function ownWindowsJob(run: string, generation: number): string {
   })
   const descriptor = new BigUint64Array(1)
   try {
-    const sddl = wide(`D:P(A;;GA;;;${windowsUserSid()})`)
+    const sddl = windowsWide(`D:P(A;;GA;;;${windowsUserSid()})`)
     if (
       !security.symbols.ConvertStringSecurityDescriptorToSecurityDescriptorW(
         ptr(sddl),
@@ -114,18 +128,18 @@ export function ownWindowsJob(run: string, generation: number): string {
         null,
       )
     )
-      throw failed("Job security descriptor")
+      throw windowsFailed("Job security descriptor")
     const attributes = new Uint8Array(24),
       view = new DataView(attributes.buffer)
     view.setUint32(0, 24, true)
     view.setBigUint64(8, new DataView(descriptor.buffer).getBigUint64(0, true), true)
-    const encodedName = wide(name)
+    const encodedName = windowsWide(name)
     const job = BigInt(api.CreateJobObjectW(ptr(attributes), ptr(encodedName)))
-    if (!job) throw failed("CreateJobObjectW")
+    if (!job) throw windowsFailed("CreateJobObjectW")
     try {
-      killOnClose(job)
+      windowsKillOnClose(job)
       if (!api.AssignProcessToJobObject(job, api.GetCurrentProcess()))
-        throw failed("AssignProcessToJobObject")
+        throw windowsFailed("AssignProcessToJobObject")
       // The host keeps the sole lifetime handle until process exit; closing it here kills itself.
       ownJob = { name, handle: job }
       return name
@@ -138,10 +152,10 @@ export function ownWindowsJob(run: string, generation: number): string {
     security.close()
   }
 }
-function withJob<T>(name: string, action: (handle: number | bigint) => T): T {
-  const api = kernel()
+export function withWindowsJob<T>(name: string, action: (handle: number | bigint) => T): T {
+  const api = windowsKernel()
   if (ownJob?.name === name) return action(ownJob.handle)
-  const encodedName = wide(name)
+  const encodedName = windowsWide(name)
   // QUERY only; never let a peer terminate the host. A Job that is not there says Win32 2; the last
   // error is read by a call of its own that this runtime can overwrite, so an answer other than 2 is
   // asked for again before it is believed.
@@ -162,11 +176,11 @@ function withJob<T>(name: string, action: (handle: number | bigint) => T): T {
   }
 }
 export function windowsJobMembers(name: string): ProcessIdentity[] {
-  return withJob(name, (job) => {
-    const api = kernel(),
+  return withWindowsJob(name, (job) => {
+    const api = windowsKernel(),
       bytes = new Uint8Array(8 + 8 * 4096)
     if (!api.QueryInformationJobObject(job, 3, ptr(bytes), bytes.length, null))
-      throw failed("QueryInformationJobObject")
+      throw windowsFailed("QueryInformationJobObject")
     const view = new DataView(bytes.buffer),
       count = view.getUint32(4, true)
     if (count > 4096 || view.getUint32(0, true) !== count)
@@ -187,220 +201,4 @@ export function windowsJobMembers(name: string): ProcessIdentity[] {
     }
     return result
   })
-}
-/** Query exact live process handles in one Job; birth checks prevent reused PIDs from inheriting proof. */
-export type WindowsProcessWitness = ProcessIdentity & { image?: string }
-export function windowsJobContains(
-  name: string,
-  identities: readonly WindowsProcessWitness[],
-): boolean {
-  if (!identities.length || identities.length > 130) return false
-  return withJob(name, (job) => {
-    const api = kernel()
-    for (const identity of identities) {
-      const handle = BigInt(api.OpenProcess(0x1000, 0, identity.pid))
-      if (!handle) return false
-      try {
-        const member = new Int32Array(1),
-          code = new Uint32Array(1)
-        if (
-          !api.GetExitCodeProcess(handle, ptr(code)) ||
-          code[0] !== 259 ||
-          birth(handle) !== identity.processStart ||
-          !api.IsProcessInJob(handle, job, ptr(member)) ||
-          !member[0]
-        )
-          return false
-        if (identity.image !== undefined) {
-          const image = new Uint16Array(32768),
-            length = new Uint32Array([image.length])
-          if (
-            !api.QueryFullProcessImageNameW(handle, 0, ptr(image), ptr(length)) ||
-            !length[0] ||
-            length[0] >= image.length
-          )
-            return false
-          const actual = Buffer.from(image.buffer, 0, length[0] * 2).toString("utf16le")
-          if (
-            realpathSync.native(actual).toLowerCase() !==
-            realpathSync.native(identity.image).toLowerCase()
-          )
-            return false
-        }
-      } finally {
-        api.CloseHandle(handle)
-      }
-    }
-    return true
-  })
-}
-export function terminateWindowsMember(identity: ProcessIdentity): boolean {
-  if (identity.pid === process.pid || (!identity.windowsJob && identity.knownBy !== "host"))
-    throw new Error("Windows termination requires an owned descendant")
-  const terminate = (job?: number | bigint) => {
-    const api = kernel(),
-      handle = BigInt(api.OpenProcess(0x1001, 0, identity.pid))
-    if (!handle) {
-      if (api.GetLastError() === 87) return false
-      throw failed("OpenProcess for cleanup")
-    }
-    try {
-      if (birth(handle) !== identity.processStart)
-        throw new Error("Windows process creation identity changed")
-      const member = new Int32Array(1)
-      if (job !== undefined && (!api.IsProcessInJob(handle, job, ptr(member)) || !member[0]))
-        throw new Error("Windows Job membership cannot be verified")
-      if (!api.TerminateProcess(handle, 1)) {
-        // A process that is already ending refuses it (access denied): it is gone, which is what Stop
-        // asked for, and cleanup that took it for a failure left the run "stopping" for ever.
-        const refused = failed("TerminateProcess")
-        const exit = new Uint32Array(1)
-        const STILL_ACTIVE = 259
-        if (api.GetExitCodeProcess(handle, ptr(exit)) && exit[0] !== STILL_ACTIVE) return true
-        throw refused
-      }
-      return true
-    } finally {
-      api.CloseHandle(handle)
-    }
-  }
-  return identity.windowsJob ? withJob(identity.windowsJob, terminate) : terminate()
-}
-export async function cleanupWindowsJob(
-  name: string,
-  recorded: ProcessIdentity[] = [],
-): Promise<CleanupResult> {
-  const hostPid = Number(/^Local\\QualityLayer-(\d+)-/.exec(name)?.[1])
-  if (!hostPid) throw new Error("Invalid Windows Job scope")
-  const errors: string[] = [],
-    unverified: ProcessIdentity[] = []
-  let remaining: ProcessIdentity[] = []
-  const deadline = Date.now() + 6000
-  do {
-    try {
-      remaining = windowsJobMembers(name).filter((p) => p.pid !== hostPid)
-    } catch (cause) {
-      // A vanished named Job has no surviving handles: kill-on-close has ended its entire tree.
-      if (String(cause).includes("OpenJobObjectW failed (Win32 2)")) remaining = []
-      else errors.push(String(cause))
-      break
-    }
-    for (const member of remaining)
-      try {
-        terminateWindowsMember(member)
-      } catch (cause) {
-        unverified.push(member)
-        errors.push(String(cause))
-      }
-    if (!remaining.length || errors.length) break
-    await Bun.sleep(50)
-  } while (Date.now() < deadline)
-  try {
-    remaining = windowsJobMembers(name).filter((p) => p.pid !== hostPid)
-  } catch (cause) {
-    if (String(cause).includes("OpenJobObjectW failed (Win32 2)")) remaining = []
-    else errors.push(String(cause))
-  }
-  if (errors.length)
-    for (const identity of recorded) {
-      try {
-        windowsProcessBirth(identity.pid)
-      } catch {
-        if (
-          !unverified.some(
-            (p) => p.pid === identity.pid && p.processStart === identity.processStart,
-          )
-        )
-          unverified.push(identity)
-      }
-    }
-  return {
-    complete: !remaining.length && !errors.length && !unverified.length,
-    remaining,
-    unverified,
-    errors,
-    at: new Date().toISOString(),
-  }
-}
-
-/** Named pipes are SE_FILE_OBJECTs; protect the listening instance before accepting input. */
-export function protectWindowsObject(path: string, inherit = false): void {
-  const security = dlopen("advapi32.dll", {
-    ConvertStringSecurityDescriptorToSecurityDescriptorW: {
-      args: ["ptr", "u32", "ptr", "ptr"],
-      returns: "i32",
-    },
-    GetSecurityDescriptorDacl: { args: ["u64", "ptr", "ptr", "ptr"], returns: "i32" },
-    SetNamedSecurityInfoW: {
-      args: ["ptr", "u32", "u32", "ptr", "ptr", "u64", "ptr"],
-      returns: "u32",
-    },
-  })
-  const descriptor = new BigUint64Array(1),
-    dacl = new BigUint64Array(1),
-    present = new Int32Array(1),
-    defaulted = new Int32Array(1)
-  const descriptorText = wide(`D:P(A;${inherit ? "OICI" : ""};GA;;;${windowsUserSid()})`)
-  const encodedPath = wide(path)
-  try {
-    if (
-      !security.symbols.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-        ptr(descriptorText),
-        1,
-        ptr(descriptor),
-        null,
-      )
-    )
-      throw failed("Windows private security descriptor")
-    if (
-      !security.symbols.GetSecurityDescriptorDacl(
-        new DataView(descriptor.buffer).getBigUint64(0, true),
-        ptr(present),
-        ptr(dacl),
-        ptr(defaulted),
-      ) ||
-      !present[0] ||
-      !dacl[0]
-    )
-      throw failed("Pipe DACL")
-    const result = security.symbols.SetNamedSecurityInfoW(
-      ptr(encodedPath),
-      1,
-      0x80000004,
-      null,
-      null,
-      new DataView(dacl.buffer).getBigUint64(0, true),
-      null,
-    )
-    if (result !== 0) throw new Error(`Pipe owner-only ACL failed (Win32 ${result})`)
-  } finally {
-    if (descriptor[0]) kernel().LocalFree(descriptor[0])
-    security.close()
-  }
-}
-
-let capability: { supported: boolean; reason?: string } | undefined
-export function windowsRunCapability(): { supported: boolean; reason?: string } {
-  if (process.platform !== "win32")
-    return { supported: false, reason: "Native Windows is required" }
-  capability ??= (() => {
-    try {
-      const api = kernel(),
-        job = BigInt(api.CreateJobObjectW(null, null))
-      if (!job) throw failed("CreateJobObjectW capability")
-      try {
-        killOnClose(job)
-      } finally {
-        api.CloseHandle(job)
-      }
-      const conpty = dlopen("kernel32.dll", {
-        CreatePseudoConsole: { args: ["u32", "u64", "u64", "u32", "ptr"], returns: "i32" },
-      })
-      conpty.close()
-      return { supported: true }
-    } catch (cause) {
-      return { supported: false, reason: String(cause) }
-    }
-  })()
-  return capability
 }

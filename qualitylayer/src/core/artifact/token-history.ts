@@ -108,6 +108,42 @@ async function versionOf(
   return run.stdout
 }
 
+function addHistoryValue(
+  history: TokenHistory,
+  theme: "light" | "dark",
+  token: string,
+  value: string,
+): void {
+  if (history.weight + value.length + token.length > TOKEN_HISTORY_BYTES) return
+  const key = `${theme}\0${token}`
+  const set = history.values.get(key) ?? new Set<string>()
+  if (set.has(value)) return
+  set.add(value)
+  history.values.set(key, set)
+  history.weight += value.length + key.length
+}
+
+function ingestHistoryText(
+  history: TokenHistory,
+  file: string,
+  text: string,
+  paletteFile: string | null,
+): void {
+  if (file === paletteFile) {
+    for (const [name, pair] of parsePalette(text) ?? []) {
+      addHistoryValue(history, "light", name, pair.light)
+      addHistoryValue(history, "dark", name, pair.dark)
+    }
+    return
+  }
+  const parsed = parseDesign(text)
+  for (const [name, colour] of parsed.colours) {
+    addHistoryValue(history, "light", name, colour.light)
+    if (colour.twin) addHistoryValue(history, "dark", name, colour.dark)
+  }
+  for (const [name, value] of parsed.others) addHistoryValue(history, "light", name, value)
+}
+
 /**
  * Every value the design file and the palette held for a token over their last commits, the newest
  * first, within a size cap. The working-tree file is not read here: the caller has it.
@@ -120,15 +156,6 @@ export async function readHistory(
   const history = NO_HISTORY()
   const files = [sources.design, sources.palette].filter((file): file is string => file !== null)
   if (files.length === 0) return history
-  const add = (theme: "light" | "dark", token: string, value: string) => {
-    if (history.weight + value.length + token.length > TOKEN_HISTORY_BYTES) return
-    const key = `${theme}\0${token}`
-    const set = history.values.get(key) ?? new Set<string>()
-    if (set.has(value)) return
-    set.add(value)
-    history.values.set(key, set)
-    history.weight += value.length + key.length
-  }
   const reads = (await commitsOf(ctx, root, files)).flatMap((commit) =>
     commit.files.map((file) => ({ sha: commit.sha, file })),
   )
@@ -140,20 +167,7 @@ export async function readHistory(
       })),
     )
     for (const { file, text } of texts) {
-      if (text === null) continue
-      if (file === sources.palette) {
-        for (const [name, pair] of parsePalette(text) ?? []) {
-          add("light", name, pair.light)
-          add("dark", name, pair.dark)
-        }
-        continue
-      }
-      const parsed = parseDesign(text)
-      for (const [name, colour] of parsed.colours) {
-        add("light", name, colour.light)
-        if (colour.twin) add("dark", name, colour.dark)
-      }
-      for (const [name, value] of parsed.others) add("light", name, value)
+      if (text !== null) ingestHistoryText(history, file, text, sources.palette)
     }
   }
   return history

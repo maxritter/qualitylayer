@@ -177,6 +177,40 @@ export async function dueArtifactChecks(ctx: Ctx, task: Task, plan: string): Pro
   return due
 }
 
+async function clearPriorPictures(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir">,
+  names: readonly string[],
+): Promise<void> {
+  const dir = picturesDir(task)
+  const left = await ctx.fs.readdir(dir).catch(() => [] as string[])
+  const stale = left.filter((file) =>
+    names.some(
+      (name) => file.startsWith(`${name}--`) || SHOTS.some((s) => file === pictureFile(name, s)),
+    ),
+  )
+  await Promise.all(stale.map((file) => ctx.fs.remove(join(dir, file)).catch(() => {})))
+}
+
+async function archivePriorReports(
+  ctx: Ctx,
+  task: Pick<Task, "runtimeDir" | "dir">,
+  names: readonly string[],
+  before: Record<string, string>,
+): Promise<void> {
+  for (const name of names) {
+    const report = join(task.dir, artifactReviewFile(name))
+    if (!(await ctx.fs.exists(report))) continue
+    const earlier = join(
+      task.dir,
+      REVIEWS_DIR,
+      `artifact-${name}.before-${before[name] ?? "unchecked"}.md`,
+    )
+    await ctx.fs.writeFile(earlier, await ctx.fs.readFile(report))
+    await ctx.fs.remove(report)
+  }
+}
+
 /**
  * The helpers are handed out: these pages are not handed out again until they change. A report a
  * check of an earlier version of the page left is kept beside, as `artifact-<name>.before-<digest>.md`,
@@ -188,37 +222,49 @@ export async function noteArtifactChecksOffered(
   seen: Record<string, string>,
   ids: Record<string, string> = {},
 ): Promise<void> {
-  if (Object.keys(seen).length === 0) return
+  const names = Object.keys(seen)
+  if (names.length === 0) return
   // A fresh check starts from no pictures: one left by an earlier run would be taken for its own.
-  const left = await ctx.fs.readdir(picturesDir(task)).catch(() => [] as string[])
-  for (const name of Object.keys(seen))
-    for (const file of left)
-      if (file.startsWith(`${name}--`) || SHOTS.some((s) => file === pictureFile(name, s)))
-        await ctx.fs.remove(join(picturesDir(task), file)).catch(() => {})
+  await clearPriorPictures(ctx, task, names)
+  await ctx.fs.mkdir(task.runtimeDir)
   if (Object.keys(ids).length > 0) {
-    await ctx.fs.mkdir(task.runtimeDir)
     await ctx.fs.atomicWrite(
       idsPath(task),
       `${JSON.stringify({ ...(await checkIds(ctx, task)), ...ids })}\n`,
     )
   }
   const before = await offered(ctx, task)
-  for (const name of Object.keys(seen)) {
-    const report = join(task.dir, artifactReviewFile(name))
-    if (!(await ctx.fs.exists(report))) continue
-    const earlier = join(
-      task.dir,
-      REVIEWS_DIR,
-      `artifact-${name}.before-${before[name] ?? "unchecked"}.md`,
-    )
-    await ctx.fs.writeFile(earlier, await ctx.fs.readFile(report))
-    await ctx.fs.remove(report)
+  await archivePriorReports(ctx, task, names, before)
+  await ctx.fs.atomicWrite(offeredPath(task), `${JSON.stringify({ ...before, ...seen })}\n`)
+}
+
+async function pendingCheckError(
+  ctx: Ctx,
+  task: Task,
+  draft: Draft,
+  handed: Record<string, string>,
+): Promise<ValidationError | null> {
+  const name = draft.key
+  const report = artifactReviewFile(name)
+  if (handed[name] === undefined) {
+    if (draft.pages.every((p) => isWireframe(p.html))) return null
+    const files = draft.pages.map((p) => p.file).join(", ")
+    return {
+      line: 1,
+      rule: "artifact-check-current",
+      message: `no fresh check of artifact ${name} was handed out yet`,
+      fix_hint: `run \`qualitylayer plan draft\`: it hands out the fresh check of ${files}; save the returned report with \`qualitylayer helper result <helper id> --file <report path>\``,
+      severity: "error",
+    }
   }
-  await ctx.fs.mkdir(task.runtimeDir)
-  await ctx.fs.atomicWrite(
-    offeredPath(task),
-    `${JSON.stringify({ ...(await offered(ctx, task)), ...seen })}\n`,
-  )
+  if (await ctx.fs.exists(join(task.dir, report))) return null
+  return {
+    line: 1,
+    rule: "artifact-check-missing",
+    message: `the fresh check of artifact ${name} has not reported yet: ${report} is not written`,
+    fix_hint: `wait for the \`artifact-check\` helper; save its returned report with \`qualitylayer helper result <helper id> --file <report path>\`, then answer each finding in ${report}`,
+    severity: "error",
+  }
 }
 
 /**
@@ -232,30 +278,9 @@ export async function pendingArtifactChecks(ctx: Ctx, task: Task): Promise<Valid
   const planPath = join(task.dir, folderDoc("plan"))
   if (!(await ctx.fs.exists(planPath))) return []
   const handed = await offered(ctx, task)
-  const errors: ValidationError[] = []
-  for (const draft of await draftsInPlan(ctx, task, await ctx.fs.readFile(planPath))) {
-    const name = draft.key
-    const report = artifactReviewFile(name)
-    const files = draft.pages.map((p) => p.file).join(", ")
-    if (handed[name] === undefined && draft.pages.every((p) => isWireframe(p.html))) continue
-    if (handed[name] === undefined)
-      errors.push({
-        line: 1,
-        rule: "artifact-check-current",
-        message: `no fresh check of artifact ${name} was handed out yet`,
-        fix_hint: `run \`qualitylayer plan draft\`: it hands out the fresh check of ${files}; save the returned report with \`qualitylayer helper result <helper id> --file <report path>\``,
-        severity: "error",
-      })
-    else if (!(await ctx.fs.exists(join(task.dir, report))))
-      errors.push({
-        line: 1,
-        rule: "artifact-check-missing",
-        message: `the fresh check of artifact ${name} has not reported yet: ${report} is not written`,
-        fix_hint: `wait for the \`artifact-check\` helper; save its returned report with \`qualitylayer helper result <helper id> --file <report path>\`, then answer each finding in ${report}`,
-        severity: "error",
-      })
-  }
-  return errors
+  const drafts = await draftsInPlan(ctx, task, await ctx.fs.readFile(planPath))
+  const found = await Promise.all(drafts.map((d) => pendingCheckError(ctx, task, d, handed)))
+  return found.filter((error): error is ValidationError => error !== null)
 }
 
 /**

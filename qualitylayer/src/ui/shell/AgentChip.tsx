@@ -31,6 +31,15 @@ type ObservedRun = Pick<
   | "waitSince"
 >
 
+function isSameActiveRun(status: AgentStatus, run: ObservedRun) {
+  const same =
+    !!run.nativeSession &&
+    status.agent === run.agent &&
+    status.signals?.sessionId === run.nativeSession
+  if (!same || run.status !== "running" || status.state === "step-done") return false
+  return run.attention !== "waiting" && run.terminalPrompt !== "permission"
+}
+
 function observedStatus(
   status: AgentStatus,
   run: ObservedRun | undefined,
@@ -38,18 +47,7 @@ function observedStatus(
 ): AgentStatus {
   if (!run) return status
   if (verifying && run.status === "running" && !runPermissionWaiting(run)) return status
-  const same =
-    !!run.nativeSession &&
-    status.agent === run.agent &&
-    status.signals?.sessionId === run.nativeSession
-  if (
-    same &&
-    run.status === "running" &&
-    status.state !== "step-done" &&
-    run.attention !== "waiting" &&
-    run.terminalPrompt !== "permission"
-  )
-    return status
+  if (isSameActiveRun(status, run)) return status
   const stopped = run.status === "stopped" || run.status === "failed"
   const waiting = run.attention === "waiting" || runPermissionWaiting(run)
   const words = {
@@ -76,6 +74,71 @@ function observedStatus(
     blocked: waiting && !stopped,
     resume: null,
   }
+}
+
+function chipAriaWords(status: AgentStatus, now: number) {
+  if (
+    status.state === "quiet" &&
+    status.doing !== "No active turn" &&
+    status.signals?.limit == null
+  ) {
+    const age = status.lastActivity === null ? null : agoShort(now - status.lastActivity)
+    return `quiet ${age ?? ""}`
+  }
+  if (status.state === "stopped") {
+    return status.signals?.stoppedAt == null
+      ? "stopped"
+      : `stopped at ${new Date(status.signals.stoppedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+  }
+  return status.doing
+}
+
+function resolveChipStatus({
+  projected,
+  task,
+  startupPrompt,
+  observedCount,
+  hasTurn,
+  openNeeds,
+  run,
+  now,
+}: {
+  projected: TaskDetail
+  task: TaskDetail
+  startupPrompt: Parameters<typeof shellStatus>[0]["startupPrompt"]
+  observedCount: number | undefined
+  hasTurn: boolean
+  openNeeds: number
+  run: ObservedRun | undefined
+  now: number
+}): AgentStatus {
+  const openItems =
+    observedCount === undefined || hasTurn
+      ? projected.openItems
+      : Math.max(0, observedCount - openNeeds)
+  const reported = observedStatus(
+    shellStatus(
+      {
+        ...projected,
+        ...(startupPrompt !== undefined ? { startupPrompt } : {}),
+        openItems,
+      },
+      now,
+    ),
+    run,
+    task.stage === "verify",
+  )
+  // The build's lead ended its turn in its own chat with nothing running: the person's move, as
+  // the sidebar row and Home say ("Open <agent>"), so the chip wears the amber mark, not the spinner.
+  if ((reported.state === "working" || reported.state === "quiet") && asksInChat(projected, now)) {
+    return {
+      ...reported,
+      state: "waits-for-you",
+      blocked: true,
+      doing: `open ${agentName(agentIdOf(projected))}`,
+    }
+  }
+  return reported
 }
 
 export function AgentChip({
@@ -121,61 +184,23 @@ export function AgentChip({
   )
   const observedCount =
     observed.data?.taskId === task.id ? observed.data.shell.status?.openItems : undefined
-  const reported = observedStatus(
-    shellStatus(
-      {
-        ...projected,
-        ...(startupPrompt !== undefined ? { startupPrompt } : {}),
-        openItems:
-          observedCount === undefined || turn !== null
-            ? projected.openItems
-            : Math.max(
-                0,
-                observedCount - (task.live?.needs.filter((n) => n.state === "open").length ?? 0),
-              ),
-      },
-      now,
-    ),
-    waitingRun ?? observedRun,
-    task.stage === "verify",
-  )
-  // The build's lead ended its turn in its own chat with nothing running: the person's move, as
-  // the sidebar row and Home say ("Open <agent>"), so the chip wears the amber mark, not the spinner.
-  const status: AgentStatus =
-    (reported.state === "working" || reported.state === "quiet") && asksInChat(projected, now)
-      ? {
-          ...reported,
-          state: "waits-for-you",
-          blocked: true,
-          doing: `open ${agentName(agentIdOf(projected))}`,
-        }
-      : reported
-  const age = status.lastActivity === null ? null : agoShort(now - status.lastActivity)
-  const words =
-    status.state === "quiet" && status.doing !== "No active turn" && status.signals?.limit == null
-      ? `quiet ${age ?? ""}`
-      : status.state === "stopped"
-        ? status.signals?.stoppedAt == null
-          ? "stopped"
-          : `stopped at ${new Date(status.signals.stoppedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-        : status.doing
+  const status = resolveChipStatus({
+    projected,
+    task,
+    startupPrompt,
+    observedCount,
+    hasTurn: turn !== null,
+    openNeeds,
+    run: waitingRun ?? observedRun,
+    now,
+  })
+  const words = chipAriaWords(status, now)
   // biome-ignore lint/correctness/useExhaustiveDependencies: moving to another task closes its old status panel
   useEffect(() => {
     setOpen(false)
   }, [task.id])
   // A phone's bar names the agent by its first word ("Claude", "Codex"), so the title keeps room.
   const [first = "", ...rest] = agentName(status.agent).split(" ")
-  const body = (
-    <>
-      <i aria-hidden="true" />
-      <AgentMark agent={status.agent} size={14} />
-      <b>
-        {first}
-        {rest.length > 0 ? <span className="ir-agent-rest"> {rest.join(" ")}</span> : null}
-      </b>
-      <ChevronDownIcon className="ir-agent-chevron" size={12} aria-hidden="true" />
-    </>
-  )
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -189,7 +214,13 @@ export function AgentChip({
           />
         }
       >
-        {body}
+        <i aria-hidden="true" />
+        <AgentMark agent={status.agent} size={14} />
+        <b>
+          {first}
+          {rest.length > 0 ? <span className="ir-agent-rest"> {rest.join(" ")}</span> : null}
+        </b>
+        <ChevronDownIcon className="ir-agent-chevron" size={12} aria-hidden="true" />
       </PopoverTrigger>
       <PopoverContent
         className="ir-status-popover"

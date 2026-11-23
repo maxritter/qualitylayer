@@ -1,4 +1,4 @@
-import { constants, fstatSync, lstatSync, openSync } from "node:fs"
+import { fstatSync } from "node:fs"
 import { join } from "node:path"
 import { type AnchoredRoot, relativeParts } from "./anchored-root.ts"
 import {
@@ -7,13 +7,14 @@ import {
   movePosixExclusive,
 } from "./posix-mutations.ts"
 import {
+  openPosixRootHandle,
+  removePosixEmptyDirectory,
+  unlinkPosixRegularFile,
+} from "./posix-root-ops.ts"
+import {
   api,
   atomic,
   child,
-  closeOnExec,
-  cString,
-  directoryFlags,
-  failure,
   listing,
   openLock,
   PosixFile,
@@ -23,34 +24,11 @@ import {
   tryNativeLock,
 } from "./posix-system.ts"
 
-function rootOf(root: string) {
-  api()
-  if (!root.startsWith("/") || root.includes("\\") || root.includes("\0"))
-    throw new Error("Native root must be an absolute canonical directory")
-  const expected = lstatSync(root)
-  if (!expected.isDirectory() || expected.isSymbolicLink()) throw new Error("Unsafe native root")
-  const handles = [openSync("/", directoryFlags)]
-  try {
-    let fd = handles[0] as number
-    for (const part of root.split("/").filter(Boolean)) {
-      if (part === "." || part === "..") throw new Error("Noncanonical native root")
-      fd = child(fd, part, false)
-      handles.push(fd)
-    }
-    const identity = fstatSync(fd)
-    if (expected.dev !== identity.dev || expected.ino !== identity.ino)
-      throw new Error("Native root identity changed")
-    return { root, handles, fd, identity }
-  } catch (cause) {
-    for (const fd of handles.toReversed()) api().close(fd)
-    throw cause
-  }
-}
 class PosixRoot implements AnchoredRoot {
   private readonly locks = new Map<string, number>()
   private closed = false
 
-  constructor(private readonly owner: ReturnType<typeof rootOf>) {}
+  constructor(private readonly owner: ReturnType<typeof openPosixRootHandle>) {}
 
   get identity() {
     return `${this.owner.identity.dev}:${this.owner.identity.ino}`
@@ -58,6 +36,22 @@ class PosixRoot implements AnchoredRoot {
 
   private alive() {
     if (this.closed) throw new Error("Native root is closed")
+  }
+
+  private readFrom<T>(
+    path: string,
+    read: (parent: ReturnType<PosixRoot["parent"]>) => T,
+  ): T | null {
+    let parent: ReturnType<PosixRoot["parent"]> | undefined
+    try {
+      parent = this.parent(path, false)
+      return read(parent)
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null
+      throw cause
+    } finally {
+      parent?.close()
+    }
   }
 
   directory(path: string): AnchoredRoot {
@@ -111,29 +105,11 @@ class PosixRoot implements AnchoredRoot {
   }
 
   snapshot(path: string, maximum: number) {
-    let parent: ReturnType<PosixRoot["parent"]> | undefined
-    try {
-      parent = this.parent(path, false)
-      return snapshot(parent.fd, parent.name, maximum)
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null
-      throw cause
-    } finally {
-      parent?.close()
-    }
+    return this.readFrom(path, (parent) => snapshot(parent.fd, parent.name, maximum))
   }
 
   probe(path: string, maximum: number) {
-    let parent: ReturnType<PosixRoot["parent"]> | undefined
-    try {
-      parent = this.parent(path, false)
-      return probe(parent.fd, parent.name, maximum)
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null
-      throw cause
-    } finally {
-      parent?.close()
-    }
+    return this.readFrom(path, (parent) => probe(parent.fd, parent.name, maximum))
   }
 
   async stream(path: string, maximum: number, consume: (bytes: Uint8Array) => Promise<void>) {
@@ -199,20 +175,7 @@ class PosixRoot implements AnchoredRoot {
   unlinkFile(path: string) {
     const parent = this.parent(path, false)
     try {
-      const fd = api().openat(
-        parent.fd,
-        cString(parent.name),
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | closeOnExec,
-        0,
-      )
-      if (fd < 0) throw failure("Open removed file")
-      try {
-        if (!fstatSync(fd).isFile()) throw new Error("Removed file is not regular")
-      } finally {
-        api().close(fd)
-      }
-      if (api().unlinkat(parent.fd, cString(parent.name), 0) !== 0)
-        throw failure("Unlink regular file")
+      unlinkPosixRegularFile(parent.fd, parent.name)
     } finally {
       parent.close()
     }
@@ -221,19 +184,7 @@ class PosixRoot implements AnchoredRoot {
   removeEmptyDirectory(path: string) {
     const parent = this.parent(path, false)
     try {
-      const held = child(parent.fd, parent.name, false)
-      try {
-        if (
-          api().unlinkat(
-            parent.fd,
-            cString(parent.name),
-            process.platform === "darwin" ? 0x80 : 0x200,
-          ) !== 0
-        )
-          throw failure("Remove empty directory")
-      } finally {
-        api().close(held)
-      }
+      removePosixEmptyDirectory(parent.fd, parent.name)
     } finally {
       parent.close()
     }
@@ -257,7 +208,7 @@ class PosixRoot implements AnchoredRoot {
 
   assertCurrentRoot() {
     this.alive()
-    const current = rootOf(this.owner.root)
+    const current = openPosixRootHandle(this.owner.root)
     try {
       if (
         current.identity.dev !== this.owner.identity.dev ||
@@ -279,12 +230,12 @@ class PosixRoot implements AnchoredRoot {
 
 /** Pin every root component with O_NOFOLLOW; all later operations are descriptor-relative. */
 export function openPosixRoot(root: string): AnchoredRoot {
-  return new PosixRoot(rootOf(root))
+  return new PosixRoot(openPosixRootHandle(root))
 }
 
 /** Compatibility boundary for a record that holds its final parent across caller work. */
 export function openPosixFile(root: string, path: string, createParents: boolean) {
-  const pinned = new PosixRoot(rootOf(root))
+  const pinned = new PosixRoot(openPosixRootHandle(root))
   let parent: ReturnType<PosixRoot["parent"]>
   try {
     parent = pinned.parent(path, createParents)

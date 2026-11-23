@@ -2,94 +2,62 @@
 // terminal. The same checks, the same outbox and the same endpoint; only the diagnostics differ in
 // having no page. An agent runs it only when the user asks to send a report, after showing the text.
 
-import { basename } from "node:path"
-import { buildDiagnostics } from "../../core/feedback/diagnostics.ts"
-import { newReportId, retryOutbox, sendFeedback } from "../../core/feedback/outbox.ts"
+import { newReportId } from "../../core/feedback/outbox.ts"
 import { PublicFeedbackFailure } from "../../core/feedback/public-client.ts"
 import { confirmPublicReport, reviewPublicReport } from "../../core/feedback/public-outbox.ts"
-import { type FeedbackImage, sniffImage } from "../../core/feedback/report.ts"
-import { loadState } from "../../core/licence/cache.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
+import { privateFeedbackCmd } from "./feedback-private.ts"
 
-const USAGE =
-  'usage: qualitylayer feedback "<text>" --private [--idea] [--image <file>]… [--no-diagnostics] [--name <name> --email <e-mail>]'
+const PUBLIC_USAGE =
+  'usage: qualitylayer feedback preview "<description>" --title "<title>" [--idea]; qualitylayer feedback submit <id> --confirm <preview-digest>; use the App for public screenshots or add --private for private support'
 
-const VALUED = new Set(["--image", "--name", "--email"])
-
-async function privateFeedbackCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+function parsePreviewArgs(args: string[]): {
+  description: string
+  title: string
+  kind: "bug" | "idea"
+} {
   const words: string[] = []
-  const files: string[] = []
-  const flags = new Map<string, string>()
-  const switches = new Set<string>()
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i] ?? ""
-    if (VALUED.has(arg)) {
-      const value = args[++i]
-      if (value === undefined)
-        return err({ code: "bad_args", message: `${arg} needs a value. ${USAGE}` })
-      if (arg === "--image") files.push(value)
-      else flags.set(arg, value)
-    } else if (arg.startsWith("--")) switches.add(arg)
-    else words.push(arg)
+  let title = ""
+  let kind: "bug" | "idea" = "bug"
+  for (let index = 1; index < args.length; index++) {
+    const value = args[index] ?? ""
+    if (value === "--title") {
+      const next = args[++index]
+      if (next === undefined)
+        throw new PublicFeedbackFailure("refused", `${value} needs a value. ${PUBLIC_USAGE}`)
+      title = next
+    } else if (value === "--idea") kind = "idea"
+    else if (value.startsWith("--"))
+      throw new PublicFeedbackFailure(
+        "refused",
+        `Unsupported public report option ${value}. Minimal system details are always included. ${PUBLIC_USAGE}`,
+      )
+    else words.push(value)
   }
-  const text = words.join(" ").trim()
-  if (text === "") return err({ code: "bad_args", message: `The report needs text. ${USAGE}` })
+  return { description: words.join(" "), title, kind }
+}
 
-  const images: FeedbackImage[] = []
-  for (const file of files) {
-    const handle = Bun.file(file)
-    if (!(await handle.exists())) {
-      return err({ code: "bad_args", message: `The screenshot ${file} does not exist.` })
-    }
-    const bytes = new Uint8Array(await handle.arrayBuffer())
-    const type = sniffImage(bytes)
-    if (type === null) {
-      return err({ code: "bad_args", message: `${file} is not a PNG, JPEG or WebP image.` })
-    }
-    images.push({ name: basename(file), type, bytes })
-  }
+async function submitPublic(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  if (args.length !== 4 || args[2] !== "--confirm" || !/^[a-f0-9]{64}$/.test(args[3] ?? ""))
+    throw new PublicFeedbackFailure(
+      "refused",
+      `Confirm the digest from the exact public preview. ${PUBLIC_USAGE}`,
+    )
+  const result = await confirmPublicReport(ctx, args[1] ?? "", args[3] ?? "")
+  const printed =
+    "message" in result ? result.message : `Public issue: ${result.issueUrl} (${result.reference})`
+  return ok({ ...result, printed })
+}
 
-  const trial = (await loadState(ctx)).state?.tier === "trial"
-  const name = flags.get("--name")
-  const email = flags.get("--email")
-  if (trial && (name === undefined || email === undefined)) {
-    return err({
-      code: "bad_args",
-      message:
-        "During the trial a report needs your name and e-mail, so we can reply. Add --name <name> --email <e-mail>; they are used for this report only.",
-    })
-  }
-  // A machine without the App never runs the server's retry: what waited goes out with this command.
-  await retryOutbox(ctx).catch(() => {})
-  const sent = await sendFeedback(
-    ctx,
-    {
-      id: newReportId(),
-      kind: switches.has("--idea") ? "idea" : "bug",
-      text,
-      sender: trial && name !== undefined && email !== undefined ? { name, email } : null,
-      diagnostics: switches.has("--no-diagnostics") ? null : await buildDiagnostics(ctx, {}),
-      images,
-    },
-    { trial },
-  )
-  if (!sent.ok) return sent
-  if (sent.data.status === "sent") {
-    return ok({
-      status: "sent",
-      reference: sent.data.reference,
-      printed: `Sent. It is reference ${sent.data.reference}. We read every report.`,
-    })
-  }
-  const why =
-    sent.data.why === "offline"
-      ? "The network did not answer"
-      : sent.data.why === "limit"
-        ? (sent.data.message ?? "Too many reports just now")
-        : "qualitylayer.dev could not take it just now"
+async function previewPublic(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const { description, title, kind } = parsePreviewArgs(args)
+  const id = newReportId()
+  const preview = await reviewPublicReport(ctx, { id, title, kind, description }, [])
+  const command = `qualitylayer feedback submit ${id} --confirm ${preview.review.contentSha256}`
   return ok({
-    status: "queued",
-    printed: `Saved to send later. ${why.replace(/\.$/, "")}, so the report waits on this computer. It goes out the next time the App is open or you run qualitylayer feedback while online.`,
+    status: "reviewed",
+    preview,
+    printed: `PUBLIC ISSUE PREVIEW · ${preview.issue.repository}\n\n${preview.issue.title}\n\n${preview.issue.body}\n\nLabels: ${preview.issue.labels.join(", ")}\n\nAnyone can read this. Check the text before publishing. Public screenshot reports use the App's visual preview.\nTo publish this exact version:\n${command}`,
   })
 }
 
@@ -100,62 +68,18 @@ export async function feedbackCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
       ctx,
       args.filter((arg) => arg !== "--private"),
     )
-  const usage =
-    'usage: qualitylayer feedback preview "<description>" --title "<title>" [--idea]; qualitylayer feedback submit <id> --confirm <preview-digest>; use the App for public screenshots or add --private for private support'
   try {
     if (args.some((arg) => arg === "--image" || arg.startsWith("--image=")))
       throw new PublicFeedbackFailure(
         "refused",
         "Public CLI reports are text-only. Use Bugs and ideas in the App to review the exact sanitized screenshots before publishing. Private support still accepts --private --image <file>.",
       )
-    if (args[0] === "submit") {
-      if (args.length !== 4 || args[2] !== "--confirm" || !/^[a-f0-9]{64}$/.test(args[3] ?? ""))
-        throw new PublicFeedbackFailure(
-          "refused",
-          `Confirm the digest from the exact public preview. ${usage}`,
-        )
-      const result = await confirmPublicReport(ctx, args[1] ?? "", args[3] ?? "")
-      const printed =
-        "message" in result
-          ? result.message
-          : `Public issue: ${result.issueUrl} (${result.reference})`
-      return ok({ ...result, printed })
-    }
-    if (args[0] !== "preview")
-      throw new PublicFeedbackFailure(
-        "refused",
-        `Public reports need a preview and explicit confirmation. ${usage}`,
-      )
-    const words: string[] = []
-    let title = ""
-    let kind: "bug" | "idea" = "bug"
-    for (let index = 1; index < args.length; index++) {
-      const value = args[index] ?? ""
-      if (value === "--title") {
-        const next = args[++index]
-        if (next === undefined)
-          throw new PublicFeedbackFailure("refused", `${value} needs a value. ${usage}`)
-        title = next
-      } else if (value === "--idea") kind = "idea"
-      else if (value.startsWith("--"))
-        throw new PublicFeedbackFailure(
-          "refused",
-          `Unsupported public report option ${value}. Minimal system details are always included. ${usage}`,
-        )
-      else words.push(value)
-    }
-    const id = newReportId()
-    const preview = await reviewPublicReport(
-      ctx,
-      { id, title, kind, description: words.join(" ") },
-      [],
+    if (args[0] === "submit") return await submitPublic(ctx, args)
+    if (args[0] === "preview") return await previewPublic(ctx, args)
+    throw new PublicFeedbackFailure(
+      "refused",
+      `Public reports need a preview and explicit confirmation. ${PUBLIC_USAGE}`,
     )
-    const command = `qualitylayer feedback submit ${id} --confirm ${preview.review.contentSha256}`
-    return ok({
-      status: "reviewed",
-      preview,
-      printed: `PUBLIC ISSUE PREVIEW · ${preview.issue.repository}\n\n${preview.issue.title}\n\n${preview.issue.body}\n\nLabels: ${preview.issue.labels.join(", ")}\n\nAnyone can read this. Check the text before publishing. Public screenshot reports use the App's visual preview.\nTo publish this exact version:\n${command}`,
-    })
   } catch (cause) {
     return err({
       code: "bad_args",

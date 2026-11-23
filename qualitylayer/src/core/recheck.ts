@@ -79,6 +79,19 @@ type Standing = {
 const clip = (text: string): string =>
   text.length <= 80 ? text : `${text.slice(0, 79).trimEnd()}…`
 
+function collectRoundAcceptance(verdicts: readonly Verdict[]): Map<string, Verdict> {
+  const said = new Map<string, Verdict>()
+  for (const verdict of verdicts) {
+    if (verdict.kind !== "acceptance") continue
+    const id = verdict.subject.toUpperCase()
+    const before = said.get(id)
+    // One failing line of a step makes the step fail.
+    if (before?.verdict === "FAIL" || before?.verdict === "MISSING") continue
+    said.set(id, verdict)
+  }
+  return said
+}
+
 /**
  * The latest result of each step across the rounds before `assignment`'s own: a full round starts
  * the record again, a recheck adds its own verdicts to what stood.
@@ -96,25 +109,47 @@ async function standingBefore(
   for (const round of earlier) {
     const ruled = await roundAssignment(ctx, runtimeDir, round.assignment)
     if (!isRecheck(ruled)) standing = new Map()
-    const said = new Map<string, Verdict>()
-    for (const verdict of round.verdicts) {
-      if (verdict.kind !== "acceptance") continue
-      const id = verdict.subject.toUpperCase()
-      const before = said.get(id)
-      // One failing line of a step makes the step fail.
-      if (before !== undefined && (before.verdict === "FAIL" || before.verdict === "MISSING"))
-        continue
-      said.set(id, verdict)
-    }
-    for (const [id, verdict] of said)
+    for (const [id, verdict] of collectRoundAcceptance(round.verdicts)) {
       standing.set(id, {
         verdict: verdict.verdict,
         text: verdict.text,
         iteration: round.n,
         stepText: ruled?.stepTexts?.[id],
       })
+    }
   }
   return standing
+}
+
+async function missingEvidenceReason(
+  was: Standing,
+  evidence: readonly string[],
+  exists: ((path: string) => Promise<boolean>) | undefined,
+): Promise<string | null> {
+  if (was.verdict !== "PASS" || exists === undefined) return null
+  if (evidence.length === 0) return `its pass in iteration ${was.iteration} cites no evidence file`
+  const checks = await Promise.all(
+    evidence.map(async (path) => ((await exists(path)) ? null : path)),
+  )
+  const gone = checks.filter((path): path is string => path !== null)
+  return gone.length > 0
+    ? `its pass in iteration ${was.iteration} cites ${gone.map((p) => `\`${p}\``).join(", ")}, no longer in the task folder`
+    : null
+}
+
+function stepRerunReason(
+  was: Standing | undefined,
+  currentText: string | undefined,
+): string | null {
+  if (was === undefined) return "it was not judged before"
+  if (was.verdict !== "PASS" && was.verdict !== "USER") {
+    return was.verdict === "NOTE"
+      ? `iteration ${was.iteration} recorded only a note for it`
+      : `it did not pass in iteration ${was.iteration}: ${clip(was.text)}`
+  }
+  if (was.stepText === undefined || currentText === undefined)
+    return `the text it was judged under in iteration ${was.iteration} was not kept`
+  return was.stepText !== currentText ? `its text changed since iteration ${was.iteration}` : null
 }
 
 /**
@@ -135,49 +170,21 @@ export async function recheckOf(
   const again = new Map<string, string>()
   for (const id of assignment.acceptance ?? []) {
     const was = standing.get(id)
-    if (was === undefined) {
-      again.set(id, "it was not judged before")
-      continue
-    }
-    if (was.verdict !== "PASS" && was.verdict !== "USER") {
-      again.set(
-        id,
-        was.verdict === "NOTE"
-          ? `iteration ${was.iteration} recorded only a note for it`
-          : `it did not pass in iteration ${was.iteration}: ${clip(was.text)}`,
-      )
-      continue
-    }
-    const now = assignment.stepTexts?.[id]
-    if (was.stepText === undefined || now === undefined || was.stepText !== now) {
-      again.set(
-        id,
-        was.stepText === undefined || now === undefined
-          ? `the text it was judged under in iteration ${was.iteration} was not kept`
-          : `its text changed since iteration ${was.iteration}`,
-      )
+    const reason = stepRerunReason(was, assignment.stepTexts?.[id])
+    if (reason !== null || was === undefined) {
+      again.set(id, reason ?? "it was not judged before")
       continue
     }
     const evidence = was.verdict === "PASS" ? evidenceIn(was.text) : []
-    if (was.verdict === "PASS" && exists !== undefined) {
-      if (evidence.length === 0) {
-        again.set(id, `its pass in iteration ${was.iteration} cites no evidence file`)
-        continue
-      }
-      const gone: string[] = []
-      for (const path of evidence) if (!(await exists(path))) gone.push(path)
-      if (gone.length > 0) {
-        again.set(
-          id,
-          `its pass in iteration ${was.iteration} cites ${gone.map((p) => `\`${p}\``).join(", ")}, no longer in the task folder`,
-        )
-        continue
-      }
+    const evidenceIssue = await missingEvidenceReason(was, evidence, exists)
+    if (evidenceIssue !== null) {
+      again.set(id, evidenceIssue)
+      continue
     }
     carried.set(id, {
       id,
       iteration: was.iteration,
-      verdict: was.verdict,
+      verdict: was.verdict as "PASS" | "USER",
       text: was.text,
       evidence,
     })

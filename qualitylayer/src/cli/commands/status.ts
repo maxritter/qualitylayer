@@ -32,6 +32,29 @@ async function boardCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   }
 }
 
+async function readCheckoutStatus(ctx: Ctx, session: string): Promise<Result<unknown>> {
+  // The repository id hashes a real path; the mod may run in a directory reached through a symlink.
+  const checkout = probeCheckout(realpathSync(ctx.env.cwd()))
+  const selected = ctx.invocationTask && checkout ? await resolveTask(ctx, checkout.repo) : null
+  if (ctx.invocationTask && selected === null)
+    return err({
+      code: "no_task",
+      message: `Task ${JSON.stringify(ctx.invocationTask)} was not found in this checkout.`,
+    })
+  const report =
+    checkout !== null
+      ? await statusFor(ctx, checkout, session.trim(), {
+          boundOnly: session !== "",
+          ...(selected ? { task: selected } : {}),
+        })
+      : null
+  if (report === null || checkout === null) return ok({ task: null })
+  // The same moves `next` lists, from the one table, so the two can never disagree.
+  const task = selected ?? (await loadTask(ctx, checkout.repo, report.task.slug))
+  const moves = task === null ? [] : movesOf((await moveStateOf(ctx, task)).state)
+  return ok({ ...report, moves })
+}
+
 /**
  * No open task is `{ ok: true, task: null }`; anything that goes wrong is an error envelope, which the
  * mod draws as a failure. `--session <id>` (the mod passes its Claude Code session's id) reports only
@@ -45,26 +68,7 @@ export async function statusCmd(ctx: Ctx, args: string[]): Promise<Result<unknow
     return err({ code: "bad_args", message: "usage: qualitylayer status [--session <id>]" })
   }
   try {
-    // The repository id hashes a real path; the mod may run in a directory reached through a symlink.
-    const checkout = probeCheckout(realpathSync(ctx.env.cwd()))
-    const selected = ctx.invocationTask && checkout ? await resolveTask(ctx, checkout.repo) : null
-    if (ctx.invocationTask && selected === null)
-      return err({
-        code: "no_task",
-        message: `Task ${JSON.stringify(ctx.invocationTask)} was not found in this checkout.`,
-      })
-    const report =
-      checkout !== null
-        ? await statusFor(ctx, checkout, session.trim(), {
-            boundOnly: session !== "",
-            ...(selected ? { task: selected } : {}),
-          })
-        : null
-    if (report === null || checkout === null) return ok({ task: null })
-    // The same moves `next` lists, from the one table, so the two can never disagree.
-    const task = selected ?? (await loadTask(ctx, checkout.repo, report.task.slug))
-    const moves = task === null ? [] : movesOf((await moveStateOf(ctx, task)).state)
-    return ok({ ...report, moves })
+    return await readCheckoutStatus(ctx, session)
   } catch (cause) {
     return err({
       code: "bad_args",

@@ -4,7 +4,7 @@
 // Change…, or a Your call's two options. A words row moves focus to the own-answer field; the field's
 // Enter sends it. No frame.
 
-import { ArrowLeftIcon, ArrowRightIcon, CircleCheckIcon, ListChecksIcon } from "lucide-react"
+import { ListChecksIcon } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { FLOW_STEPS } from "../../core/flow.ts"
 import { answerLabel, type Item, type ItemAnswer } from "../../core/items.ts"
@@ -12,22 +12,143 @@ import type { QuestionChoice } from "../../core/task/question.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { agentInfo } from "../model.ts"
 import { InlineMarkdown } from "../reader/DocReader.tsx"
-import { WireframeBlock } from "../reader/WireframeBlock.tsx"
-import { Hint } from "../sidebar/Hint.tsx"
-import { ChoiceList, Thumbnail } from "./ChoiceList.tsx"
-import { clearDraft, draftFor, useQuestionDraft, writeDraft } from "./drafts.ts"
+import { ChoiceList } from "./ChoiceList.tsx"
+import {
+  DecisionFoot,
+  DecisionHeader,
+  DecisionMedia,
+  deliverDecisionAnswer,
+  handleDecisionKeyDown,
+} from "./DecisionCardParts.tsx"
+import { useQuestionDraft, writeDraft } from "./drafts.ts"
 import { goneOf } from "./MoreRequest.tsx"
 import { QuestionComposer } from "./QuestionComposer.tsx"
 import "./question-batch.css"
 import "./question-focus.css"
 
-/** What a refused send says: the words and files stay, and the button reads Try again. */
-const SEND_FAILED = "Couldn't send. Your answer and files are kept."
 const CALL_LETTERS = ["A", "B"] as const
 /** The answers that ask for words: the row moves focus to the field. */
 const WORDS = ["change", "fix", "reply", "add-review"]
 /** The answers that go with what the Plan says: the recommendation. */
 const GO_AHEAD = ["agree", "keep", "confirm"]
+
+function buildDecisionMeta(item: Item, index: number, total: number) {
+  const call = item.call
+  const many = total > 1
+  const kindWord = item.kind === "mockup" ? "artifact" : "decision"
+  const stepLabel = FLOW_STEPS.find((step) => step.id === item.step)?.label ?? "Plan"
+  const place = many
+    ? `${kindWord} ${index + 1} of ${total}`
+    : call !== undefined
+      ? "your call"
+      : kindWord
+  const context = `${stepLabel} · ${place}${item.step === "plan" ? ", then Approve the Plan" : ""}`
+  const kinds = item.answers.options
+  const choices: QuestionChoice[] =
+    call !== undefined
+      ? call.options.map((label) => ({ label }))
+      : kinds.map((kind) => ({
+          label: answerLabel(kind, item.family, item.answers.labels),
+          ...(WORDS.includes(kind) ? { words: true as const } : {}),
+        }))
+  const recommended =
+    call !== undefined
+      ? [call.recommended]
+      : kinds[0] !== undefined && GO_AHEAD.includes(kinds[0])
+        ? [0]
+        : []
+  return { call, many, stepLabel, context, kinds, choices, recommended }
+}
+
+function composerCopy(editing: ItemAnswer["kind"] | null) {
+  if (editing === "reply") return { label: "Reply to this feedback", sendLabel: "Send reply" }
+  if (editing) return { label: "What should change?", sendLabel: "Send change" }
+  return { label: "Your own answer", sendLabel: "Send" }
+}
+
+function DecisionIntro({
+  item,
+  stepLabel,
+  who,
+  stopped,
+}: {
+  item: Item
+  stepLabel: string
+  who: string
+  stopped: boolean
+}) {
+  return (
+    <>
+      <h2>
+        <InlineMarkdown text={item.what} />
+      </h2>
+      {item.changedFrom ? (
+        <p className="qbc-why">
+          Previously: <InlineMarkdown text={item.changedFrom} />
+        </p>
+      ) : null}
+      {item.why ? (
+        <p className="qbc-why">
+          <InlineMarkdown text={item.why} />
+        </p>
+      ) : null}
+      <div className="qbc-meta">
+        <span className="qbc-settles">
+          <ListChecksIcon aria-hidden="true" />
+          <span>{item.step === "plan" ? "In the Plan" : `In ${stepLabel}`}</span>
+          <span>{item.kindLabel}</span>
+        </span>
+        <span className={stopped ? "qbc-live off" : "qbc-live"}>
+          <i aria-hidden="true" />
+          {stopped ? `${who} stopped waiting` : `${who} waits`}
+        </span>
+      </div>
+    </>
+  )
+}
+
+function useDecisionSubmission({
+  draftKey,
+  item,
+  note,
+  files,
+  busy,
+  onAnswer,
+}: {
+  draftKey: string
+  item: Item
+  note: string
+  files: File[]
+  busy: boolean
+  onAnswer: (item: Item, answer: ItemAnswer, files?: File[]) => boolean | Promise<boolean>
+}) {
+  const [sending, setSending] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const locked = busy || sending
+  const deliver = async (kind: ItemAnswer["kind"], words = note.trim()) => {
+    if (locked) return
+    setSending(true)
+    setProblem(null)
+    const err = await deliverDecisionAnswer({ draftKey, item, kind, words, files, onAnswer })
+    if (err !== null) setProblem(err)
+    setSending(false)
+  }
+  return { locked, problem, deliver }
+}
+
+function pickCallOption(
+  call: Item["call"],
+  pickIndex: number,
+  note: string,
+  deliver: (kind: ItemAnswer["kind"], words?: string) => Promise<void>,
+) {
+  if (call === undefined || call.options[pickIndex] === undefined) return
+  const suffix = note.trim() ? ` · ${note.trim()}` : ""
+  void deliver(
+    pickIndex === call.recommended ? "agree" : "change",
+    CALL_LETTERS[pickIndex] + suffix,
+  )
+}
 
 export function DecisionCard({
   item,
@@ -57,73 +178,35 @@ export function DecisionCard({
   const note = draft.words
   const files = draft.files
   const field = useRef<HTMLTextAreaElement>(null)
-  const [sending, setSending] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
   const setEditing = (answerKind: ItemAnswer["kind"] | null) =>
     writeDraft(key, { answerKind, writing: true })
   const ownKind = editing ?? (item.answers.options.includes("change") ? "change" : "reply")
-  const locked = busy || sending
+  const { locked, problem, deliver } = useDecisionSubmission({
+    draftKey: key,
+    item,
+    note,
+    files,
+    busy,
+    onAnswer,
+  })
+
   useEffect(() => {
     if (editing) field.current?.focus()
   }, [editing])
-  const deliver = async (kind: ItemAnswer["kind"], words = note.trim()) => {
-    if (locked) return
-    const attempt = draftFor(key)
-    setSending(true)
-    setProblem(null)
-    try {
-      const saved = await onAnswer(
-        item,
-        { kind, ...(words ? { note: words } : {}), at: Date.now() },
-        files,
-      )
-      if (saved !== true) setProblem(SEND_FAILED)
-      else clearDraft(key, attempt)
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : SEND_FAILED)
-    } finally {
-      setSending(false)
-    }
-  }
+
   const choose = (kind: ItemAnswer["kind"]) => {
     if (WORDS.includes(kind)) setEditing(kind)
     else void deliver(kind)
   }
-  // A Your call asks for one of its two options, as the Plan's own call does: the recommended one
-  // agrees with the Plan, the other one changes it; the letter says which.
-  const call = item.call
-  const pick = (index: number) => {
-    if (call === undefined || call.options[index] === undefined) return
-    void deliver(
-      index === call.recommended ? "agree" : "change",
-      CALL_LETTERS[index] + (note.trim() ? ` · ${note.trim()}` : ""),
-    )
-  }
-  const many = total > 1
-  const kindWord = item.kind === "mockup" ? "artifact" : "decision"
-  const stepLabel = FLOW_STEPS.find((step) => step.id === item.step)?.label ?? "Plan"
-  const place = many
-    ? `${kindWord} ${index + 1} of ${total}`
-    : call !== undefined
-      ? "your call"
-      : kindWord
-  const context = `${stepLabel} · ${place}${item.step === "plan" ? ", then Approve the Plan" : ""}`
-  const kinds = item.answers.options
-  const choices: QuestionChoice[] =
-    call !== undefined
-      ? call.options.map((label) => ({ label }))
-      : kinds.map((kind) => ({
-          label: answerLabel(kind, item.family, item.answers.labels),
-          ...(WORDS.includes(kind) ? { words: true as const } : {}),
-        }))
-  const recommended =
-    call !== undefined
-      ? [call.recommended]
-      : kinds[0] !== undefined && GO_AHEAD.includes(kinds[0])
-        ? [0]
-        : []
+
+  const meta = buildDecisionMeta(item, index, total)
+  const pick = (pickIndex: number) => pickCallOption(meta.call, pickIndex, note, deliver)
   const who = agentInfo(surface.task.session?.agent).name
   const stopped = goneOf(surface.task.live?.signals ?? null, Date.now()) !== null
+  const composer = composerCopy(editing)
+  const hasCall = meta.call !== undefined
+  const editingProps = editing ? { placeholder: "", onCancel: () => setEditing(null) } : {}
+
   return (
     <section
       className="qbc fq-decision"
@@ -131,174 +214,59 @@ export function DecisionCard({
       tabIndex={-1}
       data-testid="decision-card"
       data-item-id={item.id}
-      onKeyDown={(event) => {
-        const target = event.target as HTMLElement
-        if (
-          event.repeat ||
-          event.nativeEvent.isComposing ||
-          locked ||
-          event.defaultPrevented ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.altKey ||
-          target.isContentEditable ||
-          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-        )
-          return
-        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-          event.preventDefault()
-          ;(event.key === "ArrowLeft" ? onPrevious : onNext)()
-        } else if (call !== undefined && /^[12ab]$/i.test(event.key)) {
-          event.preventDefault()
-          pick(/^[1a]$/i.test(event.key) ? 0 : 1)
-        } else if (/^[1-9]$/.test(event.key)) {
-          const kind = item.answers.options[Number(event.key) - 1]
-          if (kind) {
-            event.preventDefault()
-            choose(kind)
-          }
-        }
-      }}
+      onKeyDown={(event) =>
+        handleDecisionKeyDown({
+          event,
+          locked,
+          hasCall,
+          options: item.answers.options,
+          onPrevious,
+          onNext,
+          onPick: pick,
+          onChoose: choose,
+        })
+      }
     >
-      <header className="qbc-top">
-        <span className="qbc-yt">
-          <i aria-hidden="true" />
-          Your turn
-        </span>
-        <span className="bq-t" data-testid={many ? "decision-place" : undefined}>
-          {context}
-        </span>
-        {many ? (
-          <span className="fq-gate">
-            <button
-              type="button"
-              className="q-btn quiet icon sm"
-              onClick={onPrevious}
-              disabled={index === 0 || locked}
-              aria-label="Previous decision"
-              title="Previous decision"
-            >
-              <ArrowLeftIcon size={14} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="q-btn quiet icon sm"
-              onClick={onNext}
-              disabled={index === total - 1 || locked}
-              aria-label="Next decision"
-              title="Next decision"
-            >
-              <ArrowRightIcon size={14} aria-hidden="true" />
-            </button>
-          </span>
-        ) : null}
-      </header>
+      <DecisionHeader
+        context={meta.context}
+        many={meta.many}
+        index={index}
+        total={total}
+        locked={locked}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
       <div className="qbc-question">
-        <h2>
-          <InlineMarkdown text={item.what} />
-        </h2>
-        {item.changedFrom ? (
-          <p className="qbc-why">
-            Previously: <InlineMarkdown text={item.changedFrom} />
-          </p>
-        ) : null}
-        {item.why ? (
-          <p className="qbc-why">
-            <InlineMarkdown text={item.why} />
-          </p>
-        ) : null}
-        <div className="qbc-meta">
-          <span className="qbc-settles">
-            <ListChecksIcon aria-hidden="true" />
-            <span>{item.step === "plan" ? "In the Plan" : `In ${stepLabel}`}</span>
-            <span>{item.kindLabel}</span>
-          </span>
-          <span className={stopped ? "qbc-live off" : "qbc-live"}>
-            <i aria-hidden="true" />
-            {stopped ? `${who} stopped waiting` : `${who} waits`}
-          </span>
-        </div>
-        {item.media?.kind === "mermaid" ? (
-          <div className="fq-decision-media">
-            <Thumbnail source={item.media.source} theme={surface.theme} testId="decision" />
-          </div>
-        ) : item.media?.kind === "wireframe" || item.media?.kind === "panel" ? (
-          <div className="fq-decision-media">
-            {surface.planning ? (
-              surface.planning.renderMedia(item)
-            ) : (
-              <WireframeBlock
-                kind={item.media.kind}
-                identity={item.media.name}
-                source={item.media.source}
-                theme={surface.theme}
-              />
-            )}
-          </div>
-        ) : item.media?.kind === "facts" ? (
-          <dl className="fq-decision-facts">
-            {item.media.rows.map((row) => (
-              <div key={row.label}>
-                <dt>{row.label}</dt>
-                <dd>{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : item.media && surface.planning ? (
-          <div className="fq-decision-media">{surface.planning.renderMedia(item)}</div>
-        ) : null}
+        <DecisionIntro item={item} stepLabel={meta.stepLabel} who={who} stopped={stopped} />
+        <DecisionMedia item={item} surface={surface} />
         <ChoiceList
-          choices={choices}
-          recommended={recommended}
+          choices={meta.choices}
+          recommended={meta.recommended}
           grade={1}
           theme={surface.theme}
           idPrefix={`decision-${item.id}`}
-          onChoose={(n) => (call !== undefined ? pick(n) : choose(kinds[n] ?? "agree"))}
+          onChoose={(n) => (hasCall ? pick(n) : choose(meta.kinds[n] ?? "agree"))}
           disabled={locked}
-          markdown={call !== undefined}
-          label={call !== undefined ? "Your call" : "Choices"}
-          testId={call !== undefined ? "focus-choice" : "decision-choice"}
+          markdown={hasCall}
+          label={hasCall ? "Your call" : "Choices"}
+          testId={hasCall ? "focus-choice" : "decision-choice"}
         />
         <QuestionComposer
           id={`decision-note-${item.id}`}
-          label={
-            editing === "reply"
-              ? "Reply to this feedback"
-              : editing
-                ? "What should change?"
-                : "Your own answer"
-          }
+          label={composer.label}
           showLabel={editing !== null}
-          {...(editing ? { placeholder: "" } : {})}
           words={note}
           files={files}
           field={field}
           onWords={(words) => writeDraft(key, { words, writing: true })}
-          onFiles={(files) => writeDraft(key, { files, writing: true })}
+          onFiles={(nextFiles) => writeDraft(key, { files: nextFiles, writing: true })}
           busy={locked}
           error={problem}
           submit={() => void deliver(ownKind)}
-          sendLabel={editing === "reply" ? "Send reply" : editing ? "Send change" : "Send"}
-          {...(editing ? { onCancel: () => setEditing(null) } : {})}
+          sendLabel={composer.sendLabel}
+          {...editingProps}
         />
-        {foot || call !== undefined ? (
-          <div className="qbc-help">
-            {foot}
-            {call !== undefined ? (
-              <Hint label="Your call is saved as you give it." side="top">
-                <button
-                  type="button"
-                  className="qbc-saved"
-                  data-testid="decision-saved"
-                  aria-label="Saved. Your call is saved as you give it."
-                >
-                  <CircleCheckIcon aria-hidden="true" />
-                  Saved
-                </button>
-              </Hint>
-            ) : null}
-          </div>
-        ) : null}
+        <DecisionFoot foot={foot} hasCall={hasCall} />
       </div>
     </section>
   )

@@ -1,307 +1,78 @@
-import { createHash } from "node:crypto"
-import {
-  closeSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  readSync,
-  realpathSync,
-} from "node:fs"
-import { basename, join } from "node:path"
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { capFolder, NATIVE_PLAN_FILE_MAX_BYTES, NATIVE_PLAN_FILES_KEPT } from "../home-caps.ts"
-import { findStateDb, openStateDb } from "../peers/codex.ts"
-import { homeVariable } from "../platform.ts"
-import { keyOf } from "../task/binding.ts"
 import { checklistCall, checklistResult, checklistState } from "./checklist.ts"
 import type { CodexPlanObservation } from "./codex.ts"
+import {
+  type CompletedPlanReceipt,
+  capturePlanFrontier,
+  type NativePlanReceipt,
+  nativePlanDir,
+  nativePlanPath,
+  readAsyncNativePlan,
+  readStoredNativePlan,
+  type StoredNativePlan,
+  samePlanSource,
+  validPlanSession,
+} from "./native-plan-store.ts"
 import type { ConversationChecklist } from "./types.ts"
-import { confinedRecord } from "./worker-location.ts"
 
-type Receipt = {
-  hook_event_name?: unknown
-  session_id?: unknown
-  tool_name?: unknown
-  tool_use_id?: unknown
-  tool_input?: unknown
-  tool_response?: unknown
-  is_error?: unknown
-  status?: unknown
-  transcript_path?: unknown
-}
-type CompletedReceipt = Receipt & {
-  session_id: string
-  tool_use_id: string
-  tool_input: Record<string, unknown>
-}
-type Frontier = {
-  file: string
-  device: string
-  inode: string
-  offset: number
-  headBytes: number
-  headHash: string
-  tailBytes: number
-  tailHash: string
-}
-type Stored = { session: string; seen: string[]; value: ConversationChecklist; frontier?: Frontier }
-const HEADER_BYTES = 1024 * 1024
-const PREFIX_BYTES = 256
-const TAIL_BYTES = 4096
-const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
-const digest = (value: unknown): value is string =>
-  typeof value === "string" && /^[a-f0-9]{64}$/.test(value)
+const FAILED_STATUSES = new Set(["failed", "cancelled", "canceled"])
 
-function frontierOf(value: unknown): Frontier | undefined {
-  if (!value || typeof value !== "object") return undefined
-  const f = value as Frontier
-  return typeof f.file === "string" &&
-    f.file.length <= 8192 &&
-    typeof f.device === "string" &&
-    typeof f.inode === "string" &&
-    Number.isSafeInteger(f.offset) &&
-    f.offset > 0 &&
-    Number.isSafeInteger(f.headBytes) &&
-    f.headBytes > 0 &&
-    f.headBytes <= Math.min(PREFIX_BYTES, f.offset) &&
-    Number.isSafeInteger(f.tailBytes) &&
-    f.tailBytes > 0 &&
-    f.tailBytes <= Math.min(TAIL_BYTES, f.offset) &&
-    digest(f.headHash) &&
-    digest(f.tailHash)
-    ? f
-    : undefined
+export const nativePlanFile = nativePlanPath
+
+function isReceiptObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-function sourceFile(ctx: Ctx, payload: CompletedReceipt): string | null {
-  const home = homeVariable(ctx.env)
-  if (!home) return null
-  const base = ctx.env.get("CODEX_HOME") || join(home, ".codex")
-  const confined = (file: string) =>
-    basename(file).endsWith(`-${payload.session_id}.jsonl`)
-      ? confinedRecord(join(realpathSync(base), "sessions"), file)
-      : null
-  if (typeof payload.transcript_path === "string") {
-    const file = confined(payload.transcript_path)
-    if (file) return file
-  }
-  let sqliteHome = ctx.env.get("CODEX_SQLITE_HOME") || base
-  try {
-    const config = join(base, "config.toml")
-    if (lstatSync(config).isFile() && lstatSync(config).size <= 256 * 1024) {
-      const value = (Bun.TOML.parse(readFileSync(config, "utf8")) as Record<string, unknown>)
-        .sqlite_home
-      if (typeof value === "string" && value)
-        sqliteHome = value.startsWith("~/") ? join(home, value.slice(2)) : value
-    }
-  } catch {
-    /* The native default or explicit directory remains authoritative. */
-  }
-  const file = findStateDb(sqliteHome)
-  if (!file) return null
-  const db = openStateDb(file)
-  try {
-    db.exec("PRAGMA busy_timeout = 100")
-    const row = db
-      .query("SELECT rollout_path FROM threads WHERE id = ? LIMIT 1")
-      .get(payload.session_id) as { rollout_path?: unknown } | null
-    return typeof row?.rollout_path === "string" ? confined(row.rollout_path) : null
-  } finally {
-    db.close()
-  }
-}
-
-function readAt(fd: number, offset: number, length: number): Buffer {
-  const bytes = Buffer.alloc(length)
-  if (readSync(fd, bytes, 0, length, offset) !== length)
-    throw new Error("Native source changed during observation")
-  return bytes
-}
-
-function captureFrontier(ctx: Ctx, payload: CompletedReceipt): Frontier | undefined {
-  try {
-    const file = sourceFile(ctx, payload)
-    if (!file) return undefined
-    const fd = openSync(file, "r")
-    try {
-      const info = fstatSync(fd)
-      if (!info.isFile() || !Number.isSafeInteger(info.size) || !info.size) return undefined
-      const first = readAt(fd, 0, Math.min(info.size, HEADER_BYTES))
-      const end = first.indexOf(10)
-      if (end < 0) return undefined
-      const header = JSON.parse(first.subarray(0, end).toString("utf8"))
-      if (header?.type !== "session_meta" || header?.payload?.id !== payload.session_id)
-        return undefined
-      const headBytes = Math.min(info.size, PREFIX_BYTES),
-        tailBytes = Math.min(info.size, TAIL_BYTES)
-      const frontier: Frontier = {
-        file,
-        device: String(info.dev),
-        inode: String(info.ino),
-        offset: info.size,
-        headBytes,
-        headHash: hash(first.subarray(0, headBytes)),
-        tailBytes,
-        tailHash: hash(readAt(fd, info.size - tailBytes, tailBytes)),
-      }
-      const after = fstatSync(fd)
-      return after.dev === info.dev && after.ino === info.ino && after.size >= info.size
-        ? frontier
-        : undefined
-    } finally {
-      closeSync(fd)
-    }
-  } catch {
-    return undefined
-  }
-}
-
-function sameSource(frontier: Frontier, path: string): boolean {
-  try {
-    if (realpathSync(path) !== frontier.file) return false
-    const fd = openSync(path, "r")
-    try {
-      const info = fstatSync(fd)
-      return (
-        info.isFile() &&
-        String(info.dev) === frontier.device &&
-        String(info.ino) === frontier.inode &&
-        info.size >= frontier.offset &&
-        hash(readAt(fd, 0, frontier.headBytes)) === frontier.headHash &&
-        hash(readAt(fd, frontier.offset - frontier.tailBytes, frontier.tailBytes)) ===
-          frontier.tailHash
-      )
-    } finally {
-      closeSync(fd)
-    }
-  } catch {
-    return false
-  }
-}
-const validSession = (session: unknown): session is string =>
-  typeof session === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(session)
-const directory = (ctx: Ctx) => join(ctx.home, "native-plans")
-export const nativePlanFile = (ctx: Ctx, session: string) =>
-  join(directory(ctx), `codex-${keyOf(session)}.json`)
-
-function decode(raw: string, session: string): Stored | null {
-  try {
-    if (Buffer.byteLength(raw) > NATIVE_PLAN_FILE_MAX_BYTES) return null
-    const record = JSON.parse(raw) as Stored
-    const value = record.value
-    if (
-      record.session !== session ||
-      !Array.isArray(record.seen) ||
-      record.seen.length > 100 ||
-      !record.seen.every((id) => typeof id === "string" && id.length > 0 && id.length <= 128)
-    )
-      return null
-    if (
-      !value ||
-      value.scope !== session ||
-      typeof value.revision !== "string" ||
-      !value.revision.length ||
-      value.revision.length > 128 ||
-      !["snapshot", "observed", "incomplete"].includes(value.coverage) ||
-      !Array.isArray(value.items) ||
-      value.items.length > 100
-    )
-      return null
-    if (
-      !value.items.every(
-        (item) =>
-          item &&
-          typeof item.id === "string" &&
-          item.id.length > 0 &&
-          item.id.length <= 128 &&
-          typeof item.text === "string" &&
-          ["pending", "in_progress", "completed"].includes(item.status),
-      ) ||
-      new Set(value.items.map((item) => item.id)).size !== value.items.length
-    )
-      return null
-    return {
-      session,
-      seen: record.seen,
-      ...(frontierOf(record.frontier) ? { frontier: frontierOf(record.frontier) } : {}),
-      value: {
-        scope: session,
-        revision: value.revision,
-        coverage: value.coverage,
-        items: value.items.map((item) => ({ id: item.id, text: item.text, status: item.status })),
-      },
-    }
-  } catch {
-    return null
-  }
-}
-
-function stored(ctx: Ctx, session: string): Stored | null {
-  try {
-    const file = nativePlanFile(ctx, session)
-    const info = lstatSync(file)
-    return info.isFile() && info.size <= NATIVE_PLAN_FILE_MAX_BYTES
-      ? decode(readFileSync(file, "utf8"), session)
-      : null
-  } catch {
-    return null
-  }
-}
-
-async function previous(ctx: Ctx, session: string): Promise<Stored | null> {
-  try {
-    const file = nativePlanFile(ctx, session)
-    const link = await ctx.fs.lstat?.(file)
-    if (link && link.kind !== "file") return null
-    const info = await ctx.fs.stat?.(file)
-    if (info && info.size > NATIVE_PLAN_FILE_MAX_BYTES) return null
-    return decode(await ctx.fs.readFile(file), session)
-  } catch {
-    return null
-  }
-}
-
-export function nativePlanReceipt(payload: Receipt, fallback: string): payload is CompletedReceipt {
-  const session = payload.session_id
+export function nativePlanReceipt(
+  payload: NativePlanReceipt,
+  fallback: string,
+): payload is CompletedPlanReceipt {
+  if (!validPlanSession(payload.session_id)) return false
+  if ((payload.hook_event_name || fallback) !== "PostToolUse") return false
+  if (payload.tool_name !== "update_plan" || payload.tool_response !== "Plan updated") return false
+  if (payload.is_error === true || FAILED_STATUSES.has(String(payload.status))) return false
   const call = payload.tool_use_id
   return (
-    validSession(session) &&
-    (payload.hook_event_name || fallback) === "PostToolUse" &&
-    payload.tool_name === "update_plan" &&
-    payload.tool_response === "Plan updated" &&
-    payload.is_error !== true &&
-    !["failed", "cancelled", "canceled"].includes(String(payload.status)) &&
     typeof call === "string" &&
     call.length > 0 &&
     call.length <= 128 &&
-    payload.tool_input !== null &&
-    typeof payload.tool_input === "object" &&
-    !Array.isArray(payload.tool_input)
+    isReceiptObject(payload.tool_input)
   )
+}
+
+function serializePlanRecord(record: StoredNativePlan): string | null {
+  let body = JSON.stringify(record)
+  if (Buffer.byteLength(body) > NATIVE_PLAN_FILE_MAX_BYTES && record.frontier) {
+    delete record.frontier
+    record.value = { ...record.value, coverage: "incomplete" }
+    body = JSON.stringify(record)
+  }
+  return Buffer.byteLength(body) <= NATIVE_PLAN_FILE_MAX_BYTES ? body : null
 }
 
 /** Called only after managed-run ownership or an outside task binding has been established. */
 export async function recordNativePlan(
   ctx: Ctx,
-  payload: Receipt,
+  payload: NativePlanReceipt,
   fallback: string,
 ): Promise<void> {
   if (!nativePlanReceipt(payload, fallback)) return
   const session = payload.session_id
   const call = payload.tool_use_id
-  const frontier = captureFrontier(ctx, payload)
+  const frontier = capturePlanFrontier(ctx, payload)
   try {
-    const dir = directory(ctx)
+    const dir = nativePlanDir(ctx)
     await ctx.fs.mkdir(dir)
     await ctx.fs.withLock(join(dir, ".write.lock"), async () => {
-      const before = await previous(ctx, session)
+      const before = await readAsyncNativePlan(ctx, session)
       if (before?.seen.includes(call)) return
       if (
         before?.frontier &&
         frontier &&
         frontier.offset < before.frontier.offset &&
-        sameSource(before.frontier, frontier.file)
+        samePlanSource(before.frontier, frontier.file)
       )
         return
       const state = checklistState()
@@ -311,19 +82,13 @@ export async function recordNativePlan(
       if (!state.value) return
       state.value.scope = session
       state.value.revision = call
-      const record: Stored = {
+      const body = serializePlanRecord({
         session,
         seen: state.seen,
         value: state.value,
         ...(frontier ? { frontier } : {}),
-      }
-      let body = JSON.stringify(record)
-      if (Buffer.byteLength(body) > NATIVE_PLAN_FILE_MAX_BYTES && record.frontier) {
-        delete record.frontier
-        record.value = { ...record.value, coverage: "incomplete" }
-        body = JSON.stringify(record)
-      }
-      if (Buffer.byteLength(body) > NATIVE_PLAN_FILE_MAX_BYTES) return
+      })
+      if (!body) return
       const file = nativePlanFile(ctx, session)
       if (!(await ctx.fs.exists(file)))
         await capFolder(ctx, dir, NATIVE_PLAN_FILES_KEPT - 1, (name) =>
@@ -340,7 +105,32 @@ export function readNativePlan(
   ctx: Ctx,
   session: string | undefined,
 ): ConversationChecklist | null {
-  return validSession(session) ? (stored(ctx, session)?.value ?? null) : null
+  return validPlanSession(session) ? (readStoredNativePlan(ctx, session)?.value ?? null) : null
+}
+
+function compareObservedPlan(
+  receipt: StoredNativePlan,
+  canonical: ConversationChecklist,
+  observation: CodexPlanObservation | undefined,
+): { checklist: ConversationChecklist | null; captured: boolean } {
+  const captured = { checklist: receipt.value, captured: true }
+  const uncertain = {
+    checklist: { ...receipt.value, coverage: "incomplete" as const },
+    captured: true,
+  }
+  const sameContent =
+    observation?.callId === receipt.value.revision ||
+    JSON.stringify(canonical.items) === JSON.stringify(receipt.value.items)
+  if (sameContent) {
+    return canonical.coverage !== "incomplete" && receipt.value.coverage === "incomplete"
+      ? { checklist: canonical, captured: false }
+      : captured
+  }
+  const frontier = receipt.frontier
+  if (!frontier || !observation) return uncertain
+  if (observation.start >= frontier.offset && observation.end > frontier.offset)
+    return { checklist: canonical, captured: false }
+  return observation.end <= frontier.offset ? captured : uncertain
 }
 
 /** Select native observations by their source barrier, never by checklist counters or clocks. */
@@ -351,25 +141,11 @@ export function selectNativePlan(
   path: string | undefined,
   observation: CodexPlanObservation | undefined,
 ): { checklist: ConversationChecklist | null; captured: boolean } {
-  const receipt = validSession(session) ? stored(ctx, session) : null
+  const receipt = validPlanSession(session) ? readStoredNativePlan(ctx, session) : null
   if (!receipt) return { checklist: canonical, captured: false }
-  const captured = { checklist: receipt.value, captured: true }
-  const uncertain = {
-    checklist: { ...receipt.value, coverage: "incomplete" as const },
-    captured: true,
+  if (receipt.frontier && (!path || !samePlanSource(receipt.frontier, path))) {
+    return { checklist: { ...receipt.value, coverage: "incomplete" }, captured: true }
   }
-  const frontier = receipt.frontier
-  if (frontier && (!path || !sameSource(frontier, path))) return uncertain
-  if (!canonical) return captured
-  if (
-    observation?.callId === receipt.value.revision ||
-    JSON.stringify(canonical.items) === JSON.stringify(receipt.value.items)
-  )
-    return canonical.coverage !== "incomplete" && receipt.value.coverage === "incomplete"
-      ? { checklist: canonical, captured: false }
-      : captured
-  if (!frontier || !observation) return uncertain
-  if (observation.start >= frontier.offset && observation.end > frontier.offset)
-    return { checklist: canonical, captured: false }
-  return observation.end <= frontier.offset ? captured : uncertain
+  if (!canonical) return { checklist: receipt.value, captured: true }
+  return compareObservedPlan(receipt, canonical, observation)
 }

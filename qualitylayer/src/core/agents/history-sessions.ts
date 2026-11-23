@@ -4,14 +4,22 @@
 // both resume a session by id); an agent whose records cannot be read is left out. Reading only,
 // bounded like the project history: the age window, the newest entries, a byte cap per record, a deadline.
 
-import { open, realpath, stat } from "node:fs/promises"
+import { realpath } from "node:fs/promises"
 import { isAbsolute, join, normalize, sep } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { roots } from "../install/agent-settings.ts"
-import { isCompressedRollout, readCompressedHead, rolloutId } from "./codex-rollout.ts"
+import { rolloutId } from "./codex-rollout.ts"
 import { codexDays, dayRollouts } from "./history-records.ts"
+import {
+  describeSessionEntry,
+  SESSION_LIMITS,
+  type SessionEntry,
+  type SessionRequest,
+} from "./history-sessions-parse.ts"
 import { cwdInHead, type Limits, newest, STORE_LIMITS } from "./history-stores.ts"
 import type { NativeAgent } from "./ids.ts"
+
+export { SESSION_LIMITS }
 
 export type HistoryAgent = Extract<NativeAgent, "claude-code" | "codex">
 
@@ -31,27 +39,9 @@ export type HistorySession = {
   at: number
 }
 
-export const SESSION_LIMITS = {
-  windowDays: 90,
-  /** Sessions described per call, newest first. */
-  described: 40,
-  /** The most bytes read of one record. */
-  readCap: 16 * 1024 * 1024,
-  /** The most bytes one request reads in all; a record always gets its first `minRead` bytes. */
-  budget: 64 * 1024 * 1024,
-  minRead: 256 * 1024,
-  /** Claude Code project folders looked at, newest first. */
-  claudeFolders: 40,
-  /** Descriptions kept for the next request (a reopened card, the resume that follows a list). */
-  cached: 200,
-  titleChars: 100,
-  deadlineMs: 2500,
-} as const
-
 const DAY = 86_400_000
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/
 
-type Entry = { agent: HistoryAgent; id: string; cwd: string; at: number; file: string }
 type Options = {
   now?: number
   /** Sessions to leave out: the ones that already are a QualityLayer task. */
@@ -65,17 +55,6 @@ type Options = {
   deadlineMs?: number
 }
 
-/** What a record said, keyed by file, last write and size: an unchanged record is not read twice. */
-const descriptions = new Map<string, HistorySession | null>()
-const remember = (key: string, value: HistorySession | null) => {
-  descriptions.delete(key)
-  descriptions.set(key, value)
-  for (const old of descriptions.keys()) {
-    if (descriptions.size <= SESSION_LIMITS.cached) break
-    descriptions.delete(old)
-  }
-}
-
 const inside = (path: string, folder: string) =>
   path === folder || path.startsWith(folder.endsWith(sep) ? folder : `${folder}${sep}`)
 const slugOf = (folder: string) => folder.replace(/[^a-zA-Z0-9]/g, "-")
@@ -87,7 +66,11 @@ async function folderNames(folder: string): Promise<string[]> {
   return [...new Set([given, real])]
 }
 
-async function claudeEntries(base: string, names: string[], limits: Limits): Promise<Entry[]> {
+async function claudeEntries(
+  base: string,
+  names: string[],
+  limits: Limits,
+): Promise<SessionEntry[]> {
   const projects = join(base, "projects")
   const slugs = names.map(slugOf)
   // The newest project folders of this one's name (itself and the folders inside it), not the first by name.
@@ -98,7 +81,7 @@ async function claudeEntries(base: string, names: string[], limits: Limits): Pro
       directory && slugs.some((slug) => dir === slug || dir.startsWith(`${slug}-`)),
     limits,
   )
-  const found: Entry[] = []
+  const found: SessionEntry[] = []
   for (const folder of folders) {
     const files = await newest(
       folder.path,
@@ -123,8 +106,12 @@ async function claudeEntries(base: string, names: string[], limits: Limits): Pro
   return found
 }
 
-async function codexEntries(base: string, names: string[], limits: Limits): Promise<Entry[]> {
-  const found: Entry[] = []
+async function codexEntries(
+  base: string,
+  names: string[],
+  limits: Limits,
+): Promise<SessionEntry[]> {
+  const found: SessionEntry[] = []
   let read = 0
   for await (const day of codexDays(join(base, "sessions"), limits)) {
     if (limits.expired() || read >= STORE_LIMITS.sessionsPerAgent) break
@@ -145,15 +132,7 @@ async function codexEntries(base: string, names: string[], limits: Limits): Prom
   return found
 }
 
-/** One request's clock and byte budget; every read of it answers to the same deadline. */
-type Request = {
-  limits: Limits
-  budget: { left: number }
-  cap: number
-  onRead?: (n: number) => void
-}
-
-function requestFor(ctx: Ctx, options: Options): Request {
+function requestFor(ctx: Ctx, options: Options): SessionRequest {
   const started = Date.now()
   const deadline = options.deadlineMs ?? SESSION_LIMITS.deadlineMs
   return {
@@ -171,8 +150,8 @@ async function entriesIn(
   ctx: Ctx,
   folder: string,
   options: Options,
-  { limits }: Request,
-): Promise<Entry[]> {
+  { limits }: SessionRequest,
+): Promise<SessionEntry[]> {
   const stores = roots(ctx)
   if (stores === null) return []
   const names = await folderNames(folder)
@@ -183,147 +162,6 @@ async function entriesIn(
   return [...claude, ...codex]
     .filter((entry) => !options.exclude?.(entry.id, entry.agent))
     .sort((a, b) => b.at - a.at)
-}
-
-/**
- * The start of a record, as text: at most the cap, and no more than what is left of the request's
- * budget (but always its first `minRead` bytes, where the first prompt is). `more` when the record
- * is longer than what was read.
- */
-async function readRecord(
-  file: string,
-  request: Request,
-): Promise<{ text: string; more: boolean; whole: boolean } | null> {
-  const allowed = Math.min(request.cap, Math.max(request.budget.left, SESSION_LIMITS.minRead))
-  if (isCompressedRollout(file)) {
-    const head = await readCompressedHead(file, allowed)
-    if (head === null) return null
-    const bytes = Buffer.byteLength(head.text)
-    request.budget.left -= bytes
-    request.onRead?.(bytes)
-    return {
-      text: head.more ? head.text.slice(0, head.text.lastIndexOf("\n") + 1) : head.text,
-      more: head.more,
-      whole: !head.more || allowed >= request.cap,
-    }
-  }
-  let handle: Awaited<ReturnType<typeof open>> | undefined
-  try {
-    handle = await open(file, "r")
-    const { size } = await handle.stat()
-    const want = Math.min(size, allowed)
-    const buffer = Buffer.alloc(want)
-    const { bytesRead } = await handle.read(buffer, 0, want, 0)
-    request.budget.left -= bytesRead
-    request.onRead?.(bytesRead)
-    const more = size > bytesRead
-    const text = buffer.subarray(0, bytesRead).toString("utf8")
-    // A record cut in the middle of a line does not count its last, partial line.
-    return {
-      text: more ? text.slice(0, text.lastIndexOf("\n") + 1) : text,
-      more,
-      whole: allowed >= Math.min(size, request.cap),
-    }
-  } catch {
-    return null
-  } finally {
-    await handle?.close().catch(() => {})
-  }
-}
-
-/** What an agent wrote into the conversation itself, not a message of the person's or the agent's. */
-const injected = (text: string) =>
-  /^\s*</.test(text) || /^\s*(# AGENTS\.md instructions|Caveat:|\[Request interrupted)/.test(text)
-
-function oneLine(text: string): string {
-  const line = (text.split("\n").find((row) => row.trim() !== "") ?? "").replace(/\s+/g, " ").trim()
-  return line.length > SESSION_LIMITS.titleChars
-    ? `${line.slice(0, SESSION_LIMITS.titleChars - 1).trimEnd()}…`
-    : line
-}
-
-type Part = { type?: unknown; text?: unknown }
-function textOf(content: unknown, kinds: string[]): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return (content as Part[])
-    .filter((part) => typeof part?.text === "string" && kinds.includes(String(part.type)))
-    .map((part) => part.text as string)
-    .join("\n")
-}
-
-type Said = { role: "user" | "assistant"; text: string }
-
-/** Claude Code: a line of the session is a prompt, a reply, or bookkeeping and tool traffic. */
-function claudeLine(line: Record<string, unknown>): Said | null {
-  if (line.isSidechain === true || line.isMeta === true) return null
-  const message = line.message as { content?: unknown } | undefined
-  if (line.type === "user") return { role: "user", text: textOf(message?.content, ["text"]) }
-  if (line.type === "assistant")
-    return { role: "assistant", text: textOf(message?.content, ["text"]) }
-  return null
-}
-
-/** Codex: the messages are `response_item`s; its own context arrives as user messages too. */
-function codexLine(line: Record<string, unknown>): Said | null {
-  const payload = line.payload as { type?: unknown; role?: unknown; content?: unknown } | undefined
-  if (line.type !== "response_item" || payload?.type !== "message") return null
-  if (payload.role === "user")
-    return { role: "user", text: textOf(payload.content, ["input_text"]) }
-  if (payload.role === "assistant")
-    return { role: "assistant", text: textOf(payload.content, ["output_text"]) }
-  return null
-}
-
-/** A Codex session another QualityLayer session started with a peer message is QualityLayer's own work. */
-const peerEnvelope = (title: string) => title.startsWith("[session-peers from=")
-
-/** The first prompt and the number of messages in the lines read. */
-function tally(text: string, read: (line: Record<string, unknown>) => Said | null) {
-  let title = ""
-  let messages = 0
-  for (const row of text.split("\n")) {
-    if (!row.includes('"user"') && !row.includes('"assistant"')) continue
-    let said: Said | null
-    try {
-      said = read(JSON.parse(row) as Record<string, unknown>)
-    } catch {
-      continue
-    }
-    if (said === null || said.text.trim() === "") continue
-    if (said.role === "user" && injected(said.text)) continue
-    messages++
-    if (title === "" && said.role === "user") title = oneLine(said.text)
-  }
-  return { title, messages }
-}
-
-async function describe(entry: Entry, request: Request): Promise<HistorySession | null> {
-  const size = await stat(entry.file).then(
-    (info) => info.size,
-    () => -1,
-  )
-  if (size < 0) return null
-  const key = `${entry.file}\0${entry.at}\0${size}\0${request.cap}`
-  if (descriptions.has(key)) return descriptions.get(key) ?? null
-  const record = await readRecord(entry.file, request)
-  if (record === null) return null
-  const { title, messages } = tally(record.text, entry.agent === "codex" ? codexLine : claudeLine)
-  const session: HistorySession | null =
-    title === "" || peerEnvelope(title)
-      ? null
-      : {
-          id: entry.id,
-          agent: entry.agent,
-          cwd: entry.cwd,
-          title,
-          messages,
-          ...(record.more ? { approximate: true as const } : {}),
-          at: entry.at,
-        }
-  // What a short read of the budget cut off is read again next time.
-  if (record.whole) remember(key, session)
-  return session
 }
 
 /**
@@ -347,7 +185,7 @@ export async function listFolderSessions(
       left = entries.length - index
       break
     }
-    const session = await describe(entry, request)
+    const session = await describeSessionEntry(entry, request)
     if (session !== null) sessions.push(session)
   }
   return { total: sessions.length + left, sessions }
@@ -366,5 +204,5 @@ export async function findFolderSession(
   const entry = (await entriesIn(ctx, folder, options, request)).find(
     (one) => one.agent === agent && one.id === id,
   )
-  return entry ? describe(entry, request) : null
+  return entry ? describeSessionEntry(entry, request) : null
 }

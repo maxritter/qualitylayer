@@ -41,6 +41,92 @@ function sectionsOf(markdown: string, cut: DocSections | null | undefined): Outl
   return entries.length >= OUTLINE_MIN ? entries.filter((entry) => entry.show !== "detail") : []
 }
 
+function trimTrailingSlashes(folder: string | undefined): string | undefined {
+  if (folder === undefined) return undefined
+  let end = folder.length
+  while (end > 0 && (folder[end - 1] === "/" || folder[end - 1] === "\\")) end--
+  return folder.slice(0, end)
+}
+
+function jumpToOutlineEntry(
+  container: HTMLElement | null,
+  entries: readonly OutlineEntry[],
+  slug: string,
+) {
+  const entry = entries.find((each) => each.slug === slug)
+  const page = container?.closest<HTMLElement>(".sp-page")
+  if (entry === undefined || !page) return
+  const target =
+    page.querySelector<HTMLElement>(`[data-passage-section="${entry.slug}"]`) ??
+    page.querySelector<HTMLElement>(`#${sectionId(entry.text)}`) ??
+    [...page.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].find(
+      (element) => element.textContent?.trim().replace(/\s+/g, " ") === entry.text,
+    )
+  jumpTo(target ?? page.querySelector<HTMLElement>("h1") ?? page)
+}
+
+function copyMenuOptions(doc: StepDocument, dir: string | undefined, live: StepLive | undefined) {
+  const loadDoc = (live as Partial<StepLive> | undefined)?.loadDoc
+  const copyDoc = live?.copyDoc
+  const branchName = copyDoc?.branch
+  return {
+    ...(loadDoc !== undefined
+      ? { agents: { step: doc.step, load: () => loadDoc(agentsPathOf(doc.step)) } }
+      : {}),
+    ...(copyDoc?.planExport === true && doc.step === "plan" ? { planExport: true } : {}),
+    ...(copyDoc?.forAgent !== undefined && doc.step === "plan"
+      ? { forAgent: copyDoc.forAgent }
+      : {}),
+    ...(live !== undefined && dir !== undefined
+      ? { copyPath: () => void live.copy(`${dir}/${doc.file}`, "Copied the path") }
+      : {}),
+    ...(live !== undefined && branchName
+      ? {
+          branch: {
+            name: branchName,
+            copy: () => void live.copy(branchName, "Copied the branch name"),
+          },
+        }
+      : {}),
+  }
+}
+
+function StepExportCard({
+  doc,
+  plain,
+  task,
+  live,
+}: {
+  doc: StepDocument
+  plain: string
+  task: string | undefined
+  live: StepLive
+}) {
+  const isPlan = doc.step === "plan"
+  const title = `${live.exportContext?.title ?? task ?? "Task"} · ${isPlan ? "Plan" : "Review"}`
+  return (
+    <ExportCard
+      kind={isPlan ? "plan" : "review"}
+      title={title}
+      disabled={!plain.trim()}
+      write={live.exportFile}
+      prepare={async (format, _scope, signal) => {
+        if (!live.exportFile) throw new Error("Export is available in the App.")
+        return workflowExport({
+          body: plain,
+          title,
+          format,
+          signal,
+          state: live.exportContext?.recordedDecision,
+          write: live.exportFile,
+          loadArtifact: live.loadArtifact,
+          loadEvidence: live.loadEvidence,
+        })
+      }}
+    />
+  )
+}
+
 export function StepTools({
   doc,
   cut,
@@ -53,12 +139,8 @@ export function StepTools({
   const file = doc.file
   const tools = useRef<HTMLSpanElement | null>(null)
   // Without the task folder there is no path to copy; the document still copies.
-  const folder = (live as Partial<StepLive> | undefined)?.dir
-  let end = folder?.length ?? 0
-  while (end > 0 && (folder?.[end - 1] === "/" || folder?.[end - 1] === "\\")) end--
-  const dir = folder?.slice(0, end)
+  const dir = trimTrailingSlashes((live as Partial<StepLive> | undefined)?.dir)
   const task = dir?.split(/[\\/]/).pop()
-  const loadDoc = (live as Partial<StepLive> | undefined)?.loadDoc
   // The copies are the step file as a document that reads on its own: no markers, no agents' file,
   // pictures for the diagrams and mockups; Copy for an agent adds the agents' file after it.
   const plain = useMemo(
@@ -71,7 +153,17 @@ export function StepTools({
   )
   const blocks = useMemo(() => toBlocks(plain), [plain])
   const entries = useMemo(() => sectionsOf(doc.markdown, cut), [doc.markdown, cut])
-  const copyDoc = live?.copyDoc
+  const exportFile = live?.exportFile
+  const prepareFormatted = exportFile
+    ? () =>
+        workflowFormatted({
+          body: plain,
+          write: exportFile,
+          loadArtifact: live.loadArtifact,
+          loadEvidence: live.loadEvidence,
+        }).then((result) => result.formatted)
+    : undefined
+  const canExport = (doc.step === "plan" || doc.step === "verify") && live !== undefined
   return (
     <span className="contents" ref={tools}>
       <CopyMenu
@@ -82,80 +174,22 @@ export function StepTools({
         renderMermaid={renderWithMermaid}
         loadArtifact={live?.loadArtifact ?? noArtifact}
         rasterise={browserRasterise}
-        prepareFormatted={
-          live?.exportFile
-            ? () =>
-                workflowFormatted({
-                  body: plain,
-                  write: live.exportFile as NonNullable<StepLive["exportFile"]>,
-                  loadArtifact: live.loadArtifact,
-                  loadEvidence: live.loadEvidence,
-                }).then((result) => result.formatted)
-            : undefined
-        }
+        prepareFormatted={prepareFormatted}
         pathHint={file}
         prepareBlocks={async () => {
           const load = live?.loadEvidence
           return load ? toBlocks(await copyPictureBody(plain, load)) : blocks
         }}
-        {...(loadDoc !== undefined
-          ? { agents: { step: doc.step, load: () => loadDoc(agentsPathOf(doc.step)) } }
-          : {})}
-        {...(copyDoc?.planExport === true && doc.step === "plan" ? { planExport: true } : {})}
-        {...(copyDoc?.forAgent !== undefined && doc.step === "plan"
-          ? { forAgent: copyDoc.forAgent }
-          : {})}
-        {...(live !== undefined && dir !== undefined
-          ? { copyPath: () => void live.copy(`${dir}/${file}`, "Copied the path") }
-          : {})}
-        {...(live !== undefined && copyDoc?.branch
-          ? {
-              branch: {
-                name: copyDoc.branch,
-                copy: () => void live.copy(copyDoc.branch ?? "", "Copied the branch name"),
-              },
-            }
-          : {})}
+        {...copyMenuOptions(doc, dir, live)}
       />
-      {(doc.step === "plan" || doc.step === "verify") && live !== undefined ? (
-        <ExportCard
-          kind={doc.step === "plan" ? "plan" : "review"}
-          title={`${live.exportContext?.title ?? task ?? "Task"} · ${doc.step === "plan" ? "Plan" : "Review"}`}
-          disabled={!plain.trim()}
-          write={live.exportFile}
-          prepare={async (format, _scope, signal) => {
-            if (!live.exportFile) throw new Error("Export is available in the App.")
-            return workflowExport({
-              body: plain,
-              title: `${live.exportContext?.title ?? task ?? "Task"} · ${doc.step === "plan" ? "Plan" : "Review"}`,
-              format,
-              signal,
-              state: live.exportContext?.recordedDecision,
-              write: live.exportFile,
-              loadArtifact: live.loadArtifact,
-              loadEvidence: live.loadEvidence,
-            })
-          }}
-        />
-      ) : null}
+      {canExport ? <StepExportCard doc={doc} plain={plain} task={task} live={live} /> : null}
       {entries.length > 0 ? (
         <OutlineButton
           always
           path={file}
           entries={entries}
           active={null}
-          onJump={(slug) => {
-            const entry = entries.find((each) => each.slug === slug)
-            const page = tools.current?.closest<HTMLElement>(".sp-page")
-            if (entry === undefined || !page) return
-            const target =
-              page.querySelector<HTMLElement>(`[data-passage-section="${entry.slug}"]`) ??
-              page.querySelector<HTMLElement>(`#${sectionId(entry.text)}`) ??
-              [...page.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].find(
-                (element) => element.textContent?.trim().replace(/\s+/g, " ") === entry.text,
-              )
-            jumpTo(target ?? page.querySelector<HTMLElement>("h1") ?? page)
-          }}
+          onJump={(slug) => jumpToOutlineEntry(tools.current, entries, slug)}
         />
       ) : null}
     </span>

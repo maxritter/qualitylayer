@@ -1,457 +1,94 @@
 // Answering an agent's permission request from the Conversation view. The agent's PermissionRequest hook
 // (`qualitylayer hook approve`) asks here: while the person looks at that session, it leaves a pending
 // request, waits for the App's answer and prints it; otherwise it prints nothing and the agent's own
-// dialog asks, as before. Everything is small files under the QualityLayer home, one folder per session:
-//
-//   approvals/<agent>-<session key>/viewing.json        the view is open (when it first was) and alive (its last read)
-//   approvals/<agent>-<session key>/pending/<id>.json   a request that waits for the person
-//   approvals/<agent>-<session key>/beats/<id>.json     the waiting hook's sign of life; never a request
-//   approvals/<agent>-<session key>/decisions/<id>.json the person's answer, read once by the waiting hook
-//
-// Open is not alive. The view is open from its first read until it says it closed; it is alive only while a
-// browser that may answer keeps reading it. A hook that finds the view open leaves its request, which wakes
-// the visible view, and asks again only if that view reads within a few seconds; a hidden, suspended or
-// crashed browser reads nothing, so its open socket or marker never holds approval authority.
+// dialog asks, as before.
 //
 // Nothing here throws into a hook: a file that is missing, torn or not ours reads as "nothing".
 
-import { createHash, randomUUID } from "node:crypto"
 import type { Ctx } from "../../ctx.ts"
 import { isNativeAgent, type NativeAgent } from "../agents/ids.ts"
 import { procStartChecked } from "../peers/claude.ts"
-import type { RunRecord } from "../run/contracts.ts"
-import { readRun } from "../run/registry.ts"
-import { pidAlive } from "../self.ts"
-import { keyOf } from "../task/binding.ts"
-import { patchDiffs, shellKind } from "./tools.ts"
 import {
-  type ApprovalDecision,
-  bounded,
-  CONVERSATION_LIMITS,
-  type PendingApproval,
-  type ToolKind,
-} from "./types.ts"
+  addPending,
+  beatPending,
+  clearCall,
+  clearPending,
+  clearSession,
+  isPending,
+  listPending,
+  pendingRunApproval,
+} from "./approvals-lifecycle.ts"
+import { callHash, newApprovalId, readPendingApprovals } from "./approvals-store.ts"
+import {
+  type ApprovalRequest,
+  allowSuggestions,
+  approvalRequest,
+  hookOutput,
+  toolKindAndTarget,
+} from "./approvals-tools.ts"
+import {
+  type ApprovalWhere,
+  approvalFolder,
+  decisionFile,
+  ensureApprovalDir,
+  HOOK_BEAT_MS,
+  isApprovalObject,
+  isOpen,
+  isViewed,
+  markViewing,
+  PENDING_MAX_MS,
+  pendingFile,
+  readApprovalJson,
+  readViewing,
+  stopAllViewing,
+  stopViewing,
+  VIEW_CONFIRM_MS,
+  VIEW_LEASE_MS,
+  VIEW_MAX_MS,
+  validApprovalId,
+  validApprovalSession,
+  WAIT_MAX_MS,
+} from "./approvals-viewing.ts"
+import type { ApprovalDecision } from "./types.ts"
 
-/** The view is alive while a read by a browser that may answer is this fresh; only such reads renew it. */
-export const VIEW_LEASE_MS = 15_000
-/** A hook that finds the view open waits this long for a read after it left its request, else the agent asks. */
-export const VIEW_CONFIRM_MS = 4_000
-/** While a request waits, its hook writes its beat file this often, so a live view reads. */
-export const HOOK_BEAT_MS = 4_000
-/** A marker not renewed for this long is leftover: the view is not open, and its folder goes. */
-export const VIEW_MAX_MS = 12 * 60 * 60_000
-/** A request nobody answered is dropped after this long; the hook gives up sooner. */
-export const PENDING_MAX_MS = 10 * 60_000
-/** How long the hook waits for an answer before the agent's dialog takes over. */
-export const WAIT_MAX_MS = 9 * 60_000
+export {
+  type ApprovalRequest,
+  addPending,
+  allowSuggestions,
+  approvalRequest,
+  beatPending,
+  callHash,
+  clearCall,
+  clearPending,
+  clearSession,
+  HOOK_BEAT_MS,
+  hookOutput,
+  isOpen,
+  isPending,
+  isViewed,
+  listPending,
+  markViewing,
+  newApprovalId,
+  PENDING_MAX_MS,
+  pendingRunApproval,
+  readViewing,
+  stopAllViewing,
+  stopViewing,
+  toolKindAndTarget,
+  VIEW_CONFIRM_MS,
+  VIEW_LEASE_MS,
+  VIEW_MAX_MS,
+  WAIT_MAX_MS,
+}
+
 const POLL_MS = 250
 const VIEW_CHECK_MS = 1_000
-const MAX_PENDING = 8
-const MAX_TARGET = 2_000
-const MAX_FOLDERS = 200
-
-const TOOL_KINDS: ReadonlySet<string> = new Set<ToolKind>([
-  "read",
-  "write",
-  "edit",
-  "search",
-  "list",
-  "shell",
-  "web",
-  "subagent",
-  "todo",
-  "qualitylayer",
-  "mcp",
-  "other",
-])
-
-type Where = { agent: NativeAgent; session: string }
-
-/** What the file for one request holds; the request itself is what the App sees. */
-type Stored = {
-  approval: PendingApproval
-  /** When the request was left, and the hook process that waits for it. */
-  at: number
-  pid?: number
-  /** That process's start time, so a reused process id is not taken for the hook. */
-  start?: string
-  /** The tool call it belongs to, so a call that went on removes only its own request. */
-  call?: { id?: string; hash: string }
-}
 
 type StoredDecision = ApprovalDecision & { at: number }
 
-const root = (ctx: Ctx) => `${ctx.home}/approvals`
-const folder = (ctx: Ctx, w: Where) => `${root(ctx)}/${w.agent}-${keyOf(w.session)}`
-const pendingFile = (ctx: Ctx, w: Where, id: string) => `${folder(ctx, w)}/pending/${id}.json`
-const beatFile = (ctx: Ctx, w: Where, id: string) => `${folder(ctx, w)}/beats/${id}.json`
-const decisionFile = (ctx: Ctx, w: Where, id: string) => `${folder(ctx, w)}/decisions/${id}.json`
-
-const validId = (id: unknown): id is string => typeof id === "string" && /^[a-f0-9]{32}$/.test(id)
-const validSession = (session: unknown): session is string =>
-  typeof session === "string" && /^[A-Za-z0-9_.-]{1,128}$/.test(session)
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-
-export function newApprovalId(): string {
-  return randomUUID().replaceAll("-", "")
-}
-
-async function readJson(ctx: Ctx, path: string): Promise<unknown> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(path))
-  } catch {
-    return null
-  }
-}
-
-async function writeJson(ctx: Ctx, path: string, value: unknown): Promise<void> {
-  await ctx.fs.atomicWrite(path, `${JSON.stringify(value)}\n`)
-}
-
-/** Owner-only folders, created with the parents the first write needs. */
-async function ensure(ctx: Ctx, path: string): Promise<void> {
-  await ctx.fs.mkdir(path, { mode: 0o700 })
-}
-
-// ---------------------------------------------------------------- viewing
-
-/** When the view first opened on a session, and when a browser that may answer last read it. */
-export type Viewing = { openedAt: number; at: number }
-
-const finite = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value)
-
-async function readMarker(ctx: Ctx, dir: string): Promise<Viewing | null> {
-  const row = await readJson(ctx, `${dir}/viewing.json`)
-  if (!isObject(row) || !finite(row.at)) return null
-  return { openedAt: finite(row.openedAt) ? row.openedAt : row.at, at: row.at }
-}
-
-/** A marker from the future is not trusted; a small skew between processes is. */
-const readable = (marker: Viewing, now: number) => now >= marker.at - 1_000
-
-/** A browser that may answer read the view: the view is open (since its first read) and alive now. */
-export async function markViewing(ctx: Ctx, agent: NativeAgent, session: string): Promise<void> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return
-    const dir = folder(ctx, { agent, session })
-    const now = ctx.clock.now()
-    let openedAt = now
-    if (await ctx.fs.exists(dir)) {
-      const before = await readMarker(ctx, dir)
-      if (before !== null && now - before.at <= VIEW_MAX_MS) openedAt = before.openedAt
-    } else {
-      await ensure(ctx, root(ctx))
-      await forgetOldFolders(ctx)
-      await ensure(ctx, dir)
-    }
-    await writeJson(ctx, `${dir}/viewing.json`, { openedAt, at: now })
-  } catch {
-    // Not seen as viewed means the agent asks in its own window, which is safe.
-  }
-}
-
-/** The marker of a session's view, or null when it is not open (never opened, closed, or long forgotten). */
-export async function readViewing(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  now: number = ctx.clock.now(),
-): Promise<Viewing | null> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return null
-    const marker = await readMarker(ctx, folder(ctx, { agent, session }))
-    return marker !== null && now - marker.at <= VIEW_MAX_MS && readable(marker, now)
-      ? marker
-      : null
-  } catch {
-    return null
-  }
-}
-
-/** Whether the view is open on this session: it was read and has not said it closed. It may be idle or gone. */
-export async function isOpen(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  now: number = ctx.clock.now(),
-): Promise<boolean> {
-  return (await readViewing(ctx, agent, session, now)) !== null
-}
-
-/** Whether the view is alive: a browser that may answer read it in the last few seconds. */
-export async function isViewed(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  now: number = ctx.clock.now(),
-): Promise<boolean> {
-  const marker = await readViewing(ctx, agent, session, now)
-  return marker !== null && now - marker.at <= VIEW_LEASE_MS
-}
-
-/** The Conversation view closed (or its window did): a waiting hook then leaves the question to the agent. */
-export async function stopViewing(ctx: Ctx, agent: NativeAgent, session: string): Promise<void> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return
-    await ctx.fs.remove(`${folder(ctx, { agent, session })}/viewing.json`)
-  } catch {
-    // Already gone.
-  }
-}
-
-/** Every open marker goes: no window survives a server start, so nothing is looked at yet. */
-export async function stopAllViewing(ctx: Ctx): Promise<void> {
-  try {
-    for (const name of (await ctx.fs.readdir(root(ctx))).slice(0, MAX_FOLDERS))
-      await ctx.fs.remove(`${root(ctx)}/${name}/viewing.json`)
-  } catch {
-    // No folder yet, or housekeeping only.
-  }
-}
-
-/** Folders of sessions nobody viewed for a day, with nothing waiting, go; bounded per call. */
-async function forgetOldFolders(ctx: Ctx): Promise<void> {
-  try {
-    const now = ctx.clock.now()
-    for (const name of (await ctx.fs.readdir(root(ctx))).slice(0, MAX_FOLDERS)) {
-      const dir = `${root(ctx)}/${name}`
-      const row = await readJson(ctx, `${dir}/viewing.json`)
-      const at = isObject(row) && typeof row.at === "number" ? row.at : 0
-      if (now - at > VIEW_MAX_MS) await ctx.fs.remove(dir)
-    }
-  } catch {
-    // Housekeeping only.
-  }
-}
-
-// ---------------------------------------------------------------- requests
-
-function readStored(value: unknown): Stored | null {
-  if (!isObject(value) || !isObject(value.approval)) return null
-  const a = value.approval
-  if (
-    !validId(a.id) ||
-    !isNativeAgent(a.agent) ||
-    typeof a.name !== "string" ||
-    a.name.length > 200 ||
-    typeof a.tool !== "string" ||
-    !TOOL_KINDS.has(a.tool) ||
-    typeof a.canAllowSession !== "boolean" ||
-    typeof a.createdAt !== "string" ||
-    Number.isNaN(Date.parse(a.createdAt)) ||
-    (a.target !== undefined &&
-      (typeof a.target !== "string" || a.target.length > MAX_TARGET + 100)) ||
-    (a.input !== undefined &&
-      (typeof a.input !== "string" || a.input.length > CONVERSATION_LIMITS.inputChars + 100)) ||
-    typeof value.at !== "number" ||
-    !Number.isFinite(value.at)
-  )
-    return null
-  const pid = value.pid
-  const start = typeof value.start === "string" && value.start !== "" ? value.start : undefined
-  const call = isObject(value.call) && typeof value.call.hash === "string" ? value.call : undefined
-  return {
-    approval: {
-      id: a.id,
-      agent: a.agent,
-      name: a.name,
-      tool: a.tool as ToolKind,
-      ...(typeof a.target === "string" ? { target: a.target } : {}),
-      ...(typeof a.input === "string" ? { input: a.input } : {}),
-      canAllowSession: a.canAllowSession,
-      createdAt: a.createdAt,
-    },
-    at: value.at,
-    ...(typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? { pid } : {}),
-    ...(start !== undefined && start.length <= 100 ? { start } : {}),
-    ...(call
-      ? {
-          call: {
-            hash: String(call.hash).slice(0, 64),
-            ...(typeof call.id === "string" ? { id: call.id.slice(0, 200) } : {}),
-          },
-        }
-      : {}),
-  }
-}
-
-/**
- * Whether the hook that left a request still runs. The process id must exist; with `exact` its start
- * time must match too, so a reused id does not keep a card alive. A start that cannot be read counts as alive.
- */
-function hookAlive(stored: Stored, exact: boolean): boolean {
-  if (stored.pid === undefined) return true
-  if (!pidAlive(stored.pid)) return false
-  if (!exact || stored.start === undefined) return true
-  const [now, error] = procStartChecked(stored.pid)
-  return error !== null || now === null || now.trim() === stored.start.trim()
-}
-
-/**
- * The live requests of a session, as stored: stale, torn and orphaned ones are removed on the way.
- * `exact` also checks the hook's start time; the hook's own polling skips it to stay cheap.
- */
-async function readPending(ctx: Ctx, w: Where, exact = false): Promise<Stored[]> {
-  const dir = `${folder(ctx, w)}/pending`
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(dir)
-  } catch {
-    await sweepBeats(ctx, w, new Set())
-    return []
-  }
-  const now = ctx.clock.now()
-  const out: Stored[] = []
-  for (const name of names.slice(0, MAX_PENDING * 4)) {
-    const path = `${dir}/${name}`
-    const stored = name.endsWith(".json") ? readStored(await readJson(ctx, path)) : null
-    const alive =
-      stored !== null &&
-      stored.approval.agent === w.agent &&
-      `${stored.approval.id}.json` === name &&
-      now - stored.at <= PENDING_MAX_MS &&
-      stored.at <= now + 1_000 &&
-      hookAlive(stored, exact)
-    if (!alive) {
-      if (!name.includes(".tmp")) await ctx.fs.remove(path).catch(() => {})
-      continue
-    }
-    out.push(stored)
-  }
-  // A listing cut short does not know every live request, so it leaves the beats alone.
-  if (names.length <= MAX_PENDING * 4)
-    await sweepBeats(ctx, w, new Set(out.map((stored) => stored.approval.id)))
-  return out
-}
-
-/** Beats whose request is gone (cleared, expired, never made) are removed; a beat is no request. */
-async function sweepBeats(ctx: Ctx, w: Where, live: ReadonlySet<string>): Promise<void> {
-  const dir = `${folder(ctx, w)}/beats`
-  try {
-    for (const name of (await ctx.fs.readdir(dir)).slice(0, MAX_PENDING * 4)) {
-      if (name.includes(".tmp")) continue
-      if (name.endsWith(".json") && live.has(name.slice(0, -5))) continue
-      await ctx.fs.remove(`${dir}/${name}`).catch(() => {})
-    }
-  } catch {
-    // No beats, or housekeeping only.
-  }
-}
-
-export type AddOptions = {
-  /** The hook process that waits; the request goes when it is gone. */
-  pid?: number
-  /** That process's start time. */
-  start?: string
-  /** The agent's id for the tool call, when its hook payload has one. */
-  toolUseId?: string
-  /** The tool call's input, to tell the call from another call of the same tool. */
-  input?: unknown
-}
-
-/** A hash of a tool call's input, the same for the request and for the hooks that follow the call. */
-export function callHash(input: unknown): string {
-  let text = ""
-  try {
-    text = JSON.stringify(input ?? null) ?? ""
-  } catch {
-    text = ""
-  }
-  return createHash("sha256").update(text).digest("hex").slice(0, 16)
-}
-
-/** Leave a request for the person. False when it could not be left (too many waiting, a bad id). */
-export async function addPending(
-  ctx: Ctx,
-  request: PendingApproval & { session: string },
-  options: AddOptions = {},
-): Promise<boolean> {
-  try {
-    const { session, ...approval } = request
-    const where = { agent: approval.agent, session }
-    if (!validSession(session) || !isNativeAgent(approval.agent) || !validId(approval.id))
-      return false
-    const stored: Stored = {
-      approval: {
-        ...approval,
-        name: approval.name.slice(0, 200),
-        ...(approval.target !== undefined ? { target: approval.target.slice(0, MAX_TARGET) } : {}),
-        ...(approval.input !== undefined
-          ? { input: bounded(approval.input, CONVERSATION_LIMITS.inputChars) }
-          : {}),
-      },
-      at: ctx.clock.now(),
-      ...(options.pid !== undefined ? { pid: options.pid } : {}),
-      ...(options.start !== undefined ? { start: options.start } : {}),
-      call: {
-        hash: callHash(options.input),
-        ...(options.toolUseId ? { id: options.toolUseId.slice(0, 200) } : {}),
-      },
-    }
-    if (readStored(stored) === null) return false
-    if ((await readPending(ctx, where)).length >= MAX_PENDING) return false
-    await ensure(ctx, `${folder(ctx, where)}/pending`)
-    await writeJson(ctx, pendingFile(ctx, where, approval.id), stored)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** What waits for the person in a session, oldest first; this is the snapshot's `approvals`. */
-export async function listPending(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-): Promise<PendingApproval[]> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return []
-    return (await readPending(ctx, { agent, session }, true))
-      .map((stored) => stored.approval)
-      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
-      .slice(0, MAX_PENDING)
-  } catch {
-    return []
-  }
-}
-
-/** The current run's live callback, shared by App presentation and CLI manager status. */
-export async function pendingRunApproval(
-  ctx: Ctx,
-  run: RunRecord,
-): Promise<PendingApproval | null> {
-  const current = () => {
-    const latest = readRun(ctx.home, run.id)
-    return (
-      latest?.generation === run.generation &&
-      latest.nativeSession === run.nativeSession &&
-      (latest.status === "running" || latest.status === "starting")
-    )
-  }
-  if (
-    !isNativeAgent(run.agent) ||
-    !run.nativeSession ||
-    (run.status !== "running" && run.status !== "starting") ||
-    !current()
-  )
-    return null
-  const pending = await listPending(ctx, run.agent, run.nativeSession)
-  if (!current()) return null
-  return (
-    pending.find(
-      (request) =>
-        Date.parse(request.createdAt) >= Date.parse(run.generationStartedAt ?? run.startedAt),
-    ) ?? null
-  )
-}
-
-// ---------------------------------------------------------------- answers
-
 function readDecision(value: unknown, canAllowSession: boolean): ApprovalDecision | null {
-  if (!isObject(value) || (value.behavior !== "allow" && value.behavior !== "deny")) return null
+  if (!isApprovalObject(value) || (value.behavior !== "allow" && value.behavior !== "deny"))
+    return null
   const message =
     typeof value.message === "string" && value.message.trim() !== ""
       ? value.message.trim().slice(0, 2_000)
@@ -461,6 +98,29 @@ function readDecision(value: unknown, canAllowSession: boolean): ApprovalDecisio
     behavior: "allow",
     scope: value.scope === "session" && canAllowSession ? "session" : "once",
   }
+}
+
+async function writeExclusiveDecision(
+  ctx: Ctx,
+  where: ApprovalWhere,
+  id: string,
+  clean: ApprovalDecision,
+): Promise<boolean> {
+  await ensureApprovalDir(ctx, `${approvalFolder(ctx, where)}/decisions`)
+  const row: StoredDecision = { ...clean, at: ctx.clock.now() }
+  const path = decisionFile(ctx, where, id)
+  try {
+    await ctx.fs.writeFile(path, `${JSON.stringify(row)}\n`, { mode: 0o600, exclusive: true })
+  } catch (cause) {
+    if (!/EEXIST/.test(`${(cause as { code?: string }).code ?? ""} ${String(cause)}`))
+      await ctx.fs.remove(path).catch(() => {})
+    return false
+  }
+  if (!(await ctx.fs.exists(pendingFile(ctx, where, id)))) {
+    await ctx.fs.remove(path).catch(() => {})
+    return false
+  }
+  return true
 }
 
 /**
@@ -475,29 +135,14 @@ export async function decide(
   decision: ApprovalDecision,
 ): Promise<boolean> {
   try {
-    if (!isNativeAgent(agent) || !validSession(session) || !validId(id)) return false
+    if (!isNativeAgent(agent) || !validApprovalSession(session) || !validApprovalId(id))
+      return false
     const where = { agent, session }
-    const stored = (await readPending(ctx, where, true)).find((entry) => entry.approval.id === id)
-    if (stored === undefined) return false
-    const clean = readDecision(decision, stored.approval.canAllowSession)
-    if (clean === null) return false
-    await ensure(ctx, `${folder(ctx, where)}/decisions`)
-    const row: StoredDecision = { ...clean, at: ctx.clock.now() }
-    const path = decisionFile(ctx, where, id)
-    try {
-      await ctx.fs.writeFile(path, `${JSON.stringify(row)}\n`, { mode: 0o600, exclusive: true })
-    } catch (cause) {
-      // Another answer got there first; any other failure must not leave a half file that blocks answers.
-      if (!/EEXIST/.test(`${(cause as { code?: string }).code ?? ""} ${String(cause)}`))
-        await ctx.fs.remove(path).catch(() => {})
-      return false
-    }
-    // The request was cleared while the answer was written: nobody takes it, and it does not stay.
-    if (!(await ctx.fs.exists(pendingFile(ctx, where, id)))) {
-      await ctx.fs.remove(path).catch(() => {})
-      return false
-    }
-    return true
+    const stored = (await readPendingApprovals(ctx, where, true)).find(
+      (entry) => entry.approval.id === id,
+    )
+    const clean = stored ? readDecision(decision, stored.approval.canAllowSession) : null
+    return clean ? await writeExclusiveDecision(ctx, where, id, clean) : false
   } catch {
     return false
   }
@@ -511,283 +156,20 @@ export async function takeDecision(
   id: string,
 ): Promise<ApprovalDecision | null> {
   try {
-    if (!isNativeAgent(agent) || !validSession(session) || !validId(id)) return null
+    if (!isNativeAgent(agent) || !validApprovalSession(session) || !validApprovalId(id)) return null
     const where = { agent, session }
     const path = decisionFile(ctx, where, id)
-    const row = await readJson(ctx, path)
+    const row = await readApprovalJson(ctx, path)
     if (row === null) return null
     await ctx.fs.remove(path)
-    const stored = (await readPending(ctx, where)).find((entry) => entry.approval.id === id)
+    const stored = (await readPendingApprovals(ctx, where)).find(
+      (entry) => entry.approval.id === id,
+    )
     return stored === undefined ? null : readDecision(row, stored.approval.canAllowSession)
   } catch {
     return null
   }
 }
-
-/** Whether a request still waits: the agent went on without it, or something cleared it, when it does not. */
-export async function isPending(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  id: string,
-): Promise<boolean> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session) || !validId(id)) return false
-    return (await readPending(ctx, { agent, session })).some((entry) => entry.approval.id === id)
-  } catch {
-    return false
-  }
-}
-
-/**
- * The waiting hook shows it still runs: its beat file is written, which the App's stream hears, so a
- * visible view reads and renews its lease. Only the beat file is written, never the request's, so a
- * request that was cleared cannot come back. False once the request is gone.
- */
-export async function beatPending(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  id: string,
-): Promise<boolean> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session) || !validId(id)) return false
-    const where = { agent, session }
-    const request = pendingFile(ctx, where, id)
-    if (readStored(await readJson(ctx, request)) === null) return false
-    const path = beatFile(ctx, where, id)
-    await ensure(ctx, `${folder(ctx, where)}/beats`)
-    await writeJson(ctx, path, { at: ctx.clock.now() })
-    // A clear that landed since the check took the request; the beat it missed does not stay.
-    if (!(await ctx.fs.exists(request))) {
-      await ctx.fs.remove(path).catch(() => {})
-      return false
-    }
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Drop one request, its beat and its answer. */
-export async function clearPending(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  id: string,
-): Promise<void> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session) || !validId(id)) return
-    const where = { agent, session }
-    await ctx.fs.remove(pendingFile(ctx, where, id))
-    await ctx.fs.remove(beatFile(ctx, where, id))
-    await ctx.fs.remove(decisionFile(ctx, where, id))
-  } catch {
-    // Already gone.
-  }
-}
-
-/** Drop every request, beat and answer of a session (its turn or the session ended). */
-export async function clearSession(ctx: Ctx, agent: NativeAgent, session: string): Promise<void> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return
-    const dir = folder(ctx, { agent, session })
-    if (!(await ctx.fs.exists(dir))) return
-    await ctx.fs.remove(`${dir}/pending`)
-    await ctx.fs.remove(`${dir}/beats`)
-    await ctx.fs.remove(`${dir}/decisions`)
-  } catch {
-    // Already gone.
-  }
-}
-
-/** Drop the request of one tool call that went on, finished or failed, by its id or by its tool and input. */
-export async function clearCall(
-  ctx: Ctx,
-  agent: NativeAgent,
-  session: string,
-  call: { toolUseId?: string; name?: string; input?: unknown },
-): Promise<void> {
-  try {
-    if (!isNativeAgent(agent) || !validSession(session)) return
-    if (!(await ctx.fs.exists(folder(ctx, { agent, session })))) return
-    const where = { agent, session }
-    const hash = callHash(call.input)
-    for (const stored of await readPending(ctx, where)) {
-      const sameId =
-        call.toolUseId !== undefined && stored.call?.id !== undefined
-          ? stored.call.id === call.toolUseId
-          : undefined
-      const same = sameId ?? (stored.approval.name === call.name && stored.call?.hash === hash)
-      if (same) await clearPending(ctx, agent, session, stored.approval.id)
-    }
-  } catch {
-    // Already gone.
-  }
-}
-
-// ---------------------------------------------------------------- what the agent asked
-
-const SHELLS = new Set([
-  "bash",
-  "shell",
-  "exec_command",
-  "local_shell",
-  "unified_exec",
-  "powershell",
-])
-
-const text = (value: unknown): string => (typeof value === "string" ? value : "")
-
-/** A shell command as the hook hands it: a string, or an argument list such as `bash -lc "<cmd>"`. */
-function commandOf(input: Record<string, unknown>): string {
-  const raw = input.command ?? input.cmd
-  if (typeof raw === "string") return raw
-  if (Array.isArray(raw)) {
-    const parts = raw.map(String)
-    const at = parts.findIndex((part) => part === "-lc" || part === "-c")
-    return at >= 0 && parts[at + 1] !== undefined ? (parts[at + 1] as string) : parts.join(" ")
-  }
-  return ""
-}
-
-function inputText(input: unknown): string | undefined {
-  try {
-    const json = JSON.stringify(input, null, 2)
-    return json === undefined ? undefined : bounded(json, CONVERSATION_LIMITS.inputChars)
-  } catch {
-    return undefined
-  }
-}
-
-/** What a tool call does and the one thing the person decides on, in the words the readers use. */
-export function toolKindAndTarget(
-  name: string,
-  rawInput: unknown,
-): { tool: ToolKind; target?: string } {
-  const input = isObject(rawInput) ? rawInput : {}
-  const lower = name.toLowerCase()
-  const file =
-    text(input.file_path) || text(input.path) || text(input.filePath) || text(input.notebook_path)
-  // OpenCode names the pattern or command it asks about under `resources`.
-  const resource = Array.isArray(input.resources) ? text(input.resources[0]) : ""
-  const pick = (value: string) => (value === "" ? undefined : value.slice(0, MAX_TARGET))
-  if (SHELLS.has(lower)) {
-    const command = commandOf(input) || resource
-    return { tool: shellKind(command).tool, target: pick(command) }
-  }
-  if (lower.startsWith("mcp__") || lower.startsWith("mcp_"))
-    return { tool: "mcp", target: pick(name) }
-  if (lower === "read" || lower === "view_image" || lower === "notebookread")
-    return { tool: "read", target: pick(file || resource) }
-  if (lower === "write") return { tool: "write", target: pick(file || resource) }
-  if (["edit", "multiedit", "notebookedit", "apply_patch", "patch"].includes(lower)) {
-    const patch = text(input.command) || text(input.patch) || text(input.input)
-    const named = patch ? patchDiffs(patch).map((diff) => diff.path) : []
-    return { tool: "edit", target: pick(named.length > 0 ? named.join(", ") : file || resource) }
-  }
-  if (["grep", "glob", "search", "codesearch"].includes(lower))
-    return { tool: "search", target: pick(text(input.pattern) || text(input.query) || resource) }
-  if (lower === "ls" || lower === "list") return { tool: "list", target: pick(file || resource) }
-  if (lower === "webfetch" || lower === "websearch" || lower === "web_search")
-    return { tool: "web", target: pick(text(input.url) || text(input.query) || resource) }
-  if (lower === "task" || lower === "agent" || lower === "spawn_agent")
-    return {
-      tool: "subagent",
-      target: pick((text(input.description) || text(input.prompt) || resource).slice(0, 200)),
-    }
-  if (lower.startsWith("todo") || lower === "update_plan") return { tool: "todo" }
-  return { tool: "other", target: pick(file || text(input.url) || text(input.command) || resource) }
-}
-
-/** An allow rule the agent suggested, kept for the session only; null for anything else (modes, directories, denies). */
-function sessionRule(entry: unknown): Record<string, unknown> | null {
-  if (!isObject(entry) || entry.type !== "addRules" || entry.behavior !== "allow") return null
-  const rules = entry.rules
-  if (!Array.isArray(rules) || rules.length === 0 || !rules.every(isObject)) return null
-  if ((inputText(entry)?.length ?? 0) >= CONVERSATION_LIMITS.inputChars) return null
-  return { type: "addRules", rules, behavior: "allow", destination: "session" }
-}
-
-/** The allow rules of a permission request's suggestions: all that "allow for this session" remembers. */
-export function allowSuggestions(raw: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map(sessionRule)
-    .filter((entry): entry is Record<string, unknown> => entry !== null)
-    .slice(0, 16)
-}
-
-export type ApprovalRequest = {
-  agent: NativeAgent
-  session: string
-  approval: PendingApproval
-  suggestions: Record<string, unknown>[]
-  options: AddOptions
-}
-
-/** A request from the agent's PermissionRequest payload; null when it names no usable session or tool. */
-export function approvalRequest(
-  agent: NativeAgent,
-  payload: Record<string, unknown>,
-): ApprovalRequest | null {
-  const session = typeof payload.session_id === "string" ? payload.session_id.trim() : ""
-  const name = typeof payload.tool_name === "string" ? payload.tool_name.trim().slice(0, 200) : ""
-  if (!validSession(session) || name === "") return null
-  const suggestions = allowSuggestions(payload.permission_suggestions)
-  const { tool, target } = toolKindAndTarget(name, payload.tool_input)
-  const input = inputText(payload.tool_input)
-  const id = newApprovalId()
-  return {
-    agent,
-    session,
-    suggestions,
-    approval: {
-      id,
-      agent,
-      name,
-      tool,
-      ...(target !== undefined ? { target } : {}),
-      ...(input !== undefined ? { input } : {}),
-      // OpenCode remembers an allow itself; the others need the agent's own suggestion to forward.
-      canAllowSession: agent === "opencode" || suggestions.length > 0,
-      createdAt: new Date(0).toISOString(),
-    },
-    options: {
-      // This hook process: a card whose hook is gone is not shown and cannot be answered.
-      pid: process.pid,
-      ...(typeof payload.tool_use_id === "string" ? { toolUseId: payload.tool_use_id } : {}),
-      input: payload.tool_input,
-    },
-  }
-}
-
-/** What Claude Code and Codex read from a PermissionRequest hook for the person's answer. */
-export function hookOutput(
-  decision: ApprovalDecision,
-  suggestions: Record<string, unknown>[],
-): Record<string, unknown> {
-  if (decision.behavior === "deny")
-    return {
-      hookSpecificOutput: {
-        hookEventName: "PermissionRequest",
-        decision: {
-          behavior: "deny",
-          ...(decision.message ? { message: decision.message } : {}),
-        },
-      },
-    }
-  const rules = decision.scope === "session" ? allowSuggestions(suggestions) : []
-  const remembered = rules.length > 0 ? { updatedPermissions: rules } : {}
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PermissionRequest",
-      decision: { behavior: "allow", ...remembered },
-    },
-  }
-}
-
-// ---------------------------------------------------------------- waiting
 
 export type WaitOptions = {
   pollMs?: number
@@ -796,13 +178,52 @@ export type WaitOptions = {
   onPending?: (clear: () => Promise<void>) => void
 }
 
+type WaitLoopState = { start: number; alive: boolean; checked: number; beat: number; maxMs: number }
+type WaitStep =
+  | { status: "done"; decision: ApprovalDecision | null }
+  | { status: "continue"; state: WaitLoopState }
+
+async function maintainApprovalLease(
+  ctx: Ctx,
+  target: { agent: NativeAgent; session: string; id: string },
+  state: WaitLoopState,
+  now: number,
+): Promise<WaitLoopState | null> {
+  const { agent, session, id } = target
+  const marker = await readViewing(ctx, agent, session, now)
+  const alive = state.alive || (marker !== null && marker.at > state.start)
+  const expired =
+    marker === null ||
+    (alive ? now - marker.at > VIEW_LEASE_MS : now - state.start >= VIEW_CONFIRM_MS)
+  if (expired) return null
+  let checked = state.checked
+  if (now - checked >= VIEW_CHECK_MS) {
+    checked = now
+    if (!(await isPending(ctx, agent, session, id))) return null
+  }
+  let beat = state.beat
+  if (now - beat >= HOOK_BEAT_MS) {
+    beat = now
+    if (!(await beatPending(ctx, agent, session, id))) return null
+  }
+  return { ...state, alive, checked, beat }
+}
+
+async function pollApprovalStep(
+  ctx: Ctx,
+  target: { agent: NativeAgent; session: string; id: string },
+  state: WaitLoopState,
+): Promise<WaitStep> {
+  const decision = await takeDecision(ctx, target.agent, target.session, target.id)
+  if (decision !== null) return { status: "done", decision }
+  const now = ctx.clock.now()
+  if (now - state.start >= state.maxMs) return { status: "done", decision: null }
+  const next = await maintainApprovalLease(ctx, target, state, now)
+  return next ? { status: "continue", state: next } : { status: "done", decision: null }
+}
+
 /**
- * Ask the Conversation view and wait. Null at once when the view is not open on this session. When it
- * is, the request is left (which wakes a visible view) and the view must read within VIEW_CONFIRM_MS,
- * else null: nobody alive is there. After that null when the reads stop for VIEW_LEASE_MS, the view
- * closes (its marker goes), the request is cleared or the time runs out; the agent's own dialog answers
- * then. Otherwise the person's answer; the request is gone when this returns. While it waits the hook
- * writes its beat file every HOOK_BEAT_MS, which is what makes an idle but visible view read.
+ * Ask the Conversation view and wait. Null at once when the view is not open on this session.
  */
 export async function awaitApproval(
   ctx: Ctx,
@@ -813,34 +234,24 @@ export async function awaitApproval(
   if (!(await isOpen(ctx, agent, session))) return null
   const start = ctx.clock.now()
   const added = { ...approval, createdAt: new Date(start).toISOString(), session }
-  // The start time is read only now that a view waits; most hooks return before this.
   const own = request.options.pid === process.pid ? procStartChecked(process.pid)[0] : null
   const filed = { ...request.options, ...(own !== null ? { start: own } : {}) }
   if (!(await addPending(ctx, added, filed))) return null
   const clear = () => clearPending(ctx, agent, session, approval.id)
   options.onPending?.(clear)
   try {
-    // Alive once a read newer than the request was seen; until then the view is only open.
-    let alive = false
-    let checked = start
-    let beat = start
+    let state: WaitLoopState = {
+      start,
+      alive: false,
+      checked: start,
+      beat: start,
+      maxMs: options.maxMs ?? WAIT_MAX_MS,
+    }
+    const target = { agent, session, id: approval.id }
     for (;;) {
-      const decision = await takeDecision(ctx, agent, session, approval.id)
-      if (decision !== null) return decision
-      const now = ctx.clock.now()
-      if (now - start >= (options.maxMs ?? WAIT_MAX_MS)) return null
-      const marker = await readViewing(ctx, agent, session, now)
-      if (marker === null) return null
-      if (marker.at > start) alive = true
-      if (alive ? now - marker.at > VIEW_LEASE_MS : now - start >= VIEW_CONFIRM_MS) return null
-      if (now - checked >= VIEW_CHECK_MS) {
-        checked = now
-        if (!(await isPending(ctx, agent, session, approval.id))) return null
-      }
-      if (now - beat >= HOOK_BEAT_MS) {
-        beat = now
-        if (!(await beatPending(ctx, agent, session, approval.id))) return null
-      }
+      const step = await pollApprovalStep(ctx, target, state)
+      if (step.status === "done") return step.decision
+      state = step.state
       await ctx.clock.sleep(options.pollMs ?? POLL_MS)
     }
   } finally {

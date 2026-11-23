@@ -1,100 +1,64 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { grokPricing, nativeUsageUsd } from "./grok-pricing.ts"
 import { zeroTokens } from "./prices.ts"
-import type { Call } from "./transcripts.ts"
 import { type Candidates, FILES_MAX, listed, transcriptsIn } from "./usage-files.ts"
+import {
+  grokUsageParser,
+  jsonLineParser,
+  nonNegativeCount,
+  parseStamp,
+} from "./usage-native-grok.ts"
 import type { ChunkParser } from "./usage-parsers.ts"
 
-type Json = Record<string, unknown>
-const object = (value: unknown): Json | null =>
-  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Json) : null
-const count = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0
-const stamp = (value: unknown): number | null => {
-  const n = typeof value === "string" ? Date.parse(value) : value
-  return typeof n === "number" && Number.isFinite(n) ? n : null
-}
+export { grokUsageParser }
 
-function parser(read: (row: Json) => Call[]): ChunkParser {
-  const calls = new Map<string, Call>()
-  return {
-    chunk(text) {
-      for (const line of text.split("\n")) {
-        try {
-          const row = object(JSON.parse(line))
-          if (row) for (const call of read(row)) if (call.id) calls.set(call.id, call)
-        } catch {
-          /* A native writer may leave a torn final line. */
-        }
-      }
-    },
-    finish: () => [...calls.values()],
+type GrokScanState = { found: Candidates; visited: number; deadline: number }
+
+async function scanGrokProject(
+  ctx: Ctx,
+  folder: string,
+  since: number,
+  state: GrokScanState,
+): Promise<boolean> {
+  const sessions = (await listed(ctx, folder)).sort((a, b) => b.name.localeCompare(a.name))
+  if (sessions.length > 1000) state.found.partial = "Grok history discovery was capped"
+  for (const session of sessions.slice(0, 1000)) {
+    if (++state.visited > 2000 || ctx.clock.now() >= state.deadline) {
+      state.found.partial = "Grok history discovery budget reached"
+      return false
+    }
+    if (session.kind !== "directory") continue
+    const updates = (await transcriptsIn(ctx, join(folder, session.name), since)).filter((file) =>
+      file.path.endsWith("updates.jsonl"),
+    )
+    state.found.push(...updates)
+    if (state.found.length >= FILES_MAX) {
+      state.found.length = FILES_MAX
+      state.found.partial = "Grok history discovery was capped"
+      return false
+    }
   }
+  return true
 }
 
-/** Turn costs are explicitly USD ticks. modelUsage splits a turn that called several models. */
-export function grokUsageParser(): ChunkParser {
-  return parser((row) => {
-    const params = object(row.params)
-    const update = object(params?.update)
-    const usage = object(update?.usage)
-    if (update?.sessionUpdate !== "turn_completed" || !usage) return []
-    const meta = object(params?._meta)
-    const at = stamp(meta?.agentTimestampMs)
-    const id = typeof update.prompt_id === "string" ? update.prompt_id : meta?.eventId
-    if (typeof id !== "string" || at === null) return []
-    const models = object(usage.modelUsage) ?? { unknown: usage }
-    const singleModel = Object.keys(models).length === 1
-    return Object.entries(models).flatMap(([model, raw]) => {
-      const one = object(raw)
-      if (!one) return []
-      const cached = count(one.cachedReadTokens)
-      const written = count(one.cacheCreationTokens)
-      const ticks = nativeUsageUsd(
-        one.costUsdTicks ?? (singleModel ? usage.costUsdTicks : undefined),
-      )
-      const reported = ticks === undefined ? undefined : ticks / 10_000_000_000
-      const tokens = {
-        ...zeroTokens(),
-        input: Math.max(0, count(one.inputTokens) - cached - written),
-        output: count(one.outputTokens),
-        cacheRead: cached,
-        cacheWrite5m: written,
-      }
-      const complete =
-        [
-          one.inputTokens,
-          one.outputTokens,
-          one.cachedReadTokens ?? 0,
-          one.cacheCreationTokens ?? 0,
-        ].every((n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0) &&
-        cached + written <= count(one.inputTokens)
-      return [
-        {
-          id: `${id}:${model}`,
-          at,
-          model,
-          tokens,
-          pricing: grokPricing(model, tokens, {
-            modelCalls: one.modelCalls ?? (singleModel ? usage.modelCalls : undefined),
-            nativeUsd: reported,
-            complete,
-          }),
-          reportedUsd: reported,
-          billing: "unknown" as const,
-          missingTokens: !complete,
-        },
-      ]
-    })
-  })
+export async function grokUsageFiles(ctx: Ctx, base: string, since: number): Promise<Candidates> {
+  const state: GrokScanState = { found: [], visited: 0, deadline: ctx.clock.now() + 250 }
+  const root = join(base, "sessions")
+  const projects = (await listed(ctx, root)).sort((a, b) => b.name.localeCompare(a.name))
+  if (projects.length > 200) state.found.partial = "Grok history discovery was capped"
+  for (const project of projects.slice(0, 200)) {
+    if (project.kind !== "directory") continue
+    const keepGoing = await scanGrokProject(ctx, join(root, project.name), since, state)
+    if (!keepGoing) return state.found
+  }
+  return state.found
 }
 
 /** Unknown models retain their token counts and remain unpriced; a later session model is not substituted. */
 export function antigravityUsageParser(): ChunkParser {
-  return parser((row) => {
+  return jsonLineParser((row) => {
     if (row.type !== "PLANNER_RESPONSE" || typeof row.step_index !== "number") return []
-    const at = stamp(row.created_at)
+    const at = parseStamp(row.created_at)
     if (at === null) return []
     const model =
       typeof row.model === "string"
@@ -109,9 +73,9 @@ export function antigravityUsageParser(): ChunkParser {
         model,
         tokens: {
           ...zeroTokens(),
-          input: count(row.input_tokens),
-          output: count(row.output_tokens),
-          cacheRead: count(row.cache_read_tokens),
+          input: nonNegativeCount(row.input_tokens),
+          output: nonNegativeCount(row.output_tokens),
+          cacheRead: nonNegativeCount(row.cache_read_tokens),
         },
         billing: "unknown",
         missingTokens: ![row.input_tokens, row.output_tokens, row.cache_read_tokens].some(
@@ -120,39 +84,6 @@ export function antigravityUsageParser(): ChunkParser {
       },
     ]
   })
-}
-
-export async function grokUsageFiles(ctx: Ctx, base: string, since: number): Promise<Candidates> {
-  const found: Candidates = []
-  const deadline = ctx.clock.now() + 250
-  let visited = 0
-  const root = join(base, "sessions")
-  const projects = (await listed(ctx, root)).sort((a, b) => b.name.localeCompare(a.name))
-  if (projects.length > 200) found.partial = "Grok history discovery was capped"
-  for (const project of projects.slice(0, 200)) {
-    if (project.kind !== "directory") continue
-    const folder = join(root, project.name)
-    const sessions = (await listed(ctx, folder)).sort((a, b) => b.name.localeCompare(a.name))
-    if (sessions.length > 1000) found.partial = "Grok history discovery was capped"
-    for (const session of sessions.slice(0, 1000)) {
-      if (++visited > 2000 || ctx.clock.now() >= deadline) {
-        found.partial = "Grok history discovery budget reached"
-        return found
-      }
-      if (session.kind !== "directory") continue
-      found.push(
-        ...(await transcriptsIn(ctx, join(folder, session.name), since)).filter((file) =>
-          file.path.endsWith("updates.jsonl"),
-        ),
-      )
-      if (found.length >= FILES_MAX) {
-        found.length = FILES_MAX
-        found.partial = "Grok history discovery was capped"
-        return found
-      }
-    }
-  }
-  return found
 }
 
 export async function antigravityUsageFiles(

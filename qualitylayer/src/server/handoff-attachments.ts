@@ -54,35 +54,30 @@ function folderName(at: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}-${random}`
 }
 
-/** `POST /api/handoff-attachments`; the caller has matched the path. */
-export async function handoffAttachmentsRoute(
-  ctx: Ctx,
-  guard: GuardConfig,
-  request: Request,
-): Promise<Response> {
-  const refusal = refuse(request, guard, true)
-  if (refusal !== null) return new Response(refusal.reason, { status: refusal.status })
-  if (request.method !== "POST") return bad("Use POST to attach files.", 405)
-  if (!request.headers.get("content-type")?.startsWith("multipart/form-data"))
+type UploadBatch = { parts: File[]; names: string[] }
+
+async function readUploadForm(request: Request): Promise<FormData | Response> {
+  const contentType = request.headers.get("content-type")
+  if (!contentType?.startsWith("multipart/form-data"))
     return bad("Attach files with the file picker, paste or drop.")
-  let form: FormData
   try {
     const bytes = await readArtifactBody(
       request,
       MAX_ATTACHMENTS * MAX_ATTACHMENT_BYTES + 64 * 1024,
     )
-    form = await new Response(bytes, {
-      headers: { "content-type": request.headers.get("content-type") as string },
-    }).formData()
+    return await new Response(bytes, { headers: { "content-type": contentType } }).formData()
   } catch (cause) {
     return cause instanceof ArtifactBodyError
       ? bad("The attached files exceed the upload limit.", cause.status)
       : bad("Could not read these files. Try attaching them again.")
   }
+}
+
+function validateUploadParts(form: FormData): UploadBatch | Response {
   if ([...form.keys()].some((key) => key !== "file")) return bad("Unknown upload field.")
-  const parts = form.getAll("file").filter((part): part is File => typeof part !== "string")
-  if (parts.length === 0 || parts.length !== form.getAll("file").length)
-    return bad("Attach at least one file.")
+  const all = form.getAll("file")
+  const parts = all.filter((part): part is File => typeof part !== "string")
+  if (parts.length === 0 || parts.length !== all.length) return bad("Attach at least one file.")
   if (parts.length > MAX_ATTACHMENTS)
     return bad(`Attach at most ${MAX_ATTACHMENTS} files to a prompt.`)
   // Bun gives a part sent without a file name no `name` at all.
@@ -100,27 +95,32 @@ export async function handoffAttachmentsRoute(
       type: part.type,
     })),
   )
-  if (problem !== null) return bad(problem.replace("to a comment", "to a prompt"))
+  return problem === null ? { parts, names } : bad(problem.replace("to a comment", "to a prompt"))
+}
 
-  try {
-    const root = join(resolve(ctx.home), "attachments")
-    await mkdir(root, { recursive: true, mode: 0o700 })
-    const seen = await lstat(root)
-    if (!seen.isDirectory() || seen.isSymbolicLink()) throw new Error("Unsafe attachment folder")
-    let folder = ""
-    for (let attempt = 0; attempt < 5 && folder === ""; attempt++) {
-      const candidate = join(root, folderName(ctx.clock.now()))
-      try {
-        await mkdir(candidate, { mode: 0o700 })
-        folder = candidate
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-      }
+async function allocateAttachmentFolder(ctx: Ctx): Promise<string> {
+  const root = join(resolve(ctx.home), "attachments")
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const seen = await lstat(root)
+  if (!seen.isDirectory() || seen.isSymbolicLink()) throw new Error("Unsafe attachment folder")
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = join(root, folderName(ctx.clock.now()))
+    try {
+      await mkdir(candidate, { mode: 0o700 })
+      return candidate
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
     }
-    if (folder === "") throw new Error("No free attachment folder")
+  }
+  throw new Error("No free attachment folder")
+}
+
+async function saveUploadBatch(ctx: Ctx, batch: UploadBatch): Promise<Response> {
+  try {
+    const folder = await allocateAttachmentFolder(ctx)
     const paths: string[] = []
-    for (const [index, part] of parts.entries()) {
-      const path = join(folder, names[index] as string)
+    for (const [index, part] of batch.parts.entries()) {
+      const path = join(folder, batch.names[index] as string)
       await writeFile(path, new Uint8Array(await part.arrayBuffer()), { flag: "wx", mode: 0o600 })
       paths.push(path)
     }
@@ -128,4 +128,20 @@ export async function handoffAttachmentsRoute(
   } catch {
     return bad("Could not save these files on this computer. Try again.", 500)
   }
+}
+
+/** `POST /api/handoff-attachments`; the caller has matched the path. */
+export async function handoffAttachmentsRoute(
+  ctx: Ctx,
+  guard: GuardConfig,
+  request: Request,
+): Promise<Response> {
+  const refusal = refuse(request, guard, true)
+  if (refusal !== null) return new Response(refusal.reason, { status: refusal.status })
+  if (request.method !== "POST") return bad("Use POST to attach files.", 405)
+  const form = await readUploadForm(request)
+  if (form instanceof Response) return form
+  const batch = validateUploadParts(form)
+  if (batch instanceof Response) return batch
+  return saveUploadBatch(ctx, batch)
 }

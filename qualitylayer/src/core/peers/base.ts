@@ -4,12 +4,10 @@
 // with the binary instead of as a separate skill. This file holds the pieces
 // every other part uses: limits, small file helpers and where things live.
 
-import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import {
   chmodSync,
   closeSync,
-  existsSync,
   fchmodSync,
   fsyncSync,
   linkSync,
@@ -21,10 +19,33 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs"
-import { homedir } from "node:os"
-import { dirname, join } from "node:path"
-import { nativeCommand, ownerOnlyFile, windows } from "../platform.ts"
-import { versionTextOfSync } from "../probe.ts"
+import { dirname } from "node:path"
+import { ownerOnlyFile, windows } from "../platform.ts"
+
+export {
+  buddiesDir,
+  budgetAllowPath,
+  budgetResetPath,
+  claudeConfigDir,
+  claudeSessionsDir,
+  codexConfigPath,
+  codexHome,
+  parseVersion,
+  registeredPath,
+  requestDir,
+  requestPath,
+  requestReplyPath,
+  runCmd,
+  stableDir,
+  stateDir,
+  threadLogPath,
+  threadPidPath,
+  threadStatePath,
+  toolVersion,
+  topicsDir,
+  versionIsNewer,
+  warnVersions,
+} from "./base-runtime.ts"
 
 // The vendor versions this bridge was measured against. A newer one warns, never fails.
 export const CLAUDE_CODE_TESTED = "2.1.289"
@@ -134,9 +155,8 @@ export function readJson<T = unknown>(path: string, fallback: T): T | unknown {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as unknown
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT")
       log(`ignoring unreadable ${path}: ${(cause as Error).message}`)
-    }
     return fallback
   }
 }
@@ -237,179 +257,5 @@ export function truncateUtf8(text: string, maxBytes: number): string {
   if (maxBytes <= 0) return ""
   return new TextDecoder("utf-8", { fatal: false })
     .decode(encoded.subarray(0, maxBytes))
-    .replace(/\uFFFD$/, "")
-}
-
-/** Run a command: [code, stdout, stderr]; a missing binary is 127. */
-function commandPath(env: NodeJS.ProcessEnv): string {
-  return (
-    (windows ? Object.entries(env).find(([key]) => key.toUpperCase() === "PATH")?.[1] : env.PATH) ??
-    ""
-  )
-}
-
-export function runCmd(
-  argv: string[],
-  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv; cwd?: string } = {},
-): [number, string, string] {
-  const [first, ...rest] = argv
-  const env = options.env ?? process.env
-  const resolved =
-    first === undefined ? undefined : Bun.which(first, { PATH: commandPath(env), cwd: options.cwd })
-  const [command, ...args] = first === undefined ? [] : nativeCommand(resolved ?? first, rest)
-  if (command === undefined) return [127, "", "no command"]
-  const result = spawnSync(command, args, {
-    encoding: "utf8",
-    timeout: options.timeoutMs ?? 10_000,
-    env,
-    cwd: options.cwd,
-    maxBuffer: 64 * 1024 * 1024,
-  })
-  if (result.error !== undefined) {
-    const code = (result.error as NodeJS.ErrnoException).code
-    return [code === "ENOENT" ? 127 : 126, "", String(result.error.message)]
-  }
-  return [result.status ?? 1, result.stdout ?? "", result.stderr ?? ""]
-}
-
-/** The first existing folder of `preferred`, HOME, `/`: a detached process must not need its starter's. */
-export function stableDir(preferred?: string | null): string {
-  for (const candidate of [preferred, homedir(), "/"]) {
-    if (candidate && existsSync(candidate)) {
-      try {
-        if (statSync(candidate).isDirectory()) return candidate
-      } catch {
-        // try the next one
-      }
-    }
-  }
-  return "/"
-}
-
-export function parseVersion(text: string | null): number[] | null {
-  const match = text?.match(/(?<!\d)(\d+(?:\.\d+)+)/)
-  return match?.[1] !== undefined ? match[1].split(".").map(Number) : null
-}
-
-export function versionIsNewer(installed: string | null, pinned: string): boolean {
-  const a = parseVersion(installed)
-  const b = parseVersion(pinned)
-  if (a === null || b === null) return false
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = a[i] ?? 0
-    const y = b[i] ?? 0
-    if (x !== y) return x > y
-  }
-  return false
-}
-
-/** `binary --version`, asked once per process for a command file that has not changed. */
-export function toolVersion(binary: string): string | null {
-  const resolved = Bun.which(binary, { PATH: commandPath(process.env) })
-  if (resolved === null) return null
-  const [program, ...args] = nativeCommand(resolved, ["--version"])
-  return (
-    versionTextOfSync(resolved, [program as string, ...args], { timeoutMs: 5_000 })?.trim() || null
-  )
-}
-
-// ------------------------------------------------------------------ roots
-
-export function claudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")
-}
-
-export function claudeSessionsDir(): string {
-  return join(claudeConfigDir(), "sessions")
-}
-
-export function codexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), ".codex")
-}
-
-export function codexConfigPath(): string {
-  return join(codexHome(), "config.toml")
-}
-
-/** QualityLayer's own home for the bridge's state: registrations, stand-ins, requests, topics. */
-export function stateDir(): string {
-  const root = process.env.QUALITYLAYER_HOME || join(homedir(), ".qualitylayer")
-  const path = join(root, "peers")
-  mkdirSync(path, { recursive: true, mode: 0o700 })
-  try {
-    chmodSync(path, 0o700)
-  } catch {
-    // best effort
-  }
-  return path
-}
-
-function privateDir(...parts: string[]): string {
-  const path = join(stateDir(), ...parts)
-  mkdirSync(path, { recursive: true, mode: 0o700 })
-  try {
-    chmodSync(path, 0o700)
-  } catch {
-    // best effort
-  }
-  return path
-}
-
-export const registeredPath = () => join(stateDir(), "registered.json")
-export const threadStatePath = (id: string) => join(stateDir(), `${id}.json`)
-export const threadPidPath = (id: string) => join(stateDir(), `${id}.pid`)
-export const threadLogPath = (id: string) => join(stateDir(), `${id}.log`)
-export const budgetResetPath = (id: string) => join(stateDir(), `${id}.budget-reset`)
-export const budgetAllowPath = (id: string) => join(stateDir(), `${id}.budget-allow`)
-export const buddiesDir = () => privateDir("buddies")
-export const requestDir = () => privateDir("requests")
-export const topicsDir = () => privateDir("topics")
-export const versionWarningPath = () => join(stateDir(), "version-warnings.json")
-
-export function requestPath(id: string): string {
-  if (!isUuid(id)) throw new PeerError("request id must be a UUID", 2)
-  return join(requestDir(), `${id}.request.json`)
-}
-
-export function requestReplyPath(id: string): string {
-  if (!isUuid(id)) throw new PeerError("request id must be a UUID", 2)
-  return join(requestDir(), `${id}.reply.json`)
-}
-
-/** Warn once a day per installed version newer than the one measured; never fail. */
-export function warnVersions(kinds: ("claude" | "codex")[] = ["claude", "codex"]): void {
-  const previous = (asRecord(readJson(versionWarningPath(), {})) ?? {}) as Record<string, number>
-  let changed = false
-  const now = nowSeconds()
-  const once = (key: string, message: string) => {
-    if (now - (Number(previous[key]) || 0) < 86_400) return
-    log(message)
-    previous[key] = now
-    changed = true
-  }
-  if (kinds.includes("claude")) {
-    const v = toolVersion("claude")
-    if (v !== null && versionIsNewer(v, CLAUDE_CODE_TESTED)) {
-      once(
-        `claude:${v}>${CLAUDE_CODE_TESTED}`,
-        `Claude Code ${v} is newer than the tested ${CLAUDE_CODE_TESTED}; if peers stop appearing, run \`qualitylayer peers doctor\``,
-      )
-    }
-  }
-  if (kinds.includes("codex")) {
-    const v = toolVersion("codex")
-    if (v !== null && versionIsNewer(v, CODEX_TESTED)) {
-      once(
-        `codex:${v}>${CODEX_TESTED}`,
-        `Codex CLI ${v} is newer than the tested ${CODEX_TESTED}; if discovery breaks, run \`qualitylayer peers doctor\``,
-      )
-    }
-  }
-  if (changed) {
-    try {
-      writeJsonAtomic(versionWarningPath(), previous)
-    } catch {
-      // a warning ledger is not worth a failure
-    }
-  }
+    .replace(/�$/, "")
 }

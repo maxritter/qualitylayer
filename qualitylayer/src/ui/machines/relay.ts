@@ -6,130 +6,25 @@
 // requires what an older page does not send (`tests/fixtures/machine-relay-v1.json`).
 
 import { machineFrame } from "./framed.ts"
+import {
+  type FromFrame,
+  type FromParent,
+  frameMessageOf,
+  parentMessageOf,
+  type RelayMachine,
+  type RelayNotice,
+  type Theme,
+} from "./relay-parse.ts"
 
-/** A notification as the page hands it to the shell today: `title` is required, a route starts `#/`. */
-export type RelayNotice = {
-  key?: string
-  title: string
-  body?: string
-  route?: string
-  silent?: boolean
+export {
+  type FromFrame,
+  type FromParent,
+  frameMessageOf,
+  parentMessageOf,
+  type RelayMachine,
+  type RelayNotice,
+  type Theme,
 }
-
-export type RelayMachine = {
-  /** A machine's id, or `this` for the computer whose page frames. */
-  id: string
-  name: string
-  state: string
-  needsYou: number
-}
-
-export type FromFrame =
-  /** `needsYou`: what Home lists under Needs you. `badge`: the count in the page's title. */
-  | { ql: 1; type: "waiting"; needsYou: number; badge: number }
-  | { ql: 1; type: "notices"; notices: RelayNotice[] }
-  /** The person chose a machine (or `this`) in the framed page's switcher. */
-  | { ql: 1; type: "switch"; to: string }
-  | { ql: 1; type: "add" }
-  | { ql: 1; type: "open-machines" }
-  /** The framed page drew its switcher (or it left the page). */
-  | { ql: 1; type: "switcher"; shown: boolean }
-  /** The person used the theme toggle on the framed page: this computer's theme is switched. */
-  | { ql: 1; type: "theme"; theme: Theme }
-
-export type Theme = "light" | "dark"
-
-export type FromParent =
-  | { ql: 1; type: "go"; route: string }
-  /** `theme`: this computer's page as it shows now; a framed page shows the same. */
-  | { ql: 1; type: "machines"; chosen: string; machines: RelayMachine[]; theme?: Theme }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-const isCount = (value: unknown): value is number =>
-  typeof value === "number" && Number.isInteger(value) && value >= 0 && value < 100_000
-const isId = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9._~-]{1,60}$/.test(value)
-const isText = (value: unknown, most: number): value is string =>
-  typeof value === "string" && value.length <= most
-const isTheme = (value: unknown): value is Theme => value === "light" || value === "dark"
-const isRoute = (value: unknown): value is string =>
-  typeof value === "string" && value.length <= 2048 && (value === "" || value.startsWith("#/"))
-
-function noticeOf(value: unknown): RelayNotice | null {
-  if (!isRecord(value) || !isText(value.title, 300) || value.title === "") return null
-  if (value.route !== undefined && !isRoute(value.route)) return null
-  return {
-    title: value.title,
-    ...(isText(value.key, 300) ? { key: value.key } : {}),
-    ...(isText(value.body, 1000) ? { body: value.body } : {}),
-    ...(value.route !== undefined ? { route: value.route } : {}),
-    ...(typeof value.silent === "boolean" ? { silent: value.silent } : {}),
-  }
-}
-
-function machineOf(value: unknown): RelayMachine | null {
-  if (!isRecord(value) || !isId(value.id) || !isText(value.name, 120)) return null
-  if (!isText(value.state, 40) || !isCount(value.needsYou)) return null
-  return { id: value.id, name: value.name, state: value.state, needsYou: value.needsYou }
-}
-
-/** A list read item by item, or null when it is no list, too long, or holds one bad item. */
-function listOf<T>(value: unknown, most: number, read: (item: unknown) => T | null): T[] | null {
-  if (!Array.isArray(value) || value.length > most) return null
-  const items = value.map(read)
-  return items.every((item) => item !== null) ? (items as T[]) : null
-}
-
-type Reader<M> = (data: Record<string, unknown>) => M | null
-
-/** One reader per type a framed page sends. A type that is not here is no message. */
-const FRAME_READERS: Record<string, Reader<FromFrame>> = {
-  waiting: (data) =>
-    isCount(data.needsYou) && isCount(data.badge)
-      ? { ql: 1, type: "waiting", needsYou: data.needsYou, badge: data.badge }
-      : null,
-  notices: (data) => {
-    const notices = listOf(data.notices, 50, noticeOf)
-    return notices === null ? null : { ql: 1, type: "notices", notices }
-  },
-  switch: (data) => (isId(data.to) ? { ql: 1, type: "switch", to: data.to } : null),
-  add: () => ({ ql: 1, type: "add" }),
-  "open-machines": () => ({ ql: 1, type: "open-machines" }),
-  switcher: (data) =>
-    typeof data.shown === "boolean" ? { ql: 1, type: "switcher", shown: data.shown } : null,
-  theme: (data) => (isTheme(data.theme) ? { ql: 1, type: "theme", theme: data.theme } : null),
-}
-
-function read<M>(readers: Record<string, Reader<M>>, data: unknown): M | null {
-  if (!isRecord(data) || data.ql !== 1 || typeof data.type !== "string") return null
-  // Own types only: a `type` such as `constructor` names no reader.
-  const reader = Object.hasOwn(readers, data.type) ? readers[data.type] : undefined
-  return reader === undefined ? null : reader(data)
-}
-
-/** A message of a framed page, or null: unknown types and malformed ones are no message. */
-export const frameMessageOf = (data: unknown): FromFrame | null => read(FRAME_READERS, data)
-
-const PARENT_READERS: Record<string, Reader<FromParent>> = {
-  go: (data) => (isRoute(data.route) ? { ql: 1, type: "go", route: data.route } : null),
-  machines: (data) => {
-    const machines = isId(data.chosen) ? listOf(data.machines, 100, machineOf) : null
-    return machines === null || !isId(data.chosen)
-      ? null
-      : {
-          ql: 1,
-          type: "machines",
-          chosen: data.chosen,
-          machines,
-          // An older page sends no theme; the framed page then keeps its own.
-          ...(isTheme(data.theme) ? { theme: data.theme } : {}),
-        }
-  },
-}
-
-/** A message of the page that frames, or null. */
-export const parentMessageOf = (data: unknown): FromParent | null => read(PARENT_READERS, data)
 
 type Heard = Pick<MessageEvent, "data" | "origin" | "source">
 

@@ -28,6 +28,18 @@ export async function publicFeedbackSystem(): Promise<Result<unknown>> {
   }
 }
 
+const PUBLIC_INPUT_KEYS = new Set(["id", "kind", "title", "description"])
+
+function isValidPublicInput(data: Record<string, unknown>): data is PublicInput {
+  const hasStrings =
+    typeof data.id === "string" &&
+    typeof data.title === "string" &&
+    typeof data.description === "string"
+  if (!hasStrings) return false
+  if (data.kind !== "bug" && data.kind !== "idea") return false
+  return Object.keys(data).every((key) => PUBLIC_INPUT_KEYS.has(key))
+}
+
 export async function publicFeedbackReview(ctx: Ctx, request: Request): Promise<Result<unknown>> {
   try {
     const length = request.headers.get("content-length")
@@ -38,13 +50,7 @@ export async function publicFeedbackReview(ctx: Ctx, request: Request): Promise<
     if (typeof raw !== "string" || raw.length > 6000)
       throw new PublicFeedbackFailure("refused", "The report is incomplete.")
     const data = JSON.parse(raw) as Record<string, unknown>
-    if (
-      typeof data.id !== "string" ||
-      (data.kind !== "bug" && data.kind !== "idea") ||
-      typeof data.title !== "string" ||
-      typeof data.description !== "string" ||
-      Object.keys(data).some((key) => !["id", "kind", "title", "description"].includes(key))
-    )
+    if (!isValidPublicInput(data))
       throw new PublicFeedbackFailure("refused", "Add the report title and description.")
     const files = form.getAll("image")
     if (files.length > 5)

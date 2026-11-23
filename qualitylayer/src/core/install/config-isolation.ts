@@ -56,6 +56,24 @@ export function nativeAccountHome(): string {
   return home
 }
 
+function overrideOutsideHome(ctx: Ctx, contains: (path: string) => boolean): string | null {
+  for (const name of OVERRIDES) {
+    const value = ctx.env.get(name)
+    if (value === undefined || value === "") continue
+    if (!isAbsolute(value) || !contains(value))
+      return `Refusing changes: ${name} is outside isolated HOME. Set ${name} to an absolute path inside HOME or unset it before install, update or uninstall.`
+  }
+  return null
+}
+
+function agentRootOutsideHome(ctx: Ctx, contains: (path: string) => boolean): string | null {
+  for (const [agent, path] of Object.entries(roots(ctx) ?? {})) {
+    if (!contains(path))
+      return `Refusing changes: ${agent}'s configuration resolves outside isolated HOME. Use a configuration directory inside HOME before install, update or uninstall.`
+  }
+  return null
+}
+
 /** An overridden HOME must isolate native configuration too; normal custom profiles stay valid. */
 export function configIsolationProblem(ctx: Ctx, home: string, nativeHome?: string): string | null {
   try {
@@ -64,22 +82,8 @@ export function configIsolationProblem(ctx: Ctx, home: string, nativeHome?: stri
       const location = realLocation(path)
       return relative(isolated, location) === "" || insidePath(isolated, location)
     }
-    let problem: string | null = null
-    for (const name of OVERRIDES) {
-      const value = ctx.env.get(name)
-      if (value === undefined || value === "") continue
-      if (!isAbsolute(value) || !contains(value)) {
-        problem = `Refusing changes: ${name} is outside isolated HOME. Set ${name} to an absolute path inside HOME or unset it before install, update or uninstall.`
-        break
-      }
-    }
     // An inherited override is not the only escape: a default config directory can be a symlink.
-    if (problem === null)
-      for (const [agent, path] of Object.entries(roots(ctx) ?? {}))
-        if (!contains(path)) {
-          problem = `Refusing changes: ${agent}'s configuration resolves outside isolated HOME. Use a configuration directory inside HOME before install, update or uninstall.`
-          break
-        }
+    const problem = overrideOutsideHome(ctx, contains) ?? agentRootOutsideHome(ctx, contains)
     if (problem === null) return null
     const accountHome = nativeHome ?? nativeAccountHome()
     if (!isAbsolute(accountHome)) throw new Error("the OS account has no absolute home")

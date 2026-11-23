@@ -5,18 +5,26 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { ListIcon, UserRoundIcon, ZapIcon } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { gentleNow } from "../motion.ts"
+import {
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 import { Segmented } from "../Segmented.tsx"
 import { holdTourDom, tourHost } from "./dom.ts"
-import { bringIntoView, ringOf } from "./geometry.ts"
-import { type Box, placeCard, TOUR_STOPS, type TourLength, type TourStop } from "./stops.ts"
-
-const CARD = { w: 328, h: 210 }
-
-/** How long the words take to fade out before the page changes, and the whole tour before it ends (ms). */
-const MOTION = { full: { leave: 140, out: 200 }, gentle: { leave: 100, out: 160 } }
-const durations = () => (gentleNow() ? MOTION.gentle : MOTION.full)
+import { TOUR_STOPS, type TourLength, type TourStop } from "./stops.ts"
+import {
+  scheduleTourLeave,
+  scheduleTourTransition,
+  useTourAcknowledgePaint,
+  useTourKeyboard,
+  useTourReachable,
+} from "./tour-hooks.ts"
+import { CARD, useTourPosition } from "./tour-position.ts"
 
 /** How the tour ended: Done, Skip tour, or Escape, which keeps the stop so Home can offer to continue. */
 export type TourEnd = { how: "done" | "skip" | "pause"; at: number }
@@ -28,54 +36,192 @@ function InTour({ host, children }: { host: HTMLElement | null; children: ReactN
   )
 }
 
-type PositionedStop = {
-  index: number
-  stop: TourStop
-  ring: Box
-  dialog: string
-  place: { left: number; top: number } | null
+function useStopLifecycle(stop: TourStop | undefined) {
+  const held = useRef<TourStop | undefined>(undefined)
+  const restore = useCallback(() => {
+    const was = held.current
+    held.current = undefined
+    was?.leave?.(tourHost())
+  }, [])
+  useEffect(() => {
+    if (!stop) return
+    if (held.current !== stop) restore()
+    if (stop.enter === undefined) return
+    held.current = stop
+    const enter = stop.enter
+    const host = tourHost()
+    return holdTourDom(() => enter(host))
+  }, [stop, restore])
+  useEffect(() => restore, [restore])
+  return restore
 }
 
-/** The workflow step each place sits on; the page is not ready while another step is current. */
-const STEP_OF: Partial<Record<TourStop["place"], string>> = {
-  questions: "Plan",
-  plan: "Plan",
-  build: "Plan",
-  conversation: "Implement",
-  terminal: "Implement",
-  files: "Implement",
-  report: "Implement",
-  verify: "Verify",
-  review: "Verify",
+function useTourRootDataset(stopPlace: TourStop["place"] | undefined) {
+  useLayoutEffect(() => {
+    if (stopPlace === undefined) return
+    const root = document.documentElement
+    root.dataset.tourTo = stopPlace
+    return () => {
+      delete root.dataset.tourTo
+    }
+  }, [stopPlace])
 }
 
-function readyFor(stop: TourStop): boolean {
-  // A task that is still opening draws the loaded header, step row included, round an outline of the page:
-  // the step is current there, but what the stop points at has not arrived.
-  if (document.querySelector('[data-testid="task-loading"][aria-busy="true"]') !== null)
-    return false
-  const step = STEP_OF[stop.place]
-  if (
-    step &&
-    !document
-      .querySelector("nav.ir-inline-steps [aria-current=step]")
-      ?.textContent?.startsWith(step)
-  )
-    return false
-  const target = document.querySelector(stop.sel)
-  for (let node = target; node; node = node.parentElement) {
-    if (
-      node
-        .getAnimations?.()
-        .some(
-          (animation) =>
-            animation.playState === "running" &&
-            animation.effect?.getComputedTiming().iterations !== Infinity,
-        )
+function TourCardProgress({
+  all,
+  shownIndex,
+  busy,
+  length,
+  onLength,
+  onGoTo,
+}: {
+  all: readonly TourStop[]
+  shownIndex: number
+  busy: boolean
+  length?: TourLength
+  onLength?: (length: TourLength) => void
+  onGoTo: (index: number) => void
+}) {
+  if (length !== undefined && onLength) {
+    return (
+      <div className="q-tour-length" data-testid="tour-length">
+        <Segmented
+          size="md"
+          label="Tour length"
+          value={length}
+          onChange={(next) => {
+            if (!busy) onLength(next)
+          }}
+          options={[
+            { id: "short", label: "Short", icon: <ZapIcon aria-hidden="true" /> },
+            { id: "full", label: "Full", icon: <ListIcon aria-hidden="true" /> },
+          ]}
+        />
+        <span className="q-tour-count">
+          {shownIndex + 1} of {all.length}
+        </span>
+      </div>
     )
-      return false
   }
-  return true
+  return (
+    <nav className="q-tour-dots" aria-label={`Stop ${shownIndex + 1} of ${all.length}`}>
+      {all.map((st, j) => (
+        <button
+          key={st.id}
+          type="button"
+          className={j < shownIndex ? "seen" : undefined}
+          aria-label={`Go to ${st.label}`}
+          aria-current={j === shownIndex ? "step" : undefined}
+          onClick={() => onGoTo(j)}
+        />
+      ))}
+    </nav>
+  )
+}
+
+function TourPopupCard({
+  attachTip,
+  nextRef,
+  place,
+  hiddenUntilPlaced,
+  shown,
+  shownIndex,
+  all,
+  pending,
+  hasPositioned,
+  busy,
+  length,
+  onLength,
+  onGoTo,
+  onSkip,
+  onBack,
+  onForward,
+}: {
+  attachTip: (node: HTMLDivElement | null) => void
+  nextRef: RefObject<HTMLButtonElement | null>
+  place: { left: number; top: number }
+  hiddenUntilPlaced: boolean
+  shown: TourStop | undefined
+  shownIndex: number
+  all: readonly TourStop[]
+  pending: boolean
+  hasPositioned: boolean
+  busy: boolean
+  length?: TourLength
+  onLength?: (length: TourLength) => void
+  onGoTo: (index: number) => void
+  onSkip: () => void
+  onBack: () => void
+  onForward: () => void
+}) {
+  const last = shownIndex + 1 === all.length
+  return (
+    <DialogPrimitive.Popup
+      ref={attachTip}
+      className="q-tour-tip"
+      initialFocus={false}
+      finalFocus={false}
+      style={{
+        left: place.left,
+        top: place.top,
+        width: Math.min(CARD.w, window.innerWidth - 24),
+        visibility: hiddenUntilPlaced ? "hidden" : undefined,
+        maxHeight: "calc(100dvh - 84px)",
+        overflowY: "auto",
+      }}
+    >
+      <div className="q-tour-body" key={shownIndex}>
+        <div className="q-tour-hd">
+          <span className="q-tour-ic" data-who={shown?.you ? "you" : undefined} aria-hidden="true">
+            {shown ? <shown.icon className="size-4" /> : null}
+          </span>
+          <DialogPrimitive.Title>{shown?.label}</DialogPrimitive.Title>
+          {shown?.you ? (
+            <span className="q-tour-you">
+              <UserRoundIcon className="size-3" aria-hidden="true" />
+              You approve
+            </span>
+          ) : null}
+        </div>
+        <DialogPrimitive.Description className="q-tour-tx">
+          {shown?.text}
+        </DialogPrimitive.Description>
+      </div>
+      {pending && !hasPositioned ? (
+        <p role="status" className="q-tour-wait">
+          Opening the next example. You can skip the tour at any time.
+        </p>
+      ) : null}
+      <TourCardProgress
+        all={all}
+        shownIndex={shownIndex}
+        busy={busy}
+        length={length}
+        onLength={onLength}
+        onGoTo={onGoTo}
+      />
+      <div className="acts">
+        <button type="button" className="q-btn quiet sm skip" onClick={onSkip}>
+          Skip tour
+        </button>
+        <span className="sp" />
+        {shownIndex > 0 ? (
+          <button type="button" className="q-btn sm" onClick={onBack} disabled={busy}>
+            Back
+          </button>
+        ) : null}
+        <button
+          ref={nextRef}
+          type="button"
+          className="q-btn primary sm"
+          onClick={onForward}
+          disabled={busy}
+        >
+          {last ? "Done" : "Next"}
+        </button>
+      </div>
+    </DialogPrimitive.Popup>
+  )
 }
 
 export function Tour({
@@ -97,7 +243,6 @@ export function Tour({
   onLength?: (length: TourLength) => void
 }) {
   const [at, setAt] = useState(controlled ?? 0)
-  const [positioned, setPositioned] = useState<PositionedStop | null>(null)
   const [phase, setPhase] = useState<"rest" | "leave" | "out">("rest")
   const timer = useRef(0)
   const lastPlace = useRef<{ left: number; top: number } | null>(null)
@@ -111,245 +256,39 @@ export function Tour({
   const next = useRef<HTMLButtonElement>(null)
   const i = Math.min(controlled ?? at, Math.max(0, all.length - 1))
   const stop = all[i]
+  const positioned = useTourPosition(i, stop, tip)
   const pending = positioned?.index !== i
-  useEffect(() => {
-    const node = tipNode
-    if (!node || !positioned?.place || pending || !onShown) return
-    const acknowledgePaint = () => {
-      const body = node.querySelector<HTMLElement>(".q-tour-body")
-      if (body && getComputedStyle(body).opacity === "1" && body.getBoundingClientRect().height > 0)
-        onShown()
-    }
-    acknowledgePaint()
-    node.addEventListener("animationend", acknowledgePaint)
-    node.addEventListener("transitionend", acknowledgePaint)
-    return () => {
-      node.removeEventListener("animationend", acknowledgePaint)
-      node.removeEventListener("transitionend", acknowledgePaint)
-    }
-  }, [tipNode, positioned?.place, pending, onShown])
   const shown = positioned?.stop ?? stop
   const sourceDialogKey = positioned?.dialog ?? "page"
-  const move = (index: number) => {
-    setAt(index)
-    onStep?.(index)
-  }
+  useTourAcknowledgePaint({ tipNode, placed: Boolean(positioned?.place), pending, onShown })
   useEffect(() => () => window.clearTimeout(timer.current), [])
+  useTourReachable(tour)
+  const restore = useStopLifecycle(stop)
+  useTourRootDataset(stop?.place)
 
-  // A modal dialog behind the card (Start the build, Report, Share) marks everything outside it hidden to
-  // assistive technology and inert; the card sits above that dialog, so it is made reachable again.
-  useEffect(() => {
-    if (tour === null) return
-    const reach = () => {
-      if (tour.getAttribute("aria-hidden") !== null) tour.removeAttribute("aria-hidden")
-      if (tour.hasAttribute("inert")) tour.removeAttribute("inert")
-    }
-    reach()
-    const watch = new MutationObserver(reach)
-    watch.observe(tour, { attributes: true, attributeFilter: ["aria-hidden", "inert"] })
-    return () => watch.disconnect()
-  }, [tour])
-
-  // The App's own state behind the stop: the previous stop's is restored, the new one set, and set
-  // again as the page changes for a moment. Ending the tour restores the last one.
-  const held = useRef<TourStop | undefined>(undefined)
-  const restore = useCallback(() => {
-    const was = held.current
-    held.current = undefined
-    was?.leave?.(tourHost())
-  }, [])
-  useEffect(() => {
-    if (!stop) return
-    if (held.current !== stop) restore()
-    if (stop.enter === undefined) return
-    held.current = stop
-    const enter = stop.enter
-    const host = tourHost()
-    return holdTourDom(() => enter(host))
-  }, [stop, restore])
-  useEffect(() => restore, [restore])
-
-  useLayoutEffect(() => {
-    if (!stop) return
-    let frame = 0
-    let gone = false
-    const opened = performance.now()
-    const resize = new ResizeObserver(() => schedule())
-    const measure = () => {
-      if (gone) return
-      if (!readyFor(stop)) return
-      // The page is still settling just after a stop opens (rows load, folds open), so a unit that ends up
-      // out of view is brought back for a moment; after that the person's own scrolling is left alone.
-      if (performance.now() - opened < 1500 && bringIntoView(stop)) return schedule()
-      const ring = ringOf(stop)
-      if (!ring) return
-      for (const selector of [stop.sel, stop.also]) {
-        const target = selector ? document.querySelector(selector) : null
-        if (target) resize.observe(target)
-      }
-      const dialog = document.querySelector("[role=dialog]:not(.q-tour-tip)")
-      const key = dialog?.id || (dialog ? "modal" : "page")
-      setPositioned((old) => {
-        if (old?.index !== i) return { index: i, stop, ring, dialog: key, place: null }
-        const place = placeCard(
-          ring,
-          window.innerWidth,
-          window.innerHeight - 52,
-          {
-            w: Math.min(CARD.w, window.innerWidth - 24),
-            h: Math.min(
-              window.innerHeight - 84,
-              tip.current?.getBoundingClientRect().height || CARD.h,
-            ),
-          },
-          stop.card,
-        )
-        if (
-          old.dialog === key &&
-          old.place?.left === place.left &&
-          old.place?.top === place.top &&
-          old.ring.x === ring.x &&
-          old.ring.y === ring.y &&
-          old.ring.w === ring.w &&
-          old.ring.h === ring.h
-        )
-          return old
-        return { index: i, stop, ring, dialog: key, place }
-      })
-    }
-    const schedule = () => {
-      if (!frame && !gone)
-        frame = requestAnimationFrame(() => {
-          frame = 0
-          measure()
-        })
-    }
-    const mutations = new MutationObserver((records) => {
-      if (
-        records.some(
-          (record) => !(record.target instanceof Element && record.target.closest(".q-tour")),
-        )
-      )
-        schedule()
-    })
-    mutations.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: [
-        "class",
-        "style",
-        "hidden",
-        "aria-current",
-        "aria-selected",
-        "aria-checked",
-        "data-state",
-        "data-open",
-        "data-popup-open",
-      ],
-    })
-    window.addEventListener("resize", schedule)
-    window.addEventListener("scroll", schedule, true)
-    document.addEventListener("animationend", schedule, true)
-    document.addEventListener("transitionend", schedule, true)
-    measure()
-    return () => {
-      gone = true
-      cancelAnimationFrame(frame)
-      resize.disconnect()
-      mutations.disconnect()
-      window.removeEventListener("resize", schedule)
-      window.removeEventListener("scroll", schedule, true)
-      document.removeEventListener("animationend", schedule, true)
-      document.removeEventListener("transitionend", schedule, true)
-    }
-  }, [i, stop])
-
-  // The new copy is measured while hidden, then its ring, position and controls paint together.
-  useLayoutEffect(() => {
-    if (!positioned || positioned.index !== i || positioned.place) return
-    const ring = ringOf(positioned.stop) ?? positioned.ring
-    const place = placeCard(
-      ring,
-      window.innerWidth,
-      window.innerHeight - 52,
-      {
-        w: Math.min(CARD.w, window.innerWidth - 24),
-        h: Math.min(window.innerHeight - 84, tip.current?.getBoundingClientRect().height || CARD.h),
+  const goTo = (to: number) =>
+    scheduleTourTransition({
+      to,
+      current: i,
+      total: all.length,
+      phase,
+      pending,
+      timer,
+      setPhase,
+      restore,
+      onEnd,
+      onMove: (nextIndex) => {
+        setAt(nextIndex)
+        onStep?.(nextIndex)
       },
-      positioned.stop.card,
-    )
-    setPositioned({ ...positioned, ring, place })
-  }, [i, positioned])
-
-  /** Fade the words, then change the page; Done fades the whole tour, then ends. */
-  const goTo = (to: number) => {
-    if (phase !== "rest" || pending || to === i || to < 0) return
-    const { leave, out } = durations()
-    window.clearTimeout(timer.current)
-    if (to >= all.length) {
-      setPhase("out")
-      timer.current = window.setTimeout(() => {
-        restore()
-        onEnd({ how: "done", at: i })
-      }, out)
-      return
-    }
-    setPhase("leave")
-    timer.current = window.setTimeout(() => {
-      setPhase("rest")
-      move(to)
-    }, leave)
-  }
-  const forward = () => goTo(i + 1)
-  const back = () => goTo(i - 1)
-  /** Skip tour ends it; Escape ends it and keeps the stop. */
-  const leaveTour = (how: "skip" | "pause") => {
-    if (phase === "out") return
-    window.clearTimeout(timer.current)
-    setPhase("out")
-    timer.current = window.setTimeout(() => {
-      restore()
-      onEnd({ how, at: i })
-    }, durations().out)
-  }
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // A dialog above the tour (the command box) has its own keys. New task is the New task stop's own
-      // page, so an Escape inside it leaves the tour, as it did when the form was a card.
-      if (
-        event.target instanceof Element &&
-        event.target.closest('[data-slot="dialog-content"]:not([data-testid="new-task"])')
-      )
-        return
-      if (event.key === "Escape") {
-        event.preventDefault()
-        event.stopPropagation()
-        leaveTour("pause")
-      } else if (
-        event.target instanceof Element &&
-        event.target.closest(
-          "input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], .xterm, [data-testid=agent-window]",
-        )
-      ) {
-        return
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault()
-        event.stopPropagation()
-        forward()
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault()
-        event.stopPropagation()
-        back()
-      }
-    }
-    window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
+    })
+  const leaveTour = (how: "skip" | "pause") =>
+    scheduleTourLeave({ how, current: i, phase, timer, setPhase, restore, onEnd })
+  useTourKeyboard({
+    onPause: () => leaveTour("pause"),
+    onForward: () => goTo(i + 1),
+    onBack: () => goTo(i - 1),
   })
-
-  // The card's main button holds the focus, so Enter and a screen reader start from it. A dialog behind
-  // the card focuses its own field or close button as it opens; Next takes the focus back.
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus moves when the stop or the dialog changes
   useEffect(() => {
     if (pending || phase !== "rest") return
@@ -357,19 +296,6 @@ export function Tour({
     const again = window.setTimeout(() => next.current?.focus({ preventScroll: true }), 80)
     return () => window.clearTimeout(again)
   }, [i, pending, phase, sourceDialogKey])
-
-  // The stops that move a dialog or the page key their CSS on the root's `data-tour-to`. A `body:has(.q-tour)`
-  // rule asks the browser to re-check the whole body after every change of the App's own page, which made
-  // every click of the App slower while no tour was open.
-  const stopPlace = stop?.place
-  useLayoutEffect(() => {
-    if (stopPlace === undefined) return
-    const root = document.documentElement
-    root.dataset.tourTo = stopPlace
-    return () => {
-      delete root.dataset.tourTo
-    }
-  }, [stopPlace])
 
   if (stop === undefined) return null
   const ring = positioned?.ring ?? null
@@ -380,7 +306,6 @@ export function Tour({
       top: 12,
     }
   const shownIndex = positioned?.index ?? i
-  const last = shownIndex + 1 === all.length
   const busy = pending || phase !== "rest"
   return (
     <div
@@ -402,104 +327,24 @@ export function Tour({
       ) : null}
       <DialogPrimitive.Root key={sourceDialogKey} open modal={false}>
         <InTour host={tour}>
-          <DialogPrimitive.Popup
-            ref={attachTip}
-            className="q-tour-tip"
-            initialFocus={false}
-            finalFocus={false}
-            style={{
-              left: place.left,
-              top: place.top,
-              width: Math.min(CARD.w, window.innerWidth - 24),
-              visibility:
-                positioned && !positioned.place && !lastPlace.current ? "hidden" : undefined,
-              maxHeight: "calc(100dvh - 84px)",
-              overflowY: "auto",
-            }}
-          >
-            <div className="q-tour-body" key={shownIndex}>
-              <div className="q-tour-hd">
-                <span
-                  className="q-tour-ic"
-                  data-who={shown?.you ? "you" : undefined}
-                  aria-hidden="true"
-                >
-                  {shown ? <shown.icon className="size-4" /> : null}
-                </span>
-                <DialogPrimitive.Title>{shown?.label}</DialogPrimitive.Title>
-                {shown?.you ? (
-                  <span className="q-tour-you">
-                    <UserRoundIcon className="size-3" aria-hidden="true" />
-                    You approve
-                  </span>
-                ) : null}
-              </div>
-              <DialogPrimitive.Description className="q-tour-tx">
-                {shown?.text}
-              </DialogPrimitive.Description>
-            </div>
-            {pending && !positioned ? (
-              <p role="status" className="q-tour-wait">
-                Opening the next example. You can skip the tour at any time.
-              </p>
-            ) : null}
-            {length !== undefined && onLength ? (
-              <div className="q-tour-length" data-testid="tour-length">
-                <Segmented
-                  size="md"
-                  label="Tour length"
-                  value={length}
-                  onChange={(next) => {
-                    if (!busy) onLength(next)
-                  }}
-                  options={[
-                    { id: "short", label: "Short", icon: <ZapIcon aria-hidden="true" /> },
-                    { id: "full", label: "Full", icon: <ListIcon aria-hidden="true" /> },
-                  ]}
-                />
-                <span className="q-tour-count">
-                  {shownIndex + 1} of {all.length}
-                </span>
-              </div>
-            ) : (
-              <nav className="q-tour-dots" aria-label={`Stop ${shownIndex + 1} of ${all.length}`}>
-                {all.map((st, j) => (
-                  <button
-                    key={st.id}
-                    type="button"
-                    className={j < shownIndex ? "seen" : undefined}
-                    aria-label={`Go to ${st.label}`}
-                    aria-current={j === shownIndex ? "step" : undefined}
-                    onClick={() => goTo(j)}
-                  />
-                ))}
-              </nav>
-            )}
-            <div className="acts">
-              <button
-                type="button"
-                className="q-btn quiet sm skip"
-                onClick={() => leaveTour("skip")}
-              >
-                Skip tour
-              </button>
-              <span className="sp" />
-              {shownIndex > 0 ? (
-                <button type="button" className="q-btn sm" onClick={back} disabled={busy}>
-                  Back
-                </button>
-              ) : null}
-              <button
-                ref={next}
-                type="button"
-                className="q-btn primary sm"
-                onClick={forward}
-                disabled={busy}
-              >
-                {last ? "Done" : "Next"}
-              </button>
-            </div>
-          </DialogPrimitive.Popup>
+          <TourPopupCard
+            attachTip={attachTip}
+            nextRef={next}
+            place={place}
+            hiddenUntilPlaced={Boolean(positioned && !positioned.place && !lastPlace.current)}
+            shown={shown}
+            shownIndex={shownIndex}
+            all={all}
+            pending={pending}
+            hasPositioned={positioned !== null}
+            busy={busy}
+            length={length}
+            onLength={onLength}
+            onGoTo={goTo}
+            onSkip={() => leaveTour("skip")}
+            onBack={() => goTo(i - 1)}
+            onForward={() => goTo(i + 1)}
+          />
         </InTour>
       </DialogPrimitive.Root>
     </div>

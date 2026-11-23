@@ -8,20 +8,28 @@
 // from git alone, whether an approved task landed; that runs with the setting off as well.
 
 import { readConfig } from "../core/config.ts"
-import type { PullRequestView } from "../core/review/summary.ts"
 import { followPullRequest, pullRequestLife } from "../core/ship/pr-life.ts"
 import { readPullRequestRecord } from "../core/ship/pr-record.ts"
 import { type WakeDeps, wakeSession } from "../core/ship/pr-wake.ts"
 import type { PullRequestLife } from "../core/ship/pr-words.ts"
-import { ghInstalled, pullRequestOf, storedUrl } from "../core/ship/pull-request.ts"
+import { ghInstalled, pullRequestOf } from "../core/ship/pull-request.ts"
 import type { Task } from "../core/task/store.ts"
 import type { Ctx } from "../ctx.ts"
 import { shippedWithOpenPullRequest } from "./api.ts"
 import { pollLanding, resetLandingSchedule } from "./landing-poll.ts"
+import { cachePullRequest, subscribePullRequestCache } from "./pull-request-poll-cache.ts"
 import { afterRead, HostBackoff, meet, type Watched } from "./pull-request-schedule.ts"
 import { wakeDeps } from "./pull-request-wake.ts"
 import { Pace } from "./resource-guard.ts"
 import type { Hub } from "./watch.ts"
+
+export {
+  cachedPullRequest,
+  cachePullRequest,
+  dropPullRequestCache,
+  PULL_REQUEST_CACHE_ENTRIES,
+  pullRequestCacheSize,
+} from "./pull-request-poll-cache.ts"
 
 /** How often an open pull request is read. */
 export const PULL_REQUEST_POLL_MS = 120_000
@@ -46,85 +54,6 @@ const looksOf = (life: PullRequestLife | null): string =>
  * what the poll last saw still tells the page.
  */
 const lastSeen = new Map<string, string>()
-
-/** Task folders kept in `prCache`; the one read longest ago goes first. */
-export const PULL_REQUEST_CACHE_ENTRIES = 500
-/** The answer older than this is shown as it is while one lookup asks again. */
-const PULL_REQUEST_FRESH_MS = 30_000
-
-/**
- * What `gh` last said of each task's pull request, by task folder, and when. A task's page reads
- * this, never `gh`: the poll fills it, and a page that finds nothing starts one lookup (below).
- */
-const prCache = new Map<string, { at: number; pr: PullRequestView | null }>()
-/** The lookups running: one per task, however many pages ask while it runs. */
-const looking = new Map<string, Promise<void>>()
-/** Who hears that a lookup brought a different answer; the poll's hub does. */
-const listeners = new Set<() => void>()
-
-/** Keep an answer; the entries beyond the cap are forgotten, the one read longest ago first. */
-export function cachePullRequest(dir: string, pr: PullRequestView | null, at: number): void {
-  prCache.delete(dir)
-  prCache.set(dir, { at, pr })
-  for (const oldest of prCache.keys()) {
-    if (prCache.size <= PULL_REQUEST_CACHE_ENTRIES) break
-    prCache.delete(oldest)
-  }
-}
-
-/** The resource guard's drop. A lookup in flight finishes into the empty cache. */
-export function dropPullRequestCache(): void {
-  prCache.clear()
-}
-
-export const pullRequestCacheSize = (): number => prCache.size
-
-/** One lookup for the task, started at most once while it runs; the page hears if the answer differs. */
-function lookUp(ctx: Ctx, task: Task): void {
-  if (looking.has(task.dir)) return
-  const before = JSON.stringify(prCache.get(task.dir)?.pr ?? null)
-  const run = (async () => {
-    try {
-      const pr = await pullRequestOf(ctx, task)
-      cachePullRequest(task.dir, pr, ctx.clock.now())
-      if (JSON.stringify(pr) !== before) for (const heard of listeners) heard()
-    } catch {
-      // A lookup that failed leaves the answer as it was; the next page asks again.
-    } finally {
-      looking.delete(task.dir)
-    }
-  })()
-  looking.set(task.dir, run)
-}
-
-/**
- * The task's pull request as a page may show it without waiting for GitHub: the last answer (asked
- * again in the background once it is old), or on a miss what the task keeps of it, marked `pending`,
- * while one lookup runs. A task that never had a pull request answers null at once.
- */
-export async function cachedPullRequest(ctx: Ctx, task: Task): Promise<PullRequestView | null> {
-  const url = await storedUrl(ctx, task)
-  const known = prCache.get(task.dir)
-  // An answer for another address than the one the task keeps now is an old one: the pull request
-  // was opened (or changed) since, so the page does not show the answer from before.
-  if (known !== undefined && (known.pr?.url ?? null) !== url) prCache.delete(task.dir)
-  else if (known !== undefined) {
-    if (ctx.clock.now() - known.at >= PULL_REQUEST_FRESH_MS) lookUp(ctx, task)
-    return known.pr
-  }
-  lookUp(ctx, task)
-  if (url === null) return null
-  const number = /\/pull\/(\d+)/.exec(url)?.[1]
-  return {
-    number: number === undefined ? null : Number(number),
-    title: task.title,
-    url,
-    state: "open",
-    checks: "reading checks",
-    branch: task.branch ?? "",
-    pending: true,
-  }
-}
 
 /** The wake-up of a poll that was given no run service: a stopped session cannot be resumed. */
 const withoutResume = async (): Promise<never> => {
@@ -257,8 +186,7 @@ export function startPullRequestPoll(
   let lastRound = ctx.clock.now()
   let lastLanding = lastRound
   // A page that opened a task before its pull request was read hears of the answer at once.
-  const heard = () => hub.publish({ type: "task-changed" })
-  listeners.add(heard)
+  const unsubscribe = subscribePullRequestCache(() => hub.publish({ type: "task-changed" }))
   const timer = setInterval(async () => {
     if (stopped || running) return
     running = true
@@ -275,7 +203,7 @@ export function startPullRequestPoll(
   }, pullRequestInterval(ctx))
   return () => {
     stopped = true
-    listeners.delete(heard)
+    unsubscribe()
     clearInterval(timer)
   }
 }

@@ -15,41 +15,47 @@ import { decisionBlocks, yourCallsOf } from "./your-calls.ts"
 const read = async (ctx: Ctx, path: string) =>
   (await ctx.fs.exists(path)) ? await ctx.fs.readFile(path) : ""
 
+type PlanRun = NonNullable<Awaited<ReturnType<typeof readRun>>>
+
+function planReviewLabel(run: PlanRun): string {
+  // A panel names the reviewers whose review stands; one that did not answer is not named here
+  // (the review file says so).
+  const standing = run.panel?.members.filter((m) => m.round1 === "running" || m.round1 === "done")
+  if (standing !== undefined) {
+    // Nobody answered: the label names no one, and ends without a dangling separator.
+    return ["Review panel", standing.map((m) => m.name).join(", ")].filter(Boolean).join(" · ")
+  }
+  if (run.kind === "sonnet") return `Plan review · ${run.name} (fresh session)`
+  const base = `Second opinion · ${run.name}, ${modelName(run.by, run.model)}`
+  return run.kind === "same-family" ? `${base} (no other maker's model available)` : base
+}
+
+function planReviewFindings(done: boolean, text: string): PlanReviewState["findings"] {
+  if (!done) return []
+  return reviewFindings(text).map((f) => ({
+    what: f.what,
+    ...(f.panel !== undefined ? { panel: f.panel } : {}),
+    ...(f.stance !== undefined ? { stance: f.stance } : {}),
+    ...(f.answer !== undefined ? { answer: f.answer } : {}),
+  }))
+}
+
 /** The Plan's review as the document names it; undefined while none has started. */
 export async function planReviewState(ctx: Ctx, task: Task): Promise<PlanReviewState | undefined> {
   const run = await readRun(ctx, task, "plan")
   if (run === null) return undefined
   const text = await read(ctx, reviewFile(task, "plan"))
-  // A panel names the reviewers whose review stands; one that did not answer is not named here
-  // (the review file says so).
-  const standing = run.panel?.members.filter((m) => m.round1 === "running" || m.round1 === "done")
-  const label =
-    standing !== undefined
-      ? // Nobody answered: the label names no one, and ends without a dangling separator.
-        ["Review panel", standing.map((m) => m.name).join(", ")].filter((p) => p !== "").join(" · ")
-      : run.kind === "sonnet"
-        ? `Plan review · ${run.name} (fresh session)`
-        : run.kind === "same-family"
-          ? `Second opinion · ${run.name}, ${modelName(run.by, run.model)} (no other maker's model available)`
-          : `Second opinion · ${run.name}, ${modelName(run.by, run.model)}`
   const done = run.state === "done"
   const verdict = done
     ? (text.match(/^(APPROVE|REVISE[^\n]*|BLOCK[^\n]*)/m)?.[1]?.trim() ?? null)
     : null
   return {
-    label,
+    label: planReviewLabel(run),
     state: run.state,
     ...(run.state === "failed" ? { reason: reasonOf(run) } : {}),
     verdict,
     ...(run.state === "running" && run.panel !== undefined ? { round: run.panel.round } : {}),
-    findings: done
-      ? reviewFindings(text).map((f) => ({
-          what: f.what,
-          ...(f.panel !== undefined ? { panel: f.panel } : {}),
-          ...(f.stance !== undefined ? { stance: f.stance } : {}),
-          ...(f.answer !== undefined ? { answer: f.answer } : {}),
-        }))
-      : [],
+    findings: planReviewFindings(done, text),
   }
 }
 

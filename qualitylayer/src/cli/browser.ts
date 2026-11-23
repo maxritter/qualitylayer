@@ -23,13 +23,7 @@ export type Machine = {
 /** A second open within this time waits for the first page to connect instead. */
 const JUST_OPENED_MS = 90_000
 
-/** The command that opens a link in the default browser, or null where no one would see it. */
-export function launcher(machine: Machine): string[] | null {
-  if (isSet(machine.env, "QUALITYLAYER_NO_BROWSER") || isSet(machine.env, "CI")) return null
-  // In a VS Code remote window (a dev container, SSH, Codespaces) the link reaches the person's
-  // own browser through the editor, which forwards the port.
-  const editor = editorBrowser(machine.env, machine.exists)
-  if (editor !== null) return [editor]
+function platformLauncher(machine: Machine): string[] | null {
   const screen = screenOf(machine)
   if (screen === "ssh") return null
   if (machine.os === "darwin") return ["open"]
@@ -37,6 +31,15 @@ export function launcher(machine: Machine): string[] | null {
   // Under WSL the link goes to the Windows browser.
   if (screen === "wsl") return machine.has("wslview") ? ["wslview"] : ["explorer.exe"]
   return screen === "desktop" ? ["xdg-open"] : null
+}
+
+/** The command that opens a link in the default browser, or null where no one would see it. */
+export function launcher(machine: Machine): string[] | null {
+  if (isSet(machine.env, "QUALITYLAYER_NO_BROWSER") || isSet(machine.env, "CI")) return null
+  // In a VS Code remote window (a dev container, SSH, Codespaces) the link reaches the person's
+  // own browser through the editor, which forwards the port.
+  const editor = editorBrowser(machine.env, machine.exists)
+  return editor !== null ? [editor] : platformLauncher(machine)
 }
 
 export type OpenOutcome = "opened" | "page-open" | "just-opened" | "unknown" | "no-browser"

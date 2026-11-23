@@ -15,6 +15,62 @@ type SidebarContext = {
   backToStage: () => void
 }
 
+const DIALOG_OR_POPUP_SELECTOR =
+  '[role="dialog"][data-open], [data-slot="select-positioner"][data-open], [data-testid="quick-ask"]'
+
+function isEditableElement(target: EventTarget | null) {
+  const el = target instanceof Element ? target : null
+  if (el?.closest(".q-run-terminal")) return true
+  if (!(el instanceof HTMLElement)) return false
+  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)
+}
+
+function shouldIgnoreSidebarKey(event: KeyboardEvent) {
+  if ((event.key !== "Escape" && event.key !== "]") || event.defaultPrevented) return true
+  if (isEditableElement(event.target)) return true
+  return document.querySelector(DIALOG_OR_POPUP_SELECTOR) !== null
+}
+
+function useSidebarKeyEffect({
+  railOpen,
+  closeSidebar,
+  onRail,
+  setSideTab,
+  canReturnToStage,
+  backToStage,
+}: {
+  railOpen: boolean
+  closeSidebar: () => void
+  onRail: (open: boolean) => void
+  setSideTab: (tab: SidebarTab) => void
+  canReturnToStage: boolean
+  backToStage: () => void
+}) {
+  // Esc closes the sidebar while it is open, wherever the focus is, unless a field or a dialog has it.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (shouldIgnoreSidebarKey(event)) return
+      if (event.key === "]") {
+        event.preventDefault()
+        if (railOpen) closeSidebar()
+        else {
+          setSideTab("files")
+          onRail(true)
+        }
+        return
+      }
+      if (canReturnToStage) {
+        event.preventDefault()
+        backToStage()
+      } else if (railOpen) {
+        closeSidebar()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [railOpen, closeSidebar, onRail, setSideTab, canReturnToStage, backToStage])
+}
+
 /** Owns the right sidebar's focus and keyboard controls: Conversation and Terminal, or Files. */
 export function useTaskSidebar({
   task,
@@ -60,44 +116,19 @@ export function useTaskSidebar({
     sidebar: fullScreen ? undefined : () => (railOpen ? closeSidebar() : reopenSidebar()),
   })
   useEffect(() => {
-    if (railOpen || !returnFocus.current) return
-    returnFocus.current = false
-    document.querySelector<HTMLElement>('[data-testid="sidebar-button"]')?.focus()
-  }, [railOpen])
-
-  // Esc closes the sidebar while it is open, wherever the focus is, unless a field or a dialog has it.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.key !== "Escape" && event.key !== "]") || event.defaultPrevented) return
-      // A key sent to the window itself has no element to ask.
-      const el = event.target instanceof Element ? event.target : null
-      if (el?.closest(".q-run-terminal")) return
-      if (
-        el instanceof HTMLElement &&
-        (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))
-      )
-        return
-      if (
-        document.querySelector(
-          '[role="dialog"][data-open], [data-slot="select-positioner"][data-open], [data-testid="quick-ask"]',
-        ) !== null
-      )
-        return
-      if (event.key === "]") {
-        event.preventDefault()
-        if (railOpen) closeSidebar()
-        else {
-          setSideTab("files")
-          onRail(true)
-        }
-      } else if (readingFrom?.taskId === task.id && artifactFile !== null) {
-        event.preventDefault()
-        backToStage()
-      } else if (railOpen) closeSidebar()
+    if (!railOpen && returnFocus.current) {
+      returnFocus.current = false
+      document.querySelector<HTMLElement>('[data-testid="sidebar-button"]')?.focus()
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [railOpen, closeSidebar, onRail, readingFrom, artifactFile, task.id, backToStage])
+  }, [railOpen])
+  useSidebarKeyEffect({
+    railOpen,
+    closeSidebar,
+    onRail,
+    setSideTab,
+    canReturnToStage: readingFrom?.taskId === task.id && artifactFile !== null,
+    backToStage,
+  })
   return {
     sideTab,
     setSideTab,

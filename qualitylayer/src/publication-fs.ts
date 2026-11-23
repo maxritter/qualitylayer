@@ -34,96 +34,134 @@ const inside = (root: string, path: string) => {
   return rest === "" || (!isAbsolute(rest) && rest !== ".." && !rest.startsWith(`..${sep}`))
 }
 
+async function checkedPublicationPath(root: string, scope: string, path: string): Promise<string> {
+  const target = resolve(path)
+  if (!inside(root, scope) || !inside(scope, target))
+    throw new PublicationReadRefusal("outside_task", "Publication path escapes the task")
+  const canonical = await realpath(root)
+  let current = canonical
+  for (const part of relative(root, target).split(sep).filter(Boolean)) {
+    current = join(current, part)
+    if ((await lstat(current)).isSymbolicLink())
+      throw new PublicationReadRefusal("symbolic_link", `Cannot publish a symbolic link: ${path}`)
+  }
+  if (!inside(canonical, await realpath(target)))
+    throw new PublicationReadRefusal("outside_task", `Publication path escapes its root: ${path}`)
+  return current
+}
+
+async function verifyOpenFile(
+  root: string,
+  scope: string,
+  path: string,
+  opened: { isFile(): boolean; dev: number; ino: number },
+): Promise<void> {
+  const current = await lstat(await checkedPublicationPath(root, scope, path))
+  if (!opened.isFile() || current.dev !== opened.dev || current.ino !== opened.ino)
+    throw new PublicationReadRefusal(
+      "changed_file",
+      `Publication file changed while being read: ${path}`,
+    )
+}
+
+async function readCheckedBytes(
+  root: string,
+  scope: string,
+  path: string,
+  maxBytes?: number,
+  expected?: FileIdentity,
+): Promise<Uint8Array> {
+  const target = await checkedPublicationPath(root, scope, path)
+  const handle = await open(
+    target,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  )
+  try {
+    const opened = await handle.stat()
+    await verifyOpenFile(root, scope, path, opened)
+    const result =
+      maxBytes === undefined
+        ? new Uint8Array(await handle.readFile())
+        : await boundedRegularFile(handle, target, maxBytes, expected)
+    await verifyOpenFile(root, scope, path, opened)
+    return result
+  } finally {
+    await handle.close()
+  }
+}
+
+async function readUnscopedBytes(fs: Fs, path: string): Promise<Uint8Array> {
+  if (fs.readBytes !== undefined) return fs.readBytes(path)
+  return new TextEncoder().encode(await fs.readFile(path))
+}
+
+async function checkedExists(root: string, scope: string, path: string): Promise<boolean> {
+  try {
+    await checkedPublicationPath(root, scope, path)
+    return true
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false
+    throw cause
+  }
+}
+
+async function readScopedRegularFile(
+  root: string,
+  scope: string,
+  path: string,
+  maxBytes: number,
+  expected?: FileIdentity,
+): Promise<Uint8Array> {
+  if (!inside(scope, resolve(path)))
+    throw new PublicationReadRefusal("outside_task", "Safe bounded source reads are unavailable")
+  return readCheckedBytes(root, scope, path, maxBytes, expected)
+}
+
+async function readScopedEntries(
+  fs: Fs,
+  root: string,
+  scope: string,
+  path: string,
+): ReturnType<Fs["entries"]> {
+  if (!inside(scope, resolve(path))) return fs.entries(path)
+  const entries = await fs.entries(await checkedPublicationPath(root, scope, path))
+  for (const entry of entries) await checkedPublicationPath(root, scope, join(path, entry.name))
+  return entries
+}
+
+async function readScopedText(fs: Fs, root: string, scope: string, path: string): Promise<string> {
+  if (!inside(scope, resolve(path))) return fs.readFile(path)
+  return new TextDecoder().decode(await readCheckedBytes(root, scope, path))
+}
+
+async function readScopedBytes(
+  fs: Fs,
+  root: string,
+  scope: string,
+  path: string,
+): Promise<Uint8Array> {
+  if (!inside(scope, resolve(path))) return readUnscopedBytes(fs, path)
+  return readCheckedBytes(root, scope, path)
+}
+
+async function readScopedDir(fs: Fs, root: string, scope: string, path: string): Promise<string[]> {
+  if (!inside(scope, resolve(path))) return fs.readdir(path)
+  return fs.readdir(await checkedPublicationPath(root, scope, path))
+}
+
 export function publicationFs(fs: Fs, anchor: string, folder: string): Fs {
   const root = resolve(anchor)
   const scope = resolve(folder)
-  async function checked(path: string): Promise<string> {
-    const target = resolve(path)
-    if (!inside(root, scope) || !inside(scope, target))
-      throw new PublicationReadRefusal("outside_task", "Publication path escapes the task")
-    const canonical = await realpath(root)
-    let current = canonical
-    for (const part of relative(root, target).split(sep).filter(Boolean)) {
-      current = join(current, part)
-      if ((await lstat(current)).isSymbolicLink())
-        throw new PublicationReadRefusal("symbolic_link", `Cannot publish a symbolic link: ${path}`)
-    }
-    if (!inside(canonical, await realpath(target)))
-      throw new PublicationReadRefusal("outside_task", `Publication path escapes its root: ${path}`)
-    return current
-  }
-  async function bytes(
-    path: string,
-    maxBytes?: number,
-    expected?: FileIdentity,
-  ): Promise<Uint8Array> {
-    const target = await checked(path)
-    const handle = await open(
-      target,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-    )
-    try {
-      const opened = await handle.stat()
-      const verify = async () => {
-        const current = await lstat(await checked(path))
-        if (!opened.isFile() || current.dev !== opened.dev || current.ino !== opened.ino)
-          throw new PublicationReadRefusal(
-            "changed_file",
-            `Publication file changed while being read: ${path}`,
-          )
-      }
-      await verify()
-      const result =
-        maxBytes === undefined
-          ? new Uint8Array(await handle.readFile())
-          : await boundedRegularFile(handle, target, maxBytes, expected)
-      await verify()
-      return result
-    } finally {
-      await handle.close()
-    }
-  }
-  const scoped = (path: string) => inside(scope, resolve(path))
   return {
     ...fs,
-    readRegularFile: async (path, maxBytes, expected) => {
-      if (!scoped(path))
-        throw new PublicationReadRefusal(
-          "outside_task",
-          "Safe bounded source reads are unavailable",
-        )
-      return bytes(path, maxBytes, expected)
-    },
-    readFile: (path) =>
-      readAt(path, async () =>
-        scoped(path) ? new TextDecoder().decode(await bytes(path)) : fs.readFile(path),
-      ),
-    readBytes: (path) =>
-      readAt(path, async () =>
-        scoped(path)
-          ? bytes(path)
-          : fs.readBytes !== undefined
-            ? fs.readBytes(path)
-            : new TextEncoder().encode(await fs.readFile(path)),
-      ),
-    exists: async (path) => {
-      if (!scoped(path)) return fs.exists(path)
-      try {
-        await checked(path)
-        return true
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false
-        throw cause
-      }
-    },
-    readdir: async (path) => (scoped(path) ? fs.readdir(await checked(path)) : fs.readdir(path)),
-    entries: (path) =>
-      readAt(path, async () => {
-        if (!scoped(path)) return fs.entries(path)
-        const entries = await fs.entries(await checked(path))
-        for (const entry of entries) await checked(join(path, entry.name))
-        return entries
-      }),
+    readRegularFile: (path, maxBytes, expected) =>
+      readScopedRegularFile(root, scope, path, maxBytes, expected),
+    readFile: (path) => readAt(path, () => readScopedText(fs, root, scope, path)),
+    readBytes: (path) => readAt(path, () => readScopedBytes(fs, root, scope, path)),
+    exists: (path) =>
+      inside(scope, resolve(path)) ? checkedExists(root, scope, path) : fs.exists(path),
+    readdir: (path) => readScopedDir(fs, root, scope, path),
+    entries: (path) => readAt(path, () => readScopedEntries(fs, root, scope, path)),
   }
 }
 

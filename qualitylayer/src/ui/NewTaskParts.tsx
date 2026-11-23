@@ -127,13 +127,18 @@ type StartFieldsProps = {
   onLeave: () => void
 }
 
+function isPlainPrimaryClick(event: MouseEvent<HTMLAnchorElement>): boolean {
+  if (event.button !== 0) return false
+  if (event.metaKey || event.ctrlKey) return false
+  return !event.shiftKey && !event.altKey
+}
+
 /**
  * A plain click on a link out of the card closes it. A click that opens the link elsewhere (a new
  * tab or window) leaves the card as it is.
  */
 const leaving = (onLeave: () => void) => (event: MouseEvent<HTMLAnchorElement>) => {
-  if (event.button === 0 && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey))
-    onLeave()
+  if (isPlainPrimaryClick(event)) onLeave()
 }
 
 /**

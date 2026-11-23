@@ -101,6 +101,31 @@ type CommandKeyHandlers = {
   textSize?: (by: 1 | -1 | 0) => void
 }
 
+function commandTable(
+  now: CommandKeyHandlers,
+  appNavigation: boolean,
+): [Chord, (() => void) | undefined][] {
+  const size = now.textSize
+  const nav = (handler: (() => void) | undefined) => (appNavigation ? handler : undefined)
+  const resize = (by: 1 | -1 | 0) => (size ? () => size(by) : undefined)
+  return [
+    [CHORD.open, now.open],
+    [CHORD.usage, now.usage],
+    [CHORD.newTask, now.newTask],
+    [CHORD.file, now.file],
+    [CHORD.taskList, nav(now.taskList)],
+    [CHORD.sidebar, nav(now.sidebar)],
+    [CHORD.home, nav(now.home)],
+    [CHORD.artifacts, nav(now.artifacts)],
+    [CHORD.settings, nav(now.settings)],
+    [CHORD.textBigger, resize(1)],
+    [CHORD.textBiggerShifted, resize(1)],
+    [CHORD.textBiggerKeypad, resize(1)],
+    [CHORD.textSmaller, resize(-1)],
+    [CHORD.textReset, resize(0)],
+  ]
+}
+
 /** Answers the chords that work on every page. The agent's terminal keeps its own keys. */
 export function useCommandKeys(handlers: CommandKeyHandlers): void {
   const latest = useRef(handlers)
@@ -109,27 +134,11 @@ export function useCommandKeys(handlers: CommandKeyHandlers): void {
     const on = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.target instanceof Element && event.target.closest(".q-run-terminal")) return
-      const now = latest.current
-      const size = now.textSize
       const appNavigation =
         inDesktopApp() && document.querySelector('[data-testid="command-box"]') === null
-      const table: [Chord, (() => void) | undefined][] = [
-        [CHORD.open, now.open],
-        [CHORD.usage, now.usage],
-        [CHORD.newTask, now.newTask],
-        [CHORD.file, now.file],
-        [CHORD.taskList, appNavigation ? now.taskList : undefined],
-        [CHORD.sidebar, appNavigation ? now.sidebar : undefined],
-        [CHORD.home, appNavigation ? now.home : undefined],
-        [CHORD.artifacts, appNavigation ? now.artifacts : undefined],
-        [CHORD.settings, appNavigation ? now.settings : undefined],
-        [CHORD.textBigger, size && (() => size(1))],
-        [CHORD.textBiggerShifted, size && (() => size(1))],
-        [CHORD.textBiggerKeypad, size && (() => size(1))],
-        [CHORD.textSmaller, size && (() => size(-1))],
-        [CHORD.textReset, size && (() => size(0))],
-      ]
-      const hit = table.find(([chord, run]) => run !== undefined && pressed(event, chord))
+      const hit = commandTable(latest.current, appNavigation).find(
+        ([chord, run]) => run !== undefined && pressed(event, chord),
+      )
       if (hit?.[1] === undefined) return
       event.preventDefault()
       dismissPopups()

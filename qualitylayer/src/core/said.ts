@@ -25,6 +25,57 @@ const cardOf = (id: string, state: Said["state"], text: string): { card?: string
   return card === null ? {} : { card }
 }
 
+const VERDICT_STATE: Record<string, Said["state"]> = {
+  fail: "failed",
+  missing: "failed",
+  user: "user",
+}
+
+const verdictState = (verdict: string): Said["state"] =>
+  VERDICT_STATE[verdict.toLowerCase()] ?? "passed"
+
+function passedPointSaid(judged: { step: { id: string }; said: Said }[]): Said {
+  const evidence = judged.find((s) => s.said.evidence !== undefined)?.said.evidence
+  return {
+    state: "passed",
+    text: judged.map((s) => `${s.step.id}: ${s.said.text}`).join(" · "),
+    ...(evidence !== undefined ? { evidence } : {}),
+    ...(judged.every((s) => s.said.carried === true) ? { carried: true as const } : {}),
+  }
+}
+
+function provePoint(
+  point: ProofList["points"][number],
+  list: ProofList,
+  items: Map<string, Said>,
+): void {
+  const key = `done:${point.n}`
+  const steps = stepsOfPoint(list, point.n).map((step) => ({
+    step,
+    said: items.get(`acceptance:${step.id}`),
+  }))
+  if (steps.length === 0) return
+  const failed = steps.find((s) => s.said?.state === "failed")
+  if (failed?.said !== undefined) {
+    items.set(key, {
+      state: "failed",
+      text: `Step ${failed.step.id} fails: ${failed.said.text}`,
+      ...(failed.said.evidence !== undefined ? { evidence: failed.said.evidence } : {}),
+    })
+    return
+  }
+  const written = items.get(key)
+  if (written?.state === "failed") return
+  const judged = steps.flatMap((s) => (s.said === undefined ? [] : [{ ...s, said: s.said }]))
+  if (judged.length < steps.length) {
+    items.delete(key)
+    return
+  }
+  const theirs = judged.find((s) => s.said.state === "user")
+  if (theirs !== undefined) items.set(key, { state: "user", text: theirs.said.text })
+  else if (written?.state !== "user") items.set(key, passedPointSaid(judged))
+}
+
 /**
  * A Done means point is proven by its steps: proven when every step under it
  * passes, failed when one fails (or is missing), the person's when one is theirs and the rest
@@ -32,42 +83,7 @@ const cardOf = (id: string, state: Said["state"], text: string): { card?: string
  * reviewer still writes cannot prove a point its steps do not, and a failing one fails it.
  */
 function provePoints(list: ProofList, items: Map<string, Said>): void {
-  for (const point of list.points) {
-    const key = `done:${point.n}`
-    const steps = stepsOfPoint(list, point.n).map((step) => ({
-      step,
-      said: items.get(`acceptance:${step.id}`),
-    }))
-    if (steps.length === 0) continue
-    const failed = steps.find((s) => s.said?.state === "failed")
-    if (failed?.said !== undefined) {
-      items.set(key, {
-        state: "failed",
-        text: `Step ${failed.step.id} fails: ${failed.said.text}`,
-        ...(failed.said.evidence !== undefined ? { evidence: failed.said.evidence } : {}),
-      })
-      continue
-    }
-    const written = items.get(key)
-    if (written?.state === "failed") continue
-    const judged = steps.flatMap((s) => (s.said === undefined ? [] : [{ ...s, said: s.said }]))
-    if (judged.length < steps.length) {
-      items.delete(key)
-      continue
-    }
-    const theirs = judged.find((s) => s.said.state === "user")
-    if (theirs !== undefined) items.set(key, { state: "user", text: theirs.said.text })
-    else if (written?.state === "user") continue
-    else {
-      const evidence = judged.find((s) => s.said.evidence !== undefined)?.said.evidence
-      items.set(key, {
-        state: "passed",
-        text: judged.map((s) => `${s.step.id}: ${s.said.text}`).join(" · "),
-        ...(evidence !== undefined ? { evidence } : {}),
-        ...(judged.every((s) => s.said.carried === true) ? { carried: true as const } : {}),
-      })
-    }
-  }
+  for (const point of list.points) provePoint(point, list, items)
 }
 
 /**
@@ -107,19 +123,9 @@ function groupVerdicts(verdicts: readonly Verdict[]): Map<string, Said> {
   for (const v of verdicts) {
     const id = itemId(`${v.kind} ${v.subject}`.trim())
     if (id === null || id === "check") continue
-    const state: Said["state"] =
-      v.verdict === "FAIL" || v.verdict === "MISSING"
-        ? "failed"
-        : v.verdict === "USER"
-          ? "user"
-          : "passed"
-    const before = grouped.get(id)
-    if (before?.state === "failed" && state !== "failed") continue
-    grouped.set(id, {
-      state,
-      text: v.text,
-      ...cardOf(id, state, v.text),
-    })
+    const state = verdictState(v.verdict)
+    if (grouped.get(id)?.state === "failed" && state !== "failed") continue
+    grouped.set(id, { state, text: v.text, ...cardOf(id, state, v.text) })
   }
   return grouped
 }
@@ -171,12 +177,7 @@ export async function said(
   // A round the build log recorded stands as written: a late or stray call cannot contradict it.
   const recorded = own?.result !== undefined && own.result !== null
   for (const [id, v] of recorded ? [] : await readVerdicts(ctx, task, assignment.id)) {
-    const state: Said["state"] =
-      v.verdict === "fail" || v.verdict === "missing"
-        ? "failed"
-        : v.verdict === "user"
-          ? "user"
-          : "passed"
+    const state = verdictState(v.verdict)
     items.set(id, {
       state,
       text: v.text,

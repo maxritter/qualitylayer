@@ -1,103 +1,33 @@
-import { lstatSync, realpathSync } from "node:fs"
-import { join, relative } from "node:path"
-import { toolhelpProcesses } from "../windows-processes.ts"
 import { codexLauncherChild } from "./codex-launcher.ts"
 import type { RunRecord } from "./contracts.ts"
 import { nativeProcess, processOwnerHash } from "./processes.ts"
 import { identityState, readHost } from "./registry.ts"
-import { type WindowsProcessWitness, windowsJobContains, windowsProcessBirth } from "./windows.ts"
+import { type LeadCaller, windowsLeadCaller } from "./windows-lead-process.ts"
 
-type LeadCaller = { direct: boolean }
-const SHELLS = new Set(["cmd.exe", "powershell.exe", "pwsh.exe", "bash.exe", "sh.exe"])
-
-function installedLauncher(home: string): string | null {
-  const expected = join(home, "bin", "qualitylayer.exe")
-  const entry = lstatSync(expected)
-  if (!entry.isFile() || entry.isSymbolicLink()) return null
-  const actual = realpathSync.native(expected)
-  return relative(realpathSync.native(home), actual).replaceAll("\\", "/").toLowerCase() ===
-    "bin/qualitylayer.exe"
-    ? actual
-    : null
+function unixHostMatchesCaller(home: string, run: RunRecord, pid: number): boolean {
+  const host = readHost(home, run.id)
+  if (!host) return true
+  if (host.generation !== run.generation) return false
+  return !host.ownerHash || processOwnerHash(pid) === host.ownerHash
 }
 
-/** Job membership alone also includes helpers; the live birth-checked shell chain must reach this lead. */
-function windowsLeadCaller(home: string, run: RunRecord, caller: number): LeadCaller | null {
-  const lead = run.lead
-  const host = readHost(home, run.id)
-  if (
-    !lead ||
-    !host ||
-    !run.host ||
-    !lead.windowsJob ||
-    host.run !== run.id ||
-    host.generation !== run.generation ||
-    host.windowsJob !== lead.windowsJob ||
-    !["starting", "running", "stopping"].includes(host.status) ||
-    host.pid !== run.host.pid ||
-    host.processStart !== run.host.processStart ||
-    host.pidDomain !== run.host.pidDomain ||
-    host.lead?.pid !== lead.pid ||
-    host.lead.processStart !== lead.processStart ||
-    host.lead.pidDomain !== lead.pidDomain ||
-    host.lead.windowsJob !== lead.windowsJob ||
-    run.host.pidDomain !== lead.pidDomain ||
-    identityState(run.host) !== "live" ||
-    identityState(lead) !== "live"
-  )
+function unixLeadCaller(home: string, run: RunRecord, pid: number): LeadCaller | null {
+  if (!run.lead || identityState(run.lead) !== "live" || !unixHostMatchesCaller(home, run, pid))
     return null
-  const prefix = `Local\\QualityLayer-${host.pid}-${run.id}-${run.generation}-`
-  if (
-    !host.windowsJob.startsWith(prefix) ||
-    !/^[a-f0-9]{48}$/.test(host.windowsJob.slice(prefix.length))
-  )
-    return null
-  const rows = toolhelpProcesses()
-  if (!rows || rows.length > 32768) return null
-  const table = new Map(rows.map((row) => [row.pid, row]))
-  if (table.size !== rows.length) return null
-  const identities: WindowsProcessWitness[] = [{ ...run.host, windowsJob: host.windowsJob }]
-  const seen = new Set<number>()
-  let pid = caller
-  let childBirth: bigint | undefined
-  for (let depth = 0; depth < 128 && pid > 0 && !seen.has(pid); depth++) {
-    seen.add(pid)
-    const row = table.get(pid)
-    const birth = windowsProcessBirth(pid)
-    if (!row || !birth || !/^\d{1,20}$/.test(birth)) return null
-    const born = BigInt(birth)
-    if (childBirth !== undefined && born > childBirth) return null
-    const identity: WindowsProcessWitness = {
-      pid,
-      processStart: birth,
-      pidDomain: lead.pidDomain,
-      knownBy: "descendant",
-      windowsJob: host.windowsJob,
-      ...(pid === caller ? { image: process.execPath } : {}),
+  const visited = new Set<number>()
+  let current = pid
+  let nativeParent = 0
+  for (let depth = 0; depth < 128 && current > 0 && !visited.has(current); depth++) {
+    if (current === run.lead.pid) {
+      const direct =
+        visited.size === 1 || (visited.size === 2 && codexLauncherChild(run, nativeParent))
+      return identityState(run.lead) === "live" ? { direct } : null
     }
-    identities.push(identity)
-    if (pid === lead.pid) {
-      if (
-        birth !== lead.processStart ||
-        !/^\d{1,20}$/.test(host.processStart) ||
-        BigInt(host.processStart) > born
-      )
-        return null
-      return windowsJobContains(host.windowsJob, identities) &&
-        identityState(lead) === "live" &&
-        identityState(run.host) === "live"
-        ? { direct: caller !== lead.pid }
-        : null
-    }
-    if (depth > 0 && !SHELLS.has(row.name.toLowerCase())) {
-      // Unlike Unix exec, our Windows launcher waits as the CLI's immediate parent.
-      if (depth !== 1 || row.name.toLowerCase() !== "qualitylayer.exe") return null
-      const launcher = installedLauncher(home)
-      if (!launcher) return null
-      identity.image = launcher
-    }
-    childBirth = born
-    pid = row.ppid
+    visited.add(current)
+    const row = nativeProcess(current)
+    if (!row) return null
+    if (depth === 0) nativeParent = row.parent
+    current = row.parent
   }
   return null
 }
@@ -105,31 +35,9 @@ function windowsLeadCaller(home: string, run: RunRecord, caller: number): LeadCa
 /** Recheck process authority at each binding/lease boundary; no environment marker grants it. */
 export function leadCaller(home: string, run: RunRecord, pid: number): LeadCaller | null {
   try {
-    if (process.platform === "win32") return windowsLeadCaller(home, run, pid)
-    if (!run.lead || identityState(run.lead) !== "live") return null
-    const host = readHost(home, run.id)
-    if (
-      host &&
-      (host.generation !== run.generation ||
-        (host.ownerHash && processOwnerHash(pid) !== host.ownerHash))
-    )
-      return null
-    const visited = new Set<number>()
-    let current = pid
-    let nativeParent = 0
-    for (let depth = 0; depth < 128 && current > 0 && !visited.has(current); depth++) {
-      if (current === run.lead.pid) {
-        const direct =
-          visited.size === 1 || (visited.size === 2 && codexLauncherChild(run, nativeParent))
-        return identityState(run.lead) === "live" ? { direct } : null
-      }
-      visited.add(current)
-      const row = nativeProcess(current)
-      if (!row) return null
-      if (depth === 0) nativeParent = row.parent
-      current = row.parent
-    }
-    return null
+    return process.platform === "win32"
+      ? windowsLeadCaller(home, run, pid)
+      : unixLeadCaller(home, run, pid)
   } catch {
     return null
   }

@@ -1,5 +1,7 @@
 import { asObject } from "./records.ts"
 
+export { endedProc, procOf } from "./process-stop.ts"
+
 /** Shell tools whose call may return while its command runs, unless the result says it ended. */
 const YIELDING_TOOLS = new Set(["exec_command", "local_shell", "shell"])
 
@@ -35,17 +37,12 @@ function structuredProcessEnd(result: Record<string, unknown>): boolean | undefi
   if (/^(?:running|in_progress|pending)$/.test(status)) return false
   return /^(?:exited|completed|failed|killed|stopped)$/.test(status) ? true : undefined
 }
+
 /**
  * Whether a shell result says its process ended (Codex's exec result or its poll). Read off the
- * result's own status, never off what the program printed:
- * - a structured exit code (`exit_code`, also under `metadata` in the older JSON wrapper): a
- *   number is an end, null is a process still running; or a `status` field;
- * - otherwise the client's status line: "Process exited with code N" among the lines before
- *   "Output:", or as the result's first line where it has no such header.
- * A result that still names the process as running ("Process running with session ID N" in that
- * same place) has not ended, whatever its output echoes.
+ * result's own status, never off what the program printed.
  */
-function processEnded(response: unknown): boolean {
+export function processEnded(response: unknown): boolean {
   const value = responseValue(response)
   let lines: string[] | null = null
   const result = asObject(value)
@@ -59,15 +56,12 @@ function processEnded(response: unknown): boolean {
   if (lines.some((line) => /^Process running with session ID\b/.test(line))) return false
   return lines.some((line) => /^Process exited with code -?\d+/.test(line))
 }
+
 /**
  * Whether a background shell's poll says the shell is over (Claude Code's BashOutput/TaskOutput,
- * Copilot's read_bash). Read off the tool result's own status, as `processEnded` reads Codex's:
- * - a `status` field (running is not over), or an exit code that is a number;
- * - in a text result, Claude Code's `<status>…</status>` before its `<stdout>`, or Copilot's
- *   shell mark at the head of the result.
- * What the program printed decides nothing: `{"status":"completed"}` on stdout is output.
+ * Copilot's read_bash). Read off the tool result's own status, as `processEnded` reads Codex's.
  */
-function taskEnded(response: unknown): boolean {
+export function taskEnded(response: unknown): boolean {
   const value = responseValue(response)
   const over = /^(?:completed|failed|killed|stopped|exited|terminated)$/
   const result = asObject(value)
@@ -87,88 +81,14 @@ function taskEnded(response: unknown): boolean {
   const status = head.match(/^\s*<status>\s*([a-z_]+)\s*<\/status>/i)?.[1]?.toLowerCase()
   return status !== undefined && over.test(status)
 }
-/** The calls that end a background shell. */
-const STOPS = new Set(["KillShell", "KillBash", "TaskStop", "stop_bash"])
 
-function responseText(response: unknown): string {
+export function responseText(response: unknown): string {
   try {
     const text = typeof response === "string" ? response : (JSON.stringify(response) ?? "")
     return text.slice(0, 65_536)
   } catch {
     return ""
   }
-}
-
-/**
- * The process a yielded call's result names: Codex's process session ("Process running with
- * session ID 7"), Claude Code's background task, Copilot's shell.
- */
-export function procOf(response: unknown): string | undefined {
-  const text = responseText(response)
-  return (
-    text.match(/Process running with session ID (\d+)/)?.[1] ??
-    text.match(/backgroundTaskId\\?"?\s*:\s*\\?"([\w-]+)/)?.[1] ??
-    text.match(/shellId:\s*([\w-]+)/)?.[1]
-  )
-}
-
-/**
- * Whether a stop call's result says the process ended. Read off the result's status alone: its
- * status fields (`is_error`, `success`, `status`), then the phrase its message begins with
- * ("Successfully stopped task: b1 (…)", "killed"), or Copilot's shell mark. The command and the
- * output a result echoes after that say nothing: a stopped `git commit -am "fix error handling"`
- * is stopped, and a stop that failed is not made a success by a command that prints "killed".
- */
-function stopSucceeded(response: unknown): boolean {
-  const result = asObject(response)
-  if (result !== null) {
-    const status = typeof result.status === "string" ? result.status.toLowerCase() : ""
-    if (result.is_error === true || result.isError === true || result.success === false)
-      return false
-    if (/^(?:failed|failure|error|running)$/.test(status)) return false
-    if (result.success === true || /^(?:stopped|killed|terminated|completed)$/.test(status))
-      return true
-  }
-  const said = result === null ? response : (result.message ?? result.result ?? result.content)
-  if (typeof said !== "string") return false
-  // Copilot marks a shell's result: `<shellId: 7 stopped>`.
-  const mark = said.match(/^\s*<[^<>]*shellId:[^<>]*>/)
-  if (mark)
-    return (
-      /\b(?:stopped|killed|terminated|exited|completed)\b/i.test(mark[0]) &&
-      !/\bnot\b/i.test(mark[0])
-    )
-  return /^\s*(?:successfully\s+)?(?:stopped|killed|terminated)\b/i.test(said)
-}
-
-function namedProcess(input: Record<string, unknown>): string | undefined {
-  for (const key of ["session_id", "bash_id", "task_id", "shell_id", "shellId"]) {
-    const value = input[key]
-    if (typeof value === "string" && value !== "") return value
-    if (typeof value === "number") return String(value)
-  }
-  return undefined
-}
-
-/**
- * The process a call says is over, by the id the call names: Codex's `write_stdin` poll whose
- * result says the process exited, Claude Code's read of a background task that completed or a
- * stop whose result says it stopped, Copilot's `read_bash` of a shell that ended or a `stop_bash`
- * that says so. Terminal evidence only: an attempt to stop is none.
- */
-export function endedProc(call: HookCall): string | undefined {
-  const id = namedProcess(asObject(call.input) ?? {})
-  const tool = typeof call.tool === "string" ? call.tool : ""
-  let ended = false
-  if (tool === "write_stdin") ended = processEnded(call.response)
-  else if (tool === "BashOutput" || tool === "TaskOutput" || tool === "read_bash")
-    ended = taskEnded(call.response)
-  else if (STOPS.has(tool)) {
-    // Asking a process to stop is not its end: only a result that says it was stopped counts. A
-    // stop that failed, or that says nothing usable, leaves the call open until the session ends.
-    ended = call.failed !== true && stopSucceeded(call.response)
-  }
-  return ended ? id : undefined
 }
 
 /**

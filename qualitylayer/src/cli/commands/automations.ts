@@ -6,92 +6,21 @@ import { type DeliveryLine, readDeliveries } from "../../core/automations/log.ts
 import { dropQueuedFor } from "../../core/automations/queue.ts"
 import { sendTest } from "../../core/automations/sender.ts"
 import {
-  addAutomation,
-  changeAutomation,
   findAutomation,
   readAutomations,
   removeAutomation,
-  resolveProjects,
   shownAutomation,
 } from "../../core/automations/store.ts"
-import { type Ctx, err, ok, type Result } from "../../ctx.ts"
+import { type Ctx, ok, type Result } from "../../ctx.ts"
+import {
+  AUTOMATIONS_USAGE,
+  addAutomationCmd,
+  badAutomationArgs,
+  idOf,
+  refuseOtherOptions,
+  setAutomationCmd,
+} from "./automations-mutate.ts"
 import { parseArgs } from "./shared.ts"
-
-const USAGE =
-  'usage: qualitylayer automations add --url <url> | add --command "<command>" [--events <names>] [--projects <names or ids>] | automations list | automations events | automations set <id> [--url <url> | --command "<command>"] [--events <names>] [--projects <names or ids>] [--on | --off] | automations remove <id> | automations test <id> | automations log [<id>] | automations secret <id>'
-
-const bad = (message: string) => err({ code: "bad_args", message })
-
-/** The flags a subcommand takes; any other is refused rather than ignored, so none is lost silently. */
-function refuseOtherOptions(
-  flags: Record<string, string | true>,
-  known: string[],
-): Result<never> | null {
-  const unknown = Object.keys(flags).filter((name) => !known.includes(name))
-  return unknown.length === 0 ? null : bad(`unknown option --${unknown[0]}. ${USAGE}`)
-}
-
-const names = (value: string): string[] =>
-  value
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name !== "")
-
-/** `--events a,b` or `all`: validated against the ten names by the store. */
-function eventsOf(flags: Record<string, string | true>): Result<"all" | string[] | undefined> {
-  if (flags.events === undefined) return ok(undefined)
-  if (typeof flags.events !== "string")
-    return bad('--events needs the event names, separated by commas, or "all".')
-  const given = names(flags.events)
-  return ok(given.length === 1 && given[0] === "all" ? "all" : given)
-}
-
-/** `--projects a,b` by name or id, or `all`: the ids, or the reason a name is no project. */
-async function projectsOf(
-  ctx: Ctx,
-  flags: Record<string, string | true>,
-): Promise<Result<"all" | string[] | undefined>> {
-  if (flags.projects === undefined) return ok(undefined)
-  if (typeof flags.projects !== "string")
-    return bad('--projects needs project names or ids, separated by commas, or "all".')
-  return resolveProjects(ctx, names(flags.projects))
-}
-
-/** The limits a call gives: its events and its projects, each only when the call names them. */
-async function limitsOf(
-  ctx: Ctx,
-  flags: Record<string, string | true>,
-): Promise<Result<{ events?: "all" | string[]; projects?: "all" | string[] }>> {
-  const events = eventsOf(flags)
-  if (!events.ok) return events
-  const projects = await projectsOf(ctx, flags)
-  if (!projects.ok) return projects
-  return ok({
-    ...(events.data !== undefined ? { events: events.data } : {}),
-    ...(projects.data !== undefined ? { projects: projects.data } : {}),
-  })
-}
-
-async function add(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const known = ["url", "command", "events", "projects"]
-  const { positional, flags } = parseArgs(args, known)
-  const other = refuseOtherOptions(flags, known)
-  if (other !== null) return other
-  if (flags.url !== undefined && flags.command !== undefined)
-    return bad("An automation sends to a URL or runs a command: give --url or --command, not both.")
-  const target = flags.url ?? flags.command
-  if (positional.length > 0 || typeof target !== "string") return bad(USAGE)
-  const limits = await limitsOf(ctx, flags)
-  if (!limits.ok) return limits
-  const added = await addAutomation(ctx, {
-    kind: flags.url !== undefined ? "url" : "command",
-    target,
-    ...limits.data,
-  })
-  if (!added.ok) return added
-  // A URL's secret is shown here, and again by `automations secret`; `list` masks it.
-  return ok({ ...added.data })
-}
 
 function lastOf(lines: DeliveryLine[]): Record<string, unknown> | null {
   const last = lines.at(-1)
@@ -104,7 +33,7 @@ async function list(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const { positional, flags } = parseArgs(args)
   const other = refuseOtherOptions(flags, [])
   if (other !== null) return other
-  if (positional.length > 0) return bad(USAGE)
+  if (positional.length > 0) return badAutomationArgs(AUTOMATIONS_USAGE)
   const { automations, problem } = await readAutomations(ctx)
   const deliveries = await readDeliveries(ctx)
   return ok({
@@ -116,62 +45,10 @@ async function list(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   })
 }
 
-function events(args: string[]): Result<unknown> {
-  return args.length === 0 ? ok({ events: [...PUBLIC_EVENTS] }) : bad(USAGE)
-}
-
-/** The one automation id a subcommand takes, or the usage. */
-function idOf(positional: string[]): Result<string> {
-  const [id] = positional
-  return positional.length === 1 && id !== undefined ? ok(id) : bad(USAGE)
-}
-
-/** Change what an automation sends, to where, or whether it is on. Turning it off drops what waits for it. */
-async function set(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const valued = ["url", "command", "events", "projects"]
-  const { positional, flags } = parseArgs(args, valued)
-  const other = refuseOtherOptions(flags, [...valued, "on", "off"])
-  if (other !== null) return other
-  const id = idOf(positional)
-  if (!id.ok) return id
-  if (flags.url !== undefined && flags.command !== undefined)
-    return bad("An automation sends to a URL or runs a command: give --url or --command, not both.")
-  if (flags.on !== undefined && flags.off !== undefined)
-    return bad("An automation is on or off: give --on or --off, not both.")
-  if (Object.keys(flags).length === 0)
-    return bad("Nothing to change: give --url, --command, --events, --projects, --on or --off.")
-  const kind = flags.url !== undefined ? "url" : flags.command !== undefined ? "command" : null
-  const target = flags.url ?? flags.command
-  if (kind !== null && typeof target !== "string")
-    return bad(kind === "url" ? "--url needs a URL." : "--command needs the command to run.")
-  const limits = await limitsOf(ctx, flags)
-  if (!limits.ok) return limits
-  const changed = await changeAutomation(ctx, id.data, {
-    ...(kind !== null && typeof target === "string" ? { target: { kind, target } } : {}),
-    ...limits.data,
-    ...(flags.on !== undefined ? { on: true } : {}),
-    ...(flags.off !== undefined ? { on: false } : {}),
-  })
-  if (!changed.ok) return changed
-  if (!changed.data.automation.on) await dropQueuedFor(ctx, id.data)
-  // The secret is masked, except one that was just made for an automation that became a URL.
-  return ok(
-    changed.data.newSecret
-      ? { ...changed.data.automation }
-      : shownAutomation(changed.data.automation),
-  )
-}
-
-async function remove(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const { positional, flags } = parseArgs(args)
-  const other = refuseOtherOptions(flags, [])
-  if (other !== null) return other
-  const id = idOf(positional)
-  if (!id.ok) return id
-  const removed = await removeAutomation(ctx, id.data)
-  if (!removed.ok) return removed
-  await dropQueuedFor(ctx, id.data)
-  return ok({ removed: removed.data.id, kind: removed.data.kind, target: removed.data.target })
+function events(_ctx: Ctx, args: string[]): Result<unknown> {
+  return args.length === 0
+    ? ok({ events: [...PUBLIC_EVENTS] })
+    : badAutomationArgs(AUTOMATIONS_USAGE)
 }
 
 /** Send the sample event now. A receiver that fails is a result (`delivered: false`), not a failed command. */
@@ -199,7 +76,7 @@ async function log(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const { positional, flags } = parseArgs(args)
   const other = refuseOtherOptions(flags, [])
   if (other !== null) return other
-  if (positional.length > 1) return bad(USAGE)
+  if (positional.length > 1) return badAutomationArgs(AUTOMATIONS_USAGE)
   const [id] = positional
   if (id !== undefined) {
     const found = await findAutomation(ctx, id)
@@ -229,30 +106,38 @@ async function secret(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const found = await findAutomation(ctx, id.data)
   if (!found.ok) return found
   if (found.data.secret === undefined)
-    return bad(`${found.data.id} runs a command: a command has no signing secret.`)
+    return badAutomationArgs(`${found.data.id} runs a command: a command has no signing secret.`)
   return ok({ id: found.data.id, secret: found.data.secret })
+}
+
+async function remove(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const { positional, flags } = parseArgs(args)
+  const other = refuseOtherOptions(flags, [])
+  if (other !== null) return other
+  const id = idOf(positional)
+  if (!id.ok) return id
+  const removed = await removeAutomation(ctx, id.data)
+  if (!removed.ok) return removed
+  await dropQueuedFor(ctx, id.data)
+  return ok({ removed: removed.data.id, kind: removed.data.kind, target: removed.data.target })
+}
+
+const SUBCOMMANDS: Record<
+  string,
+  (ctx: Ctx, args: string[]) => Promise<Result<unknown>> | Result<unknown>
+> = {
+  add: addAutomationCmd,
+  list,
+  events,
+  set: setAutomationCmd,
+  remove,
+  test,
+  log,
+  secret,
 }
 
 export async function automationsCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const [sub, ...rest] = args
-  switch (sub) {
-    case "add":
-      return add(ctx, rest)
-    case "list":
-      return list(ctx, rest)
-    case "events":
-      return events(rest)
-    case "set":
-      return set(ctx, rest)
-    case "remove":
-      return remove(ctx, rest)
-    case "test":
-      return test(ctx, rest)
-    case "log":
-      return log(ctx, rest)
-    case "secret":
-      return secret(ctx, rest)
-    default:
-      return bad(USAGE)
-  }
+  const handler = sub === undefined ? undefined : SUBCOMMANDS[sub]
+  return handler ? handler(ctx, rest) : badAutomationArgs(AUTOMATIONS_USAGE)
 }

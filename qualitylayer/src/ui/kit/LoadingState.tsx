@@ -107,6 +107,49 @@ export type LoadingStateProps = {
   slowNote?: ReactNode
 }
 
+function LoadingOutline({ kind }: { kind: LoadingStateProps["kind"] }) {
+  if (kind === "artifact") return <FrameOutline />
+  return kind === "task" ? <PageOutline /> : <ListOutline />
+}
+
+function LoadingFailure({
+  kind,
+  error,
+  failedTitle,
+  onRetry,
+  back,
+}: {
+  kind: LoadingStateProps["kind"]
+  error: Error
+  failedTitle?: string | undefined
+  onRetry?: (() => void) | undefined
+  back?: LoadingStateProps["back"]
+}) {
+  return (
+    <div className="q-ld-over">
+      <section className="q-ld-fail" role="alert">
+        <h2>
+          <span className="q-ld-mark" aria-hidden="true" />
+          {failedTitle ?? "This didn't open"}
+        </h2>
+        <p>{error.message}</p>
+        <div className="q-ld-act">
+          {onRetry ? (
+            <button type="button" className="q-btn primary" onClick={onRetry}>
+              {kind === "artifact" ? "Reload" : "Try again"}
+            </button>
+          ) : null}
+          {back ? (
+            <button type="button" className="q-btn quiet" onClick={back.onClick}>
+              {back.label}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export function LoadingState({
   kind,
   what,
@@ -122,18 +165,12 @@ export function LoadingState({
   const slow = !failed && elapsed >= SLOW_AFTER_SECONDS
   const words = slow ? `Still ${what.charAt(0).toLowerCase()}${what.slice(1)}` : what
   const floating = kind === "artifact"
-  const status = (
-    <p className={floating ? "q-ld-float" : "q-ld-status"} role="status">
-      <span className="q-ld-spin" aria-hidden="true" />
-      <b>{words}</b>
-      {slow ? <span className="q-ld-time">· {elapsed} s</span> : null}
-      {slow && floating && back ? (
-        <button type="button" className="q-link" onClick={back.onClick}>
-          {back.label}
-        </button>
-      ) : null}
-    </p>
-  )
+  const retry = onRetry
+    ? () => {
+        setStartedAt(Date.now())
+        onRetry()
+      }
+    : undefined
   return (
     <div
       className={`q-ld q-ld-${kind}`}
@@ -141,38 +178,28 @@ export function LoadingState({
       data-testid="loading-state"
       aria-busy={!failed}
     >
-      {failed ? null : status}
+      {failed ? null : (
+        <p className={floating ? "q-ld-float" : "q-ld-status"} role="status">
+          <span className="q-ld-spin" aria-hidden="true" />
+          <b>{words}</b>
+          {slow ? <span className="q-ld-time">· {elapsed} s</span> : null}
+          {slow && floating && back ? (
+            <button type="button" className="q-link" onClick={back.onClick}>
+              {back.label}
+            </button>
+          ) : null}
+        </p>
+      )}
       {slow && !floating && slowNote ? <p className="q-ld-sub">{slowNote}</p> : null}
-      {floating ? <FrameOutline /> : kind === "task" ? <PageOutline /> : <ListOutline />}
+      <LoadingOutline kind={kind} />
       {failed ? (
-        <div className="q-ld-over">
-          <section className="q-ld-fail" role="alert">
-            <h2>
-              <span className="q-ld-mark" aria-hidden="true" />
-              {failedTitle ?? "This didn't open"}
-            </h2>
-            <p>{error.message}</p>
-            <div className="q-ld-act">
-              {onRetry ? (
-                <button
-                  type="button"
-                  className="q-btn primary"
-                  onClick={() => {
-                    setStartedAt(Date.now())
-                    onRetry()
-                  }}
-                >
-                  {kind === "artifact" ? "Reload" : "Try again"}
-                </button>
-              ) : null}
-              {back ? (
-                <button type="button" className="q-btn quiet" onClick={back.onClick}>
-                  {back.label}
-                </button>
-              ) : null}
-            </div>
-          </section>
-        </div>
+        <LoadingFailure
+          kind={kind}
+          error={error}
+          failedTitle={failedTitle}
+          onRetry={retry}
+          back={back}
+        />
       ) : null}
     </div>
   )

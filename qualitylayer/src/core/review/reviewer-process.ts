@@ -50,6 +50,35 @@ function lineBuffer(onLine: (line: string) => void) {
   }
 }
 
+function killGroupOnExit(child: ReturnType<typeof spawn>, signal: NodeJS.Signals | null): void {
+  if (windows || signal !== null || child.pid === undefined) return
+  // Workers in this review's group end with its leader, even when process queries are denied.
+  try {
+    killProcessTree(child.pid)
+  } catch {}
+}
+
+function attachProcessListeners(
+  child: ReturnType<typeof spawn>,
+  result: ProcessResult,
+  pushStdout: (chunk: Buffer) => void,
+  finish: (code: number) => void,
+  stdin: string,
+): void {
+  child.stdout?.on("data", pushStdout)
+  child.stderr?.on("data", (chunk: Buffer) => {
+    result.stderr += chunk.toString()
+  })
+  child.on("error", (cause) => {
+    result.stderr += String(cause)
+    finish(127)
+  })
+  child.on("exit", (_code, signal) => killGroupOnExit(child, signal))
+  child.on("close", (code) => finish(code ?? 1))
+  child.stdin?.on("error", () => {})
+  child.stdin?.end(stdin)
+}
+
 /** Run to the end, to the hard stop, or to the guard's first objection. */
 export function runProcess(run: ProcessRun): Promise<ProcessResult> {
   return new Promise<ProcessResult>((resolve) => {
@@ -63,20 +92,18 @@ export function runProcess(run: ProcessRun): Promise<ProcessResult> {
       if (rest !== "") result.stdout.push(rest)
       resolve({ ...result, code })
     }
-    const lines = lineBuffer((line) => take(line))
-    // A child that kept the pipes open must not hold the answer back.
     const stop = (code: number) => {
       stopTree(child)
       setTimeout(() => finish(code), 500)
     }
-    const take = (line: string) => {
+    const lines = lineBuffer((line) => {
       result.stdout.push(line)
       run.seen(line)
       const why = result.broke === null ? (run.guard?.(line) ?? null) : null
       if (why === null) return
       result.broke = why
       stop(1)
-    }
+    })
     // Its own process group, so the stop takes the reviewer's children with it.
     const child = spawn(run.program, run.args, {
       cwd: run.cwd,
@@ -89,23 +116,6 @@ export function runProcess(run: ProcessRun): Promise<ProcessResult> {
       result.timedOut = true
       stop(137)
     }, run.hardStop)
-    child.stdout.on("data", (chunk: Buffer) => lines.push(chunk))
-    child.stderr.on("data", (chunk: Buffer) => {
-      result.stderr += chunk.toString()
-    })
-    child.on("error", (cause) => {
-      result.stderr += String(cause)
-      finish(127)
-    })
-    child.on("exit", (_code, signal) => {
-      if (windows || signal !== null || child.pid === undefined) return
-      // Workers in this review's group end with its leader, even when process queries are denied.
-      try {
-        killProcessTree(child.pid)
-      } catch {}
-    })
-    child.on("close", (code) => finish(code ?? 1))
-    child.stdin.on("error", () => {})
-    child.stdin.end(run.stdin)
+    attachProcessListeners(child, result, (chunk) => lines.push(chunk), finish, run.stdin)
   })
 }

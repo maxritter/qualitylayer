@@ -105,16 +105,16 @@ function recordChain(
   for (const row of chain) result.associated.set(row.view.stamp, commit.commit)
 }
 
+type CompareContext = { ctx: Ctx; task: Task; budget: Budget }
+
 async function compareCommit(
-  ctx: Ctx,
-  task: Task,
+  c: CompareContext,
   part: OwnedPart,
   candidates: OwnedPart[],
-  budget: Budget,
   result: Coverage,
 ) {
-  const before = await sourceHash(ctx, task, part.before, budget)
-  const after = await sourceHash(ctx, task, part.after, budget)
+  const before = await sourceHash(c.ctx, c.task, part.before, c.budget)
+  const after = await sourceHash(c.ctx, c.task, part.after, c.budget)
   if (before === undefined || after === undefined) {
     result.withheld.add(part.view.stamp)
     return
@@ -122,35 +122,32 @@ async function compareCommit(
   const exact = candidates.flatMap((row, index) =>
     (row.before?.hash ?? null) === before ? [index] : [],
   )
-  const matched = await matchingChain(ctx, task, part, candidates, exact, after, budget)
+  const matched = await matchingChain(c, part, candidates, exact, after)
   if (matched) {
     recordChain(result, part, matched, before)
     return
   }
   const fallback = await matchingChain(
-    ctx,
-    task,
+    c,
     part,
     candidates,
     candidates.map((_, index) => index),
     after,
-    budget,
   )
   if (fallback) recordChain(result, part, fallback, before)
 }
 
 async function matchingChain(
-  ctx: Ctx,
-  task: Task,
+  c: CompareContext,
   commit: OwnedPart,
   candidates: OwnedPart[],
   starts: number[],
   after: string | null,
-  budget: Budget,
 ): Promise<OwnedPart[] | null> {
   for (const start of starts) {
-    const chain = chainEndingAt(candidates, start, after, budget)
-    if (chain.length && (await precedesCommit(ctx, task, chain[0]!, commit))) return chain
+    const chain = chainEndingAt(candidates, start, after, c.budget)
+    const first = chain[0]
+    if (first && (await precedesCommit(c.ctx, c.task, first, commit))) return chain
   }
   return null
 }
@@ -164,11 +161,12 @@ export async function nativeCoverage(
   budget: Budget,
 ): Promise<Coverage> {
   const result: Coverage = { covered: new Set(), withheld: new Set(), associated: new Map() }
+  const c: CompareContext = { ctx, task, budget }
   for (const part of committed) {
     const candidates = working.filter((row) => row.view.path === part.view.path)
     if (!candidates.length) continue
     try {
-      await compareCommit(ctx, task, part, candidates, budget, result)
+      await compareCommit(c, part, candidates, result)
     } catch {
       result.withheld.add(part.view.stamp)
     }

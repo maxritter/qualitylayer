@@ -3,7 +3,7 @@ import {
   ARTIFACT_FOLDER_MAX_FILES,
   folderArtifactOf,
 } from "../artifact/format.ts"
-import { type AnchoredRoot } from "../filesystem/anchored-root.ts"
+import type { AnchoredRoot } from "../filesystem/anchored-root.ts"
 import { installCopyOutputs, stageCopyOutputs } from "./artifact-copy-install.ts"
 import { artifactFileSnapshot } from "./artifact-identity.ts"
 import { ANNOTATION_ASSETS_BYTES, jsonBytes, recordHash } from "./contract.ts"

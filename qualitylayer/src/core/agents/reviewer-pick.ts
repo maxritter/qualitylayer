@@ -78,6 +78,52 @@ function whyAuto(agent: NativeAgent, c: Candidate, builder: ModelMaker | null): 
   return `${name} checks the work.`
 }
 
+function makePick(
+  agent: NativeAgent,
+  why: string,
+  builder: ModelMaker | null,
+  reviewerMaker: ModelMaker | null,
+  sameFamilyOverride?: boolean,
+): ReviewerPick {
+  return {
+    agent,
+    sameFamily: sameFamilyOverride ?? (builder !== null && reviewerMaker === builder),
+    builderMaker: builder,
+    reviewerMaker,
+    why,
+  }
+}
+
+function pickNamedReviewer(
+  choice: NativeAgent,
+  rankedPool: { builder: ModelMaker | null; candidates: readonly Candidate[] },
+  input: { working: string; installed: readonly NativeAgent[]; context: ReviewerContext },
+): ReviewerPick | null {
+  const { builder, candidates } = rankedPool
+  const { working, installed, context } = input
+  if (!installed.includes(choice)) return null
+  if (choice !== working) {
+    return makePick(
+      choice,
+      `${AGENT_NAMES[choice]} was chosen in Settings.`,
+      builder,
+      modelMaker(context.models?.[choice]),
+    )
+  }
+  // It built the change: another agent checks it, picked as the automatic choice picks.
+  const other = candidates[0]
+  if (other !== undefined) {
+    return makePick(other.agent, whyAuto(other.agent, other, builder), builder, other.maker)
+  }
+  return makePick(
+    choice,
+    `${AGENT_NAMES[choice]} was chosen in Settings and built the change, so a fresh session of it reviews.`,
+    builder,
+    modelMaker(context.models?.[choice]),
+    true,
+  )
+}
+
 /**
  * The reviewer of a change an agent built. A named agent is that agent, or another one when it built
  * the change; `auto` is Other model family: among the installed agents other than the builder that
@@ -92,40 +138,13 @@ export function pickReviewer(
   installed: readonly NativeAgent[],
   context: ReviewerContext = {},
 ): ReviewerPick | null {
-  const { builder, candidates } = ranked(working, installed, context)
+  const pool = ranked(working, installed, context)
   if (choice !== "auto") {
-    if (!installed.includes(choice)) return null
-    const named = (agent: NativeAgent, why: string, c?: Candidate): ReviewerPick => {
-      const reviewerMaker = c?.maker ?? modelMaker(context.models?.[agent])
-      return {
-        agent,
-        sameFamily: builder !== null && reviewerMaker === builder,
-        builderMaker: builder,
-        reviewerMaker,
-        why,
-      }
-    }
-    if (choice !== working) return named(choice, `${AGENT_NAMES[choice]} was chosen in Settings.`)
-    // It built the change: another agent checks it, picked as the automatic choice picks.
-    const other = candidates[0]
-    if (other !== undefined) return named(other.agent, whyAuto(other.agent, other, builder), other)
-    return {
-      ...named(
-        choice,
-        `${AGENT_NAMES[choice]} was chosen in Settings and built the change, so a fresh session of it reviews.`,
-      ),
-      sameFamily: true,
-    }
+    return pickNamedReviewer(choice, pool, { working, installed, context })
   }
-  const best = candidates[0]
+  const best = pool.candidates[0]
   if (best === undefined) return null
-  return {
-    agent: best.agent,
-    sameFamily: builder !== null && best.maker === builder,
-    builderMaker: builder,
-    reviewerMaker: best.maker,
-    why: whyAuto(best.agent, best, builder),
-  }
+  return makePick(best.agent, whyAuto(best.agent, best, pool.builder), pool.builder, best.maker)
 }
 
 /** The most reviewers a Plan's panel seats: a task's extra planners (`task start --planners`). */

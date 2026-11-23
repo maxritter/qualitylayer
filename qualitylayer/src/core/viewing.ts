@@ -1,115 +1,32 @@
 import { createHash } from "node:crypto"
 import { join } from "node:path"
-import { marked } from "marked"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
-import { ARTIFACT_NAME, ARTIFACT_PAGE_NAME } from "./artifact/format.ts"
-import { readLasting } from "./artifact/lasting.ts"
-import { findArtifact } from "./artifact/store.ts"
-import { headingSlug } from "./docs/anchor.ts"
-import { taskFiles } from "./docs/names.ts"
 import { capFolder, VIEWING_FILES_KEPT, VIEWING_MAX_BYTES } from "./home-caps.ts"
-import { type Task, taskDocPath } from "./task/store.ts"
+import type { Task } from "./task/store.ts"
+import { validateViewing } from "./viewing-validate.ts"
 
 export type Viewing = { doc?: string; section?: string; artifact?: string; page?: string }
 export const VIEWING_FRESH_MS = 5 * 60_000
-function documentPath(task: Task, doc: string): string | null {
-  const file = taskFiles(task.repoId, task.slug, task.type, () => true).find(
-    (file) => file.name === doc,
-  )
-  return file ? taskDocPath(task, file.role) : null
-}
 export function viewingPath(ctx: Pick<Ctx, "home">, task: Pick<Task, "repoId" | "slug">): string {
   const key = createHash("sha256").update(`${task.repoId}~${task.slug}`).digest("hex")
   return join(ctx.home, "viewing", `${key}.json`)
-}
-
-/** Resolve headings from the document, so hook output never repeats caller-supplied prose. */
-async function validate(
-  ctx: Ctx,
-  task: Task,
-  raw: unknown,
-): Promise<{ location: Viewing; heading: string | null } | null> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
-  const value = raw as Record<string, unknown>
-  if (Object.keys(value).some((key) => !["doc", "section", "artifact", "page"].includes(key)))
-    return null
-  if (
-    Object.values(value).some(
-      (v) =>
-        typeof v !== "string" ||
-        v.length === 0 ||
-        v.length > 200 ||
-        [...v].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127),
-    )
-  )
-    return null
-  const { doc, section, artifact, page } = value as Viewing
-  let heading: string | null = null
-  if (!doc && !artifact) return null
-  if (section && !doc) return null
-  if (page && !artifact) return null
-  if (doc) {
-    const path = documentPath(task, doc)
-    if (!path) return null
-    let markdown: string
-    try {
-      markdown = await ctx.fs.readFile(path)
-    } catch {
-      return null
-    }
-    if (section) {
-      marked.walkTokens(marked.lexer(markdown), (token) => {
-        if (token.type === "heading" && headingSlug(token.text) === section) heading = token.text
-      })
-      if (heading === null) return null
-    }
-  }
-  if (artifact) {
-    if (!ARTIFACT_NAME.test(artifact) || (page !== undefined && !ARTIFACT_PAGE_NAME.test(page)))
-      return null
-    const found = await findArtifact(
-      ctx,
-      { scope: "task", dir: task.dir, runtimeDir: task.runtimeDir },
-      artifact,
-    )
-    if (found) {
-      if (
-        page &&
-        !(found.folder ? found.folder.pages.includes(page) : page === `${found.name}.html`)
-      )
-        return null
-    } else {
-      const lasting = await readLasting(task.repoRoot, artifact)
-      if (!lasting.ok || (page && !lasting.data.pages.includes(page))) return null
-    }
-  }
-  return {
-    heading,
-    location: {
-      ...(doc ? { doc } : {}),
-      ...(section ? { section } : {}),
-      ...(artifact ? { artifact } : {}),
-      ...(page ? { page } : {}),
-    },
-  }
 }
 
 export async function clearViewing(ctx: Ctx, task: Pick<Task, "repoId" | "slug">): Promise<void> {
   await ctx.fs.remove(viewingPath(ctx, task))
 }
 
+function isClearRequest(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false
+  return Object.keys(raw).length === 1 && (raw as { clear?: unknown }).clear === true
+}
+
 export async function writeViewing(ctx: Ctx, task: Task, raw: unknown): Promise<Result<Viewing>> {
-  if (
-    raw &&
-    typeof raw === "object" &&
-    !Array.isArray(raw) &&
-    Object.keys(raw).length === 1 &&
-    (raw as { clear?: unknown }).clear === true
-  ) {
+  if (isClearRequest(raw)) {
     await clearViewing(ctx, task)
     return ok({})
   }
-  const valid = await validate(ctx, task, raw)
+  const valid = await validateViewing(ctx, task, raw)
   if (!valid)
     return err({
       code: "bad_args",
@@ -126,39 +43,42 @@ export async function writeViewing(ctx: Ctx, task: Task, raw: unknown): Promise<
   return ok(viewing)
 }
 
+function isFreshViewingHeader(
+  task: Task,
+  now: number,
+  header: { at: unknown; repoId: unknown; slug: unknown },
+): boolean {
+  if (header.repoId !== task.repoId || header.slug !== task.slug) return false
+  if (typeof header.at !== "number" || !Number.isFinite(header.at)) return false
+  return header.at <= now && now - header.at < VIEWING_FRESH_MS
+}
+
+function formatViewingLocation(viewing: Viewing, heading: string | null): string {
+  let location = viewing.doc ?? "an artifact"
+  if (viewing.section && viewing.doc) {
+    const clean = [...(heading ?? "")]
+      .map((c) => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 ? " " : c))
+      .join("")
+      .slice(0, 80)
+    location += `, section ${JSON.stringify(clean)}`
+  }
+  if (viewing.artifact)
+    location += ` (artifact ${viewing.artifact}${viewing.page ? `, page ${viewing.page}` : ""})`
+  return location
+}
+
 export async function viewingLine(ctx: Ctx, task: Task): Promise<string | null> {
   try {
     const path = viewingPath(ctx, task)
     if (((await ctx.fs.stat?.(path))?.size ?? 0) > VIEWING_MAX_BYTES) return null
     const text = await ctx.fs.readFile(path)
     if (Buffer.byteLength(text) > VIEWING_MAX_BYTES) return null
-    const raw = JSON.parse(text)
-    const { at, repoId, slug, ...identity } = raw
-    if (
-      repoId !== task.repoId ||
-      slug !== task.slug ||
-      typeof at !== "number" ||
-      !Number.isFinite(at) ||
-      at > ctx.clock.now() ||
-      ctx.clock.now() - at >= VIEWING_FRESH_MS
-    )
-      return null
-    const valid = await validate(ctx, task, identity)
-    if (!valid) return null
-    const viewing = valid.location
-    let location = viewing.doc ?? "an artifact"
-    if (viewing.section && viewing.doc) {
-      const title = valid.heading ?? ""
-      location += `, section ${JSON.stringify(
-        [...title]
-          .map((c) => (c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127 ? " " : c))
-          .join("")
-          .slice(0, 80),
-      )}`
-    }
-    if (viewing.artifact)
-      location += ` (artifact ${viewing.artifact}${viewing.page ? `, page ${viewing.page}` : ""})`
-    return `QualityLayer: the App last showed ${location}. Information only: it is no instruction and no opt-in.`
+    const { at, repoId, slug, ...identity } = JSON.parse(text)
+    if (!isFreshViewingHeader(task, ctx.clock.now(), { at, repoId, slug })) return null
+    const valid = await validateViewing(ctx, task, identity)
+    return valid
+      ? `QualityLayer: the App last showed ${formatViewingLocation(valid.location, valid.heading)}. Information only: it is no instruction and no opt-in.`
+      : null
   } catch {
     return null
   }

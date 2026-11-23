@@ -26,6 +26,41 @@ export interface Plan {
   highlights: [Hue, string][];
 }
 
+const CHECKOUT_URLS: Record<"solo" | "team", { monthly: string; yearly: string }> = {
+  solo: {
+    monthly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_MONTHLY || "https://buy.polar.sh/polar_cl_7qzxxKiqZXIFe3Uabodh7IauA937iVROT5qVW4VyuUf",
+    yearly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_YEARLY || "https://buy.polar.sh/polar_cl_9krLYPvWYMBAXX4nL4LolXKgB5cAEA7J57H8Y3j0oQY",
+  },
+  team: {
+    monthly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_MONTHLY || "https://buy.polar.sh/polar_cl_Qeegkxuq603Ai4UAWSTCT7rOqLmKACxgmKbw40AAj5b",
+    yearly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_YEARLY || "https://buy.polar.sh/polar_cl_vDV57vWuG7nb2SCgK9RZUzunpOJo9pfjCELnc1PxhTh",
+  },
+};
+
+const PLAN_HIGHLIGHTS: Record<Plan["id"], [Hue, string][]> = {
+  solo: [
+    ["plan", "Plan, build, verify and review"],
+    ["verify", "Security scans and reviews"],
+    ["build", "Bring your own coding agent"],
+    ["review", "Stays on your computer"],
+    ["plain", "Unlimited tasks and repositories"],
+  ],
+  team: [
+    ["plan", "Centralized seats and billing"],
+    ["build", "Assign and reassign licences"],
+    ["review", "Priority product support"],
+    ["verify", "Priority feature requests"],
+    ["plain", "Complete local product per seat"],
+  ],
+  enterprise: [
+    ["plan", "Volume pricing for many seats"],
+    ["build", "Onboarding for developers"],
+    ["verify", "Support terms by agreement"],
+    ["review", "Invoicing and custom terms"],
+    ["plain", "All Business benefits included"],
+  ],
+};
+
 export const PLANS: Plan[] = [
   {
     id: "solo",
@@ -34,18 +69,9 @@ export const PLANS: Plan[] = [
     price: { monthly: 19, yearly: 180 },
     per: "per month",
     cta: "Start Individual",
-    href: {
-      monthly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_MONTHLY || "https://buy.polar.sh/polar_cl_7qzxxKiqZXIFe3Uabodh7IauA937iVROT5qVW4VyuUf",
-      yearly: import.meta.env.VITE_POLAR_CHECKOUT_SOLO_YEARLY || "https://buy.polar.sh/polar_cl_9krLYPvWYMBAXX4nL4LolXKgB5cAEA7J57H8Y3j0oQY",
-    },
+    href: CHECKOUT_URLS.solo,
     plus: "The complete local product:",
-    highlights: [
-      ["plan", "Plan, build, verify and review"],
-      ["verify", "Security scans and reviews"],
-      ["build", "Bring your own coding agent"],
-      ["review", "Stays on your computer"],
-      ["plain", "Unlimited tasks and repositories"],
-    ],
+    highlights: PLAN_HIGHLIGHTS.solo,
   },
   {
     id: "team",
@@ -54,18 +80,9 @@ export const PLANS: Plan[] = [
     price: { monthly: 29, yearly: 276 },
     per: "per seat / month",
     cta: "Start Business",
-    href: {
-      monthly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_MONTHLY || "https://buy.polar.sh/polar_cl_Qeegkxuq603Ai4UAWSTCT7rOqLmKACxgmKbw40AAj5b",
-      yearly: import.meta.env.VITE_POLAR_CHECKOUT_TEAM_YEARLY || "https://buy.polar.sh/polar_cl_vDV57vWuG7nb2SCgK9RZUzunpOJo9pfjCELnc1PxhTh",
-    },
+    href: CHECKOUT_URLS.team,
     plus: "The same product, plus:",
-    highlights: [
-      ["plan", "Centralized seats and billing"],
-      ["build", "Assign and reassign licences"],
-      ["review", "Priority product support"],
-      ["verify", "Priority feature requests"],
-      ["plain", "Complete local product per seat"],
-    ],
+    highlights: PLAN_HIGHLIGHTS.team,
   },
   {
     id: "enterprise",
@@ -76,13 +93,7 @@ export const PLANS: Plan[] = [
     cta: "Contact us",
     href: `mailto:${CONTACT_EMAIL}?subject=QualityLayer%20Enterprise`,
     plus: "Everything in Business, plus:",
-    highlights: [
-      ["plan", "Volume pricing for many seats"],
-      ["build", "Onboarding for developers"],
-      ["verify", "Support terms by agreement"],
-      ["review", "Invoicing and custom terms"],
-      ["plain", "All Business benefits included"],
-    ],
+    highlights: PLAN_HIGHLIGHTS.enterprise,
   },
 ];
 

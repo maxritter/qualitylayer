@@ -15,8 +15,13 @@ claims. State the purpose in two lines beside the preview: what the person needs
 changes. Draw one complete direction per changed surface in the product's vocabulary; with no reference,
 show two to four structurally different artboards and recommend one. **Reuse the real components:**
 `qualitylayer artifact new` starts the page with the project's tokens and fonts; copy the markup, class
-names and variants of the button, field, row or header you need, and draw a labelled placeholder for what
-is missing. A product interface, including one control, is a **product-fidelity artifact** (real
+names, variants and exact numeric values (spacing, radii, font sizes, line heights) of the button, field,
+row or header you need rather than snapping to a generic grid, treating real code and styles over
+screenshots, and draw a labelled placeholder for what is missing. Keep targeted edits targeted: when asked
+for one control, label or colour change on an existing artifact, leave surrounding layout, spacing and
+typography untouched and suggest wider improvements in your reply. Solve empty space with layout, never
+filler sections, invented numbers or generic clichés (decorative gradient washes, left-border accent cards,
+emoji as UI icons). A product interface, including one control, is a **product-fidelity artifact** (real
 components, colours, type, labels and changed states). A **wireframe** (`artifact new <name> --wire`) is
 only for an unresolved spatial arrangement, settled into the product artifact. Markdown carries text and
 tables, Mermaid flows and relationships, and actual terminal output a plain-text fence (selectable,
@@ -58,6 +63,13 @@ task; once an approved copy is implemented, link them with `artifact adopt`.
 ```
 
 ## Craft and review
+
+**Accessible as drawn.** Use real `<button>`, `<a href>` and `<input>` with `<label>` even in static
+mockups (never clickable `<div>` or `<span>`), `aria-label` on icon-only buttons and `aria-hidden="true"`
+on decorative SVG. Hold ≥ 4.5:1 contrast for body and caption text (≥ 3:1 at 24 px+), distinguish status or
+series colours by lightness as well as hue, keep touch targets ≥ 44 px, and draw no fake OS status bars or
+virtual keyboards on mobile mockups. Prefer fluid grids (`minmax(min(<min>px, 100%), 1fr)`) so 390 px views
+collapse cleanly without clipping; taller beats clipped.
 
 **Viewer theme bridge.** Interactive state follows the viewer's View → Light/Dark: read
 `document.documentElement.dataset.theme` for the initial theme, listen for `ql:artifact-mode` on `window`

@@ -2,99 +2,16 @@
 // is written is the phase text's business, never a rule's.
 
 import { join } from "node:path"
-import { parseMarkers } from "../markers.ts"
 import { agentFileOf, RESEARCH_DIR } from "../names.ts"
-import { extractPaths, isLineReference, isPathLike } from "../outline.ts"
-import { repoFiles, suffixMatches } from "../repo-files.ts"
 import { checkMermaid } from "../visuals.ts"
 import { proseLines, type Rule, type RuleInput, sectionRanges, verr } from "./types.ts"
+
+export { referencesResolve } from "./doc-references.ts"
 
 /** A file of the task folder, "" when it is not written. */
 async function taskFile(input: RuleInput, name: string): Promise<string> {
   const path = join(input.taskDir, name)
   return (await input.ctx.fs.exists(path)) ? await input.ctx.fs.readFile(path) : ""
-}
-
-/** The backticked `path:line` citations of a line: paths with a folder, and bare file names. */
-function lineCitations(text: string): string[] {
-  const found = new Set(extractPaths(text).filter(isLineReference))
-  for (const match of text.matchAll(/`([^`\s]+)`/g)) {
-    const token = match[1] ?? ""
-    if (isLineReference(token) && isPathLike(token.replace(LINE_SUFFIX, ""))) found.add(token)
-  }
-  return [...found]
-}
-
-/** `:12`, `:12-30`, and the column a compiler or linter adds: `:12:5`, `:12:5-30:2`. */
-const LINE_SUFFIX = /:\d+(?::\d+)?(?:-\d+(?::\d+)?)?$/
-
-/**
- * Every `path:line` citation names a file of this repository, written from its root. A path that
- * does not exist from the root is looked up by its end among the repository's files: `kit/kit.css`
- * and a bare `sync.ts` are refused with the full path, up to three, instead of passing unresolvable.
- */
-export const referencesResolve: Rule = async (input) => {
-  if (input.repoRoot === null) return []
-  const errors = []
-  const checked = new Map<string, boolean>()
-  let files: string[] | null | undefined
-  const listing = async () => {
-    if (files === undefined)
-      files = await (input.repoFiles?.() ?? repoFiles(input.ctx, input.repoRoot as string))
-    return files
-  }
-  // What QualityLayer writes between its markers (a reviewer's findings, say) is not the author's to fix.
-  const written = parseMarkers(input.markdown).markers.map((m) => [m.line, m.endLine] as const)
-  const isWritten = (line: number) => written.some(([from, to]) => line > from && line < to)
-  for (const { text, line } of proseLines(input.markdown)) {
-    if (isWritten(line)) continue
-    for (const token of lineCitations(text)) {
-      const path = token.replace(LINE_SUFFIX, "")
-      if (path.startsWith("~") || path.startsWith("/")) continue
-      let exists = checked.get(path)
-      if (exists === undefined) {
-        exists = await input.ctx.fs.exists(join(input.repoRoot, path))
-        checked.set(path, exists)
-      }
-      if (exists) continue
-      const lineSuffix = token.slice(path.length)
-      const matches = suffixMatches((await listing()) ?? [], path)
-      // A bare file name that only one file of the repository has is as good as its full path.
-      if (matches.length === 1 && !path.includes("/")) continue
-      if (matches.length > 0) {
-        const named = matches.slice(0, 3).map((match) => `\`${match}${lineSuffix}\``)
-        const more = matches.length > 3 ? `, or one of ${matches.length - 3} more` : ""
-        errors.push(
-          verr(
-            line,
-            "references-resolve",
-            `\`${token}\` does not resolve from the repository root; did you mean ${
-              named.length === 1 ? (named[0] ?? "") : `${named.join(", ")}${more}`
-            }?`,
-            "write every cited path from the repository root, with the full folder path, and reopen the source to confirm the line",
-          ),
-        )
-        continue
-      }
-      // A path whose top folder this repository does not have is most likely another repository's
-      // file (a pointer the person gave): a warning. One under a folder that exists here is wrong.
-      const top = path.split("/")[0] ?? path
-      const elsewhere =
-        path.includes("/") && !(await input.ctx.fs.exists(join(input.repoRoot, top)))
-      errors.push(
-        verr(
-          line,
-          "references-resolve",
-          `\`${token}\` does not resolve: ${path} is not in this repository`,
-          elsewhere
-            ? "when it is another repository's file, name that repository beside the path; otherwise cite a path from this repository's root that exists"
-            : "cite a path relative to the repository root that exists, and reopen the source to confirm the line",
-          elsewhere ? "warning" : "error",
-        ),
-      )
-    }
-  }
-  return errors
 }
 
 export const mermaidParses: Rule = async (input) => {

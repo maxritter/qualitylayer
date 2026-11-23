@@ -50,6 +50,67 @@ export function AddPageDialog({
   )
 }
 
+function AddPageFlow({
+  draftName,
+  artifactTitle,
+  gained,
+}: {
+  draftName: string
+  artifactTitle: string
+  gained: readonly string[]
+}) {
+  const gainedNames = gained.map((each) => each.replace(/\.html$/, ""))
+  const gainedWord = `+ ${gained.length} ${gained.length === 1 ? "page" : "pages"}`
+  return (
+    <div className="ap-flow" data-testid="add-page-flow">
+      <span className="ap-node ap-from" title={draftName}>
+        <FileIcon aria-hidden="true" size={14} />
+        <code>{draftName}</code>
+      </span>
+      <ArrowRightIcon aria-hidden="true" size={14} className="ap-arrow" />
+      <span className="ap-node ap-to" title={artifactTitle}>
+        <ShapesIcon aria-hidden="true" size={14} />
+        <b>{artifactTitle}</b>
+        <small title={gained.join(", ")}>
+          {gainedWord}
+          {gained.length <= 3 ? ` (${gainedNames.join(", ")})` : ""}
+        </small>
+      </span>
+    </div>
+  )
+}
+
+function AddPageNotices({
+  collisions,
+  artifactTitle,
+  problem,
+}: {
+  collisions: readonly string[]
+  artifactTitle: string
+  problem: string | null
+}) {
+  return (
+    <>
+      {collisions.length > 0 ? (
+        <p className="ap-warn" role="status">
+          <TriangleAlertIcon aria-hidden="true" size={14} />
+          {collisions.join(", ")} already {collisions.length === 1 ? "exists" : "exist"} in{" "}
+          {artifactTitle}: it is replaced.
+        </p>
+      ) : null}
+      <p className="ap-fold">
+        <GitMergeIcon aria-hidden="true" size={14} />
+        Folds in when this task ships
+      </p>
+      {problem !== null ? (
+        <p className="kd-bad" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 function AddPageForm({
   api,
   task,
@@ -71,16 +132,12 @@ function AddPageForm({
   const [problem, setProblem] = useState<string | null>(null)
   const pageId = useId()
   const file = page.endsWith(".html") ? page : `${page}.html`
-  const names = draft.pages?.map((each) => each.page) ?? []
-  // What the target gains: the new page's name, or the pages of the folder, without their extension.
-  const gained = single ? [file] : names
-  const gainedNames = gained.map((each) => each.replace(/\.html$/, ""))
-  const gainedWord = `+ ${gained.length} ${gained.length === 1 ? "page" : "pages"}`
-  // A page name that is already in the artifact is replaced; only then is there anything to warn about.
+  const gained = single ? [file] : (draft.pages?.map((each) => each.page) ?? [])
   const collisions = gained.filter((each) => artifact.pages.some((have) => have.page === each))
+  const disabled = busy || (single && page.trim() === "")
 
   const submit = async () => {
-    if (busy || (single && page.trim() === "")) return
+    if (disabled) return
     setBusy(true)
     setProblem(null)
     try {
@@ -115,21 +172,7 @@ function AddPageForm({
           void submit()
         }}
       >
-        <div className="ap-flow" data-testid="add-page-flow">
-          <span className="ap-node ap-from" title={draft.name}>
-            <FileIcon aria-hidden="true" size={14} />
-            <code>{draft.name}</code>
-          </span>
-          <ArrowRightIcon aria-hidden="true" size={14} className="ap-arrow" />
-          <span className="ap-node ap-to" title={artifact.title}>
-            <ShapesIcon aria-hidden="true" size={14} />
-            <b>{artifact.title}</b>
-            <small title={gained.join(", ")}>
-              {gainedWord}
-              {gained.length <= 3 ? ` (${gainedNames.join(", ")})` : ""}
-            </small>
-          </span>
-        </div>
+        <AddPageFlow draftName={draft.name} artifactTitle={artifact.title} gained={gained} />
         {single ? (
           <label className="kd-field" htmlFor={pageId}>
             Page name
@@ -143,31 +186,12 @@ function AddPageForm({
             />
           </label>
         ) : null}
-        {collisions.length > 0 ? (
-          <p className="ap-warn" role="status">
-            <TriangleAlertIcon aria-hidden="true" size={14} />
-            {collisions.join(", ")} already {collisions.length === 1 ? "exists" : "exist"} in{" "}
-            {artifact.title}: it is replaced.
-          </p>
-        ) : null}
-        <p className="ap-fold">
-          <GitMergeIcon aria-hidden="true" size={14} />
-          Folds in when this task ships
-        </p>
-        {problem !== null ? (
-          <p className="kd-bad" role="alert">
-            {problem}
-          </p>
-        ) : null}
+        <AddPageNotices collisions={collisions} artifactTitle={artifact.title} problem={problem} />
         <div className="kd-actions">
           <button type="button" className="q-btn quiet" onClick={onClose}>
             Cancel
           </button>
-          <button
-            type="submit"
-            className="q-btn primary"
-            disabled={busy || (single && page.trim() === "")}
-          >
+          <button type="submit" className="q-btn primary" disabled={disabled}>
             Add as a page
           </button>
         </div>

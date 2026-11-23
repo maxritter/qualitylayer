@@ -2,9 +2,8 @@ import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { CommentThread } from "../../interaction/contracts.ts"
 import { refuseStandaloneAnnotationWrite } from "../artifact/annotation-upgrade.ts"
-import { type ArtifactAnchor, isArtifactDoc } from "../artifact/format.ts"
 import { type CommentHandling, type HandlingContext, threadHandling } from "../comment-handling.ts"
-import { type Comment, helperDoc, readComments } from "../gate/comments.ts"
+import { type Comment, readComments } from "../gate/comments.ts"
 import { agentName } from "../live/liveness.ts"
 import { readLive } from "../live/read.ts"
 import { liveAnswerRun, reachOf, sessionWaiting } from "../review/answers.ts"
@@ -18,24 +17,14 @@ import {
   updateTeamThread,
 } from "../team/comments.ts"
 import { attachmentProblem, type Incoming, saveAttachments } from "./attachments.ts"
+import {
+  buildCommentThread,
+  buildLocalComment,
+  needsAgentHandling,
+  type ThreadInput,
+} from "./thread-build.ts"
 
 type Holder = Pick<Task, "runtimeDir"> & Partial<Pick<Task, "stage">>
-type Input = {
-  for?: "agent" | "person"
-  doc: string
-  quote: string
-  before?: string
-  after?: string
-  section?: string
-  remark: string
-  item?: string
-  pin?: string
-  thread?: string
-  spot?: ArtifactAnchor
-  artifactRevision?: string
-  /** Files to keep with the comment; checked before anything is saved. */
-  files?: Incoming[]
-}
 
 /** Normalize existing comment records. No guessed people, votes or delivery timestamps. */
 export function threadsOf(comments: Comment[], stage?: Task["stage"]): CommentThread[] {
@@ -43,49 +32,16 @@ export function threadsOf(comments: Comment[], stage?: Task["stage"]): CommentTh
   for (const comment of comments) {
     if (comment.kind !== undefined && comment.remark === "" && !comment.files?.length) continue
     const id = comment.thread?.id ?? comment.id
-    groups.set(id, [...(groups.get(id) ?? []), comment])
+    const existing = groups.get(id)
+    if (existing) existing.push(comment)
+    else groups.set(id, [comment])
   }
-  return [...groups].flatMap(([id, rows]) => {
-    const root = rows[0]
-    if (root === undefined) return []
-    return [
-      {
-        id,
-        doc: root.doc,
-        item: root.item ?? null,
-        quote: root.quote,
-        state: rows.every((c) => c.resolved !== undefined || c.thread?.state === "resolved")
-          ? "resolved"
-          : "open",
-        comments: rows,
-        replies: rows.flatMap(
-          (c) =>
-            c.teamReplies ??
-            (c.answer === undefined
-              ? []
-              : [
-                  {
-                    id: `${c.id}:answer`,
-                    author: { name: "Agent", email: "" },
-                    text: c.answer,
-                    at: c.answered ?? c.created,
-                    via: "agent" as const,
-                    ...(c.answeredBy === "helper" ? { helper: c.answeredHelper ?? "" } : {}),
-                  },
-                ]),
-        ),
-        delivery:
-          root.source !== undefined || root.build !== undefined || isArtifactDoc(root.doc)
-            ? "immediate"
-            : root.doc === "build"
-              ? "immediate"
-              : stage === "implement" || stage === "verify"
-                ? "saved"
-                : "with-approval",
-        tally: null,
-      } satisfies CommentThread,
-    ]
-  })
+  const result: CommentThread[] = []
+  for (const [id, rows] of groups) {
+    const thread = buildCommentThread(id, rows, stage)
+    if (thread !== null) result.push(thread)
+  }
+  return result
 }
 
 /** What the cards need to say where each comment stands: the agent, its reach, the helper running now. */
@@ -122,23 +78,15 @@ export async function readThreads(ctx: Ctx, task: Holder): Promise<CommentThread
     ],
     task.stage,
   )
-  const waiting = threads.some((t) =>
-    t.comments.some(
-      (c) =>
-        helperDoc(c.doc) &&
-        c.answer === undefined &&
-        c.resolved === undefined &&
-        c.for !== "person" &&
-        c.source === undefined,
-    ),
-  )
+  const waiting = threads.some((t) => t.comments.some(needsAgentHandling))
   const hc = waiting ? await handlingContext(ctx, task) : null
-  return threads.map((t) =>
-    withHandling(
-      t,
-      hc ?? { now: ctx.clock.now(), agent: "The agent", reach: "idle", helper: null },
-    ),
-  )
+  const fallback: HandlingContext = {
+    now: ctx.clock.now(),
+    agent: "The agent",
+    reach: "idle",
+    helper: null,
+  }
+  return threads.map((t) => withHandling(t, hc ?? fallback))
 }
 
 const save = async (ctx: Ctx, task: Holder, rows: Comment[]) => {
@@ -150,68 +98,64 @@ const save = async (ctx: Ctx, task: Holder, rows: Comment[]) => {
   )
 }
 
-export async function addThread(ctx: Ctx, task: Holder, input: Input): Promise<CommentThread> {
+async function tryReplyToTeamThread(
+  ctx: Ctx,
+  task: Holder,
+  input: ThreadInput,
+  files: Incoming[],
+): Promise<CommentThread | null> {
+  if (input.thread === undefined) return null
+  const remote = (await readTeamComments(ctx, task)).find(
+    (c) => c.id === input.thread && (!isStructured(c) || personNote(c) !== null),
+  )
+  if (!remote) return null
+  if (files.length > 0)
+    throw new Error(
+      "A reply on a teammate's thread carries words only. Attach the files to a comment of your own.",
+    )
+  if (asComment(remote).doc !== input.doc)
+    throw new Error("This thread is on another document. Reload it before replying.")
+  await updateTeamThread(ctx, task, remote.id, { text: input.remark, via: "app" })
+  return (await readThreads(ctx, task)).find((t) => t.id === remote.id) as CommentThread
+}
+
+export async function addThread(
+  ctx: Ctx,
+  task: Holder,
+  input: ThreadInput,
+): Promise<CommentThread> {
   refuseStandaloneAnnotationWrite(ctx, task)
   const files = input.files ?? []
   const problem = attachmentProblem(files)
   if (problem !== null) throw new Error(problem)
-  if (input.thread !== undefined) {
-    const remote = (await readTeamComments(ctx, task)).find(
-      (c) => c.id === input.thread && (!isStructured(c) || personNote(c) !== null),
-    )
-    if (remote) {
-      if (files.length > 0)
-        throw new Error(
-          "A reply on a teammate's thread carries words only. Attach the files to a comment of your own.",
-        )
-      if (asComment(remote).doc !== input.doc)
-        throw new Error("This thread is on another document. Reload it before replying.")
-      await updateTeamThread(ctx, task, remote.id, { text: input.remark, via: "app" })
-      return (await readThreads(ctx, task)).find((t) => t.id === remote.id) as CommentThread
-    }
-  }
+  const teamReply = await tryReplyToTeamThread(ctx, task, input, files)
+  if (teamReply !== null) return teamReply
   return ctx.fs.withLock(join(task.runtimeDir, "comments.lock"), async () => {
     const rows = await readComments(ctx, task)
     const root =
       input.thread === undefined ? undefined : threadsOf(rows).find((t) => t.id === input.thread)
-    if (
+    const invalidReply =
       input.thread !== undefined &&
       (root === undefined || root.doc !== input.doc || root.state !== "open")
-    )
+    if (invalidReply)
       throw new Error(
         "This thread is missing, resolved or on another document. Reload it before replying.",
       )
     const id = `c-${crypto.randomUUID()}`
     const thread = root?.id ?? id
-    const recipient = root ? root.comments[0]?.for : input.for
     refuseStandaloneAnnotationWrite(ctx, task)
     const saved = await saveAttachments(ctx, task, id, files)
-    const comment: Comment = {
+    const comment = buildLocalComment({
       id,
-      doc: input.doc,
-      quote: root?.quote ?? input.quote,
-      ...Object.fromEntries(
-        ["before", "after", "section"].flatMap((key) => {
-          const value = (root?.comments[0] ?? input)[key as "before" | "after" | "section"]
-          return value === undefined ? [] : [[key, value]]
-        }),
-      ),
-      remark: input.remark.trim(),
-      ...(recipient !== undefined ? { for: recipient } : {}),
-      created: ctx.clock.now(),
-      thread: { id: thread, state: "open" },
-      ...(input.item ? { item: input.item } : {}),
-      ...(input.pin ? { pin: input.pin } : {}),
-      ...((root?.comments[0]?.spot ?? input.spot) !== undefined
-        ? { spot: root?.comments[0]?.spot ?? input.spot }
-        : {}),
-      ...((root?.comments[0]?.artifactRevision ?? input.artifactRevision) !== undefined
-        ? { artifactRevision: root?.comments[0]?.artifactRevision ?? input.artifactRevision }
-        : {}),
-      ...(saved.length > 0 ? { files: saved } : {}),
-    }
-    await save(ctx, task, [...rows, comment])
-    return threadsOf([...rows, comment], task.stage).find((t) => t.id === thread) as CommentThread
+      thread,
+      input,
+      root,
+      saved,
+      now: ctx.clock.now(),
+    })
+    const next = [...rows, comment]
+    await save(ctx, task, next)
+    return threadsOf(next, task.stage).find((t) => t.id === thread) as CommentThread
   })
 }
 

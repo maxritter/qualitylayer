@@ -4,22 +4,67 @@
 // project builds on, then the ones it shows from other projects (each opening in its owner), with a
 // link to all of them. Both have a "…" button and a right-click menu (`ArtifactMenus`).
 
-import {
-  ChevronDownIcon,
-  ImageIcon,
-  LayersIcon,
-  MoreHorizontalIcon,
-  ShapesIcon,
-} from "lucide-react"
+import { ChevronDownIcon } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import type { Artifact } from "../../core/artifact/format.ts"
 import type { ArtifactWhere } from "../api.ts"
 import { useArtifactMenus } from "./ArtifactMenus.tsx"
 import type { TaskArtifactState } from "./TaskArtifact.tsx"
+import { DraftArtifactRow, LastingArtifactsSection } from "./TaskFilesRows.tsx"
 import { draftedOn, draftLine, useTaskLasting } from "./task-lasting.ts"
 import "./task-lasting.css"
 
 const FIRST = 5
+
+function LastingPanel({
+  task,
+  lasting,
+  lastingShown,
+  named,
+  menus,
+  onShowAll,
+}: {
+  task: TaskArtifactState["task"]
+  lasting: ReturnType<typeof useTaskLasting>
+  lastingShown: ReturnType<typeof useTaskLasting>["artifacts"]
+  named: ReadonlySet<string>
+  menus: ReturnType<typeof useArtifactMenus>
+  onShowAll: () => void
+}) {
+  if (lasting.project !== null && task !== undefined) {
+    return (
+      <LastingArtifactsSection
+        task={task}
+        lasting={lasting}
+        lastingShown={lastingShown}
+        named={named}
+        menus={menus}
+        onShowAll={onShowAll}
+      />
+    )
+  }
+  if (lasting.query.error !== null) {
+    return (
+      <p className="ir-doc-note" role="status">
+        Could not read the lasting artifacts.{" "}
+        <button type="button" className="q-link" onClick={lasting.reload}>
+          Try again
+        </button>
+      </p>
+    )
+  }
+  return null
+}
+
+function isSameArtifactTarget(
+  current: { where: ArtifactWhere; file: string } | null,
+  where: ArtifactWhere,
+  file: string,
+): boolean {
+  return (
+    current?.file === file && current.where.scope === where.scope && current.where.id === where.id
+  )
+}
 
 export function TaskFilesArtifacts({
   state,
@@ -59,110 +104,33 @@ export function TaskFilesArtifacts({
   const lines = state.api !== undefined && task !== undefined
   const listed = lasting.artifacts
   const lastingShown = allLasting || listed.length <= 6 ? listed : listed.slice(0, FIRST)
+  const countLabel = artifacts.length ? artifacts.length : planned ? "none" : "none yet"
+  const projectsCtx =
+    task !== undefined && lasting.query.data !== null
+      ? { projects: lasting.query.data.projects, project: task.project }
+      : undefined
 
   return (
     <>
       <section className="ir-compact-artifacts" data-testid="artifacts-tab" aria-label="Artifacts">
         <h3>
           <span>Artifacts</span>
-          <span>{artifacts.length ? artifacts.length : planned ? "none" : "none yet"}</span>
+          <span>{countLabel}</span>
         </h3>
-        {shown.map(({ where, artifact }) => {
-          const line =
-            lines && task !== undefined
-              ? draftLine(
-                  artifact,
-                  listed,
-                  task.id,
-                  lasting.query.data !== null
-                    ? { projects: lasting.query.data.projects, project: task.project }
-                    : undefined,
-                )
-              : null
-          return (
-            <div
-              className="ir-file-entry"
-              key={`${where.scope}:${where.id}:${artifact.file}`}
-              data-draft={artifact.name}
-            >
-              <button
-                type="button"
-                className="ir-file-row ir-draft-row"
-                title={`${artifact.title} · ${artifact.file}`}
-                data-testid="artifact-row"
-                data-file={artifact.file}
-                aria-current={
-                  current?.file === artifact.file &&
-                  current.where.scope === where.scope &&
-                  current.where.id === where.id
-                    ? "page"
-                    : undefined
-                }
-                onClick={() => onOpen(where, artifact)}
-                onContextMenu={(event) => menus.draftMenu(event, artifact)}
-              >
-                <ImageIcon size={13} aria-hidden="true" />
-                {lines ? (
-                  <span className="ir-draft-text">
-                    <span className="ir-draft-name">
-                      {artifact.pages !== undefined
-                        ? artifact.name
-                        : artifact.file.replace(/^.*\//, "").replace(/\.html$/, "")}
-                      {line === null ? (
-                        // A draft with no base in the Library is new: one mono line, the dot says so.
-                        <i
-                          className="dg-dot ir-new-dot"
-                          title="New · not in the Library"
-                          data-testid="artifact-new"
-                        />
-                      ) : null}
-                    </span>
-                    {line === null ? null : (
-                      <span className="ir-draft-line" data-testid="draft-line">
-                        {line.state === "deleted" ? (
-                          <>
-                            Its base, <b>{line.title}</b>, was deleted from the Library
-                          </>
-                        ) : line.state === "missing" ? (
-                          <>
-                            Builds on <b>{line.title}</b>, which is not in the Library
-                          </>
-                        ) : (
-                          <>
-                            {line.title}
-                            {line.state === "archived" ? " (archived)" : ""}
-                            {line.pages.length > 0 ? ` › ${line.pages.join(", ")}` : ""}
-                          </>
-                        )}
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span>
-                    {artifact.pages !== undefined
-                      ? artifact.name
-                      : artifact.file.replace(/^.*\//, "").replace(/\.html$/, "")}
-                  </span>
-                )}
-                <small>
-                  {artifact.comments
-                    ? `${artifact.comments} ${artifact.comments === 1 ? "comment" : "comments"}`
-                    : ""}
-                </small>
-              </button>
-              {menus.enabled ? (
-                <button
-                  type="button"
-                  className="ir-file-menu"
-                  aria-label={`Actions for ${artifact.name}`}
-                  onClick={(event) => menus.draftMenu(event, artifact)}
-                >
-                  <MoreHorizontalIcon size={14} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          )
-        })}
+        {shown.map(({ where, artifact }) => (
+          <DraftArtifactRow
+            key={`${where.scope}:${where.id}:${artifact.file}`}
+            where={where}
+            artifact={artifact}
+            line={
+              lines && task !== undefined ? draftLine(artifact, listed, task.id, projectsCtx) : null
+            }
+            lines={lines}
+            isCurrent={isSameArtifactTarget(current, where, artifact.file)}
+            menus={menus}
+            onOpen={onOpen}
+          />
+        ))}
         {shown.length < artifacts.length ? (
           <button type="button" className="ir-file-row" onClick={() => setAll(true)}>
             <ChevronDownIcon size={13} aria-hidden="true" />
@@ -178,121 +146,14 @@ export function TaskFilesArtifacts({
         ) : null}
       </section>
       {afterDrafts}
-      {lasting.project !== null && task !== undefined ? (
-        <section data-testid="lasting-artifacts" aria-label="Lasting artifacts">
-          <h3>
-            <span>Library · {task.projectName}</span>
-            <a className="q-link ir-all-artifacts" href="#/artifacts">
-              All artifacts
-            </a>
-          </h3>
-          {lastingShown.map((artifact) => (
-            <div className="ir-file-entry" key={artifact.name} data-lasting={artifact.name}>
-              <button
-                type="button"
-                className="ir-file-row ir-draft-row"
-                title={`${artifact.title} · ${artifact.folder}`}
-                data-testid="lasting-row"
-                onClick={() => menus.openInLibrary(task.project, artifact)}
-                onContextMenu={(event) => menus.lastingMenu(event, artifact)}
-              >
-                <LayersIcon size={13} aria-hidden="true" />
-                <span className="ir-draft-text">
-                  <span className="ir-draft-name ir-lasting-name">{artifact.title}</span>
-                  {named.has(artifact.name) ? (
-                    <span className="ir-draft-line">This task drafts on it</span>
-                  ) : null}
-                </span>
-                <small>
-                  {artifact.pages.length} {artifact.pages.length === 1 ? "page" : "pages"}
-                </small>
-              </button>
-              {menus.enabled ? (
-                <button
-                  type="button"
-                  className="ir-file-menu"
-                  aria-label={`Actions for ${artifact.title}`}
-                  onClick={(event) => menus.lastingMenu(event, artifact)}
-                >
-                  <MoreHorizontalIcon size={14} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          ))}
-          {lasting.broken.map((artifact) => (
-            <div
-              className="ir-file-row"
-              key={artifact.name}
-              aria-disabled="true"
-              data-testid="lasting-broken"
-            >
-              <LayersIcon size={13} aria-hidden="true" />
-              <span className="ir-draft-text">
-                <span className="ir-draft-name">{artifact.name}</span>
-                <span className="ir-draft-line">Cannot be read: {artifact.reason}</span>
-              </span>
-            </div>
-          ))}
-          {lasting.also.map(({ project, artifact }) => (
-            // Shown here from another project: it opens, and drafts, as that project's artifact.
-            <div
-              className="ir-file-entry"
-              key={`${project}:${artifact.name}`}
-              data-lasting={`${project}:${artifact.name}`}
-            >
-              <button
-                type="button"
-                className="ir-file-row ir-draft-row"
-                title={`${artifact.title} · ${artifact.folder}`}
-                data-testid="lasting-row"
-                onClick={() => menus.openInLibrary(project, artifact)}
-                onContextMenu={(event) => menus.lastingMenu(event, artifact, project)}
-              >
-                <LayersIcon size={13} aria-hidden="true" />
-                <span className="ir-draft-text">
-                  <span className="ir-draft-name ir-lasting-name">{artifact.title}</span>
-                  <span className="ir-draft-line">
-                    From{" "}
-                    {lasting.query.data?.projects.find((p) => p.id === project)?.name ?? project}
-                  </span>
-                </span>
-                <small>
-                  {artifact.pages.length} {artifact.pages.length === 1 ? "page" : "pages"}
-                </small>
-              </button>
-              {menus.enabled ? (
-                <button
-                  type="button"
-                  className="ir-file-menu"
-                  aria-label={`Actions for ${artifact.title}`}
-                  onClick={(event) => menus.lastingMenu(event, artifact, project)}
-                >
-                  <MoreHorizontalIcon size={14} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          ))}
-          {lastingShown.length < listed.length ? (
-            <button type="button" className="ir-file-row" onClick={() => setAllLasting(true)}>
-              <ChevronDownIcon size={13} aria-hidden="true" />
-              <span>{listed.length - lastingShown.length} more</span>
-            </button>
-          ) : null}
-          {listed.length === 0 && lasting.broken.length === 0 && lasting.also.length === 0 ? (
-            <p className="ir-doc-note ir-library-empty" data-testid="lasting-empty">
-              <ShapesIcon size={13} aria-hidden="true" />
-              None saved yet
-            </p>
-          ) : null}
-        </section>
-      ) : lasting.query.error !== null ? (
-        <p className="ir-doc-note" role="status">
-          Could not read the lasting artifacts.{" "}
-          <button type="button" className="q-link" onClick={lasting.reload}>
-            Try again
-          </button>
-        </p>
-      ) : null}
+      <LastingPanel
+        task={task}
+        lasting={lasting}
+        lastingShown={lastingShown}
+        named={named}
+        menus={menus}
+        onShowAll={() => setAllLasting(true)}
+      />
       {menus.node}
     </>
   )

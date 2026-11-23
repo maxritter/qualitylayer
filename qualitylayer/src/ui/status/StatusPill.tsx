@@ -7,7 +7,6 @@ import { cn } from "cn"
 import {
   ArrowRightIcon,
   ChevronDownIcon,
-  CopyIcon,
   HourglassIcon,
   SquareTerminalIcon,
   TriangleAlertIcon,
@@ -15,30 +14,30 @@ import {
 } from "lucide-react"
 import { type ReactNode, useContext, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { agentName, lastSign, QUIET_MS } from "../../core/live/liveness.ts"
+import { agentName } from "../../core/live/liveness.ts"
 import type { TaskDetail } from "../api.ts"
 import { useNow } from "../hooks.ts"
 import { WhoMark } from "../kit/WhoMark.tsx"
-import { type Status, signalAge, statusOf, TOOL_QUIET_WORDS } from "../live-status.ts"
-import { personVerify } from "../model.ts"
-import { ReportThis } from "../ReportThis.tsx"
+import { type Status, statusOf } from "../live-status.ts"
 import { AgentChip } from "../shell/AgentChip.tsx"
 import { ShellApiContext } from "../shell/context.ts"
+import { StatusPanel } from "./StatusPanel.tsx"
 
-const MIN = 60_000
+export { StatusPanel }
 
-const clock = (at: number) =>
-  new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+const STATUS_ICONS: Partial<Record<Status["icon"], () => ReactNode>> = {
+  spin: () => <span className="q-st-spin" aria-hidden="true" />,
+  go: () => null,
+  term: () => <SquareTerminalIcon className="ic" aria-hidden="true" />,
+  hour: () => <HourglassIcon className="ic" aria-hidden="true" />,
+  unplug: () => <UnplugIcon className="ic" aria-hidden="true" />,
+  alert: () => <TriangleAlertIcon className="ic" aria-hidden="true" />,
+  done: () => <WhoMark who="done" />,
+}
 
 function Icon({ icon }: { icon: Status["icon"] }) {
-  if (icon === "spin") return <span className="q-st-spin" aria-hidden="true" />
-  if (icon === "go") return null
-  if (icon === "term") return <SquareTerminalIcon className="ic" aria-hidden="true" />
-  if (icon === "hour") return <HourglassIcon className="ic" aria-hidden="true" />
-  if (icon === "unplug") return <UnplugIcon className="ic" aria-hidden="true" />
-  if (icon === "alert") return <TriangleAlertIcon className="ic" aria-hidden="true" />
-  if (icon === "done") return <WhoMark who="done" />
-  return <i className="q-m q-m-quiet" aria-hidden="true" />
+  const render = STATUS_ICONS[icon]
+  return render ? render() : <i className="q-m q-m-quiet" aria-hidden="true" />
 }
 
 /** The words of the pill: the agent or the lead first, then what it says. */
@@ -161,304 +160,5 @@ function LegacyStatusPill({ task, compact = false, onGo, onCopy, onOpen }: Props
         />
       </PopoverContent>
     </Popover>
-  )
-}
-
-/** What the session does now, in the panel's header: "Codex · building". */
-function stageWord(task: TaskDetail): string {
-  if (task.stage === "implement") return "building"
-  if (task.stage === "verify") return personVerify(task) ? "reviewing" : "checking"
-  return "planning"
-}
-
-function Command({
-  command,
-  onCopy,
-}: {
-  command: string
-  onCopy: (text: string, note: string) => void
-}) {
-  return (
-    <div className="q-cmdline" data-testid="status-command">
-      <code className="min-w-0 truncate">{command}</code>
-      <button
-        type="button"
-        className="q-btn quiet sm"
-        onClick={() => onCopy(command, "Copied. Paste it into your agent.")}
-      >
-        <CopyIcon className="size-3.5" aria-hidden="true" />
-        Copy
-      </button>
-    </div>
-  )
-}
-
-function Row({
-  mark,
-  name,
-  time,
-  detail,
-}: {
-  mark: ReactNode
-  name: string
-  time: string
-  detail?: string | null
-}) {
-  return (
-    <div className="q-stp-r" data-testid="status-row">
-      {mark}
-      <span className="n">{name}</span>
-      <span className="t">{time}</span>
-      {detail !== undefined && detail !== null && detail !== "" ? (
-        <span className="d">{detail}</span>
-      ) : null}
-    </div>
-  )
-}
-
-export function StatusPanel({
-  task,
-  status,
-  now,
-  onCopy,
-  onOpen,
-}: {
-  task: TaskDetail
-  status: Status
-  now: number
-  onCopy: (text: string, note: string) => void
-  onOpen: (view: string) => void
-}) {
-  const signals = task.live?.signals ?? null
-  const name = agentName(task.session?.agent ?? signals?.agent ?? null)
-  const last = signals !== null ? lastSign(signals) : null
-  const progress = task.live?.progress ?? null
-  const live = status.liveness
-  const session =
-    task.action === "implement" ? "The Plan is approved" : `${name} · ${stageWord(task)}`
-
-  const title =
-    status.state === "working"
-      ? [
-          status.short,
-          progress?.slice != null
-            ? task.slices.find((s) => s.n === progress.slice?.n)?.title.toLowerCase()
-            : undefined,
-        ]
-          .filter(Boolean)
-          .join(" · ")
-      : status.state === "stopped" && live.state === "stopped"
-        ? live.why === "interrupted"
-          ? `You stopped ${name} at ${clock(live.at)}`
-          : `${status.lead} at ${clock(live.at)}`
-        : status.state === "error"
-          ? `QualityLayer refused it at ${clock(task.live?.refusal?.at ?? now)}`
-          : status.lead !== null
-            ? `${status.lead} · ${status.text}`
-            : status.text
-
-  const sigAge = (at: number | null) => signalAge(at, now)
-  const fresh = (at: number | null) => at !== null && now - at < QUIET_MS
-  const signalRow =
-    signals !== null ? (
-      <>
-        {last !== null ? (
-          <div className="q-stp-life" data-testid="status-life">
-            <span>Last sign of life</span>
-            <b>{now - last.at > 60 * MIN ? clock(last.at) : `${sigAge(last.at)} ago`}</b>
-            <span className="t">{last.words}</span>
-          </div>
-        ) : null}
-        <div className="q-stp-sigs" data-testid="status-signals">
-          <span>
-            <i className={fresh(signals.hook?.at ?? null) ? undefined : "old"} />
-            tool hook · {sigAge(signals.hook?.at ?? null)}
-          </span>
-          <span>
-            <i className={fresh(signals.transcript) ? undefined : "old"} />
-            transcript · {sigAge(signals.transcript)}
-          </span>
-          <span>
-            <i
-              className={
-                signals.process === "alive"
-                  ? undefined
-                  : signals.process === "gone"
-                    ? "gone"
-                    : "old"
-              }
-            />
-            process · {signals.process === "unknown" ? "not known" : signals.process}
-          </span>
-        </div>
-      </>
-    ) : null
-
-  const subagents = signals?.agents ?? []
-  const running = subagents.filter((a) => a.stopped === null)
-  const recent = subagents.filter((a) => a.stopped !== null && now - a.stopped < 10 * MIN)
-  const helpers = (task.helpers ?? []).filter(
-    (h) => h.kind !== "review" && h.state !== "done" && h.state !== "failed",
-  )
-  const reviews = (task.helpers ?? []).filter((h) => h.kind === "review" && h.state === "running")
-  const helperRow = (h: (typeof helpers)[number]) => ({
-    key: h.id,
-    done: false,
-    name: h.label ?? h.budget?.name ?? "An agent",
-    time: sigAge(h.started ?? h.at ?? null),
-    detail: h.line,
-  })
-  const agentRows =
-    running.length + recent.length > 0
-      ? [...running, ...recent].map((a) => ({
-          key: a.id,
-          done: a.stopped !== null,
-          name: a.words,
-          time: sigAge(a.started),
-          detail: a.stopped !== null ? "done" : null,
-        }))
-      : helpers.map(helperRow)
-  const runningCount = agentRows.filter((r) => !r.done).length
-  const doneCount = agentRows.length - runningCount
-
-  return (
-    <div data-testid="status-panel-body">
-      <div className="q-stp-h">
-        <b>{title}</b>
-        <span className="q-stp-sess">{session}</span>
-      </div>
-
-      {status.state === "working" || status.state === "quiet" || status.state === "stopped"
-        ? signalRow
-        : null}
-
-      {status.state === "working" && signals?.tool != null ? (
-        <>
-          <div className="q-stp-g">Now</div>
-          <Row
-            mark={<WhoMark who="agent" running />}
-            name={signals.tool.words}
-            time={sigAge(signals.tool.at)}
-            detail={TOOL_QUIET_WORDS}
-          />
-        </>
-      ) : null}
-
-      {task.stage === "implement" && progress !== null && status.state !== "your-move" ? (
-        <>
-          <div className="q-stp-g">The build</div>
-          <Row
-            mark={<WhoMark who={status.state === "working" ? "agent" : "todo"} />}
-            name={progress.words.place}
-            time=""
-          />
-        </>
-      ) : null}
-
-      {status.state === "working" && agentRows.length > 0 ? (
-        <>
-          <div className="q-stp-g">
-            Agents it started · {runningCount} running{doneCount > 0 ? `, ${doneCount} done` : ""}
-          </div>
-          {agentRows.map((r) => (
-            <Row
-              key={r.key}
-              mark={<WhoMark who={r.done ? "done" : "agent"} running={!r.done} />}
-              name={r.name}
-              time={r.time}
-              detail={r.detail}
-            />
-          ))}
-        </>
-      ) : null}
-
-      {status.state === "working" && reviews.length > 0 ? (
-        <>
-          <div className="q-stp-g">Reviews</div>
-          {reviews.map((r) => (
-            <Row
-              key={r.id}
-              mark={<WhoMark who="agent" running />}
-              name={r.label ?? "Review"}
-              time={sigAge(r.started ?? null)}
-              detail={r.line}
-            />
-          ))}
-        </>
-      ) : null}
-
-      {status.state === "quiet" ? (
-        <>
-          <p>
-            It may still be thinking, or it may be waiting on something only its window shows. Look
-            there for:
-          </p>
-          <ul>
-            <li>a permission prompt waiting for you</li>
-            <li>a long command still running</li>
-            <li>an error it printed</li>
-          </ul>
-        </>
-      ) : null}
-
-      {status.state === "your-move" && task.action === "implement" ? (
-        <p>
-          The build runs in a new session you start yourself, with the agent, model and effort you
-          pick on Implement Start.
-        </p>
-      ) : status.state === "your-move" && status.icon === "hour" ? (
-        <p>
-          {name} has said nothing for a while. Look in its window: a permission prompt, a question
-          in its chat, or an error may wait for you there. If its session is gone, continue with:
-        </p>
-      ) : status.state === "your-move" && status.text.includes("permission") ? (
-        <p>Allow it, or say no, in {name}'s window. The work goes on from there.</p>
-      ) : status.state === "your-move" && status.text.includes("waits for you") ? (
-        <p>{name} ended its turn and waits for your words in its window.</p>
-      ) : status.state === "your-move" ? (
-        <p>Your decision is recorded. {name} stopped waiting, so tell it to continue:</p>
-      ) : null}
-
-      {status.state === "stopped" && live.state === "stopped" ? (
-        <p>
-          {live.why === "interrupted"
-            ? `Type anything in ${name}'s window and it goes on where it stopped.`
-            : task.live?.question != null
-              ? `Question ${task.live.question.number} is still open: answer it here, and it is kept. To go on, run this in ${name} or any agent:`
-              : `Nothing is lost. To go on, run this in ${name} or any agent:`}
-        </p>
-      ) : null}
-
-      {status.state === "error" ? (
-        <>
-          <p>
-            {task.live?.refusal?.words}. {name} was told and is fixing it.
-          </p>
-          <p>Nothing needs you. If it is refused a second time, it comes to you.</p>
-        </>
-      ) : null}
-
-      {status.command !== null ? <Command command={status.command} onCopy={onCopy} /> : null}
-
-      {status.state === "working" ? (
-        <div className="q-stp-f">
-          Nothing needs you. You get a notification when something does.
-        </div>
-      ) : status.state === "quiet" ? (
-        <div className="q-stp-f">With no news for 20 minutes, this becomes your move.</div>
-      ) : status.state === "your-move" && task.action === "implement" ? (
-        <div className="q-stp-f">
-          <button type="button" className="q-link" onClick={() => onOpen("implement")}>
-            Open Implement Start
-          </button>
-        </div>
-      ) : status.state === "error" ? (
-        <div className="q-stp-f">
-          <ReportThis
-            error={`${task.live?.refusal?.lead ?? ""}: ${task.live?.refusal?.words ?? ""}`}
-          />
-        </div>
-      ) : null}
-    </div>
   )
 }

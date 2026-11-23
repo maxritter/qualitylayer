@@ -26,6 +26,95 @@ export function StepGlyph({ step, className }: { step: FlowStepId; className?: s
   return <Icon className={className} aria-hidden="true" />
 }
 
+const TONE_WHO: Record<string, string> = {
+  you: "you",
+  live: "agent",
+  done: "done",
+  bad: "stop",
+}
+
+const TONE_FILL: Record<string, number> = {
+  done: 1,
+  todo: 0,
+}
+
+function nextFocusIndex(key: string, current: number, total: number) {
+  if (key === "Home") return 0
+  if (key === "End") return total - 1
+  const delta = key === "ArrowRight" ? 1 : -1
+  return (current + delta + total) % total
+}
+
+function handleStepTrackKeyDown(event: KeyboardEvent<HTMLElement>, nav: HTMLElement | null) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+  const buttons = [...(nav?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+  const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  if (current < 0 || buttons.length === 0) return
+  const next = nextFocusIndex(event.key, current, buttons.length)
+  event.preventDefault()
+  buttons[next]?.focus()
+  buttons[next]?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
+}
+
+function scrollCurrentStepIntoView(nav: HTMLElement | null) {
+  const current = nav?.querySelector<HTMLElement>('[aria-current="step"]')
+  if (!nav || !current || nav.scrollWidth <= nav.clientWidth) return
+  const box = nav.getBoundingClientRect()
+  const at = current.getBoundingClientRect()
+  if (at.left >= box.left && at.right <= box.right) return
+  nav.scrollLeft += at.left - box.left - (box.width - at.width) / 2
+}
+
+function StepTabButton({
+  tab,
+  step,
+  approves,
+  progress,
+  look,
+  onOpen,
+}: {
+  tab: StageTab
+  step: FlowStepId | null
+  approves: boolean
+  progress: boolean
+  look: "header" | "strip"
+  onOpen: (key: string) => void
+}) {
+  // A step's own ring: empty before it is reached, half filled while it runs, checked once done.
+  const fill = TONE_FILL[tab.tone] ?? 0.5
+  const note =
+    tab.note !== undefined ? (
+      <small className="ir-step-note">{tab.note}</small>
+    ) : progress && tab.state !== "" ? (
+      <small className="ir-step-state">{tab.state}</small>
+    ) : null
+  return (
+    <button
+      type="button"
+      className="q-tab"
+      data-tone={tab.tone}
+      data-step={tab.step}
+      aria-current={tab.step === step ? "step" : undefined}
+      title={[tab.title, progress ? tab.state : null].filter(Boolean).join(" · ")}
+      onClick={() => onOpen(tab.key)}
+    >
+      <span
+        className="ir-step-symbol"
+        aria-hidden="true"
+        data-step={tab.step}
+        data-who={TONE_WHO[tab.tone] ?? "todo"}
+      >
+        <StepRing fill={fill} size={look === "header" ? 14 : 16} />
+      </span>
+      <span className="ir-track-label">
+        {tab.label}
+        {note}
+      </span>
+      {approves ? <ApprovesIcon step={tab.step} /> : null}
+    </button>
+  )
+}
+
 export function StepTrack({
   tabs,
   step,
@@ -51,31 +140,8 @@ export function StepTrack({
   // A row narrower than its steps scrolls sideways: the step in view is brought into it, so the
   // person sees where they are (Verify on a phone sits past the right edge otherwise).
   const row = useRef<HTMLElement>(null)
-  const move = (event: KeyboardEvent<HTMLElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
-    const buttons = [...(row.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
-    const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
-    if (current < 0 || buttons.length === 0) return
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? buttons.length - 1
-          : (current + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length
-    event.preventDefault()
-    buttons[next]?.focus()
-    buttons[next]?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
-  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new step or a new set of steps moves the current one
-  useLayoutEffect(() => {
-    const nav = row.current
-    const current = nav?.querySelector<HTMLElement>('[aria-current="step"]')
-    if (!nav || !current || nav.scrollWidth <= nav.clientWidth) return
-    const box = nav.getBoundingClientRect()
-    const at = current.getBoundingClientRect()
-    if (at.left >= box.left && at.right <= box.right) return
-    nav.scrollLeft += at.left - box.left - (box.width - at.width) / 2
-  }, [step, tabs.length])
+  useLayoutEffect(() => scrollCurrentStepIntoView(row.current), [step, tabs.length])
   // An earlier task has no steps to draw.
   if (tabs.length === 0) return null
   return (
@@ -86,52 +152,19 @@ export function StepTrack({
       data-look={look}
       data-steps={tabs.length}
       data-waiting={starting}
-      onKeyDown={move}
+      onKeyDown={(event) => handleStepTrackKeyDown(event, row.current)}
     >
-      {tabs.map((tab) => {
-        // A step's own ring: empty before it is reached, half filled while it runs, checked once done.
-        const fill = tab.tone === "done" ? 1 : tab.tone === "todo" ? 0 : 0.5
-        return (
-          <button
-            type="button"
-            key={tab.key}
-            className="q-tab"
-            data-tone={tab.tone}
-            data-step={tab.step}
-            aria-current={tab.step === step ? "step" : undefined}
-            title={[tab.title, progress ? tab.state : null].filter(Boolean).join(" · ")}
-            onClick={() => onOpen(tab.key)}
-          >
-            <span
-              className="ir-step-symbol"
-              aria-hidden="true"
-              data-step={tab.step}
-              data-who={
-                tab.tone === "you"
-                  ? "you"
-                  : tab.tone === "live"
-                    ? "agent"
-                    : tab.tone === "done"
-                      ? "done"
-                      : tab.tone === "bad"
-                        ? "stop"
-                        : "todo"
-              }
-            >
-              <StepRing fill={fill} size={look === "header" ? 14 : 16} />
-            </span>
-            <span className="ir-track-label">
-              {tab.label}
-              {tab.note !== undefined ? (
-                <small className="ir-step-note">{tab.note}</small>
-              ) : progress && tab.state !== "" ? (
-                <small className="ir-step-state">{tab.state}</small>
-              ) : null}
-            </span>
-            {approves ? <ApprovesIcon step={tab.step} /> : null}
-          </button>
-        )
-      })}
+      {tabs.map((tab) => (
+        <StepTabButton
+          key={tab.key}
+          tab={tab}
+          step={step}
+          approves={approves}
+          progress={progress}
+          look={look}
+          onOpen={onOpen}
+        />
+      ))}
     </nav>
   )
 }

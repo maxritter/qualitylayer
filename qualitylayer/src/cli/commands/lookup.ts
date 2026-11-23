@@ -42,6 +42,38 @@ export type CostFigures = {
 
 export type CostRow = Entry & { cost: CostFigures | null }
 
+async function readEntryCost(
+  ctx: Ctx,
+  repo: RepoRef,
+  entry: Entry,
+  read: (ctx: Ctx, task: Task) => Promise<TaskCost>,
+): Promise<CostFigures | null> {
+  // `path` is `<checkout>/docs/plans/<slug>`: the task is read from the checkout that holds it.
+  const task = await loadTask(
+    ctx,
+    { root: dirname(dirname(dirname(entry.path))), id: repo.id },
+    entry.task,
+  )
+  if (task === null) return null
+  try {
+    const { total } = await read(ctx, task)
+    // A model without a price makes the figure unknown, as the App's shipped summary does.
+    const unpriced = total.usd === null || (total.unpriced ?? []).some((row) => row.tokens > 0)
+    const cost: CostFigures = {
+      usd: unpriced ? null : total.usd,
+      active_ms: total.ms,
+      tokens: total.all,
+    }
+    // The App's one quiet warning, for a task still at work.
+    const warning = await taskTokenWarning(ctx, task, { total }).catch(() => null)
+    if (warning !== null) cost.token_warning = warning.text
+    return cost
+  } catch {
+    // records that cannot be read leave this task without a cost; the others go on
+    return null
+  }
+}
+
 /**
  * Each task of `entries` (newest first) with its cost. `taskCost` has no deadline of its own, so
  * the command keeps the bound: the clock is read before each task, and once `budgetMs` is spent the
@@ -72,27 +104,7 @@ export async function costRows(
       tasks.push({ ...entry, cost: null })
       continue
     }
-    // `path` is `<checkout>/docs/plans/<slug>`: the task is read from the checkout that holds it.
-    const task = await loadTask(
-      ctx,
-      { root: dirname(dirname(dirname(entry.path))), id: repo.id },
-      entry.task,
-    )
-    let cost: CostFigures | null = null
-    if (task !== null) {
-      try {
-        const { total } = await read(ctx, task)
-        // A model without a price makes the figure unknown, as the App's shipped summary does.
-        const unpriced = total.usd === null || (total.unpriced ?? []).some((row) => row.tokens > 0)
-        cost = { usd: unpriced ? null : total.usd, active_ms: total.ms, tokens: total.all }
-        // The App's one quiet warning, for a task still at work.
-        const warning = await taskTokenWarning(ctx, task, { total }).catch(() => null)
-        if (warning !== null) cost.token_warning = warning.text
-      } catch {
-        // records that cannot be read leave this task without a cost; the others go on
-      }
-    }
-    tasks.push({ ...entry, cost })
+    tasks.push({ ...entry, cost: await readEntryCost(ctx, repo, entry, read) })
   }
   return { tasks, complete: pending === 0, pending }
 }

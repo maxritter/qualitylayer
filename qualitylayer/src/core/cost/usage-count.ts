@@ -4,10 +4,9 @@
 
 import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../agents/ids.ts"
 import type { UsageAccounting } from "./accounting.ts"
-import { billingCode } from "./accounting.ts"
-import { isFastTier, PRICE_NOTE, priceOf } from "./prices.ts"
-import type { Call } from "./transcripts.ts"
+import { PRICE_NOTE } from "./prices.ts"
 import type { UsageBilling } from "./usage-billing.ts"
+import { type Indexed, pack, STRIDE, sessionOf, widened } from "./usage-count-pack.ts"
 import { type DayWindow, dayIndex, dayKey, type UsagePeriod, usageWindows } from "./usage-days.ts"
 import type { Candidate } from "./usage-files.ts"
 import { UNCOUNTED_REASON } from "./usage-reason.ts"
@@ -24,8 +23,10 @@ import {
   zeroSpend,
 } from "./usage-spend.ts"
 
+export type { Indexed } from "./usage-count-pack.ts"
 export type { UsagePeriod } from "./usage-days.ts"
 export type { Spend } from "./usage-spend.ts"
+export { pack, STRIDE, sessionOf, widened }
 export const tokensOf = tokensIn
 
 export type ModelUsage = Spend & {
@@ -91,84 +92,7 @@ export type Usage = {
   note: string
 }
 
-/** One transcript's calls as flat numbers: see `STRIDE`. */
-export type Indexed = {
-  mtimeMs: number
-  size: number
-  models: string[]
-  calls: number[]
-  /** The numbers a call takes; an index made before the tier was kept has none and holds 9. */
-  stride?: number
-}
-/** id, time, model, input, output, cache read, cache write 5m, cache write 1h, USD (-1: no price), fast tier (0 or 1). */
-export const STRIDE = 13
-/** What an index made before the fast tier was kept took for each call. */
-export const STRIDE_BEFORE_TIER = 9
-
 export type Wanted = { source: Source; file: Candidate }
-
-/** A 53-bit number for an id, small enough to keep a million of them. */
-const idNumber = (key: string): number => Number(BigInt(Bun.hash(key)) & 0x1fffffffffffffn)
-
-export function pack(source: Source, file: Candidate, calls: Call[]): Indexed {
-  const models: string[] = []
-  const flat: number[] = []
-  for (const call of calls) {
-    let model = models.indexOf(call.model)
-    if (model === -1) model = models.push(call.model) - 1
-    const usd = priceOf(call.model, call.tokens, { ...call.pricing, at: call.at ?? file.mtimeMs })
-    const key = call.accountingId
-      ? `${source.agent}:accounting:${call.accountingId}`
-      : source.sharedIds
-        ? `${source.agent}:${call.id}`
-        : `${file.path}:${call.id}`
-    flat.push(
-      idNumber(key),
-      call.at ?? file.mtimeMs,
-      model,
-      call.tokens.input,
-      call.tokens.output,
-      call.tokens.cacheRead,
-      call.tokens.cacheWrite5m,
-      call.tokens.cacheWrite1h,
-      usd ?? -1,
-      usd !== null && isFastTier(call.model, call.pricing ?? {}) ? 1 : 0,
-      typeof call.reportedUsd === "number" &&
-        Number.isFinite(call.reportedUsd) &&
-        call.reportedUsd >= 0
-        ? call.reportedUsd
-        : -1,
-      billingCode(call.billing),
-      call.missingTokens ? 1 : 0,
-    )
-  }
-  return { mtimeMs: file.mtimeMs, size: file.size, models, calls: flat, stride: STRIDE }
-}
-
-/**
- * An index in the current form. One made before the tier was kept holds nine numbers a call: each is
- * given the standard tier (its price already carried the tier; only the speed was not recorded), and
- * the transcript is not read again.
- */
-export function widened(indexed: Indexed): Indexed | null {
-  const stride = indexed.stride ?? STRIDE_BEFORE_TIER
-  if (stride === STRIDE) return indexed
-  if (![STRIDE_BEFORE_TIER, 10].includes(stride) || indexed.calls.length % stride !== 0) return null
-  const calls: number[] = []
-  for (let at = 0; at < indexed.calls.length; at += stride) {
-    for (let n = 0; n < stride; n++) calls.push(indexed.calls[at + n] as number)
-    if (stride === STRIDE_BEFORE_TIER) calls.push(0)
-    calls.push(-1, 0, 0)
-  }
-  return { ...indexed, calls, stride: STRIDE }
-}
-
-/** The session a transcript belongs to: a Claude Code helper's transcript is part of its parent's. */
-const SUBAGENT = /^(.*)[\\/]subagents[\\/][^\\/]+\.jsonl$/
-export const sessionOf = (path: string): string => {
-  const sub = SUBAGENT.exec(path)
-  return sub?.[1] === undefined ? path : `${sub[1]}.jsonl`
-}
 
 /** What is added up for one agent: the whole period, the period before, each model, each day. */
 type AgentAcc = {
@@ -198,6 +122,43 @@ const accOf = (map: Map<string, Acc>, key: string): Acc => {
 
 type Counted = { agents: Map<NativeAgent, AgentAcc>; total: Acc; before: Acc }
 
+type CountState = {
+  seen: Set<number>
+  units: Map<string, UnitPrice | null>
+  out: Counted
+  piece: Piece
+  current: DayWindow
+  previous: DayWindow
+}
+
+function recordPiece(mine: AgentAcc, out: Counted, piece: Piece, day: number, model: string): void {
+  if (day < 0) {
+    mine.before.add(piece)
+    out.before.add(piece)
+    return
+  }
+  mine.total.add(piece)
+  out.total.add(piece)
+  accOf(mine.models, model).add(piece)
+  mine.days[day]?.add(piece)
+  const inDay = mine.dayModels[day]
+  if (inDay !== undefined) accOf(inDay, model).add(piece)
+}
+
+function countFileCalls(held: Indexed, mine: AgentAcc, session: number, state: CountState): void {
+  for (let at = 0; at < held.calls.length; at += STRIDE) {
+    const time = held.calls[at + 1] as number
+    const day = dayIndex(state.current, time)
+    if (day < 0 && dayIndex(state.previous, time) < 0) continue
+    const id = held.calls[at] as number
+    if (state.seen.has(id)) continue
+    state.seen.add(id)
+    const model = held.models[held.calls[at + 2] as number] ?? "unknown"
+    fill(state.piece, held, at, session, unitOf(state.units, model))
+    recordPiece(mine, state.out, state.piece, day, model)
+  }
+}
+
 /** The calls of every held file in `wanted`, each message id once, added up by agent, model and day. */
 function counted(
   files: ReadonlyMap<string, Indexed>,
@@ -205,41 +166,24 @@ function counted(
   current: DayWindow,
   previous: DayWindow,
 ): Counted {
-  const seen = new Set<number>()
   const sessions = new Map<string, number>()
-  const units = new Map<string, UnitPrice | null>()
-  const out: Counted = { agents: new Map(), total: new Acc(), before: new Acc() }
-  const piece = newPiece()
+  const state: CountState = {
+    seen: new Set(),
+    units: new Map(),
+    out: { agents: new Map(), total: new Acc(), before: new Acc() },
+    piece: newPiece(),
+    current,
+    previous,
+  }
   for (const { source, file } of wanted) {
     const held = files.get(file.path)
     if (held === undefined) continue
-    const mine = out.agents.get(source.agent) ?? newAgentAcc(current.starts.length)
-    out.agents.set(source.agent, mine)
+    const mine = state.out.agents.get(source.agent) ?? newAgentAcc(current.starts.length)
+    state.out.agents.set(source.agent, mine)
     const session = sessionNumber(sessions, `${source.agent}:${sessionOf(file.path)}`)
-    for (let at = 0; at < held.calls.length; at += STRIDE) {
-      const time = held.calls[at + 1] as number
-      const day = dayIndex(current, time)
-      const earlier = day < 0 && dayIndex(previous, time) >= 0
-      if (day < 0 && !earlier) continue
-      const id = held.calls[at] as number
-      if (seen.has(id)) continue
-      seen.add(id)
-      const model = held.models[held.calls[at + 2] as number] ?? "unknown"
-      fill(piece, held, at, session, unitOf(units, model))
-      if (earlier) {
-        mine.before.add(piece)
-        out.before.add(piece)
-        continue
-      }
-      mine.total.add(piece)
-      out.total.add(piece)
-      accOf(mine.models, model).add(piece)
-      mine.days[day]?.add(piece)
-      const inDay = mine.dayModels[day]
-      if (inDay !== undefined) accOf(inDay, model).add(piece)
-    }
+    countFileCalls(held, mine, session, state)
   }
-  return out
+  return state.out
 }
 
 const sessionNumber = (sessions: Map<string, number>, key: string): number => {

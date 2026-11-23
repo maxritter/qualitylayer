@@ -29,10 +29,96 @@ export type AdoptInput = {
 
 const pageName = (page: string): string => (page.endsWith(".html") ? page : `${page}.html`)
 
-export async function adoptDraft(
+type AdoptOutcome = { draft: string; file: string; draftOn: DraftOn; copied: string[] }
+
+async function adoptSinglePageDraft(
+  draft: { name: string; dir: string; pages: { file: string }[] },
+  artifact: string,
+  asked: string | undefined,
+): Promise<Result<AdoptOutcome>> {
+  // One page: the meta tag names the page it becomes in the artifact.
+  const target = asked ?? `${draft.name}.html`
+  if (!ARTIFACT_PAGE_NAME.test(target))
+    return bad(`"${target}" is not a page name: give the page a name`)
+  const file = draft.pages[0]?.file as string
+  const path = join(draft.dir, file)
+  await writeFile(
+    path,
+    withMeta(await readFile(path, "utf8"), "ql:draft-on", `${artifact}/${target}`),
+  )
+  return ok({
+    draft: draft.name,
+    file: `${TASK_ARTIFACTS}/${file}`,
+    draftOn: { artifact, page: target },
+    copied: [],
+  })
+}
+
+async function readExistingDraftConfig(
+  configPath: string,
+  draftName: string,
+): Promise<Result<Record<string, unknown>>> {
+  const seen = await lstat(configPath).catch(() => null)
+  if (seen === null) return ok({})
+  if (!seen.isFile() || seen.size > LASTING_CONFIG_MAX_BYTES)
+    return bad(`artifacts/${draftName}/${LASTING_CONFIG} cannot be changed`)
+  try {
+    const parsed: unknown = JSON.parse(await readFile(configPath, "utf8"))
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error()
+    return ok(parsed as Record<string, unknown>)
+  } catch {
+    return bad(`artifacts/${draftName}/${LASTING_CONFIG} does not read as JSON`)
+  }
+}
+
+async function collectUnchangedBase(
+  draftDir: string,
+  lastingDir: string,
+): Promise<Record<string, string>> {
+  // A file the artifact already has, byte for byte, is where the draft begins: it is no change until the
+  // draft edits it (a draft just kept is identical to what it became). The others are new.
+  const base: Record<string, string> = {}
+  const files = await listFiles(draftDir)
+  if (!files.ok) return base
+  for (const rel of files.data) {
+    if (rel === LASTING_CONFIG) continue
+    const mine = await fileBlobId(join(draftDir, rel))
+    if (mine !== null && mine === (await fileBlobId(join(lastingDir, rel)))) base[rel] = mine
+  }
+  return base
+}
+
+async function adoptFolderDraft(
+  task: Pick<WriteTask, "dir" | "repoRoot" | "repoId">,
+  draft: { name: string; dir: string; config: string; pages: { file: string }[] },
+  lastingDir: string,
+  artifact: string,
+  asked: string | undefined,
+): Promise<Result<AdoptOutcome>> {
+  if (asked !== undefined && !draft.pages.some((p) => p.file === asked))
+    return bad(`${draft.name} has no page ${asked}`)
+  const raw = await readExistingDraftConfig(draft.config, draft.name)
+  if (!raw.ok) return raw
+  const base = await collectUnchangedBase(draft.dir, lastingDir)
+  const draftOn: DraftOn = {
+    artifact,
+    project: task.repoId,
+    ...(asked !== undefined ? { page: asked } : {}),
+    ...(Object.keys(base).length > 0 ? { base } : {}),
+  }
+  await writeFile(draft.config, `${JSON.stringify({ v: 1, ...raw.data, draftOn }, null, 2)}\n`)
+  return ok({
+    draft: draft.name,
+    file: `${TASK_ARTIFACTS}/${draft.name}/${draft.pages[0]?.file}`,
+    draftOn,
+    copied: [],
+  })
+}
+
+async function validateAdoptInputs(
   task: Pick<WriteTask, "dir" | "repoRoot" | "repoId">,
   input: AdoptInput,
-): Promise<Result<{ draft: string; file: string; draftOn: DraftOn; copied: string[] }>> {
+) {
   if (!ARTIFACT_NAME.test(input.artifact)) return bad(`"${input.artifact}" is not an artifact name`)
   const draft = await readDraft(task, input.draft)
   if (!draft.ok) return draft
@@ -40,69 +126,27 @@ export async function adoptDraft(
     return bad(`${input.draft} already drafts on ${draft.data.draftOn.artifact}`)
   const lasting = await readLasting(task.repoRoot, input.artifact)
   if (!lasting.ok) return bad(`${input.artifact}: ${lasting.error.message}`)
+  return ok({ draft: draft.data, lasting: lasting.data })
+}
+
+export async function adoptDraft(
+  task: Pick<WriteTask, "dir" | "repoRoot" | "repoId">,
+  input: AdoptInput,
+): Promise<Result<AdoptOutcome>> {
   const asked = input.page === undefined ? undefined : pageName(input.page)
   if (asked !== undefined && !ARTIFACT_PAGE_NAME.test(asked))
     return bad(
       `"${input.page}" is not a page name (letters, digits, dots and dashes, ending in .html)`,
     )
-
-  if (draft.data.config === null) {
-    // One page: the meta tag names the page it becomes in the artifact.
-    const target = asked ?? `${draft.data.name}.html`
-    if (!ARTIFACT_PAGE_NAME.test(target))
-      return bad(`"${target}" is not a page name: give the page a name`)
-    const file = draft.data.pages[0]?.file as string
-    const path = join(draft.data.dir, file)
-    await writeFile(
-      path,
-      withMeta(await readFile(path, "utf8"), "ql:draft-on", `${input.artifact}/${target}`),
-    )
-    return ok({
-      draft: draft.data.name,
-      file: `${TASK_ARTIFACTS}/${file}`,
-      draftOn: { artifact: input.artifact, page: target },
-      copied: [],
-    })
-  }
-
-  if (asked !== undefined && !draft.data.pages.some((p) => p.file === asked))
-    return bad(`${draft.data.name} has no page ${asked}`)
-  // The folder's artifact.json may not exist yet; one that does not read is not overwritten.
-  let raw: Record<string, unknown> = {}
-  const seen = await lstat(draft.data.config).catch(() => null)
-  if (seen !== null) {
-    if (!seen.isFile() || seen.size > LASTING_CONFIG_MAX_BYTES)
-      return bad(`artifacts/${draft.data.name}/${LASTING_CONFIG} cannot be changed`)
-    try {
-      const parsed: unknown = JSON.parse(await readFile(draft.data.config, "utf8"))
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error()
-      raw = parsed as Record<string, unknown>
-    } catch {
-      return bad(`artifacts/${draft.data.name}/${LASTING_CONFIG} does not read as JSON`)
-    }
-  }
-  // A file the artifact already has, byte for byte, is where the draft begins: it is no change until the
-  // draft edits it (a draft just kept is identical to what it became). The others are new.
-  const base: Record<string, string> = {}
-  const files = await listFiles(draft.data.dir)
-  if (files.ok)
-    for (const rel of files.data) {
-      if (rel === LASTING_CONFIG) continue
-      const mine = await fileBlobId(join(draft.data.dir, rel))
-      if (mine !== null && mine === (await fileBlobId(join(lasting.data.dir, rel))))
-        base[rel] = mine
-    }
-  const draftOn: DraftOn = {
-    artifact: input.artifact,
-    project: task.repoId,
-    ...(asked !== undefined ? { page: asked } : {}),
-    ...(Object.keys(base).length > 0 ? { base } : {}),
-  }
-  await writeFile(draft.data.config, `${JSON.stringify({ v: 1, ...raw, draftOn }, null, 2)}\n`)
-  return ok({
-    draft: draft.data.name,
-    file: `${TASK_ARTIFACTS}/${draft.data.name}/${draft.data.pages[0]?.file}`,
-    draftOn,
-    copied: [],
-  })
+  const validated = await validateAdoptInputs(task, input)
+  if (!validated.ok) return validated
+  const { draft, lasting } = validated.data
+  if (draft.config === null) return adoptSinglePageDraft(draft, input.artifact, asked)
+  return adoptFolderDraft(
+    task,
+    { ...draft, config: draft.config },
+    lasting.dir,
+    input.artifact,
+    asked,
+  )
 }

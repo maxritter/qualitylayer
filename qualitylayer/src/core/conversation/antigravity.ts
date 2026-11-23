@@ -165,8 +165,8 @@ function response(
   state.cacheRead += cacheRead
   if (input + cacheRead > 0) state.contextUsed = input + cacheRead
   if (content && calls.length === 0) {
-    const began = state.startedAt === undefined ? Number.NaN : Date.parse(state.startedAt)
-    const ended = at === undefined ? Number.NaN : Date.parse(at)
+    const began = Date.parse(state.startedAt ?? "")
+    const ended = Date.parse(at ?? "")
     events.push({
       id: `${id}:end`,
       at,
@@ -210,28 +210,48 @@ function output(
   })
 }
 
+function userInput(
+  state: AntigravityState,
+  events: ConversationEvent[],
+  id: string,
+  at: string | undefined,
+  value: Json,
+) {
+  const attachments = conversationAttachments(value)
+  const text = imageMessageText(request(imageContentText(value.content)), attachments)
+  if (!text && !attachments.length) return
+  state.calls = []
+  state.startedAt = at
+  state.turns++
+  events.push({
+    id,
+    at,
+    kind: "user",
+    text: bounded(text, CONVERSATION_LIMITS.textChars),
+    ...(attachments.length ? { attachments } : {}),
+  })
+}
+
+const STEP_HANDLERS: Record<
+  string,
+  (
+    state: AntigravityState,
+    events: ConversationEvent[],
+    id: string,
+    at: string | undefined,
+    step: Json,
+  ) => void
+> = {
+  USER_INPUT: userInput,
+  PLANNER_RESPONSE: response,
+  GENERIC: output,
+}
+
 function step(state: AntigravityState, events: ConversationEvent[], value: Json) {
   const index = value.step_index
   if (typeof index !== "number") return
-  const id = `s${index}`
-  const at = jsonText(value.created_at) || undefined
-  const type = jsonText(value.type)
-  if (type === "USER_INPUT") {
-    const attachments = conversationAttachments(value)
-    const text = imageMessageText(request(imageContentText(value.content)), attachments)
-    if (!text && !attachments.length) return
-    state.calls = []
-    state.startedAt = at
-    state.turns++
-    events.push({
-      id,
-      at,
-      kind: "user",
-      text: bounded(text, CONVERSATION_LIMITS.textChars),
-      ...(attachments.length ? { attachments: attachments } : {}),
-    })
-  } else if (type === "PLANNER_RESPONSE") response(state, events, id, at, value)
-  else if (type === "GENERIC") output(state, events, id, at, value)
+  const handler = STEP_HANDLERS[jsonText(value.type)]
+  handler?.(state, events, `s${index}`, jsonText(value.created_at) || undefined, value)
 }
 
 function usageOf(state: AntigravityState): ConversationUsage | undefined {

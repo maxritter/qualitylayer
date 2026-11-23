@@ -3,71 +3,21 @@
 
 import { ChevronRightIcon } from "lucide-react"
 import { useEffect, useState } from "react"
-import { LASTING_ARTIFACTS } from "../../core/artifact/format.ts"
-import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import { screenSize, type WalkScreen } from "../../core/review/screen-pairs.ts"
-import type { WalkFile, Walkthrough as WalkthroughView } from "../../core/review/walkthrough.ts"
 import { ArtifactPreview } from "../artifact/ArtifactPreview.tsx"
 import { FullscreenDialog } from "../reader/VisualParts.tsx"
 import { WireframeBlock } from "../reader/WireframeBlock.tsx"
 import { type LoadEvidence, plural, useEvidence } from "./parts.tsx"
+import {
+  artifactReferenceForScreen,
+  captionOf,
+  leadScreens,
+  type ReviewFileGroups,
+  rowsOf,
+} from "./walkthrough-model.ts"
 import "./walkthrough.css"
 
-/** One row of the change: a slice of the build, or what stands outside the slices. */
-export type Row = {
-  key: string
-  /** The slice's number; null for a row of its own kind. */
-  n: number | null
-  title: string
-  summary: string
-  tasks: WalkthroughView["slices"][number]["tasks"]
-  decisions: string[]
-  files: WalkFile[]
-}
-
-/** The change's groups as Built reads them: the slices, then the rows of their own kind. */
-export type ReviewFileGroups = Pick<
-  WalkthroughView,
-  "slices" | "planDecisions" | "decided" | "fixes" | "changeScope" | "documents"
->
-
-export function rowsOf(view: ReviewFileGroups, owner?: string): Row[] {
-  const rows: Row[] = view.slices.map((s) => ({
-    key: String(s.n),
-    n: s.n,
-    title: s.title,
-    summary: s.summary,
-    tasks: s.tasks,
-    decisions: s.decisions,
-    files: s.files,
-  }))
-  if (view.planDecisions.length > 0 || view.decided.length > 0)
-    rows.push({
-      key: "plan",
-      n: null,
-      title: view.changeScope?.candidate
-        ? "Changed files"
-        : "Decided on the way, outside any slice",
-      summary: "",
-      tasks: [],
-      decisions: view.planDecisions,
-      files: view.decided,
-    })
-  if (view.fixes.length > 0)
-    rows.push({
-      key: "fixes",
-      n: null,
-      title: owner !== undefined ? "Changed after the review" : "Changed after your review",
-      summary:
-        owner !== undefined
-          ? "To make the changes the review asked for."
-          : "To make the changes you asked for.",
-      tasks: [],
-      decisions: [],
-      files: view.fixes,
-    })
-  return rows
-}
+export { artifactReferenceForScreen, leadScreens, type ReviewFileGroups, rowsOf }
 
 // ------------------------------------------------------------------ the parts
 
@@ -122,24 +72,6 @@ export function ScreenImage({ src, title }: { src: string; title: string }) {
   )
 }
 
-/** Screen keys omit a single page's extension and normalize project artifacts to `project/`. */
-export function artifactReferenceForScreen(key: string): string | null {
-  const hash = key.indexOf("#")
-  const page = hash === -1 ? key : key.slice(0, hash)
-  const section = hash === -1 ? "" : key.slice(hash)
-  const lasting = key.startsWith("project/")
-    ? parseArtifactReference(`${LASTING_ARTIFACTS}/${key.slice("project/".length)}`)
-    : null
-  const reference =
-    lasting ??
-    parseArtifactReference(
-      page.includes("/") ? `artifacts/${key}` : `artifacts/${page}.html${section}`,
-    )
-  return reference === null
-    ? null
-    : reference.file + (reference.section ? `#${reference.section}` : "")
-}
-
 /** The screen as the Plan designed it: the approved picture, else the artifact drawn from its source. */
 export function DesignedScreen({
   screen,
@@ -187,50 +119,18 @@ export function BuiltScreen({
   )
 }
 
-/** Whether a screen has a built picture to show: inline in a shared copy, or kept evidence to read. */
-const hasPicture = (screen: WalkScreen, loadEvidence: LoadEvidence | undefined): boolean =>
-  screen.outcome === "captured" &&
-  (screen.built !== undefined ||
-    (screen.file != null && screen.file !== "" && loadEvidence !== undefined))
-
-/**
- * One screen for each changed surface, the lead capture: a captured picture over none, a current one
- * over a stale one, light over dark, the widest. The rest of the surface's sizes and themes are the
- * matrix under it.
- */
-export function leadScreens(
-  screens: readonly WalkScreen[],
-  loadEvidence?: LoadEvidence,
-): { key: string; lead: WalkScreen }[] {
-  const rank = (screen: WalkScreen) => [
-    hasPicture(screen, loadEvidence) ? 0 : 1,
-    screen.outcome === "captured" ? 0 : 1,
-    screen.stale ? 1 : 0,
-    screen.theme === "light" ? 0 : 1,
-    -screen.width,
-  ]
-  const better = (a: WalkScreen, b: WalkScreen) => {
-    const [x, y] = [rank(a), rank(b)]
-    for (const [index, value] of x.entries()) if (value !== y[index]) return value - (y[index] ?? 0)
-    return 0
-  }
-  return [...new Set(screens.map((screen) => screen.key))].flatMap((key) => {
-    const lead = screens.filter((screen) => screen.key === key).sort(better)[0]
-    return lead === undefined ? [] : [{ key, lead }]
-  })
-}
-
-/** The words under a surface's picture: its size and theme, and what is wrong with it if anything. */
-const captionOf = (screen: WalkScreen): string =>
-  [
-    screenSize(screen),
-    screen.theme,
-    screen.outcome === "captured" ? "captured by the independent review" : screen.outcome,
-  ].join(" · ")
-
 /** A surface's picture: the latest capture, or its name and why there is no picture. */
-function Shot({ screen, loadEvidence }: { screen: WalkScreen; loadEvidence?: LoadEvidence }) {
-  const title = `Built ${screen.key}`
+function Shot({
+  screen,
+  loadEvidence,
+  title = `Built ${screen.key}`,
+  unavailable = screen.key,
+}: {
+  screen: WalkScreen
+  loadEvidence?: LoadEvidence | undefined
+  title?: string
+  unavailable?: string
+}) {
   if (screen.outcome !== "captured")
     return (
       <p className="wt-screen-empty">
@@ -241,7 +141,7 @@ function Shot({ screen, loadEvidence }: { screen: WalkScreen; loadEvidence?: Loa
   if (screen.file && loadEvidence)
     return <BuiltScreen key={screen.file} screen={screen} load={loadEvidence} title={title} />
   // A share link shows a picture as its name until the link carries pictures.
-  return <p className="wt-screen-empty">{screen.key}</p>
+  return <p className="wt-screen-empty">{unavailable}</p>
 }
 
 /** One size and theme of a surface: the artifact beside the capture, and the independent review's verdict. */
@@ -275,22 +175,12 @@ function ScreenPair({
         </figure>
         <figure>
           <figcaption>Built</figcaption>
-          {screen.outcome !== "captured" ? (
-            <p className="wt-screen-empty">
-              No picture. {screen.outcome === "not captured" ? "Not captured." : screen.outcome}
-            </p>
-          ) : screen.built ? (
-            <ScreenImage src={screen.built} title={`Built ${which}`} />
-          ) : screen.file && loadEvidence ? (
-            <BuiltScreen
-              key={screen.file}
-              screen={screen}
-              load={loadEvidence}
-              title={`Built ${which}`}
-            />
-          ) : (
-            <p className="wt-screen-empty">Built picture unavailable in this copy.</p>
-          )}
+          <Shot
+            screen={screen}
+            loadEvidence={loadEvidence}
+            title={`Built ${which}`}
+            unavailable="Built picture unavailable in this copy."
+          />
         </figure>
       </div>
       <p className="wt-screen-verdict">

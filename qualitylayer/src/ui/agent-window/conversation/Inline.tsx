@@ -67,35 +67,37 @@ function linkOf(token: Token, opens: Opens, key: number): ReactNode {
   return (chip && chipFor(chip, opens, key, children)) || children
 }
 
+function nestedInline(token: Token, opens: Opens): ReactNode[] {
+  return inlineTokens("tokens" in token ? (token.tokens ?? []) : [], opens)
+}
+
+function codeSpanOf(text: string, opens: Opens, key: number): ReactNode {
+  const chip = chipOf(text)
+  return (chip && chipFor(chip, opens, key)) || <code key={key}>{text}</code>
+}
+
+type InlineRenderer = (token: Token, key: number, opens: Opens) => ReactNode
+
+const INLINE_RENDERERS: Record<string, InlineRenderer> = {
+  codespan: (token, key, opens) => codeSpanOf("text" in token ? token.text : "", opens, key),
+  strong: (token, key, opens) => <strong key={key}>{nestedInline(token, opens)}</strong>,
+  em: (token, key, opens) => <em key={key}>{nestedInline(token, opens)}</em>,
+  del: (token, key, opens) => <del key={key}>{nestedInline(token, opens)}</del>,
+  link: (token, key, opens) => linkOf(token, opens, key),
+  image: (token, key, opens) => linkOf(token, opens, key),
+  br: (_token, key) => <br key={key} />,
+  html: (token, key) => (bareLineBreak(token.raw) ? <br key={key} /> : token.raw),
+  checkbox: () => null,
+  text: (token, _key, opens) =>
+    "tokens" in token && token.tokens
+      ? nestedInline(token, opens)
+      : textOf("text" in token ? token.text : ""),
+  escape: (token) => ("text" in token ? token.text : token.raw),
+}
+
 function part(token: Token, key: number, opens: Opens): ReactNode {
-  const nested = () => inlineTokens("tokens" in token ? (token.tokens ?? []) : [], opens)
-  switch (token.type) {
-    case "codespan": {
-      const chip = chipOf(token.text)
-      return (chip && chipFor(chip, opens, key)) || <code key={key}>{token.text}</code>
-    }
-    case "strong":
-      return <strong key={key}>{nested()}</strong>
-    case "em":
-      return <em key={key}>{nested()}</em>
-    case "del":
-      return <del key={key}>{nested()}</del>
-    case "link":
-    case "image":
-      return linkOf(token, opens, key)
-    case "br":
-      return <br key={key} />
-    case "html":
-      return bareLineBreak(token.raw) ? <br key={key} /> : token.raw
-    case "checkbox":
-      return null
-    case "text":
-      return "tokens" in token && token.tokens ? nested() : textOf(token.text)
-    case "escape":
-      return token.text
-    default:
-      return token.raw
-  }
+  const render = INLINE_RENDERERS[token.type]
+  return render ? render(token, key, opens) : token.raw
 }
 
 export function inlineTokens(tokens: readonly Token[], opens: Opens): ReactNode[] {

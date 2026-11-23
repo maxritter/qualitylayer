@@ -1,5 +1,41 @@
+import type { KeyboardEvent } from "react"
 import { useResizeDrag } from "../useResizeDrag.ts"
 import { useTerminalLayout } from "./layout.tsx"
+
+function isPlainEnter(event: KeyboardEvent): boolean {
+  const noModifiers = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+  return event.key === "Enter" && noModifiers
+}
+
+function handleResizerKey(
+  event: KeyboardEvent,
+  options: {
+    size: number
+    maxWidth: number
+    resize: (width: number) => void
+    cancelDrag: () => void
+    onCollapse?: () => void
+  },
+) {
+  if (options.onCollapse && isPlainEnter(event)) {
+    event.preventDefault()
+    event.stopPropagation()
+    options.cancelDrag()
+    options.onCollapse()
+    return
+  }
+  const increase = event.key === "ArrowLeft"
+  const decrease = event.key === "ArrowRight"
+  if (increase || decrease) {
+    event.preventDefault()
+    options.resize(options.size + (increase ? 1 : -1) * (event.shiftKey ? 50 : 10))
+    return
+  }
+  if (event.key === "Home" || event.key === "End") {
+    event.preventDefault()
+    options.resize(event.key === "Home" ? 320 : options.maxWidth)
+  }
+}
 
 export function TerminalResizer({
   sidebar = false,
@@ -43,29 +79,15 @@ export function TerminalResizer({
       }
       onDoubleClick={layout.reset}
       onPointerDown={drag.start}
-      onKeyDown={(event) => {
-        const increase = event.key === "ArrowLeft"
-        const decrease = event.key === "ArrowRight"
-        if (
-          onCollapse &&
-          event.key === "Enter" &&
-          !event.ctrlKey &&
-          !event.metaKey &&
-          !event.altKey &&
-          !event.shiftKey
-        ) {
-          event.preventDefault()
-          event.stopPropagation()
-          drag.cancel()
-          onCollapse()
-        } else if (increase || decrease) {
-          event.preventDefault()
-          layout.resize(size + (increase ? 1 : -1) * (event.shiftKey ? 50 : 10))
-        } else if (event.key === "Home" || event.key === "End") {
-          event.preventDefault()
-          layout.resize(event.key === "Home" ? 320 : layout.maxWidth)
-        }
-      }}
+      onKeyDown={(event) =>
+        handleResizerKey(event, {
+          size,
+          maxWidth: layout.maxWidth,
+          resize: layout.resize,
+          cancelDrag: drag.cancel,
+          ...(onCollapse ? { onCollapse } : {}),
+        })
+      }
     />
   )
 }

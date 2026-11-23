@@ -27,6 +27,112 @@ import type { AgentTabTerminal } from "../run/AgentTab.tsx"
 import { useTurnTask } from "../turn/projection.ts"
 import { chatChipState } from "./chat-agent-state.ts"
 
+function InterruptItem({ controls }: { controls: TaskAgentControls | undefined }) {
+  if (controls?.interruptRequested === true) {
+    return (
+      <DropdownMenuItem disabled>
+        <PauseIcon size={14} aria-hidden="true" />
+        Interrupt requested…
+      </DropdownMenuItem>
+    )
+  }
+  if (!controls?.canInterrupt) return null
+  return (
+    <DropdownMenuItem disabled={controls.busy} onClick={() => void controls.interrupt()}>
+      <PauseIcon size={14} aria-hidden="true" />
+      Interrupt
+      <kbd className="ml-auto text-(--ql-text-dim) [font:12px/1_var(--font-mono)]">Esc</kbd>
+    </DropdownMenuItem>
+  )
+}
+
+function SessionActionsGroup({
+  controls,
+  name,
+}: {
+  controls: TaskAgentControls | undefined
+  name: string
+}) {
+  const hasInterrupt = controls?.interruptRequested === true || Boolean(controls?.canInterrupt)
+  const hasStop = Boolean(controls?.canStop)
+  const resume = controls?.session?.resume
+  if (!hasInterrupt && !hasStop && !resume) return null
+  return (
+    <>
+      <DropdownMenuSeparator />
+      <InterruptItem controls={controls} />
+      {controls?.canStop ? (
+        <DropdownMenuItem
+          disabled={controls.busy || controls.status === "stopping"}
+          onClick={() => void controls.stop()}
+        >
+          <CircleStopIcon size={14} aria-hidden="true" />
+          Stop session
+          <span className="ml-auto pl-3 text-(--ql-text-dim) text-xs">
+            Ends {name}; the Chat stays
+          </span>
+        </DropdownMenuItem>
+      ) : null}
+      {resume ? (
+        <DropdownMenuItem onClick={resume}>
+          <RotateCcwIcon size={14} aria-hidden="true" />
+          Resume session
+        </DropdownMenuItem>
+      ) : null}
+    </>
+  )
+}
+
+function SessionRowsGroup({
+  controls,
+  onCopy,
+}: {
+  controls: TaskAgentControls | undefined
+  onCopy(text: string, note: string): void
+}) {
+  const rows = controls?.session
+  if (!rows) return null
+  const hasElsewhere = Boolean(rows.move || rows.resumeLine)
+  return (
+    <>
+      <DropdownMenuSeparator />
+      {rows.configure ? (
+        <DropdownMenuItem onClick={rows.configure}>
+          <SlidersHorizontalIcon size={14} aria-hidden="true" />
+          Model & effort…
+        </DropdownMenuItem>
+      ) : null}
+      <DropdownMenuItem onClick={rows.appearance}>
+        <SlidersHorizontalIcon size={14} aria-hidden="true" />
+        Appearance…
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={rows.information}>
+        <InfoIcon size={14} aria-hidden="true" />
+        Session information
+      </DropdownMenuItem>
+      {hasElsewhere ? (
+        <>
+          <DropdownMenuSeparator />
+          {rows.move ? (
+            <DropdownMenuItem disabled={controls?.busy} onClick={rows.move}>
+              <ArrowUpRightIcon size={14} aria-hidden="true" />
+              Move to my own agent…
+            </DropdownMenuItem>
+          ) : null}
+          {rows.resumeLine ? (
+            <DropdownMenuItem
+              onClick={() => onCopy(rows.resumeLine ?? "", "Copied the resume command")}
+            >
+              <CopyIcon size={14} aria-hidden="true" />
+              Copy resume command
+            </DropdownMenuItem>
+          ) : null}
+        </>
+      ) : null}
+    </>
+  )
+}
+
 /**
  * The Chat's agent, quiet like the workflow header's, and the session's one menu: what it is doing,
  * Interrupt and Stop session, then how it runs and where else it can run. The window that holds
@@ -51,75 +157,7 @@ export function ChatAgentChip({
   const agent = controls?.agent ?? status.agent
   const name = agentName(agent)
   const { state, words } = chatChipState(status, controls, now)
-  const rows = controls?.session
   const named = words ? `${name} · ${words}` : name
-  const interrupt =
-    controls?.interruptRequested === true ? (
-      <DropdownMenuItem disabled>
-        <PauseIcon size={14} aria-hidden="true" />
-        Interrupt requested…
-      </DropdownMenuItem>
-    ) : controls?.canInterrupt ? (
-      <DropdownMenuItem disabled={controls.busy} onClick={() => void controls.interrupt()}>
-        <PauseIcon size={14} aria-hidden="true" />
-        Interrupt
-        <kbd className="ml-auto text-(--ql-text-dim) [font:12px/1_var(--font-mono)]">Esc</kbd>
-      </DropdownMenuItem>
-    ) : null
-  const stop = controls?.canStop ? (
-    <DropdownMenuItem
-      disabled={controls.busy || controls.status === "stopping"}
-      onClick={() => void controls.stop()}
-    >
-      <CircleStopIcon size={14} aria-hidden="true" />
-      Stop session
-      <span className="ml-auto pl-3 text-(--ql-text-dim) text-xs">Ends {name}; the Chat stays</span>
-    </DropdownMenuItem>
-  ) : null
-  const resume = rows?.resume ? (
-    <DropdownMenuItem onClick={rows.resume}>
-      <RotateCcwIcon size={14} aria-hidden="true" />
-      Resume session
-    </DropdownMenuItem>
-  ) : null
-  const how = rows ? (
-    <>
-      {rows.configure ? (
-        <DropdownMenuItem onClick={rows.configure}>
-          <SlidersHorizontalIcon size={14} aria-hidden="true" />
-          Model & effort…
-        </DropdownMenuItem>
-      ) : null}
-      <DropdownMenuItem onClick={rows.appearance}>
-        <SlidersHorizontalIcon size={14} aria-hidden="true" />
-        Appearance…
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={rows.information}>
-        <InfoIcon size={14} aria-hidden="true" />
-        Session information
-      </DropdownMenuItem>
-    </>
-  ) : null
-  const elsewhere =
-    rows?.move || rows?.resumeLine ? (
-      <>
-        {rows.move ? (
-          <DropdownMenuItem disabled={controls?.busy} onClick={rows.move}>
-            <ArrowUpRightIcon size={14} aria-hidden="true" />
-            Move to my own agent…
-          </DropdownMenuItem>
-        ) : null}
-        {rows.resumeLine ? (
-          <DropdownMenuItem
-            onClick={() => onCopy(rows.resumeLine ?? "", "Copied the resume command")}
-          >
-            <CopyIcon size={14} aria-hidden="true" />
-            Copy resume command
-          </DropdownMenuItem>
-        ) : null}
-      </>
-    ) : null
-  const acts = interrupt !== null || stop !== null || resume !== null
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
@@ -143,29 +181,11 @@ export function ChatAgentChip({
           <AgentMark agent={agent} size={16} />
           <span>
             <b>{named}</b>
-            {rows?.facts ? <small>{rows.facts}</small> : null}
+            {controls?.session?.facts ? <small>{controls.session.facts}</small> : null}
           </span>
         </DropdownMenuGroup>
-        {acts ? (
-          <>
-            <DropdownMenuSeparator />
-            {interrupt}
-            {stop}
-            {resume}
-          </>
-        ) : null}
-        {how ? (
-          <>
-            <DropdownMenuSeparator />
-            {how}
-          </>
-        ) : null}
-        {elsewhere ? (
-          <>
-            <DropdownMenuSeparator />
-            {elsewhere}
-          </>
-        ) : null}
+        <SessionActionsGroup controls={controls} name={name} />
+        <SessionRowsGroup controls={controls} onCopy={onCopy} />
         {plainTerminal && !plainTerminalShown ? (
           <>
             <DropdownMenuSeparator />

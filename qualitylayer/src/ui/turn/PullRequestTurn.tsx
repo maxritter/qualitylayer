@@ -1,49 +1,18 @@
-// The Review page's top card after the approval. While the pull request is open and nothing waits it
-// is a calm line ("Approved · pull request #412 opened on dev", with the cost); when threads, a
-// failing check or a request for changes wait it is the Your turn card with what was said and the
-// command that has the person's agent triage it; when the agent's fix is committed and not pushed
-// it offers *Push the fix*, the one click that updates the pull request (QualityLayer never pushes
-// on its own). Merged says so and closes the task; closed without a merge says that.
-//
-// No keyboard hints ("1 2 pick · C comment" of the App Model draft). The App's Your turn cards bind
-// number keys to the choices of a question (QuestionBatch, DecisionCard, StopDecision), each of
-// which sends an answer. This card has no choice to make and no comment to write: the threads are
-// settled with the agent through the command below, and an answer is posted by that decision.
-// A "pick" that only moves focus would be a hint for a key that does nothing, and "C" already opens
-// the Comments panel from anywhere in the App, so a hint for it here would claim a key that is not
-// this card's. The card's links and buttons are reached by Tab and used with Enter.
+// The Review page's top card after the approval.
 
-import { CopyIcon } from "lucide-react"
-import { type ReactNode, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 import { launchAgent, stagePrompt } from "../../core/run/launch-spec.ts"
-import type { PrCheck, PrThreadRow } from "../../core/ship/pr-record.ts"
 import { isWaiting, type PullRequestLife } from "../../core/ship/pr-words.ts"
 import type { Api, TaskDetail } from "../api.ts"
-import { WhoMark } from "../kit/WhoMark.tsx"
+import { ContinueCommand } from "./ContinueCommand.tsx"
+import { buildWaitingEntries, PullRequestCalm } from "./PullRequestTurnParts.tsx"
 import { TurnLabel } from "./TurnLabel.tsx"
 
-/**
- * How many things that wait show before the rest fold behind "Show all N": up to four stand open;
- * a longer list shows two, so the actions under it stay inside a small window.
- */
 const SAID_FITS = 4
 const SAID_SHOWN = 2
 const shownOf = (count: number) => (count > SAID_FITS ? SAID_SHOWN : count)
-
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-
-/** "42 min", "7 h 40 min": the time from the first question to the approval. */
-const minutesWords = (minutes: number): string =>
-  minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`
-
-const initials = (name: string) =>
-  name
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(0, 2)
-    .toUpperCase() || "?"
-const tail = (path: string) => path.split("/").slice(-2).join("/")
-const isUrl = (text: string) => /^https?:\/\//.test(text)
 
 /** What waits, in a title: "2 threads and 1 failing check wait on you". */
 export function waitingTitle(life: PullRequestLife): string {
@@ -62,118 +31,102 @@ export function waitingTitle(life: PullRequestLife): string {
   return `${said.charAt(0).toUpperCase()}${said.slice(1)} ${verb} on you`
 }
 
-/** Elapsed time stays visible; amounts are opened from the task's Cost panel. */
-function CostLine({ task }: { task: TaskDetail }) {
-  const cost = task.shipped?.cost
-  if (cost === undefined) return null
-  const words = [
-    cost.minutes !== null
-      ? `${minutesWords(cost.minutes)} from the first question to your approval`
-      : "",
-  ].filter((part) => part !== "")
-  if (words.length === 0) return null
+function WaitingBody({
+  task,
+  life,
+  command,
+}: {
+  task: TaskDetail
+  life: PullRequestLife
+  command: string
+}) {
+  const [all, setAll] = useState(false)
+  const entries = buildWaitingEntries(life)
+  const limit = shownOf(entries.length)
   return (
-    <footer className="pr-cost">
-      <span className="pr-cost-k">Duration</span>
-      <span>{words.join(" · ")}</span>
+    <div className="pr-turn-b">
+      <ul className="pr-said-list" aria-label="What waits on you">
+        {(all ? entries : entries.slice(0, limit)).map((entry) => entry.node)}
+        {entries.length > limit ? (
+          <li className="pr-said-more">
+            <button type="button" className="q-link" onClick={() => setAll(!all)}>
+              {all ? "Show fewer" : `Show all ${entries.length}`}
+            </button>
+          </li>
+        ) : null}
+      </ul>
+      <p className="pr-in">
+        In your agent, in <code>{task.projectName}</code>
+      </p>
+      <ContinueCommand
+        command={command}
+        testId="review-command"
+        copiedMessage="Copied. Paste it in your agent."
+      />
+    </div>
+  )
+}
+
+function WaitingFooter({
+  fixReady,
+  asking,
+  busy,
+  onAct,
+}: {
+  fixReady: boolean
+  asking: boolean
+  busy: "push" | "leave" | null
+  onAct: (what: "push" | "leave") => void
+}) {
+  return (
+    <footer className="pr-turn-f">
+      {fixReady ? (
+        <button
+          type="button"
+          className="q-btn primary"
+          disabled={busy !== null}
+          onClick={() => onAct("push")}
+          data-testid="push-fix"
+        >
+          {busy === "push" ? "Pushing…" : "Push the fix"}
+        </button>
+      ) : null}
+      {asking ? (
+        <button
+          type="button"
+          className="q-link"
+          disabled={busy !== null}
+          onClick={() => onAct("leave")}
+          data-testid="leave-pull-request"
+        >
+          Leave them for now
+        </button>
+      ) : null}
+      {asking ? (
+        <span className="pr-hint">Settled answers are posted on GitHub in your name.</span>
+      ) : null}
     </footer>
   )
 }
 
-/** The calm card: approved and open, merged, or closed. */
-function Calm({ task, life }: { task: TaskDetail; life: PullRequestLife }) {
-  const number = life.number !== null ? ` #${life.number}` : ""
-  const title =
-    life.state === "merged"
-      ? `Merged into ${life.base} · pull request${number}`
-      : life.state === "closed"
-        ? `Pull request${number} was closed without a merge`
-        : `Approved · pull request${number} opened${life.branch !== "" ? ` on ${life.branch}` : ""}`
-  const words =
-    life.state === "merged"
-      ? null
-      : life.state === "closed"
-        ? "Nothing more is followed here. The task stays as it was approved."
-        : !life.followed
-          ? "gh is not installed here, so the pull request is not followed. The task closed at the approval."
-          : "Checks run on GitHub now. You are told when a review or a failing check needs you."
-  return (
-    <section
-      className="ir-steps-agent pr-calm"
-      aria-label="Pull request status"
-      data-testid="pull-request-status"
-      data-state={life.state}
-    >
-      <header>
-        <h2>{title}</h2>
-        {words !== null ? <p>{words}</p> : null}
-      </header>
-      <CostLine task={task} />
-    </section>
-  )
-}
-
-function Said({ thread, url }: { thread: PrThreadRow; url: string }) {
-  // The thread's own first comment opens on its line; a record from before it was kept falls back to the pull request.
-  const line = thread.url !== ""
-  return (
-    <li className="pr-said">
-      <span className="pr-av" aria-hidden="true">
-        {initials(thread.by)}
-      </span>
-      <div>
-        <div className="pr-said-h">
-          <b>{thread.by}</b>
-          <span>
-            {thread.via} ·{" "}
-            <code>
-              {tail(thread.path)}
-              {thread.line !== null ? `:${thread.line}` : ""}
-            </code>
-          </span>
-        </div>
-        <p>{thread.text}</p>
-      </div>
-      <a
-        className="q-link"
-        href={line ? thread.url : url}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`${line ? "Open the line on GitHub" : "Open the pull request on GitHub"}, ${thread.by}'s comment on ${tail(thread.path)}`}
-      >
-        {line ? "Open the line" : "Open on GitHub"}
-      </a>
-    </li>
-  )
-}
-
-function FailedCheck({ check }: { check: PrCheck }) {
-  return (
-    <li className="pr-said" data-kind="check">
-      <span className="pr-av pr-av-bad" aria-hidden="true">
-        <WhoMark who="stop" />
-      </span>
-      <div>
-        <div className="pr-said-h">
-          <b>{check.name}</b>
-          <span>failed</span>
-        </div>
-        {check.summary ? (
-          <p>{check.summary}</p>
-        ) : (
-          <p>
-            GitHub says this check failed. Your agent reads its log, reproduces it and fixes it test
-            first.
-          </p>
-        )}
-      </div>
-      {isUrl(check.detail) ? (
-        <a className="q-link" href={check.detail} target="_blank" rel="noreferrer">
-          Read the log
-        </a>
-      ) : null}
-    </li>
-  )
+async function performPullRequestAction(
+  api: Api,
+  taskId: string,
+  what: "push" | "leave",
+  reload: (() => void) | undefined,
+): Promise<string | null> {
+  try {
+    if (what === "push") {
+      await api.pushFix(taskId)
+      toast.success("Pushed. GitHub runs the checks again.")
+    } else {
+      await api.leavePullRequest(taskId)
+    }
+    reload?.()
+    return null
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : "That did not go through. Try again."
+  }
 }
 
 /** The Your turn card: what waits, the command for the agent, Leave them for now, Push the fix. */
@@ -190,10 +143,7 @@ function Waiting({
 }) {
   const [busy, setBusy] = useState<"push" | "leave" | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [all, setAll] = useState(false)
   const w = life.waiting
-  const open = life.threads.filter((t) => w.threadIds.includes(t.id))
-  const failed = life.checks.filter((c) => c.result === "failed" && !w.left)
   const asking = w.threads + w.failing > 0 || w.changes || w.conflict === true
   const command = stagePrompt(
     launchAgent(task.session?.agent ?? "claude-code"),
@@ -203,78 +153,10 @@ function Waiting({
   const act = async (what: "push" | "leave") => {
     setBusy(what)
     setError(null)
-    try {
-      if (what === "push") {
-        await api.pushFix(task.id)
-        toast.success("Pushed. GitHub runs the checks again.")
-      } else await api.leavePullRequest(task.id)
-      reload?.()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "That did not go through. Try again.")
-    } finally {
-      setBusy(null)
-    }
+    const err = await performPullRequestAction(api, task.id, what, reload)
+    if (err !== null) setError(err)
+    setBusy(null)
   }
-  const entries: { key: string; node: ReactNode }[] = [
-    ...open.map((thread) => ({
-      key: `thread-${thread.id}`,
-      node: <Said key={`thread-${thread.id}`} thread={thread} url={life.url} />,
-    })),
-    ...failed.map((check) => ({
-      key: `check-${check.name}`,
-      node: <FailedCheck key={`check-${check.name}`} check={check} />,
-    })),
-    ...(w.changes
-      ? [
-          {
-            key: "changes",
-            node: (
-              <li className="pr-said" data-kind="changes" key="changes">
-                <span className="pr-av pr-av-bad" aria-hidden="true">
-                  <WhoMark who="stop" />
-                </span>
-                <div>
-                  <div className="pr-said-h">
-                    <b>Changes were requested</b>
-                    <span>github</span>
-                  </div>
-                  <p>
-                    A reviewer asked for changes without a comment on a line. Open it on GitHub.
-                  </p>
-                </div>
-                <a className="q-link" href={life.url} target="_blank" rel="noreferrer">
-                  Open on GitHub
-                </a>
-              </li>
-            ),
-          },
-        ]
-      : []),
-    ...(w.conflict === true
-      ? [
-          {
-            key: "conflict",
-            node: (
-              <li className="pr-said" data-kind="conflict" key="conflict">
-                <span className="pr-av pr-av-bad" aria-hidden="true">
-                  <WhoMark who="stop" />
-                </span>
-                <div>
-                  <div className="pr-said-h">
-                    <b>The branch conflicts with {life.base || "its base"}</b>
-                    <span>github</span>
-                  </div>
-                  <p>It cannot merge as it is. Bring the base into the branch and resolve it.</p>
-                </div>
-                <a className="q-link" href={life.url} target="_blank" rel="noreferrer">
-                  Open on GitHub
-                </a>
-              </li>
-            ),
-          },
-        ]
-      : []),
-  ]
   return (
     <section
       className="ir-step-turn pr-turn"
@@ -293,71 +175,18 @@ function Waiting({
           </p>
         )}
       </header>
-      {asking ? (
-        <div className="pr-turn-b">
-          <ul className="pr-said-list" aria-label="What waits on you">
-            {(all ? entries : entries.slice(0, shownOf(entries.length))).map((entry) => entry.node)}
-            {entries.length > shownOf(entries.length) ? (
-              <li className="pr-said-more">
-                <button type="button" className="q-link" onClick={() => setAll(!all)}>
-                  {all ? "Show fewer" : `Show all ${entries.length}`}
-                </button>
-              </li>
-            ) : null}
-          </ul>
-          <p className="pr-in">
-            In your agent, in <code>{task.projectName}</code>
-          </p>
-          <div className="aa-cmd" data-testid="review-command">
-            <code>{command}</code>
-            <button
-              type="button"
-              className="q-btn quiet sm"
-              onClick={() => {
-                void navigator.clipboard?.writeText(command).then(
-                  () => toast.success("Copied. Paste it in your agent."),
-                  () => toast.error("Could not copy"),
-                )
-              }}
-            >
-              <CopyIcon aria-hidden="true" />
-              Copy
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {asking ? <WaitingBody task={task} life={life} command={command} /> : null}
       {error !== null ? (
         <p className="pr-error" role="alert">
           {error}
         </p>
       ) : null}
-      <footer className="pr-turn-f">
-        {w.fixReady ? (
-          <button
-            type="button"
-            className="q-btn primary"
-            disabled={busy !== null}
-            onClick={() => void act("push")}
-            data-testid="push-fix"
-          >
-            {busy === "push" ? "Pushing…" : "Push the fix"}
-          </button>
-        ) : null}
-        {asking ? (
-          <button
-            type="button"
-            className="q-link"
-            disabled={busy !== null}
-            onClick={() => void act("leave")}
-            data-testid="leave-pull-request"
-          >
-            Leave them for now
-          </button>
-        ) : null}
-        {asking ? (
-          <span className="pr-hint">Settled answers are posted on GitHub in your name.</span>
-        ) : null}
-      </footer>
+      <WaitingFooter
+        fixReady={w.fixReady}
+        asking={asking}
+        busy={busy}
+        onAct={(what) => void act(what)}
+      />
     </section>
   )
 }
@@ -377,9 +206,8 @@ export function PullRequestTurn({
 }) {
   const life = task.pullRequest
   if (task.stage !== "shipped" || life === undefined) return null
-  const w = life.waiting
-  const waits = life.state === "open" && isWaiting(w)
+  const waits = life.state === "open" && isWaiting(life.waiting)
   if (waits && api !== undefined)
     return <Waiting task={task} life={life} api={api} reload={reload} />
-  return <Calm task={task} life={life} />
+  return <PullRequestCalm task={task} life={life} />
 }

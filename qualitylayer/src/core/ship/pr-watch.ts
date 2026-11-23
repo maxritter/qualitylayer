@@ -10,17 +10,21 @@
 // lives in the agent's own command, not in the server.
 
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import { detectAgent } from "../agents/detect.ts"
-import { openThreads } from "../review/triage.ts"
-import { type Task, touchSession } from "../task/store.ts"
+import type { Task } from "../task/store.ts"
+import type { PrCheck } from "./pr-record.ts"
+import type { PrRemark } from "./pr-threads.ts"
 import {
-  checkOf,
-  type PrCheck,
-  readPullRequestRecord,
-  remarkKey,
-  threadWordsKey,
-} from "./pr-record.ts"
-import { type PrRemark, pullRequestRemarks } from "./pr-threads.ts"
+  cadenceOf,
+  conflictFiles,
+  type FailingCheck,
+  failingWithLogs,
+  gaveUpSay,
+  greenWords,
+  nap,
+  reviewersSaid,
+  type Snapshot,
+  snapshotOf,
+} from "./pr-watch-github.ts"
 import {
   MAX_ATTEMPTS,
   readWatch,
@@ -28,8 +32,9 @@ import {
   type WatchRecord,
   writeWatch,
 } from "./pr-watch-record.ts"
-import { ghInstalled, pullRequestOf, runIn, storedUrl } from "./pull-request.ts"
+import { ghInstalled, pullRequestOf, storedUrl } from "./pull-request.ts"
 
+export { type FailingCheck, tailOf } from "./pr-watch-github.ts"
 export { MAX_ATTEMPTS }
 
 /** Every status the command answers with; the text Ship gives the agent names each one. */
@@ -46,9 +51,6 @@ export const WATCH_STATUSES = [
 ] as const
 
 export type WatchStatus = (typeof WATCH_STATUSES)[number]
-
-/** A failing check, with the end of what its run printed when it failed. */
-export type FailingCheck = { name: string; url: string; log: string }
 
 export type WatchAnswer = {
   status: WatchStatus
@@ -87,148 +89,14 @@ export type WatchOptions = {
 const INITIAL_WAIT_MS = 300_000
 const CALL_LIMIT_MS = 540_000
 const TOTAL_LIMIT_MS = 3_600_000
-const POLL_MS = 60_000
 /** A call that finds the watch written this recently carries on the same round, without the initial wait. */
 const CONTINUE_MS = 20 * 60_000
-/** The task's session is kept alive this often while the command waits. */
-const BEAT_MS = 15_000
 /** Reads that find no check at all before the pull request is said to have none. */
 const EMPTY_READS = 3
 /** Reads gh cannot answer before the watch gives up on it. */
 const UNREADABLE_READS = 3
-/** Failed logs cap: lines of the tail, then characters. */
-const LOG_LINES = 80
-const LOG_CHARS = 6000
-/** Failed checks whose logs are read in one answer. */
-const LOGS_READ = 5
 
 const bad = (message: string) => err({ code: "bad_args" as const, message })
-
-type Snapshot = {
-  state: "open" | "merged" | "closed"
-  mergeable: string
-  base: string
-  head: string
-  number: number | null
-  checks: PrCheck[]
-}
-
-const looked = new Map<string, { at: number; snapshot: Snapshot }>()
-
-/** Terminal colour codes: an escape, a bracket, digits and a letter. */
-const COLOURS = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, "g")
-
-/** The end of a run's log: colours and carriage returns dropped, the last lines, capped. */
-export function tailOf(text: string, lines = LOG_LINES, chars = LOG_CHARS): string {
-  const clean = text.replace(COLOURS, "").replaceAll("\r", "").trimEnd()
-  const kept = clean.split("\n").slice(-lines).join("\n")
-  return kept.length > chars ? kept.slice(kept.length - chars) : kept
-}
-
-/** What GitHub says of the pull request now, remembered for one cadence; null when gh cannot say. */
-async function snapshotOf(
-  ctx: Ctx,
-  task: Task,
-  url: string,
-  ttl: number,
-): Promise<Snapshot | null> {
-  const known = looked.get(task.dir)
-  if (known !== undefined && ctx.clock.now() - known.at < ttl) return known.snapshot
-  const seen = await runIn(ctx, task.repoRoot, [
-    "gh",
-    "pr",
-    "view",
-    url,
-    "--json",
-    "number,state,mergeable,baseRefName,headRefOid,statusCheckRollup",
-  ])
-  if (seen === null || seen.code !== 0) return null
-  try {
-    const pull = JSON.parse(seen.stdout) as {
-      number?: number
-      state?: string
-      mergeable?: string
-      baseRefName?: string
-      headRefOid?: string
-      statusCheckRollup?: Parameters<typeof checkOf>[0][]
-    }
-    const state = (pull.state ?? "OPEN").toUpperCase()
-    const snapshot: Snapshot = {
-      state: state === "MERGED" ? "merged" : state === "CLOSED" ? "closed" : "open",
-      mergeable: (pull.mergeable ?? "").toUpperCase(),
-      base: pull.baseRefName ?? "",
-      head: pull.headRefOid ?? "",
-      number: typeof pull.number === "number" ? pull.number : null,
-      checks: (pull.statusCheckRollup ?? []).map(checkOf),
-    }
-    looked.set(task.dir, { at: ctx.clock.now(), snapshot })
-    return snapshot
-  } catch {
-    return null
-  }
-}
-
-const isUrl = (text: string) => /^https?:\/\//.test(text)
-
-/** The failing checks with the tail of each run's failed log; a run shared by several checks is read once. */
-async function failingWithLogs(ctx: Ctx, task: Task, failed: PrCheck[]): Promise<FailingCheck[]> {
-  const logs = new Map<string, string>()
-  const out: FailingCheck[] = []
-  for (const check of failed) {
-    const run = /\/actions\/runs\/(\d+)/.exec(check.detail)?.[1]
-    let log = ""
-    if (run !== undefined && logs.size < LOGS_READ) {
-      if (!logs.has(run)) {
-        const asked = await runIn(ctx, task.repoRoot, ["gh", "run", "view", run, "--log-failed"])
-        logs.set(run, asked !== null && asked.code === 0 ? tailOf(asked.stdout) : "")
-        log = logs.get(run) ?? ""
-      } else
-        log = `(the same run as ${out.find((c) => c.url.includes(`/runs/${run}`))?.name ?? "the check above"})`
-    }
-    out.push({ name: check.name, url: isUrl(check.detail) ? check.detail : "", log })
-  }
-  return out
-}
-
-/** The files git names as conflicting between the task's branch and the base; empty when git cannot say. */
-async function conflictFiles(ctx: Ctx, task: Task, base: string): Promise<string[]> {
-  if (base === "") return []
-  await ctx.git.run(task.repoRoot, ["fetch", "--quiet", "origin", base])
-  const merged = await ctx.git.run(task.repoRoot, [
-    "merge-tree",
-    "--write-tree",
-    "--name-only",
-    "--no-messages",
-    task.branch ?? "HEAD",
-    `origin/${base}`,
-  ])
-  if (merged.code !== 1) return []
-  return merged.stdout
-    .split("\n")
-    .slice(1)
-    .map((line) => line.trim())
-    .filter((line) => line !== "")
-}
-
-/** Sleep, keeping the task's session alive as the waits do. */
-async function nap(ctx: Ctx, task: Task, ms: number): Promise<void> {
-  let left = ms
-  while (left > 0) {
-    const step = Math.min(left, BEAT_MS)
-    await ctx.clock.sleep(step)
-    left -= step
-    try {
-      await touchSession(ctx, task, detectAgent(ctx.env), "busy")
-    } catch {
-      // keeping the session alive is a courtesy
-    }
-  }
-}
-
-function cadenceOf(ctx: Ctx): number {
-  const given = Number(ctx.env.get("QUALITYLAYER_TEAM_POLL_MS"))
-  return Number.isFinite(given) && given > 0 ? given : POLL_MS
-}
 
 const fresh = (url: string, now: number): WatchRecord => ({
   url,
@@ -246,53 +114,6 @@ const fresh = (url: string, now: number): WatchRecord => ({
 
 const left = (w: Pick<WatchRecord, "attempt">) => Math.max(0, MAX_ATTEMPTS - w.attempt)
 
-type ReviewersSaid = Pick<WatchAnswer, "open_threads" | "remarks">
-
-/**
- * Once the checks pass, what the reviewers wrote that still waits on the agent: the threads the
- * author has not triaged, and the remarks it was not told of before (each is told once). A read gh
- * cannot answer adds nothing; the checks' green stands.
- */
-async function reviewersSaid(
-  ctx: Ctx,
-  task: Task,
-  url: string,
-  told: string[],
-): Promise<{ fields: ReviewersSaid; told: string[] }> {
-  const threads = (await openThreads(ctx, task, url)).filter((t) => t.needs_triage).length
-  // The threads as just read are now known to the agent: a wake-up never repeats them.
-  const record = await readPullRequestRecord(ctx, task)
-  const threadKeys = (record?.url === url ? record.threads : [])
-    .map(threadWordsKey)
-    .filter((key): key is string => key !== null)
-  const remarks = ((await pullRequestRemarks(ctx, task, url)) ?? []).filter(
-    (r) => !told.includes(remarkKey(r.id)),
-  )
-  return {
-    fields: {
-      ...(threads > 0 ? { open_threads: threads } : {}),
-      ...(remarks.length > 0 ? { remarks } : {}),
-    },
-    told: [...new Set([...told, ...threadKeys, ...remarks.map((r) => remarkKey(r.id))])],
-  }
-}
-
-const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`
-
-function greenWords(task: Task, said: ReviewersSaid): string {
-  const parts = ["All checks pass."]
-  if (said.open_threads !== undefined)
-    parts.push(
-      `${count(said.open_threads, "review thread")} wait: run qualitylayer next --task ${task.slug} for their triage.`,
-    )
-  if (said.remarks !== undefined)
-    parts.push(
-      `${count(said.remarks.length, "new remark")} on the pull request: read them, and ask the author in the App before changing anything one asks for.`,
-    )
-  parts.push(parts.length === 1 ? "Say so in one line and stop." : "Then stop.")
-  return parts.join(" ")
-}
-
 /** What a watch that gave up says, from the record alone: a stop on a conflict names no failing check. */
 function gaveUp(w: WatchRecord, number: number | null): WatchAnswer {
   const conflict = w.failing.length === 0
@@ -304,9 +125,7 @@ function gaveUp(w: WatchRecord, number: number | null): WatchAnswer {
     attempts_left: 0,
     still_failing: w.failing,
     ...(conflict ? { conflict: { base: w.base, files: w.files } } : {}),
-    say: `Stopped after ${MAX_ATTEMPTS} attempts: ${
-      conflict ? "the conflicts remain" : `${w.failing.join(", ")} still fails`
-    }. Tell the person what still fails and stop.`,
+    say: gaveUpSay(w),
   }
 }
 

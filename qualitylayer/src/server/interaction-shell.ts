@@ -1,18 +1,21 @@
 // SHELL owns this adapter, /interaction/shell/* and the global shell endpoints.
 
-import { join } from "node:path"
-import { readLedger, spentIn } from "../core/cost/ledger.ts"
-import { readDecided } from "../core/gate/decided.ts"
-import { calendarPeriods, homeFacts } from "../core/interaction-shell/home.ts"
-import { notificationsOf, settleNotifications } from "../core/interaction-shell/notifications.ts"
-import { agentIdOf, backgroundAgents, shellStatus } from "../core/interaction-shell/status.ts"
+import { backgroundAgents, shellStatus } from "../core/interaction-shell/status.ts"
 import { taskRuntimeDir } from "../core/paths.ts"
 import { readBatch } from "../core/task/question-batch.ts"
 import type { Ctx } from "../ctx.ts"
-import type { Notification, ShellSnapshot } from "../interaction/contracts.ts"
-import { listAllTasks, type TaskDetail, type TaskSummary, taskCostOf, taskSummary } from "./api.ts"
+import type { ShellSnapshot } from "../interaction/contracts.ts"
+import { listAllTasks, type TaskDetail, type TaskSummary, taskSummary } from "./api.ts"
 import type { InteractionRoute } from "./interaction-route.ts"
+import { buildHomeFacts } from "./interaction-shell-home.ts"
+import {
+  clearNotifications,
+  filterTasksByScope,
+  readScopedNotifications,
+} from "./interaction-shell-notifications.ts"
+
 export const shellCapabilities = { status: true, homeFacts: true }
+
 export async function shellSnapshot(
   task: TaskSummary & Partial<Pick<TaskDetail, "question">>,
   ctx: Ctx,
@@ -27,10 +30,10 @@ export async function shellSnapshot(
     signals: task.live?.signals ?? null,
     agents: backgroundAgents(task),
     steps: task.helpers
-      .filter((h) => h.line !== null)
+      .filter((h): h is typeof h & { line: string } => h.line !== null)
       .map((h) => ({
         id: h.id,
-        text: h.line!,
+        text: h.line,
         state: h.state === "done" ? "done" : "now",
         at: h.at,
       })),
@@ -44,29 +47,53 @@ export async function shellSnapshot(
             : null,
   }
 }
-const costCache = new Map<string, { at: number; value: number | null }>()
-const warming = new Set<string>()
-const costQueue: (() => Promise<unknown>)[] = []
-let costRunning = false
-function queueCost(work: () => Promise<unknown>) {
-  costQueue.push(work)
-  if (costRunning) return
-  costRunning = true
-  setTimeout(async () => {
-    try {
-      while (costQueue.length) {
-        await costQueue.shift()?.()
-        await new Promise<void>((resolve) => setTimeout(resolve, 0))
-      }
-    } finally {
-      costRunning = false
-    }
-  }, 0)
+
+const shellReply = (body: object, status = 200) =>
+  Response.json(body, { status, headers: { "cache-control": "no-store" } })
+
+async function handleGlobalShellGet(
+  ctx: Ctx,
+  route: "home" | "notifications",
+  url: URL,
+): Promise<Response> {
+  const project = url.searchParams.get("project") ?? ""
+  const agent = url.searchParams.get("agent") ?? ""
+  const all = await listAllTasks(ctx)
+  const tasks = filterTasksByScope(all, project, agent)
+  if (route === "notifications")
+    return shellReply({ ok: true, notifications: await readScopedNotifications(ctx, all, tasks) })
+  const timezone =
+    url.searchParams.get("timezone") ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone }).format()
+  } catch {
+    return shellReply({ ok: false, error: { code: "timezone", message: "Unknown time zone" } }, 400)
+  }
+  return shellReply({
+    ok: true,
+    facts: await buildHomeFacts(ctx, tasks, { project, agent, timezone }),
+  })
 }
+
+async function handleShellGet(
+  ctx: Ctx,
+  id: string | null,
+  path: string[],
+  request: Request,
+): Promise<Response> {
+  if (id !== null && path[1] === "status") {
+    const detail = await taskSummary(ctx, id)
+    return detail.ok
+      ? shellReply({ ok: true, shell: await shellSnapshot(detail.data, ctx) })
+      : shellReply({ ok: false, error: detail.error }, 404)
+  }
+  if (id === null && (path[1] === "home" || path[1] === "notifications"))
+    return handleGlobalShellGet(ctx, path[1], new URL(request.url))
+  return shellReply({ ok: false, error: { code: "not_found" } }, 404)
+}
+
 export const shellRoute: InteractionRoute = async (ctx, id, path, request) => {
   if (path[0] !== "shell") return null
-  const reply = (body: object, status = 200) =>
-    Response.json(body, { status, headers: { "cache-control": "no-store" } })
   // Clear all: the settled notifications in this scope are cleared. What still waits stays, since
   // it is no notice but the work itself; it leaves once it is answered.
   if (
@@ -76,162 +103,14 @@ export const shellRoute: InteractionRoute = async (ctx, id, path, request) => {
     path[2] === "clear"
   ) {
     const url = new URL(request.url)
-    const project = url.searchParams.get("project") ?? ""
-    const agent = url.searchParams.get("agent") ?? ""
-    const ids = new Set(
-      (await listAllTasks(ctx))
-        .filter(
-          (t) =>
-            (project === "" || t.project === project) && (agent === "" || agentIdOf(t) === agent),
-        )
-        .map((t) => t.id),
+    const cleared = await clearNotifications(
+      ctx,
+      url.searchParams.get("project") ?? "",
+      url.searchParams.get("agent") ?? "",
     )
-    const file = join(ctx.home, "interaction-shell-notifications.json")
-    const cleared = await ctx.fs.withLock(`${file}.lock`, async () => {
-      let previous: Notification[] = []
-      try {
-        previous = JSON.parse(await ctx.fs.readFile(file)) as Notification[]
-      } catch {
-        return 0
-      }
-      const kept = previous.filter((n) => n.state !== "settled" || !ids.has(n.target.taskId))
-      if (kept.length !== previous.length)
-        await ctx.fs.atomicWrite(file, `${JSON.stringify(kept)}\n`)
-      return previous.length - kept.length
-    })
-    return reply({ ok: true, cleared })
+    return shellReply({ ok: true, cleared })
   }
   if (request.method !== "GET")
-    return reply({ ok: false, error: { code: "method", message: "Use GET" } }, 405)
-  if (id !== null && path[1] === "status") {
-    const detail = await taskSummary(ctx, id)
-    return detail.ok
-      ? reply({ ok: true, shell: await shellSnapshot(detail.data, ctx) })
-      : reply({ ok: false, error: detail.error }, 404)
-  }
-  if (id !== null || !["home", "notifications"].includes(path[1] ?? ""))
-    return reply({ ok: false, error: { code: "not_found" } }, 404)
-  const url = new URL(request.url)
-  const project = url.searchParams.get("project") ?? ""
-  const agent = url.searchParams.get("agent") ?? ""
-  const all = await listAllTasks(ctx)
-  const tasks = all.filter(
-    (t) => (project === "" || t.project === project) && (agent === "" || agentIdOf(t) === agent),
-  )
-  if (path[1] === "notifications") {
-    const batches = Object.fromEntries(
-      await Promise.all(
-        all
-          .filter((t) => !t.archived && t.answers !== "terminal")
-          .map(async (task) => [
-            task.id,
-            await readBatch(ctx, { runtimeDir: taskRuntimeDir(ctx, task.project, task.slug) }),
-          ]),
-      ),
-    )
-    const file = join(ctx.home, "interaction-shell-notifications.json")
-    const notifications = await ctx.fs.withLock(`${file}.lock`, async () => {
-      let previous: Notification[] = []
-      try {
-        previous = JSON.parse(await ctx.fs.readFile(file)) as Notification[]
-      } catch {}
-      const next = settleNotifications(
-        previous,
-        notificationsOf(all, ctx.clock.now(), batches),
-        ctx.clock.now(),
-      )
-      if (JSON.stringify(previous) !== JSON.stringify(next))
-        await ctx.fs.atomicWrite(file, `${JSON.stringify(next)}\n`)
-      const ids = new Set(tasks.map((t) => t.id))
-      return next.filter((n) => ids.has(n.target.taskId))
-    })
-    return reply({ ok: true, notifications })
-  }
-  const timezone =
-    url.searchParams.get("timezone") ?? Intl.DateTimeFormat().resolvedOptions().timeZone
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: timezone }).format()
-  } catch {
-    return reply({ ok: false, error: { code: "timezone", message: "Unknown time zone" } }, 400)
-  }
-  const costs: Record<string, number | null> = {}
-  const approvals = Object.fromEntries(
-    await Promise.all(
-      tasks
-        .filter((t) => t.stage === "shipped")
-        .map(async (task) => {
-          const decided = await readDecided(ctx, {
-            runtimeDir: taskRuntimeDir(ctx, task.project, task.slug),
-          })
-          return [
-            task.id,
-            decided.findLast((d) => d.target === "final" && d.decision === "approved")?.at ?? null,
-          ]
-        }),
-    ),
-  )
-  for (const task of tasks) {
-    const key = `${ctx.home}|${task.id}`
-    const cached = costCache.get(key)
-    costs[task.id] = cached?.value ?? null
-    if (
-      warming.has(key) ||
-      warming.size >= 32 ||
-      (cached !== undefined && ctx.clock.now() - cached.at < 60_000)
-    )
-      continue
-    warming.add(key)
-    // Transcript reads happen after rendering, once per task, never one cost request per row.
-    queueCost(() =>
-      taskCostOf(ctx, task.id)
-        .then(async (result) => {
-          costCache.set(key, {
-            at: ctx.clock.now(),
-            value:
-              result.ok && result.data.missing === 0 && result.data.total.all > 0
-                ? result.data.total.usd
-                : null,
-          })
-          for (const oldest of costCache.keys()) {
-            if (costCache.size <= 500) break
-            costCache.delete(oldest)
-          }
-          // The existing project watcher publishes one SSE event when the off-path read
-          // finishes. Home then reads the cache; no browser timer or per-row request.
-          const runtimeDir = taskRuntimeDir(ctx, task.project, task.slug)
-          if (await ctx.fs.exists(runtimeDir))
-            await ctx.fs.atomicWrite(
-              join(runtimeDir, "shell-cost-ready.json"),
-              `${JSON.stringify(costCache.get(key))}\n`,
-            )
-        })
-        .catch(() => {})
-        .finally(() => warming.delete(key)),
-    )
-  }
-  const visible = new Set(tasks.map((task) => task.id))
-  const rows = (await readLedger(ctx)).filter(
-    (row) =>
-      (project === "" || row.taskId.startsWith(`${project}~`)) &&
-      (agent === "" || visible.has(row.taskId)),
-  )
-  // A shipped task's cost from the same ledger the spending card sums, so one task shows one figure
-  // on Home; the transcript total stays the fallback for a task the ledger misses or cannot price.
-  const ledgerUsd = new Map<string, number | null>()
-  for (const row of rows) {
-    const was = ledgerUsd.get(row.taskId)
-    ledgerUsd.set(row.taskId, was === null || row.usd === null ? null : (was ?? 0) + row.usd)
-  }
-  for (const [id, usd] of ledgerUsd) if (id in costs && usd !== null && usd > 0) costs[id] = usd
-  const now = ctx.clock.now()
-  const spending =
-    rows.length === 0
-      ? undefined
-      : Object.fromEntries(
-          Object.entries(calendarPeriods(now, timezone)).map(([period, range]) => [
-            period,
-            spentIn(rows, range.from, Math.min(range.to, now + 1)),
-          ]),
-        )
-  return reply({ ok: true, facts: homeFacts(tasks, now, timezone, costs, approvals, spending) })
+    return shellReply({ ok: false, error: { code: "method", message: "Use GET" } }, 405)
+  return handleShellGet(ctx, id, path, request)
 }

@@ -4,37 +4,15 @@
 // text.
 
 import { cn } from "cn"
-import {
-  CodeXmlIcon,
-  EyeIcon,
-  ListChecksIcon,
-  type LucideIcon,
-  NetworkIcon,
-  PencilLineIcon,
-  PlusIcon,
-  ShieldCheckIcon,
-  SquareTerminalIcon,
-  Trash2Icon,
-} from "lucide-react"
-import { Fragment, type ReactNode, useRef, useState } from "react"
-import { Button } from "@/components/ui/button"
+import { EyeIcon, ListChecksIcon, PencilLineIcon } from "lucide-react"
+import { Fragment, type ReactNode, type RefObject, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { FLOW_STEPS, type FlowStepId } from "../../core/flow.ts"
-import {
-  CHECK_STEPS,
-  isProjectCheck,
-  type RequiredLine,
-  requiredLines,
-  runCommand,
-  stepLabel,
-  withoutRequiredLine,
-  withRequiredLine,
-} from "../../core/required-parse.ts"
+import { FLOW_STEPS } from "../../core/flow.ts"
+import { type RequiredLine, requiredLines, stepLabel } from "../../core/required-parse.ts"
 import type { InstructionsOutcome, InstructionsText } from "../api.ts"
-import { toBlocks } from "../reader/DocReader.tsx"
 import { Segmented } from "../Segmented.tsx"
-import { Pick, SettingsMore } from "./Rows.tsx"
+import { InstructionsPreview, InstructionsSteps } from "./InstructionsSteps.tsx"
+import { SettingsMore } from "./Rows.tsx"
 
 /** The same cap the server holds (`INSTRUCTIONS_MAX_CHARS`), counted in characters, not bytes. */
 export const INSTRUCTIONS_LIMIT = 12_000
@@ -57,192 +35,11 @@ const count = (n: number) => n.toLocaleString("en-US")
 /** Characters are code points, as the server counts them. */
 const lengthOf = (text: string) => [...text].length
 
-/** The text as it renders, through the reader's sanitiser; a link is never followed from here. */
-function Preview({ text }: { text: string }) {
-  return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: the click only stops a link from navigating
-    // biome-ignore lint/a11y/noStaticElementInteractions: same
-    <div
-      className="q-ins-prev"
-      data-testid="instructions-preview"
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest("a") !== null) event.preventDefault()
-      }}
-    >
-      {toBlocks(text).map((block) =>
-        block.kind === "html" || block.kind === "added" ? (
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised by DOMPurify in toBlocks
-          <div key={block.key} dangerouslySetInnerHTML={{ __html: block.html }} />
-        ) : null,
-      )}
-    </div>
-  )
-}
-
 /** The required lines in the person's local instructions, grouped in the hint when possible. */
 export function requiredSummary(lines: RequiredLine[]): string | null {
   if (lines.length === 0) return null
   const steps = new Set(lines.map((line) => line.step))
   return `${lines.length} step ${lines.length === 1 ? "check" : "checks"}${steps.size === 1 ? ` in ${stepLabel(lines[0]?.step ?? "verify")}` : ""}`
-}
-
-type Shown = RequiredLine & {
-  /** The person's own line at this place in the text alone, for Remove. */
-  at?: number
-  added: boolean
-}
-
-/** A line's position and whether this draft adds it to the saved local instructions. */
-function shownLines(draft: string, filed: string): Shown[] {
-  const kept = requiredLines(null, filed)
-  const seen = new Map<string, number>()
-  return requiredLines(null, draft).map((line) => {
-    const key = `${line.step}\n${line.text}`
-    const nth = (seen.get(key) ?? 0) + 1
-    seen.set(key, nth)
-    return {
-      ...line,
-      at: line.n,
-      added:
-        nth > kept.filter((saved) => saved.step === line.step && saved.text === line.text).length,
-    }
-  })
-}
-
-/** A step's mark, the task header's (the App Model's `QL.ICON` step.*): a line that is not a Project check wears its step's. */
-const STEP_ICONS: Record<FlowStepId, LucideIcon> = {
-  plan: NetworkIcon,
-  implement: CodeXmlIcon,
-  verify: ShieldCheckIcon,
-}
-
-/** The Add row's Step menu: each step by name, with its mark. */
-const STEP_OPTIONS = FLOW_STEPS.map(({ id, label }) => {
-  const Mark = STEP_ICONS[id]
-  return { id, name: label, icon: <Mark className="size-3.5" aria-hidden="true" /> }
-})
-
-function RequiredRow({ line, onRemove }: { line: Shown; onRemove?: () => void }) {
-  const check = isProjectCheck(line)
-  const StepIcon = STEP_ICONS[line.step]
-  const shown = line.run ?? line.text
-  return (
-    <li className="q-ins-line" data-line>
-      {check ? (
-        <SquareTerminalIcon className="q-ins-ic" aria-hidden="true" />
-      ) : (
-        <StepIcon className="q-ins-ic" aria-hidden="true" />
-      )}
-      <div className="q-ins-line-text">
-        <b className={cn(line.run !== undefined && "mono")}>{shown}</b>
-        <span className="q-ins-line-meta">
-          <span>{check ? "Project check" : "Done or skipped with a reason"}</span>
-          {line.added ? <span className="new">Added · save to keep</span> : null}
-        </span>
-      </div>
-      {onRemove !== undefined ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Remove ${line.text}`}
-          onClick={onRemove}
-        >
-          <Trash2Icon aria-hidden="true" />
-        </Button>
-      ) : null}
-    </li>
-  )
-}
-
-/** The Steps view: what is required, grouped by step, and a row to add one. Edits go into the draft. */
-function Steps({
-  draft,
-  filed,
-  edit,
-  help,
-}: {
-  draft: string
-  filed: string
-  edit: (next: string) => void
-  help: string
-}) {
-  const [step, setStep] = useState<FlowStepId>("verify")
-  const [words, setWords] = useState("")
-  const lines = shownLines(draft, filed)
-  const shown = FLOW_STEPS.filter(({ id }) => lines.some((line) => line.step === id))
-  const given = words.replace(/\s+/g, " ").trim()
-  const runs = runCommand(given) !== undefined && CHECK_STEPS.has(step)
-  const add = () => {
-    if (given === "") return
-    edit(withRequiredLine(draft, step, given))
-    setWords("")
-  }
-  return (
-    <>
-      <section className="q-ins-steps" aria-label="Step checks by step">
-        {shown.length === 0 ? (
-          <p className="q-ins-none">No step checks yet. Your text still guides every step.</p>
-        ) : (
-          shown.map(({ id, label }) => (
-            <section key={id} className="q-ins-stepgroup">
-              <h3 className="q-ins-step" data-step>
-                {label}
-              </h3>
-              <ul className="q-ins-lines">
-                {lines
-                  .filter((line) => line.step === id)
-                  .map((line) => (
-                    <RequiredRow
-                      key={`${line.source}:${line.n}`}
-                      line={line}
-                      {...(line.at !== undefined
-                        ? { onRemove: () => edit(withoutRequiredLine(draft, id, line.at ?? 1)) }
-                        : {})}
-                    />
-                  ))}
-              </ul>
-            </section>
-          ))
-        )}
-      </section>
-      <form
-        className="q-ins-add"
-        aria-label="Add a step check"
-        onSubmit={(event) => {
-          event.preventDefault()
-          add()
-        }}
-      >
-        <Pick
-          label="Step"
-          value={step}
-          options={STEP_OPTIONS}
-          onChange={(id) => setStep(id as FlowStepId)}
-        />
-        <Input
-          aria-label="What the agent must do"
-          placeholder="What the agent must do, or run: command"
-          autoComplete="off"
-          spellCheck={false}
-          value={words}
-          onChange={(event) => setWords(event.target.value)}
-        />
-        <button type="submit" className="q-btn" disabled={given === ""}>
-          <PlusIcon aria-hidden="true" />
-          Add
-        </button>
-        <p className="q-ins-add-hint">
-          Adds <code>{`- [ ] ${given === "" ? "…" : given}`}</code> under{" "}
-          <code>{`## ${stepLabel(step)}`}</code>.{" "}
-          {runs
-            ? "It runs with the Project checks you approve in the Plan."
-            : "The agent does it or skips it with a reason; Verify shows which."}
-        </p>
-      </form>
-      <p className="q-ins-help">{help}</p>
-    </>
-  )
 }
 
 type View = "write" | "steps" | "preview"
@@ -253,6 +50,172 @@ const VIEWS: { id: View; label: string; icon: ReactNode }[] = [
 ]
 
 type Problem = { kind: "conflict"; current: InstructionsText } | { kind: "failed"; message: string }
+
+function InstructionsViewPane({
+  view,
+  draft,
+  filed,
+  over,
+  help,
+  field,
+  edit,
+}: {
+  view: View
+  draft: string
+  filed: string
+  over: boolean
+  help: string
+  field: RefObject<HTMLTextAreaElement | null>
+  edit: (next: string) => void
+}) {
+  if (view === "steps") {
+    return (
+      <InstructionsSteps
+        draft={draft}
+        filed={filed}
+        edit={edit}
+        help="Changes apply from your next task."
+      />
+    )
+  }
+  if (view === "preview") {
+    return (
+      <>
+        {draft.trim() === "" ? (
+          <p className="q-dim m-0">Nothing to preview yet.</p>
+        ) : (
+          <InstructionsPreview text={draft} />
+        )}
+        <p className="q-ins-help">{help}</p>
+      </>
+    )
+  }
+  return (
+    <>
+      <label className="sr-only" htmlFor="instructions-field">
+        Instructions
+      </label>
+      <textarea
+        id="instructions-field"
+        ref={field}
+        className="q-ins-field"
+        value={draft}
+        spellCheck={false}
+        placeholder="## Coding standards"
+        onChange={(event) => edit(event.target.value)}
+        aria-invalid={over}
+        data-testid="instructions-field"
+      />
+      <p className="q-ins-help">{help}</p>
+      <SettingsMore summary="Step headings and step checks">
+        <p className="q-ins-help">
+          The headings are{" "}
+          {FLOW_STEPS.map(({ id, label }, at) => (
+            <Fragment key={id}>
+              {at === 0 ? "" : at === FLOW_STEPS.length - 1 ? " and " : ", "}
+              <code>{`## ${label}`}</code>
+            </Fragment>
+          ))}
+          . A <code>- [ ]</code> line under one is a step check.
+        </p>
+      </SettingsMore>
+    </>
+  )
+}
+
+function InstructionsProblem({
+  problem,
+  onTakeCurrent,
+}: {
+  problem: Problem | null
+  onTakeCurrent: (current: InstructionsText) => void
+}) {
+  if (problem === null) return null
+  if (problem.kind === "conflict") {
+    return (
+      <p className="q-ins-err" role="alert">
+        <b>Changed elsewhere.</b> Newer text was saved while you were editing. Yours stays here
+        until you choose.{" "}
+        <button type="button" className="q-link" onClick={() => onTakeCurrent(problem.current)}>
+          Show the current text
+        </button>
+      </p>
+    )
+  }
+  return (
+    <p className="q-ins-err" role="alert">
+      <b>Not saved.</b> {problem.message} Your text is still here; save again when it works.
+    </p>
+  )
+}
+
+function InstructionsFooter({
+  asking,
+  over,
+  countLine,
+  dirty,
+  saving,
+  failed,
+  setAsking,
+  onClose,
+  onSave,
+}: {
+  asking: boolean
+  over: boolean
+  countLine: string
+  dirty: boolean
+  saving: boolean
+  failed: boolean
+  setAsking: (asking: boolean) => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  if (asking) {
+    return (
+      <footer className="q-ins-foot">
+        <span className="q-ins-confirm" role="alert">
+          Discard your changes?
+        </span>
+        <span className="q-ins-sp" />
+        <button type="button" className="q-btn quiet" onClick={() => setAsking(false)}>
+          Keep editing
+        </button>
+        <button type="button" className="q-btn quiet danger" onClick={onClose}>
+          Discard
+        </button>
+      </footer>
+    )
+  }
+  const saveTitle = over ? "Shorten the text to save" : !dirty ? "No changes to save" : undefined
+  return (
+    <footer className="q-ins-foot">
+      <span
+        className={cn("q-ins-count", over && "over")}
+        data-testid="instructions-count"
+        aria-live="polite"
+      >
+        {countLine}
+      </span>
+      <span className="q-ins-sp" />
+      <button
+        type="button"
+        className="q-btn quiet"
+        onClick={() => (dirty ? setAsking(true) : onClose())}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="q-btn primary"
+        disabled={!dirty || over || saving}
+        title={saveTitle}
+        onClick={onSave}
+      >
+        {failed ? "Save again" : "Save"}
+      </button>
+    </footer>
+  )
+}
 
 function Body({
   text,
@@ -275,14 +238,13 @@ function Body({
   onClose: () => void
   help: string
 }) {
-  // What the sheet opened with: `base` stays the file's version this text came from, so a change
-  // saved elsewhere meanwhile ends in the conflict message, never in a silent overwrite.
   const [filed, setFiled] = useState(text)
   const [base, setBase] = useState(opened)
   const [draft, setDraft] = useState(text)
-  const has = (from: string) => requiredLines(null, from).length > 0
   const [started, setStarted] = useState(text !== "")
-  const [view, setView] = useState<View>(() => (has(text) ? "steps" : "write"))
+  const [view, setView] = useState<View>(() =>
+    requiredLines(null, text).length > 0 ? "steps" : "write",
+  )
   const [saving, setSaving] = useState(false)
   const [savedNow, setSavedNow] = useState(false)
   const [problem, setProblem] = useState<Problem | null>(null)
@@ -332,12 +294,6 @@ function Body({
     setProblem(null)
     setSavedNow(false)
   }
-
-  const stepsHelp = "Changes apply from your next task."
-  const stepsView = (from: string) => (
-    <Steps draft={from} filed={filed} edit={edit} help={stepsHelp} />
-  )
-
   const countLine = over
     ? `${count(length)} of ${count(INSTRUCTIONS_LIMIT)} characters · shorten by ${count(length - INSTRUCTIONS_LIMIT)} to save`
     : `${count(length)} of ${count(INSTRUCTIONS_LIMIT)} characters`
@@ -370,105 +326,30 @@ function Body({
                 </span>
               ) : null}
             </div>
-            {view === "steps" ? (
-              stepsView(draft)
-            ) : view === "write" ? (
-              <>
-                <label className="sr-only" htmlFor="instructions-field">
-                  Instructions
-                </label>
-                <textarea
-                  id="instructions-field"
-                  ref={field}
-                  className="q-ins-field"
-                  value={draft}
-                  spellCheck={false}
-                  placeholder="## Coding standards"
-                  onChange={(event) => edit(event.target.value)}
-                  aria-invalid={over}
-                  data-testid="instructions-field"
-                />
-              </>
-            ) : draft.trim() === "" ? (
-              <p className="q-dim m-0">Nothing to preview yet.</p>
-            ) : (
-              <Preview text={draft} />
-            )}
-            {view === "steps" ? null : <p className="q-ins-help">{help}</p>}
-            {view === "write" ? (
-              <SettingsMore summary="Step headings and step checks">
-                <p className="q-ins-help">
-                  The headings are{" "}
-                  {FLOW_STEPS.map(({ id, label }, at) => (
-                    <Fragment key={id}>
-                      {at === 0 ? "" : at === FLOW_STEPS.length - 1 ? " and " : ", "}
-                      <code>{`## ${label}`}</code>
-                    </Fragment>
-                  ))}
-                  . A <code>- [ ]</code> line under one is a step check.
-                </p>
-              </SettingsMore>
-            ) : null}
+            <InstructionsViewPane
+              view={view}
+              draft={draft}
+              filed={filed}
+              over={over}
+              help={help}
+              field={field}
+              edit={edit}
+            />
           </>
         )}
-        {problem?.kind === "conflict" ? (
-          <p className="q-ins-err" role="alert">
-            <b>Changed elsewhere.</b> Newer text was saved while you were editing. Yours stays here
-            until you choose.{" "}
-            <button type="button" className="q-link" onClick={() => takeCurrent(problem.current)}>
-              Show the current text
-            </button>
-          </p>
-        ) : null}
-        {problem?.kind === "failed" ? (
-          <p className="q-ins-err" role="alert">
-            <b>Not saved.</b> {problem.message} Your text is still here; save again when it works.
-          </p>
-        ) : null}
+        <InstructionsProblem problem={problem} onTakeCurrent={takeCurrent} />
       </div>
-      <footer className="q-ins-foot">
-        {asking ? (
-          <>
-            <span className="q-ins-confirm" role="alert">
-              Discard your changes?
-            </span>
-            <span className="q-ins-sp" />
-            <button type="button" className="q-btn quiet" onClick={() => setAsking(false)}>
-              Keep editing
-            </button>
-            <button type="button" className="q-btn quiet danger" onClick={onClose}>
-              Discard
-            </button>
-          </>
-        ) : (
-          <>
-            <span
-              className={cn("q-ins-count", over && "over")}
-              data-testid="instructions-count"
-              aria-live="polite"
-            >
-              {countLine}
-            </span>
-            <span className="q-ins-sp" />
-            <button
-              type="button"
-              className="q-btn quiet"
-              onClick={() => (dirty ? setAsking(true) : onClose())}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="q-btn primary"
-              disabled={!dirty || over || saving}
-              title={over ? "Shorten the text to save" : !dirty ? "No changes to save" : undefined}
-              onClick={() => void run()}
-            >
-              {problem?.kind === "failed" ? "Save again" : "Save"}
-            </button>
-          </>
-        )}
-      </footer>
+      <InstructionsFooter
+        asking={asking}
+        over={over}
+        countLine={countLine}
+        dirty={dirty}
+        saving={saving}
+        failed={problem?.kind === "failed"}
+        setAsking={setAsking}
+        onClose={onClose}
+        onSave={() => void run()}
+      />
     </>
   )
 }
@@ -504,7 +385,6 @@ export function InstructionsSheet({
     setAsking(false)
     onOpenChange(false)
   }
-  // Escape, the × and a click outside ask once when there are changes; nothing is lost by a stray key.
   const request = () => (dirty.current ? setAsking(true) : close())
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : request())}>
@@ -512,7 +392,6 @@ export function InstructionsSheet({
         ref={content}
         className="q-ins top-[max(24px,8vh)] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[640px] max-sm:inset-0 max-sm:h-dvh max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:grid-rows-[auto_minmax(0,1fr)_auto] max-sm:rounded-none"
         initialFocus={() => {
-          // The sheet has no trigger of its own, so it remembers the button that opened it.
           opener.current = document.activeElement as HTMLElement | null
           return (
             content.current?.querySelector<HTMLElement>(

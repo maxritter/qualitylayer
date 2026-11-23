@@ -23,24 +23,36 @@ function metadata(html) {
 // through their links, but the sitemap lists the articles themselves, as the Docusaurus sitemap did.
 const LISTING = /^\/blog\/(?:page\/\d+|tags(?:\/.*)?|authors(?:\/.*)?|archive)$/;
 
+async function readSitemapEntry(dist, name) {
+  if (!name.endsWith(".html") || !/^(docs|blog)(\.html|\/)/.test(name)) return null;
+  const { canonical, noindex, modified } = metadata(await readFile(path.join(dist, name), "utf8"));
+  if (noindex || !canonical) return null;
+  const url = new URL(canonical);
+  if (url.origin !== ORIGIN || url.hash || url.search) throw new Error(`Invalid canonical in ${name}: ${canonical}`);
+  const route = url.pathname.replace(/\/$/, "") || "/";
+  const actual = `/${name.replace(/(?:\/index)?\.html$/, "")}`;
+  if (route !== actual) throw new Error(`Canonical does not match output: ${name} → ${canonical}`);
+  if (LISTING.test(route)) return null;
+  return [`${ORIGIN}${route}`, /^\d{4}-\d{2}-\d{2}$/.test(modified ?? "") ? modified : null];
+}
+
+function renderSitemapXml(urls) {
+  const rows = [...urls.keys()].sort().map((url) => {
+    const lastmod = urls.get(url);
+    return `  <url><loc>${escapeXml(url)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`;
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows.join("\n")}\n</urlset>\n`;
+}
+
 /** Read final HTML, so frontmatter slugs, generated pages and pagination stay in sync. */
 export async function generateDocsSitemap(dist) {
   const urls = new Map();
   for (const name of await readdir(dist, { recursive: true })) {
-    if (!name.endsWith(".html") || !/^(docs|blog)(\.html|\/)/.test(name)) continue;
-    const { canonical, noindex, modified } = metadata(await readFile(path.join(dist, name), "utf8"));
-    if (noindex || !canonical) continue;
-    const url = new URL(canonical);
-    if (url.origin !== ORIGIN || url.hash || url.search) throw new Error(`Invalid canonical in ${name}: ${canonical}`);
-    const route = url.pathname.replace(/\/$/, "") || "/";
-    const actual = `/${name.replace(/(?:\/index)?\.html$/, "")}`;
-    if (route !== actual) throw new Error(`Canonical does not match output: ${name} → ${canonical}`);
-    if (LISTING.test(route)) continue;
-    urls.set(`${ORIGIN}${route}`, /^\d{4}-\d{2}-\d{2}$/.test(modified ?? "") ? modified : null);
+    const entry = await readSitemapEntry(dist, name);
+    if (entry) urls.set(entry[0], entry[1]);
   }
   if (!urls.has(`${ORIGIN}/docs`) || !urls.has(`${ORIGIN}/docs/install`)) throw new Error("Documentation output is incomplete");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[...urls.keys()].sort().map((url) => `  <url><loc>${escapeXml(url)}</loc>${urls.get(url) ? `<lastmod>${urls.get(url)}</lastmod>` : ""}</url>`).join("\n")}\n</urlset>\n`;
-  await writeFile(path.join(dist, "docs/sitemap.xml"), xml);
+  await writeFile(path.join(dist, "docs/sitemap.xml"), renderSitemapXml(urls));
   return [...urls.keys()].sort();
 }
 

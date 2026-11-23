@@ -1,483 +1,69 @@
 // Rules over Implement's slices and cards (agents/02-implement.md): the records the build reads
 // and the limits it runs under (no command that leaves the machine unseen, repository files only).
 
-import { basename, join, posix, relative, sep } from "node:path"
 import type { ValidationError } from "../../../ctx.ts"
-import { publicationReadRefusal } from "../../../publication-fs.ts"
-import { artifactFiles } from "../../artifact/store.ts"
-import { sliceCommands, stepCommands, taskCommands, taskRedCommands } from "../commands.ts"
-import { parseDoc } from "../frontmatter.ts"
-import { ARTIFACT_DIR, agentFileOf, folderDoc, isProofPath, RECORDS_DIR } from "../names.ts"
-import {
-  allTasks,
-  designPage,
-  isGrantAtApproval,
-  isPathLike,
-  parsePrerequisites,
-  prerequisiteSettled,
-} from "../outline.ts"
+import { agentFileOf, folderDoc } from "../names.ts"
+import type { ProofOrderLine } from "../outline.ts"
 import { planProof } from "./plan-proof.ts"
-import { type Rule, type RuleInput, sectionRanges, verr } from "./types.ts"
+import { type Rule, sectionRanges, verr } from "./types.ts"
+
+type SectionRange = ReturnType<typeof sectionRanges>[number]
+
+export { artifactRefsResolve, filesAreSource } from "./outline-files-rules.ts"
+export { commandRisk, prerequisitesSettled, unapprovedCommand } from "./outline-prereq-rules.ts"
+export { everyTaskHasLabels, testFirstOrTrivial } from "./outline-task-rules.ts"
 
 const CARDS_FILE = agentFileOf("implement")
 
-export const everyTaskHasLabels: Rule = (input) => {
-  const outline = input.outline()
-  const errors = outline.malformed
-    .filter((m) => m.kind !== "prerequisite-table")
-    .map((m) =>
-      m.kind === "card"
-        ? verr(
-            m.line,
-            "every-task-has-labels",
-            `the card "${m.text}" has no box of its id in its slice`,
-            "add `- [ ] <id> <title>` to the slice the card stands under, or take the card out",
-          )
-        : verr(
-            m.line,
-            "every-task-has-labels",
-            `malformed task checkbox: "${m.text}"`,
-            "write tasks as `- [ ] T1 <title>` at the start of the line",
-          ),
-    )
-  if (outline.slices.length === 0) {
-    errors.push(
-      verr(
-        1,
-        "every-task-has-labels",
-        `${CARDS_FILE} has no \`### Slice N: <title>\` under "## Task cards"`,
-        "add at least one slice with its task boxes and cards",
-      ),
+function checkProofOrderLine(
+  line: ProofOrderLine,
+  steps: readonly string[],
+  slices: readonly number[],
+  written: (id: string) => string,
+): ValidationError | null {
+  if (!steps.includes(line.id)) {
+    const plan = folderDoc("plan")
+    return verr(
+      line.line,
+      "proof-order",
+      `Proof order names ${line.id}, which the Plan's Done means does not have (its steps are ${steps.join(", ")})`,
+      `take the line out; if the Plan is missing that step, add it to ${plan} and record it with \`qualitylayer plan amend --by agent --note "<the step, and why>"\``,
     )
   }
-  const seen = new Set<string>()
-  outline.slices.forEach((slice, index) => {
-    if (slice.n !== index + 1) {
-      errors.push(
-        verr(
-          slice.line,
-          "every-task-has-labels",
-          `slice ${slice.n} is out of sequence (expected ${index + 1})`,
-          "number slices 1, 2, 3 … in build order",
-        ),
-      )
-    }
-    if (slice.tasks.length === 0) {
-      errors.push(
-        verr(
-          slice.line,
-          "every-task-has-labels",
-          `slice ${slice.n} has no tasks`,
-          "add at least one `- [ ] T<n> <title>` task box with its `#### T<n>` card",
-        ),
-      )
-    }
-    if (slice.validation === "") {
-      errors.push(
-        verr(
-          slice.line,
-          "every-task-has-labels",
-          `slice ${slice.n} has no **Validation:** line`,
-          `under "### Slice ${slice.n}" in ${CARDS_FILE}, write \`**Validation:** automated: … · manual: …\`; use manual: none when automated evidence settles the slice`,
-        ),
-      )
-    }
-    for (const task of slice.tasks) {
-      if (seen.has(task.id)) {
-        errors.push(
-          verr(
-            task.line,
-            "every-task-has-labels",
-            `task id ${task.id} is used twice`,
-            "number tasks T1, T2, … uniquely across the whole Plan",
-          ),
-        )
-      }
-      seen.add(task.id)
-      if (task.title === "") {
-        errors.push(
-          verr(
-            task.line,
-            "every-task-has-labels",
-            `task ${task.id} has no title`,
-            "name the one observable change after the task id",
-          ),
-        )
-      }
-      const required =
-        task.owner === "User" ? ["objective", "done when"] : ["objective", "files", "done when"]
-      for (const label of required) {
-        if (!task.labels.includes(label)) {
-          errors.push(
-            verr(
-              task.line,
-              "every-task-has-labels",
-              `task ${task.id} is missing **${label[0]?.toUpperCase()}${label.slice(1)}:**`,
-              `under its box, every task has a \`#### ${task.id}\` card with Objective, Files, Test first (or Trivial) and Done when`,
-            ),
-          )
-        }
-      }
-      if (task.owner === "User" && !task.userAction?.trim()) {
-        errors.push(
-          verr(
-            task.line,
-            "user-action-required",
-            `task ${task.id} names no human action`,
-            "a task is the agent's: put a human step in `## Prerequisites` instead, and state there how it is met",
-          ),
-        )
-      }
-      if (task.labels.includes("done when") && task.dod.length === 0) {
-        errors.push(
-          verr(
-            task.line,
-            "every-task-has-labels",
-            `task ${task.id} has an empty Done when`,
-            "add falsifiable bullets; the last one is the verify command",
-          ),
-        )
-      }
-    }
-  })
-  return errors
-}
-
-function inlineVerification(text: string): boolean {
-  const spans = text.split("`")
-  return spans.some((span, index) => {
-    if (index === 0 || index >= spans.length - 1 || span.includes("\n")) return false
-    if (/\S/.test(span)) return true
-    return index < spans.length - 2 && !(spans[index + 1] ?? "").includes("\n")
-  })
-}
-
-export const testFirstOrTrivial: Rule = (input) => {
-  const errors = []
-  for (const task of allTasks(input.outline())) {
-    if (task.owner === "User") continue
-    if (task.testFirst === null || task.testFirst.text === "") {
-      errors.push(
-        verr(
-          task.line,
-          "test-first-or-trivial",
-          `task ${task.id} names neither a failing test nor a covering test`,
-          "add `**Test first:**` for implementation, `**Trivial:**` for a mechanical change, or `**Qualification:**` for existing-candidate proof with failure-path witnesses",
-          "warning",
-        ),
-      )
-    } else if (
-      (task.testFirst.kind === "trivial" || task.testFirst.kind === "qualification") &&
-      !inlineVerification(task.testFirst.text) &&
-      !taskCommands(task).some(
-        (command) =>
-          !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(command) &&
-          (/\s/.test(command) ||
-            !isPathLike(command) ||
-            command.startsWith("./") ||
-            /\.(sh|bash|zsh|ps1|cmd|bat)$/.test(command)),
-      )
-    ) {
-      errors.push(
-        verr(
-          task.line,
-          "test-first-or-trivial",
-          `task ${task.id} is marked ${task.testFirst.kind === "qualification" ? "Qualification" : "Trivial"} without naming its verification`,
-          task.testFirst.kind === "qualification"
-            ? "put a concrete backticked candidate check on verify: and name its failure-path witnesses"
-            : "name the existing test or verification command in backticks in Trivial, or put a concrete backticked command on a same-card `verify:` line; explain why it covers this mechanical change",
-          "warning",
-        ),
-      )
-    }
-  }
-  return errors
-}
-
-/** A card's Files are source: the plan folder holds evidence and records, which are written freely. */
-export const filesAreSource: Rule = (input) => {
-  const own = planFolderPrefixes(input)
-  const inPlans = (file: string) =>
-    file.startsWith("docs/plans/") || own.some((p) => file.startsWith(p))
-  const errors = []
-  for (const task of allTasks(input.outline())) {
-    for (const file of task.files) {
-      const path = posix.normalize(file.replaceAll("\\", "/"))
-      if (
-        /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/|~|\$)/.test(file) ||
-        path === ".." ||
-        path.startsWith("../")
-      )
-        errors.push(
-          verr(
-            task.line,
-            "files-are-source",
-            `task ${task.id} lists non-repository path \`${file}\` in Files`,
-            "list only repository-relative changed paths; name a change outside the repository (a private skill, a LaunchAgent, a git-ignored file), artifact addresses and outside examples in the card's prose, where slice commits never take them",
-          ),
-        )
-    }
-    const named = task.files.filter((file) => inPlans(file.replace(/^\.\//, "")))
-    if (named.length === 0) continue
-    errors.push(
-      verr(
-        task.line,
-        "files-are-source",
-        `task ${task.id} lists ${named.length === 1 ? named[0] : `${named.length} paths under the plan folder (${named[0]}, …)`} in Files`,
-        "evidence and records are written freely and are never Files: take the plan folder's paths off the card",
-      ),
+  if (slices.length > 0 && !slices.includes(line.slice)) {
+    return verr(
+      line.line,
+      "proof-order",
+      `Proof order puts ${line.id} after slice ${line.slice}, which the cards do not have`,
+      `name one of its slices (${slices.map((n) => `slice ${n}`).join(", ")}) in \`${written(line.id)}\``,
     )
   }
-  return errors
-}
-
-/** `docs/plans/<task>/` of the task this document belongs to, as a path from the repository root. */
-function planFolderPrefixes(input: RuleInput): string[] {
-  if (input.taskDir === undefined || input.taskDir === "") return []
-  const fromRoot =
-    input.repoRoot !== null && input.repoRoot !== undefined
-      ? relative(input.repoRoot, input.taskDir).split(sep).join("/")
-      : ""
-  const own = fromRoot !== "" && !fromRoot.startsWith("..") ? [`${fromRoot}/`] : []
-  return [...own, `docs/plans/${basename(input.taskDir)}/`]
-}
-
-/** Every name under a task's `**Design:**` that is `page <name>` is an artifact page the task folder holds. */
-export const artifactRefsResolve: Rule = async (input) => {
-  const errors: ValidationError[] = []
-  const tasks = allTasks(input.outline())
-  if (!tasks.some((task) => task.design.some((entry) => designPage(entry) !== null))) return errors
-  const pages = (
-    await artifactFiles(input.ctx, { scope: "task", dir: input.taskDir, runtimeDir: "" })
-  )
-    .filter((file) => !file.showMe)
-    .map((file) => file.name)
-  for (const task of tasks) {
-    for (const page of task.design.flatMap((entry) => designPage(entry) ?? [])) {
-      if (pages.includes(page)) continue
-      errors.push(
-        verr(
-          task.line,
-          "artifact-refs-resolve",
-          `task ${task.id} names the artifact page "${page}", and ${ARTIFACT_DIR}/ ${pages.length > 0 ? `holds only ${pages.join(", ")}` : "holds no page"}`,
-          `name a page that exists in ${ARTIFACT_DIR}/ (\`page <name>\`), or draw it first with \`qualitylayer artifact new ${page}\``,
-        ),
-      )
-    }
-  }
-  return errors
-}
-
-/** The file under evidence/ or records/ a prerequisite row names, in its status or its text. */
-const EVIDENCE_FILE = /(?<![\w/])(?:evidence|records)\/[A-Za-z0-9][A-Za-z0-9._/-]*/
-const EVIDENCE_FAILURES = {
-  missing: "does not exist in the task folder",
-  empty: "is empty",
-  unsafe: "must be a regular file inside the task folder without parent segments or symbolic links",
-} as const
-
-async function prerequisiteEvidence(
-  input: RuleInput,
-  named: string,
-): Promise<"missing" | "empty" | "unsafe" | null> {
-  if (!isProofPath(named)) return "unsafe"
-  const fs = input.ctx.fs.forPublication?.(input.taskDir, input.taskDir) ?? input.ctx.fs
-  const path = join(input.taskDir, named)
-  try {
-    if (!(await fs.exists(path))) return "missing"
-    return (await fs.readFile(path)).trim() === "" ? "empty" : null
-  } catch (cause) {
-    if (publicationReadRefusal(cause)) return "unsafe"
-    throw cause
-  }
-}
-
-/**
- * A row marked `met` that the agent met by testing something now (a call, a flag, a permission)
- * links the file under `evidence/` that holds the output. A row the user met by answering needs no
- * file, and neither does one that only says a permission was granted.
- */
-const needsEvidence = (p: { metBy: string; status: string }): boolean =>
-  /\bmet\b/i.test(p.status) &&
-  !/^\s*(you|the user|user)\b/i.test(p.metBy) &&
-  !/^\s*your answers?(?:\s+in\s+(?:the\s+)?Plan)?(?:\s*[,·()]|$)/i.test(p.metBy)
-
-/**
- * The build runs from the Plan gate to Verify without waiting for a person: every human step is
- * settled in `## Prerequisites`, each row met or granted, and no task is left to the user.
- */
-function evidenceName(path: string | undefined): string | undefined {
-  if (path === undefined) return undefined
-  let end = path.length
-  while (end > 0 && ".,;:".includes(path[end - 1] ?? "")) end--
-  return path.slice(0, end)
-}
-
-export const prerequisitesSettled: Rule = async (input) => {
-  const { rows, malformed } = parsePrerequisites(input.markdown)
-  const errors = malformed.map((m) =>
-    verr(
-      m.line,
-      "prerequisite-table",
-      `cannot read this Prerequisites table header or row: "${m.text}"`,
-      "use `| # | Prerequisite | Met by | Status |` followed by `|---|---|---|---|`, with one nonempty cell per column. The # column is optional; Step, What or Requirement, Who, and State are accepted heading aliases",
-    ),
-  )
-  for (const prerequisite of rows) {
-    if (prerequisiteSettled(prerequisite.status) && needsEvidence(prerequisite)) {
-      // A sentence's full stop after the link is no part of the file's name.
-      const named = evidenceName(
-        `${prerequisite.status} ${prerequisite.what} ${prerequisite.metBy}`.match(
-          EVIDENCE_FILE,
-        )?.[0],
-      )
-      if (named === undefined) {
-        errors.push(
-          verr(
-            prerequisite.line,
-            "prerequisite-no-evidence",
-            `prerequisite ${prerequisite.n} is marked met, but links no file under ${RECORDS_DIR}/`,
-            `save the probe's output (status, key fields, date) under ${RECORDS_DIR}/ and link it in the Status, as \`met · [${RECORDS_DIR}/p1.txt](${RECORDS_DIR}/p1.txt)\``,
-          ),
-        )
-        continue
-      }
-      const failure = await prerequisiteEvidence(input, named)
-      if (failure !== null)
-        errors.push(
-          verr(
-            prerequisite.line,
-            "prerequisite-no-evidence",
-            `prerequisite ${prerequisite.n} links ${named}, which ${EVIDENCE_FAILURES[failure]}`,
-            `save the probe's output (status, key fields, date) in a regular file under ${RECORDS_DIR}/ and link it`,
-          ),
-        )
-    }
-    // P1 waits for the Plan's approval, which writes `granted` into it; no other row may wait.
-    if (prerequisiteSettled(prerequisite.status) || isGrantAtApproval(prerequisite)) continue
-    errors.push(
-      verr(
-        prerequisite.line,
-        "prerequisite-open",
-        `prerequisite ${prerequisite.n} is not settled: its status is "${prerequisite.status}"`,
-        "settle it with the user before the gate: have the agent meet it with a permission granted now, or have them do it now, then write `met` or `granted` in its Status",
-      ),
-    )
-  }
-  for (const task of allTasks(input.outline())) {
-    if (task.owner !== "User") continue
-    errors.push(
-      verr(
-        task.line,
-        "owner-user-in-plan",
-        `task ${task.id} is left to the user, and the build runs unattended once the Plan is approved`,
-        "move the human step to `## Prerequisites` as a prerequisite the agent meets with a permission granted now, or the user meets now; the task itself is then the agent's",
-      ),
-    )
-  }
-  return errors
-}
-
-/** The task's Plan, "" when it is not written. */
-async function planText(input: RuleInput): Promise<string> {
-  const path = join(input.taskDir, folderDoc("plan"))
-  return (await input.ctx.fs.exists(path)) ? await input.ctx.fs.readFile(path) : ""
-}
-
-/** What a command does that the build may not do unseen; null for an ordinary local command. */
-type CommandRisk = { kind: "pushes" | "deploys" | "publishes" | "calls"; grants: string[] }
-
-const LOOPBACK = /^(localhost|[\w.-]+\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[?::1\]?)$/i
-
-const RISKS: { test: RegExp; kind: CommandRisk["kind"]; grants: string[] }[] = [
-  { test: /\b(?:git|docker|podman|helm)\s+push\b/i, kind: "pushes", grants: ["push"] },
-  {
-    test: /\b(?:npm|pnpm|yarn|bun|cargo|gem|poetry|dotnet\s+nuget|vsce|ovsx)\s+publish\b|\btwine\s+upload\b|\bgh\s+release\s+(?:create|upload|edit)\b/i,
-    kind: "publishes",
-    grants: ["publish", "release"],
-  },
-  {
-    test: /\b(?:vercel|netlify|flyctl|fly|wrangler|firebase|heroku|railway|serverless|sls|cdk|amplify|surge)\b[^|;&]*\b(?:deploy|publish|--prod|up)\b|\b(?:kubectl|helm|terraform|pulumi)\s+(?:apply|install|upgrade|up|deploy)\b|\b(?:run|make|just)\s+[\w:-]*deploy\b|(?:^|[\s/])deploy(?:\.sh)?(?:\s|$)/i,
-    kind: "deploys",
-    grants: ["deploy", "release"],
-  },
-]
-
-/** What `command` would do beyond this machine: push, publish, deploy or call another host. */
-export function commandRisk(command: string): CommandRisk | null {
-  for (const risk of RISKS)
-    if (risk.test.test(command)) return { kind: risk.kind, grants: risk.grants }
-  const hosts = [...command.matchAll(/\b(?:https?|wss?|ftp):\/\/(\[[^\]]+\]|[^/\s:'"`)]+)/gi)].map(
-    (m) => m[1] ?? "",
-  )
-  const remote = hosts.find((host) => !LOOPBACK.test(host))
-  if (remote !== undefined) return { kind: "calls", grants: [remote.toLowerCase(), "network"] }
-  const shell = command.match(
-    /\b(?:ssh|scp|rsync|sftp)\s+(?:-\S+\s+)*(?:[\w.-]+@)?([\w.-]+)(?::|\s|$)/i,
-  )
-  if (shell !== null && !LOOPBACK.test(shell[1] ?? ""))
-    return { kind: "calls", grants: [(shell[1] ?? "").toLowerCase(), "network"] }
   return null
 }
 
-/**
- * The build runs every Validation, verify and Done means command unattended, so a command that
- * pushes, deploys, publishes or calls another machine runs only when the Plan's *Prerequisites*
- * holds a settled row that grants it (the person granted it before the gate).
- */
-export const unapprovedCommand: Rule = async (input) => {
-  const outline = input.outline()
-  const plan = await planText(input)
-  const rows = parsePrerequisites(plan ? parseDoc(plan).body : "").rows.filter(
-    (p) => prerequisiteSettled(p.status) || isGrantAtApproval(p),
+function missingProofOrderError(
+  heading: SectionRange | undefined,
+  steps: readonly string[],
+  missing: readonly string[],
+  written: (id: string) => string,
+): ValidationError {
+  if (heading === undefined) {
+    return verr(
+      1,
+      "proof-order",
+      `${CARDS_FILE} has no \`## Proof order\` section, and the Plan's Done means has ${steps.length === 1 ? "one step" : `${steps.length} steps`} (${steps.join(", ")})`,
+      `add "## Proof order" to ${CARDS_FILE} with one line per step saying after which slice it can first run, such as ${missing
+        .slice(0, 3)
+        .map((id) => `\`${written(id)}\``)
+        .join(" and ")}`,
+    )
+  }
+  return verr(
+    heading.start,
+    "proof-order",
+    `Proof order has no line for ${missing.join(", ")}`,
+    `under "## Proof order" in ${CARDS_FILE} add one line for ${missing.length === 1 ? "it" : "each"}, such as \`${written(missing[0] ?? "A1")}\``,
   )
-  const granted = (command: string, risk: CommandRisk) =>
-    rows.some((row) => {
-      const text = `${row.what} ${row.metBy}`.toLowerCase()
-      return text.includes(command.toLowerCase()) || risk.grants.some((word) => text.includes(word))
-    })
-  // The Plan's Done means steps run too: each command in a step's Action is held to the same approval.
-  const proof = await planProof(input)
-  const placed = (id: string) => outline.proofOrder.find((line) => line.id === id)?.line ?? 1
-  const runs: { command: string; where: string; line: number; step?: string }[] = [
-    ...proof.steps.flatMap((step) =>
-      stepCommands(step).map((command) => ({
-        command,
-        where: `the Plan's step ${step.id}`,
-        line: placed(step.id),
-        step: step.id,
-      })),
-    ),
-    ...outline.slices.flatMap((slice) =>
-      sliceCommands(slice).map((command) => ({
-        command,
-        where: `slice ${slice.n}'s Validation`,
-        line: slice.line,
-      })),
-    ),
-    ...allTasks(outline).flatMap((task) =>
-      [...taskCommands(task), ...taskRedCommands(task)].map((command) => ({
-        command,
-        where: `${task.id}'s verify line`,
-        line: task.line,
-      })),
-    ),
-  ]
-  const planDoc = folderDoc("plan")
-  return runs.flatMap(({ command, where, line, step }) => {
-    const risk = commandRisk(command)
-    if (risk === null || granted(command, risk)) return []
-    return [
-      verr(
-        line,
-        "unapproved-command",
-        `${where} runs \`${command}\`, which ${risk.kind === "calls" ? `calls ${risk.grants[0]}` : risk.kind}, and no row of ${planDoc}'s Prerequisites grants it`,
-        step === undefined
-          ? `take the command out (the build never pushes, deploys, publishes or calls another machine unseen), or have the person grant it as a row of Prerequisites in ${planDoc} before the gate`
-          : `the build never pushes, deploys, publishes or calls another machine unseen: take the command out of step ${step} in ${planDoc}, then \`qualitylayer plan amend --by agent --note "<what changed and why>"\`, or ask the person to grant it as a row of Prerequisites in ${planDoc}`,
-      ),
-    ]
-  })
 }
 
 /**
@@ -488,8 +74,6 @@ export const unapprovedCommand: Rule = async (input) => {
 export const proofOrder: Rule = async (input) => {
   const list = await planProof(input)
   const outline = input.outline()
-  const people = CARDS_FILE
-  const plan = folderDoc("plan")
   const heading = sectionRanges(input.markdown).find(
     (r) => r.heading.toLowerCase() === "proof order",
   )
@@ -507,24 +91,8 @@ export const proofOrder: Rule = async (input) => {
     ),
   )
   for (const line of outline.proofOrder) {
-    if (!steps.includes(line.id))
-      errors.push(
-        verr(
-          line.line,
-          "proof-order",
-          `Proof order names ${line.id}, which the Plan's Done means does not have (its steps are ${steps.join(", ")})`,
-          `take the line out; if the Plan is missing that step, add it to ${plan} and record it with \`qualitylayer plan amend --by agent --note "<the step, and why>"\``,
-        ),
-      )
-    else if (slices.length > 0 && !slices.includes(line.slice))
-      errors.push(
-        verr(
-          line.line,
-          "proof-order",
-          `Proof order puts ${line.id} after slice ${line.slice}, which the cards do not have`,
-          `name one of its slices (${slices.map((n) => `slice ${n}`).join(", ")}) in \`${written(line.id)}\``,
-        ),
-      )
+    const found = checkProofOrderLine(line, steps, slices, written)
+    if (found !== null) errors.push(found)
   }
   // A line that names a step without a slice is refused above; its step is not also missing.
   const placed = new Set([
@@ -532,24 +100,6 @@ export const proofOrder: Rule = async (input) => {
     ...outline.proofOrderUnread.flatMap((line) => line.ids),
   ])
   const missing = steps.filter((id) => !placed.has(id))
-  if (missing.length > 0)
-    errors.push(
-      heading === undefined
-        ? verr(
-            1,
-            "proof-order",
-            `${people} has no \`## Proof order\` section, and the Plan's Done means has ${steps.length === 1 ? "one step" : `${steps.length} steps`} (${steps.join(", ")})`,
-            `add "## Proof order" to ${people} with one line per step saying after which slice it can first run, such as ${missing
-              .slice(0, 3)
-              .map((id) => `\`${written(id)}\``)
-              .join(" and ")}`,
-          )
-        : verr(
-            heading.start,
-            "proof-order",
-            `Proof order has no line for ${missing.join(", ")}`,
-            `under "## Proof order" in ${people} add one line for ${missing.length === 1 ? "it" : "each"}, such as \`${written(missing[0] ?? "A1")}\``,
-          ),
-    )
+  if (missing.length > 0) errors.push(missingProofOrderError(heading, steps, missing, written))
   return errors
 }

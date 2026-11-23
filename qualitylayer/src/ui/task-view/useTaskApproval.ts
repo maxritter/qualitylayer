@@ -1,11 +1,15 @@
 import { type RefObject, useRef, useState } from "react"
-import { toast } from "sonner"
-import { type ItemAnswer, mainAction } from "../../core/items.ts"
+import type { ItemAnswer } from "../../core/items.ts"
 import type { Api, TaskDetail } from "../api.ts"
 import { clearIntent } from "../build-here-intent.ts"
 import type { BuildLaunchSelection } from "../ImplementStart.tsx"
-import { personVerify, reviewGate, viewedStep } from "../model.ts"
-import { questionError, turnedMessage } from "./errors.ts"
+import {
+  type BuildApprovalRecord,
+  gateKeyOf,
+  isPlanAlreadyApproved,
+  resolveBuildApproval,
+} from "./task-approval-helpers.ts"
+import { useGateDecision } from "./useGateDecision.ts"
 
 export type Foreground = { task: string; view: string; reader: boolean }
 
@@ -25,41 +29,79 @@ type ApprovalContext = {
   showBuild: () => void
 }
 
+async function runBuildConfirmation({
+  context,
+  gate,
+  approval,
+  launch,
+  selection,
+  origin,
+  onClearChoice,
+  onFailed,
+}: {
+  context: ApprovalContext
+  gate: ReturnType<typeof useGateDecision>
+  approval: BuildApprovalRecord
+  launch: () => Promise<void>
+  selection: BuildLaunchSelection | null
+  origin: Foreground
+  onClearChoice: () => void
+  onFailed: () => void
+}) {
+  try {
+    if (!approval.approved) {
+      const approved = await gate.decide("approved", approval.remark, undefined, true)
+      if (approved !== true || !approval.approved) {
+        throw new Error(
+          gate.decisionFailure.current ??
+            "The Plan was not approved. Review its pending choices before starting.",
+        )
+      }
+    }
+    await launch()
+    const canFinishUi =
+      selection !== null &&
+      context.mounted.current &&
+      context.foreground.current.task === context.task.id
+    if (!canFinishUi) return
+    context.onBuildLaunch?.(selection)
+    onClearChoice()
+    if (context.foreground.current === origin || context.foreground.current.view === "implement") {
+      context.showBuild()
+    }
+  } catch (cause) {
+    if (approval.approved && selection !== null) onFailed()
+    throw cause
+  }
+}
+
+function captureActiveElement() {
+  return document.activeElement instanceof HTMLElement ? document.activeElement : null
+}
+
 /** Owns the decision transaction and the approval kept while choosing where to build. */
-export function useTaskApproval({
-  api,
-  task,
-  view,
-  answers,
-  flush,
-  clear,
-  reload,
-  foreground,
-  mounted,
-  openStart,
-  onBuildLaunch,
-  showBuild,
-}: ApprovalContext) {
+export function useTaskApproval(context: ApprovalContext) {
+  const { task, foreground } = context
   const [implementationChoice, setImplementationChoice] = useState<string | null>(null)
   const buildOpener = useRef<{ task: string; element: HTMLElement | null } | null>(null)
-  const buildApproval = useRef<{
-    task: string
-    gate: string | null
-    approved: boolean
-    remark?: string
-  } | null>(null)
+  const buildApproval = useRef<BuildApprovalRecord | null>(null)
   const buildConfirming = useRef(false)
   const [buildBusy, setBuildBusy] = useState(false)
   const [buildLaunchFailed, setBuildLaunchFailed] = useState(false)
-  const decisionFailure = useRef<string | null>(null)
+
+  const prepareBuild = (remark?: string) => {
+    buildApproval.current = {
+      task: task.id,
+      gate: gateKeyOf(task),
+      approved: isPlanAlreadyApproved(task),
+      ...(remark !== undefined ? { remark } : {}),
+    }
+  }
   const openBuildChoice = (remark?: string) => {
     if (buildConfirming.current) return
-    if (implementationChoice !== task.id)
-      buildOpener.current = {
-        task: task.id,
-        element: document.activeElement instanceof HTMLElement ? document.activeElement : null,
-      }
-    // Choosing where to build ends a kept Approve and build here.
+    if (implementationChoice !== task.id) {
+      buildOpener.current = { task: task.id, element: captureActiveElement() }
+    }
     clearIntent(task.id)
     prepareBuild(remark)
     setBuildLaunchFailed(false)
@@ -69,182 +111,41 @@ export function useTaskApproval({
     if (buildConfirming.current) return
     setImplementationChoice((current) => (current === task.id ? null : current))
   }
-  const [busy, setBusy] = useState(false)
-  const deciding = useRef(false)
-  const [decisionError, setDecisionError] = useState<string | null>(null)
-  /** Record the decision; false when it was not saved, so the page keeps what the reviewer wrote. */
-  const decide = async (
-    decision: "approved" | "changes",
-    remark?: string,
-    ship?: "pull-request" | "only" | "commands",
-    confirmingBuild = false,
-  ): Promise<boolean | undefined> => {
-    const origin = foreground.current
-    if (decision === "approved" && task.stage === "plan" && !confirmingBuild) {
-      openBuildChoice(remark)
-      return undefined
-    }
-    // No gate is open while the agent writes: the comments are already with it, as drafts that
-    // `comments take` hands over at its next step.
-    const review = reviewGate(task)
-    if (decision === "changes" && (review === null || review.settled)) {
-      toast.success("Feedback sent. The agent applies it on its next step")
-      return true
-    }
-    // One decision at a time: `busy` only reaches the buttons and shortcuts on the next render.
-    if (deciding.current) return false
-    deciding.current = true
-    setBusy(true)
-    setDecisionError(null)
-    decisionFailure.current = null
-    try {
-      // What was picked is saved first: the decision delivers the drafts the server holds.
-      const asked = mainAction(
-        (task.items ?? []).filter((item) => item.step === viewedStep(view)),
-        answers,
-      ).changes
-      await flush()
-      const disclosure =
-        decision === "approved" &&
-        review?.target === "final" &&
-        !review.settled &&
-        review.decision === "pending"
-          ? { revision: review.revision }
-          : undefined
-      const sent =
-        disclosure !== undefined
-          ? await api.gate(task.id, decision, remark, review?.id, ship, disclosure)
-          : ship === undefined
-            ? await api.gate(task.id, decision, remark, review?.id)
-            : await api.gate(task.id, decision, remark, review?.id, ship)
-      if (sent.prError !== undefined) {
-        toast.error(`Approved. The pull request could not be opened: ${sent.prError}`)
-      } else if (sent.pr !== undefined) {
-        const notes = sent.prNotes
-        toast.success(
-          `Approved. Pull request ${sent.pr.number !== null ? `#${sent.pr.number} ` : ""}is open on GitHub${
-            notes !== undefined && notes.posted > 0
-              ? `, with ${notes.posted === 1 ? "your open comment" : `your ${notes.posted} open comments`} as notes`
-              : ""
-          }`,
-        )
-        if (notes?.error !== undefined)
-          toast.error(`Your open comments could not be added to the pull request: ${notes.error}`)
-      } else
-        toast.success(
-          sent.turned === true
-            ? turnedMessage(sent.sent, asked)
-            : decision === "approved"
-              ? sent.sent !== undefined
-                ? `Approved, with ${sent.sent} ${sent.sent === 1 ? "answer" : "answers"} for the agent`
-                : "Approved"
-              : asked > 0
-                ? `Sent ${asked} ${asked === 1 ? "change" : "changes"} to the agent`
-                : "Changes sent to the agent",
-        )
-      // What was picked has gone with the decision: the answers start clean.
-      clear()
-      if (
-        confirmingBuild &&
-        decision === "approved" &&
-        sent.turned !== true &&
-        buildApproval.current?.task === task.id
-      )
-        buildApproval.current.approved = true
-      if (
-        decision === "approved" &&
-        task.stage === "plan" &&
-        sent.turned !== true &&
-        mounted.current &&
-        foreground.current === origin
-      )
-        openStart()
-      reload()
-      return !(confirmingBuild && sent.turned === true)
-    } catch (cause) {
-      // A page opened before the Cockpit restarted is signed out: say what to do.
-      const message = questionError(cause)
-      setDecisionError(message)
-      decisionFailure.current = message
-      toast.error(personVerify(task) ? "Approval not saved. Your review is kept." : message)
-      reload()
-      return false
-    } finally {
-      deciding.current = false
-      setBusy(false)
-    }
-  }
+  const gate = useGateDecision({ ...context, openBuildChoice, buildApproval })
+
   const confirmBuildStart = async (
     launch: () => Promise<void>,
     selection: BuildLaunchSelection | null,
   ) => {
-    const origin = foreground.current
     if (buildConfirming.current) throw new Error("This build confirmation is already running.")
-    const gateKey = task.gate ? (task.gate.id ?? String(task.gate.opened)) : null
-    // A Plan approved since this card was prepared (Approve and build here, whose build then could
-    // not start in the planner's session) is approved now: approving it again finds no open gate.
-    const approvedNow = task.stage !== "plan" || task.gate?.decision === "approved"
-    const kept = buildApproval.current
-    const approval =
-      kept === null
-        ? { task: task.id, gate: gateKey, approved: approvedNow }
-        : kept.task === task.id && approvedNow && !kept.approved
-          ? { ...kept, gate: gateKey, approved: true }
-          : kept
-    if (
-      approval.task !== task.id ||
-      (task.stage === "plan" && task.gate?.decision !== "approved" && approval.gate !== gateKey)
-    )
-      throw new Error("The Plan's approval changed. Close this card and review the current Plan.")
+    const origin = foreground.current
+    const approval = resolveBuildApproval(buildApproval.current, task)
     buildApproval.current = approval
     buildConfirming.current = true
     setBuildBusy(true)
     try {
-      if (!approval.approved) {
-        const approved = await decide("approved", approval.remark, undefined, true)
-        if (approved !== true || !approval.approved)
-          throw new Error(
-            decisionFailure.current ??
-              "The Plan was not approved. Review its pending choices before starting.",
-          )
-      }
-      await launch()
-      if (selection === null) return
-      if (!mounted.current || foreground.current.task !== task.id) return
-      onBuildLaunch?.(selection)
-      setImplementationChoice(null)
-      if (foreground.current === origin || foreground.current.view === "implement") {
-        showBuild()
-      }
-    } catch (cause) {
-      if (approval.approved && selection !== null) setBuildLaunchFailed(true)
-      throw cause
+      await runBuildConfirmation({
+        context,
+        gate,
+        approval,
+        launch,
+        selection,
+        origin,
+        onClearChoice: () => setImplementationChoice(null),
+        onFailed: () => setBuildLaunchFailed(true),
+      })
     } finally {
       buildConfirming.current = false
       setBuildBusy(false)
     }
   }
-  function prepareBuild(remark?: string) {
-    const gate = task.gate
-    buildApproval.current = {
-      task: task.id,
-      gate: gate ? (gate.id ?? String(gate.opened)) : null,
-      approved: task.stage !== "plan" || gate?.decision === "approved",
-      ...(remark !== undefined ? { remark } : {}),
-    }
-  }
   const buildApproved = () => buildApproval.current?.approved === true
   const currentBuildApproved = () =>
-    buildApproved() &&
-    buildApproval.current?.gate === (task.gate ? (task.gate.id ?? String(task.gate.opened)) : null)
-  const takeDecisionFailure = () => {
-    if (decisionFailure.current !== null) setDecisionError(null)
-    return decisionFailure.current
-  }
+    buildApproved() && buildApproval.current?.gate === gateKeyOf(task)
   return {
-    busy,
-    decisionError,
-    decide,
+    busy: gate.busy,
+    decisionError: gate.decisionError,
+    decide: gate.decide,
     implementationChoice,
     buildOpener,
     buildBusy,
@@ -255,7 +156,7 @@ export function useTaskApproval({
     prepareBuild,
     buildApproved,
     currentBuildApproved,
-    takeDecisionFailure,
+    takeDecisionFailure: gate.takeDecisionFailure,
     resetBuildFailure: () => setBuildLaunchFailed(false),
   }
 }

@@ -1,102 +1,52 @@
 import { randomUUID } from "node:crypto"
 import type { MemoryService } from "../core/memory/index.ts"
-import type { MappedPilotRecord } from "../core/memory/pilot-migration.ts"
 import { verifySources } from "../core/memory/pilot-source/files.ts"
-import { object, words } from "../core/memory/pilot-source/normalize.ts"
+import { words } from "../core/memory/pilot-source/normalize.ts"
 import { scanPilotSource } from "../core/memory/pilot-source/scan.ts"
-import type {
-  PilotCancelResult,
-  PilotScan,
-  PilotSelection,
-  PilotSourceInput,
-} from "../pilot-memory-contracts.ts"
+import type { PilotCancelResult, PilotScan } from "../pilot-memory-contracts.ts"
 import { applyPilotScan, type PilotSavedScan, stopPilotScan } from "./pilot-memory-apply.ts"
+import {
+  mapPilotSelection,
+  parsePilotSelection,
+  parsePilotSourceInput,
+} from "./pilot-memory-input.ts"
 
 type Writer = Partial<Pick<MemoryService, "reviewPilotRecords" | "importPilotRecords">>
 type Saved = PilotSavedScan
 const SCAN_LIFETIME = 10 * 60_000
-function selection(value: Record<string, unknown>): PilotSelection {
-  if (
-    !Array.isArray(value.mappings) ||
-    value.mappings.length > 5000 ||
-    typeof value.includeLearnings !== "boolean"
-  )
-    throw new Error("Choose memory destinations and whether to include session learnings.")
-  const seen = new Set<string>()
-  const mappings = value.mappings.map((row) => {
-    if (
-      !object(row) ||
-      !words(row.group) ||
-      !(
-        row.project === null ||
-        (typeof row.project === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(row.project))
-      ) ||
-      seen.has(words(row.group))
-    )
-      throw new Error("Memory destination mapping is invalid or repeated.")
-    seen.add(words(row.group))
-    return { group: words(row.group), project: row.project as string | null }
-  })
-  return { scan: words(value.scan), mappings, includeLearnings: value.includeLearnings }
-}
-function mapped(
-  saved: Saved,
-  input: PilotSelection,
-): { records: MappedPilotRecord[]; leftOut: number } {
-  for (const mapping of input.mappings)
-    if (!saved.source.groups.has(mapping.group))
-      throw new Error("This source group is not part of the preview.")
-  const destinations = new Map(input.mappings.map((row) => [row.group, row.project]))
-  const records: MappedPilotRecord[] = []
-  let leftOut = saved.source.counts.invalid + saved.source.counts.excluded
-  for (const record of saved.source.records) {
-    if (record.excluded) continue
-    const project = destinations.get(record.group)
-    if (!project || (!input.includeLearnings && record.category === "learning")) leftOut++
-    else records.push({ record, project })
-  }
-  return { records, leftOut }
-}
-function sourceInput(value: Record<string, unknown>): PilotSourceInput {
-  const kind = words(value.kind)
-  if (!["folder", "database", "backup", "files"].includes(kind))
-    throw new Error("Choose a supported Pilot source.")
-  const path = (input: unknown) => {
-    if (typeof input !== "string" || !input || input.length > 4096)
-      throw new Error("Choose a local source path.")
-    return input
-  }
-  const projectFolders =
-    value.projectFolders === undefined
-      ? undefined
-      : Array.isArray(value.projectFolders)
-        ? value.projectFolders.map(path)
-        : null
-  if (projectFolders === null || (projectFolders?.length ?? 0) > 100)
-    throw new Error("Select at most 100 project knowledge folders.")
-  if (value.files !== undefined && !Array.isArray(value.files))
-    throw new Error("Choose exported memory files.")
+
+function listGroupRecords(saved: Saved, input: Record<string, unknown>) {
+  const group = words(input.group)
+  const offset = input.offset ?? 0
+  if (!saved.source.groups.has(group) || !Number.isSafeInteger(offset) || Number(offset) < 0)
+    throw new Error("Choose a source group and record page.")
+  const rows = saved.source.records.filter((record) => record.group === group)
   return {
-    kind: kind as PilotSourceInput["kind"],
-    ...(value.path === undefined ? {} : { path: path(value.path) }),
-    ...(value.knowledgeFolder === undefined
-      ? {}
-      : { knowledgeFolder: path(value.knowledgeFolder) }),
-    ...(projectFolders ? { projectFolders } : {}),
-    ...(value.files === undefined ? {} : { files: value.files as PilotSourceInput["files"] }),
+    total: rows.length,
+    items: rows.slice(Number(offset), Number(offset) + 50).map((record) => ({
+      id: record.sourceId,
+      title: record.title,
+      category: record.category,
+      preview: record.content,
+      state: record.state,
+      ...(record.excluded ? { excluded: record.excluded } : {}),
+    })),
   }
 }
+
 export class PilotMemoryMigration {
   private readonly scans = new Map<string, Saved>()
   private readonly receipts = new Map<string, { result: PilotCancelResult; expiresAt: number }>()
   private scanning = false
   constructor(private readonly now: () => number) {}
+
   private expire() {
     for (const [id, saved] of this.scans)
       if (!saved.applying && saved.scan.expiresAt < this.now()) this.scans.delete(id)
     for (const [id, saved] of this.receipts)
       if (saved.expiresAt < this.now()) this.receipts.delete(id)
   }
+
   private saved(id: unknown): Saved {
     this.expire()
     const saved = this.scans.get(words(id))
@@ -104,77 +54,65 @@ export class PilotMemoryMigration {
       throw new Error("This memory preview expired or was cancelled. Scan the source again.")
     return saved
   }
+
   private async scan(input: Record<string, unknown>, signal: AbortSignal): Promise<PilotScan> {
     this.expire()
-    if (this.scanning || this.scans.size >= 2)
+    if (this.scanning || this.scans.size >= 2) {
       throw new Error(
         "A memory preview is already open. Finish or cancel it before scanning another source.",
       )
+    }
     this.scanning = true
     try {
-      const request = sourceInput(input),
-        source = await scanPilotSource(request, signal)
+      const request = parsePilotSourceInput(input)
+      const source = await scanPilotSource(request, signal)
       if (signal.aborted) throw new Error("Memory scan was cancelled.")
-      const id = randomUUID(),
-        scan: PilotScan = {
-          id,
-          source: request.kind,
-          expiresAt: this.now() + SCAN_LIFETIME,
-          groups: [...source.groups.values()],
-          counts: source.counts,
-          issues: source.issues,
-          privateKnowledge: source.privateKnowledge,
-          ...(source.archiveAt ? { archiveAt: source.archiveAt } : {}),
-        }
+      const id = randomUUID()
+      const scan: PilotScan = {
+        id,
+        source: request.kind,
+        expiresAt: this.now() + SCAN_LIFETIME,
+        groups: [...source.groups.values()],
+        counts: source.counts,
+        issues: source.issues,
+        privateKnowledge: source.privateKnowledge,
+        ...(source.archiveAt ? { archiveAt: source.archiveAt } : {}),
+      }
       this.scans.set(id, { source, scan, applying: false })
       return scan
     } finally {
       this.scanning = false
     }
   }
-  async handle(
-    action: string,
+
+  private async cancelScan(scanId: unknown): Promise<PilotCancelResult> {
+    const id = words(scanId)
+    const cached = this.receipts.get(id)
+    if (cached) {
+      if (!this.scans.get(id)?.applying) this.scans.delete(id)
+      return cached.result
+    }
+    const saved = this.saved(scanId)
+    const wasApplying = saved.applying
+    const result = await stopPilotScan(saved)
+    this.receipts.set(saved.scan.id, { result, expiresAt: this.now() + SCAN_LIFETIME })
+    if (this.receipts.size > 20) {
+      const oldest = this.receipts.keys().next().value
+      if (oldest !== undefined) this.receipts.delete(oldest)
+    }
+    if (!wasApplying) this.scans.delete(saved.scan.id)
+    return result
+  }
+
+  private async reviewOrApply(
+    action: "review" | "apply",
+    saved: Saved,
     input: Record<string, unknown>,
     service: Writer,
     signal: AbortSignal,
   ): Promise<unknown> {
-    if (action === "scan") return await this.scan(input, signal)
-    this.expire()
-    if (action === "cancel" && this.receipts.has(words(input.scan))) {
-      if (!this.scans.get(words(input.scan))?.applying) this.scans.delete(words(input.scan))
-      return this.receipts.get(words(input.scan))!.result
-    }
-    const saved = this.saved(input.scan)
-    if (action === "cancel") {
-      const wasApplying = saved.applying
-      const result = await stopPilotScan(saved)
-      this.receipts.set(saved.scan.id, { result, expiresAt: this.now() + SCAN_LIFETIME })
-      if (this.receipts.size > 20) this.receipts.delete(this.receipts.keys().next().value!)
-      if (!wasApplying) this.scans.delete(saved.scan.id)
-      return result
-    }
-    if (action === "records") {
-      const group = words(input.group),
-        offset = input.offset ?? 0
-      if (!saved.source.groups.has(group) || !Number.isSafeInteger(offset) || Number(offset) < 0)
-        throw new Error("Choose a source group and record page.")
-      const rows = saved.source.records.filter((record) => record.group === group)
-      return {
-        total: rows.length,
-        items: rows.slice(Number(offset), Number(offset) + 50).map((record) => ({
-          id: record.sourceId,
-          title: record.title,
-          category: record.category,
-          preview: record.content,
-          state: record.state,
-          ...(record.excluded ? { excluded: record.excluded } : {}),
-        })),
-      }
-    }
-    if (action !== "review" && action !== "apply")
-      throw new Error("Unknown Pilot memory operation.")
     if (saved.applying) throw new Error("This memory import is already running.")
-    const selected = mapped(saved, selection(input))
+    const selected = mapPilotSelection(saved, parsePilotSelection(input))
     if (!service.reviewPilotRecords || !service.importPilotRecords)
       throw new Error("This memory service cannot import local Pilot sources.")
     if (action === "review") {
@@ -184,5 +122,21 @@ export class PilotMemoryMigration {
     if (!selected.records.length) throw new Error("Choose at least one memory destination.")
     this.receipts.delete(saved.scan.id)
     return await applyPilotScan(saved, selected, service.importPilotRecords.bind(service), signal)
+  }
+
+  async handle(
+    action: string,
+    input: Record<string, unknown>,
+    service: Writer,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    if (action === "scan") return await this.scan(input, signal)
+    this.expire()
+    if (action === "cancel") return await this.cancelScan(input.scan)
+    const saved = this.saved(input.scan)
+    if (action === "records") return listGroupRecords(saved, input)
+    if (action !== "review" && action !== "apply")
+      throw new Error("Unknown Pilot memory operation.")
+    return await this.reviewOrApply(action, saved, input, service, signal)
   }
 }

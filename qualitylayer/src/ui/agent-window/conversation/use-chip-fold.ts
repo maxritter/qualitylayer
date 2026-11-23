@@ -28,6 +28,23 @@ function picksWidth(picks: HTMLElement): number {
   )
 }
 
+function measureFold(foot: HTMLElement, forms: HTMLElement | null): Fold | undefined {
+  const picks = foot.querySelector<HTMLElement>(".cv-picks")
+  if (!forms || !picks) return undefined
+  const form = (key: string) => width(forms.querySelector(`[data-m="${key}"]`))
+  const style = getComputedStyle(foot)
+  const has = (key: string) => forms.querySelector(`[data-m="${key}"]`) !== null
+  return chooseFold({
+    room: foot.clientWidth - px(style.paddingLeft) - px(style.paddingRight),
+    picks: picksWidth(picks),
+    state: width(foot.querySelector(".cv-state")),
+    ring: width(foot.querySelector(".cv-ctx")),
+    gap: px(style.columnGap) || 4,
+    files: has("files-0") ? [form("files-0"), form("files-1"), form("files-2")] : null,
+    use: has("use-0") ? [form("use-0"), form("use-1")] : null,
+  })
+}
+
 export function useChipFold(
   meta: RefObject<HTMLElement | null>,
   measure: RefObject<HTMLElement | null>,
@@ -38,22 +55,8 @@ export function useChipFold(
     const foot = meta.current
     if (!foot) return
     const run = () => {
-      const forms = measure.current
-      const picks = foot.querySelector<HTMLElement>(".cv-picks")
-      if (!forms || !picks) return
-      const form = (key: string) => width(forms.querySelector(`[data-m="${key}"]`))
-      const style = getComputedStyle(foot)
-      const has = (key: string) => forms.querySelector(`[data-m="${key}"]`) !== null
-      const next = chooseFold({
-        room: foot.clientWidth - px(style.paddingLeft) - px(style.paddingRight),
-        picks: picksWidth(picks),
-        state: width(foot.querySelector(".cv-state")),
-        ring: width(foot.querySelector(".cv-ctx")),
-        gap: px(style.columnGap) || 4,
-        files: has("files-0") ? [form("files-0"), form("files-1"), form("files-2")] : null,
-        use: has("use-0") ? [form("use-0"), form("use-1")] : null,
-      })
-      setFold((before) => (before === next ? before : next))
+      const next = measureFold(foot, measure.current)
+      if (next !== undefined) setFold((before) => (before === next ? before : next))
     }
     run()
     if (typeof ResizeObserver === "undefined") return

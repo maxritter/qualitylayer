@@ -33,6 +33,29 @@ async function hasForeignCommit(ctx: Ctx, task: Task, commits: string[]): Promis
   return receipts.some((rows) => rows.length > 512 || rows.some(matchesCommit))
 }
 
+async function resolveVerifyBase(ctx: Ctx, task: Task, head: string): Promise<string | null> {
+  const fm = await readmeFrontmatter(ctx, task)
+  if (typeof fm.base !== "string" || !/^[a-f0-9]{7,64}$/.test(fm.base)) return null
+  const base = await effectiveBase(ctx, task.repoRoot, fm, head)
+  if (!base || !commitId.test(base)) return null
+  const ancestor = await ctx.git.run(task.repoRoot, ["merge-base", "--is-ancestor", base, head])
+  return ancestor.code === 0 ? base : null
+}
+
+async function listVerifyCommits(
+  ctx: Ctx,
+  repoRoot: string,
+  base: string,
+  head: string,
+): Promise<string[] | null> {
+  const list = await ctx.git.run(repoRoot, ["rev-list", "--reverse", `${base}..${head}`], {
+    maxOutputBytes: 256 * 1024,
+  })
+  if (list.code !== 0) return null
+  const commits = list.stdout.split("\n").filter(Boolean)
+  return commits.every((sha) => commitId.test(sha)) ? commits : null
+}
+
 /** The source assigned to a whole-tree judge, with immutable endpoints and no working edits. */
 export async function verifyRange(
   ctx: Ctx,
@@ -41,18 +64,10 @@ export async function verifyRange(
   explicitlySelected = false,
 ): Promise<VerifyRange | null> {
   if (!head || !commitId.test(head)) return null
-  const fm = await readmeFrontmatter(ctx, task)
-  if (typeof fm.base !== "string" || !/^[a-f0-9]{7,64}$/.test(fm.base)) return null
-  const base = await effectiveBase(ctx, task.repoRoot, fm, head)
-  if (!base || !commitId.test(base)) return null
-  if ((await ctx.git.run(task.repoRoot, ["merge-base", "--is-ancestor", base, head])).code !== 0)
-    return null
-  const list = await ctx.git.run(task.repoRoot, ["rev-list", "--reverse", `${base}..${head}`], {
-    maxOutputBytes: 256 * 1024,
-  })
-  if (list.code !== 0) return null
-  const commits = list.stdout.split("\n").filter(Boolean)
-  if (!commits.every((sha) => commitId.test(sha))) return null
+  const base = await resolveVerifyBase(ctx, task, head)
+  if (!base) return null
+  const commits = await listVerifyCommits(ctx, task.repoRoot, base, head)
+  if (!commits) return null
   if (!explicitlySelected && (await hasForeignCommit(ctx, task, commits))) return null
   return { base, head, commits }
 }

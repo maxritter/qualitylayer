@@ -3,6 +3,34 @@ import { endWithThisProcess, stopOwnedSubprocess } from "../platform.ts"
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 const OUTPUT_BYTES = 64 * 1024
 
+function collectLineIds(
+  text: string,
+  ids: Set<string>,
+  label: string,
+  announced: (id: string) => void,
+): void {
+  for (const match of text.matchAll(UUID)) ids.add(match[0].toLowerCase())
+  if (ids.size > 1) throw new Error(`${label} printed ambiguous session ids`)
+  const id = ids.values().next().value
+  if (id !== undefined) announced(id)
+}
+
+function drainLines(
+  pending: string,
+  ids: Set<string>,
+  label: string,
+  announced: (id: string) => void,
+): string {
+  let rest = pending
+  let end = rest.indexOf("\n")
+  while (end !== -1) {
+    collectLineIds(rest.slice(0, end), ids, label, announced)
+    rest = rest.slice(end + 1)
+    end = rest.indexOf("\n")
+  }
+  return rest
+}
+
 async function readId(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   label: string,
@@ -12,28 +40,16 @@ async function readId(
   const ids = new Set<string>()
   let pending = ""
   let bytes = 0
-  const line = (text: string) => {
-    for (const match of text.matchAll(UUID)) ids.add(match[0].toLowerCase())
-    if (ids.size > 1) throw new Error(`${label} printed ambiguous session ids`)
-    const id = ids.values().next().value
-    if (id !== undefined) announced(id)
-  }
   for (;;) {
     const { done, value } = await reader.read()
     if (value) {
       bytes += value.byteLength
       if (bytes > OUTPUT_BYTES) throw new Error(`${label} output exceeded its byte bound`)
-      pending += decoder.decode(value, { stream: true })
-      let end = pending.indexOf("\n")
-      while (end !== -1) {
-        line(pending.slice(0, end))
-        pending = pending.slice(end + 1)
-        end = pending.indexOf("\n")
-      }
+      pending = drainLines(pending + decoder.decode(value, { stream: true }), ids, label, announced)
     }
     if (done) break
   }
-  line(pending + decoder.decode())
+  collectLineIds(pending + decoder.decode(), ids, label, announced)
   return ids.values().next().value
 }
 

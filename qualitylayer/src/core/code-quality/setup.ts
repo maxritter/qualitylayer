@@ -1,36 +1,28 @@
-import { spawn } from "node:child_process"
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
-import {
-  chmod,
-  cp,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  rmdir,
-  writeFile,
-} from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rm, rmdir } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { configIsolationProblem } from "../install/config-isolation.ts"
 import { realLocation, unsafePath, userHome } from "../install/manifest.ts"
-import {
-  assertSafeDirectory,
-  endWithThisProcess,
-  renameWithRetry,
-  windows,
-  windowsSystemCommand,
-} from "../platform.ts"
+import { assertSafeDirectory } from "../platform.ts"
 import { fetchPinned } from "./pinned-download.ts"
+import { placeStage, stageMove } from "./setup-command.ts"
+import {
+  cleanupRetiredTarget,
+  QLTY_VERSION,
+  qltyInstalledResult,
+  qltyReady,
+  qltyVersionOf,
+  stageQltyArchive,
+  verifyReplaceableTarget,
+} from "./setup-verify.ts"
 
-export const QLTY_VERSION = "0.657.0"
+export { commandBytes, placeStage, setupEnvironment, stageMove } from "./setup-command.ts"
+export { QLTY_VERSION } from "./setup-verify.ts"
+
 const RELEASE = `https://github.com/qltysh/qlty/releases/download/v${QLTY_VERSION}`
 const ARCHIVE_LIMIT = 32 * 1024 * 1024
-const BINARY_LIMIT = 128 * 1024 * 1024
-const LICENSE_LIMIT = 64 * 1024
 
 export type QualityToolPlatform = { platform?: string; arch?: string; libc?: "gnu" | "musl" }
 export type QualityToolAsset = { target: string; sha256: string; archive: string }
@@ -106,67 +98,6 @@ export type QualityToolSetupDeps = StagePlacement & {
   downloadTimeoutMs?: number
 }
 
-/** A large new executable can be held by an on-access malware scan for many seconds. */
-const PLACE_BUDGET_MS = 30_000
-
-/** A folder rename, retried on Windows while something holds a file inside it. */
-export function stageMove(deps: StagePlacement) {
-  return (from: string, to: string) =>
-    renameWithRetry(from, to, {
-      rename: deps.rename,
-      sleep: deps.sleep,
-      windows: deps.windows ?? windows,
-      budgetMs: PLACE_BUDGET_MS,
-    })
-}
-
-/**
- * Moves a finished, verified stage folder to `dir`, which does not exist. On Windows an on-access
- * malware scanner can hold the just-written executable, and the rename is refused (EPERM, EACCES,
- * EBUSY): it is retried for about 30 s, then the stage is copied into place and removed. Elsewhere it
- * is one rename. Returns whether the copied stage could not be removed yet.
- */
-export async function placeStage(
-  stage: string,
-  dir: string,
-  deps: StagePlacement = {},
-): Promise<{ stageLeft: boolean }> {
-  const onWindows = deps.windows ?? windows
-  try {
-    await stageMove(deps)(stage, dir)
-    return { stageLeft: false }
-  } catch (cause) {
-    const code = (cause as NodeJS.ErrnoException).code ?? ""
-    if (
-      !onWindows ||
-      !["EPERM", "EACCES", "EBUSY"].includes(code) ||
-      (await lstat(dir).catch(() => null)) !== null
-    )
-      throw cause
-    try {
-      await (
-        deps.copy ??
-        ((from: string, to: string) =>
-          cp(from, to, { recursive: true, errorOnExist: true, force: false }))
-      )(stage, dir)
-    } catch {
-      // `dir` did not exist before the copy and the setup lock is held: what is there is the partial copy.
-      await rm(dir, { recursive: true, force: true }).catch(() => {})
-      throw cause
-    }
-  }
-  try {
-    await rm(stage, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
-    return { stageLeft: false }
-  } catch {
-    return { stageLeft: true }
-  }
-}
-
-function digest(bytes: Uint8Array | string): string {
-  return createHash("sha256").update(bytes).digest("hex")
-}
-
 /** The platform's release target (`aarch64-apple-darwin`, …), or null where no pinned tool runs. */
 export function targetFor(options: QualityToolPlatform): string | null {
   const platform = options.platform ?? process.platform
@@ -200,172 +131,11 @@ export function toolHome(ctx: Ctx): string {
   return isAbsolute(ctx.home) ? join(realLocation(dirname(ctx.home)), basename(ctx.home)) : ctx.home
 }
 
-export async function commandBytes(
-  program: string,
-  args: string[],
-  limit: number,
-  cwd: string,
-  env: Record<string, string>,
-  /** A large new executable's first start can wait on the system's malware scan. */
-  timeoutMs = 10_000,
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(program, args, {
-      cwd,
-      detached: !windows,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...env,
-        NO_COLOR: "1",
-        QLTY_TELEMETRY: "off",
-      },
-    })
-    const chunks: Buffer[] = []
-    let size = 0
-    let stderrSize = 0
-    let failure: Error | undefined
-    const stop = () => {
-      try {
-        if (!windows && child.pid !== undefined) process.kill(-child.pid, "SIGKILL")
-        else child.kill("SIGKILL")
-      } catch {
-        // The owned child may already have exited.
-      }
-    }
-    const forget = endWithThisProcess({ kill: stop })
-    const timer = setTimeout(() => {
-      failure = new Error("Qlty setup command exceeded its time budget")
-      stop()
-    }, timeoutMs)
-    child.stdout.on("data", (part: Buffer) => {
-      size += part.length
-      if (size > limit) {
-        failure = new Error("Qlty setup command exceeded its output budget")
-        stop()
-      } else chunks.push(part)
-    })
-    child.stderr.on("data", (part: Buffer) => {
-      stderrSize += part.length
-      if (stderrSize > 16 * 1024) {
-        failure = new Error("Qlty setup command exceeded its diagnostic budget")
-        stop()
-      }
-    })
-    child.once("error", (error) => {
-      failure = error
-    })
-    child.once("close", (code) => {
-      clearTimeout(timer)
-      forget()
-      if (failure) reject(failure)
-      else if (code !== 0) reject(new Error(`Qlty setup command exited with ${code}`))
-      else resolve(Buffer.concat(chunks))
-    })
-  })
-}
-
-export function setupEnvironment(ctx: Ctx, cwd: string): Record<string, string> {
-  const home = ctx.env.get("HOME") ?? ctx.env.get("USERPROFILE") ?? dirname(ctx.home)
-  const env: Record<string, string> = {
-    HOME: home,
-    USERPROFILE: ctx.env.get("USERPROFILE") ?? home,
-    QUALITYLAYER_HOME: ctx.home,
-    PATH: windows ? (ctx.env.get("PATH") ?? "") : "/usr/bin:/bin",
-    XDG_CONFIG_HOME: ctx.env.get("XDG_CONFIG_HOME") ?? join(home, ".config"),
-    XDG_CACHE_HOME: ctx.env.get("XDG_CACHE_HOME") ?? join(home, ".cache"),
-    XDG_DATA_HOME: ctx.env.get("XDG_DATA_HOME") ?? join(home, ".local", "share"),
-    APPDATA: ctx.env.get("APPDATA") ?? join(home, "AppData", "Roaming"),
-    LOCALAPPDATA: ctx.env.get("LOCALAPPDATA") ?? join(home, "AppData", "Local"),
-    TMPDIR: ctx.env.get("TMPDIR") ?? cwd,
-    TMP: ctx.env.get("TMP") ?? ctx.env.get("TMPDIR") ?? cwd,
-    TEMP: ctx.env.get("TEMP") ?? ctx.env.get("TMPDIR") ?? cwd,
-  }
-  for (const name of ["SystemRoot", "SYSTEMROOT", "WINDIR", "LANG", "LC_ALL"]) {
-    const value = ctx.env.get(name)
-    if (value !== undefined) env[name] = value
-  }
-  return env
-}
-
-function archiveName(path: string, asset: QualityToolAsset): string {
-  if (!path || path.includes("\\") || path.includes("\0") || path.startsWith("/"))
-    throw new Error("Unsafe Qlty archive path")
-  const parts = path.replace(/\/$/, "").split("/")
-  if (parts.some((part) => !part || part === "." || part === ".."))
-    throw new Error("Unsafe Qlty archive path")
-  if (parts.length === 2 && parts[0] === `qlty-${asset.target}`) return parts[1] as string
-  if (parts.length === 1) return parts[0] as string
-  throw new Error("Unexpected Qlty archive layout")
-}
-
-function validateEntries(entries: QualityArchiveEntry[], asset: QualityToolAsset) {
-  if (entries.length < 2 || entries.length > 8)
-    throw new Error("Unexpected Qlty archive entry count")
-  const seen = new Set<string>()
-  const selected = new Map<string, QualityArchiveEntry>()
-  for (const entry of entries) {
-    if (seen.has(entry.path)) throw new Error("Duplicate Qlty archive entry")
-    seen.add(entry.path)
-    const name = archiveName(entry.path, asset)
-    if (entry.kind === "directory" && entry.path === `qlty-${asset.target}/`) continue
-    if (
-      entry.kind !== "file" ||
-      !["qlty", "qlty.exe", "LICENSE.md", "README.md", "CHANGELOG.md"].includes(name)
-    )
-      throw new Error("Unexpected Qlty archive entry or non-regular file")
-    if (name === "qlty" || name === "qlty.exe") {
-      if (selected.has("binary")) throw new Error("Multiple Qlty executables in archive")
-      selected.set("binary", entry)
-    } else if (name === "LICENSE.md") {
-      if (selected.has("license")) throw new Error("Multiple Qlty licenses in archive")
-      selected.set("license", entry)
-    }
-  }
-  const binary = selected.get("binary")
-  const license = selected.get("license")
-  if (!binary || !license) throw new Error("Qlty executable or license missing from archive")
-  return { binary, license }
-}
-
-async function extractArchive(
+async function downloadQlty(
   ctx: Ctx,
-  archive: string,
   asset: QualityToolAsset,
-): Promise<QualityArchiveEntry[]> {
-  const tar = windows
-    ? windowsSystemCommand("tar.exe")
-    : existsSync("/usr/bin/tar")
-      ? "/usr/bin/tar"
-      : "/bin/tar"
-  const cwd = dirname(archive)
-  const env = setupEnvironment(ctx, cwd)
-  const names = (await commandBytes(tar, ["-tf", archive], 64 * 1024, cwd, env))
-    .toString("utf8")
-    .trimEnd()
-    .split("\n")
-  const verbose = (await commandBytes(tar, ["-tvf", archive], 64 * 1024, cwd, env))
-    .toString("utf8")
-    .trimEnd()
-    .split("\n")
-  if (names.length !== verbose.length) throw new Error("Unrecognized Qlty archive metadata")
-  const entries = names.map(
-    (path, index): QualityArchiveEntry => ({
-      path: path.replace(/\r$/, ""),
-      kind: verbose[index]?.startsWith("-")
-        ? "file"
-        : verbose[index]?.startsWith("d")
-          ? "directory"
-          : "other",
-    }),
-  )
-  const { binary, license } = validateEntries(entries, asset)
-  binary.bytes = await commandBytes(tar, ["-xOf", archive, binary.path], BINARY_LIMIT, cwd, env)
-  license.bytes = await commandBytes(tar, ["-xOf", archive, license.path], LICENSE_LIMIT, cwd, env)
-  return entries
-}
-
-async function download(ctx: Ctx, asset: QualityToolAsset, timeoutMs: number): Promise<Uint8Array> {
+  timeoutMs: number,
+): Promise<Uint8Array> {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
     throw new Error("Qlty download deadline must be between 1 and 30000ms")
   return fetchPinned(ctx, {
@@ -379,90 +149,83 @@ async function download(ctx: Ctx, asset: QualityToolAsset, timeoutMs: number): P
   })
 }
 
-type Receipt = {
-  schema: 1
-  version: string
-  target: string
-  archiveSha256: string
-  binarySha256: string
-  licenseSha256: string
+function isValidQltyAsset(
+  asset: QualityToolAsset | undefined,
+  target: string,
+): asset is QualityToolAsset {
+  if (!asset || asset.target !== target || !/^[a-f0-9]{64}$/.test(asset.sha256)) return false
+  return asset.archive === `qlty-${target}.${target.includes("windows") ? "zip" : "tar.xz"}`
 }
 
-async function receiptAt(dir: string, asset: QualityToolAsset): Promise<Receipt | null> {
-  const path = join(dir, "receipt.json")
-  const entry = await lstat(path).catch(() => null)
-  if (!entry?.isFile() || entry.isSymbolicLink() || entry.size > 4096) return null
-  try {
-    const value = JSON.parse(await readFile(path, "utf8")) as Receipt
-    return value.schema === 1 &&
-      value.version === QLTY_VERSION &&
-      value.target === asset.target &&
-      value.archiveSha256 === asset.sha256 &&
-      /^[a-f0-9]{64}$/.test(value.binarySha256) &&
-      /^[a-f0-9]{64}$/.test(value.licenseSha256)
-      ? value
-      : null
-  } catch {
-    return null
-  }
-}
-
-async function regularBytes(path: string, limit: number): Promise<Uint8Array> {
-  const entry = await lstat(path)
-  if (!entry.isFile() || entry.isSymbolicLink() || entry.size < 1 || entry.size > limit)
-    throw new Error("Invalid managed Qlty file")
-  const bytes = await readFile(path)
-  if (bytes.length > limit) throw new Error("Managed Qlty file exceeds its byte budget")
-  return bytes
-}
-
-async function versionOf(ctx: Ctx, binary: string): Promise<string> {
-  return (
-    await commandBytes(
-      binary,
-      ["--no-upgrade-check", "--version"],
-      4096,
-      dirname(binary),
-      setupEnvironment(ctx, dirname(binary)),
-    )
-  ).toString("utf8")
-}
-
-function versionMatches(text: string): boolean {
-  const [name, version] = text.trim().split(/\s+/, 3)
-  return name === "qlty" && version === QLTY_VERSION
-}
-
-async function ready(
+async function prepareQltyParents(
+  ctx: Ctx,
   dir: string,
-  binary: string,
-  asset: QualityToolAsset,
-  version: (path: string) => Promise<string>,
-) {
-  const receipt = await receiptAt(dir, asset)
-  if (receipt === null) return false
-  try {
-    const bytes = await regularBytes(binary, BINARY_LIMIT)
-    const license = await regularBytes(join(dir, "LICENSE.md"), LICENSE_LIMIT)
-    return (
-      digest(bytes) === receipt.binarySha256 &&
-      digest(license) === receipt.licenseSha256 &&
-      versionMatches(await version(binary))
-    )
-  } catch {
-    return false
+  parent: string,
+  created: string[],
+): Promise<void> {
+  if (!isAbsolute(ctx.home)) throw new Error("Qlty tools home must be absolute")
+  const home = userHome(ctx)
+  if (!home.ok) throw new Error(home.reason)
+  const problem = configIsolationProblem(ctx, home.home) ?? unsafePath(home.home, ctx.home)
+  if (problem !== null) throw new Error(problem)
+  await assertSafeDirectory(dir)
+  for (const path of [ctx.home, join(ctx.home, "tools"), join(ctx.home, "tools", "qlty"), parent]) {
+    try {
+      await mkdir(path, { mode: 0o700 })
+      created.push(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+    }
+    await assertSafeDirectory(path)
   }
 }
 
-async function installedResult(binary: string, dirs: string[]): Promise<QualityToolSetup> {
-  const files = []
-  for (const path of [
-    binary,
-    join(dirname(binary), "LICENSE.md"),
-    join(dirname(binary), "receipt.json"),
-  ])
-    files.push({ path, sha256: digest(await readFile(path)) })
-  return { status: "ready", version: QLTY_VERSION, binary, files, dirs }
+type QltyInstallState = {
+  ctx: Ctx
+  target: string
+  asset: QualityToolAsset
+  binary: string
+  dir: string
+  parent: string
+  created: string[]
+  deps: QualityToolSetupDeps
+  version: (path: string) => Promise<string>
+  stage?: string
+  published: boolean
+}
+
+async function installQltyLocked(state: QltyInstallState): Promise<QualityToolSetup> {
+  const { ctx, target, asset, binary, dir, parent, created, deps, version } = state
+  await assertSafeDirectory(dir)
+  if (await qltyReady(dir, binary, asset, version)) {
+    state.published = true
+    return qltyInstalledResult(binary, created)
+  }
+  const hasPrevious = await verifyReplaceableTarget(dir, target, asset)
+  const bytes = await downloadQlty(ctx, asset, deps.downloadTimeoutMs ?? 30_000)
+  const stage = await mkdtemp(join(parent, `.${target}-`))
+  state.stage = stage
+  await chmod(stage, 0o700)
+  const stagedBinary = await stageQltyArchive(ctx, stage, bytes, asset, deps)
+  if (!(await qltyReady(stage, stagedBinary, asset, version)))
+    throw new Error("Staged Qlty executable failed integrity or version verification")
+  const move = stageMove(deps)
+  const retired = `${dir}.retired-${randomUUID()}`
+  if (hasPrevious) await move(dir, retired)
+  let placed: { stageLeft: boolean }
+  try {
+    placed = await placeStage(stage, dir, deps)
+  } catch (error) {
+    if (hasPrevious) await move(retired, dir)
+    throw error
+  }
+  state.stage = undefined
+  state.published = true
+  const result = await qltyInstalledResult(binary, [...created, dir])
+  if (placed.stageLeft)
+    result.reason = `Qlty is ready; its temporary setup folder ${stage} could not be removed yet`
+  if (hasPrevious) await cleanupRetiredTarget(retired, result, deps)
+  return result
 }
 
 export async function ensureQualityTool(
@@ -480,12 +243,7 @@ export async function ensureQualityTool(
       reason: "Qlty has no pinned native release for this operating system and architecture",
     }
   const asset = (deps.assets ?? QLTY_ASSETS)[target]
-  if (
-    !asset ||
-    asset.target !== target ||
-    !/^[a-f0-9]{64}$/.test(asset.sha256) ||
-    asset.archive !== `qlty-${target}.${target.includes("windows") ? "zip" : "tar.xz"}`
-  )
+  if (!isValidQltyAsset(asset, target))
     return {
       status: "failed",
       version: QLTY_VERSION,
@@ -493,140 +251,25 @@ export async function ensureQualityTool(
     }
   const dir = dirname(binary)
   const parent = dirname(dir)
-  const parents = [ctx.home, join(ctx.home, "tools"), join(ctx.home, "tools", "qlty"), parent]
-  const created: string[] = []
-  let stage: string | undefined
-  let published = false
+  const state: QltyInstallState = {
+    ctx,
+    target,
+    asset,
+    binary,
+    dir,
+    parent,
+    created: [],
+    deps,
+    version: deps.version ?? ((path: string) => qltyVersionOf(ctx, path)),
+    published: false,
+  }
   let result: QualityToolSetup
   let cleanupFailure: string | undefined
-  const version = deps.version ?? ((path: string) => versionOf(ctx, path))
   try {
-    if (!isAbsolute(ctx.home)) throw new Error("Qlty tools home must be absolute")
-    const home = userHome(ctx)
-    if (!home.ok) throw new Error(home.reason)
-    const problem = configIsolationProblem(ctx, home.home) ?? unsafePath(home.home, ctx.home)
-    if (problem !== null) throw new Error(problem)
-    await assertSafeDirectory(dir)
-    for (const path of parents) {
-      try {
-        await mkdir(path, { mode: 0o700 })
-        created.push(path)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-      }
-      await assertSafeDirectory(path)
-    }
-    result = await ctx.fs.withLock(join(parent, `${target}.setup.lock`), async () => {
-      await assertSafeDirectory(dir)
-      if (await ready(dir, binary, asset, version)) {
-        published = true
-        return installedResult(binary, created)
-      }
-      const previous = await lstat(dir).catch(() => null)
-      if (previous) {
-        if (
-          !previous.isDirectory() ||
-          previous.isSymbolicLink() ||
-          (await receiptAt(dir, asset)) === null
-        )
-          throw new Error(
-            "Existing Qlty target is not a recognized managed installation; left untouched",
-          )
-        const names = await readdir(dir)
-        if (
-          names.some(
-            (name) =>
-              ![
-                target.includes("windows") ? "qlty.exe" : "qlty",
-                "LICENSE.md",
-                "receipt.json",
-              ].includes(name),
-          )
-        )
-          throw new Error("Existing Qlty target contains unowned files; left untouched")
-        for (const name of names) {
-          const entry = await lstat(join(dir, name))
-          if (!entry.isFile() || entry.isSymbolicLink())
-            throw new Error("Existing Qlty target contains non-regular files; left untouched")
-        }
-      }
-      const bytes = await download(ctx, asset, deps.downloadTimeoutMs ?? 30_000)
-      stage = await mkdtemp(join(parent, `.${target}-`))
-      await chmod(stage, 0o700)
-      const archive = join(stage, asset.archive)
-      await writeFile(archive, bytes, { mode: 0o600, flag: "wx" })
-      const entries = await (
-        deps.extract ?? ((path, selected) => extractArchive(ctx, path, selected))
-      )(archive, asset)
-      const selected = validateEntries(entries, asset)
-      const data = selected.binary.bytes
-      const license = selected.license.bytes
-      if (
-        !data?.length ||
-        data.length > BINARY_LIMIT ||
-        !license?.length ||
-        license.length > LICENSE_LIMIT
-      )
-        throw new Error("Qlty archive has missing or oversized selected bytes")
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(license)
-      if (
-        !text.includes("Business Source License 1.1") ||
-        !text.includes("Qlty Software Inc.") ||
-        !text.includes("Artificial Intelligence Coding Service")
-      )
-        throw new Error("Qlty archive license notice is missing or unexpected")
-      const stagedBinary = join(stage, target.includes("windows") ? "qlty.exe" : "qlty")
-      await writeFile(stagedBinary, data, { mode: 0o700, flag: "wx" })
-      await writeFile(join(stage, "LICENSE.md"), license, { mode: 0o600, flag: "wx" })
-      const receipt: Receipt = {
-        schema: 1,
-        version: QLTY_VERSION,
-        target,
-        archiveSha256: asset.sha256,
-        binarySha256: digest(data),
-        licenseSha256: digest(license),
-      }
-      await writeFile(join(stage, "receipt.json"), `${JSON.stringify(receipt, null, 2)}\n`, {
-        mode: 0o600,
-        flag: "wx",
-      })
-      await rm(archive)
-      if (!(await ready(stage, stagedBinary, asset, version)))
-        throw new Error("Staged Qlty executable failed integrity or version verification")
-      const move = stageMove(deps)
-      const retired = `${dir}.retired-${randomUUID()}`
-      if (previous) await move(dir, retired)
-      let placed: { stageLeft: boolean }
-      try {
-        placed = await placeStage(stage, dir, deps)
-      } catch (error) {
-        if (previous) await move(retired, dir)
-        throw error
-      }
-      const left = placed.stageLeft ? stage : undefined
-      stage = undefined
-      published = true
-      const result = await installedResult(binary, [...created, dir])
-      if (left !== undefined)
-        result.reason = `Qlty is ready; its temporary setup folder ${left} could not be removed yet`
-      if (previous) {
-        try {
-          await (deps.removeRetired ?? ((path) => rm(path, { recursive: true, force: true })))(
-            retired,
-          )
-        } catch {
-          // A loaded Windows executable can remain open; retain its manifest ownership.
-          result.dirs?.push(retired)
-          for (const name of await readdir(retired)) {
-            const path = join(retired, name)
-            result.files?.push({ path, sha256: digest(await regularBytes(path, BINARY_LIMIT)) })
-          }
-          result.reason =
-            "Qlty is ready; retired files remain recorded for removal when no longer in use"
-        }
-      }
-      return result
-    })
+    await prepareQltyParents(ctx, dir, parent, state.created)
+    result = await ctx.fs.withLock(join(parent, `${target}.setup.lock`), () =>
+      installQltyLocked(state),
+    )
   } catch (error) {
     result = {
       status: "failed",
@@ -634,14 +277,13 @@ export async function ensureQualityTool(
       reason: error instanceof Error ? error.message : String(error),
     }
   } finally {
-    if (stage !== undefined) {
-      try {
-        await rm(stage, { recursive: true, force: true })
-      } catch {
-        cleanupFailure = `Cannot remove owned Qlty staging directory: ${stage}`
-      }
+    if (state.stage !== undefined) {
+      await rm(state.stage, { recursive: true, force: true }).catch(() => {
+        cleanupFailure = `Cannot remove owned Qlty staging directory: ${state.stage}`
+      })
     }
-    if (!published) for (const path of [...created].reverse()) await rmdir(path).catch(() => {})
+    if (!state.published)
+      for (const path of [...state.created].reverse()) await rmdir(path).catch(() => {})
   }
   return cleanupFailure
     ? { status: "failed", version: QLTY_VERSION, reason: cleanupFailure }

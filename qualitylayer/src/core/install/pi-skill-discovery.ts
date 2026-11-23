@@ -1,88 +1,76 @@
-import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
+import {
+  type DiscoveryRecord,
+  digestText,
+  isPlainObject,
+  isStringArray,
+  type PiSettings,
+  piPaths,
+  RECORD_MAX_BYTES,
+  readDiscoveryRecord,
+  statePath,
+} from "./pi-skill-discovery-record.ts"
 import { QUALITYLAYER_SKILLS } from "./skill-names.ts"
 
-type Record = {
-  file: string
-  added: string[]
-  createdFile?: boolean
-  hadSkills?: boolean
-  original?: string
-  writtenHash?: string
-}
-const RECORD_MAX_BYTES = 16 * 1024
-const digest = (text: string) => createHash("sha256").update(text).digest("hex")
-const statePath = (ctx: Ctx) => join(ctx.home, "pi-skill-discovery.json")
-const paths = (ctx: Ctx, home: string) => {
-  const root = ctx.env.get("PI_CODING_AGENT_DIR") || join(home, ".pi", "agent")
-  return { root, file: join(root, "settings.json"), shared: join(home, ".agents", "skills") }
+async function readSettingsDoc(
+  ctx: Ctx,
+  file: string,
+): Promise<{ original: string | undefined; settings: PiSettings } | null> {
+  try {
+    const original = (await ctx.fs.exists(file)) ? await ctx.fs.readFile(file) : undefined
+    const parsed: unknown = original === undefined ? {} : JSON.parse(original)
+    if (!isPlainObject(parsed)) return null
+    if (parsed.skills !== undefined && !isStringArray(parsed.skills)) return null
+    return { original, settings: parsed }
+  } catch {
+    return null
+  }
 }
 
-async function readRecord(ctx: Ctx, file: string, allowed: string[]): Promise<Record | null> {
-  if (!(await ctx.fs.exists(statePath(ctx)))) return null
-  const text = await ctx.fs.readFile(statePath(ctx))
-  if (Buffer.byteLength(text) > RECORD_MAX_BYTES)
-    throw new Error("Pi discovery record exceeds its cap")
-  const value = JSON.parse(text) as Record
-  if (
-    value.file !== file ||
-    !Array.isArray(value.added) ||
-    value.added.some((item) => !allowed.includes(item)) ||
-    (value.original !== undefined && typeof value.original !== "string") ||
-    (value.writtenHash !== undefined &&
-      (typeof value.writtenHash !== "string" || !/^[a-f0-9]{64}$/.test(value.writtenHash)))
-  )
-    throw new Error("Pi discovery record does not match the configured native root")
-  return value
+async function missingExclusions(
+  ctx: Ctx,
+  dirs: { root: string; shared: string },
+  existing: string[],
+  priorAdded: string[],
+): Promise<string[]> {
+  const added: string[] = []
+  for (const name of QUALITYLAYER_SKILLS) {
+    const member = `-${join(dirs.shared, name, "SKILL.md")}`
+    if (existing.includes(member) || priorAdded.includes(member)) continue
+    const hasNative = await ctx.fs.exists(join(dirs.root, "skills", name, "SKILL.md"))
+    const hasShared = await ctx.fs.exists(join(dirs.shared, name, "SKILL.md"))
+    if (hasNative && hasShared) added.push(member)
+  }
+  return added
 }
 
 /** Pi discovers both roots; keep its client-specific workflow rather than the shared Codex copy. */
 export async function configurePiSkillDiscovery(ctx: Ctx, home: string): Promise<void> {
-  const { root, file, shared } = paths(ctx, home)
+  const { root, file, shared } = piPaths(ctx, home)
   if (!(await ctx.fs.exists(root))) return
   const allowed = QUALITYLAYER_SKILLS.map((name) => `-${join(shared, name, "SKILL.md")}`)
-  const before = await readRecord(ctx, file, allowed)
-  let settings: { skills?: unknown; [key: string]: unknown }
-  let original: string | undefined
-  try {
-    original = (await ctx.fs.exists(file)) ? await ctx.fs.readFile(file) : undefined
-    settings = original === undefined ? {} : JSON.parse(original)
-  } catch {
-    return
-  }
-  if (
-    !settings ||
-    typeof settings !== "object" ||
-    Array.isArray(settings) ||
-    (settings.skills !== undefined &&
-      (!Array.isArray(settings.skills) || settings.skills.some((item) => typeof item !== "string")))
-  )
-    return
-  const skills = [...((settings.skills as string[] | undefined) ?? [])]
-  const added: string[] = []
-  for (const name of QUALITYLAYER_SKILLS) {
-    const member = `-${join(shared, name, "SKILL.md")}`
-    if (skills.includes(member) || before?.added.includes(member)) continue
-    if (
-      !(await ctx.fs.exists(join(root, "skills", name, "SKILL.md"))) ||
-      !(await ctx.fs.exists(join(shared, name, "SKILL.md")))
-    )
-      continue
-    skills.push(member)
-    added.push(member)
-  }
+  const before = await readDiscoveryRecord(ctx, file, allowed)
+  const doc = await readSettingsDoc(ctx, file)
+  if (!doc) return
+  const skills = [...((doc.settings.skills as string[] | undefined) ?? [])]
+  const added = await missingExclusions(ctx, { root, shared }, skills, before?.added ?? [])
   if (!added.length) return
-  const written = `${JSON.stringify({ ...settings, skills }, null, 2)}\n`
+  skills.push(...added)
+  const written = `${JSON.stringify({ ...doc.settings, skills }, null, 2)}\n`
   const canRestore =
-    before === null || (original !== undefined && before.writtenHash === digest(original))
+    before === null ||
+    (doc.original !== undefined && before.writtenHash === digestText(doc.original))
   const record = `${JSON.stringify({
     file,
     added: [...(before?.added ?? []), ...added],
-    createdFile: before?.createdFile ?? original === undefined,
-    hadSkills: before?.hadSkills ?? settings.skills !== undefined,
+    createdFile: before?.createdFile ?? doc.original === undefined,
+    hadSkills: before?.hadSkills ?? doc.settings.skills !== undefined,
     ...(canRestore
-      ? { original: before === null ? original : before.original, writtenHash: digest(written) }
+      ? {
+          original: before === null ? doc.original : before.original,
+          writtenHash: digestText(written),
+        }
       : {}),
   })}\n`
   // A lossless backup that cannot fit stays out of the preferences rather than growing the journal.
@@ -98,46 +86,47 @@ export async function configurePiSkillDiscovery(ctx: Ctx, home: string): Promise
   }
 }
 
+async function revertSettingsFile(
+  ctx: Ctx,
+  file: string,
+  record: DiscoveryRecord,
+): Promise<boolean> {
+  const text = await ctx.fs.readFile(file)
+  const exactMatch =
+    record.writtenHash === digestText(text) && (record.original !== undefined || record.createdFile)
+  if (exactMatch) {
+    if (record.original !== undefined) await ctx.fs.atomicWrite(file, record.original)
+    else await ctx.fs.remove(file)
+    return true
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return false
+  }
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.skills)) return false
+  const skills = parsed.skills.filter((item) => !record.added.includes(item as string))
+  if (skills.length !== parsed.skills.length) {
+    const next: PiSettings = { ...parsed, skills }
+    if (skills.length === 0 && record.hadSkills === false) delete next.skills
+    if (record.createdFile && Object.keys(next).length === 0) await ctx.fs.remove(file)
+    else await ctx.fs.atomicWrite(file, `${JSON.stringify(next, null, 2)}\n`)
+  }
+  return true
+}
+
 /** Remove only exclusions this installer added, preserving a person's later skill preferences. */
 export async function revertPiSkillDiscovery(ctx: Ctx, home: string): Promise<void> {
-  const { file, shared } = paths(ctx, home)
-  const record = await readRecord(
+  const { file, shared } = piPaths(ctx, home)
+  const record = await readDiscoveryRecord(
     ctx,
     file,
     QUALITYLAYER_SKILLS.map((name) => `-${join(shared, name, "SKILL.md")}`),
   )
   if (!record) return
   if (await ctx.fs.exists(file)) {
-    const text = await ctx.fs.readFile(file)
-    if (
-      record.writtenHash === digest(text) &&
-      (record.original !== undefined || record.createdFile)
-    ) {
-      if (record.original !== undefined) await ctx.fs.atomicWrite(file, record.original)
-      else if (record.createdFile) await ctx.fs.remove(file)
-      await ctx.fs.remove(statePath(ctx))
-      return
-    }
-    let settings: { skills?: unknown; [key: string]: unknown }
-    try {
-      settings = JSON.parse(text)
-    } catch {
-      return
-    }
-    if (
-      !settings ||
-      typeof settings !== "object" ||
-      Array.isArray(settings) ||
-      !Array.isArray(settings.skills)
-    )
-      return
-    const skills = settings.skills.filter((item) => !record.added.includes(item))
-    if (skills.length !== settings.skills.length) {
-      const next = { ...settings, skills } as typeof settings
-      if (skills.length === 0 && record.hadSkills === false) delete next.skills
-      if (record.createdFile && Object.keys(next).length === 0) await ctx.fs.remove(file)
-      else await ctx.fs.atomicWrite(file, `${JSON.stringify(next, null, 2)}\n`)
-    }
+    if (!(await revertSettingsFile(ctx, file, record))) return
   }
   await ctx.fs.remove(statePath(ctx))
 }

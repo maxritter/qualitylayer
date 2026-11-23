@@ -3,74 +3,22 @@
 
 import { join } from "node:path"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
-import { LASTING_ALSO_MAX } from "./artifact/format.ts"
+import { type LookPatch, PROJECT_LOOK_MAX_BYTES, type ProjectLooks } from "./project-look.ts"
 import {
-  ALSO_ARTIFACT,
-  LABEL_MAX,
-  type LookPatch,
-  PROJECT_COLORS,
-  PROJECT_LOOK_MAX_BYTES,
-  type ProjectColor,
-  type ProjectLookEntry,
-  type ProjectLooks,
-} from "./project-look.ts"
+  applyLookPatch,
+  cleanedLooks,
+  prunedLooks,
+  validateLookPatch,
+} from "./project-look-validate.ts"
 
 const lookPath = (ctx: Ctx) => join(ctx.home, "project-look.json")
-
-const colorOf = (value: unknown): ProjectColor | null =>
-  PROJECT_COLORS.includes(value as ProjectColor) ? (value as ProjectColor) : null
-
-/** A name as the person typed it: trimmed, 1 to 40 characters, or null. */
-function labelOf(value: unknown): string | null {
-  if (typeof value !== "string") return null
-  const label = value.replace(/\s+/g, " ").trim()
-  return label.length >= 1 && label.length <= LABEL_MAX ? label : null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-/** The lasting artifacts of other projects a stored entry lists: well-formed, once each, at most the cap. */
-function alsoOf(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const found: string[] = []
-  for (const item of value)
-    if (typeof item === "string" && ALSO_ARTIFACT.test(item) && !found.includes(item))
-      found.push(item)
-  return found.slice(0, LASTING_ALSO_MAX)
-}
-
-/** What a stored file says, with everything unusable dropped: a broken entry never breaks the rest. */
-function cleaned(raw: unknown): ProjectLooks {
-  if (!isRecord(raw) || raw.v !== 1) return { order: [], projects: {} }
-  const order: string[] = []
-  if (Array.isArray(raw.order))
-    for (const id of raw.order) if (typeof id === "string" && !order.includes(id)) order.push(id)
-  const projects: Record<string, ProjectLookEntry> = {}
-  if (isRecord(raw.projects))
-    for (const [id, value] of Object.entries(raw.projects)) {
-      if (!isRecord(value)) continue
-      const entry: ProjectLookEntry = {}
-      const color = colorOf(value.color)
-      if (color !== null) entry.color = color
-      const label = labelOf(value.label)
-      if (label !== null) entry.label = label
-      if (value.hidden === true) entry.hidden = true
-      // A file saved before the rename lists them as `designs`; the next save writes `artifacts`.
-      const artifacts = alsoOf(value.artifacts ?? value.designs)
-      if (artifacts.length > 0) entry.artifacts = artifacts
-      if (Object.keys(entry).length > 0) projects[id] = entry
-    }
-  return { order, projects }
-}
 
 /** The saved looks. A missing, unreadable, oversized or wrong-version file reads as none. */
 export async function readLooks(ctx: Ctx): Promise<ProjectLooks> {
   try {
     const text = await ctx.fs.readFile(lookPath(ctx))
     if (Buffer.byteLength(text) > PROJECT_LOOK_MAX_BYTES) return { order: [], projects: {} }
-    return cleaned(JSON.parse(text))
+    return cleanedLooks(JSON.parse(text))
   } catch {
     return { order: [], projects: {} }
   }
@@ -87,21 +35,6 @@ async function knownProjectIds(ctx: Ctx): Promise<Set<string>> {
   return ids
 }
 
-/** The looks of projects that still exist, in a stable shape. */
-function pruned(looks: ProjectLooks, known: Set<string>): ProjectLooks {
-  const projects: Record<string, ProjectLookEntry> = {}
-  for (const [id, entry] of Object.entries(looks.projects)) {
-    if (!known.has(id)) continue
-    const kept: ProjectLookEntry = { ...entry }
-    // An artifact of a project that no longer exists is not listed any more.
-    const artifacts = (entry.artifacts ?? []).filter((d) => known.has(d.slice(0, d.indexOf(":"))))
-    if (artifacts.length > 0) kept.artifacts = artifacts
-    else delete kept.artifacts
-    if (Object.keys(kept).length > 0) projects[id] = kept
-  }
-  return { order: looks.order.filter((id) => known.has(id)), projects }
-}
-
 async function write(ctx: Ctx, looks: ProjectLooks): Promise<void> {
   await ctx.fs.mkdir(ctx.home)
   await ctx.fs.atomicWrite(lookPath(ctx), `${JSON.stringify({ v: 1, ...looks }, null, 2)}\n`)
@@ -112,47 +45,35 @@ const locked = <T>(ctx: Ctx, action: () => Promise<T>): Promise<T> =>
 
 const bad = (message: string) => err({ code: "bad_args", message })
 
+function checkArtifactTargets(
+  id: string,
+  artifacts: readonly string[],
+  known: Set<string>,
+): Result<void> {
+  for (const d of artifacts) {
+    const other = d.slice(0, d.indexOf(":"))
+    if (other === id) return bad("a project lists the artifacts of other projects only")
+    if (!known.has(other)) return bad(`unknown project "${other}"`)
+  }
+  return ok(undefined)
+}
+
 /** Change one project's color, name or hidden flag. An entry left empty is removed. */
 export async function setLook(
   ctx: Ctx,
   id: string,
   patch: LookPatch,
 ): Promise<Result<ProjectLooks>> {
-  if (typeof patch !== "object" || patch === null)
-    return bad("expected { color?, label?, hidden? }")
-  if (patch.color !== undefined && colorOf(patch.color) === null)
-    return bad(`color must be one of ${PROJECT_COLORS.join(", ")}`)
-  if (patch.label !== undefined && patch.label !== null && labelOf(patch.label) === null)
-    return bad(`a name has 1 to ${LABEL_MAX} characters`)
-  if (patch.hidden !== undefined && typeof patch.hidden !== "boolean")
-    return bad("hidden must be true or false")
-  if (patch.artifacts !== undefined && patch.artifacts !== null) {
-    if (
-      !Array.isArray(patch.artifacts) ||
-      patch.artifacts.some((d) => typeof d !== "string" || !ALSO_ARTIFACT.test(d))
-    )
-      return bad('artifacts must be a list of "<project id>:<artifact name>"')
-    if (patch.artifacts.length > LASTING_ALSO_MAX)
-      return bad(`a project lists at most ${LASTING_ALSO_MAX} artifacts of other projects`)
-  }
+  const checked = validateLookPatch(patch)
+  if (!checked.ok) return checked
   return locked(ctx, async () => {
     const known = await knownProjectIds(ctx)
     if (!known.has(id)) return bad(`unknown project "${id}"`)
-    for (const d of patch.artifacts ?? []) {
-      const other = d.slice(0, d.indexOf(":"))
-      if (other === id) return bad("a project lists the artifacts of other projects only")
-      if (!known.has(other)) return bad(`unknown project "${other}"`)
-    }
-    const looks = pruned(await readLooks(ctx), known)
-    const entry: ProjectLookEntry = { ...looks.projects[id] }
-    if (patch.color !== undefined) entry.color = patch.color
-    if (patch.label === null) delete entry.label
-    else if (patch.label !== undefined) entry.label = labelOf(patch.label) as string
-    if (patch.hidden === true) entry.hidden = true
-    else if (patch.hidden === false) delete entry.hidden
-    if (patch.artifacts === null || patch.artifacts?.length === 0) delete entry.artifacts
-    else if (patch.artifacts !== undefined) entry.artifacts = [...new Set(patch.artifacts)]
-    if (Object.keys(entry).length > 0) looks.projects[id] = entry
+    const targets = checkArtifactTargets(id, patch.artifacts ?? [], known)
+    if (!targets.ok) return targets
+    const looks = prunedLooks(await readLooks(ctx), known)
+    const entry = applyLookPatch(looks.projects[id], patch)
+    if (entry !== null) looks.projects[id] = entry
     else delete looks.projects[id]
     await write(ctx, looks)
     return ok(looks)
@@ -165,9 +86,8 @@ export async function setOrder(ctx: Ctx, ids: unknown): Promise<Result<ProjectLo
     return bad("expected { ids: string[] }")
   return locked(ctx, async () => {
     const known = await knownProjectIds(ctx)
-    const looks = pruned(await readLooks(ctx), known)
-    const order: string[] = []
-    for (const id of ids as string[]) if (known.has(id) && !order.includes(id)) order.push(id)
+    const looks = prunedLooks(await readLooks(ctx), known)
+    const order = [...new Set((ids as string[]).filter((id) => known.has(id)))]
     const next = { ...looks, order }
     await write(ctx, next)
     return ok(next)

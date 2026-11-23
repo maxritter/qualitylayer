@@ -46,23 +46,29 @@ export function sniffImage(bytes: Uint8Array): ImageType | null {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const validEmail = (value: string) => value.length <= 254 && EMAIL.test(value)
 
+function imagesProblem(images: FeedbackImage[], textBytes: number): string | null {
+  if (images.length > MAX_IMAGES) return `At most ${MAX_IMAGES} screenshots can be sent.`
+  let total = textBytes
+  for (const image of images) {
+    if (image.bytes.length > MAX_IMAGE_BYTES) return "A screenshot can be at most 5 MB."
+    total += image.bytes.length
+  }
+  return total > MAX_TOTAL_BYTES
+    ? "The screenshots are too large to send together (4 MB at most)."
+    : null
+}
+
+function trialSenderProblem(sender: Sender | null): string | null {
+  if (sender === null || sender.name.trim() === "") return "Your name is needed to send."
+  return validEmail(sender.email.trim()) ? null : "A valid e-mail is needed to send."
+}
+
 /** Why a report cannot be sent as it stands, in a sentence for the person, or null. */
 export function problemWith(report: Report, trial: boolean): string | null {
   const text = report.text.trim()
   if (text === "") return "Write what happened or what you would like."
   if ([...text].length > MAX_TEXT) return `The text can be at most ${MAX_TEXT} characters.`
-  if (report.images.length > MAX_IMAGES) return `At most ${MAX_IMAGES} screenshots can be sent.`
-  let total = Buffer.byteLength(text)
-  for (const image of report.images) {
-    if (image.bytes.length > MAX_IMAGE_BYTES) return "A screenshot can be at most 5 MB."
-    total += image.bytes.length
-  }
-  if (total > MAX_TOTAL_BYTES)
-    return "The screenshots are too large to send together (4 MB at most)."
-  if (trial) {
-    const sender = report.sender
-    if (sender === null || sender.name.trim() === "") return "Your name is needed to send."
-    if (!validEmail(sender.email.trim())) return "A valid e-mail is needed to send."
-  }
-  return null
+  const imageError = imagesProblem(report.images, Buffer.byteLength(text))
+  if (imageError !== null) return imageError
+  return trial ? trialSenderProblem(report.sender) : null
 }

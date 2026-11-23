@@ -37,45 +37,49 @@ export function serveCmd(gatekeeper?: Gatekeeper) {
   }
 }
 
-export async function cockpitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  if (args[0] === "stop") {
-    const lock = await liveLock(ctx)
-    if (lock === null) return ok({ stopped: false, message: "the QualityLayer App is not running" })
-    if (!(await stopCockpit(ctx, lock)))
-      return err({
-        code: "bad_args",
-        message: `cannot stop the QualityLayer App's server (pid ${lock.pid})`,
-      })
-    return ok({ stopped: true, pid: lock.pid })
+async function stopApp(ctx: Ctx): Promise<Result<unknown>> {
+  const lock = await liveLock(ctx)
+  if (lock === null) return ok({ stopped: false, message: "the QualityLayer App is not running" })
+  if (!(await stopCockpit(ctx, lock)))
+    return err({
+      code: "bad_args",
+      message: `cannot stop the QualityLayer App's server (pid ${lock.pid})`,
+    })
+  return ok({ stopped: true, pid: lock.pid })
+}
+
+async function cockpitLink(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const [, doc, ...heading] = args.filter((a) => a !== "--no-open")
+  if (doc === undefined) {
+    return err({
+      code: "bad_args",
+      message: 'usage: qualitylayer app link <doc> ["<heading>"]',
+    })
   }
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  const base = await taskCockpitUrl(ctx, task.data.slug)
+  if (base === undefined) {
+    return err({
+      code: "bad_args",
+      message: appLinkOpensHere(ctx.home)
+        ? "the QualityLayer App's server could not be started"
+        : "this computer is a machine of the person's own App, where no link from here opens: name the task and its section instead",
+    })
+  }
+  const words = heading
+    .join(" ")
+    .replace(/^#+\s*/, "")
+    .trim()
+  const at = words !== "" ? `/${encodeURIComponent(headingSlug(words))}` : ""
+  return ok({ url: `${base}/${encodeURIComponent(doc)}${at}` })
+}
+
+export async function cockpitCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  if (args[0] === "stop") return stopApp(ctx)
   // `cockpit link <doc> ["<heading>"]`: the link that opens the task's document at
   // that heading and marks its section, for the agent to put beside a question.
-  if (args[0] === "link") {
-    const [, doc, ...heading] = args.filter((a) => a !== "--no-open")
-    if (doc === undefined) {
-      return err({
-        code: "bad_args",
-        message: 'usage: qualitylayer app link <doc> ["<heading>"]',
-      })
-    }
-    const task = await requireTask(ctx)
-    if (!task.ok) return task
-    const base = await taskCockpitUrl(ctx, task.data.slug)
-    if (base === undefined) {
-      return err({
-        code: "bad_args",
-        message: appLinkOpensHere(ctx.home)
-          ? "the QualityLayer App's server could not be started"
-          : "this computer is a machine of the person's own App, where no link from here opens: name the task and its section instead",
-      })
-    }
-    const words = heading
-      .join(" ")
-      .replace(/^#+\s*/, "")
-      .trim()
-    const at = words !== "" ? `/${encodeURIComponent(headingSlug(words))}` : ""
-    return ok({ url: `${base}/${encodeURIComponent(doc)}${at}` })
-  }
+  if (args[0] === "link") return cockpitLink(ctx, args)
   return openPage(ctx, { open: !args.includes("--no-open") })
 }
 

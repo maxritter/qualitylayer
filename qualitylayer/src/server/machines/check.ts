@@ -82,16 +82,7 @@ async function withoutUname(ssh: Ssh, target: string): Promise<Looked> {
   return unsupported(ver.code === 0 && /windows/i.test(ver.out) ? "Windows" : "an unknown system")
 }
 
-/** Reach the machine and say what runs there. */
-export async function lookAt(ssh: Ssh, target: string): Promise<Looked> {
-  const named = await ssh.run(target, ["uname", "-sm"], QUICK)
-  if (!named.ok) return failure(named)
-  const system = named.code === 0 ? named.out.trim().slice(0, 60) : ""
-  if (system === "") return withoutUname(ssh, target)
-  const kernel = system.split(/\s+/)[0] ?? ""
-  if (WINDOWS_KERNEL.test(kernel)) return unsupported("Windows")
-  if (!SUPPORTED_KERNELS.has(kernel)) return unsupported(system)
-
+async function lookAtSupported(ssh: Ssh, target: string, system: string): Promise<Looked> {
   const version = await versionOn(ssh, target)
   if (version !== null && typeof version === "object") return failure(version)
   if (version === null) return { reach: "ok", system, verdict: "install", version, licence: null }
@@ -103,4 +94,16 @@ export async function lookAt(ssh: Ssh, target: string): Promise<Looked> {
     version,
     licence: held.ok && held.code === 0 ? licenceIn(held.out) : null,
   }
+}
+
+/** Reach the machine and say what runs there. */
+export async function lookAt(ssh: Ssh, target: string): Promise<Looked> {
+  const named = await ssh.run(target, ["uname", "-sm"], QUICK)
+  if (!named.ok) return failure(named)
+  const system = named.code === 0 ? named.out.trim().slice(0, 60) : ""
+  if (system === "") return withoutUname(ssh, target)
+  const kernel = system.split(/\s+/)[0] ?? ""
+  if (WINDOWS_KERNEL.test(kernel)) return unsupported("Windows")
+  if (!SUPPORTED_KERNELS.has(kernel)) return unsupported(system)
+  return lookAtSupported(ssh, target, system)
 }

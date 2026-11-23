@@ -2,187 +2,49 @@
 // hooks and the CLI left (record.ts), the transcript's time, the process, and the question's
 // heartbeat. The rules that turn them into "working", "quiet" or "stopped" are liveness.ts's.
 
-import { basename, dirname, isAbsolute, join } from "node:path"
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import { isNativeAgent } from "../agents/ids.ts"
-import { wakesOf } from "../agents/wakes.ts"
-import { ownRecordPath } from "../conversation/locate.ts"
-import { openPosixRoot } from "../filesystem/anchored-posix.ts"
-import type { AnchoredRoot } from "../filesystem/anchored-root.ts"
-import { probeWindowsFile } from "../filesystem/anchored-windows.ts"
-import { detectLimitStop, type LimitStop } from "../limits/stop.ts"
 import { acceptedTurnBoundary } from "../run/bind.ts"
 import type { ProcessIdentity, RunRecord } from "../run/contracts.ts"
-import { identityState, readRun, runDir } from "../run/registry.ts"
+import { identityState, readRun } from "../run/registry.ts"
 import { keyOf } from "../task/binding.ts"
 import { readSession, type Task } from "../task/store.ts"
-import { codexGoalActive, opencodeOpenWork, readBackgroundShells, readOpen } from "./background.ts"
 import type { EndKind, LiveSignals } from "./liveness.ts"
 import { processGonePath, watchProcess } from "./monitor.ts"
+import { readBackground, readLimit, readRefusal } from "./read-background.ts"
 import {
-  type CliRow,
-  type ErrorRow,
-  type HookRow,
-  liveDir,
-  type OpenTool,
-  type OwnerRow,
-  type ProcessRow,
-  type SubagentRow,
-} from "./record.ts"
+  QUESTION_HEARTBEAT,
+  readCliAndQuestion,
+  readHooks,
+  readJson,
+  readOpenTool,
+  readSubagents,
+} from "./read-files.ts"
+import {
+  interruptedIn,
+  LIMIT_QUIET_MS,
+  limitFact,
+  limitStopOf,
+  observeLimitRechecks,
+  observeLimitStops,
+  type Probe,
+  realProbe,
+} from "./read-limit.ts"
+import { type HookRow, liveDir, type OwnerRow, type ProcessRow } from "./record.ts"
 import { readTodo } from "./todo.ts"
 
-/** What the server asks the machine: a file's time, a process, the end of a transcript. */
-export type Probe = {
-  mtime(path: string): number | null
-  /** A file's size, when the probe can tell; a cache key beside its time. */
-  size?(path: string): number | null
-  alive(pid: number): boolean
-  identity?: (identity: ProcessIdentity) => "live" | "dead" | "unverified"
-  tail(path: string, bytes: number): string
-}
-
-function nativeProbe(path: string, bytes: number) {
-  let root: AnchoredRoot | undefined
-  try {
-    if (!isAbsolute(path)) return null
-    if (process.platform === "win32") return probeWindowsFile(path, bytes)
-    if (process.platform === "darwin" || process.platform === "linux")
-      root = openPosixRoot(dirname(path))
-    else return null
-    return root.probe(basename(path), bytes)
-  } catch {
-    return null
-  } finally {
-    root?.close()
-  }
-}
-
-export const realProbe: Probe = {
-  identity: identityState,
-  mtime: (path) => nativeProbe(path, 0)?.mtimeMs ?? null,
-  size: (path) => nativeProbe(path, 0)?.size ?? null,
-  alive: (pid) => {
-    try {
-      process.kill(pid, 0)
-      return true
-    } catch (cause) {
-      // Another user's process is alive too; only "no such process" is gone.
-      return (cause as NodeJS.ErrnoException).code === "EPERM"
-    }
-  },
-  tail: (path, bytes) => Buffer.from(nativeProbe(path, bytes)?.bytes ?? []).toString("utf8"),
-}
-
-/** A tool call started this long ago with no end is taken as lost (a crash, a missed hook). */
-const OPEN_TOOL_MAX_MS = 3 * 60 * 60_000
-/** The question's heartbeat file that `question ask` touches while it waits. */
-export const QUESTION_HEARTBEAT = "question-heartbeat"
-
-async function readJson<T>(ctx: Ctx, path: string): Promise<T | null> {
-  try {
-    return JSON.parse(await ctx.fs.readFile(path)) as T
-  } catch {
-    return null
-  }
-}
-
-async function list(ctx: Ctx, dir: string): Promise<string[]> {
-  try {
-    return await ctx.fs.readdir(dir)
-  } catch {
-    return []
-  }
-}
-
-/**
- * Whether the end of a transcript says the person interrupted the agent: Claude Code writes
- * "[Request interrupted by user]" as the person's message, Codex a `turn_aborted` event.
- */
-export function interruptedIn(tail: string): boolean {
-  const lines = tail.split("\n").filter((line) => line.trim() !== "")
-  for (let i = lines.length - 1; i >= 0 && i >= lines.length - 6; i--) {
-    const line = lines[i] as string
-    if (/\[Request interrupted by user/.test(line)) return true
-    if (/"type"\s*:\s*"turn_aborted"/.test(line)) return true
-    // The latest real message is something else: the agent went on after the interruption.
-    if (/"type"\s*:\s*"(assistant|user|response_item|function_call|message)"/.test(line))
-      return false
-  }
-  return false
-}
-
-/** A session record is looked at for a plan-limit stop once nothing has moved for this long. */
-export const LIMIT_QUIET_MS = 20_000
-/** How much of the end of the record that look reads, as the resume after reset does. */
-const LIMIT_TAIL_BYTES = 128 * 1024
-/** The records looked at, by path: a look is repeated only when the record's size or time moved. */
-const LIMIT_SEEN_MAX = 256
-const limitSeen = new Map<string, { stamp: string; stop: LimitStop | null; told?: string | null }>()
-const limitListeners = new Set<(run: string) => void>()
-
-/**
- * Hear each plan-limit stop a status read finds first, by its managed run: the server plans or holds
- * the resume for it then (limits/resume.ts), without waiting for another event. Returns the unsubscribe.
- */
-export function observeLimitStops(listener: (run: string) => void): () => void {
-  limitListeners.add(listener)
-  return () => limitListeners.delete(listener)
-}
-
-const recheckListeners = new Set<(record: string, inMs: number) => void>()
-
-/**
- * Hear when a read met a session record that is not quiet long enough to be looked at yet, and in
- * how many milliseconds it will be: the server tells its pages to read again then, once per record.
- */
-export function observeLimitRechecks(listener: (record: string, inMs: number) => void): () => void {
-  recheckListeners.add(listener)
-  return () => recheckListeners.delete(listener)
-}
-
-/**
- * Whether the session record ends in a plan-limit stop (limits/stop.ts), looked at only once the
- * record has been quiet for `LIMIT_QUIET_MS`: a reading costs one bounded tail read, and only when
- * the record's size or time changed since the last.
- */
-export function limitStopOf(
-  probe: Probe,
-  agent: string | null,
-  record: string | null,
-  lastActivity: number | null,
-  now: number,
-  run: string | null = null,
-): LimitStop | null {
-  if (record === null || !isNativeAgent(agent)) return null
-  const mtime = probe.mtime(record)
-  if (mtime === null) return null
-  const quietFor = now - Math.max(mtime, lastActivity ?? 0)
-  if (quietFor < LIMIT_QUIET_MS) {
-    // Not quiet yet: whoever shows it reads again once it is, since a stopped agent sends nothing.
-    for (const listener of recheckListeners) listener(record, LIMIT_QUIET_MS - quietFor)
-    return null
-  }
-  const size = probe.size?.(record) ?? null
-  const stamp = `${agent}:${mtime}:${size ?? ""}`
-  const seen = limitSeen.get(record)
-  let stop: LimitStop | null
-  if (seen?.stamp === stamp) stop = seen.stop
-  else {
-    // A first line cut by the start of the read does not parse, and the reader skips it.
-    const rows = probe
-      .tail(record, LIMIT_TAIL_BYTES)
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-    stop = detectLimitStop(agent, rows)
-  }
-  // Each stop is told once per run, also when the run became known after the stop was first seen.
-  const told = stop !== null && seen?.stop?.key === stop.key ? (seen.told ?? null) : null
-  const tell = stop !== null && run !== null && told !== run
-  limitSeen.delete(record)
-  limitSeen.set(record, { stamp, stop, told: tell ? run : told })
-  if (limitSeen.size > LIMIT_SEEN_MAX) limitSeen.delete(limitSeen.keys().next().value as string)
-  if (tell) for (const listener of limitListeners) listener(run as string)
-  return stop
+export {
+  interruptedIn,
+  LIMIT_QUIET_MS,
+  limitStopOf,
+  observeLimitRechecks,
+  observeLimitStops,
+  type Probe,
+  QUESTION_HEARTBEAT,
+  readBackground,
+  readLimit,
+  readRefusal,
+  realProbe,
 }
 
 function managedLeadOf(
@@ -209,6 +71,38 @@ function processStateOf(
   return pid === undefined ? "unknown" : probe.alive(pid) ? "alive" : "gone"
 }
 
+function isBlockedManagedEnd(
+  end: { at: number; kind: EndKind } | null,
+  ownHook: HookRow | null,
+  run: RunRecord | null,
+): boolean {
+  if (!ownHook?.run || end === null) return false
+  if (end.kind === "permission") return true
+  if (end.kind !== "turn-end") return false
+  return !run || run.generation !== ownHook.run.generation || !acceptedTurnBoundary(run)
+}
+
+function resolveEnd(
+  ownHook: HookRow | null,
+  run: RunRecord | null,
+  proc: ProcessRow | null,
+  transcript: number | null,
+  probe: Probe,
+): { at: number; kind: EndKind } | null {
+  let end: { at: number; kind: EndKind } | null =
+    ownHook?.end !== undefined ? { at: ownHook.at, kind: ownHook.end } : null
+  // Managed permission waits notify from RunProvider after their keyed delay; task notices
+  // must not announce the same wait immediately. A blocked Stop is not a quiet task either.
+  if (isBlockedManagedEnd(end, ownHook, run)) end = null
+  // Esc leaves no hook behind; the transcript says so.
+  const canCheckInterrupt =
+    proc?.transcript != null && transcript !== null && (end === null || transcript > end.at)
+  if (canCheckInterrupt && interruptedIn(probe.tail(proc.transcript as string, 8192))) {
+    end = { at: transcript, kind: "interrupted" }
+  }
+  return end
+}
+
 /** One task's signals, or null when no session ever spoke for it. */
 export async function readLive(
   ctx: Ctx,
@@ -218,32 +112,14 @@ export async function readLive(
   const dir = liveDir(task.runtimeDir)
   const now = ctx.clock.now()
   const session = await readSession(ctx, task)
-  const cliRow = await readJson<CliRow>(ctx, join(dir, "cli.json"))
-  // `gate wait` and every command touch the session's heartbeat: that is a QualityLayer call too.
-  const heartbeat = session?.heartbeat ?? null
-  const cli =
-    cliRow !== null && (heartbeat === null || cliRow.at >= heartbeat)
-      ? cliRow
-      : heartbeat !== null
-        ? { at: heartbeat, command: cliRow?.command ?? "" }
-        : null
-  // `question ask` writes {at, id, pid, waiting} at once and every 20 s.
-  const heart = await readJson<{ at?: unknown; pid?: unknown; waiting?: unknown }>(
+  const { cli, question, ask } = await readCliAndQuestion(
     ctx,
-    join(task.runtimeDir, QUESTION_HEARTBEAT),
+    dir,
+    task.runtimeDir,
+    session?.heartbeat ?? null,
+    probe,
   )
-  const question = typeof heart?.at === "number" ? heart.at : null
-  const ask =
-    typeof heart?.at === "number" && typeof heart.pid === "number"
-      ? { at: heart.at, waiting: heart.waiting === true, alive: probe.alive(heart.pid) }
-      : null
-
-  const keys = (await list(ctx, dir)).filter((name) => !name.includes("."))
-  const hooks = new Map<string, HookRow>()
-  for (const key of keys) {
-    const row = await readJson<HookRow>(ctx, join(dir, key, "hook.json"))
-    if (row !== null) hooks.set(key, row)
-  }
+  const hooks = await readHooks(ctx, dir)
   if (hooks.size === 0 && cli === null && question === null) return null
 
   // The owner is the session of the latest workflow call; before any, the newest that spoke.
@@ -263,49 +139,15 @@ export async function readLive(
     owner === null
       ? null
       : await readJson<{ pid: number; at: number }>(ctx, processGonePath(task.runtimeDir, owner))
-  if (probe === realProbe && pid !== undefined && owner !== null && processState === "alive")
+  if (probe === realProbe && pid !== undefined && owner !== null && processState === "alive") {
     watchProcess(ctx, task.runtimeDir, owner, pid, probe)
+  }
 
-  let tool: LiveSignals["tool"] = null
-  if (owner !== null) {
-    for (const name of await list(ctx, join(dir, owner, "open"))) {
-      const open = await readJson<OpenTool>(ctx, join(dir, owner, "open", name))
-      if (open === null || now - open.at > OPEN_TOOL_MAX_MS) continue
-      if (tool === null || open.at < tool.at) tool = { at: open.at, words: open.words }
-    }
-  }
-  const agents: LiveSignals["agents"] = []
-  if (owner !== null) {
-    for (const name of await list(ctx, join(dir, owner, "agents"))) {
-      const row = await readJson<SubagentRow>(ctx, join(dir, owner, "agents", name))
-      if (row !== null)
-        agents.push({ id: row.id, words: row.words, started: row.started, stopped: row.stopped })
-    }
-    agents.sort((a, b) => a.started - b.started)
-  }
+  const tool = owner !== null ? await readOpenTool(ctx, dir, owner, now) : null
+  const agents = owner !== null ? await readSubagents(ctx, dir, owner) : []
   const todo = owner !== null ? await readTodo(ctx, join(dir, owner)) : null
-
   const transcript = proc?.transcript != null ? probe.mtime(proc.transcript) : null
-  let end: { at: number; kind: EndKind } | null =
-    ownHook?.end !== undefined ? { at: ownHook.at, kind: ownHook.end } : null
-  if (ownHook?.run) {
-    // Managed permission waits notify from RunProvider after their keyed delay; task notices
-    // must not announce the same wait immediately. A blocked Stop is not a quiet task either.
-    if (
-      end?.kind === "permission" ||
-      (end?.kind === "turn-end" &&
-        (!run || run.generation !== ownHook.run.generation || !acceptedTurnBoundary(run)))
-    )
-      end = null
-  }
-  // Esc leaves no hook behind; the transcript says so.
-  if (
-    proc?.transcript != null &&
-    transcript !== null &&
-    (end === null || transcript > end.at) &&
-    interruptedIn(probe.tail(proc.transcript, 8192))
-  )
-    end = { at: transcript, kind: "interrupted" }
+  let end = resolveEnd(ownHook, run, proc, transcript, probe)
 
   const agent = ownHook?.agent ?? proc?.agent ?? newest?.agent ?? session?.agent ?? null
   const limit =
@@ -339,134 +181,4 @@ export async function readLive(
     ...(todo !== null ? { todo } : {}),
     ...(limit !== null ? { limit: await limitFact(ctx, limit, ownHook?.run?.id ?? null) } : {}),
   }
-}
-
-/**
- * The stop as the App shows it, with the resume planned for it (limits/resume.ts keeps it with the
- * run): when the agent is told to go on and the run to cancel it on; null for both when none is.
- */
-async function limitFact(
-  ctx: Ctx,
-  stop: LimitStop,
-  run: string | null,
-): Promise<NonNullable<LiveSignals["limit"]>> {
-  const entry =
-    run === null
-      ? null
-      : await readJson<{ state?: unknown; stopKey?: unknown; resumeAt?: unknown }>(
-          ctx,
-          join(runDir(ctx.home, run), "limit-resume.json"),
-        )
-  const planned =
-    entry?.state === "scheduled" && entry.stopKey === stop.key && typeof entry.resumeAt === "number"
-  return {
-    at: stop.at,
-    resetsAt: stop.resetsAt,
-    window: stop.window,
-    resumeAt: planned ? (entry.resumeAt as number) : null,
-    run,
-  }
-}
-
-/**
- * The plan-limit stop of the task's owning session, for a report outside the App (`status`): the
- * same look as `readLive` makes, from the owner's process and hook rows.
- */
-export async function readLimit(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-  probe: Probe = realProbe,
-): Promise<LiveSignals["limit"] | null> {
-  const dir = liveDir(task.runtimeDir)
-  const owner = (await readJson<OwnerRow>(ctx, join(dir, "owner.json")))?.key ?? null
-  if (owner === null) return null
-  const proc = await readJson<ProcessRow>(ctx, join(dir, owner, "process.json"))
-  const hook = await readJson<HookRow>(ctx, join(dir, owner, "hook.json"))
-  const cli = await readJson<CliRow>(ctx, join(dir, "cli.json"))
-  const stop = limitStopOf(
-    probe,
-    proc?.agent ?? hook?.agent ?? null,
-    proc?.transcript ?? null,
-    Math.max(hook?.at ?? 0, cli?.at ?? 0),
-    ctx.clock.now(),
-    hook?.run?.id ?? null,
-  )
-  return stop === null ? null : limitFact(ctx, stop, hook?.run?.id ?? null)
-}
-
-/**
- * Whether something may still wake the step's owning session by itself after its turn ended, so the
- * turn end is no wait on the person (agents/wakes.ts per agent). An agent whose harness never wakes
- * it: false. One whose record says what is open: that record (background.ts), Claude Code's as
- * a4437dd3a read it. One whose record cannot say, or an agent not known: true.
- */
-export async function readBackground(ctx: Ctx, task: Pick<Task, "runtimeDir">): Promise<boolean> {
-  const dir = liveDir(task.runtimeDir)
-  const owner = (await readJson<OwnerRow>(ctx, join(dir, "owner.json")))?.key ?? null
-  if (owner === null) return false
-  const proc = await readJson<ProcessRow>(ctx, join(dir, owner, "process.json"))
-  const hook = await readJson<HookRow>(ctx, join(dir, owner, "hook.json"))
-  const agent = proc?.agent ?? hook?.agent ?? null
-  const wakes = wakesOf(agent)
-  if (wakes.wakes === "alone") return false
-  if (wakes.wakes === "unknown") return true
-  const record = proc?.transcript ?? null
-  const session = proc?.sessionId ?? null
-  switch (wakes.record) {
-    case "claude-transcript":
-      return record !== null && readBackgroundShells(record)
-    // The databases are asked only at a turn end, the one moment the answer is used.
-    case "codex-goals":
-      if (hook?.end !== "turn-end") return false
-      return codexGoalActive(ctx, session)
-    case "opencode-database":
-      if (hook?.end !== "turn-end") return false
-      return session === null || opencodeOpenWork(ctx, session)
-    default: {
-      const path = agentRecord(ctx, agent, wakes.record, record, session)
-      return path === null || readOpen(wakes.record, path, true)
-    }
-  }
-}
-
-/** The record file of a Copilot, Grok or Antigravity session: the one its hooks named, else found by id. */
-function agentRecord(
-  ctx: Ctx,
-  agent: string | null,
-  record: "copilot-events" | "grok-updates" | "antigravity-transcript",
-  transcript: string | null,
-  session: string | null,
-): string | null {
-  const named =
-    transcript === null
-      ? null
-      : record === "copilot-events" && basename(transcript) === "events.jsonl"
-        ? transcript
-        : record === "grok-updates" && /[\\/]\.grok[\\/]sessions[\\/]/.test(transcript)
-          ? join(dirname(transcript), "updates.jsonl")
-          : null
-  if (named !== null) return named
-  if (session === null || (agent !== "copilot" && agent !== "grok" && agent !== "antigravity"))
-    return transcript
-  return ownRecordPath(ctx, agent, ctx.env.cwd(), session) ?? transcript
-}
-
-/** QualityLayer's own refusal for the task, when one is open: what it is and how often it came. */
-export async function readRefusal(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<
-  (Pick<ErrorRow, "lead" | "words" | "count" | "at" | "since"> & { errors: number }) | null
-> {
-  const row = await readJson<ErrorRow>(ctx, join(liveDir(task.runtimeDir), "errors.json"))
-  return row === null
-    ? null
-    : {
-        lead: row.lead,
-        words: row.words,
-        count: row.count,
-        errors: row.errors ?? 1,
-        at: row.at,
-        since: row.since,
-      }
 }

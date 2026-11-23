@@ -5,8 +5,11 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import type { Call } from "./transcripts.ts"
+import { copilotCall, copilotText } from "./usage-copilot-call.ts"
 import { type Candidate, FILES_MAX, listed } from "./usage-files.ts"
 import type { ChunkParser } from "./usage-parsers.ts"
+
+export { copilotCall }
 
 const RECORD = "events.jsonl"
 
@@ -25,77 +28,6 @@ export async function copilotFiles(ctx: Ctx, base: string, since: number): Promi
   return found
 }
 
-const count = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
-
-const text = (value: unknown): string | null =>
-  typeof value === "string" && value !== "" ? value : null
-
-/** Whether the call ran on the person's own key (BYOK) rather than the Copilot plan. */
-function ownKey(usage: Record<string, unknown>): boolean {
-  if (usage.isByok === true) return true
-  const provider = usage.provider
-  if (typeof provider !== "object" || provider === null) return false
-  const { kind } = provider as { kind?: unknown }
-  return typeof kind === "string" && kind !== "copilot" && kind !== "loki"
-}
-
-/**
- * The call a `session.usage_record` row is, or null for any other row. Its id uses the
- * accounting identity, then its API call id or event id. Legacy `cost` is premium requests.
- * Current server-reported credit usage is kept separately from native dollar charges.
- */
-export function copilotCall(row: unknown): Call | null {
-  if (typeof row !== "object" || row === null) return null
-  const { type, data, timestamp, id } = row as {
-    type?: unknown
-    data?: unknown
-    timestamp?: unknown
-    id?: unknown
-  }
-  if (type !== "session.usage_record" || typeof data !== "object" || data === null) return null
-  const usage = (data as { usage?: Record<string, unknown> }).usage
-  if (typeof usage !== "object" || usage === null || typeof usage.model !== "string") return null
-  const read = count(usage.cacheReadTokens)
-  const write = count(usage.cacheWriteTokens)
-  const at = typeof timestamp === "string" ? Date.parse(timestamp) : Number.NaN
-  const accounting = usage.accounting as
-    | { sourceSessionId?: unknown; usageId?: unknown }
-    | undefined
-  const source = text(accounting?.sourceSessionId)
-  const usageId = text(accounting?.usageId)
-  const key =
-    source && usageId ? JSON.stringify([source, usageId]) : (text(usage.apiCallId) ?? text(id))
-  const nano = (usage.copilotUsage as { totalNanoAiu?: unknown } | undefined)?.totalNanoAiu
-  const keyBilling = ownKey(usage)
-  const status = usage.aiCreditsStatus
-  const available =
-    status !== "unavailable" && typeof nano === "number" && Number.isFinite(nano) && nano >= 0
-  const nativeCredits: NonNullable<Call["nativeCredits"]> = {
-    status: available ? (status === "partial" ? "partial" : "complete") : "unavailable",
-    ...(available ? { amount: nano / 1_000_000_000 } : {}),
-  }
-  return {
-    ...(key === null ? {} : { id: key }),
-    ...((text(id) ?? text(usage.apiCallId))
-      ? { legacyIds: [String(text(id) ?? text(usage.apiCallId))] }
-      : {}),
-    ...(source && usageId ? { accountingId: JSON.stringify([source, usageId]) } : {}),
-    ...(!keyBilling ? { nativeCredits } : {}),
-    ...(available && !keyBilling ? { reportedCreditValueUsd: nano / 100_000_000_000 } : {}),
-    billing: keyBilling ? "key" : "plan",
-    at: Number.isNaN(at) ? null : at,
-    model: usage.model,
-    tokens: {
-      input: Math.max(0, count(usage.inputTokens) - read - write),
-      output: count(usage.outputTokens),
-      cacheRead: read,
-      cacheWrite5m: write,
-      cacheWrite1h: 0,
-    },
-  }
-}
-
 /** Compaction usage may omit its model; the behavior model is attribution, never a price alias. */
 function compactionCall(row: Record<string, unknown>): Call | null {
   const data = row.data as
@@ -107,7 +39,7 @@ function compactionCall(row: Record<string, unknown>): Call | null {
     | undefined
   const usage = data?.compactionTokensUsed
   if (!usage) return null
-  const key = text(data.requestId) ?? text(row.id)
+  const key = copilotText(data.requestId) ?? copilotText(row.id)
   if (key === null) return null
   return copilotCall({
     ...row,
@@ -115,7 +47,7 @@ function compactionCall(row: Record<string, unknown>): Call | null {
     data: {
       usage: {
         ...usage,
-        model: text(usage.model) ?? text(data.behaviorModelId) ?? "unknown",
+        model: copilotText(usage.model) ?? copilotText(data.behaviorModelId) ?? "unknown",
         apiCallId: key,
       },
     },
@@ -132,7 +64,7 @@ function recordUsage(
   const usage = (
     row.data as { usage?: { apiCallId?: unknown; accounting?: { usageId?: unknown } } } | undefined
   )?.usage
-  for (const id of [text(usage?.apiCallId), text(usage?.accounting?.usageId)])
+  for (const id of [copilotText(usage?.apiCallId), copilotText(usage?.accounting?.usageId)])
     if (id) mirrored.add(id)
   const key = call.id ?? `#${calls.size}`
   call.id = key
@@ -141,28 +73,32 @@ function recordUsage(
   calls.set(key, call)
 }
 
+function parseCopilotLine(
+  line: string,
+  calls: Map<string, Call>,
+  mirrored: Set<string>,
+  compactions: Map<string, Call>,
+): void {
+  if (!line.includes('"session.usage_record"') && !line.includes('"session.compaction_complete"'))
+    return
+  try {
+    const row = JSON.parse(line)
+    if (row.type === "session.compaction_complete") {
+      const call = compactionCall(row)
+      if (call?.id) compactions.set(call.id, call)
+    } else recordUsage(row, calls, mirrored)
+  } catch {
+    // A torn last line of a record still being written.
+  }
+}
+
 export function copilotParser(): ChunkParser {
   const calls = new Map<string, Call>()
   const mirrored = new Set<string>()
   const compactions = new Map<string, Call>()
   return {
     chunk(chunk) {
-      for (const line of chunk.split("\n")) {
-        if (
-          !line.includes('"session.usage_record"') &&
-          !line.includes('"session.compaction_complete"')
-        )
-          continue
-        try {
-          const row = JSON.parse(line)
-          if (row.type === "session.compaction_complete") {
-            const call = compactionCall(row)
-            if (call?.id) compactions.set(call.id, call)
-          } else recordUsage(row, calls, mirrored)
-        } catch {
-          // A torn last line of a record still being written.
-        }
-      }
+      for (const line of chunk.split("\n")) parseCopilotLine(line, calls, mirrored, compactions)
     },
     finish: () => [
       ...calls.values(),

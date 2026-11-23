@@ -63,17 +63,22 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
 
 export const DIAGRAM_FONT = "Geist, system-ui, sans-serif"
 
+const DIAGRAM_KINDS: Record<string, string> = {
+  sequenceDiagram: "sequence",
+  classDiagram: "class",
+  erDiagram: "data",
+  mindmap: "commands",
+}
+
 /**
  * What kind of diagram a source draws, in the word the App names it by: "sequence", "flow",
  * "architecture". The diagram frame and the Plan's decision cards both use it.
  */
 export function diagramKind(source: string): string {
   const head = /^\s*(?:%%\{[^\n]*\}%%\s*)?([A-Za-z-]+)/.exec(source)?.[1] ?? ""
-  if (head === "sequenceDiagram") return "sequence"
   if (head.startsWith("state")) return "state"
-  if (head === "classDiagram") return "class"
-  if (head === "erDiagram") return "data"
-  if (head === "mindmap") return "commands"
+  const mapped = DIAGRAM_KINDS[head]
+  if (mapped !== undefined) return mapped
   // A flowchart with a question in it (a diamond) is a decision; without one it shows the parts.
   return /\w\s*\{[^{}]+\}/.test(source) ? "flow" : "architecture"
 }

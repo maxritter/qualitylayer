@@ -8,67 +8,88 @@ export type SourceRequest = { path: string; stamp: string; side: "old" | "new" }
 export type ReviewSource = SourceRequest & { content: string }
 export type SourceLoader = (request: SourceRequest) => Promise<ReviewSource>
 
+function buildSourceRequest(
+  file: WalkFile | undefined,
+  enabled: boolean,
+  part?: FilePart,
+): SourceRequest | null {
+  if (!enabled || !file) return null
+  return {
+    path: file.path,
+    stamp: part?.stamp ?? file.stamp ?? "",
+    side: (part?.part?.status ?? file.status) === "D" ? "old" : "new",
+  }
+}
+
+async function fetchValidatedSource(
+  request: SourceRequest,
+  load: SourceLoader,
+): Promise<ReviewSource> {
+  const source = await load(request)
+  if (
+    source.path !== request.path ||
+    source.stamp !== request.stamp ||
+    source.side !== request.side
+  ) {
+    throw new Error("The file revision changed. Refresh Review before reading this source.")
+  }
+  return source
+}
+
+type SourceResult = { identity: string; data?: ReviewSource; error?: string }
+
+function subscribeSourceLoad(
+  request: SourceRequest | null,
+  identity: string,
+  load: SourceLoader | undefined,
+  cache: Map<string, ReviewSource>,
+  setResult: (next: SourceResult) => void,
+): (() => void) | undefined {
+  if (request === null) return undefined
+  if (!request.stamp || !load) {
+    setResult({
+      identity,
+      error: "An exact task-owned file revision is not available. Read the diff instead.",
+    })
+    return undefined
+  }
+  const known = cache.get(identity)
+  if (known) {
+    setResult({ identity, data: known })
+    return undefined
+  }
+  let live = true
+  setResult({ identity })
+  void fetchValidatedSource(request, load)
+    .then((source) => {
+      if (!live) return
+      cache.set(identity, source)
+      setResult({ identity, data: source })
+    })
+    .catch((cause: unknown) => {
+      if (live)
+        setResult({ identity, error: cause instanceof Error ? cause.message : String(cause) })
+    })
+  return () => {
+    live = false
+  }
+}
+
 export function useReviewSource(
   file: WalkFile | undefined,
   enabled: boolean,
   load: SourceLoader | undefined,
   part?: FilePart,
 ) {
-  const request = useMemo(
-    () =>
-      !enabled || !file
-        ? null
-        : {
-            path: file.path,
-            stamp: part?.stamp ?? file.stamp ?? "",
-            side: (part?.part?.status ?? file.status) === "D" ? ("old" as const) : ("new" as const),
-          },
-    [enabled, file, part],
-  )
+  const request = useMemo(() => buildSourceRequest(file, enabled, part), [enabled, file, part])
   const [attempt, retry] = useState(0)
   const identity = JSON.stringify([request, attempt])
   const cache = useRef(new Map<string, ReviewSource>())
-  const [result, setResult] = useState<{
-    identity: string
-    data?: ReviewSource
-    error?: string
-  } | null>(null)
-  useEffect(() => {
-    if (request === null) return
-    if (!request.stamp || !load) {
-      setResult({
-        identity,
-        error: "An exact task-owned file revision is not available. Read the diff instead.",
-      })
-      return
-    }
-    const known = cache.current.get(identity)
-    if (known) {
-      setResult({ identity, data: known })
-      return
-    }
-    let live = true
-    setResult({ identity })
-    void load(request)
-      .then((source) => {
-        if (
-          source.path !== request.path ||
-          source.stamp !== request.stamp ||
-          source.side !== request.side
-        )
-          throw new Error("The file revision changed. Refresh Review before reading this source.")
-        if (!live) return
-        cache.current.set(identity, source)
-        setResult({ identity, data: source })
-      })
-      .catch((cause: unknown) => {
-        if (live)
-          setResult({ identity, error: cause instanceof Error ? cause.message : String(cause) })
-      })
-    return () => {
-      live = false
-    }
-  }, [request, identity, load])
+  const [result, setResult] = useState<SourceResult | null>(null)
+  useEffect(
+    () => subscribeSourceLoad(request, identity, load, cache.current, setResult),
+    [request, identity, load],
+  )
   return {
     source: result?.identity === identity ? result.data : undefined,
     error: result?.identity === identity ? result.error : undefined,

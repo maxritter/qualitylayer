@@ -35,6 +35,18 @@ const repairOf = (ctx: Ctx, agent: unknown): Promise<Result<unknown>> | Result<u
     ? repairAgent(ctx, agent)
     : err({ code: "bad_args", message: `agent: expected ${NATIVE_AGENTS.join(", ")}` })
 
+async function handleAgentCheck(
+  ctx: Ctx,
+  paired: () => boolean,
+  readBody: () => Promise<Record<string, unknown>>,
+): Promise<Result<unknown> | Response> {
+  if (!paired()) return refusal("check installed agents")
+  const agent = (await readBody()).agent
+  if (agent !== undefined && !isNativeAgent(agent))
+    return err({ code: "bad_args", message: "Unknown native agent" })
+  return ok({ agents: await checkAgentHealth(ctx, agent === undefined ? undefined : [agent]) })
+}
+
 /**
  * The answer to `/api/agents`, `/check`, `/integration`, `/repair`, `/api/tools` or `/api/tools/check`: a result for the caller to send,
  * a response when the caller may not do it, or null for any other path.
@@ -47,13 +59,7 @@ export async function agentSetupRoute(
   readBody: () => Promise<Record<string, unknown>>,
 ): Promise<Result<unknown> | Response | null> {
   if (request.method !== "POST") return request.method === "GET" ? readRoute(ctx, path) : null
-  if (path === "/api/agents/check") {
-    if (!paired()) return refusal("check installed agents")
-    const agent = (await readBody()).agent
-    if (agent !== undefined && !isNativeAgent(agent))
-      return err({ code: "bad_args", message: "Unknown native agent" })
-    return ok({ agents: await checkAgentHealth(ctx, agent === undefined ? undefined : [agent]) })
-  }
+  if (path === "/api/agents/check") return handleAgentCheck(ctx, paired, readBody)
   if (path === "/api/tools/check")
     return paired() ? ok({ tools: await readTools(ctx, true) }) : refusal("check git and gh")
   if (path === "/api/agents/repair")

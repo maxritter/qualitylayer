@@ -4,17 +4,18 @@
 // it says what it read, what it found, and what it could not read. A scanner that is missing, timed out
 // or could not parse a file is "not checked" for that part, never clean.
 
-import { createHash } from "node:crypto"
 import { lstatSync, realpathSync } from "node:fs"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { Ctx } from "../../../ctx.ts"
-import { diagnostic, parseSarif, runQualityProcess } from "../engine.ts"
+import { diagnostic, runQualityProcess } from "../engine.ts"
 import { toolHome } from "../setup.ts"
 import type { QualityFinding, QualityRunner } from "../types.ts"
 import { SCANNERS, type ScannerId } from "./registry.ts"
-import rules from "./rules.yml" with { type: "text" }
+import { DRIVERS, MAX_FILE_BYTES, rulesFile } from "./scan-drivers.ts"
 import { scannerEnvironment, scannerPath } from "./setup.ts"
+
+export { scanBrief, scanLine } from "./scan-drivers.ts"
 
 export type ScanKind = "secrets" | "dependencies" | "workflows" | "code"
 export const SCAN_KINDS: readonly ScanKind[] = ["secrets", "dependencies", "workflows", "code"]
@@ -29,6 +30,8 @@ export type ScanFinding = Pick<
   QualityFinding,
   "id" | "rule" | "message" | "path" | "line" | "endLine"
 >
+
+export type Missed = { path?: string; reason: string }
 
 /** One scanner's record: what it read, what it found, and what it could not read. */
 export type ScanResult = {
@@ -57,7 +60,6 @@ export type ScanOptions = {
 }
 
 const MAX_FILES = 2000
-const MAX_FILE_BYTES = 2 * 1024 * 1024
 const CHUNK = 200
 const MAX_FINDINGS = 200
 const BUDGET_MS: Readonly<Record<ScanKind, number>> = {
@@ -118,6 +120,34 @@ export function within(root: string, path: string, self = false): boolean {
   return !isAbsolute(inside) && inside !== ".." && !inside.startsWith(`..${sep}`)
 }
 
+function resolveRealParentFile(full: string): string | null {
+  try {
+    return join(realpathSync(dirname(full)), basename(full))
+  } catch {
+    return null
+  }
+}
+
+function classifyReadablePath(
+  root: string,
+  realRoot: string,
+  path: string,
+): { file?: string; skipped?: Missed } {
+  const full = resolve(root, path)
+  const entry = lstatSync(full, { throwIfNoEntry: false })
+  if (entry === undefined) return {}
+  // The parent folder's real path (every link above the file followed); the file itself must not be a
+  // link. Resolving the parent also keeps a backslash in a Unix name, which Bun's realpath misreads.
+  const real = resolveRealParentFile(full)
+  const outside = !within(root, full) || real === null || !within(realRoot, real)
+  if (outside || entry.isSymbolicLink())
+    return { skipped: { path, reason: "outside the repository, or reached through a link" } }
+  if (!entry.isFile()) return {}
+  if (entry.size > MAX_FILE_BYTES) return { skipped: { path, reason: "larger than 2 MB" } }
+  const lexical = relative(root, full)
+  return { file: sep === "/" ? lexical : lexical.split(sep).join("/") }
+}
+
 /**
  * The changed files a scan may read: regular files whose real path (every parent folder's link
  * followed) lies inside the repository's real root, at most 2 MB. A deleted path is no input. A path
@@ -131,28 +161,9 @@ export function readable(
   const files: string[] = []
   const skipped: Missed[] = []
   for (const path of paths) {
-    const full = resolve(root, path)
-    const lexical = relative(root, full)
-    const entry = lstatSync(full, { throwIfNoEntry: false })
-    if (entry === undefined) continue
-    // The parent folder's real path (every link above the file followed); the file itself must not be a
-    // link. Resolving the parent also keeps a backslash in a Unix name, which Bun's realpath misreads.
-    let real: string | null = null
-    try {
-      real = join(realpathSync(dirname(full)), basename(full))
-    } catch {
-      real = null
-    }
-    if (!within(root, full) || real === null || !within(realRoot, real) || entry.isSymbolicLink()) {
-      skipped.push({ path, reason: "outside the repository, or reached through a link" })
-      continue
-    }
-    if (!entry.isFile()) continue
-    if (entry.size > MAX_FILE_BYTES) {
-      skipped.push({ path, reason: "larger than 2 MB" })
-      continue
-    }
-    files.push(sep === "/" ? lexical : lexical.split(sep).join("/"))
+    const check = classifyReadablePath(root, realRoot, path)
+    if (check.file !== undefined) files.push(check.file)
+    if (check.skipped !== undefined) skipped.push(check.skipped)
   }
   const unique = [...new Set(files)]
   for (const path of unique.slice(MAX_FILES))
@@ -160,189 +171,29 @@ export function readable(
   return { files: unique.slice(0, MAX_FILES), skipped }
 }
 
-/** A path operand no scanner can read as an option: `./` before every repository-relative path. */
-const operand = (path: string) => `./${path}`
-
-const findingId = (f: Omit<ScanFinding, "id">) =>
-  createHash("sha256")
-    .update(JSON.stringify([f.rule, f.path, f.line, f.message]))
-    .digest("hex")
-    .slice(0, 24)
-
 function chunks<T>(items: readonly T[], size = CHUNK): T[][] {
   const out: T[][] = []
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
 }
 
-type Driver = {
-  argv: (binary: string, files: string[], extra: { rulesPath: string; local: boolean }) => string[]
-  /** Exit codes that mean the scan ran (with or without findings). */
-  ran: (code: number | null) => boolean
-  read: (
-    stdout: string,
-    stderr: string,
-    root: string,
-  ) => { findings: ScanFinding[]; notChecked: { path?: string; reason: string }[] }
-  /** Each file in its own run (OSV reads lockfiles one by one), or in batches. */
-  batch: boolean
+type ScanOneRequest = {
+  ctx: Ctx
+  root: string
+  kind: ScanKind
+  files: string[]
+  options: ScanOptions
+  skipped: Missed[]
 }
 
-const fromSarif = (stdout: string, root: string): ScanFinding[] => {
-  const found: QualityFinding[] = []
-  parseSarif(stdout, root, found)
-  return found.map(({ rule, message, path, line, endLine }) => {
-    const f = { rule, message: message.slice(0, 300), path, line, endLine }
-    return { ...f, id: findingId(f) }
-  })
-}
-
-const DRIVERS: Readonly<Record<ScanKind, Driver>> = {
-  secrets: {
-    argv: (bin, files) => [
-      bin,
-      "dir",
-      ...files.map(operand),
-      "--no-banner",
-      "--no-color",
-      "--redact",
-      "--exit-code",
-      "0",
-      "-l",
-      "error",
-      "--max-target-megabytes",
-      "2",
-      "-f",
-      "sarif",
-      "-r",
-      "-",
-    ],
-    ran: (code) => code === 0,
-    read: (stdout, _stderr, root) => ({ findings: fromSarif(stdout, root), notChecked: [] }),
-    batch: true,
-  },
-  dependencies: {
-    // No build scripts (call analysis off) and no transitive resolution: only the lockfile's own pins.
-    argv: (bin, files, { local }) => [
-      bin,
-      "scan",
-      "source",
-      ...files.flatMap((file) => ["-L", operand(file)]),
-      "--format",
-      "sarif",
-      "--no-call-analysis=all",
-      "--no-resolve",
-      "--verbosity",
-      "error",
-      ...(local ? ["--offline-vulnerabilities", "--download-offline-databases"] : []),
-    ],
-    ran: (code) => code === 0 || code === 1,
-    read: (stdout, _stderr, root) => ({ findings: fromSarif(stdout, root), notChecked: [] }),
-    batch: true,
-  },
-  workflows: {
-    argv: (bin, files) => [
-      bin,
-      "--offline",
-      "--no-progress",
-      "--no-exit-codes",
-      "--format",
-      "sarif",
-      ...files.map(operand),
-    ],
-    ran: (code) => code === 0,
-    read: (stdout, stderr, root) => ({
-      findings: fromSarif(stdout, root),
-      // zizmor skips a workflow GitHub's schema rejects with a warning only: that file is not checked.
-      notChecked: [...stderr.matchAll(/failed to (?:validate|load) file:\/\/(\S+?) as/g)].map(
-        (m) => ({
-          path: (m[1] ?? "").replace(/^\.\//, ""),
-          reason: "does not match GitHub's workflow schema",
-        }),
-      ),
-    }),
-    batch: true,
-  },
-  code: {
-    argv: (bin, files, { rulesPath }) => [
-      bin,
-      "scan",
-      "--taint-intrafile",
-      "--config",
-      rulesPath,
-      "--json",
-      "--quiet",
-      "-j",
-      "2",
-      "--timeout",
-      "10",
-      "--max-target-bytes",
-      String(MAX_FILE_BYTES),
-      ...files.map(operand),
-    ],
-    ran: (code) => code === 0 || code === 1,
-    read: (stdout) => {
-      const report = JSON.parse(stdout) as {
-        results?: {
-          check_id?: string
-          path?: string
-          start?: { line?: number }
-          end?: { line?: number }
-          extra?: { message?: string }
-        }[]
-        errors?: {
-          type?: unknown
-          level?: string
-          message?: string
-          path?: string
-          rule_id?: string
-        }[]
-      }
-      const findings = (report.results ?? []).map((r) => {
-        const f = {
-          rule: (r.check_id ?? "").replace(/^.*?(ql\.)/, "$1"),
-          message: diagnostic(r.extra?.message ?? "").slice(0, 300),
-          path: (r.path ?? "").replace(/^\.\//, ""),
-          line: r.start?.line ?? 1,
-          endLine: r.end?.line ?? r.start?.line ?? 1,
-        }
-        return { ...f, id: findingId(f) }
-      })
-      const notChecked: { path?: string; reason: string }[] = []
-      for (const error of report.errors ?? []) {
-        const spans = Array.isArray(error.type)
-          ? (error.type[1] as { path?: string }[] | undefined)
-          : undefined
-        const path = error.path ?? spans?.[0]?.path
-        if (error.rule_id !== undefined) throw new Error(`rule ${error.rule_id} did not load`)
-        if (path !== undefined)
-          notChecked.push({ path, reason: "OpenGrep could not parse all of it" })
-      }
-      return { findings, notChecked }
-    },
-    batch: true,
-  },
-}
-
-async function rulesFile(ctx: Ctx): Promise<string> {
-  const digest = createHash("sha256").update(rules).digest("hex").slice(0, 16)
-  const dir = join(toolHome(ctx), "tools", "opengrep", "state")
-  await mkdir(dir, { recursive: true, mode: 0o700 })
-  const path = join(dir, `rules-${digest}.yml`)
-  if (!lstatSync(path, { throwIfNoEntry: false })?.isFile())
-    await writeFile(path, rules, { mode: 0o600 })
-  return path
-}
-
-async function scanOne(
-  ctx: Ctx,
-  root: string,
-  kind: ScanKind,
-  files: string[],
-  options: ScanOptions,
-  /** Changed inputs of this kind the scan may not read: each is not checked. */
-  skipped: Missed[] = [],
-): Promise<ScanResult> {
+async function scanOne({
+  ctx,
+  root,
+  kind,
+  files,
+  options,
+  skipped,
+}: ScanOneRequest): Promise<ScanResult> {
   const id = SCANNER_OF[kind]
   const spec = SCANNERS[id]
   const started = performance.now()
@@ -364,11 +215,7 @@ async function scanOne(
       ? result("not_checked", { scanned: 0, notChecked: skipped })
       : result("not_needed", { scanned: 0 })
   const binary = options.binaries?.[id] !== undefined ? options.binaries[id] : scannerPath(ctx, id)
-  if (
-    binary === null ||
-    binary === undefined ||
-    !lstatSync(binary, { throwIfNoEntry: false })?.isFile()
-  )
+  if (!binary || !lstatSync(binary, { throwIfNoEntry: false })?.isFile())
     return result("not_checked", {
       scanned: 0,
       notChecked: [
@@ -399,8 +246,6 @@ async function scanOne(
     notChecked,
   })
 }
-
-type Missed = { path?: string; reason: string }
 
 /** Not checked when nothing was read, else findings over a partial read, else not checked over clean. */
 function finalState(missed: number, files: number, found: number): ScanResult["state"] {
@@ -479,88 +324,14 @@ export async function scanChanges(
   )
   return Promise.all(
     kinds.map((kind) =>
-      scanOne(
+      scanOne({
         ctx,
         root,
         kind,
-        targets[kind],
+        files: targets[kind],
         options,
-        unread[kind].map((path) => ({ path, reason: why.get(path) ?? "" })),
-      ),
+        skipped: unread[kind].map((path) => ({ path, reason: why.get(path) ?? "" })),
+      }),
     ),
   )
-}
-
-/** What a scan with nothing to read did not find changed. */
-const NOTHING_CHANGED: Readonly<Record<ScanKind, string>> = {
-  secrets: "file",
-  dependencies: "lockfile",
-  workflows: "GitHub workflow",
-  code: "JavaScript, TypeScript or Python",
-}
-
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-
-/** The first file a scan could not read, with why: `(a.ts: OpenGrep could not parse all of it)`. */
-function firstMissed(notChecked: readonly Missed[]): string {
-  const first = notChecked[0]
-  if (first === undefined) return ""
-  const where = first.path ? `${first.path}: ` : ""
-  return ` · ${notChecked.length} not checked (${where}${first.reason})`
-}
-
-/** One line per scan for `## Checks` and the CLI: what ran, on how much, and what it found. */
-export function scanLine(result: ScanResult): string {
-  const head = `${result.name} ${result.version} · ${result.kind}`
-  if (result.state === "off") return `${head} · off in Settings`
-  if (result.state === "not_needed")
-    return `${head} · not needed · no changed ${NOTHING_CHANGED[result.kind]}`
-  const found =
-    result.findings.length === 0
-      ? "none found"
-      : count(result.findings.length, "finding", "findings")
-  return `${head} · ${count(result.scanned, "file", "files")} · ${found}${firstMissed(result.notChecked)}`
-}
-
-/** At most this many findings reach the Security review's brief; the record keeps the rest. */
-const BRIEF_FINDINGS = 40
-
-/**
- * The scans as the Security review's first candidates: one line per scan, then the findings to confirm
- * or drop. Dependency advisories are grouped per lockfile so one old package does not fill the brief.
- */
-export function scanBrief(scans: { results: readonly ScanResult[] } | null): string {
-  if (scans === null) return "**Security scans:** none recorded; read the change without them."
-  const lines = scans.results.map((result) => `- ${scanLine(result)}`)
-  const findings = scans.results.flatMap((result) =>
-    result.kind === "dependencies"
-      ? [...new Set(result.findings.map((f) => f.path))].map(
-          (path) =>
-            `- dependencies · ${path} · ${result.findings.filter((f) => f.path === path).length} advisories (${result.findings
-              .filter((f) => f.path === path)
-              .slice(0, 6)
-              .map((f) => f.rule)
-              .join(", ")})`,
-        )
-      : result.findings.map(
-          (f) => `- ${result.kind} · ${f.path}:${f.line} · ${f.rule} · ${f.message}`,
-        ),
-  )
-  const shown = findings.slice(0, BRIEF_FINDINGS)
-  return [
-    "**Security scans** (QualityLayer ran them on this change; each finding is a candidate, not a verdict):",
-    ...lines,
-    ...(shown.length
-      ? [
-          "",
-          "Candidates to confirm with Reach, Impact and Defenses, or drop with a reason:",
-          ...shown,
-          ...(findings.length > shown.length
-            ? [
-                `- … ${findings.length - shown.length} more in \`qualitylayer quality scan --since <base>\``,
-              ]
-            : []),
-        ]
-      : []),
-  ].join("\n")
 }

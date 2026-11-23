@@ -31,45 +31,40 @@ function parse(args: string[]): { words: string[]; flags: Record<string, string[
   return { words, flags }
 }
 
-export async function needCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const [sub, ...rest] = args
-  if (sub === undefined || sub === "help") return err({ code: "bad_args", message: USAGE })
-  const task = await requireTask(ctx)
-  if (!task.ok) return task
+type LoadedTask = Awaited<ReturnType<typeof requireTask>> extends Result<infer T> ? T : never
 
-  if (sub === "list") {
-    return ok({ needs: await readNeeds(ctx, task.data) })
-  }
-  if (sub === "resolved") {
-    const done = await markResolved(ctx, task.data, rest[0] ?? "")
-    if (!done.ok) return done
-    return ok({
-      need: done.data.for,
-      state: "resolved",
-      instructions: `Availability recorded for ${done.data.for}; keep the prerequisite's verification evidence. This command runs no check and grants no permission or approval. Run \`qualitylayer next\`.`,
-    })
-  }
-  if (sub === "reopen") {
-    const [word, ...why] = rest
-    const back = await markReopened(ctx, task.data, word ?? "", why.join(" "))
-    if (!back.ok) return back
-    const autonomous = await autonomousNow(ctx, task.data)
-    if (task.data.answers === "terminal" && !autonomous) {
-      const chat = await terminalNeed(ctx, task.data, back.data, true)
-      return chat.ok ? ok({ need: back.data.for, state: "open", ...chat.data }) : chat
-    }
-    return ok({
-      need: back.data.for,
-      state: "open",
-      ...(autonomous ? { deferred_until: "verify" } : { wait: "qualitylayer wait" }),
-      instructions: autonomous
-        ? `Recorded as unverified for the person's review in Verify. Continue available work with \`qualitylayer next\`; ${back.data.for} remains unresolved.`
-        : `Open again; the App says what you did not find.`,
-    })
-  }
+async function needResolved(ctx: Ctx, task: LoadedTask, target: string): Promise<Result<unknown>> {
+  const done = await markResolved(ctx, task, target)
+  if (!done.ok) return done
+  return ok({
+    need: done.data.for,
+    state: "resolved",
+    instructions: `Availability recorded for ${done.data.for}; keep the prerequisite's verification evidence. This command runs no check and grants no permission or approval. Run \`qualitylayer next\`.`,
+  })
+}
 
+async function needReopen(ctx: Ctx, task: LoadedTask, rest: string[]): Promise<Result<unknown>> {
+  const [word, ...why] = rest
+  const back = await markReopened(ctx, task, word ?? "", why.join(" "))
+  if (!back.ok) return back
+  const autonomous = await autonomousNow(ctx, task)
+  if (task.answers === "terminal" && !autonomous) {
+    const chat = await terminalNeed(ctx, task, back.data, true)
+    return chat.ok ? ok({ need: back.data.for, state: "open", ...chat.data }) : chat
+  }
+  return ok({
+    need: back.data.for,
+    state: "open",
+    ...(autonomous ? { deferred_until: "verify" } : { wait: "qualitylayer wait" }),
+    instructions: autonomous
+      ? `Recorded as unverified for the person's review in Verify. Continue available work with \`qualitylayer next\`; ${back.data.for} remains unresolved.`
+      : `Open again; the App says what you did not find.`,
+  })
+}
+
+async function needRecord(ctx: Ctx, task: LoadedTask, args: string[]): Promise<Result<unknown>> {
   const { words, flags } = parse(args)
-  const recorded = await recordNeed(ctx, task.data, {
+  const recorded = await recordNeed(ctx, task, {
     words: words.join(" "),
     for: flags.for?.[0] ?? "",
     ...(flags.kind?.[0] !== undefined ? { kind: flags.kind[0] } : {}),
@@ -78,9 +73,9 @@ export async function needCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
   })
   if (!recorded.ok) return recorded
   const need = recorded.data
-  const autonomous = await autonomousNow(ctx, task.data)
-  if (task.data.answers === "terminal" && !autonomous) {
-    const chat = await terminalNeed(ctx, task.data, need)
+  const autonomous = await autonomousNow(ctx, task)
+  if (task.answers === "terminal" && !autonomous) {
+    const chat = await terminalNeed(ctx, task, need)
     return chat.ok ? ok({ need: need.for, state: need.state, ...chat.data }) : chat
   }
   return ok({
@@ -92,4 +87,25 @@ export async function needCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>
       ? `Recorded as unverified for the person's review in Verify. \`qualitylayer next\` continues available work without asking the person; ${need.for} remains unresolved. Never ask for a secret value or print it.`
       : `Recorded. The App asks the person. Never ask for a secret value or print it. Their answer reaches you with a later reply; build everything else meanwhile.`,
   })
+}
+
+function dispatchNeed(
+  ctx: Ctx,
+  task: LoadedTask,
+  sub: string,
+  rest: string[],
+  args: string[],
+): Promise<Result<unknown>> {
+  if (sub === "list") return readNeeds(ctx, task).then((needs) => ok({ needs }))
+  if (sub === "resolved") return needResolved(ctx, task, rest[0] ?? "")
+  if (sub === "reopen") return needReopen(ctx, task, rest)
+  return needRecord(ctx, task, args)
+}
+
+export async function needCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const [sub, ...rest] = args
+  if (sub === undefined || sub === "help") return err({ code: "bad_args", message: USAGE })
+  const task = await requireTask(ctx)
+  if (!task.ok) return task
+  return dispatchNeed(ctx, task.data, sub, rest, args)
 }

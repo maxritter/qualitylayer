@@ -104,6 +104,53 @@ function Opened({
   )
 }
 
+function findingFileStamp(walkthrough: WalkthroughView, filePath: string): string | undefined {
+  const entry = rowsOf(walkthrough)
+    .flatMap((row) => row.files)
+    .find((item) => item.path === filePath)
+  if (!entry) return undefined
+  if (entry.parts?.length === 1) return entry.parts[0]?.stamp
+  return entry.parts?.length ? undefined : entry.stamp
+}
+
+function isFinalGateDeciding(task: TaskDetail): boolean {
+  return (
+    task.gate !== null &&
+    task.gate.target === "final" &&
+    task.gate.decision === "pending" &&
+    !task.gate.settled
+  )
+}
+
+async function recordFindingDecision(params: {
+  api: WalkthroughApi
+  task: TaskDetail
+  walkthrough: WalkthroughView
+  finding: Parameters<NonNullable<Parameters<typeof ReviewWorkspace>[0]["onFinding"]>>[0]
+  kind: "adopted" | "dismissed"
+  reason?: string
+  reload?: () => void
+}): Promise<void> {
+  const { api, task, walkthrough, finding: f, kind, reason, reload } = params
+  const stamp = findingFileStamp(walkthrough, f.file)
+  if (kind === "adopted") {
+    await api.putComments(
+      task.id,
+      "final",
+      lineDraftsAfter(task, {
+        add: {
+          anchor: { file: f.file, side: "new", line: f.line, ...(stamp ? { stamp } : {}) },
+          remark: `${f.by}: ${f.what}`,
+          text: "",
+          ask: "change",
+        },
+      }),
+    )
+  }
+  await api.finding(task.id, f.id, { kind, ...(reason !== undefined ? { reason } : {}) })
+  reload?.()
+}
+
 function Workspace({
   task,
   api,
@@ -124,71 +171,48 @@ function Workspace({
   const { editor } = useEditor(api)
   const comments = useMemo(() => lineComments(task), [task])
   const readOnly = walkthrough.changeScope?.history !== undefined || checked !== undefined
-  const deciding =
-    task.gate !== null &&
-    task.gate.target === "final" &&
-    task.gate.decision === "pending" &&
-    !task.gate.settled
+  const deciding = !readOnly && isFinalGateDeciding(task)
+  const openAction =
+    !readOnly && offersHostActions()
+      ? { open: { editor, run: (path: string) => void openInEditor(api, task.id, editor, path) } }
+      : {}
+  const clearAction =
+    !readOnly && typeof api.clearTaskChanges === "function"
+      ? {
+          onClearChanges: async () => {
+            await api.clearTaskChanges?.(task.id)
+            reload?.()
+            onClose()
+          },
+        }
+      : {}
+  const loadDiff = (path: string, signal?: AbortSignal, revision?: string, since?: string) =>
+    api.fileDiff(task.id, path, {
+      signal,
+      ...(walkthrough.changeScope && revision && !since ? { revision } : {}),
+      ...(checked ? { checked } : {}),
+      ...(since ? { since } : {}),
+    })
+
   return (
     <ReviewWorkspace
       taskId={task.id}
       title={task.title}
       view={walkthrough}
       comments={comments}
-      deciding={!readOnly && deciding}
+      deciding={deciding}
       {...(!readOnly && onMark ? { onMark } : {})}
-      loadDiff={(path, signal, revision, since) =>
-        api.fileDiff(task.id, path, {
-          signal,
-          ...(walkthrough.changeScope && revision && !since ? { revision } : {}),
-          ...(checked ? { checked } : {}),
-          ...(since ? { since } : {}),
-        })
-      }
+      loadDiff={loadDiff}
       loadSource={(request) => api.reviewFileSource(task.id, request, checked)}
-      {...(!readOnly && offersHostActions()
-        ? { open: { editor, run: (path) => void openInEditor(api, task.id, editor, path) } }
-        : {})}
+      {...openAction}
       {...(!readOnly && task.findings !== undefined ? { findings: task.findings } : {})}
-      onFinding={async (f, kind, reason) => {
-        const file = rowsOf(walkthrough)
-          .flatMap((row) => row.files)
-          .find((entry) => entry.path === f.file)
-        const stamp =
-          file?.parts?.length === 1
-            ? file.parts[0]?.stamp
-            : file?.parts?.length
-              ? undefined
-              : file?.stamp
-        // Made a change request, it is the person's own draft on its line, as if they wrote it.
-        if (kind === "adopted")
-          await api.putComments(
-            task.id,
-            "final",
-            lineDraftsAfter(task, {
-              add: {
-                anchor: { file: f.file, side: "new", line: f.line, ...(stamp ? { stamp } : {}) },
-                remark: `${f.by}: ${f.what}`,
-                text: "",
-                ask: "change",
-              },
-            }),
-          )
-        await api.finding(task.id, f.id, { kind, ...(reason !== undefined ? { reason } : {}) })
-        reload?.()
-      }}
+      onFinding={(finding, kind, reason) =>
+        recordFindingDecision({ api, task, walkthrough, finding, kind, reason, reload })
+      }
       file={file}
       initialSlice={slice}
       onClose={onClose}
-      {...(!readOnly && typeof api.clearTaskChanges === "function"
-        ? {
-            onClearChanges: async () => {
-              await api.clearTaskChanges(task.id)
-              reload?.()
-              onClose()
-            },
-          }
-        : {})}
+      {...clearAction}
     />
   )
 }

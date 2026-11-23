@@ -24,6 +24,72 @@ export function latestSetupRuns(runs: readonly RunWindow[]): Map<NativeAgent, Ru
   return latest
 }
 
+function getOrCreateAttemptKey(attempts: Map<string, string>, key: string) {
+  let idempotencyKey = attempts.get(key)
+  if (!idempotencyKey) {
+    idempotencyKey = crypto.randomUUID()
+    attempts.set(key, idempotencyKey)
+  }
+  return idempotencyKey
+}
+
+async function launchSetupTerminal({
+  runs,
+  agent,
+  operation,
+  attempts,
+  observed,
+  check,
+  setVisible,
+}: {
+  runs: NonNullable<ReturnType<typeof useOptionalRuns>>
+  agent: NativeAgent
+  operation: AgentSetupOperation
+  attempts: Map<string, string>
+  observed: Map<NativeAgent, string>
+  check: (agent: NativeAgent) => Promise<void>
+  setVisible: (id: string | null) => void
+}) {
+  const key = `${agent}:${operation}`
+  const idempotencyKey = getOrCreateAttemptKey(attempts, key)
+  const run = await runs.start({
+    agent: "other",
+    purpose: {
+      kind: "terminal",
+      shell: true,
+      context: { kind: "agent-setup", agent, operation },
+    },
+    works: "checkout",
+    mode: "plain",
+    settings: { perm: "own", answers: "terminal" },
+    idempotencyKey,
+  })
+  if (setupRunning(run)) observed.set(agent, `${run.id}:${run.generation}`)
+  else {
+    observed.delete(agent)
+    await check(agent)
+  }
+  attempts.delete(key)
+  setVisible(run.id)
+}
+
+function reconcileObservedSetups(
+  latest: Map<NativeAgent, RunWindow>,
+  observed: Map<NativeAgent, string>,
+  check: (agent: NativeAgent) => Promise<void>,
+) {
+  for (const [agent, run] of latest) {
+    const key = `${run.id}:${run.generation}`
+    if (setupRunning(run)) {
+      observed.set(agent, key)
+      continue
+    }
+    if (observed.get(agent) !== key) continue
+    observed.delete(agent)
+    void check(agent)
+  }
+}
+
 export function useMachineSetup(api: MachineHealthApi) {
   const runs = useOptionalRuns()
   const health = useAgentHealth(api, { checkOnMount: true })
@@ -36,49 +102,24 @@ export function useMachineSetup(api: MachineHealthApi) {
   const selected = runs?.runs.find((run) => run.id === visible)
   const { check } = health
   useEffect(() => {
-    for (const [agent, run] of latest) {
-      const key = `${run.id}:${run.generation}`
-      if (setupRunning(run)) {
-        observed.current.set(agent, key)
-        continue
-      }
-      if (observed.current.get(agent) !== key) continue
-      observed.current.delete(agent)
-      void check(agent)
-    }
+    reconcileObservedSetups(latest, observed.current, check)
   }, [latest, check])
   const start = async (agent: NativeAgent, operation: AgentSetupOperation) => {
     if (!runs?.support?.canStart || starting !== null) return
     const existing = latest.get(agent)
     if (existing && setupRunning(existing)) return setVisible(existing.id)
-    const key = `${agent}:${operation}`
-    let idempotencyKey = attempts.current.get(key)
-    if (!idempotencyKey) {
-      idempotencyKey = crypto.randomUUID()
-      attempts.current.set(key, idempotencyKey)
-    }
     setStarting(agent)
     setError(null)
     try {
-      const run = await runs.start({
-        agent: "other",
-        purpose: {
-          kind: "terminal",
-          shell: true,
-          context: { kind: "agent-setup", agent, operation },
-        },
-        works: "checkout",
-        mode: "plain",
-        settings: { perm: "own", answers: "terminal" },
-        idempotencyKey,
+      await launchSetupTerminal({
+        runs,
+        agent,
+        operation,
+        attempts: attempts.current,
+        observed: observed.current,
+        check,
+        setVisible,
       })
-      if (setupRunning(run)) observed.current.set(agent, `${run.id}:${run.generation}`)
-      else {
-        observed.current.delete(agent)
-        await check(agent)
-      }
-      attempts.current.delete(key)
-      setVisible(run.id)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The setup terminal could not start.")
     } finally {

@@ -16,7 +16,7 @@ import {
   TriangleAlertIcon,
   WifiOffIcon,
 } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useState } from "react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,176 +24,48 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { sharedValue } from "../hooks.ts"
-import { machineFrame } from "./framed.ts"
-import { machineHash, machineRouteOf, useMachines } from "./machines-api.ts"
-import { fromParent, type RelayMachine, type Theme, toParent } from "./relay.ts"
+import {
+  addRequested,
+  chosenName,
+  clearAddRequest,
+  isConnected,
+  needsSignIn,
+  requestMenu,
+  resetFramedMachines,
+  type SwitchView,
+  switchActions,
+  THIS,
+  takeMenuRequest,
+  useAddRequested,
+  useFramedMachines,
+  useHash,
+  useHostTheme,
+  useSwitcherShown,
+  useSwitchView,
+  viewOf,
+  waitingElsewhere,
+} from "./machine-switch-state.ts"
+import type { RelayMachine } from "./relay.ts"
 import "./machines.css"
 
-/** The switcher as a page draws it: every machine, this computer first, and which one is chosen. */
-export type SwitchView = {
-  /** `this`, or a machine's id. */
-  chosen: string
-  machines: RelayMachine[]
-}
-
-export const THIS = "this"
-
-// ── What a page knows to draw the switcher from ──
-
-/** What this computer's page last sent a framed page; null until it did, and in a page that is not framed. */
-const framedList = sharedValue<SwitchView | null>(null)
-
-/** The theme this computer's page last sent a framed page; null until it did, and in a page that is not framed. */
-const framedTheme = sharedValue<Theme | null>(null)
-
-/** The theme of the page that frames this one: a machine's page shows as this computer's does. */
-export const useHostTheme = (): Theme | null => framedTheme.use()
-
-/** For tests: forget the list a frame was sent. */
-export const resetFramedMachines = (): void => {
-  framedList.set(null)
-  framedTheme.set(null)
-}
-
-/**
- * Keeps the list the page that frames this one sends: only its window and its origin count. A page that
- * is not framed listens to nobody. `announce`: a page with nothing else to say (Setup) says that nothing
- * waits on it, which is what makes the page that frames it send the list; a page with the frames layer
- * says it there.
- */
-export function useFramedMachines(announce = false): void {
-  useEffect(() => {
-    const frame = machineFrame()
-    if (frame === null) return
-    const heard = (event: MessageEvent) => {
-      const said = fromParent(event, frame.parent)
-      if (said?.type !== "machines") return
-      framedList.set({ chosen: said.chosen, machines: said.machines })
-      if (said.theme !== undefined) framedTheme.set(said.theme)
-      // The word above may have been lost on its way: hearing the list, it is said again.
-      if (announce) toParent({ ql: 1, type: "waiting", needsYou: 0, badge: 0 })
-    }
-    window.addEventListener("message", heard)
-    if (announce) toParent({ ql: 1, type: "waiting", needsYou: 0, badge: 0 })
-    return () => window.removeEventListener("message", heard)
-  }, [announce])
-}
-
-/** The page's address; the chosen machine lives in it. */
-export function useHash(): string {
-  const [hash, setHash] = useState(() => window.location.hash)
-  useEffect(() => {
-    const on = () => setHash(window.location.hash)
-    window.addEventListener("hashchange", on)
-    return () => window.removeEventListener("hashchange", on)
-  }, [])
-  return hash
-}
-
-/** What this computer's page knows of its machines, as the relay and the switcher name them. */
-export function viewOf(
-  machines: ReturnType<typeof useMachines>,
-  chosenId: string | null,
-  waiting: number,
-): SwitchView | null {
-  if (machines.machines === null || machines.machines.length === 0) return null
-  const listed = machines.machines
-  return {
-    chosen: chosenId !== null && listed.some((one) => one.id === chosenId) ? chosenId : THIS,
-    machines: [
-      { id: THIS, name: "This computer", state: "connected", needsYou: waiting },
-      ...listed.map((one) => ({
-        id: one.id,
-        name: one.name,
-        state: one.state,
-        needsYou: machines.needsYou[one.id] ?? 0,
-      })),
-    ],
-  }
-}
-
-/**
- * The list to draw the switcher from, or null while there is none (the product name stays). `waiting`
- * is what this computer's Home lists under Needs you. A machine's framed page has the list its
- * framing page sent; this computer's page has its own.
- */
-export function useSwitchView(waiting: number, announce = false): SwitchView | null {
-  const own = useMachines()
-  const hash = useHash()
-  const sent = framedList.use()
-  useFramedMachines(announce)
-  if (machineFrame() !== null) return sent
-  return viewOf(own, machineRouteOf(hash)?.id ?? null, waiting)
-}
-
-const isConnected = (one: RelayMachine) => one.state === "connected"
-const needsPerson = (one: RelayMachine) => one.state === "needs-you" || one.state === "unknown-host"
-
-/** What waits on the machines that are not the chosen one. */
-export const waitingElsewhere = (view: SwitchView): number =>
-  view.machines
-    .filter((one) => one.id !== view.chosen && isConnected(one))
-    .reduce((sum, one) => sum + one.needsYou, 0)
-
-/** Whether a machine other than the chosen one waits for the person to sign in. */
-export const needsSignIn = (view: SwitchView): boolean =>
-  view.machines.some((one) => one.id !== view.chosen && needsPerson(one))
-
-export const chosenName = (view: SwitchView): string =>
-  view.machines.find((one) => one.id === view.chosen)?.name ?? "This computer"
-
-// ── What choosing does ──
-
-/** Add machine asked for; this computer's page opens the dialog (a machine's page cannot add one). */
-const addAsked = sharedValue(false)
-export const addRequested = (): boolean => addAsked.get()
-export const clearAddRequest = (): void => addAsked.set(false)
-export const useAddRequested = addAsked.use
-
-/** The collapsed rail's tile asked for the menu: the sidebar that opens takes it. */
-const menuAsked = sharedValue(false)
-export const requestMenu = (): void => menuAsked.set(true)
-const takeMenuRequest = (): boolean => {
-  const asked = menuAsked.get()
-  if (asked) menuAsked.set(false)
-  return asked
-}
-
-/** This computer's own page: the route and the dialog. A machine's page: a message to this computer's page. */
-export function switchActions() {
-  const framed = machineFrame() !== null
-  return {
-    choose(id: string) {
-      if (framed) toParent({ ql: 1, type: "switch", to: id })
-      else window.location.hash = id === THIS ? "#/" : machineHash(id)
-    },
-    add() {
-      if (framed) return void toParent({ ql: 1, type: "add" })
-      // This computer's page owns the machines: it chooses itself, then opens the dialog.
-      if (machineRouteOf(window.location.hash) !== null) window.location.hash = "#/"
-      addAsked.set(true)
-    },
-    openMachines() {
-      if (framed) toParent({ ql: 1, type: "open-machines" })
-      else window.location.hash = "#/settings/machines"
-    },
-  }
-}
-
-/**
- * A framed page says its switcher is drawn once it is, and that it left when it does. The page that
- * frames it waits for this and otherwise draws the switcher itself. It runs after the render with a
- * list, never at load.
- */
-export function useSwitcherShown(): void {
-  useEffect(() => {
-    if (machineFrame() === null) return
-    toParent({ ql: 1, type: "switcher", shown: true })
-    return () => {
-      toParent({ ql: 1, type: "switcher", shown: false })
-    }
-  }, [])
+export {
+  addRequested,
+  chosenName,
+  clearAddRequest,
+  needsSignIn,
+  requestMenu,
+  resetFramedMachines,
+  type SwitchView,
+  switchActions,
+  THIS,
+  useAddRequested,
+  useFramedMachines,
+  useHash,
+  useHostTheme,
+  useSwitcherShown,
+  useSwitchView,
+  viewOf,
+  waitingElsewhere,
 }
 
 // ── The switcher ──

@@ -7,9 +7,17 @@ import { join } from "node:path"
 import { type Ctx, err, type Result } from "../ctx.ts"
 import { appendToSection, sectionText, verifyLogPath } from "./docs/build-log.ts"
 import { removeLeftoverSlots } from "./docs/slots.ts"
-import { qualityFinding, qualityHeading, qualityResult } from "./review/quality-lines.ts"
+import {
+  listedFindings,
+  type Owed,
+  owedQuality,
+  parseQualityPass,
+  SECURITY_SECTION,
+} from "./polish-parse.ts"
 import type { Flow } from "./scaling.ts"
 import type { Task } from "./task/store.ts"
+
+export { listedFindings, parseQualityPass, SECURITY_SECTION }
 
 export type Severity = "critical" | "high" | "medium" | "low"
 
@@ -59,101 +67,6 @@ export const blockHeading = (role: QualityRole): string => HEADINGS[role]
 
 export const LABELS: Record<QualityRole, string> = { security: "Security review" }
 
-/** The section of the Verify agents' file the security review records its blocks under. */
-export const SECURITY_SECTION = "Security"
-
-const RECHECK_HEADING = "Security re-check"
-
-/** Fixed before the judge: a critical or high security finding. */
-const severe = (item: QualityItem) => item.severity === "critical" || item.severity === "high"
-
-const RECHECK_FIXED = /^[-*]\s+(S\d+)\s+fixed\b/
-
-function readCoverageLine(block: QualityBlock, line: string, collecting: boolean): boolean {
-  const uncovered = line.match(/^\s*\*\*Not checked:\*\*(.*)/i)
-  if (uncovered) {
-    const text = uncovered[1]?.trim() ?? ""
-    collecting = text === ""
-    if (collecting) block.notChecked.push("Remaining review scope was not listed")
-    if (text !== "" && !/^(?:none|nothing|n\/a|not applicable)[.!]?$/i.test(text))
-      block.notChecked.push(text)
-  } else if (collecting) {
-    const item = line.match(/^\s*[-*]\s+(\S.*)/)?.[1]?.trimEnd()
-    if (item) {
-      block.notChecked = block.notChecked.filter(
-        (scope) => scope !== "Remaining review scope was not listed",
-      )
-      block.notChecked.push(item)
-    } else if (line.trim() !== "") collecting = false
-  }
-  return collecting
-}
-
-/** The security block of the log's `## Security` section, by the role that recorded it. */
-export function parseQualityPass(log: string): Map<QualityRole, QualityBlock> {
-  const blocks = new Map<QualityRole, QualityBlock>()
-  let block: QualityBlock | null = null
-  let recheck = false
-  let notCheckedList = false
-  for (const line of sectionText(log, SECURITY_SECTION).split(/\r?\n/)) {
-    const heading = qualityHeading(line)
-    if (heading !== undefined) {
-      notCheckedList = false
-      recheck = heading === RECHECK_HEADING.toLowerCase()
-      block = null
-      if (heading === "security" || recheck) {
-        block = blocks.get("security") ?? {
-          items: [],
-          rechecked: new Set<string>(),
-          result: null,
-          recheckResult: null,
-          notChecked: [],
-        }
-        blocks.set("security", block)
-      }
-      continue
-    }
-    if (block === null) continue
-    notCheckedList = readCoverageLine(block, line, notCheckedList)
-    const resultLine = qualityResult(line)
-    if (!recheck && block.result === null) block.result = resultLine
-    if (recheck && block.recheckResult === null) block.recheckResult = resultLine
-    // A re-check clears a finding only with its own `- S<n> fixed` line; the latest line of an id stands.
-    const fixed = recheck ? line.trim().match(RECHECK_FIXED)?.[1] : undefined
-    if (fixed !== undefined) block.rechecked.add(fixed)
-    const found = qualityFinding(line.trim())
-    if (found === null) continue
-    // A finding written again as a box, by the re-check or after it, is unchecked until checked again.
-    block.rechecked.delete(found.id)
-    const at = block.items.findIndex((i) => i.id === found.id)
-    if (at === -1) block.items.push(found)
-    else block.items[at] = found
-  }
-  return blocks
-}
-
-function remainingCoverage(role: QualityRole, block: QualityBlock): QualityCoverageGap[] {
-  const remaining: QualityCoverageGap[] = [...new Set(block.notChecked)].map((scope) => ({
-    role,
-    scope,
-  }))
-  for (const result of [block.result, block.recheckResult]) {
-    if (
-      result &&
-      /^(?:partial|partly|incomplete|blocked|not checked|not done|not reviewed|not run|unfinished|stopped|skipped|inconclusive|unverified|unable)\b/i.test(
-        result,
-      )
-    )
-      remaining.push({ role, scope: `Incomplete report: ${result}` })
-  }
-  return remaining
-}
-
-/** The Medium and Low findings of the security review: they block nothing and go into the pull request description. */
-export function listedFindings(log: string): QualityItem[] {
-  return (parseQualityPass(log).get("security")?.items ?? []).filter((item) => !severe(item))
-}
-
 /** The text of the file the quality pass is recorded in (the Verify file), empty before it exists. */
 export async function readQualityLog(ctx: Ctx, task: Pick<Task, "dir">): Promise<string> {
   const path = verifyLogPath(task)
@@ -164,35 +77,7 @@ export async function readQualityLog(ctx: Ctx, task: Pick<Task, "dir">): Promise
 export const passRoles = (flow: Pick<Flow, "security">): QualityRole[] =>
   flow.security ? ["security"] : []
 
-/** What the pass still owes, in the order it is handed out. */
-type Owed =
-  | { kind: "run"; role: QualityRole }
-  | { kind: "fix"; role: QualityRole; items: QualityItem[] }
-  | { kind: "recheck"; ids: string[] }
-  | { kind: "coverage"; role: QualityRole; remaining: QualityCoverageGap[] }
-
-function owed(roles: readonly QualityRole[], blocks: Map<QualityRole, QualityBlock>): Owed[] {
-  const found: Owed[] = []
-  for (const role of roles) {
-    const block = blocks.get(role)
-    // A heading alone is a helper that has not finished: the step is done once its result line is written.
-    if (block === undefined || block.result === null) {
-      found.push({ kind: "run", role })
-      continue
-    }
-    const open = block.items.filter((item) => severe(item) && !item.ticked)
-    if (open.length > 0) {
-      found.push({ kind: "fix", role, items: open })
-      continue
-    }
-    // A security finding that was fixed is checked again.
-    const unchecked = block.items.filter((item) => severe(item) && !block.rechecked.has(item.id))
-    if (unchecked.length > 0) found.push({ kind: "recheck", ids: unchecked.map((item) => item.id) })
-    const remaining = remainingCoverage(role, block)
-    if (remaining.length > 0) found.push({ kind: "coverage", role, remaining })
-  }
-  return found
-}
+const owed = owedQuality
 
 /**
  * What Verify hands out next: the helper still owed, then the fix of every open severe finding
@@ -263,6 +148,45 @@ export type QualityRow = {
   coverage?: QualityCoverageGap[]
 }
 
+function qualityRowState(
+  role: QualityRole,
+  owing: Owed | undefined,
+  running: readonly string[],
+): QualityState {
+  if (owing === undefined) return "done"
+  if (owing.kind === "fix") return "fixing"
+  if (owing.kind === "recheck" || running.some((id) => id.startsWith(`q-${role}-`)))
+    return "running"
+  return "waiting"
+}
+
+function buildQualityRow(
+  role: QualityRole,
+  roles: readonly QualityRole[],
+  block: QualityBlock | undefined,
+  left: readonly Owed[],
+  running: readonly string[],
+): QualityRow {
+  if (!roles.includes(role) && block === undefined) return { step: role, state: "off" }
+  const owing = left.find((one) => (one.kind === "recheck" ? "security" : one.role) === role)
+  const result =
+    block?.result != null
+      ? owing?.kind === "coverage"
+        ? `incomplete · ${block.result}`
+        : block.result
+      : undefined
+  return {
+    step: role,
+    state: qualityRowState(role, owing, running),
+    ...(result !== undefined ? { result } : {}),
+    ...(block && block.items.length > 0
+      ? { findings: block.items.map((item) => ({ severity: item.severity, text: item.text })) }
+      : {}),
+    ...(owing?.kind === "fix" ? { open: owing.items.length } : {}),
+    ...(owing?.kind === "coverage" ? { coverage: owing.remaining } : {}),
+  }
+}
+
 /**
  * The pass as the App lists it: security is off when the change crosses no trust boundary. The
  * helper runs while its id (`q-<role>-…`, from `running`) is out.
@@ -274,31 +198,7 @@ export function qualityRows(
 ): QualityRow[] {
   const blocks = parseQualityPass(log)
   const left = owed(roles, blocks)
-  return QUALITY_ROLES.map((role): QualityRow => {
-    const block = blocks.get(role)
-    if (!roles.includes(role) && block === undefined) return { step: role, state: "off" }
-    const owing = left.find((one) => (one.kind === "recheck" ? "security" : one.role) === role)
-    const state: QualityState =
-      owing === undefined
-        ? "done"
-        : owing.kind === "fix"
-          ? "fixing"
-          : owing.kind === "recheck" || running.some((id) => id.startsWith(`q-${role}-`))
-            ? "running"
-            : "waiting"
-    return {
-      step: role,
-      state,
-      ...(block?.result != null
-        ? { result: owing?.kind === "coverage" ? `incomplete · ${block.result}` : block.result }
-        : {}),
-      ...(block !== undefined && block.items.length > 0
-        ? { findings: block.items.map((item) => ({ severity: item.severity, text: item.text })) }
-        : {}),
-      ...(owing?.kind === "fix" ? { open: owing.items.length } : {}),
-      ...(owing?.kind === "coverage" ? { coverage: owing.remaining } : {}),
-    }
-  })
+  return QUALITY_ROLES.map((role) => buildQualityRow(role, roles, blocks.get(role), left, running))
 }
 
 /** `qualityRows` for a task: the log as it stands, so every surface reads the pass the way `next` does. */

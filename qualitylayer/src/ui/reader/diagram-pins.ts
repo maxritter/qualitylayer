@@ -32,6 +32,15 @@ function nodeName(element: Element): string {
 /** The elements a click may pin: what `pinnable` marks, found again by `find`. */
 const PINNABLE = "g.node, g.cluster, path.flowchart-link, text.actor, rect.actor, text.messageText"
 
+function describeEdge(hit: Element): Pinned | null {
+  const classes = [...hit.classList]
+  const origin = classes.find((c) => c.startsWith("LS-"))?.slice(3)
+  const end = classes.find((c) => c.startsWith("LE-"))?.slice(3)
+  return origin !== undefined && end !== undefined
+    ? { target: `edge:${origin}>${end}`, label: `${origin} to ${end}` }
+    : null
+}
+
 /** What a click landed on, as an anchor and the words to quote beside the comment; null for empty space. */
 export function describe(from: Element, root: Element): Pinned | null {
   const hit = from.closest(PINNABLE)
@@ -40,13 +49,7 @@ export function describe(from: Element, root: Element): Pinned | null {
     const id = nodeName(hit)
     return id === "" ? null : { target: `node:${id}`, label: words(hit) || id }
   }
-  if (hit.matches("path.flowchart-link")) {
-    const classes = [...hit.classList]
-    const origin = classes.find((c) => c.startsWith("LS-"))?.slice(3)
-    const end = classes.find((c) => c.startsWith("LE-"))?.slice(3)
-    if (origin === undefined || end === undefined) return null
-    return { target: `edge:${origin}>${end}`, label: `${origin} to ${end}` }
-  }
+  if (hit.matches("path.flowchart-link")) return describeEdge(hit)
   if (hit.matches("text.actor, rect.actor")) {
     const name = hit.matches("rect.actor") ? words(hit.parentElement ?? hit) : words(hit)
     return name === "" ? null : { target: `actor:${name}`, label: name }

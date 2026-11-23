@@ -135,46 +135,62 @@ export function lastSign(signals: LiveSignals): LastSign | null {
   return best
 }
 
+function isFreshEnd(signals: LiveSignals, end: NonNullable<LiveSignals["end"]>): boolean {
+  // An end counts only when no sign of life came after it. The client writes its transcript a
+  // beat after the hook ran, so growth within a few seconds of the end is the end itself.
+  const checks: [number | null | undefined, number][] = [
+    [signals.hook?.at, 0],
+    [signals.cli?.at, 0],
+    [signals.question, 0],
+    [signals.transcript, END_GRACE_MS],
+  ]
+  return !checks.some(([at, grace]) => at !== null && at !== undefined && at > end.at + grace)
+}
+
+function livenessFromEnd(end: NonNullable<LiveSignals["end"]>, last: LastSign | null): Liveness {
+  switch (end.kind) {
+    case "session-end":
+      return { state: "stopped", why: "ended", at: end.at, last }
+    case "interrupted":
+      return { state: "stopped", why: "interrupted", at: end.at, last }
+    case "permission":
+      return { state: "permission", at: end.at, last }
+    default:
+      return { state: "turn-end", at: end.at, last }
+  }
+}
+
+function stoppedWhyOf(end: LiveSignals["end"]): "ended" | "interrupted" | "crashed" {
+  if (end?.kind === "session-end") return "ended"
+  if (end?.kind === "interrupted") return "interrupted"
+  return "crashed"
+}
+
 /** Where the agent stands at `now`, from its signals. */
 export function livenessOf(signals: LiveSignals, now: number): Liveness {
   const last = lastSign(signals)
   const end = signals.end
   // A process that is gone has stopped, however it went: never "quiet".
   if (signals.process === "gone") {
-    const why =
-      end?.kind === "session-end"
-        ? "ended"
-        : end?.kind === "interrupted"
-          ? "interrupted"
-          : "crashed"
-    return { state: "stopped", why, at: signals.stoppedAt ?? end?.at ?? last?.at ?? now, last }
+    return {
+      state: "stopped",
+      why: stoppedWhyOf(end),
+      at: signals.stoppedAt ?? end?.at ?? last?.at ?? now,
+      last,
+    }
   }
-  // An end counts only when no sign of life came after it. The client writes its transcript a
-  // beat after the hook ran, so growth within a few seconds of the end is the end itself.
-  const after = (at: number | null | undefined, grace = 0) =>
-    end !== null && at !== null && at !== undefined && at > end.at + grace
-  const fresh =
-    end !== null &&
-    !after(signals.hook?.at) &&
-    !after(signals.cli?.at) &&
-    !after(signals.question) &&
-    !after(signals.transcript, END_GRACE_MS)
-  if (end !== null && fresh) {
-    if (end.kind === "session-end") return { state: "stopped", why: "ended", at: end.at, last }
-    if (end.kind === "interrupted")
-      return { state: "stopped", why: "interrupted", at: end.at, last }
-    if (end.kind === "permission") return { state: "permission", at: end.at, last }
-    return { state: "turn-end", at: end.at, last }
-  }
+  if (end !== null && isFreshEnd(signals, end)) return livenessFromEnd(end, last)
   // A waiter can outlive its agent. Only an owner without stop evidence benefits from it.
-  if (signals.ask?.waiting === true && signals.ask.alive && last !== null)
+  if (signals.ask?.waiting === true && signals.ask.alive && last !== null) {
     return { state: "working", last, toolRunning: true }
+  }
   if (last === null) return { state: "none" }
   const toolRunning = signals.tool !== null
   const silent = Math.max(0, now - last.at)
   const threshold = toolRunning ? QUIET_TOOL_MS : QUIET_MS
-  if (silent < threshold) return { state: "working", last, toolRunning }
-  return { state: "quiet", last, quietFor: silent, long: silent >= LONG_QUIET_MS, toolRunning }
+  return silent < threshold
+    ? { state: "working", last, toolRunning }
+    : { state: "quiet", last, quietFor: silent, long: silent >= LONG_QUIET_MS, toolRunning }
 }
 
 /** "3 s", "40 s", "6 min", "1 h 20 min": how long ago, short. */

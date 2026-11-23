@@ -14,21 +14,19 @@ type JudgedInputs = Pick<Assignment, "id" | "iteration" | "revision" | "context"
   head: string
 }
 
+function hasValidJudgedMetadata(record: Partial<JudgedInputs>): boolean {
+  const validHead = typeof record.head === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(record.head)
+  const validRevision =
+    typeof record.revision === "string" && /^[a-f0-9]{64}$/.test(record.revision)
+  const validContext = typeof record.context === "string" && /^[a-f0-9]{64}:/.test(record.context)
+  return validHead && validRevision && validContext
+}
+
 function matchingInputs(value: unknown, id: string, iteration: number): JudgedInputs | null {
   if (value === null || typeof value !== "object") return null
   const record = value as Partial<JudgedInputs>
-  if (
-    record.id !== id ||
-    record.iteration !== iteration ||
-    typeof record.head !== "string" ||
-    !/^[A-Za-z0-9_-]{1,64}$/.test(record.head) ||
-    typeof record.revision !== "string" ||
-    !/^[a-f0-9]{64}$/.test(record.revision) ||
-    typeof record.context !== "string" ||
-    !/^[a-f0-9]{64}:/.test(record.context)
-  )
-    return null
-  return record as JudgedInputs
+  if (record.id !== id || record.iteration !== iteration) return null
+  return hasValidJudgedMetadata(record) ? (record as JudgedInputs) : null
 }
 
 /** Split parts must share one exact assignment; incomplete legacy metadata proves no supersession. */
@@ -170,6 +168,20 @@ async function archiveBlocks(ctx: Ctx, task: Task, entries: Archived[]): Promise
   return done
 }
 
+async function replacedAssignmentId(
+  ctx: Ctx,
+  task: Task,
+  currentId: string,
+  iteration: Iteration,
+): Promise<string | null> {
+  const parts = iteration.parts ?? [iteration]
+  const id = parts[0]?.assignment
+  if (typeof id !== "string" || id === currentId || !/^[A-Za-z0-9-]+$/.test(id)) return null
+  if (parts.some((part) => part.assignment !== id)) return null
+  const recorded = await ctx.fs.exists(join(task.runtimeDir, "judgements", `${id}.json`))
+  return recorded ? id : null
+}
+
 /**
  * Set aside unread blocks that name an assignment a later one replaced. A replaced judge's block
  * can never be read (the current assignment's is the one that counts), and left in the record it
@@ -184,17 +196,8 @@ export async function setAsideReplaced(ctx: Ctx, task: Task): Promise<number[]> 
   )
   const replaced: { iteration: Iteration; id: string }[] = []
   for (const iteration of unread) {
-    const parts = iteration.parts ?? [iteration]
-    const id = parts[0]?.assignment
-    if (
-      typeof id !== "string" ||
-      id === current.id ||
-      !/^[A-Za-z0-9-]+$/.test(id) ||
-      parts.some((part) => part.assignment !== id) ||
-      !(await ctx.fs.exists(join(task.runtimeDir, "judgements", `${id}.json`)))
-    )
-      continue
-    replaced.push({ iteration, id })
+    const id = await replacedAssignmentId(ctx, task, current.id, iteration)
+    if (id !== null) replaced.push({ iteration, id })
   }
   if (replaced.length === 0) return []
   return archiveBlocks(

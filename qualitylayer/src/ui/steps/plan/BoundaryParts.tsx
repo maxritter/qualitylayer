@@ -109,21 +109,20 @@ export function ReasonRows({
   )
 }
 
+const isPrerequisiteHeaders = (names: readonly string[]): boolean => {
+  if (names.length !== 4 || names[0] !== "#") return false
+  const hasSubject = ["prerequisite", "what"].includes(names[1] ?? "")
+  return hasSubject && names[2] === "met by" && names[3] === "status"
+}
+
 /** The Prerequisites table (`#`, Prerequisite, Met by, Status), or null for any other shape. */
 export function prerequisiteTable(markdown: string): Tokens.Table | null {
   const table = marked
     .lexer(markdown.replace(/^## .*\n?/, "").replace(/<!--[\s\S]*?-->/g, ""))
     .find((token) => token.type === "table") as Tokens.Table | undefined
-  if (table === undefined) return null
+  if (table === undefined || table.rows.length === 0) return null
   const names = table.header.map((cell) => cell.text.trim().toLowerCase())
-  return names.length === 4 &&
-    names[0] === "#" &&
-    ["prerequisite", "what"].includes(names[1] ?? "") &&
-    names[2] === "met by" &&
-    names[3] === "status" &&
-    table.rows.length > 0
-    ? table
-    : null
+  return isPrerequisiteHeaders(names) ? table : null
 }
 
 /** The Prerequisites table as numbered rows: the code, what is needed and whether it is met; who or when opens. */

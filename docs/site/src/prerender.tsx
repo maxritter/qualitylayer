@@ -20,6 +20,14 @@ const pages = {
   ...Object.fromEntries(LEGAL_PATHS.map((route) => [route, Legal])),
 };
 
+const HEAD_TAGS = new Set(["title", "meta", "link"]);
+
+function isHeadElement(child: DefaultTreeAdapterMap["element"]): boolean {
+  if (HEAD_TAGS.has(child.tagName)) return true;
+  if (child.tagName !== "script") return false;
+  return child.attrs.some((attr) => attr.name === "type" && attr.value === "application/ld+json");
+}
+
 export async function render(pathname: string) {
   const Page = pages[pathname as keyof typeof pages];
   const tree = (
@@ -37,8 +45,7 @@ export async function render(pathname: string) {
   const head: string[] = [];
   function extract(node: DefaultTreeAdapterMap["parentNode"]) {
     node.childNodes = node.childNodes.filter((child) => {
-      if ("tagName" in child && (["title", "meta", "link"].includes(child.tagName)
-        || (child.tagName === "script" && child.attrs.some((attr) => attr.name === "type" && attr.value === "application/ld+json")))) {
+      if ("tagName" in child && isHeadElement(child)) {
         child.attrs.push({ name: "data-prerendered-head", value: "" });
         head.push(serializeOuter(child));
         return false;

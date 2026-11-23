@@ -11,7 +11,7 @@
 //   failed      the read fails
 
 import { AGENT_NAMES, NATIVE_AGENTS, type NativeAgent } from "../../core/agents/ids.ts"
-import { PRICE_NOTE, priceParts, type Tokens, zeroTokens } from "../../core/cost/prices.ts"
+import { PRICE_NOTE } from "../../core/cost/prices.ts"
 import type {
   AgentUsage,
   DayModel,
@@ -19,346 +19,29 @@ import type {
   ModelUsage,
   Spend,
   Usage,
-  UsageBilling,
   UsagePeriod,
 } from "../../core/cost/usage.ts"
 import { dayKey, dayStart, usageWindows } from "../../core/cost/usage-days.ts"
 import { UNCOUNTED_REASON } from "../../core/cost/usage-reason.ts"
 import { sumSpends, tokensIn, zeroSpend } from "../../core/cost/usage-spend.ts"
+import {
+  buildUsageHistory,
+  DAYS,
+  type DayFacts,
+  demoBilling,
+  demoUsageFails,
+  demoUsageScenario,
+  type History,
+  type Mix,
+  MS,
+  SCENARIOS,
+  spendOf,
+  sum4,
+  USAGE_SCENARIOS,
+  type UsageScenario,
+} from "./usage-history.ts"
 
-export const USAGE_SCENARIOS = [
-  "plan",
-  "api",
-  "mixed",
-  "claude-key",
-  "one",
-  "empty",
-  "huge",
-  "partial",
-  "failed",
-  "all",
-] as const
-export type UsageScenario = (typeof USAGE_SCENARIOS)[number]
-
-type Scenario = {
-  billing: Partial<Record<NativeAgent, UsageBilling>>
-  empty?: true
-  huge?: true
-  pending?: number
-  failed?: true
-}
-
-const SCENARIOS: Record<UsageScenario, Scenario> = {
-  all: {
-    billing: {
-      "claude-code": "plan",
-      codex: "plan",
-      pi: "plan",
-      opencode: "key",
-      grok: "key",
-      antigravity: "plan",
-      copilot: "plan",
-    },
-  },
-  plan: { billing: { "claude-code": "plan", codex: "plan", copilot: "plan" } },
-  api: {
-    billing: { "claude-code": "gateway", codex: "key", pi: "key", opencode: "key" },
-  },
-  mixed: { billing: { "claude-code": "plan", codex: "key" } },
-  "claude-key": { billing: { "claude-code": "key", codex: "plan" } },
-  one: { billing: { "claude-code": "key" } },
-  empty: { billing: { "claude-code": "key", codex: "key" }, empty: true },
-  huge: { billing: { "claude-code": "plan", codex: "key", opencode: "key" }, huge: true },
-  partial: {
-    billing: { "claude-code": "gateway", codex: "key", pi: "key", opencode: "key" },
-    pending: 12,
-  },
-  failed: {
-    billing: { "claude-code": "gateway", codex: "key", pi: "key", opencode: "key" },
-    failed: true,
-  },
-}
-
-/** The scenario the address asks for (`?usage=api`); plans only otherwise. */
-export function demoUsageScenario(search = ""): UsageScenario {
-  const asked = new URLSearchParams(search).get("usage")
-  return USAGE_SCENARIOS.find((name) => name === asked) ?? "plan"
-}
-
-/** Whether the scenario's read fails: the demo's usage call rejects. */
-export const demoUsageFails = (search = ""): boolean =>
-  SCENARIOS[demoUsageScenario(search)].failed === true
-
-/** The agents the scenario puts on an API key or a gateway, for the demo's plan limits to leave out. */
-export function demoBilling(search = ""): Partial<Record<NativeAgent, UsageBilling>> {
-  return SCENARIOS[demoUsageScenario(search)].billing
-}
-
-/* ── the made-up history ── */
-
-/** Days kept: this month and last month's same days reach back 62 days. */
-const DAYS = 70
-const MS = 86_400_000
-
-/** List prices in USD per million tokens [input, output, cache read]; null: no price confirmed. */
-function rateOf(model: string): [number, number, number] | null {
-  const parts = priceParts(
-    model,
-    { ...zeroTokens(), input: 1e6, output: 1e6, cacheRead: 1e6 },
-    { promptTokens: 0, at: Date.now() },
-  )
-  return parts ? [parts.input, parts.output, parts.cacheRead] : null
-}
-
-type Mix = {
-  /** Tokens on an ordinary weekday. */
-  base: number
-  models: [string, number][]
-  /** The share of cache reads, cache writes, input and output. */
-  kinds: [number, number, number, number]
-  /** The share of calls on the fast tier, which costs twice. */
-  fast: number
-  /** Tokens in a session. */
-  per: number
-  seed: number
-}
-
-const MIX: Partial<Record<NativeAgent, Mix>> = {
-  "claude-code": {
-    base: 60e6,
-    models: [
-      ["claude-opus-5-5", 0.6],
-      ["claude-sonnet-5-5", 0.3],
-      ["claude-fable-5-1", 0.08],
-      ["claude-haiku-5-5", 0.02],
-    ],
-    kinds: [0.9, 0.05, 0.01, 0.04],
-    fast: 0.06,
-    per: 6e6,
-    seed: 11,
-  },
-  codex: {
-    base: 20e6,
-    models: [
-      ["gpt-6.1-sol", 0.92],
-      ["gpt-6-luna", 0.08],
-    ],
-    kinds: [0.85, 0, 0.1, 0.05],
-    fast: 0.2,
-    per: 4e6,
-    seed: 23,
-  },
-  pi: {
-    base: 2e6,
-    models: [["anthropic/claude-sonnet-5-5", 1]],
-    kinds: [0.88, 0.05, 0.03, 0.04],
-    fast: 0,
-    per: 1e6,
-    seed: 37,
-  },
-  opencode: {
-    base: 1.5e6,
-    models: [
-      ["anthropic/claude-haiku-5-5", 0.7],
-      ["alibaba-token-plan/qwen3.8-coder-plus", 0.3],
-    ],
-    kinds: [0.8, 0.05, 0.1, 0.05],
-    fast: 0,
-    per: 0.8e6,
-    seed: 41,
-  },
-  // Native credits remain separate; known model tokens still have an API-price comparison.
-  copilot: {
-    base: 3e6,
-    models: [
-      ["claude-sonnet-5.5", 0.7],
-      ["claude-opus-5.5", 0.2],
-      ["auto", 0.1],
-    ],
-    kinds: [0.85, 0.05, 0.05, 0.05],
-    fast: 0,
-    per: 1.2e6,
-    seed: 53,
-  },
-  grok: {
-    base: 2e6,
-    models: [["grok-4.7", 1]],
-    kinds: [0.5, 0, 0.4, 0.1],
-    fast: 0,
-    per: 0.5e6,
-    seed: 67,
-  },
-  antigravity: {
-    base: 4e6,
-    models: [["gemini-3.8-flash-high", 1]],
-    kinds: [0.7, 0, 0.2, 0.1],
-    fast: 0,
-    per: 1e6,
-    seed: 71,
-  },
-}
-
-/** A long name a gateway can give a model, for the pages that must hold one. */
-const LONG_MODEL = "openrouter/alibaba-token-plan/qwen3.8-coder-plus-20261001-thinking-extended"
-
-function rng(seed: number): () => number {
-  let t = seed >>> 0
-  return () => {
-    t += 0x6d2b79f5
-    let r = Math.imul(t ^ (t >>> 15), 1 | t)
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r)
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-type Kinds4 = { cr: number; cw: number; in: number; out: number }
-const kinds4 = (): Kinds4 => ({ cr: 0, cw: 0, in: 0, out: 0 })
-const sum4 = (k: Kinds4): number => k.cr + k.cw + k.in + k.out
-
-type ModelDay = {
-  tok: Kinds4
-  costK: Kinds4
-  cost: number
-  fast: number
-  priced: boolean
-  sessions: number
-}
-type DayFacts = { models: Map<string, ModelDay>; sessions: number }
-
-/** One agent's day: `daysAgo` 0 is today. A fixed seed per agent and day, the weekday as it falls. */
-function dayOf(mix: Mix, daysAgo: number, now: number, scale: number, long: boolean): DayFacts {
-  const seeded = rng(mix.seed * 1000 + (59 - daysAgo))
-  const date = new Date(dayStart(now, -daysAgo))
-  const weekday = date.getDay()
-  const week = weekday === 0 ? 0.25 : weekday === 6 ? 0.35 : 1
-  const trend = 0.72 + 0.48 * ((59 - daysAgo) / 59)
-  const f = week * trend * (0.75 + 0.5 * seeded()) * (daysAgo === 0 ? 0.55 : 1) * scale
-  const total = mix.base * f
-  const models = new Map<string, ModelDay>()
-  const tier = 1 + mix.fast
-  for (const [named, share] of mix.models) {
-    const id = long && named.startsWith("alibaba") ? LONG_MODEL : named
-    const tokens = total * share
-    const tok: Kinds4 = {
-      cr: tokens * mix.kinds[0],
-      cw: tokens * mix.kinds[1],
-      in: tokens * mix.kinds[2],
-      out: tokens * mix.kinds[3],
-    }
-    const rate = rateOf(id)
-    const costK = kinds4()
-    if (rate !== null) {
-      costK.cr = ((tok.cr * rate[2]) / 1e6) * tier
-      costK.cw = ((tok.cw * rate[0] * 1.25) / 1e6) * tier
-      costK.in = ((tok.in * rate[0]) / 1e6) * tier
-      costK.out = ((tok.out * rate[1]) / 1e6) * tier
-    }
-    const cost = sum4(costK)
-    models.set(id, {
-      tok,
-      costK,
-      cost,
-      fast: (cost / tier) * mix.fast * 2,
-      priced: rate !== null,
-      sessions: (total / mix.per) * Math.min(1, share * 1.6),
-    })
-  }
-  return { models, sessions: Math.round(total / mix.per) }
-}
-
-/** A made-up day or model as the server's numbers: kinds of token, cost by kind, the fast part. */
-function spendOf(
-  model: string | null,
-  d: Pick<ModelDay, "tok" | "costK" | "cost" | "fast" | "priced" | "sessions">,
-  mix: Mix,
-): Spend {
-  const rate = model === null ? null : rateOf(model)
-  const tokens: Tokens = {
-    input: d.tok.in,
-    output: d.tok.out,
-    cacheRead: d.tok.cr,
-    cacheWrite5m: d.tok.cw,
-    cacheWrite1h: 0,
-  }
-  return {
-    calls: Math.round(d.sessions * 38),
-    sessions: Math.round(d.sessions),
-    tokens,
-    costUsd: d.cost,
-    costKinds: {
-      cacheRead: d.costK.cr,
-      cacheWrite: d.costK.cw,
-      input: d.costK.in,
-      output: d.costK.out,
-    },
-    fastUsd: d.fast,
-    unpricedTokens: d.priced ? 0 : sum4(d.tok),
-    cacheSavedUsd: rate === null ? 0 : d.tok.cr * ((rate[0] - rate[2]) / 1e6) * (1 + mix.fast),
-  }
-}
-
-type History = {
-  billing: UsageBilling
-  /** One entry for each of the DAYS days, oldest first. */
-  days: DayFacts[]
-  mix: Mix
-}
-
-const histories = new Map<string, Map<NativeAgent, History>>()
-
-function scaleHistory(h: History, k: number): void {
-  for (const day of h.days) {
-    day.sessions = Math.round(day.sessions * Math.sqrt(k))
-    for (const m of day.models.values()) {
-      for (const name of ["cr", "cw", "in", "out"] as const) {
-        m.tok[name] *= k
-        m.costK[name] *= k
-      }
-      m.cost *= k
-      m.fast *= k
-      m.sessions *= Math.sqrt(k)
-    }
-  }
-}
-
-const dayTokens = (day: DayFacts) => [...day.models.values()].reduce((n, m) => n + sum4(m.tok), 0)
-const dayCost = (day: DayFacts) => [...day.models.values()].reduce((n, m) => n + m.cost, 0)
-
-function build(name: UsageScenario, now: number): Map<NativeAgent, History> {
-  const key = `${name}:${dayKey(now)}`
-  const kept = histories.get(key)
-  if (kept !== undefined) return kept
-  const scenario = SCENARIOS[name]
-  const made = new Map<NativeAgent, History>()
-  for (const agent of NATIVE_AGENTS) {
-    const mix = MIX[agent]
-    const billing = scenario.billing[agent]
-    if (mix === undefined || billing === undefined) continue
-    const days = Array.from({ length: DAYS }, (_, n) =>
-      dayOf(mix, DAYS - 1 - n, now, scenario.empty ? 0 : 1, scenario.huge === true),
-    )
-    made.set(agent, { billing, days, mix })
-  }
-  if (scenario.huge) fitHuge(made)
-  histories.set(key, made)
-  return made
-}
-
-/** The heavy team: $17,993.13 over 30 days billed by use (Codex and OpenCode), Claude Code's plan at 74.6B tokens. */
-function fitHuge(made: Map<NativeAgent, History>): void {
-  const last30 = (h: History, f: (day: DayFacts) => number) =>
-    h.days.slice(DAYS - 30).reduce((n, day) => n + f(day), 0)
-  const codex = made.get("codex")
-  const claude = made.get("claude-code")
-  if (codex === undefined || claude === undefined) return
-  let others = 0
-  for (const [agent, h] of made)
-    if (agent !== "codex" && h.billing !== "plan") others += last30(h, dayCost)
-  scaleHistory(codex, (17993.13 - others) / last30(codex, dayCost))
-  scaleHistory(claude, 74.6e9 / last30(claude, dayTokens))
-}
-
-/* ── the answer ── */
+export { demoBilling, demoUsageFails, demoUsageScenario, USAGE_SCENARIOS, type UsageScenario }
 
 function dayUsage(key: string, facts: DayFacts, mix: Mix): DayUsage {
   const models: DayModel[] = [...facts.models]
@@ -442,7 +125,7 @@ export function demoUsage(
   scenario: UsageScenario = "plan",
   now: number = Date.now(),
 ): Usage {
-  const made = build(scenario, now)
+  const made = buildUsageHistory(scenario, now)
   const { current, previous } = usageWindows(period, now)
   // The history's last day is today: a window's day n is the history's day (DAYS - 1 - daysAgo).
   const index = (start: number) => DAYS - 1 - Math.round((dayStart(now) - start) / MS)

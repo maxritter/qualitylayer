@@ -47,6 +47,12 @@ function taskOf(
   return repo && slug ? { task: `${repo.id}~${slug}` } : null
 }
 
+function isRepoSession(ctx: Ctx, repo: RepoRef | null, key: string): boolean {
+  if (repo === null) return false
+  if (boundSlug(ctx, repo.id, key) !== null) return true
+  return existsSync(join(ctx.home, "projects", repo.id, "sessions", `${key}.startup.json`))
+}
+
 /**
  * Whether a session is QualityLayer's own work, so it is no outside session to resume: a run of ours
  * has it, a QualityLayer command bound it to a task (the binding goes when the task finishes), a
@@ -56,14 +62,103 @@ function ownSession(ctx: Ctx, repo: RepoRef | null): (id: string, agent: string)
   const runs = new Set(
     listRuns(ctx.home).flatMap((run) => (run.nativeSession ? [run.nativeSession] : [])),
   )
-  return (id, agent) =>
-    runs.has(id) ||
-    (repo !== null &&
-      (boundSlug(ctx, repo.id, keyOf(id)) !== null ||
-        existsSync(
-          join(ctx.home, "projects", repo.id, "sessions", `${keyOf(id)}.startup.json`),
-        ))) ||
-    existsSync(join(ctx.home, "cost-sessions", `${agent}-${keyOf(id)}.ndjson`))
+  return (id, agent) => {
+    if (runs.has(id)) return true
+    const key = keyOf(id)
+    if (isRepoSession(ctx, repo, key)) return true
+    return existsSync(join(ctx.home, "cost-sessions", `${agent}-${key}.ndjson`))
+  }
+}
+
+const STRIPPED_ENV =
+  /^(CLAUDE_CODE_SESSION_ID|CLAUDECODE|CODEX_THREAD_ID|CODEX_SESSION_ID|PI_SESSION_ID|OPENCODE_SESSION_ID|QUALITYLAYER_TASK)$/
+
+function historyStartupCtx(ctx: Ctx, agent: string, id: string, cwd: string): Ctx {
+  return {
+    ...ctx,
+    env: {
+      cwd: () => cwd,
+      get: (name) => {
+        if (name === "QUALITYLAYER_SESSION") return `history:${agent}:${id}`
+        if (name === "QUALITYLAYER_AGENT") return agent
+        return STRIPPED_ENV.test(name) ? undefined : ctx.env.get(name)
+      },
+    },
+  }
+}
+
+async function handleListSessions(ctx: Ctx, url: URL): Promise<Response> {
+  const path = url.searchParams.get("path") ?? ""
+  if (!isAbsolute(path) || path.includes("\0")) return refuse("Name the project's folder.", 400)
+  const repo = await repoOf(ctx, path)
+  const found = await listFolderSessions(ctx, path, { exclude: ownSession(ctx, repo) })
+  return reply({ ok: true, ...found })
+}
+
+type ResumeInput = { path: string; agent: "claude-code" | "codex"; id: string }
+
+async function parseResumeInput(request: Request): Promise<ResumeInput | Response> {
+  let body: { path?: unknown; agent?: unknown; id?: unknown }
+  try {
+    body = (await request.json()) as typeof body
+  } catch {
+    return refuse("Send the session as JSON.", 400)
+  }
+  const { path, agent, id } = body
+  const validTypes =
+    typeof path === "string" &&
+    isAbsolute(path) &&
+    typeof agent === "string" &&
+    typeof id === "string"
+  if (!validTypes) return refuse("Name the folder, the agent and the session.", 400)
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || (agent !== "claude-code" && agent !== "codex"))
+    return refuse("That session cannot be resumed here.", 400)
+  return { path, agent, id }
+}
+
+async function handleResumeSession(ctx: Ctx, request: Request): Promise<Response> {
+  const parsed = await parseResumeInput(request)
+  if (parsed instanceof Response) return parsed
+  const { path, agent, id } = parsed
+  const repo = await repoOf(ctx, path)
+  // Read again from the agent's record: nothing a client sends names the folder or the title.
+  // A session that already is a task opens that task; any other QualityLayer session is not offered.
+  const existing = taskOf(ctx, repo, agent, id)
+  if (existing !== null) {
+    return reply({
+      ok: true,
+      task: existing.task,
+      created: false,
+      agent,
+      id,
+      cwd: existing.cwd ?? path,
+    })
+  }
+  const session: HistorySession | null = await findFolderSession(ctx, path, agent, id, {
+    exclude: ownSession(ctx, repo),
+  })
+  if (session === null || repo === null)
+    return refuse("That session is not in this folder's history.", 404)
+  // One startup journal per session: a repeated start finds the task it made.
+  const started = await startTask(
+    historyStartupCtx(ctx, agent, id, session.cwd),
+    repo,
+    session.title,
+    {
+      type: "chat",
+      answers: "app",
+    },
+  )
+  if (!started.ok) return refuse(started.error.message, 400)
+  const { task } = started.data
+  return reply({
+    ok: true,
+    task: `${task.repoId}~${task.slug}`,
+    created: started.data.created,
+    agent,
+    id,
+    cwd: session.cwd,
+  })
 }
 
 /** The answer to the history routes, or null for any other request. */
@@ -79,77 +174,5 @@ export async function agentHistoryRoute(
     return new Response(`Use ${list ? "GET" : "POST"} for this route.`, { status: 405 })
   if (!hasKeyHeader(request, guard) && sessionAuthority(request, guard)?.keyPaired !== true)
     return new Response("Agent history requires the App or a browser it opened.", { status: 403 })
-
-  if (list) {
-    const path = url.searchParams.get("path") ?? ""
-    if (!isAbsolute(path) || path.includes("\0")) return refuse("Name the project's folder.", 400)
-    const repo = await repoOf(ctx, path)
-    const found = await listFolderSessions(ctx, path, {
-      exclude: ownSession(ctx, repo),
-    })
-    return reply({ ok: true, ...found })
-  }
-
-  let body: { path?: unknown; agent?: unknown; id?: unknown }
-  try {
-    body = (await request.json()) as typeof body
-  } catch {
-    return refuse("Send the session as JSON.", 400)
-  }
-  const { path, agent, id } = body
-  if (
-    typeof path !== "string" ||
-    !isAbsolute(path) ||
-    typeof agent !== "string" ||
-    typeof id !== "string"
-  )
-    return refuse("Name the folder, the agent and the session.", 400)
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || (agent !== "claude-code" && agent !== "codex"))
-    return refuse("That session cannot be resumed here.", 400)
-  const repo = await repoOf(ctx, path)
-  // Read again from the agent's record: nothing a client sends names the folder or the title.
-  // A session that already is a task opens that task; any other QualityLayer session is not offered.
-  const existing = taskOf(ctx, repo, agent, id)
-  if (existing !== null)
-    return reply({
-      ok: true,
-      task: existing.task,
-      created: false,
-      agent,
-      id,
-      cwd: existing.cwd ?? path,
-    })
-  const session: HistorySession | null = await findFolderSession(ctx, path, agent, id, {
-    exclude: ownSession(ctx, repo),
-  })
-  if (session === null || repo === null)
-    return refuse("That session is not in this folder's history.", 404)
-  // One startup journal per session: a repeated start finds the task it made.
-  const startup: Ctx = {
-    ...ctx,
-    env: {
-      cwd: () => session.cwd,
-      get: (name) =>
-        name === "QUALITYLAYER_SESSION"
-          ? `history:${agent}:${id}`
-          : name === "QUALITYLAYER_AGENT"
-            ? agent
-            : /^(CLAUDE_CODE_SESSION_ID|CLAUDECODE|CODEX_THREAD_ID|CODEX_SESSION_ID|PI_SESSION_ID|OPENCODE_SESSION_ID|QUALITYLAYER_TASK)$/.test(
-                  name,
-                )
-              ? undefined
-              : ctx.env.get(name),
-    },
-  }
-  const started = await startTask(startup, repo, session.title, { type: "chat", answers: "app" })
-  if (!started.ok) return refuse(started.error.message, 400)
-  const { task } = started.data
-  return reply({
-    ok: true,
-    task: `${task.repoId}~${task.slug}`,
-    created: started.data.created,
-    agent,
-    id,
-    cwd: session.cwd,
-  })
+  return list ? handleListSessions(ctx, url) : handleResumeSession(ctx, request)
 }

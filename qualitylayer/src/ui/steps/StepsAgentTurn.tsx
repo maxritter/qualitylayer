@@ -1,10 +1,27 @@
-import { CheckIcon, CircleIcon, LoaderCircleIcon } from "lucide-react"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { autonomous, viewedStep } from "../model.ts"
 import { AgentTurn } from "../shell/AgentTurn.tsx"
 import { DeferredNeeds } from "../status/DeferredNeeds.tsx"
 import { useNeedsAbove } from "./context.ts"
 import { StepReceipts } from "./StepReceipts.tsx"
+import {
+  ChecklistNowRows,
+  RequestedNotesRows,
+  SetNeedsRows,
+  SliceProgressRows,
+} from "./StepsAgentRows.tsx"
+
+function progressTitle(shipped: boolean, notesCount: number, doneCount: number, total: number) {
+  if (shipped) return "Shipped"
+  if (notesCount > 0) return "Your requested changes"
+  return `Build progress · ${doneCount} of ${total} slices done`
+}
+
+function progressSummary(shipped: boolean, step: string | null) {
+  if (shipped) return "Your decisions and the evidence are kept with this task."
+  if (step === "implement") return "Each task is written test first and every check is recorded."
+  return "The checks and fixes update as they are recorded. Your confirmations are kept."
+}
 
 export function StepsAgentTurn(props: TaskSurfaceProps) {
   const needsAbove = useNeedsAbove()
@@ -16,14 +33,13 @@ export function StepsAgentTurn(props: TaskSurfaceProps) {
   )
   const notes = task.changesRequested?.notes ?? []
   const shipped = task.stage === "shipped"
-  const deferred =
-    autonomous(task) && !(step === "implement" && task.stage === "implement") && !needsAbove ? (
-      <DeferredNeeds needs={task.live?.needs ?? []} />
-    ) : null
-  if (
+  const showDeferred =
+    autonomous(task) && !(step === "implement" && task.stage === "implement") && !needsAbove
+  const deferred = showDeferred ? <DeferredNeeds needs={task.live?.needs ?? []} /> : null
+  const hideProgress =
     task.action === "implement" ||
     ((step !== "implement" || slices.length === 0) && notes.length === 0)
-  )
+  if (hideProgress) {
     return (
       <>
         <AgentTurn {...props} />
@@ -31,11 +47,9 @@ export function StepsAgentTurn(props: TaskSurfaceProps) {
         <StepReceipts task={task} />
       </>
     )
-  const title = shipped
-    ? "Shipped"
-    : notes.length
-      ? "Your requested changes"
-      : `Build progress · ${finished.length} of ${slices.length} slices done`
+  }
+  const title = progressTitle(shipped, notes.length, finished.length, slices.length)
+  const prUrl = shipped ? task.shipped?.pr?.url : undefined
   return (
     <>
       <AgentTurn {...props} />
@@ -50,90 +64,24 @@ export function StepsAgentTurn(props: TaskSurfaceProps) {
             {shipped ? "The change is shipped" : "Recorded work"}
           </div>
           <h2>{title}</h2>
-          <p>
-            {shipped
-              ? "Your decisions and the evidence are kept with this task."
-              : step === "implement"
-                ? "Each task is written test first and every check is recorded."
-                : "The checks and fixes update as they are recorded. Your confirmations are kept."}
-          </p>
+          <p>{progressSummary(shipped, step)}</p>
         </header>
         <ol>
-          {(task.live?.needs ?? [])
-            .filter((need) => need.state === "set")
-            .map((need) => (
-              <li key={`need-${need.for}`} data-state="next">
-                <CircleIcon aria-hidden="true" />
-                <span>
-                  {need.what}
-                  <small>You said it's set. The agent has not confirmed it yet.</small>
-                </span>
-                <small>saved</small>
-              </li>
-            ))}
-          {notes.length > 0
-            ? notes.map((note) => (
-                <li key={note.id} data-state={note.state}>
-                  {note.state === "done" || note.state === "checked" ? (
-                    <CheckIcon aria-hidden="true" />
-                  ) : note.state === "picked" ? (
-                    <LoaderCircleIcon aria-hidden="true" />
-                  ) : (
-                    <CircleIcon aria-hidden="true" />
-                  )}
-                  <span>
-                    {note.what}
-                    {note.reply !== undefined ? <small>{note.reply}</small> : null}
-                  </span>
-                  <small>{note.state === "picked" ? "picked up" : note.state}</small>
-                </li>
-              ))
-            : step === "implement"
-              ? slices.map((slice) => {
-                  const done = finished.includes(slice)
-                  // The build session's own report names the task it is on, and so the slice.
-                  const reported = task.timeline?.builder
-                  const worker =
-                    reported?.task != null &&
-                    slice.tasks.some((entry) => entry.id === reported.task && !entry.checked)
-                      ? { task: reported.task, line: reported.line }
-                      : undefined
-                  return (
-                    <li
-                      key={slice.n}
-                      data-state={done ? "done" : worker !== undefined ? "now" : "next"}
-                    >
-                      {done ? (
-                        <CheckIcon aria-hidden="true" />
-                      ) : worker !== undefined ? (
-                        <LoaderCircleIcon aria-hidden="true" />
-                      ) : (
-                        <CircleIcon aria-hidden="true" />
-                      )}
-                      <span>
-                        Slice {slice.n} · {slice.title}
-                        {worker !== undefined ? (
-                          <small>
-                            {worker.task} · {worker.line}
-                          </small>
-                        ) : null}
-                      </span>
-                      <small>{done ? "done" : worker !== undefined ? "now" : "next"}</small>
-                    </li>
-                  )
-                })
-              : (task.checklist?.now ?? []).map((entry) => (
-                  <li key={`${entry.who}-${entry.line}`} data-state="now">
-                    <LoaderCircleIcon aria-hidden="true" />
-                    <span>
-                      {entry.who} · {entry.line}
-                    </span>
-                    <small>now</small>
-                  </li>
-                ))}
+          <SetNeedsRows needs={task.live?.needs ?? []} />
+          {notes.length > 0 ? (
+            <RequestedNotesRows notes={notes} />
+          ) : step === "implement" ? (
+            <SliceProgressRows
+              slices={slices}
+              finished={finished}
+              builder={task.timeline?.builder}
+            />
+          ) : (
+            <ChecklistNowRows now={task.checklist?.now ?? []} />
+          )}
         </ol>
-        {shipped && task.shipped?.pr !== undefined && task.shipped.pr !== null ? (
-          <a className="q-link" href={task.shipped.pr.url} target="_blank" rel="noreferrer">
+        {prUrl !== undefined ? (
+          <a className="q-link" href={prUrl} target="_blank" rel="noreferrer">
             Open the pull request
           </a>
         ) : null}

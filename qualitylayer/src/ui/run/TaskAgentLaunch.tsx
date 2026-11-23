@@ -1,16 +1,10 @@
-import { CopyIcon, FolderIcon, HammerIcon, PlayIcon } from "lucide-react"
-import { useRef, useState } from "react"
 import { type Config, DEFAULT_CONFIG } from "../../core/config-values.ts"
-import { agentIdOf } from "../../core/interaction-shell/status.ts"
-import { agentName } from "../../core/live/liveness.ts"
 import { taskLaunchPrompt } from "../../core/run/launch-spec.ts"
 import { ContextDraftHandoff } from "../agent-window/conversation/ContextDraftAttachment.tsx"
 import type { ContextDraftTarget } from "../agent-window/conversation/context-draft.ts"
 import type { SubagentModels, TaskDetail } from "../api.ts"
-import { WhoMark } from "../kit/WhoMark.tsx"
 import { approvesOutside } from "../outside.ts"
 import { useOptionalRuns } from "../run-context.tsx"
-import { runColors } from "../runs-api.ts"
 import {
   AgentLaunchFields,
   type AgentLaunchValue,
@@ -20,24 +14,184 @@ import {
 import { AgentTabLinks, type AgentTabTerminal, OutsideDialog } from "./AgentTab.tsx"
 import { taskApprovalReady } from "./approval-ready.ts"
 import { ExistingPlanContext } from "./ExistingPlanContext.tsx"
-import { taskAgentDefaults, taskAgentRequest, taskPlanningLaunch } from "./task-launch.ts"
+import {
+  launchHeadingText,
+  TaskApprovalReadyCard,
+  TaskBuildReadyCard,
+  TaskCheckoutFolder,
+} from "./TaskAgentReadyCards.tsx"
+import { taskAgentDefaults, taskPlanningLaunch } from "./task-launch.ts"
+import { useTaskLaunchActions } from "./useTaskLaunchActions.ts"
 import "./task-agent-launch.css"
 
 export function taskLaunchKey(task: Pick<TaskDetail, "id" | "stage" | "gate">): string {
   return `${task.id}:${taskPlanningLaunch(task) ? "planning" : "build"}`
 }
 
-function checkoutContext(path: string) {
-  const parts = path.split(/[\\/]/).filter(Boolean)
-  const name = parts.at(-1) ?? path
-  if (path.length <= 46 || parts.length <= 3) return { name, shown: path }
-  const separator = path.includes("\\") ? "\\" : "/"
-  const prefix = path.startsWith("\\\\")
-    ? `\\\\${parts[0]}`
-    : path.startsWith("/")
-      ? `/${parts.slice(0, 2).join("/")}`
-      : parts[0]
-  return { name, shown: [prefix, "…", ...parts.slice(-2)].join(separator) }
+function LaunchStatusHints({
+  inApp,
+  ready,
+  canStart,
+  reason,
+  error,
+}: {
+  inApp: boolean
+  ready: boolean
+  canStart: boolean
+  reason: string | undefined
+  error: string | undefined
+}) {
+  return (
+    <>
+      {!inApp || !ready ? (
+        <p className="q-lands-note">
+          {reason ?? "Choose an installed agent, or run it in your own agent."}
+        </p>
+      ) : null}
+      {!canStart && inApp ? (
+        <p className="q-lands-note">Start from the App or a browser it opened.</p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="q-run-error">
+          {error}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+function TaskEndedNotice({ earlier, ended }: { earlier: boolean; ended: boolean }) {
+  if (earlier) {
+    return (
+      <p>
+        This task was made before the three steps. Its files stay as they are; open them under
+        Files.
+      </p>
+    )
+  }
+  if (ended) return <p>This task is closed. Its recorded conversations remain in History.</p>
+  return null
+}
+
+function TaskContextHandoff({
+  contextTarget,
+  taskId,
+  agent,
+  installed,
+  terminal,
+}: {
+  contextTarget?: ContextDraftTarget
+  taskId: string
+  agent: AgentLaunchValue["agent"]
+  installed: SubagentModels[] | null | undefined
+  terminal?: AgentTabTerminal
+}) {
+  if (contextTarget?.kind !== "task" || contextTarget.task !== taskId) return null
+  return (
+    <ContextDraftHandoff
+      target={contextTarget}
+      unsupported={agent === "other" || !launchAgentAvailable(agent, installed)}
+      onTerminal={terminal?.open}
+    />
+  )
+}
+
+function TaskLaunchControls({
+  task,
+  planning,
+  choice,
+  defaultModel,
+  installed,
+  supported,
+  canConfigure,
+  canStart,
+  reason,
+  inApp,
+  ready,
+  headerPrimary,
+  outside,
+  command,
+  terminal,
+  actions,
+  onPatch,
+  onOutside,
+  onCopy,
+}: {
+  task: TaskDetail
+  planning: boolean
+  choice: AgentLaunchValue
+  defaultModel: string
+  installed: SubagentModels[] | null | undefined
+  supported: boolean
+  canConfigure: boolean
+  canStart: boolean
+  reason: string | undefined
+  inApp: boolean
+  ready: boolean
+  headerPrimary: boolean
+  outside: boolean
+  command: string
+  terminal?: AgentTabTerminal
+  actions: ReturnType<typeof useTaskLaunchActions>
+  onPatch: (patch: Partial<AgentLaunchValue>) => void
+  onOutside?: (open: boolean) => void
+  onCopy:
+    | ((text: string, note: string) => Promise<boolean>)
+    | ((text: string, note: string) => void)
+}) {
+  const outsideContext = task.checkout
+    ? {
+        context: { label: "Project folder", path: task.checkout },
+        onCopyPath: async (path: string) =>
+          (await onCopy(path, "Copied the project folder")) !== false,
+      }
+    : {}
+  return (
+    <>
+      <AgentLaunchFields
+        scope="Task agent"
+        modelRole={planning ? "Planner" : "Lead"}
+        defaultModel={defaultModel}
+        value={choice}
+        installed={installed}
+        supported={supported}
+        disabled={actions.busy}
+        canConfigure={canConfigure}
+        onChange={onPatch}
+        nativeOnly
+        location={false}
+      />
+      <TaskCheckoutFolder checkout={task.checkout} />
+      <button
+        type="button"
+        className={headerPrimary ? "q-btn" : "q-btn primary"}
+        disabled={!ready || actions.busy || !inApp || !canStart}
+        onClick={() => void actions.start()}
+      >
+        {actions.busy && !outside ? "Starting…" : "Start here"}
+      </button>
+      <LaunchStatusHints
+        inApp={inApp}
+        ready={ready}
+        canStart={canStart}
+        reason={reason}
+        error={actions.error}
+      />
+      <AgentTabLinks terminal={terminal} onOutside={() => onOutside?.(true)} />
+      <OutsideDialog
+        open={outside}
+        onClose={() => onOutside?.(false)}
+        request={command}
+        copyLabel="Copy task request"
+        busy={actions.busy}
+        disabled={!ready}
+        copied={actions.copied}
+        error={actions.outsideError}
+        onCopy={() => void actions.copy()}
+        {...outsideContext}
+      />
+    </>
+  )
 }
 
 export function TaskAgentLaunch({
@@ -63,12 +217,9 @@ export function TaskAgentLaunch({
     | ((text: string, note: string) => Promise<boolean>)
     | ((text: string, note: string) => void)
   onStarted?: () => void
-  /** Open the task's existing build handoff instead of starting around its approved workspace. */
   onBuildOptions?: () => void
-  /** Whether Run it in my own agent is open; the card's link and the session menu open it. */
   outside?: boolean
   onOutside?: (open: boolean) => void
-  /** The plain terminal's link; absent where no shell can open. */
   terminal?: AgentTabTerminal
   contextTarget?: ContextDraftTarget
 }) {
@@ -78,266 +229,85 @@ export function TaskAgentLaunch({
   const planning = taskPlanningLaunch(task)
   const own = agent === "other" ? null : agent
   const defaultsFor = (next: AgentLaunchValue["agent"]) => taskAgentDefaults(task, saved, next)
-  const choice: AgentLaunchValue = {
-    ...(value?.agent === agent
-      ? value
-      : {
-          agent,
-          ...defaultsFor(agent),
-          runWhere: "app",
-        }),
-  }
+  const choice: AgentLaunchValue =
+    value?.agent === agent ? value : { agent, ...defaultsFor(agent), runWhere: "app" }
   const supported = runs?.support?.supported === true
-  const contextRequest =
-    contextTarget?.kind === "task" && contextTarget.task === task.id ? (
-      <ContextDraftHandoff
-        target={contextTarget}
-        unsupported={agent === "other" || !launchAgentAvailable(agent, installed)}
-        onTerminal={terminal?.open}
-      />
-    ) : null
-  const inApp = supported && own !== null
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string>()
-  const [outsideError, setOutsideError] = useState<string>()
-  const [copied, setCopied] = useState(false)
-  const attempt = useRef({ key: "", id: "" })
-  // An open pull request is reviewed with `/ql review <task>`: the card's button says so.
-  const awaitsPullRequest = task.stage === "shipped" && task.pullRequest?.state === "open"
-  // Approval does not end the conversation: a shipped task keeps its chat for merge, deploy and
-  // tweaks, landing or landed. Only an archived or abandoned task is closed.
-  // A task from before the three steps opens as files only: nothing continues it.
+  const contextRequest = (
+    <TaskContextHandoff
+      contextTarget={contextTarget}
+      taskId={task.id}
+      agent={agent}
+      installed={installed}
+      terminal={terminal}
+    />
+  )
   const earlier = task.earlier === true
   const ended = task.archived || task.stage === "abandoned" || earlier
-  const folder = task.checkout ? checkoutContext(task.checkout) : null
   const ready =
     config !== null && installed != null && launchAgentAvailable(agent, installed) && !ended
-  const command = taskLaunchPrompt(
-    agent,
-    task.id,
-    !planning && task.stage === "plan" ? "implement" : task.stage,
-    "terminal",
-  )
-  const start = async () => {
-    if (!ready || !runs || !own || !runs.support?.canStart || busy) return
-    const request = taskAgentRequest(task, choice)
-    const { cwd: _checkout, ...choices } = request
-    const key = JSON.stringify(choices)
-    if (attempt.current.key !== key) attempt.current = { key, id: crypto.randomUUID() }
-    setBusy(true)
-    setError(undefined)
-    try {
-      await runs.start({ ...request, idempotencyKey: attempt.current.id, colors: runColors() })
-      onStarted?.()
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "The agent could not start. Your choices are kept.",
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-  const copy = async () => {
-    if (!ready || busy) return
-    setBusy(true)
-    setOutsideError(undefined)
-    setCopied(false)
-    try {
-      const accepted = await onCopy(command, "Copied the task request")
-      if (accepted !== false) setCopied(true)
-      else
-        setOutsideError(
-          "The request could not be copied. Select it to copy manually, or try again.",
-        )
-    } catch (cause) {
-      setOutsideError(cause instanceof Error ? cause.message : "The request could not be copied.")
-    } finally {
-      setBusy(false)
-    }
-  }
-  // The header owns the one filled button while it carries Approve Plan or Approve review (DESIGN.md ›
-  // Actions): Start here, a fresh session, is then the neutral secondary.
-  const headerPrimary = taskApprovalReady(task) !== null
+  const promptStage = !planning && task.stage === "plan" ? "implement" : task.stage
+  const command = taskLaunchPrompt(agent, task.id, promptStage, "terminal")
+  const actions = useTaskLaunchActions({
+    runs,
+    task,
+    choice,
+    command,
+    canLaunchInApp: own !== null,
+    ready,
+    onCopy,
+    onStarted,
+  })
   const approval = approvesOutside(task) && !task.outside ? taskApprovalReady(task) : null
-  if (approval)
-    return (
-      <div className="q-agent-empty-message" data-testid="task-agent-ready">
-        {contextRequest}
-        <h2>Ready for your {approval}</h2>
-        <p>The recorded work is ready for your decision here or in your own agent.</p>
-        <p>
-          No outside session has reported its presence here. Approval does not start or move an
-          agent.
-        </p>
-        <ExistingPlanContext task={task} />
-      </div>
-    )
+  if (approval) {
+    return <TaskApprovalReadyCard task={task} approval={approval} contextRequest={contextRequest} />
+  }
   if (!planning && task.action === "implement") {
-    // Ready to build (4 November 2026): one compact card with the Plan's size and the two moves.
-    const start = task.implementStart
-    const prompt =
-      start?.agents.find((option) => option.agent === agentIdOf(task))?.prompt ??
-      start?.agents[0]?.prompt ??
-      null
-    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
-    // Approved for its own outside session: that session builds it next, so no start card.
-    const route = task.start?.route === true && task.start.where === "here" ? task.start : null
-    if (route !== null) {
-      const name =
-        route.agent === undefined || route.agent === "other" ? "your agent" : agentName(route.agent)
-      // The App Model's words for this choice (agent-build-outside-approved*.html), kept until it starts.
-      return (
-        <div className="q-agent-empty-message q-agent-ready" data-testid="task-agent-builds-next">
-          <section className="q-agent-ready-card" aria-label="Builds next">
-            <h2 className="q-agent-ready-head">
-              <WhoMark who={route.compact === true ? "you" : "agent"} />
-              {route.compact === true
-                ? "Approved · build here, from the Plan"
-                : "Approved · keeping this conversation"}
-            </h2>
-            <p className="q-agent-ready-size">
-              <HammerIcon size={13} aria-hidden="true" />
-              {route.compact === true
-                ? `Run your compact command in ${name}, then say “build here”.`
-                : "The same conversation builds it next."}
-            </p>
-          </section>
-        </div>
-      )
-    }
     return (
-      <div className="q-agent-empty-message q-agent-ready" data-testid="task-agent-build-ready">
-        {contextRequest}
-        <section className="q-agent-ready-card" aria-label="Ready to build">
-          <h2 className="q-agent-ready-head">
-            <WhoMark who="you" />
-            Ready to build
-          </h2>
-          <p className="q-agent-ready-size">
-            <HammerIcon size={13} aria-hidden="true" />
-            {start && start.slices > 0
-              ? `Plan approved · ${plural(start.slices, "slice")}${start.tasks > 0 ? ` · ${plural(start.tasks, "task")}` : ""}`
-              : "Plan approved"}
-          </p>
-          <div className="q-agent-ready-actions">
-            {onBuildOptions ? (
-              <button type="button" className="q-btn sm primary" onClick={onBuildOptions}>
-                <PlayIcon size={13} aria-hidden="true" />
-                Start the build
-              </button>
-            ) : null}
-            {prompt ? (
-              <button
-                type="button"
-                className="q-btn sm"
-                onClick={() => void onCopy(prompt, "Copied the build prompt")}
-              >
-                <CopyIcon size={13} aria-hidden="true" />
-                Copy prompt
-              </button>
-            ) : null}
-          </div>
-        </section>
-      </div>
+      <TaskBuildReadyCard
+        task={task}
+        contextRequest={contextRequest}
+        onBuildOptions={onBuildOptions}
+        onCopy={onCopy}
+      />
     )
   }
+  const awaitsPullRequest = task.stage === "shipped" && task.pullRequest?.state === "open"
   return (
     <div className="q-agent-empty-message" data-testid="task-agent-launch">
       {contextRequest}
-      <h2>
-        {earlier
-          ? "Earlier workflow"
-          : `Continue ${task.stage === "verify" ? "verification" : planning ? "planning" : awaitsPullRequest ? "review" : "this task"}`}
-      </h2>
-      {earlier ? (
-        <p>
-          This task was made before the three steps. Its files stay as they are; open them under
-          Files.
-        </p>
-      ) : ended ? (
-        <p>This task is closed. Its recorded conversations remain in History.</p>
-      ) : null}
+      <h2>{launchHeadingText(task, earlier, planning, awaitsPullRequest)}</h2>
+      <TaskEndedNotice earlier={earlier} ended={ended} />
       <ExistingPlanContext task={task} />
       {!ended ? (
-        <>
-          <AgentLaunchFields
-            scope="Task agent"
-            modelRole={planning ? "Planner" : "Lead"}
-            defaultModel={defaultsFor(agent).model}
-            value={choice}
-            installed={installed}
-            supported={supported}
-            disabled={busy}
-            canConfigure={!supported || runs?.support?.canConfigure === true}
-            onChange={(patch) => {
-              onChange({
-                ...choice,
-                ...patch,
-                ...(patch.agent ? defaultsFor(patch.agent) : {}),
-              })
-              setError(undefined)
-              setCopied(false)
-            }}
-            nativeOnly
-            location={false}
-          />
-          {task.checkout ? (
-            <fieldset
-              className="q-task-launch-folder"
-              aria-label={`Project folder: ${task.checkout}`}
-            >
-              <span aria-hidden="true">
-                <FolderIcon size={14} aria-hidden="true" />
-                <b title={task.checkout}>{folder?.name}</b>
-              </span>
-              <code title={task.checkout} aria-hidden="true">
-                {folder?.shown}
-              </code>
-            </fieldset>
-          ) : null}
-          <button
-            type="button"
-            className={headerPrimary ? "q-btn" : "q-btn primary"}
-            disabled={!ready || busy || !inApp || !runs?.support?.canStart}
-            onClick={() => void start()}
-          >
-            {busy && !outside ? "Starting…" : "Start here"}
-          </button>
-          {!inApp || !ready ? (
-            <p className="q-lands-note">
-              {runs?.support?.reason ?? "Choose an installed agent, or run it in your own agent."}
-            </p>
-          ) : null}
-          {!runs?.support?.canStart && inApp ? (
-            <p className="q-lands-note">Start from the App or a browser it opened.</p>
-          ) : null}
-          {error ? (
-            <p role="alert" className="q-run-error">
-              {error}
-            </p>
-          ) : null}
-          <AgentTabLinks terminal={terminal} onOutside={() => onOutside?.(true)} />
-          <OutsideDialog
-            open={outside}
-            onClose={() => onOutside?.(false)}
-            request={command}
-            copyLabel="Copy task request"
-            busy={busy}
-            disabled={!ready}
-            copied={copied}
-            error={outsideError}
-            onCopy={() => void copy()}
-            {...(task.checkout
-              ? {
-                  context: { label: "Project folder", path: task.checkout },
-                  onCopyPath: async (path: string) =>
-                    (await onCopy(path, "Copied the project folder")) !== false,
-                }
-              : {})}
-          />
-        </>
+        <TaskLaunchControls
+          task={task}
+          planning={planning}
+          choice={choice}
+          defaultModel={defaultsFor(agent).model}
+          installed={installed}
+          supported={supported}
+          canConfigure={!supported || runs?.support?.canConfigure === true}
+          canStart={runs?.support?.canStart === true}
+          reason={runs?.support?.reason}
+          inApp={supported && own !== null}
+          ready={ready}
+          headerPrimary={taskApprovalReady(task) !== null}
+          outside={outside}
+          command={command}
+          terminal={terminal}
+          actions={actions}
+          onPatch={(patch) => {
+            onChange({
+              ...choice,
+              ...patch,
+              ...(patch.agent ? defaultsFor(patch.agent) : {}),
+            })
+            actions.setError(undefined)
+            actions.setCopied(false)
+          }}
+          onOutside={onOutside}
+          onCopy={onCopy}
+        />
       ) : null}
     </div>
   )

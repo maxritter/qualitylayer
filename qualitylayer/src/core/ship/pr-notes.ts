@@ -11,16 +11,12 @@ import type { Task } from "../task/store.ts"
 import { run } from "./pull-request.ts"
 
 /** A comment on a line of the change that asks for something and waits for no one: a note now. */
-export const pullRequestNote = (c: Comment): boolean =>
-  c.doc === "final" &&
-  c.anchor !== undefined &&
-  c.ask !== "question" &&
-  c.source === undefined &&
+export function pullRequestNote(c: Comment): boolean {
+  if (c.doc !== "final" || c.anchor === undefined || c.ask === "question") return false
   // A message of a team review thread was said in that thread, not left for the pull request.
-  c.thread === undefined &&
-  c.answer === undefined &&
-  c.resolved === undefined &&
-  c.prNote === undefined
+  if (c.source !== undefined || c.thread !== undefined) return false
+  return c.answer === undefined && c.resolved === undefined && c.prNote === undefined
+}
 
 const LEAD = "Notes from the review in QualityLayer, left open when the change was approved."
 
@@ -57,6 +53,34 @@ export function listedReviewOf(notes: readonly Comment[]) {
 const RETRY_MS = 10 * 60_000
 const refused = new Map<string, number>()
 
+async function sendReview(
+  ctx: Ctx,
+  task: Task,
+  endpoint: string,
+  review: object,
+): Promise<{ code: number; stderr: string } | null> {
+  const file = join(task.runtimeDir, "pull-request-notes.json")
+  await ctx.fs.writeFile(file, JSON.stringify(review))
+  try {
+    return await run(ctx, task.repoRoot, [
+      "gh",
+      "api",
+      endpoint,
+      "--method",
+      "POST",
+      "--input",
+      file,
+    ])
+  } finally {
+    await ctx.fs.remove(file).catch(() => {})
+  }
+}
+
+function reviewEndpoint(url: string): string | null {
+  const where = url.match(/^https:\/\/[^/]+\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
+  return where === null ? null : `repos/${where[1]}/${where[2]}/pulls/${where[3]}/reviews`
+}
+
 /**
  * Post the open line comments to the pull request at `url` and mark them sent; how many went, and
  * why none did when GitHub refused both ways. Every read of an open pull request calls this, so a
@@ -72,28 +96,11 @@ export async function postPullRequestNotes(
   const last = refused.get(url)
   if (last !== undefined && ctx.clock.now() - last < RETRY_MS)
     return { posted: 0, error: "GitHub refused the notes a moment ago; they are tried again soon" }
-  const where = url.match(/^https:\/\/[^/]+\/([^/]+)\/([^/]+)\/pull\/(\d+)/)
-  if (where === null) return { posted: 0, error: "the pull request's address could not be read" }
-  const endpoint = `repos/${where[1]}/${where[2]}/pulls/${where[3]}/reviews`
-  const send = async (review: object) => {
-    const file = join(task.runtimeDir, "pull-request-notes.json")
-    await ctx.fs.writeFile(file, JSON.stringify(review))
-    try {
-      return await run(ctx, task.repoRoot, [
-        "gh",
-        "api",
-        endpoint,
-        "--method",
-        "POST",
-        "--input",
-        file,
-      ])
-    } finally {
-      await ctx.fs.remove(file).catch(() => {})
-    }
-  }
-  let sent = await send(reviewOf(notes))
-  if (sent === null || sent.code !== 0) sent = await send(listedReviewOf(notes))
+  const endpoint = reviewEndpoint(url)
+  if (endpoint === null) return { posted: 0, error: "the pull request's address could not be read" }
+  let sent = await sendReview(ctx, task, endpoint, reviewOf(notes))
+  if (sent === null || sent.code !== 0)
+    sent = await sendReview(ctx, task, endpoint, listedReviewOf(notes))
   if (sent === null || sent.code !== 0) {
     refused.set(url, ctx.clock.now())
     return {

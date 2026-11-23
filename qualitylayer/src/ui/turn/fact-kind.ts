@@ -17,15 +17,19 @@ const ADDS = /^(?:adds?|added|costs?|extra|needs?|requires?|nothing added|no ext
 const TIMING =
   /\b(?:\d+(?:[.,]\d+)?\s*(?:ms|s|sec|seconds?|min|minutes?|h|hours?|days?|weeks?)\b|within|late|later|hour|hourly|minute|nightly|daily|weekly|real[- ]time|latency|delay|instant|immediately|every)\b/i
 
+const HEAD_PATTERNS: readonly [RegExp, FactKind][] = [
+  [/^evidence/, "evidence"],
+  [/^(?:timing|when|latency|speed|time)\b/, "timing"],
+  [/^(?:adds?|costs?|cost|extra|needs?|requires?)\b/, "adds"],
+  [/^(?:why|because|holds)\b/, "why"],
+]
+
 /** The kind of one fact line; `term` is the part before a colon, when the line has one. */
 export function factKind(text: string, term?: string): FactKind {
   const head = (term ?? "").toLowerCase()
-  if (head.startsWith("evidence")) return "evidence"
-  if (/^(?:timing|when|latency|speed|time)\b/.test(head)) return "timing"
-  if (/^(?:adds?|costs?|cost|extra|needs?|requires?)\b/.test(head)) return "adds"
-  if (/^(?:why|because|holds)\b/.test(head)) return "why"
+  const matched = HEAD_PATTERNS.find(([pattern]) => pattern.test(head))
+  if (matched) return matched[1]
   const whole = text.trim()
   if (ADDS.test(whole)) return "adds"
-  if (TIMING.test(whole)) return "timing"
-  return "why"
+  return TIMING.test(whole) ? "timing" : "why"
 }

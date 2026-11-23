@@ -122,6 +122,12 @@ export async function queueTaskEvent(
   }
 }
 
+function isQueuedEntry(entry: Queued): boolean {
+  if (typeof entry.id !== "string" || typeof entry.automation !== "string") return false
+  if (typeof entry.payload?.id !== "string") return false
+  return typeof entry.tries === "number" && typeof entry.next === "number"
+}
+
 /** Everything waiting, oldest first; a file that does not read stays where it is. */
 export async function readQueue(ctx: Ctx): Promise<Queued[]> {
   let names: string[]
@@ -134,14 +140,7 @@ export async function readQueue(ctx: Ctx): Promise<Queued[]> {
   for (const name of names) {
     try {
       const entry = JSON.parse(await ctx.fs.readFile(join(queueDir(ctx), name))) as Queued
-      if (
-        typeof entry.id === "string" &&
-        typeof entry.automation === "string" &&
-        typeof entry.payload?.id === "string" &&
-        typeof entry.tries === "number" &&
-        typeof entry.next === "number"
-      )
-        found.push(entry)
+      if (isQueuedEntry(entry)) found.push(entry)
     } catch {
       // half-written or foreign
     }

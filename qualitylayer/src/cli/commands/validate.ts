@@ -10,6 +10,50 @@ import { resolveTask } from "../../core/task/store.ts"
 import { lostEvidenceWarnings } from "../../core/verification.ts"
 import { type Ctx, err, type Result } from "../../ctx.ts"
 
+type ValidationData = Awaited<ReturnType<typeof validateDoc>> extends Result<infer T> ? T : never
+type ResolvedTask = NonNullable<Awaited<ReturnType<typeof resolveTask>>>
+
+async function enrichVerifyReport(
+  ctx: Ctx,
+  task: ResolvedTask,
+  data: ValidationData,
+): Promise<ValidationData> {
+  // The Verify record is held to exactly what `next` refuses it for (`verifyRecordErrors`: every
+  // recorded verdict, each unread round's cited files, the unread round's assignment, shares and
+  // proof), so a judge that validates its record is not refused when `next` reads it. Only a round
+  // `next` has not counted yet is held to its files; a counted one that cites a file that is gone
+  // gets a warning, the one `next` shows too.
+  let next = data
+  const record = await readBuildRecord(ctx, task)
+  const known = new Set(next.errors.map((e) => `${e.line}\0${e.rule}\0${e.message}`))
+  const more = (await verifyRecordErrors(ctx, task)).filter(
+    (e) => !known.has(`${e.line}\0${e.rule}\0${e.message}`),
+  )
+  if (more.length > 0) {
+    next = {
+      ...next,
+      valid: next.valid && !more.some((e) => e.severity === "error"),
+      errors: [...next.errors, ...more],
+    }
+  }
+  const gone = await lostEvidenceWarnings(ctx, task, record.verification)
+  if (gone.length > 0) next = { ...next, errors: [...next.errors, ...gone] }
+  return next
+}
+
+function toValidationResult(data: ValidationData): Result<unknown> {
+  if (!data.valid) {
+    // Only the errors refuse a document; the warnings ride along without counting.
+    const count = data.errors.filter((e) => e.severity === "error").length
+    return err({
+      code: "validation_failed",
+      message: `${data.doc} has ${count} validation error${count === 1 ? "" : "s"}`,
+      errors: data.errors,
+    })
+  }
+  return { ok: true, data: { doc: data.doc, valid: true, errors: data.errors } }
+}
+
 export async function validateCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
   const doc = args[0]
   if (doc === undefined) {
@@ -23,34 +67,7 @@ export async function validateCmd(ctx: Ctx, args: string[]): Promise<Result<unkn
   }
   const report = await validateDoc(ctx, task.dir, doc, { runtimeDir: task.runtimeDir })
   if (!report.ok) return report
-  // The Verify record is held to exactly what `next` refuses it for (`verifyRecordErrors`: every
-  // recorded verdict, each unread round's cited files, the unread round's assignment, shares and
-  // proof), so a judge that validates its record is not refused when `next` reads it. Only a round
-  // `next` has not counted yet is held to its files; a counted one that cites a file that is gone
-  // gets a warning, the one `next` shows too.
-  if (report.data.doc === LOGS.verify) {
-    const record = await readBuildRecord(ctx, task)
-    const known = new Set(report.data.errors.map((e) => `${e.line}\0${e.rule}\0${e.message}`))
-    const more = (await verifyRecordErrors(ctx, task)).filter(
-      (e) => !known.has(`${e.line}\0${e.rule}\0${e.message}`),
-    )
-    if (more.length > 0)
-      report.data = {
-        ...report.data,
-        valid: report.data.valid && !more.some((e) => e.severity === "error"),
-        errors: [...report.data.errors, ...more],
-      }
-    const gone = await lostEvidenceWarnings(ctx, task, record.verification)
-    if (gone.length > 0) report.data = { ...report.data, errors: [...report.data.errors, ...gone] }
-  }
-  if (!report.data.valid) {
-    // Only the errors refuse a document; the warnings ride along without counting.
-    const count = report.data.errors.filter((e) => e.severity === "error").length
-    return err({
-      code: "validation_failed",
-      message: `${report.data.doc} has ${count} validation error${count === 1 ? "" : "s"}`,
-      errors: report.data.errors,
-    })
-  }
-  return { ok: true, data: { doc: report.data.doc, valid: true, errors: report.data.errors } }
+  const data =
+    report.data.doc === LOGS.verify ? await enrichVerifyReport(ctx, task, report.data) : report.data
+  return toValidationResult(data)
 }

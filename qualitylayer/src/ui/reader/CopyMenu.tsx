@@ -127,23 +127,125 @@ function copied({ diagrams, mockups, lines }: Formatted): string {
   return `${parts.join("; ")}. Paste it into your page.`
 }
 
-export function CopyMenu({
-  body,
-  blocks,
-  theme,
-  renderMermaid,
-  loadArtifact,
-  rasterise,
-  forAgent,
-  copyPath,
-  planExport = false,
-  pathHint,
-  branch,
-  labelled = false,
-  agents,
-  prepareBlocks,
-  prepareFormatted,
-}: Props) {
+async function copyForAgentDocument(
+  body: string,
+  agents: NonNullable<Props["agents"]>,
+  writeText: (text: string, said: string) => Promise<void>,
+): Promise<void> {
+  const joined = Promise.all([agents.load(), agents.loadChecks?.()]).then(([file, checks]) =>
+    forAgentMarkdown(toMarkdown(body), agents.step, file, checks),
+  )
+  void joined.catch(() => {})
+  const written = await writeClipboardText(joined).then(
+    (ok) => ({ ok }),
+    (cause: unknown) => ({ cause }),
+  )
+  if ("cause" in written) {
+    toast.error(
+      `Not copied: the agents' file could not be read (${written.cause instanceof Error ? written.cause.message : String(written.cause)})`,
+    )
+    return
+  }
+  const doneMsg = "Copied the step file and its agents' file. Give it to your agent."
+  if (written.ok) toast.success(doneMsg)
+  else await writeText(await joined, doneMsg)
+}
+
+function copyFormattedDocument(
+  props: Pick<
+    Props,
+    | "body"
+    | "blocks"
+    | "theme"
+    | "renderMermaid"
+    | "loadArtifact"
+    | "rasterise"
+    | "prepareBlocks"
+    | "prepareFormatted"
+  >,
+  writeText: (text: string, said: string) => Promise<void>,
+): void {
+  const {
+    body,
+    blocks,
+    theme,
+    renderMermaid,
+    loadArtifact,
+    rasterise,
+    prepareBlocks,
+    prepareFormatted,
+  } = props
+  const markdown = toMarkdown(body, true)
+  const made = prepareFormatted
+    ? prepareFormatted()
+    : (prepareBlocks ? prepareBlocks() : Promise.resolve(blocks)).then((prepared) =>
+        toFormatted(prepared, { theme, renderMermaid, loadArtifact, rasterise }),
+      )
+  const html = made.then((m) => new Blob([m.html], { type: "text/html" }))
+  void html.catch(() => {})
+  const fallback = async () => {
+    try {
+      await made
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "The pictures could not be prepared. Try again.",
+      )
+      return
+    }
+    await writeText(markdown, "The browser refused formatted copy: copied as Markdown instead.")
+  }
+  try {
+    const item = new ClipboardItem({
+      "text/html": html,
+      "text/plain": new Blob([markdown], { type: "text/plain" }),
+    })
+    void Promise.resolve(navigator.clipboard.write([item]))
+      .then(async () => toast.success(copied(await made)), fallback)
+      .catch(fallback)
+  } catch {
+    void fallback()
+  }
+}
+
+function CopyFallbackDialog({ text, onClose }: { text: string | null; onClose: () => void }) {
+  return (
+    <Dialog
+      open={text !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Copy unavailable</DialogTitle>
+          <DialogDescription>
+            Select and copy this text. It is the exact export the clipboard could not accept.
+          </DialogDescription>
+        </DialogHeader>
+        <textarea
+          aria-label="Text to copy"
+          readOnly
+          value={text ?? ""}
+          rows={12}
+          onFocus={(event) => event.currentTarget.select()}
+          className="w-full resize-y rounded-md border border-input bg-transparent p-3 font-mono text-sm"
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function CopyMenu(props: Props) {
+  const {
+    body,
+    forAgent,
+    copyPath,
+    planExport = false,
+    pathHint,
+    branch,
+    labelled = false,
+    agents,
+  } = props
   const [fallback, setFallback] = useState<string | null>(null)
   const writeText = async (text: string, said: string) => {
     if (await writeClipboardText(text).catch(() => false)) toast.success(said)
@@ -154,72 +256,6 @@ export function CopyMenu({
   }
   const canFormat =
     typeof ClipboardItem !== "undefined" && ClipboardItem.supports?.("text/html") === true
-  // A local picture or mockup goes as its name: the copy never publishes anything.
-  const copyMarkdown = () =>
-    void writeText(toMarkdown(body, true), "Copied as Markdown. Paste it into your page.")
-
-  // The agents' file is read in the click and handed to the clipboard as it arrives. A file that
-  // cannot be read is said, never left out: an agent outside QualityLayer would work on half.
-  const copyForAgent = async () => {
-    if (agents === undefined) return
-    const joined = Promise.all([agents.load(), agents.loadChecks?.()]).then(([file, checks]) =>
-      forAgentMarkdown(toMarkdown(body), agents.step, file, checks),
-    )
-    void joined.catch(() => {})
-    const written = await writeClipboardText(joined).then(
-      (ok) => ({ ok }),
-      (cause: unknown) => ({ cause }),
-    )
-    if ("cause" in written) {
-      toast.error(
-        `Not copied: the agents' file could not be read (${written.cause instanceof Error ? written.cause.message : String(written.cause)})`,
-      )
-      return
-    }
-    if (written.ok)
-      toast.success("Copied the step file and its agents' file. Give it to your agent.")
-    else
-      await writeText(
-        await joined,
-        "Copied the step file and its agents' file. Give it to your agent.",
-      )
-  }
-
-  // The pictures take a moment to draw, and a browser only lets a click write to the clipboard:
-  // the item holds the HTML as a promise, so the write starts inside the click.
-  const copyFormatted = () => {
-    const markdown = toMarkdown(body, true)
-    const made = prepareFormatted
-      ? prepareFormatted()
-      : (prepareBlocks ? prepareBlocks() : Promise.resolve(blocks)).then((prepared) =>
-          toFormatted(prepared, { theme, renderMermaid, loadArtifact, rasterise }),
-        )
-    const html = made.then((m) => new Blob([m.html], { type: "text/html" }))
-    void html.catch(() => {})
-    const fallback = async () => {
-      try {
-        await made
-      } catch (cause) {
-        toast.error(
-          cause instanceof Error ? cause.message : "The pictures could not be prepared. Try again.",
-        )
-        return
-      }
-      await writeText(markdown, "The browser refused formatted copy: copied as Markdown instead.")
-    }
-    try {
-      const item = new ClipboardItem({
-        "text/html": html,
-        "text/plain": new Blob([markdown], { type: "text/plain" }),
-      })
-      void Promise.resolve(navigator.clipboard.write([item]))
-        .then(async () => toast.success(copied(await made)), fallback)
-        .catch(fallback)
-    } catch {
-      void fallback()
-    }
-  }
-
   return (
     <>
       <DropdownMenu>
@@ -249,14 +285,16 @@ export function CopyMenu({
                 ? "Jira, GitHub, Linear · names only; plan export writes picture files"
                 : "Jira, GitHub, Linear"
             }
-            onClick={copyMarkdown}
+            onClick={() =>
+              void writeText(toMarkdown(body, true), "Copied as Markdown. Paste it into your page.")
+            }
           />
           {canFormat ? (
             <Item
               icon={<FileTextIcon aria-hidden="true" />}
               title="Copy formatted"
               hint="Confluence, Docs, Notion, Word · pictures included"
-              onClick={copyFormatted}
+              onClick={() => copyFormattedDocument(props, writeText)}
             />
           ) : null}
           {agents !== undefined ? (
@@ -269,7 +307,7 @@ export function CopyMenu({
                   ? "The step, agent notes and checks"
                   : "The step file, then its agents' file"
               }
-              onClick={() => void copyForAgent()}
+              onClick={() => void copyForAgentDocument(body, agents, writeText)}
             />
           ) : null}
           {forAgent !== undefined ? (
@@ -301,29 +339,7 @@ export function CopyMenu({
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog
-        open={fallback !== null}
-        onOpenChange={(open) => {
-          if (!open) setFallback(null)
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Copy unavailable</DialogTitle>
-            <DialogDescription>
-              Select and copy this text. It is the exact export the clipboard could not accept.
-            </DialogDescription>
-          </DialogHeader>
-          <textarea
-            aria-label="Text to copy"
-            readOnly
-            value={fallback ?? ""}
-            rows={12}
-            onFocus={(event) => event.currentTarget.select()}
-            className="w-full resize-y rounded-md border border-input bg-transparent p-3 font-mono text-sm"
-          />
-        </DialogContent>
-      </Dialog>
+      <CopyFallbackDialog text={fallback} onClose={() => setFallback(null)} />
     </>
   )
 }

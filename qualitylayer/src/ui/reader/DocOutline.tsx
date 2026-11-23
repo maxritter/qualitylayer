@@ -4,116 +4,25 @@
 
 import { cn } from "cn"
 import { BotIcon, ListTreeIcon } from "lucide-react"
-import { marked } from "marked"
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { headingSlug } from "../../core/docs/anchor.ts"
-import type { SectionShow } from "../../core/docs/schema.ts"
-import { AGENTS_SLUG } from "./AgentsPart.tsx"
-import { stripFrontmatter } from "./DocReader.tsx"
+import {
+  OUTLINE_MIN,
+  type OutlineEntry,
+  outlineOf,
+  useActiveSection,
+  withAgentsEntry,
+  withSectionShow,
+} from "./outline-model.ts"
 
-/**
- * `key` tells apart two headings with the same words. `show` is where the step page shows the
- * section (a task's documents): a `detail` section is the Reader's alone, dimmed and tagged.
- */
-export type OutlineEntry = {
-  level: 2 | 3
-  text: string
-  slug: string
-  key: string
-  show?: SectionShow
-  /** What QualityLayer says of the section beside its title, dimmed like a working section: "generated". */
-  tag?: string
-  /** The Reader's For agents heading, which opens the agents' file on demand. */
-  agents?: true
-}
-
-/** Fewer sections than this read at a glance: no outline. */
-export const OUTLINE_MIN = 3
-
-/** The outline with the agents' file listed last, under its own heading and marked not approved. */
-export function withAgentsEntry(entries: OutlineEntry[]): OutlineEntry[] {
-  if (entries.length === 0) return entries
-  return [
-    ...entries,
-    {
-      level: 2,
-      text: "For agents",
-      slug: AGENTS_SLUG,
-      key: AGENTS_SLUG,
-      tag: "not approved",
-      agents: true,
-    },
-  ]
-}
-
-/** The document's second- and third-level headings, in order, as the reader's jump links name them. */
-export function outlineOf(markdown: string): OutlineEntry[] {
-  const entries: OutlineEntry[] = []
-  const seen = new Map<string, number>()
-  for (const token of marked.lexer(stripFrontmatter(markdown))) {
-    if (token.type !== "heading" || (token.depth !== 2 && token.depth !== 3)) continue
-    const raw = String(token.text)
-    const slug = headingSlug(raw)
-    const count = (seen.get(slug) ?? 0) + 1
-    seen.set(slug, count)
-    entries.push({
-      level: token.depth,
-      text: raw.replace(/`|\*\*/g, "").trim(),
-      slug,
-      key: count === 1 ? slug : `${slug}~${count}`,
-    })
-  }
-  return entries
-}
-
-/**
- * The entries with each one's `show`: a second-level heading takes the show of the section of that
- * title, and the third-level headings under it take its show. A heading no section names leads.
- */
-export function withSectionShow(
-  entries: OutlineEntry[],
-  sections: readonly { title: string; show: SectionShow }[],
-): OutlineEntry[] {
-  let inside: SectionShow = "lead"
-  return entries.map((entry) => {
-    if (entry.level === 2)
-      inside = sections.find((s) => s.title.trim() === entry.text)?.show ?? "lead"
-    return { ...entry, show: inside }
-  })
-}
-
-/** The section in view: the last outline heading at or above the top of the scroll area. */
-export function useActiveSection(root: HTMLElement | null, entries: OutlineEntry[]): string | null {
-  const [active, setActive] = useState<string | null>(null)
-  useEffect(() => {
-    if (root === null || entries.length === 0) {
-      setActive(null)
-      return
-    }
-    const known = new Set(entries.map((e) => e.slug))
-    const update = () => {
-      const line = root.getBoundingClientRect().top + 96
-      let current: string | null = null
-      for (const heading of root.querySelectorAll<HTMLElement>(".page h2, .page h3")) {
-        // The agents' file is read under its own heading; its sections are not the document's.
-        if (heading.closest("[data-reader-agents]") !== null && !heading.matches("[data-agents-h]"))
-          continue
-        const slug = heading.matches("[data-agents-h]")
-          ? AGENTS_SLUG
-          : headingSlug(heading.textContent ?? "")
-        if (!known.has(slug)) continue
-        if (heading.getBoundingClientRect().top > line) break
-        current = slug
-      }
-      setActive(current ?? entries[0]?.slug ?? null)
-    }
-    update()
-    root.addEventListener("scroll", update, { passive: true })
-    return () => root.removeEventListener("scroll", update)
-  }, [root, entries])
-  return active
+export {
+  OUTLINE_MIN,
+  type OutlineEntry,
+  outlineOf,
+  useActiveSection,
+  withAgentsEntry,
+  withSectionShow,
 }
 
 type ListProps = {
@@ -122,49 +31,67 @@ type ListProps = {
   onJump: (slug: string) => void
 }
 
+function entryTitle(entry: OutlineEntry): string {
+  if (entry.tag !== undefined) return `${entry.text} · ${entry.tag}`
+  return entry.show === "detail" ? `${entry.text} · working section` : entry.text
+}
+
+function OutlineItem({
+  entry,
+  isActive,
+  onJump,
+}: {
+  entry: OutlineEntry
+  isActive: boolean
+  onJump: (slug: string) => void
+}) {
+  return (
+    <li className="min-w-0">
+      <button
+        type="button"
+        className={cn(
+          "block w-full cursor-pointer truncate rounded-md px-2 py-1 text-left text-[13px] leading-snug text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+          entry.level === 3 && "pl-5 text-[12.5px]",
+          (entry.show === "detail" || entry.tag !== undefined) && "text-dim",
+          isActive && "bg-surface-2 font-medium text-foreground",
+        )}
+        title={entryTitle(entry)}
+        data-show={entry.show}
+        aria-current={isActive ? "location" : undefined}
+        onClick={() => onJump(entry.slug)}
+      >
+        {entry.agents === true ? (
+          <BotIcon aria-hidden="true" className="mr-1.5 inline size-3.5 align-[-2px]" />
+        ) : null}
+        {entry.text}
+        {entry.show === "detail" && entry.level === 2 ? (
+          <span className="ml-1.5 text-[11px] font-normal text-dim" data-testid="detail-tag">
+            detail
+          </span>
+        ) : null}
+        {entry.tag !== undefined && entry.level === 2 ? (
+          <span
+            className="ml-1.5 text-[11px] font-normal text-dim"
+            data-testid={entry.agents === true ? "agents-tag" : "generated-tag"}
+          >
+            {entry.tag}
+          </span>
+        ) : null}
+      </button>
+    </li>
+  )
+}
+
 function OutlineList({ entries, active, onJump }: ListProps) {
   return (
     <ol className="m-0 grid min-w-0 list-none gap-px p-0">
       {entries.map((entry) => (
-        <li key={entry.key} className="min-w-0">
-          <button
-            type="button"
-            className={cn(
-              "block w-full cursor-pointer truncate rounded-md px-2 py-1 text-left text-[13px] leading-snug text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-              entry.level === 3 && "pl-5 text-[12.5px]",
-              (entry.show === "detail" || entry.tag !== undefined) && "text-dim",
-              active === entry.slug && "bg-surface-2 font-medium text-foreground",
-            )}
-            title={
-              entry.tag !== undefined
-                ? `${entry.text} · ${entry.tag}`
-                : entry.show === "detail"
-                  ? `${entry.text} · working section`
-                  : entry.text
-            }
-            data-show={entry.show}
-            aria-current={active === entry.slug ? "location" : undefined}
-            onClick={() => onJump(entry.slug)}
-          >
-            {entry.agents === true ? (
-              <BotIcon aria-hidden="true" className="mr-1.5 inline size-3.5 align-[-2px]" />
-            ) : null}
-            {entry.text}
-            {entry.show === "detail" && entry.level === 2 ? (
-              <span className="ml-1.5 text-[11px] font-normal text-dim" data-testid="detail-tag">
-                detail
-              </span>
-            ) : null}
-            {entry.tag !== undefined && entry.level === 2 ? (
-              <span
-                className="ml-1.5 text-[11px] font-normal text-dim"
-                data-testid={entry.agents === true ? "agents-tag" : "generated-tag"}
-              >
-                {entry.tag}
-              </span>
-            ) : null}
-          </button>
-        </li>
+        <OutlineItem
+          key={entry.key}
+          entry={entry}
+          isActive={active === entry.slug}
+          onJump={onJump}
+        />
       ))}
     </ol>
   )

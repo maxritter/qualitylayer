@@ -34,12 +34,30 @@ export async function ciParityWarning(
   }
 }
 
-async function compareChecks(
-  ctx: Ctx,
-  task: Task,
-  known: PullRequestView | null | undefined,
-  fresh: boolean,
-): Promise<string | null> {
+function passedAtRevision(
+  record: Awaited<ReturnType<typeof readCheckRecords>>[number] | undefined,
+  head: string,
+  revision: string,
+): boolean {
+  if (record?.head !== head || record.revision !== revision) return false
+  return record.ran && record.exit === 0 && record.notRun === undefined
+}
+
+async function isCodeTreeClean(ctx: Ctx, repoRoot: string): Promise<boolean> {
+  const clean = await ctx.git.run(repoRoot, [
+    "diff",
+    "--quiet",
+    "HEAD",
+    "--",
+    ".",
+    ":(exclude)docs/plans/**",
+  ])
+  const freshFiles = await untrackedFiles(ctx, repoRoot)
+  if (clean.code !== 0 || freshFiles === null) return false
+  return !freshFiles.some((f) => !f.startsWith("docs/plans/"))
+}
+
+async function localChecksGreenAtHead(ctx: Ctx, task: Task): Promise<string | null> {
   const records = (await readCheckRecords(ctx, task)).filter((r) => r.scope === "all")
   if (records.length === 0) return null
   const commit = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
@@ -48,35 +66,20 @@ async function compareChecks(
   const revision = await buildRevision(ctx, task)
   const commands = projectChecks((await planDetailsText(ctx, task)) ?? "")
   const latest = new Map(records.map((r) => [r.command, r]))
-  if (
-    commands.length === 0 ||
-    !commands.every((command) => {
-      const r = latest.get(command)
-      return (
-        r?.head === head &&
-        r.revision === revision &&
-        r.ran &&
-        r.exit === 0 &&
-        r.notRun === undefined
-      )
-    })
-  )
-    return null
-  const clean = await ctx.git.run(task.repoRoot, [
-    "diff",
-    "--quiet",
-    "HEAD",
-    "--",
-    ".",
-    ":(exclude)docs/plans/**",
-  ])
-  const freshFiles = await untrackedFiles(ctx, task.repoRoot)
-  if (
-    clean.code !== 0 ||
-    freshFiles === null ||
-    freshFiles.some((f) => !f.startsWith("docs/plans/"))
-  )
-    return null
+  const allPassed =
+    commands.length > 0 &&
+    commands.every((command) => passedAtRevision(latest.get(command), head, revision))
+  return allPassed ? head : null
+}
+
+async function compareChecks(
+  ctx: Ctx,
+  task: Task,
+  known: PullRequestView | null | undefined,
+  fresh: boolean,
+): Promise<string | null> {
+  const head = await localChecksGreenAtHead(ctx, task)
+  if (head === null || !(await isCodeTreeClean(ctx, task.repoRoot))) return null
   const pr = known === undefined ? await pullRequestOf(ctx, task, fresh) : known
   if (pr?.head !== head || (pr.failingChecks?.length ?? 0) === 0) return null
   return `check all passed at ${head}, but PR #${pr.number} CI failed: ${pr.failingChecks?.join("; ")}. Read the workflow and add the missing CI checks to the Plan. ${pr.url}`

@@ -199,6 +199,71 @@ export function ColorSwatches({
 
 type Dropdown = { id: string; x: number; y: number; align: "start" | "end" }
 
+function toPointItems(
+  project: MenuProject,
+  actions: MenuActions,
+  onColor: () => void,
+): PointItem[] {
+  return tidy(entriesOf(project, actions)).map((entry): PointItem => {
+    if (entry.kind === "separator") return "separator"
+    if (entry.kind === "colors") {
+      return {
+        label: "Color…",
+        icon: <PaletteIcon aria-hidden="true" />,
+        onSelect: onColor,
+      }
+    }
+    return {
+      label: entry.label,
+      icon: entry.icon,
+      disabled: entry.disabled,
+      onSelect: entry.run,
+    }
+  })
+}
+
+function ProjectDropdownEntries({
+  project,
+  actions,
+}: {
+  project: MenuProject
+  actions: MenuActions
+}) {
+  return (
+    <>
+      {tidy(entriesOf(project, actions)).map((entry, i) => {
+        if (entry.kind === "separator")
+          // biome-ignore lint/suspicious/noArrayIndexKey: a separator has no identity but its place
+          return <DropdownMenuSeparator key={`sep-${i}`} />
+        if (entry.kind === "colors")
+          return (
+            <ColorSwatches
+              key="colors"
+              color={project.color}
+              onPick={(color) => actions.color(project.id, color)}
+            />
+          )
+        return (
+          <DropdownMenuItem key={entry.label} disabled={entry.disabled} onClick={entry.run}>
+            {entry.icon}
+            <span className="flex-1">{entry.label}</span>
+            {entry.hint !== undefined ? (
+              <span className="pj-menu-key" aria-hidden="true">
+                {entry.hint}
+              </span>
+            ) : null}
+          </DropdownMenuItem>
+        )
+      })}
+      {project.folder !== "" ? (
+        <p className="pj-menu-path" title={project.folder}>
+          {project.folder}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 /**
  * `open(id, event)` is what the header's ⋯ button and its right-click call: a click opens the
  * dropdown under the button, a contextmenu event opens the point menu. Render `node` once.
@@ -222,34 +287,26 @@ export function useProjectMenu({
     const target = projects.find((p) => p.id === id)
     if (target === undefined) return
     if (event.type === "contextmenu") {
-      const items: PointItem[] = tidy(entriesOf(target, actions)).map((entry): PointItem => {
-        if (entry.kind === "separator") return "separator"
-        if (entry.kind === "colors")
-          return {
-            label: "Color…",
-            icon: <PaletteIcon aria-hidden="true" />,
-            // The point menu closes with the choice and the project's dropdown opens at the same spot.
-            onSelect: () => setDropdown({ id, x: event.clientX, y: event.clientY, align: "start" }),
-          }
-        return {
-          label: entry.label,
-          icon: entry.icon,
-          disabled: entry.disabled,
-          onSelect: entry.run,
-        }
-      })
-      point.open(event, items)
+      // The point menu closes with the choice and the project's dropdown opens at the same spot.
+      point.open(
+        event,
+        toPointItems(target, actions, () =>
+          setDropdown({ id, x: event.clientX, y: event.clientY, align: "start" }),
+        ),
+      )
       return
     }
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
     setDropdown({ id, x: box.right, y: box.bottom, align: "end" })
   }
 
-  const close = () => setDropdown(null)
   const node = (
     <>
       {point.menu}
-      <DropdownMenu open={dropdown !== null} onOpenChange={(next) => (next ? undefined : close())}>
+      <DropdownMenu
+        open={dropdown !== null}
+        onOpenChange={(next) => (next ? undefined : setDropdown(null))}
+      >
         <DropdownMenuContent
           anchor={anchor}
           align={dropdown?.align ?? "end"}
@@ -263,36 +320,8 @@ export function useProjectMenu({
             return false
           }}
         >
-          {project !== undefined
-            ? tidy(entriesOf(project, actions)).map((entry, i) => {
-                if (entry.kind === "separator")
-                  // biome-ignore lint/suspicious/noArrayIndexKey: a separator has no identity but its place
-                  return <DropdownMenuSeparator key={`sep-${i}`} />
-                if (entry.kind === "colors")
-                  return (
-                    <ColorSwatches
-                      key="colors"
-                      color={project.color}
-                      onPick={(color) => actions.color(project.id, color)}
-                    />
-                  )
-                return (
-                  <DropdownMenuItem key={entry.label} disabled={entry.disabled} onClick={entry.run}>
-                    {entry.icon}
-                    <span className="flex-1">{entry.label}</span>
-                    {entry.hint !== undefined ? (
-                      <span className="pj-menu-key" aria-hidden="true">
-                        {entry.hint}
-                      </span>
-                    ) : null}
-                  </DropdownMenuItem>
-                )
-              })
-            : null}
-          {project !== undefined && project.folder !== "" ? (
-            <p className="pj-menu-path" title={project.folder}>
-              {project.folder}
-            </p>
+          {project !== undefined ? (
+            <ProjectDropdownEntries project={project} actions={actions} />
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

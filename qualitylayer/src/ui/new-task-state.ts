@@ -2,16 +2,24 @@
 // run an agent, and saving attached files once.
 
 import { useEffect, useRef, useState } from "react"
-import type { HistorySession } from "../core/agents/history-sessions.ts"
 import type { NativeAgent } from "../core/agents/ids.ts"
 import type { DefaultsAgent, PlanningDefaults } from "../core/config-values.ts"
-import type { AgentHistoryApi } from "./agent-history-api.ts"
 import type { Project, SubagentModels } from "./api.ts"
 import type { ProjectFolderApi, ProjectTarget } from "./ProjectPicker.tsx"
 import { type AgentLaunchValue, availableLaunchAgents } from "./run/AgentLaunchFields.tsx"
-import type { LaunchBranchResolved, LaunchBranchState } from "./run/LaunchBranch.tsx"
+import type { LaunchBranchState } from "./run/LaunchBranch.tsx"
 import { NO_AGENT, NO_RUNS } from "./run/launch-copy.ts"
 import type { RunSupport } from "./runs-api.ts"
+
+export {
+  messageCount,
+  PASTED_PLAN_FILE,
+  PLAN_FILE,
+  resumeRequest,
+  sessionAge,
+  startRequest,
+  useFolderSessions,
+} from "./new-task-state-helpers.ts"
 
 /**
  * The checked-out branch of the chosen folder, read once per folder. `known` is the branch the App
@@ -143,115 +151,4 @@ export function useRequestText(
 ): [string, (text: string) => void] {
   const [own, setOwn] = useState("")
   return [chat ? own : kept, chat ? setOwn : keep]
-}
-
-type SessionList = { total: number; sessions: HistorySession[] }
-
-/**
- * The sessions an agent already has in the chosen project, read once per folder while `enabled`.
- * `null` is "not known": still reading, not asked, or the read failed (the card says nothing then,
- * rather than claiming there are none).
- */
-export function useFolderSessions(
-  api: AgentHistoryApi,
-  path: string | null,
-  enabled: boolean,
-): SessionList | null {
-  const [read, setRead] = useState<{ path: string; list: SessionList } | null>(null)
-  useEffect(() => {
-    if (!enabled || path === null) return
-    const stop = new AbortController()
-    void api.sessions(path, stop.signal).then(
-      (list) => {
-        if (!stop.signal.aborted) setRead({ path, list })
-      },
-      () => {
-        if (!stop.signal.aborted) setRead(null)
-      },
-    )
-    return () => stop.abort()
-  }, [api, path, enabled])
-  return enabled && read?.path === path ? read.list : null
-}
-
-/** How long ago a session was last written, in the resume list's words: "2 h", "Yesterday", "3 d". */
-export function sessionAge(at: number, now = Date.now()): string {
-  const minutes = Math.max(0, Math.round((now - at) / 60_000))
-  if (minutes < 1) return "now"
-  if (minutes < 60) return `${minutes} min`
-  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} h`
-  const days = Math.floor(minutes / (24 * 60))
-  return days < 2 ? "Yesterday" : `${days} d`
-}
-
-/** "14 messages"; a record longer than the read counts "14+ messages", never a guessed exact number. */
-export function messageCount(session: Pick<HistorySession, "messages" | "approximate">): string {
-  const n = `${session.messages}${session.approximate ? "+" : ""}`
-  return session.messages === 1 && !session.approximate ? "1 message" : `${n} messages`
-}
-
-/**
- * What the App's server is asked to start to resume a session as a Chat: the Chat task the history
- * route made, run in the folder the session ran in, with the agent's own conversation resumed.
- */
-export function resumeRequest(task: string, session: { agent: string; id: string }, cwd: string) {
-  return {
-    agent: session.agent as "claude-code" | "codex",
-    purpose: { kind: "task" as const, task },
-    cwd,
-    works: "checkout" as const,
-    mode: "plain" as const,
-    settings: { answers: "app" as const },
-    resumeNative: session.id,
-    idempotencyKey: `resume:${task}:${session.id}`,
-  }
-}
-
-/** A plan pasted into New task travels under this name; the server reads it as pasted text (task/adoption.ts). */
-export const PASTED_PLAN_FILE = "pasted-plan.md"
-/** The files that can be an original plan: one Markdown or text document. Pictures and PDFs stay context. */
-export const PLAN_FILE = /\.(md|txt)$/i
-
-/** What the App's server is asked to start for a new task. */
-export function startRequest(choice: {
-  agent: DefaultsAgent
-  prompt: string
-  kind: "feature" | "bugfix" | "chat"
-  cwd: string
-  resolved: LaunchBranchResolved
-  values: PlanningDefaults
-  /** The launch file holding the person's existing plan; the server adopts it as the original. */
-  fromPlan?: string
-  /** A feature's extra planners, kept with the task the server makes (review/planners.ts). */
-  planners?: readonly { agent: NativeAgent; model: string; effort: string }[]
-}) {
-  const { resolved, values } = choice
-  return {
-    agent: choice.agent,
-    ...(choice.planners?.length
-      ? {
-          planners: choice.planners.map((p) => ({
-            agent: p.agent,
-            model: p.model,
-            ...(p.effort !== "" ? { effort: p.effort } : {}),
-          })),
-        }
-      : {}),
-    purpose: {
-      kind: "new-task" as const,
-      request: choice.prompt,
-      type: choice.kind,
-      ...(choice.fromPlan !== undefined ? { fromPlan: choice.fromPlan } : {}),
-    },
-    allocateTask: true,
-    cwd: choice.cwd,
-    works: resolved.works,
-    ...(resolved.works !== "checkout" ? { branch: resolved.branch } : {}),
-    ...(resolved.plan ? { worktreePath: resolved.plan.folder } : {}),
-    settings: {
-      answers: "app" as const,
-      model: values.model,
-      effort: values.effort,
-    },
-  }
 }

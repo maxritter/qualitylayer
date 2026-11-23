@@ -11,101 +11,22 @@ import { findAgentBinary, PASSED } from "../install/agents-found.ts"
 import { pickEnv } from "../platform.ts"
 import { runBounded } from "./bounded-run.ts"
 import {
-  type LimitCause,
-  type ReportedWindow,
-  usedShare,
-  WEEK_MINUTES,
-  windowLabel,
-} from "./window.ts"
+  CLAUDE_NO_PLAN,
+  CLAUDE_UNANSWERED,
+  CLAUDE_UNREPORTED,
+  type ClaudeReport,
+  holdsNoPlan,
+  noPlan,
+  parseUsageReport,
+  unanswered,
+} from "./claude-usage-parse.ts"
+import type { LimitCause } from "./window.ts"
+
+export { CLAUDE_NO_PLAN, CLAUDE_UNANSWERED, CLAUDE_UNREPORTED, type ClaudeReport, parseUsageReport }
 
 type Json = Record<string, unknown>
 const record = (value: unknown): Json | null =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : null
-
-/** `claude -p "/usage"` gives its limits as data: how a limit's kind is named and how long it lasts. */
-const KINDS: Record<string, { minutes: number; label: string }> = {
-  session: { minutes: 300, label: windowLabel(300) },
-  weekly_all: { minutes: WEEK_MINUTES, label: windowLabel(WEEK_MINUTES) },
-}
-
-/** The older cache reason that treated an empty report as an account with no plan. */
-export const CLAUDE_UNREPORTED = "Claude Code doesn't report limits for this sign-in"
-/**
- * Why Claude Code has no plan limits on an API key. It has no plan to limit, so its `/usage` prints
- * the session cost summary and no report.
- */
-export const CLAUDE_NO_PLAN = "Claude Code is signed in with an API key, which has no plan limits"
-/** Why nothing is known when the command could not be run or answered nothing usable. */
-export const CLAUDE_UNANSWERED = "Claude Code didn't answer its /usage command"
-
-export type ClaudeReport =
-  | { at: number; windows: ReportedWindow[] }
-  | { reason: string; cause: LimitCause }
-
-const unanswered = (): ClaudeReport => ({ reason: CLAUDE_UNANSWERED, cause: "failed" })
-const noPlan = (reason: string): ClaudeReport => ({ reason, cause: "no-plan" })
-
-/** A held answer that says there is no plan to limit; it stays true until the sign-in changes. */
-const holdsNoPlan = (report: ClaudeReport | undefined): boolean =>
-  report !== undefined && "cause" in report && report.cause === "no-plan"
-
-function windowOfLimit(limit: Json): ReportedWindow | null {
-  const scope = record(record(record(limit.scope)?.model))
-  const named =
-    limit.kind === "weekly_scoped" && typeof scope?.display_name === "string"
-      ? { minutes: WEEK_MINUTES, label: `${windowLabel(WEEK_MINUTES)} · ${scope.display_name}` }
-      : KINDS[String(limit.kind)]
-  const used = usedShare(limit.percent)
-  if (named === undefined || used === null) return null
-  const resets = typeof limit.resets_at === "string" ? Date.parse(limit.resets_at) : Number.NaN
-  return {
-    minutes: named.minutes,
-    label: named.label,
-    usedPercent: used,
-    resetsAt: Number.isNaN(resets) ? null : resets,
-  }
-}
-
-/** The report one output line carries; null for a line that is not one. */
-function reportOf(line: string): Json | null {
-  if (!line.includes('"usage_report"')) return null
-  try {
-    return record(record(JSON.parse(line))?.usage_report)
-  } catch {
-    return null
-  }
-}
-
-/**
- * Whether a line is the answer of `/usage` for a sign-in with no plan: the command's own result row,
- * which holds the session cost summary where a plan would have a report. Anything else is not.
- */
-function costSummary(line: string): boolean {
-  if (!line.includes('"local_command"')) return false
-  try {
-    const row = record(JSON.parse(line))
-    if (row?.type !== "result" || row.local_command !== "usage" || row.is_error === true)
-      return false
-    return typeof row.result === "string" && row.result.startsWith("Total cost:")
-  } catch {
-    return false
-  }
-}
-
-/** The report in the command's stream-json output: its limits, or why it has none. */
-export function parseUsageReport(text: string, at: number): ClaudeReport {
-  const lines = text.split("\n")
-  for (const line of lines) {
-    const report = reportOf(line)
-    if (report === null) continue
-    const limits = record(report.rate_limits)?.limits
-    const windows = (Array.isArray(limits) ? limits : [])
-      .map((entry) => windowOfLimit(record(entry) ?? {}))
-      .filter((window): window is ReportedWindow => window !== null)
-    return windows.length === 0 ? unanswered() : { at, windows }
-  }
-  return lines.some(costSummary) ? noPlan(CLAUDE_NO_PLAN) : unanswered()
-}
 
 /**
  * What the command is given: print mode, the report as data, no settings but the project's own (the

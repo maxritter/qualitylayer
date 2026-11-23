@@ -5,6 +5,45 @@
 import { CheckIcon } from "lucide-react"
 import type { BatchMember } from "../../interaction/contracts.ts"
 
+function BatchStripItem({
+  member,
+  currentId,
+  onFocus,
+  onChange,
+}: {
+  member: BatchMember
+  currentId: string | undefined
+  onFocus: ((id: string) => void) | undefined
+  onChange: ((id: string) => void) | undefined
+}) {
+  const done = member.answer !== undefined
+  const on = member.id === currentId
+  const disabled = !on && (done ? onChange === undefined : onFocus === undefined)
+  const waits = disabled && !done
+  const classes = ["bq-i", done ? "done" : "", on ? "on" : "", waits ? "waiting" : ""]
+    .join(" ")
+    .trim()
+  const label = done
+    ? `Question ${member.number}: ${member.text}. Answered: ${member.answer}. Change it`
+    : `Question ${member.number}: ${member.text}`
+  return (
+    <button
+      type="button"
+      className={classes}
+      data-testid="batch-strip-item"
+      data-state={done ? "answered" : "open"}
+      aria-current={on ? "true" : undefined}
+      aria-label={label}
+      title={done ? `${member.text} · answered: ${member.answer}` : member.text}
+      disabled={disabled}
+      onClick={() => (done ? onChange?.(member.id) : onFocus?.(member.id))}
+    >
+      {done ? <CheckIcon className="bq-tick" aria-hidden="true" /> : null}
+      {member.number}
+    </button>
+  )
+}
+
 export function BatchStrip({
   title,
   members,
@@ -25,45 +64,23 @@ export function BatchStrip({
     0,
     members.findIndex((m) => m.id === currentId),
   )
+  const singleOpen = members.length === 1 && members[0]?.answer === undefined
   return (
     <div className="bq" data-testid="batch-strip">
       {title ? <span className="bq-t">{title}</span> : null}
-      {/* One open question is no batch to page through: the lone number would look like an input. */}
-      {members.length === 1 && members[0]?.answer === undefined ? null : (
+      {singleOpen ? null : (
         <fieldset className="bq-strip" aria-label="Questions in this batch">
-          {members.map((member) => {
-            const done = member.answer !== undefined
-            const on = member.id === currentId
-            const disabled = on ? false : done ? onChange === undefined : onFocus === undefined
-            // An open member the person cannot reach yet is a mark that waits its turn, not a tab that does nothing.
-            const waits = disabled && !done
-            return (
-              <button
-                key={member.id}
-                type="button"
-                className={["bq-i", done ? "done" : "", on ? "on" : "", waits ? "waiting" : ""]
-                  .join(" ")
-                  .trim()}
-                data-testid="batch-strip-item"
-                data-state={done ? "answered" : "open"}
-                aria-current={on ? "true" : undefined}
-                aria-label={
-                  done
-                    ? `Question ${member.number}: ${member.text}. Answered: ${member.answer}. Change it`
-                    : `Question ${member.number}: ${member.text}`
-                }
-                title={done ? `${member.text} · answered: ${member.answer}` : member.text}
-                disabled={disabled}
-                onClick={() => (done ? onChange?.(member.id) : onFocus?.(member.id))}
-              >
-                {done ? <CheckIcon className="bq-tick" aria-hidden="true" /> : null}
-                {member.number}
-              </button>
-            )
-          })}
+          {members.map((member) => (
+            <BatchStripItem
+              key={member.id}
+              member={member}
+              currentId={currentId}
+              onFocus={onFocus}
+              onChange={onChange}
+            />
+          ))}
         </fieldset>
       )}
-      {/* The strip shows the place; a screen reader hears it here. */}
       {currentId !== undefined ? (
         <span className="sr-only" data-testid="batch-strip-place">
           question {place + 1} of {members.length}

@@ -45,6 +45,15 @@ const PARTS = FLOW_STEPS.map((step) => ({
 }))
 
 const FIRST_DRAFT_PREF = "qualitylayer-first-task-draft-v1"
+function parseFirstDraft(value: unknown): { request: string; agent: DefaultsAgent } | null {
+  if (typeof value !== "object" || value === null) return null
+  const record = value as { request?: unknown; agent?: unknown }
+  if (typeof record.request !== "string") return null
+  const agent = record.agent
+  if (!isNativeAgent(agent) && agent !== "other") return null
+  return { request: record.request, agent }
+}
+
 function readFirstDraft(): {
   request: string
   agent: DefaultsAgent
@@ -52,21 +61,7 @@ function readFirstDraft(): {
   try {
     const raw = localStorage.getItem(FIRST_DRAFT_PREF)
     if (raw === null || raw.length > 256_000) return null
-    const value: unknown = JSON.parse(raw)
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      !("request" in value) ||
-      typeof value.request !== "string" ||
-      !("agent" in value)
-    )
-      return null
-    const agent = value.agent
-    if (!isNativeAgent(agent) && agent !== "other") return null
-    return {
-      request: value.request,
-      agent,
-    }
+    return parseFirstDraft(JSON.parse(raw))
   } catch {
     return null
   }
@@ -151,6 +146,59 @@ function StayInAgent({ place, onPlace }: { place: SavedPlace; onPlace: (patch: u
         <ExternalLinkIcon className="size-3" aria-hidden="true" />
       </a>
     </section>
+  )
+}
+
+function FirstRunNotices({
+  noAgent,
+  onSetup,
+  hooksPending,
+  copied,
+  onCopyHooks,
+  copyError,
+  draftError,
+}: {
+  noAgent: boolean
+  onSetup?: () => void
+  hooksPending: boolean
+  copied: boolean
+  onCopyHooks: () => void
+  copyError: string | null
+  draftError: boolean
+}) {
+  return (
+    <>
+      {noAgent ? (
+        <p className="q-fr-note">
+          <TriangleAlertIcon className="q-fr-warn size-3.5" aria-hidden="true" />
+          No coding agent found.
+          {onSetup !== undefined ? (
+            <button type="button" className="q-link" onClick={onSetup}>
+              Set up an agent
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+      {hooksPending ? (
+        <p className="q-fr-note">
+          <TriangleAlertIcon className="q-fr-warn size-3.5" aria-hidden="true" />
+          Codex hooks need a review: run <code>/hooks</code> in Codex.
+          <button type="button" className="q-link" onClick={onCopyHooks}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </p>
+      ) : null}
+      {copyError !== null ? (
+        <p className="q-fr-note" role="alert">
+          {copyError}
+        </p>
+      ) : null}
+      {draftError ? (
+        <p className="q-fr-note" role="alert">
+          Could not keep your request for the tour. Start a task to keep it, or try again.
+        </p>
+      ) : null}
+    </>
   )
 }
 
@@ -248,36 +296,15 @@ export function FirstRun({
               </button>
             ) : null}
           </div>
-          {noAgent ? (
-            <p className="q-fr-note">
-              <TriangleAlertIcon className="q-fr-warn size-3.5" aria-hidden="true" />
-              No coding agent found.
-              {onSetup !== undefined ? (
-                <button type="button" className="q-link" onClick={onSetup}>
-                  Set up an agent
-                </button>
-              ) : null}
-            </p>
-          ) : null}
-          {hooksPending ? (
-            <p className="q-fr-note">
-              <TriangleAlertIcon className="q-fr-warn size-3.5" aria-hidden="true" />
-              Codex hooks need a review: run <code>/hooks</code> in Codex.
-              <button type="button" className="q-link" onClick={() => void copyHooks()}>
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </p>
-          ) : null}
-          {copyError !== null ? (
-            <p className="q-fr-note" role="alert">
-              {copyError}
-            </p>
-          ) : null}
-          {draftError ? (
-            <p className="q-fr-note" role="alert">
-              Could not keep your request for the tour. Start a task to keep it, or try again.
-            </p>
-          ) : null}
+          <FirstRunNotices
+            noAgent={noAgent}
+            onSetup={onSetup}
+            hooksPending={hooksPending}
+            copied={copied}
+            onCopyHooks={() => void copyHooks()}
+            copyError={copyError}
+            draftError={draftError}
+          />
           <FlowRow />
           <p className="q-fr-note">For planned changes</p>
           {place !== undefined && onPlace !== undefined ? (

@@ -1,143 +1,12 @@
 import { AGENT_NAMES, type NativeAgent } from "../agents/ids.ts"
 import type { AgentLimits, LimitWindow } from "../limits/index.ts"
 import { type MoneyBasis, percentage, readingId, type UsageDisplay } from "../usage-display.ts"
-import type { Spend, Usage, UsageBilling } from "./usage.ts"
+import { dailyMoney, type MoneyAmount, moneyAmount, usageForMoney } from "./display-money.ts"
+import type { Usage } from "./usage.ts"
 import { dayKey } from "./usage-days.ts"
-import { zeroSpend } from "./usage-spend.ts"
 
-/** Project the displayed money without changing the stored API-price ledger. */
-export function usageForMoney(usage: Usage, basis: MoneyBasis): Usage {
-  if (basis === "value") return usage
-  const project = <T extends Spend>(spend: T, billing: UsageBilling): T => {
-    const amount = moneyAmount(spend, billing, "spend")
-    const usd = amount.usd ?? 0
-    const scale = spend.costUsd > 0 ? usd / spend.costUsd : 0
-    return {
-      ...spend,
-      costUsd: usd,
-      costKinds: {
-        input: spend.costKinds.input * scale,
-        output: spend.costKinds.output * scale,
-        cacheRead: spend.costKinds.cacheRead * scale,
-        cacheWrite: spend.costKinds.cacheWrite * scale,
-      },
-      fastUsd: spend.fastUsd * scale,
-      cacheSavedUsd: spend.cacheSavedUsd * scale,
-    }
-  }
-  const metered = (agent: Usage["agents"][number]) =>
-    agent.billing === "key" ||
-    agent.billing === "gateway" ||
-    (agent.accounting?.spendCalls ?? 0) > 0
-  const agents = usage.agents.map((agent) =>
-    !metered(agent)
-      ? agent
-      : {
-          ...project(agent, agent.billing),
-          daily: agent.daily.map((day) => ({
-            ...project(day, agent.billing),
-            models: day.models.map((model) => ({
-              ...model,
-              costUsd:
-                moneyAmount(
-                  {
-                    ...zeroSpend(),
-                    calls: model.calls ?? 0,
-                    costUsd: model.costUsd,
-                    unpricedTokens: model.priced ? 0 : model.tokens,
-                    accounting: model.accounting,
-                  },
-                  agent.billing,
-                  "spend",
-                ).usd ?? 0,
-            })),
-          })),
-          models: agent.models.map((model) => project(model, agent.billing)),
-        },
-  )
-  return {
-    ...usage,
-    agents,
-    previous: usage.previous
-      ? {
-          ...usage.previous,
-          agents: usage.previous.agents.map((agent) => {
-            const parent = usage.agents.find((row) => row.agent === agent.agent)
-            return parent && metered(parent) ? project(agent, parent.billing) : agent
-          }),
-        }
-      : null,
-  }
-}
-
-export type MoneyAmount = { usd: number | null; partial: boolean; reported: boolean }
-
-export function moneyAmount(spend: Spend, billing: UsageBilling, basis: MoneyBasis): MoneyAmount {
-  const accounting = spend.accounting
-  if (basis === "value")
-    return {
-      usd:
-        spend.costUsd === 0 && (spend.unpricedTokens > 0 || (accounting?.missingTokens ?? 0) > 0)
-          ? null
-          : spend.costUsd,
-      partial: spend.unpricedTokens > 0 || (accounting?.missingTokens ?? 0) > 0,
-      reported: false,
-    }
-  if (accounting)
-    return {
-      usd: accounting.spendCalls > 0 ? accounting.spendUsd : null,
-      partial: accounting.spendUnpriced > 0 || accounting.unknownCalls > 0,
-      reported: accounting.spendCalls > 0 && accounting.nativeCalls === accounting.spendCalls,
-    }
-  const metered = billing === "key" || billing === "gateway"
-  return {
-    usd: metered ? (spend.unpricedTokens > 0 && spend.costUsd === 0 ? null : spend.costUsd) : null,
-    partial: metered ? spend.unpricedTokens > 0 : billing === "unknown" && spend.calls > 0,
-    reported: false,
-  }
-}
-
-export type DailyMoney = MoneyAmount & { omitted: string[]; day: string | null }
-export function dailyMoney(usage: Usage | null, basis: MoneyBasis, now?: number): DailyMoney {
-  if (!usage) return { usd: null, partial: true, reported: false, omitted: [], day: null }
-  if (now !== undefined && usage.days.at(-1) !== dayKey(now))
-    return {
-      usd: null,
-      partial: true,
-      reported: false,
-      omitted: usage.agents.map((agent) => agent.name),
-      day: usage.days.at(-1) ?? null,
-    }
-  const omitted: string[] = []
-  let usd = 0
-  let any = false
-  let reported = true
-  for (const agent of usage.agents) {
-    const day = agent.daily.at(-1)
-    if (agent.state === "unavailable" || !day) {
-      omitted.push(agent.name)
-      continue
-    }
-    if ((agent.partial || !usage.complete) && day.calls === 0) {
-      omitted.push(agent.name)
-      continue
-    }
-    const amount = moneyAmount(day, agent.billing, basis)
-    if (amount.partial || agent.partial) omitted.push(agent.name)
-    if (amount.usd === null) continue
-    any = true
-    usd += amount.usd
-    reported &&= amount.reported
-  }
-  return {
-    usd: any ? usd : null,
-    partial:
-      !usage.complete || usage.skippedFiles > 0 || usage.cappedFiles > 0 || omitted.length > 0,
-    reported: any && reported,
-    omitted,
-    day: usage.days.at(-1) ?? null,
-  }
-}
+export type { MoneyAmount }
+export { dailyMoney, moneyAmount, usageForMoney }
 
 export type ReadingOption = {
   id: string
@@ -164,60 +33,61 @@ function closest(options: readonly ReadingOption[]): ReadingOption | undefined {
   return best
 }
 
+function limitOptionsForAgent(agent: AgentLimits): ReadingOption[] {
+  if (agent.state !== "reported") return []
+  return agent.windows.map((window) => ({
+    id: readingId(agent.agent, "limit", window.label),
+    agent: agent.agent,
+    name: agent.name,
+    kind: "limit",
+    label: `${window.label} (%)`,
+    window,
+    available: window.reached || window.usedPercent !== null,
+    credits: agent.credits !== undefined && (window.reached || (window.usedPercent ?? 0) >= 100),
+  }))
+}
+
+function costOptionForAgent(agent: Usage["agents"][number], now?: number): ReadingOption {
+  const day = agent.daily.at(-1)
+  const basis: MoneyBasis =
+    agent.billing === "key" || agent.billing === "gateway" || (day?.accounting?.spendCalls ?? 0) > 0
+      ? "spend"
+      : "value"
+  const unavailable =
+    agent.state === "unavailable" ||
+    !day ||
+    (now !== undefined && day.day !== dayKey(now)) ||
+    (agent.partial && day.calls === 0)
+  const money = unavailable
+    ? { usd: null, partial: true, reported: false }
+    : moneyAmount(day, agent.billing, basis)
+  return {
+    id: readingId(agent.agent, "cost"),
+    agent: agent.agent,
+    name: agent.name,
+    kind: "cost",
+    label: basis === "spend" ? "Daily API spend ($)" : "Daily API-price value ($)",
+    money,
+    basis,
+    available: money.usd !== null,
+    reason:
+      agent.state === "unavailable"
+        ? (agent.reason ?? "Usage not reported")
+        : money.usd === null
+          ? "No priced usage available"
+          : agent.partial,
+  }
+}
+
 export function readingOptions(
   limits: readonly AgentLimits[],
   usage: Usage | null,
   now?: number,
 ): ReadingOption[] {
-  const options: ReadingOption[] = []
-  for (const agent of limits) {
-    if (agent.state !== "reported") continue
-    for (const window of agent.windows)
-      options.push({
-        id: readingId(agent.agent, "limit", window.label),
-        agent: agent.agent,
-        name: agent.name,
-        kind: "limit",
-        label: `${window.label} (%)`,
-        window,
-        available: window.reached || window.usedPercent !== null,
-        credits:
-          agent.credits !== undefined && (window.reached || (window.usedPercent ?? 0) >= 100),
-      })
-  }
-  for (const agent of usage?.agents ?? []) {
-    const day = agent.daily.at(-1)
-    const basis =
-      agent.billing === "key" ||
-      agent.billing === "gateway" ||
-      (day?.accounting?.spendCalls ?? 0) > 0
-        ? "spend"
-        : "value"
-    const money =
-      agent.state === "unavailable" ||
-      !day ||
-      (now !== undefined && day.day !== dayKey(now)) ||
-      (agent.partial && day.calls === 0)
-        ? { usd: null, partial: true, reported: false }
-        : moneyAmount(day, agent.billing, basis)
-    options.push({
-      id: readingId(agent.agent, "cost"),
-      agent: agent.agent,
-      name: agent.name,
-      kind: "cost",
-      label: basis === "spend" ? "Daily API spend ($)" : "Daily API-price value ($)",
-      money,
-      basis,
-      available: money.usd !== null,
-      reason:
-        agent.state === "unavailable"
-          ? (agent.reason ?? "Usage not reported")
-          : money.usd === null
-            ? "No priced usage available"
-            : agent.partial,
-    })
-  }
-  return options
+  return [
+    ...limits.flatMap(limitOptionsForAgent),
+    ...(usage?.agents ?? []).map((agent) => costOptionForAgent(agent, now)),
+  ]
 }
 
 export function selectedReadings(

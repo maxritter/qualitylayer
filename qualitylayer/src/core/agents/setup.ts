@@ -82,9 +82,8 @@ export const agentSetupCapabilities = (
   }))
 
 /** Unknown authentication stays unknown; it does not remove an installed agent's launch capability. */
-export const usableSetupAgent = (health: AgentHealth | undefined): boolean =>
-  health?.status === "available" &&
-  health.path !== null &&
-  health.account !== SIGNING_IN &&
-  health.accountCheck?.state !== "signed-out" &&
-  health.accountCheck?.providers !== 0
+export function usableSetupAgent(health: AgentHealth | undefined): boolean {
+  if (health?.status !== "available" || health.path === null) return false
+  if (health.account === SIGNING_IN) return false
+  return health.accountCheck?.state !== "signed-out" && health.accountCheck?.providers !== 0
+}

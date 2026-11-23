@@ -10,9 +10,11 @@
 import type { NativeAgent } from "../agents/ids.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
 import { claudeRefusal } from "./claude.ts"
-import { lastRecordReading } from "./codex.ts"
 import { copilotReading } from "./copilot-record.ts"
+import { codexMessageReset, codexStop } from "./stop-codex.ts"
 import { windowLabel } from "./window.ts"
+
+export { codexMessageReset }
 
 export type LimitStop = {
   /** The record row that says it: the same row is the same stop. */
@@ -57,98 +59,6 @@ function claudeStop(lines: readonly string[]): LimitStop | null {
           window: refusal.minutes === null ? null : windowLabel(refusal.minutes),
           at: refusal.at,
         }
-  }
-  return null
-}
-
-/** What Codex writes when the person or the agent goes on: nothing ahead of it can still be a stop. */
-const CODEX_PROGRESS = new Set([
-  "user_message",
-  "agent_message",
-  "task_started",
-  "turn_started",
-  "item_completed",
-])
-/** The rows that end a Codex turn, carrying its error when it failed. */
-const CODEX_TURN_END = new Set(["task_complete", "turn_complete", "turn_aborted"])
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-/**
- * Codex's own words (codex-rs/protocol/src/error.rs): "… or try again at Dec 2nd, 2026 5:23 PM.",
- * the same day "… or try again at 5:23 PM.", and on some plans "… Try again at 5:23 PM."
- */
-const CODEX_TRY_AGAIN =
-  /[Tt]ry again at (?:([A-Z][a-z]{2}) (\d{1,2})(?:st|nd|rd|th)?, (\d{4}) )?(\d{1,2}):(\d{2}) ([AP]M)/
-
-/**
- * The reset time Codex's error message names, in this machine's local time as Codex printed it; null
- * when it names none. A time without a date is on the day of the error.
- */
-export function codexMessageReset(message: unknown, at: number | null): number | null {
-  const match = typeof message === "string" ? CODEX_TRY_AGAIN.exec(message) : null
-  if (match === null) return null
-  const [, month, day, year, hour, minute, half] = match
-  const date = new Date(at ?? 0)
-  if (month !== undefined) {
-    const index = MONTHS.indexOf(month)
-    if (index < 0) return null
-    date.setFullYear(Number(year), index, Number(day))
-  } else if (at === null) return null
-  const hours = (Number(hour) % 12) + (half === "PM" ? 12 : 0)
-  date.setHours(hours, Number(minute), 0, 0)
-  const time = date.getTime()
-  return Number.isNaN(time) ? null : time
-}
-
-/**
- * When Codex's plan resets and which window ran out. The time its error message names wins (a free
- * plan's last reading can still show 99 % used); otherwise the windows the last reading shows used up.
- */
-function codexReset(
-  lines: readonly string[],
-  message: unknown,
-  at: number | null,
-): { resetsAt: number | null; window: string | null } {
-  const windows = lastRecordReading(lines)?.windows ?? []
-  const named = codexMessageReset(message, at)
-  if (named !== null) {
-    // The window whose own reset is that minute, when the reading has one.
-    const same = windows.find(
-      (window) => window.resetsAt !== null && Math.abs(window.resetsAt - named) < 2 * 60_000,
-    )
-    return { resetsAt: named, window: same === undefined ? null : windowLabel(same.minutes) }
-  }
-  const full = windows.filter((window) => window.usedPercent >= 100)
-  const latest = full.sort((a, b) => (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0]
-  return latest === undefined
-    ? { resetsAt: null, window: null }
-    : { resetsAt: latest.resetsAt, window: windowLabel(latest.minutes) }
-}
-
-/** The error a Codex row carries: the live `error` event itself, or the one a turn ended with. */
-function codexError(payload: Json): Json | null {
-  if (payload.type === "error") return payload
-  return CODEX_TURN_END.has(String(payload.type)) ? record(payload.error) : null
-}
-
-function codexStop(lines: readonly string[]): LimitStop | null {
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const row = parse(lines[index] as string)
-    const payload = record(row?.payload)
-    if (row?.type !== "event_msg" || payload === null) continue
-    const type = String(payload.type)
-    if (CODEX_PROGRESS.has(type)) return null
-    // A turn end without its error: an older record keeps the error as its own row just before.
-    const error = codexError(payload)
-    if (error === null) continue
-    // The last turn failed on something else: no stop.
-    if (error.codex_error_info !== "usage_limit_exceeded") return null
-    const at = timeOf(row.timestamp)
-    return {
-      key: `${String(row.timestamp)}:${String(row.ordinal ?? "")}`,
-      ...codexReset(lines, error.message, at),
-      at,
-    }
   }
   return null
 }

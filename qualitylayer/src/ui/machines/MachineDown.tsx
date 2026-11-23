@@ -85,19 +85,7 @@ function wordsOf(machine: Machine): Words {
   }
 }
 
-export function MachineDown({
-  machine,
-  view,
-  onTry,
-}: {
-  machine: Machine
-  /** The switcher's list; the place always carries the switcher, so there is a way back. */
-  view: SwitchView | null
-  /** Ask this computer's server to connect the machine now. */
-  onTry: () => Promise<void>
-}) {
-  const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
+function useMachineDownEffects(machine: Machine, onError: (message: string) => void) {
   const [fingerprint, setFingerprint] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const alive = useRef(true)
@@ -107,25 +95,65 @@ export function MachineDown({
       alive.current = false
     }
   }, [])
-  // The countdown to the next try, while there is one.
   const retryAt = machine.state === "offline" ? machine.retryAt : undefined
   useEffect(() => {
     if (retryAt === undefined) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [retryAt])
-  // A changed host key: the new one, read from the machine, is what Trust takes.
   useEffect(() => {
     if (machine.state !== "unknown-host") return
     setFingerprint(null)
     void readHostKey(machine.id).then(
       (read) => alive.current && setFingerprint(read.fingerprint),
-      (cause) =>
-        alive.current && setProblem(cause instanceof Error ? cause.message : String(cause)),
+      (cause) => alive.current && onError(cause instanceof Error ? cause.message : String(cause)),
     )
-  }, [machine.id, machine.state])
+  }, [machine.id, machine.state, onError])
+  return { fingerprint, now, retryAt, alive }
+}
 
-  const words = wordsOf(machine)
+function MachineDownPrimaryButton({
+  state,
+  busy,
+  fingerprint,
+  onPair,
+  onTrust,
+  onTry,
+}: {
+  state: Machine["state"]
+  busy: boolean
+  fingerprint: string | null
+  onPair: () => void
+  onTrust: () => void
+  onTry: () => void
+}) {
+  if (state === "needs-you") {
+    return (
+      <Button type="button" disabled={busy} onClick={onPair}>
+        <KeyRoundIcon aria-hidden="true" />
+        Pair again
+      </Button>
+    )
+  }
+  if (state === "unknown-host") {
+    return (
+      <Button type="button" disabled={busy || fingerprint === null} onClick={onTrust}>
+        <ShieldCheckIcon aria-hidden="true" />
+        Trust new key
+      </Button>
+    )
+  }
+  return (
+    <Button type="button" disabled={busy} onClick={onTry}>
+      <RotateCwIcon aria-hidden="true" />
+      {busy ? "Trying…" : "Try now"}
+    </Button>
+  )
+}
+
+function useMachineDownAction(alive: React.RefObject<boolean>) {
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
   const act = async (what: () => Promise<void>) => {
     setBusy(true)
     setProblem(null)
@@ -137,6 +165,30 @@ export function MachineDown({
       if (alive.current) setBusy(false)
     }
   }
+  return { busy, problem, setProblem, act }
+}
+
+export function MachineDown({
+  machine,
+  view,
+  onTry,
+}: {
+  machine: Machine
+  /** The switcher's list; the place always carries the switcher, so there is a way back. */
+  view: SwitchView | null
+  /** Ask this computer's server to connect the machine now. */
+  onTry: () => Promise<void>
+}) {
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  const { busy, problem, setProblem, act } = useMachineDownAction(alive)
+  const { fingerprint, now, retryAt } = useMachineDownEffects(machine, setProblem)
+  const words = wordsOf(machine)
   const pair = () => act(async () => showPairing(await startPairing({ machine: machine.id })))
   const trust = () =>
     act(async () => {
@@ -179,26 +231,14 @@ export function MachineDown({
         ) : null}
         {machine.state === "connecting" ? null : (
           <div className="md-acts">
-            {machine.state === "needs-you" ? (
-              <Button type="button" disabled={busy} onClick={() => void pair()}>
-                <KeyRoundIcon aria-hidden="true" />
-                Pair again
-              </Button>
-            ) : machine.state === "unknown-host" ? (
-              <Button
-                type="button"
-                disabled={busy || fingerprint === null}
-                onClick={() => void trust()}
-              >
-                <ShieldCheckIcon aria-hidden="true" />
-                Trust new key
-              </Button>
-            ) : (
-              <Button type="button" disabled={busy} onClick={() => void act(onTry)}>
-                <RotateCwIcon aria-hidden="true" />
-                {busy ? "Trying…" : "Try now"}
-              </Button>
-            )}
+            <MachineDownPrimaryButton
+              state={machine.state}
+              busy={busy}
+              fingerprint={fingerprint}
+              onPair={() => void pair()}
+              onTrust={() => void trust()}
+              onTry={() => void act(onTry)}
+            />
             <Button
               type="button"
               variant="outline"

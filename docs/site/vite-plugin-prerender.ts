@@ -19,6 +19,80 @@ export function renderedHtml(template: string, head: string, body: string) {
     .replace('<div id="root"></div>', () => `<div id="root">${body}</div>`);
 }
 
+interface ManifestChunk {
+  css?: string[];
+  imports?: string[];
+  dynamicImports?: string[];
+  isEntry?: boolean;
+}
+
+const ROUTE_ENTRIES: Record<string, string> = {
+  "/": "src/components/home/Sections.tsx",
+  "/pricing": "src/pages/Pricing.tsx",
+  "/download": "src/pages/Download.tsx",
+  "/404": "src/pages/NotFound.tsx",
+  [DEEP_DIVE_PATH]: "src/pages/DeepDive.tsx",
+  ...Object.fromEntries(COMPARISON_PATHS.map((route) => [route, "src/pages/Compare.tsx"])),
+  ...Object.fromEntries(LEGAL_PATHS.map((route) => [route, "src/pages/Legal.tsx"])),
+};
+
+const EXTRA_ROUTES = ["/404", "/billing", "/checkout/success", "/shared", "/open", "/notifications"];
+
+async function readIndexTemplate(outDir: string): Promise<string | null> {
+  try {
+    return await readFile(path.join(outDir, "index.html"), "utf8");
+  } catch (cause: unknown) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+    const held = await readdir(outDir).catch(() => ["no folder"]);
+    console.error(`Prerender skipped: ${outDir} has no index.html (it holds: ${held.slice(0, 40).join(", ")}).`);
+    return null;
+  }
+}
+
+function collectStyles(manifest: Record<string, ManifestChunk>, entry: string | undefined, seen = new Set<string>()): string[] {
+  if (!entry || seen.has(entry)) return [];
+  seen.add(entry);
+  const chunk = manifest[entry];
+  if (!chunk) return [];
+  const deps = [...(chunk.imports ?? []), ...(chunk.isEntry ? [] : chunk.dynamicImports ?? [])];
+  return [...(chunk.css ?? []), ...deps.flatMap((dependency) => collectStyles(manifest, dependency, seen))];
+}
+
+function stylesheetTags(manifest: Record<string, ManifestChunk>, entry: string | undefined, template: string): string {
+  return [...new Set(collectStyles(manifest, entry))]
+    .filter((file) => !template.includes(`href="/${file}"`))
+    .map((file) => `<link rel="stylesheet" href="/${file}">`)
+    .join("\n");
+}
+
+async function prerenderRoutes(root: string, outDir: string, mode: string) {
+  const template = await readIndexTemplate(outDir);
+  if (template === null) return;
+  const manifest = JSON.parse(await readFile(path.join(outDir, ".vite/manifest.json"), "utf8")) as Record<string, ManifestChunk>;
+  const server = await createServer({
+    configFile: false,
+    root,
+    mode,
+    plugins: [cockpitDemo()],
+    resolve: { alias: { "@ql": path.resolve(root, "../../qualitylayer/src") }, dedupe: [...COCKPIT_DEDUPE] },
+    server: { middlewareMode: true, watch: null },
+    optimizeDeps: { noDiscovery: true },
+    appType: "custom",
+  });
+  try {
+    const { render } = await server.ssrLoadModule("/src/prerender.tsx");
+    for (const route of [...Object.keys(PUBLIC_PAGES), ...EXTRA_ROUTES]) {
+      const { head, body } = await render(route);
+      const css = stylesheetTags(manifest, ROUTE_ENTRIES[route], template);
+      const file = path.join(outDir, route === "/" ? "index.html" : `${route.slice(1)}.html`);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, renderedHtml(template, `${head}\n${css}`, body));
+    }
+  } finally {
+    await server.close();
+  }
+}
+
 export default function prerenderPlugin(): Plugin {
   let root: string;
   let outDir: string;
@@ -35,52 +109,7 @@ export default function prerenderPlugin(): Plugin {
       // A build that failed before it wrote its pages has none to render, and Vite closes the bundle
       // in a `finally`: an error thrown here would hide the build's own.
       if (error) return;
-      const template = await readFile(path.join(outDir, "index.html"), "utf8").catch(async (cause: unknown) => {
-        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
-        const held = await readdir(outDir).catch(() => ["no folder"]);
-        console.error(`Prerender skipped: ${outDir} has no index.html (it holds: ${held.slice(0, 40).join(", ")}).`);
-        return null;
-      });
-      if (template === null) return;
-      const manifest = JSON.parse(await readFile(path.join(outDir, ".vite/manifest.json"), "utf8")) as Record<string, { css?: string[]; imports?: string[]; dynamicImports?: string[]; isEntry?: boolean }>;
-      const entries: Record<string, string> = {
-        "/": "src/components/home/Sections.tsx",
-        "/pricing": "src/pages/Pricing.tsx",
-        "/download": "src/pages/Download.tsx",
-        "/404": "src/pages/NotFound.tsx",
-        [DEEP_DIVE_PATH]: "src/pages/DeepDive.tsx",
-        ...Object.fromEntries(COMPARISON_PATHS.map((route) => [route, "src/pages/Compare.tsx"])),
-        ...Object.fromEntries(LEGAL_PATHS.map((route) => [route, "src/pages/Legal.tsx"])),
-      };
-      function styles(entry: string | undefined, seen = new Set<string>()): string[] {
-        if (!entry || seen.has(entry)) return [];
-        seen.add(entry);
-        const chunk = manifest[entry];
-        return [...(chunk?.css ?? []), ...[...(chunk?.imports ?? []), ...(chunk?.isEntry ? [] : chunk?.dynamicImports ?? [])].flatMap((dependency) => styles(dependency, seen))];
-      }
-      const server = await createServer({
-        configFile: false,
-        root,
-        mode,
-        plugins: [cockpitDemo()],
-        resolve: { alias: { "@ql": path.resolve(root, "../../qualitylayer/src") }, dedupe: [...COCKPIT_DEDUPE] },
-        server: { middlewareMode: true, watch: null },
-        optimizeDeps: { noDiscovery: true },
-        appType: "custom",
-      });
-      try {
-        const { render } = await server.ssrLoadModule("/src/prerender.tsx");
-        for (const route of [...Object.keys(PUBLIC_PAGES), "/404", "/billing", "/checkout/success", "/shared", "/open", "/notifications"]) {
-          const { head, body } = await render(route);
-          const css = [...new Set(styles(entries[route]))].filter((file) => !template.includes(`href="/${file}"`))
-            .map((file) => `<link rel="stylesheet" href="/${file}">`).join("\n");
-          const file = path.join(outDir, route === "/" ? "index.html" : `${route.slice(1)}.html`);
-          await mkdir(path.dirname(file), { recursive: true });
-          await writeFile(file, renderedHtml(template, `${head}\n${css}`, body));
-        }
-      } finally {
-        await server.close();
-      }
+      await prerenderRoutes(root, outDir, mode);
     },
   };
 }

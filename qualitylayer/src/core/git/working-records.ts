@@ -1,14 +1,17 @@
 import { createHash } from "node:crypto"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import {
-  WORKING_CLOSED_KEEP_MS,
-  WORKING_EVENTS_MAX,
-  WORKING_EVENTS_PER_TASK,
-  WORKING_FILE_MAX_BYTES,
-  WORKING_STORE_MAX_BYTES,
-  WORKING_TASK_MAX_BYTES,
-} from "../home-caps.ts"
+import { WORKING_CLOSED_KEEP_MS, WORKING_EVENTS_MAX, WORKING_FILE_MAX_BYTES } from "../home-caps.ts"
+
+export { admitWorkingRecord } from "./working-admit.ts"
+export {
+  clearWorkingRecords,
+  closeWorkingRecords,
+  deleteWorkingRecords,
+  endWorkingCalls,
+  expireWorkingRecords,
+  reopenWorkingRecords,
+} from "./working-lifecycle.ts"
 
 export const digest = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex")
 export const workingTaskKey = (task: { repoId: string; slug: string }) =>
@@ -36,56 +39,63 @@ export type WorkingRecord = {
   state: "pending" | "verified" | "ambiguous" | "failed" | "unavailable"
   operations: WorkingOperation[]
 }
-type Ledger = { version: 1; records: WorkingRecord[]; objects: Record<string, number> }
-const LEDGER_BYTES = 8 * 1024 * 1024
-const empty = (): Ledger => ({ version: 1, records: [], objects: {} })
+export type WorkingLedger = {
+  version: 1
+  records: WorkingRecord[]
+  objects: Record<string, number>
+}
+export const LEDGER_BYTES = 8 * 1024 * 1024
+const empty = (): WorkingLedger => ({ version: 1, records: [], objects: {} })
 export const workingDirectory = (ctx: Ctx) => join(ctx.home, "working-changes")
 export const workingObjectPath = (ctx: Ctx, hash: string) => {
   if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error("Invalid saved file identity")
   return join(workingDirectory(ctx), "objects", hash)
 }
-const hashesOf = (record: WorkingRecord) =>
+export const hashesOfRecord = (record: WorkingRecord) =>
   record.operations
     .flatMap((op) => [op.before, op.after])
     .filter((hash): hash is string => hash !== null)
 
-export async function readWorkingLedger(ctx: Ctx): Promise<Ledger> {
+const isSha256 = (value: string) => /^[a-f0-9]{64}$/.test(value)
+
+function isValidLedgerShape(ledger: WorkingLedger): boolean {
+  if (ledger.version !== 1 || !Array.isArray(ledger.records)) return false
+  if (ledger.records.length > WORKING_EVENTS_MAX) return false
+  return typeof ledger.objects === "object" && ledger.objects !== null
+}
+
+function validateRecord(row: WorkingRecord) {
+  if (
+    !isSha256(row.id) ||
+    !isSha256(row.task) ||
+    !Array.isArray(row.operations) ||
+    row.operations.length > 64
+  )
+    throw new Error("Invalid saved change record")
+  if (hashesOfRecord(row).some((hash) => !isSha256(hash)))
+    throw new Error("Invalid saved source identity")
+}
+
+export async function readWorkingLedger(ctx: Ctx): Promise<WorkingLedger> {
   const path = join(workingDirectory(ctx), "index.json")
   if (!(await ctx.fs.exists(path))) return empty()
   if (!ctx.fs.readRegularFile) throw new Error("Safe saved-change reads are unavailable")
   const safe = ctx.fs.forPublication?.(ctx.home, workingDirectory(ctx))
   if (!safe?.readRegularFile) throw new Error("Safe saved-change reads are unavailable")
   const body = await safe.readRegularFile(path, LEDGER_BYTES)
-  const ledger = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as Ledger
-  if (
-    ledger.version !== 1 ||
-    !Array.isArray(ledger.records) ||
-    ledger.records.length > WORKING_EVENTS_MAX ||
-    typeof ledger.objects !== "object" ||
-    ledger.objects === null
-  )
-    throw new Error("Saved change history is unavailable")
-  for (const row of ledger.records) {
-    if (
-      !/^[a-f0-9]{64}$/.test(row.id) ||
-      !/^[a-f0-9]{64}$/.test(row.task) ||
-      !Array.isArray(row.operations) ||
-      row.operations.length > 64
-    )
-      throw new Error("Invalid saved change record")
-    if (hashesOf(row).some((hash) => !/^[a-f0-9]{64}$/.test(hash)))
-      throw new Error("Invalid saved source identity")
-  }
+  const ledger = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)) as WorkingLedger
+  if (!isValidLedgerShape(ledger)) throw new Error("Saved change history is unavailable")
+  for (const row of ledger.records) validateRecord(row)
   return ledger
 }
 
-async function prune(ctx: Ctx, ledger: Ledger) {
+export async function pruneWorkingLedger(ctx: Ctx, ledger: WorkingLedger) {
   const now = ctx.clock.now()
   for (const row of ledger.records)
     if (row.closed !== undefined && now - row.closed >= WORKING_CLOSED_KEEP_MS)
       row.state = "unavailable"
   const used = new Set(
-    ledger.records.filter((row) => row.state !== "unavailable").flatMap(hashesOf),
+    ledger.records.filter((row) => row.state !== "unavailable").flatMap(hashesOfRecord),
   )
   for (const hash of Object.keys(ledger.objects)) {
     if (used.has(hash)) continue
@@ -97,7 +107,7 @@ async function prune(ctx: Ctx, ledger: Ledger) {
 /** One short metadata transaction; it never locks the person's working files. */
 export async function updateWorkingLedger<T>(
   ctx: Ctx,
-  change: (ledger: Ledger) => Promise<T>,
+  change: (ledger: WorkingLedger) => Promise<T>,
 ): Promise<T> {
   const dir = workingDirectory(ctx)
   await ctx.fs.mkdir(dir, { mode: 0o700 })
@@ -106,7 +116,7 @@ export async function updateWorkingLedger<T>(
     join(dir, ".metadata.lock"),
     async () => {
       const ledger = await readWorkingLedger(ctx)
-      await prune(ctx, ledger)
+      await pruneWorkingLedger(ctx, ledger)
       const result = await change(ledger)
       const body = JSON.stringify(ledger)
       if (Buffer.byteLength(body) > LEDGER_BYTES)
@@ -116,74 +126,6 @@ export async function updateWorkingLedger<T>(
     },
     { waitMs: 10, label: "saved workflow changes" },
   )
-}
-
-function capacityFor(
-  ledger: Ledger,
-  record: WorkingRecord,
-  contents: Map<string, string>,
-): boolean {
-  if (ledger.records.some((row) => row.id === record.id)) return false
-  const own = ledger.records.filter((row) => row.task === record.task)
-  if (own.length >= WORKING_EVENTS_PER_TASK || ledger.records.length >= WORKING_EVENTS_MAX)
-    return false
-  const size = (hash: string) =>
-    contents.has(hash) ? Buffer.byteLength(contents.get(hash)!) : (ledger.objects[hash] ?? 0)
-  const total = (hashes: Set<string>) => [...hashes].reduce((all, hash) => all + size(hash), 0)
-  const ownBytes = total(new Set([...own.flatMap(hashesOf), ...contents.keys()]))
-  const allBytes =
-    total(new Set([...Object.keys(ledger.objects), ...contents.keys()])) + LEDGER_BYTES
-  return ownBytes <= WORKING_TASK_MAX_BYTES && allBytes <= WORKING_STORE_MAX_BYTES
-}
-
-function markOverlap(ledger: Ledger, record: WorkingRecord) {
-  const paths = new Set(record.operations.flatMap((op) => [op.path, op.from].filter(Boolean)))
-  for (const other of ledger.records) {
-    if (other.repository !== record.repository) continue
-    if (other.end !== undefined && other.end < record.at) continue
-    if (other.operations.some((op) => paths.has(op.path) || (op.from && paths.has(op.from)))) {
-      other.state = "ambiguous"
-      delete other.verified
-      record.state = "ambiguous"
-    }
-  }
-}
-
-async function writeObjects(ctx: Ctx, contents: Map<string, string>) {
-  for (const [hash, content] of contents) {
-    const path = workingObjectPath(ctx, hash)
-    if (await ctx.fs.exists(path)) {
-      await workingSource(ctx, hash)
-      continue
-    }
-    await ctx.fs.writeFile(path, content, { mode: 0o600, exclusive: true })
-  }
-}
-
-export async function admitWorkingRecord(
-  ctx: Ctx,
-  record: WorkingRecord,
-  contents: Map<string, string>,
-): Promise<boolean> {
-  if ([...contents].some(([hash, content]) => digest(content) !== hash))
-    throw new Error("Saved source content does not match its identity")
-  return updateWorkingLedger(ctx, async (ledger) => {
-    if (!capacityFor(ledger, record, contents)) return false
-    markOverlap(ledger, record)
-    const dir = join(workingDirectory(ctx), "objects")
-    await ctx.fs.mkdir(dir, { mode: 0o700 })
-    await ctx.fs.assertSafeDirectory?.(dir)
-    ledger.records.push(record)
-    if (record.state === "verified") record.verified = true
-    for (const [hash, content] of contents) ledger.objects[hash] ??= Buffer.byteLength(content)
-    const reservation = JSON.stringify(ledger)
-    if (Buffer.byteLength(reservation) > LEDGER_BYTES)
-      throw new Error("Saved change history reached its limit")
-    // Reserve bytes before writing sources; an interrupted capture cannot leave unaccounted objects.
-    await ctx.fs.atomicWrite(join(workingDirectory(ctx), "index.json"), reservation)
-    await writeObjects(ctx, contents)
-    return true
-  })
 }
 
 /** Source is read only after the caller establishes task + part membership. */
@@ -203,95 +145,4 @@ export async function workingSource(
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   if (text.includes("\0")) throw new Error("Binary saved source")
   return text
-}
-
-export async function closeWorkingRecords(
-  ctx: Ctx,
-  task: { repoId: string; slug: string },
-): Promise<void> {
-  if (!(await ctx.fs.exists(workingDirectory(ctx)))) return
-  const key = workingTaskKey(task)
-  await updateWorkingLedger(ctx, async (ledger) => {
-    for (const row of ledger.records)
-      if (row.task === key && row.closed === undefined) {
-        row.closed = ctx.clock.now()
-        row.end ??= row.closed
-      }
-  })
-}
-
-export async function clearWorkingRecords(
-  ctx: Ctx,
-  task: { repoId: string; slug: string },
-): Promise<void> {
-  if (!(await ctx.fs.exists(workingDirectory(ctx)))) return
-  const key = workingTaskKey(task)
-  await updateWorkingLedger(ctx, async (ledger) => {
-    for (const row of ledger.records)
-      if (row.task === key) {
-        row.state = "unavailable"
-        row.end ??= ctx.clock.now()
-      }
-    await prune(ctx, ledger)
-  })
-}
-
-export async function expireWorkingRecords(ctx: Ctx): Promise<void> {
-  const ledger = await readWorkingLedger(ctx)
-  if (
-    ledger.records.some(
-      (row) =>
-        row.state !== "unavailable" &&
-        row.closed !== undefined &&
-        ctx.clock.now() - row.closed >= WORKING_CLOSED_KEEP_MS,
-    )
-  )
-    await updateWorkingLedger(ctx, async () => {})
-}
-
-export async function deleteWorkingRecords(
-  ctx: Ctx,
-  task: { repoId: string; slug: string },
-): Promise<void> {
-  if (!(await ctx.fs.exists(workingDirectory(ctx)))) return
-  const key = workingTaskKey(task)
-  await updateWorkingLedger(ctx, async (ledger) => {
-    ledger.records = ledger.records.filter((row) => row.task !== key)
-    await prune(ctx, ledger)
-  })
-}
-
-export async function reopenWorkingRecords(
-  ctx: Ctx,
-  task: { repoId: string; slug: string },
-): Promise<void> {
-  if (!(await ctx.fs.exists(workingDirectory(ctx)))) return
-  const key = workingTaskKey(task)
-  await updateWorkingLedger(ctx, async (ledger) => {
-    for (const row of ledger.records) if (row.task === key) delete row.closed
-  })
-}
-
-/** A native turn/session end closes missing completions; it cannot certify their edits. */
-export async function endWorkingCalls(
-  ctx: Ctx,
-  task: { repoId: string; slug: string },
-  session: string,
-): Promise<void> {
-  if (!(await ctx.fs.exists(workingDirectory(ctx)))) return
-  const key = workingTaskKey(task)
-  const ledger = await readWorkingLedger(ctx)
-  if (
-    !ledger.records.some(
-      (row) => row.task === key && row.session === session && row.end === undefined,
-    )
-  )
-    return
-  await updateWorkingLedger(ctx, async (current) => {
-    for (const row of current.records)
-      if (row.task === key && row.session === session && row.end === undefined) {
-        row.end = ctx.clock.now()
-        if (row.state === "pending") row.state = "failed"
-      }
-  })
 }

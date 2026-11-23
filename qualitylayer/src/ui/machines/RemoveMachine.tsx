@@ -21,6 +21,102 @@ import "./machines.css"
 
 const ICON = "size-[15px]"
 
+function useRunningTasks(machineId: string, reachable: boolean) {
+  const [running, setRunning] = useState<number | null>(null)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    const stopReading = new AbortController()
+    if (reachable) {
+      void readRunning(machineId, stopReading.signal).then(
+        (count) => alive.current && setRunning(count),
+      )
+    }
+    return () => {
+      alive.current = false
+      stopReading.abort()
+    }
+  }, [machineId, reachable])
+  return { running, alive }
+}
+
+function RemoveAlerts({
+  name,
+  releasing,
+  running,
+  problem,
+}: {
+  name: string
+  releasing: boolean
+  running: number | null
+  problem: string | null
+}) {
+  const releaseWarning =
+    running !== null && running > 0
+      ? `${running === 1 ? "1 task" : `${running} tasks`} running there stop at their next step`
+      : "Tasks there stop at their next step"
+  return (
+    <>
+      {releasing ? (
+        <p className="ma-bad" role="alert">
+          <TriangleAlertIcon className={ICON} aria-hidden="true" />
+          <span>{releaseWarning}</span>
+        </p>
+      ) : null}
+      {problem !== null ? (
+        <p className="ma-bad" role="alert">
+          <TriangleAlertIcon className={ICON} aria-hidden="true" />
+          <span>
+            {problem} {name} was not removed.
+          </span>
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+async function performRemoveMachine({
+  machineId,
+  name,
+  releasing,
+  dropKey,
+  working,
+  alive,
+  setBusy,
+  setProblem,
+  onRemoved,
+  onClose,
+}: {
+  machineId: string
+  name: string
+  releasing: boolean
+  dropKey: boolean
+  working: React.RefObject<boolean>
+  alive: React.RefObject<boolean>
+  setBusy: (busy: boolean) => void
+  setProblem: (problem: string | null) => void
+  onRemoved: (name: string) => void
+  onClose: () => void
+}) {
+  working.current = true
+  setBusy(true)
+  setProblem(null)
+  try {
+    await removeMachine(machineId, releasing, !dropKey)
+  } catch (cause) {
+    working.current = false
+    if (alive.current) {
+      setBusy(false)
+      setProblem(cause instanceof Error ? cause.message : "The machine could not be removed.")
+    }
+    return
+  }
+  working.current = false
+  toast.success(`${name} removed${releasing ? "; its activation is released" : ""}`)
+  onRemoved(name)
+  onClose()
+}
+
 export function RemoveMachine({
   machine,
   onClose,
@@ -32,57 +128,36 @@ export function RemoveMachine({
   onRemoved: (name: string) => void
 }) {
   const { name } = machine
-  // Only a machine that is connected can be asked to release its activation.
   const reachable = machine.state === "connected"
   const [release, setRelease] = useState(false)
-  // QualityLayer's own key and its ssh config entry go with the machine unless the person keeps them.
   const [dropKey, setDropKey] = useState(true)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  // The tasks running there, when the machine could be asked; the warning never waits for it.
-  const [running, setRunning] = useState<number | null>(null)
-  const alive = useRef(true)
+  const { running, alive } = useRunningTasks(machine.id, reachable)
   const working = useRef(false)
   const cancel = useRef<HTMLButtonElement | null>(null)
-  useEffect(() => {
-    alive.current = true
-    const stopReading = new AbortController()
-    if (reachable)
-      void readRunning(machine.id, stopReading.signal).then(
-        (count) => alive.current && setRunning(count),
-      )
-    return () => {
-      alive.current = false
-      stopReading.abort()
-    }
-  }, [machine.id, reachable])
-
   const releasing = reachable && release
-  const remove = async () => {
-    working.current = true
-    setBusy(true)
-    setProblem(null)
-    try {
-      await removeMachine(machine.id, releasing, !dropKey)
-    } catch (cause) {
-      working.current = false
-      if (alive.current) {
-        setBusy(false)
-        setProblem(cause instanceof Error ? cause.message : "The machine could not be removed.")
-      }
-      return
-    }
-    working.current = false
-    toast.success(`${name} removed${releasing ? "; its activation is released" : ""}`)
-    onRemoved(name)
-    onClose()
-  }
 
-  // A stray key or click must not close the dialog over a release that is on its way.
+  const remove = () =>
+    performRemoveMachine({
+      machineId: machine.id,
+      name,
+      releasing,
+      dropKey,
+      working,
+      alive,
+      setBusy,
+      setProblem,
+      onRemoved,
+      onClose,
+    })
+
   const close = (open: boolean, details: CloseDetails) =>
     keepWhile(working.current, open, details, (next) => {
       if (!next) onClose()
     })
+
+  const confirmLabel = busy ? "Removing…" : releasing ? "Remove and release" : "Remove"
 
   return (
     <Dialog open onOpenChange={close}>
@@ -92,7 +167,6 @@ export function RemoveMachine({
         aria-label={`Remove ${name}?`}
         aria-describedby={undefined}
         showCloseButton={false}
-        // The safe answer takes the focus: Enter on a stray open never removes.
         initialFocus={cancel}
       >
         <DialogHeader>
@@ -128,24 +202,7 @@ export function RemoveMachine({
               <small className="ma-hint">And its ssh config entry here</small>
             </span>
           </label>
-          {releasing ? (
-            <p className="ma-bad" role="alert">
-              <TriangleAlertIcon className={ICON} aria-hidden="true" />
-              <span>
-                {running !== null && running > 0
-                  ? `${running === 1 ? "1 task" : `${running} tasks`} running there stop at their next step`
-                  : "Tasks there stop at their next step"}
-              </span>
-            </p>
-          ) : null}
-          {problem !== null ? (
-            <p className="ma-bad" role="alert">
-              <TriangleAlertIcon className={ICON} aria-hidden="true" />
-              <span>
-                {problem} {name} was not removed.
-              </span>
-            </p>
-          ) : null}
+          <RemoveAlerts name={name} releasing={releasing} running={running} problem={problem} />
           <div className="flex justify-end gap-2">
             <Button ref={cancel} type="button" variant="outline" disabled={busy} onClick={onClose}>
               Cancel
@@ -156,7 +213,7 @@ export function RemoveMachine({
               disabled={busy}
               onClick={() => void remove()}
             >
-              {busy ? "Removing…" : releasing ? "Remove and release" : "Remove"}
+              {confirmLabel}
             </Button>
           </div>
         </div>

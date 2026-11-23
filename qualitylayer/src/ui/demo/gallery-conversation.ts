@@ -262,19 +262,30 @@ const scenes: Record<string, Scene> = {
   },
 }
 
+const EXACT_SCENES: Record<string, string> = {
+  "plan-q": "billing-plan-questions",
+  "plan-choices": "billing-plan-questions",
+  "plan-outside": "billing-plan-questions",
+  "plan-small": "billing-plan-questions",
+  "plan-reading": "billing-plan-reading",
+  "plan-approve": "billing-plan-ready",
+  now: "billing-implement",
+  verify: "billing-verify",
+  "verify-rechecking": "billing-verify",
+  "verify-outside": "billing-verify",
+  "pr-merged": "billing-merged",
+}
+
+const PREFIX_SCENES: readonly [string, string][] = [
+  ["plan", "billing-plan"],
+  ["impl", "billing-implement"],
+  ["verify", "billing-verify-checking"],
+  ["pr-", "billing-pr"],
+]
+
 /** The usage-billing session a moment (`?moment=`) draws: the one for the moment's step. */
 export function storyScene(moment: string): string | undefined {
-  if (["plan-q", "plan-choices", "plan-outside", "plan-small"].includes(moment))
-    return "billing-plan-questions"
-  if (moment === "plan-reading") return "billing-plan-reading"
-  if (moment === "plan-approve") return "billing-plan-ready"
-  if (moment.startsWith("plan")) return "billing-plan"
-  if (moment === "now" || moment.startsWith("impl")) return "billing-implement"
-  if (["verify", "verify-rechecking", "verify-outside"].includes(moment)) return "billing-verify"
-  if (moment.startsWith("verify")) return "billing-verify-checking"
-  if (moment === "pr-merged") return "billing-merged"
-  if (moment.startsWith("pr-")) return "billing-pr"
-  return undefined
+  return EXACT_SCENES[moment] ?? PREFIX_SCENES.find(([prefix]) => moment.startsWith(prefix))?.[1]
 }
 
 /** Illustrative stage-specific records, rendered by the production Conversation component. */

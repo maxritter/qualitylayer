@@ -2,7 +2,7 @@
 // arguments for every start, and the folder the agent keeps its settings in (only for an agent whose
 // folder can be moved). Nothing is saved until Save; an empty program or folder means "use the one shown".
 
-import { type ReactNode, useId, useState } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,24 +21,20 @@ import {
   type RunPermission,
   validAbsolutePath,
 } from "../../core/config-values.ts"
-import {
-  AGENT_CAPABILITIES,
-  bypassArgsIn,
-  permissionFor,
-  resolvePermission,
-} from "../../core/run/launch-spec.ts"
+import { bypassArgsIn } from "../../core/run/launch-spec.ts"
 import { permissionChoices } from "../agent-window/conversation/footer-values.ts"
 import { AgentMark } from "../kit/marks/index.ts"
-import { ARGUMENT_EXAMPLE, DEFAULT_FOLDER, defaultModes, OWN_SETTING } from "./agent-facts.tsx"
+import { ARGUMENT_EXAMPLE, DEFAULT_FOLDER } from "./agent-facts.tsx"
 import { joinArguments, splitArguments } from "./arguments.ts"
 import { MONO_INPUT, type SaveResult } from "./CommitField.tsx"
-import { effortName, fromPick, launchEfforts, toPick } from "./Defaults.tsx"
+import { effortName } from "./Defaults.tsx"
+import { EffortField, LaunchField, ModeField } from "./LaunchSheetFields.tsx"
 import {
   type EffortDefaultsPatch,
   effortDefaultsPatch,
   type LaunchEfforts,
 } from "./launch-effort.ts"
-import { Pick, SettingsMore } from "./Rows.tsx"
+import { SettingsMore } from "./Rows.tsx"
 import "./launch-sheet.css"
 
 const PATH_PROBLEM = "Use an absolute path, like /opt/homebrew/bin/agent, or leave it empty."
@@ -73,142 +69,72 @@ export function launchPatch(
   return Object.keys(next).length === 0 ? null : { agents: { [agent]: next } }
 }
 
-function Field({
-  label,
-  problem,
-  children,
-}: {
-  label: string
-  problem?: string | null
-  children: (props: { id: string; describedBy: string | undefined }) => ReactNode
-}) {
-  const id = useId()
-  const note = `${id}-note`
-  return (
-    <div className="q-ag-f">
-      <label htmlFor={id}>{label}</label>
-      {children({ id, describedBy: problem ? note : undefined })}
-      {problem ? (
-        <span id={note} className="q-sr-err" role="alert">
-          {problem}
-        </span>
-      ) : null}
-    </div>
-  )
-}
-
-function ModeField({
+function LaunchNotes({
   agent,
-  value,
-  disabled,
-  onChange,
-  permission,
+  permitted,
+  effortPatch,
+  efforts,
+  nextEffort,
+  refused,
 }: {
   agent: NativeAgent
-  value: string
-  disabled: boolean
-  onChange: (mode: string) => void
-  permission: RunPermission
+  permitted: boolean
+  effortPatch: EffortDefaultsPatch | null
+  efforts: LaunchEfforts
+  nextEffort: EffortChoice
+  refused: string | null
 }) {
-  const name = AGENT_NAMES[agent]
-  const modes = defaultModes(agent)
-  const inherited =
-    resolvePermission(agent, permissionFor(agent, permission)).mode?.id ?? OWN_SETTING
-  const shown =
-    value === "" ? inherited : modes.some((mode) => mode.id === value) ? value : OWN_SETTING
-  if (modes.length > 1)
-    return (
-      <div className="q-ag-f">
-        <span>Default permission mode</span>
-        <Pick
-          label={`Default permission mode for ${name}`}
-          value={shown}
-          options={modes}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      </div>
-    )
+  const bypassLabel = permissionChoices(agent).find((choice) => choice.bypass)?.label ?? "Bypass"
+  const priorEffort =
+    efforts.planning !== efforts.implement
+      ? `Planning ${effortName(efforts.planning)} · Implement ${effortName(efforts.implement)}`
+      : effortName(efforts.planning)
   return (
-    <div className="q-ag-f">
-      <span>Default permission mode</span>
-      <b className="q-ag-fixed">
-        {modes.length === 1
-          ? (permissionChoices(agent)[0]?.hint ?? `${name}'s own settings`)
-          : agent === "pi"
-            ? `${value === "own" || permission !== "bypass" ? "Agent settings" : "Bypass"} · Pi has no approval switch`
-            : `${name} has no permission mode`}
-      </b>
-    </div>
-  )
-}
-
-function EffortField({
-  agent,
-  value,
-  defaults,
-  disabled,
-  onChange,
-}: {
-  agent: NativeAgent
-  value: EffortChoice
-  defaults: LaunchEfforts
-  disabled: boolean
-  onChange: (effort: EffortChoice) => void
-}) {
-  const name = AGENT_NAMES[agent],
-    capability = AGENT_CAPABILITIES[agent]
-  if (capability.effort !== "separate")
-    return (
-      <div className="q-ag-f">
-        <span>Default effort</span>
-        <b className="q-ag-fixed">
-          {capability.effort === "in-model"
-            ? `Part of the model ${name} runs`
-            : `${name} has no separate effort setting`}
-        </b>
-      </div>
-    )
-  const options = launchEfforts(agent)
-    .filter((option) => option.id === "agent-settings" || capability.efforts.includes(option.id))
-    .map((option) => ({
-      ...option,
-      ...(option.id === "high"
-        ? { note: "Default" }
-        : option.id === "xhigh" || option.id === "max"
-          ? { note: "costs much more" }
-          : {}),
-    }))
-  if (!options.some((option) => option.id === toPick(value)))
-    options.unshift({
-      id: toPick(value),
-      name: effortName(value),
-      note: `Not supported by ${name}`,
-      disabled: true,
-    })
-  return (
-    <div className="q-ag-f">
-      <span>Default effort</span>
-      <Pick
-        label={`Default effort for ${name}`}
-        value={toPick(value)}
-        options={options}
-        disabled={disabled}
-        onChange={(next) => onChange(fromPick(next) as EffortChoice)}
-        onReselect={(next) => onChange(fromPick(next) as EffortChoice)}
-      />
-      <p className="q-ag-note">
-        New sessions start at this effort. A task’s own pick wins; running sessions keep theirs.
-      </p>
-      {defaults.planning !== defaults.implement ? (
-        <p className="q-ag-note" role="note">
-          Saved defaults differ: Planning {effortName(defaults.planning)} · Implement{" "}
-          {effortName(defaults.implement)}. Choose an effort to apply it to both; other edits keep
-          them.
+    <>
+      {permitted ? (
+        <SettingsMore summary="How it starts">
+          <p className="q-ag-note">
+            {`An empty command or folder uses the one shown; arguments are added to every start. Saved permission defaults apply to new sessions. Changing an existing session to ${bypassLabel} asks you to confirm.`}
+          </p>
+        </SettingsMore>
+      ) : (
+        <p className="q-ag-note">Change these from QualityLayer or a browser it opened.</p>
+      )}
+      {effortPatch !== null ? (
+        <p className="q-ag-note" role="status">
+          Saving changes new sessions only: {priorEffort} → {effortName(nextEffort)}.
         </p>
       ) : null}
-    </div>
+      {refused !== null ? (
+        <p className="q-sr-err" role="alert" data-testid="launch-refused">
+          Not saved: {refused}
+        </p>
+      ) : null}
+    </>
   )
+}
+
+async function saveLaunchSettings(params: {
+  saving: boolean
+  patch: LaunchSettingsPatch | null
+  onSave: (patch: LaunchSettingsPatch) => SaveResult
+  onClose: () => void
+  setSaving: (value: boolean) => void
+  setRefused: (value: string | null) => void
+}): Promise<void> {
+  if (params.saving) return
+  if (params.patch === null) return params.onClose()
+  params.setSaving(true)
+  params.setRefused(null)
+  try {
+    const refusal = await params.onSave(params.patch)
+    if (typeof refusal === "string") return params.setRefused(refusal)
+    params.onClose()
+  } catch (error) {
+    params.setRefused(error instanceof Error ? error.message : "Settings could not be saved.")
+  } finally {
+    params.setSaving(false)
+  }
 }
 
 export function LaunchSheet({
@@ -226,9 +152,7 @@ export function LaunchSheet({
   settings: AgentSettings
   permission: RunPermission
   efforts: LaunchEfforts
-  /** The person may change what starts a program here. */
   permitted: boolean
-  /** Saves the patch; an answer of why it was refused keeps the sheet open with that said. */
   onSave: (patch: LaunchSettingsPatch) => SaveResult
   onClose: () => void
 }) {
@@ -253,22 +177,10 @@ export function LaunchSheet({
   const effortPatch = effortDefaultsPatch(agent, efforts, draft.effort, effortPicked)
   const changed = { ...launchPatch(agent, settings, draft), ...effortPatch }
   const patch = Object.keys(changed).length ? changed : null
-  const save = async () => {
-    if (saving) return
-    if (patch === null) return onClose()
-    setSaving(true)
-    setRefused(null)
-    try {
-      const refusal = await onSave(patch)
-      if (typeof refusal === "string") return setRefused(refusal)
-      onClose()
-    } catch (error) {
-      setRefused(error instanceof Error ? error.message : "Settings could not be saved.")
-    } finally {
-      setSaving(false)
-    }
-  }
+  const disabled = !permitted || saving
   const blocked = Object.values(problems).some((problem) => problem !== null)
+  const save = () =>
+    void saveLaunchSettings({ saving, patch, onSave, onClose, setSaving, setRefused })
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
       <DialogContent className="q-ag-sheet sm:max-w-[460px]" data-testid="launch-sheet">
@@ -281,22 +193,22 @@ export function LaunchSheet({
         <DialogDescription className="sr-only">
           How QualityLayer starts {name}. Nothing is saved until you press Save.
         </DialogDescription>
-        <Field label="Command" problem={problems.command}>
+        <LaunchField label="Command" problem={problems.command}>
           {({ id, describedBy }) => (
             <Input
               id={id}
               className={MONO_INPUT}
               value={draft.command}
               placeholder={health?.path ?? BINARIES[agent]}
-              disabled={!permitted || saving}
+              disabled={disabled}
               aria-invalid={problems.command !== null || undefined}
               aria-describedby={describedBy}
               spellCheck={false}
               onChange={(event) => set({ command: event.target.value })}
             />
           )}
-        </Field>
-        <Field label="Extra arguments" problem={problems.args}>
+        </LaunchField>
+        <LaunchField label="Extra arguments" problem={problems.args}>
           {({ id, describedBy }) => (
             <Input
               id={id}
@@ -305,77 +217,59 @@ export function LaunchSheet({
               className={MONO_INPUT}
               value={draft.args}
               placeholder={ARGUMENT_EXAMPLE[agent]}
-              disabled={!permitted || saving}
+              disabled={disabled}
               spellCheck={false}
               onChange={(event) => set({ args: event.target.value })}
             />
           )}
-        </Field>
+        </LaunchField>
         {moves ? (
-          <Field label="Config folder" problem={problems.configDir}>
+          <LaunchField label="Config folder" problem={problems.configDir}>
             {({ id, describedBy }) => (
               <Input
                 id={id}
                 className={MONO_INPUT}
                 value={draft.configDir}
                 placeholder={DEFAULT_FOLDER[agent]}
-                disabled={!permitted || saving}
+                disabled={disabled}
                 aria-invalid={problems.configDir !== null || undefined}
                 aria-describedby={describedBy}
                 spellCheck={false}
                 onChange={(event) => set({ configDir: event.target.value })}
               />
             )}
-          </Field>
+          </LaunchField>
         ) : null}
         <ModeField
           agent={agent}
           value={draft.permMode}
           permission={permission}
-          disabled={!permitted || saving}
+          disabled={disabled}
           onChange={(permMode) => set({ permMode })}
         />
         <EffortField
           agent={agent}
           value={draft.effort}
           defaults={efforts}
-          disabled={!permitted || saving}
+          disabled={disabled}
           onChange={(effort) => {
             set({ effort })
             setEffortPicked(true)
           }}
         />
-        {permitted ? (
-          <SettingsMore summary="How it starts">
-            <p className="q-ag-note">
-              {`An empty command or folder uses the one shown; arguments are added to every start. Saved permission defaults apply to new sessions. Changing an existing session to ${permissionChoices(agent).find((choice) => choice.bypass)?.label ?? "Bypass"} asks you to confirm.`}
-            </p>
-          </SettingsMore>
-        ) : (
-          <p className="q-ag-note">Change these from QualityLayer or a browser it opened.</p>
-        )}
-        {effortPatch !== null ? (
-          <p className="q-ag-note" role="status">
-            Saving changes new sessions only:{" "}
-            {efforts.planning !== efforts.implement
-              ? `Planning ${effortName(efforts.planning)} · Implement ${effortName(efforts.implement)}`
-              : effortName(efforts.planning)}{" "}
-            → {effortName(draft.effort)}.
-          </p>
-        ) : null}
-        {refused !== null ? (
-          <p className="q-sr-err" role="alert" data-testid="launch-refused">
-            Not saved: {refused}
-          </p>
-        ) : null}
+        <LaunchNotes
+          agent={agent}
+          permitted={permitted}
+          effortPatch={effortPatch}
+          efforts={efforts}
+          nextEffort={draft.effort}
+          refused={refused}
+        />
         <DialogFooter>
           <Button variant="outline" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            disabled={!permitted || blocked || saving || patch === null}
-            onClick={() => void save()}
-          >
+          <Button disabled={disabled || blocked || patch === null} onClick={() => void save()}>
             Save
           </Button>
         </DialogFooter>

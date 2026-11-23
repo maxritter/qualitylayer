@@ -1,20 +1,13 @@
-import { createHash } from "node:crypto"
-import { lstat, opendir, readFile, realpath } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, sep } from "node:path"
+import { realpath } from "node:fs/promises"
+import { dirname } from "node:path"
 import { type DefaultTreeAdapterMap, parse } from "parse5"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
-import {
-  ARTIFACT_FILE_MAX_BYTES,
-  ARTIFACT_FOLDER_MAX_FILES,
-  ARTIFACT_PACKED_MAX_BYTES,
-  ARTIFACT_PAGE_NAME,
-  folderArtifactOf,
-  lastingDoc,
-  lastingDocOf,
-} from "./format.ts"
-import { readLasting } from "./lasting.ts"
+import { artifactSourceWitness } from "./agent-witness.ts"
+import { folderArtifactOf, lastingDocOf } from "./format.ts"
 import type { ArtifactFile, ArtifactHome } from "./store.ts"
-import { artifactAnchor, safeArtifactPath } from "./workspace.ts"
+import { artifactAnchor } from "./workspace.ts"
+
+export { artifactSourceWitness } from "./agent-witness.ts"
 
 export type ArtifactAgentAddress = {
   scope: "task" | "project"
@@ -36,106 +29,6 @@ export type ArtifactAgentBinding = {
 
 export const ARTIFACT_AGENT_CONTEXT_MAX_BYTES = 64 * 1024
 export const ARTIFACT_AGENT_REQUEST_MAX = 8000
-
-/** Folders a build or a package manager writes; an artifact's walk never enters them. */
-const GENERATED_FOLDERS = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  "out",
-  "coverage",
-  "target",
-  "__pycache__",
-])
-
-const within = (root: string, path: string) => {
-  const rel = relative(root, path)
-  return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`))
-}
-
-/** Content, not just file times: a child JS/CSS edit invalidates an entry page's witness too. */
-export async function artifactSourceWitness(
-  ctx: Ctx,
-  binding: ArtifactAgentBinding,
-): Promise<Result<{ revision: string; pages: string[]; bytes: number; files: number }>> {
-  try {
-    if (
-      !isAbsolute(binding.root) ||
-      !within(binding.root, binding.folder) ||
-      !within(binding.folder, binding.sourcePath)
-    )
-      throw new Error("This artifact source is outside its recorded checkout.")
-    await safeArtifactPath(ctx, binding.root, binding.sourcePath)
-    if ((await realpath(binding.root)) !== binding.root)
-      throw new Error("The recorded checkout identity changed. Open the artifact again.")
-    const lasting = lastingDocOf(binding.address.file)
-    let pages = binding.pages
-    if (lasting) {
-      const found = await readLasting(binding.root, lasting.name)
-      if (
-        !found.ok ||
-        found.data.dir !== binding.folder ||
-        !found.data.pages.includes(lasting.page) ||
-        join(found.data.dir, lasting.page) !== binding.sourcePath
-      )
-        throw new Error("The artifact registration changed. Open the artifact again.")
-      pages = found.data.pages.map((page) => lastingDoc(lasting.name, page))
-    }
-    const files: string[] = []
-    let entries = 0
-    const walk = async (folder: string, depth = 0) => {
-      if (depth > 16) throw new Error("An artifact source may nest at most 16 folders.")
-      for await (const entry of await opendir(folder)) {
-        if (++entries > ARTIFACT_FOLDER_MAX_FILES * 4)
-          throw new Error("The artifact source contains too many directory entries.")
-        if (entry.name.startsWith(".")) continue
-        const path = join(folder, entry.name)
-        if (entry.isSymbolicLink())
-          throw new Error("Artifact sources cannot contain symbolic links.")
-        if (entry.isDirectory()) {
-          // Generated and ignored folders are no part of the artifact: they are not counted.
-          if (GENERATED_FOLDERS.has(entry.name)) continue
-          const ignored = await ctx.git.run(binding.root, ["check-ignore", "-q", "--", path])
-          if (ignored.code !== 0) await walk(path, depth + 1)
-        } else if (entry.isFile()) {
-          files.push(relative(binding.folder, path).split(sep).join("/"))
-          if (files.length > ARTIFACT_FOLDER_MAX_FILES)
-            throw new Error(`An artifact may hold at most ${ARTIFACT_FOLDER_MAX_FILES} files.`)
-        }
-      }
-    }
-    if (binding.kind === "folder") await walk(binding.folder)
-    else files.push(relative(binding.folder, binding.sourcePath))
-    files.sort()
-    const named = folderArtifactOf(binding.address.file)
-    if (!lasting && named)
-      pages = files
-        .filter((file) => !file.includes("/") && ARTIFACT_PAGE_NAME.test(file))
-        .map((page) => `${named.root}/${named.name}/${page}`)
-    const hash = createHash("sha256")
-    let bytes = 0
-    for (const name of files) {
-      const path = join(binding.folder, name)
-      await safeArtifactPath(ctx, binding.root, path)
-      const stat = await lstat(path)
-      if (!stat.isFile() || stat.size > ARTIFACT_FILE_MAX_BYTES)
-        throw new Error("An artifact source file is unavailable or exceeds 10 MiB.")
-      bytes += stat.size
-      if (bytes > ARTIFACT_PACKED_MAX_BYTES)
-        throw new Error("The artifact source exceeds the 16 MiB context limit.")
-      const content = await readFile(path)
-      if (content.length !== stat.size)
-        throw new Error("The artifact changed while reading it. Try again.")
-      hash.update(name).update("\0").update(content).update("\0")
-    }
-    return ok({ revision: hash.digest("hex"), pages, bytes, files: files.length })
-  } catch (cause) {
-    return err({
-      code: "bad_args",
-      message: cause instanceof Error ? cause.message : String(cause),
-    })
-  }
-}
 
 /**
  * Whether a comment's section is still on the page: an element with that id or `data-screen-label`
@@ -204,6 +97,40 @@ export async function currentArtifactRevision(
 
 export type CommentHealth = { anchor?: "missing"; written?: "earlier" }
 
+type HealthComment = { id: string; spot?: { section?: string }; artifactRevision?: string }
+
+async function markMissingAnchors(
+  comments: readonly HealthComment[],
+  source: () => Promise<string>,
+  health: Map<string, CommentHealth>,
+): Promise<void> {
+  const sectioned = comments.filter((c) => c.spot?.section !== undefined)
+  if (sectioned.length === 0) return
+  const html = await source().catch(() => null)
+  if (html === null) return
+  for (const comment of sectioned) {
+    if (!hasSection(html, comment.spot?.section as string))
+      health.set(comment.id, { anchor: "missing" })
+  }
+}
+
+async function markEarlierRevisions(
+  ctx: Ctx,
+  home: ArtifactHome,
+  entry: ArtifactFile,
+  comments: readonly HealthComment[],
+  health: Map<string, CommentHealth>,
+): Promise<void> {
+  const recorded = comments.filter((c) => c.artifactRevision !== undefined)
+  if (recorded.length === 0) return
+  const now = await currentArtifactRevision(ctx, home, entry)
+  if (now === null) return
+  for (const comment of recorded) {
+    if (comment.artifactRevision !== now)
+      health.set(comment.id, { ...health.get(comment.id), written: "earlier" })
+  }
+}
+
 /**
  * Which open comments have gone stale: `anchor: "missing"` when the section they name is no longer on
  * the page, `written: "earlier"` when they were made against another revision of the source. A
@@ -213,25 +140,12 @@ export async function commentHealth(
   ctx: Ctx,
   home: ArtifactHome,
   entry: ArtifactFile,
-  comments: readonly { id: string; spot?: { section?: string }; artifactRevision?: string }[],
+  comments: readonly HealthComment[],
   source: () => Promise<string>,
 ): Promise<Map<string, CommentHealth>> {
   const health = new Map<string, CommentHealth>()
-  const sectioned = comments.filter((c) => c.spot?.section !== undefined)
-  if (sectioned.length > 0) {
-    const html = await source().catch(() => null)
-    if (html !== null)
-      for (const c of sectioned)
-        if (!hasSection(html, c.spot?.section as string)) health.set(c.id, { anchor: "missing" })
-  }
-  const recorded = comments.filter((c) => c.artifactRevision !== undefined)
-  if (recorded.length > 0) {
-    const now = await currentArtifactRevision(ctx, home, entry)
-    if (now !== null)
-      for (const c of recorded)
-        if (c.artifactRevision !== now)
-          health.set(c.id, { ...health.get(c.id), written: "earlier" })
-  }
+  await markMissingAnchors(comments, source, health)
+  await markEarlierRevisions(ctx, home, entry, comments, health)
   return health
 }
 

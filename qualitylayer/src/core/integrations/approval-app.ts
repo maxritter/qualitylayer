@@ -67,54 +67,92 @@ const shown = (s: Sent | null): OutsideState["sent"] =>
         at: s.at,
       }
 
+async function readTargetGate(ctx: Ctx, task: Task, target: Target) {
+  const g = await gate.readGate(ctx, task)
+  return g?.target === STEP[target].gate ? g : null
+}
+
+function approvedOutcome(
+  open: Awaited<ReturnType<typeof gate.readGate>>,
+): Pick<OutsideState, "state" | "approvedBy"> | null {
+  if (open?.decision !== "approved" || open.outside === undefined) return null
+  return {
+    state: "approved",
+    approvedBy: { login: open.outside.login, url: open.outside.url, via: "github" },
+  }
+}
+
+async function refreshOutside(
+  ctx: Ctx,
+  task: Task,
+  target: Target,
+  sent: Sent,
+  open: Awaited<ReturnType<typeof gate.readGate>>,
+): Promise<{ sent: Sent; early?: OutsideState }> {
+  const key = `${task.runtimeDir}:${target}`
+  const now = ctx.clock.now()
+  if (now - (lastLook.get(key) ?? 0) < LOOK_MS) return { sent }
+  lastLook.set(key, now)
+  // The pull request the person created on GitHub's page, found by its branch.
+  const latest = (await requestFor(ctx, task, sent).catch(() => null)) ?? sent
+  if (open?.decision !== "pending" || latest.number === undefined) return { sent: latest }
+  await outsidePoller(ctx, task, { feedback: false, target })().catch(() => null)
+  const settled = approvedOutcome(await readTargetGate(ctx, task, target))
+  if (settled) return { sent: latest, early: { sent: shown(latest), ...settled } }
+  const reread = (await readSent(ctx, task, target)) ?? latest
+  if (reread.closed === true) return { sent: reread, early: { sent: null, state: "none" } }
+  return { sent: reread }
+}
+
 /** Where the Plan or the change stands on GitHub. Looking may record an approval; comments stay for the agents. */
 export async function outsideState(
   ctx: Ctx,
   task: Task,
   target: Target = "plan",
 ): Promise<OutsideState> {
-  let sent = await readSent(ctx, task, target)
-  const step = STEP[target]
-  const read = async () => {
-    const g = await gate.readGate(ctx, task)
-    return g?.target === step.gate ? g : null
-  }
-  let open = await read()
-  const decided = (g: typeof open) =>
-    g?.decision === "approved" && g.outside !== undefined
-      ? {
-          state: "approved" as const,
-          approvedBy: { login: g.outside.login, url: g.outside.url, via: "github" as const },
-        }
-      : null
-  const settledFirst = decided(open)
+  const sent = await readSent(ctx, task, target)
+  const open = await readTargetGate(ctx, task, target)
+  const settledFirst = approvedOutcome(open)
   if (settledFirst) return { sent: shown(sent), ...settledFirst }
-  if (sent === null || sent.closed === true || task.stage !== step.stage)
+  if (sent === null || sent.closed === true || task.stage !== STEP[target].stage) {
     return {
       sent: shown(sent),
       state: "none",
       destination: reviewDestination(await originUrl(ctx, task.repoRoot)),
     }
-  const key = `${task.runtimeDir}:${target}`
-  const now = ctx.clock.now()
-  if (now - (lastLook.get(key) ?? 0) >= LOOK_MS) {
-    lastLook.set(key, now)
-    // The pull request the person created on GitHub's page, found by its branch.
-    sent = (await requestFor(ctx, task, sent).catch(() => null)) ?? sent
-    if (open?.decision === "pending" && sent.number !== undefined) {
-      await outsidePoller(ctx, task, { feedback: false, target })().catch(() => null)
-      open = await read()
-      const settled = decided(open)
-      if (settled) return { sent: shown(sent), ...settled }
-      sent = (await readSent(ctx, task, target)) ?? sent
-      if (sent.closed === true) return { sent: null, state: "none" }
-    }
   }
+  const refreshed = await refreshOutside(ctx, task, target, sent, open)
+  if (refreshed.early) return refreshed.early
   const here = await current(ctx, task, target)
-  return {
-    sent: shown(sent),
-    state: here !== sent.revision ? "stale" : sent.number !== undefined ? "waiting" : "pushed",
+  const state =
+    here !== refreshed.sent.revision
+      ? "stale"
+      : refreshed.sent.number !== undefined
+        ? "waiting"
+        : "pushed"
+  return { sent: shown(refreshed.sent), state }
+}
+
+async function pushFinalFromApp(ctx: Ctx, task: Task): Promise<Result<Sent>> {
+  if (task.stage !== "verify")
+    return refused("Only a change in its final review gets a pull request here.", [])
+  // The review opens when the page turned to the person; a click before the page read it opens it.
+  await gate.ensureFinalReview(ctx, task)
+  const review = await gate.readGate(ctx, task)
+  if (review?.target !== gate.FINAL || review.decision !== "pending" || review.settled === true)
+    return refused("The final review is not open, so nothing is pushed yet.", [])
+  return sendFinal(ctx, task)
+}
+
+async function pushPlanFromApp(ctx: Ctx, task: Task): Promise<Result<Sent>> {
+  if (task.stage !== "plan") return refused("Only an open Plan gets a pull request here.", [])
+  // A Plan whose gate is open stays as it is (its session and its id); only a closed one opens.
+  const open = await gate.readGate(ctx, task)
+  if (open?.target !== NAMES.plan || open.decision !== "pending" || open.settled === true) {
+    const opened = await gate.open(ctx, task, NAMES.plan)
+    if (!opened.ok) return opened
   }
+  return sendPlan(ctx, task)
 }
 
 /** The person's click: push the Plan (opening its gate when needed) or the change in its final review. */
@@ -123,31 +161,10 @@ export async function sendFromApp(
   task: Task,
   target: Target = "plan",
 ): Promise<Result<OutsideState>> {
-  let pushed: Sent
-  if (target === "final") {
-    if (task.stage !== "verify")
-      return refused("Only a change in its final review gets a pull request here.", [])
-    // The review opens when the page turned to the person; a click before the page read it opens it.
-    await gate.ensureFinalReview(ctx, task)
-    const review = await gate.readGate(ctx, task)
-    if (review?.target !== gate.FINAL || review.decision !== "pending" || review.settled === true)
-      return refused("The final review is not open, so nothing is pushed yet.", [])
-    const sent = await sendFinal(ctx, task)
-    if (!sent.ok) return sent
-    pushed = sent.data
-  } else {
-    if (task.stage !== "plan") return refused("Only an open Plan gets a pull request here.", [])
-    // A Plan whose gate is open stays as it is (its session and its id); only a closed one opens.
-    const open = await gate.readGate(ctx, task)
-    if (open?.target !== NAMES.plan || open.decision !== "pending" || open.settled === true) {
-      const opened = await gate.open(ctx, task, NAMES.plan)
-      if (!opened.ok) return opened
-    }
-    const sent = await sendPlan(ctx, task)
-    if (!sent.ok) return sent
-    pushed = sent.data
-  }
+  const sent =
+    target === "final" ? await pushFinalFromApp(ctx, task) : await pushPlanFromApp(ctx, task)
+  if (!sent.ok) return sent
   lastLook.delete(`${task.runtimeDir}:${target}`)
   const now = await outsideState(ctx, task, target)
-  return ok({ ...now, open: now.sent?.url ?? linkOf(pushed) })
+  return ok({ ...now, open: now.sent?.url ?? linkOf(sent.data) })
 }

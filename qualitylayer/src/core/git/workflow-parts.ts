@@ -1,15 +1,16 @@
 import type { Ctx } from "../../ctx.ts"
 import type { ChangePart } from "../review/walkthrough.ts"
 import type { Task } from "../task/store.ts"
-import { GIT_AT_ONCE, mapBounded } from "./bounded.ts"
-import { taskCommitDiff, taskDiffArgs } from "./task-diff.ts"
-import { type VerifyRange, verifyDiffArgs, verifyPaths } from "./verify-range.ts"
+import { taskCommitDiff } from "./task-diff.ts"
+import type { VerifyRange } from "./verify-range.ts"
+import { commitParts, type RawFile } from "./workflow-parts-git.ts"
 import type { WorkingOperation } from "./working-records.ts"
 import { digest, workingTaskKey } from "./working-records.ts"
 
 export type PartSource =
   | { kind: "git"; hash: string; path: string; mode: string }
   | { kind: "working"; hash: string }
+
 export type OwnedPart = {
   commit?: string
   base?: string
@@ -21,6 +22,7 @@ export type OwnedPart = {
   before: PartSource | null
   after: PartSource | null
 }
+
 const MAX_PATCH_BYTES = 8 * 1024 * 1024
 const cached = new Map<string, { parts: OwnedPart[]; commits: string[]; bytes: number }>()
 
@@ -37,231 +39,43 @@ export const patchCounts = (patch: string) => {
   return { additions, deletions }
 }
 
-type RawFile = {
-  path: string
-  from?: string
-  status: string
-  before: PartSource | null
-  after: PartSource | null
-}
-function rawFiles(raw: string): RawFile[] {
-  const fields = raw.split("\0")
-  const files: RawFile[] = []
-  for (let i = 0; i < fields.length; i++) {
-    const meta = fields[i] ?? ""
-    if (!meta.startsWith(":")) continue
-    const [oldMode = "", newMode = "", oldHash = "", newHash = "", status = ""] = meta
-      .slice(1)
-      .split(" ")
-    const oldPath = fields[++i] ?? ""
-    const path = /^[RC]/.test(status) ? (fields[++i] ?? "") : oldPath
-    if (!path || path.startsWith("docs/plans/")) {
-      files.push({ path, status, before: null, after: null })
-      continue
-    }
-    const side = (hash: string, mode: string, path: string): PartSource | null =>
-      /^0+$/.test(hash) ? null : { kind: "git", hash, mode, path }
-    files.push({
-      path,
-      ...(oldPath !== path ? { from: oldPath } : {}),
-      status: status[0] ?? "M",
-      before: side(oldHash, oldMode, oldPath),
-      after: side(newHash, newMode, path),
-    })
-  }
-  return files
-}
-
-const showArgs = (commit: string, paths?: string[]) => [
-  "show",
-  "-M",
-  "--src-prefix=a/",
-  "--dst-prefix=b/",
-  ...taskDiffArgs([commit], paths).slice(1),
-  ":(exclude)docs/plans/**",
-]
-const PATCH_LIMIT = "The workflow patch exceeds the reading limit"
-const PATCH_INVENTORY = "The workflow patch inventory changed"
-const PATCH_UNREADABLE = "The workflow's registered patches could not be read"
-
-function splitPatch(text: string) {
-  const starts = [...text.matchAll(/^diff --git /gm)].map((match) => match.index)
-  return {
-    header: text.slice(0, starts[0]),
-    patches: starts.map((start, index) => text.slice(start, starts[index + 1] ?? text.length)),
-  }
-}
-
-/**
- * The most pathspec bytes one run names: well inside Windows' 32,767-character command line once
- * git's own arguments and quoting are added, and as safe on POSIX.
- */
-const RUN_PATH_BYTES = 20 * 1024
-
-/** A file's pathspecs as a run names them: its path, and a rename's old path beside it. */
-const runPaths = (file: RawFile): string[] => (file.from ? [file.path, file.from] : [file.path])
-
-/** What a file adds to a run's command line: each literal pathspec and its separator. */
-const pathBytes = (file: RawFile): number =>
-  runPaths(file).reduce((sum, path) => sum + Buffer.byteLength(`:(literal)${path}`) + 1, 0)
-
-/**
- * The files in runs that keep their order: about `count` runs as even as they divide, each split
- * again where its paths would pass RUN_PATH_BYTES. A file never splits, so one very long path is a
- * run of its own, as readable as before. Only `count` runs go at once (mapBounded).
- */
-function batches(files: readonly RawFile[], count: number): RawFile[][] {
-  const size = Math.ceil(files.length / Math.min(count, files.length))
-  const runs: RawFile[][] = []
-  for (let at = 0; at < files.length; at += size) {
-    let run: RawFile[] = []
-    let cost = 0
-    for (const file of files.slice(at, at + size)) {
-      const add = pathBytes(file)
-      if (run.length > 0 && cost + add > RUN_PATH_BYTES) {
-        runs.push(run)
-        run = []
-        cost = 0
-      }
-      run.push(file)
-      cost += add
-    }
-    if (run.length > 0) runs.push(run)
-  }
-  return runs
-}
-
-/**
- * A whole commit's patches, read GIT_AT_ONCE `git show` processes at a time: a diff
- * driver (git-crypt's textconv) runs once per file, and in one process those runs follow each
- * other, while a process per file would start thousands for a wide commit. Each run names its
- * files in the inventory's order (a rename with both paths) and must return exactly one patch per
- * file. The bytes count as in one output (the commit header once, then each patch); a run is kept
- * only while the total stays under the limit, and no further run starts once it does not.
- */
-async function filePatches(
-  ctx: Ctx,
+export function buildOwnedPart(
   task: Task,
   commit: string,
-  files: readonly RawFile[],
-  limit: number,
-): Promise<{ texts: string[]; bytes: number }> {
-  let bytes = 0
-  let header = false
-  const runs = await mapBounded(batches(files, GIT_AT_ONCE), async (run) => {
-    const read = await ctx.git.run(
-      task.repoRoot,
-      showArgs(commit, run.flatMap(runPaths)),
-      // Each run repeats the commit header, so one run may use the whole limit; the total
-      // (header once) is checked as each run completes.
-      { maxOutputBytes: limit },
-    )
-    if (read.code !== 0) throw new Error(PATCH_UNREADABLE)
-    const parsed = splitPatch(read.stdout)
-    if (parsed.patches.length !== run.length) throw new Error(PATCH_INVENTORY)
-    for (const text of parsed.patches) bytes += Buffer.byteLength(text)
-    if (!header) {
-      header = true
-      bytes += Buffer.byteLength(parsed.header)
-    }
-    if (bytes >= limit) throw new Error(PATCH_LIMIT)
-    return parsed.patches
-  })
-  return { texts: runs.flat(), bytes }
-}
-
-async function commitParts(
-  ctx: Ctx,
-  task: Task,
-  commit: string,
-  options: { metadata: boolean; limit: number; paths?: string[]; base?: string },
-): Promise<{ parts: OwnedPart[]; bytes: number }> {
-  const { metadata, limit, paths, base } = options
-  const targets = paths?.map((path) => `:(literal)${path}`)
-  const rawArgs = base
-    ? [
-        "diff",
-        "--raw",
-        "--abbrev=64",
-        "--no-renames",
-        "-z",
-        base,
-        commit,
-        "--",
-        ...(targets ?? verifyPaths),
-      ]
-    : [
-        "diff-tree",
-        "--root",
-        "--first-parent",
-        "--diff-merges=first-parent",
-        "--no-commit-id",
-        "--raw",
-        "--abbrev=64",
-        "-M",
-        "-r",
-        "-z",
-        commit,
-        ...(targets ? ["--", ...targets] : []),
-      ]
-  const raw = await ctx.git.run(task.repoRoot, rawArgs, { maxOutputBytes: 1024 * 1024 })
-  if (raw.code !== 0) throw new Error(PATCH_UNREADABLE)
-  const files = rawFiles(raw.stdout)
-  const visible = files.filter((file) => file.path && !file.path.startsWith("docs/plans/"))
-  let patches: string[] = []
-  let bytes = 0
-  if (!base && !metadata && paths === undefined && visible.length > 1) {
-    // A whole commit's files: at most GIT_AT_ONCE processes side by side.
-    const read = await filePatches(ctx, task, commit, visible, limit)
-    patches = read.texts
-    bytes = read.bytes
-  } else if (!metadata) {
-    const args = base ? verifyDiffArgs({ base, head: commit }, paths) : showArgs(commit, paths)
-    const patch = await ctx.git.run(task.repoRoot, args, {
-      maxOutputBytes: limit,
-    })
-    if (patch.code !== 0) throw new Error(PATCH_UNREADABLE)
-    bytes = Buffer.byteLength(patch.stdout)
-    if (bytes >= limit) throw new Error(PATCH_LIMIT)
-    patches = splitPatch(patch.stdout).patches
-  }
-  if (!metadata && patches.length !== visible.length) throw new Error(PATCH_INVENTORY)
-  const parts: OwnedPart[] = []
-  for (const [index, file] of visible.entries()) {
-    let text = metadata ? "" : patches[index]!
-    if (text.includes("\0")) text = `${text.split("\n")[0]}\nBinary files differ\n`
-    const stamp = digest(
-      JSON.stringify([
-        workingTaskKey(task),
-        ...(base ? [base] : []),
-        commit,
-        file.path,
-        file.from,
-        file.before,
-        file.after,
-      ]),
-    )
-    parts.push({
+  file: RawFile,
+  rawText: string,
+  options: { metadata: boolean; base?: string },
+): OwnedPart {
+  let text = options.metadata ? "" : rawText
+  if (text.includes("\0")) text = `${text.split("\n")[0]}\nBinary files differ\n`
+  const stamp = digest(
+    JSON.stringify([
+      workingTaskKey(task),
+      ...(options.base ? [options.base] : []),
       commit,
-      ...(base ? { base } : {}),
-      view: {
-        id: stamp,
-        stamp,
-        path: file.path,
-        ...(file.from ? { from: file.from } : {}),
-        status: file.status,
-        ...(metadata ? { additions: null, deletions: null } : patchCounts(text)),
-        kind: "commit",
-        label: commit.slice(0, 8),
-      },
-      patch: text,
-      before: file.before,
-      after: file.after,
-    })
+      file.path,
+      file.from,
+      file.before,
+      file.after,
+    ]),
+  )
+  return {
+    commit,
+    ...(options.base ? { base: options.base } : {}),
+    view: {
+      id: stamp,
+      stamp,
+      path: file.path,
+      ...(file.from ? { from: file.from } : {}),
+      status: file.status,
+      ...(options.metadata ? { additions: null, deletions: null } : patchCounts(text)),
+      kind: "commit",
+      label: commit.slice(0, 8),
+    },
+    patch: text,
+    before: file.before,
+    after: file.after,
   }
-  const size = metadata ? Buffer.byteLength(JSON.stringify(parts.map((part) => part.view))) : bytes
-  if (size > limit) throw new Error("The workflow inventory exceeds the reading limit")
-  return { parts, bytes: size }
 }
 
 function remember(key: string, parts: OwnedPart[], bytes: number, metadata = false) {
@@ -270,8 +84,10 @@ function remember(key: string, parts: OwnedPart[], bytes: number, metadata = fal
     cached.size &&
     (cached.size >= 16 ||
       [...cached.values()].reduce((total, row) => total + row.bytes, 0) + bytes > MAX_PATCH_BYTES)
-  )
-    cached.delete(cached.keys().next().value!)
+  ) {
+    const oldest = cached.keys().next().value
+    if (oldest !== undefined) cached.delete(oldest)
+  }
   const commits = [...new Set(parts.flatMap((part) => (part.commit ? [part.commit] : [])))]
   if (bytes <= MAX_PATCH_BYTES) cached.set(key, { parts, commits, bytes })
   return commits

@@ -9,6 +9,29 @@ import { reconcile } from "../task/reconcile.ts"
 import type { Task } from "../task/store.ts"
 import { existingSliceCommit } from "./slice-commit.ts"
 
+async function approvedRepositories(ctx: Ctx, task: Task): Promise<(string | undefined)[]> {
+  const plan = await ctx.fs.readFile(join(task.dir, folderDoc("plan")))
+  const scope = proseLines(sectionText(plan, "Scope").replace(/<!--[\s\S]*?(?:-->|$)/g, ""))
+    .map(({ text }) => text)
+    .join("\n")
+  const inScope = scope.split(/^### In scope[ \t]*$/m)[1]?.split(/^### /m)[0] ?? ""
+  return [...inScope.matchAll(/^ {0,3}- \*\*Repository:\*\* `([^`\r\n]+)`[ \t]*$/gm)].map(
+    (entry) => entry[1],
+  )
+}
+
+async function resolveExtraCheckout(ctx: Ctx, task: Task, root: string): Promise<Result<RepoRef>> {
+  const refused = (message: string) => err({ code: "bad_args" as const, message })
+  const canonical = await realpath(root).catch(() => null)
+  if (canonical === null || canonical !== root)
+    return refused(`${root} is not the exact local path of a checkout root.`)
+  const [top, commonDir] = await Promise.all([ctx.git.topLevel(root), ctx.git.commonDir(root)])
+  if (top !== root || commonDir === null) return refused(`${root} is not a Git working tree root.`)
+  const id = repoIdFrom(commonDir)
+  if (id === task.repoId) return refused("Use the task’s primary checkout without --repo.")
+  return ok({ root, commonDir, id })
+}
+
 /** The exact additional local checkout the person's approved Scope authorizes. */
 export async function implementRepository(
   ctx: Ctx,
@@ -23,24 +46,9 @@ export async function implementRepository(
   const admitted = await reconcile(ctx, task)
   if (!admitted.ok) return admitted
   const root = resolve(path)
-  const plan = await ctx.fs.readFile(join(task.dir, folderDoc("plan")))
-  const scope = proseLines(sectionText(plan, "Scope").replace(/<!--[\s\S]*?(?:-->|$)/g, ""))
-    .map(({ text }) => text)
-    .join("\n")
-  const inScope = scope.split(/^### In scope[ \t]*$/m)[1]?.split(/^### /m)[0] ?? ""
-  const approved = [...inScope.matchAll(/^ {0,3}- \*\*Repository:\*\* `([^`\r\n]+)`[ \t]*$/gm)].map(
-    (entry) => entry[1],
-  )
-  if (!approved.includes(root))
+  if (!(await approvedRepositories(ctx, task)).includes(root))
     return refused(`${root} is not named as a Repository in the approved Plan’s Scope.`)
-  const canonical = await realpath(root).catch(() => null)
-  if (canonical === null || canonical !== root)
-    return refused(`${root} is not the exact local path of a checkout root.`)
-  const [top, commonDir] = await Promise.all([ctx.git.topLevel(root), ctx.git.commonDir(root)])
-  if (top !== root || commonDir === null) return refused(`${root} is not a Git working tree root.`)
-  const id = repoIdFrom(commonDir)
-  if (id === task.repoId) return refused("Use the task’s primary checkout without --repo.")
-  return ok({ root, commonDir, id })
+  return resolveExtraCheckout(ctx, task, root)
 }
 
 export type ExternalSlice = {

@@ -4,121 +4,46 @@
 // stores, and saves them a moment after the last one (Undo is the same save without it).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import {
-  type AnswerKind,
-  answerDoc,
-  flattenItems,
-  type Item,
-  type ItemAnswer,
-  pointText,
-} from "../core/items.ts"
+import type { Item, ItemAnswer } from "../core/items.ts"
 import { type Api, api as liveApi, type TaskDetail } from "./api.ts"
 import { useItemAnswers } from "./turn/actions.ts"
+import {
+  type AnswerOverlay,
+  draftsFor,
+  mergeAnswerOverlay,
+  pruneSyncedOverlay,
+  SAVE_AFTER_MS,
+  storedAnswers,
+  touchedAnswerDocs,
+} from "./useAnswers-helpers.ts"
 
-/** A draft the server keeps on a document: an answer to an item, or a line of the review decision. */
-export type Draft = {
-  id?: string
-  quote: string
-  remark: string
-  /** Kept when a line comment on the diff is saved again with the others. */
-  anchor?: { file: string; side: "old" | "new"; line: number }
-  /** The item a comment or an answer is about; an answer also has its kind and the digest seen. */
-  item?: string
-  kind?: AnswerKind
-  seen?: string
-  /** Where on the item's diagram a comment is pinned. */
-  pin?: string
+export { SAVE_AFTER_MS } from "./useAnswers-helpers.ts"
+
+type Snapshot = {
+  task: TaskDetail
+  answers: Record<string, ItemAnswer>
+  mine: AnswerOverlay | undefined
 }
 
-/** How long after the last pick the answers are saved. */
-export const SAVE_AFTER_MS = 400
-
-/** The answers the server stores as chosen (not sent yet), by item id. */
-export function storedAnswers(items: readonly Item[] | undefined): Record<string, ItemAnswer> {
-  const out: Record<string, ItemAnswer> = {}
-  for (const item of flattenItems(items ?? []))
-    if (item.state === "chosen" && item.answer !== undefined) out[item.id] = item.answer
-  return out
+async function persistAnswersSnapshot(
+  api: Api,
+  snapshot: Snapshot,
+  reload: () => void,
+): Promise<void> {
+  const { task: now, answers: picks, mine: touched } = snapshot
+  const docs = touchedAnswerDocs(now.items, touched)
+  for (const doc of docs) await api.putComments(now.id, doc, draftsFor(now, doc, picks))
+  reload()
 }
 
-/** The drafts on a document as they are saved: the free ones kept as they are, and one per answered item. */
-export function draftsFor(
-  task: Pick<TaskDetail, "comments" | "items">,
-  doc: string,
-  answers: Readonly<Record<string, ItemAnswer>>,
-): Draft[] {
-  const free = task.comments
-    .filter(
-      (c) =>
-        c.doc === doc &&
-        c.delivered !== true &&
-        c.build === undefined &&
-        c.source === undefined &&
-        c.kind === undefined,
-    )
-    .map(
-      (c): Draft => ({
-        id: c.id,
-        quote: c.quote,
-        remark: c.remark,
-        ...(c.anchor !== undefined ? { anchor: c.anchor } : {}),
-        ...(c.item !== undefined ? { item: c.item } : {}),
-      }),
-    )
-  const answered = flattenItems(task.items ?? []).flatMap((item): Draft[] => {
-    const answer = answers[item.id]
-    if (answer === undefined || answerDoc(item.step) !== doc) return []
-    return [
-      {
-        quote: item.id.startsWith("plan:done:1:") ? pointText(item) : item.what,
-        remark: answer.note ?? "",
-        item: item.id,
-        kind: answer.kind,
-        ...(item.digest !== undefined ? { seen: item.digest } : {}),
-      },
-    ]
-  })
-  return [...free, ...answered]
-}
-
-type Overlay = Record<string, { answer: ItemAnswer | null; digest: string | undefined }>
-
-export function useAnswers(api: Api, task: TaskDetail, reload: () => void) {
-  const immediateAnswer = useItemAnswers(task, reload)
-  const stored = useMemo(() => storedAnswers(task.items), [task.items])
-  const [overlays, setOverlays] = useState<Record<string, Overlay>>({})
-  const mine = overlays[task.id]
-  const answers = useMemo(() => {
-    const merged = { ...stored }
-    const current = new Map(flattenItems(task.items ?? []).map((item) => [item.id, item.digest]))
-    for (const [id, picked] of Object.entries(mine ?? {})) {
-      if (picked.digest !== current.get(id)) continue
-      const answer = picked.answer
-      if (answer === null) delete merged[id]
-      else merged[id] = answer
-    }
-    return merged
-  }, [stored, mine, task.items])
-
-  const latest = useRef({ task, answers, mine })
-  latest.current = { task, answers, mine }
+function useAnswerPersistence(api: Api, snapshot: Snapshot, reload: () => void) {
+  const latest = useRef<Snapshot>(snapshot)
+  latest.current = snapshot
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saving = useRef<Promise<void>>(Promise.resolve())
 
   const persist = useCallback(
-    async (snapshot: typeof latest.current) => {
-      const { task: now, answers: picks, mine: touched } = snapshot
-      const byId = new Map(flattenItems(now.items ?? []).map((item) => [item.id, item]))
-      // The documents a pick touched: an answer lives on its step's document.
-      const docs = new Set(
-        Object.keys(touched ?? {}).flatMap((id) => {
-          const item = byId.get(id)
-          return item === undefined ? [] : [answerDoc(item.step)]
-        }),
-      )
-      for (const doc of docs) await api.putComments(now.id, doc, draftsFor(now, doc, picks))
-      reload()
-    },
+    (snap: Snapshot) => persistAnswersSnapshot(api, snap, reload),
     [api, reload],
   )
   const save = useCallback(async () => {
@@ -136,6 +61,56 @@ export function useAnswers(api: Api, task: TaskDetail, reload: () => void) {
     }, SAVE_AFTER_MS)
   }, [save])
 
+  const flush = useCallback(async () => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current)
+      saving.current = saving.current.catch(() => {}).then(save)
+    }
+    try {
+      await saving.current
+    } catch {
+      saving.current = save()
+      await saving.current
+    }
+  }, [save])
+
+  const cancelTimer = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current)
+    timer.current = null
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (timer.current === null) return
+      clearTimeout(timer.current)
+      const current = latest.current
+      saving.current = saving.current
+        .catch(() => {})
+        .then(() => persistNow.current(current))
+        .catch(() => {})
+    },
+    [],
+  )
+
+  return { timer, schedule, flush, cancelTimer }
+}
+
+export function useAnswers(api: Api, task: TaskDetail, reload: () => void) {
+  const immediateAnswer = useItemAnswers(task, reload)
+  const stored = useMemo(() => storedAnswers(task.items), [task.items])
+  const [overlays, setOverlays] = useState<Record<string, AnswerOverlay>>({})
+  const mine = overlays[task.id]
+  const answers = useMemo(
+    () => mergeAnswerOverlay(stored, mine, task.items),
+    [stored, mine, task.items],
+  )
+
+  const { timer, schedule, flush, cancelTimer } = useAnswerPersistence(
+    api,
+    { task, answers, mine },
+    reload,
+  )
+
   /** Answer an item, or Undo with null. */
   const answer = useCallback(
     (item: Item, next: ItemAnswer | null) => {
@@ -152,26 +127,11 @@ export function useAnswers(api: Api, task: TaskDetail, reload: () => void) {
     [task.id, schedule, api, immediateAnswer],
   )
 
-  /** Save what is waiting now, before a decision is sent. */
-  const flush = useCallback(async () => {
-    if (timer.current !== null) {
-      clearTimeout(timer.current)
-      saving.current = saving.current.catch(() => {}).then(save)
-    }
-    try {
-      await saving.current
-    } catch {
-      saving.current = save()
-      await saving.current
-    }
-  }, [save])
-
   /** What was sent has gone with the decision: the picks start clean. */
   const clear = useCallback(() => {
-    if (timer.current !== null) clearTimeout(timer.current)
-    timer.current = null
+    cancelTimer()
     setOverlays((was) => ({ ...was, [task.id]: {} }))
-  }, [task.id])
+  }, [task.id, cancelTimer])
 
   // Once the server shows what was picked, the pick is the server's: the overlay lets go of it.
   useEffect(() => {
@@ -179,28 +139,10 @@ export function useAnswers(api: Api, task: TaskDetail, reload: () => void) {
     setOverlays((was) => {
       const current = was[task.id]
       if (current === undefined) return was
-      const rest = Object.entries(current).filter(([id, pick]) =>
-        pick.answer === null ? stored[id] !== undefined : stored[id]?.kind !== pick.answer.kind,
-      )
-      return rest.length === Object.keys(current).length
-        ? was
-        : { ...was, [task.id]: Object.fromEntries(rest) }
+      const next = pruneSyncedOverlay(current, stored)
+      return next === null ? was : { ...was, [task.id]: next }
     })
-  }, [stored, task.id])
-
-  useEffect(
-    () => () => {
-      if (timer.current !== null) {
-        clearTimeout(timer.current)
-        const snapshot = latest.current
-        saving.current = saving.current
-          .catch(() => {})
-          .then(() => persistNow.current(snapshot))
-          .catch(() => {})
-      }
-    },
-    [],
-  )
+  }, [stored, task.id, timer])
 
   return { answers, answer, flush, clear }
 }

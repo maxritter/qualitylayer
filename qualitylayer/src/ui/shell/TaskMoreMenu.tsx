@@ -58,6 +58,39 @@ function MenuAction({
   )
 }
 
+function LifecycleMenuSection({
+  archived,
+  busy,
+  phone,
+  onArchive,
+  onDelete,
+}: {
+  archived: boolean
+  busy: boolean
+  phone: boolean
+  onArchive: () => void
+  onDelete: () => void
+}) {
+  return (
+    <>
+      {phone ? <DropdownMenuSeparator /> : null}
+      <MenuAction
+        icon={
+          archived ? <ArchiveRestoreIcon aria-hidden="true" /> : <ArchiveIcon aria-hidden="true" />
+        }
+        disabled={busy}
+        onPick={onArchive}
+      >
+        {archived ? "Restore" : "Archive"}
+      </MenuAction>
+      <DropdownMenuSeparator />
+      <MenuAction icon={<Trash2Icon aria-hidden="true" />} destructive onPick={onDelete}>
+        Delete…
+      </MenuAction>
+    </>
+  )
+}
+
 export function TaskMoreMenu({
   task,
   api,
@@ -92,9 +125,9 @@ export function TaskMoreMenu({
 }) {
   const { branch } = task
   const known = useCodeSummary(task.id)
-  const stageActions = phone || changesOverflow || fold
-  if (!stageActions) return null
+  if (!phone && !changesOverflow && !fold) return null
   const full = phone || fold
+  const filesSuffix = known && known.files > 0 ? ` · ${known.files} files` : ""
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -122,7 +155,7 @@ export function TaskMoreMenu({
             icon={<FileDiffIcon aria-hidden="true" />}
             onPick={() => openReviewWorkspace(task.id, null)}
           >
-            View changes{known && known.files > 0 ? ` · ${known.files} files` : ""}
+            View changes{filesSuffix}
           </MenuAction>
         ) : null}
         {full && branch ? (
@@ -148,30 +181,13 @@ export function TaskMoreMenu({
           </MenuAction>
         ) : null}
         {phone || lifecycleFolded ? (
-          <>
-            {phone ? <DropdownMenuSeparator /> : null}
-            <MenuAction
-              icon={
-                task.archived ? (
-                  <ArchiveRestoreIcon aria-hidden="true" />
-                ) : (
-                  <ArchiveIcon aria-hidden="true" />
-                )
-              }
-              disabled={busy}
-              onPick={onArchive}
-            >
-              {task.archived ? "Restore" : "Archive"}
-            </MenuAction>
-            <DropdownMenuSeparator />
-            <MenuAction
-              icon={<Trash2Icon aria-hidden="true" />}
-              destructive
-              onPick={() => onPanel("delete")}
-            >
-              Delete…
-            </MenuAction>
-          </>
+          <LifecycleMenuSection
+            archived={Boolean(task.archived)}
+            busy={busy}
+            phone={phone}
+            onArchive={onArchive}
+            onDelete={() => onPanel("delete")}
+          />
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>

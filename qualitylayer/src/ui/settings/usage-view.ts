@@ -7,7 +7,17 @@
 import type { AgentUsage, Spend, Usage } from "../../core/cost/usage.ts"
 import { tokensIn } from "../../core/cost/usage-spend.ts"
 import { changeAgainst, keyedAgents, kindOf, planAgents } from "../usage/facts.ts"
-import { niceTop } from "../usage/format.ts"
+
+export {
+  chartAgents,
+  chartSeries,
+  type DayRow,
+  dayRows,
+  type Measure,
+  type ModelRow,
+  measureOf,
+  modelRows,
+} from "./usage-view-series.ts"
 
 /** An agent of the page with what it used in the period and in the one before. */
 export type Pick = { agent: AgentUsage; now: Spend; before: Spend }
@@ -104,50 +114,6 @@ const zero: Spend = {
 export const changeOf = (view: UsageView, now: number, before: number): number | null =>
   view.empty ? null : changeAgainst(now, before)
 
-/* ── the daily chart ── */
-
-export type Measure = "cost" | "tokens"
-
-/** What the chart shows unless the person picked: dollars when only agents billed by use are here, tokens otherwise. */
-export const measureOf = (view: UsageView, picked: Measure | null): Measure =>
-  picked ?? (view.kind === "api" ? "cost" : "tokens")
-
-/** The agents in the chart: those billed by use when it shows dollars, all that used something otherwise. */
-export function chartAgents(view: UsageView, measure: Measure): AgentUsage[] {
-  const pool = measure === "cost" ? view.keyed : view.all
-  return pool.filter((p) => tokensIn(p.now.tokens) > 0 || view.empty).map((p) => p.agent)
-}
-
-export type Series = {
-  days: string[]
-  /** `values[a][d]`: the amount of the agent `agents[a]` on the day `days[d]`. */
-  values: number[][]
-  totals: number[]
-  /** The axis top, a clean number above the highest day. */
-  top: number
-  /** Every day is nothing. */
-  empty: boolean
-}
-
-export function chartSeries(usage: Usage, agents: readonly AgentUsage[], measure: Measure): Series {
-  const values = agents.map((agent) =>
-    usage.days.map((_, d) => {
-      const day = agent.daily[d]
-      if (day === undefined) return 0
-      return measure === "cost" ? day.costUsd : tokensIn(day.tokens)
-    }),
-  )
-  const totals = usage.days.map((_, d) => values.reduce((n, row) => n + (row[d] ?? 0), 0))
-  const highest = Math.max(0, ...totals)
-  return {
-    days: usage.days,
-    values,
-    totals,
-    top: niceTop(highest),
-    empty: totals.every((v) => v === 0),
-  }
-}
-
 /* ── the share column ── */
 
 /** An agent's share of the period: of the cost when only agents billed by use are here, of the tokens otherwise. */
@@ -195,71 +161,4 @@ export function kindsOf(view: UsageView): Kinds {
     out.savedUsd += p.now.cacheSavedUsd
   }
   return out
-}
-
-/* ── the breakdown ── */
-
-export type ModelRow = {
-  agent: AgentUsage
-  model: string
-  sessions: number
-  tokens: number
-  costUsd: number
-  priced: boolean
-  /** Of the cost when only agents billed by use are here, of the tokens otherwise; 0 for a model with no price in dollars. */
-  share: number
-}
-
-/** Every model of every agent that used it, the biggest first: by cost when only agents billed by use are here, by tokens otherwise. */
-export function modelRows(view: UsageView): ModelRow[] {
-  const byCost = view.kind === "api"
-  const whole = byCost ? view.cost : view.tokens
-  const rows: ModelRow[] = []
-  for (const { agent } of view.all)
-    for (const model of agent.models) {
-      const tokens = tokensIn(model.tokens)
-      if (tokens <= 0) continue
-      const part = byCost ? model.costUsd : tokens
-      rows.push({
-        agent,
-        model: model.model,
-        sessions: model.sessions,
-        tokens,
-        costUsd: model.costUsd,
-        priced: model.priced,
-        share: whole > 0 ? part / whole : 0,
-      })
-    }
-  return rows.sort((a, b) =>
-    byCost ? b.costUsd - a.costUsd || b.tokens - a.tokens : b.tokens - a.tokens,
-  )
-}
-
-export type DayRow = {
-  day: string
-  tokens: number
-  /** Agents billed by use only. */
-  costUsd: number
-  sessions: number
-  /** The agents that used something that day. */
-  active: AgentUsage[]
-}
-
-/** The days of the period, today first. */
-export function dayRows(usage: Usage, view: UsageView): DayRow[] {
-  const rows: DayRow[] = []
-  for (let d = usage.days.length - 1; d >= 0; d--) {
-    const day = usage.days[d] as string
-    const dayOf = (p: Pick) => p.agent.daily[d]
-    rows.push({
-      day,
-      tokens: sum(view.all, (p) => tokensIn(dayOf(p)?.tokens ?? zero.tokens)),
-      costUsd: sum(view.keyed, (p) => dayOf(p)?.costUsd ?? 0),
-      sessions: sum(view.all, (p) => dayOf(p)?.sessions ?? 0),
-      active: view.all
-        .filter((p) => tokensIn(dayOf(p)?.tokens ?? zero.tokens) > 0)
-        .map((p) => p.agent),
-    })
-  }
-  return rows
 }

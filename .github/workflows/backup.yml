@@ -31,6 +31,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       # The schema the copy is read by and the backup script live in encrypted paths.
       - name: Install git-crypt

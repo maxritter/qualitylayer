@@ -102,6 +102,68 @@ export type ArtifactCardProps = {
   onRenamed: () => void
 }
 
+type ReadableRow = Exclude<LibraryRow, { kind: "broken" }>
+
+const rowPicture = (row: ReadableRow) => {
+  if (row.kind === "lasting") return lastingPicture(row.artifact, row.owner)
+  const { thumb, file } = row.artifact
+  return {
+    thumb,
+    src: thumb === null ? null : thumbSrc({ scope: "project", id: row.owner }, file, thumb),
+  }
+}
+
+const rowEdited = (row: ReadableRow, archivedView: boolean, now: number) => {
+  if (row.kind !== "lasting") return `Edited ${agoPhrase(row.artifact.updated, now)}`
+  if (archivedView && row.artifact.archivedAt !== undefined)
+    return `Archived ${agoPhrase(row.artifact.archivedAt, now)}`
+  return `Edited ${agoPhrase(lastingTime(row.artifact), now)}`
+}
+
+function CardStatus({ row, go }: { row: ReadableRow; go: (route: Route) => void }) {
+  if (row.kind === "personal")
+    return (
+      <span className="lib-card-meta">
+        <MonitorIcon aria-hidden="true" className="size-3 flex-none" />
+        <span className="lib-card-when">only on this computer</span>
+      </span>
+    )
+  if (row.artifact.changing.length > 0 && row.artifact.archivedAt === undefined)
+    return (
+      <span className="lib-card-meta lib-card-chg">
+        <Changing row={row} go={go} />
+      </span>
+    )
+  if (row.alsoIn.length > 0 && row.own)
+    return (
+      <span className="lib-card-meta">
+        <UsersIcon aria-hidden="true" className="size-3 flex-none" />
+        <span className="lib-card-when">also in {row.alsoIn.map((p) => p.label).join(", ")}</span>
+      </span>
+    )
+  return null
+}
+
+function CardWhere({
+  listed,
+  favorite,
+  projectLabel,
+}: {
+  listed?: boolean
+  favorite?: boolean
+  projectLabel: string
+}) {
+  if (!listed && !favorite) return null
+  return (
+    <>
+      <span className="lib-card-where" title={projectLabel}>
+        {listed ? `from ${projectLabel}` : projectLabel}
+      </span>
+      <span aria-hidden="true">·</span>
+    </>
+  )
+}
+
 export function ArtifactCard(props: ArtifactCardProps) {
   const { row, now, location } = props
   if (row.kind === "broken")
@@ -115,26 +177,12 @@ export function ArtifactCard(props: ArtifactCardProps) {
     )
 
   const title = row.artifact.title
-  const picture =
-    row.kind === "lasting"
-      ? lastingPicture(row.artifact, row.owner)
-      : {
-          thumb: row.artifact.thumb,
-          src:
-            row.artifact.thumb === null
-              ? null
-              : thumbSrc(
-                  { scope: "project", id: row.owner },
-                  row.artifact.file,
-                  row.artifact.thumb,
-                ),
-        }
-  const edited =
-    row.kind === "lasting"
-      ? props.archivedView && row.artifact.archivedAt !== undefined
-        ? `Archived ${agoPhrase(row.artifact.archivedAt, now)}`
-        : `Edited ${agoPhrase(lastingTime(row.artifact), now)}`
-      : `Edited ${agoPhrase(row.artifact.updated, now)}`
+  const picture = rowPicture(row)
+  const edited = rowEdited(row, props.archivedView, now)
+  const listedIn =
+    row.kind === "lasting" && !row.own && !props.favorite && props.listedIn !== undefined
+      ? { listedIn: props.listedIn }
+      : {}
 
   return (
     <li className="lib-card" data-testid="library-card" data-library-location={location}>
@@ -150,33 +198,14 @@ export function ArtifactCard(props: ArtifactCardProps) {
           {title}
         </button>
         <span className="lib-card-meta">
-          {props.listed || props.favorite ? (
-            <>
-              <span className="lib-card-where" title={props.projectLabel}>
-                {props.listed ? `from ${props.projectLabel}` : props.projectLabel}
-              </span>
-              <span aria-hidden="true">·</span>
-            </>
-          ) : null}
+          <CardWhere
+            listed={props.listed}
+            favorite={props.favorite}
+            projectLabel={props.projectLabel}
+          />
           <span className="lib-card-when">{edited}</span>
         </span>
-        {row.kind === "personal" ? (
-          <span className="lib-card-meta">
-            <MonitorIcon aria-hidden="true" className="size-3 flex-none" />
-            <span className="lib-card-when">only on this computer</span>
-          </span>
-        ) : row.artifact.changing.length > 0 && row.artifact.archivedAt === undefined ? (
-          <span className="lib-card-meta lib-card-chg">
-            <Changing row={row} go={props.go} />
-          </span>
-        ) : row.alsoIn.length > 0 && row.own ? (
-          <span className="lib-card-meta">
-            <UsersIcon aria-hidden="true" className="size-3 flex-none" />
-            <span className="lib-card-when">
-              also in {row.alsoIn.map((p) => p.label).join(", ")}
-            </span>
-          </span>
-        ) : null}
+        <CardStatus row={row} go={props.go} />
         {props.kept ? (
           <span className="lib-kept" data-testid="library-row-kept">
             Renamed: it no longer matches your search, and stays here until you change it.
@@ -193,9 +222,7 @@ export function ArtifactCard(props: ArtifactCardProps) {
             projects={props.choices}
             reload={props.reload}
             go={props.go}
-            {...(!row.own && !props.favorite && props.listedIn !== undefined
-              ? { listedIn: props.listedIn }
-              : {})}
+            {...listedIn}
             onRenamed={props.onRenamed}
           />
         ) : null}

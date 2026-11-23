@@ -9,133 +9,17 @@
 // moves it; Fit returns to it. Button and key steps ease (a short transition, none under reduced
 // motion); a drag and a wheel follow the hand at once.
 
+import { type ReactNode, useRef, useState } from "react"
+import type { Size } from "./pan-zoom.ts"
 import {
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react"
-import {
-  centreOf,
-  DRAG_THRESHOLD,
-  fitView,
-  keyTravel,
-  moveBy,
-  type Point,
-  type Size,
-  type View,
-  wheelFactor,
-  ZOOM_STEP,
-  zoomBy,
-  zoomLevel,
-  zoomTo,
-} from "./pan-zoom.ts"
+  type PanZoom,
+  usePanZoom,
+  usePointerPan,
+  useViewportSizeObservers,
+  useViewportWheelGestures,
+} from "./use-pan-zoom.ts"
 
-type Model = {
-  /** The viewport's size, once measured. */
-  room: Size | null
-  /** The drawing's own size in pixels, once measured. */
-  content: Size | null
-  /** The view the person moved to; null while the drawing is fitted (it then follows the viewport). */
-  free: View | null
-  /** Whether the next change eases (a button or a key) or follows the hand (a drag, a wheel). */
-  smooth: boolean
-  panning: boolean
-}
-
-type Drag = { id: number; x: number; y: number; view: View; moved: boolean }
-
-/** What Safari sends for a trackpad's pinch, in place of a wheel with Ctrl held. */
-type Gesture = Event & { scale: number; clientX: number; clientY: number }
-
-function sameSize(a: Size | null, b: Size): boolean {
-  return a !== null && a.width === b.width && a.height === b.height
-}
-
-/** The pan and zoom of one drawing, shared by the viewport and the controls beside it. */
-export function usePanZoom() {
-  const [model, setModel] = useState<Model>({
-    room: null,
-    content: null,
-    free: null,
-    smooth: false,
-    panning: false,
-  })
-  // Events arrive faster than renders (a wheel can fire several times a frame): handlers read what the
-  // last one wrote, not the last render.
-  const latest = useRef(model)
-  const update = useCallback((patch: Partial<Model>) => {
-    latest.current = { ...latest.current, ...patch }
-    setModel(latest.current)
-  }, [])
-
-  const current = useCallback((): View | null => {
-    const { room, content, free } = latest.current
-    if (room === null || content === null) return null
-    return free ?? fitView(room, content)
-  }, [])
-
-  const zoomAround = useCallback(
-    (factor: number, at: Point | null, smooth: boolean) => {
-      const { room, content } = latest.current
-      const view = current()
-      if (view === null || room === null || content === null) return
-      update({ free: zoomBy(view, factor, at ?? centreOf(room), room, content), smooth })
-    },
-    [current, update],
-  )
-  const zoomIn = useCallback(() => zoomAround(ZOOM_STEP, null, true), [zoomAround])
-  const zoomOut = useCallback(() => zoomAround(1 / ZOOM_STEP, null, true), [zoomAround])
-  const fit = useCallback(() => update({ free: null, smooth: true }), [update])
-  const moveView = useCallback(
-    (dx: number, dy: number, smooth: boolean) => {
-      const { room, content } = latest.current
-      const view = current()
-      if (view === null || room === null || content === null) return
-      update({ free: moveBy(view, dx, dy, room, content), smooth })
-    },
-    [current, update],
-  )
-
-  /** Keys, for the dialog around the viewport: arrows pan, + − zoom, 0 fits. Chords are the browser's. */
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return
-    const travel = keyTravel(event.key, event.shiftKey)
-    if (travel !== null) {
-      event.preventDefault()
-      moveView(travel.x, travel.y, true)
-    } else if (event.key === "+" || event.key === "=") zoomIn()
-    else if (event.key === "-" || event.key === "−") zoomOut()
-    else if (event.key === "0") fit()
-  }
-
-  const { room, content, free } = model
-  const view = room !== null && content !== null ? (free ?? fitView(room, content)) : null
-  const percent =
-    view !== null && room !== null && content !== null
-      ? Math.round(zoomLevel(view, room, content) * 100)
-      : 100
-
-  return {
-    view,
-    content,
-    percent,
-    smooth: model.smooth,
-    panning: model.panning,
-    zoomIn,
-    zoomOut,
-    fit,
-    onKeyDown,
-    /** For PanZoomViewport only. */
-    inner: { latest, update, current, zoomAround },
-  }
-}
-
-export type PanZoom = ReturnType<typeof usePanZoom>
+export { usePanZoom }
 
 type ViewportProps = {
   pan: PanZoom
@@ -157,129 +41,11 @@ export function PanZoomViewport({
   testId,
   children,
 }: ViewportProps) {
-  const { latest, update, current, zoomAround } = pan.inner
   const [frame, setFrame] = useState<HTMLDivElement | null>(null)
   const layer = useRef<HTMLDivElement>(null)
-  const drag = useRef<Drag | null>(null)
-  const dragged = useRef(false)
-
-  // The drawing's size: now, and again when the page's fonts arrive and change the width of the text.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: another drawing (contentKey) is measured again
-  useLayoutEffect(() => {
-    const element = layer.current
-    if (element === null) return
-    let live = true
-    const take = () => {
-      const size = live ? measure(element) : null
-      if (size !== null && !sameSize(latest.current.content, size)) update({ content: size })
-    }
-    take()
-    void document.fonts?.ready.then(take)
-    return () => {
-      live = false
-    }
-  }, [measure, contentKey, latest, update])
-
-  // The viewport's size, kept current as the window and the dialog change.
-  useLayoutEffect(() => {
-    if (frame === null) return
-    const take = () => {
-      const size = { width: frame.clientWidth, height: frame.clientHeight }
-      if (size.width > 0 && size.height > 0 && !sameSize(latest.current.room, size))
-        update({ room: size })
-    }
-    take()
-    if (typeof ResizeObserver === "undefined") return
-    const watch = new ResizeObserver(take)
-    watch.observe(frame)
-    return () => watch.disconnect()
-  }, [frame, latest, update])
-
-  // The wheel and the pinch are native listeners: a React one is passive, and cannot keep the page from
-  // scrolling or the browser from zooming itself.
-  useEffect(() => {
-    if (frame === null) return
-    const at = (event: { clientX: number; clientY: number }): Point => {
-      const box = frame.getBoundingClientRect()
-      return { x: event.clientX - box.left, y: event.clientY - box.top }
-    }
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault()
-      zoomAround(wheelFactor(event), at(event), false)
-    }
-    let from = 1
-    const onGestureStart = (event: Event) => {
-      event.preventDefault()
-      from = current()?.scale ?? 1
-    }
-    const onGestureChange = (event: Event) => {
-      event.preventDefault()
-      const gesture = event as Gesture
-      const { room, content } = latest.current
-      const view = current()
-      if (view === null || room === null || content === null) return
-      update({
-        free: zoomTo(view, from * gesture.scale, at(gesture), room, content),
-        smooth: false,
-      })
-    }
-    frame.addEventListener("wheel", onWheel, { passive: false })
-    frame.addEventListener("gesturestart", onGestureStart)
-    frame.addEventListener("gesturechange", onGestureChange)
-    return () => {
-      frame.removeEventListener("wheel", onWheel)
-      frame.removeEventListener("gesturestart", onGestureStart)
-      frame.removeEventListener("gesturechange", onGestureChange)
-    }
-  }, [frame, current, latest, update, zoomAround])
-
-  // A drag selects nothing: the browser's own selection drag is stopped once the press has become a pan.
-  useEffect(() => {
-    if (frame === null) return
-    const stop = (event: Event) => {
-      if (drag.current?.moved) event.preventDefault()
-    }
-    frame.addEventListener("selectstart", stop)
-    return () => frame.removeEventListener("selectstart", stop)
-  }, [frame])
-
-  const press = (event: PointerEvent<HTMLDivElement>) => {
-    if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return
-    const view = current()
-    if (view === null) return
-    drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, view, moved: false }
-    dragged.current = false
-    // A press on a word that is selected would begin dragging the word away instead of the drawing;
-    // a press clears a selection anyway, as it does anywhere on a page.
-    window.getSelection()?.removeAllRanges()
-  }
-  const move = (event: PointerEvent<HTMLDivElement>) => {
-    const from = drag.current
-    if (from === null || from.id !== event.pointerId) return
-    const dx = event.clientX - from.x
-    const dy = event.clientY - from.y
-    if (!from.moved) {
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
-      from.moved = true
-      // The press that began on a word may already have started selecting it.
-      window.getSelection()?.removeAllRanges()
-      event.currentTarget.setPointerCapture?.(event.pointerId)
-      update({ panning: true })
-    }
-    const { room, content } = latest.current
-    if (room === null || content === null) return
-    update({ free: moveBy(from.view, dx, dy, room, content), smooth: false })
-  }
-  const release = (event: PointerEvent<HTMLDivElement>) => {
-    const from = drag.current
-    if (from === null || from.id !== event.pointerId) return
-    drag.current = null
-    if (!from.moved) return
-    dragged.current = true
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
-    update({ panning: false })
-  }
-
+  useViewportSizeObservers({ frame, layer, measure, contentKey, inner: pan.inner })
+  useViewportWheelGestures(frame, pan.inner)
+  const pointer = usePointerPan(frame, pan.inner)
   const view = pan.view
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend the viewport does not want
@@ -291,17 +57,11 @@ export function PanZoomViewport({
       data-zoom={pan.percent}
       role="group"
       aria-label={label}
-      onPointerDown={press}
-      onPointerMove={move}
-      onPointerUp={release}
-      onPointerCancel={release}
-      // The click that ends a drag is not a click on whatever lay under the pointer.
-      onClickCapture={(event) => {
-        if (!dragged.current) return
-        dragged.current = false
-        event.stopPropagation()
-        event.preventDefault()
-      }}
+      onPointerDown={pointer.onPointerDown}
+      onPointerMove={pointer.onPointerMove}
+      onPointerUp={pointer.onPointerEnd}
+      onPointerCancel={pointer.onPointerEnd}
+      onClickCapture={pointer.onClickCapture}
       // A selection dragged by its text would start a drag and drop; a pan is what a drag means here.
       onDragStart={(event) => event.preventDefault()}
     >

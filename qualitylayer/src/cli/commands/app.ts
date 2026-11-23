@@ -114,20 +114,19 @@ function crashed(ctx: Ctx, args: string[]): Result<unknown> {
   return ok({ recorded: known })
 }
 
-export async function appCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const [sub] = args
-  if (sub === "ensure") return ensure(ctx, args)
-  if (sub === "crashed") return crashed(ctx, args)
-  if (sub === "status") return status(ctx)
-  if (sub === "restart") return restart(ctx)
-  if (sub === "stop" || sub === "link") return cockpitCmd(ctx, args)
-  if (args.includes("--forget-browsers")) {
-    return (await forgetBrowsers(ctx))
-      ? ok({ forgotten: true })
-      : err({ code: "bad_args", message: "the running server could not forget the browsers" })
-  }
-  // `app pair` is the browser path even where the App is installed.
-  const browser = sub === "pair"
+const SUBCOMMANDS: Record<
+  string,
+  (ctx: Ctx, args: string[]) => Promise<Result<unknown>> | Result<unknown>
+> = {
+  ensure,
+  crashed,
+  status: (ctx) => status(ctx),
+  restart: (ctx) => restart(ctx),
+  stop: cockpitCmd,
+  link: cockpitCmd,
+}
+
+async function openAppRoute(ctx: Ctx, args: string[], browser: boolean): Promise<Result<unknown>> {
   const route = args.slice(browser ? 1 : 0).find((arg) => !arg.startsWith("--"))
   const checked = route === undefined ? null : routeOf(route)
   if (route !== undefined && checked === null) {
@@ -136,7 +135,6 @@ export async function appCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>>
       message: `"${route}" is not a place in the App: use task/<id>[/<doc>[/<heading>]], artifacts/<project>/<file>, team/<task>[/<doc>], ask/<task>/<ask> or step/<task>/<step>`,
     })
   }
-
   const place = checked === null ? null : await withTaskId(ctx, checked)
   const main = browser || args.includes("--no-open") ? null : await appMain(ctx)
   if (main !== null) {
@@ -149,6 +147,19 @@ export async function appCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>>
     route: place ?? undefined,
     remember: args.includes("--remember"),
   })
+}
+
+export async function appCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const [sub] = args
+  const handler = sub === undefined ? undefined : SUBCOMMANDS[sub]
+  if (handler) return handler(ctx, args)
+  if (args.includes("--forget-browsers")) {
+    return (await forgetBrowsers(ctx))
+      ? ok({ forgotten: true })
+      : err({ code: "bad_args", message: "the running server could not forget the browsers" })
+  }
+  // `app pair` is the browser path even where the App is installed.
+  return openAppRoute(ctx, args, sub === "pair")
 }
 
 /**

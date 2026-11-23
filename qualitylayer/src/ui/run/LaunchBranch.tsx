@@ -72,6 +72,66 @@ export function resolveLaunchBranch(
   return { works: "checkout", branch: "", name: "", plan: null, problem: null }
 }
 
+function LaunchBranchInput({
+  id,
+  scope,
+  works,
+  resolved,
+  disabled,
+  current,
+  checkout,
+  showPath,
+  onChange,
+}: {
+  id: string
+  scope: string
+  works: LaunchWorks
+  resolved: LaunchBranchResolved
+  disabled: boolean
+  current?: string | null
+  checkout: string | null
+  showPath: boolean
+  onChange: (patch: Partial<LaunchBranchState>) => void
+}) {
+  if (works === "checkout") {
+    return (
+      <p className="q-launch-branch-line">
+        <GitBranchIcon size={13} aria-hidden="true" />
+        {checkout || current ? (
+          <>
+            <b>{current || "Current branch"}</b>
+            {checkout && showPath ? <span title={checkout}>in {checkout}</span> : null}
+          </>
+        ) : (
+          <span>Choose a project to see its current branch.</span>
+        )}
+      </p>
+    )
+  }
+  const isWorktree = works === "worktree"
+  return (
+    <div className="q-launch-branch-fields">
+      <label htmlFor={`${id}-name`}>
+        {isWorktree ? "Worktree name" : "Branch name"}
+        <Input
+          id={`${id}-name`}
+          aria-label={`${scope}: ${isWorktree ? "worktree name" : "branch name"}`}
+          aria-invalid={resolved.problem !== null}
+          value={isWorktree ? resolved.name : resolved.branch}
+          disabled={disabled}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) =>
+            onChange(
+              isWorktree ? { nameEdit: event.target.value } : { branchEdit: event.target.value },
+            )
+          }
+        />
+      </label>
+    </div>
+  )
+}
+
 /**
  * Where the work happens: the current branch, a new branch, or a new worktree. A worktree is named once;
  * the name gives its folder, next to the project, and its branch. Nothing asks for a folder.
@@ -136,41 +196,17 @@ export function LaunchBranch({
           onChange={(works) => onChange({ works })}
         />
       </div>
-      {state.works === "checkout" ? (
-        <p className="q-launch-branch-line">
-          <GitBranchIcon size={13} aria-hidden="true" />
-          {checkout || current ? (
-            <>
-              <b>{current || "Current branch"}</b>
-              {checkout && showPath ? <span title={checkout}>in {checkout}</span> : null}
-            </>
-          ) : (
-            <span>Choose a project to see its current branch.</span>
-          )}
-        </p>
-      ) : (
-        <div className="q-launch-branch-fields">
-          <label htmlFor={`${id}-name`}>
-            {state.works === "worktree" ? "Worktree name" : "Branch name"}
-            <Input
-              id={`${id}-name`}
-              aria-label={`${scope}: ${state.works === "worktree" ? "worktree name" : "branch name"}`}
-              aria-invalid={resolved.problem !== null}
-              value={state.works === "worktree" ? resolved.name : resolved.branch}
-              disabled={disabled}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) =>
-                onChange(
-                  state.works === "worktree"
-                    ? { nameEdit: event.target.value }
-                    : { branchEdit: event.target.value },
-                )
-              }
-            />
-          </label>
-        </div>
-      )}
+      <LaunchBranchInput
+        id={id}
+        scope={scope}
+        works={state.works}
+        resolved={resolved}
+        disabled={disabled}
+        current={current}
+        checkout={checkout}
+        showPath={showPath}
+        onChange={onChange}
+      />
       {state.works === "worktree" && resolved.plan ? (
         <div className="q-launch-worktree-at" data-testid="new-task-worktree-plan">
           <span>Folder</span>

@@ -1,264 +1,200 @@
-import { createHash } from "node:crypto"
 import type { Ctx } from "../../ctx.ts"
-import { PICKER_PENDING_MAX, PICKER_RECORD_MAX_BYTES, PICKER_SESSIONS_MAX } from "../home-caps.ts"
-import { pidAlive } from "../self.ts"
-import { keyOf } from "../task/binding.ts"
+import { PICKER_RECORD_MAX_BYTES } from "../home-caps.ts"
 import { HOOK_BEAT_MS, isViewed, readViewing, VIEW_CONFIRM_MS, VIEW_LEASE_MS } from "./approvals.ts"
+import {
+  admitPicker,
+  cleanPickerAnswers,
+  isPickerObject,
+  isPickerSessionValid,
+  listPickers,
+  type PendingPicker,
+  type PickerAnswers,
+  pickerFile,
+  pickerFolder,
+  readPickerJson,
+} from "./pickers-store.ts"
 import { questionCall, questionState } from "./questions.ts"
-import type { ConversationQuestion } from "./types.ts"
 
-export type PickerAnswers = Record<string, string[]>
-export type PendingPicker = {
-  callId: string
-  question: ConversationQuestion
-  original: unknown[]
-  at: number
-  pid: number
-}
-const sessionValid = (session: string) => /^[A-Za-z0-9_.-]{1,128}$/.test(session)
-const root = (ctx: Ctx) => `${ctx.home}/pickers`
-const folder = (ctx: Ctx, session: string) => `${root(ctx)}/claude-code-${keyOf(session)}`
-const fileId = (callId: string) => createHash("sha256").update(callId).digest("hex").slice(0, 32)
-const file = (ctx: Ctx, session: string, callId: string, kind: string) =>
-  `${folder(ctx, session)}/${kind}/${fileId(callId)}.json`
-const object = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v)
-async function read(ctx: Ctx, path: string): Promise<unknown> {
-  try {
-    const text = await ctx.fs.readFile(path)
-    return Buffer.byteLength(text) <= PICKER_RECORD_MAX_BYTES ? JSON.parse(text) : null
-  } catch {
-    return null
-  }
-}
-function validStored(row: unknown, now: number): row is PendingPicker {
-  if (
-    !object(row) ||
-    typeof row.callId !== "string" ||
-    !object(row.question) ||
-    !Array.isArray(row.original) ||
-    typeof row.at !== "number" ||
-    typeof row.pid !== "number"
+export { cleanPickerAnswers, listPickers }
+
+async function writePickerDecision(
+  ctx: Ctx,
+  target: { session: string; callId: string; clean: PickerAnswers; additionalContext?: string },
+  authorize: () => Promise<boolean>,
+  onWritten?: () => void,
+): Promise<boolean> {
+  await ctx.fs.mkdir(`${pickerFolder(ctx, target.session)}/decisions`, { mode: 0o700 })
+  const path = pickerFile(ctx, target.session, target.callId, "decisions")
+  if (!(await authorize()) || !(await isViewed(ctx, "claude-code", target.session))) return false
+  await ctx.fs.writeFile(
+    path,
+    JSON.stringify({
+      callId: target.callId,
+      answers: target.clean,
+      ...(target.additionalContext ? { additionalContext: target.additionalContext } : {}),
+    }),
+    { mode: 0o600, exclusive: true },
   )
+  onWritten?.()
+  const stillPending = await ctx.fs.exists(
+    pickerFile(ctx, target.session, target.callId, "pending"),
+  )
+  if (!(await authorize()) || !stillPending) {
+    await ctx.fs.remove(path)
     return false
-  if (!Number.isSafeInteger(row.pid) || row.pid <= 0) return false
-  const state = questionState()
-  questionCall(state, row.callId, "claude-code", { questions: row.original })
-  return (
-    state.value?.answerable === true &&
-    JSON.stringify(state.value) === JSON.stringify(row.question) &&
-    row.at <= now + 1000 &&
-    now - row.at <= 600_000 &&
-    pidAlive(row.pid)
-  )
-}
-export async function listPickers(ctx: Ctx, session: string): Promise<PendingPicker[]> {
-  if (!sessionValid(session)) return []
-  const out: PendingPicker[] = []
-  try {
-    for (const name of (await ctx.fs.readdir(`${folder(ctx, session)}/pending`)).slice(
-      0,
-      PICKER_PENDING_MAX * 2,
-    )) {
-      if (!/^[a-f0-9]{32}\.json$/.test(name)) continue
-      const path = `${folder(ctx, session)}/pending/${name}`
-      const row = await read(ctx, path)
-      if (validStored(row, ctx.clock.now()) && `${fileId(row.callId)}.json` === name) out.push(row)
-      else {
-        await ctx.fs.remove(path)
-        for (const kind of ["beats", "decisions"])
-          await ctx.fs.remove(`${folder(ctx, session)}/${kind}/${name}`)
-      }
-    }
-  } catch {
-    return []
   }
-  return out.sort((a, b) => a.at - b.at).slice(0, PICKER_PENDING_MAX)
+  return true
 }
-export function cleanPickerAnswers(pending: PendingPicker, answers: unknown): PickerAnswers | null {
-  if (!object(answers) || Object.keys(answers).length !== pending.question.questions.length)
-    return null
-  const clean: PickerAnswers = {}
-  for (const q of pending.question.questions) {
-    const values = answers[q.id]
-    if (
-      !Array.isArray(values) ||
-      !values.length ||
-      values.length > (q.multiSelect ? q.options.length : 1) ||
-      values.some((v) => typeof v !== "string" || !v.trim() || v.length > 8000) ||
-      new Set(values).size !== values.length
-    )
-      return null
-    clean[q.id] = values
-  }
-  return Buffer.byteLength(JSON.stringify(clean)) <= PICKER_RECORD_MAX_BYTES / 2 ? clean : null
-}
+
 export async function decidePicker(
   ctx: Ctx,
   session: string,
   callId: string,
   answers: unknown,
-  authorize: () => Promise<boolean> = async () => true,
-  supporting: { additionalContext?: string; onWritten?(): void } = {},
+  ...rest: [
+    authorize?: () => Promise<boolean>,
+    supporting?: { additionalContext?: string; onWritten?(): void },
+  ]
 ): Promise<boolean> {
+  const [authorize = async () => true, supporting = {}] = rest
   try {
     if (!(await isViewed(ctx, "claude-code", session))) return false
     const pending = (await listPickers(ctx, session)).find((p) => p.callId === callId)
-    if (!pending) return false
-    const clean = cleanPickerAnswers(pending, answers)
-    if (!clean) return false
-    await ctx.fs.mkdir(`${folder(ctx, session)}/decisions`, { mode: 0o700 })
-    const path = file(ctx, session, callId, "decisions")
-    if (!(await authorize()) || !(await isViewed(ctx, "claude-code", session))) return false
+    const clean = pending ? cleanPickerAnswers(pending, answers) : null
     const additionalContext = supporting.additionalContext
-    if (
+    const contextTooLarge =
       additionalContext !== undefined &&
       Buffer.byteLength(additionalContext) > PICKER_RECORD_MAX_BYTES / 4
+    if (!clean || contextTooLarge) return false
+    return await writePickerDecision(
+      ctx,
+      { session, callId, clean, additionalContext },
+      authorize,
+      supporting.onWritten,
     )
-      return false
-    await ctx.fs.writeFile(
-      path,
-      JSON.stringify({
-        callId,
-        answers: clean,
-        ...(additionalContext ? { additionalContext } : {}),
-      }),
-      {
-        mode: 0o600,
-        exclusive: true,
-      },
-    )
-    supporting.onWritten?.()
-    if (!(await authorize()) || !(await ctx.fs.exists(file(ctx, session, callId, "pending")))) {
-      await ctx.fs.remove(path)
-      return false
-    }
-    return true
   } catch {
     return false
   }
 }
-async function admit(ctx: Ctx, session: string, pending: PendingPicker): Promise<boolean> {
-  const text = JSON.stringify(pending)
-  if (Buffer.byteLength(text) > PICKER_RECORD_MAX_BYTES) return false
-  await ctx.fs.mkdir(root(ctx), { mode: 0o700 })
-  return ctx.fs.withLock(`${root(ctx)}/admission.lock`, async () => {
-    const sessions = (await ctx.fs.readdir(root(ctx))).filter((name) =>
-      /^claude-code-[a-f0-9]{16}$/.test(name),
-    )
-    if (
-      sessions.length >= PICKER_SESSIONS_MAX &&
-      !sessions.includes(`claude-code-${keyOf(session)}`)
-    ) {
-      let evicted = false
-      for (const name of sessions) {
-        const dir = `${root(ctx)}/${name}`
-        const names = await ctx.fs.readdir(`${dir}/pending`).catch(() => [])
-        let alive = false
-        for (const file of names.slice(0, PICKER_PENDING_MAX * 2)) {
-          if (validStored(await read(ctx, `${dir}/pending/${file}`), ctx.clock.now())) {
-            alive = true
-            break
-          }
-        }
-        if (!alive) {
-          await ctx.fs.remove(dir)
-          evicted = true
-          break
-        }
-      }
-      if (!evicted) return false
-    }
-    if ((await listPickers(ctx, session)).length >= PICKER_PENDING_MAX) return false
-    await ctx.fs.mkdir(`${folder(ctx, session)}/pending`, { mode: 0o700 })
-    await ctx.fs.writeFile(file(ctx, session, pending.callId, "pending"), text, {
-      mode: 0o600,
-      exclusive: true,
-    })
-    return true
-  })
+
+function buildPendingPicker(
+  ctx: Ctx,
+  payload: { session_id?: unknown; tool_use_id?: unknown; tool_input?: unknown },
+): { session: string; toolInput: Record<string, unknown>; pending: PendingPicker } | null {
+  const session = payload.session_id
+  const callId = payload.tool_use_id
+  if (typeof session !== "string" || !isPickerSessionValid(session)) return null
+  if (typeof callId !== "string" || !isPickerObject(payload.tool_input)) return null
+  const state = questionState()
+  questionCall(state, callId, "claude-code", payload.tool_input)
+  if (!state.value?.answerable) return null
+  const uniqueQuestions = new Set(state.value.questions.map((q) => q.question)).size
+  if (uniqueQuestions !== state.value.questions.length) return null
+  return {
+    session,
+    toolInput: payload.tool_input,
+    pending: {
+      callId,
+      question: state.value,
+      original: payload.tool_input.questions as unknown[],
+      at: ctx.clock.now(),
+      pid: process.pid,
+    },
+  }
 }
+
+function formatPickerOutput(
+  pending: PendingPicker,
+  toolInput: Record<string, unknown>,
+  decision: unknown,
+): Record<string, unknown> | null {
+  const answers =
+    isPickerObject(decision) && decision.callId === pending.callId
+      ? cleanPickerAnswers(pending, decision.answers)
+      : null
+  if (!answers) return null
+  const result: Record<string, string> = {}
+  for (const q of pending.question.questions) result[q.question] = (answers[q.id] ?? []).join(", ")
+  const hasContext =
+    isPickerObject(decision) &&
+    typeof decision.additionalContext === "string" &&
+    Buffer.byteLength(decision.additionalContext) <= PICKER_RECORD_MAX_BYTES / 4
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      updatedInput: { ...toolInput, questions: pending.original, answers: result },
+      ...(hasContext ? { additionalContext: decision.additionalContext } : {}),
+    },
+  }
+}
+
+async function writeBeat(ctx: Ctx, session: string, callId: string, now: number): Promise<boolean> {
+  await ctx.fs.mkdir(`${pickerFolder(ctx, session)}/beats`, { mode: 0o700 })
+  await ctx.fs.atomicWrite(pickerFile(ctx, session, callId, "beats"), JSON.stringify({ at: now }))
+  return ctx.fs.exists(pickerFile(ctx, session, callId, "pending"))
+}
+
+type PollStep =
+  | { status: "continue"; alive: boolean; beat: number }
+  | { status: "done"; output: Record<string, unknown> | null }
+
+async function pollPickerStep(
+  ctx: Ctx,
+  target: { session: string; toolInput: Record<string, unknown>; pending: PendingPicker },
+  loop: { alive: boolean; beat: number },
+): Promise<PollStep> {
+  const { session, pending, toolInput } = target
+  const now = ctx.clock.now()
+  const view = await readViewing(ctx, "claude-code", session)
+  const alive = loop.alive || (view !== null && view.at > pending.at)
+  const expired =
+    !view || (alive ? now - view.at > VIEW_LEASE_MS : now - pending.at >= VIEW_CONFIRM_MS)
+  if (expired || !(await ctx.fs.exists(pickerFile(ctx, session, pending.callId, "pending"))))
+    return { status: "done", output: null }
+  const decisionPath = pickerFile(ctx, session, pending.callId, "decisions")
+  const decision = await readPickerJson(ctx, decisionPath)
+  if (decision !== null || (await ctx.fs.exists(decisionPath))) {
+    return {
+      status: "done",
+      output: decision !== null ? formatPickerOutput(pending, toolInput, decision) : null,
+    }
+  }
+  let beat = loop.beat
+  if (now - beat >= HOOK_BEAT_MS) {
+    beat = now
+    if (!(await writeBeat(ctx, session, pending.callId, now)))
+      return { status: "done", output: null }
+  }
+  return { status: "continue", alive, beat }
+}
+
 export async function awaitPicker(
   ctx: Ctx,
   payload: { session_id?: unknown; tool_use_id?: unknown; tool_input?: unknown },
   options: { maxMs?: number } = {},
 ): Promise<Record<string, unknown> | null> {
-  const session = payload.session_id
-  const callId = payload.tool_use_id
-  if (
-    typeof session !== "string" ||
-    !sessionValid(session) ||
-    typeof callId !== "string" ||
-    !object(payload.tool_input)
-  )
-    return null
-  const state = questionState()
-  questionCall(state, callId, "claude-code", payload.tool_input)
-  if (!state.value?.answerable || !(await readViewing(ctx, "claude-code", session))) return null
-  if (new Set(state.value.questions.map((q) => q.question)).size !== state.value.questions.length)
-    return null
-  const pending: PendingPicker = {
-    callId,
-    question: state.value,
-    original: payload.tool_input.questions as unknown[],
-    at: ctx.clock.now(),
-    pid: process.pid,
-  }
-  const dir = folder(ctx, session)
+  const built = buildPendingPicker(ctx, payload)
+  if (!built || !(await readViewing(ctx, "claude-code", built.session))) return null
+  const { session, pending } = built
   let filed = false
-  const clear = async () => {
-    for (const kind of ["pending", "beats", "decisions"])
-      await ctx.fs.remove(file(ctx, session, callId, kind)).catch(() => {})
-  }
   try {
-    filed = await admit(ctx, session, pending)
+    filed = await admitPicker(ctx, session, pending)
     if (!filed) return null
-    let alive = false
-    let beat = pending.at
+    let loop = { alive: false, beat: pending.at }
     while (ctx.clock.now() - pending.at < (options.maxMs ?? 570_000)) {
-      const now = ctx.clock.now()
-      const view = await readViewing(ctx, "claude-code", session)
-      if (!view) return null
-      if (view.at > pending.at) alive = true
-      if (alive ? now - view.at > VIEW_LEASE_MS : now - pending.at >= VIEW_CONFIRM_MS) return null
-      if (!(await ctx.fs.exists(file(ctx, session, callId, "pending")))) return null
-      const decision = await read(ctx, file(ctx, session, callId, "decisions"))
-      if (decision === null && (await ctx.fs.exists(file(ctx, session, callId, "decisions"))))
-        return null
-      if (decision !== null) {
-        const answers =
-          object(decision) && decision.callId === callId
-            ? cleanPickerAnswers(pending, decision.answers)
-            : null
-        if (!answers) return null
-        const result: Record<string, string> = {}
-        for (const q of pending.question.questions)
-          result[q.question] = (answers[q.id] ?? []).join(", ")
-        return {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "allow",
-            updatedInput: { ...payload.tool_input, questions: pending.original, answers: result },
-            ...(object(decision) &&
-            typeof decision.additionalContext === "string" &&
-            Buffer.byteLength(decision.additionalContext) <= PICKER_RECORD_MAX_BYTES / 4
-              ? { additionalContext: decision.additionalContext }
-              : {}),
-          },
-        }
-      }
-      if (now - beat >= HOOK_BEAT_MS) {
-        beat = now
-        await ctx.fs.mkdir(`${dir}/beats`, { mode: 0o700 })
-        await ctx.fs.atomicWrite(file(ctx, session, callId, "beats"), JSON.stringify({ at: now }))
-        if (!(await ctx.fs.exists(file(ctx, session, callId, "pending")))) return null
-      }
+      const step = await pollPickerStep(ctx, built, loop)
+      if (step.status === "done") return step.output
+      loop = { alive: step.alive, beat: step.beat }
       await ctx.clock.sleep(250)
     }
     return null
   } catch {
     return null
   } finally {
-    if (filed) await clear()
+    if (filed) {
+      for (const kind of ["pending", "beats", "decisions"])
+        await ctx.fs.remove(pickerFile(ctx, session, pending.callId, kind)).catch(() => {})
+    }
   }
 }

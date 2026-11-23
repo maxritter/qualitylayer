@@ -1,4 +1,4 @@
-import { existsSync, type FSWatcher, lstatSync, readFileSync, statSync, watch } from "node:fs"
+import { existsSync, lstatSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { readGate } from "../gate/gate.ts"
@@ -9,7 +9,9 @@ import { acceptedStopEvent } from "./bind.ts"
 import type { RunRecord } from "./contracts.ts"
 import { nativeSessionFile } from "./control.ts"
 import { intentHelperRunning } from "./intent.ts"
-import { readRun, runDir, updateRun } from "./registry.ts"
+import { updateRun } from "./registry.ts"
+
+export { watchIdleRun } from "./idle-watch.ts"
 
 export const RUN_IDLE_MS = 15 * 60_000
 
@@ -30,7 +32,7 @@ export function handedOffBoundary(run: RunRecord, sequence: number): boolean {
   return run.handedOff !== undefined && sequence > run.handedOff.sequence
 }
 
-const HUMAN_FILES = [
+export const HUMAN_FILES = [
   "gate.json",
   "question.json",
   "question-batches.json",
@@ -68,25 +70,24 @@ export function reserveIdleStop(
   })
 }
 
+function isReadableHumanFile(runtimeDir: string, name: string): boolean {
+  const path = join(runtimeDir, name)
+  if (!existsSync(path)) return true
+  // A damaged or unexpectedly large record is unknown, never permission to stop.
+  if (statSync(path).size > 1024 * 1024) return false
+  const value = JSON.parse(readFileSync(path, "utf8")) as unknown
+  const array = name === "questions.json" || name === "question-batches.json"
+  if (!value || typeof value !== "object" || Array.isArray(value) !== array) return false
+  if (name !== "gate.json") return true
+  return ["pending", "approved", "changes"].includes((value as { decision: string }).decision)
+}
+
 /** Preserve native resume and every outstanding human/helper boundary. */
 export async function idleRunBlocked(ctx: Ctx, run: RunRecord): Promise<boolean> {
   if (!nativeSessionFile(ctx, run)) return true
-  if (!run.taskRuntimeDir) return !!run.task || run.purpose.kind === "task"
-  const task = { runtimeDir: run.taskRuntimeDir }
-  for (const name of HUMAN_FILES) {
-    const path = join(task.runtimeDir, name)
-    if (!existsSync(path)) continue
-    // A damaged or unexpectedly large record is unknown, never permission to stop.
-    if (statSync(path).size > 1024 * 1024) return true
-    const value = JSON.parse(readFileSync(path, "utf8")) as unknown
-    const array = name === "questions.json" || name === "question-batches.json"
-    if (!value || typeof value !== "object" || Array.isArray(value) !== array) return true
-    if (
-      name === "gate.json" &&
-      !["pending", "approved", "changes"].includes((value as { decision: string }).decision)
-    )
-      return true
-  }
+  if (!run.taskRuntimeDir) return Boolean(run.task) || run.purpose.kind === "task"
+  if (!HUMAN_FILES.every((name) => isReadableHumanFile(run.taskRuntimeDir as string, name)))
+    return true
   return Object.values(await idlePending(ctx, run)).some(Boolean)
 }
 
@@ -113,143 +114,5 @@ export async function idlePending(
     batch?.questions.length,
     needs.some((need) => need.state === "open" && need.waiting !== null),
   ]
-  return { human: human.some(Boolean), helper: !!helper }
-}
-
-/** Watches run and human-decision records with one deadline; no recurring idle poll. */
-export function watchIdleRun(options: {
-  home: string
-  id: string
-  generation: number
-  attached: () => boolean
-  blocked: (run: RunRecord) => Promise<boolean>
-  stop: (sequence: number, stamp: string) => void
-  timeoutMs?: number
-  /**
-   * A planner marked handed off whose turn has ended and that nobody has told yet (the CLI of the
-   * outside session could not reach this host, as from inside an agent's sandbox): the host types the
-   * message itself, once nobody has typed for a moment. `quietAt` is when the last typing ends.
-   */
-  tell?: (run: RunRecord) => void
-  quietAt?: () => number
-}) {
-  const timeout = options.timeoutMs ?? RUN_IDLE_MS
-  let telling: ReturnType<typeof setTimeout> | undefined
-  let detachedAt = Date.now()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let disposed = false
-  let revision = 0
-  let taskWatcher: FSWatcher | undefined
-  let taskDirectory: string | undefined
-  const current = () => {
-    const run = readRun(options.home, options.id)
-    return run?.generation === options.generation ? run : null
-  }
-  const settle = async (sequence: number, stamp: number) => {
-    const candidate = current()
-    if (!candidate || idleRunBoundary(candidate) !== sequence) return
-    // A planner whose build went outside the App closes at once, watched or not: it is history now.
-    const finished = handedOffBoundary(candidate, sequence)
-    if (!finished && options.attached()) return
-    const state = idleStateStamp(candidate)
-    if (!finished && (await options.blocked(candidate))) return
-    if (disposed || revision !== stamp || (!finished && options.attached())) return
-    const latest = current()
-    if (latest && idleRunBoundary(latest) === sequence) options.stop(sequence, state)
-  }
-  const refresh = () => {
-    const stamp = ++revision
-    if (timer) clearTimeout(timer)
-    timer = undefined
-    if (disposed) return
-    const run = current()
-    if (run?.taskRuntimeDir !== taskDirectory) {
-      taskWatcher?.close()
-      taskWatcher = undefined
-      taskDirectory = run?.taskRuntimeDir
-      if (taskDirectory)
-        try {
-          const watched = watch(taskDirectory, { persistent: false }, (_, name) => {
-            if (name === null || HUMAN_FILES.includes(name.toString())) refresh()
-          })
-          taskWatcher = watched
-          watched.on("error", () => {
-            watched.close()
-            if (taskWatcher === watched) {
-              taskWatcher = undefined
-              taskDirectory = undefined
-            }
-          })
-        } catch {
-          taskDirectory = undefined
-        }
-    }
-    const sequence = run ? idleRunBoundary(run) : undefined
-    if (sequence === undefined || !run) return
-    if (
-      run.handedOff &&
-      !run.handedOff.told &&
-      sequence <= run.handedOff.sequence &&
-      options.tell
-    ) {
-      if (telling) clearTimeout(telling)
-      const tell = options.tell
-      // The quiet time is read again when it ends: a person who typed since starts it over.
-      const arm = () => {
-        telling = setTimeout(
-          () => {
-            telling = undefined
-            if (disposed) return
-            if ((options.quietAt?.() ?? 0) > Date.now()) return arm()
-            const latest = current()
-            if (latest?.handedOff && !latest.handedOff.told)
-              if (idleRunBoundary(latest) === sequence) tell(latest)
-          },
-          Math.max(0, (options.quietAt?.() ?? 0) - Date.now()),
-        )
-        telling.unref()
-      }
-      arm()
-    }
-    const finished = handedOffBoundary(run, sequence)
-    if (!finished && options.attached()) return
-    const since = Math.max(detachedAt, Date.parse(acceptedStopEvent(run)?.at ?? ""))
-    timer = setTimeout(
-      () => {
-        timer = undefined
-        void settle(sequence, stamp).catch(() => {
-          // Failed state/ownership inspection leaves the live session alone.
-        })
-      },
-      finished ? 0 : Math.max(0, since + timeout - Date.now()),
-    )
-    timer.unref()
-  }
-  let watcher: FSWatcher
-  try {
-    watcher = watch(runDir(options.home, options.id), { persistent: false }, (_, name) => {
-      if (name === null || name.toString() === "run.json") refresh()
-    })
-  } catch {
-    return { changed: () => {}, dispose: () => {} }
-  }
-  watcher.on("error", () => {
-    dispose()
-  })
-  const dispose = () => {
-    disposed = true
-    revision++
-    if (timer) clearTimeout(timer)
-    if (telling) clearTimeout(telling)
-    taskWatcher?.close()
-    watcher.close()
-  }
-  refresh()
-  return {
-    changed: () => {
-      detachedAt = Date.now()
-      refresh()
-    },
-    dispose,
-  }
+  return { human: human.some(Boolean), helper: Boolean(helper) }
 }

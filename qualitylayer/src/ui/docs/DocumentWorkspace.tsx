@@ -4,22 +4,21 @@ import { useDocumentFullSize, useDocumentRecord } from "./mode.ts"
 import "./docs.css"
 import { RecordReader } from "./RecordReader.tsx"
 
+const INPUT_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"])
+
+function shouldIgnoreShortcut(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return true
+  const el = document.activeElement as HTMLElement | null
+  return Boolean(el?.isContentEditable || INPUT_TAGS.has(el?.tagName ?? ""))
+}
+
 export function DocumentWorkspace(props: TaskSurfaceProps) {
   const { children, task, onSidebar } = props
   const full = useDocumentFullSize()
   const record = useDocumentRecord()
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      const el = document.activeElement as HTMLElement | null
-      if (
-        event.defaultPrevented ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        el?.isContentEditable ||
-        ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName ?? "")
-      )
-        return
+      if (shouldIgnoreShortcut(event)) return
       if (
         document.querySelector(
           '[role="dialog"][data-open], [role="menu"], [data-slot="select-positioner"][data-open]',

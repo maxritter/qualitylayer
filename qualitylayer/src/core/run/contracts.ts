@@ -407,23 +407,33 @@ export function runPermissionWaiting(
       (run.attention === "waiting" && run.waitSince !== undefined))
   )
 }
+function isArtifactPurpose(v: Record<string, unknown>, text: (key: string) => boolean): boolean {
+  const validScope = v.scope === "task" || v.scope === "project"
+  const validText = text("id") && text("file") && text("revision")
+  return v.kind === "artifact" && validScope && validText && text("request")
+}
+
 export function isRunPurpose(value: unknown): value is RunPurpose {
   if (!value || typeof value !== "object") return false
   const v = value as Record<string, unknown>
   const text = (key: string) => typeof v[key] === "string" && (v[key] as string).length > 0
-  return v.kind === "task"
-    ? text("task")
-    : v.kind === "new-task"
-      ? text("request")
-      : v.kind === "terminal"
-        ? (v.shell === undefined || v.shell === true) &&
-          (v.context === undefined || isTerminalContext(v.context))
-        : v.kind === "artifact" &&
-          ["task", "project"].includes(v.scope as string) &&
-          text("id") &&
-          text("file") &&
-          text("revision") &&
-          text("request")
+  if (v.kind === "task") return text("task")
+  if (v.kind === "new-task") return text("request")
+  if (v.kind === "terminal") {
+    const validShell = v.shell === undefined || v.shell === true
+    return validShell && (v.context === undefined || isTerminalContext(v.context))
+  }
+  return isArtifactPurpose(v, text)
+}
+
+function isArtifactTerminalContext(
+  v: Record<string, unknown>,
+  bounded: (key: string) => boolean,
+): boolean {
+  const validScope = v.scope === "task" || v.scope === "project"
+  const validRevision = typeof v.revision === "string" && /^[a-f0-9]{64}$/.test(v.revision)
+  const validFields = bounded("id") && bounded("file") && validRevision
+  return v.kind === "artifact" && validScope && validFields
 }
 
 export function isTerminalContext(value: unknown): value is TerminalContext {
@@ -441,15 +451,6 @@ export function isTerminalContext(value: unknown): value is TerminalContext {
     (v[key] as string).length <= 4096 &&
     !(v[key] as string).includes("\0")
   const fields = v.kind === "task" ? ["kind", "task"] : ["kind", "scope", "id", "file", "revision"]
-  return (
-    Object.keys(v).every((key) => fields.includes(key)) &&
-    (v.kind === "task"
-      ? bounded("task")
-      : v.kind === "artifact" &&
-        ["task", "project"].includes(v.scope as string) &&
-        bounded("id") &&
-        bounded("file") &&
-        typeof v.revision === "string" &&
-        /^[a-f0-9]{64}$/.test(v.revision))
-  )
+  if (!Object.keys(v).every((key) => fields.includes(key))) return false
+  return v.kind === "task" ? bounded("task") : isArtifactTerminalContext(v, bounded)
 }

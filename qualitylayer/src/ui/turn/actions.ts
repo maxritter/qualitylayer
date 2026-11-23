@@ -4,15 +4,20 @@ import type { Item, ItemAnswer } from "../../core/items.ts"
 import type { AnsweredQuestion, Question } from "../../core/task/question.ts"
 import { askedInAgent } from "../../core/task/sides.ts"
 import type { BatchAnswer, DeliveryReceipt, TurnSnapshot } from "../../interaction/contracts.ts"
-import { recommendedIndices, recommendedLabel } from "../../interaction/question-recommendations.ts"
 import { type Api, interactionApi, api as liveApi, type TaskDetail } from "../api.ts"
 import { jumpToItem } from "../jump.ts"
 import { acknowledgeTurn } from "./acknowledge.ts"
 import { answerBody } from "./answer-body.ts"
 import { optimisticTurn, publishServerTurn, turnFor, useTurnSnapshot } from "./projection.ts"
+import {
+  applyOptimisticAnswer,
+  buildAnsweredEntry,
+  replaceItemAnswer,
+} from "./turn-action-helpers.ts"
 
 let readSequence = 0
 const latestRead = new Map<string, number>()
+
 export async function refreshTurn(id: string) {
   const sequence = ++readSequence
   const snapshot = await interactionApi.task(id)
@@ -22,6 +27,7 @@ export async function refreshTurn(id: string) {
   }
   return snapshot.turn
 }
+
 export function useTurnData(task: TaskDetail, api: Api, version: number) {
   const turn = useTurnSnapshot(task.id)
   // biome-ignore lint/correctness/useExhaustiveDependencies: version is the server event generation
@@ -30,6 +36,7 @@ export function useTurnData(task: TaskDetail, api: Api, version: number) {
   }, [task.id, api, version])
   return turn
 }
+
 export async function mutateTurn<T>(
   id: string,
   action: string,
@@ -56,107 +63,72 @@ export async function mutateTurn<T>(
     throw error
   }
 }
+
+type AnswerRouteResult = { answer?: AnsweredQuestion; receipt?: DeliveryReceipt }
+
+function sendBatchAnswer(
+  task: Pick<TaskDetail, "id" | "answers" | "approvals">,
+  reload: () => void,
+  answer: BatchAnswer,
+  files: File[],
+) {
+  const post = () =>
+    interactionApi.taskRoute<AnswerRouteResult>(task.id, "turn", "answer", {
+      method: "POST",
+      body: answerBody(answer, files),
+    })
+  const q = turnFor(task.id)?.questions.find((row) => row.id === answer.id)
+  if (!q) {
+    if (!answer.revision) return Promise.resolve(false)
+    return mutateTurn<AnswerRouteResult>(task.id, "answer", answer, (was) => was, post).then(
+      (result) => {
+        reload()
+        return result.answer !== undefined
+      },
+    )
+  }
+  const at = Date.now()
+  const entry = buildAnsweredEntry(q, answer, at)
+  const skipOptimistic =
+    files.length > 0 || askedInAgent({ answers: task.answers, approvals: task.approvals }, [q])
+  return mutateTurn<AnswerRouteResult>(
+    task.id,
+    "answer",
+    answer,
+    (was) => applyOptimisticAnswer({ was, q, answer, entry, at, skipOptimistic }),
+    post,
+  ).then((result) => {
+    reload()
+    if (!result.answer) return true
+    const saved = result.answer
+    toast("Answer sent", {
+      duration: 5000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          void reopenQuestion(task.id, answer.batch, saved, false).then(reload, (error) =>
+            toast.error(error.message),
+          )
+        },
+      },
+    })
+    return true
+  })
+}
+
 export function useBatchActions(task: TaskDetail, reload: () => void) {
   return useCallback(
-    (answer: BatchAnswer, files: File[] = []) => {
-      const post = () =>
-        interactionApi.taskRoute<{ answer?: AnsweredQuestion; receipt?: DeliveryReceipt }>(
-          task.id,
-          "turn",
-          "answer",
-          {
-            method: "POST",
-            body: answerBody(answer, files),
-          },
-        )
-      const turn = turnFor(task.id)
-      const q = turn?.questions.find((q) => q.id === answer.id)
-      if (!q) {
-        if (!answer.revision) return Promise.resolve(false)
-        return mutateTurn<{ answer?: AnsweredQuestion; receipt?: DeliveryReceipt }>(
-          task.id,
-          "answer",
-          answer,
-          (was) => was,
-          post,
-        ).then((result) => {
-          reload()
-          return result.answer !== undefined
-        })
-      }
-      const at = Date.now()
-      const entry: AnsweredQuestion = {
-        id: q.id,
-        question: q.question,
-        number: q.number,
-        choice:
-          "choices" in answer
-            ? answer.choices.map((i) => q.choices[i]?.label ?? "").join(" + ")
-            : "choice" in answer
-              ? (q.choices[answer.choice]?.label ?? "")
-              : "text" in answer
-                ? answer.text
-                : recommendedLabel(q),
-        ...("choices" in answer || ("unsure" in answer && q.multi && q.recommendedChoices)
-          ? {
-              picked: "choices" in answer ? answer.choices : recommendedIndices(q),
-              pickedLabels: ("choices" in answer ? answer.choices : recommendedIndices(q)).map(
-                (i) => q.choices[i]?.label ?? "",
-              ),
-            }
-          : {}),
-        at,
-        via: "app",
-        delivered: false,
-        ...(q.multi === true && q.gate === undefined ? { multi: true as const } : {}),
-        ...(q.agent ? { agent: q.agent } : {}),
-        ...(q.about ? { about: q.about } : {}),
-        ...("unsure" in answer ? { kind: "unsure" } : {}),
-      }
-      return mutateTurn<{ answer?: AnsweredQuestion; receipt?: DeliveryReceipt }>(
-        task.id,
-        "answer",
+    (answer: BatchAnswer, files: File[] = []) =>
+      sendBatchAnswer(
+        { id: task.id, answers: task.answers, approvals: task.approvals },
+        reload,
         answer,
-        (was) =>
-          files.length || askedInAgent({ answers: task.answers, approvals: task.approvals }, [q])
-            ? was
-            : "more" in answer
-              ? {
-                  ...was,
-                  questions: was.questions.map((it) =>
-                    it.id === q.id ? { ...it, more: { request: answer.more.request, at } } : it,
-                  ),
-                }
-              : {
-                  ...was,
-                  questions: was.questions.filter((it) => it.id !== q.id),
-                  answered: [...was.answered.filter((a) => a.id !== entry.id), entry],
-                },
-        post,
-      ).then(
-        (result) => {
-          reload()
-          if (!result.answer) return true
-          const saved = result.answer
-          toast("Answer sent", {
-            duration: 5000,
-            action: {
-              label: "Undo",
-              onClick: () => {
-                void reopenQuestion(task.id, answer.batch, saved, false).then(reload, (error) =>
-                  toast.error(error.message),
-                )
-              },
-            },
-          })
-          return true
-        },
-        // A refusal rejects: the card shows it on its own line and keeps the answer, with no second toast.
-      )
-    },
+        files,
+      ),
     [task.id, task.answers, task.approvals, reload],
   )
 }
+
 /**
  * Cancel on a Tell me more request of a batch member. The request stays open in the turn until the
  * server has saved the cancel (the card shows it pending meanwhile), then the card goes back to
@@ -187,6 +159,7 @@ export async function cancelBatchMore(taskId: string, batch: string, id: string)
     return false
   }
 }
+
 export async function reopenQuestion(
   id: string,
   batch: string,
@@ -204,55 +177,54 @@ export async function reopenQuestion(
   void refreshTurn(id).catch(() => {})
   if (answer.id) jumpToItem(`question:${answer.id}`)
 }
+
+function sendItemAnswer(
+  taskId: string,
+  reload: () => void,
+  item: Item,
+  answer: ItemAnswer | null,
+  files: File[],
+) {
+  return mutateTurn(
+    taskId,
+    "item",
+    { item: item.id, answer, seen: item.digest },
+    (was) =>
+      files.length ? was : { ...was, items: replaceItemAnswer(was.items, item.id, answer) },
+    () =>
+      interactionApi.taskRoute(taskId, "turn", "item", {
+        method: "POST",
+        body: answerBody({ item: item.id, answer, seen: item.digest }, files),
+      }),
+  ).then(
+    () => {
+      reload()
+      if (answer) {
+        toast("Answer sent", {
+          duration: 5000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              void mutateTurn(
+                taskId,
+                "item",
+                { item: item.id, answer: null, seen: item.digest },
+                (was) => ({ ...was, items: was.items }),
+              ).then(reload, (error) => toast.error(error.message))
+            },
+          },
+        })
+      }
+      return true
+    },
+    () => false,
+  )
+}
+
 export function useItemAnswers(task: TaskDetail, reload: () => void) {
   return useCallback(
-    (item: Item, answer: ItemAnswer | null, files: File[] = []) => {
-      const map = (items: Item[]): Item[] =>
-        items.map((it) =>
-          it.id === item.id
-            ? { ...it, state: answer ? "sent" : "open", answer: answer ?? undefined }
-            : { ...it, ...(it.children ? { children: map(it.children) } : {}) },
-        )
-      return mutateTurn(
-        task.id,
-        "item",
-        { item: item.id, answer, seen: item.digest },
-        (was) =>
-          files.length
-            ? was
-            : {
-                ...was,
-                items: map(was.items),
-              },
-        () =>
-          interactionApi.taskRoute(task.id, "turn", "item", {
-            method: "POST",
-            body: answerBody({ item: item.id, answer, seen: item.digest }, files),
-          }),
-      ).then(
-        () => {
-          reload()
-          if (answer)
-            toast("Answer sent", {
-              duration: 5000,
-              action: {
-                label: "Undo",
-                onClick: () => {
-                  void mutateTurn(
-                    task.id,
-                    "item",
-                    { item: item.id, answer: null, seen: item.digest },
-                    (was) => ({ ...was, items: was.items }),
-                  ).then(reload, (error) => toast.error(error.message))
-                },
-              },
-            })
-          return true
-        },
-        // The Your call card shows the failure inline (DecisionCard): no second toast.
-        () => false,
-      )
-    },
+    (item: Item, answer: ItemAnswer | null, files: File[] = []) =>
+      sendItemAnswer(task.id, reload, item, answer, files),
     [task.id, reload],
   )
 }

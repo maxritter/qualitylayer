@@ -48,16 +48,17 @@ const HOST_ACTION: Refusal = {
  * Every route is matched by prefix, so a machine on another version that reads one a little wider
  * is covered as well; no route a page uses starts with one of these.
  */
-export function isHostAction(pathname: string): boolean {
-  // A segment that is not valid encoding is matched as written: the machine may still route on it.
-  const decoded = (segment: string) => {
-    try {
-      return decodeURIComponent(segment)
-    } catch {
-      return segment
-    }
+// A segment that is not valid encoding is matched as written: the machine may still route on it.
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
   }
-  const parts = pathname.split("/").filter(Boolean).map(decoded)
+}
+
+export function isHostAction(pathname: string): boolean {
+  const parts = pathname.split("/").filter(Boolean).map(decodeSegment)
   const [api, place, id, action] = parts
   if (api !== "api") return false
   if (place === "tasks" && action === "open") return true

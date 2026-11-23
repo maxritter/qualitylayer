@@ -53,6 +53,25 @@ export function summaryState(summary: string): string {
   return lines.slice(counts).join(" ")
 }
 
+function isPunctuationEndValid(summary: string, mark: string, after: number): boolean {
+  if (mark === ".") {
+    const rest = skipWhitespace(summary, after)
+    return rest === summary.length || !isLineText(summary.slice(after, rest))
+  }
+  return mark === "," && /\s/.test(summary.charAt(after))
+}
+
+function whitespaceEnd(
+  summary: string,
+  mark: string,
+  end: number,
+  after: number,
+): { end: number; valid: boolean } | null {
+  if (after === summary.length || !isLineText(mark)) return { end, valid: true }
+  const atMiddleDot = summary.charAt(after) === "·" && /\s/.test(summary.charAt(after + 1))
+  return atMiddleDot ? { end: after - 1, valid: true } : null
+}
+
 /** The timestamp suffix may include a time zone, but ends at the first valid delimiter. */
 function startedEnd(summary: string, from: number): { end: number; valid: boolean } {
   const boundaries = /[,·.]|\s+/g
@@ -61,17 +80,9 @@ function startedEnd(summary: string, from: number): { end: number; valid: boolea
     const end = match.index
     const after = boundaries.lastIndex
     const mark = match[0]
-    if (/^[,·.]$/.test(mark)) {
-      const rest = mark === "." ? skipWhitespace(summary, after) : after
-      const valid =
-        mark === "."
-          ? rest === summary.length || !isLineText(summary.slice(after, rest))
-          : mark === "," && /\s/.test(summary.charAt(after))
-      return { end, valid }
-    }
-    const atLineEnd = after === summary.length || !isLineText(mark)
-    const atMiddleDot = summary.charAt(after) === "·" && /\s/.test(summary.charAt(after + 1))
-    if (atLineEnd || atMiddleDot) return { end: atLineEnd ? end : after - 1, valid: true }
+    if (/^[,·.]$/.test(mark)) return { end, valid: isPunctuationEndValid(summary, mark, after) }
+    const ws = whitespaceEnd(summary, mark, end, after)
+    if (ws !== null) return ws
   }
   return { end: summary.length, valid: true }
 }

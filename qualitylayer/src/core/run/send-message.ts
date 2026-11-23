@@ -21,18 +21,24 @@ export const PASTE_GAP_MS = 200
 
 const PASTE_THEN_ENTER = Buffer.from("\x1b[201~\r")
 
-export function inputBoundaryMatches(run: RunRecord, boundary: InputBoundary): boolean {
+function matchesBoundaryIdentity(run: RunRecord, boundary: InputBoundary): boolean {
   return (
     run.generation === boundary.generation &&
     run.nativeSession === boundary.nativeSession &&
     run.task === boundary.task &&
-    acceptedStopSequence(run) === boundary.sequence &&
-    !run.waitSince &&
-    !run.terminalPrompt &&
-    !run.startupPrompt &&
-    run.intent?.state !== "paused" &&
-    !(run.recovery?.generation === run.generation && run.recovery.state === "cancelled")
+    acceptedStopSequence(run) === boundary.sequence
   )
+}
+
+function isRunIdleForBoundary(run: RunRecord): boolean {
+  const noPrompts = !run.waitSince && !run.terminalPrompt && !run.startupPrompt
+  const recoveryCancelled =
+    run.recovery?.generation === run.generation && run.recovery.state === "cancelled"
+  return noPrompts && run.intent?.state !== "paused" && !recoveryCancelled
+}
+
+export function inputBoundaryMatches(run: RunRecord, boundary: InputBoundary): boolean {
+  return matchesBoundaryIdentity(run, boundary) && isRunIdleForBoundary(run)
 }
 
 /**
@@ -44,6 +50,50 @@ export function inputSteps(bytes: Uint8Array): (Uint8Array | number)[] {
   const tail = bytes.subarray(bytes.length - PASTE_THEN_ENTER.length)
   if (bytes.length <= PASTE_THEN_ENTER.length || !PASTE_THEN_ENTER.equals(tail)) return [bytes]
   return [bytes.subarray(0, bytes.length - 1), PASTE_GAP_MS, bytes.subarray(bytes.length - 1)]
+}
+
+type ConnectedHost = Awaited<ReturnType<typeof connectOrRevive>>
+
+async function sendBoundedInput(
+  host: ConnectedHost,
+  bytes: Buffer,
+  boundary: InputBoundary,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Answer handoff was not confirmed")), 2000)
+    const off = host.onFrame((frame) => {
+      if (
+        frame.type !== "input-result" ||
+        frame.generation !== boundary.generation ||
+        frame.sequence !== boundary.sequence
+      )
+        return
+      clearTimeout(timer)
+      off()
+      if (frame.accepted) resolve()
+      else reject(new Error("The planner changed before its answers could be sent"))
+    })
+    host.send({ type: "input", data: bytes, boundary })
+  })
+}
+
+async function flushHostSocket(host: ConnectedHost, strictFlush?: boolean): Promise<void> {
+  // Destroying the socket drops what it has not flushed: end it, and close once it is written.
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        strictFlush
+          ? reject(
+              new Error("The request delivery was not confirmed; inspect Terminal before retrying"),
+            )
+          : resolve(),
+      2000,
+    )
+    host.socket.end(() => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }
 
 /** Put `text` into the run's session. Throws when the run has no live host of this generation. */
@@ -71,43 +121,9 @@ export async function sendToRun(
       throw new Error("This host cannot confirm an idle answer handoff")
     await options.beforeSend?.()
     options.onWrite?.()
-    if (options.boundary) {
-      const boundary = options.boundary
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Answer handoff was not confirmed")), 2000)
-        const off = host.onFrame((frame) => {
-          if (
-            frame.type !== "input-result" ||
-            frame.generation !== boundary.generation ||
-            frame.sequence !== boundary.sequence
-          )
-            return
-          clearTimeout(timer)
-          off()
-          if (frame.accepted) resolve()
-          else reject(new Error("The planner changed before its answers could be sent"))
-        })
-        host.send({ type: "input", data: bytes, boundary })
-      })
-    } else host.send({ type: "input", data: bytes })
-    // Destroying the socket drops what it has not flushed: end it, and close once it is written.
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () =>
-          options.strictFlush
-            ? reject(
-                new Error(
-                  "The request delivery was not confirmed; inspect Terminal before retrying",
-                ),
-              )
-            : resolve(),
-        2000,
-      )
-      host.socket.end(() => {
-        clearTimeout(timer)
-        resolve()
-      })
-    })
+    if (options.boundary) await sendBoundedInput(host, bytes, options.boundary)
+    else host.send({ type: "input", data: bytes })
+    await flushHostSocket(host, options.strictFlush)
   } finally {
     host.close()
   }

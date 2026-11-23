@@ -33,6 +33,32 @@ export const screenStillKey = (
 ): string =>
   `screen/${screen.key}/${screen.width}${screen.height === undefined ? "" : `x${screen.height}`}/${screen.theme}`
 
+const SCREEN_ROW =
+  /^- \*\*([^*\r\n]+)\*\* · (\d+)(?: × (\d+))? px · (light|dark) · (captured|not captured|skipped: no browser|unavailable: .+|omitted: size) · (stale|current)$/
+
+function parseScreenRow(line: string): WalkScreen | null {
+  const row = SCREEN_ROW.exec(line)
+  const key = row?.[1] ?? ""
+  if (!row || !safeScreenKey(key)) return null
+  return {
+    key,
+    width: Number(row[2]),
+    ...(row[3] ? { height: Number(row[3]) } : {}),
+    theme: row[4] as "light" | "dark",
+    outcome: row[5] as WalkScreen["outcome"],
+    stale: row[6] === "stale",
+    verdict: "No comparison recorded.",
+  }
+}
+
+function applyScreenDetail(screen: WalkScreen | undefined, line: string): void {
+  if (!screen) return
+  const verdict = "  - Independent review: "
+  if (line.startsWith(verdict)) screen.verdict = line.slice(verdict.length)
+  else if (line.startsWith("  - Refresh: ")) screen.staleReason = line.slice(13)
+  else if (line.startsWith("  - Designed: ")) screen.approved = line.slice(14).replace(/^`|`$/g, "")
+}
+
 export function screensFromReview(review: string): WalkScreen[] {
   const screens: WalkScreen[] = []
   const fences = extractFences(review)
@@ -44,28 +70,9 @@ export function screensFromReview(review: string): WalkScreen[] {
       continue
     }
     if (!inside) continue
-    const row =
-      /^- \*\*([^*\r\n]+)\*\* · (\d+)(?: × (\d+))? px · (light|dark) · (captured|not captured|skipped: no browser|unavailable: .+|omitted: size) · (stale|current)$/.exec(
-        line,
-      )
-    if (row && safeScreenKey(row[1] ?? ""))
-      screens.push({
-        key: row[1] ?? "",
-        width: Number(row[2]),
-        ...(row[3] ? { height: Number(row[3]) } : {}),
-        theme: row[4] as "light" | "dark",
-        outcome: row[5] as WalkScreen["outcome"],
-        stale: row[6] === "stale",
-        verdict: "No comparison recorded.",
-      })
-    else {
-      const screen = screens.at(-1)
-      const verdict = "  - Independent review: "
-      if (line.startsWith(verdict) && screen) screen.verdict = line.slice(verdict.length)
-      if (line.startsWith("  - Refresh: ") && screen) screen.staleReason = line.slice(13)
-      if (line.startsWith("  - Designed: ") && screen)
-        screen.approved = line.slice(14).replace(/^`|`$/g, "")
-    }
+    const parsed = parseScreenRow(line)
+    if (parsed) screens.push(parsed)
+    else applyScreenDetail(screens.at(-1), line)
   }
   return screens
 }

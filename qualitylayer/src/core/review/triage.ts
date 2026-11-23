@@ -2,25 +2,22 @@
 // it is and what was said, and decided as a fix, a different fix, an answer or a replan. The fixes
 // are built and judged again; when that round passes, the review reopens by itself.
 
-import { type Ctx, err, ok, type Result } from "../../ctx.ts"
+import type { Ctx } from "../../ctx.ts"
 import { parseDoc } from "../docs/frontmatter.ts"
-import {
-  type PrComment,
-  type PrThread,
-  pullRequestThreads,
-  replyToPullRequestThread,
-} from "../ship/pr-threads.ts"
+import { pullRequestThreads } from "../ship/pr-threads.ts"
 import { type Task, taskDocPath } from "../task/store.ts"
 import { doneMeansOf } from "./detail.ts"
 import {
-  DECISIONS,
   type DecisionKind,
   type ReviewAnchor,
   type ReviewSource,
   type ReviewThread,
   readReview,
-  sayInReview,
 } from "./threads.ts"
+import { decideThread, headOf, settleDecisions } from "./triage-decide.ts"
+import { PR_PREFIX, prAnchor, takeInNewReplies } from "./triage-pr.ts"
+
+export { decideThread, settleDecisions }
 
 /** An open thread as the agent reads it: where it is, what it is on, and every word written. */
 export type TriageThread = {
@@ -53,13 +50,6 @@ export function awaitsFix(thread: ReviewThread): boolean {
   )
 }
 
-const KIND_WORDS: Record<DecisionKind, string> = {
-  fix: "fix it as asked",
-  other: "fix it differently",
-  answer: "answer instead",
-  replan: "replan",
-}
-
 async function contextOf(ctx: Ctx, task: Task, anchor: ReviewAnchor): Promise<string> {
   if (anchor.kind === "doneMeans") {
     const path = taskDocPath(task, "plan")
@@ -86,62 +76,12 @@ const WHERE: Record<ReviewAnchor["kind"], (anchor: ReviewAnchor) => string> = {
 
 const whereOf = (anchor: ReviewAnchor): string => WHERE[anchor.kind](anchor)
 
-function prAnchor(pr: PrThread): ReviewAnchor {
-  const quote = (pr.comments[0]?.text ?? "").slice(0, 300)
-  return {
-    kind: "pr",
-    id: pr.path,
-    ...(pr.line !== null ? { line: pr.line } : {}),
-    ...(quote !== "" ? { quote } : {}),
-  }
-}
-
-const PR = "pr:"
-
-/** Where the checkout's code stands: a decision records it, and a fix is built once it has moved. */
-async function headOf(ctx: Ctx, task: Task): Promise<string> {
-  const head = await ctx.git.run(task.repoRoot, ["rev-parse", "HEAD"])
-  return head.code === 0 ? head.stdout.trim() : ""
-}
-
 /** The agreed fixes have been committed: the code is no longer where it was when the author decided. */
 export async function fixesBuilt(ctx: Ctx, task: Task): Promise<boolean> {
   const fixes = (await readReview(ctx, task)).threads.filter(awaitsFix)
   if (fixes.length === 0) return false
   const head = await headOf(ctx, task)
   return fixes.some((t) => t.decision !== undefined && t.decision.head !== head)
-}
-
-/** The thread already holds this comment: by its id, or, for one kept without an id, by its words. */
-function holds(thread: ReviewThread, comment: PrComment): boolean {
-  return thread.messages.some((m) =>
-    m.ref !== undefined ? m.ref === comment.id : m.text === comment.text,
-  )
-}
-
-/**
- * A pull request thread the review already holds may have heard more since: the replies it does not
- * hold yet are added to it, and a thread settled or resolved here is open for triage again.
- */
-async function takeInNewReplies(ctx: Ctx, task: Task, remote: PrThread[]): Promise<void> {
-  const state = await readReview(ctx, task)
-  for (const pr of remote) {
-    const local = state.threads.find((t) => t.id === `${PR}${pr.id}`)
-    if (local === undefined) continue
-    const fresh = pr.comments.filter((c) => !holds(local, c))
-    for (const comment of fresh) {
-      await sayInReview(
-        ctx,
-        task,
-        { t: "reply", thread: local.id, text: comment.text, ref: comment.id },
-        { by: comment.by, src: "pr" },
-      )
-    }
-    const last = fresh.at(-1)
-    if (last !== undefined && local.state === "resolved") {
-      await sayInReview(ctx, task, { t: "reopen", thread: local.id }, { by: last.by, src: "pr" })
-    }
-  }
 }
 
 /** The review's open threads, each with its context, for `review threads`; `url` when the pull request is known. */
@@ -153,11 +93,11 @@ export async function openThreads(ctx: Ctx, task: Task, url?: string): Promise<T
   // Unresolved code comments on the pull request join the triage until the author has decided them.
   const known = new Set(state.threads.map((t) => t.id))
   for (const pr of remote) {
-    if (known.has(`${PR}${pr.id}`)) continue
+    if (known.has(`${PR_PREFIX}${pr.id}`)) continue
     const first = pr.comments[0]?.text ?? ""
     const anchor = prAnchor(pr)
     out.push({
-      id: `${PR}${pr.id}`,
+      id: `${PR_PREFIX}${pr.id}`,
       anchor,
       where: whereOf(anchor),
       context: await contextOf(ctx, task, anchor),
@@ -184,137 +124,4 @@ export async function openThreads(ctx: Ctx, task: Task, url?: string): Promise<T
     })
   }
   return out
-}
-
-/** Copy a pull request thread into the review log as its own, so a decision has a thread to sit in. */
-async function bringInPullRequestThread(ctx: Ctx, task: Task, node: string): Promise<Result<null>> {
-  const pr = (await pullRequestThreads(ctx, task)).find((t) => t.id === node)
-  if (pr === undefined) {
-    return err({ code: "bad_args", message: `the pull request has no open thread "${node}"` })
-  }
-  const [first, ...rest] = pr.comments
-  const by = first?.by ?? "someone"
-  const opened = await sayInReview(
-    ctx,
-    task,
-    {
-      t: "thread",
-      thread: `${PR}${node}`,
-      anchor: prAnchor(pr),
-      text: first?.text || "(no words)",
-      ...(first !== undefined ? { ref: first.id } : {}),
-    },
-    { by, src: "pr" },
-  )
-  if (!opened.ok) return opened
-  for (const comment of rest) {
-    await sayInReview(
-      ctx,
-      task,
-      { t: "reply", thread: `${PR}${node}`, text: comment.text, ref: comment.id },
-      { by: comment.by, src: "pr" },
-    )
-  }
-  return ok(null)
-}
-
-/**
- * Write the author's decision into the thread: for an answer the words the reviewer reads, for the
- * others "Decided with you: …". The work itself happens after, and a new verify round settles it.
- */
-export async function decideThread(
-  ctx: Ctx,
-  task: Task,
-  thread: string,
-  kind: string,
-  note: string,
-): Promise<Result<{ thread: string; kind: DecisionKind }>> {
-  const decision = decisionOf(kind, note)
-  if (!decision.ok) return decision
-  const open = await openThreadToDecide(ctx, task, thread)
-  if (!open.ok) return open
-  const recorded = await recordDecision(ctx, task, thread, decision.data)
-  return recorded.ok ? ok({ thread, kind: decision.data.kind }) : recorded
-}
-
-type Decision = { kind: DecisionKind; words: string }
-
-/** The decision as asked: a known kind, and an answer always with the words the reviewer reads. */
-function decisionOf(kind: string, note: string): Result<Decision> {
-  if (!(DECISIONS as readonly string[]).includes(kind)) {
-    return err({ code: "bad_args", message: `--as is one of ${DECISIONS.join(", ")}` })
-  }
-  const words = note.trim()
-  return kind === "answer" && words === ""
-    ? err({ code: "bad_args", message: "an answer needs --note: the reply the reviewer reads" })
-    : ok({ kind: kind as DecisionKind, words })
-}
-
-/** The open thread a decision sits in; a code comment on the pull request enters the review here. */
-async function openThreadToDecide(ctx: Ctx, task: Task, thread: string): Promise<Result<null>> {
-  const find = async () => (await readReview(ctx, task)).threads.find((t) => t.id === thread)
-  if ((await find()) === undefined && thread.startsWith(PR)) {
-    const brought = await bringInPullRequestThread(ctx, task, thread.slice(PR.length))
-    if (!brought.ok) return brought
-  }
-  const known = await find()
-  return known === undefined || known.state !== "open"
-    ? err({ code: "bad_args", message: `the review has no open thread "${thread}"` })
-    : ok(null)
-}
-
-/**
- * Write the decision into the thread. An answer to a code comment is posted to GitHub first: only
- * here, because the author chose it. Its id is kept with the reply, so the author's own comment is
- * not read back as the reviewer's.
- */
-async function recordDecision(
-  ctx: Ctx,
-  task: Task,
-  thread: string,
-  { kind, words }: Decision,
-): Promise<Result<null>> {
-  let posted: string | null = null
-  if (kind === "answer" && thread.startsWith(PR)) {
-    const reply = await replyToPullRequestThread(ctx, task, thread.slice(PR.length), words)
-    if (!reply.ok) return reply
-    posted = reply.data.comment
-  }
-  const text = kind === "answer" ? words : `Decided with you: ${words || KIND_WORDS[kind]}`
-  const said = await sayInReview(ctx, task, {
-    t: "reply",
-    thread,
-    text,
-    ...(posted !== null ? { ref: posted } : {}),
-  })
-  if (!said.ok) return said
-  const recorded = await sayInReview(ctx, task, {
-    t: "decision",
-    thread,
-    kind,
-    note: words || KIND_WORDS[kind],
-    round: task.iterations,
-    head: await headOf(ctx, task),
-  })
-  return recorded.ok ? ok(null) : recorded
-}
-
-/**
- * A new verify round has passed since the author decided: the threads they agreed to fix are
- * resolved, and everyone who asked for changes is asked to review again. Returns how many threads
- * it settled.
- */
-export async function settleDecisions(ctx: Ctx, task: Task): Promise<number> {
-  const state = await readReview(ctx, task)
-  const due = state.threads.filter(
-    (t) => awaitsFix(t) && t.decision !== undefined && task.iterations > t.decision.round,
-  )
-  if (due.length === 0) return 0
-  for (const thread of due) await sayInReview(ctx, task, { t: "resolve", thread: thread.id })
-  for (const reviewer of state.reviewers) {
-    if (reviewer.role === "team" && reviewer.state === "changes") {
-      await sayInReview(ctx, task, { t: "rereview", to: reviewer.email ?? reviewer.name })
-    }
-  }
-  return due.length
 }

@@ -1,15 +1,17 @@
-import { posix, win32 } from "node:path"
 import { createGunzip } from "node:zlib"
-import { hash } from "../identity.ts"
+import {
+  archiveCollection,
+  importBundleDocuments,
+  registerBundleCheckouts,
+} from "./archive-knowledge.ts"
 import { readSource, utf8 } from "./files.ts"
-import { knowledgeDocument } from "./knowledge.ts"
-import { invalid, learning, object, observation, words } from "./normalize.ts"
+import { learning, object, observation, words } from "./normalize.ts"
 import type { PilotSourceData } from "./types.ts"
-import { budget, PILOT_EXPANDED_MAX_BYTES, PILOT_ROWS_MAX } from "./types.ts"
+import { budget, PILOT_EXPANDED_MAX_BYTES } from "./types.ts"
 
 async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = createGunzip(),
-    chunks: Buffer[] = []
+  const stream = createGunzip()
+  const chunks: Buffer[] = []
   let size = 0
   const finished = new Promise<Uint8Array>((resolve, reject) => {
     stream.on("data", (chunk: Buffer) => {
@@ -26,91 +28,50 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   stream.end(bytes)
   return await finished
 }
-function array(input: unknown, name: string): Record<string, unknown>[] {
-  if (input === undefined) return []
-  if (
-    !Array.isArray(input) ||
-    input.length > PILOT_ROWS_MAX ||
-    input.some((value) => !object(value))
-  )
-    throw new Error(`Pilot backup ${name} collection is malformed or too large.`)
-  return input as Record<string, unknown>[]
-}
-export async function archiveSource(data: PilotSourceData, path: string) {
-  if (!/\.backup\.(?:json|gz)$/i.test(path))
-    throw new Error("Choose a Pilot .backup.json or .backup.gz archive.")
+
+async function readExpandedArchive(data: PilotSourceData, path: string): Promise<Uint8Array> {
   const bytes = await readSource(data, path)
+  if (!bytes) throw new Error("Pilot source file was not found.")
   const compressed = /\.gz$/i.test(path)
-  const expanded = compressed ? await gunzip(bytes!) : bytes!
-  if (expanded.length > PILOT_EXPANDED_MAX_BYTES)
+  const expanded = compressed ? await gunzip(bytes) : bytes
+  if (expanded.length > PILOT_EXPANDED_MAX_BYTES) {
     throw new Error("Pilot backup exceeds the expanded byte limit.")
+  }
   if (compressed) data.bytes += expanded.length
   budget(data)
+  return expanded
+}
+
+export async function archiveSource(data: PilotSourceData, path: string) {
+  if (!/\.backup\.(?:json|gz)$/i.test(path)) {
+    throw new Error("Choose a Pilot .backup.json or .backup.gz archive.")
+  }
+  const expanded = await readExpandedArchive(data, path)
   const parsed: unknown = JSON.parse(utf8(expanded))
-  if (!object(parsed) || !["1.0", "1.1"].includes(words(parsed.version)) || !object(parsed.data))
+  if (!object(parsed) || !["1.0", "1.1"].includes(words(parsed.version)) || !object(parsed.data)) {
     throw new Error("Pilot backup version is not supported.")
+  }
   const source = parsed.data
   data.archiveAt = words(parsed.createdAt) || undefined
   const personal = source.personalKnowledge
-  if (personal !== undefined && (!object(personal) || personal.version !== 1))
+  if (personal !== undefined && (!object(personal) || personal.version !== 1)) {
     throw new Error("Pilot backup private knowledge version is not supported.")
-  const bundles = object(personal) ? array(personal.bundles, "knowledge bundles") : []
-  if (bundles.length > 1000) throw new Error("Pilot backup has too many knowledge bundles.")
-  for (const bundle of bundles) {
-    const key = words(bundle.storageKey),
-      checkouts = array(bundle.checkouts, "knowledge checkouts")
-    if (!/^[a-f0-9]{64}$/.test(key) || checkouts.length > 100)
-      throw new Error("Pilot backup knowledge mapping is malformed.")
-    for (const checkout of checkouts) {
-      const project = words(checkout.project),
-        root = words(checkout.projectRoot)
-      if (
-        !project ||
-        project.length > 500 ||
-        root.length > 4096 ||
-        root.includes("\0") ||
-        !(posix.isAbsolute(root) || win32.isAbsolute(root)) ||
-        hash(root) !== key
-      )
-        throw new Error("Pilot backup checkout does not match its original bundle identity.")
-      const roots = data.roots.get(project) ?? []
-      if (!roots.includes(root)) roots.push(root)
-      data.roots.set(project, roots.sort())
-    }
   }
-  for (const row of array(source.observations, "observations")) {
+  const bundles = object(personal) ? archiveCollection(personal.bundles, "knowledge bundles") : []
+  if (bundles.length > 1000) throw new Error("Pilot backup has too many knowledge bundles.")
+  registerBundleCheckouts(data, bundles)
+  for (const row of archiveCollection(source.observations, "observations")) {
     budget(data)
     observation(data, row)
   }
-  for (const row of array(source.summaries, "summaries")) {
+  for (const row of archiveCollection(source.summaries, "summaries")) {
     budget(data)
     learning(data, row)
   }
   for (const field of ["sessions", "prompts", "pendingMessages"]) {
     if (Array.isArray(source[field])) data.counts.excluded += source[field].length
   }
-  if (source.personalKnowledge === undefined) return
-  if (!object(source.personalKnowledge) || source.personalKnowledge.version !== 1)
-    throw new Error("Pilot backup private knowledge version is not supported.")
-  for (const bundle of bundles) {
-    const storageKey = words(bundle.storageKey)
-    if (!/^[a-f0-9]{64}$/.test(storageKey))
-      throw new Error("Pilot backup knowledge bundle identity is malformed.")
-    const checkouts = array(bundle.checkouts, "knowledge checkouts")
-    const mapping = checkouts.length === 1 ? checkouts[0] : undefined
-    for (const document of array(bundle.documents, "knowledge documents")) {
-      if (typeof document.path !== "string" || typeof document.content !== "string") {
-        invalid(data, "Pilot backup contains a malformed knowledge document.")
-        continue
-      }
-      knowledgeDocument(data, {
-        path: document.path,
-        content: document.content,
-        project: words(mapping?.project),
-        root: words(mapping?.projectRoot) || undefined,
-        bundle: storageKey,
-      })
-    }
-  }
+  if (personal === undefined) return
+  importBundleDocuments(data, bundles)
   data.privateKnowledge = true
 }

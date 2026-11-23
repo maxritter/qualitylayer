@@ -1,61 +1,38 @@
-import { createHash } from "node:crypto"
-import { type Dir, lstatSync, opendirSync } from "node:fs"
-import { basename, dirname, join, sep } from "node:path"
+import { dirname, join, sep } from "node:path"
+import { scanPublicationRoot } from "./watch-publications-scan.ts"
+import {
+  admitScanBatch,
+  advanceRootGroup,
+  NativeReceiptCache,
+  topLevelRoots,
+} from "./watch-publications-state.ts"
+import {
+  fileStamp,
+  isPermittedPath,
+  PUBLICATION_SCANS_MAX,
+  PUBLICATION_STAMP_BYTES_MAX,
+  PUBLICATION_STAMPS_MAX,
+  PUBLICATION_WORK_LIMIT,
+  type PublicationRoot,
+} from "./watch-publications-types.ts"
 
-export const PUBLICATION_CHECK_MS = 750
-/** The recovery walk slows once the server has heard no file event and published nothing for this long. */
-export const PUBLICATION_QUIET_MS = 10_000
-/** A quiet server walks every this many beats: the walk is the net for an event that never came. */
-export const PUBLICATION_QUIET_STRIDE = 4
-
-/** The beats between two recovery walks: the resource guard's stretch, times the quiet server's. */
-export const recoveryStride = (quietMs: number, stretch: number): number =>
-  stretch * (quietMs >= PUBLICATION_QUIET_MS ? PUBLICATION_QUIET_STRIDE : 1)
-export const PUBLICATION_WORK_LIMIT = 256
-export const PUBLICATION_STAMPS_MAX = 8192
-export const PUBLICATION_STAMP_BYTES_MAX = 8 * 1024 * 1024
-export const PUBLICATION_NATIVE_RECEIPTS_MAX = 256
-export const PUBLICATION_NATIVE_BYTES_MAX = 512 * 1024
-export const PUBLICATION_SCANS_MAX = 8
-export const PUBLICATION_HANDLES_PER_SCAN = 8
-/** Windows' 32768 UTF-16 path units, allowing four UTF-8 bytes per unit. */
-export const PUBLICATION_PATH_BYTES_MAX = 4 * 32768
-
-export const atomicStaging = (path: string): boolean =>
-  /^[^\\/]+\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tmp$/.test(
-    basename(path),
-  )
-
-type Root = {
-  path: string
-  files: Map<string, string>
-  bytes: number
-  overflow: boolean
-  seeded: boolean
-  digest?: string
-  work?: Generator<void>
-}
-type Frame = {
-  name: string
-  read: number
-  dir?: Dir
-  revision?: string
-  direct: bigint
-  directFiles: number
-  children: bigint
-  childDirs: number
-  replay?: { direct: bigint; directFiles: number; children: bigint; childDirs: number }
-}
+export {
+  atomicStaging,
+  PUBLICATION_CHECK_MS,
+  PUBLICATION_QUIET_MS,
+  PUBLICATION_QUIET_STRIDE,
+  PUBLICATION_WORK_LIMIT,
+  recoveryStride,
+} from "./watch-publications-types.ts"
 
 /** Exact identities while bounded; oversized roots keep a streaming metadata digest instead. */
 export class PublicationRecovery {
-  private roots = new Map<string, Root>()
+  private roots = new Map<string, PublicationRoot>()
   private stopped = false
   private kept = 0
   private keptBytes = 0
-  private nativeBytes = 0
   private nextRoot = 0
-  private nativeReceipts = new Map<string, string | null>()
+  private readonly nativeReceipts = new NativeReceiptCache()
   private readonly startedAt = BigInt(
     Math.trunc((performance.timeOrigin + performance.now()) * 1_000_000),
   )
@@ -77,12 +54,7 @@ export class PublicationRecovery {
 
   setRoots(roots: string[]): void {
     if (this.stopped) return
-    const wanted = new Set(
-      roots.filter(
-        (root, index) =>
-          !roots.some((other, i) => i !== index && root.startsWith(`${other}${sep}`)),
-      ),
-    )
+    const wanted = topLevelRoots(roots)
     for (const [path, root] of this.roots) {
       if (wanted.has(path)) continue
       root.work?.return(undefined)
@@ -90,31 +62,9 @@ export class PublicationRecovery {
       this.keptBytes -= root.bytes
       this.roots.delete(path)
     }
-    for (const path of wanted)
+    for (const path of wanted) {
       if (!this.roots.has(path))
         this.roots.set(path, { path, files: new Map(), bytes: 0, overflow: false, seeded: false })
-  }
-
-  private permitted(path: string, directory = false): boolean {
-    if (atomicStaging(path)) return false
-    if (path === this.runs) return directory
-    if (!path.startsWith(`${this.runs}${sep}`)) return true
-    const parts = path.slice(this.runs.length + 1).split(sep)
-    return directory
-      ? parts.length === 1
-      : parts.length === 2 &&
-          /^(?:(?:host|run|events|request-state)\.(?:json|jsonl)|turn-snapshots\.json)$/.test(
-            parts[1] ?? "",
-          )
-  }
-
-  private stamp(path: string): string | null {
-    try {
-      const entry = lstatSync(path, { bigint: true })
-      if (!entry.isFile()) return null
-      return `${entry.dev}:${entry.ino}:${entry.size}:${entry.mtimeNs}:${entry.ctimeNs}`
-    } catch {
-      return null
     }
   }
 
@@ -123,41 +73,39 @@ export class PublicationRecovery {
   }
 
   notice(path: string): void {
-    if (this.stopped || !this.permitted(path)) return
-    const root = [...this.roots.values()].find((root) => path.startsWith(`${root.path}${sep}`))
+    if (this.stopped || !isPermittedPath(this.runs, path)) return
+    const root = [...this.roots.values()].find((item) => path.startsWith(`${item.path}${sep}`))
     if (!root) return
-    const stamp = this.stamp(path)
+    const stamp = fileStamp(path)
     if (!root.overflow) this.record(root, path, stamp, true)
-    if (root.overflow) {
-      // Native paths remain exact for server observers. Eviction never publishes anything.
-      if (this.nativeReceipts.has(path) && this.nativeReceipts.get(path) === stamp) return
-      const size = Buffer.byteLength(path) + Buffer.byteLength(stamp ?? "")
-      if (size > PUBLICATION_NATIVE_BYTES_MAX) {
-        this.publish(path)
-        return
-      }
-      const previous = this.nativeReceipts.get(path)
-      if (this.nativeReceipts.has(path)) {
-        this.nativeBytes -= Buffer.byteLength(path) + Buffer.byteLength(previous ?? "")
-        this.nativeReceipts.delete(path)
-      }
-      while (
-        this.nativeReceipts.size >= PUBLICATION_NATIVE_RECEIPTS_MAX ||
-        this.nativeBytes + size > PUBLICATION_NATIVE_BYTES_MAX
-      ) {
-        const oldest = this.nativeReceipts.keys().next().value
-        if (oldest === undefined) break
-        this.nativeBytes -=
-          Buffer.byteLength(oldest) + Buffer.byteLength(this.nativeReceipts.get(oldest) ?? "")
-        this.nativeReceipts.delete(oldest)
-      }
-      this.nativeReceipts.set(path, stamp)
-      this.nativeBytes += size
+    if (root.overflow && this.nativeReceipts.recordAndShouldPublish(path, stamp)) {
       this.publish(path)
     }
   }
 
-  private record(root: Root, path: string, current: string | null, notify: boolean): void {
+  private overflowRoot(root: PublicationRoot): void {
+    this.kept -= root.files.size
+    this.keptBytes -= root.bytes
+    root.files.clear()
+    root.bytes = 0
+    root.overflow = true
+  }
+
+  private shouldNotifyChange(
+    previous: string | undefined,
+    current: string | null,
+    notify: boolean,
+  ): boolean {
+    if (previous === current || (previous === undefined && current === null)) return false
+    return notify || (current !== null && this.duringSeed(current))
+  }
+
+  private record(
+    root: PublicationRoot,
+    path: string,
+    current: string | null,
+    notify: boolean,
+  ): void {
     const previous = root.files.get(path)
     const before =
       previous === undefined ? 0 : Buffer.byteLength(path) + Buffer.byteLength(previous)
@@ -165,15 +113,11 @@ export class PublicationRecovery {
     if (current === null) {
       if (root.files.delete(path)) this.kept--
     } else {
-      if (
+      const overCap =
         (previous === undefined && this.kept >= PUBLICATION_STAMPS_MAX) ||
         this.keptBytes + after - before > PUBLICATION_STAMP_BYTES_MAX
-      ) {
-        this.kept -= root.files.size
-        this.keptBytes -= root.bytes
-        root.files.clear()
-        root.bytes = 0
-        root.overflow = true
+      if (overCap) {
+        this.overflowRoot(root)
         return
       }
       if (previous === undefined) this.kept++
@@ -181,209 +125,27 @@ export class PublicationRecovery {
     }
     this.keptBytes += after - before
     root.bytes += after - before
-    if (
-      (notify || (current !== null && this.duringSeed(current))) &&
-      (previous !== undefined || current !== null) &&
-      previous !== current
-    )
-      this.publish(path)
+    if (this.shouldNotifyChange(previous, current, notify)) this.publish(path)
   }
 
-  private directoryStamp(path: string): string | null {
-    try {
-      const entry = lstatSync(path, { bigint: true })
-      return entry.isDirectory()
-        ? `${entry.dev}:${entry.ino}:${entry.mtimeNs}:${entry.ctimeNs}`
-        : null
-    } catch {
-      return null
+  private isRuntimeRoot(root: PublicationRoot): boolean {
+    return root.path === this.runs || root.path === join(dirname(this.runs), "projects")
+  }
+
+  private admitRoots(roots: PublicationRoot[], active: PublicationRoot[], notify: boolean): void {
+    const hooks = {
+      isStopped: () => this.stopped,
+      permitted: (path: string, dir?: boolean) => isPermittedPath(this.runs, path, dir),
+      duringSeed: (stamp: string) => this.duringSeed(stamp),
+      record: (r: PublicationRoot, path: string, cur: string | null, n: boolean) =>
+        this.record(r, path, cur, n),
+      publish: (path: string, aggregate?: boolean) => this.publish(path, aggregate),
     }
-  }
-
-  private *scan(root: Root, notify: boolean): Generator<void> {
-    const missing = new Set(root.files.keys())
-    const frameOf = (name: string): Frame => ({
-      name,
-      read: 0,
-      direct: 0n,
-      directFiles: 0,
-      children: 0n,
-      childDirs: 0,
+    this.nextRoot = admitScanBatch(roots, active, this.nextRoot, {
+      maxScans: PUBLICATION_SCANS_MAX,
+      isRuntime: (root) => this.isRuntimeRoot(root),
+      startScan: (root) => scanPublicationRoot(root, notify, hooks),
     })
-    const frames = [frameOf("")]
-    let pathBytes = Buffer.byteLength(root.path),
-      handles = 0
-    let digest = 0n,
-      files = 0,
-      committedDuringSeed = false,
-      seedDelta = false
-    const hash = (path: string, stamp: string) =>
-      BigInt(`0x${createHash("sha256").update(`${path}\0${stamp}`).digest("hex")}`)
-    const close = (frame: Frame) => {
-      const dir = frame.dir
-      if (!dir) return
-      frame.dir = undefined
-      handles--
-      try {
-        dir.closeSync()
-      } catch {}
-    }
-    const pop = (frame: Frame) => {
-      frames.pop()
-      pathBytes -= Buffer.byteLength(frame.name) + 1
-    }
-    try {
-      while (frames.length > 0 && !this.stopped) {
-        const frame = frames.at(-1)
-        if (!frame) break
-        const folder = join(root.path, ...frames.slice(1).map((part) => part.name))
-        if (!frame.dir) {
-          const revision = this.directoryStamp(folder)
-          if (revision === null) {
-            digest ^= hash(folder, "unreadable")
-            pop(frame)
-            yield
-            continue
-          }
-          frame.revision ??= revision
-          yield
-          // Retain ordinary parent cursors. Only unusually deep trees need a parent re-seek.
-          if (handles >= PUBLICATION_HANDLES_PER_SCAN) {
-            const oldest = frames.find((part) => part.dir)
-            if (oldest) {
-              close(oldest)
-              yield
-            }
-          }
-          try {
-            frame.dir = opendirSync(folder, { bufferSize: 32 })
-            handles++
-          } catch {
-            digest ^= hash(folder, "unreadable")
-            pop(frame)
-            yield
-            continue
-          }
-          yield
-          let exhausted = false
-          for (let read = 0; read < frame.read; read++) {
-            try {
-              exhausted = frame.dir.readSync() === null
-            } catch {
-              digest ^= hash(folder, "unreadable")
-              exhausted = true
-            }
-            yield
-            if (exhausted) break
-          }
-          if (exhausted) {
-            close(frame)
-            yield
-            pop(frame)
-            continue
-          }
-        }
-        let entry: ReturnType<Dir["readSync"]>
-        try {
-          entry = frame.dir.readSync()
-        } catch {
-          digest ^= hash(folder, "unreadable")
-          yield
-          close(frame)
-          yield
-          pop(frame)
-          continue
-        }
-        yield
-        if (entry === null) {
-          if (!root.seeded && !frame.replay) {
-            const revision = this.directoryStamp(folder)
-            yield
-            if (revision !== frame.revision) {
-              // A buffered directory can predate a commit made while its child was being walked.
-              // Replay its direct entries once, without re-walking any unchanged subtree.
-              close(frame)
-              yield
-              frame.replay = {
-                direct: frame.direct,
-                directFiles: frame.directFiles,
-                children: frame.children,
-                childDirs: frame.childDirs,
-              }
-              digest ^= frame.direct
-              files -= frame.directFiles
-              frame.direct = 0n
-              frame.directFiles = 0
-              frame.children = 0n
-              frame.childDirs = 0
-              frame.read = 0
-              continue
-            }
-          }
-          if (
-            frame.replay &&
-            (frame.direct !== frame.replay.direct ||
-              frame.directFiles !== frame.replay.directFiles ||
-              frame.children !== frame.replay.children ||
-              frame.childDirs !== frame.replay.childDirs)
-          )
-            seedDelta = true
-          close(frame)
-          yield
-          pop(frame)
-          continue
-        }
-        frame.read++
-        const path = join(folder, entry.name)
-        if (!this.permitted(path, entry.isDirectory())) continue
-        if (entry.isDirectory()) {
-          if (!root.seeded) {
-            frame.children ^= hash(entry.name, "directory")
-            frame.childDirs++
-          }
-          if (frame.replay) continue
-          const nextBytes = pathBytes + Buffer.byteLength(entry.name) + 1
-          if (nextBytes > PUBLICATION_PATH_BYTES_MAX) {
-            digest ^= hash(path, "path-too-long")
-            continue
-          }
-          frames.push(frameOf(entry.name))
-          pathBytes = nextBytes
-          continue
-        }
-        if (!entry.isFile()) continue
-        const stamp = this.stamp(path)
-        if (stamp !== null) {
-          const value = hash(path, stamp)
-          digest ^= value
-          files++
-          if (!root.seeded) {
-            frame.direct ^= value
-            frame.directFiles++
-          }
-          committedDuringSeed ||= this.duringSeed(stamp)
-        }
-        missing.delete(path)
-        if (!root.overflow)
-          this.record(root, path, stamp, notify || root.seeded || frame.replay !== undefined)
-        yield
-      }
-      if (!root.overflow)
-        for (const path of missing) {
-          this.record(root, path, this.stamp(path), notify || root.seeded)
-          yield
-        }
-      const current = `${files}:${digest}`
-      if (
-        seedDelta ||
-        (root.overflow && current !== root.digest && (notify || root.seeded || committedDuringSeed))
-      )
-        this.publish(root.path, true)
-      root.digest = current
-      root.seeded = true
-    } finally {
-      for (const frame of frames) close(frame)
-    }
   }
 
   /** All roots share one work budget; runtime roots are admitted before source roots. */
@@ -391,40 +153,13 @@ export class PublicationRecovery {
     if (this.stopped) return true
     const roots = [...this.roots.values()]
     const active = roots.filter((root) => root.work)
-    const admit = (root: Root) => {
-      if (root.work || active.length >= PUBLICATION_SCANS_MAX) return
-      root.work = this.scan(root, notify)
-      active.push(root)
-    }
-    const runtime = (root: Root) =>
-      [this.runs, join(dirname(this.runs), "projects")].includes(root.path)
-    for (const root of roots) if (runtime(root)) admit(root)
-    for (let tried = 0; tried < roots.length && active.length < PUBLICATION_SCANS_MAX; tried++) {
-      this.nextRoot %= roots.length
-      const root = roots[this.nextRoot++]
-      if (root) admit(root)
-    }
-    const priority = active.filter(runtime)
-    const sources = active.filter((root) => !runtime(root))
-    const advance = (group: Root[], budget: number): number => {
-      let index = 0,
-        used = 0
-      while (used < budget && group.length > 0) {
-        index %= group.length
-        const root = group[index]
-        if (!root?.work) break
-        used++
-        if (root.work.next().done) {
-          root.work = undefined
-          group.splice(index, 1)
-        } else index++
-      }
-      return used
-    }
+    this.admitRoots(roots, active, notify)
+    const priority = active.filter((root) => this.isRuntimeRoot(root))
+    const sources = active.filter((root) => !this.isRuntimeRoot(root))
     // Runtime publications keep half the beat; either side lends its unused work to the other.
-    let used = advance(priority, PUBLICATION_WORK_LIMIT / 2)
-    used += advance(sources, PUBLICATION_WORK_LIMIT - used)
-    advance(priority, PUBLICATION_WORK_LIMIT - used)
+    let used = advanceRootGroup(priority, PUBLICATION_WORK_LIMIT / 2)
+    used += advanceRootGroup(sources, PUBLICATION_WORK_LIMIT - used)
+    advanceRootGroup(priority, PUBLICATION_WORK_LIMIT - used)
     return notify
       ? active.every((root) => !root.work) && roots.every((root) => root.seeded)
       : roots.every((root) => root.seeded)
@@ -441,6 +176,5 @@ export class PublicationRecovery {
     this.nativeReceipts.clear()
     this.kept = 0
     this.keptBytes = 0
-    this.nativeBytes = 0
   }
 }

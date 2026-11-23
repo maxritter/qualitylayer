@@ -38,7 +38,7 @@ export function PortableReviewDraft({
   const copy = async (text: string, what: string) => {
     if (await writeClipboardText(text)) {
       setManual(null)
-      setNotice(what + " copied")
+      setNotice(`${what} copied`)
       return
     }
     setManual(text)
@@ -54,7 +54,7 @@ export function PortableReviewDraft({
       <DialogContent className="q-portable-pr w-[min(760px,calc(100vw-24px))] max-w-none sm:max-w-none">
         <DialogHeader>
           <DialogTitle>
-            {plan ? "Plan " + label : label === "merge request" ? "Merge request" : "Pull request"}
+            {plan ? `Plan ${label}` : label === "merge request" ? "Merge request" : "Pull request"}
           </DialogTitle>
           <DialogDescription className="q-pr-origin">
             <ReviewProviderIcon provider={destination.provider} />
@@ -66,7 +66,7 @@ export function PortableReviewDraft({
         <div className="q-pr-fields">
           <div className="q-pr-field">
             <div>
-              <label htmlFor={id + "-title"}>
+              <label htmlFor={`${id}-title`}>
                 <TypeIcon />
                 Title
               </label>
@@ -75,11 +75,11 @@ export function PortableReviewDraft({
                 Copy title
               </Button>
             </div>
-            <Input id={id + "-title"} value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input id={`${id}-title`} value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
           <div className="q-pr-field">
             <div>
-              <label htmlFor={id + "-body"}>
+              <label htmlFor={`${id}-body`}>
                 <AlignLeftIcon />
                 Description
               </label>
@@ -88,7 +88,7 @@ export function PortableReviewDraft({
                 Copy description
               </Button>
             </div>
-            <textarea id={id + "-body"} value={body} onChange={(e) => setBody(e.target.value)} />
+            <textarea id={`${id}-body`} value={body} onChange={(e) => setBody(e.target.value)} />
           </div>
           <p className="text-sm text-muted-foreground">
             {destination.web
@@ -113,7 +113,7 @@ export function PortableReviewDraft({
               Open {names[destination.provider]} <ExternalLinkIcon />
             </Button>
           ) : (
-            <Button onClick={() => void copy(title + "\n\n" + body, "Draft")}>Copy draft</Button>
+            <Button onClick={() => void copy(`${title}\n\n${body}`, "Draft")}>Copy draft</Button>
           )}
         </DialogFooter>
       </DialogContent>

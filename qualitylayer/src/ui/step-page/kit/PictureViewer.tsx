@@ -74,6 +74,7 @@ function Thumb({
       onClick={(event) => onOpen(event.currentTarget)}
     >
       <span className="pv-img">
+        {/* biome-ignore lint/performance/noImgElement: raster capture served from task evidence */}
         <img src={picture.src} alt="" loading="lazy" decoding="async" />
       </span>
     </button>
@@ -128,6 +129,223 @@ function RunIndex({
   )
 }
 
+function LargeStrip({
+  pictures,
+  shown,
+  onOpen,
+}: {
+  pictures: readonly Picture[]
+  shown: readonly number[]
+  onOpen: (index: number, from: HTMLElement | null) => void
+}) {
+  return (
+    <div className="pv-large">
+      {shown.map((index) => {
+        const item = pictures[index]
+        if (!item) return null
+        return (
+          <button
+            key={index}
+            type="button"
+            className="pv-wide"
+            aria-label={`Open picture: ${sizeOf(item)}`}
+            onClick={(event) => onOpen(index, event.currentTarget)}
+          >
+            {/* biome-ignore lint/performance/noImgElement: raster capture served from task evidence */}
+            <img src={item.src} alt="" loading="lazy" decoding="async" />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ThumbStrip({
+  pictures,
+  shown,
+  rest,
+  onOpen,
+}: {
+  pictures: readonly Picture[]
+  shown: readonly number[]
+  rest: number
+  onOpen: (index: number, from: HTMLElement | null, withIndex?: boolean) => void
+}) {
+  return (
+    <div className="pv-strip">
+      {shown.map((index) => {
+        const item = pictures[index]
+        if (!item) return null
+        return (
+          <Thumb
+            key={index}
+            picture={item}
+            label={`Open picture: ${sizeOf(item)}`}
+            onOpen={(button) => onOpen(index, button)}
+          />
+        )
+      })}
+      {rest > 0 ? (
+        <button
+          type="button"
+          className="pv-more"
+          aria-label={`Open all ${pictures.length} pictures`}
+          onClick={(event) => onOpen(shown.length, event.currentTarget, true)}
+        >
+          +{rest}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function ViewerBar({
+  indexed,
+  picture,
+  at,
+  total,
+}: {
+  indexed: boolean
+  picture: Picture
+  at: number
+  total: number
+}) {
+  if (indexed) {
+    return (
+      <span className="pv-cap">
+        <b>All pictures</b>
+        <span>{total}, latest run first</span>
+      </span>
+    )
+  }
+  return (
+    <span className="pv-cap">
+      <b>{picture.caption}</b>
+      <span>
+        {picture.step ? `${picture.step} · ` : ""}
+        {PICTURE_MODE_LABEL[picture.mode]} · {at + 1} of {total}
+      </span>
+    </span>
+  )
+}
+
+function ViewerActions({
+  indexed,
+  actual,
+  at,
+  total,
+  onToggleIndex,
+  onToggleActual,
+  onMove,
+}: {
+  indexed: boolean
+  actual: boolean
+  at: number
+  total: number
+  onToggleIndex: () => void
+  onToggleActual: () => void
+  onMove: (to: number) => void
+}) {
+  return (
+    <>
+      <button type="button" className="q-btn sm" aria-pressed={indexed} onClick={onToggleIndex}>
+        <GridIcon className="size-3.5" aria-hidden="true" />
+        All pictures
+      </button>
+      {indexed ? null : (
+        <>
+          <button type="button" className="q-btn sm" aria-pressed={actual} onClick={onToggleActual}>
+            {actual ? "Fit picture" : "Actual size"}
+          </button>
+          <button
+            type="button"
+            className="q-btn sm"
+            disabled={at <= 0}
+            onClick={() => onMove(at - 1)}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="q-btn sm"
+            disabled={at >= total - 1}
+            onClick={() => onMove(at + 1)}
+          >
+            Next
+          </button>
+        </>
+      )}
+    </>
+  )
+}
+
+function ViewerDialog({
+  pictures,
+  picture,
+  at,
+  actual,
+  indexed,
+  latestFirst,
+  opener,
+  onClose,
+  onToggleIndex,
+  onToggleActual,
+  onMove,
+  onPickIndex,
+}: {
+  pictures: readonly Picture[]
+  picture: Picture
+  at: number
+  actual: boolean
+  indexed: boolean
+  latestFirst: boolean
+  opener: React.RefObject<HTMLElement | null>
+  onClose: () => void
+  onToggleIndex: () => void
+  onToggleActual: () => void
+  onMove: (to: number) => void
+  onPickIndex: (index: number) => void
+}) {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (indexed) return
+    const delta = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0
+    if (delta === 0) return
+    event.preventDefault()
+    onMove(at + delta)
+  }
+  return (
+    <FullscreenDialog
+      open
+      onClose={onClose}
+      title={indexed ? "All pictures" : `Picture: ${sizeOf(picture)}`}
+      returnFocus={opener}
+      testId="picture-dialog"
+      onKeyDown={onKeyDown}
+      bar={<ViewerBar indexed={indexed} picture={picture} at={at} total={pictures.length} />}
+      actions={
+        <ViewerActions
+          indexed={indexed}
+          actual={actual}
+          at={at}
+          total={pictures.length}
+          onToggleIndex={onToggleIndex}
+          onToggleActual={onToggleActual}
+          onMove={onMove}
+        />
+      }
+    >
+      {indexed ? (
+        <RunIndex latestFirst={latestFirst} pictures={pictures} onPick={onPickIndex} />
+      ) : (
+        <div className="pv-view" data-actual={actual}>
+          {/* biome-ignore lint/performance/noImgElement: raster capture served from task evidence */}
+          <img src={picture.src} alt={`${picture.caption}, ${PICTURE_MODE_LABEL[picture.mode]}`} />
+        </div>
+      )}
+    </FullscreenDialog>
+  )
+}
+
 export function PictureViewer({
   pictures,
   show,
@@ -159,155 +377,39 @@ export function PictureViewer({
     setIndexed(withIndex)
     setAt(index)
   }
-  const close = () => setAt(null)
   const move = (to: number) => {
     if (to < 0 || to >= pictures.length) return
     setActual(false)
     setAt(to)
   }
   const picture = at === null ? undefined : pictures[at]
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (indexed || at === null) return
-    if (event.key === "ArrowLeft") {
-      event.preventDefault()
-      move(at - 1)
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault()
-      move(at + 1)
-    }
-  }
 
   if (pictures.length === 0) return null
   return (
     <div className="pv" data-testid="picture-viewer">
       {large ? (
-        <div className="pv-large">
-          {shown.map((index) => {
-            const item = pictures[index]
-            return item ? (
-              <button
-                key={index}
-                type="button"
-                className="pv-wide"
-                aria-label={`Open picture: ${sizeOf(item)}`}
-                onClick={(event) => open(index, event.currentTarget)}
-              >
-                <img src={item.src} alt="" loading="lazy" decoding="async" />
-              </button>
-            ) : null
-          })}
-        </div>
+        <LargeStrip pictures={pictures} shown={shown} onOpen={open} />
       ) : (
-        <div className="pv-strip">
-          {shown.map((index) => {
-            const item = pictures[index]
-            return item ? (
-              <Thumb
-                key={index}
-                picture={item}
-                label={`Open picture: ${sizeOf(item)}`}
-                onOpen={(button) => open(index, button)}
-              />
-            ) : null
-          })}
-          {rest > 0 ? (
-            <button
-              type="button"
-              className="pv-more"
-              aria-label={`Open all ${pictures.length} pictures`}
-              onClick={(event) => open(shown.length, event.currentTarget, true)}
-            >
-              +{rest}
-            </button>
-          ) : null}
-        </div>
+        <ThumbStrip pictures={pictures} shown={shown} rest={rest} onOpen={open} />
       )}
       {at !== null && picture ? (
-        <FullscreenDialog
-          open
-          onClose={close}
-          title={indexed ? "All pictures" : `Picture: ${sizeOf(picture)}`}
-          returnFocus={opener}
-          testId="picture-dialog"
-          onKeyDown={onKeyDown}
-          bar={
-            <span className="pv-cap">
-              {indexed ? (
-                <>
-                  <b>All pictures</b>
-                  <span>{pictures.length}, latest run first</span>
-                </>
-              ) : (
-                <>
-                  <b>{picture.caption}</b>
-                  <span>
-                    {picture.step ? `${picture.step} · ` : ""}
-                    {PICTURE_MODE_LABEL[picture.mode]} · {at + 1} of {pictures.length}
-                  </span>
-                </>
-              )}
-            </span>
-          }
-          actions={
-            <>
-              <button
-                type="button"
-                className="q-btn sm"
-                aria-pressed={indexed}
-                onClick={() => setIndexed((value) => !value)}
-              >
-                <GridIcon className="size-3.5" aria-hidden="true" />
-                All pictures
-              </button>
-              {indexed ? null : (
-                <>
-                  <button
-                    type="button"
-                    className="q-btn sm"
-                    aria-pressed={actual}
-                    onClick={() => setActual((value) => !value)}
-                  >
-                    {actual ? "Fit picture" : "Actual size"}
-                  </button>
-                  <button
-                    type="button"
-                    className="q-btn sm"
-                    disabled={at <= 0}
-                    onClick={() => move(at - 1)}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    className="q-btn sm"
-                    disabled={at >= pictures.length - 1}
-                    onClick={() => move(at + 1)}
-                  >
-                    Next
-                  </button>
-                </>
-              )}
-            </>
-          }
-        >
-          {indexed ? (
-            <RunIndex
-              latestFirst={latestFirst}
-              pictures={pictures}
-              onPick={(index) => {
-                setIndexed(false)
-                move(index)
-              }}
-            />
-          ) : (
-            <div className="pv-view" data-actual={actual}>
-              <img
-                src={picture.src}
-                alt={`${picture.caption}, ${PICTURE_MODE_LABEL[picture.mode]}`}
-              />
-            </div>
-          )}
-        </FullscreenDialog>
+        <ViewerDialog
+          pictures={pictures}
+          picture={picture}
+          at={at}
+          actual={actual}
+          indexed={indexed}
+          latestFirst={latestFirst}
+          opener={opener}
+          onClose={() => setAt(null)}
+          onToggleIndex={() => setIndexed((value) => !value)}
+          onToggleActual={() => setActual((value) => !value)}
+          onMove={move}
+          onPickIndex={(index) => {
+            setIndexed(false)
+            move(index)
+          }}
+        />
       ) : null}
     </div>
   )

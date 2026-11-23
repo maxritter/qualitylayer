@@ -1,24 +1,18 @@
-import { basename, dirname, join } from "node:path"
-import { anchorState } from "../core/artifact/agent-context.ts"
-import {
-  addArtifactThread,
-  artifactThreads,
-  setArtifactThreadState,
-} from "../core/artifact/feedback.ts"
-import { folderArtifactOf, lastingDocOf } from "../core/artifact/format.ts"
 import { commentsHolder } from "../core/artifact/store.ts"
-import { readComments, requestHelperNow } from "../core/gate/comments.ts"
-import { attachmentDir } from "../core/interaction-docs/attachments.ts"
 import { startAnswering } from "../core/review/answers.ts"
 import { isArchived } from "../core/task/archive.ts"
-import { asComment, readTeamComments } from "../core/team/comments.ts"
 import type { Ctx } from "../ctx.ts"
-import type { CommentThread } from "../interaction/contracts.ts"
 import { locate } from "./api.ts"
-import { resolveArtifactAgentContext } from "./artifact-agent.ts"
-import { packFolderPage } from "./artifact-pack.ts"
-import { type Located, locateArtifact, spotOf } from "./artifacts.ts"
-import { tellOutsideAgent } from "./comment-wake.ts"
+import {
+  type CreateThreadContext,
+  failFeedback,
+  handleAttachmentGet,
+  handleCreateThreadPost,
+  handleHelperPost,
+  handleThreadStatePost,
+  handleThreadsGet,
+} from "./artifact-feedback-handlers.ts"
+import { locateArtifact } from "./artifacts.ts"
 import { ArtifactBodyError, readArtifactInput } from "./request-body.ts"
 
 export type ArtifactFeedbackAddress = { scope: "task" | "project"; id: string; file: string }
@@ -29,44 +23,94 @@ export type ArtifactFeedbackAction =
   | "reopen"
   | "helper"
   | "attachment"
-const fail = (message: string, status = 400) =>
-  Response.json({ ok: false, error: { code: "bad_args", message } }, { status })
-
-/**
- * Each artifact comment says whether the section it names is still on the page: `anchor: "missing"` or
- * `"ok"` (also for a comment on the page as a whole). The page is read only when a comment names a section.
- */
-async function withAnchors(
-  ctx: Ctx,
-  located: Located,
-  file: string,
-  threads: CommentThread[],
-): Promise<CommentThread[]> {
-  const named = threads.some((thread) =>
-    thread.comments.some((comment) => comment.spot?.section !== undefined),
-  )
-  let html: string | null = null
-  if (named) {
-    try {
-      const packed =
-        lastingDocOf(file) !== null || folderArtifactOf(file) !== null
-          ? await packFolderPage(dirname(located.path), basename(located.path))
-          : null
-      html = packed?.ok ? packed.data.html : await ctx.fs.readFile(located.path)
-    } catch {
-      html = null
-    }
-  }
-  return threads.map((thread) => ({
-    ...thread,
-    comments: thread.comments.map((comment) => ({
-      ...comment,
-      anchor: html === null ? "ok" : anchorState(html, comment),
-    })),
-  })) as unknown as CommentThread[]
-}
 
 const standalone = (address: ArtifactFeedbackAddress) => address.scope === "project"
+
+function isValidAddress(address: ArtifactFeedbackAddress): boolean {
+  const validScope = address.scope === "task" || address.scope === "project"
+  const validId = typeof address.id === "string" && address.id.length <= 200
+  const validFile = typeof address.file === "string" && address.file.length <= 512
+  return validScope && validId && validFile
+}
+
+async function resolveWritableTask(
+  ctx: Ctx,
+  address: ArtifactFeedbackAddress,
+): Promise<
+  { ok: true; task?: Awaited<ReturnType<typeof locate>> } | { ok: false; response: Response }
+> {
+  if (address.scope !== "task") return { ok: true }
+  const task = await locate(ctx, address.id)
+  if (!task.ok) return { ok: false, response: failFeedback(task.error.message, 404) }
+  const blocked =
+    (await isArchived(ctx, task.data.task)) ||
+    ["shipped", "abandoned"].includes(task.data.task.stage)
+  if (blocked)
+    return {
+      ok: false,
+      response: failFeedback("Restore or reopen this task before changing its artifact feedback."),
+    }
+  return { ok: true, task }
+}
+
+async function dispatchFeedbackPost(
+  env: CreateThreadContext,
+  action: "thread" | "resolve" | "reopen" | "helper",
+  request: Request,
+): Promise<Response> {
+  try {
+    const { body, files } = await readArtifactInput(request, "comment")
+    const allowed =
+      action === "thread" ? ["remark", "quote", "for", "thread", "spot", "revision"] : ["thread"]
+    if (Object.keys(body).some((key) => !allowed.includes(key)))
+      return failFeedback("Unknown feedback field.")
+    // "Answer now with a helper": the thread's unanswered comments go to a fresh helper at once.
+    if (action === "helper")
+      return await handleHelperPost(env.ctx, env.holder, env.address.file, body, env.backstop)
+    if (action === "resolve" || action === "reopen")
+      return await handleThreadStatePost(env.ctx, env.holder, env.address.file, action, {
+        body,
+        files,
+      })
+    return await handleCreateThreadPost(env, body, files)
+  } catch (cause) {
+    return failFeedback(
+      cause instanceof Error ? cause.message : "The feedback could not be saved.",
+      cause instanceof ArtifactBodyError ? cause.status : 400,
+    )
+  }
+}
+
+async function runLocatedFeedbackRoute(
+  ctx: Ctx,
+  address: ArtifactFeedbackAddress,
+  action: ArtifactFeedbackAction,
+  request: Request,
+  located: Extract<Awaited<ReturnType<typeof locateArtifact>>, { ok: true }>["data"],
+): Promise<Response> {
+  const holder = commentsHolder(ctx, located.home)
+  // The backstop: a comment the artifact's agent does not read in time goes to a fresh helper. The
+  // worker also starts again here when the App restarted while a comment waited.
+  const backstop = async () => {
+    if (address.scope === "task") {
+      const owner = await locate(ctx, address.id)
+      if (owner.ok) await startAnswering(ctx, owner.data.task).catch(() => {})
+    }
+  }
+  if (request.method === "GET" && action === "threads")
+    return handleThreadsGet(ctx, holder, located, address.file, backstop)
+  if (request.method === "GET" && action === "attachment")
+    return handleAttachmentGet(ctx, holder, address.file, request)
+  if (request.method !== "POST" || !["thread", "resolve", "reopen", "helper"].includes(action))
+    return failFeedback("Unsupported artifact feedback action.", 405)
+  const writable = await resolveWritableTask(ctx, address)
+  if (!writable.ok) return writable.response
+  return dispatchFeedbackPost(
+    { ctx, address, holder, task: writable.task, backstop },
+    action as "thread" | "resolve" | "reopen" | "helper",
+    request,
+  )
+}
 
 /** Auth and origin checks precede this adapter; its threads share the existing comment store. */
 export async function artifactFeedbackRoute(
@@ -76,172 +120,9 @@ export async function artifactFeedbackRoute(
   request: Request,
 ): Promise<Response> {
   if (standalone(address))
-    return fail("Standalone artifact feedback is retired; its history is read-only.", 410)
-  if (
-    !["task", "project"].includes(address.scope) ||
-    typeof address.id !== "string" ||
-    address.id.length > 200 ||
-    typeof address.file !== "string" ||
-    address.file.length > 512
-  )
-    return fail("Invalid artifact address.")
+    return failFeedback("Standalone artifact feedback is retired; its history is read-only.", 410)
+  if (!isValidAddress(address)) return failFeedback("Invalid artifact address.")
   const found = await locateArtifact(ctx, address.scope, address.id, address.file)
-  if (!found.ok) return fail(found.error.message, 404)
-  const holder = commentsHolder(ctx, found.data.home)
-  // The backstop: a comment the artifact's agent does not read in time goes to a fresh helper. The
-  // worker also starts again here when the App restarted while a comment waited.
-  const backstop = async () => {
-    if (address.scope === "task") {
-      const owner = await locate(ctx, address.id)
-      if (owner.ok) await startAnswering(ctx, owner.data.task).catch(() => {})
-    }
-  }
-  if (action === "threads" && request.method === "GET") {
-    const listed = await artifactThreads(ctx, holder, address.file)
-    if (listed.some((thread) => thread.handling && thread.handling.phase !== "answered"))
-      await backstop()
-    return Response.json({
-      ok: true,
-      threads: await withAnchors(ctx, found.data, address.file, listed),
-      capabilities: { agent: true, person: true, attachments: true, team: false },
-    })
-  }
-  if (action === "attachment" && request.method === "GET") {
-    const params = new URL(request.url).searchParams
-    const comment = [
-      ...(await readComments(ctx, holder)),
-      ...(await readTeamComments(ctx, holder).then((rows) => rows.map(asComment))),
-    ].find((comment) => comment.id === params.get("comment") && comment.doc === address.file)
-    const file = comment?.files?.find((file) => file.name === params.get("name"))
-    if (
-      !comment ||
-      !file ||
-      file.path !== join(attachmentDir(holder, comment.id), file.name) ||
-      !ctx.fs.readBytes
-    )
-      return fail("This file is not attached to feedback on this artifact.", 404)
-    try {
-      const bytes = await ctx.fs.readBytes(file.path)
-      return new Response(new Blob([new Uint8Array(bytes)]), {
-        headers: {
-          "content-type": file.type === "text/plain" ? "text/plain; charset=utf-8" : file.type,
-          "content-disposition": `${file.type.startsWith("image/") ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
-          "x-content-type-options": "nosniff",
-          "content-security-policy": "default-src 'none'; sandbox",
-          "cache-control": "private, max-age=3600",
-        },
-      })
-    } catch {
-      return fail("The attached file is unavailable.", 404)
-    }
-  }
-  if (request.method !== "POST" || !["thread", "resolve", "reopen", "helper"].includes(action))
-    return fail("Unsupported artifact feedback action.", 405)
-  let task: Awaited<ReturnType<typeof locate>> | undefined
-  if (address.scope === "task") {
-    task = await locate(ctx, address.id)
-    if (!task.ok) return fail(task.error.message, 404)
-    if (
-      (await isArchived(ctx, task.data.task)) ||
-      ["shipped", "abandoned"].includes(task.data.task.stage)
-    )
-      return fail("Restore or reopen this task before changing its artifact feedback.")
-  }
-  try {
-    const { body, files } = await readArtifactInput(request, "comment")
-    const allowed =
-      action === "thread" ? ["remark", "quote", "for", "thread", "spot", "revision"] : ["thread"]
-    if (Object.keys(body).some((key) => !allowed.includes(key)))
-      return fail("Unknown feedback field.")
-    // "Answer now with a helper": the thread's unanswered comments go to a fresh helper at once.
-    if (action === "helper") {
-      if (typeof body.thread !== "string" || body.thread.length > 200)
-        return fail("Name this artifact's thread.")
-      if ((await requestHelperNow(ctx, holder, body.thread)) === 0)
-        return fail("Nothing on this thread waits for an answer.")
-      await backstop()
-      const thread = (await artifactThreads(ctx, holder, address.file)).find(
-        (one) => one.id === body.thread,
-      )
-      return thread
-        ? Response.json({ ok: true, thread })
-        : fail("This feedback thread is not on this artifact. Reload before changing it.")
-    }
-    if (action === "resolve" || action === "reopen") {
-      if (files.length) return fail("A thread state change does not carry attached files.")
-      if (typeof body.thread !== "string" || body.thread.length > 200)
-        return fail("Name this artifact's thread.")
-      const thread = await setArtifactThreadState(
-        ctx,
-        holder,
-        address.file,
-        body.thread,
-        action === "reopen",
-      )
-      return Response.json({ ok: true, thread })
-    }
-    if (
-      typeof body.remark !== "string" ||
-      !body.remark.trim() ||
-      body.remark.length > 10000 ||
-      (body.quote !== undefined && (typeof body.quote !== "string" || body.quote.length > 2000)) ||
-      (body.for !== undefined && body.for !== "agent" && body.for !== "person") ||
-      (body.thread !== undefined &&
-        (typeof body.thread !== "string" || body.thread.length > 200)) ||
-      (body.spot !== undefined && spotOf(body.spot) === undefined)
-    )
-      return fail(
-        "Expected feedback words, a valid recipient and an optional artifact quote or pin.",
-      )
-    if (
-      body.revision !== undefined &&
-      (typeof body.revision !== "string" || !/^[a-f0-9]{64}$/.test(body.revision))
-    )
-      return fail("Invalid artifact source revision.")
-    if (body.thread === undefined) {
-      if (typeof body.revision !== "string")
-        return fail("Refresh the artifact before adding feedback.")
-      const source = await resolveArtifactAgentContext(ctx, {
-        ...address,
-        request: "",
-        revision: body.revision,
-      })
-      if (!source.ok) return fail(source.error.message)
-      const page = spotOf(body.spot)?.page
-      if (page && !source.data.binding.pages.some((file) => file.endsWith(`/${page}`)))
-        return fail("This pin names a page outside this artifact.")
-    }
-    const thread = await addArtifactThread(ctx, holder, address.file, {
-      remark: body.remark,
-      quote: typeof body.quote === "string" ? body.quote : undefined,
-      for: body.for as "agent" | "person" | undefined,
-      thread: body.thread as string | undefined,
-      spot: spotOf(body.spot),
-      artifactRevision: body.revision as string | undefined,
-      files,
-    })
-    if (thread.handling !== undefined) {
-      await backstop()
-      const fresh = thread.comments.at(-1)
-      if (task?.ok && fresh !== undefined)
-        await tellOutsideAgent(
-          ctx,
-          task.data.task,
-          [fresh.id],
-          address.file,
-          folderArtifactOf(address.file)?.name ??
-            address.file
-              .replace(/\.html$/, "")
-              .split("/")
-              .at(-1) ??
-            address.file,
-        )
-    }
-    return Response.json({ ok: true, thread })
-  } catch (cause) {
-    return fail(
-      cause instanceof Error ? cause.message : "The feedback could not be saved.",
-      cause instanceof ArtifactBodyError ? cause.status : 400,
-    )
-  }
+  if (!found.ok) return failFeedback(found.error.message, 404)
+  return runLocatedFeedbackRoute(ctx, address, action, request, found.data)
 }

@@ -42,11 +42,22 @@ fn basename(suggested: &Path) -> Option<String> {
         return None;
     }
     let upper = Path::new(clean).file_stem()?.to_str()?.to_ascii_uppercase();
-    let reserved = matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (upper.len() == 4
-            && (upper.starts_with("COM") || upper.starts_with("LPT"))
-            && upper.as_bytes()[3].is_ascii_digit());
-    Some(format!("{}{clean}", if reserved { "export-" } else { "" }))
+    Some(format!(
+        "{}{clean}",
+        if is_windows_reserved(&upper) {
+            "export-"
+        } else {
+            ""
+        }
+    ))
+}
+
+fn is_windows_reserved(upper: &str) -> bool {
+    if matches!(upper, "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    let has_port_prefix = upper.starts_with("COM") || upper.starts_with("LPT");
+    upper.len() == 4 && has_port_prefix && upper.as_bytes()[3].is_ascii_digit()
 }
 
 #[derive(Debug, PartialEq)]

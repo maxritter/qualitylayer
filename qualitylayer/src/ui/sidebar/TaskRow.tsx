@@ -198,6 +198,8 @@ export function TaskRow({
   const bare = strip === undefined && stage.toLowerCase() !== look.sub.toLowerCase()
   const session = look.session
   const card = detailed && !oneLine && session !== null && hasLiveCard(session)
+  const hasLineContent = [card, strip !== undefined, hasMeta(facts), bare].some(Boolean)
+  const showRowMeta = detailed && !oneLine && hasLineContent
   const rowButton = (
     <Tooltip>
       <TooltipTrigger
@@ -243,7 +245,7 @@ export function TaskRow({
               age={facts.age}
             />
             {/* A live row's toggle rides on this line, so it exists even when there is nothing else to show. */}
-            {detailed && !oneLine && (card || strip !== undefined || hasMeta(facts) || bare) ? (
+            {showRowMeta ? (
               <RowMeta
                 facts={facts}
                 stage={strip === undefined && bare ? stage : undefined}

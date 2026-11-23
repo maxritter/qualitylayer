@@ -8,49 +8,56 @@
 // unread again, even when a fix edited a line in place and the counts stayed.
 
 import { cn } from "cn"
-import { FileTextIcon, XIcon } from "lucide-react"
 import {
   type CSSProperties,
+  type MutableRefObject,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react"
 import { createPortal } from "react-dom"
-import { EDITOR_NAMES, type Editor } from "../../core/config-values.ts"
+import type { Editor } from "../../core/config-values.ts"
 import type { LineFinding } from "../../core/review/findings.ts"
-import { isGeneratedPath } from "../../core/review/generated.ts"
 import type { WalkFile, Walkthrough } from "../../core/review/walkthrough.ts"
 import type { Comment } from "../api.ts"
-import { EditorMark } from "../files/EditorMark.tsx"
-import { SliceFlowGraph } from "../steps/verify/SliceFlowGraph.tsx"
-import { type Anchor, lineKey } from "../timeline/FilesChanged.tsx"
-import { type ReviewFileGroups, rowsOf } from "../timeline/Walkthrough.tsx"
+import type { Anchor } from "../timeline/FilesChanged.tsx"
+import type { ReviewFileGroups } from "../timeline/Walkthrough.tsx"
 import { ChangeDetails } from "./ChangeDetails.tsx"
-import { factsOf, titlesOf, whyOf } from "./details.ts"
-import { FileHeader, HEADER_PX } from "./FileHeader.tsx"
-import { FindingThread } from "./FindingThread.tsx"
 import { useFocusLayer } from "./focus.ts"
-import { type DiffsModule, diffsViewer } from "./load.ts"
-import { belongsToPart, type FilePart, fileParts, partAnchor, partFile } from "./parts.ts"
+import type { FilePart } from "./parts.ts"
 import { type MarkdownMode, ReadingControls, type ReadingMode } from "./ReadingControls.tsx"
-import { ReadStatus } from "./ReadStatus.tsx"
-import { SliceBanner } from "./SliceBanner.tsx"
-import { type SourceLoader, SourceMarkdown, useReviewSource } from "./source.tsx"
+import { type SourceLoader, useReviewSource } from "./source.tsx"
 import { Tree, treeWidth } from "./Tree.tsx"
-import { changedFileOf } from "./target.ts"
 import { useDiffFiles } from "./useDiffFiles.ts"
+import { useViewerSync } from "./useViewerSync.ts"
+import { useWorkspaceFiles } from "./useWorkspaceFiles.ts"
+import { type ChoiceState, useViewerInstance } from "./useWorkspaceViewer.ts"
+import { WorkspaceFooter, WorkspaceHeader, WorkspaceMainBody } from "./WorkspaceChrome.tsx"
+import { WorkspaceSlots } from "./WorkspaceSlots.tsx"
+import {
+  FOLDED,
+  type Folds,
+  readViewed,
+  type SelectedRange,
+  type Side,
+  SPLIT_KEY,
+  stampOf,
+  typingOrChord,
+  writeViewed,
+} from "./workspace-model.ts"
 import "./workspace.css"
+
+export { ExitButton } from "./WorkspaceChrome.tsx"
+export { readableFiles, viewedCount } from "./workspace-model.ts"
 
 export type ReviewWorkspaceProps = {
   taskId: string
   title: string
   view: ReviewFileGroups & Pick<Partial<Walkthrough>, "columns" | "rounds">
-  /** The review decision's change requests on lines: counted on the files and the Finish button. */
   comments: readonly Comment[]
-  /** The final review waits for the person: the header's button finishes the code review. */
   deciding: boolean
   loadDiff: (
     path: string,
@@ -59,23 +66,15 @@ export type ReviewWorkspaceProps = {
     since?: string,
   ) => Promise<string>
   loadSource?: SourceLoader
-  /**
-   * Open on each file's header, in the place files open in (Settings › Git and editor). A workspace
-   * whose files are not in this task's checkout, a teammate's change, has none.
-   */
   open?: { editor: Editor; run: (path: string) => void }
-  /** Lines marked (a line number clicked, or several dragged or Shift-clicked): the quick field opens. */
   onMark?: (mark: CodeMark) => void
-  /** What the agents found on lines of the change, and what the person does with each. */
   findings?: readonly LineFinding[]
   onFinding?: (f: LineFinding, kind: "adopted" | "dismissed", reason?: string) => Promise<void>
-  /** The file to open at; null opens at the first file. */
   file: string | null
-  /** Optional slice to scope on open. */
   initialSlice?: number | null
   onClose: () => void
   onClearChanges?: () => Promise<void>
-  commitReview?: React.ReactNode
+  commitReview?: ReactNode
 }
 
 /** Lines of a file marked in the viewer, with their text and where on screen the marking ended. */
@@ -86,277 +85,36 @@ export type CodeMark = {
   end: number
   quote: string
   at: { x: number; y: number }
-  /** Called when the quick field closes: the lines stop being marked. */
   clear: () => void
 }
 
-type Viewer = InstanceType<DiffsModule["CodeView"]>
-type FileDiff = ReturnType<DiffsModule["parsePatchFiles"]>[number]["files"][number]
-type Side = "additions" | "deletions"
-type SelectedRange = { start: number; end: number; side?: Side; endSide?: Side }
-type Slot = { key: string; el: HTMLElement }
-
-/** The file's content stamp; a file the server could not stamp falls back to its counts. */
-const stampOf = (f: WalkFile) => f.stamp ?? `${f.additions}-${f.deletions}`
-const viewedKey = (taskId: string) => `ql:review-viewed:${taskId}`
-const SPLIT_KEY = "ql:review-split"
-
-function readViewed(taskId: string): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(viewedKey(taskId)) ?? "{}") as Record<string, string>
-  } catch {
-    return {}
-  }
+function useEscapeClose(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (typingOrChord(e) || e.key !== "Escape") return
+      onClose()
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
+  })
 }
 
-/** The files the person reads by default: the code, without generated files and the task's documents. */
-export function readableFiles(view: ReviewFileGroups): number {
-  return filesOf(view).order.length
+function usePointerPosition() {
+  const pointer = useRef({ x: 0, y: 0 })
+  useEffect(() => {
+    const up = (event: PointerEvent) => {
+      pointer.current = { x: event.clientX, y: event.clientY }
+    }
+    window.addEventListener("pointerup", up, true)
+    return () => window.removeEventListener("pointerup", up, true)
+  }, [])
+  return pointer
 }
 
-/** How many generated files the tree folds, and how many documents stand apart from the code. */
-function foldCounts(view: ReviewFileGroups) {
-  const generated = new Set<string>()
-  for (const row of rowsOf(view))
-    for (const f of row.files) if (isGeneratedPath(f.path)) generated.add(f.path)
-  return { generated: generated.size, documents: view.documents?.length ?? 0 }
-}
-
-/** How many of the change's files this person marked viewed, unchanged since: the Review page's count. */
-export function viewedCount(taskId: string, view: ReviewFileGroups): number {
-  const marks = readViewed(taskId)
-  return filesOf(view).order.filter((f) => marks[f.path] === stampOf(f)).length
-}
-
-/** A line's text as the patch shows it: what Replace with starts from and what the comment quotes. */
-export function lineTextOf(diff: FileDiff | undefined, anchor: Anchor): string {
-  if (diff === undefined) return ""
-  const add = anchor.side === "new"
-  for (const h of diff.hunks) {
-    const start = add ? h.additionStart : h.deletionStart
-    const count = add ? h.additionCount : h.deletionCount
-    if (anchor.line < start || anchor.line >= start + count) continue
-    const lines = add ? diff.additionLines : diff.deletionLines
-    const index = (add ? h.additionLineIndex : h.deletionLineIndex) + anchor.line - start
-    return (lines[index] ?? "").replace(/\r?\n$/, "")
-  }
-  return ""
-}
-
-/** A finding that needs the person: kept against its reviewer, or open, and not yet handled. */
-const needsYou = (f: LineFinding) => f.state !== "fixed" && f.disposition === undefined
-
-const darkNow = () => document.documentElement.classList.contains("dark")
-const slotKey = (path: string, side: Side, line: number) => JSON.stringify([path, side, line])
-
-/** What the tree folds away until the person asks: generated files and the task's documents. */
-type Folds = { generated: boolean; documents: boolean }
-const FOLDED: Folds = { generated: false, documents: false }
-
-/** Every file once, in the order the tree lists them; the folds say what is drawn besides the code. */
-function filesOf(view: ReviewFileGroups, folds: Folds = FOLDED) {
-  const groups = rowsOf(view)
-    .map((row) => ({
-      ...row,
-      files: folds.generated ? row.files : row.files.filter((f) => !isGeneratedPath(f.path)),
-    }))
-    .filter((row) => row.files.length > 0)
-  const documents = view.documents ?? []
-  if (folds.documents && documents.length > 0)
-    groups.push({
-      key: "documents",
-      n: null,
-      title: "The task's documents",
-      summary: "",
-      tasks: [],
-      decisions: [],
-      files: documents,
-    })
-  const seen = new Set<string>()
-  const order: WalkFile[] = []
-  for (const g of groups)
-    for (const f of g.files)
-      if (!seen.has(f.path)) {
-        seen.add(f.path)
-        order.push(f)
-      }
-  return { groups, order }
-}
-
-/** The keyboard way to mark lines: a line or a range typed into the file's header (10 or 10-14). */
-function LineOpener({
-  path,
-  onOpen,
-}: {
-  path: string
-  onOpen: (start: number, end: number, at: { x: number; y: number }) => void
-}) {
-  const [line, setLine] = useState("")
-  const open = (from: HTMLElement) => {
-    const [a, b] = line.split(/[-–]/).map(Number)
-    if (a === undefined || !Number.isInteger(a) || a < 1) return
-    const end = b !== undefined && Number.isInteger(b) && b >= a ? b : a
-    const box = from.getBoundingClientRect()
-    onOpen(a, end, { x: box.left, y: box.bottom + 6 })
-    setLine("")
-  }
-  return (
-    <span className="rw-line-open">
-      <label>
-        <span className="sr-only">Ask the agent about lines of {path}</span>
-        <input
-          inputMode="numeric"
-          placeholder="Lines"
-          value={line}
-          onChange={(e) => setLine(e.target.value.replace(/[^\d\s–-]/g, ""))}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault()
-              open(e.currentTarget)
-            }
-          }}
-        />
-      </label>
-    </span>
-  )
-}
-
-/**
- * Leaves the viewer, at the right end of the header after the viewed count. It is the header's filled
- * button unless a decision button (Finish code review, Send your review) holds that place.
- */
-export function ExitButton({
-  onClick,
-  primary = false,
-  label = "Exit",
-}: {
-  onClick: () => void
-  primary?: boolean
-  label?: string
-}) {
-  return (
-    <button type="button" className={cn("rw-btn", primary && "primary")} onClick={onClick}>
-      <XIcon className="size-3.5" aria-hidden="true" />
-      {label}
-    </button>
-  )
-}
-
-/** Leave text fields and the App's keyboard chords alone. Checkboxes retain Escape navigation. */
-function typingOrChord(e: KeyboardEvent): boolean {
-  if (e.metaKey || e.ctrlKey || e.altKey) return true
-  return (
-    e.target instanceof Element &&
-    e.target.closest("textarea, input:not([type=checkbox]), select, [contenteditable=true]") !==
-      null
-  )
-}
-
-export function ReviewWorkspace(props: ReviewWorkspaceProps) {
-  const { view, comments, deciding, taskId } = props
-  const [fileTreeOpen, setFileTreeOpen] = useState(false)
-  const [focus, setFocus] = useState(false)
-  const [showDiagrams, setShowDiagrams] = useState(false)
-  const [activeSlice, setActiveSlice] = useState<number | null>(() => props.initialSlice ?? null)
-  const [sinceRound, setSinceRound] = useState<string | null>(null)
-  const [folds, setFolds] = useState<Folds>(FOLDED)
-  const { groups: rawGroups, order: rawOrder } = useMemo(() => filesOf(view, folds), [view, folds])
-  const roundFilter = useMemo(() => {
-    if (!sinceRound || !view.rounds) return null
-    const hit = view.rounds.find((r) => r.revision === sinceRound)
-    return hit ? new Set(hit.files) : null
-  }, [sinceRound, view.rounds])
-  const groups = useMemo(() => {
-    const filtered = rawGroups
-      .map((g) => ({
-        ...g,
-        files: roundFilter ? g.files.filter((f) => roundFilter.has(f.path)) : g.files,
-      }))
-      .filter((g) => g.files.length > 0)
-    return filtered
-  }, [rawGroups, roundFilter])
-  const order = useMemo(() => {
-    const scopedGroups = activeSlice === null ? groups : groups.filter((g) => g.n === activeSlice)
-    const seen = new Set<string>()
-    const out: WalkFile[] = []
-    for (const g of scopedGroups)
-      for (const f of g.files)
-        if (!seen.has(f.path)) {
-          seen.add(f.path)
-          out.push(f)
-        }
-    return out
-  }, [groups, activeSlice])
-  const allReadableOrder = useMemo(
-    () => (roundFilter ? rawOrder.filter((f) => roundFilter.has(f.path)) : rawOrder),
-    [rawOrder, roundFilter],
-  )
-  const folded = useMemo(() => foldCounts(view), [view])
-  const facts = useMemo(() => factsOf(view), [view])
-  const titles = useMemo(() => titlesOf(view), [view])
-  const [split, setSplit] = useState(
-    () =>
-      (!props.commitReview || window.innerWidth > 760) &&
-      localStorage.getItem(SPLIT_KEY) !== "unified",
-  )
+function useViewedMarks(taskId: string) {
   const [viewed, setViewed] = useState(() => readViewed(taskId))
-  const [mode, setMode] = useState<ReadingMode>("diff")
-  const [format, setFormat] = useState<MarkdownMode>("source")
-  const target = useMemo(
-    () =>
-      changedFileOf(
-        order.map((f) => f.path),
-        props.file,
-      ),
-    [order, props.file],
-  )
-  const request = JSON.stringify([taskId, props.file])
-  const [choice, setChoice] = useState<{ request: string; path: string; only: boolean } | null>(
-    null,
-  )
-  const explicit = choice?.request === request ? choice : null
-  const selected = explicit?.path ?? (props.file === null ? (order[0]?.path ?? null) : target)
-  const filtered = sinceRound !== null || activeSlice !== null
-  const current =
-    selected !== null && order.some((file) => file.path === selected)
-      ? selected
-      : filtered
-        ? (order[0]?.path ?? null)
-        : null
-  const missing = current === null && !filtered ? (explicit?.path ?? props.file) : null
-  const only = mode === "file" || explicit?.only === true
-  const activeOrder = useMemo(() => {
-    const base =
-      missing !== null ? [] : only ? order.filter((file) => file.path === current) : order
-    return sinceRound !== null ? base.map((file) => ({ ...file, parts: undefined })) : base
-  }, [order, current, missing, only, sinceRound])
-  const selectedFile = order.find((file) => file.path === current)
-  const allParts = useMemo(() => order.flatMap(fileParts), [order])
-  const partsById = useMemo(() => new Map(allParts.map((item) => [item.id, item])), [allParts])
-  const [versionChoice, setVersionChoice] = useState<{ path: string; stamp: string } | null>(null)
-  const selectedParts = allParts.filter((item) => item.file.path === current)
-  const selectedPart =
-    selectedParts.find(
-      (item) => item.file.path === versionChoice?.path && item.stamp === versionChoice.stamp,
-    ) ?? selectedParts.at(-1)
-  const source = useReviewSource(selectedFile, mode === "file", props.loadSource, selectedPart)
-  const rendered = mode === "file" && current?.endsWith(".md") === true && format === "rendered"
-  const reading = useRef({ mode, rendered, side: "additions" as Side })
-  reading.current = {
-    mode,
-    rendered,
-    side: (selectedPart?.part?.status ?? selectedFile?.status) === "D" ? "deletions" : "additions",
-  }
-  useLayoutEffect(() => {
-    setChoice((previous) => (previous?.request === request ? previous : null))
-  }, [request])
-  const [state, setState] = useState<"loading" | "ready" | "failed">("loading")
-  const [slots, setSlots] = useState<readonly Slot[]>([])
-  const host = useRef<HTMLDivElement>(null)
-  const viewer = useRef<Viewer | null>(null)
-  const made = useRef(new Map<string, HTMLElement>())
-  const versions = useRef(new Map<string, [string, number]>())
-
   const isViewed = useCallback(
     (f: WalkFile) => viewed[f.path] !== undefined && viewed[f.path] === stampOf(f),
     [viewed],
@@ -368,732 +126,402 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         if (on) next[f.path] = stampOf(f)
         else delete next[f.path]
       }
-      try {
-        localStorage.setItem(viewedKey(taskId), JSON.stringify(next))
-      } catch {
-        // A full or blocked storage keeps the marks for this session only.
-      }
+      writeViewed(taskId, next)
       return next
     })
   const setFileViewed = (file: WalkFile, on: boolean) => setFilesViewed([file], on)
+  return { isViewed, setFilesViewed, setFileViewed }
+}
 
-  /** The slot an annotation or a header draws into, made once and kept for React's portals. */
-  const slot = useCallback((key: string) => {
-    const known = made.current.get(key)
-    if (known !== undefined) return known
-    const el = document.createElement("div")
-    el.className = key.startsWith("hdr|") ? "rw-fh-slot" : "rw-slot"
-    made.current.set(key, el)
-    queueMicrotask(() => setSlots([...made.current].map(([k, e]) => ({ key: k, el: e }))))
-    return el
-  }, [])
-
-  // Marking lines reads this render's diff and source; the viewer's options are made once.
-  const marks = useRef(props.onMark)
-  marks.current = props.onMark
-  const markLines = useRef<(item: FilePart, range: SelectedRange) => void>(() => {})
-  // Where the pointer let go: the field opens there.
-  const pointer = useRef({ x: 0, y: 0 })
-  useEffect(() => {
-    const up = (event: PointerEvent) => {
-      pointer.current = { x: event.clientX, y: event.clientY }
-    }
-    window.addEventListener("pointerup", up, true)
-    return () => window.removeEventListener("pointerup", up, true)
-  }, [])
-
-  const options = useCallback(
-    (splitView: boolean) => ({
-      theme: { light: "pierre-light", dark: "pierre-dark" },
-      themeType: darkNow() ? ("dark" as const) : ("light" as const),
-      diffStyle: splitView ? ("split" as const) : ("unified" as const),
-      overflow: splitView ? ("wrap" as const) : ("scroll" as const),
-      lineDiffType: "word-alt" as const,
-      hunkSeparators: "line-info-basic" as const,
-      stickyHeaders: true,
-      lineHoverHighlight: "both" as const,
-      // A line number clicked, dragged over or Shift-clicked marks lines: the quick field opens.
-      enableLineSelection: marks.current !== undefined,
-      onLineSelectionEnd: (range: SelectedRange | null, ctx: { item: { id: string } }) => {
-        if (range === null || reading.current.rendered) return
-        const item = partsById.get(ctx.item.id)
-        if (item) markLines.current(item, range)
-      },
-      layout: { paddingTop: 12, paddingBottom: 24, gap: 12 },
-      renderAnnotation: (a: { side?: Side; lineNumber: number }, ctx: { item: { id: string } }) =>
-        slot(slotKey(ctx.item.id, a.side ?? reading.current.side, a.lineNumber)),
-      // The whole header is ours (FileHeader): the file's line and Why it changed under it.
-      itemMetrics: { diffHeaderHeight: HEADER_PX },
-      renderCustomHeader: (_f: unknown, ctx: { item: { id: string } }) =>
-        slot(`hdr|${ctx.item.id}`),
-    }),
-    [slot, partsById],
+function useWorkspaceState(props: ReviewWorkspaceProps) {
+  const [fileTreeOpen, setFileTreeOpen] = useState(false)
+  const [focus, setFocus] = useState(false)
+  const [showDiagrams, setShowDiagrams] = useState(false)
+  const [activeSlice, setActiveSlice] = useState<number | null>(() => props.initialSlice ?? null)
+  const [sinceRound, setSinceRound] = useState<string | null>(null)
+  const [folds, setFolds] = useState<Folds>(FOLDED)
+  const [split, setSplit] = useState(
+    () =>
+      (!props.commitReview || window.innerWidth > 760) &&
+      localStorage.getItem(SPLIT_KEY) !== "unified",
   )
+  const [mode, setMode] = useState<ReadingMode>("diff")
+  const [format, setFormat] = useState<MarkdownMode>("source")
+  const [versionChoice, setVersionChoice] = useState<{ path: string; stamp: string } | null>(null)
+  const request = JSON.stringify([props.taskId, props.file])
+  const [choice, setChoice] = useState<ChoiceState | null>(null)
+  const explicit = choice?.request === request ? choice : null
 
-  // What the one-time setup below reads when it runs: the viewer is made once per opening.
-  const first = useRef({ options, split })
-  first.current = { options, split }
-  const parseRef = useRef<DiffsModule["parsePatchFiles"] | null>(null)
-
-  // The viewer: fetched once, set up in the main area, told when the App's theme changes.
-  useEffect(() => {
-    let live = true
-    let made: Viewer | null = null
-    const at = first.current
-    diffsViewer()
-      .then(({ lib, pool }) => {
-        if (!live || host.current === null) return
-        made = new lib.CodeView(at.options(at.split) as never, pool)
-        made.setup(host.current)
-        viewer.current = made
-        parseRef.current = lib.parsePatchFiles
-        setState("ready")
-      })
-      .catch(() => {
-        if (live) setState("failed")
-      })
-    const watch = new MutationObserver(() => {
-      const now = first.current
-      viewer.current?.setOptions(now.options(now.split) as never)
-    })
-    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
-    return () => {
-      live = false
-      watch.disconnect()
-      made?.cleanUp()
-      viewer.current = null
-    }
-  }, [])
-
-  const diffs = useDiffFiles({
-    files: activeOrder,
-    current,
-    parse: state === "ready" ? parseRef.current : null,
-    load: props.loadDiff,
-    since: sinceRound,
-  })
-  const { loaded, errors } = diffs
-
-  useEffect(() => {
-    viewer.current?.setOptions(options(split) as never)
-    try {
-      localStorage.setItem(SPLIT_KEY, split ? "split" : "unified")
-    } catch {
-      // Without storage the layout is this session's.
-    }
-  }, [split, options])
-
-  const byFile = useMemo(() => {
-    const map = new Map<string, Comment[]>()
-    for (const c of comments)
-      if (c.anchor !== undefined) map.set(c.anchor.file, [...(map.get(c.anchor.file) ?? []), c])
-    return map
-  }, [comments])
-  const commentCounts = useMemo(
-    () => new Map([...byFile].map(([path, list]) => [path, list.length])),
-    [byFile],
-  )
-  const findingsByFile = useMemo(() => {
-    const map = new Map<string, LineFinding[]>()
-    for (const f of props.findings ?? []) map.set(f.file, [...(map.get(f.file) ?? []), f])
-    return map
-  }, [props.findings])
-
-  // Clear an unavailable or replaced selection before paint; cached unrelated diffs stay hidden.
   useLayoutEffect(() => {
-    const v = viewer.current
-    if (v === null) return
-    if (mode === "file") {
-      const file = selectedFile
-      const content = source.source
-      if (!file || !content || !selectedPart || rendered) {
-        v.setItems([])
-        return
-      }
-      const side = content.side === "old" ? "deletions" : "additions"
-      const annotations = new Map<number, { lineNumber: number }>()
-      if (side === "additions" && selectedParts.length === 1)
-        for (const finding of findingsByFile.get(file.path) ?? [])
-          annotations.set(finding.line, { lineNumber: finding.line })
-      const signature = JSON.stringify([content.stamp, content.side, [...annotations.keys()]])
-      const previous = versions.current.get(`source:${file.path}`)
-      const version =
-        previous === undefined ? 1 : previous[0] === signature ? previous[1] : previous[1] + 1
-      versions.current.set(`source:${file.path}`, [signature, version])
-      v.setItems([
-        {
-          id: selectedPart.id,
-          type: "file",
-          file: {
-            name: file.path,
-            contents: content.content,
-            cacheKey: JSON.stringify([taskId, file.path, content.stamp, content.side]),
-          },
-          annotations: [...annotations.values()],
-          collapsed: false,
-          version,
-        },
-      ] as never)
-      return
-    }
-    const items = activeOrder.flatMap((file) =>
-      fileParts(file).flatMap((item) => {
-        const fileDiff = loaded.get(file.path)?.[item.index]
-        if (fileDiff === undefined) return []
-        const anchors = new Map<string, { side: Side; lineNumber: number }>()
-        if (fileParts(file).length === 1)
-          for (const f of findingsByFile.get(file.path) ?? [])
-            anchors.set(lineKey(partAnchor(item, "new", f.line)), {
-              side: "additions",
-              lineNumber: f.line,
-            })
-        const annotations = [...anchors.values()]
-        const collapsed = !only && isViewed(file)
-        const signature = JSON.stringify([item.stamp, annotations, collapsed])
-        const known = versions.current.get(item.id)
-        const version = known === undefined ? 1 : known[0] === signature ? known[1] : known[1] + 1
-        versions.current.set(item.id, [signature, version])
-        return [{ id: item.id, type: "diff" as const, fileDiff, annotations, collapsed, version }]
-      }),
-    )
-    v.setItems(items as never)
-  }, [
-    activeOrder,
-    loaded,
-    findingsByFile,
-    isViewed,
-    only,
+    setChoice((previous) => (previous?.request === request ? previous : null))
+  }, [request])
+
+  return {
+    fileTreeOpen,
+    setFileTreeOpen,
+    focus,
+    setFocus,
+    showDiagrams,
+    setShowDiagrams,
+    activeSlice,
+    setActiveSlice,
+    sinceRound,
+    setSinceRound,
+    folds,
+    setFolds,
+    split,
+    setSplit,
     mode,
-    selectedFile,
-    selectedPart,
-    selectedParts.length,
-    source.source,
-    rendered,
-    taskId,
-  ])
-
-  // Marked lines open the quick field; they stay marked while it is open.
-  markLines.current = (item, range) => {
-    const onMark = marks.current
-    if (!onMark) return
-    const sideName =
-      reading.current.mode === "file"
-        ? reading.current.side
-        : (range.endSide ?? range.side ?? "additions")
-    const side: Anchor["side"] = sideName === "deletions" ? "old" : "new"
-    const start = Math.min(range.start, range.end)
-    const end = Math.max(range.start, range.end)
-    const path = item.file.path
-    const text = (line: number) =>
-      mode === "file" && source.source?.path === path && source.source.side === side
-        ? (source.source.content.split("\n")[line - 1] ?? "")
-        : lineTextOf(loaded.get(path)?.[item.index], partAnchor(item, side, line))
-    const quote = Array.from({ length: Math.min(end - start + 1, 80) }, (_, i) => text(start + i))
-      .join("\n")
-      .trimEnd()
-    onMark({
-      path,
-      side,
-      start,
-      end,
-      quote,
-      // Right of the line numbers, so the numbers below stay free for a Shift-click.
-      at: { x: pointer.current.x + 64, y: pointer.current.y + 14 },
-      clear: () => viewer.current?.clearSelectedLines(),
-    })
-  }
-
-  const opened = useRef<{ request: string; path: string; preceding?: string } | null>(null)
-  const userScroll = useRef(false)
-  const go = useCallback(
-    (path: string) => {
-      if (!order.some((file) => file.path === path)) return
-      userScroll.current = false
-      opened.current = null
-      setChoice({ request, path, only: only || missing !== null })
-    },
-    [order, request, only, missing],
-  )
-
-  useEffect(() => {
-    if (state !== "ready") return
-    const v = viewer.current
-    const container = v?.getContainerElement?.()
-    if (!v || !container || only) return
-    const manual = () => {
-      userScroll.current = true
-    }
-    container.addEventListener("wheel", manual, { passive: true })
-    container.addEventListener("touchstart", manual, { passive: true })
-    container.addEventListener("pointerdown", manual, { passive: true })
-    container.addEventListener("keydown", manual, { passive: true })
-    const unsubscribe = v.subscribeToScroll(() => {
-      if (!userScroll.current) return
-      const top = container.getBoundingClientRect().top
-      const visible = v
-        .getRenderedItems()
-        .find((item) => item.element.getBoundingClientRect().bottom > top + HEADER_PX)
-      const item = visible ? partsById.get(visible.id) : undefined
-      if (!item) return
-      opened.current = { request, path: item.file.path }
-      setChoice({ request, path: item.file.path, only: false })
-    })
-    return () => {
-      unsubscribe()
-      container.removeEventListener("wheel", manual)
-      container.removeEventListener("touchstart", manual)
-      container.removeEventListener("pointerdown", manual)
-      container.removeEventListener("keydown", manual)
-    }
-  }, [state, only, request, partsById])
-
-  // The requested file may arrive later; a newer explicit choice remains authoritative.
-  useEffect(() => {
-    if (
-      current === null ||
-      (props.file === null && explicit === null) ||
-      (mode === "diff" ? !loaded.has(current) : source.source === undefined)
-    )
-      return
-    const preceding = JSON.stringify(
-      activeOrder
-        .slice(
-          0,
-          activeOrder.findIndex((file) => file.path === current),
-        )
-        .flatMap((file) => (loaded.has(file.path) ? [[file.path, stampOf(file)]] : [])),
-    )
-    const sameChoice = opened.current?.request === request && opened.current.path === current
-    if (sameChoice && (userScroll.current || opened.current?.preceding === preceding)) return
-    if (!sameChoice) userScroll.current = false
-    opened.current = { request, path: current, preceding }
-    viewer.current?.scrollTo({
-      type: "item",
-      id:
-        mode === "file"
-          ? (selectedPart?.id ?? current)
-          : selectedFile
-            ? (fileParts(selectedFile)[0]?.id ?? current)
-            : current,
-      align: "start",
-    } as never)
-  }, [
-    activeOrder,
-    loaded,
-    current,
+    setMode,
+    format,
+    setFormat,
+    versionChoice,
+    setVersionChoice,
     request,
     explicit,
-    props.file,
-    mode,
-    source.source,
-    selectedPart,
-    selectedFile,
-  ])
+    setChoice,
+  }
+}
 
-  const close = props.onClose
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (typingOrChord(e)) return
-      // The workspace covers the page: its keys come before the page's own (capture), and stop there.
-      let handled = true
-      if (e.key === "Escape") close()
-      else handled = false
-      if (handled) {
-        e.preventDefault()
-        e.stopPropagation()
-      }
-    }
-    window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
-  })
+function WorkspaceControls({
+  props,
+  ui,
+  derived,
+  currentIndex,
+  unreadable,
+  isViewed,
+  setFilesViewed,
+  go,
+  selectSlice,
+}: {
+  props: ReviewWorkspaceProps
+  ui: ReturnType<typeof useWorkspaceState>
+  derived: ReturnType<typeof useWorkspaceFiles>
+  currentIndex: number
+  unreadable: readonly string[]
+  isViewed: (file: WalkFile) => boolean
+  setFilesViewed: (files: readonly WalkFile[], on: boolean) => void
+  go: (path: string) => void
+  selectSlice: (slice: number | null, file?: string | null) => void
+}) {
+  return (
+    <>
+      <ReadingControls
+        mobileFileTree={
+          props.commitReview
+            ? { open: ui.fileTreeOpen, toggle: () => ui.setFileTreeOpen((open) => !open) }
+            : undefined
+        }
+        focus={ui.focus}
+        onFocus={() => ui.setFocus((on) => !on)}
+        rounds={props.view.rounds}
+        sinceRound={ui.sinceRound}
+        onSinceRound={(rev) => {
+          ui.setSinceRound(rev)
+          ui.setShowDiagrams(false)
+        }}
+        hasDiagrams={props.view.slices.length >= 2}
+        showDiagrams={ui.showDiagrams}
+        onToggleDiagrams={() => ui.setShowDiagrams((on) => !on)}
+        index={currentIndex}
+        count={derived.order.length}
+        onGo={(offset) => {
+          const file = derived.order[currentIndex + offset]
+          if (file) go(file.path)
+        }}
+        only={derived.only}
+        onOnly={(value) => {
+          if (derived.current)
+            ui.setChoice({ request: ui.request, path: derived.current, only: value })
+        }}
+        mode={ui.mode}
+        onMode={(value) => {
+          ui.setMode(value)
+          if (derived.current)
+            ui.setChoice({
+              request: ui.request,
+              path: derived.current,
+              only: value === "file" || derived.only,
+            })
+        }}
+        split={ui.split}
+        onSplit={ui.setSplit}
+        markdown={derived.current?.endsWith(".md") === true}
+        format={ui.format}
+        onFormat={ui.setFormat}
+        modified={derived.selectedFile?.status === "M"}
+      />
+      <Tree
+        groups={derived.groups}
+        lookFirst={derived.lookFirst}
+        files={derived.filesByPath}
+        comments={derived.commentCounts}
+        unreadable={unreadable}
+        activeSlice={ui.activeSlice}
+        onSelectSlice={(slice) => selectSlice(slice)}
+        details={
+          <ChangeDetails
+            scope={props.view.changeScope}
+            comments={derived.unassigned}
+            clear={props.onClearChanges}
+          />
+        }
+        current={derived.current}
+        isViewed={isViewed}
+        onGo={(path) => {
+          ui.setShowDiagrams(false)
+          if (ui.activeSlice !== null && derived.facts.get(path)?.slice !== ui.activeSlice)
+            ui.setActiveSlice(null)
+          go(path)
+        }}
+        onViewed={setFilesViewed}
+        folds={{
+          generated: {
+            count: derived.folded.generated,
+            shown: ui.folds.generated,
+            toggle: () => ui.setFolds((f) => ({ ...f, generated: !f.generated })),
+          },
+          documents: {
+            count: derived.folded.documents,
+            shown: ui.folds.documents,
+            toggle: () => ui.setFolds((f) => ({ ...f, documents: !f.documents })),
+          },
+        }}
+      />
+    </>
+  )
+}
 
-  // Focus moves into the workspace when it opens and back to what opened it when it closes.
-  const root = useFocusLayer<HTMLDivElement>()
-
-  const read = allReadableOrder.filter(isViewed).length
-  const activeSliceObj = useMemo(() => {
-    const n = activeSlice ?? (current !== null ? (facts.get(current)?.slice ?? null) : null)
-    return n === null ? null : (view.slices.find((s) => s.n === n) ?? null)
-  }, [activeSlice, current, facts, view.slices])
-  const activeSliceFiles = useMemo(
-    () =>
-      activeSliceObj === null
-        ? []
-        : activeSliceObj.files.filter((f) => folds.generated || !isGeneratedPath(f.path)),
-    [activeSliceObj, folds.generated],
+function useWorkspaceNavigation(
+  ui: ReturnType<typeof useWorkspaceState>,
+  derived: ReturnType<typeof useWorkspaceFiles>,
+  opened: MutableRefObject<{ request: string; path: string; preceding?: string } | null>,
+  userScroll: MutableRefObject<boolean>,
+) {
+  const go = useCallback(
+    (path: string) => {
+      if (!derived.order.some((file) => file.path === path)) return
+      userScroll.current = false
+      opened.current = null
+      ui.setChoice({ request: ui.request, path, only: derived.only || derived.missing !== null })
+    },
+    [derived.order, ui.request, ui.setChoice, derived.only, derived.missing, opened, userScroll],
   )
   const selectSlice = useCallback(
     (slice: number | null, file?: string | null) => {
-      setActiveSlice(slice)
-      setShowDiagrams(false)
-      if (file) {
-        setChoice({ request, path: file, only: only || missing !== null })
-        return
-      }
-      if (slice !== null) {
-        const firstFile = groups.find((g) => g.n === slice)?.files[0]?.path
-        if (firstFile) setChoice({ request, path: firstFile, only: only || missing !== null })
-      }
+      ui.setActiveSlice(slice)
+      ui.setShowDiagrams(false)
+      const fallback =
+        slice !== null ? derived.groups.find((g) => g.n === slice)?.files[0]?.path : null
+      const nextFile = file ?? fallback
+      if (nextFile)
+        ui.setChoice({
+          request: ui.request,
+          path: nextFile,
+          only: derived.only || derived.missing !== null,
+        })
     },
-    [groups, missing, only, request],
+    [
+      derived.groups,
+      derived.missing,
+      derived.only,
+      ui.request,
+      ui.setActiveSlice,
+      ui.setChoice,
+      ui.setShowDiagrams,
+    ],
   )
-  const unassigned = comments.filter((comment) => {
-    const anchor = comment.anchor
-    return anchor !== undefined && !allParts.some((item) => belongsToPart(anchor, item))
+  return { go, selectSlice }
+}
+
+export function ReviewWorkspace(props: ReviewWorkspaceProps) {
+  const { view, comments, deciding, taskId } = props
+  const ui = useWorkspaceState(props)
+  const derived = useWorkspaceFiles({
+    view,
+    comments,
+    findings: props.findings,
+    folds: ui.folds,
+    sinceRound: ui.sinceRound,
+    activeSlice: ui.activeSlice,
+    initialFile: props.file,
+    explicit: ui.explicit,
+    mode: ui.mode,
+    versionChoice: ui.versionChoice,
   })
-  // Change requests still waiting for the decision; a question is answered on its own.
-  const requests = comments.filter(
-    (c) => c.source === undefined && c.delivered !== true && c.ask !== "question",
+  const source = useReviewSource(
+    derived.selectedFile,
+    ui.mode === "file",
+    props.loadSource,
+    derived.selectedPart,
   )
-  const mine = requests.length
-  const filesByPath = useMemo(
-    () => new Map(allReadableOrder.map((f) => [f.path, f])),
-    [allReadableOrder],
-  )
-  // Disagreements and open findings come first: the files that hold them, in tree order.
-  const lookFirst = useMemo(
-    () =>
-      allReadableOrder.flatMap((f): [string, number][] => {
-        const count = (findingsByFile.get(f.path) ?? []).filter(needsYou).length
-        return count > 0 ? [[f.path, count]] : []
-      }),
-    [allReadableOrder, findingsByFile],
+  const rendered =
+    ui.mode === "file" && derived.current?.endsWith(".md") === true && ui.format === "rendered"
+  const reading = useRef({ mode: ui.mode, rendered, side: "additions" as Side })
+  const partStatus = derived.selectedPart?.part?.status ?? derived.selectedFile?.status
+  reading.current = {
+    mode: ui.mode,
+    rendered,
+    side: partStatus === "D" ? "deletions" : "additions",
+  }
+
+  const { isViewed, setFilesViewed, setFileViewed } = useViewedMarks(taskId)
+  const marks = useRef(props.onMark)
+  marks.current = props.onMark
+  const markLines = useRef<(item: FilePart, range: SelectedRange) => void>(() => {})
+  const pointer = usePointerPosition()
+  const opened = useRef<{ request: string; path: string; preceding?: string } | null>(null)
+  const userScroll = useRef(false)
+
+  const { state, slots, host, viewer, parseRef } = useViewerInstance({
+    split: ui.split,
+    partsById: derived.partsById,
+    reading,
+    marks,
+    markLines,
+  })
+  const diffs = useDiffFiles({
+    files: derived.activeOrder,
+    current: derived.current,
+    parse: state === "ready" ? parseRef.current : null,
+    load: props.loadDiff,
+    since: ui.sinceRound,
+  })
+  useViewerSync({
+    viewer,
+    state,
+    taskId,
+    mode: ui.mode,
+    only: derived.only,
+    rendered,
+    request: ui.request,
+    initialFile: props.file,
+    explicit: ui.explicit,
+    current: derived.current,
+    activeOrder: derived.activeOrder,
+    selectedFile: derived.selectedFile,
+    selectedPart: derived.selectedPart,
+    selectedPartsCount: derived.selectedParts.length,
+    source: source.source,
+    loaded: diffs.loaded,
+    findingsByFile: derived.findingsByFile,
+    partsById: derived.partsById,
+    isViewed,
+    reading,
+    marks,
+    markLines,
+    pointer,
+    opened,
+    userScroll,
+    setChoice: ui.setChoice,
+  })
+
+  const { go, selectSlice } = useWorkspaceNavigation(ui, derived, opened, userScroll)
+  useEscapeClose(props.onClose)
+  const root = useFocusLayer<HTMLDivElement>()
+  const read = derived.allReadableOrder.filter(isViewed).length
+  const currentIndex = derived.order.findIndex((file) => file.path === derived.current)
+  const mainLabel = ui.showDiagrams ? "Slice flow" : ui.mode === "diff" ? "Diff" : "Full file"
+  const workspaceClass = cn(
+    "rw",
+    ui.focus && "rw-focused",
+    (derived.missing !== null || derived.only) && "rw-file-choice",
+    props.commitReview && "rw-precommit",
+    props.commitReview && ui.fileTreeOpen && "rw-precommit-tree",
   )
 
   return createPortal(
     <div
       ref={root}
       tabIndex={-1}
-      className={cn(
-        "rw",
-        focus && "rw-focused",
-        (missing !== null || only) && "rw-file-choice",
-        props.commitReview && "rw-precommit",
-        props.commitReview && fileTreeOpen && "rw-precommit-tree",
-      )}
-      style={{ "--rw-tree": `${treeWidth(filesByPath.keys())}px` } as CSSProperties}
+      className={workspaceClass}
+      style={{ "--rw-tree": `${treeWidth(derived.filesByPath.keys())}px` } as CSSProperties}
       role="dialog"
       aria-modal="true"
       aria-label={props.commitReview ? "Review before committing" : "Review the code"}
       data-testid="review-workspace"
     >
-      <header className="rw-top">
-        <span className="rw-crumb">
-          <span className="dim">{props.title}</span>
-          <b>{props.commitReview ? "Worktree diff" : "Code"}</b>
-        </span>
-        <span className="rw-sp" />
-        <span className="rw-prog" data-testid="review-progress">
-          {read} of {allReadableOrder.length} viewed
-          <i aria-hidden="true">
-            <b
-              style={{
-                width: `${allReadableOrder.length === 0 ? 0 : Math.round((read / allReadableOrder.length) * 100)}%`,
-              }}
-            />
-          </i>
-        </span>
-        {deciding ? (
-          <button type="button" className="rw-btn primary" onClick={close}>
-            Finish code review{mine > 0 ? ` · ${mine}` : ""}
-          </button>
-        ) : (
-          <ExitButton
-            onClick={close}
-            primary={!props.commitReview}
-            label={props.commitReview ? "Close diff" : "Exit"}
-          />
-        )}
-      </header>
-      <ReadingControls
-        mobileFileTree={
-          props.commitReview
-            ? { open: fileTreeOpen, toggle: () => setFileTreeOpen((open) => !open) }
-            : undefined
-        }
-        focus={focus}
-        onFocus={() => setFocus((on) => !on)}
-        rounds={view.rounds}
-        sinceRound={sinceRound}
-        onSinceRound={(rev) => {
-          setSinceRound(rev)
-          setShowDiagrams(false)
-        }}
-        hasDiagrams={view.slices.length >= 2}
-        showDiagrams={showDiagrams}
-        onToggleDiagrams={() => setShowDiagrams((on) => !on)}
-        index={order.findIndex((file) => file.path === current)}
-        count={order.length}
-        onGo={(offset) => {
-          const file = order[order.findIndex((f) => f.path === current) + offset]
-          if (file) go(file.path)
-        }}
-        only={only}
-        onOnly={(value) => {
-          if (current) setChoice({ request, path: current, only: value })
-        }}
-        mode={mode}
-        onMode={(value) => {
-          setMode(value)
-          if (current) setChoice({ request, path: current, only: value === "file" || only })
-        }}
-        split={split}
-        onSplit={setSplit}
-        markdown={current?.endsWith(".md") === true}
-        format={format}
-        onFormat={setFormat}
-        modified={order.find((file) => file.path === current)?.status === "M"}
+      <WorkspaceHeader
+        title={props.title}
+        hasCommitReview={Boolean(props.commitReview)}
+        read={read}
+        total={derived.allReadableOrder.length}
+        deciding={deciding}
+        mine={derived.mine}
+        onClose={props.onClose}
       />
-      <Tree
-        groups={groups}
-        lookFirst={lookFirst}
-        files={filesByPath}
-        comments={commentCounts}
-        unreadable={[...errors.keys()]}
-        activeSlice={activeSlice}
-        onSelectSlice={(slice) => selectSlice(slice)}
-        details={
-          <ChangeDetails
-            scope={view.changeScope}
-            comments={unassigned}
-            clear={props.onClearChanges}
-          />
-        }
-        current={current}
+      <WorkspaceControls
+        props={props}
+        ui={ui}
+        derived={derived}
+        currentIndex={currentIndex}
+        unreadable={[...diffs.errors.keys()]}
         isViewed={isViewed}
-        onGo={(path) => {
-          setShowDiagrams(false)
-          if (activeSlice !== null && facts.get(path)?.slice !== activeSlice) setActiveSlice(null)
-          go(path)
-        }}
-        onViewed={setFilesViewed}
-        folds={{
-          generated: {
-            count: folded.generated,
-            shown: folds.generated,
-            toggle: () => setFolds((f) => ({ ...f, generated: !f.generated })),
-          },
-          documents: {
-            count: folded.documents,
-            shown: folds.documents,
-            toggle: () => setFolds((f) => ({ ...f, documents: !f.documents })),
-          },
-        }}
+        setFilesViewed={setFilesViewed}
+        go={go}
+        selectSlice={selectSlice}
       />
-      <main
-        className="rw-main"
-        aria-label={showDiagrams ? "Slice flow" : mode === "diff" ? "Diff" : "Full file"}
-      >
-        {showDiagrams ? (
-          <div className="rw-diagrams-pane" data-testid="review-diagrams-pane">
-            <SliceFlowGraph
-              walk={{ slices: view.slices, columns: view.columns }}
-              isViewed={isViewed}
-              initialSlice={activeSliceObj?.n ?? null}
-              onOpenSlice={(slice, file) => selectSlice(slice, file)}
-            />
-          </div>
-        ) : null}
-        {!showDiagrams && activeSliceObj !== null ? (
-          <SliceBanner
-            slice={activeSliceObj}
-            viewed={activeSliceFiles.filter(isViewed).length}
-            total={activeSliceFiles.length}
-            scoped={activeSlice !== null}
-            onMarkViewed={(on) => setFilesViewed(activeSliceFiles, on)}
-            onClearScope={() => setActiveSlice(null)}
-          />
-        ) : null}
-        {view.changeScope?.history ? (
-          <p className="rw-note rw-note-changed" role="status">
-            {view.changeScope.history === "registered"
-              ? "Historical registered changes. These patches were recorded before the branch was rewritten."
-              : "Registered patches are unavailable. Open Details for the missing commits."}
-          </p>
-        ) : null}
-        {selectedFile?.current === "changed" ? (
-          <p className="rw-note rw-note-changed" role="status">
-            This file changed. You're viewing an earlier version.
-          </p>
-        ) : null}
-        {mode === "file" && selectedParts.length > 1 ? (
-          <label className="rw-version">
-            Version{" "}
-            <select
-              aria-label="File version"
-              value={selectedPart?.stamp ?? ""}
-              onChange={(event) => {
-                if (current) setVersionChoice({ path: current, stamp: event.target.value })
-              }}
-            >
-              {selectedParts.map((item) => (
-                <option key={item.id} value={item.stamp}>
-                  {item.part?.label ?? "File"}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        {!showDiagrams ? (
-          <ReadStatus
-            missing={missing}
-            empty={order.length === 0}
-            state={state}
-            mode={mode}
-            source={{
-              ready: source.source !== undefined,
-              error: source.error,
-              retry: source.retry,
-            }}
-            current={current}
-            count={activeOrder.length}
-            loaded={loaded.size}
-            errors={errors}
-            retry={diffs.retry}
-            onDiff={() => setMode("diff")}
-          />
-        ) : null}
-        {!showDiagrams &&
-        mode === "diff" &&
-        current !== null &&
-        !errors.has(current) &&
-        !loaded.has(current) &&
-        loaded.size > 0 ? (
-          <p role="status" className="rw-note">
-            Reading {current}…
-          </p>
-        ) : null}
-        {!showDiagrams && rendered && source.source && selectedFile ? (
-          <>
-            <FileHeader
-              file={selectedFile}
-              why={whyOf(selectedFile, facts.get(selectedFile.path), titles)}
-              controls={
-                <label className="rw-viewed">
-                  <input
-                    type="checkbox"
-                    checked={isViewed(selectedFile)}
-                    onChange={(event) => setFileViewed(selectedFile, event.target.checked)}
-                  />
-                  Viewed
-                </label>
-              }
-            />
-            <SourceMarkdown content={source.source.content} onSource={() => setFormat("source")} />
-          </>
-        ) : null}
-        <div ref={host} className="rw-host" hidden={showDiagrams || missing !== null || rendered} />
+      <main className="rw-main" aria-label={mainLabel}>
+        <WorkspaceMainBody
+          showDiagrams={ui.showDiagrams}
+          view={view}
+          activeSliceObj={derived.activeSliceObj}
+          activeSliceFiles={derived.activeSliceFiles}
+          activeSlice={ui.activeSlice}
+          selectedFile={derived.selectedFile}
+          selectedParts={derived.selectedParts}
+          selectedPart={derived.selectedPart}
+          current={derived.current}
+          missing={derived.missing}
+          orderCount={derived.order.length}
+          activeOrderCount={derived.activeOrder.length}
+          state={state}
+          mode={ui.mode}
+          source={source}
+          rendered={rendered}
+          loadedCount={diffs.loaded.size}
+          hasCurrentLoaded={derived.current !== null && diffs.loaded.has(derived.current)}
+          errors={diffs.errors}
+          facts={derived.facts}
+          titles={derived.titles}
+          isViewed={isViewed}
+          setFilesViewed={setFilesViewed}
+          setFileViewed={setFileViewed}
+          setActiveSlice={ui.setActiveSlice}
+          selectSlice={selectSlice}
+          setVersionChoice={ui.setVersionChoice}
+          retryDiffs={diffs.retry}
+          setMode={ui.setMode}
+          setFormat={ui.setFormat}
+        />
+        <div
+          ref={host}
+          className="rw-host"
+          hidden={ui.showDiagrams || derived.missing !== null || rendered}
+        />
       </main>
-      {props.commitReview ? (
-        <footer className="rw-foot">{props.commitReview}</footer>
-      ) : (
-        <footer className="rw-foot">
-          <span className="rw-keys">
-            <span>
-              In the file tree: <kbd>↑</kbd>
-              <kbd>↓</kbd> files
-            </span>
-            <span>
-              <kbd>Esc</kbd> exit
-            </span>
-          </span>
-          <span className="rw-sp" />
-          <span>
-            {mine > 0
-              ? `${mine === 1 ? "1 change request goes" : `${mine} change requests go`} with your decision`
-              : ""}
-          </span>
-        </footer>
-      )}
-      {slots.map(({ key, el }) => {
-        if (key.startsWith("hdr|")) {
-          const item = partsById.get(key.slice(4))
-          if (item === undefined) return null
-          const f = partFile(item)
-          const fileFacts = facts.get(f.path)
-          return createPortal(
-            <FileHeader
-              file={f}
-              why={item.part ? { tasks: [], note: item.part.label } : whyOf(f, fileFacts, titles)}
-              controls={
-                <>
-                  {item.stamp ? (
-                    <button
-                      type="button"
-                      className="rw-btn quiet"
-                      aria-label={`Read this version of ${f.path}`}
-                      title={item.part?.label ?? "Read this file version"}
-                      onClick={() => {
-                        if (item.stamp) setVersionChoice({ path: f.path, stamp: item.stamp })
-                        setChoice({ request, path: f.path, only: true })
-                        setMode("file")
-                      }}
-                    >
-                      <FileTextIcon size={14} />
-                    </button>
-                  ) : null}
-                  {props.open !== undefined ? (
-                    <button
-                      type="button"
-                      className="rw-open-ed"
-                      title={`Open ${f.path} in ${EDITOR_NAMES[props.open.editor]}`}
-                      aria-label={`Open ${f.path} in ${EDITOR_NAMES[props.open.editor]}`}
-                      onClick={() => props.open?.run(f.path)}
-                    >
-                      <EditorMark editor={props.open.editor} size={13} />
-                    </button>
-                  ) : null}
-                  {props.onMark !== undefined && !rendered ? (
-                    <LineOpener
-                      path={f.path}
-                      onOpen={(start, end, at) => {
-                        pointer.current = { x: at.x - 64, y: at.y - 14 }
-                        const side = mode === "file" && f.status === "D" ? "deletions" : "additions"
-                        viewer.current?.setSelectedLines?.({ start, end, side } as never)
-                        markLines.current(item, { start, end, side })
-                      }}
-                    />
-                  ) : null}
-                  {mode === "file" || item.index === 0 ? (
-                    <label className="rw-viewed">
-                      <input
-                        type="checkbox"
-                        checked={isViewed(item.file)}
-                        onChange={(e) => setFileViewed(item.file, e.target.checked)}
-                      />
-                      Viewed
-                    </label>
-                  ) : null}
-                </>
-              }
-            />,
-            el,
-            key,
-          )
-        }
-        const [itemId, side, line] = JSON.parse(key) as [string, Side, number]
-        const item = partsById.get(itemId)
-        if (!item) return null
-        const path = item.file.path
-        const anchor = partAnchor(item, side === "deletions" ? "old" : "new", line)
-        const found =
-          anchor.side === "new" && fileParts(item.file).length === 1
-            ? (findingsByFile.get(path) ?? []).filter((f) => f.line === anchor.line)
-            : []
-        return createPortal(
-          <>
-            {found.map((f) => (
-              <FindingThread
-                key={f.id}
-                finding={f}
-                {...(props.onFinding !== undefined ? { onFinding: props.onFinding } : {})}
-              />
-            ))}
-          </>,
-          el,
-          key,
-        )
-      })}
+      <WorkspaceFooter commitReview={props.commitReview} mine={derived.mine} />
+      <WorkspaceSlots
+        slots={slots}
+        partsById={derived.partsById}
+        facts={derived.facts}
+        titles={derived.titles}
+        findingsByFile={derived.findingsByFile}
+        mode={ui.mode}
+        rendered={rendered}
+        request={ui.request}
+        open={props.open}
+        canMark={props.onMark !== undefined}
+        onFinding={props.onFinding}
+        isViewed={isViewed}
+        pointer={pointer}
+        viewer={viewer}
+        markLines={markLines}
+        setVersionChoice={ui.setVersionChoice}
+        setChoice={ui.setChoice}
+        setMode={ui.setMode}
+        setFileViewed={setFileViewed}
+      />
     </div>,
     document.body,
   )

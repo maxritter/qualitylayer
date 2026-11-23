@@ -1,18 +1,16 @@
 export type NativeSettingField = "model" | "effort"
+function isNativeSettingField(field: unknown): field is NativeSettingField {
+  return field === "model" || field === "effort"
+}
+
 export function missingNativeSettings(value: unknown): NativeSettingField[] | undefined {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !("code" in value) ||
-    value.code !== "native_settings_unknown" ||
-    !("fields" in value) ||
-    !Array.isArray(value.fields) ||
-    value.fields.length < 1 ||
-    value.fields.length > 2 ||
-    value.fields.some((field) => field !== "model" && field !== "effort")
-  )
-    return undefined
-  return [...new Set(value.fields)] as NativeSettingField[]
+  if (!value || typeof value !== "object") return undefined
+  const record = value as { code?: unknown; fields?: unknown }
+  if (record.code !== "native_settings_unknown" || !Array.isArray(record.fields)) return undefined
+  const { fields } = record
+  if (fields.length < 1 || fields.length > 2) return undefined
+  if (!fields.every(isNativeSettingField)) return undefined
+  return [...new Set(fields)]
 }
 export class NativeSettingsUnknown extends Error {
   readonly code = "native_settings_unknown"

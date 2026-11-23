@@ -2,49 +2,23 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { ViewerState } from "../../core/run/protocol.ts"
 import type { RunWindow } from "../run-context.tsx"
 import type { PlanUpdateOutcome } from "./plan-feedback.ts"
+import {
+  acknowledgesInterrupt,
+  boundPlanUpdate,
+  buildTaskControlsPayload,
+  createInterruptRequest,
+  ended,
+  type InterruptRequest,
+  isInterruptRequestStale,
+  mayStop,
+  type SessionRows,
+  sameScope,
+  type TaskAgentControls,
+  type TaskTurnEnd,
+  useStableSessionRows,
+} from "./task-controls-helpers.ts"
 
-const ended = (status: RunWindow["status"]) => status === "stopped" || status === "failed"
-const sameScope = (
-  current: Pick<TaskAgentControls, "run" | "generation" | "nativeSession">,
-  run: Pick<RunWindow, "id" | "generation" | "nativeSession">,
-) =>
-  current.run === run.id &&
-  current.generation === run.generation &&
-  current.nativeSession === run.nativeSession
-
-type PlanControl = Pick<
-  TaskAgentControls,
-  "run" | "generation" | "nativeSession" | "busy" | "updatePlan"
-> & {
-  readOnly: boolean
-}
-
-async function boundPlanUpdate(
-  now: PlanControl,
-  run: Pick<RunWindow, "id" | "generation" | "nativeSession">,
-) {
-  if (!sameScope(now, run) || now.readOnly || now.busy || !now.updatePlan)
-    throw new Error("The current planner is unavailable. Your feedback is saved.")
-  return now.updatePlan()
-}
-
-function mayStop({
-  active,
-  sameViewer,
-  viewer,
-  readOnly,
-  allowReadOnlyStop,
-}: {
-  active: boolean
-  sameViewer: boolean
-  viewer: ViewerState | undefined
-  readOnly: boolean
-  allowReadOnlyStop: boolean
-}) {
-  const permittedView = !readOnly || allowReadOnlyStop
-  const authorizedViewer = sameViewer && viewer?.canStop === true
-  return active && permittedView && authorizedViewer
-}
+export type { SessionRows, TaskAgentControls, TaskTurnEnd }
 
 export function requireStopped(action: string, required: boolean, result: RunWindow | undefined) {
   if (action !== "stop" || !required) return
@@ -52,83 +26,7 @@ export function requireStopped(action: string, required: boolean, result: RunWin
   throw new Error("The session has not confirmed it stopped. Try Stop session again.")
 }
 
-export type TaskAgentControls = {
-  run: string
-  generation: number
-  nativeSession: string | undefined
-  agent: RunWindow["agent"]
-  status: RunWindow["status"]
-  attention: RunWindow["attention"]
-  canInterrupt: boolean
-  canStop: boolean
-  busy: boolean
-  interruptRequested: boolean
-  interrupt(): Promise<boolean>
-  stop(): Promise<boolean>
-  updatePlan?: () => Promise<PlanUpdateOutcome>
-  /** The window's other session rows, for a header menu that owns the session controls (the Chat's agent chip). */
-  session?: SessionRows
-}
-
-/**
- * What the window opens besides Interrupt and Stop, named for the header's session menu. A row the
- * window cannot offer now (no model choice for this agent, no terminal to move to) is absent.
- */
-export type SessionRows = {
-  /** Model & effort… */
-  configure?(): void
-  /** Terminal appearance… */
-  appearance(): void
-  /** Session information */
-  information(): void
-  /** Move to my own agent… */
-  move?(): void
-  /** Resume the stopped session in this window. */
-  resume?(): void
-  resumeLine?: string
-  /** The session summary's second line: "Last launch" model and effort, then the permission. */
-  facts?: string
-}
-
-export type TaskTurnEnd = {
-  run: string
-  generation: number
-  nativeSession: string | undefined
-  id: string
-  at: string | undefined
-}
-
-type InterruptRequest = Pick<TaskTurnEnd, "run" | "generation" | "nativeSession"> & {
-  sequence: number
-  at: number
-  previousEnd: string | undefined
-}
-
-function acknowledgesInterrupt(pending: InterruptRequest | undefined, end: TaskTurnEnd) {
-  if (!pending || end.id === pending.previousEnd) return false
-  const bound = sameScope(pending, {
-    id: end.run,
-    generation: end.generation,
-    nativeSession: end.nativeSession,
-  })
-  const at = Date.parse(end.at ?? "")
-  return bound && Number.isFinite(at) && at > pending.at
-}
-
-export function useTaskControls({
-  run,
-  status,
-  attention,
-  viewer,
-  readOnly,
-  allowReadOnlyStop,
-  busy,
-  canInterrupt,
-  act,
-  onControls,
-  updatePlan,
-  session,
-}: {
+type UseTaskControlsInput = {
   run: RunWindow
   status: RunWindow["status"]
   attention: RunWindow["attention"]
@@ -141,70 +39,24 @@ export function useTaskControls({
   onControls?(controls: TaskAgentControls | undefined): void
   updatePlan?: () => Promise<PlanUpdateOutcome>
   session?: SessionRows
-}) {
-  const [request, setRequest] = useState<InterruptRequest>()
-  // The window's rows change identity at every draw; the header reads the latest through stable callbacks.
-  const rows = useRef(session)
-  rows.current = session
-  const configure = useCallback(() => rows.current?.configure?.(), [])
-  const appearance = useCallback(() => rows.current?.appearance(), [])
-  const information = useCallback(() => rows.current?.information(), [])
-  const move = useCallback(() => rows.current?.move?.(), [])
-  const resume = useCallback(() => rows.current?.resume?.(), [])
-  const hasRows = session !== undefined
-  const hasConfigure = session?.configure !== undefined
-  const hasMove = session?.move !== undefined
-  const hasResume = session?.resume !== undefined
-  const resumeLine = session?.resumeLine
-  const facts = session?.facts
-  const lastEnd = useRef<TaskTurnEnd | undefined>(undefined)
-  const active = !ended(status)
-  const sameViewer = viewer?.generation === run.generation
-  const canStop = mayStop({ active, sameViewer, viewer, readOnly, allowReadOnlyStop })
-  const current = useRef({
-    run: run.id,
-    generation: run.generation,
-    nativeSession: run.nativeSession,
-    canStop,
-    canInterrupt,
-    act,
-    updatePlan,
-    readOnly,
-    busy,
-  })
-  current.current = {
-    run: run.id,
-    generation: run.generation,
-    nativeSession: run.nativeSession,
-    canStop,
-    canInterrupt,
-    act,
-    updatePlan,
-    readOnly,
-    busy,
-  }
-  useEffect(() => {
-    if (!request) return
-    const ended = !active || (run.acceptedStopSequence ?? 0) > request.sequence
-    if (
-      !sameScope(request, {
-        id: run.id,
-        generation: run.generation,
-        nativeSession: run.nativeSession,
-      }) ||
-      ended
-    )
-      setRequest(undefined)
-  }, [active, request, run.id, run.generation, run.nativeSession, run.acceptedStopSequence])
-  const observeTurnEnd = useCallback((end: TaskTurnEnd) => {
-    const now = current.current
-    if (
-      sameScope(end, { id: now.run, generation: now.generation, nativeSession: now.nativeSession })
-    ) {
-      lastEnd.current = end
-      setRequest((pending) => (acknowledgesInterrupt(pending, end) ? undefined : pending))
+}
+
+function useRunActionCallbacks(
+  run: Pick<RunWindow, "id" | "generation" | "nativeSession">,
+  current: {
+    current: {
+      run: string
+      generation: number
+      nativeSession: string | undefined
+      canStop: boolean
+      canInterrupt: boolean
+      act(action: "interrupt" | "stop"): Promise<boolean | undefined>
+      updatePlan?: (() => Promise<PlanUpdateOutcome>) | undefined
+      readOnly: boolean
+      busy: boolean
     }
-  }, [])
+  },
+) {
   const invoke = useCallback(
     async (action: "interrupt" | "stop") => {
       const now = current.current
@@ -214,10 +66,9 @@ export function useTaskControls({
         generation: run.generation,
         nativeSession: run.nativeSession,
       })
-      if (!bound || !allowed) return false
-      return (await now.act(action)) === true
+      return bound && allowed ? (await now.act(action)) === true : false
     },
-    [run.id, run.generation, run.nativeSession],
+    [run.id, run.generation, run.nativeSession, current],
   )
   const interrupt = useCallback(() => invoke("interrupt"), [invoke])
   const stop = useCallback(() => invoke("stop"), [invoke])
@@ -228,45 +79,72 @@ export function useTaskControls({
         generation: run.generation,
         nativeSession: run.nativeSession,
       }),
-    [run.id, run.generation, run.nativeSession],
+    [run.id, run.generation, run.nativeSession, current],
   )
+  return { interrupt, stop, update }
+}
+
+export function useTaskControls(input: UseTaskControlsInput) {
+  const { run, status, attention, viewer, readOnly, allowReadOnlyStop, busy, canInterrupt } = input
+  const { act, onControls, updatePlan, session } = input
+  const [request, setRequest] = useState<InterruptRequest>()
+  const sessionRows = useStableSessionRows(session)
+  const lastEnd = useRef<TaskTurnEnd | undefined>(undefined)
+  const active = !ended(status)
+  const sameViewer = viewer?.generation === run.generation
+  const canStop = mayStop({ active, sameViewer, viewer, readOnly, allowReadOnlyStop })
+  const snapshot = {
+    run: run.id,
+    generation: run.generation,
+    nativeSession: run.nativeSession,
+    canStop,
+    canInterrupt,
+    act,
+    updatePlan,
+    readOnly,
+    busy,
+  }
+  const current = useRef(snapshot)
+  current.current = snapshot
+  useEffect(() => {
+    if (request && isInterruptRequestStale(request, run, active)) setRequest(undefined)
+  }, [active, request, run])
+  const observeTurnEnd = useCallback((end: TaskTurnEnd) => {
+    const now = current.current
+    if (
+      !sameScope(end, { id: now.run, generation: now.generation, nativeSession: now.nativeSession })
+    )
+      return
+    lastEnd.current = end
+    setRequest((pending) => (acknowledgesInterrupt(pending, end) ? undefined : pending))
+  }, [])
+  const { interrupt, stop, update } = useRunActionCallbacks(run, current)
+  const canExpose = sameViewer || (!active && updatePlan !== undefined && !readOnly)
   useEffect(() => {
     onControls?.(
-      sameViewer || (!active && updatePlan !== undefined && !readOnly)
-        ? {
-            run: run.id,
-            generation: run.generation,
-            nativeSession: run.nativeSession,
-            agent: run.agent,
-            status,
-            attention,
-            canInterrupt,
-            canStop,
-            busy,
-            interruptRequested: request !== undefined,
-            interrupt,
-            stop,
-            ...(updatePlan ? { updatePlan: update } : {}),
-            ...(hasRows
-              ? {
-                  session: {
-                    ...(hasConfigure ? { configure } : {}),
-                    appearance,
-                    information,
-                    ...(hasMove ? { move } : {}),
-                    ...(hasResume ? { resume } : {}),
-                    ...(resumeLine ? { resumeLine } : {}),
-                    ...(facts ? { facts } : {}),
-                  },
-                }
-              : {}),
-          }
-        : undefined,
+      buildTaskControlsPayload({
+        canExpose,
+        runId: run.id,
+        generation: run.generation,
+        nativeSession: run.nativeSession,
+        agent: run.agent,
+        status,
+        attention,
+        canInterrupt,
+        canStop,
+        busy,
+        interruptRequested: request !== undefined,
+        interrupt,
+        stop,
+        updatePlan,
+        update,
+        sessionRows,
+      }),
     )
     return () => onControls?.(undefined)
   }, [
     onControls,
-    sameViewer,
+    canExpose,
     run.id,
     run.generation,
     run.nativeSession,
@@ -279,21 +157,9 @@ export function useTaskControls({
     request,
     interrupt,
     stop,
-    active,
-    readOnly,
     updatePlan,
     update,
-    hasRows,
-    hasConfigure,
-    hasMove,
-    hasResume,
-    resumeLine,
-    facts,
-    configure,
-    appearance,
-    information,
-    move,
-    resume,
+    sessionRows,
   ])
   return {
     canStop,
@@ -301,15 +167,7 @@ export function useTaskControls({
     observeTurnEnd,
     actionStarted: (action: string) => {
       if (action === "interrupt" && onControls)
-        setRequest({
-          run: run.id,
-          generation: run.generation,
-          nativeSession: run.nativeSession,
-          sequence: run.acceptedStopSequence ?? 0,
-          at: Date.now(),
-          previousEnd:
-            lastEnd.current && sameScope(lastEnd.current, run) ? lastEnd.current.id : undefined,
-        })
+        setRequest(createInterruptRequest(run, lastEnd.current))
     },
     actionFailed: (action: string) => {
       if (action === "interrupt") setRequest(undefined)

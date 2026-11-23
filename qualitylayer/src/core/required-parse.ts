@@ -50,30 +50,30 @@ type Row = {
   required?: string
 }
 
+function nextFence(fence: string | null, raw: string): string | null {
+  if (fence === null) return FENCE.exec(raw)?.[1] ?? null
+  const closing = CLOSING.exec(raw)?.[1]
+  const closes = closing !== undefined && closing[0] === fence[0] && closing.length >= fence.length
+  return closes ? null : fence
+}
+
+function parseRow(raw: string, state: { step: FlowStepId | null; fence: string | null }): Row {
+  const wasFenced = state.fence !== null
+  state.fence = nextFence(state.fence, raw)
+  if (wasFenced || state.fence !== null) return { raw, step: state.step, heading: false }
+  const heading = raw.startsWith("## ") || raw.startsWith("# ")
+  if (heading) state.step = raw.startsWith("## ") ? stepOf(raw) : null
+  const words = state.step === null || heading ? undefined : REQUIRED.exec(raw.trimEnd())?.[1]
+  return { raw, step: state.step, heading, ...(words !== undefined ? { required: words } : {}) }
+}
+
 /** The text's rows with the section each is in; headings inside code fences start no section. */
 function rows(text: string): Row[] {
-  const out: Row[] = []
-  let step: FlowStepId | null = null
-  let fence: string | null = null
-  for (const raw of text.replaceAll("\r\n", "\n").split("\n")) {
-    const marker = FENCE.exec(raw)?.[1]
-    const closing = CLOSING.exec(raw)?.[1]
-    const closes: boolean =
-      fence !== null &&
-      closing !== undefined &&
-      closing[0] === fence[0] &&
-      closing.length >= fence.length
-    if (fence !== null || marker !== undefined) {
-      fence = closes ? null : (fence ?? marker ?? null)
-      out.push({ raw, step, heading: false })
-      continue
-    }
-    const heading = raw.startsWith("## ") || raw.startsWith("# ")
-    if (heading) step = raw.startsWith("## ") ? stepOf(raw) : null
-    const words = step === null || heading ? undefined : REQUIRED.exec(raw.trimEnd())?.[1]
-    out.push({ raw, step, heading, ...(words !== undefined ? { required: words } : {}) })
-  }
-  return out
+  const state: { step: FlowStepId | null; fence: string | null } = { step: null, fence: null }
+  return text
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((raw) => parseRow(raw, state))
 }
 
 /** The command a `run:` line names: the backticked span when there is one, else the rest of the line. */

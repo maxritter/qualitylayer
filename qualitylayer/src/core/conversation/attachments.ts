@@ -1,151 +1,20 @@
-import { createHash } from "node:crypto"
-import { basename, extname } from "node:path"
-import { fileURLToPath } from "node:url"
-import { TEXT_EXTENSIONS } from "../interaction-docs/attachment-rules.ts"
+import {
+  asJsonObject,
+  asString,
+  attachmentDigest,
+  attachmentPart,
+  MAX_ENCODED_ATTACHMENT,
+} from "./attachment-parts.ts"
 import type {
   ConversationAttachment,
   ConversationAttachmentSource,
   ConversationEvent,
 } from "./types.ts"
 
-const TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-  "application/pdf",
-  "text/plain",
-])
 const MAX_IMAGES = 6
-const MAX_ENCODED = 14 * 1024 * 1024
-type Json = Record<string, unknown>
-const object = (value: unknown): Json | undefined =>
-  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Json) : undefined
-const string = (value: unknown) => (typeof value === "string" ? value : undefined)
-const digest = (type: string, encoded: string) =>
-  createHash("sha256").update(type).update("\0").update(encoded).digest("hex")
-
-function inline(
-  type: unknown,
-  data: unknown,
-  pointer: string[],
-): ConversationAttachment | undefined {
-  if (
-    typeof type !== "string" ||
-    !TYPES.has(type) ||
-    typeof data !== "string" ||
-    !data.length ||
-    data.length > MAX_ENCODED ||
-    !/^[A-Za-z0-9+/\r\n]*={0,2}$/.test(data) ||
-    data.length % 4 === 1
-  )
-    return
-  const encodedLength = data.replace(/[\r\n]/g, "").length
-  const size = Math.max(
-    0,
-    Math.floor((encodedLength * 3) / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0),
-  )
-  return {
-    name: type.startsWith("image/") ? "Image" : "Document",
-    type,
-    size,
-    source: { kind: "inline", digest: digest(type, data), pointer },
-  }
-}
-
-function dataUrl(value: unknown, pointer: string[]): ConversationAttachment | undefined {
-  if (typeof value !== "string") return
-  const match = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=\r\n]+)$/.exec(value)
-  return match ? inline(match[1], match[2], pointer) : undefined
-}
-
-function encodedImagePart(value: Json, pointer: string[]): ConversationAttachment | undefined {
-  const source = object(value.source)
-  if (source?.type === "base64")
-    return (
-      inline(source.media_type, source.data, [...pointer, "source", "data"]) ?? {
-        name: "Image",
-        type: string(source.media_type) ?? "image/unknown",
-      }
-    )
-  if (value.type === "image" && typeof value.data === "string")
-    return (
-      inline(value.mimeType ?? value.mime_type ?? value.mime, value.data, [...pointer, "data"]) ?? {
-        name: "Image",
-        type: "image/unknown",
-      }
-    )
-  if (value.type === "input_image") {
-    const image = dataUrl(value.image_url, [...pointer, "image_url"])
-    if (image) return image
-  }
-  if (value.type === "image_url") {
-    const url = object(value.image_url)
-    const image = dataUrl(url?.url, [...pointer, "image_url", "url"])
-    if (image) return image
-  }
-  return (
-    dataUrl(value.url, [...pointer, "url"]) ?? dataUrl(source?.url, [...pointer, "source", "url"])
-  )
-}
-
-function fileImagePart(value: Json): ConversationAttachment | undefined {
-  const source = object(value.source)
-  const suppliedType = string(value.mime) ?? string(value.mimeType) ?? string(value.media_type)
-  const type =
-    suppliedType && /^[\w.+-]{1,80}\/[\w.+-]{1,80}$/.test(suppliedType) ? suppliedType : undefined
-  const url =
-    string(value.path) ??
-    string(value.filePath) ??
-    string(value.url) ??
-    string(source?.url) ??
-    string(value.image_url) ??
-    string(object(value.image_url)?.url)
-  if (
-    !url ||
-    url.length > 4096 ||
-    !(
-      type !== undefined ||
-      ["image", "file", "input_image", "image_url"].includes(String(value.type))
-    )
-  )
-    return
-  if (/^https?:/i.test(url))
-    return { name: string(value.filename) ?? "File", type: type ?? "application/octet-stream" }
-  let path = url
-  if (url.startsWith("file:")) {
-    try {
-      path = fileURLToPath(url)
-    } catch {
-      return
-    }
-  }
-  return {
-    name: basename(path),
-    type: type ?? fileImageType(path),
-    source: { kind: "file", path },
-  }
-}
-
-function fileImageType(path: string): string {
-  const extension = extname(path).toLowerCase()
-  if ((TEXT_EXTENSIONS as readonly string[]).includes(extension)) return "text/plain"
-  const media: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".pdf": "application/pdf",
-  }
-  return media[extension] ?? "application/octet-stream"
-}
-
-function part(value: Json, pointer: string[]): ConversationAttachment | undefined {
-  return encodedImagePart(value, pointer) ?? fileImagePart(value)
-}
 
 type VisitState = { found: ConversationAttachment[]; nodes: number }
+
 function visitImageParts(item: unknown, pointer: string[], depth: number, state: VisitState): void {
   if (++state.nodes > 256 || depth > 9 || state.found.length >= MAX_IMAGES) return
   if (Array.isArray(item)) {
@@ -157,9 +26,9 @@ function visitImageParts(item: unknown, pointer: string[], depth: number, state:
       visitImageParts(item[index], [...pointer, String(index)], depth + 1, state)
     return
   }
-  const record = object(item)
+  const record = asJsonObject(item)
   if (!record) return
-  const image = part(record, pointer)
+  const image = attachmentPart(record, pointer)
   if (image) {
     state.found.push(image)
     return
@@ -185,11 +54,8 @@ export function imageMessageText(
   attachments: readonly ConversationAttachment[],
 ): string {
   let clean = text.trim()
-  for (
-    let index = 0;
-    index < attachments.filter((file) => file.type.startsWith("image/")).length;
-    index++
-  ) {
+  const imageCount = attachments.filter((file) => file.type.startsWith("image/")).length
+  for (let index = 0; index < imageCount; index++) {
     const next = clean.replace(/^\[Image ?#?\d+\]\s*/i, "")
     if (next === clean) break
     clean = next
@@ -199,9 +65,9 @@ export function imageMessageText(
 
 export function imageContentText(content: unknown): string {
   if (typeof content === "string") return content
-  if (!Array.isArray(content)) return string(object(content)?.text) ?? ""
+  if (!Array.isArray(content)) return asString(asJsonObject(content)?.text) ?? ""
   return content
-    .map((part) => string(object(part)?.text) ?? "")
+    .map((part) => asString(asJsonObject(part)?.text) ?? "")
     .filter(Boolean)
     .join("\n")
 }
@@ -217,7 +83,11 @@ function rememberRecordImages(
       const source = image.source
       if (source?.kind !== "inline") continue
       sources.set(source.digest, { ...source, offset: position })
-      while (sources.size > 256) sources.delete(sources.keys().next().value!)
+      while (sources.size > 256) {
+        const oldest = sources.keys().next().value
+        if (oldest === undefined) break
+        sources.delete(oldest)
+      }
     }
   } catch {
     /* Malformed native records are not image sources. */
@@ -269,11 +139,12 @@ export function inlineImageData(
 ): string | undefined {
   let value: unknown = record
   for (const key of source.pointer ?? [])
-    value = object(value)?.[key] ?? (Array.isArray(value) ? value[Number(key)] : undefined)
-  if (typeof value !== "string") return
+    value = asJsonObject(value)?.[key] ?? (Array.isArray(value) ? value[Number(key)] : undefined)
+  if (typeof value !== "string") return undefined
   const match = /^data:image\/(?:png|jpeg|gif|webp);base64,(.*)$/s.exec(value)
   const encoded = match?.[1] ?? value
-  return encoded.length <= MAX_ENCODED && digest(type, encoded) === source.digest
+  return encoded.length <= MAX_ENCODED_ATTACHMENT &&
+    attachmentDigest(type, encoded) === source.digest
     ? encoded
     : undefined
 }

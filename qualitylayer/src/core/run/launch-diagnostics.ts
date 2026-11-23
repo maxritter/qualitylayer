@@ -69,29 +69,35 @@ const version = (v: unknown): v is string =>
 const member = <T extends string>(v: unknown, values: readonly T[]): v is T =>
   typeof v === "string" && values.includes(v as T)
 
+function hasValidDiagnosticCounts(value: Record<string, unknown>): boolean {
+  return (
+    count(value.inheritedEntries) &&
+    count(value.loginEntries) &&
+    count(value.pathEntries) &&
+    count(value.knownFoldersChecked)
+  )
+}
+
+function hasValidDiagnosticFields(value: Record<string, unknown>): boolean {
+  const validIdentity = member(value.agent, NATIVE_AGENTS) && member(value.phase, START_PHASES)
+  const validObservations =
+    member(value.outcome, LOGIN_PROBE_OUTCOMES) &&
+    member(value.source, BINARY_SOURCES) &&
+    member(value.result, BINARY_CHECK_RESULTS)
+  return validIdentity && validObservations && version(value.serverVersion)
+}
+
 /** Rebuild a saved observation without accepting paths, output or arbitrary error text. */
 export function cleanLaunchDiagnostic(value: unknown): LaunchDiagnostic | null {
-  if (
-    !record(value) ||
-    !member(value.agent, NATIVE_AGENTS) ||
-    !member(value.phase, START_PHASES) ||
-    !member(value.outcome, LOGIN_PROBE_OUTCOMES) ||
-    !member(value.source, BINARY_SOURCES) ||
-    !member(value.result, BINARY_CHECK_RESULTS) ||
-    !version(value.serverVersion) ||
-    !count(value.inheritedEntries) ||
-    !count(value.loginEntries) ||
-    !count(value.pathEntries) ||
-    !count(value.knownFoldersChecked)
-  )
+  if (!record(value) || !hasValidDiagnosticFields(value) || !hasValidDiagnosticCounts(value))
     return null
   return {
-    agent: value.agent,
-    phase: value.phase,
-    outcome: value.outcome,
-    source: value.source,
-    result: value.result,
-    serverVersion: value.serverVersion,
+    agent: value.agent as LaunchDiagnostic["agent"],
+    phase: value.phase as LaunchDiagnostic["phase"],
+    outcome: value.outcome as LaunchDiagnostic["outcome"],
+    source: value.source as LaunchDiagnostic["source"],
+    result: value.result as LaunchDiagnostic["result"],
+    serverVersion: value.serverVersion as string,
     inheritedEntries: value.inheritedEntries as number,
     loginEntries: value.loginEntries as number,
     pathEntries: value.pathEntries as number,

@@ -41,107 +41,7 @@ export const APPROVAL_SETTLE_MS = 10_000
 // Codex's working line ticks every second, so a read follows at most every two seconds while it works.
 const DEBOUNCE_MS = 2000
 
-/** A native permission dialog at the live bottom of a terminal, never a reply transport. */
-export function terminalPermissionScreen(screen: string): boolean {
-  const rows = screen
-    .split(/\r?\n/)
-    .map((row) => row.replace(/\s+/g, " ").trim().toLowerCase())
-    .filter(Boolean)
-    .slice(-24)
-  const text = rows.join("\n")
-  if (rows.every((row) => row.startsWith("> "))) return false
-  // Copilot's MCP permission dialog includes Yes, Yes and don't ask again, and No.
-  // Requiring real choice rows excludes an assistant merely mentioning approval.
-  const choices = rows.map((row) =>
-    row
-      .replace(/^[│┃|›>❯→●○\s\d.)-]+/, "")
-      .replace(/[│┃|]\s*$/, "")
-      .trim(),
-  )
-  const cursorQuestion = rows.lastIndexOf("run this command?")
-  const cursorNotAllowed = rows.findLastIndex((row) => row.startsWith("not in allowlist:"))
-  const cursorRun = choices.lastIndexOf("run (once) (y)")
-  const cursorSkip = choices.lastIndexOf("skip & tell the agent what to do instead (esc or n)")
-  if (
-    cursorQuestion >= 0 &&
-    cursorNotAllowed > cursorQuestion &&
-    cursorRun > cursorNotAllowed &&
-    cursorSkip > cursorRun &&
-    cursorSkip === choices.length - 1
-  )
-    return true
-  const lastChoice = choices.findLastIndex((row) =>
-    /^(?:yes|no|allow|approve|accept|deny|reject|decline|cancel)(?:$|[, (])/.test(row),
-  )
-  if (
-    lastChoice >= 0 &&
-    rows
-      .slice(lastChoice + 1)
-      .some(
-        (row) =>
-          !/^[─━└┘┌┐╭╮╯╰│┃┴┬├┤+\s-]+$/.test(row) &&
-          !/(?:enter to|esc(?:ape)? to|press enter|arrow keys|↑|↓|navigate|select an option)/.test(
-            row,
-          ),
-      )
-  )
-    return false
-  const yes = choices.some((row) => /^yes(?:$|[, (])/.test(row))
-  const no = choices.some((row) => /^no(?:$|[, (])/.test(row))
-  const remember = choices.some((row) =>
-    /^(?:yes[, ]+)?(?:and )?(?:don.t ask again|allow.*session|always allow)/.test(row),
-  )
-  if (yes && no && remember) return true
-  const question =
-    rows.some((row) =>
-      /^(?:permission (?:required|request)|approval (?:required|request))[:?]?$/.test(row),
-    ) ||
-    /(?:would you like|do you want|allow|approve|permission|confirm).{0,160}(?:run|execute|tool|command|access|create|\bread\b|write|edit|delete|file|request)|(?:run|execute|tool|command|access|create|\bread\b|write|edit|delete).{0,160}(?:permission|approval|\?)/.test(
-      text,
-    )
-  if (!question) return false
-  const allow = choices.some((row) => /^(?:allow|approve|accept)(?:$|[, (])/.test(row))
-  const deny = choices.some((row) => /^(?:deny|reject|decline|cancel)(?:$|[, (])/.test(row))
-  const footer = rows
-    .slice(-3)
-    .some((row) =>
-      /(?:enter to (?:confirm|accept)|press enter to confirm|\[y\/n\]|\(y\/n\))/.test(row),
-    )
-  return (yes && no) || (allow && deny) || footer
-}
-
-/** Observe output pauses only; idle terminals cause no reads or recurring timers. */
-export function watchTerminalPermission(watch: {
-  screen(): string
-  set(asking: boolean): void
-  debounceMs?: number
-}) {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let asking = false
-  let ended = false
-  return {
-    changed() {
-      if (ended || timer) return
-      timer = setTimeout(() => {
-        timer = undefined
-        if (ended) return
-        const next = terminalPermissionScreen(watch.screen())
-        if (next !== asking) {
-          asking = next
-          watch.set(next)
-        }
-      }, watch.debounceMs ?? 700)
-      timer.unref?.()
-    },
-    stop() {
-      ended = true
-      if (timer) clearTimeout(timer)
-      timer = undefined
-      if (asking) watch.set(false)
-      asking = false
-    },
-  }
-}
+export { terminalPermissionScreen, watchTerminalPermission } from "./permission-screen.ts"
 
 /** The run's unresolved lead permission request: the event that recorded it and the wait it set. */
 export type PendingApproval = { sequence: number; requestedAt: string; waitSince?: string }
@@ -157,6 +57,21 @@ type Watch = {
   debounceMs?: number
 }
 
+function evaluateApprovalScreen(
+  watch: Watch,
+  request: PendingApproval,
+  now: () => number,
+  schedule: (ms: number) => void,
+): void {
+  const settled = Date.parse(request.requestedAt) + APPROVAL_SETTLE_MS - now()
+  const shown = approvalScreen(watch.screen())
+  if (shown === "asking" && request.waitSince === undefined)
+    watch.set(request.sequence, new Date(now()).toISOString())
+  else if (shown === "working" && request.waitSince !== undefined && settled <= 0)
+    watch.set(request.sequence, undefined)
+  else if (settled > 0) schedule(settled)
+}
+
 /**
  * Watches one Codex run for a permission wait its screen contradicts. `runChanged` is called when the
  * run record changed, `changed` when the agent printed something. A pending request is read when it has
@@ -169,8 +84,12 @@ export function watchApprovalScreen(watch: Watch) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let watched: number | undefined
   let ended = false
-  const later = (ms: number) => {
+  const clearTimer = () => {
     if (timer) clearTimeout(timer)
+    timer = undefined
+  }
+  const later = (ms: number) => {
+    clearTimer()
     timer = setTimeout(read, Math.max(0, ms))
     timer.unref?.()
   }
@@ -182,13 +101,7 @@ export function watchApprovalScreen(watch: Watch) {
       watched = undefined
       return
     }
-    const settled = Date.parse(request.requestedAt) + APPROVAL_SETTLE_MS - now()
-    const shown = approvalScreen(watch.screen())
-    if (shown === "asking" && request.waitSince === undefined)
-      watch.set(request.sequence, new Date(now()).toISOString())
-    else if (shown === "working" && request.waitSince !== undefined && settled <= 0)
-      watch.set(request.sequence, undefined)
-    else if (settled > 0) later(settled)
+    evaluateApprovalScreen(watch, request, now, later)
   }
   return {
     runChanged() {
@@ -196,8 +109,7 @@ export function watchApprovalScreen(watch: Watch) {
       const request = watch.pending()
       if (request?.sequence === watched) return
       watched = request?.sequence
-      if (timer) clearTimeout(timer)
-      timer = undefined
+      clearTimer()
       if (request) later(Date.parse(request.requestedAt) + APPROVAL_SETTLE_MS - now())
     },
     changed() {
@@ -207,8 +119,7 @@ export function watchApprovalScreen(watch: Watch) {
     stop() {
       ended = true
       watched = undefined
-      if (timer) clearTimeout(timer)
-      timer = undefined
+      clearTimer()
     },
   }
 }

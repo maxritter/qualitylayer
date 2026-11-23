@@ -102,6 +102,33 @@ type Watch = {
   debounceMs?: number
 }
 
+function antigravityStartupStillShowing(
+  agent: NativeAgent | undefined,
+  current: StartupPrompt | null,
+  screen: string,
+): boolean {
+  if (!holdsAntigravityStartup(agent ?? "other", current ?? undefined)) return false
+  return !screen || ANTIGRAVITY_PROMPTS.some(([, title]) => screen.includes(title))
+}
+
+function evaluateStartupScreen(
+  watch: Watch,
+  current: StartupPrompt | null,
+  elapsedMs: number,
+): { action: "end" | "keep" | "set"; next?: StartupPrompt | null } {
+  const tookPrompt = watch.done()
+  if (tookPrompt && watch.agent !== "antigravity") return { action: "end" }
+  const screen = screenWords(watch.screen())
+  const next = detect(screen, watch.agent, tookPrompt)
+  if (tookPrompt && next === null) {
+    return antigravityStartupStillShowing(watch.agent, current, screen)
+      ? { action: "keep" }
+      : { action: "end" }
+  }
+  if (next === null && current === null && elapsedMs > STARTUP_WATCH_MS) return { action: "end" }
+  return next === current ? { action: "keep" } : { action: "set", next }
+}
+
 /**
  * Watches one run's screen for its start-up question. `changed` is called when the agent printed
  * something; at most one read follows it, 700 ms later, so a stream of output costs one screen read per
@@ -126,22 +153,12 @@ export function watchStartupPrompt(watch: Watch) {
   const read = () => {
     timer = undefined
     if (ended) return
-    const tookPrompt = watch.done()
-    if (tookPrompt && watch.agent !== "antigravity") return end()
-    const screen = screenWords(watch.screen())
-    const next = detect(screen, watch.agent, tookPrompt)
-    if (tookPrompt && next === null) {
-      if (
-        holdsAntigravityStartup(watch.agent ?? "other", current ?? undefined) &&
-        (!screen || ANTIGRAVITY_PROMPTS.some(([, title]) => screen.includes(title)))
-      )
-        return
-      return end()
+    const verdict = evaluateStartupScreen(watch, current, now() - started)
+    if (verdict.action === "end") end()
+    else if (verdict.action === "set") {
+      current = verdict.next ?? null
+      watch.set(current)
     }
-    if (next === null && current === null && now() - started > STARTUP_WATCH_MS) return end()
-    if (next === current) return
-    current = next
-    watch.set(next)
   }
   return {
     changed() {

@@ -93,46 +93,46 @@ const EXTRA_PROJECTS = [
   { id: "tokens", name: "design-systems/tokens" },
 ]
 
+type MadeTemplate = { project: string; template: LastingArtifact }
+
+function buildLargeOverview(
+  base: ArtifactsOverview,
+  now: number,
+  made: Map<string, MadeTemplate>,
+): ArtifactsOverview {
+  const templates = base.projects
+    .flatMap((project) => project.lasting)
+    .filter((entry): entry is LastingArtifact => !("broken" in entry))
+  const ids = [...LARGE_PROJECTS, ...EXTRA_PROJECTS]
+  const projects = ids.slice(0, 15).map((project): ProjectArtifacts => {
+    const known = base.projects.find((item) => item.id === project.id)
+    const own = known?.lasting ?? []
+    const lasting = lastingOf(project.id, own, templates, 32 + (project.id.length % 5), now)
+    for (const entry of lasting) {
+      if ("broken" in entry || own.includes(entry)) continue
+      const template =
+        templates.find((t) => entry.pages[0]?.file.includes(t.name)) ??
+        (templates[0] as LastingArtifact)
+      made.set(entry.name, { project: project.id, template })
+    }
+    return {
+      id: project.id,
+      name: project.name,
+      lasting,
+      also: known?.also ?? [],
+      personal: known?.personal ?? [],
+      drafts: known?.drafts ?? [],
+    }
+  })
+  return { ...base, projects }
+}
+
 export function largeArtifacts(api: Api, now: number): Partial<Api> {
-  const made = new Map<string, { project: string; template: LastingArtifact }>()
+  const made = new Map<string, MadeTemplate>()
   let kept: ArtifactsOverview | undefined
   const overview = async (): Promise<ArtifactsOverview> => {
-    if (kept === undefined) kept = build(await api.artifactsOverview())
+    if (kept === undefined) kept = buildLargeOverview(await api.artifactsOverview(), now, made)
     return structuredClone(kept)
-  }
-  const build = (base: ArtifactsOverview): ArtifactsOverview => {
-    const templates = base.projects
-      .flatMap((project) => project.lasting)
-      .filter((entry): entry is LastingArtifact => !("broken" in entry))
-    const ids = [...LARGE_PROJECTS, ...EXTRA_PROJECTS]
-    const projects = ids.slice(0, 15).map((project): ProjectArtifacts => {
-      const known = base.projects.find((item) => item.id === project.id)
-      const lasting = lastingOf(
-        project.id,
-        known?.lasting ?? [],
-        templates,
-        32 + (project.id.length % 5),
-        now,
-      )
-      for (const entry of lasting)
-        if (!("broken" in entry) && !(known?.lasting ?? []).includes(entry))
-          made.set(entry.name, {
-            project: project.id,
-            template:
-              templates.find((t) => entry.pages[0]?.file.includes(t.name)) ??
-              (templates[0] as LastingArtifact),
-          })
-      return {
-        id: project.id,
-        name: project.name,
-        lasting,
-        also: known?.also ?? [],
-        personal: known?.personal ?? [],
-        drafts: known?.drafts ?? [],
-      }
-    })
-    // The rows shared with this member come from the collaboration layer, outside this one.
-    return { ...base, projects }
   }
   return {
     artifactsOverview: overview,

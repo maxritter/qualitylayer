@@ -1,150 +1,11 @@
-import { createHash } from "node:crypto"
 import { constants } from "node:fs"
-import { lstat, mkdir, open, readdir, realpath, writeFile } from "node:fs/promises"
+import { lstat, mkdir, open, realpath, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, relative, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { inside, runtimePaths, safe, sha, validatePlan } from "./component-plan.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SOURCE_HEAD = "ae7b6e545098f33fc0255e7b2396d044a2d35301"
-const SOURCE_CATALOG_SHA256 = "f7e52709f845cbe76dc13a3fc56927c41f917a4468aa1a247e647b98741580ab"
-const OMISSION_POLICY_SHA256 = "eb4ba5f8bbabdbc4a66d66a607f1f208087d98b319f1ab17242f2f8bff0a27de"
-const PRIVATE_RUNTIME = [
-  "src/core/licence/",
-  "src/commercial/licensing/",
-  "src/server/ui/",
-  "src/memory-engine/payloads/",
-  "src/memory-embed/assets/",
-]
-const PUBLIC_LICENCE = new Set([
-  "qualitylayer/src/memory-embed/assets/NOTICES.txt",
-  "qualitylayer/src/memory-embed/assets/manifest.json",
-  "qualitylayer/src/memory-embed/assets/vocab.txt",
-  "qualitylayer/src/memory-engine/payloads/NOTICES.txt",
-  "qualitylayer/src/memory-engine/payloads/darwin-arm64.build-info.txt",
-  "qualitylayer/src/memory-engine/payloads/darwin-x64.build-info.txt",
-  "qualitylayer/src/memory-engine/payloads/linux-arm64.build-info.txt",
-  "qualitylayer/src/memory-engine/payloads/linux-x64.build-info.txt",
-  "qualitylayer/src/memory-engine/payloads/manifest.json",
-  "qualitylayer/src/memory-engine/payloads/win32-arm64.build-info.txt",
-  "qualitylayer/src/memory-engine/payloads/win32-x64.build-info.txt",
-  "qualitylayer/src/core/licence/address-policy.ts",
-  "qualitylayer/src/core/licence/mask.ts",
-  "qualitylayer/src/core/licence/workflow.ts",
-])
-const RETIRING = new Set([
-  "qualitylayer/src/core/team/comments.ts",
-  "qualitylayer/src/core/team/own-log.ts",
-  "qualitylayer/src/core/team/people.ts",
-  "qualitylayer/src/core/team/publication.ts",
-  "qualitylayer/src/core/team/shared-text.ts",
-  "qualitylayer/src/core/team/thread-publication.ts",
-  "qualitylayer/src/ui/demo/artifact-feedback.ts",
-])
-const PROFILE_OUTPUTS = new Map([
-  ["component-package.json", "qualitylayer/package.json"],
-  ["component-bun.lock", "qualitylayer/bun.lock"],
-  ["component-tsconfig.json", "qualitylayer/tsconfig.public.json"],
-  ["component-biome.json", "qualitylayer/biome.public.json"],
-])
-const sha = (bytes) => createHash("sha256").update(bytes).digest("hex")
-const safe = (path) =>
-  typeof path === "string" &&
-  !/[\\\0]/.test(path) &&
-  path.split("/").every((p) => p && p !== "." && p !== "..")
-const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value)
-const inside = (root, path) => {
-  const part = relative(root, path)
-  return part && part !== ".." && !part.startsWith("../") && !part.startsWith("/")
-}
-
-function publicPath(path) {
-  if (!safe(path)) return false
-  if (path.startsWith("qualitylayer/src/")) {
-    if (PUBLIC_LICENCE.has(path)) return true
-    return !PRIVATE_RUNTIME.some((prefix) => path.startsWith(`qualitylayer/${prefix}`))
-  }
-  return (
-    ["LICENSE", "CONTRIBUTING.md"].includes(path) ||
-    /^qualitylayer\/scripts\/public\/(?:check-workflow|check-licensing|workflow-assets)\.ts$/.test(
-      path,
-    ) ||
-    /^qualitylayer\/tests\/(?:workflow\/(?:asset-bundle|composition)|licensing-client\/(?:identity|transport))\.test\.ts$/.test(
-      path,
-    ) ||
-    /^qualitylayer\/patches\/@xterm%2F(?:addon-webgl@0\.19\.0|xterm@6\.0\.0)\.patch$/.test(path)
-  )
-}
-
-function validatePlan(plan) {
-  if (plan.schema !== 1 || plan.scope !== "public-workflow-component" || plan.globalReady !== false)
-    throw new Error("Expected an explicit component scope; global publication is unqualified")
-  if (
-    !Array.isArray(plan.files) ||
-    !Array.isArray(plan.profiles) ||
-    !Array.isArray(plan.runtimeOmissions)
-  )
-    throw new Error("Missing exact component membership")
-  if (plan.files.length + plan.runtimeOmissions.length > 10000)
-    throw new Error("Component file-count budget exceeded")
-  if (
-    plan.sourceHead !== SOURCE_HEAD ||
-    plan.catalogSha256 !== SOURCE_CATALOG_SHA256 ||
-    sha(JSON.stringify(plan.runtimeOmissions)) !== OMISSION_POLICY_SHA256
-  )
-    throw new Error(
-      "Runtime omission policy differs from the exact reviewed committed source policy",
-    )
-  const selected = new Set()
-  for (const row of plan.files) {
-    if (
-      "output" in row ||
-      !publicPath(row.path) ||
-      row.visibility !== "public" ||
-      row.responsibility !== "nonlicensing" ||
-      row.review !== "reviewed" ||
-      !digest(row.sha256)
-    )
-      throw new Error(`Unapproved public component input: ${row.path}`)
-    if (
-      row.lifecycle !== "retained" &&
-      !(row.lifecycle === "retirement-pending" && RETIRING.has(row.path))
-    )
-      throw new Error(`Unapproved component lifecycle: ${row.path}`)
-    if (selected.has(row.path)) throw new Error("Duplicate component input")
-    selected.add(row.path)
-  }
-  for (const path of RETIRING)
-    if (!selected.has(path)) throw new Error(`Current public producer omitted: ${path}`)
-  const profiles = new Set()
-  for (const row of plan.profiles) {
-    const name = row.path?.split("/").at(-1)
-    if (
-      row.path !== `qualitylayer/scripts/public/${name}` ||
-      PROFILE_OUTPUTS.get(name) !== row.output ||
-      !digest(row.sha256) ||
-      profiles.has(row.output)
-    )
-      throw new Error("Unapproved contributor data profile")
-    profiles.add(row.output)
-  }
-  if (profiles.size !== PROFILE_OUTPUTS.size)
-    throw new Error("Incomplete contributor data profiles")
-  for (const row of plan.runtimeOmissions) {
-    if (
-      !safe(row.path) ||
-      publicPath(row.path) ||
-      !row.path.startsWith("qualitylayer/src/") ||
-      !["private", "excluded"].includes(row.visibility) ||
-      !["licensing-enforcement", "excluded-data"].includes(row.responsibility) ||
-      row.review !== "reviewed" ||
-      selected.has(row.path)
-    )
-      throw new Error("Invalid private/generated runtime omission")
-    if (selected.has(`omit:${row.path}`)) throw new Error("Duplicate runtime omission")
-    selected.add(`omit:${row.path}`)
-  }
-}
 
 async function regularBytes(root, path) {
   if (!safe(path)) throw new Error("Unsafe input path")
@@ -177,16 +38,18 @@ async function regularBytes(root, path) {
   }
 }
 
-async function runtimePaths(root, path = "qualitylayer/src") {
-  const found = []
-  for (const entry of await readdir(join(root, path), { withFileTypes: true })) {
-    const child = `${path}/${entry.name}`
-    if (entry.isSymbolicLink()) throw new Error("Runtime symlink refused")
-    if (entry.isDirectory()) found.push(...(await runtimePaths(root, child)))
-    else if (entry.isFile()) found.push(child)
-    else throw new Error("Unexpected runtime entry")
+async function inspectRow(canonical, row, state) {
+  try {
+    const bytes = await regularBytes(canonical, row.path)
+    state.total += bytes.length
+    if (state.total > 384 * 1024 * 1024) throw new Error("Component byte budget exceeded")
+    const actual = sha(bytes)
+    if (actual !== row.sha256)
+      state.failures.push({ path: row.path, code: "hash-mismatch", expected: row.sha256, actual })
+    else state.inputs.set(row.output ?? row.path, bytes)
+  } catch (cause) {
+    state.failures.push({ path: row.path, code: "input-refused", reason: cause.message })
   }
-  return found
 }
 
 export async function inspect(root, plan) {
@@ -196,25 +59,11 @@ export async function inspect(root, plan) {
     ...plan.files.map((r) => r.path),
     ...plan.runtimeOmissions.map((r) => r.path),
   ])
-  const failures = []
+  const state = { failures: [], inputs: new Map(), total: 0 }
   for (const path of await runtimePaths(canonical))
-    if (!known.has(path)) failures.push({ path, code: "unlisted-runtime-producer" })
-  const inputs = new Map()
-  let total = 0
-  for (const row of [...plan.files, ...plan.profiles]) {
-    try {
-      const bytes = await regularBytes(canonical, row.path)
-      total += bytes.length
-      if (total > 384 * 1024 * 1024) throw new Error("Component byte budget exceeded")
-      const actual = sha(bytes)
-      if (actual !== row.sha256)
-        failures.push({ path: row.path, code: "hash-mismatch", expected: row.sha256, actual })
-      else inputs.set(row.output ?? row.path, bytes)
-    } catch (cause) {
-      failures.push({ path: row.path, code: "input-refused", reason: cause.message })
-    }
-  }
-  return { canonical, inputs, failures, bytes: total }
+    if (!known.has(path)) state.failures.push({ path, code: "unlisted-runtime-producer" })
+  for (const row of [...plan.files, ...plan.profiles]) await inspectRow(canonical, row, state)
+  return { canonical, inputs: state.inputs, failures: state.failures, bytes: state.total }
 }
 
 async function privateOutput(source, requested) {

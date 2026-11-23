@@ -1,8 +1,3 @@
-import {
-  standaloneAnnotationSnapshot,
-  standaloneAnnotationStatus,
-  upgradeStandaloneAnnotations,
-} from "../core/artifact/annotation-upgrade.ts"
 import { readAnswerAsset } from "../core/records/answer-assets.ts"
 import { archiveRecords, readArchiveAsset, readArchiveRecord } from "../core/records/archive.ts"
 import {
@@ -19,78 +14,117 @@ import {
 } from "../core/records/owner.ts"
 import { readItemAnswers } from "../core/task/item-answer-store.ts"
 import type { Ctx } from "../ctx.ts"
+import {
+  attachmentResponse,
+  RECORD_HEADERS,
+  standaloneRecordRoute,
+} from "./runtime-records-standalone.ts"
 
 export type RuntimeRecordAddress =
   | { scope: "task"; id: string }
   | { scope: "artifact"; id: string; file: string }
 
-const headers = {
-  "cache-control": "no-store",
-  "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'; sandbox",
-}
-
-async function recordOwner(ctx: Ctx, address: RuntimeRecordAddress): Promise<RecordOwner> {
-  let projectId: string
-  let slug: string | undefined
+function parseAddressOwner(address: RuntimeRecordAddress): { projectId: string; slug?: string } {
   if (address.scope === "task") {
     const [id, task, extra] = address.id.split("~")
     if (!token(id) || !token(task) || extra !== undefined)
       throw new Error("Invalid private task owner")
-    projectId = id
-    slug = task
-  } else {
-    if (!token(address.id)) throw new Error("Invalid private artifact project")
-    projectId = address.id
+    return { projectId: id, slug: task }
   }
+  if (!token(address.id)) throw new Error("Invalid private artifact project")
+  return { projectId: address.id }
+}
+
+async function tryOwner(
+  ctx: Ctx,
+  address: RuntimeRecordAddress,
+  owner: RecordOwner,
+): Promise<RecordOwner | null> {
+  try {
+    await validateRecordOwner(ctx, owner)
+    if (address.scope === "artifact") await currentRecordState(ctx, owner)
+    return owner
+  } catch (cause) {
+    const code = (cause as { code?: string }).code
+    if (code !== "ENOENT" && address.scope === "artifact") throw cause
+    return null
+  }
+}
+
+async function recordOwner(ctx: Ctx, address: RuntimeRecordAddress): Promise<RecordOwner> {
+  const { projectId, slug } = parseAddressOwner(address)
+  const layouts = address.scope === "task" ? [undefined] : ARTIFACT_RECORD_LAYOUTS
   for (const root of await registeredRecordRoots(ctx, projectId)) {
-    const layouts = address.scope === "task" ? [undefined] : ARTIFACT_RECORD_LAYOUTS
     for (const storage of layouts) {
-      const owner = deriveRecordOwner(
+      const candidate = deriveRecordOwner(
         ctx.home,
         address.scope === "task"
           ? { kind: "task", projectId, root, slug: slug as string }
           : { kind: "artifact", projectId, root, file: address.file, storage },
       )
-      try {
-        await validateRecordOwner(ctx, owner)
-        if (address.scope === "artifact") await currentRecordState(ctx, owner)
-        return owner
-      } catch (cause) {
-        const code = (cause as { code?: string }).code
-        if (code !== "ENOENT" && address.scope === "artifact") throw cause
-      }
+      const matched = await tryOwner(ctx, address, candidate)
+      if (matched) return matched
     }
   }
   throw new Error("This private record has no live registered owner")
 }
 
 async function recordResponse(ctx: Ctx, owner: RecordOwner, entry?: string, asset?: string) {
-  if (entry === undefined)
+  if (entry === undefined) {
     return Response.json(
       { id: ANNOTATION_ARCHIVE, entries: await archiveRecords(ctx, owner) },
-      { headers },
+      { headers: RECORD_HEADERS },
     )
-  if (asset === undefined)
+  }
+  if (asset === undefined) {
     return new Response(await readArchiveRecord(ctx, owner, entry), {
-      headers: { ...headers, "content-type": "application/json; charset=utf-8" },
+      headers: { ...RECORD_HEADERS, "content-type": "application/json; charset=utf-8" },
     })
-  const file = await readArchiveAsset(ctx, owner, entry, asset)
-  return attachmentResponse(file)
+  }
+  return attachmentResponse(await readArchiveAsset(ctx, owner, entry, asset))
 }
 
-function attachmentResponse(file: { name: string; bytes: Uint8Array }) {
-  const name = encodeURIComponent(file.name).replace(
-    /[!'()*]/g,
-    (char) => `%${char.charCodeAt(0).toString(16)}`,
+async function itemAnswerAttachmentResponse(
+  ctx: Ctx,
+  address: RuntimeRecordAddress,
+  owner: RecordOwner,
+  entry: string | undefined,
+  asset: string | undefined,
+): Promise<Response> {
+  if (address.scope !== "task") throw new Error("Item attachments belong to a task")
+  const answer = (await readItemAnswers(ctx, owner)).find((row) => row.record.id === entry)
+  const reference = answer?.attachments?.find(
+    (file) => file.ref.entry === entry && file.ref.asset === asset,
   )
-  return new Response(new Uint8Array(file.bytes).buffer, {
-    headers: {
-      ...headers,
-      "content-type": "application/octet-stream",
-      "content-disposition": `attachment; filename*=UTF-8''${name}`,
-    },
-  })
+  if (!reference) throw new Error("Unknown retained answer attachment")
+  return attachmentResponse(await readAnswerAsset(ctx, owner, reference))
+}
+
+function isValidRecordRef(parts: readonly string[], currentAnswer: boolean): boolean {
+  const entry = parts[1]
+  const asset = parts[3]
+  if (!currentAnswer && parts.length === 1) return true
+  if (!currentAnswer && parts.length === 2 && token(entry)) return true
+  return parts.length === 4 && token(entry) && parts[2] === "assets" && token(asset)
+}
+
+async function serveReadRecord(
+  ctx: Ctx,
+  address: RuntimeRecordAddress,
+  parts: readonly string[],
+  currentAnswer: boolean,
+): Promise<Response> {
+  try {
+    const owner = await recordOwner(ctx, address)
+    if (currentAnswer)
+      return await itemAnswerAttachmentResponse(ctx, address, owner, parts[1], parts[3])
+    return await recordResponse(ctx, owner, parts[1], parts[3])
+  } catch {
+    return new Response("This private record is unavailable", {
+      status: 404,
+      headers: RECORD_HEADERS,
+    })
+  }
 }
 
 /** Registered opaque references only; historical content has no action or executable response. */
@@ -105,87 +139,13 @@ export async function runtimeRecordRoute(
     parts[0] === ANNOTATION_ARCHIVE &&
     ["status", "upgrade", "snapshots"].includes(parts[1] ?? "")
   )
-    return standaloneRoute(ctx, address, parts, method)
-  if (method !== "GET") return new Response("Read-only record", { status: 405, headers })
+    return standaloneRecordRoute(ctx, address, parts, method)
+  if (method !== "GET")
+    return new Response("Read-only record", { status: 405, headers: RECORD_HEADERS })
   const currentAnswer = parts[0] === "item-answers-v1"
   if (parts[0] !== ANNOTATION_ARCHIVE && !currentAnswer)
-    return new Response("Unknown record", { status: 404, headers })
-  const entry = parts[1]
-  const asset = parts[3]
-  const index = !currentAnswer && parts.length === 1
-  const record = !currentAnswer && parts.length === 2 && token(entry)
-  const attachment = parts.length === 4 && token(entry) && parts[2] === "assets" && token(asset)
-  if (!index && !record && !attachment)
-    return new Response("Unknown record reference", { status: 404, headers })
-  try {
-    const owner = await recordOwner(ctx, address)
-    if (currentAnswer) {
-      if (address.scope !== "task") throw new Error("Item attachments belong to a task")
-      const answer = (await readItemAnswers(ctx, owner)).find((row) => row.record.id === entry)
-      const reference = answer?.attachments?.find(
-        (file) => file.ref.entry === entry && file.ref.asset === asset,
-      )
-      if (!reference) throw new Error("Unknown retained answer attachment")
-      return attachmentResponse(await readAnswerAsset(ctx, owner, reference))
-    }
-    return await recordResponse(ctx, owner, entry, asset)
-  } catch {
-    return new Response("This private record is unavailable", { status: 404, headers })
-  }
-}
-
-async function standaloneRoute(
-  ctx: Ctx,
-  address: Extract<RuntimeRecordAddress, { scope: "artifact" }>,
-  parts: readonly string[],
-  method: string,
-) {
-  const action = parts[1]
-  const status = parts.length === 2 && action === "status" && method === "GET"
-  const upgrade = parts.length === 2 && action === "upgrade" && method === "POST"
-  const snapshot = parts[2]
-  const entry = parts[3]
-  const asset = parts[5]
-  const evidence =
-    action === "snapshots" &&
-    method === "GET" &&
-    token(snapshot) &&
-    token(entry) &&
-    (parts.length === 4 || (parts.length === 6 && parts[4] === "assets" && token(asset)))
-  if (!status && !upgrade && !evidence)
-    return new Response("Unknown standalone record action", { status: 405, headers })
-  try {
-    if (status)
-      return Response.json(await standaloneAnnotationStatus(ctx, address.id, address.file), {
-        headers,
-      })
-    if (upgrade)
-      return Response.json(await upgradeStandaloneAnnotations(ctx, address.id, address.file), {
-        headers,
-      })
-    const value = await standaloneAnnotationSnapshot(
-      ctx,
-      { projectId: address.id, file: address.file },
-      { snapshot: snapshot as string, entry: entry as string, asset: asset },
-    )
-    return typeof value === "string"
-      ? new Response(value, {
-          headers: { ...headers, "content-type": "application/json; charset=utf-8" },
-        })
-      : attachmentResponse(value)
-  } catch (cause) {
-    return status || upgrade
-      ? Response.json(
-          {
-            state: "preserved",
-            reason:
-              (cause as { code?: string }).code === "artifact_alias_conflict"
-                ? "conflict"
-                : "fault",
-            snapshots: [],
-          },
-          { status: 409, headers },
-        )
-      : new Response("This standalone record is unavailable", { status: 409, headers })
-  }
+    return new Response("Unknown record", { status: 404, headers: RECORD_HEADERS })
+  if (!isValidRecordRef(parts, currentAnswer))
+    return new Response("Unknown record reference", { status: 404, headers: RECORD_HEADERS })
+  return serveReadRecord(ctx, address, parts, currentAnswer)
 }

@@ -13,39 +13,11 @@ const COMMIT = /^(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,12}$|^[0-9a-f]{40}$
 const PATH = /^[\w@.+~/\-[\]()]+$/
 
 /** Extensions of files agents name that the marks do not have a kind for. */
-const EXTENSIONS = new Set([
-  "txt",
-  "go",
-  "java",
-  "kt",
-  "kts",
-  "rb",
-  "php",
-  "c",
-  "h",
-  "cc",
-  "cpp",
-  "hpp",
-  "cs",
-  "swift",
-  "sql",
-  "toml",
-  "xml",
-  "csv",
-  "tsv",
-  "ini",
-  "cfg",
-  "conf",
-  "gradle",
-  "vue",
-  "svelte",
-  "astro",
-  "tf",
-  "proto",
-  "graphql",
-  "gql",
-  "pdf",
-])
+const EXTENSIONS = new Set(
+  "txt go java kt kts rb php c h cc cpp hpp cs swift sql toml xml csv tsv ini cfg conf gradle vue svelte astro tf proto graphql gql pdf".split(
+    " ",
+  ),
+)
 
 /** `src/a.ts:42` and `src/a.ts:42:7`: the file, and the line when one is named. */
 const LINE = /^(.+?):(\d+)(?::\d+)?$/

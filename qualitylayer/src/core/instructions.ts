@@ -32,6 +32,18 @@ const EARLIER_HEADINGS: Record<string, FlowStepId> = {
 /** Where the person's file was kept as it was before its headings were renamed. */
 export const INSTRUCTIONS_BACKUP = "instructions.seven-steps.md"
 
+function nextFenceState(
+  fence: string | null,
+  line: string,
+): { next: string | null; inside: boolean } {
+  const marker = FENCE.exec(line)?.[1]
+  if (fence !== null) {
+    const closes = marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length
+    return { next: closes ? null : fence, inside: true }
+  }
+  return marker !== undefined ? { next: marker, inside: true } : { next: null, inside: false }
+}
+
 /**
  * The text with each `## ` heading of an earlier step renamed to the step it now belongs to
  * (`## Discuss` and `## Research` to `## Plan`, `## Outline` to `## Implement`, `## Review` to
@@ -42,17 +54,9 @@ export function withThreeStepHeadings(text: string): string {
   const lines = text.split("\n")
   let changed = false
   for (const [at, line] of lines.entries()) {
-    const marker = FENCE.exec(line)?.[1]
-    if (fence !== null) {
-      if (marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length)
-        fence = null
-      continue
-    }
-    if (marker !== undefined) {
-      fence = marker
-      continue
-    }
-    if (!line.startsWith("## ")) continue
+    const state = nextFenceState(fence, line)
+    fence = state.next
+    if (state.inside || !line.startsWith("## ")) continue
     const step = EARLIER_HEADINGS[trimEndCharacters(line.slice(3), " \r").toLowerCase()]
     if (step === undefined) continue
     const label = FLOW_STEPS.find((s) => s.id === step)?.label ?? step
@@ -135,16 +139,14 @@ export async function saveInstructions(
 /** The team's copy fetched earlier (`team-instructions.json`); null when missing or not valid. */
 export async function readTeamCopy(ctx: Ctx): Promise<InstructionsSource | null> {
   try {
-    const copy: unknown = JSON.parse(
+    const copy = JSON.parse(
       await ctx.fs.readFile(join(ctx.home, "team-instructions.json")),
-    )
-    if (typeof copy !== "object" || copy === null) return null
-    const { text, by, updated } = copy as Record<string, unknown>
-    if (typeof text !== "string") return null
+    ) as Record<string, unknown> | null
+    if (typeof copy?.text !== "string") return null
     return {
-      text,
-      by: typeof by === "string" && by !== "" ? by : "your team",
-      updated: typeof updated === "number" && Number.isFinite(updated) ? updated : 0,
+      text: copy.text,
+      by: typeof copy.by === "string" && copy.by !== "" ? copy.by : "your team",
+      updated: typeof copy.updated === "number" && Number.isFinite(copy.updated) ? copy.updated : 0,
     }
   } catch {
     return null
@@ -174,13 +176,9 @@ export function forStep(text: string, step: FlowStepId | null): string {
   let keep = true
   let fence: string | null = null
   for (const line of lines) {
-    const marker = FENCE.exec(line)?.[1]
-    if (fence !== null) {
-      if (marker !== undefined && marker[0] === fence[0] && marker.length >= fence.length)
-        fence = null
-    } else if (marker !== undefined) {
-      fence = marker
-    } else if (line.startsWith("## ")) {
+    const state = nextFenceState(fence, line)
+    fence = state.next
+    if (!state.inside && line.startsWith("## ")) {
       const named = stepHeading(line)
       keep = named === null || named === step
     }
@@ -215,15 +213,16 @@ export async function instructionsSection(
 /** The block for one step; null when neither file has text for it. */
 export async function instructionsBlock(ctx: Ctx, step: FlowStepId | null): Promise<string | null> {
   const [team, personal] = await Promise.all([readTeamCopy(ctx), readPersonal(ctx)])
-  const teamText = team === null ? "" : forStep(team.text, step)
-  const ownText = personal === null ? "" : forStep(personal.text, step)
-  if (teamText === "" && ownText === "") return null
-  return [
+  const teamText = team ? forStep(team.text, step) : ""
+  const ownText = personal ? forStep(personal.text, step) : ""
+  if (!teamText && !ownText) return null
+  const sections = [
     "## Your team's and your own instructions",
     "Follow these in this step, as you follow the repository's own rules. QualityLayer's gates, approvals and the rules above still apply: where a line below conflicts with them, they win. Where the team's and your own instructions disagree, the team's win. Never copy these instructions into a task document or the chat.",
-    ...(team !== null && teamText !== ""
-      ? [`### From your team (${changed(team.by ?? "your team", team.updated)})`, teamText]
-      : []),
-    ...(ownText !== "" ? ["### Your own", ownText] : []),
-  ].join("\n\n")
+  ]
+  if (team && teamText) {
+    sections.push(`### From your team (${changed(team.by ?? "your team", team.updated)})`, teamText)
+  }
+  if (ownText) sections.push("### Your own", ownText)
+  return sections.join("\n\n")
 }

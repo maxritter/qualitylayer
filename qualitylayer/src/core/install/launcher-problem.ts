@@ -18,17 +18,19 @@ export type LauncherProblem = {
 
 const file = (ctx: Ctx) => join(ctx.home, "launcher-problem.json")
 
+function isLauncherProblem(note: Partial<LauncherProblem> | null): note is LauncherProblem {
+  if (!note || typeof note.day !== "number" || typeof note.at !== "number") return false
+  return (
+    typeof note.reason === "string" &&
+    typeof note.path === "string" &&
+    typeof note.call === "string"
+  )
+}
+
 export async function readLauncherProblem(ctx: Ctx): Promise<LauncherProblem | null> {
   try {
     const note = JSON.parse(await ctx.fs.readFile(file(ctx))) as Partial<LauncherProblem> | null
-    if (
-      typeof note?.day !== "number" ||
-      typeof note.at !== "number" ||
-      typeof note.reason !== "string" ||
-      typeof note.path !== "string" ||
-      typeof note.call !== "string"
-    )
-      return null
+    if (!isLauncherProblem(note)) return null
     return { day: note.day, at: note.at, reason: note.reason, path: note.path, call: note.call }
   } catch {
     return null

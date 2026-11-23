@@ -36,6 +36,30 @@ const fenceOf = (line: string): string | null => /^\s*(`{3,}|~{3,})/.exec(line)?
 
 export type LeftoverSlot = { line: number; text: string; heading: string }
 
+function closesFence(open: string, marker: string | null, line: string): boolean {
+  return (
+    marker !== null &&
+    marker[0] === open[0] &&
+    marker.length >= open.length &&
+    line.trim() === marker
+  )
+}
+
+type SectionSlotState = { heading: string; fills: LeftoverSlot[]; written: boolean }
+
+function recordProseLine(
+  line: string,
+  lineNo: number,
+  section: SectionSlotState,
+  optional: LeftoverSlot[],
+): void {
+  const slot = slotHeading(line)
+  if (slot !== undefined) optional.push({ line: lineNo, text: line, heading: slot })
+  else if (FILL_LINE.test(line))
+    section.fills.push({ line: lineNo, text: line, heading: section.heading })
+  else if (line.trim() !== "" && !line.trim().startsWith("<!--")) section.written = true
+}
+
 /**
  * Placeholder comments whose `## heading` exists in the document, and fill comments standing alone
  * in a section that holds written content (outside code fences).
@@ -46,7 +70,7 @@ export function leftoverSlots(markdown: string): LeftoverSlot[] {
   const optional: LeftoverSlot[] = []
   const fills: LeftoverSlot[] = []
   // The fill comments of the section being read, and whether it holds anything else.
-  let section = { heading: "", fills: [] as LeftoverSlot[], written: false }
+  let section: SectionSlotState = { heading: "", fills: [], written: false }
   const closeSection = () => {
     if (section.written) fills.push(...section.fills)
   }
@@ -57,13 +81,7 @@ export function leftoverSlots(markdown: string): LeftoverSlot[] {
     const line = raw.trimEnd()
     const marker = fenceOf(line)
     if (open !== null) {
-      if (
-        marker !== null &&
-        marker[0] === open[0] &&
-        marker.length >= open.length &&
-        line.trim() === marker
-      )
-        open = null
+      if (closesFence(open, marker, line)) open = null
       section.written = true
       return
     }
@@ -79,11 +97,7 @@ export function leftoverSlots(markdown: string): LeftoverSlot[] {
       if (line.startsWith("## ")) headings.add(top.trim())
       return
     }
-    const slot = slotHeading(line)
-    if (slot !== undefined) optional.push({ line: index + 1, text: line, heading: slot })
-    else if (FILL_LINE.test(line))
-      section.fills.push({ line: index + 1, text: line, heading: section.heading })
-    else if (line.trim() !== "" && !line.trim().startsWith("<!--")) section.written = true
+    recordProseLine(line, index + 1, section, optional)
   })
   closeSection()
   // An optional section's placeholder is left over once its heading exists anywhere in the document.

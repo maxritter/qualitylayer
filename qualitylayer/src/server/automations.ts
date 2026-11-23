@@ -3,33 +3,25 @@
 // routes of Settings › Automations. Those routes sit behind the server's guard; reading is for every
 // paired browser, changing only for the key or a browser the App opened (a watch-only one gets 403).
 
-import { randomBytes } from "node:crypto"
-import { PUBLIC_EVENTS } from "../core/automations/events.ts"
-import { type DeliveryLine, isTestLine, readDeliveries } from "../core/automations/log.ts"
-import { dropQueuedFor, readQueue, wakeSender } from "../core/automations/queue.ts"
+import { wakeSender } from "../core/automations/queue.ts"
+import { automationsWaiting, startAutomationSender } from "../core/automations/sender.ts"
+import type { Ctx } from "../ctx.ts"
 import {
-  automationsWaiting,
-  RETRY_DELAYS_MS,
-  sendTest,
-  startAutomationSender,
-} from "../core/automations/sender.ts"
-import {
-  type Automation,
-  type AutomationChange,
-  type AutomationKind,
-  addAutomation,
-  changeAutomation,
-  checkTarget,
-  findAutomation,
-  type KnownProject,
-  knownProjects,
-  readAutomations,
-  removeAutomation,
-  resolveProjects,
-  shownAutomation,
-} from "../core/automations/store.ts"
-import { type Ctx, err, ok, type Result } from "../ctx.ts"
+  addAutomationRoute,
+  automationReply,
+  changeAutomationRoute,
+  removeAutomationRoute,
+  secretAutomationRoute,
+  testAutomationRoute,
+  testDraftAutomationRoute,
+} from "./automations-mutations.ts"
+import { automationDeliveriesOf, automationsViewOf } from "./automations-views.ts"
 
+export type {
+  AutomationsReply,
+  AutomationView,
+  DeliveryView,
+} from "./automations-views.ts"
 export { automationsWaiting }
 
 /** Start sending queued events; returns the way to stop, as the server's other starts do. */
@@ -37,341 +29,54 @@ export function startAutomations(ctx: Ctx): () => void {
   return startAutomationSender(ctx)
 }
 
-/** The newest try of an automation: when, what came back, and whether it counts as delivered. */
-export type LastTry = { at: number; result: string; ok: boolean; event: string | null }
-
-/** An automation as the page shows it: the secret masked, its last try, and why it is failing. */
-export type AutomationView = Omit<Automation, "secret"> & {
-  /** The signing secret, masked; a command has none. */
-  secret?: string
-  last: LastTry | null
-  /** "Failing since 09:12 · 503 · next try in 4 min" while its newest tries failed; else null. */
-  failing: string | null
-}
-
-export type AutomationsReply = {
-  automations: AutomationView[]
-  /** The public events, in the docs' order. */
-  events: string[]
-  /** The projects registered on this computer. */
-  projects: KnownProject[]
-  /** Why the automations file cannot be used, when it cannot. */
-  problem?: string
-}
-
-/** One try as the Recent deliveries list shows it. */
-export type DeliveryView = {
-  at: number
-  /** The event's name; empty for a failure that belongs to no event. */
-  event: string
-  /** The receiver: a URL's host, a command's file name. */
-  to: string
-  ok: boolean
-  /** The result with its try: `503 · try 3 of 6`, `exit 1 · given up`. */
-  text: string
-  automation: string | null
-}
-
-/** How many tries the list shows. */
-const RECENT = 10
-const MAX_BODY = 64 * 1024
-
-/** A try that went through: a 2xx answer, or a command that exited 0. */
-const delivered = (result: string): boolean => /^2\d\d$/.test(result) || result === "exit 0"
-
-const headers = { "cache-control": "no-store" }
-
-const reply = (data: object, status = 200): Response =>
-  Response.json({ ok: true, ...data }, { status, headers })
-
-function refuse(error: { code: string; message: string }): Response {
-  return Response.json(
-    { ok: false, error: { code: error.code, message: error.message } },
-    { status: error.code === "bad_args" ? 400 : 500, headers },
-  )
-}
-
-const refuseWith = (code: string, message: string) => refuse({ code, message })
-
-/** Today's tries by the clock, older ones with their day: the page's own words for a time. */
-function when(at: number, now: number): string {
-  const date = new Date(at)
-  const clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
-  const today = new Date(now)
-  return date.toDateString() === today.toDateString()
-    ? clock
-    : `${date.toLocaleDateString([], { month: "short", day: "numeric" })} ${clock}`
-}
-
-function inWords(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000))
-  return minutes < 120 ? `${minutes} min` : `${Math.round(minutes / 60)} h`
-}
-
-/** The receiver of a delivery, short: a URL's host, a command's file. */
-function receiverOf(automation: Automation | undefined): string {
-  if (automation === undefined) return "a removed automation"
-  if (automation.kind === "url") {
-    try {
-      return new URL(automation.target).host
-    } catch {
-      return automation.target
-    }
-  }
-  const [first = automation.target] = automation.target.trim().split(/\s+/)
-  return first.split(/[\\/]/).at(-1) || first
-}
-
-/** The tries of each automation, oldest first, each with its place among the tries of its event. */
-function withTryNumbers(lines: DeliveryLine[]): { line: DeliveryLine; attempt: number }[] {
-  const counted = new Map<string, number>()
-  return lines.map((line) => {
-    const key = `${line.automation}|${line.event}`
-    const attempt = (counted.get(key) ?? 0) + 1
-    counted.set(key, attempt)
-    return { line, attempt }
-  })
-}
-
-function textOf(kind: AutomationKind | null, line: DeliveryLine, attempt: number): string {
-  // A test send is one try: it has no place among retries and nothing to give up.
-  if (delivered(line.result) || isTestLine(line)) return line.result
-  if (kind === "command") return line.gaveUp ? `${line.result} · given up` : line.result
-  if (!line.gaveUp) return `${line.result} · try ${attempt} of ${RETRY_DELAYS_MS.length + 1}`
-  return attempt >= RETRY_DELAYS_MS.length + 1
-    ? `${line.result} · try ${attempt} of ${RETRY_DELAYS_MS.length + 1}, given up`
-    : `${line.result} · given up`
-}
-
-/**
- * Why an automation is failing, or null: its newest try went through, or it is off. Only deliveries
- * of the person's events count: a test send, passed or failed, says nothing about them.
- */
-function failingOf(
-  automation: Automation,
-  all: DeliveryLine[],
-  nextAt: number | null,
-  now: number,
-): string | null {
-  const tries = all.filter((line) => !isTestLine(line))
-  const newest = tries.at(-1)
-  if (!automation.on || newest === undefined || delivered(newest.result)) return null
-  let since = newest
-  for (const line of tries.toReversed()) {
-    if (delivered(line.result)) break
-    since = line
-  }
-  const next =
-    nextAt !== null && !newest.gaveUp
-      ? ` · next try in ${inWords(nextAt - now)}`
-      : newest.gaveUp
-        ? " · given up"
-        : ""
-  return `Failing since ${when(since.at, now)} · ${newest.result}${next}`
-}
-
-async function viewOf(ctx: Ctx): Promise<AutomationsReply> {
-  const { automations, problem } = await readAutomations(ctx)
-  const lines = await readDeliveries(ctx)
-  const queue = await readQueue(ctx)
-  const now = ctx.clock.now()
-  return {
-    automations: automations.map((automation) => {
-      const tries = lines.filter((line) => line.automation === automation.id)
-      const newest = tries.at(-1)
-      const waits = queue.filter((entry) => entry.automation === automation.id)
-      const nextAt = waits.length === 0 ? null : Math.min(...waits.map((entry) => entry.next))
-      return {
-        ...shownAutomation(automation),
-        last:
-          newest === undefined
-            ? null
-            : {
-                at: newest.at,
-                result: newest.result,
-                ok: delivered(newest.result),
-                event: newest.name,
-              },
-        failing: failingOf(automation, tries, nextAt, now),
-      }
-    }),
-    events: [...PUBLIC_EVENTS],
-    projects: await knownProjects(ctx),
-    ...(problem !== null ? { problem } : {}),
-  }
-}
-
-async function oneView(ctx: Ctx, id: string): Promise<AutomationView | null> {
-  return (await viewOf(ctx)).automations.find((automation) => automation.id === id) ?? null
-}
-
-async function deliveriesOf(ctx: Ctx, only: string | null): Promise<DeliveryView[]> {
-  const { automations } = await readAutomations(ctx)
-  const numbered = withTryNumbers(await readDeliveries(ctx))
-  return numbered
-    .filter(({ line }) => only === null || line.automation === only)
-    .slice(-RECENT)
-    .toReversed()
-    .map(({ line, attempt }) => {
-      const automation = automations.find((candidate) => candidate.id === line.automation)
-      return {
-        at: line.at,
-        event: line.name ?? "",
-        to: line.automation === null ? "this computer" : receiverOf(automation),
-        ok: delivered(line.result),
-        text: textOf(automation?.kind ?? null, line, attempt),
-        automation: line.automation,
-      }
-    })
-}
-
-type Body = Record<string, unknown>
-
-async function bodyOf(request: Request): Promise<Result<Body>> {
-  const declared = Number(request.headers.get("content-length") ?? 0)
-  if (declared > MAX_BODY)
-    return err({ code: "bad_args", message: "That request is too large for an automation." })
-  try {
-    const text = await request.text()
-    if (text.length > MAX_BODY)
-      return err({ code: "bad_args", message: "That request is too large for an automation." })
-    const parsed: unknown = text.trim() === "" ? {} : JSON.parse(text)
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? ok(parsed as Body)
-      : err({ code: "bad_args", message: "The request should be a JSON object." })
-  } catch {
-    return err({ code: "bad_args", message: "The request is not valid JSON." })
-  }
-}
-
-const kindOf = (value: unknown): AutomationKind | null =>
-  value === "url" || value === "command" ? value : null
-
-/** The projects a request names (ids or names), as ids; "all" stays "all"; absent stays absent. */
-async function projectsOf(ctx: Ctx, value: unknown): Promise<Result<"all" | string[] | undefined>> {
-  if (value === undefined || value === "all") return ok(value)
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string"))
-    return err({
-      code: "bad_args",
-      message: 'Name at least one project, or "all" for every project on this computer.',
-    })
-  return resolveProjects(ctx, value as string[])
-}
-
-/** The events a request names; the store checks the names. */
-const eventsOf = (value: unknown): "all" | string[] | undefined =>
-  value === undefined || value === "all" ? (value as undefined | "all") : (value as string[])
-
-async function add(ctx: Ctx, request: Request): Promise<Response> {
-  const body = await bodyOf(request)
-  if (!body.ok) return refuse(body.error)
-  const kind = kindOf(body.data.kind)
-  if (kind === null) return refuseWith("bad_args", "An automation is a url or a command.")
-  const projects = await projectsOf(ctx, body.data.projects)
-  if (!projects.ok) return refuse(projects.error)
-  const added = await addAutomation(ctx, {
-    kind,
-    target: body.data.target as string,
-    ...(body.data.events !== undefined ? { events: eventsOf(body.data.events) } : {}),
-    ...(projects.data !== undefined ? { projects: projects.data } : {}),
-    ...(typeof body.data.secret === "string" ? { secret: body.data.secret } : {}),
-  })
-  if (!added.ok) return refuse(added.error)
-  return reply({ automation: await oneView(ctx, added.data.id) })
-}
-
-async function change(ctx: Ctx, id: string, request: Request): Promise<Response> {
-  const body = await bodyOf(request)
-  if (!body.ok) return refuse(body.error)
-  const found = await findAutomation(ctx, id)
-  if (!found.ok) return refuse(found.error)
-  const kind = kindOf(body.data.kind) ?? found.data.kind
-  if (body.data.kind !== undefined && kindOf(body.data.kind) === null)
-    return refuseWith("bad_args", "An automation is a url or a command.")
-  if (kind !== found.data.kind && body.data.target === undefined)
-    return refuseWith(
-      "bad_args",
-      kind === "url" ? "Give the URL to send to." : "Give the command to run.",
-    )
-  const projects = await projectsOf(ctx, body.data.projects)
-  if (!projects.ok) return refuse(projects.error)
-  const patch: AutomationChange = {
-    ...(body.data.target !== undefined
-      ? { target: { kind, target: String(body.data.target) } }
-      : {}),
-    ...(body.data.events !== undefined ? { events: eventsOf(body.data.events) } : {}),
-    ...(projects.data !== undefined ? { projects: projects.data } : {}),
-    ...(typeof body.data.on === "boolean" ? { on: body.data.on } : {}),
-  }
-  const changed = await changeAutomation(ctx, id, patch)
-  if (!changed.ok) return refuse(changed.error)
-  if (!changed.data.automation.on) await dropQueuedFor(ctx, id)
-  return reply({ automation: await oneView(ctx, id) })
-}
-
-async function remove(ctx: Ctx, id: string): Promise<Response> {
-  const removed = await removeAutomation(ctx, id)
-  if (!removed.ok) return refuse(removed.error)
-  await dropQueuedFor(ctx, id)
-  return reply({ removed: id })
-}
-
-const testReply = (sent: Awaited<ReturnType<typeof sendTest>>): Response =>
-  reply({
-    event: sent.event,
-    delivery: sent.id,
-    result: sent.result,
-    delivered: sent.delivered,
-    ...(sent.output !== undefined ? { output: sent.output } : {}),
-  })
-
-async function test(ctx: Ctx, id: string): Promise<Response> {
-  const found = await findAutomation(ctx, id)
-  if (!found.ok) return refuse(found.error)
-  return testReply(await sendTest(ctx, found.data))
-}
-
-/** The form's test: a target that is not saved yet gets the sample event, and nothing is stored or logged. */
-async function testDraft(ctx: Ctx, request: Request): Promise<Response> {
-  const body = await bodyOf(request)
-  if (!body.ok) return refuse(body.error)
-  const kind = kindOf(body.data.kind)
-  if (kind === null) return refuseWith("bad_args", "An automation is a url or a command.")
-  const target = checkTarget(kind, body.data.target)
-  if (!target.ok) return refuse(target.error)
-  // The projects the form has chosen so far say where a command is tested.
-  const projects = await projectsOf(ctx, body.data.projects)
-  if (!projects.ok) return refuse(projects.error)
-  const draft: Automation = {
-    id: "au_00000000",
-    kind,
-    target: target.data,
-    events: "all",
-    projects: projects.data ?? "all",
-    on: true,
-    ...(kind === "url"
-      ? {
-          secret:
-            typeof body.data.secret === "string" && body.data.secret !== ""
-              ? body.data.secret
-              : randomBytes(32).toString("hex"),
-        }
-      : {}),
-    created: ctx.clock.now(),
-  }
-  return testReply(await sendTest(ctx, draft, { log: false }))
-}
-
-async function secret(ctx: Ctx, id: string): Promise<Response> {
-  const found = await findAutomation(ctx, id)
-  if (!found.ok) return refuse(found.error)
-  if (found.data.secret === undefined)
-    return refuseWith("bad_args", `${id} runs a command: a command has no signing secret.`)
-  return reply({ id, secret: found.data.secret })
-}
-
 const ID = "([^/]+)"
 const FIXED = new Set(["test", "deliveries", "flush"])
+
+function readOnlyAutomationRoute(ctx: Ctx, url: URL, method: string): Promise<Response> | null {
+  if (url.pathname === "/api/automations/flush" && method === "POST") {
+    wakeSender()
+    return Promise.resolve(Response.json({ ok: true }))
+  }
+  if (url.pathname === "/api/automations" && method === "GET")
+    return automationsViewOf(ctx).then((view) => automationReply(view))
+  if (url.pathname === "/api/automations/deliveries" && method === "GET")
+    return automationDeliveriesOf(ctx, url.searchParams.get("automation")).then((deliveries) =>
+      automationReply({ deliveries }),
+    )
+  return null
+}
+
+const ITEM_HANDLERS: Record<string, (ctx: Ctx, id: string, request: Request) => Promise<Response>> =
+  {
+    "PUT:": (ctx, id, request) => changeAutomationRoute(ctx, id, request),
+    "DELETE:": (ctx, id) => removeAutomationRoute(ctx, id),
+    "POST:test": (ctx, id) => testAutomationRoute(ctx, id),
+    "GET:secret": (ctx, id) => secretAutomationRoute(ctx, id),
+  }
+
+function itemAutomationRoute(
+  ctx: Ctx,
+  pathname: string,
+  request: Request,
+): Promise<Response> | null {
+  const match = new RegExp(`^/api/automations/${ID}(?:/(test|secret))?$`).exec(pathname)
+  const id = match?.[1]
+  if (id === undefined || FIXED.has(id)) return null
+  const handler = ITEM_HANDLERS[`${request.method}:${match?.[2] ?? ""}`]
+  return handler ? handler(ctx, id, request) : null
+}
+
+function mutableAutomationRoute(
+  ctx: Ctx,
+  pathname: string,
+  request: Request,
+): Promise<Response> | null {
+  if (pathname === "/api/automations")
+    return request.method === "POST" ? addAutomationRoute(ctx, request) : null
+  if (pathname === "/api/automations/test" && request.method === "POST")
+    return testDraftAutomationRoute(ctx, request)
+  return itemAutomationRoute(ctx, pathname, request)
+}
 
 /**
  * The routes of Settings › Automations and the flush call a command makes after it queued an event;
@@ -387,17 +92,10 @@ export async function automationsRoute(
   mayChange: boolean,
 ): Promise<Response | null> {
   const url = new URL(request.url)
-  const { pathname } = url
-  if (!pathname.startsWith("/api/automations")) return null
-  const method = request.method
-  if (pathname === "/api/automations/flush" && method === "POST") {
-    wakeSender()
-    return Response.json({ ok: true })
-  }
-  if (pathname === "/api/automations" && method === "GET") return reply(await viewOf(ctx))
-  if (pathname === "/api/automations/deliveries" && method === "GET")
-    return reply({ deliveries: await deliveriesOf(ctx, url.searchParams.get("automation")) })
-  if (!mayChange)
+  if (!url.pathname.startsWith("/api/automations")) return null
+  const readonly = readOnlyAutomationRoute(ctx, url, request.method)
+  if (readonly !== null) return readonly
+  if (!mayChange) {
     return Response.json(
       {
         ok: false,
@@ -409,18 +107,6 @@ export async function automationsRoute(
       },
       { status: 403 },
     )
-  if (pathname === "/api/automations") {
-    if (method === "POST") return add(ctx, request)
-    return null
   }
-  if (pathname === "/api/automations/test" && method === "POST") return testDraft(ctx, request)
-  const match = new RegExp(`^/api/automations/${ID}(?:/(test|secret))?$`).exec(pathname)
-  const id = match?.[1]
-  if (id === undefined || FIXED.has(id)) return null
-  const action = match?.[2]
-  if (action === undefined && method === "PUT") return change(ctx, id, request)
-  if (action === undefined && method === "DELETE") return remove(ctx, id)
-  if (action === "test" && method === "POST") return test(ctx, id)
-  if (action === "secret" && method === "GET") return secret(ctx, id)
-  return null
+  return mutableAutomationRoute(ctx, url.pathname, request)
 }

@@ -1,14 +1,7 @@
 // A turn drawn: the person's message, the agent's name, then either everything it did (while it runs) or
 // one folded "Worked for …" line with the answer open below it, and the files the turn changed.
-import {
-  ChevronRightIcon,
-  CodeXmlIcon,
-  Columns2Icon,
-  FileTextIcon,
-  GitCommitHorizontalIcon,
-  LayersIcon,
-} from "lucide-react"
-import { useContext, useId, useState } from "react"
+import { ChevronRightIcon, CodeXmlIcon, Columns2Icon, FileTextIcon, LayersIcon } from "lucide-react"
+import { useId, useState } from "react"
 import { Attachments } from "../../docs/Attachments.tsx"
 import { sentJustNow } from "../../quick-ask/deliver.ts"
 import {
@@ -17,107 +10,13 @@ import {
   type SentMessage as SentMessageText,
 } from "../../quick-ask/sent.ts"
 import "../../quick-ask/quick-ask.css"
-import { AgentMark, FileChip, FileIcon } from "../../kit/marks/index.ts"
+import { AgentMark } from "../../kit/marks/index.ts"
 import { type ChangedFiles, type Folded, foldTurn, isFinished } from "./fold.ts"
 import { Entry, type LogContext } from "./Log.tsx"
 import { type Block, clock, type Turn, tokens } from "./model.ts"
-import { OpensContext } from "./Say.tsx"
+import { TurnChanges } from "./TurnChanges.tsx"
 import { useThinkingVisibility } from "./thinking.ts"
 import "./turns.css"
-
-/** Files named on the line before the rest go behind "N more". */
-const INLINE_FILES = 1
-
-const fileWord = (count: number) => (count === 1 ? "1 file" : `${count} files`)
-
-/** The lines gained and lost: a zero is left out, and a file with no counts says why. */
-function Counts({ file }: { file: ChangedFiles["files"][number] }) {
-  if (file.added === null || file.removed === null)
-    return <span className="cv-dim">{file.large ? "large file" : "binary"}</span>
-  return (
-    <>
-      {file.added > 0 ? <span className="cv-add">+{file.added}</span> : null}
-      {file.removed > 0 ? <span className="cv-del">−{file.removed}</span> : null}
-    </>
-  )
-}
-
-/** One file of a turn's changes: its name as a chip when it can open, with its counts when asked. */
-function ChangedFile({
-  file,
-  counts = false,
-}: {
-  file: ChangedFiles["files"][number]
-  counts?: boolean
-}) {
-  const { file: open } = useContext(OpensContext)
-  return (
-    <>
-      {open ? (
-        <FileChip path={file.path} onOpen={open} />
-      ) : (
-        <span className="cv-nochip" title={file.path}>
-          <FileIcon path={file.path} size={13} />
-          {file.path.split("/").pop()}
-        </span>
-      )}
-      {counts ? <Counts file={file} /> : null}
-    </>
-  )
-}
-
-/** The end of a turn that changed files: how many, the lines, the first few, and the full list on request. */
-function Changes({ changes }: { changes: ChangedFiles }) {
-  const { changes: view } = useContext(OpensContext)
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  const total = changes.files.length + changes.more
-  const rest = changes.files.length - INLINE_FILES
-  return (
-    <section className="cv-changes" aria-label={`Changes in this turn: ${fileWord(total)}`}>
-      <div className="cv-changes-h">
-        <GitCommitHorizontalIcon size={13} aria-hidden="true" />
-        <span>Changed {fileWord(total)}</span>
-        {changes.added > 0 ? <span className="cv-add">+{changes.added}</span> : null}
-        {changes.removed > 0 ? <span className="cv-del">−{changes.removed}</span> : null}
-        {open
-          ? null
-          : changes.files.slice(0, INLINE_FILES).map((file) => (
-              <span className="cv-changed" key={file.path}>
-                <ChangedFile file={file} />
-              </span>
-            ))}
-        {rest > 0 ? (
-          <button
-            type="button"
-            className="q-link"
-            aria-expanded={open}
-            aria-controls={open ? id : undefined}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? "Show fewer" : `${rest} more`}
-          </button>
-        ) : null}
-        <span className="cv-sp" />
-        {view ? (
-          <button type="button" className="q-link" onClick={view}>
-            View changes
-          </button>
-        ) : null}
-      </div>
-      {open ? (
-        <ul className="cv-changes-list" id={id}>
-          {changes.files.map((file) => (
-            <li key={file.path}>
-              <ChangedFile file={file} counts />
-            </li>
-          ))}
-          {changes.more > 0 ? <li className="cv-dim">and {changes.more} more files</li> : null}
-        </ul>
-      ) : null}
-    </section>
-  )
-}
 
 type TurnProps = {
   turn: Turn
@@ -266,7 +165,7 @@ export function TurnView({ turn, ctx, finished, open, onToggle, changes }: TurnP
       {(folded ? folded.open : turn.items).map((item) => (
         <Entry key={item.id} item={item} ctx={ctx} />
       ))}
-      {finished && changes ? <Changes changes={changes} /> : null}
+      {finished && changes ? <TurnChanges changes={changes} /> : null}
     </section>
   )
 }

@@ -2,39 +2,37 @@ import { resolve } from "node:path"
 import { importCursorExport } from "../../core/cost/usage-cursor.ts"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 
-export async function usageCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
-  const [sub, provider, file, ...rest] = args
+const USAGE =
+  "usage: qualitylayer usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]"
+
+const ALLOWED_FLAGS = new Set(["--from", "--to", "--account"])
+
+function parseUsageFlags(rest: string[]): Map<string, string> | null {
   const flags = new Map<string, string>()
   for (let index = 0; index < rest.length; index += 2) {
-    const key = rest[index],
-      value = rest[index + 1]
-    if (!key || !value || !["--from", "--to", "--account"].includes(key) || flags.has(key))
-      return err({
-        code: "bad_args",
-        message:
-          "usage: qualitylayer usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]",
-      })
+    const key = rest[index]
+    const value = rest[index + 1]
+    if (!key || !value || !ALLOWED_FLAGS.has(key) || flags.has(key)) return null
     flags.set(key, value)
   }
-  if (
-    sub !== "import" ||
-    provider !== "cursor" ||
-    !file ||
-    !flags.has("--from") ||
-    !flags.has("--to")
-  )
-    return err({
-      code: "bad_args",
-      message:
-        "usage: qualitylayer usage import cursor <file.csv> --from <ISO time> --to <ISO time> [--account <local label>]",
-    })
+  return flags
+}
+
+export async function usageCmd(ctx: Ctx, args: string[]): Promise<Result<unknown>> {
+  const [sub, provider, file, ...rest] = args
+  const flags = parseUsageFlags(rest)
+  const from = flags?.get("--from")
+  const to = flags?.get("--to")
+  if (sub !== "import" || provider !== "cursor" || !file)
+    return err({ code: "bad_args", message: USAGE })
+  if (!from || !to) return err({ code: "bad_args", message: USAGE })
   try {
     const rows = await importCursorExport(
       ctx,
       resolve(ctx.env.cwd(), file),
-      Date.parse(flags.get("--from")!),
-      Date.parse(flags.get("--to")!),
-      flags.get("--account"),
+      Date.parse(from),
+      Date.parse(to),
+      flags?.get("--account"),
     )
     return ok({
       provider: "cursor",

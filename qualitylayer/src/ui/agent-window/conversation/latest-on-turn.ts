@@ -10,6 +10,22 @@ export const USER_SCROLL_MS = 5000
 /** What scrolls the log for the person: the wheel, a drag, a touch, a key. Programmatic moves are none of these. */
 const BY_PERSON = ["wheel", "touchmove", "keydown", "pointerdown"] as const
 
+function swapScrollListeners(
+  before: HTMLDivElement | null,
+  node: HTMLDivElement | null,
+  handler: () => void,
+): void {
+  if (before) for (const name of BY_PERSON) before.removeEventListener(name, handler)
+  if (node) for (const name of BY_PERSON) node.addEventListener(name, handler, { passive: true })
+}
+
+function scrollToLatest(node: HTMLDivElement, follow: RefObject<boolean>): void {
+  follow.current = true
+  node.scrollTop = node.scrollHeight
+  // The log learns its place from scroll events (the virtualizer, the Jump to latest button).
+  node.dispatchEvent(new Event("scroll"))
+}
+
 /**
  * `turn` is empty while nothing waits on the person, and names the wait (the last turn that ended)
  * while it does: a change to a non-empty `turn` moves the log to its end and keeps it following.
@@ -29,11 +45,8 @@ export function useLatestOnTurn(
     touched.current = clock.current()
   })
   const listen = useCallback((node: HTMLDivElement | null) => {
-    const before = listening.current
-    if (before) for (const name of BY_PERSON) before.removeEventListener(name, mark.current)
+    swapScrollListeners(listening.current, node, mark.current)
     listening.current = node
-    if (node)
-      for (const name of BY_PERSON) node.addEventListener(name, mark.current, { passive: true })
   }, [])
   // The log mounts and unmounts with the view: listen to whichever element is there.
   useEffect(() => {
@@ -48,9 +61,6 @@ export function useLatestOnTurn(
     seen.current = turn
     if (turn === "" || node === null) return
     if (now() - touched.current < USER_SCROLL_MS) return
-    follow.current = true
-    node.scrollTop = node.scrollHeight
-    // The log learns its place from scroll events (the virtualizer, the Jump to latest button).
-    node.dispatchEvent(new Event("scroll"))
+    scrollToLatest(node, follow)
   }, [turn])
 }

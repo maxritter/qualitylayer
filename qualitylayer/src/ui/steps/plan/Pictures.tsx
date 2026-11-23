@@ -25,15 +25,12 @@ import { MermaidBlock, usePageTheme } from "../../reader/MermaidBlock.tsx"
 import { ArtifactSlot } from "../../step-page/ArtifactSlot.tsx"
 import { CommentBlock } from "../../step-page/DocMarkdown.tsx"
 import { GalleryTabs } from "../../step-page/kit/GalleryTabs.tsx"
-import { NumberedRows } from "../../step-page/kit/NumberedRows.tsx"
 import type { StepLive } from "../../step-page/live.ts"
 import type { Mode, StepState } from "../../step-page/state.ts"
-import {
-  type AcceptanceView,
-  type DiagramItem,
-  type InterfaceItem,
-  runKindOf,
-} from "./plan-model.ts"
+import { AcceptanceList, RunKindMark, RunMark } from "./AcceptanceList.tsx"
+import type { DiagramItem, InterfaceItem } from "./plan-model.ts"
+
+export { AcceptanceList, RunKindMark, RunMark }
 
 type Where = {
   state: StepState
@@ -203,100 +200,4 @@ export function InterfaceTabs({ items, ...where }: { items: readonly InterfaceIt
       />
     </div>
   )
-}
-
-/** How the test runs, as a short mark in its heading; the whole sentence is its tooltip. */
-export function RunMark({ runs }: { runs: string | null }) {
-  return <RunKindMark kind={runKindOf(runs)} title={runs ?? undefined} lead="proven by a" />
-}
-
-/** The mark itself: a scripted run or a real agent session; the Plan says it will be proven by one,
- * Verify that it was proven in one (Workflow model). */
-export function RunKindMark({
-  kind,
-  title,
-  lead,
-  other,
-}: {
-  kind: "scripted run" | "real agent session" | null
-  title?: string | undefined
-  lead: "proven by a" | "proven in a"
-  /** Steps that ran the other way: named after the main way ("A3 in a real agent session"). */
-  other?: { kind: "scripted run" | "real agent session"; steps: string[] } | undefined
-}) {
-  if (kind === null) return null
-  const shown = other?.steps.slice(0, 3) ?? []
-  const more = (other?.steps.length ?? 0) - shown.length
-  return (
-    <span className="pl-runmark" data-testid="acceptance-runs" title={title}>
-      <TerminalIcon className="size-3" aria-hidden="true" />
-      {`${lead} ${kind}`}
-      {other !== undefined && shown.length > 0
-        ? `, ${shown.join(", ")}${more > 0 ? ` +${more}` : ""} in a ${other.kind}`
-        : null}
-    </span>
-  )
-}
-
-/**
- * Done means: a row per point (the Plan's number, the point in bold), all closed until the person
- * opens one, each opening to how it shows and the steps that prove it as what the step does and what
- * passes. A bug's step says what shows the bug before the fix and what shows it gone after.
- * A step that proves a second point shows under each, marked with its id.
- */
-function PointRows({ view, bug }: { view: AcceptanceView; bug: boolean }) {
-  return (
-    <NumberedRows
-      testId="acceptance-rows"
-      rows={view.points.map((point) => ({
-        key: `p${point.n}`,
-        n: point.n,
-        title: point.text,
-        body:
-          point.tabs.length === 0 && point.how === "" ? undefined : (
-            <>
-              {point.how !== "" ? (
-                <p className="pl-step" data-testid="point-how">
-                  <InlineMarkdown text={point.how} />
-                </p>
-              ) : null}
-              <ol className="pl-ssteps" data-testid="point-steps">
-                {point.tabs.map((step) => (
-                  <li key={step.id} className={bug ? "pl-bugstep" : undefined}>
-                    <span className="ac">
-                      <InlineMarkdown text={step.action} />
-                      {step.shared ? (
-                        <span className="pl-shared" title="This step proves more than one point">
-                          {step.id} · shared
-                        </span>
-                      ) : null}
-                    </span>
-                    {bug ? (
-                      <>
-                        <span className="bf" data-testid="step-before">
-                          <b>Before the fix</b> <InlineMarkdown text={step.before} />
-                        </span>
-                        <span className="af" data-testid="step-after">
-                          <b>After the fix</b> <InlineMarkdown text={step.text} />
-                        </span>
-                      </>
-                    ) : step.text !== "" ? (
-                      <span className="ex">
-                        <InlineMarkdown text={step.text} />
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            </>
-          ),
-      }))}
-    />
-  )
-}
-
-/** Done means as a numbered list: a row per point, each opening to the steps that prove it. */
-export function AcceptanceList({ view, bug = false }: { view: AcceptanceView; bug?: boolean }) {
-  if (view.points.length === 0) return null
-  return <PointRows view={view} bug={bug} />
 }

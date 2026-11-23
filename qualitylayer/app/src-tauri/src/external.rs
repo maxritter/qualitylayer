@@ -116,11 +116,9 @@ fn download_in(url: &Url, ports: &[u16]) -> bool {
     } else {
         url.clone()
     };
-    origin.scheme() == "http"
-        && origin.username().is_empty()
-        && origin.password().is_none()
-        && is_loopback(&origin)
-        && is_the_app(&origin, ports)
+    let plain_http =
+        origin.scheme() == "http" && origin.username().is_empty() && origin.password().is_none();
+    plain_http && is_loopback(&origin) && is_the_app(&origin, ports)
 }
 
 /// Downloads have their own gate; a Blob is still never an allowed window navigation.

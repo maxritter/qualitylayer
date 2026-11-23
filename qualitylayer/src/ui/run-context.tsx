@@ -3,12 +3,10 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { toast } from "sonner"
 import type { PickerRequest, PickerResult } from "../core/conversation/codex-picker.ts"
 import type { CommandCatalog } from "../core/conversation/commands/types.ts"
 import type {
@@ -21,15 +19,19 @@ import type { Usage, UsagePeriod } from "../core/cost/usage.ts"
 import type { Attachment } from "../core/interaction-docs/attachments.ts"
 import type { AgentLimits } from "../core/limits/index.ts"
 import type { ControlRequest, RunRecord, StartRequest } from "../core/run/contracts.ts"
-import { runPermissionWaiting } from "../core/run/contracts.ts"
 import type { ViewerState } from "../core/run/protocol.ts"
 import type { TurnChanges } from "../core/run/turn-snapshots.ts"
 import type { NativeAnswerUpload } from "./agent-window/conversation/Question.tsx"
-import { chooseWindowView } from "./agent-window/conversation/view-choice.ts"
 import type { TerminalOptions, TerminalView } from "./agent-window/view.ts"
-import { runLiveNoticeOf, tellShell } from "./live-notify.ts"
-import { store, stored } from "./prefs.ts"
-import { buildRunForTask, preferredBuildRun, type RunSupport, runTaskId } from "./runs-api.ts"
+import {
+  closedTerminals,
+  HANDOVER_KEY,
+  keepClosed,
+  useRunActions,
+  useRunHandovers,
+} from "./run-context-helpers.ts"
+import { useRunNotifications } from "./run-context-notices.ts"
+import { preferredBuildRun, type RunSupport } from "./runs-api.ts"
 import {
   dispositionRuns,
   type TaskDispositionStore,
@@ -137,41 +139,7 @@ type RunContextValue = {
   support: RunSupport | undefined
 }
 const RunContext = createContext<RunContextValue | null>(null)
-const VISIBILITY_KEY = "qualitylayer-terminal-visibility-v1"
-const HANDOVER_KEY = "qualitylayer-terminal-handovers-v1"
-const VISIBILITY_LIMIT = 256
-function visibilityIdentity(value: unknown): value is string {
-  if (typeof value !== "string" || value.length > 145) return false
-  const match = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}:([1-9][0-9]*)$/.exec(value)
-  return match !== null && Number.isSafeInteger(Number(match[1]))
-}
-function closedTerminals(key = VISIBILITY_KEY): Set<string> {
-  const raw = stored(key, "[]")
-  if (raw.length > 65_536) return new Set()
-  try {
-    const values = JSON.parse(raw) as unknown
-    return new Set(
-      Array.isArray(values) ? values.filter(visibilityIdentity).slice(-VISIBILITY_LIMIT) : [],
-    )
-  } catch {
-    return new Set()
-  }
-}
-function keepClosed(values: Set<string>, key = VISIBILITY_KEY): Set<string> {
-  const next = new Set([...values].slice(-VISIBILITY_LIMIT))
-  store(key, JSON.stringify([...next].filter(visibilityIdentity)))
-  return next
-}
-function permissionAttention(run: RunWindow, now: number): RunWindow {
-  if (runPermissionWaiting(run)) return run
-  if (run.agent === "other" || !run.waitSince) return run
-  const attention =
-    (run.status === "running" || run.status === "starting") &&
-    now - Date.parse(run.waitSince) >= 3000
-      ? "waiting"
-      : "clear"
-  return run.attention === attention ? run : { ...run, attention }
-}
+
 export function RunProvider({
   adapter,
   children,
@@ -199,159 +167,27 @@ export function RunProvider({
   }, [])
   const [error, setError] = useState<string>()
   const [support, setSupport] = useState<RunSupport>()
-  const listRevision = useRef(0)
-  const noticesSeen = useRef(new Set<string>())
-  const permissionToasts = useRef(new Set<string>())
-  const refresh = useCallback(async () => {
-    const revision = ++listRevision.current
-    try {
-      const listed = await adapter.list()
-      if (revision !== listRevision.current) return
-      setRuns(listed.map((run) => permissionAttention(run, Date.now())))
-      setLoaded(true)
-      setSupport(adapter.support?.())
-      setError(undefined)
-    } catch (cause) {
-      if (revision !== listRevision.current) return
-      setError(cause instanceof Error ? cause.message : "The agent windows could not be loaded.")
-    }
-  }, [adapter])
-  useEffect(() => {
-    void refresh()
-    const unsubscribe = adapter.subscribe?.(() => void refresh())
-    return () => {
-      ++listRevision.current
-      unsubscribe?.()
-    }
-  }, [adapter, refresh])
-  useEffect(() => {
-    const again = () => void refresh()
-    window.addEventListener("focus", again)
-    return () => window.removeEventListener("focus", again)
-  }, [refresh])
-  useEffect(() => {
-    const builders = runs
-      .filter((run) => run.purpose.kind === "task" && buildRunForTask(run, run.purpose.task))
-      .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
-    const planning = new Set<string>()
-    let changed = false
-    for (const build of builders) {
-      const key = `${build.id}:${build.generation}`
-      if (handedOver.current.has(key)) continue
-      handedOver.current.add(key)
-      changed = true
-      if (closed.has(key)) continue
-      const task = runTaskId(build)
-      const previous = runs.filter(
-        (run) =>
-          run.purpose.kind === "new-task" &&
-          runTaskId(run) === task &&
-          Date.parse(run.startedAt) <= Date.parse(build.startedAt),
+  const { refresh, start, control } = useRunActions({
+    adapter,
+    setRuns,
+    setLoaded,
+    setSupport,
+    setError,
+    open,
+  })
+  useRunHandovers(runs, closed, handedOver, setClosed, select)
+  useRunNotifications(runs, closed, select, setRuns)
+  const close = useCallback(
+    (id: string) => {
+      const run = runs.find((item) => item.id === id)
+      if (!run) return
+      setClosed((before) => keepClosed(new Set([...before, `${run.id}:${run.generation}`])))
+      const remaining = openRuns.filter((item) => item.id !== id)
+      select((before) =>
+        before && before !== id ? before : (preferredBuildRun(remaining) ?? remaining.at(-1))?.id,
       )
-      for (const run of previous) planning.add(`${run.id}:${run.generation}`)
-      if (previous.length)
-        select((before) =>
-          !before || previous.some((run) => run.id === before) ? build.id : before,
-        )
-    }
-    if (planning.size) setClosed((before) => keepClosed(new Set([...before, ...planning])))
-    if (changed) handedOver.current = keepClosed(handedOver.current, HANDOVER_KEY)
-    const visible = runs.filter((run) => {
-      const key = `${run.id}:${run.generation}`
-      return !closed.has(key) && !planning.has(key)
-    })
-    select((before) =>
-      runs.some((run) => run.id === before)
-        ? before
-        : (preferredBuildRun(visible) ?? visible.at(-1))?.id,
-    )
-  }, [runs, closed])
-  useEffect(() => {
-    const now = Date.now()
-    const notices = runs.flatMap((run) => {
-      const notice = runLiveNoticeOf(run, now)
-      if (!notice || noticesSeen.current.has(notice.key)) return []
-      noticesSeen.current.add(notice.key)
-      if (runPermissionWaiting(run)) {
-        const terminalOnly = run.terminalPrompt === "permission"
-        permissionToasts.current.add(`permission:${run.id}:${run.generation}`)
-        toast(notice.title, {
-          id: `permission:${run.id}:${run.generation}`,
-          description: terminalOnly
-            ? "The agent is waiting. Open Terminal to allow or refuse the request."
-            : "The agent is waiting. Allow or deny the request in Conversation.",
-          duration: Infinity,
-          action: {
-            label: terminalOnly ? "Open Terminal" : "Open Conversation",
-            onClick: () => {
-              chooseWindowView(run.id, terminalOnly ? "terminal" : "conversation")
-              select(run.id)
-              window.location.hash = notice.route
-            },
-          },
-        })
-      }
-      if (!closed.has(`${run.id}:${run.generation}`)) select(run.id)
-      if (noticesSeen.current.size > 512) {
-        const oldest = noticesSeen.current.values().next().value
-        if (oldest) noticesSeen.current.delete(oldest)
-      }
-      return [notice]
-    })
-    tellShell(notices)
-    const activePermissionToasts = new Set(
-      runs.filter(runPermissionWaiting).map((run) => `permission:${run.id}:${run.generation}`),
-    )
-    for (const id of permissionToasts.current) {
-      if (!activePermissionToasts.has(id)) {
-        toast.dismiss(id)
-        permissionToasts.current.delete(id)
-      }
-    }
-    const deadlines = runs.flatMap((run) => {
-      if (
-        run.agent === "other" ||
-        !run.waitSince ||
-        (run.status !== "running" && run.status !== "starting")
-      )
-        return []
-      const deadline = Date.parse(run.waitSince) + 3000
-      return Number.isFinite(deadline) && deadline > now ? [deadline] : []
-    })
-    if (!deadlines.length) return
-    const timer = setTimeout(
-      () => setRuns((before) => before.map((run) => permissionAttention(run, Date.now()))),
-      Math.min(...deadlines) - now,
-    )
-    return () => clearTimeout(timer)
-  }, [runs, closed])
-  const remember = useCallback(
-    (run: RunWindow) => {
-      ++listRevision.current
-      setRuns((before) => [
-        ...before.filter((item) => item.id !== run.id),
-        permissionAttention(run, Date.now()),
-      ])
-      open(run.id)
     },
-    [open],
-  )
-  const start = useCallback(
-    async (request: RunStart, files?: readonly File[]) => {
-      const run = await adapter.start(request, files)
-      remember(run)
-      return run
-    },
-    [adapter, remember],
-  )
-  const control = useCallback(
-    async (id: string, request: RunControlRequest) => {
-      const run = await adapter.control(id, request)
-      if (run) remember(run)
-      else await refresh()
-      return run
-    },
-    [adapter, remember, refresh],
+    [runs, openRuns],
   )
   const value = useMemo(
     () => ({
@@ -363,15 +199,7 @@ export function RunProvider({
         preferredBuildRun(openRuns) ??
         openRuns.at(-1),
       select: open,
-      close(id: string) {
-        const run = runs.find((item) => item.id === id)
-        if (!run) return
-        setClosed((before) => keepClosed(new Set([...before, `${run.id}:${run.generation}`])))
-        const remaining = openRuns.filter((item) => item.id !== id)
-        select((before) =>
-          before && before !== id ? before : (preferredBuildRun(remaining) ?? remaining.at(-1))?.id,
-        )
-      },
+      close,
       refresh,
       start,
       control,
@@ -379,7 +207,20 @@ export function RunProvider({
       error,
       support,
     }),
-    [loaded, runs, openRuns, selectedId, open, refresh, start, control, adapter, error, support],
+    [
+      loaded,
+      runs,
+      openRuns,
+      selectedId,
+      open,
+      close,
+      refresh,
+      start,
+      control,
+      adapter,
+      error,
+      support,
+    ],
   )
   return <RunContext.Provider value={value}>{children}</RunContext.Provider>
 }

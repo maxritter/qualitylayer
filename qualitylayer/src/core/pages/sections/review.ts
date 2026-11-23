@@ -5,11 +5,12 @@
 // written (core/ship/pr-body.ts): names only, no pictures. Review opens when every point passes, so no
 // section lists what is left.
 
-import type { AcceptanceAsRun } from "../../review/screen-evidence.ts"
-import { screenSize } from "../../review/screen-pairs.ts"
 import type { RiskAtMerge, Walkthrough } from "../../review/walkthrough.ts"
 import { countedFacts } from "../lanes.ts"
 import type { PageState, SectionWriters } from "../render.ts"
+import { acceptanceMarkdown, screensMarkdown } from "./review-format.ts"
+
+export { acceptanceMarkdown, screensMarkdown } from "./review-format.ts"
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
@@ -100,71 +101,6 @@ export function codeMarkdown(
       ? []
       : [`Security: ${facts.length > 0 ? facts.join(", ") : security.result.trim()}`]),
   ].join(" · ")
-}
-
-/**
- * *Screens*: each screen the Plan showed with its size, theme, capture outcome and freshness, and the
- * independent review's comparison. The pictures stay local; the line names the approved one.
- */
-export function screensMarkdown(view: Walkthrough): string {
-  if (!view.screens?.length) return "No screens were drawn in the Plan."
-  return view.screens
-    .map((screen) =>
-      [
-        `- **${screen.key}** · ${screenSize(screen)} · ${screen.theme} · ${screen.outcome.replace(/[\r\n]/g, " ")} · ${screen.stale ? "stale" : "current"}`,
-        ...(screen.approved ? [`  - Designed: \`${screen.approved}\``] : []),
-        `  - Independent review: ${screen.verdict.replace(/[\r\n]/g, " ")}`,
-        ...(screen.staleReason
-          ? [`  - Refresh: ${screen.staleReason.replace(/[\r\n]/g, " ")}`]
-          : []),
-      ].join("\n"),
-    )
-    .join("\n")
-}
-
-/** The steps that ran the other way than the run did: ", A3 in a real agent session"; empty when none. */
-function otherWay(acceptance: AcceptanceAsRun): string {
-  const others = acceptance.steps.filter(
-    (step) => step.mode !== undefined && step.mode !== acceptance.mode,
-  )
-  if (others.length === 0) return ""
-  const kind = acceptance.mode === "scripted" ? "a real agent session" : "a scripted run"
-  return `, ${others.map((step) => step.id).join(", ")} in ${kind}`
-}
-
-/**
- * *Acceptance test*: the Plan's steps as written, each with the pictures and outputs the run that
- * passed recorded for it, and how that run happened: a scripted run or a real agent session.
- */
-export function acceptanceMarkdown(acceptance: AcceptanceAsRun): string {
-  if (acceptance.steps.length === 0) return "The Plan has no acceptance test."
-  const how =
-    acceptance.mode === null
-      ? acceptance.judged === true
-        ? "Passed the independent review on the evidence it cited."
-        : "No run has passed yet."
-      : `Passed in ${acceptance.mode === "scripted" ? "a scripted run" : "a real agent session"}${otherWay(acceptance)} (run ${acceptance.run}).`
-  const cited = (step: AcceptanceAsRun["steps"][number]) =>
-    step.evidence.length > 0
-      ? ` · ${step.evidence.map((item) => `\`${item.file}\``).join(", ")}${step.run !== undefined && step.run !== acceptance.run ? ` · run ${step.run}` : ""}`
-      : ""
-  // A Plan that lists its test by Done means point: a heading per point with its steps under it,
-  // the step ids as the Plan has them (a step that proves two points is listed under both).
-  if (acceptance.points !== undefined)
-    return [
-      how,
-      ...acceptance.points.flatMap((point) => [
-        "",
-        `### ${point.n}. ${point.text}`,
-        ...point.steps.flatMap((step) => [
-          `- ${step.id} · ${step.text}${cited(step)}`,
-          // A bug's step: what showed the bug before the fix, under it (`text` ends at what shows it gone).
-          ...(step.before !== undefined ? [`  - Before the fix: ${step.before}`] : []),
-        ]),
-      ]),
-    ].join("\n")
-  const steps = acceptance.steps.map((step) => `${step.n}. ${step.text}${cited(step)}`)
-  return [how, "", ...steps].join("\n")
 }
 
 export const reviewSections: SectionWriters = {

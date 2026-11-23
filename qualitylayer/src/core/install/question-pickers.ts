@@ -42,49 +42,69 @@ async function toml(ctx: Ctx, path: string): Promise<Record<string, unknown> | n
   }
 }
 
+async function claudePickerOff(ctx: Ctx, dir: string): Promise<string | null> {
+  const file = join(dir, "settings.json")
+  const text = await read(ctx, file)
+  try {
+    const deny = record(record(text === null ? null : JSON.parse(text))?.permissions)?.deny
+    const names =
+      Array.isArray(deny) && deny.some((rule) => /^AskUserQuestion(\(|$)/.test(`${rule}`))
+    return names ? `permissions.deny names AskUserQuestion in ${file}` : null
+  } catch {
+    return null
+  }
+}
+
+async function tomlFeatureOff(
+  ctx: Ctx,
+  dir: string,
+  key: string,
+  label: string,
+): Promise<string | null> {
+  const file = join(dir, "config.toml")
+  const off = record((await toml(ctx, file))?.features)?.[key] === false
+  return off ? `${label} = false in ${file}` : null
+}
+
+async function opencodePickerOff(ctx: Ctx, dir: string): Promise<string | null> {
+  // OpenCode's permission config takes `question` as a key; `"deny"` removes the tool.
+  for (const name of ["opencode.json", "opencode.jsonc"]) {
+    const file = join(dir, name)
+    const text = await read(ctx, file)
+    try {
+      const question = record(
+        record(text === null ? null : Bun.JSONC.parse(text))?.permission,
+      )?.question
+      if (question === "deny" || record(question)?.["*"] === "deny")
+        return `permission.question is "deny" in ${file}`
+    } catch {}
+  }
+  return null
+}
+
 /** The reason this agent's picker is off in the person's own settings, or null. */
 async function turnedOff(
   ctx: Ctx,
   agent: NativeAgent,
   dirs: NonNullable<ReturnType<typeof roots>>,
 ): Promise<string | null> {
-  if (agent === "claude-code") {
-    const file = join(dirs.claude, "settings.json")
-    const text = await read(ctx, file)
-    try {
-      const deny = record(record(text === null ? null : JSON.parse(text))?.permissions)?.deny
-      const names =
-        Array.isArray(deny) && deny.some((rule) => /^AskUserQuestion(\(|$)/.test(`${rule}`))
-      return names ? `permissions.deny names AskUserQuestion in ${file}` : null
-    } catch {
+  switch (agent) {
+    case "claude-code":
+      return claudePickerOff(ctx, dirs.claude)
+    case "codex":
+      return tomlFeatureOff(
+        ctx,
+        dirs.codex,
+        "default_mode_request_user_input",
+        "default_mode_request_user_input",
+      )
+    case "grok":
+      return tomlFeatureOff(ctx, dirs.grok, "ask_user_question", "features.ask_user_question")
+    case "opencode":
+      return opencodePickerOff(ctx, dirs.opencode)
+    default:
       return null
-    }
   }
-  if (agent === "codex") {
-    const file = join(dirs.codex, "config.toml")
-    const off = record((await toml(ctx, file))?.features)?.default_mode_request_user_input === false
-    return off ? `default_mode_request_user_input = false in ${file}` : null
-  }
-  if (agent === "grok") {
-    const file = join(dirs.grok, "config.toml")
-    const off = record((await toml(ctx, file))?.features)?.ask_user_question === false
-    return off ? `features.ask_user_question = false in ${file}` : null
-  }
-  if (agent === "opencode") {
-    // OpenCode's permission config takes `question` as a key; `"deny"` removes the tool.
-    for (const name of ["opencode.json", "opencode.jsonc"]) {
-      const file = join(dirs.opencode, name)
-      const text = await read(ctx, file)
-      try {
-        const question = record(
-          record(text === null ? null : Bun.JSONC.parse(text))?.permission,
-        )?.question
-        if (question === "deny" || record(question)?.["*"] === "deny")
-          return `permission.question is "deny" in ${file}`
-      } catch {}
-    }
-  }
-  return null
 }
 
 /**

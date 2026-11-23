@@ -22,8 +22,7 @@ export async function snapshotPlan(
 
 type Op = { op: " " | "+" | "-"; line: string }
 
-/** A line diff: the common head and tail are trimmed, the middle is a longest-common-subsequence walk. */
-export function lineOps(before: string[], after: string[]): Op[] {
+function commonBounds(before: string[], after: string[]): { head: number; tail: number } {
   let head = 0
   while (head < before.length && head < after.length && before[head] === after[head]) head++
   let tail = 0
@@ -33,6 +32,44 @@ export function lineOps(before: string[], after: string[]): Op[] {
     before[before.length - 1 - tail] === after[after.length - 1 - tail]
   )
     tail++
+  return { head, tail }
+}
+
+function lcsOps(a: string[], b: string[]): Op[] {
+  const width = b.length + 1
+  const table = new Uint32Array((a.length + 1) * width)
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i * width + j] =
+        a[i] === b[j]
+          ? (table[(i + 1) * width + j + 1] ?? 0) + 1
+          : Math.max(table[(i + 1) * width + j] ?? 0, table[i * width + j + 1] ?? 0)
+    }
+  }
+  const ops: Op[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      ops.push({ op: " ", line: a[i] ?? "" })
+      i++
+      j++
+    } else if ((table[(i + 1) * width + j] ?? 0) >= (table[i * width + j + 1] ?? 0)) {
+      ops.push({ op: "-", line: a[i] ?? "" })
+      i++
+    } else {
+      ops.push({ op: "+", line: b[j] ?? "" })
+      j++
+    }
+  }
+  for (; i < a.length; i++) ops.push({ op: "-", line: a[i] ?? "" })
+  for (; j < b.length; j++) ops.push({ op: "+", line: b[j] ?? "" })
+  return ops
+}
+
+/** A line diff: the common head and tail are trimmed, the middle is a longest-common-subsequence walk. */
+export function lineOps(before: string[], after: string[]): Op[] {
+  const { head, tail } = commonBounds(before, after)
   const a = before.slice(head, before.length - tail)
   const b = after.slice(head, after.length - tail)
   const ops: Op[] = before.slice(0, head).map((line) => ({ op: " ", line }))
@@ -43,33 +80,7 @@ export function lineOps(before: string[], after: string[]): Op[] {
       ...b.map((line): Op => ({ op: "+", line })),
     )
   } else {
-    const width = b.length + 1
-    const table = new Uint32Array((a.length + 1) * width)
-    for (let i = a.length - 1; i >= 0; i--) {
-      for (let j = b.length - 1; j >= 0; j--) {
-        table[i * width + j] =
-          a[i] === b[j]
-            ? (table[(i + 1) * width + j + 1] ?? 0) + 1
-            : Math.max(table[(i + 1) * width + j] ?? 0, table[i * width + j + 1] ?? 0)
-      }
-    }
-    let i = 0
-    let j = 0
-    while (i < a.length && j < b.length) {
-      if (a[i] === b[j]) {
-        ops.push({ op: " ", line: a[i] ?? "" })
-        i++
-        j++
-      } else if ((table[(i + 1) * width + j] ?? 0) >= (table[i * width + j + 1] ?? 0)) {
-        ops.push({ op: "-", line: a[i] ?? "" })
-        i++
-      } else {
-        ops.push({ op: "+", line: b[j] ?? "" })
-        j++
-      }
-    }
-    for (; i < a.length; i++) ops.push({ op: "-", line: a[i] ?? "" })
-    for (; j < b.length; j++) ops.push({ op: "+", line: b[j] ?? "" })
+    ops.push(...lcsOps(a, b))
   }
   ops.push(...after.slice(after.length - tail).map((line): Op => ({ op: " ", line })))
   return ops

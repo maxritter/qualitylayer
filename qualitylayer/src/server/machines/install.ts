@@ -79,23 +79,45 @@ const broke = (reason: string, ran: Ran): Installed => ({
   lines: lastLines(ran.out, ran.err),
 })
 
+async function runPreparedStep(
+  ssh: Ssh,
+  target: string,
+  argv: string[],
+  failureReason: string,
+): Promise<Installed | null> {
+  const step = await ssh.run(target, argv, { timeoutMs: 30_000 })
+  if (!step.ok) return { ok: false, reason: step.reason, lines: [], failure: step.failure }
+  return step.code === 0 ? null : broke(failureReason, step)
+}
+
 /** The installer on the machine, as a file; wget is tried where there is no curl. */
 async function download(ssh: Ssh, target: string, url: string): Promise<Installed | null> {
-  const made = await ssh.run(target, ["mkdir", "-p", "~/.qualitylayer"], { timeoutMs: 30_000 })
-  if (!made.ok) return { ok: false, reason: made.reason, lines: [], failure: made.failure }
-  if (made.code !== 0)
-    return broke("The machine's home could not be prepared for the installer.", made)
+  const prepError = "The machine's home could not be prepared for the installer."
+  const made = await runPreparedStep(ssh, target, ["mkdir", "-p", "~/.qualitylayer"], prepError)
+  if (made !== null) return made
   // An ssh login on Ubuntu runs with umask 002, so the folder just made would be group-writable,
   // and QualityLayer refuses to work in such a folder ("Unsafe directory ownership").
-  const closed = await ssh.run(target, ["chmod", "700", "~/.qualitylayer"], { timeoutMs: 30_000 })
-  if (!closed.ok) return { ok: false, reason: closed.reason, lines: [], failure: closed.failure }
-  if (closed.code !== 0)
-    return broke("The machine's home could not be prepared for the installer.", closed)
+  const closed = await runPreparedStep(ssh, target, ["chmod", "700", "~/.qualitylayer"], prepError)
+  if (closed !== null) return closed
   let got = await ssh.run(target, ["curl", "-fsSL", "-o", FILE, url], { timeoutMs: 180_000 })
   if (got.ok && got.code === 127)
     got = await ssh.run(target, ["wget", "-q", "-O", FILE, url], { timeoutMs: 180_000 })
   if (!got.ok) return { ok: false, reason: got.reason, lines: [], failure: got.failure }
   return got.code === 0 ? null : broke("The installer could not be downloaded on the machine.", got)
+}
+
+async function verifyInstalledVersion(ssh: Ssh, target: string, ran: Ran): Promise<Installed> {
+  const version = await versionOn(ssh, target)
+  if (version !== null && typeof version === "object")
+    return { ok: false, reason: version.reason, lines: [], failure: version.failure }
+  if (version === null)
+    return broke("The installer finished, but QualityLayer did not answer there afterwards.", ran)
+  if (!hasMachines(version))
+    return broke(
+      `The installer finished, but QualityLayer there is ${version}; machines need ${FIRST_WITH_MACHINES} or newer.`,
+      ran,
+    )
+  return { ok: true, version }
 }
 
 /**
@@ -128,17 +150,7 @@ export async function installOn(
     )
     if (!ran.ok) return { ok: false, reason: ran.reason, lines: [], failure: ran.failure }
     if (ran.code !== 0) return broke("The installer stopped before it finished.", ran)
-    const version = await versionOn(ssh, target)
-    if (version !== null && typeof version === "object")
-      return { ok: false, reason: version.reason, lines: [], failure: version.failure }
-    if (version === null)
-      return broke("The installer finished, but QualityLayer did not answer there afterwards.", ran)
-    if (!hasMachines(version))
-      return broke(
-        `The installer finished, but QualityLayer there is ${version}; machines need ${FIRST_WITH_MACHINES} or newer.`,
-        ran,
-      )
-    return { ok: true, version }
+    return await verifyInstalledVersion(ssh, target, ran)
   } finally {
     await ssh.run(target, ["rm", "-f", FILE], { timeoutMs: 30_000 })
   }

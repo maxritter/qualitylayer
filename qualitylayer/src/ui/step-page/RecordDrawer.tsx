@@ -2,28 +2,23 @@
 // right with Copy path and Open in editor. Esc closes the drawer.
 
 import {
-  BotIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   CopyIcon,
   ExternalLinkIcon,
-  FlaskConicalIcon,
   ListChecksIcon,
   LockIcon,
   ScrollTextIcon,
   XIcon,
 } from "lucide-react"
-import { type ReactNode, useEffect, useId, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { trimEndCharacters } from "../../core/text-boundaries.ts"
-import { WhoMark } from "../kit/WhoMark.tsx"
 import { offersHostActions } from "../machines/framed.ts"
-import { InlineMarkdown } from "../reader/DocReader.tsx"
 import { terminalText } from "../reader/terminal-text.ts"
 import type { StepLive } from "./live.ts"
 import type { CardsPlace, RecordView, TaskCard } from "./state.ts"
-import "./task-cards.css"
+import { TaskCards } from "./TaskCards.tsx"
+
+export { TaskCards }
 
 /** What the drawer shows: a record, or a slice's task cards. */
 export type Drawer =
@@ -83,205 +78,6 @@ function RecordBody({ record, live }: { record: RecordView; live: StepLive }) {
         <p className="sp-dr-o">Nothing was recorded beyond the facts above.</p>
       )}
     </>
-  )
-}
-
-/** The first sentence of a card's objective, read across its wrapped lines. */
-export function firstSentence(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim()
-  const end = /^.*?[.!?](?=\s|$)/.exec(flat)
-  return end?.[0] ?? flat
-}
-
-type Toggle = "files" | "test" | "done"
-
-/** One task opened: a sentence, then the agents' card behind three closed toggles. */
-function TaskDetails({ card, id }: { card: TaskCard; id: string }) {
-  const [open, setOpen] = useState<ReadonlySet<Toggle>>(new Set())
-  const flip = (key: Toggle) =>
-    setOpen((current) => {
-      const next = new Set(current)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
-  const toggles: { key: Toggle; label: string; count?: number; icon: ReactNode; show: boolean }[] =
-    [
-      {
-        key: "files",
-        label: "Files",
-        count: card.files.length,
-        icon: <CopyIcon className="size-3.5" aria-hidden="true" />,
-        show: card.files.length > 0,
-      },
-      {
-        key: "test",
-        label: "Test first",
-        icon: <FlaskConicalIcon className="size-3.5" aria-hidden="true" />,
-        show: card.testFirst !== undefined,
-      },
-      {
-        key: "done",
-        label: "Done when",
-        count: card.dod.length,
-        icon: <ListChecksIcon className="size-3.5" aria-hidden="true" />,
-        show: card.dod.length > 0,
-      },
-    ]
-  const shown = toggles.filter((toggle) => toggle.show)
-  return (
-    <section
-      id={id}
-      aria-label={`Details for ${card.id}`}
-      className="sp-task-detail"
-      data-testid="task-detail"
-    >
-      {card.objective !== undefined ? (
-        <p className="sp-task-sentence">
-          <InlineMarkdown text={firstSentence(card.objective)} />
-        </p>
-      ) : null}
-      {card.line !== undefined ? (
-        <p className="sp-task-line" data-testid="task-line">
-          <WhoMark who="agent" running />
-          <b>In work</b>
-          <span>{card.line}</span>
-        </p>
-      ) : null}
-      {shown.length > 0 ? (
-        <div className="sp-task-card" data-testid="task-card-toggles">
-          <span className="sp-task-card-l">
-            <BotIcon className="size-3.5" aria-hidden="true" />
-            Agents' card
-          </span>
-          {shown.map((toggle) => (
-            <button
-              key={toggle.key}
-              type="button"
-              className="sp-task-toggle"
-              aria-expanded={open.has(toggle.key)}
-              onClick={() => flip(toggle.key)}
-            >
-              {toggle.icon}
-              {toggle.label}
-              {toggle.count !== undefined ? (
-                <>
-                  {" "}
-                  <span className="n">{toggle.count}</span>
-                </>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {open.has("files") ? (
-        <ul className="sp-task-files" data-testid="task-files">
-          {card.files.map((path) => (
-            <li key={path}>
-              <code>{path}</code>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {open.has("test") && card.testFirst !== undefined ? (
-        <p className="sp-task-body" data-testid="task-test-first">
-          <InlineMarkdown text={card.testFirst} />
-        </p>
-      ) : null}
-      {open.has("done") ? (
-        <ul className="sp-task-done" data-testid="task-done-when">
-          {card.dod.map((line) => (
-            <li key={line}>
-              <InlineMarkdown text={line} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  )
-}
-
-/**
- * What a bug's card says about its role: a reproduce card ticked before the fix reads "red as
- * expected" (the failing test is committed first), the fix card ticked reads "fixed".
- */
-export function roleWords(card: TaskCard, cards: readonly TaskCard[]): string | null {
-  if (card.role === undefined) return null
-  const fixDone = cards.every((c) => c.role !== "fix" || c.state === "done")
-  if (card.role === "reproduce" && card.state === "done" && !fixDone) return "red as expected"
-  if (card.role === "fix" && card.state === "done") return "fixed"
-  return card.role.charAt(0).toUpperCase() + card.role.slice(1)
-}
-
-/**
- * A slice's tasks, each its own row that opens in place (several can stay open); the agents' card
- * is one click further. A task in work carries its working mark, a done one its check.
- */
-export function TaskCards({
-  cards,
-  initial,
-}: {
-  cards: TaskCard[]
-  /** The cards that start open. */
-  initial?: readonly string[]
-}) {
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set(initial ?? []))
-  const prefix = useId()
-  const toggle = (id: string) =>
-    setOpened((current) => {
-      const next = new Set(current)
-      if (!next.delete(id)) next.add(id)
-      return next
-    })
-  return (
-    <div className="sp-task-cards min-w-0" data-testid="task-cards">
-      {cards.map((card) => {
-        const open = opened.has(card.id)
-        const id = `${prefix}-${card.id}`
-        return (
-          <div key={card.id} data-task-id={card.id} data-state={card.state}>
-            <button
-              type="button"
-              aria-label={`${card.id}: ${card.title}`}
-              aria-expanded={open}
-              aria-controls={open ? id : undefined}
-              className="sp-task-row"
-              onClick={() => toggle(card.id)}
-            >
-              {card.state === "done" ? (
-                <span className="sp-task-completed" aria-hidden="true">
-                  <CheckIcon size={11} />
-                </span>
-              ) : (
-                <WhoMark
-                  who={card.state === "building" ? "agent" : "todo"}
-                  running={card.state === "building"}
-                />
-              )}
-              <code>{card.id}</code>
-              <span className="sp-task-row-copy">
-                <span inert className="sp-task-row-title">
-                  <InlineMarkdown text={card.title} />
-                </span>
-                {roleWords(card, cards) !== null ? (
-                  <span className="sp-task-role" data-testid="task-role">
-                    {roleWords(card, cards)}
-                  </span>
-                ) : null}
-                {card.state === "stopped" ? (
-                  <span className="sp-task-row-state">Stopped</span>
-                ) : null}
-              </span>
-              {open ? (
-                <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <ChevronRightIcon className="size-3.5 shrink-0" aria-hidden="true" />
-              )}
-            </button>
-            {open ? <TaskDetails card={card} id={id} /> : null}
-          </div>
-        )
-      })}
-    </div>
   )
 }
 

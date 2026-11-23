@@ -1,21 +1,12 @@
 import { createHash } from "node:crypto"
-import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
-import {
-  PUBLIC_FEEDBACK_BYTES_MAX,
-  PUBLIC_FEEDBACK_ENTRIES_MAX,
-  PUBLIC_FEEDBACK_ENTRY_MAX_BYTES,
-  PUBLIC_FEEDBACK_MAX_AGE_MS,
-} from "../home-caps.ts"
 import { VERSION } from "../version.ts"
 import { realFacts, type SystemFacts } from "./diagnostics.ts"
 import {
   PublicFeedbackFailure,
-  type PublicIdentity,
   preparePublicImages,
   previewPublicReport,
   publicIdentity,
-  submitPublicReport,
 } from "./public-client.ts"
 import {
   PUBLIC_DESTINATION,
@@ -23,34 +14,25 @@ import {
   type PublicDraft,
   type PublicImage,
   type PublicInput,
-  type PublicPreparation,
   type PublicPreview,
   type PublicSystem,
 } from "./public-contract.ts"
+import { deliverPublicReport, retryWaitingPublicReports } from "./public-outbox-deliver.ts"
+import {
+  assertPublicCaller,
+  PUBLIC_MAX_AGE,
+  publicImagesOf,
+  publicOutboxDir,
+  publicReportLock,
+  publicReportPath,
+  readPublicReport,
+  type StoredPublicReport,
+  savePublicReport,
+} from "./public-outbox-store.ts"
 
-type Stored = {
-  version: 1
-  destination: typeof PUBLIC_DESTINATION
-  caller: string
-  at: number
-  state: "reviewed" | "queued" | "uncertain" | "submitted"
-  draft: PublicDraft
-  preview: PublicPreview
-  preparation: { id: string; expiresAt: number } | null
-  images: string[]
-  receipt?: PublicDelivery
-  createdReceipt?: Extract<PublicDelivery, { reference: string }>
-  notBefore?: number
-}
-const ID = /^[A-Za-z0-9_-]{1,64}$/
-const MAX_AGE = PUBLIC_FEEDBACK_MAX_AGE_MS
+export { publicOutboxDir }
+
 const retryingHomes = new Set<string>()
-export const publicOutboxDir = (ctx: Ctx) => join(ctx.home, "feedback-public-outbox-v1")
-const pathFor = (ctx: Ctx, id: string) => {
-  if (!ID.test(id)) throw new PublicFeedbackFailure("refused", "That report ID is invalid.")
-  return join(publicOutboxDir(ctx), `${id}.json`)
-}
-const lockFor = (ctx: Ctx, id: string) => `${pathFor(ctx, id)}.lock`
 
 export async function minimalPublicSystem(facts?: SystemFacts): Promise<PublicSystem> {
   const known = facts ?? (await realFacts())
@@ -67,99 +49,11 @@ export async function minimalPublicSystem(facts?: SystemFacts): Promise<PublicSy
   }
 }
 
-async function save(ctx: Ctx, entry: Stored): Promise<void> {
-  await ctx.fs.mkdir(publicOutboxDir(ctx), { mode: 0o700 })
-  const text = JSON.stringify(entry)
-  const size = Buffer.byteLength(text)
-  if (size > PUBLIC_FEEDBACK_ENTRY_MAX_BYTES)
-    throw new PublicFeedbackFailure(
-      "refused",
-      "This report is too large to retain safely. Use smaller screenshots.",
-    )
-  await ctx.fs.withLock(join(publicOutboxDir(ctx), ".quota.lock"), async () => {
-    const names = (await ctx.fs.readdir(publicOutboxDir(ctx))).filter((name) =>
-      /^[A-Za-z0-9_-]{1,64}\.json$/.test(name),
-    )
-    let count = 1
-    let bytes = size
-    for (const name of names) {
-      if (name === `${entry.draft.id}.json`) continue
-      const path = join(publicOutboxDir(ctx), name)
-      const info = await ctx.fs.stat?.(path)
-      if (info && ctx.clock.now() - info.mtimeMs > MAX_AGE) {
-        await ctx.fs.remove(path)
-        continue
-      }
-      count++
-      bytes += info?.size ?? Buffer.byteLength(await ctx.fs.readFile(path))
-    }
-    if (count > PUBLIC_FEEDBACK_ENTRIES_MAX || bytes > PUBLIC_FEEDBACK_BYTES_MAX)
-      throw new PublicFeedbackFailure(
-        "refused",
-        "Public reports kept on this computer have reached their 20-report or 64 MB limit. Existing reports are kept for up to 30 days; use private support before adding another.",
-      )
-    await ctx.fs.atomicWrite(pathFor(ctx, entry.draft.id), text)
-  })
+function isValidPublicInput(input: PublicInput): boolean {
+  if (input.kind !== "bug" && input.kind !== "idea") return false
+  if (!input.title.trim() || input.title.length > 120) return false
+  return Boolean(input.description.trim()) && input.description.length <= 5000
 }
-
-async function read(ctx: Ctx, id: string, pruneExpired = true): Promise<Stored> {
-  const path = pathFor(ctx, id)
-  let raw: string
-  try {
-    raw = ctx.fs.readRegularFile
-      ? new TextDecoder().decode(
-          await ctx.fs.readRegularFile(path, PUBLIC_FEEDBACK_ENTRY_MAX_BYTES),
-        )
-      : await ctx.fs.readFile(path)
-  } catch {
-    throw new PublicFeedbackFailure(
-      "refused",
-      "The reviewed report is no longer on this computer. Preview it again.",
-    )
-  }
-  let entry: Stored
-  try {
-    entry = JSON.parse(raw) as Stored
-  } catch {
-    throw new PublicFeedbackFailure("refused", "The saved report cannot be read. Preview it again.")
-  }
-  if (
-    entry.version !== 1 ||
-    entry.destination !== PUBLIC_DESTINATION ||
-    entry.draft?.id !== id ||
-    entry.draft.destination !== PUBLIC_DESTINATION ||
-    typeof entry.caller !== "string" ||
-    !Array.isArray(entry.images) ||
-    entry.images.length > 5 ||
-    !entry.preview?.review?.contentSha256
-  )
-    throw new PublicFeedbackFailure("refused", "The saved report is not a reviewed public report.")
-  if (!Number.isFinite(entry.at))
-    throw new PublicFeedbackFailure(
-      "refused",
-      "The saved report has no valid review date. Preview it again.",
-    )
-  if (ctx.clock.now() - entry.at > MAX_AGE) {
-    if (!pruneExpired) return entry
-    await ctx.fs.remove(path)
-    throw new PublicFeedbackFailure(
-      "refused",
-      "The saved review expired after 30 days. Preview your report again before sending.",
-    )
-  }
-  return entry
-}
-
-function assertCaller(entry: Stored, identity: PublicIdentity): void {
-  if (entry.caller !== identity.binding)
-    throw new PublicFeedbackFailure(
-      "refused",
-      "This report belongs to the licence or trial that reviewed it. Switch back to that profile or create a new report.",
-    )
-}
-
-const imagesOf = (entry: Stored): PublicImage[] =>
-  entry.images.map((data) => ({ bytes: new Uint8Array(Buffer.from(data, "base64")) }))
 
 export async function reviewPublicReport(
   ctx: Ctx,
@@ -167,24 +61,18 @@ export async function reviewPublicReport(
   images: PublicImage[],
   system?: PublicSystem,
 ): Promise<PublicPreview> {
-  pathFor(ctx, input.id)
-  if (
-    (input.kind !== "bug" && input.kind !== "idea") ||
-    !input.title.trim() ||
-    input.title.length > 120 ||
-    !input.description.trim() ||
-    input.description.length > 5000
-  )
+  publicReportPath(ctx, input.id)
+  if (!isValidPublicInput(input))
     throw new PublicFeedbackFailure(
       "refused",
       "Add a title up to 120 characters and a description up to 5,000 characters.",
     )
   const identity = await publicIdentity(ctx)
   await ctx.fs.mkdir(publicOutboxDir(ctx), { mode: 0o700 })
-  return ctx.fs.withLock(lockFor(ctx, input.id), async () => {
-    if (await ctx.fs.exists(pathFor(ctx, input.id))) {
-      const held = await read(ctx, input.id)
-      assertCaller(held, identity)
+  return ctx.fs.withLock(publicReportLock(ctx, input.id), async () => {
+    if (await ctx.fs.exists(publicReportPath(ctx, input.id))) {
+      const held = await readPublicReport(ctx, input.id)
+      assertPublicCaller(held, identity)
       if (held.state !== "reviewed")
         throw new PublicFeedbackFailure(
           "refused",
@@ -205,7 +93,7 @@ export async function reviewPublicReport(
       },
     }
     const preview = await previewPublicReport(ctx, identity, draft, preparation?.preparationId)
-    const entry: Stored = {
+    const entry: StoredPublicReport = {
       version: 1,
       destination: PUBLIC_DESTINATION,
       caller: identity.binding,
@@ -220,111 +108,9 @@ export async function reviewPublicReport(
         Buffer.from(image.bytes).toString("base64"),
       ),
     }
-    await save(ctx, entry)
+    await savePublicReport(ctx, entry)
     return preview
   })
-}
-
-async function renew(
-  ctx: Ctx,
-  identity: PublicIdentity,
-  entry: Stored,
-  force = false,
-): Promise<PublicPreparation | null> {
-  if (!entry.preparation || (!force && entry.preparation.expiresAt > ctx.clock.now() + 5000))
-    return null
-  const prepared = await preparePublicImages(ctx, identity, entry.draft.id, imagesOf(entry))
-  if (
-    !prepared ||
-    JSON.stringify(prepared.screenshots) !== JSON.stringify(entry.draft.content.screenshots)
-  )
-    throw new PublicFeedbackFailure(
-      "uncertain",
-      "The screenshot preview changed. Automatic delivery is paused; review your draft again.",
-    )
-  const preview = await previewPublicReport(ctx, identity, entry.draft, prepared.preparationId)
-  if (preview.review.contentSha256 !== entry.preview.review.contentSha256)
-    throw new PublicFeedbackFailure(
-      "uncertain",
-      "The public issue changed. Automatic delivery is paused; review your draft again.",
-    )
-  entry.preparation = { id: prepared.preparationId, expiresAt: prepared.expiresAt }
-  return prepared
-}
-
-async function sendReviewed(ctx: Ctx, identity: PublicIdentity, entry: Stored) {
-  if (!entry.createdReceipt) await renew(ctx, identity, entry)
-  const send = () =>
-    submitPublicReport(
-      ctx,
-      identity,
-      entry.draft,
-      entry.preview.review.contentSha256,
-      entry.preparation?.id,
-    )
-  try {
-    return await send()
-  } catch (cause) {
-    if (!(cause instanceof PublicFeedbackFailure) || cause.code !== "expired") throw cause
-    await renew(ctx, identity, entry, true)
-    return send()
-  }
-}
-
-function waitingReport(entry: Stored, failure: PublicFeedbackFailure): PublicDelivery {
-  const reason =
-    failure.code === "offline"
-      ? "offline"
-      : failure.code === "retry"
-        ? "busy"
-        : failure.code === "private_copy_pending"
-          ? "private_copy_pending"
-          : undefined
-  return {
-    status: reason ? "queued" : "uncertain",
-    id: entry.draft.id,
-    message: failure.message,
-    ...(reason ? { reason } : {}),
-    ...(entry.createdReceipt
-      ? { reference: entry.createdReceipt.reference, issueUrl: entry.createdReceipt.issueUrl }
-      : {}),
-  }
-}
-
-async function deliver(ctx: Ctx, identity: PublicIdentity, entry: Stored): Promise<PublicDelivery> {
-  try {
-    const receipt = await sendReviewed(ctx, identity, entry)
-    entry.state = "submitted"
-    entry.receipt = receipt
-    entry.createdReceipt = receipt
-    // The remote receipt proves creation even if the local receipt write fails. The pre-send
-    // queued snapshot still has the same ID and digest, so a later retry remains idempotent.
-    await save(ctx, entry).catch(() => {})
-    return receipt
-  } catch (cause) {
-    const failure =
-      cause instanceof PublicFeedbackFailure
-        ? cause
-        : new PublicFeedbackFailure(
-            "uncertain",
-            "The submission outcome is uncertain. Your report is kept and automatic retry is paused.",
-          )
-    if (failure.code === "refused") {
-      entry.state = entry.createdReceipt ? "uncertain" : "reviewed"
-      delete entry.receipt
-      await save(ctx, entry)
-      if (entry.createdReceipt) return entry.createdReceipt
-      throw failure
-    }
-    if (failure.receipt) entry.createdReceipt = failure.receipt
-    const result = waitingReport(entry, failure)
-    entry.state = result.status === "queued" ? "queued" : "uncertain"
-    entry.notBefore = ctx.clock.now() + 2 * 60_000
-    entry.receipt = result
-    await save(ctx, entry)
-    if (entry.createdReceipt) return entry.createdReceipt
-    return result
-  }
 }
 
 export async function confirmPublicReport(
@@ -333,9 +119,9 @@ export async function confirmPublicReport(
   digest: string,
 ): Promise<PublicDelivery> {
   const identity = await publicIdentity(ctx)
-  return ctx.fs.withLock(lockFor(ctx, id), async () => {
-    const entry = await read(ctx, id)
-    assertCaller(entry, identity)
+  return ctx.fs.withLock(publicReportLock(ctx, id), async () => {
+    const entry = await readPublicReport(ctx, id)
+    assertPublicCaller(entry, identity)
     if (digest !== entry.preview.review.contentSha256)
       throw new PublicFeedbackFailure(
         "refused",
@@ -348,16 +134,16 @@ export async function confirmPublicReport(
     if (entry.state !== "reviewed" && entry.state !== "queued")
       throw new PublicFeedbackFailure("refused", "Preview the report before submitting.")
     entry.state = "queued"
-    await save(ctx, entry)
-    return deliver(ctx, identity, entry)
+    await savePublicReport(ctx, entry)
+    return deliverPublicReport(ctx, identity, entry)
   })
 }
 
 export async function publicReportImage(ctx: Ctx, id: string, index: number): Promise<Uint8Array> {
-  return ctx.fs.withLock(lockFor(ctx, id), async () => {
-    const entry = await read(ctx, id)
-    assertCaller(entry, await publicIdentity(ctx))
-    const image = imagesOf(entry)[index]
+  return ctx.fs.withLock(publicReportLock(ctx, id), async () => {
+    const entry = await readPublicReport(ctx, id)
+    assertPublicCaller(entry, await publicIdentity(ctx))
+    const image = publicImagesOf(entry)[index]
     const descriptor = entry.preview.content.screenshots[index]
     if (
       !image ||
@@ -375,13 +161,13 @@ export async function publicReportImage(ctx: Ctx, id: string, index: number): Pr
 /** Read the owner's retained outcome without submitting, renewing a lease or changing consent. */
 export async function publicReportStatus(ctx: Ctx, id: string): Promise<PublicDelivery | null> {
   const identity = await publicIdentity(ctx)
-  if (!(await ctx.fs.exists(pathFor(ctx, id)))) return null
+  if (!(await ctx.fs.exists(publicReportPath(ctx, id)))) return null
   return ctx.fs.withLock(
-    lockFor(ctx, id),
+    publicReportLock(ctx, id),
     async () => {
-      const entry = await read(ctx, id, false)
-      assertCaller(entry, identity)
-      if (ctx.clock.now() - entry.at > MAX_AGE || entry.state === "reviewed") return null
+      const entry = await readPublicReport(ctx, id, false)
+      assertPublicCaller(entry, identity)
+      if (ctx.clock.now() - entry.at > PUBLIC_MAX_AGE || entry.state === "reviewed") return null
       if (entry.createdReceipt) return entry.createdReceipt
       if (entry.receipt) return entry.receipt
       return {
@@ -399,9 +185,9 @@ export async function publicReportStatus(ctx: Ctx, id: string): Promise<PublicDe
 
 export async function cancelPublicReport(ctx: Ctx, id: string): Promise<void> {
   const identity = await publicIdentity(ctx)
-  await ctx.fs.withLock(lockFor(ctx, id), async () => {
-    const entry = await read(ctx, id)
-    assertCaller(entry, identity)
+  await ctx.fs.withLock(publicReportLock(ctx, id), async () => {
+    const entry = await readPublicReport(ctx, id)
+    assertPublicCaller(entry, identity)
     if (entry.createdReceipt)
       throw new PublicFeedbackFailure(
         "refused",
@@ -414,7 +200,7 @@ export async function cancelPublicReport(ctx: Ctx, id: string): Promise<void> {
       )
     entry.state = "reviewed"
     delete entry.receipt
-    await save(ctx, entry)
+    await savePublicReport(ctx, entry)
   })
 }
 
@@ -425,26 +211,5 @@ export async function retryPublicOutbox(ctx: Ctx): Promise<void> {
     await retryWaitingPublicReports(ctx)
   } finally {
     retryingHomes.delete(ctx.home)
-  }
-}
-
-async function retryWaitingPublicReports(ctx: Ctx): Promise<void> {
-  if (!(await ctx.fs.exists(publicOutboxDir(ctx)))) return
-  const identity = await publicIdentity(ctx).catch(() => null)
-  const names = await ctx.fs.readdir(publicOutboxDir(ctx))
-  for (const name of names.filter((name) => /^[A-Za-z0-9_-]{1,64}\.json$/.test(name))) {
-    const id = name.slice(0, -5)
-    await ctx.fs
-      .withLock(lockFor(ctx, id), async () => {
-        const entry = await read(ctx, id)
-        if (!identity || entry.caller !== identity.binding) return
-        if (ctx.clock.now() - entry.at > MAX_AGE) {
-          await ctx.fs.remove(pathFor(ctx, id))
-          return
-        }
-        if (entry.state === "queued" && (entry.notBefore ?? 0) <= ctx.clock.now())
-          await deliver(ctx, identity, entry)
-      })
-      .catch(() => {})
   }
 }

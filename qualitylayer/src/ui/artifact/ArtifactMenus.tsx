@@ -14,15 +14,8 @@ import {
   ShapesIcon,
   Trash2Icon,
 } from "lucide-react"
-import { type ReactNode, useId, useState } from "react"
+import { type ReactNode, useState } from "react"
 import { toast } from "sonner"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import type { Artifact } from "../../core/artifact/format.ts"
 import { trimEndCharacters } from "../../core/text-boundaries.ts"
 import type {
@@ -36,9 +29,10 @@ import type {
 import { noteOrigin } from "../artifacts/origin.ts"
 import { copyText, type PointItem, usePointMenu } from "../kit/PointMenu.tsx"
 import { AddPageDialog } from "./AddPageDialog.tsx"
+import { DeleteArtifactDialog, RenameArtifactDialog } from "./ArtifactDialogs.tsx"
 import { CompareDialog, type CompareSides } from "./CompareArtifacts.tsx"
 import { KeepDialog } from "./KeepDialog.tsx"
-import { draftedOn, draftLine, type TaskLasting } from "./task-lasting.ts"
+import { type DraftLine, draftedOn, draftLine, type TaskLasting } from "./task-lasting.ts"
 import "./task-lasting.css"
 
 type Pointer = Parameters<ReturnType<typeof usePointMenu>["open"]>[0]
@@ -61,7 +55,177 @@ export function lastingAsArtifact(artifact: LastingArtifact, page?: string): Art
   }
 }
 
-const SLUG = /^[a-z0-9][a-z0-9-]*$/
+function compareSidesOf(args: {
+  api: Api
+  task: TaskDetail
+  draft: Artifact
+  artifact: LastingArtifact
+  owner: string
+}): CompareSides {
+  const { api, task, draft, artifact, owner } = args
+  const on = draft.draftOn
+  const pages =
+    draft.pages !== undefined
+      ? draft.pages
+          .filter((each) => on?.page === undefined || each.page === on.page)
+          .map(({ page, title, file }) => ({ page, title, file }))
+      : [{ page: on?.page ?? `${draft.name}.html`, title: draft.title, file: draft.file }]
+  return {
+    api,
+    task,
+    project: owner,
+    artifact: {
+      name: artifact.name,
+      title: artifact.title,
+      pages: artifact.pages.map(({ page, title, file }) => ({ page, title, file })),
+    },
+    draft: { name: draft.name, title: draft.title, pages },
+    ...(on?.page !== undefined ? { page: on.page } : {}),
+  }
+}
+
+function buildDraftMenuItems(args: {
+  draft: Artifact
+  task: TaskDetail
+  where: ArtifactWhere
+  drafts: readonly Artifact[]
+  lasting: TaskLasting
+  readOnly: boolean
+  line: DraftLine | null
+  onOpen: (where: ArtifactWhere, artifact: Artifact) => void
+  openInLibrary: (owner: string, artifact: LastingArtifact, page?: string) => void
+  onKeep: (draft: Artifact) => void
+  onAddPage: (draft: Artifact, artifact: LastingArtifact) => void
+  onCompare: (draft: Artifact, artifact: LastingArtifact, owner: string) => void
+  onRename: (draft: Artifact) => void
+  onDelete: (draft: Artifact) => void
+}): PointItem[] {
+  const {
+    draft,
+    task,
+    where,
+    drafts,
+    lasting,
+    readOnly,
+    line,
+    onOpen,
+    openInLibrary,
+    onKeep,
+    onAddPage,
+    onCompare,
+    onRename,
+    onDelete,
+  } = args
+  const on = draft.draftOn
+  const found =
+    line?.base !== undefined && line.owner !== null
+      ? { artifact: line.base, owner: line.owner, deleted: line.state === "deleted" }
+      : undefined
+  const named = draftedOn([...drafts])
+  const targets =
+    on !== undefined
+      ? []
+      : lasting.artifacts.filter((each) => named.size === 0 || named.has(each.name))
+  const items: PointItem[] = [
+    { label: "Open", icon: <EyeIcon aria-hidden="true" />, onSelect: () => onOpen(where, draft) },
+  ]
+  if (found !== undefined) {
+    items.push({
+      label: found.deleted
+        ? `Restore ${found.artifact.title}…`
+        : `Open ${found.artifact.title} in the Library`,
+      icon: <ShapesIcon aria-hidden="true" />,
+      onSelect: () => openInLibrary(found.owner, found.artifact, on?.page),
+    })
+  }
+  if (!readOnly) {
+    items.push("separator", {
+      label: "Save to library…",
+      icon: <PinIcon aria-hidden="true" />,
+      onSelect: () => onKeep(draft),
+    })
+    for (const target of targets) {
+      items.push({
+        label: `Add as a page of ${target.title}…`,
+        icon: <FileIcon aria-hidden="true" />,
+        onSelect: () => onAddPage(draft, target),
+      })
+    }
+  }
+  if (found !== undefined && !found.deleted) {
+    items.push({
+      label: `Compare with ${found.artifact.title}`,
+      icon: <ColumnsIcon aria-hidden="true" />,
+      onSelect: () => onCompare(draft, found.artifact, found.owner),
+    })
+  }
+  items.push("separator")
+  const canEditSingle = !readOnly && draft.pages === undefined
+  if (canEditSingle) {
+    items.push({
+      label: "Rename…",
+      icon: <PencilIcon aria-hidden="true" />,
+      onSelect: () => onRename(draft),
+    })
+  }
+  items.push({
+    label: "Copy path",
+    icon: <CopyIcon aria-hidden="true" />,
+    onSelect: () => copyText(`${trimEndCharacters(task.dir, "\\/")}/${draft.file}`),
+  })
+  if (canEditSingle) {
+    items.push("separator", {
+      label: "Delete…",
+      icon: <Trash2Icon aria-hidden="true" />,
+      danger: true,
+      onSelect: () => onDelete(draft),
+    })
+  }
+  return items
+}
+
+function buildLastingMenuItems(args: {
+  artifact: LastingArtifact
+  owner: string
+  readOnly: boolean
+  openInLibrary: (owner: string, artifact: LastingArtifact) => void
+  onDraftFrom: (artifact: LastingArtifact, owner: string) => void
+}): PointItem[] {
+  const { artifact, owner, readOnly, openInLibrary, onDraftFrom } = args
+  const items: PointItem[] = [
+    {
+      label: "Open",
+      icon: <EyeIcon aria-hidden="true" />,
+      onSelect: () => openInLibrary(owner, artifact),
+    },
+  ]
+  if (!readOnly && artifact.archivedAt === undefined && artifact.deletedAt === undefined) {
+    items.push({
+      label: "Draft on it in this task",
+      icon: <ArrowUpRightIcon aria-hidden="true" />,
+      onSelect: () => onDraftFrom(artifact, owner),
+    })
+  }
+  if (artifact.claudeDesign !== undefined) {
+    const link = artifact.claudeDesign
+    items.push({
+      label: "Open in Claude Design",
+      icon: <ExternalLinkIcon aria-hidden="true" />,
+      onSelect: () => void window.open(link, "_blank", "noopener,noreferrer"),
+    })
+  }
+  return items
+}
+
+function notifyKept(result: KeepResult, notShown: string[], projectName: string) {
+  toast.success(
+    result.where === "repository"
+      ? `Saved to the ${projectName} Library as ${result.path}. Every task of ${projectName} can draft on it.`
+      : `Saved only on this computer in ${result.path}.`,
+  )
+  if (notShown.length > 0)
+    toast.error(`It could not be listed under ${notShown.join(", ")}. Try again from that project.`)
+}
 
 export function useArtifactMenus({
   api,
@@ -74,25 +238,20 @@ export function useArtifactMenus({
   onOpen,
   reload,
 }: {
-  /** Without the App's API or the task (a bare list), the menus are off: no "…" button, no right-click. */
   api: Api | undefined
   task: TaskDetail | undefined
   where: ArtifactWhere
   drafts: Artifact[]
   lasting: TaskLasting
   readOnly: boolean
-  /** The artifact open now, so a rename or a delete of it can move the page on. */
   current: string | null
   onOpen: (where: ArtifactWhere, artifact: Artifact) => void
   reload: () => void
 }): {
   enabled: boolean
   draftMenu: (event: Pointer, draft: Artifact) => void
-  /** `owner`: the project the artifact belongs to, for one this project shows from another. */
   lastingMenu: (event: Pointer, artifact: LastingArtifact, owner?: string) => void
-  /** Open a Library artifact in its owner's viewer, remembering this task for the way back. */
   openInLibrary: (owner: string, artifact: LastingArtifact, page?: string) => void
-  /** Ask to save a draft to the Library (the Save to library dialog). */
   keep: (draft: Artifact) => void
   node: ReactNode
 } {
@@ -117,29 +276,6 @@ export function useArtifactMenus({
     reload()
     lasting.reload()
   }
-  const sidesOf = (draft: Artifact, artifact: LastingArtifact, owner: string): CompareSides => {
-    const on = draft.draftOn
-    const pages =
-      draft.pages !== undefined
-        ? draft.pages
-            .filter((each) => on?.page === undefined || each.page === on.page)
-            .map(({ page, title, file }) => ({ page, title, file }))
-        : [{ page: on?.page ?? `${draft.name}.html`, title: draft.title, file: draft.file }]
-    return {
-      api,
-      task,
-      project: owner,
-      artifact: {
-        name: artifact.name,
-        title: artifact.title,
-        pages: artifact.pages.map(({ page, title, file }) => ({ page, title, file })),
-      },
-      draft: { name: draft.name, title: draft.title, pages },
-      ...(on?.page !== undefined ? { page: on.page } : {}),
-    }
-  }
-
-  // A Library artifact opens in its owner project's viewer, which offers the way back to this task.
   const openInLibrary = (owner: string, artifact: LastingArtifact, page?: string) => {
     noteOrigin(task.title, owner, artifact.name)
     onOpen({ scope: "project", id: owner }, lastingAsArtifact(artifact, page))
@@ -153,12 +289,10 @@ export function useArtifactMenus({
         ? { projects: lasting.query.data.projects, project: task.project }
         : undefined,
     )
-
   const draftFrom = async (artifact: LastingArtifact, owner: string) => {
     try {
       const made = await api.draftOnArtifact(task.id, {
         artifact: artifact.name,
-        // An artifact shown from another project keeps its owner: the draft names it.
         ...(owner !== task.project ? { project: owner } : {}),
       })
       toast.success(`Drafting on ${artifact.title}: ${made.file}`)
@@ -174,122 +308,38 @@ export function useArtifactMenus({
       toast.error(cause instanceof Error ? cause.message : String(cause))
     }
   }
-
-  const draftMenu = (event: Pointer, draft: Artifact) => {
-    const on = draft.draftOn
-    // The base is found in its owner project. An archived one opens and compares as it is; a deleted
-    // one opens on its viewer's Restore, never compared; a missing one offers neither.
-    const line = baseOf(draft)
-    const found =
-      line?.base !== undefined && line.owner !== null
-        ? { artifact: line.base, owner: line.owner, deleted: line.state === "deleted" }
-        : undefined
-    const onto = found !== undefined && !found.deleted ? found : undefined
-    // A new draft can become a page of an artifact the task already drafts on, else of any lasting one.
-    const named = draftedOn(drafts)
-    const targets =
-      on !== undefined
-        ? []
-        : lasting.artifacts.filter((each) => named.size === 0 || named.has(each.name))
-    const items: PointItem[] = [
-      {
-        label: "Open",
-        icon: <EyeIcon aria-hidden="true" />,
-        onSelect: () => onOpen(where, draft),
-      },
-    ]
-    if (found !== undefined)
-      items.push({
-        label: found.deleted
-          ? `Restore ${found.artifact.title}…`
-          : `Open ${found.artifact.title} in the Library`,
-        icon: <ShapesIcon aria-hidden="true" />,
-        onSelect: () => openInLibrary(found.owner, found.artifact, on?.page),
-      })
-    if (!readOnly) {
-      items.push("separator", {
-        label: "Save to library…",
-        icon: <PinIcon aria-hidden="true" />,
-        onSelect: () => setKeeping(draft),
-      })
-      for (const target of targets)
-        items.push({
-          label: `Add as a page of ${target.title}…`,
-          icon: <FileIcon aria-hidden="true" />,
-          onSelect: () => setAdding({ draft, artifact: target }),
-        })
-    }
-    if (onto !== undefined)
-      items.push({
-        label: `Compare with ${onto.artifact.title}`,
-        icon: <ColumnsIcon aria-hidden="true" />,
-        onSelect: () => setComparing(sidesOf(draft, onto.artifact, onto.owner)),
-      })
-    items.push("separator")
-    // A page can be renamed or deleted in place; a folder's pages are managed on the artifact itself.
-    if (!readOnly && draft.pages === undefined)
-      items.push({
-        label: "Rename…",
-        icon: <PencilIcon aria-hidden="true" />,
-        onSelect: () => setRenaming(draft),
-      })
-    items.push({
-      label: "Copy path",
-      icon: <CopyIcon aria-hidden="true" />,
-      onSelect: () => copyText(`${trimEndCharacters(task.dir, "\\/")}/${draft.file}`),
-    })
-    if (!readOnly && draft.pages === undefined)
-      items.push("separator", {
-        label: "Delete…",
-        icon: <Trash2Icon aria-hidden="true" />,
-        danger: true,
-        onSelect: () => setDeleting(draft),
-      })
-    open(event, items)
-  }
-
-  const lastingMenu = (event: Pointer, artifact: LastingArtifact, owner = task.project) => {
-    const items: PointItem[] = [
-      {
-        label: "Open",
-        icon: <EyeIcon aria-hidden="true" />,
-        onSelect: () => openInLibrary(owner, artifact),
-      },
-    ]
-    // An archived or deleted artifact takes no new draft until it is restored.
-    if (!readOnly && artifact.archivedAt === undefined && artifact.deletedAt === undefined)
-      items.push({
-        label: "Draft on it in this task",
-        icon: <ArrowUpRightIcon aria-hidden="true" />,
-        onSelect: () => void draftFrom(artifact, owner),
-      })
-    if (artifact.claudeDesign !== undefined) {
-      const link = artifact.claudeDesign
-      items.push({
-        label: "Open in Claude Design",
-        icon: <ExternalLinkIcon aria-hidden="true" />,
-        onSelect: () => void window.open(link, "_blank", "noopener,noreferrer"),
-      })
-    }
-    open(event, items)
-  }
-
-  const kept = (result: KeepResult, notShown: string[], projectName: string) => {
-    toast.success(
-      result.where === "repository"
-        ? `Saved to the ${projectName} Library as ${result.path}. Every task of ${projectName} can draft on it.`
-        : `Saved only on this computer in ${result.path}.`,
+  const draftMenu = (event: Pointer, draft: Artifact) =>
+    open(
+      event,
+      buildDraftMenuItems({
+        draft,
+        task,
+        where,
+        drafts,
+        lasting,
+        readOnly,
+        line: baseOf(draft),
+        onOpen,
+        openInLibrary,
+        onKeep: setKeeping,
+        onAddPage: (d, artifact) => setAdding({ draft: d, artifact }),
+        onCompare: (d, artifact, owner) =>
+          setComparing(compareSidesOf({ api, task, draft: d, artifact, owner })),
+        onRename: setRenaming,
+        onDelete: setDeleting,
+      }),
     )
-    if (notShown.length > 0)
-      toast.error(
-        `It could not be listed under ${notShown.join(", ")}. Try again from that project.`,
-      )
-    refresh()
-  }
-  const added = (_: DraftedOn, artifact: LastingArtifact) => {
-    toast.success(`Added. It folds into ${artifact.title} at Verify.`)
-    refresh()
-  }
+  const lastingMenu = (event: Pointer, artifact: LastingArtifact, owner = task.project) =>
+    open(
+      event,
+      buildLastingMenuItems({
+        artifact,
+        owner,
+        readOnly,
+        openInLibrary,
+        onDraftFrom: (a, o) => void draftFrom(a, o),
+      }),
+    )
 
   return {
     enabled: true,
@@ -307,7 +357,10 @@ export function useArtifactMenus({
           base={keeping !== null ? baseOf(keeping) : null}
           projects={lasting.query.data?.projects ?? []}
           onClose={() => setKeeping(null)}
-          onKept={kept}
+          onKept={(result, notShown, projectName) => {
+            notifyKept(result, notShown, projectName)
+            refresh()
+          }}
         />
         <AddPageDialog
           api={api}
@@ -315,10 +368,13 @@ export function useArtifactMenus({
           draft={adding?.draft ?? null}
           artifact={adding?.artifact ?? null}
           onClose={() => setAdding(null)}
-          onAdded={added}
+          onAdded={(_: DraftedOn, artifact: LastingArtifact) => {
+            toast.success(`Added. It folds into ${artifact.title} at Verify.`)
+            refresh()
+          }}
         />
         <CompareDialog sides={comparing} onClose={() => setComparing(null)} />
-        <RenameDialog
+        <RenameArtifactDialog
           api={api}
           where={where}
           draft={renaming}
@@ -334,7 +390,7 @@ export function useArtifactMenus({
             reload()
           }}
         />
-        <DeleteDialog
+        <DeleteArtifactDialog
           api={api}
           where={where}
           draft={deleting}
@@ -347,181 +403,4 @@ export function useArtifactMenus({
       </>
     ),
   }
-}
-
-function RenameDialog({
-  api,
-  where,
-  draft,
-  onClose,
-  onDone,
-}: {
-  api: Api
-  where: ArtifactWhere
-  draft: Artifact | null
-  onClose: () => void
-  onDone: (file: string) => void
-}) {
-  return (
-    <Dialog open={draft !== null} onOpenChange={(next) => (next ? undefined : onClose())}>
-      {draft !== null ? (
-        <RenameForm
-          key={draft.file}
-          api={api}
-          where={where}
-          draft={draft}
-          onClose={onClose}
-          onDone={onDone}
-        />
-      ) : null}
-    </Dialog>
-  )
-}
-
-function RenameForm({
-  api,
-  where,
-  draft,
-  onClose,
-  onDone,
-}: {
-  api: Api
-  where: ArtifactWhere
-  draft: Artifact
-  onClose: () => void
-  onDone: (file: string) => void
-}) {
-  const [name, setName] = useState(draft.name)
-  const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const id = useId()
-  const valid = SLUG.test(name) && name.length <= 100
-  const save = async () => {
-    if (busy || !valid) return
-    if (name === draft.name) return onClose()
-    setBusy(true)
-    setProblem(null)
-    try {
-      if (api.artifactSource === undefined || api.artifactMutate === undefined)
-        throw new Error("This App cannot rename artifacts.")
-      const source = await api.artifactSource(where, draft.file)
-      const changed = await api.artifactMutate(where, draft.file, {
-        action: "rename",
-        name,
-        expected: source.revision,
-      })
-      onDone(changed.file)
-      onClose()
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "The artifact could not be renamed.")
-      setBusy(false)
-    }
-  }
-  return (
-    <DialogContent className="kd sm:max-w-[420px]" data-testid="rename-artifact">
-      <DialogHeader>
-        <DialogTitle>Rename this artifact</DialogTitle>
-        <DialogDescription>
-          Lower-case letters, digits and dashes. Its feedback names the file, so an artifact with
-          feedback keeps its name.
-        </DialogDescription>
-      </DialogHeader>
-      <form
-        className="kd-form"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void save()
-        }}
-      >
-        <label className="kd-field" htmlFor={id}>
-          Name
-          <input
-            id={id}
-            className="kd-input"
-            value={name}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        {problem !== null ? (
-          <p className="kd-bad" role="alert">
-            {problem}
-          </p>
-        ) : null}
-        <div className="kd-actions">
-          <button type="button" className="q-btn quiet" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="q-btn primary" disabled={busy || !valid}>
-            Rename
-          </button>
-        </div>
-      </form>
-    </DialogContent>
-  )
-}
-
-function DeleteDialog({
-  api,
-  where,
-  draft,
-  onClose,
-  onDone,
-}: {
-  api: Api
-  where: ArtifactWhere
-  draft: Artifact | null
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const remove = async () => {
-    if (draft === null || busy) return
-    setBusy(true)
-    setProblem(null)
-    try {
-      if (api.artifactSource === undefined || api.artifactMutate === undefined)
-        throw new Error("This App cannot delete artifacts.")
-      const source = await api.artifactSource(where, draft.file)
-      await api.artifactMutate(where, draft.file, { action: "delete", expected: source.revision })
-      onDone()
-      onClose()
-    } catch (cause) {
-      setProblem(cause instanceof Error ? cause.message : "The artifact could not be deleted.")
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open={draft !== null} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="kd sm:max-w-[420px]" data-testid="delete-artifact">
-        <DialogHeader>
-          <DialogTitle>Delete this artifact?</DialogTitle>
-          <DialogDescription>
-            {draft?.title}: its page is deleted from this task. Its history keeps earlier versions.
-          </DialogDescription>
-        </DialogHeader>
-        {problem !== null ? (
-          <p className="kd-bad" role="alert">
-            {problem}
-          </p>
-        ) : null}
-        <div className="kd-actions">
-          <button type="button" className="q-btn quiet" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="q-btn q-delete-confirm"
-            disabled={busy}
-            onClick={() => void remove()}
-          >
-            Delete
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
 }

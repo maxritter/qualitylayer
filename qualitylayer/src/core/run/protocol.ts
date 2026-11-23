@@ -120,159 +120,41 @@ export function isTerminalFocusReport(bytes: Uint8Array): boolean {
   return true
 }
 
+import { validateFrame, validateViewerState } from "./protocol-validate.ts"
+
+export { validateFrame, validateViewerState }
+
 const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= max
 export const validSize = (cols: unknown, rows: unknown) =>
   integer(cols, 2, 500) && integer(rows, 1, 300)
-/** The lowest event a frame can name: a restart needs a turn behind it, a guarded stop can be at the start. */
-const FIRST_BOUNDARY = { restart: 1, "guarded-stop": 0 } as const
-const text = (v: unknown, max = 4096): v is string =>
-  typeof v === "string" && v.length > 0 && v.length <= max
-export function validateFrame(value: unknown, direction?: Direction): Frame {
-  if (!value || typeof value !== "object") throw new Error("invalid frame")
-  const f = value as Record<string, unknown>
-  const type = f.type as keyof typeof FRAME_SCHEMA
-  const schema = FRAME_SCHEMA[type]
-  if (!schema || (direction && schema.direction !== direction))
-    throw new Error("unknown or wrong-direction frame")
-  const binary = (limit: number) => f.data instanceof Uint8Array && f.data.length <= limit
-  let valid = false
-  switch (type) {
-    case "hello":
-      valid = integer(f.protocol, 1) && text(f.token, 256)
-      break
-    case "input":
-      valid =
-        binary(LIMITS.inputBytes) &&
-        (f.boundary === undefined ||
-          (typeof f.boundary === "object" &&
-            f.boundary !== null &&
-            integer((f.boundary as Record<string, unknown>).generation, 1) &&
-            integer((f.boundary as Record<string, unknown>).sequence, 1) &&
-            text((f.boundary as Record<string, unknown>).nativeSession, 128) &&
-            text((f.boundary as Record<string, unknown>).task, 512) &&
-            Object.keys(f.boundary).every((key) =>
-              ["generation", "nativeSession", "sequence", "task"].includes(key),
-            )))
-      break
-    case "input-result":
-      valid = integer(f.generation, 1) && integer(f.sequence, 1) && typeof f.accepted === "boolean"
-      break
-    case "resize":
-      valid = validSize(f.cols, f.rows)
-      break
-    case "control":
-      valid =
-        typeof f.action === "string" &&
-        ["interrupt", "stop", "move", "take-control"].includes(f.action) &&
-        integer(f.generation, 1)
-      break
-    case "attach":
-      valid = integer(f.generation, 1)
-      break
-    case "ack":
-      valid = integer(f.bytes) && Object.keys(f).every((key) => ["type", "bytes"].includes(key))
-      break
-    case "restart":
-      valid =
-        integer(f.generation, 1) &&
-        integer(f.sequence, 1) &&
-        (f.permission === undefined ||
-          (typeof f.permission === "object" &&
-            f.permission !== null &&
-            text((f.permission as Record<string, unknown>).nativeSession, 128) &&
-            integer((f.permission as Record<string, unknown>).inputAt) &&
-            Object.keys(f.permission).every((key) =>
-              ["nativeSession", "inputAt"].includes(key),
-            ))) &&
-        Object.keys(f).every((key) =>
-          ["type", "generation", "sequence", "permission"].includes(key),
-        )
-      break
-    case "guarded-stop":
-      valid =
-        integer(f.generation, 1) &&
-        integer(f.sequence, FIRST_BOUNDARY[type]) &&
-        Object.keys(f).every((key) => ["type", "generation", "sequence"].includes(key))
-      break
-    case "fresh":
-      valid =
-        integer(f.generation, 1) &&
-        integer(f.sequence, 1) &&
-        typeof f.request === "string" &&
-        /^[a-f0-9]{32}$/.test(f.request) &&
-        Object.keys(f).every((key) => ["type", "generation", "sequence", "request"].includes(key))
-      break
-    case "fresh-result":
-      valid =
-        integer(f.generation, 1) &&
-        typeof f.request === "string" &&
-        /^[a-f0-9]{32}$/.test(f.request) &&
-        (f.status === "started"
-          ? text(f.run, 128) &&
-            integer(f.nextGeneration, 1) &&
-            Object.keys(f).every((key) =>
-              ["type", "generation", "request", "status", "run", "nextGeneration"].includes(key),
-            )
-          : f.status === "failed" &&
-            text(f.message, 2048) &&
-            Object.keys(f).every((key) =>
-              ["type", "generation", "request", "status", "message"].includes(key),
-            ))
-      break
-    case "ready":
-      valid =
-        integer(f.protocol, 1) &&
-        text(f.run, 128) &&
-        integer(f.generation, 1) &&
-        integer(f.pid, 1) &&
-        text(f.processStart)
-      valid = valid && (f.guardedRestart === undefined || typeof f.guardedRestart === "boolean")
-      valid =
-        valid && (f.permissionRestart === undefined || typeof f.permissionRestart === "boolean")
-      valid = valid && (f.acknowledges === undefined || typeof f.acknowledges === "boolean")
-      valid = valid && (f.guardedInput === undefined || typeof f.guardedInput === "boolean")
-      break
-    case "output":
-      valid = integer(f.seq, 1) && binary(32 * 1024)
-      break
-    case "replay-begin":
-      valid =
-        integer(f.epoch, 1) &&
-        validSize(f.cols, f.rows) &&
-        typeof f.kind === "string" &&
-        ["replay", "rebuild"].includes(f.kind) &&
-        typeof f.truncated === "boolean" &&
-        integer(f.upTo)
-      break
-    case "replay-chunk":
-      valid = integer(f.epoch, 1) && binary(32 * 1024)
-      break
-    case "replay-end":
-      valid = integer(f.epoch, 1)
-      break
-    case "status":
-      valid =
-        typeof f.status === "string" &&
-        ["validated", "starting", "running", "stopping", "stopped", "failed"].includes(f.status) &&
-        validSize(f.cols, f.rows)
-      break
-    case "attention":
-      valid = typeof f.kind === "string" && ["attention", "waiting", "clear"].includes(f.kind)
-      break
-    case "resync":
-      valid = text(f.reason)
-      break
-    case "error":
-      valid = text(f.code, 128) && text(f.message)
-      break
-    case "exit":
-      valid = integer(f.code, -2147483648, 2147483647) && typeof f.cleanupComplete === "boolean"
-      break
-  }
-  if (!valid) throw new Error(`invalid ${type} frame`)
-  return value as Frame
+
+function reviveBinary(_: string, v: unknown): unknown {
+  if (!v || typeof v !== "object" || typeof (v as { base64?: unknown }).base64 !== "string")
+    return v
+  const base64 = (v as { base64: string }).base64
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64))
+    throw new Error("invalid binary frame")
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
 }
+
+function decodeSingleFrame(
+  bytes: Uint8Array,
+  offset: number,
+  length: number,
+  direction: Direction,
+): Frame {
+  const schema = Object.entries(FRAME_SCHEMA).find(([, v]) => v.id === bytes[offset + 4])
+  if (!schema || schema[1].direction !== direction)
+    throw new Error("unknown or wrong-direction frame")
+  const parsed = JSON.parse(
+    decoder.decode(bytes.subarray(offset + 5, offset + 4 + length)),
+    reviveBinary,
+  )
+  if (parsed?.type !== schema[0]) throw new Error("frame type mismatch")
+  return validateFrame(parsed, direction)
+}
+
 export function encodeFrame(frame: Frame): Uint8Array {
   validateFrame(frame)
   const wire =
@@ -301,22 +183,7 @@ export class FrameDecoder {
       const length = new DataView(bytes.buffer, bytes.byteOffset + offset).getUint32(0)
       if (length < 2 || length > LIMITS.frameBytes) throw new Error("invalid frame length")
       if (offset + 4 + length > bytes.length) break
-      const schema = Object.entries(FRAME_SCHEMA).find(([, v]) => v.id === bytes[offset + 4])
-      if (!schema || schema[1].direction !== this.direction)
-        throw new Error("unknown or wrong-direction frame")
-      const parsed = JSON.parse(
-        decoder.decode(bytes.subarray(offset + 5, offset + 4 + length)),
-        (_, v) => {
-          if (v && typeof v === "object" && typeof v.base64 === "string") {
-            if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(v.base64))
-              throw new Error("invalid binary frame")
-            return Uint8Array.from(atob(v.base64), (c) => c.charCodeAt(0))
-          }
-          return v
-        },
-      )
-      if (parsed?.type !== schema[0]) throw new Error("frame type mismatch")
-      frames.push(validateFrame(parsed, this.direction))
+      frames.push(decodeSingleFrame(bytes, offset, length, this.direction))
       offset += length + 4
     }
     this.pending = bytes.slice(offset)
@@ -349,40 +216,3 @@ export type ViewerState = {
   canTakeControl: boolean
 }
 export const VIEWER_STATE_BYTES = 1024
-export function validateViewerState(value: unknown): ViewerState {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("invalid viewer state")
-  const state = value as Record<string, unknown>
-  const proof = Object.hasOwn(state, "pickerProof")
-  const keys = [
-    "type",
-    "generation",
-    "controller",
-    "canType",
-    "canStop",
-    "canResize",
-    "canTakeControl",
-  ]
-  if (
-    Object.keys(state).length !== keys.length + Number(proof) ||
-    keys.some((key) => !Object.hasOwn(state, key)) ||
-    state.type !== "viewer-state" ||
-    !integer(state.generation, 1) ||
-    keys.slice(2).some((key) => typeof state[key] !== "boolean") ||
-    encoder.encode(JSON.stringify(value)).length > VIEWER_STATE_BYTES
-  )
-    throw new Error("invalid viewer state")
-  if (
-    (state.canType && (!state.controller || !state.canTakeControl)) ||
-    (state.canResize && !state.canType)
-  )
-    throw new Error("inconsistent viewer state")
-  if (
-    proof &&
-    (!state.canType ||
-      typeof state.pickerProof !== "string" ||
-      !/^[a-f0-9]{64}$/.test(state.pickerProof))
-  )
-    throw new Error("invalid picker proof")
-  return value as ViewerState
-}

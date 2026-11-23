@@ -5,12 +5,17 @@ import { join } from "node:path"
 import type { Ctx, Env } from "../../ctx.ts"
 import { roots } from "../install/agent-settings.ts"
 import { userHome } from "../install/manifest.ts"
-import { windows } from "../platform.ts"
 import { AGENT_CAPABILITIES } from "../run/launch-spec.ts"
-import { isLineText } from "../text-boundaries.ts"
-import { recentWindowsProcesses, type WindowsProcess } from "../windows-processes.ts"
 import { runnableFile } from "./binary.ts"
-import { BINARIES, isNativeAgent, NATIVE_AGENTS, type NativeAgent } from "./ids.ts"
+import {
+  type NearestAgent,
+  nearestAgentInfo,
+  nearestAgentProcess,
+  nearestWindowsAgent,
+} from "./detect-process.ts"
+import { isNativeAgent, NATIVE_AGENTS, type NativeAgent } from "./ids.ts"
+
+export { nearestWindowsAgent }
 
 export type AgentId = NativeAgent | "unknown"
 
@@ -79,85 +84,6 @@ export function agentSession(env: Pick<Env, "get">): string | null {
   if (own) return own.id
   return env.get("CODEX_SESSION_ID")?.trim() || null
 }
-
-/** The agent a process name belongs to: `cursor-agent` is Cursor, `agy` is Antigravity. */
-const agentOfProcess = (name: string): NativeAgent | null =>
-  NATIVE_AGENTS.find((agent) => BINARIES[agent] === name) ?? null
-
-type NearestAgent = { agent: Exclude<AgentId, "unknown">; path: string | null }
-
-export function nearestWindowsAgent(
-  records: Pick<WindowsProcess, "pid" | "ppid" | "name">[],
-  start: number,
-  marker?: { pid: number; agent: NativeAgent },
-): NativeAgent | null {
-  let pid = start
-  for (let depth = 0; depth < 12 && pid > 0; depth++) {
-    const row = records.find((record) => record.pid === pid)
-    if (!row) break
-    const name = row.name.toLowerCase().replace(/\.exe$/, "")
-    const named = agentOfProcess(name)
-    if (named !== null) return named
-    if (marker?.pid === row.pid) return marker.agent
-    pid = row.ppid
-  }
-  return null
-}
-
-let nearestKnown: NearestAgent | null | undefined
-
-/**
- * The closest parent process that is Claude Code or Codex, with the file it runs from when the
- * system tells (not on Windows), looked up once per process.
- */
-function nearestAgentInfo(): NearestAgent | null {
-  if (nearestKnown !== undefined) return nearestKnown
-  let found: NearestAgent | null = null
-  let pid = process.ppid
-  const native = process.env.QUALITYLAYER_AGENT
-  const markedPid = Number(process.env.QUALITYLAYER_NATIVE_PID)
-  const marker: { pid: number; agent: NativeAgent } | undefined =
-    isNativeAgent(native) && Number.isSafeInteger(markedPid) && markedPid > 1
-      ? { pid: markedPid, agent: native }
-      : undefined
-  if (windows) {
-    const [records] = recentWindowsProcesses()
-    const agent = nearestWindowsAgent(records, pid, marker)
-    if (agent) found = { agent, path: null }
-    nearestKnown = found
-    return found
-  }
-  try {
-    for (let depth = 0; depth < 12 && pid > 1 && found === null; depth++) {
-      const ps = Bun.spawnSync(["ps", "-o", "ppid=,comm=", "-p", String(pid)])
-      const processLine = ps.stdout.toString().trim()
-      const match = /^(\d+)\s+/.exec(processLine)
-      if (ps.exitCode !== 0 || match === null) break
-      const path = processLine.slice(match[0].length)
-      if (!isLineText(path)) break
-      const name = path.split("/").pop() ?? ""
-      const named = agentOfProcess(name)
-      if (named !== null) found = { agent: named, path }
-      else if (marker?.pid === pid) found = { agent: marker.agent, path: null }
-      else if (name === "node" || name === "bun") {
-        const args = Bun.spawnSync(["ps", "-o", "args=", "-p", String(pid)])
-          .stdout.toString()
-          .slice(0, 8192)
-        if (/[\\/]pi-coding-agent[\\/](?:dist[\\/])?cli\.[cm]?js(?:\s|$)/.test(args))
-          found = { agent: "pi", path: null }
-      }
-      pid = Number(match[1])
-    }
-  } catch {
-    // A native sandbox may forbid process queries; executable discovery is optional.
-    found = null
-  }
-  nearestKnown = found
-  return found
-}
-
-const nearestAgentProcess = (): Exclude<AgentId, "unknown"> | null =>
-  nearestAgentInfo()?.agent ?? null
 
 /**
  * The executable of the agent session that runs this command: the nearest parent process that is

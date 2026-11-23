@@ -51,14 +51,26 @@ export const metaLine = (
     .filter((part): part is string => part !== undefined && part.trim() !== "")
     .join(" · ")
 
+const hasPart = (part: unknown): boolean =>
+  part !== undefined && part !== null && part !== "" && part !== false
+
+const hasSummaryContent = (
+  summary: ReactNode,
+  bullets: readonly ReactNode[] | undefined,
+): boolean => {
+  const hasSummary = summary !== undefined && summary !== null && summary !== ""
+  const hasBullets = bullets !== undefined && bullets.length > 0
+  return hasSummary || hasBullets
+}
+
 /** Whether the gist has anything to draw; a band with nothing in it is left out. */
-export const hasGist = (gist: GistProps | undefined): gist is GistProps =>
-  (gist !== undefined &&
-    [gist.title, gist.actions, gist.meta, gist.asOf, gist.summary, gist.body].some(
-      (part) => part !== undefined && part !== null && part !== "" && part !== false,
-    )) ||
-  (gist !== undefined && hasFacts(gist.facts, gist.now)) ||
-  (gist?.bullets?.length ?? 0) > 0
+export const hasGist = (gist: GistProps | undefined): gist is GistProps => {
+  if (gist === undefined) return false
+  const primary = [gist.title, gist.actions, gist.meta, gist.asOf, gist.summary, gist.body]
+  if (primary.some(hasPart)) return true
+  if (hasFacts(gist.facts, gist.now)) return true
+  return (gist.bullets?.length ?? 0) > 0
+}
 
 function GistHeading({ title, actions }: Pick<GistProps, "title" | "actions">) {
   // A step page's title leads with the step's own mark, as the step track draws it.
@@ -121,9 +133,7 @@ export function Gist({
       {/* The facts stand above the summary, as every step page of the Workflow model draws them. */}
       {body === undefined ? (factsView ?? <FactRow facts={facts} now={now} />) : null}
       {body !== undefined && body !== null ? body : null}
-      {body === undefined &&
-      ((summary !== undefined && summary !== null && summary !== "") ||
-        (bullets !== undefined && bullets.length > 0)) ? (
+      {body === undefined && hasSummaryContent(summary, bullets) ? (
         <div className="bd-sum" data-testid="step-summary">
           <div className="bd-sumb">
             {summary}

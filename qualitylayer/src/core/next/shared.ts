@@ -19,14 +19,14 @@ export const at = (task: Task, role: DocRole) => taskDocPath(task, role)
 
 /**
  * A step's agents' file in the reply: its path, and its skeleton while it is not written. Nothing
- * for a step whose schema names no agents' sections.
+ * for a step whose schema names no agents' sections. `facts` carries what else the skeleton depends
+ * on: the Plan's proof list, for the cards' file.
  */
 export async function agentsFields(
   ctx: Ctx,
   task: Task,
   role: DocRole,
   title: string,
-  /** What else the skeleton depends on: the Plan's proof list, for the cards' file. */
   facts: Partial<DocFacts> = {},
 ): Promise<NextPayload> {
   const template = agentsTemplateFor(folderDoc(role), { ...task, ...facts }, title)

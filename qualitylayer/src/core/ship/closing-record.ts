@@ -4,21 +4,32 @@
 
 import { join } from "node:path"
 import { type Ctx, ok, type Result } from "../../ctx.ts"
-import { parseIterations, verifyLogPath } from "../docs/build-log.ts"
-import { fillMarkers, markerKey } from "../docs/markers.ts"
-import { folderDoc } from "../docs/names.ts"
 import { cardsPath, readCards } from "../docs/outline-files.ts"
 import { verifyTemplate } from "../docs/schema.ts"
 import { buildBase } from "../git/base.ts"
 import { changes } from "../git/changes.ts"
 import { currentBranch } from "../git/repo.ts"
-import { fingerprint, readPagesRecord, withPagesLock, writePagesRecord } from "../pages/record.ts"
-import { codeLineJudgedOn, type PassJudgedOn } from "../pages/sections/review.ts"
-import { appendEvent, patchReadme, type Task, taskDocPath } from "../task/store.ts"
-import { passStanding, readAssignment } from "../verification.ts"
+import { appendEvent, patchReadme, type Task } from "../task/store.ts"
+import {
+  type ClosingPass,
+  closingReadyPath,
+  commitsAfter,
+  descriptionPath,
+  nameJudgedCommit,
+  passOf,
+} from "./closing-pass.ts"
 import { recordApproval } from "./landing.ts"
 import { markUnknown, updateRecord } from "./landing-record.ts"
 import { pullRequestBodyFile } from "./pr-body.ts"
+
+export {
+  type ClosedPass,
+  type ClosingPass,
+  closingReadyPath,
+  descriptionPath,
+  passedCommit,
+  readClosedPass,
+} from "./closing-pass.ts"
 
 export type ClosingRecord = {
   status: "verified" | "approved"
@@ -45,10 +56,6 @@ export function shipStatePath(task: Pick<Task, "runtimeDir">): string {
   return join(task.runtimeDir, "ship.json")
 }
 
-export function closingReadyPath(task: Pick<Task, "runtimeDir">): string {
-  return join(task.runtimeDir, "closing-ready.json")
-}
-
 export async function publishClosingRecord(ctx: Ctx, task: Task): Promise<void> {
   if (await ctx.fs.exists(shipStatePath(task))) return
   const ready = JSON.parse(await ctx.fs.readFile(closingReadyPath(task))) as {
@@ -63,11 +70,6 @@ export async function publishClosingRecord(ctx: Ctx, task: Task): Promise<void> 
     iterations: task.iterations,
     slices: ready.closing.slices,
   })
-}
-
-/** Where the pull request description lives: the task's Verify file. The Cockpit and `gh` read the same file. */
-export function descriptionPath(task: Pick<Task, "dir" | "runtimeDir">): string {
-  return taskDocPath(task, "verify")
 }
 
 /** Heads the generated draft until the agent has rewritten it from the diff. */
@@ -94,147 +96,27 @@ async function landingRecordFailed(ctx: Ctx, task: Task, cause: unknown): Promis
   }).catch(() => undefined)
 }
 
-/**
- * What the judge's pass covers when the approval is applied: the approved code (`stands`), or an
- * earlier commit, named so the record and the pull request do not claim the approved code passed.
- */
-export type ClosingPass = { stands: true } | ({ stands: false } & PassJudgedOn)
-
-/**
- * What the closing record says of the pass to whoever reads the task afterwards (the App's Review
- * header): whether it covers the approved code, the commit it was given on, and how many commits
- * followed that one up to the approved head. Null when the task has no closing record on disk.
- */
-export type ClosedPass = { stands: boolean; commit: string | null; after: number }
-
-export async function readClosedPass(
-  ctx: Ctx,
-  task: Pick<Task, "runtimeDir">,
-): Promise<ClosedPass | null> {
-  try {
-    if (!(await ctx.fs.exists(closingReadyPath(task)))) return null
-    const ready = JSON.parse(await ctx.fs.readFile(closingReadyPath(task))) as {
-      closing?: ClosingRecord
-      pass?: ClosingPass & { after?: number }
-    }
-    if (ready.closing === undefined) return null
-    const pass = ready.pass
-    if (pass === undefined || pass.stands) return { stands: true, commit: null, after: 0 }
-    return {
-      stands: false,
-      commit: pass.commit,
-      after: typeof pass.after === "number" ? pass.after : 0,
-    }
-  } catch {
-    return null
-  }
-}
-
-/** The commits from the one the passes were given on up to the approved head; 0 when git cannot say. */
-async function commitsAfter(
-  ctx: Ctx,
-  task: Task,
-  commit: string | null,
-  approvedHead: string | undefined,
-): Promise<number> {
-  if (commit === null || commit === "") return 0
-  try {
-    const head = approvedHead !== undefined && approvedHead !== "" ? approvedHead : "HEAD"
-    const counted = await ctx.git.run(task.repoRoot, ["rev-list", "--count", `${commit}..${head}`])
-    const n = counted.code === 0 ? Number(counted.stdout.trim()) : Number.NaN
-    return Number.isInteger(n) && n > 0 ? n : 0
-  } catch {
-    return 0
-  }
-}
-
-const shortCommit = (head: string | undefined): string | null =>
-  head !== undefined && head !== "" ? head.slice(0, 7) : null
-
-/**
- * The commit of the last judgement that finished with a pass: what "checked up to" may name. The
- * current receipt when its judge ruled pass (a pass withdrawn since was still given on it).
- * Otherwise the latest passing round in the Verify record, by the assignment it was handed out
- * under. A judge that was handed a commit and has not ruled checked nothing: its commit is never
- * named. Null when no judgement passed, or its commit is not on record.
- */
-export async function passedCommit(ctx: Ctx, task: Task): Promise<string | null> {
-  const receipt = await readAssignment(ctx, task).catch(() => null)
-  if (receipt?.result === "pass") return shortCommit(receipt.head)
-  try {
-    const log = verifyLogPath(task)
-    if (!(await ctx.fs.exists(log))) return null
-    const passed = parseIterations(await ctx.fs.readFile(log)).findLast(
-      // A round written under the current receipt is not finished: its verdict was not taken yet.
-      (round) => round.result === "pass" && round.assignment !== receipt?.id,
-    )
-    const id = passed?.assignment
-    if (id === undefined || !/^[A-Za-z0-9-]+$/.test(id)) return null
-    const archived = JSON.parse(
-      await ctx.fs.readFile(join(task.runtimeDir, "judgements", `${id}.json`)),
-    ) as { id?: unknown; head?: unknown }
-    return archived.id === id && typeof archived.head === "string"
-      ? shortCommit(archived.head)
-      : null
-  } catch {
-    return null
-  }
-}
-
-/** The pass as the task's own records give it, for a close whose caller did not read it. */
-async function passOf(ctx: Ctx, task: Task): Promise<ClosingPass> {
-  try {
-    const pass = await passStanding(ctx, task)
-    if (pass.stands) return { stands: true }
-    return {
-      stands: false,
-      commit: await passedCommit(ctx, task),
-      code: pass.moved.some((words) => /^The code\b/.test(words)),
-    }
-  } catch {
-    return { stands: false, commit: null, code: true }
-  }
-}
-
-/**
- * The Verify file's Code line, said with the commit the passes were judged on. The line was
- * written while the person reviewed; the pull request's body is exported from this document.
- * Never fails the close.
- */
-async function nameJudgedCommit(ctx: Ctx, task: Task, judged: PassJudgedOn): Promise<void> {
-  const path = descriptionPath(task)
-  try {
-    if (!(await ctx.fs.exists(path))) return
-    await withPagesLock(ctx, task.runtimeDir, async () => {
-      const text = await ctx.fs.readFile(path)
-      const said: Record<string, string> = {}
-      const next = fillMarkers(text, (marker) => {
-        if (marker.name !== "code") return null
-        const written = codeLineJudgedOn(marker.fallback, judged)
-        if (written === marker.fallback) return null
-        said[markerKey(marker)] = fingerprint(written)
-        return written
-      })
-      if (next === text) return
-      await ctx.fs.writeFile(path, next)
-      // The line stays QualityLayer's own text: a later refresh in Verify writes it from the state again.
-      const record = await readPagesRecord(ctx, task.runtimeDir)
-      const doc = folderDoc("verify")
-      if (record[doc] === undefined) return
-      record[doc] = { ...record[doc], ...said }
-      await writePagesRecord(ctx, task.runtimeDir, record)
-    })
-  } catch {
-    // The closing record still says `approved`; the line is written at the next close.
-  }
-}
-
 /** Set the landing record's approved head to the head the person approved on, when it differs. */
 async function bindApprovedHead(ctx: Ctx, task: Task, head: string | undefined): Promise<void> {
   if (head === undefined || head === "") return
   await updateRecord(ctx, task, (fresh) =>
     fresh === null || fresh.approvedHead === head ? null : { ...fresh, approvedHead: head },
   )
+}
+
+async function reuseExistingClosing(ctx: Ctx, task: Task): Promise<ClosingRecord | null> {
+  if (!(await ctx.fs.exists(closingReadyPath(task)))) return null
+  const previous = JSON.parse(await ctx.fs.readFile(closingReadyPath(task))) as {
+    closing?: ClosingRecord
+    pass?: ClosingPass
+  }
+  if (!previous.closing) return null
+  // A close taken up again: the Verify file may have been refreshed in between.
+  if (previous.pass?.stands === false) {
+    await nameJudgedCommit(ctx, task, previous.pass)
+    await pullRequestBodyFile(ctx, task)
+  }
+  return previous.closing
 }
 
 export async function closeTask(
@@ -253,20 +135,8 @@ export async function closeTask(
     approvedHead?: string
   } = {},
 ): Promise<Result<ClosingRecord>> {
-  if (await ctx.fs.exists(closingReadyPath(task))) {
-    const previous = JSON.parse(await ctx.fs.readFile(closingReadyPath(task))) as {
-      closing?: ClosingRecord
-      pass?: ClosingPass
-    }
-    if (previous.closing) {
-      // A close taken up again: the Verify file may have been refreshed in between.
-      if (previous.pass?.stands === false) {
-        await nameJudgedCommit(ctx, task, previous.pass)
-        await pullRequestBodyFile(ctx, task)
-      }
-      return ok(previous.closing)
-    }
-  }
+  const existing = await reuseExistingClosing(ctx, task)
+  if (existing !== null) return ok(existing)
   const authorized = await options.authority?.(task.repoRoot)
   if (authorized && !authorized.ok) return authorized
   const diff = await changes(ctx, task.repoRoot, await buildBase(ctx, task))

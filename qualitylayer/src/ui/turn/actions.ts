@@ -99,19 +99,20 @@ function sendBatchAnswer(
     post,
   ).then((result) => {
     reload()
-    if (!result.answer) return true
     const saved = result.answer
-    toast("Answer sent", {
-      duration: 5000,
-      action: {
-        label: "Undo",
-        onClick: () => {
-          void reopenQuestion(task.id, answer.batch, saved, false).then(reload, (error) =>
-            toast.error(error.message),
-          )
+    if (saved) {
+      toast("Answer sent", {
+        duration: 5000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void reopenQuestion(task.id, answer.batch, saved, false).then(reload, (error) =>
+              toast.error(error.message),
+            )
+          },
         },
-      },
-    })
+      })
+    }
     return true
   })
 }

@@ -225,16 +225,18 @@ export function DocMarkdown({ markdown, state, first, live, bare = false, hidden
     lead: first,
     kind: undefined,
   }
-  for (let i = 0; i < tokens.length; i++) {
+  let i = 0
+  while (i < tokens.length) {
     const token = tokens[i] as Token
     const key = `${i}-${token.type}`
     if (bare) {
       out.push(<Html key={key} raw={token.raw} live={quoteLive} theme={theme} />)
+      i += 1
       continue
     }
     const step = renderBodyToken(token, i, key, ctx)
     if (step.node !== undefined) out.push(step.node)
-    i = step.nextIndex
+    i = step.nextIndex + 1
   }
   return <Fragment>{out}</Fragment>
 }

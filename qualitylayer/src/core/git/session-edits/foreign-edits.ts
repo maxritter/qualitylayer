@@ -67,17 +67,14 @@ export async function foreignEdits(
   lasting = false,
 ): Promise<Record<string, string>> {
   const found: Record<string, string> = {}
-  let names: string[]
-  try {
-    names = await ctx.fs.readdir(editsDir(ctx, repo.id))
-  } catch {
-    return found
-  }
-  const state = { paths, now: ctx.clock.now(), lasting, committedAt: new Map(), found }
-  for (const name of names.filter((n) => n.endsWith(".json"))) {
-    const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
-    if (edits !== null && edits.task !== task)
-      await collectForeignPaths(ctx, repo.root, edits, state)
+  const names = await ctx.fs.readdir(editsDir(ctx, repo.id)).catch(() => null)
+  if (names !== null) {
+    const state = { paths, now: ctx.clock.now(), lasting, committedAt: new Map(), found }
+    for (const name of names.filter((n) => n.endsWith(".json"))) {
+      const edits = await readEdits(ctx, join(editsDir(ctx, repo.id), name))
+      if (edits !== null && edits.task !== task)
+        await collectForeignPaths(ctx, repo.root, edits, state)
+    }
   }
   return found
 }

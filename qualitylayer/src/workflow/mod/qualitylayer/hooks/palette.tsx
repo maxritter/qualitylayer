@@ -112,8 +112,8 @@ const WIDE_CODE_RANGES: readonly (readonly [number, number])[] = [
 export const oneLine = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
 
 const glyphWidth = (glyph: string): number => {
-  if (/\p{Mark}|[‍︎️]/u.test(glyph)) return 0
   const code = glyph.codePointAt(0) ?? 0
+  if (/\p{Mark}/u.test(glyph) || code === 0x200d || code === 0xfe0e || code === 0xfe0f) return 0
   return WIDE_CODE_RANGES.some(([lo, hi]) => code >= lo && code <= hi) ? 2 : 1
 }
 

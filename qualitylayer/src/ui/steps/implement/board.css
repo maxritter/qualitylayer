@@ -207,21 +207,14 @@
     display: grid;
     gap: 10px;
   }
-  .ib-graph-viewport {
-    max-height: 410px;
-    overflow: auto;
-    border: 1px solid var(--ql-border);
-    border-radius: 10px;
-    background: var(--ql-bg-sunken);
-  }
   .ib-graph {
     position: relative;
     display: inline-flex;
     flex-wrap: nowrap;
     align-items: start;
     gap: 32px;
-    min-width: 100%;
-    padding: 12px 14px;
+    width: max-content;
+    padding: 16px 18px;
   }
   .ib-gcol {
     position: relative;

@@ -27,15 +27,20 @@ export const DRAG_THRESHOLD = 3
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
 
 /** The scale at which the whole drawing fits the viewport with its padding. */
-export function fitScale(room: Size, content: Size, padding = FIT_PADDING): number {
+export function fitScale(
+  room: Size,
+  content: Size,
+  padding = FIT_PADDING,
+  maxScale = Number.POSITIVE_INFINITY,
+): number {
   const width = Math.max(1, room.width - padding * 2)
   const height = Math.max(1, room.height - padding * 2)
-  return Math.min(width / content.width, height / content.height)
+  return Math.min(maxScale, width / content.width, height / content.height)
 }
 
 /** The whole drawing, as large as the viewport allows and centred in it. */
-export function fitView(room: Size, content: Size): View {
-  const scale = fitScale(room, content)
+export function fitView(room: Size, content: Size, maxScale = Number.POSITIVE_INFINITY): View {
+  const scale = fitScale(room, content, FIT_PADDING, maxScale)
   return {
     scale,
     x: (room.width - content.width * scale) / 2,
@@ -44,8 +49,13 @@ export function fitView(room: Size, content: Size): View {
 }
 
 /** The zoom the person reads: the view's scale relative to the fitted one (1 is the fitted view). */
-export function zoomLevel(view: View, room: Size, content: Size): number {
-  return view.scale / fitScale(room, content)
+export function zoomLevel(
+  view: View,
+  room: Size,
+  content: Size,
+  maxScale = Number.POSITIVE_INFINITY,
+): number {
+  return view.scale / fitScale(room, content, FIT_PADDING, maxScale)
 }
 
 /** Move the view back until some of the drawing is inside the viewport on each axis. */
@@ -66,10 +76,13 @@ export function moveBy(view: View, dx: number, dy: number, room: Size, content: 
   return keepInReach({ scale: view.scale, x: view.x + dx, y: view.y + dy }, room, content)
 }
 
-/** Zoom to `scale` (held within the range) so the point `at` of the viewport stays under the pointer. */
-export function zoomTo(view: View, scale: number, at: Point, room: Size, content: Size): View {
-  const base = fitScale(room, content)
-  const next = clamp(scale, base * ZOOM_MIN, base * ZOOM_MAX)
+export type ZoomBounds = { room: Size; content: Size; maxScale?: number }
+
+/** Zoom to `scale` within fitted bounds so `at` stays under the pointer. */
+export function zoomInBounds(view: View, scale: number, at: Point, bounds: ZoomBounds): View {
+  const { room, content, maxScale = Number.POSITIVE_INFINITY } = bounds
+  const base = fitScale(room, content, FIT_PADDING, maxScale)
+  const next = clamp(scale, base * ZOOM_MIN, Math.max(base * ZOOM_MAX, 2))
   const ratio = next / view.scale
   return keepInReach(
     { scale: next, x: at.x - (at.x - view.x) * ratio, y: at.y - (at.y - view.y) * ratio },
@@ -78,9 +91,14 @@ export function zoomTo(view: View, scale: number, at: Point, room: Size, content
   )
 }
 
+/** Zoom to `scale` (held within the range) so the point `at` of the viewport stays under the pointer. */
+export function zoomTo(view: View, scale: number, at: Point, room: Size, content: Size): View {
+  return zoomInBounds(view, scale, at, { room, content })
+}
+
 /** Zoom by a factor around `at`. */
 export function zoomBy(view: View, factor: number, at: Point, room: Size, content: Size): View {
-  return zoomTo(view, view.scale * factor, at, room, content)
+  return zoomInBounds(view, view.scale * factor, at, { room, content })
 }
 
 /** The middle of the viewport: where the buttons and keys zoom around, so the view stays centred. */

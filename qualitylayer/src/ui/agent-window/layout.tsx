@@ -93,10 +93,12 @@ function observeTargets(targets: readonly (HTMLElement | null)[], measure: () =>
     if (target) observer?.observe(target)
   }
   window.addEventListener("resize", measure)
+  window.addEventListener("scroll", measure, { capture: true, passive: true })
   measure()
   return () => {
     observer?.disconnect()
     window.removeEventListener("resize", measure)
+    window.removeEventListener("scroll", measure, { capture: true })
   }
 }
 

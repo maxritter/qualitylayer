@@ -133,8 +133,14 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
 .bdiff { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; margin-left: 6px; border: 1px solid var(--ql-border); border-radius: 6px; background: transparent; color: var(--ql-text-muted); font: 500 11.5px var(--font-sans); cursor: pointer; }
 .bdiff:hover { color: var(--ql-text); border-color: var(--ql-border-strong); }
 .sg-wrap { border: 1px solid var(--ql-border); border-radius: 10px; background: var(--ql-bg-sunken); overflow: hidden; }
-.sg-scroll { overflow-x: auto; padding: 14px; }
-.sg-canvas { position: relative; display: grid; grid-template-columns: repeat(3, 210px); gap: 28px; align-items: start; min-width: 686px; }
+.sg-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--ql-line); background: var(--ql-surface); font-size: 12.5px; font-weight: 600; }
+.sg-bar .grow { flex: 1; }
+.sg-bar button { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid var(--ql-border); border-radius: 6px; background: transparent; color: var(--ql-text-muted); cursor: pointer; font: 500 12px var(--font-sans); }
+.sg-bar button:hover { color: var(--ql-text); border-color: var(--ql-border-strong); }
+.sg-scroll { overflow: auto; padding: 14px; display: flex; justify-content: center; }
+.sg-canvas { position: relative; display: grid; grid-template-columns: repeat(3, 210px); gap: 28px; align-items: start; width: max-content; transform-origin: top center; transition: transform 0.14s ease; }
+.sg-wrap.sg-full { position: fixed; inset: 28px; z-index: 60; display: flex; flex-direction: column; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45); }
+.sg-wrap.sg-full .sg-scroll { flex: 1; align-items: center; }
 .sg-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .sg-edges path { fill: none; stroke: var(--ql-border-strong); stroke-width: 1.5; opacity: 0.55; transition: stroke 0.14s, opacity 0.14s; }
 .sg-edges path.hi { stroke: var(--ql-accent); stroke-width: 2; opacity: 1; }
@@ -361,6 +367,15 @@ details.tfold[open] > summary .chev { transform: rotate(90deg); }
             </span>
           </h2>
           <div class="sg-wrap" id="impl-stack-graph" hidden>
+            <div class="sg-bar">
+              <svg class="ic s13"><use href="#i-flow"/></svg>
+              <span>Stack graph · 7 slices</span>
+              <span class="grow"></span>
+              <button type="button" data-sg-zoom="out" aria-label="Zoom out" title="Zoom out">−</button>
+              <button type="button" data-sg-zoom="in" aria-label="Zoom in" title="Zoom in">+</button>
+              <button type="button" data-sg-zoom="fit" aria-label="Fit map" title="Fit to view">Fit</button>
+              <button type="button" data-sg-zoom="full" aria-label="Open map full size" title="Open full size">⤢</button>
+            </div>
             <div class="sg-scroll">
               <div class="sg-canvas" id="impl-sg-canvas">
                 <svg class="sg-edges" id="impl-sg-edges" aria-hidden="true"></svg>
@@ -671,7 +686,7 @@ What to open, and in which state.
     <div><b>Cutting the Plan</b><span class="now">The agent, first: slices and cards, then the build. A small task's single slice is written and built in one pass.</span></div>
     <div><b>Task cards</b><span class="now">The agent, in <code>agents/02-implement.md</code>: Objective, Files, Notes, Test first, Done when. Notes hold what this task needs from the reading, in one or two lines, with its link. Files list changed repository source (tests, fixtures, docs and lasting models), never task records, evidence or drafts. Use <code>none</code> for evidence-only qualification without source changes; put inspected paths in <b>Read only</b>. The Plan's Constraints apply to every card without being repeated on it. Parallel builders get separate Files. A deferred file belongs to the slice that will commit it. The repository’s rules govern whether task records are committed.</span></div>
     <div><b>Proof order</b><span class="now">The agent puts each step after the slice that makes it possible and records a command that proves the whole expectation. Focused checks show narrower results in <code>records/checks.md</code>, under Files › Records › Checks. If only you can do a step, the agent names it when handing the build to Verify and asks you there.</span></div>
-    <div><b>Summary and Slices</b><span class="now">QualityLayer: one line of counts, the slice board with <code>Depends on</code> chips, changed-file counts and quiet <b>View diff</b> on completed slices, and a <b>Stack graph</b> switch showing parallel dependency waves left to right.</span></div>
+    <div><b>Summary and Slices</b><span class="now">QualityLayer: one line of counts, the slice board with <code>Depends on</code> chips, changed-file counts and quiet <b>View diff</b> on completed slices, and a <b>Stack graph</b> switch showing parallel dependency waves centered and fitted left to right with pan, zoom, and <b>Open full size</b>.</span></div>
     <div><b>Decided while building</b><span class="now">QualityLayer, from the record: one line per decision that touches what you approved or the order of the build, with its kind. A card that turns out to need another file is the agent's own change, written on the card; it is no amendment.</span></div>
     <div><b>Program design</b><span class="now">The agent: a headline per decision about how the code is shaped. Where each module lives stays in the agents' file.</span></div>
     <div><b>Status</b><span class="now">QualityLayer: a card ticks when its check passes, from the first slice, and "N under way" shows while helpers work. A commit never holds the status back.</span></div>
@@ -758,20 +773,36 @@ What to open, and in which state.
   const drawEdges = () => {
     if (!canvasEl || !edgesSvg || graphEl.hidden) return
     const cr = canvasEl.getBoundingClientRect()
+    const sx = canvasEl.offsetWidth > 0 && cr.width > 0 ? cr.width / canvasEl.offsetWidth : 1
+    const sy = canvasEl.offsetHeight > 0 && cr.height > 0 ? cr.height / canvasEl.offsetHeight : 1
     const lin = lineageOf(selected)
-    edgesSvg.setAttribute("width", String(canvasEl.scrollWidth))
-    edgesSvg.setAttribute("height", String(canvasEl.scrollHeight))
+    edgesSvg.setAttribute("width", String(canvasEl.offsetWidth || canvasEl.scrollWidth))
+    edgesSvg.setAttribute("height", String(canvasEl.offsetHeight || canvasEl.scrollHeight))
     edgesSvg.innerHTML = EDGES.map(([a, b]) => {
       const na = canvasEl.querySelector(`[data-slice="${a}"]`), nb = canvasEl.querySelector(`[data-slice="${b}"]`)
       if (!na || !nb) return ""
       const ra = na.getBoundingClientRect(), rb = nb.getBoundingClientRect()
-      const x1 = ra.right - cr.left, y1 = ra.top + ra.height / 2 - cr.top
-      const x2 = rb.left - cr.left, y2 = rb.top + rb.height / 2 - cr.top
+      const x1 = (ra.right - cr.left) / sx, y1 = (ra.top + ra.height / 2 - cr.top) / sy
+      const x2 = (rb.left - cr.left) / sx, y2 = (rb.top + rb.height / 2 - cr.top) / sy
       const dx = Math.max(24, (x2 - x1) * 0.5)
       const hi = lin.has(a) && lin.has(b)
       return `<path class="${hi ? "hi" : ""}" d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}"/>`
     }).join("")
   }
+  let sgScale = 1
+  const applySgScale = (next) => {
+    sgScale = Math.max(0.5, Math.min(1.6, next))
+    if (canvasEl) canvasEl.style.transform = sgScale === 1 ? "" : `scale(${sgScale.toFixed(2)})`
+    requestAnimationFrame(drawEdges)
+  }
+  graphEl?.addEventListener("click", (e) => {
+    const z = e.target.closest("[data-sg-zoom]")?.dataset.sgZoom
+    if (!z) return
+    if (z === "in") applySgScale(sgScale * 1.18)
+    else if (z === "out") applySgScale(sgScale / 1.18)
+    else if (z === "fit") applySgScale(1)
+    else if (z === "full") { graphEl.classList.toggle("sg-full"); requestAnimationFrame(drawEdges) }
+  })
   const renderSel = (id) => {
     selected = id
     const lin = lineageOf(id)

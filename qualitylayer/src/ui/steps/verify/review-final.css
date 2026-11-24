@@ -362,18 +362,17 @@
     opacity: 0.16;
   }
 
-  /* Deterministic left-to-right Slice Flow architecture diagram */
-  .rvw-flow {
+  /* Shared centered pan/zoom + fullscreen frame for Implement Stack graph and Verify Slice flow */
+  .ql-graph-bar {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
-  .rvw-flow-bar {
+  .ql-graph-bar-head {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
-  .rvw-flow-bar-title {
+  .ql-graph-bar-title {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -381,14 +380,57 @@
     font-weight: 600;
     color: var(--ql-text);
   }
-  .rvw-flow-bar-title > svg {
+  .ql-graph-bar-title > svg {
     color: var(--ql-text-dim);
+  }
+  .ql-graph-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .ql-graph-stage {
+    height: 360px;
+    border: 1px solid var(--ql-line);
+    border-radius: 10px;
+    background: var(--ql-bg-sunken);
+    overflow: hidden;
+  }
+  .rw-diagrams-pane .ql-graph-stage {
+    height: clamp(360px, calc(100vh - 300px), 620px);
+  }
+  .ql-graph-full-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .ql-graph-full-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    background: var(--ql-bg-sunken);
+    overflow: hidden;
+  }
+  .ql-graph-full-detail {
+    flex: 0 0 auto;
+    padding: 10px 14px;
+    border-top: 1px solid var(--ql-line);
+    background: var(--ql-bg);
+    max-height: 220px;
+    overflow: auto;
+  }
+
+  /* Deterministic left-to-right Slice Flow architecture diagram */
+  .rvw-flow {
+    display: grid;
+    gap: 10px;
   }
   .rvw-flow-waves {
     display: inline-flex;
     flex-wrap: wrap;
     gap: 3px;
-    margin: 0 0 0 auto;
+    width: fit-content;
+    margin: 0;
     padding: 2px;
     border: 1px solid var(--ql-border);
     border-radius: 8px;
@@ -420,24 +462,14 @@
     outline: 2px solid var(--ql-accent);
     outline-offset: 1px;
   }
-  .rvw-flow-viewport {
-    max-height: 410px;
-    overflow: auto;
-    border: 1px solid var(--ql-line);
-    border-radius: 10px;
-    background: var(--ql-bg-sunken);
-  }
-  .rw-diagrams-pane .rvw-flow-viewport {
-    max-height: calc(100vh - 280px);
-  }
   .rvw-flow-canvas {
     position: relative;
     display: inline-flex;
     flex-wrap: nowrap;
     align-items: start;
     gap: 32px;
-    min-width: 100%;
-    padding: 12px 14px;
+    width: max-content;
+    padding: 16px 18px;
   }
   .rvw-flow-col {
     position: relative;

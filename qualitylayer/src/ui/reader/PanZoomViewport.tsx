@@ -29,6 +29,7 @@ type ViewportProps = {
   contentKey: string
   label: string
   testId?: string
+  wheel?: "all" | "pinch"
   children: ReactNode
 }
 
@@ -39,12 +40,13 @@ export function PanZoomViewport({
   contentKey,
   label,
   testId,
+  wheel = "all",
   children,
 }: ViewportProps) {
   const [frame, setFrame] = useState<HTMLDivElement | null>(null)
   const layer = useRef<HTMLDivElement>(null)
   useViewportSizeObservers({ frame, layer, measure, contentKey, inner: pan.inner })
-  useViewportWheelGestures(frame, pan.inner)
+  useViewportWheelGestures(frame, pan.inner, wheel)
   const pointer = usePointerPan(frame, pan.inner)
   const view = pan.view
   return (

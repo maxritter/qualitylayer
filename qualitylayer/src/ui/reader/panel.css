@@ -145,7 +145,8 @@
 .q-panzoom * {
   cursor: inherit;
 }
-.q-panzoom a {
+.q-panzoom a,
+.q-panzoom:not([data-panning="true"]) button {
   cursor: pointer;
 }
 .q-panzoom[data-panning="true"] {

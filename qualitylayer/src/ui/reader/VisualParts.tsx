@@ -61,6 +61,33 @@ type FullscreenProps = {
   children: ReactNode
 }
 
+const TALL_IFRAME_MIN = 1400
+const EMBEDDED_DIALOG_HEIGHT = 760
+
+export function embeddedDialogStyle(
+  open: boolean,
+  returnFocus: RefObject<HTMLElement | null> | undefined,
+  base: CSSProperties | undefined,
+  env?: { embedded: boolean; innerHeight: number },
+): CSSProperties | undefined {
+  if (!open) return base
+  const frame =
+    env ??
+    (typeof window === "undefined"
+      ? { embedded: false, innerHeight: 0 }
+      : { embedded: window.self !== window.top, innerHeight: window.innerHeight })
+  if (!frame.embedded || frame.innerHeight <= TALL_IFRAME_MIN) return base
+  const triggerTop = returnFocus?.current?.getBoundingClientRect().top ?? 80
+  const maxTop = Math.max(24, frame.innerHeight - EMBEDDED_DIALOG_HEIGHT - 40)
+  const top = Math.max(24, Math.min(Math.round(triggerTop - 48), maxTop))
+  return {
+    ...base,
+    top: `${top}px`,
+    height: `min(${EMBEDDED_DIALOG_HEIGHT}px, 88vh)`,
+    translate: "-50% 0",
+  }
+}
+
 export function FullscreenDialog({
   open,
   onClose,
@@ -74,6 +101,7 @@ export function FullscreenDialog({
   children,
 }: FullscreenProps) {
   const popup = useRef<HTMLDivElement>(null)
+  const resolvedStyle = embeddedDialogStyle(open, returnFocus, style)
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent
@@ -90,7 +118,7 @@ export function FullscreenDialog({
           target.focus({ preventScroll: true })
           return false
         }}
-        style={style}
+        style={resolvedStyle}
         data-testid={testId}
         className="flex h-[92vh] w-[min(1400px,96vw)] max-w-none flex-col gap-0 overflow-hidden border border-strong bg-surface p-0 sm:max-w-none"
       >

@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "7e35c49f54d9c7c723c4331fa45632731b6e81b6",
-  "sourceTree": "0356bc676f029efa45ee4d95d786efccec9bfa4e",
+  "sourceCommit": "5c54220da0193b5301215d69dae9d39bee0c1166",
+  "sourceTree": "b472ae01fde3543df403d9613c101fa5cd14fb1a",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "38a8c827c0610c8a1b930f13e7f5faf5fde3f2d53c95c460c0f2a23da873f5a0",
@@ -693,7 +693,7 @@
     "qualitylayer/src/ui/reader/PanZoomViewport.tsx": "3301c8ee8b051951a9d176c6a7ff890d74461e97d67be734889d86e51e290bcf",
     "qualitylayer/src/ui/reader/ReaderBlock.tsx": "237ba5b2b3ccaeec4cca150844b24d65a7f88a7703429f3ebfe568b6df9ef1b3",
     "qualitylayer/src/ui/reader/VisualLegend.tsx": "235a86eb31430e0ac0dd38f65748d551ecd2971990e32a64a2342547928ded59",
-    "qualitylayer/src/ui/reader/VisualParts.tsx": "93fe279d492bfbc5b169d5d9f441f323300a8a16adbccc856a662f73c7cc19a8",
+    "qualitylayer/src/ui/reader/VisualParts.tsx": "183bbcf686b2264163915162571c1c7f59fb73e50c7653db5bcf1216c34bc067",
     "qualitylayer/src/ui/reader/WireframeBlock.tsx": "2b4ab723554cd58a682def4a27d6b3fd2d498a70a114c1514d0167e35d0e10b4",
     "qualitylayer/src/ui/reader/check-record.ts": "afbd23d23fab601f692ea9719e6d17ae08311b4e99c743e3218fd98e1acd43d6",
     "qualitylayer/src/ui/reader/code-scrollbars.css": "c4be630cf9b67b0d4fdd9ed9141454bcb9e181b8e6e2e2abe227d9baf9eaf866",
@@ -2043,7 +2043,7 @@
     "qualitylayer/src/ui/reader/PanZoomViewport.tsx": "3301c8ee8b051951a9d176c6a7ff890d74461e97d67be734889d86e51e290bcf",
     "qualitylayer/src/ui/reader/ReaderBlock.tsx": "237ba5b2b3ccaeec4cca150844b24d65a7f88a7703429f3ebfe568b6df9ef1b3",
     "qualitylayer/src/ui/reader/VisualLegend.tsx": "235a86eb31430e0ac0dd38f65748d551ecd2971990e32a64a2342547928ded59",
-    "qualitylayer/src/ui/reader/VisualParts.tsx": "93fe279d492bfbc5b169d5d9f441f323300a8a16adbccc856a662f73c7cc19a8",
+    "qualitylayer/src/ui/reader/VisualParts.tsx": "183bbcf686b2264163915162571c1c7f59fb73e50c7653db5bcf1216c34bc067",
     "qualitylayer/src/ui/reader/WireframeBlock.tsx": "2b4ab723554cd58a682def4a27d6b3fd2d498a70a114c1514d0167e35d0e10b4",
     "qualitylayer/src/ui/reader/check-record.ts": "afbd23d23fab601f692ea9719e6d17ae08311b4e99c743e3218fd98e1acd43d6",
     "qualitylayer/src/ui/reader/code-scrollbars.css": "c4be630cf9b67b0d4fdd9ed9141454bcb9e181b8e6e2e2abe227d9baf9eaf866",
@@ -2704,7 +2704,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-24T10:22:54.743Z",
+  "checkedAt": "2026-11-24T12:13:02.720Z",
   "chapters": [
     "setup",
     "welcome",

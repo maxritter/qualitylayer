@@ -35,7 +35,7 @@ Work side by side in the App or browser, or in your own agent: terminal, IDE or 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-dark-v2026112301.webp">
-  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026112301.webp" alt="The QualityLayer App walking through a fictional usage-based billing change: you answer its questions and choose in the Plan, agents build and check it, and you approve the change and open its pull request" width="804">
+  <img src="https://qualitylayer-media.max-ritter.workers.dev/readme-walkthrough-light-v2026112301.webp" alt="The QualityLayer App walking through a fictional usage-based billing change: you answer questions, approve the Plan, and review the built change." width="804">
 </picture>
 
 <sub>Watch the [full-resolution video](https://qualitylayer-media.max-ritter.workers.dev/hero-walkthrough-v2026111301.mp4) or [try the demo](https://qualitylayer.dev/app-demo/?story&guide) in your browser. Fictional project.</sub>
@@ -135,7 +135,7 @@ Three steps, two approvals. You plan and you verify; agents do everything betwee
 
 ### 1 · Plan, approved by you
 
-Your agent reads the code, asks what only you can answer and writes one Plan: **Done means** with the steps that prove each point, named diagrams and clickable screen previews. Compare Plan revisions after feedback. A bug is reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
+Your agent reads the code, asks what only you can answer and writes one Plan: **Done means**, named diagrams and clickable screens. Compare revisions after feedback. Bugs are reproduced and diagnosed here. [Plan guide](https://qualitylayer.dev/docs/steps/plan)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/site/public/product/plan-dark.webp">

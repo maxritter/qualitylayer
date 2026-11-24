@@ -54,8 +54,13 @@ function roundStep(r: Rounds, event: Record<string, unknown>): Rounds {
     // pass between (no independent reviewer), each is one more failed judgement.
     case "verify_withdrawn":
       return r.passStands
-        ? { ...r, judgeRuns: r.before.judgeRuns + 1, asked: r.before.asked, passStands: false }
-        : { ...r, judgeRuns: r.judgeRuns + 1, passStands: false }
+        ? {
+            ...r,
+            judgeRuns: r.before.judgeRuns + 1,
+            asked: r.before.asked + r.asked,
+            passStands: false,
+          }
+        : { ...r, judgeRuns: r.judgeRuns + 1 }
     case "verify_result":
       return verifyResultStep(r, event)
     case "plan_amended":

@@ -111,14 +111,14 @@ function matchBareNumber(stripped: string, choices: readonly Choice[]): TypedCho
 }
 
 export function typedChoice(words: string, choices: readonly Choice[]): TypedChoice {
-  const said = tokens(words)
+  const stripped = words.replace(/^\s*\/(?:ql|qualitylayer)\s+/i, "")
+  const said = tokens(stripped)
   if (said.length === 0) return NONE
   const labels = choices.map((choice) => tokens(choice.label))
   const exact = exactLabelMatch(labels, said.join(" "))
   if (exact !== null) return exact
   // The number and the words must name the same choice: "1. Approve" is the first choice when it
   // is called Approve, and "1. Request changes" is two different answers, so none is taken.
-  const stripped = words.replace(/^\/(?:ql|qualitylayer)\s+/i, "")
   const prefixed = matchPrefixedNumber(stripped, choices)
   if (prefixed !== null) return prefixed
   if (said.length > 6) return NONE

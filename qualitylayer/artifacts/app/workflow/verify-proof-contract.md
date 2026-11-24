@@ -37,3 +37,12 @@ Shipping a shared branch still discloses its complete source change separately f
 The generated “Changed from the Plan” section excludes routine manifests and lock files covered by the task cards. Their dependency facts and source diffs remain intact; an outside-card dependency or recorded amendment stays visible. A complete, unchanged scope reads “As planned.” Incomplete attribution retains its existing pending treatment.
 
 Each judge records the verdict kinds named in its assignment. A diff-only share cites applicable project check receipts in its review. The judge can validate the agents’ Verify document with the standalone document validator.
+
+## Invariant and law verification
+
+When a task defines or changes a rule, parser, policy, or state transition, Plan stays code-free and states both when the contract holds and when it refuses (converses and boundaries) in Done means and `agents/01-plan.md` Contracts, settling obvious defaults in Decisions made for you and asking only genuine product trade-offs. Plan review checks those plain-English promises for missing converses and breaking inputs.
+
+Implement writes the executable check first in the repository’s existing test runner (no extra test dependency or lockfile churn): an exhaustive table sweep, a seeded multi-step event sequence against a small independent reference model, or a property test that mixes valid prefixes/states with adversarial inputs, seen red before green (or rejecting a broken output when covering existing behavior) so a stub cannot pass.
+
+Verify’s Independent review and Second opinion audit executable tests against the approved English Done means for narrowed input domains, hardcoded arguments, missing converses, generator starvation, or assertions a stub passes; when adding missing Judge tests for pure rules or state machines, the judge probes with exhaustive sweeps or seeded event sequences.
+

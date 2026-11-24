@@ -214,12 +214,14 @@ jobs:
       - name: Install the pinned native Claude Code for mod tests
         run: bash .github/workflows/scripts/setup-claude-code.sh "${RUNNER_TEMP:?}/ql-native-claude"
       - name: Typecheck
+        if: matrix.shard == 1
         working-directory: qualitylayer
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/74972bf0d10c696441b2fff200280c5ac8b6f904dd74173a58f073d3ea7616b3.sh"
         env:
           QL_RELEASE_EXPORTS: "{}"
         shell: bash
       - name: Lint
+        if: matrix.shard == 1
         working-directory: qualitylayer
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/62c1bfc8d3174964498b295800e51c92cba6d8f3b98eb08b7666c593dd55222c.sh"
         env:
@@ -308,12 +310,14 @@ jobs:
       - name: Install the pinned native Claude Code for mod tests
         run: bash .github/workflows/scripts/setup-claude-code.sh "${RUNNER_TEMP:?}/ql-native-claude"
       - name: Typecheck
+        if: matrix.shard == 1
         working-directory: qualitylayer
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/74972bf0d10c696441b2fff200280c5ac8b6f904dd74173a58f073d3ea7616b3.sh"
         env:
           QL_RELEASE_EXPORTS: "{}"
         shell: bash
       - name: Lint
+        if: matrix.shard == 1
         working-directory: qualitylayer
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/62c1bfc8d3174964498b295800e51c92cba6d8f3b98eb08b7666c593dd55222c.sh"
         env:

@@ -438,6 +438,7 @@ jobs:
     - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       with:
         fetch-depth: 0
+        filter: blob:none
         persist-credentials: false
     - name: Qualify private command channels before decryption
       shell: bash

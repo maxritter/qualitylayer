@@ -38,6 +38,8 @@
     "test:smoke": "bun run scripts/test.ts",
     "preflight": "bun run scripts/preflight.ts",
     "release:preflight": "bun run scripts/release-preflight.ts",
+    "release:check-local": "bun run scripts/release-check-local.ts",
+    "release:sync-media": "bun run scripts/release-sync-media.ts",
     "build": "bun run scripts/build.ts",
     "app:build": "bun run scripts/app.ts",
     "app:install": "bun run scripts/app-install.ts",

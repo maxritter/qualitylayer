@@ -2,7 +2,7 @@
 
 Clear everything needing the person before approval: ask it, or settle reversible/code-answered choices under *Decisions made for you*. Always ask when a new feature runs and whether its result binds anyone. Risks are asked or settled, then accepted; visual/wording judgements happen when approving what shows them.
 
-Ask in the App with `qualitylayer question ask --batch '<json>'` (or `--file <path>`). Batch independent choices, highest-unblock first, and keep working on unblocked tasks.
+Ask in the App with `qualitylayer question ask --batch --file <path>` (or `--batch '<json>'`). Batch independent choices, highest-unblock first, and keep working on unblocked tasks.
 
 | Field | Holds |
 | --- | --- |

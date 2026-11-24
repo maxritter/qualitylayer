@@ -6,7 +6,7 @@ Answer the assigned questions about how this codebase works **today** in one doc
 
 - Answer only the questions below. Trace one complete active path per question (entry point, defaults, config, decisions, storage/network/subprocess boundaries, observable result).
 - Cite the authoritative source (contracts = intent, code/config = runtime, tests = covered cases, locked library docs = dependency behavior); flag conflicts and state which wins at runtime.
-- Work sequentially yourself (locate → trace → patterns → docs) without nested helpers.
+- Work sequentially yourself (locate → trace → patterns → docs) without spawning nested helpers.
 - Challenge each load-bearing finding once. Claim "ran"/"verified" only with a command and output. Never touch production services; redact secrets; label facts, inferences and gaps.
 - Note existing callers, 90-day churn (`git log --oneline --since=90.days -- <path>`), hard-to-change areas, exact load-bearing contract lines (`path:line` + side), and test layout + single-file/suite commands.
 

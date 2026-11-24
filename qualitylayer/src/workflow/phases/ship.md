@@ -12,7 +12,7 @@ Final approval is saved. `description` / `description_file` (`{verify_doc}`) is 
 4. **Watch PR checks** via `qualitylayer pr watch` (up to 3 fix attempts):
    - `green`: report it; if `open_threads` exist, read `qualitylayer ship --task <task>` and ask the author before changing anything. `pending`: watch again.
    - `failing`: read check logs, fix the root cause (never weaken/skip checks), re-run checks, commit, push, watch again.
-   - `conflict`: log a short plan in `agents/{verify_doc}`, merge/rebase per repo policy, verify checks, inspect `git range-diff`, push with `--force-with-lease=<branch>:<remote-head>`, watch again.
+   - `conflict`: note a short plan in `agents/{verify_doc}`, merge/rebase per repo policy, verify checks, inspect `git range-diff`, push with `--force-with-lease=<branch>:<remote-head>`, watch again.
    - `gave-up`, `no-checks`, `timed-out`, `merged`, `closed`: report status in one line and stop.
 
 Never force-push others' commits or merge unasked. Post-approval tweaks use `qualitylayer commit fix` (`QUALITYLAYER_TASK=<task>` outside the session). New scope becomes a follow-up task. For a real defect in approved scope before landing, untick/add a card in `agents/{implement_doc}` and run `qualitylayer plan amend --task <task> --by agent --note "<what was found>"` to reopen build + verify.

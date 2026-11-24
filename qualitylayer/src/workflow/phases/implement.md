@@ -2,7 +2,7 @@
 
 Cut the approved Plan into slices and cards and build them without stopping. Work from the saved files in `context` order; the Plan is the agreement and its agents' file grants nothing. You lead the build until the person reviews. Build small changes directly; for larger builds, delegate independent cohesive slices to native subagents (explicit scope, owned files, checks), keep shared files with one owner, and integrate and verify the result yourself.
 
-**Done when** every card is ticked or waits on a need, every Done means step ran green on the built tree, and you reviewed your full diff once to remove near-copies and dead code. Then run `qualitylayer build done` (`missing` names what to settle) and continue straight into Verify in the same turn without pausing to report.
+**Done when** every card is ticked or waits on a need, every Done means step ran green on the built tree, and you reviewed your full diff once to remove near-copies and dead code. Then run `qualitylayer build done` (`missing` names what to settle). Verify is yours too: go straight on with its reply in the same turn, without a report, until the page turns to the person.
 
 ## Cut the slices
 

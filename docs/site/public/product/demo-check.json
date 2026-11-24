@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "ecb762abc6219c0370d33548f8c23953a7d7ee6e",
-  "sourceTree": "7edc489612af58130f53b7820fd082037edc5b27",
+  "sourceCommit": "5fbdc9c48563405229626aed03064c84a9774cf1",
+  "sourceTree": "c070965d837b3cd818659be4fbe69a2ef4928359",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "38a8c827c0610c8a1b930f13e7f5faf5fde3f2d53c95c460c0f2a23da873f5a0",
@@ -716,7 +716,7 @@
     "qualitylayer/src/ui/reader/mermaid-layout.ts": "4f4356cabd247e8723beb2c10e848c0cbb88824564ed59f6439d1b05fdc9748c",
     "qualitylayer/src/ui/reader/mermaid-runtime.ts": "7cf1c53af133031266137ab1d67a32bf69070c8a985744c95b11aaf6b467fb0f",
     "qualitylayer/src/ui/reader/outline-model.ts": "574be08123b3025680643607c3dfc344a743e03022d660be0e86d67ecbb9ed94",
-    "qualitylayer/src/ui/reader/pan-zoom.ts": "cec450e61a275aa3b72ec1cd46ac05178c0d0893f5d6cf31a256301e4cccc81e",
+    "qualitylayer/src/ui/reader/pan-zoom.ts": "c4d728a5641296af58ee134e5a9256f12a10d8ebff546b35e6d6432d9379f5b4",
     "qualitylayer/src/ui/reader/panel.css": "abab73d0932c5aa6b251713f36c1ef7044dd352dcb88a5f892eca171fc6febc7",
     "qualitylayer/src/ui/reader/rasterise.ts": "393685a0a560603fa4159791d242dbc29b11490b2d26e07bb0f330cbf9e20fa8",
     "qualitylayer/src/ui/reader/reader.css": "99d1a7506e8c649145c2006267aa426feb25fddf4ecb83a8223a31c14e3221c1",
@@ -2067,7 +2067,7 @@
     "qualitylayer/src/ui/reader/mermaid-layout.ts": "4f4356cabd247e8723beb2c10e848c0cbb88824564ed59f6439d1b05fdc9748c",
     "qualitylayer/src/ui/reader/mermaid-runtime.ts": "7cf1c53af133031266137ab1d67a32bf69070c8a985744c95b11aaf6b467fb0f",
     "qualitylayer/src/ui/reader/outline-model.ts": "574be08123b3025680643607c3dfc344a743e03022d660be0e86d67ecbb9ed94",
-    "qualitylayer/src/ui/reader/pan-zoom.ts": "cec450e61a275aa3b72ec1cd46ac05178c0d0893f5d6cf31a256301e4cccc81e",
+    "qualitylayer/src/ui/reader/pan-zoom.ts": "c4d728a5641296af58ee134e5a9256f12a10d8ebff546b35e6d6432d9379f5b4",
     "qualitylayer/src/ui/reader/panel.css": "abab73d0932c5aa6b251713f36c1ef7044dd352dcb88a5f892eca171fc6febc7",
     "qualitylayer/src/ui/reader/rasterise.ts": "393685a0a560603fa4159791d242dbc29b11490b2d26e07bb0f330cbf9e20fa8",
     "qualitylayer/src/ui/reader/reader.css": "99d1a7506e8c649145c2006267aa426feb25fddf4ecb83a8223a31c14e3221c1",
@@ -2706,7 +2706,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-24T14:44:46.517Z",
+  "checkedAt": "2026-11-24T15:36:13.574Z",
   "chapters": [
     "setup",
     "welcome",

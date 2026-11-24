@@ -595,3 +595,32 @@ fn a_hook_whose_cli_cannot_start_is_silent_and_a_typed_command_says_why() {
         .unwrap()
         .contains("cannot run"));
 }
+
+/// A Windows installer handover lock (`handover`) holds CLI calls back until the new App removes it.
+#[test]
+fn a_handover_update_lock_holds_a_call_back_until_it_is_released() {
+    let world = World::new("handover-lock");
+    world.point_at_echo();
+    let lock = world.home.join("update.lock");
+    fs::write(&lock, "handover").unwrap();
+    let releaser = lock.clone();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        let _ = fs::remove_file(releaser);
+    });
+
+    let started = std::time::Instant::now();
+    let mut command = world.launcher();
+    command.arg("status");
+    let out = run(command, b"");
+    release.join().unwrap();
+
+    assert_eq!(out.status.code(), Some(0));
+    assert!(started.elapsed() >= std::time::Duration::from_millis(250));
+    assert!(String::from_utf8(out.stderr)
+        .unwrap()
+        .contains("QualityLayer is updating"));
+    assert!(String::from_utf8(out.stdout)
+        .unwrap()
+        .contains("arg:status"));
+}

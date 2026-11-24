@@ -29,8 +29,7 @@ A test in the private tree checks that this page matches those files.
   signal it sends back: the window title, the dock badge, and the `ql-notify:` notification lines.
   The page's Content-Security-Policy comes from the local server, not Tauri (`csp` is `null`).
 - **Processes it starts**: the bundled CLI (`qualitylayer-cli`), the downloaded update's own
-  install step, `ps` on macOS or `powershell` on Windows to find running CLI copies before an
-  update (Linux reads `/proc`), and the system browser for links that leave the App.
+  install step, and the system browser for links that leave the App.
 - **Network**: the loopback server, using the key that `app ensure` returns, and the update feed.
   Nothing else.
 - **Files**: inside the QualityLayer home. It reads `app.json`, and from `config.json` the quit
@@ -86,16 +85,22 @@ These are all the permissions the App asks the operating system for:
 The App installs per user (`currentUser`). Only the optional Windows Defender repair asks for
 administrator approval. The installer hooks do this:
 
-- **After install**: copy `windows/repair-defender.ps1` into the install folder as
-  `QualityLayer-Windows-Repair.ps1`. Unless the installer runs without shortcuts or as an update,
-  add the Start-menu shortcut `QualityLayer - Repair Windows launch`, which runs the repair with
-  `-Launch`. Only an interactive first install runs the repair once with `-Automatic`, never an
-  update, a passive install or a silent install.
+- **Before install**: if `qualitylayer-cli.exe` or `qualitylayer-launcher.exe` already exists in
+  the install folder, rename each to a unique `.old-<n>.exe` file and schedule it for removal on
+  reboot (`Delete /REBOOTOK`) before extracting the new executables, so running CLI processes keep
+  working without blocking the update.
+- **After install**: delete any unlocked `.old-*.exe` copies left from earlier updates, copy
+  `windows/repair-defender.ps1` into the install folder as `QualityLayer-Windows-Repair.ps1`.
+  Unless the installer runs without shortcuts or as an update, add the Start-menu shortcut
+  `QualityLayer - Repair Windows launch`, which runs the repair with `-Launch`. Only an interactive
+  first install runs the repair once with `-Automatic`, never an update, a passive install or a
+  silent install.
 - **Before uninstall**: if the repair's record `.qualitylayer-asr.json` exists and the uninstall is
   interactive and not part of an update, run the repair with `-Remove` to undo its Defender
   exception.
-- **After uninstall**: outside an update, remove the shortcut. Also remove the helper and the
-  install folder, unless the record is still there, so a declined clean-up can run later with `-Remove`.
+- **After uninstall**: outside an update, remove the shortcut, any `.old-*.exe` copies, the helper
+  and the install folder, unless the record is still there, so a declined clean-up can run later
+  with `-Remove`.
 
 The repair always runs through the native Windows PowerShell (through `Sysnative` from the 32-bit
 installer) with `-ExecutionPolicy Bypass` for that one process. The device's execution policy is

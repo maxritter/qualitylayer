@@ -135,12 +135,15 @@ export function useUpdates({
   const [checking, setChecking] = useState(false)
   const [checkStalled, setCheckStalled] = useState(false)
   const checkedAt = useRef<number | null>(null)
+  const checkVersion = useRef<number>(version)
 
   useUpdateStateTracking({
     info,
+    version,
     asked,
     checking,
     checkedAt,
+    checkVersion,
     answerWaitMs,
     setOpen,
     setAsked,
@@ -170,6 +173,7 @@ export function useUpdates({
   }
   const check = () => {
     checkedAt.current = info?.checkedAt ?? null
+    checkVersion.current = version
     setCheckStalled(false)
     setChecking(true)
     void act("check")

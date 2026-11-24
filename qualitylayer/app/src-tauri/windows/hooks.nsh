@@ -16,7 +16,40 @@
   Pop $R8
 !macroend
 
+!macro QL_RETIRE_BINARY FILENAME
+  ; Windows locks a running .exe against overwrite, not rename. Moving an existing copy aside
+  ; lets long-lived CLI processes (memory mcp, peers shim, running agent commands) keep running
+  ; while NSIS writes the new executable cleanly.
+  ${If} ${FileExists} "$INSTDIR\${FILENAME}.exe"
+    Push $R8
+    Push $R9
+    StrCpy $R8 0
+    ${DoWhile} $R8 < 64
+      StrCpy $R9 "$INSTDIR\${FILENAME}.old-$R8.exe"
+      ${IfNot} ${FileExists} "$R9"
+        ClearErrors
+        Rename "$INSTDIR\${FILENAME}.exe" "$R9"
+        ${IfNot} ${Errors}
+          Delete /REBOOTOK "$R9"
+        ${EndIf}
+        ${ExitDo}
+      ${EndIf}
+      IntOp $R8 $R8 + 1
+    ${Loop}
+    Pop $R9
+    Pop $R8
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro QL_RETIRE_BINARY "qualitylayer-cli"
+  !insertmacro QL_RETIRE_BINARY "qualitylayer-launcher"
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
+  ; Clean up retired copies whose old processes have already exited.
+  Delete "$INSTDIR\qualitylayer-cli.old-*.exe"
+  Delete "$INSTDIR\qualitylayer-launcher.old-*.exe"
   SetOutPath "$INSTDIR"
   File /oname=QualityLayer-Windows-Repair.ps1 "${QL_WINDOWS_HOOK_DIR}\repair-defender.ps1"
   ${If} $NoShortcutMode <> 1
@@ -51,6 +84,8 @@
     IfFileExists "$INSTDIR\.qualitylayer-asr.json" ql_security_keep_helper
     Delete "$INSTDIR\QualityLayer-Windows-Repair.ps1"
     Delete "$INSTDIR\.qualitylayer-asr.json.tmp"
+    Delete /REBOOTOK "$INSTDIR\qualitylayer-cli.old-*.exe"
+    Delete /REBOOTOK "$INSTDIR\qualitylayer-launcher.old-*.exe"
     RMDir "$INSTDIR"
   ${EndIf}
   ql_security_keep_helper:

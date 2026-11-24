@@ -1,7 +1,7 @@
 // The routes behind the update sheet and Settings › About. The shell owns the update; these only
 // read what it wrote (update.json) and leave it a request file to act on.
 
-import { type FSWatcher, watch } from "node:fs"
+import { type FSWatcher, statSync, watch } from "node:fs"
 import { type Config, readConfig } from "../core/config.ts"
 import { effectiveChannel, releasesOnChannel } from "../core/update/channel.ts"
 import type { Release } from "../core/update/notes.ts"
@@ -12,6 +12,7 @@ import {
   requestUpdate,
   type UpdateInfo,
   type UpdateRequest,
+  updatePath,
 } from "../core/update/state.ts"
 import { VERSION } from "../core/version.ts"
 import { type Ctx, ok, type Result } from "../ctx.ts"
@@ -72,13 +73,33 @@ export async function postUpdate(ctx: Ctx, action: string): Promise<Result<{ req
   return ok({ requested: request })
 }
 
+function updateStamp(path: string): string {
+  try {
+    const info = statSync(path)
+    return `${info.mtimeMs}:${info.size}`
+  } catch {
+    return ""
+  }
+}
+
 /** Tell the page when the shell rewrites update.json, so the sidebar line and the sheet follow it live. */
 export function startUpdateWatch(ctx: Ctx, hub: Hub): () => void {
   let pending: ReturnType<typeof setTimeout> | null = null
   let watcher: FSWatcher | null = null
+  const path = updatePath(ctx)
+  let lastStamp = updateStamp(path)
   try {
     watcher = watch(ctx.home, (_event, file) => {
-      if (file !== "update.json" || pending !== null) return
+      if (pending !== null) return
+      if (file === "update.json") {
+        lastStamp = updateStamp(path)
+      } else if (file === null) {
+        const nextStamp = updateStamp(path)
+        if (nextStamp === lastStamp) return
+        lastStamp = nextStamp
+      } else {
+        return
+      }
       pending = setTimeout(() => {
         pending = null
         hub.publish({ type: "update-changed" })

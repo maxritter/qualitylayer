@@ -9,14 +9,35 @@ use std::time::{Duration, SystemTime};
 /// How long a lock holds calls back, however long its holder keeps running.
 pub const MAX_AGE: Duration = Duration::from_secs(10 * 60);
 
+/// Written to `update.lock` when a Windows installer takes over and exits the old App: the
+/// launcher holds new CLI calls back until the new App starts and removes the lock, or until
+/// `HANDOVER_MAX_AGE` passes so a failed installer never blocks commands for long.
+pub const HANDOVER_MARKER: &str = "handover";
+pub const HANDOVER_MAX_AGE: Duration = Duration::from_secs(60);
+
 pub fn path(home: &Path) -> PathBuf {
     home.join("update.lock")
+}
+
+/// Whether the lock file content marks a Windows installer handover.
+pub fn is_handover_text(text: &str) -> bool {
+    text.trim() == HANDOVER_MARKER
 }
 
 /// The decision, apart from the file system: `holder` is the pid the file holds, `age` how long
 /// ago it was written.
 pub fn is_live(holder: Option<u32>, age: Duration, alive: impl Fn(u32) -> bool) -> bool {
     age < MAX_AGE && holder.is_some_and(alive)
+}
+
+/// The same decision over raw lock text, supporting both a live holder pid and a bounded Windows
+/// installer handover marker.
+pub fn is_live_content(text: &str, age: Duration, alive: impl Fn(u32) -> bool) -> bool {
+    if is_handover_text(text) {
+        return age < HANDOVER_MAX_AGE;
+    }
+    let holder = text.trim().parse().ok();
+    is_live(holder, age, alive)
 }
 
 /// Whether the lock file at `lock` is live now.
@@ -27,10 +48,10 @@ pub fn is_live_file(lock: &Path) -> bool {
     let age = SystemTime::now()
         .duration_since(modified)
         .unwrap_or(Duration::ZERO);
-    let holder = fs::read_to_string(lock)
-        .ok()
-        .and_then(|text| text.trim().parse().ok());
-    is_live(holder, age, pid_alive)
+    let Ok(text) = fs::read_to_string(lock) else {
+        return false;
+    };
+    is_live_content(&text, age, pid_alive)
 }
 
 #[cfg(unix)]
@@ -84,6 +105,24 @@ mod tests {
             "ten minutes is too old"
         );
         assert!(is_live(Some(7), MAX_AGE - Duration::from_secs(1), |_| true));
+    }
+
+    #[test]
+    fn a_handover_lock_is_live_only_until_its_bounded_window_passes() {
+        assert!(is_handover_text("handover"));
+        assert!(is_handover_text("handover\n"));
+        assert!(!is_handover_text("1234"));
+        assert!(is_live_content("handover", Duration::from_secs(10), |_| {
+            false
+        }));
+        assert!(is_live_content(
+            "handover\n",
+            HANDOVER_MAX_AGE - Duration::from_secs(1),
+            |_| false
+        ));
+        assert!(!is_live_content("handover", HANDOVER_MAX_AGE, |_| true));
+        assert!(is_live_content("7", Duration::from_secs(10), |pid| pid == 7));
+        assert!(!is_live_content("7", Duration::from_secs(10), |_| false));
     }
 
     #[test]

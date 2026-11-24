@@ -1,30 +1,30 @@
 //! Updates: the App owns them in an App install, so the App and its CLI never disagree. Every hour
 //! the App looks for a newer build, downloads it in the background and verifies its signature, and
-//! says so in `update.json`; the page offers it, and replaces the App only when the person asks. On
-//! macOS and Linux running agent commands keep their old copy of the CLI until they end; Windows
-//! locks a running program file, so there the install waits until none run. While the App is
-//! replaced, `update.lock` keeps new agent commands back (the launcher reads it). The sequence and
-//! the files it talks through are in `update_flow.rs`; this file is the updater under it.
+//! says so in `update.json`; the page offers it, and replaces the App only when the person asks.
+//! Running agent commands (including long-lived `memory mcp` and `peers shim` helpers) keep their
+//! old copy of the CLI until they end: Unix unlinks in place, and Windows moves existing sidecars
+//! aside in `NSIS_HOOK_PREINSTALL` before writing the new ones. While the App is replaced,
+//! `update.lock` keeps new agent commands back (the launcher reads it). The sequence and the files
+//! it talks through are in `update_flow.rs`; this file is the updater under it.
 
 use crate::cli;
 use crate::update_flow::{
-    check_due, now_ms, read_state, take_requests, write_state, Backend, Engine, Failure, Found,
-    Installed, Phase, State,
+    check_due, now_ms, read_state, take_requests, write_state, Backend, Checked, Engine, Failure,
+    Found, Installed, Phase, State,
 };
 use qualitylayer_launcher::{quality_layer_home, say_err, update_lock};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(test)]
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_updater::UpdaterExt;
 
-/// How often a waiting update looks again for agent commands that are still running.
+/// How often a waiting update looks again.
 const POLL: Duration = Duration::from_secs(if cfg!(feature = "test-updater") {
     1
 } else {
@@ -41,112 +41,27 @@ const WATCH_TICK: Duration = Duration::from_millis(if cfg!(feature = "test-updat
 /// How long `update.json` says that this start updated the App, for the page's one toast.
 const UPDATED_NOTE_FOR: Duration = Duration::from_secs(2 * 60);
 
-/// A check that failed (no network) is tried again after this long, not at every tick.
-const RETRY_AFTER: Duration = Duration::from_secs(60 * 60);
+/// Backoff after failed automatic checks (e.g. cold boot before Wi-Fi connects): retries quickly at
+/// first, then settles to hourly.
+const AUTO_RETRY_BACKOFF: [Duration; 4] = [
+    Duration::from_secs(2 * 60),
+    Duration::from_secs(5 * 60),
+    Duration::from_secs(15 * 60),
+    Duration::from_secs(60 * 60),
+];
 
-/// Only Windows holds a running program file; elsewhere the update installs at once.
-const WAITS_FOR_AGENTS: bool = cfg!(windows);
+/// Windows replaces the App through its NSIS installer (stopping the local server and handing over
+/// `QUALITYLAYER_HOME`), and moves existing CLI/launcher binaries aside before writing the new ones,
+/// so no platform waits for running agent commands.
+const WINDOWS_INSTALLER: bool = cfg!(windows);
+const WAITS_FOR_AGENTS: bool = false;
 
-/// The update server and key a test build reads from its environment. A release build ignores
-/// both variables, whatever the environment holds.
-pub fn test_overrides(
-    test_build: bool,
-    var: impl Fn(&str) -> Option<String>,
-) -> (Option<String>, Option<String>) {
-    if !test_build {
-        return (None, None);
-    }
-    (
-        var("QUALITYLAYER_UPDATE_ENDPOINT"),
-        var("QUALITYLAYER_UPDATE_PUBKEY"),
-    )
-}
-
-/// What `<QL home>/app.json` says about the install this App refreshes.
-#[derive(Debug, PartialEq)]
-pub struct Pointer {
-    pub cli: String,
-    pub version: String,
-}
-
-fn read_pointer(home: &Path) -> Option<Pointer> {
-    let text = fs::read_to_string(home.join("app.json")).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-    Some(Pointer {
-        cli: json["cli"].as_str()?.to_string(),
-        version: json["version"].as_str()?.to_string(),
-    })
-}
-
-/// A start that finds the install pointing at another version of the App, or at another place,
-/// refreshes it: the new CLI rewrites skills, hooks and the mod. No pointer means the App was never
-/// set up here; setting up is not this module's job.
-pub fn needs_refresh(pointer: Option<&Pointer>, version: &str, cli: &Path) -> bool {
-    pointer.is_some_and(|p| p.version != version || Path::new(&p.cli) != cli)
-}
-
-/// Whether the lock is held by `own` or no longer held: the lock to remove after a refresh.
-pub fn lock_is_ours_to_remove(holder: Option<u32>, live: bool, own: u32) -> bool {
-    holder == Some(own) || !live
-}
-
-/// Create the lock, or report that a live one is held. A stale lock is replaced.
-pub fn take_lock(lock: &Path, pid: u32) -> std::io::Result<bool> {
-    for _ in 0..2 {
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(lock)
-        {
-            Ok(mut file) => {
-                write!(file, "{pid}")?;
-                return Ok(true);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                if update_lock::is_live_file(lock) {
-                    return Ok(false);
-                }
-                let _ = fs::remove_file(lock);
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(false)
-}
-
-#[path = "update_process.rs"]
-mod process;
-
-#[cfg(test)]
-use process::parse_ps;
-use process::{running_cli, server_pid};
-
-/// The feed of the Beta channel: it also offers prereleases, and the newest release wins. Stable
-/// keeps the feed `tauri.conf.json` names, which offers stable releases only.
-const BETA_FEED: &str = "https://qualitylayer.dev/app/latest.json?channel=beta";
-
-/// The channel `updates.channel` of `<QL home>/config.json` names, when the person chose one. A
-/// missing, large or broken file, or another value, is no choice.
-pub fn chosen_channel(home: &Path) -> Option<String> {
-    let config = home.join("config.json");
-    if fs::metadata(&config).map_or(true, |m| m.len() > 64 * 1024) {
-        return None;
-    }
-    let json: serde_json::Value = serde_json::from_slice(&fs::read(config).ok()?).ok()?;
-    let channel = json["updates"]["channel"].as_str()?;
-    matches!(channel, "stable" | "beta").then(|| channel.to_string())
-}
-
-/// The feed that replaces the configured one: Beta's, or none for Stable. Nobody having chosen, an
-/// installed prerelease follows Beta until the person chooses. Which release is offered then stays
-/// the updater's rule: only a newer one, so a channel never moves the App to an older version.
-pub fn channel_endpoint(chosen: Option<&str>, installed: &str) -> Option<&'static str> {
-    let beta = match chosen {
-        Some("beta") => true,
-        Some("stable") => false,
-        _ => installed.contains('-'),
-    };
-    beta.then_some(BETA_FEED)
+pub fn auto_retry_delay(failures: u32) -> Duration {
+    let index = usize::try_from(failures.saturating_sub(1)).unwrap_or(AUTO_RETRY_BACKOFF.len() - 1);
+    AUTO_RETRY_BACKOFF
+        .get(index)
+        .copied()
+        .unwrap_or(AUTO_RETRY_BACKOFF[AUTO_RETRY_BACKOFF.len() - 1])
 }
 
 fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
@@ -192,8 +107,6 @@ fn code_of(error: &tauri_plugin_updater::Error, otherwise: &'static str) -> &'st
 /// the App.
 pub struct TauriBackend {
     app: AppHandle,
-    cli: PathBuf,
-    home: PathBuf,
     /// What the new App starts with: nothing for an update the page asked for, the arguments of an
     /// update the command line asked for.
     relaunch: Vec<String>,
@@ -233,7 +146,7 @@ impl Backend for TauriBackend {
     }
 
     fn running(&self) -> usize {
-        running_cli(&self.cli, server_pid(&self.home)).len()
+        0
     }
 
     fn install(&mut self, payload: &Vec<u8>, lock: &Path) -> Result<(), Failure> {
@@ -258,24 +171,32 @@ impl Backend for TauriBackend {
 pub struct Runtime {
     engine: Mutex<Engine<TauriBackend>>,
     cancel: AtomicBool,
+    installing: AtomicBool,
     /// When the last check went through (ms); 0 before the first. What the automatic timer reads without
     /// waiting for a check that is running.
     checked_at: AtomicU64,
+    /// Consecutive failed automatic checks since the last success, for progressive retry backoff.
+    auto_failures: AtomicU32,
+}
+
+struct FlagGuard<'a>(&'a AtomicBool);
+impl Drop for FlagGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Get ready: the sequence over this App's updater, and the files it talks through. No-op where the
 /// App has no command line next to it (a build run from its folder): there is nothing to update.
 pub fn setup(app: &AppHandle, relaunch: Vec<String>) -> Result<(), String> {
     let home = quality_layer_home().ok_or("no home directory for QualityLayer")?;
-    let cli = cli::bundled_cli()?;
+    let _cli = cli::bundled_cli()?;
     let version = app.package_info().version.to_string();
     let state = read_state(&home).unwrap_or_else(|| State::idle(&version));
     let checked_at = state.checked_at.unwrap_or(0);
     let engine = Engine::new(
         TauriBackend {
             app: app.clone(),
-            cli,
-            home: home.clone(),
             relaunch,
             update: None,
         },
@@ -290,36 +211,65 @@ pub fn setup(app: &AppHandle, relaunch: Vec<String>) -> Result<(), String> {
     app.manage(Runtime {
         engine: Mutex::new(engine),
         cancel: AtomicBool::new(false),
+        installing: AtomicBool::new(false),
         checked_at: AtomicU64::new(checked_at),
+        auto_failures: AtomicU32::new(0),
     });
     Ok(())
 }
 
-/// Look for an update and download it, unless the sequence is busy already. True when it ran.
-/// `by_person`: someone asked for this check (check now); the automatic one runs unasked and never
-/// reports a failure as one.
+/// Look for an update and download it. When `by_person` is true (explicit "Check now"), waits for
+/// any in-flight background check instead of dropping the request silently; skips only if an
+/// install is already running.
 pub fn check(app: &AppHandle, by_person: bool) -> bool {
     let Some(runtime) = app.try_state::<Runtime>() else {
         return false;
     };
-    let Ok(mut engine) = runtime.engine.try_lock() else {
+    if runtime.installing.load(Ordering::SeqCst) {
         return false;
+    }
+    let mut engine = if by_person {
+        runtime
+            .engine
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    } else {
+        let Ok(guard) = runtime.engine.try_lock() else {
+            return false;
+        };
+        guard
     };
-    engine.check(by_person);
+    let checked = engine.check(by_person);
     runtime
         .checked_at
         .store(engine.checked_at().unwrap_or(0), Ordering::SeqCst);
+    match checked {
+        Checked::UpToDate | Checked::Ready(_) => {
+            runtime.auto_failures.store(0, Ordering::SeqCst);
+        }
+        Checked::Failed if !by_person => {
+            runtime.auto_failures.fetch_add(1, Ordering::SeqCst);
+        }
+        Checked::Failed => {}
+    }
     true
 }
 
 /// Install the update, as the person asked: the one that was downloaded, or one found now. Runs off
 /// the main thread and returns once the new App is starting (true: this App ends), the wait was
-/// cancelled, or it failed. A check that is running is waited for, never turned into a lost
-/// request: this runs on a thread of its own.
+/// cancelled, or it failed. Duplicate clicks while an install is already running coalesce cleanly.
 pub fn install_now(app: &AppHandle) -> Result<bool, String> {
     let Some(runtime) = app.try_state::<Runtime>() else {
         return Err("this App has no updater".to_string());
     };
+    if runtime
+        .installing
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Ok(false);
+    }
+    let _guard = FlagGuard(&runtime.installing);
     let mut engine = runtime
         .engine
         .lock()
@@ -379,7 +329,8 @@ fn handle_watch_tick(
 fn maybe_schedule_auto_check(app: &AppHandle, runtime: &Runtime, last_try: &mut Option<Instant>) {
     let checked = runtime.checked_at.load(Ordering::SeqCst);
     let due = check_due((checked != 0).then_some(checked), now_ms());
-    if due && last_try.is_none_or(|at| at.elapsed() >= RETRY_AFTER) {
+    let retry_after = auto_retry_delay(runtime.auto_failures.load(Ordering::SeqCst));
+    if due && last_try.is_none_or(|at| at.elapsed() >= retry_after) {
         *last_try = Some(Instant::now());
         let handle = app.clone();
         std::thread::spawn(move || {
@@ -413,19 +364,20 @@ fn install(
 ) -> Result<(), String> {
     // The server may go for the install: the watch over it (`liveness.rs`) must not start it again.
     crate::liveness::set_updating(true);
-    // Windows replaces files the server holds open: it stops for the install and comes back after.
-    if WAITS_FOR_AGENTS {
+    // Windows stops the old server before the NSIS installer runs, hands over QUALITYLAYER_HOME,
+    // and marks `update.lock` as a bounded handover so the launcher keeps holding new CLI calls
+    // back after `tauri_plugin_updater` exits this process to run NSIS.
+    if WINDOWS_INSTALLER {
         let _ = cli::stop();
-        // The installer ends this App and starts the new one with another environment: the home
-        // goes over in a file (`HANDOVER_FILE`).
         leave_home_for_installer();
+        let _ = fs::write(lock, update_lock::HANDOVER_MARKER);
     }
     let result = finish_install(
         update.install(bytes).map_err(|error| error.to_string()),
         lock,
         || relaunch_app(relaunch),
     );
-    if result.is_err() && WAITS_FOR_AGENTS {
+    if result.is_err() && WINDOWS_INSTALLER {
         // A server stopped for the install comes back when the update did not go through.
         forget_home_for_installer();
         let _ = cli::ensure();
@@ -496,16 +448,6 @@ fn bundle_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "cannot find the App's folder".to_string())
 }
 
-/// Whether this start is the installer's restart of an App that was just updated by `--update`.
-/// Tauri's Windows updater ends the App and lets the installer start the new one with the arguments
-/// the old one had, `--update` among them (macOS and Linux start it with `relaunch`, which lacks
-/// it). Such a start must open the window and the server, not look for an update again and end:
-/// its install still points at the version before, which only a start that has just been updated
-/// finds.
-pub fn restarted_by_installer(pointer: Option<&Pointer>, version: &str, windows: bool) -> bool {
-    windows && updated_to(pointer, version).is_some()
-}
-
 /// `restarted_by_installer` for this start, read from the install's pointer.
 pub fn is_restart_by_installer(app: &AppHandle) -> bool {
     let Some(home) = quality_layer_home() else {
@@ -518,17 +460,16 @@ pub fn is_restart_by_installer(app: &AppHandle) -> bool {
 #[path = "update_handover.rs"]
 mod handover;
 
-pub use handover::adopt_home_of_installer;
-use handover::{forget_home_for_installer, leave_home_for_installer};
+pub use handover::{
+    adopt_home_of_installer, cleanup_retired_binaries, lock_is_ours_to_remove, needs_refresh,
+    rename_with_retry, restarted_by_installer, take_lock, updated_to,
+};
+use handover::{
+    channel_endpoint, chosen_channel, forget_home_for_installer, leave_home_for_installer,
+    read_pointer, test_overrides,
+};
 #[cfg(test)]
-use handover::{leave_home, take_home, HANDOVER_FILE};
-
-/// The version a start has just updated to: the install pointed at another version of the App.
-pub fn updated_to(pointer: Option<&Pointer>, version: &str) -> Option<String> {
-    pointer
-        .filter(|p| p.version != version)
-        .map(|_| version.to_string())
-}
+use handover::{leave_home, needs_refresh_for, take_home, Pointer, BETA_FEED, HANDOVER_FILE};
 
 /// What a start does about the install: when this App is a newer or moved copy of the one the
 /// install points at, its CLI refreshes skills, hooks and the mod. Then the update lock this process
@@ -539,6 +480,9 @@ pub fn after_start(app: &AppHandle) -> Option<String> {
     let version = app.package_info().version.to_string();
     let mut updated = None;
     if let Ok(cli_path) = cli::bundled_cli() {
+        if let Some(dir) = cli_path.parent() {
+            cleanup_retired_binaries(dir);
+        }
         let pointer = read_pointer(&home);
         if needs_refresh(pointer.as_ref(), &version, &cli_path) {
             match bundle_path().and_then(|bundle| cli::install_app(&bundle)) {
@@ -548,11 +492,13 @@ pub fn after_start(app: &AppHandle) -> Option<String> {
         }
     }
     let lock = update_lock::path(&home);
-    let holder = fs::read_to_string(&lock)
-        .ok()
-        .and_then(|text| text.trim().parse().ok());
+    let content = fs::read_to_string(&lock).ok();
     if lock.exists()
-        && lock_is_ours_to_remove(holder, update_lock::is_live_file(&lock), std::process::id())
+        && lock_is_ours_to_remove(
+            content.as_deref(),
+            update_lock::is_live_file(&lock),
+            std::process::id(),
+        )
     {
         let _ = fs::remove_file(&lock);
     }
@@ -739,17 +685,59 @@ mod tests {
             !needs_refresh(None, "12.2.0", cli),
             "never set up: not for a refresh"
         );
+        // Windows path comparison is case-insensitive so differing drive/user casing never re-installs.
+        let win_pointer = Pointer {
+            cli: r"C:\Users\Max\AppData\Local\QualityLayer\qualitylayer-cli.exe".into(),
+            version: "14.4.1".into(),
+        };
+        assert!(!needs_refresh_for(
+            Some(&win_pointer),
+            "14.4.1",
+            Path::new(r"c:\users\max\appdata\local\qualitylayer\qualitylayer-cli.exe"),
+            true
+        ));
     }
 
     #[test]
-    fn a_lock_is_removed_when_it_is_ours_or_nobody_holds_it() {
-        assert!(lock_is_ours_to_remove(Some(7), true, 7));
-        assert!(lock_is_ours_to_remove(Some(8), false, 7));
+    fn a_lock_is_removed_when_it_is_ours_a_handover_or_nobody_holds_it() {
+        assert!(lock_is_ours_to_remove(Some("7"), true, 7));
+        assert!(lock_is_ours_to_remove(Some("handover"), true, 7));
+        assert!(lock_is_ours_to_remove(Some("8"), false, 7));
         assert!(lock_is_ours_to_remove(None, false, 7));
         assert!(
-            !lock_is_ours_to_remove(Some(8), true, 7),
+            !lock_is_ours_to_remove(Some("8"), true, 7),
             "another live updater"
         );
+    }
+
+    #[test]
+    fn failed_auto_checks_back_off_progressively_and_cap_at_an_hour() {
+        assert_eq!(auto_retry_delay(0), Duration::from_secs(2 * 60));
+        assert_eq!(auto_retry_delay(1), Duration::from_secs(2 * 60));
+        assert_eq!(auto_retry_delay(2), Duration::from_secs(5 * 60));
+        assert_eq!(auto_retry_delay(3), Duration::from_secs(15 * 60));
+        assert_eq!(auto_retry_delay(4), Duration::from_secs(60 * 60));
+        assert_eq!(auto_retry_delay(99), Duration::from_secs(60 * 60));
+    }
+
+    #[test]
+    fn retired_windows_sidecars_are_cleaned_up_without_touching_active_files() {
+        let dir = std::env::temp_dir().join(format!("ql-retired-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let active_cli = dir.join("qualitylayer-cli.exe");
+        let retired_cli = dir.join("qualitylayer-cli.old-0.exe");
+        let retired_launcher = dir.join("qualitylayer-launcher.old-1.exe");
+        let other = dir.join("other.old-0.exe");
+        for file in [&active_cli, &retired_cli, &retired_launcher, &other] {
+            fs::write(file, b"stub").unwrap();
+        }
+        cleanup_retired_binaries(&dir);
+        assert!(active_cli.exists());
+        assert!(other.exists());
+        assert!(!retired_cli.exists());
+        assert!(!retired_launcher.exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -848,12 +836,5 @@ mod tests {
         assert!(!offered("12.1.0-beta.3", "12.1.0-beta.3"));
         assert!(offered("12.0.0-beta.61", "12.0.0"));
         assert!(!offered("12.0.0", "12.0.0-beta.61"));
-    }
-
-    #[test]
-    fn ps_lines_name_the_processes_running_the_cli() {
-        let cli = Path::new("/Apps/QualityLayer.app/Contents/MacOS/qualitylayer-cli");
-        let output = "  101 /sbin/launchd\n  4021 /Apps/QualityLayer.app/Contents/MacOS/qualitylayer-cli\n 77 /Other/qualitylayer-cli\n";
-        assert_eq!(parse_ps(output, cli), vec![4021]);
     }
 }

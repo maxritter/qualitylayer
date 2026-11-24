@@ -7,7 +7,7 @@
 //! The sequence runs against a `Backend`, so its rules are tested without a network, a signature or
 //! a real App to replace; `update.rs` is the Backend over Tauri's updater.
 
-use crate::update::take_lock;
+use crate::update::{rename_with_retry, take_lock};
 use qualitylayer_launcher::{say_err, update_lock};
 use serde_json::{json, Value};
 use std::fs;
@@ -176,9 +176,9 @@ pub fn read_state(home: &Path) -> Option<State> {
 
 /// Write the state whole: to a file of its own first, so the server never reads half of it.
 pub fn write_state(home: &Path, state: &State) -> std::io::Result<()> {
-    let temp = home.join(format!("{STATE_FILE}.tmp"));
+    let temp = home.join(format!("{STATE_FILE}.{}.tmp", std::process::id()));
     fs::write(&temp, format!("{}\n", state.to_json()))?;
-    fs::rename(&temp, home.join(STATE_FILE))
+    rename_with_retry(&temp, &home.join(STATE_FILE))
 }
 
 /// The version that is downloaded and verified, ready to install, if there is one.
@@ -359,6 +359,9 @@ impl<B: Backend> Engine<B> {
         say_err!("QualityLayer: the update check failed: {}", failure.message);
         let code = failure.code.to_string();
         self.put(|state| {
+            state.available = None;
+            state.notes = None;
+            state.downloaded = false;
             state.phase = Phase::Idle;
             state.waiting_for = None;
             state.error = Some(code);
@@ -433,10 +436,7 @@ impl<B: Backend> Engine<B> {
     /// (and it is used up).
     fn nap(&self, cancel: &AtomicBool) -> bool {
         let mut left = self.poll;
-        loop {
-            if cancel.swap(false, Ordering::SeqCst) {
-                return true;
-            }
+        while !cancel.swap(false, Ordering::SeqCst) {
             if left.is_zero() {
                 return false;
             }
@@ -444,6 +444,7 @@ impl<B: Backend> Engine<B> {
             std::thread::sleep(step);
             left -= step;
         }
+        true
     }
 
     fn ensure_ready(&mut self) -> Result<(), Installed> {
@@ -458,8 +459,11 @@ impl<B: Backend> Engine<B> {
     }
 
     fn wait_for_running_agents(&mut self, cancel: &AtomicBool) -> Result<bool, Installed> {
+        if !self.waits_for_agents {
+            return Ok(false);
+        }
         let running = self.backend.running();
-        if !self.waits_for_agents || running == 0 {
+        if running == 0 {
             return Ok(false);
         }
         say_err!("QualityLayer: waiting for {}", agent_commands(running));
@@ -474,7 +478,7 @@ impl<B: Backend> Engine<B> {
         Ok(true)
     }
 
-    fn acquire_update_lock(&mut self, lock: &Path) -> Result<bool, Installed> {
+    fn acquire_update_lock(&mut self, lock: &Path, cancel: &AtomicBool) -> Result<bool, Installed> {
         match take_lock(lock, std::process::id()) {
             Ok(true) => {
                 if self.waits_for_agents && self.backend.running() > 0 {
@@ -484,7 +488,10 @@ impl<B: Backend> Engine<B> {
                 Ok(true)
             }
             Ok(false) => {
-                std::thread::sleep(self.poll);
+                if self.nap(cancel) {
+                    self.back_to_ready();
+                    return Err(Installed::Cancelled);
+                }
                 Ok(false)
             }
             Err(error) => {
@@ -533,7 +540,7 @@ impl<B: Backend> Engine<B> {
                 Ok(false) => {}
                 Err(outcome) => return outcome,
             }
-            match self.acquire_update_lock(&lock) {
+            match self.acquire_update_lock(&lock, cancel) {
                 Ok(true) => return self.run_locked_install(&lock),
                 Ok(false) => continue,
                 Err(outcome) => return outcome,
@@ -1034,7 +1041,7 @@ mod tests {
             fs::remove_dir_all(&home).unwrap();
         }
 
-        // A download that fails with nothing ready, unattended: idle, with the code.
+        // A download that fails with nothing ready, unattended: idle, with the code and no half-ready version.
         let home = temp("quiet-download");
         let log = Rc::new(RefCell::new(Log::default()));
         let mut backend = fake(&home, &log);
@@ -1043,8 +1050,14 @@ mod tests {
         assert_eq!(engine.check(false), Checked::Failed);
         let state = read_state(&home).unwrap();
         assert_eq!(
-            (state.phase, state.error.as_deref(), state.downloaded),
-            (Phase::Idle, Some("signature"), false)
+            (
+                state.phase,
+                state.error.as_deref(),
+                state.available.as_deref(),
+                state.notes.as_deref(),
+                state.downloaded
+            ),
+            (Phase::Idle, Some("signature"), None, None, false)
         );
         fs::remove_dir_all(&home).unwrap();
     }

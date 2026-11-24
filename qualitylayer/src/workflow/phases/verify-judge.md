@@ -1,27 +1,10 @@
 # Run the fresh reviewer and collect its verdicts
 
-Start the reviewer the reply supplies on its brief, `model` and `effort`, following the judge brief's
-no-file-change rule when it applies. A `reviews` entry is
-the Second opinion, running beside it in the background. A build too large for one reviewer comes as
-`helpers`, one per share plus one for the diff: start each at once on exactly its own brief, wait
-for all and judge on none alone; together they are one run. When `then` names a share with no part,
-start only those reviewers again.
+Start the reviewer(s) on their exact `brief_file`, `model` and `effort` (following any no-file-change rule). Start any `reviews` (Second opinion) and split `helpers` (one per share + diff) in parallel; judge on none alone. If `then` names a missing share, restart only those reviewers.
 
-- **While it works, leave the checkout and project checks alone**. Queue known fixes in your task
-  list and inspect their evidence while you wait. Each brief names an assigned working tree or a
-  selected commit. If the assigned code changes, report the move and recheck the affected code.
-  Apply the fixes after collecting the verdicts.
-- **When it has finished**, record a review returned under that rule and its verdicts verbatim.
-  **Read the verdicts and run `then`**, which validates them and their freshness. When it returns a
-  fix move, follow it. Ask for a new judgement after the fixes and their focused checks. Verdicts and evidence
-  files stay as the reviewer supplied them: an edited proof file expires its verdict, and changed code or a changed Plan
-  needs a new assignment. QualityLayer commits any added tests with its pass.
-- **If the reviewer stopped early**, follow up with the same agent; an idle worker is no reason to
-  start a new reviewer. Never invent its verdict or turn a FAIL or MISSING into a PASS.
-- **An `environment:` blocker** is cleared after the round: by you (a deployment, a service), or by
-  the person through `qualitylayer need "<what to set up, and why you cannot>" --for T<n>`, asked
-  before another reviewer starts; never send one to find the same blocker again. Then a fresh
-  reviewer judges that scenario.
+- **While it works, leave the checkout and project checks alone.** Queue fixes and inspect evidence while waiting; apply fixes only after collecting verdicts. Report any change to the assigned code and recheck it.
+- **When finished**, record returned no-write reviews/verdicts verbatim, then run `then` to validate them and follow its next move. Verdicts and evidence files stay as the reviewer supplied them (editing a proof file expires its verdict; changed code/Plan needs a new assignment). QualityLayer commits added tests with its pass.
+- **If the reviewer stopped early**, follow up with that same agent; never start a duplicate reviewer for an idle worker. Never invent its verdict or turn a FAIL or MISSING into a PASS.
+- **An `environment:` blocker** is cleared once after the round (fix it yourself, or open `qualitylayer need "<what to set up, and why you cannot>" --for T<n>`). Never send another reviewer into an unchanged blocker.
 
-With no helpers available, follow the same brief yourself, label the judge as the build session and
-tell the person it was not independent.
+With no helpers available, run the brief yourself, label the judge as the build session, and tell the person it was not independent.

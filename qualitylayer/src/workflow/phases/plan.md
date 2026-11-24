@@ -1,114 +1,41 @@
 # Plan: agree what to build, then the one approval before any code
 
-Plan is the first of three steps: Plan, Implement, Verify. You and the person settle the problem, what
-done means and the approach, and they approve `{plan_doc}` once, before any code. A build session with
-no memory of this conversation then builds from the saved files, so whatever it needs is in them. A
-question costs the person's time; a misunderstanding found after approval costs both of you.
+Plan is step 1 of 3. Settle the problem, Done means and approach, and get `{plan_doc}` approved once before any code. A fresh build session reads only the saved files.
 
-**Done when** nothing is left open: every choice only the person can make is answered, everything else
-you settled and listed, `qualitylayer plan draft` reports no error, and the gate is open with its review
-answered.
+**Done when** nothing is left open: every person-only choice is answered, everything else you settled and listed, `qualitylayer plan draft` reports no error, and the gate is open with its review answered.
 
 ## Understand the request
 
-1. **Read the code the request touches first**, and what earlier tasks decided (`memory_search` or
-   `qualitylayer memory search`, `qualitylayer find "<words>"`). Options you offer name real files; a
-   settled decision is not asked again. A reversal says so in the agents' file: `Reverses <task>,
-   decision <n>: <what changes>`.
-2. **Name the task**: `qualitylayer task set title="<action and topic>"` (2 to 8 words) unless the
-   person named it. If this checkout does not hold the product the request is about, say its path and
-   ask the person to start the task in the right project. Set what applies: `type=bugfix` or
-   `type=feature`; `ui=true` when a page, dialog or form changes; `profile=small` when the first look
-   is traced, nothing risky is touched and one slice builds it.
-3. **Read by size.** A small task you read yourself. Otherwise write numbered questions under
-   *Questions for helpers* in `agents/{plan_doc}`: how the code works today, never what will change,
-   each with where to look (two to four questions a helper; a hands-on trial names a place of its
-   own). `qualitylayer brief plan` then lists `helpers`: start each on its `brief_file`, side by
-   side, and save each report with `qualitylayer helper result <id> --file <path>`. Reports land in
-   `{research_dir}` as written. Stop reading once each Done means point has a place in the code, an
-   approach and a proof. Every finding the Plan rests on is one line under *Findings* with a
-   `file:line` that resolves, linking its report (`{research_dir}/r1.md#2`). Probe the deployed
-   state a decision depends on and save the probe under `{records_dir}/`.
+1. **Read touched code and prior decisions first** (`memory_search` or `qualitylayer memory search`, `qualitylayer find "<words>"`). Options name real files; a settled decision is not asked again. Reversals note `Reverses <task>, decision <n>: <what changes>` in the agents' file.
+2. **Name and classify the task**: `qualitylayer task set title="<action and topic>"` (2 to 8 words) unless named. If this checkout does not hold the product the request is about, name its path and ask the person to start the task in the right project. Set `type=bugfix|feature`, `ui=true` when a visible surface changes, and `profile=small` when one slice builds it with no risk.
+3. **Read by size.** Read a small task yourself. Otherwise write numbered how-it-works-today questions under *Questions for helpers* in `agents/{plan_doc}` (2–4 per helper, with where to look), run `qualitylayer brief plan` to get `helpers`, run them in parallel on their `brief_file`, and save each report via `qualitylayer helper result <id> --file <path>`. Reports land in `{research_dir}` as written. Stop reading once every Done means point has a place in the code, an approach and a proof. Every finding the Plan rests on is one line under *Findings* with a `file:line` that resolves, linking its report (`{research_dir}/r1.md#2`). Save live probes under `{records_dir}/`.
 
 ## Ask only what you cannot decide
 
-Ask (*Asking the person*) in the order that changes what gets built: the problem and Done means,
-scope, behaviour (empty, loading and error states; shapes, errors and exit codes; a schema and its
-migration), then a technical shape only where it changes a contract or what the user sees. A question
-says first what changes for the user, then names the file or contract when that helps them decide.
-Ask when a question arises, not all at the end; keep working on what no open answer blocks. What the
-code answers or a reversible detail settles, you decide and list under *Decisions made for you* with
-its reason. "Decide for me" leaves only what is hard to reverse. Each question's `about` is `{"doc":
-"{plan_doc}", "section": "<heading>", "quote": "<the words it settles>"}`; link answers to their points
-with `qualitylayer question link <id> --points 1,3`.
+Ask (*Asking the person*) in the order that changes what gets built: problem/Done means, scope, observable behaviour (empty/loading/error states, contracts, migrations), then technical shape only where it affects contracts or users. Ask as questions arise while working on unblocked parts. Decide reversible/code-answered details yourself under *Decisions made for you* with reasons. Set `about: {"doc": "{plan_doc}", "section": "<heading>", "quote": "<words>"}` and link answers with `qualitylayer question link <id> --points 1,3`.
 
 ## Write the two files
 
-Fill both templates in place and keep `{plan_doc}`'s front matter (overwriting it loses the task).
-Each template's hints own section format; write **Summary**, **Done means** and **Approach**, and any
-other section only when it has something to say. Keep the Plan concise—do not pad a small task. Write
-each fact once.
+Fill both templates in place and keep `{plan_doc}`'s front matter. Template hints own section formatting; write **Summary**, **Done means** and **Approach**, and optional sections only when non-empty. Keep `ql:` markers as two empty lines. Write each fact once.
 
-- `{plan_doc}` is for people: plain words, no `file:line` in lead sections, each list item opening with
-  a **bold headline sentence**. *Summary*: one plain sentence on what the user gets, the outcome in 2 to
-  4 one-line bullets, then `**Size:**` and `**Trust boundary:**` (plus `**Risk:**` / `**Integrations:**`
-  only when backed by the Plan). *Scope*: when the build needs another Git checkout, put
-  `` - **Repository:** `/absolute/path` `` under `### In scope` using the checkout's exact local root.
-  *Approach*: Chosen, Gives, Costs, then at most five bullets of what changes.
-- `agents/{plan_doc}` is the build's working record (request, findings, contracts, code to imitate,
-  start/test, project checks, rejected approaches, guarded risks, pitfalls). It grants nothing and never
-  changes scope; where the two differ, the Plan wins.
-- Keep QualityLayer's `ql:` markers as two empty lines. Fold settled feedback into one current proposal,
-  then reread *Summary* and *Approach* so they still match.
+Four Plan layout rules (apply from the first draft):
+- *Summary*: one plain sentence on what the user gets, the outcome in 2 to 4 one-line bullets, then `**Size:**` and `**Trust boundary:**` (`**Risk:**` / `**Integrations:**` only when backed by the Plan).
+- **Scope**: always use `### In scope` and `### Out of scope` subheadings (under `### In scope`, add `` - **Repository:** `/absolute/path` `` when another checkout is needed).
+- **Diagrams**: give every Mermaid block its own concise `### <Title>` heading and a one-line caption below it (so the App never repeats the caption as a truncated title). For a new/changed router, agent or pipeline, diagram how requests move, branch and call tools.
+- **Done means (deterministic vs. stochastic)**: follow `Runs as:` and the `A1`/`A2` table with observable actions and results (never test filters; name the *Interface* artifact for screens; mark person-only/remote steps under the step). Separate deterministic code/contract checks from stochastic or live-LLM/eval checks — give probabilistic checks an explicit pass threshold and a hard spend/retry cap instead of "in every run".
 
-**Done means decides.** Follow the template's `Runs as:` and `A1`/`A2` step table: every point needs a
-step that can fail while every task passes, stated as observable action and result (never a test filter),
-naming its *Interface* artifact when it shows a screen, and marking person-only/remote steps under the
-step.
-
-**Show what changes.** With `ui: true`, draw each changed surface as a product-fidelity artifact between
-`<!-- ql:artifact <name> -->` markers after updating its lasting model (`qualitylayer artifact guide`,
-once). Each finished artifact gets one fresh check: save its report with `qualitylayer helper result
-<id> --file <path>` and answer every finding `Answer: Taken · <what changed>` or `Answer: Kept · <why>`.
-For a new/changed router, agent or pipeline, diagram how a request moves, branches and calls tools.
-
-**Clear the way for the build now.** Settle every human step (secret, account, permission, deploy) as
-`met` or `granted` under *Prerequisites* (leaving `P1` intact), and spike unproven dependencies under
-*Proven before the gate*. A choice that appeared only once the design was drawn becomes a **Your call**
-(`late: true` under *Engineering decisions*, locking Approve until answered and folded in with
-`question reply`).
+Additional file rules:
+- `{plan_doc}` is for people: plain words, no `file:line` in lead sections, each list item opening with a **bold headline sentence**. *Approach*: Chosen, Gives, Costs, then at most five bullets of what changes.
+- `agents/{plan_doc}` holds build working notes (request, findings, contracts, code to imitate, start/test, checks, rejected approaches, risks, pitfalls). Where the two differ, the Plan wins.
+- With `ui: true`, update the lasting model first, draw changed surfaces as product-fidelity artifacts between `<!-- ql:artifact <name> -->` markers (`qualitylayer artifact guide`), run one fresh check, save via `qualitylayer helper result <id> --file <path>`, and answer every finding `Answer: Taken · <what changed>` or `Answer: Kept · <why>`.
+- Settle human prerequisites (`met` or `granted` under *Prerequisites*, keeping `P1`), spike unproven dependencies under *Proven before the gate*, and turn late design choices into a **Your call** (`late: true` under *Engineering decisions*, folded via `question reply`).
 
 ## Draft, gate, approval
 
-1. `qualitylayer plan draft`, and fix every error in one pass. Reread the Plan as a reviewer would: no
-   contradiction, nothing buildable two ways. Walk the change through its life once (first use, daily
-   use, left alone overnight, one side updated, removed, broken): the Plan says what the person sees
-   and what keeps running; settle or ask what it does not.
-2. `qualitylayer gate open plan` at once. Approve stays locked while a review runs.
-3. When the reply lists `reviews`: `qualitylayer wait --for review`, say who reviews, read
-   `{reviews_dir}/plan.md`, change the Plan for each finding you take and answer every one in one pass:
-   `Answer: Taken · <what you changed>`, `Answer: Kept · <why>`, or `Answer: Ask · <the question>` for
-   what is truly the person's. Put `"late": true` and `"settles": ["plan:finding:<n>"]` on each
-   question in the batch. A panel's finding marked `Panel: all` you take, or ask the person and keep
-   it only when they pick the keep choice (`"kind": "keep"`); a `Panel: split` one you decide, giving
-   both views and your reason. Findings that say the same get the same answer. Then `gate open plan`
-   again after you have folded in the answers. While a named finding waits for its answer, follow
-   the gate's move to hear it.
-4. Follow the gate reply. With approvals in the App it carries `presentation.planHandoff`: say that
-   once and ask nothing; the person uses **Approve and build here**, or marks what should change in the
-   App, which reaches you as an ordinary message with the marked place: answer it like any message. With
-   approvals in your agent it carries `your_turn`: say it, show `qualitylayer read {plan_doc} --lead`,
-   then send each `chat_review` entry in order (each open Your call, then the approval) with
-   `qualitylayer question ask '<entry>'` and ask the `chat_questions` it returns. On **Give feedback**,
-   ask what should change. On **Show the Plan**, print `qualitylayer read {plan_doc} --lead` in chat.
-   Wait for approval after responding. A pick in a picker QualityLayer did not hand you records nothing. A comment
-   reopens the gate when the Plan changed. Either way, while the gate is open your move is `qualitylayer
-   wait --for approval` (again while it says pending; in the background where your harness has one):
-   reading a Plan takes the person minutes, and it returns when they approve or comment, in the App or
-   here. Ask for the approval once; a reply that is not one gets its answer and another wait.
-5. On approval the build starts clean: print the reply's `message`, ask any `chat_questions` and end
-   your turn; the person compacts or opens a new conversation and says "build here". Only when they
-   chose to keep this conversation, run `qualitylayer build start` now. From here the Plan changes
-   only through `qualitylayer plan amend --by agent|user --note "<what changed, and why>"`.
+1. **Validate locally while editing, draft once:** use `qualitylayer validate {plan_doc}` during edits; run `qualitylayer plan draft` once the full Plan and diagrams are ready, and fix any errors in one pass. Check once for contradictions, ambiguity, and lifecycle gaps (first use, daily use, overnight, partial update, failure).
+2. Run `qualitylayer gate open plan` at once.
+3. On `reviews`: `qualitylayer wait --for review`, read `{reviews_dir}/plan.md`, apply taken edits and answer every finding in one pass: `Answer: Taken · <what changed>`, `Answer: Kept · <why>`, or `Answer: Ask · <the question>` (`"late": true`, `"settles": ["plan:finding:<n>"]`). Take `Panel: all` findings unless the person picks a `"kind": "keep"` choice; decide `Panel: split` with both views and your reason. Re-open with `gate open plan` once answers are folded in.
+4. Follow the gate reply. In App approvals it carries `presentation.planHandoff`: say that once and ask nothing; the person uses **Approve and build here** or comments in the App. In agent approvals it carries `your_turn`: say it, show `qualitylayer read {plan_doc} --lead`, then send each `chat_review` entry with `qualitylayer question ask '<entry>'` and ask its `chat_questions` (on **Show the Plan**, print `--lead`; on **Give feedback**, ask what to change). While the gate is open, wait with `qualitylayer wait --for approval` (background when supported, repeat while `pending`).
+5. On approval, print `message`, ask any `chat_questions` and end your turn (only run `qualitylayer build start` now if they chose to keep this conversation). From here, Plan changes go through `qualitylayer plan amend --by agent|user --note "<what changed, and why>"`.
 
-A person who asks for a plain prompt gets `qualitylayer task handback "<reason>" --prompt "<prompt>"`.
+If the person asks for a plain prompt, run `qualitylayer task handback "<reason>" --prompt "<prompt>"`.

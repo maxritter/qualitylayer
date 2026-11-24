@@ -401,23 +401,35 @@
   }
   .gal-collection .gal-fig-head {
     flex-wrap: wrap;
-    align-items: flex-start;
-    padding: 12px 13px;
+    align-items: center;
+    padding: 8px 10px 8px 14px;
+    border-bottom: 1px solid var(--ql-line);
   }
   .gal-figure-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
     flex: 1 1 200px;
     min-width: 0;
+  }
+  .gal-figure-name > svg {
+    flex: none;
+    color: var(--ql-text-dim);
   }
   .gal-figure-name h3 {
     margin: 0;
     color: var(--ql-text);
-    font: 600 14px / 1.32 var(--font-sans);
+    font: 600 13.5px / 1.32 var(--font-sans);
     overflow-wrap: anywhere;
   }
-  .gal-figure-name .pl-cap {
-    max-width: 68ch;
-    margin: 4px 0 0;
-    font-size: 12px;
+  .gal-fig-below {
+    margin-top: 6px;
+  }
+  .gal-fig-below .pl-cap {
+    max-width: 72ch;
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ql-text-dim);
   }
   .gal-collection-diagrams .gal-fig > :not(.gal-fig-head) {
     margin: 0;
@@ -480,21 +492,47 @@
       width: 100%;
     }
   }
-  @container plan-gallery (min-width: 600px) {
+  @container plan-gallery (min-width: 440px) {
+    /* Compact horizontal top tabs give Mermaid diagrams full reading width instead of a 27% rail. */
     .gal-collection-diagrams[data-many="true"] {
-      grid-template-columns: minmax(130px, 27%) minmax(0, 1fr);
-      align-items: start;
-    }
-    .gal-collection-diagrams[data-many="true"] > .gal-head {
-      grid-column: 1;
-      grid-row: 1;
-    }
-    .gal-collection-diagrams[data-many="true"] > .gal-p {
-      grid-column: 2;
-      grid-row: 1;
+      grid-template-columns: minmax(0, 1fr);
     }
     .gal-collection-diagrams .gal-tabs {
-      display: grid;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      width: fit-content;
+      max-width: 100%;
+      padding: 3px;
+      border: 1px solid var(--ql-border);
+      border-radius: 10px;
+      background: var(--ql-surface-2);
+    }
+    .gal-collection-diagrams .gal-tabs > [role="tab"] {
+      min-height: 30px;
+      height: 30px;
+      padding: 0 11px;
+      gap: 6px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--ql-text-muted);
+      white-space: nowrap;
+    }
+    .gal-collection-diagrams .gal-tabs > [role="tab"][aria-selected="true"] {
+      border-color: var(--ql-line);
+      background: var(--ql-bg);
+      color: var(--ql-text);
+    }
+    .gal-collection-diagrams .gal-thumb {
+      width: 16px;
+      height: 16px;
+      border: 0;
+      background: transparent;
+    }
+    .gal-collection-diagrams .gal-thumb > svg {
+      width: 14px;
+      height: 14px;
     }
     .gal-collection-diagrams .gal-picker {
       display: none;

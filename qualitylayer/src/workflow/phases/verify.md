@@ -1,84 +1,34 @@
 # Verify: checks, independent review, your fixes, then the person's review
 
-The build is delivered. Verify proves it with records and fixes what fails, so the person's review
-opens with everything finished. Implement's limits stand. QualityLayer writes the person's page
-(`{verify_doc}`) between its `<!-- ql:... -->` markers; the work lives in `agents/{verify_doc}`, where
-reviewers append their own blocks.
+Verify proves the built change with records and fixes every gap so the person's review opens finished. Implement's limits stand. QualityLayer fills `{verify_doc}` between `<!-- ql:... -->` markers; work lives in `agents/{verify_doc}`.
 
-**Done when** `qualitylayer check all` passes on the final source (or is red on the base commit too)
-and every Done means point passes as approved or as amended. The page then turns to the person.
+**Done when** `qualitylayer check all` passes on the final source (or is red on base too) and every Done means point passes as approved or amended. The page then turns to the person.
 
 ## The order
 
-1. **Security review beside the checks**, when the change crosses a trust boundary (the Plan's line,
-   or an endpoint that writes state, agent instructions, hooks, install scripts, CI): start it in a
-   subagent and go on. Fix its critical and high findings before step 3. Scope it did not reach is
-   `**Result:** unverified`, never clean.
-2. **`qualitylayer check all`**, before the reviewer starts. As checks run, save redacted local output
-   from the actual candidate and run for a Done means step with `qualitylayer evidence add --run <id> --mode scripted|real-session --step A<n> <file>`.
-   The reviewer still records the verdict. A red check stays red whatever a reviewer rules, and is
-   yours to fix. The reviewers rule on scan findings. One that was red
-   before this task: `qualitylayer check all --base` records that (a test that also fails on the base
-   commit is excused by name; a lint, type or build check never is, and when it is red on the base too
-   the person is asked at once with `qualitylayer question ask`).
-3. **`qualitylayer verify judge`** hands out the independent review. A single judge adds the missing
-   tests, runs the Done means steps and reviews the whole diff. If the first round is split, each
-   acceptance helper runs the steps in its brief on the assigned source and records its own evidence.
-   The fresh judge checks the recorded results and reviews the integrated diff independently. Leave
-   the checkout alone while they work. QualityLayer commits the judge's tests with its pass.
-4. **Second opinion** (when on) runs beside the reviewer: answer each finding `Answer: Taken · <what
-   you changed>` or `Answer: Kept · <why>`. With Independent review off in Settings, check the change
-   against Done means yourself.
-5. **Fix the gaps** (`qualitylayer verify fix`), running the focused checks you choose, then
-   `qualitylayer verify recheck`: a fresh reviewer rechecks what failed and the lines the fix changed.
-   Keep a genuine regression case in the suite when fixing a finding, verify it fails before the fix and passes after, and keep running it in later rounds.
-   A commit of tests or docs only needs no recheck, just `qualitylayer check all`.
-6. **`qualitylayer check all` once more**, on the final source. Fix a red result when you can make
-   progress within the approved scope; otherwise follow the exit below for a real blocker.
+1. **Security review** in parallel when a trust boundary is crossed (Plan's line, state-writing endpoints, agent instructions, hooks, installers, CI). Fix critical/high findings before step 3; unreached scope is `**Result:** unverified`, never clean.
+2. **`qualitylayer check all`** before the reviewer starts. Save redacted local output for Done means steps with `qualitylayer evidence add --run <id> --mode scripted|real-session --step A<n> <file>`. A red check is yours to fix; use `qualitylayer check all --base` when a test already fails on base (a base-failing test is excused by name; lint/type/build never is — ask the person at once with `qualitylayer question ask`).
+3. **`qualitylayer verify judge`** starts the independent review (single judge, or split acceptance helpers + diff judge). Leave the checkout alone while they work. QualityLayer commits the judge's tests with its pass.
+4. **Second opinion** (when on) runs beside the reviewer: answer every finding `Answer: Taken · <what changed>` or `Answer: Kept · <why>`. With Independent review off, check Done means yourself.
+5. **Fix gaps** (`qualitylayer verify fix`), then `qualitylayer verify recheck` (rechecks failed items + changed lines only). Add a regression test for each fixed bug (red before, green after). **Before calling `verify recheck`, re-run the previous round's failing cases alongside the new fix** so one fix does not regress another. Test/doc-only commits need `qualitylayer check all`, not a recheck.
+6. **`qualitylayer check all` once more** on the final source.
 
-## What fails a judgement
+## Failure bar & limits
 
-A Done means point that does not hold, a red project check this build caused, a critical or high
-security finding, lost data, or a bug the reviewer reproduces in the lines this task changed. Anything
-else a reviewer finds is a finding with its evidence: answer it Taken or Kept with a reason, as you
-answer the second opinion, and the person sees the kept ones. In a recheck a new finding outside what
-failed and what the fix changed is a finding, never a fail. **A reproduced bug is never Kept**
-(`[NOTE] bug:` included): fix it test first before the person's review, or, when it lies outside this
-task, name it as a follow-up with its owner. A step that passes on a retry is passed with a note.
+The judge's failure bar governs the round (unmet Done means, build-caused red check, critical/high security finding, lost data, or reproduced bug in changed lines). **A reproduced bug is never Kept** (`[NOTE] bug:` included): fix test-first, or name an external follow-up with owner.
 
-## Limits
-
-- A verdict is its reviewer's: never rewrite it or another reviewer's block. One that is factually
-  wrong goes back to that reviewer with a line on what it got wrong.
-- In a shared checkout, another session's unfinished edits are not this task's source: when a check
-  fails only on them, `check all` runs it again on a copy of HEAD with this task's files and says so,
-  and that run is the record. Another session's commit stays its own.
-- State you cannot create (a second approver in a sandbox, an account) is a need for the person, asked
-  before the next reviewer starts: `qualitylayer need "<what. why you cannot>" --for T<n>`, closed with
-  `qualitylayer need resolved T<n>` once they gave it.
-- A step the Plan gave to the person, or one that needs a push or a runner it did not grant, never
-  holds Verify: it is shown to the person with what ran here.
-- Redeploy a release slice only to a non-production target the Plan grants.
+- A verdict is its reviewer's: never rewrite it. Send factual errors back to that reviewer.
+- In a shared checkout, `check all` isolates foreign unfinished edits on a copy of HEAD + this task's files.
+- Person-only state/access is a need before the next reviewer starts: `qualitylayer need "<what. why you cannot>" --for T<n>`, closed via `qualitylayer need resolved T<n>`.
+- **Park unchanged `environment:` blockers after 1 round:** if an external outage, missing credential or spend cap has not changed since the last round, do not start another judge round against it — record a `need` or ask the person once via `qualitylayer question ask` and continue unblocked work.
+- Person-only steps or ungranted pushes/runners never hold Verify; redeploy only to a Plan-granted non-production target.
 
 ## When it does not pass
 
-Choose the next move from the evidence, within the approved scope. Keep fixing and
-rechecking while you can make meaningful progress. If the result is unchanged, change the approach
-or investigate the cause before another recheck. Record what you tried under *Fix rounds*.
-If you cannot make progress without a decision only the person can make, ask that specific question
-with `qualitylayer question ask`. Keep working while an App question is open. For terminal answers,
-finish independent work before opening the returned picker, which waits for the person. When the
-environment, a timed-out check, a release or a person-only
-need blocks the rest, `qualitylayer next` names the exit and the move:
+Keep fixing and rechecking while you can make meaningful progress within approved scope. If a result is unchanged, change the approach or diagnose the cause before another recheck, and log what you tried under *Fix rounds*.
 
-- **Outside the task** (another session's work, a failure already on the base): a follow-up with its
-  owner, under *Fix rounds* in the agents' file.
-- **Inside the task**: one question to the person, sent with `qualitylayer question ask` (the exit's
-  `question`, `recommended` your choice, `why` a line of evidence). Ask once and keep going with
-  what does not depend on the answer. Their answer is **Change what Done means** (their
-  words into the Plan, then `qualitylayer plan amend --by user`, which resets the rounds), **One more
-  fix round** (`qualitylayer verify fix`), **Stop the task** (`qualitylayer task abandon`) or, when red
-  project checks are all that is open, **Keep it red and review it** (`qualitylayer verify keep-red`),
-  which the review shows red with their choice. A failing point becomes a pass only by passing.
+When blocked on an external/environment issue, timeout, or person-only decision, `qualitylayer next` names the exit and move:
+- **Outside the task** (foreign work, pre-existing base failure): log follow-up + owner under *Fix rounds*.
+- **Inside the task**: ask once via `qualitylayer question ask` (`question`, `recommended`, `why`). In App mode, keep doing unblocked work while open; in terminal mode, finish independent work before opening the picker. If the person explicitly replies to the exit question in chat while `answers` is `app`, record their exact words via `qualitylayer question answered "<their words>"` instead of stalling. Choices: **Change what Done means** (`qualitylayer plan amend --by user`), **One more fix round** (`qualitylayer verify fix`), **Stop the task** (`qualitylayer task abandon`), or (red project checks only) **Keep it red and review it** (`qualitylayer verify keep-red`). A failing point becomes a pass only by passing.
 
-When a decision or evidence only the person can provide is needed, use the existing question flow. For a recorded Verify need, `question ask` can bind the question to its current `ownerRequest` (`need`, its opened or reopened time as `since`, and `kind`). Use `budget` with explicit USD `amountCents` only for a spending decision, or `evidence` for a result or link. A need or saved answer is no verdict. Ask for redacted evidence, never credentials. Use the answer from the existing poll or wait.
+For a recorded Verify need, `question ask` may bind `ownerRequest` (`need`, `since`, `kind`: `budget` with `amountCents`, or `evidence` for redacted proof/links, never credentials). A need or saved answer is never a verdict.

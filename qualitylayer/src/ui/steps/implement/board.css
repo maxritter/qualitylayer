@@ -43,6 +43,18 @@
     font-weight: 500;
     overflow-wrap: anywhere;
   }
+  .ib-done-no {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 1px solid var(--ql-pass-line);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--ql-pass) 8%, transparent);
+    color: var(--ql-pass);
+    font-weight: 600;
+    text-align: center;
+  }
   .ib-segs {
     display: inline-flex;
     gap: 3px;

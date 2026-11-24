@@ -367,6 +367,59 @@
     display: grid;
     gap: 10px;
   }
+  .rvw-flow-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .rvw-flow-bar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ql-text);
+  }
+  .rvw-flow-bar-title > svg {
+    color: var(--ql-text-dim);
+  }
+  .rvw-flow-waves {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin: 0 0 0 auto;
+    padding: 2px;
+    border: 1px solid var(--ql-border);
+    border-radius: 8px;
+    background: var(--ql-surface-2);
+  }
+  .rvw-flow-wave-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ql-text-muted);
+    font: 500 12px var(--font-sans);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .rvw-flow-wave-btn:hover {
+    color: var(--ql-text);
+  }
+  .rvw-flow-wave-btn[aria-pressed="true"] {
+    border-color: var(--ql-line);
+    background: var(--ql-bg);
+    color: var(--ql-text);
+  }
+  .rvw-flow-wave-btn:focus-visible {
+    outline: 2px solid var(--ql-accent);
+    outline-offset: 1px;
+  }
   .rvw-flow-viewport {
     max-height: 410px;
     overflow: auto;

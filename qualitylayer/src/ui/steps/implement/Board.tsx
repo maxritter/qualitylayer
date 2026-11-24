@@ -50,16 +50,24 @@ function SliceRow({
   const state = slice.status === "done" ? "done" : slice.status === "run" ? "work" : "todo"
   const deps = nonLinearDeps(slice)
   const canDiff = taskId !== undefined && slice.status === "done"
+  const done = slice.status === "done"
   const head = (
     <>
-      <span className="sp-no">
+      <span
+        className={done ? "sp-no ib-done-no" : "sp-no"}
+        title={done ? `Slice ${slice.n} done` : undefined}
+      >
         <span className="sr-only">Slice </span>
         {slice.n}
       </span>
       <span className="ib-title">
-        <TitleWithState state={state}>
+        {done ? (
           <InlineMarkdown text={slice.title} />
-        </TitleWithState>
+        ) : (
+          <TitleWithState state={state}>
+            <InlineMarkdown text={slice.title} />
+          </TitleWithState>
+        )}
         {deps.length > 0 ? (
           <span className="ib-dep-chip" title={slice.dependsReason ?? undefined}>
             Depends on {deps.map((n) => `S${n}`).join(", ")}

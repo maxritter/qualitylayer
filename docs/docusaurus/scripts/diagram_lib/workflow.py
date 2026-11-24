@@ -109,8 +109,8 @@ def slices(c: Theme) -> str:
     b.append(curve(c, (792, 184), (812, 134), col='muted'))
     b.append(node(c, (814, 94, 186, 80), 'Independent review', ['Adds missing tests,', 'checks every point'], col='violet', fill='violetf'))
     b.append(T(c, (W / 2, 258), 'An agent that did not write the code checks every point on the running program.', size=13, fill='muted', weight=400, anchor='middle'))
-    b.append(T(c, (W / 2, 278), 'Up to two fix rounds; then the page is your review, and you approve the change.', size=13, fill='muted', weight=400, anchor='middle'))
-    return svg((W, H), ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and an agent that did not write the code adds missing tests and checks every point on the running program; after up to two fix rounds the Verify page is your review')
+    b.append(T(c, (W / 2, 278), 'Fixes and focused rechecks run automatically; then the page is your review, and you approve the change.', size=13, fill='muted', weight=400, anchor='middle'))
+    return svg((W, H), ''.join(b), 'Implement and Verify: one session builds the slices in order, test first, and fixes what fails; then a security review when the change crosses a trust boundary, the project checks, and an agent that did not write the code adds missing tests and checks every point on the running program; after fixes and focused rechecks the Verify page is your review')
 
 
 def plan_ill(c: Theme) -> str:

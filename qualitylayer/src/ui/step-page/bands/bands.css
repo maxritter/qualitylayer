@@ -21,11 +21,11 @@
   .bd-folds {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 22px;
     min-width: 0;
   }
   .bd-folds {
-    gap: 6px;
+    gap: 8px;
   }
   .bd-dim {
     color: var(--ql-text-dim);

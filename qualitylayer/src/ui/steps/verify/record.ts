@@ -70,8 +70,10 @@ export type ReviewRecord = {
 }
 
 export function reviewRecord(sections: DocSections | null, fallbackWhy = ""): ReviewRecord {
+  const writtenWhy = sentencesOf(bodyOf(sectionOf(sections, "Why")))[0] ?? ""
+  const why = writtenWhy !== "" ? writtenWhy : (sentencesOf(bodyOf(fallbackWhy))[0] ?? "")
   return {
-    why: sentencesOf(bodyOf(sectionOf(sections, "Why") || fallbackWhy))[0] ?? "",
+    why,
     diagrams: diagramsOf(sectionOf(sections, "Diagrams")),
   }
 }

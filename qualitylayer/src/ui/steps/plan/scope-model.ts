@@ -17,8 +17,21 @@ const bulletsOf = (lines: string[]): string[] => {
   return out
 }
 
-const INLINE_IN = /^\*\*in(?:\s+scope)?:\*\*\s*(.+)$/i
-const INLINE_OUT = /^\*\*out(?:\s+of\s+scope)?:\*\*\s*(.+)$/i
+const INLINE_LABELS: Record<string, keyof Scope> = {
+  in: "inScope",
+  "in scope": "inScope",
+  out: "outOfScope",
+  "out of scope": "outOfScope",
+}
+
+const parseInlineScopeItem = (item: string): [keyof Scope, string] | null => {
+  const close = item.startsWith("**") ? item.indexOf(":**", 2) : -1
+  if (close === -1) return null
+  const label = item.slice(2, close).trim().replace(/\s+/g, " ").toLowerCase()
+  const bucket = INLINE_LABELS[label]
+  const value = item.slice(close + 3).trim()
+  return bucket && value !== "" ? [bucket, value] : null
+}
 
 const headingBucket = (line: string): keyof Scope | null | undefined => {
   const head = line.startsWith("###") ? (trimmedLineTail(line, 3, 1) ?? undefined) : undefined
@@ -31,12 +44,8 @@ const headingBucket = (line: string): keyof Scope | null | undefined => {
 const collectInlineScope = (bodyLines: string[]): Scope => {
   const lists: Scope = { inScope: [], outOfScope: [] }
   for (const item of bulletsOf(bodyLines)) {
-    const inMatch = INLINE_IN.exec(item)
-    if (inMatch?.[1]) lists.inScope.push(inMatch[1].trim())
-    else {
-      const outMatch = INLINE_OUT.exec(item)
-      if (outMatch?.[1]) lists.outOfScope.push(outMatch[1].trim())
-    }
+    const parsed = parseInlineScopeItem(item)
+    if (parsed !== null) lists[parsed[0]].push(parsed[1])
   }
   return lists
 }

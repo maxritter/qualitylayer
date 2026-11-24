@@ -91,11 +91,6 @@ export function zoomInBounds(view: View, scale: number, at: Point, bounds: ZoomB
   )
 }
 
-/** Zoom to `scale` (held within the range) so the point `at` of the viewport stays under the pointer. */
-export function zoomTo(view: View, scale: number, at: Point, room: Size, content: Size): View {
-  return zoomInBounds(view, scale, at, { room, content })
-}
-
 /** Zoom by a factor around `at`. */
 export function zoomBy(view: View, factor: number, at: Point, room: Size, content: Size): View {
   return zoomInBounds(view, view.scale * factor, at, { room, content })

@@ -21,7 +21,7 @@ if (params.has("guide")) {
     // Without storage the App opens with its defaults; the guide still plays.
   }
   void import("./player.ts").then(({ startGuide }) => startGuide())
-} else if (params.has("story") || params.has("moment")) {
+} else if (params.has("story")) {
   try {
     if (!localStorage.getItem("qualitylayer-terminal-layout"))
       localStorage.setItem("qualitylayer-terminal-layout", JSON.stringify({ width: 360 }))

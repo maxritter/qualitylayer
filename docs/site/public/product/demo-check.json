@@ -1,6 +1,6 @@
 {
-  "sourceCommit": "94996b502831335d75d410528e0d61a7de20ab34",
-  "sourceTree": "a6d5ec3d77653a87509fc3848ccb769298563def",
+  "sourceCommit": "1204fcd5f164bbd68fbb79a5ed497a43cab17591",
+  "sourceTree": "d1bb34ce6c664a48337a8bfb746d3c08a9001634",
   "sourceInputs": {
     "docs/site/app-demo/index.html": "2ba81256d7cdf9b9e8aa7320433bd17ecaa007b78ca6706d9f8846b7f8967ead",
     "docs/site/package-lock.json": "38a8c827c0610c8a1b930f13e7f5faf5fde3f2d53c95c460c0f2a23da873f5a0",
@@ -1335,7 +1335,7 @@
     "qualitylayer/src/workflow/phases/line-question.md": "57028b186f7a54ef06ac7c582d15ff9d6792c0534a0b545fb25fb2331960c4ce",
     "qualitylayer/src/workflow/phases/plan-adopted.md": "5f65f80be28672c2957e340fdc094074efa1235766c77834ddb9f33564b40cd1",
     "qualitylayer/src/workflow/phases/plan-bugfix.md": "50b774adb3d98044785d1c2e50e51f09777b83134c3c42670a32b8282a1647ce",
-    "qualitylayer/src/workflow/phases/plan.md": "54c037586cd79ed7de49f691e4a5bb2e2d9ddf54c3784a80cec349ca5f8bd24c",
+    "qualitylayer/src/workflow/phases/plan.md": "de3709de598fdd4d5a697d6fdc1b9fad577986b68eb71ea00abe94a10e9ea5ff",
     "qualitylayer/src/workflow/phases/quality-security-recheck.md": "994795deb9650cf7befcf69ce87a60a9abebe0f4dfb4bdedb4586be57608318f",
     "qualitylayer/src/workflow/phases/quality-security.md": "0b92ee1c6c295f0f1e297a3e7ec764af9bba191be2bc5e27a441ae5b04bf77c7",
     "qualitylayer/src/workflow/phases/research-helper.md": "85505fe0812db4aa9c9cb76f14318689a8f6760f9848a5f2cf8dd431032be270",
@@ -2686,7 +2686,7 @@
     "qualitylayer/src/workflow/phases/line-question.md": "57028b186f7a54ef06ac7c582d15ff9d6792c0534a0b545fb25fb2331960c4ce",
     "qualitylayer/src/workflow/phases/plan-adopted.md": "5f65f80be28672c2957e340fdc094074efa1235766c77834ddb9f33564b40cd1",
     "qualitylayer/src/workflow/phases/plan-bugfix.md": "50b774adb3d98044785d1c2e50e51f09777b83134c3c42670a32b8282a1647ce",
-    "qualitylayer/src/workflow/phases/plan.md": "54c037586cd79ed7de49f691e4a5bb2e2d9ddf54c3784a80cec349ca5f8bd24c",
+    "qualitylayer/src/workflow/phases/plan.md": "de3709de598fdd4d5a697d6fdc1b9fad577986b68eb71ea00abe94a10e9ea5ff",
     "qualitylayer/src/workflow/phases/quality-security-recheck.md": "994795deb9650cf7befcf69ce87a60a9abebe0f4dfb4bdedb4586be57608318f",
     "qualitylayer/src/workflow/phases/quality-security.md": "0b92ee1c6c295f0f1e297a3e7ec764af9bba191be2bc5e27a441ae5b04bf77c7",
     "qualitylayer/src/workflow/phases/research-helper.md": "85505fe0812db4aa9c9cb76f14318689a8f6760f9848a5f2cf8dd431032be270",
@@ -2706,7 +2706,7 @@
   "sourceDirtyFiles": [],
   "status": "passed",
   "mode": "private-source-build",
-  "checkedAt": "2026-11-25T13:13:24.968Z",
+  "checkedAt": "2026-11-25T15:47:06.926Z",
   "chapters": [
     "setup",
     "welcome",

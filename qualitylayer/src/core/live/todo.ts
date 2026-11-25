@@ -41,27 +41,51 @@ const TEXT_MAX = 200
 /** A hook waits this long for a parallel call of its session to finish writing. */
 const LOCK_WAIT_MS = 3000
 
+function antigravityStepStatus(status: unknown): "completed" | "in_progress" | "pending" {
+  if (status === "done") return "completed"
+  if (status === "in_progress") return "in_progress"
+  return "pending"
+}
+
+function antigravityTodos(steps: unknown[]): { content: string; status: string }[] {
+  return steps
+    .map((row) => asObject(row))
+    .filter((row) => row.status !== "skipped" && str(row.title).trim() !== "")
+    .map((row) => ({ content: str(row.title), status: antigravityStepStatus(row.status) }))
+}
+
+function doneToolSource(
+  agent: string | null,
+  tool: string,
+  input: Record<string, unknown>,
+): { name: string; input: Record<string, unknown> } | null {
+  if (agent === "claude-code" && CLAUDE_TOOLS.has(tool)) return { name: tool, input }
+  if (agent === "antigravity" && tool === "update_steps" && Array.isArray(input.steps)) {
+    return { name: "TodoWrite", input: { todos: antigravityTodos(input.steps) } }
+  }
+  if (agent === "opencode" && tool === "todowrite" && Array.isArray(input.todos)) {
+    // Dropped items are not to do.
+    return {
+      name: "TodoWrite",
+      input: { todos: input.todos.filter((row) => asObject(row).status !== "cancelled") },
+    }
+  }
+  return null
+}
+
 /** The Conversation's name for the call, and its input, when this hook reports a task list. */
 function sourceOf(
   agent: string | null,
   event: string,
   payload: Record<string, unknown>,
 ): { name: string; input: Record<string, unknown> } | null {
-  const tool = str(payload.tool_name)
-  const input = asObject(payload.tool_input)
   // A subagent's own list is not the session's.
   if (str(payload.agent_id) !== "") return null
-  const done = event === "PostToolUse" && payload.is_error !== true
-  if (agent === "claude-code") return done && CLAUDE_TOOLS.has(tool) ? { name: tool, input } : null
+  const input = asObject(payload.tool_input)
   if (agent === "codex")
     return nativePlanReceipt(payload, event) ? { name: "update_plan", input } : null
-  if (agent === "opencode" && done && tool === "todowrite" && Array.isArray(input.todos))
-    // Dropped items are not to do.
-    return {
-      name: "TodoWrite",
-      input: { todos: input.todos.filter((row) => asObject(row).status !== "cancelled") },
-    }
-  return null
+  if (event !== "PostToolUse" || payload.is_error === true) return null
+  return doneToolSource(agent, str(payload.tool_name), input)
 }
 
 async function readRow(ctx: Ctx, path: string): Promise<TodoRow | null> {

@@ -80,7 +80,12 @@ export function VerifyBoardPage(props: StepPageProps) {
       <>
         <YourMove>{supporting}</YourMove>
         {candidate}
-        <StepQuiet step="verify" kind={stepIsWorking(task) ? "writing" : "draft"} back={null} />
+        <StepQuiet
+          step="verify"
+          kind={stepIsWorking(task) ? "writing" : "draft"}
+          activity={props.state.activity}
+          back={null}
+        />
       </>
     )
 

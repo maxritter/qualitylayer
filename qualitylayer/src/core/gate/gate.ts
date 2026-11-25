@@ -19,6 +19,7 @@ export {
   finalApprovalUnheard,
   invalidateGate,
   markGateShown,
+  planApprovalUnheard,
   recheckedReview,
   reopenVerify,
 } from "./gate-phase.ts"

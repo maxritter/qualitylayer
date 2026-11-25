@@ -1,6 +1,10 @@
 import { shellStatus } from "../../core/interaction-shell/status.ts"
+import { agoShort } from "../../core/live/liveness.ts"
 import type { TaskDetail } from "../api.ts"
 import type { ImplementView } from "../step-page/state.ts"
+
+const QUIET_THINKING_MS = 15_000
+const GENERIC_HOOK_WORDS = new Set(["you wrote to it", "its turn ended", "the session ended"])
 
 /** A draft names work only while an attached agent is actually working. */
 export function stepIsWorking(task: TaskDetail, now = Date.now()): boolean {
@@ -9,6 +13,36 @@ export function stepIsWorking(task: TaskDetail, now = Date.now()): boolean {
     task.live?.signals != null ||
     task.helpers.some((helper) => helper.state === "running")
   return attached && shellStatus(task, now).state === "working"
+}
+
+function quietThinkingText(task: TaskDetail, now: number): string | null {
+  const signals = task.live?.signals
+  if (signals?.modelWaiting !== true || signals.tool != null) return null
+  const last = shellStatus(task, now).lastActivity
+  if (last === null) return null
+  const age = Math.max(0, now - last)
+  return age >= QUIET_THINKING_MS ? `Thinking for ${agoShort(age)}` : null
+}
+
+function fallbackActivity(task: TaskDetail): string | undefined {
+  const hook = task.live?.signals?.hook
+  const words = hook?.event !== "SessionEnd" ? hook?.words?.trim() || null : null
+  if (words !== null && !GENERIC_HOOK_WORDS.has(words)) return `Last: ${words}`
+  return task.helpers.find((one) => one.state === "running")?.line?.trim() || undefined
+}
+
+/** Concise live activity line for a step still being written, or undefined when none is active. */
+export function stepActivity(task: TaskDetail, now = Date.now()): string | undefined {
+  if (!stepIsWorking(task, now)) return undefined
+  const signals = task.live?.signals
+  const todo = signals?.todo?.items.find((item) => item.state === "now")?.text.trim() || null
+  const tool = signals?.tool?.words?.trim() || null
+  const thinking = quietThinkingText(task, now)
+  if (todo !== null) {
+    const detail = tool ?? thinking
+    return detail && detail !== todo ? `${todo} · ${detail}` : todo
+  }
+  return tool ?? thinking ?? fallbackActivity(task)
 }
 
 const named = (title: string, fallback: string): boolean => {

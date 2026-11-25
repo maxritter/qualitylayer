@@ -6,8 +6,8 @@ Cut the approved Plan into slices and cards and build them without stopping. Wor
 
 ## Cut the slices
 
-1. **Vertical slices** matching `**Size:**`: thinnest end-to-end path first, then biggest unknown. Each slice commits on its own (export + callers together). A small task is one slice.
-2. **Write cards** under *Task cards* in `agents/{implement_doc}` (`T1`, `T2` …). State done behaviors, failure modes, tests with two real inputs (one awkward), and approved copy verbatim. **Files** lists every touched repo path (source, tests, fixtures, docs, lasting models; never task records/evidence/drafts; `none` for evidence-only tasks with **Read only** paths).
+1. **Vertical slices** matching `**Size:**`: thinnest end-to-end path first, then biggest unknown. Each slice commits on its own (export + callers together). A small or single-module task is **1 slice and 1–2 cohesive cards** (not a separate card per helper function).
+2. **Write cards** under *Task cards* in `agents/{implement_doc}` (`T1`, `T2` …). State done behaviors, failure modes, tests with two real inputs (one awkward), and approved copy verbatim. **Files** lists every touched repo path (source, tests, fixtures, docs, lasting models; never task records/evidence/drafts; `none` for evidence-only tasks with **Read only** paths). Batch related edits and test runs instead of one file per turn.
 3. **Order the proof:** add `## Proof order` (`A3 · after slice 2`, adding `(the person confirms it in Verify)` for human-only steps). Add any missed boundary/cancel/concurrency step via `qualitylayer plan amend --by agent --note "<step and why>"`, then run `qualitylayer validate agents/{implement_doc}`.
 4. **Unattended safe commands** from repo root; only push/deploy/call remote systems granted in *Prerequisites*. Run paid/real-agent commands in one card and cite its result elsewhere (`QUALITYLAYER_CHECK_TIMEOUT_MS` up to 7200000).
 
@@ -20,7 +20,7 @@ Cards are yours to edit or split. Only changing what the person approved require
 3. For UI changes, inspect each changed state at real width in light and dark.
 4. `qualitylayer check task T<n>` records its focused check; tick the card (`- [x]`) when its done lines hold, before its dependent work starts. Fix failures yourself (if a fix fails twice, change the mechanism; a failure predates the task only if it fails on base). On concurrent edits, `check slice` re-runs on HEAD + slice files. After a rebase, inspect `qualitylayer doctor --json` and registered commits.
 5. Finish each slice with `qualitylayer check slice <n>`. Under `commit_timing: slice` (default), run `qualitylayer commit slice <n>` (`--commit <fullsha>` for manual commits). Under `before-verify` or `review`, keep slices in the worktree and run `qualitylayer check all` before `qualitylayer build done` (`review` opens a person decision; in terminal, show exact actions from `qualitylayer commit task`, apply requested edits and recheck). Keep `left_out` (other sessions' edits) out. A tick never waits for a commit.
-6. Run due Done means steps (*Proof order*) with `check step` (command fails unless full Expected holds); defer person-only steps via `qualitylayer build done --defer "<step and why>"`.
+6. Run due Done means steps (*Proof order*) with `check step` (command fails unless full Expected holds); batch independent `check step` calls in one shell command or cite one combined verification command across related steps instead of one turn per row, and chain routine CLI transitions once checks pass (`check slice` → `commit slice`, or batched `check step` → `build done`). Defer person-only steps via `qualitylayer build done --defer "<step and why>"`.
 
 ## Limits
 

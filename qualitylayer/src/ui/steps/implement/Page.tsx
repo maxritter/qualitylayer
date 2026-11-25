@@ -211,7 +211,12 @@ export function ImplementStepPage(props: StepPageProps) {
       <>
         <YourMove>{card}</YourMove>
         {supporting}
-        <StepQuiet step="implement" kind={working ? "writing" : "draft"} back={null} />
+        <StepQuiet
+          step="implement"
+          kind={working ? "writing" : "draft"}
+          activity={state.activity}
+          back={null}
+        />
       </>
     )
 

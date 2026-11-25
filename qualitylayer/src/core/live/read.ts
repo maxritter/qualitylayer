@@ -109,9 +109,21 @@ function isModelWaiting(input: {
   limit: unknown
   tool: LiveSignals["tool"]
   tail: string | null
+  ownHook: HookRow | null
 }): boolean {
-  if (input.processState === "gone" || input.end !== null || input.limit !== null) return false
-  return input.tool === null && input.tail !== null && modelWaitingIn(input.tail)
+  if (
+    input.processState === "gone" ||
+    input.end !== null ||
+    input.limit !== null ||
+    input.tool !== null
+  )
+    return false
+  if (
+    input.ownHook?.event === "PreInvocation" ||
+    (input.ownHook?.agent === "antigravity" && input.ownHook.event === "UserPromptSubmit")
+  )
+    return true
+  return input.tail !== null && modelWaitingIn(input.tail)
 }
 
 function transcriptTailOf(
@@ -183,7 +195,7 @@ export async function readLive(
         )
   // The turn the limit ended was aborted by the error, not by the person's Esc.
   if (limit !== null && end?.kind === "interrupted") end = null
-  const modelWaiting = isModelWaiting({ processState, end, limit, tool, tail })
+  const modelWaiting = isModelWaiting({ processState, end, limit, tool, tail, ownHook })
 
   return {
     agent,

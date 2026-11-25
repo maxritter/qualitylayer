@@ -77,17 +77,21 @@ type Props = {
 function PreparingPlanView({
   request,
   working,
+  activity,
   taskId,
   yourMove,
   supporting,
 }: {
   request: string
   working: boolean | undefined
+  activity: string | undefined
   taskId: string | undefined
   yourMove: ReactNode
   supporting: ReactNode
 }) {
-  const quiet = <StepQuiet step="plan" kind={working ? "writing" : "draft"} back={null} />
+  const quiet = (
+    <StepQuiet step="plan" kind={working ? "writing" : "draft"} activity={activity} back={null} />
+  )
   return (
     <div data-testid="plan-preparing" data-step="plan">
       <YourMove>{yourMove}</YourMove>
@@ -226,6 +230,7 @@ export function StepPage({
       <PreparingPlanView
         request={state.preparing.request}
         working={state.working}
+        activity={state.activity}
         taskId={taskId}
         yourMove={yourMove}
         supporting={supporting}
@@ -239,7 +244,12 @@ export function StepPage({
       <>
         <YourMove>{yourMove}</YourMove>
         {supporting}
-        <StepQuiet step={doc.step} kind={state.working ? "writing" : "draft"} back={null} />
+        <StepQuiet
+          step={doc.step}
+          kind={state.working ? "writing" : "draft"}
+          activity={state.activity}
+          back={null}
+        />
       </>
     )
   }

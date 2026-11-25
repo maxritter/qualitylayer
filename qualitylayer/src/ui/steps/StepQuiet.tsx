@@ -51,6 +51,8 @@ type Props = {
   heading?: string
   /** The line under the heading; the step's own (what happens there, who does it) when absent. */
   line?: string
+  /** Concise live agent activity shown calmly below the status line while `kind === "writing"`. */
+  activity?: string | undefined
   /** The link back: its label names the step, `open` takes the person there. */
   back: { label: string; open: () => void } | null
   /** A current move in the same quiet presentation, such as opening the approved Plan. */
@@ -63,6 +65,7 @@ export function StepQuiet({
   kind,
   heading,
   line,
+  activity,
   back,
   action,
   testId = "step-quiet",
@@ -78,6 +81,11 @@ export function StepQuiet({
           (kind === "writing" ? WRITING_HEADING[step] : pending ? "Draft" : FUTURE_HEADING[step])}
       </h1>
       <p>{line ?? (pending ? WRITING_LINE[step] : FUTURE_LINE[step])}</p>
+      {kind === "writing" && activity ? (
+        <p className="sq-activity" data-testid="step-quiet-activity">
+          {activity}
+        </p>
+      ) : null}
       {action ? (
         <button type="button" className="q-btn quiet" onClick={action.open}>
           {action.label}

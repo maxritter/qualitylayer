@@ -8,7 +8,7 @@ import { pointProof } from "../../core/interaction-steps/proof.ts"
 import type { ItemAnswer } from "../../core/items.ts"
 import type { TaskDetail } from "../api.ts"
 import { agentInfo, inReview } from "../model.ts"
-import { stepIsWorking } from "../steps/readiness.ts"
+import { stepActivity, stepIsWorking } from "../steps/readiness.ts"
 import type { StepDocument } from "./document.ts"
 import { implementView } from "./state-implement.ts"
 import { headingsOf, needsOf } from "./state-index.ts"
@@ -64,8 +64,10 @@ export function stepState(
   const answers = options.answers ?? {}
   const mode = options.mode ?? "live"
   const now = options.now ?? Date.now()
+  const activity = mode === "live" ? stepActivity(task, now) : undefined
   const base = {
     working: stepIsWorking(task, now),
+    ...(activity !== undefined ? { activity } : {}),
     step,
     mode,
     title: task.title,

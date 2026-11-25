@@ -4,6 +4,7 @@
 // reset time. This runs it for one answer, in the way that costs a person nothing: no hooks, no
 // session kept, a folder of QualityLayer's own.
 
+import { userInfo } from "node:os"
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { agentBinary, configuredBinary } from "../agents/binary.ts"
@@ -57,17 +58,47 @@ export const CLAUDE_NOT_READ = "Claude Code's limits have not been read yet"
 /** What Claude Code signs in with instead of a plan when it is set. */
 const KEY_VARIABLES = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
 
+function usageEnv(ctx: Ctx): Record<string, string> {
+  const configDir = ctx.env.get("CLAUDE_CONFIG_DIR")
+  const env: Record<string, string> = {
+    ...pickEnv(ctx.env, PASSED),
+    ...(configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: configDir }),
+  }
+  // macOS LaunchServices can omit USER; Claude Code needs USER to read its Keychain OAuth login.
+  if (process.platform !== "win32" && !env.USER) {
+    try {
+      const name = userInfo().username
+      if (name) env.USER = name
+    } catch {
+      // Keep the environment as given when the OS user lookup is unavailable.
+    }
+  }
+  return env
+}
+
+async function runUsageProbe(
+  ctx: Ctx,
+  executable: string,
+  cwd: string,
+  env: Record<string, string>,
+  timeoutMs: number,
+): Promise<ClaudeReport> {
+  const output = await runBounded(executable, CLAUDE_USAGE_ARGS, { cwd, env, timeoutMs })
+  return output === null || output.code !== 0
+    ? unanswered()
+    : parseUsageReport(output.stdout, ctx.clock.now())
+}
+
 /** Run the command and read its report; `timeoutMs` is for a test that does not wait twenty seconds. */
 export async function askClaude(
   ctx: Ctx,
   timeoutMs: number = CLAUDE_USAGE_TIMEOUT_MS,
 ): Promise<ClaudeReport> {
+  const configured = await configuredBinary(ctx, "claude-code")
   // A command the person set in Settings that cannot run is not searched past.
   const executable =
     (await agentBinary(ctx, "claude-code")) ??
-    ((await configuredBinary(ctx, "claude-code")) === ""
-      ? await findAgentBinary(ctx, "claude-code")
-      : null)
+    (configured === "" ? await findAgentBinary(ctx, "claude-code") : null)
   // An empty folder of QualityLayer's own, never a project: Claude Code notes each folder it runs in.
   const cwd = join(ctx.home, "limits", "claude-usage")
   if (executable === null) return unanswered()
@@ -78,19 +109,19 @@ export async function askClaude(
   if (!inheritedProxySession && KEY_VARIABLES.some((name) => (ctx.env.get(name) ?? "") !== ""))
     return noPlan(CLAUDE_NO_PLAN)
   await ctx.fs.mkdir(cwd)
-  const configDir = ctx.env.get("CLAUDE_CONFIG_DIR")
-  const env = {
-    ...pickEnv(ctx.env, PASSED),
-    ...(configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: configDir }),
+  const env = usageEnv(ctx)
+  const first = await runUsageProbe(ctx, executable, cwd, env, timeoutMs)
+  if ("windows" in first) return first
+  // A proxy wrapper configured in Settings (for example Apollo Bridge) injects a proxy token, so its
+  // `/usage` sees no Anthropic subscription; fall back once to the native `claude` binary on PATH.
+  if (configured !== "" && !(ctx.env.get("QUALITYLAYER_CLAUDE_BIN") ?? "").trim()) {
+    const native = await findAgentBinary(ctx, "claude-code")
+    if (native !== null && native !== executable) {
+      const fallback = await runUsageProbe(ctx, native, cwd, env, timeoutMs)
+      if ("windows" in fallback) return fallback
+    }
   }
-  const output = await runBounded(executable, CLAUDE_USAGE_ARGS, {
-    cwd,
-    env,
-    timeoutMs,
-  })
-  return output === null || output.code !== 0
-    ? unanswered()
-    : parseUsageReport(output.stdout, ctx.clock.now())
+  return first
 }
 
 /** The report as it was last read, and when: what the sidebar shows between asks. */

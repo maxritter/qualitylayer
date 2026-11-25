@@ -669,7 +669,7 @@
     "qualitylayer/src/core/limits-text.ts": "c35850ff51b80293f08f5436c0b3dbc2b7db08de9397915be4c8c73c13a788ce",
     "qualitylayer/src/core/limits.ts": "c95997d60c26f11ddbb933e3dcfc707ceecd178abc0cedf2d53aa73f0bccb2c0",
     "qualitylayer/src/core/limits/bounded-run.ts": "0cccad30199e514f8770cf9ad1593dd1016dbf3b12628949f692b7c4188277d5",
-    "qualitylayer/src/core/limits/claude-usage.ts": "a92a26dfef1742b1c3acdda58fd383e461a39614c035882a7e301b8a41d6f3e2",
+    "qualitylayer/src/core/limits/claude-usage.ts": "9862f19f3cb530721e1de5e2fb8f4886089ab9ff806e3597dd55ac26bcc531ed",
     "qualitylayer/src/core/limits/claude.ts": "dbab78e82fe275549d64b755db86d79e692f224f8fbc5f31d141b3774d501dc8",
     "qualitylayer/src/core/limits/codex-app-server.ts": "c6b22feeefd99734e5e7a1c758a63195b90f9fdc0d1d3211fac32b2d06e7fe21",
     "qualitylayer/src/core/limits/codex-record.ts": "18e926c7f357b12a3bf208ef86cbbce7e3a17899f8dc518a610269d7f2c31332",

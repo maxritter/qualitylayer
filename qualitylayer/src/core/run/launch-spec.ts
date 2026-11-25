@@ -123,6 +123,12 @@ export type LaunchSpecInput = {
   /** Exact context resolved from the registered artifact and its current source witness. */
   artifactPrompt?: string
   /**
+   * Managed folders already trusted by the person in QualityLayer (the chosen project checkout and
+   * its granted brief directories). Antigravity CLI accepts them via session-only `--settings` so
+   * managed starts never stall on its workspace-trust prompt.
+   */
+  trustedWorkspaces?: readonly string[]
+  /**
    * What a managed App launch carries for its hooks (`launch-hooks.ts` `launchHooks`): arguments
    * before the prompt, and variables. Absent: the agent reports through its installed hooks.
    */
@@ -225,6 +231,10 @@ function nativeArguments(
       : (mode?.env ?? {}),
   )
   const claudeDirs = appendGrantedDirArgs(input, agent, perm, mode, args)
+  if (agent === "antigravity" && input.managed && input.trustedWorkspaces?.length) {
+    const trusted = [...new Set(input.trustedWorkspaces.filter((dir) => dir.trim() !== ""))]
+    if (trusted.length > 0) args.push("--settings", JSON.stringify({ trustedWorkspaces: trusted }))
+  }
   modelArguments(input, agent, capabilities, args, env)
   args.push(...worktreeArguments(input, capabilities))
   if (input.managed && input.hooks) {

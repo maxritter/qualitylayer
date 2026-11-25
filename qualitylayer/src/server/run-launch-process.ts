@@ -195,10 +195,12 @@ export async function prepareStartProcess(
   }
   const additionalDirectories =
     current.agent === "claude-code" ? grantedFolders(specInput) : undefined
+  const trustedWorkspaces =
+    current.agent === "antigravity" ? [context.cwd, ...grantedFolders(specInput)] : undefined
   const hooks = launchHooksFor(ctx, current, binary.version, current.settings, {
     resume: input.resumeNative !== undefined,
     additionalDirectories,
   })
-  const spec = launchSpec({ ...specInput, hooks })
+  const spec = launchSpec({ ...specInput, hooks, trustedWorkspaces })
   return { run: current, env, binary, hooks, spec }
 }

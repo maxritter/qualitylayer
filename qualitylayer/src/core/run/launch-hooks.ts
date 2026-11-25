@@ -64,6 +64,11 @@ export type LaunchHooksInput = {
   /** The agent's version as it reports it, when known. */
   version?: string
   /**
+   * Directories granted to Claude Code via `permissions.additionalDirectories` inside `--settings`
+   * (avoiding `--add-dir`, which triggers Claude Code 2.1.332+'s interactive directory trust prompt).
+   */
+  additionalDirectories?: readonly string[]
+  /**
    * The command line is short: Windows refuses more than 32,767 characters, and its fifteen Claude
    * Code hooks are a PowerShell script each, about 2,000 characters apiece. Default: this platform
    * is Windows.
@@ -154,11 +159,14 @@ function codexArguments(binary: string): string[] {
 }
 
 /** The `--settings` JSON for Claude Code. */
-function claudeSettings(binary: string): string {
+function claudeSettings(binary: string, additionalDirectories?: readonly string[]): string {
   const hooks: Record<string, Group[]> = {}
   for (const { event, group } of launchHookGroups("claude-code", binary))
     hooks[event] = [...(hooks[event] ?? []), group]
-  return JSON.stringify({ hooks })
+  const dirs = additionalDirectories?.filter((dir) => dir !== "") ?? []
+  return JSON.stringify(
+    dirs.length > 0 ? { hooks, permissions: { additionalDirectories: dirs } } : { hooks },
+  )
 }
 
 /** Where the installed copy of the Pi and OpenCode extensions lives, relative to the agent's folder. */
@@ -194,7 +202,7 @@ function copilotLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
 
 function claudeLaunchHooks(input: ResolvedHooksInput): LaunchHooks {
   const env = { QUALITYLAYER_SESSION_HOOKS: input.agent }
-  const settings = claudeSettings(input.binary)
+  const settings = claudeSettings(input.binary, input.additionalDirectories)
   if (!input.boundedCommandLine) return { args: ["--settings", settings], env, overlays: [] }
   // `--settings` takes a file as well as the JSON: the hooks ride in a file of the launch folder.
   const dir = join(input.folder, "claude")

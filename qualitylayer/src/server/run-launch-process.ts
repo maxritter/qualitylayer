@@ -7,9 +7,15 @@ import { runBriefsDirectory, taskBriefsDirectory } from "../core/run/bind.ts"
 import type { RunRecord, RunSettings, StartRequest } from "../core/run/contracts.ts"
 import { assertNativeAvailable } from "../core/run/control.ts"
 import { createNativeSession } from "../core/run/create-session.ts"
+import { grantedFolders } from "../core/run/launch-args.ts"
 import type { launchDiagnostic } from "../core/run/launch-diagnostics.ts"
 import { createLaunchOverlays, launchHooks, launchHooksFolder } from "../core/run/launch-hooks.ts"
-import { AGENT_CAPABILITIES, launchSpec, permissionChoice } from "../core/run/launch-spec.ts"
+import {
+  AGENT_CAPABILITIES,
+  type LaunchSpecInput,
+  launchSpec,
+  permissionChoice,
+} from "../core/run/launch-spec.ts"
 import { updateRun } from "../core/run/registry.ts"
 import type { Ctx } from "../ctx.ts"
 import { agentSetupProgram } from "./agent-setup-command.ts"
@@ -26,19 +32,21 @@ export function launchHooksFor(
   run: Pick<RunRecord, "id" | "generation" | "agent">,
   version: string,
   settings?: Partial<Pick<RunSettings, "perm" | "permMode">>,
-  resume = false,
+  options?: { resume?: boolean; additionalDirectories?: readonly string[] },
 ) {
   const { id, generation, agent } = run
   if (agent === "other") return undefined
   const folder = launchHooksFolder(ctx.home, id, generation)
   const mode = permissionChoice(agent, settings ?? {}).permMode
+  const dirs = options?.additionalDirectories
   return launchHooks({
     agent,
     binary: agentEntry(ctx),
     folder,
     version,
     ...(mode ? { permissionMode: mode } : {}),
-    resume,
+    ...(dirs && dirs.length > 0 ? { additionalDirectories: dirs } : {}),
+    resume: options?.resume ?? false,
   })
 }
 /**
@@ -157,15 +165,8 @@ export async function prepareStartProcess(
   })
   // Resuming the outside session's own conversation: nothing else may hold it now.
   if (input.resumeNative !== undefined) assertNativeAvailable(ctx, current)
-  const hooks = launchHooksFor(
-    ctx,
-    current,
-    binary.version,
-    current.settings,
-    input.resumeNative !== undefined,
-  )
   const isNative = current.agent !== "other"
-  const spec = launchSpec({
+  const specInput: LaunchSpecInput = {
     ...(input.resumeNative !== undefined ? { resume: true, continue: true } : {}),
     agent: current.agent,
     launchFiles: current.launchFiles,
@@ -191,7 +192,13 @@ export async function prepareStartProcess(
     mode: current.purpose.kind === "task" ? "plain" : (input.mode ?? "plain"),
     otherAgent: shellProgram ?? config.otherAgent,
     agentArgs: agentArgs(current.agent, config),
-    hooks,
+  }
+  const additionalDirectories =
+    current.agent === "claude-code" ? grantedFolders(specInput) : undefined
+  const hooks = launchHooksFor(ctx, current, binary.version, current.settings, {
+    resume: input.resumeNative !== undefined,
+    additionalDirectories,
   })
+  const spec = launchSpec({ ...specInput, hooks })
   return { run: current, env, binary, hooks, spec }
 }

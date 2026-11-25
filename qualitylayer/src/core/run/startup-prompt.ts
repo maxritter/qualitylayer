@@ -43,7 +43,7 @@ const PATTERNS: readonly (readonly [StartupPrompt, RegExp])[] = [
   ],
   [
     "trust",
-    /is this a project you created or one you trust|do you trust (the files in|the contents of|this)|yes, i trust this (folder|workspace|directory)|trust this (folder|workspace|directory)\?|workspace trust required/,
+    /is this a (?:project|directory) you created or one you trust|do you trust (the files in|the contents of|this)|yes, i trust this (folder|workspace|directory)|trust this (folder|workspace|directory)\?|workspace trust required/,
   ],
   ["theme", /text style that looks best with your terminal|choose the text style|select a theme/],
   ["notes", /security notes:[\s\S]{0,600}press enter to continue/],

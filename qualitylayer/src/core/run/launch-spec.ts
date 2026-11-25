@@ -145,16 +145,51 @@ function applyAgentSpecificPreArgs(
     args.push("-c", `agents.default_subagent_model=${JSON.stringify(input.subagentModel)}`)
 }
 
+function mergeClaudeAdditionalDirs(
+  hookArgs: readonly string[],
+  folders: readonly string[],
+): string[] {
+  const out = [...hookArgs]
+  const flagAt = out.lastIndexOf("--settings")
+  if (flagAt < 0 || flagAt + 1 >= out.length) {
+    out.push("--settings", JSON.stringify({ permissions: { additionalDirectories: folders } }))
+    return out
+  }
+  const raw = out[flagAt + 1] ?? ""
+  if (!raw.trimStart().startsWith("{")) return out
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const existingPerms =
+      parsed.permissions && typeof parsed.permissions === "object"
+        ? (parsed.permissions as Record<string, unknown>)
+        : {}
+    const existingDirs = Array.isArray(existingPerms.additionalDirectories)
+      ? existingPerms.additionalDirectories.filter((d): d is string => typeof d === "string")
+      : []
+    const merged = [...new Set([...existingDirs, ...folders])]
+    out[flagAt + 1] = JSON.stringify({
+      ...parsed,
+      permissions: { ...existingPerms, additionalDirectories: merged },
+    })
+  } catch {
+    // Non-JSON --settings value (such as a file path) keeps its authored contents.
+  }
+  return out
+}
+
 function appendGrantedDirArgs(
   input: LaunchSpecInput,
   agent: NativeAgent,
   perm: PermissionLevel,
   mode: PermissionMode | undefined,
   args: string[],
-): void {
+): string[] {
   const flag = AGENT_CAPABILITIES[agent].addDirFlag
   const folders = grantedFolders(input)
-  if (!flag) return
+  if (!flag || folders.length === 0) return []
+  // Claude Code 2.1.332+ blocks interactive launches with a trust prompt for every `--add-dir` path.
+  // Passing `permissions.additionalDirectories` in `--settings` grants the same folders with no prompt.
+  if (agent === "claude-code") return folders
   const candidateArgs = mode?.args ?? input.agentArgs ?? []
   const readOnlyCodex =
     agent === "codex" &&
@@ -162,6 +197,7 @@ function appendGrantedDirArgs(
       holdsSequence(candidateArgs, ["--sandbox", "read-only"]))
   const inheritedCodex = agent === "codex" && perm === "own" && !mode
   if (!readOnlyCodex && !inheritedCodex) for (const folder of folders) args.push(flag, folder)
+  return []
 }
 
 function nativeArguments(
@@ -188,12 +224,18 @@ function nativeArguments(
       ? { COPILOT_ALLOW_ALL: "false", COPILOT_ASSISTED_APPROVAL: "false" }
       : (mode?.env ?? {}),
   )
-  appendGrantedDirArgs(input, agent, perm, mode, args)
+  const claudeDirs = appendGrantedDirArgs(input, agent, perm, mode, args)
   modelArguments(input, agent, capabilities, args, env)
   args.push(...worktreeArguments(input, capabilities))
   if (input.managed && input.hooks) {
-    args.push(...input.hooks.args)
+    const hookArgs =
+      claudeDirs.length > 0
+        ? mergeClaudeAdditionalDirs(input.hooks.args, claudeDirs)
+        : input.hooks.args
+    args.push(...hookArgs)
     Object.assign(env, input.hooks.env)
+  } else if (claudeDirs.length > 0) {
+    args.push("--settings", JSON.stringify({ permissions: { additionalDirectories: claudeDirs } }))
   }
   if (prompt && (!input.resume || input.continue !== false))
     args.push(...(capabilities.promptFlag ? [capabilities.promptFlag, prompt] : [prompt]))

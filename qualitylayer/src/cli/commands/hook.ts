@@ -7,7 +7,12 @@ import { hasHookFile } from "../../core/install/agent-hooks.ts"
 import type { Ctx } from "../../ctx.ts"
 import { ASK_DENIED, approveHook, askHook, ownCommandHook } from "./hook-ask.ts"
 import { liveCmd } from "./hook-live.ts"
-import { asAdditionalContext, memoryCompact, promptHook } from "./hook-prompt.ts"
+import {
+  asAdditionalContext,
+  asAntigravityInjectSteps,
+  memoryCompact,
+  promptHook,
+} from "./hook-prompt.ts"
 import { pickedAnswers, shellPatchWarning } from "./hook-shared.ts"
 import { activityHook, pickerHook } from "./hook-work.ts"
 
@@ -89,7 +94,10 @@ export async function hookCmd(given: Ctx, called: string[]): Promise<number> {
     )
     return 1
   }
-  if (detectAgent(ctx.env) === "copilot") await asAdditionalContext(() => promptHook(ctx, args))
+  const promptAgent = detectAgent(ctx.env)
+  if (promptAgent === "copilot") await asAdditionalContext(() => promptHook(ctx, args))
+  else if (promptAgent === "antigravity")
+    await asAntigravityInjectSteps(() => promptHook(ctx, args))
   else await promptHook(ctx, args)
   return 0
 }

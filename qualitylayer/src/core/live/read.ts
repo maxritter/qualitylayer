@@ -25,6 +25,7 @@ import {
   LIMIT_QUIET_MS,
   limitFact,
   limitStopOf,
+  modelWaitingIn,
   observeLimitRechecks,
   observeLimitStops,
   type Probe,
@@ -85,9 +86,8 @@ function isBlockedManagedEnd(
 function resolveEnd(
   ownHook: HookRow | null,
   run: RunRecord | null,
-  proc: ProcessRow | null,
   transcript: number | null,
-  probe: Probe,
+  tail: string | null,
 ): { at: number; kind: EndKind } | null {
   let end: { at: number; kind: EndKind } | null =
     ownHook?.end !== undefined ? { at: ownHook.at, kind: ownHook.end } : null
@@ -96,11 +96,31 @@ function resolveEnd(
   if (isBlockedManagedEnd(end, ownHook, run)) end = null
   // Esc leaves no hook behind; the transcript says so.
   const canCheckInterrupt =
-    proc?.transcript != null && transcript !== null && (end === null || transcript > end.at)
-  if (canCheckInterrupt && interruptedIn(probe.tail(proc.transcript as string, 8192))) {
+    tail !== null && transcript !== null && (end === null || transcript > end.at)
+  if (canCheckInterrupt && interruptedIn(tail)) {
     end = { at: transcript, kind: "interrupted" }
   }
   return end
+}
+
+function isModelWaiting(input: {
+  processState: LiveSignals["process"]
+  end: { at: number; kind: EndKind } | null
+  limit: unknown
+  tool: LiveSignals["tool"]
+  tail: string | null
+}): boolean {
+  if (input.processState === "gone" || input.end !== null || input.limit !== null) return false
+  return input.tool === null && input.tail !== null && modelWaitingIn(input.tail)
+}
+
+function transcriptTailOf(
+  proc: ProcessRow | null,
+  probe: Probe,
+): { transcript: number | null; tail: string | null } {
+  if (proc?.transcript == null) return { transcript: null, tail: null }
+  const transcript = probe.mtime(proc.transcript)
+  return { transcript, tail: transcript !== null ? probe.tail(proc.transcript, 8192) : null }
 }
 
 /** One task's signals, or null when no session ever spoke for it. */
@@ -146,8 +166,8 @@ export async function readLive(
   const tool = owner !== null ? await readOpenTool(ctx, dir, owner, now) : null
   const agents = owner !== null ? await readSubagents(ctx, dir, owner) : []
   const todo = owner !== null ? await readTodo(ctx, join(dir, owner)) : null
-  const transcript = proc?.transcript != null ? probe.mtime(proc.transcript) : null
-  let end = resolveEnd(ownHook, run, proc, transcript, probe)
+  const { transcript, tail } = transcriptTailOf(proc, probe)
+  let end = resolveEnd(ownHook, run, transcript, tail)
 
   const agent = ownHook?.agent ?? proc?.agent ?? newest?.agent ?? session?.agent ?? null
   const limit =
@@ -163,6 +183,7 @@ export async function readLive(
         )
   // The turn the limit ended was aborted by the error, not by the person's Esc.
   if (limit !== null && end?.kind === "interrupted") end = null
+  const modelWaiting = isModelWaiting({ processState, end, limit, tool, tail })
 
   return {
     agent,
@@ -170,6 +191,7 @@ export async function readLive(
     sessionId: proc?.sessionId ?? null,
     hook: newest !== null ? { at: newest.at, event: newest.event, words: newest.words } : null,
     tool,
+    ...(modelWaiting ? { modelWaiting: true } : {}),
     transcript,
     cli,
     question,

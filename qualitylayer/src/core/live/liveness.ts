@@ -48,6 +48,8 @@ export type LiveSignals = {
   hook: { at: number; event: string; words: string } | null
   /** The oldest tool call still running in the owning session: started, and what it runs. */
   tool: { at: number; words: string } | null
+  /** An in-flight model request (e.g. Claude Code `api-request`) with no assistant reply yet. */
+  modelWaiting?: boolean
   /** When the owning session's transcript last grew. */
   transcript: number | null
   /** The latest `qualitylayer` call for the task (a command or a `gate wait` heartbeat). */
@@ -187,7 +189,7 @@ export function livenessOf(signals: LiveSignals, now: number): Liveness {
   if (last === null) return { state: "none" }
   const toolRunning = signals.tool !== null
   const silent = Math.max(0, now - last.at)
-  const threshold = toolRunning ? QUIET_TOOL_MS : QUIET_MS
+  const threshold = toolRunning || signals.modelWaiting === true ? QUIET_TOOL_MS : QUIET_MS
   return silent < threshold
     ? { state: "working", last, toolRunning }
     : { state: "quiet", last, quietFor: silent, long: silent >= LONG_QUIET_MS, toolRunning }

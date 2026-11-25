@@ -16,7 +16,7 @@ import {
 } from "#workflow"
 import type { Env } from "../../ctx.ts"
 import { AGENT_NAMES, type NativeAgent } from "../agents/ids.ts"
-import { type HookFileAgent, hookFile } from "./agent-hooks.ts"
+import { type HookFileAgent, hookFileMarkers } from "./agent-hooks.ts"
 import { realDir } from "./manifest.ts"
 import {
   ARTIFACT_NAME,
@@ -105,10 +105,12 @@ const READS_SKILLS_OF: Record<"cursor" | "grok" | "copilot", readonly NativeAgen
   copilot: ["codex"],
 }
 
-/** Whether the agent has been started once from a terminal: its folder, and the marker beside it. */
+/** Whether the agent has been started once: its folder, and any marker beside it. */
 function startedOnce(agent: HookFileAgent, root: string): boolean {
-  const { marker } = hookFile(agent)
-  return existsSync(root) && (marker === null || existsSync(join(root, marker)))
+  const markers = hookFileMarkers(agent)
+  return (
+    existsSync(root) && (markers.length === 0 || markers.some((m) => existsSync(join(root, m))))
+  )
 }
 
 /** The skill, with the absolute path of the binary it drives. */

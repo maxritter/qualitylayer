@@ -38,8 +38,8 @@ export type FileHook = {
 type HookFile = {
   /** The hook file, from the agent's configuration folder. */
   file: readonly string[]
-  /** What shows the agent was started once from a terminal, beside its folder; null: the folder is enough. */
-  marker: string | null
+  /** What shows the agent was started once (any one entry beside its folder); null: the folder is enough. */
+  marker: string | readonly string[] | null
   /**
    * `flat`: an event holds the hooks themselves (`{ command }`). `groups`: it holds groups with a
    * `hooks` list, as Claude Code writes them.
@@ -103,15 +103,16 @@ const FILES: Record<HookFileAgent, HookFile> = {
   },
   antigravity: {
     file: ["config", "hooks.json"],
-    marker: "antigravity-cli",
+    marker: ["antigravity-cli", "antigravity", "antigravity-ide"],
     // Antigravity 1.4.12 refuses a grouped Stop ("command hook must specify 'command'"): only its
     // tool events take groups, each with a tool matcher ("*" for every tool), as its hook reference
-    // (1.5.4) says.
+    // (1.5.x) says. PreInvocation delivers prompt/quality feedback via injectSteps.systemMessage.
     shape: "flat",
     handler: "command",
     events: ["qualitylayer"],
     version: null,
     more: [
+      { event: "PreInvocation", kind: "prompt" },
       { event: "PreToolUse", kind: "livePre", matcher: "*" },
       { event: "PostToolUse", kind: "activity", matcher: "*" },
     ],
@@ -155,6 +156,13 @@ export const HOOK_FILE_AGENTS = Object.keys(FILES) as HookFileAgent[]
 export const hasHookFile = (agent: string): agent is HookFileAgent => Object.hasOwn(FILES, agent)
 
 export const hookFile = (agent: HookFileAgent) => FILES[agent]
+
+/** Marker directories/files that prove this hook-file agent was started at least once. */
+export function hookFileMarkers(agent: HookFileAgent): readonly string[] {
+  const { marker } = FILES[agent]
+  if (marker === null) return []
+  return typeof marker === "string" ? [marker] : marker
+}
 
 export const hookFilePath = (agent: HookFileAgent, root: string): string =>
   join(root, ...FILES[agent].file)

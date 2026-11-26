@@ -24,13 +24,14 @@ function matchDemoEndpoint(
     const task = decodeURIComponent(outside[1] as string)
     return json({ ok: true, ...(method === "GET" ? approval.read(task) : approval.send(task)) })
   }
-  if (pathname === "/api/machines/hosts") return json({ ok: true, hosts: [] })
-  if (pathname === "/api/machines/pairings" && method === "GET")
-    return json({ ok: true, pairings: [] })
+  const simple: Record<string, unknown> = {
+    "/api/machines/hosts": { ok: true, hosts: [] },
+    ...(method === "GET" ? { "/api/machines/pairings": { ok: true, pairings: [] } } : {}),
+    ...(method === "GET" ? { "/api/schedules": { ok: true, schedules: [] } } : {}),
+  }
+  if (Object.hasOwn(simple, pathname)) return json(simple[pathname])
   if (/^\/api\/machines\/[^/]+\/sessions$/.test(pathname)) return json({ ok: true, running: 1 })
-  if (pathname === "/api/schedules" && method === "GET") return json({ ok: true, schedules: [] })
-  if (pathname.startsWith("/api/schedules")) return json({ ok: true, cancelled: true })
-  return null
+  return pathname.startsWith("/api/schedules") ? json({ ok: true, cancelled: true }) : null
 }
 
 /** The demo's answer to a request, or null for one it leaves alone. */

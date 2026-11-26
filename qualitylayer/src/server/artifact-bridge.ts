@@ -329,6 +329,7 @@ export const BRIDGE = `(() => {
     if (data.kind !== "mode") return;
     marking = data.mark === true;
     multi = data.multi === true;
+    if (data.pins !== undefined) renderPins(data.pins);
     arm(marking && data.armed === true);
     panning = data.pan === true;
     if (data.theme === "light" || data.theme === "dark") {

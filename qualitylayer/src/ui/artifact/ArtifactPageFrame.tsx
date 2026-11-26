@@ -232,7 +232,7 @@ export function ArtifactPageFrame({
     return () => window.removeEventListener("message", onMessage)
   }, [])
   // The mode is said to the page whenever it changes, and again whenever the page reloads.
-  const tell = () => {
+  const tell = () =>
     frame.current?.contentWindow?.postMessage(
       {
         type: "ql:artifact",
@@ -242,13 +242,10 @@ export function ArtifactPageFrame({
         multi: marking && multi,
         theme,
         pan: onScroll !== undefined,
+        ...(pins !== undefined ? { pins } : {}),
       },
       "*",
     )
-    if (pins !== undefined) {
-      frame.current?.contentWindow?.postMessage({ type: "ql:artifact", kind: "pins", pins }, "*")
-    }
-  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: the mode and pins are what is said
   useLayoutEffect(() => {
     tell()

@@ -22,7 +22,7 @@ import { type Query, useQuery } from "../hooks.ts"
 import type { TaskSurfaceProps } from "../interaction/props.ts"
 import { AgentChip } from "../shell/AgentChip.tsx"
 import { useTurnData } from "../turn/actions.ts"
-import { primaryAnchorOf } from "./ArtifactAnnotateTray.tsx"
+import { createTaskAnnotateHandler } from "./ArtifactAnnotateTray.tsx"
 import { useArtifactMenus } from "./ArtifactMenus.tsx"
 import { ArtifactPage, type ArtifactPageMark } from "./ArtifactPage.tsx"
 import type { ArtifactHostValue } from "./ArtifactPreview.tsx"
@@ -86,6 +86,8 @@ export function useTaskArtifacts(
   ]
   const identity = `${task.id}:${task.me.email}:${task.me.name}`
   const cache = useMemo(() => previewCache(api, identity), [api, identity])
+  const readOnly = task.archived || task.stage === "shipped" || task.stage === "abandoned"
+  const annotate = createTaskAnnotateHandler({ api, where, project: task.project, readOnly })
   const host: ArtifactHostValue = {
     artifacts: own,
     identity,
@@ -116,25 +118,10 @@ export function useTaskArtifacts(
         else open(where, artifact)
       }
     },
-    ...(task.archived || task.stage === "shipped" || task.stage === "abandoned"
-      ? {}
-      : {
-          annotate: async (file, batchMarkdown, pins) => {
-            const targetWhere: ArtifactWhere =
-              parseArtifactReference(file)?.scope === "project"
-                ? { scope: "project", id: task.project }
-                : where
-            const first = pins[0]
-            const spot = first !== undefined ? primaryAnchorOf(first) : undefined
-            await api.artifactComment(targetWhere, file, batchMarkdown, spot)
-            toast.success(
-              `Sent ${pins.length} ${pins.length === 1 ? "annotation" : "annotations"} to planner`,
-            )
-          },
-        }),
+    ...(annotate ? { annotate } : {}),
   }
   return {
-    readOnly: task.archived || task.stage === "shipped" || task.stage === "abandoned",
+    readOnly,
     list,
     where,
     groups,

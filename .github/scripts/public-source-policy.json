@@ -1425,7 +1425,7 @@
     "qualitylayer/src/ui/artifact/PagePicker.tsx": "6f70d1dfdc44ce2202347154c43a4a13ae1143c71199dced7958214299bdf326",
     "qualitylayer/src/ui/artifact/PreviewControls.tsx": "9d02790a391a6de5ff2bcbbf030f33a2b4942df3937e31aeeb0490fe58f44af5",
     "qualitylayer/src/ui/artifact/SharedArtifacts.tsx": "eb97867b06dedfe43ea7eb99eae8bf5bd2714c87aa84efbd9778367e3a5dbcd2",
-    "qualitylayer/src/ui/artifact/TaskArtifact.tsx": "d4f5247931ce9f2c8f72706ca737fe035313b3e47551f02bce13a6d385fe669c",
+    "qualitylayer/src/ui/artifact/TaskArtifact.tsx": "9b9653af420245a25458cc7ab91d9b0c863eab732e2ffafea5fd77f53929f234",
     "qualitylayer/src/ui/artifact/TaskFilesArtifacts.tsx": "d4ef72f2cea5bd0a0d5970cc02f40773e4e1e4a31ef48503174d2b25ec678cc0",
     "qualitylayer/src/ui/artifact/artifact.css": "efc88bb0bc4d99d371095c76d5e760765f49affc129512322b0506b899d3da33",
     "qualitylayer/src/ui/artifact/canvas.css": "b16720ac1543549b15720e14b14fb2ec34ed4dc7d04ab45a52d8e6a2902c682a",

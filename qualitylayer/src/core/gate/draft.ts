@@ -112,6 +112,12 @@ async function validateDraftPlan(
   ])
 }
 
+export function draftWarningsAside(count: number): string {
+  return count === 0
+    ? ""
+    : ` ${count} warning(s) are in \`warnings\`: fix what you agree with; the design check of each artifact runs beside the draft (\`qualitylayer next\` hands it out).`
+}
+
 async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
   const document = folderDoc("plan")
   const validated = await validateDraftPlan(ctx, task, document)
@@ -126,10 +132,7 @@ async function draftUnlocked(ctx: Ctx, task: Task): Promise<Result<Drafted>> {
   )
   await appendEvent(ctx, task, { event: "plan_drafted", review: run?.by ?? null })
   const then = "qualitylayer gate open plan"
-  const aside =
-    warnings.length === 0
-      ? ""
-      : ` ${warnings.length} warning(s) are in \`warnings\`: fix what you agree with; the design check of each artifact runs beside the draft (\`qualitylayer next\` hands it out).`
+  const aside = draftWarningsAside(warnings.length)
   if (run === null)
     return ok({
       drafted: true,

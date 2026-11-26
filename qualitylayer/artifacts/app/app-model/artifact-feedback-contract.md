@@ -15,3 +15,12 @@ Clicking, dragging and selecting text on an artifact always use the artifact. No
 Every mark goes into the existing quick field and feedback record; nothing else changes. Marking gives no approval and changes no workflow state.
 
 Bridge messages from the artifact frame stay untrusted: source-window check, shape and bounds validation, sandboxed frame, no network.
+
+## Approved multi-place element/area annotations on planned screens (#268, 26 November 2026)
+
+Max approved `artifact-design-annotations.html` on 26 November 2026: “All right, please exactly do it like that. Implement everything, test everything, and then go ahead and release a new version.”
+
+- **Direct from Plan previews:** `ArtifactPreview` adds an **Annotate** button beside **Open in card** when feedback is available on a live task Plan. Clicking **Annotate** opens `ArtifactPreviewDialog` directly in armed multi-place Annotate mode.
+- **Multi-place batching:** Annotate stays armed across multiple clicks (snapping to element bounding boxes) and dragged rectangles (`>= 8 px`), rendering persistent numbered overlays (`1`, `2`, `3`…) inside the frame and accumulating notes in a side tray before sending all pinned notes together in one turn to the planner.
+- **Element identity context:** `artifact-bridge.ts` captures sanitized element metadata (`id`, `data-testid`, `tag`, `role`, short visible text, concise CSS selector, bounding `rect`) for element clicks and every identified element overlapping a dragged rectangle (`targets[]`). `ArtifactAnchor` carries these as backward-compatible optional fields (`kind`, `rect`, `target`, `targets`).
+- **Use screen preserved:** Switching to **Use screen** or pressing **Esc** restores normal artifact interaction unchanged.

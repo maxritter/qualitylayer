@@ -202,6 +202,11 @@ export class RunAttachments {
     return handleStartChatWorkflow(this.routeDeps(), request, id, value)
   }
 
+  /** Start a build whose schedule fired (no browser socket attached yet). */
+  startScheduled(input: StartRequest): Promise<RunRecord> {
+    return this.start(input, null)
+  }
+
   private start(
     input: StartRequest,
     session: string | null,

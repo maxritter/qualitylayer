@@ -8,7 +8,7 @@ import { loadWorkflow } from "#workflow"
 import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import { detectAgent } from "../agents/detect.ts"
 import { isWireframe } from "../artifact-check.ts"
-import { type ArtifactReview, artifactReviewBrief } from "../briefs.ts"
+import { type ArtifactReview, artifactReviewBriefFor } from "../briefs.ts"
 import { readConfig, SESSION_MODEL } from "../config.ts"
 import { subagentModel } from "../helper-staff.ts"
 import { reviewFindings } from "../task/items.ts"
@@ -35,6 +35,8 @@ export type ReviewTarget = {
   revision: string
   /** The pictures to take: the artifact's width and a phone's, each light and dark. */
   views: ArtifactReview["views"]
+  /** Every page of a multi-page folder artifact when reviewing without `--page`. */
+  pages?: ArtifactReview["pages"]
 }
 
 /** What the command prints; `status` says which of the six things happened. */
@@ -139,13 +141,14 @@ export async function reviewArtifact(
   if (held !== null && held.revision === target.revision) return ok(alreadyReviewed(target, held))
   const loaded = await loadWorkflow(ctx)
   if (!loaded.ok) return loaded
-  const brief = artifactReviewBrief({
+  const brief = await artifactReviewBriefFor(ctx, {
     artifact: target.artifact,
     ...(target.page !== undefined ? { page: basename(target.page, ".html") } : {}),
     file: target.file,
     repoRoot: target.repoRoot,
     ...(target.task !== undefined ? { task: target.task } : {}),
     views: target.views,
+    ...(target.pages !== undefined && target.pages.length > 1 ? { pages: target.pages } : {}),
     asked: askedOf(options.request, options.purpose),
   })
   await ctx.fs.mkdir(reviewsDir(target))

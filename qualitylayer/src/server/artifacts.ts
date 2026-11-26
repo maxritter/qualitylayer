@@ -3,7 +3,7 @@
 // its thumbnail, comments on a spot of it, and Open in browser. An artifact is read only from the folder
 // that holds artifacts: a name that climbs out, or a file of any other kind, is refused.
 
-import { ARTIFACT_PAGE_NAME, type ArtifactAnchor } from "../core/artifact/format.ts"
+import type { ArtifactAnchor } from "../core/artifact/format.ts"
 import { commentsHolder } from "../core/artifact/store.ts"
 import {
   addArtifactComment,
@@ -16,8 +16,11 @@ import { startAnswering } from "../core/review/answers.ts"
 import { isArchived } from "../core/task/archive.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { locate } from "./api.ts"
+import { spotOf } from "./artifact-spot.ts"
 import { locateArtifact } from "./artifacts-locate.ts"
 import { type Opener, openableArtifact, openFile } from "./open-file.ts"
+
+export { spotOf } from "./artifact-spot.ts"
 
 export {
   findProject,
@@ -35,22 +38,6 @@ export {
   artifactWorkspaceRead,
   artifactWorkspaceWrite,
 } from "./artifacts-workspace.ts"
-
-export const spotOf = (value: unknown): ArtifactAnchor | undefined => {
-  if (typeof value !== "object" || value === null) return undefined
-  const { x, y, section, page } = value as Record<string, unknown>
-  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y))
-    return undefined
-  if (x < 0 || y < 0 || x > 100_000 || y > 1_000_000) return undefined
-  return {
-    x: Math.round(x),
-    y: Math.round(y),
-    ...(typeof section === "string" && section.trim() !== ""
-      ? { section: section.trim().slice(0, 200) }
-      : {}),
-    ...(typeof page === "string" && ARTIFACT_PAGE_NAME.test(page) ? { page } : {}),
-  }
-}
 
 function validateCommentBody(
   body: Record<string, unknown>,

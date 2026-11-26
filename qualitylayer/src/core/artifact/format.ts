@@ -219,11 +219,34 @@ export type ArtifactPageInfo = {
   groupFolded?: true
 }
 
+/** Sanitized DOM identity of an element marked inside a planned screen artifact (#268). */
+export type ArtifactElementRef = {
+  id?: string
+  testId?: string
+  tag?: string
+  role?: string
+  text?: string
+  selector?: string
+}
+
+/** Bounding box in page CSS pixels at 100 %. */
+export type ArtifactRect = { x: number; y: number; width: number; height: number }
+
 /**
  * Where a comment on an artifact points: page CSS pixels at 100 %, and the part it is in. `page` names
  * the page of a folder artifact (`settings.html`); a comment without one belongs to the entry page.
+ * Optional `kind`, `rect`, `target` and `targets` carry element/region context for the planner (#268).
  */
-export type ArtifactAnchor = { x: number; y: number; section?: string; page?: string }
+export type ArtifactAnchor = {
+  x: number
+  y: number
+  section?: string
+  page?: string
+  kind?: "spot" | "element" | "region"
+  rect?: ArtifactRect
+  target?: ArtifactElementRef
+  targets?: ArtifactElementRef[]
+}
 
 // ---------------------------------------------------------------- what the lasting artifacts' routes answer
 

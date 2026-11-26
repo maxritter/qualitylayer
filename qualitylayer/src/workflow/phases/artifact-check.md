@@ -6,8 +6,8 @@ and the only other file you write is your report (one report for a draft with se
 
 1. **Establish the reference**: the request, the artifact's purpose and *What this shows*, the product
    system; for a task's Plan, its artifact references for the exact pages and section ids.
-2. **Take the four pictures and open each**: the supplied capture command, else `qualitylayer artifact
-   shot <name> --matrix` (`--page <page>` for a folder), and `artifact check <name> --render`. A
+2. **Take the four pictures first, then open each**: the capture files do not exist until you run the supplied capture commands (else `qualitylayer artifact
+   shot <name> --matrix`, with `--page <page>` for a folder), and `artifact check <name> --render`. A
    `runtime-error`, `blocked-request`, `unresponsive-page` or an `errors`/`blocked` entry is a defect,
    reported with width and theme; a blank, stale, clipped or broken picture is a finding by itself.
    Capture each Plan-referenced section with `--section <id>` in both themes before judging content

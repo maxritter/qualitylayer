@@ -1,4 +1,10 @@
-import { AppWindowIcon, ChevronDownIcon, FocusIcon, HistoryIcon } from "lucide-react"
+import {
+  AppWindowIcon,
+  ChevronDownIcon,
+  FocusIcon,
+  HistoryIcon,
+  MessageSquarePlusIcon,
+} from "lucide-react"
 import { Fragment, type MouseEvent, type ReactNode } from "react"
 
 /** "50 min ago" as the header draws it: a history mark and the age, the full words in the tooltip. */
@@ -22,6 +28,7 @@ export function PreviewHeader({
   name,
   meta,
   onCard,
+  onAnnotate,
   cardDisabled = false,
 }: {
   name: string
@@ -29,6 +36,8 @@ export function PreviewHeader({
   meta: readonly ReactNode[]
   /** Open the card; the button is where focus returns to when it closes. */
   onCard?: ((event: MouseEvent<HTMLButtonElement>) => void) | null
+  /** Open the card armed for multi-place element/area annotations (#268). */
+  onAnnotate?: ((event: MouseEvent<HTMLButtonElement>) => void) | null
   cardDisabled?: boolean
 }) {
   return (
@@ -55,6 +64,18 @@ export function PreviewHeader({
             Open in card
           </button>
         ) : null}
+        {onAnnotate ? (
+          <button
+            type="button"
+            className="q-btn sm"
+            disabled={cardDisabled}
+            data-testid="preview-annotate"
+            onClick={onAnnotate}
+          >
+            <MessageSquarePlusIcon aria-hidden="true" />
+            Annotate
+          </button>
+        ) : null}
       </div>
     </div>
   )
@@ -68,12 +89,14 @@ export function PreviewActions({
   name,
   meta,
   onCard,
+  onAnnotate,
   cardDisabled = false,
 }: {
   /** The screen's name, for the button's accessible name: the row's tab carries it on screen. */
   name: string
   meta: readonly ReactNode[]
   onCard?: ((event: MouseEvent<HTMLButtonElement>) => void) | null
+  onAnnotate?: ((event: MouseEvent<HTMLButtonElement>) => void) | null
   cardDisabled?: boolean
 }) {
   return (
@@ -99,6 +122,19 @@ export function PreviewActions({
         >
           <FocusIcon aria-hidden="true" />
           Open in card
+        </button>
+      ) : null}
+      {onAnnotate ? (
+        <button
+          type="button"
+          className="q-btn sm"
+          aria-label={`Annotate ${name}`}
+          disabled={cardDisabled}
+          data-testid="preview-annotate"
+          onClick={onAnnotate}
+        >
+          <MessageSquarePlusIcon aria-hidden="true" />
+          Annotate
         </button>
       ) : null}
     </span>

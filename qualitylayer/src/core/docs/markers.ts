@@ -199,7 +199,7 @@ export function parseMarkers(markdown: string): { markers: Marker[]; problems: M
 
 const MARKER_HINT: Record<string, string> = {
   artifact:
-    "use `<!-- ql:artifact <name> -->` for a task artifact, or a local artifact page such as `.qualitylayer/artifacts/<artifact>/<page>.html#<section-id>`",
+    "use `<!-- ql:artifact <name> -->` or `<!-- ql:artifact artifacts/<name>/<page>.html#<section-id> -->` for a task draft, or `.qualitylayer/artifacts/<artifact>/<page>.html#<section-id>` for a lasting Library page",
   decide: "write it as `<!-- ql:decide <id> -->`, one id per decision: d1, d2 …",
   slices: "write it as `<!-- ql:slices -->`; QualityLayer writes `ql:slices live` itself",
   approve: "write it as `<!-- ql:approve plan -->`",

@@ -4,6 +4,7 @@
 // and the App's keys pressed inside it, accepted from this frame's own window only.
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import type { ArtifactElementRef } from "../../core/artifact/format.ts"
 import { type BridgeMessage, onScreen, readBridge } from "./artifact-frame-bridge.ts"
 import { buildFrameSource } from "./artifact-frame-source.ts"
 
@@ -27,21 +28,36 @@ export type ArtifactLayout = {
   contentHeight?: number
   parts: ArtifactPart[]
 }
-/** What the person marked on the page: a spot, a dragged region or selected words. */
+/** What the person marked on the page: a spot, an element, a dragged region or selected words. */
 export type ArtifactMark = {
-  mark: "spot" | "region" | "text"
-  /** In page pixels: the spot, or the region's or passage's top left. */
+  mark: "spot" | "element" | "region" | "text"
+  /** In page pixels: the spot, or the element's, region's or passage's top left. */
   x: number
   y: number
   width?: number
   height?: number
   /** The `data-screen-label` of the part it is in. */
   section?: string
+  /** Identified DOM element when clicking an element in Annotate mode (#268). */
+  target?: ArtifactElementRef
+  /** Identified DOM elements inside a dragged rectangle (#268). */
+  targets?: ArtifactElementRef[]
   quote: string
   /** The passage's lines or the region, in the App's viewport pixels once `onMark` hears them. */
   boxes: { x: number; y: number; width: number; height: number }[]
   /** The spot on screen, for the pin. */
   point?: { x: number; y: number }
+}
+
+/** Persistent overlay drawn inside the artifact frame for multi-place annotations (#268). */
+export type ArtifactPinOverlay = {
+  num: number
+  kind: "element" | "region" | "spot"
+  x: number
+  y: number
+  width: number
+  height: number
+  active?: boolean
 }
 export type ArtifactScroll = { x: number; y: number; unit: 0 | 1 | 2 | 3 }
 
@@ -70,6 +86,10 @@ type Props = FrameHandlers & {
    * the page works as authored; marks are offered only when `onMark` is given.
    */
   armed?: boolean
+  /** Stay armed across multiple element/region marks for batch screen feedback (#268). */
+  multi?: boolean
+  /** Numbered pin/region overlays rendered inside the frame (#268). */
+  pins?: readonly ArtifactPinOverlay[]
   className?: string
   theme?: "light" | "dark"
   /**
@@ -155,6 +175,8 @@ export function ArtifactPageFrame({
   height,
   scale,
   armed = false,
+  multi = false,
+  pins,
   onMark,
   onSelection,
   onLayout,
@@ -210,22 +232,27 @@ export function ArtifactPageFrame({
     return () => window.removeEventListener("message", onMessage)
   }, [])
   // The mode is said to the page whenever it changes, and again whenever the page reloads.
-  const tell = () =>
+  const tell = () => {
     frame.current?.contentWindow?.postMessage(
       {
         type: "ql:artifact",
         kind: "mode",
         mark: marking,
         armed: marking && armed,
+        multi: marking && multi,
         theme,
         pan: onScroll !== undefined,
       },
       "*",
     )
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the mode is what is said
+    if (pins !== undefined) {
+      frame.current?.contentWindow?.postMessage({ type: "ql:artifact", kind: "pins", pins }, "*")
+    }
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the mode and pins are what is said
   useLayoutEffect(() => {
     tell()
-  }, [armed, marking, theme])
+  }, [armed, marking, multi, theme, pins])
   // Armed, the page takes the keyboard: Tab walks its controls, Enter marks, Escape leaves.
   useEffect(() => {
     if (armed && marking) frame.current?.focus({ preventScroll: true })

@@ -4,6 +4,7 @@
 // planning session or a fresh one.
 import { CodeXmlIcon, WalletIcon } from "lucide-react"
 import { permissionDescription } from "../core/run/launch-spec.ts"
+import { BuildScheduleControl } from "./BuildScheduleControl.tsx"
 import { type BuildLaunchSelection, updateBuildPicks } from "./implement-start-actions.ts"
 import { type ImplementStartProps, useImplementStartModel } from "./implement-start-model.ts"
 import {
@@ -95,6 +96,10 @@ function ImplementStartFooter({
         <p className="q-start-note" role="status" data-testid="start-note">
           {m.reason}
         </p>
+      ) : m.scheduleNote ? (
+        <p className="q-start-note" role="status" data-testid="schedule-note">
+          {m.scheduleNote}
+        </p>
       ) : null}
       {m.credits !== null ? (
         <p className="q-start-note q-start-credit" role="status" data-testid="start-credits">
@@ -114,12 +119,51 @@ function ImplementStartFooter({
           data-testid="step-main"
           disabled={m.blocked}
           aria-disabled={m.blocked}
-          onClick={() => void m.start()}
+          onClick={() => void (m.scheduling ? m.schedule() : m.start())}
         >
-          {m.starting ? "Starting…" : m.copying ? "Preparing…" : m.actionLabel}
+          {m.starting
+            ? m.scheduling
+              ? "Scheduling…"
+              : "Starting…"
+            : m.copying
+              ? "Preparing…"
+              : m.actionLabel}
         </button>
       ) : null}
     </div>
+  )
+}
+
+function ImplementWorkspaceSection({ m }: { m: ReturnType<typeof useImplementStartModel> }) {
+  if (!m.inApp) return null
+  return (
+    <>
+      <LaunchBranch
+        scope="Build"
+        heading="Workspace"
+        icons
+        state={m.branchState}
+        resolved={m.resolved}
+        current={m.branch.state?.branch}
+        checkout={m.checkout}
+        disabled={m.starting || m.copying || (m.supported && !m.canConfigure)}
+        contested={m.contested}
+        onChange={(patch) => m.setPickedBranch({ ...m.branchState, ...patch })}
+      />
+      {m.agent !== "other" ? (
+        <BuildScheduleControl
+          agent={m.agent}
+          taskId={m.detail?.id}
+          repoId={m.detail?.project}
+          works={m.resolved.works}
+          mode={m.whenMode}
+          startAt={m.scheduleStartAt}
+          disabled={m.starting || m.copying}
+          onModeChange={m.setWhenMode}
+          onStartAtChange={m.setScheduleStartAt}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -201,20 +245,7 @@ export function ImplementStart(props: ImplementStartProps) {
             }}
           />
         </section>
-        {m.inApp ? (
-          <LaunchBranch
-            scope="Build"
-            heading="Workspace"
-            icons
-            state={m.branchState}
-            resolved={m.resolved}
-            current={m.branch.state?.branch}
-            checkout={m.checkout}
-            disabled={m.starting || m.copying || (m.supported && !m.canConfigure)}
-            contested={m.contested}
-            onChange={(patch) => m.setPickedBranch({ ...m.branchState, ...patch })}
-          />
-        ) : null}
+        <ImplementWorkspaceSection m={m} />
         {m.problem ? (
           <p role="alert" className="q-run-error">
             {m.problem}

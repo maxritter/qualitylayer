@@ -98,7 +98,9 @@ function validateSliceNumbers(
   const group = what === "slices"
   // `--take-staged a.ts b.ts` leaves b.ts as a stray word: name the fix instead of the usage line.
   const stray = numbers.find((n) => !/^\d+$/.test(n))
-  const listed = ["--take-staged", "--take", "--leave"].find((flag) => args.includes(flag))
+  const listed = ["--take-staged", "--take", "--leave", "--accept-edits"].find((flag) =>
+    args.includes(flag),
+  )
   if (stray !== undefined && listed !== undefined)
     return err({
       code: "bad_args",

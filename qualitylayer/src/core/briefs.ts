@@ -36,8 +36,12 @@ import type { Task } from "./task/store.ts"
 
 export { type ArtifactReview, artifactCheckHelper, judgeHelper }
 
-export function artifactReviewBrief(review: ArtifactReview): string {
-  return renderArtifactReviewBrief(review, commandSection())
+export function artifactReviewBrief(review: ArtifactReview, invocation?: string[]): string {
+  return renderArtifactReviewBrief(review, commandSection(invocation))
+}
+
+export async function artifactReviewBriefFor(ctx: Ctx, review: ArtifactReview): Promise<string> {
+  return renderArtifactReviewBrief(review, commandSection(await briefInvocation(ctx)))
 }
 
 export type Helper = {

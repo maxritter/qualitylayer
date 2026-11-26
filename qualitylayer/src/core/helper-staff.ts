@@ -20,24 +20,33 @@ export async function subagentModel(
   share?: Helper["share"],
 ): Promise<string | null> {
   if (!isNativeAgent(agent)) return null
-  if (Object.keys(agentEntry(agent).helperModels ?? {}).length === 0) return null
+  const helperModels = agentEntry(agent).helperModels ?? {}
+  if (Object.keys(helperModels).length === 0) return null
   const models = (await readConfig(ctx)).models[agent]
   if (models.helpers === SESSION_MODEL) return SESSION_MODEL
-  if (
-    role === "plan-review" ||
-    role === "security" ||
-    (role === "judge" && share?.kind !== "slices")
-  )
-    return models.judge
-  return role === "artifact-check" ? models.design : models.helpers
+  const picked =
+    role === "plan-review" || role === "security" || (role === "judge" && share?.kind !== "slices")
+      ? models.judge
+      : role === "artifact-check"
+        ? models.design
+        : models.helpers
+  if (agent === "claude-code" && picked !== SESSION_MODEL && !Object.hasOwn(helperModels, picked))
+    return null
+  return picked
 }
 
 /** How this agent starts a helper from its brief file, with the model and effort the reply names. */
-function startLine(agent: string): string {
+function startLine(agent: string, hasModel: boolean): string {
   if (agent === "pi" || agent === "opencode")
     return "Run each helper with ql_helper, passing only the path of its `brief_file` with its model, effort and minutes."
   if (agent === "unknown") return ""
-  return `Start each helper with only the path of its \`brief_file\` and the words "Read it in full and follow it"${agent === "claude-code" ? ", passing its `model` and `effort` to the Agent tool" : ""}.`
+  const claudeArgs =
+    agent !== "claude-code"
+      ? ""
+      : hasModel
+        ? ", passing its `model` and `effort` to the Agent tool"
+        : ", passing its `effort` to the Agent tool (omit `model` to inherit your session's model)"
+  return `Start each helper with only the path of its \`brief_file\` and the words "Read it in full and follow it"${claudeArgs}.`
 }
 
 /**
@@ -60,7 +69,13 @@ export async function staff(
     if (model === SESSION_MODEL) off.push(helper)
     else on.push({ ...helper, ...(model !== null ? { model } : {}), effort })
   }
-  const start = on.length > 0 ? startLine(agent) : ""
+  const start =
+    on.length > 0
+      ? startLine(
+          agent,
+          on.some((h) => h.model !== undefined),
+        )
+      : ""
   const asked = off.filter((h) => h.role !== "slice")
   if (asked.length === 0) return { on, off: start, start, own: "" }
   const own = [

@@ -34,6 +34,23 @@ export function foreignRefusal(path: string, who: string): string {
   const byHand =
     "commit this task's hunks through a private index on HEAD, then register with `qualitylayer commit slice <n> --commit <hash>` or `qualitylayer commit fix --commit <hash>`"
   if (who === UNRECORDED)
-    return `${path} changed after this task's last edit; nothing was committed. If \`git diff -- ${path}\` is all this task's, retry with \`--accept-edits ${path}\`; otherwise, ${byHand}.`
+    return `${path} changed after this task's last edit; nothing was committed. If \`git diff -- ${path}\` is all this task's, retry with \`--accept-edits ${path}\` (or \`--accept-edits all\` / \`--accept-edits <dir>/\` for several files); otherwise, ${byHand}.`
   return `${path} holds uncommitted edits from ${who}; nothing was committed. ${byHand[0]?.toUpperCase()}${byHand.slice(1)}.`
+}
+
+/** Format refusals across one or more paths, grouping multiple unrecorded paths into one actionable reply. */
+export function foreignRefusals(
+  paths: readonly string[],
+  foreign: Readonly<Record<string, string>>,
+): string | null {
+  const named = paths.find((path) => foreign[path] !== undefined && foreign[path] !== UNRECORDED)
+  if (named !== undefined) return foreignRefusal(named, foreign[named] as string)
+  const unrecorded = paths.filter((path) => foreign[path] === UNRECORDED)
+  if (unrecorded.length === 0) return null
+  if (unrecorded.length === 1) return foreignRefusal(unrecorded[0] as string, UNRECORDED)
+  const shown = unrecorded.slice(0, 5).join(", ")
+  const more = unrecorded.length > 5 ? ` and ${unrecorded.length - 5} more` : ""
+  const byHand =
+    "commit this task's hunks through a private index on HEAD, then register with `qualitylayer commit slice <n> --commit <hash>` or `qualitylayer commit fix --commit <hash>`"
+  return `${unrecorded.length} files changed after this task's last edit (${shown}${more}); nothing was committed. If their diffs are all this task's, retry with \`--accept-edits all\` (or repeat/comma-separate \`--accept-edits <file|dir/>\`); otherwise, ${byHand}.`
 }

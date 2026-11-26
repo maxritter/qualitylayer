@@ -83,6 +83,7 @@ function captureActiveElement() {
 export function useTaskApproval(context: ApprovalContext) {
   const { task, foreground } = context
   const [implementationChoice, setImplementationChoice] = useState<string | null>(null)
+  const [buildScheduleDefault, setBuildScheduleDefault] = useState(false)
   const buildOpener = useRef<{ task: string; element: HTMLElement | null } | null>(null)
   const buildApproval = useRef<BuildApprovalRecord | null>(null)
   const buildConfirming = useRef(false)
@@ -97,7 +98,7 @@ export function useTaskApproval(context: ApprovalContext) {
       ...(remark !== undefined ? { remark } : {}),
     }
   }
-  const openBuildChoice = (remark?: string) => {
+  const openBuildChoice = (remark?: string, options?: { schedule?: boolean }) => {
     if (buildConfirming.current) return
     if (implementationChoice !== task.id) {
       buildOpener.current = { task: task.id, element: captureActiveElement() }
@@ -105,6 +106,7 @@ export function useTaskApproval(context: ApprovalContext) {
     clearIntent(task.id)
     prepareBuild(remark)
     setBuildLaunchFailed(false)
+    setBuildScheduleDefault(options?.schedule === true)
     setImplementationChoice(task.id)
   }
   const dismissImplementationChoice = () => {
@@ -147,6 +149,7 @@ export function useTaskApproval(context: ApprovalContext) {
     decisionError: gate.decisionError,
     decide: gate.decide,
     implementationChoice,
+    buildScheduleDefault,
     buildOpener,
     buildBusy,
     buildLaunchFailed,

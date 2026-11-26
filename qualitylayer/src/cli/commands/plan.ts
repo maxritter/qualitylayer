@@ -6,7 +6,7 @@
 
 import { chatWorkflowRefusal } from "../../core/chat/task.ts"
 import { amendPlan } from "../../core/gate/amend.ts"
-import { draftPlan } from "../../core/gate/draft.ts"
+import { draftPlan, draftWarningsAside } from "../../core/gate/draft.ts"
 import { artifactCheckHelpers } from "../../core/next/plan.ts"
 import { capturePlanAssets } from "../../core/plan-assets.ts"
 import { withTaskComments } from "../../core/planning-comments.ts"
@@ -54,6 +54,16 @@ async function draftCmd(ctx: Ctx): Promise<Result<unknown>> {
   // its helpers ride along with the draft's reply.
   const due = drafted.data.warnings.some((w) => w.rule === "artifact-check-current")
   const checks = due ? await artifactCheckHelpers(ctx, task.data) : null
+  const remainingWarnings = drafted.data.warnings.filter((w) => w.rule !== "artifact-check-current")
+  const handedMessage =
+    remainingWarnings.length === drafted.data.warnings.length
+      ? drafted.data.message
+      : drafted.data.message.replace(
+          draftWarningsAside(drafted.data.warnings.length),
+          remainingWarnings.length === 0
+            ? ""
+            : ` ${remainingWarnings.length} warning(s) are in \`warnings\`: fix what you agree with.`,
+        )
   const handedOut =
     checks !== null && checks.on.length + checks.handles.length > 0
       ? {
@@ -63,7 +73,8 @@ async function draftCmd(ctx: Ctx): Promise<Result<unknown>> {
           ...(checks.handles.length > 0 ? { artifact_checks: checks.handles } : {}),
           design_check: DESIGN_CHECK_LINE,
           // The check handed out in this reply no longer waits to be handed out.
-          warnings: drafted.data.warnings.filter((w) => w.rule !== "artifact-check-current"),
+          warnings: remainingWarnings,
+          message: handedMessage,
         }
       : drafted.data
   const unpictured = pictures.filter((p) => p.status === "failed")

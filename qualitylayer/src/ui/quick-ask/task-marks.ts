@@ -96,7 +96,18 @@ export function quoteMark(...args: QuoteMarkArgs): QuickAskMark {
   }
 }
 
-/** A spot clicked, a region dragged or words selected on one of the task's artifacts. */
+function artifactTargetHint(mark: ArtifactPageMark): string {
+  if (mark.target?.selector) return ` · ${mark.target.selector}`
+  if (mark.mark !== "region") return ""
+  const ids = (mark.targets ?? [])
+    .slice(0, 2)
+    .map((t) => t.selector)
+    .filter(Boolean)
+    .join(", ")
+  return ids ? ` · ${ids}` : " · region"
+}
+
+/** A spot clicked, an element marked, a region dragged or words selected on one of the task's artifacts. */
 export function artifactMark(
   task: Task,
   target: ContextDraftTarget,
@@ -105,9 +116,11 @@ export function artifactMark(
   mark: ArtifactPageMark,
 ): QuickAskMark {
   const part = mark.section ? ` › ${mark.section}` : ""
-  const place = `${title}${part}${mark.mark === "region" ? " · region" : ""}`
-  const quote = mark.quote || title
+  const place = `${title}${part}${artifactTargetHint(mark)}`
+  const quote = mark.quote || mark.target?.selector || title
   const page = mark.file ?? file
+  const isBox = mark.mark === "region" || mark.mark === "element"
+  const hasSize = isBox && mark.width !== undefined && mark.height !== undefined
   return {
     kind: "artifact",
     place,
@@ -118,7 +131,7 @@ export function artifactMark(
         : below(mark.boxes),
     boxes: mark.mark === "spot" ? [] : mark.boxes,
     ...(mark.mark === "spot" && mark.point ? { pin: mark.point } : {}),
-    ...(mark.mark === "region" ? { region: true } : {}),
+    ...(isBox ? { region: true } : {}),
     context: async (): Promise<ContextualRequest> => ({
       target,
       title: task.title,
@@ -127,8 +140,15 @@ export function artifactMark(
       revision: await sourceRevision(mark.html),
       section: mark.section ?? `${mark.mark}-${mark.x}-${mark.y}`,
       ...(mark.mark === "spot" ? { spot: { x: mark.x, y: mark.y } } : {}),
-      ...(mark.mark === "region" && mark.width !== undefined && mark.height !== undefined
-        ? { region: { x: mark.x, y: mark.y, width: mark.width, height: mark.height } }
+      ...(hasSize
+        ? {
+            region: {
+              x: mark.x,
+              y: mark.y,
+              width: mark.width as number,
+              height: mark.height as number,
+            },
+          }
         : {}),
       quote: clip(quote, 600),
       place,

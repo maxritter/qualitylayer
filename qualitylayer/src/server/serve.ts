@@ -19,6 +19,7 @@ import { VERSION } from "../core/version.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { idleDeadline } from "./agent-sessions.ts"
 import * as api from "./api.ts"
+import { buildScheduler } from "./build-schedule.ts"
 import { coalescing } from "./coalesce.ts"
 import { crashLine, testFault } from "./crash.ts"
 import type { AppSocketData, EventAccess } from "./event-socket.ts"
@@ -252,6 +253,10 @@ export function createHandler(
   })
   const idleStop = idleDeadline(ctx, () => hub.publish({ type: "run-changed" }))
   const runs = new RunAttachments(ctx, checked)
+  const schedules = buildScheduler(ctx, runs, () => {
+    hub.publish({ type: "task-changed" })
+    hub.publish({ type: "live-changed" })
+  })
   const stopSettingsChanges = hub.observe((event) => {
     if (event.type === "run-changed" && event.path) {
       void runs.processSettingsChange(event.path).catch(() => {
@@ -278,6 +283,7 @@ export function createHandler(
       thumbs,
       memory: createMemoryHandler(ctx),
       resume,
+      schedules,
       runs,
       server: options.server,
       machines: options.machines,
@@ -317,10 +323,12 @@ export function createHandler(
   return Object.assign(handler, {
     runs,
     resume,
+    schedules,
     idleStop,
     close: async () => {
       stopSettingsChanges()
       setupEvents.close()
+      schedules.dispose()
       idleStop.dispose()
       runs.dispose()
       await folderPicker.close()

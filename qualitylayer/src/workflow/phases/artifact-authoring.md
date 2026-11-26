@@ -46,7 +46,10 @@ or clipped render. If a picture reaches the 16,000 px height limit, capture the 
 ## Format and embedding
 
 One HTML file with inline CSS and JS, embedded `data:` images and fonts, and no network request; each
-navigable part carries a stable `id` and `data-screen-label` on the same element. Draw the initial screen
+navigable part carries a stable `id` and `data-screen-label` on the same element. Folder artifacts pack
+statically referenced local scripts, styles, fonts and images into each page; scripts that build markup
+dynamically should read `.src` from a hidden static `<img>` or inline `data:` URLs instead of relative paths.
+Draw the initial screen
 in literal HTML and say what is simulated. A website draft (`--on website[/<page>]`) leaves generated
 JavaScript alone: copy goes in `window.QL_DRAFT_CHANGES.text`, styles in `ql-draft.css`.
 

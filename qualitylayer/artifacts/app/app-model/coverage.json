@@ -2596,6 +2596,29 @@
       "demo": null,
       "note": "Approved Plan Interface collection. Chooser thumbnails use the normal artifact picture source and a glyph while a picture is unavailable. The selected preview uses the current focused artifact and keeps Open in card and the exact full-size destination. This page mounts current App and gallery source with synthetic Chat screens.",
       "verification": "18 November 2026. Source-backed gallery in current App shell. Measured compiled browser interactions and exact viewer destination. Packed artifact renders at 1280 and 390 in both themes with zero blocked requests or runtime errors. Evidence is in the private Plan gallery production qualification."
+    },
+    "build-schedule.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/ImplementStart.tsx",
+        "qualitylayer/src/ui/BuildScheduleControl.tsx",
+        "qualitylayer/src/ui/ScheduledBuildCard.tsx",
+        "qualitylayer/src/ui/turn/ApproveCardMenus.tsx"
+      ],
+      "demo": null,
+      "note": "Approved 26 November 2026 (#267): Schedule build… in Plan approval split menu, When (Now/Later) with live quota-window presets, cascade view, checkout conflict notice, waiting Implement state, quiet sidebar badge, and missed-sleep recovery."
+    },
+    "artifact-design-annotations.html": {
+      "status": "built",
+      "files": [
+        "qualitylayer/src/ui/artifact/PreviewControls.tsx",
+        "qualitylayer/src/ui/artifact/ArtifactPreview.tsx",
+        "qualitylayer/src/ui/artifact/ArtifactPreviewDialog.tsx",
+        "qualitylayer/src/ui/artifact/ArtifactAnnotateTray.tsx",
+        "qualitylayer/src/ui/artifact/ArtifactPageFrame.tsx"
+      ],
+      "demo": null,
+      "note": "Approved 26 November 2026 (#268): Direct Annotate button on Plan artifact previews, armed multi-place element click & rectangle drag with numbered overlays, DOM #id/data-testid context capture, Planner context preview, and one-batch send."
     }
   }
 }

@@ -21,6 +21,7 @@ import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import type { Api } from "../api.ts"
 import { agoPhrase, useQuery } from "../hooks.ts"
 import { useActionSlot } from "../kit/action-slot.ts"
+import type { StagedAnnotation } from "./ArtifactAnnotateTray.tsx"
 import type { ArtifactLayout } from "./ArtifactPageFrame.tsx"
 import { ArtifactPreviewBody } from "./ArtifactPreviewBody.tsx"
 import { ArtifactPreviewDialog } from "./ArtifactPreviewDialog.tsx"
@@ -44,6 +45,8 @@ export type ArtifactHostValue = {
   theme?: "light" | "dark"
   /** The visible Plan gallery can ask for its choice images through the existing thumbnail reader. */
   galleryThumbnails?: () => Promise<ReadonlyMap<string, string>>
+  /** Submit batched multi-place element/area annotations directly to the planner (#268). */
+  annotate?: (file: string, batchMarkdown: string, pins: StagedAnnotation[]) => Promise<void>
 }
 
 const ArtifactHost = createContext<ArtifactHostValue | null>(null)
@@ -131,6 +134,7 @@ function PreviewSlotHeader({
   title,
   meta,
   toCard,
+  toAnnotate,
   cardDisabled,
 }: {
   slot: ReturnType<typeof useActionSlot>
@@ -138,14 +142,29 @@ function PreviewSlotHeader({
   title: string | undefined
   meta: ReactNode[]
   toCard: ((event: MouseEvent<HTMLButtonElement>) => void) | null
+  toAnnotate: ((event: MouseEvent<HTMLButtonElement>) => void) | null
   cardDisabled: boolean
 }) {
   if (slot === null) {
-    return <PreviewHeader name={name} meta={meta} onCard={toCard} cardDisabled={cardDisabled} />
+    return (
+      <PreviewHeader
+        name={name}
+        meta={meta}
+        onCard={toCard}
+        onAnnotate={toAnnotate}
+        cardDisabled={cardDisabled}
+      />
+    )
   }
   if (!slot.shown || slot.element === null) return null
   return createPortal(
-    <PreviewActions name={title ?? name} meta={meta} onCard={toCard} cardDisabled={cardDisabled} />,
+    <PreviewActions
+      name={title ?? name}
+      meta={meta}
+      onCard={toCard}
+      onAnnotate={toAnnotate}
+      cardDisabled={cardDisabled}
+    />,
     slot.element,
   )
 }
@@ -201,6 +220,33 @@ function previewCardAction(
   return open === null ? null : () => open()
 }
 
+function usePreviewDialogControls(
+  error: string | null,
+  hostAnnotate: ArtifactHostValue["annotate"],
+) {
+  const returnFocus = useRef<HTMLElement | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [openAnnotating, setOpenAnnotating] = useState(false)
+  const enlarge = (event: MouseEvent<HTMLButtonElement>) => {
+    returnFocus.current = event.currentTarget
+    setOpenAnnotating(false)
+    setExpanded(true)
+  }
+  const startAnnotate =
+    hostAnnotate && error === null
+      ? (event: MouseEvent<HTMLButtonElement>) => {
+          returnFocus.current = event.currentTarget
+          setOpenAnnotating(true)
+          setExpanded(true)
+        }
+      : null
+  const close = () => {
+    setExpanded(false)
+    setOpenAnnotating(false)
+  }
+  return { returnFocus, expanded, openAnnotating, enlarge, startAnnotate, close }
+}
+
 export function ArtifactPreview(props: ArtifactPreviewProps) {
   const { task, onOpen, load, title } = props
   const host = useContext(ArtifactHost)
@@ -215,12 +261,10 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
   const near = useNearViewport(root)
   const viewport = useRef<HTMLDivElement | null>(null)
   const room = useViewportRoom(viewport)
-  const returnFocus = useRef<HTMLElement | null>(null)
-  const [expanded, setExpanded] = useState(false)
 
   const { currentHtml, error, warmLayout } = usePreviewPageLoad({
     near,
-    expanded,
+    expanded: false,
     file,
     identity,
     scope,
@@ -230,6 +274,9 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
     loader: previewLoaderOf(host, task, load),
     onLeaveViewport: () => setReportedFor(null),
   })
+  const hostAnnotate = host?.annotate
+  const dialog = usePreviewDialogControls(error, hostAnnotate)
+  const { returnFocus, expanded, openAnnotating, enlarge, startAnnotate } = dialog
   const [layout, setLayout] = useState<ArtifactLayout | null>(
     () => warmLayout ?? host?.cache?.shape(file) ?? null,
   )
@@ -261,10 +308,6 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
     section,
   })
   const canEnlarge = error === null && currentHtml !== null && (!section || focused !== null)
-  const enlarge = (event: MouseEvent<HTMLButtonElement>) => {
-    returnFocus.current = event.currentTarget
-    setExpanded(true)
-  }
   const handleLayout = (next: ArtifactLayout) => {
     if (root.current?.closest("[hidden]")) return
     setLayout(next)
@@ -290,6 +333,7 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
         title={title}
         meta={previewMetaItems(reference?.scope, artifact)}
         toCard={previewCardAction(error, enlarge, open)}
+        toAnnotate={startAnnotate}
         cardDisabled={error === null && !canEnlarge}
       />
       {error !== null ? (
@@ -318,7 +362,7 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
       {canEnlarge && currentHtml ? (
         <ArtifactPreviewDialog
           open={expanded}
-          close={() => setExpanded(false)}
+          close={dialog.close}
           name={name}
           html={currentHtml.text}
           width={width}
@@ -326,6 +370,8 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
           section={section}
           theme={host?.theme}
           onOpen={open}
+          onAnnotate={hostAnnotate ? (markdown, pins) => hostAnnotate(file, markdown, pins) : null}
+          initialAnnotate={openAnnotating}
           returnFocus={returnFocus}
         />
       ) : null}

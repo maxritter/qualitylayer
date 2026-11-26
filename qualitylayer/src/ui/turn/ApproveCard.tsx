@@ -51,6 +51,12 @@ async function submitPlanDecision(
   here: boolean,
 ): Promise<string | null> {
   try {
+    if (decision === "approved" && route === "schedule") {
+      window.dispatchEvent(
+        new CustomEvent("qualitylayer:build-schedule", { detail: surface.task.id }),
+      )
+      return null
+    }
     let saved: boolean | undefined
     if (decision === "approved" && route !== "choose" && here && surface.buildHere) {
       saved = await surface.buildHere.start(

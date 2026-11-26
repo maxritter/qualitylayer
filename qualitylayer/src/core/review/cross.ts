@@ -347,7 +347,11 @@ async function runCrossReviewWithInput(
     const step = first.recoveryHead
       ? { ...again, file: first.file, recoveryHead: first.recoveryHead }
       : again
-    run = buildRunningRecord(point, step, run.started, step.why, input)
+    const fallbackWhy =
+      again.by !== first.by
+        ? `${first.name} could not run (${(attempts[0] as Attempt).reason}); ${step.name} reviewed it instead`
+        : step.why
+    run = buildRunningRecord(point, step, run.started, fallbackWhy, input)
     await writeRun(ctx, task, run)
     attempts.push(
       await runSingleAttempt(ctx, task, point, {

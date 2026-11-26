@@ -28,6 +28,8 @@ function matchDemoEndpoint(
   if (pathname === "/api/machines/pairings" && method === "GET")
     return json({ ok: true, pairings: [] })
   if (/^\/api\/machines\/[^/]+\/sessions$/.test(pathname)) return json({ ok: true, running: 1 })
+  if (pathname === "/api/schedules" && method === "GET") return json({ ok: true, schedules: [] })
+  if (pathname.startsWith("/api/schedules")) return json({ ok: true, cancelled: true })
   return null
 }
 

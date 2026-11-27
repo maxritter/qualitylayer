@@ -55,15 +55,17 @@ function upgradeHead(incoming: IncomingMessage, headers: OutgoingHttpHeaders): s
   return `${lines.join("\r\n")}\r\n\r\n`
 }
 
+export type PassSocketRequest = {
+  incoming: IncomingMessage
+  socket: Duplex
+  head: Buffer
+  track: (socket: Duplex) => void
+  trackUpstream?: (socket: Duplex) => void
+}
+
 /** Join the browser's socket to the machine's, or refuse it before the machine hears of it. */
-export function passSocket(
-  config: PassThroughConfig,
-  track: (socket: Duplex) => void,
-  incoming: IncomingMessage,
-  socket: Duplex,
-  head: Buffer,
-  trackUpstream?: (socket: Duplex) => void,
-): void {
+export function passSocket(config: PassThroughConfig, req: PassSocketRequest): void {
+  const { incoming, socket, head, track, trackUpstream } = req
   track(socket)
   const tcpBrowser = socket as Duplex & { setKeepAlive?: (on: boolean, ms?: number) => void }
   tcpBrowser.setKeepAlive?.(true, 15_000)

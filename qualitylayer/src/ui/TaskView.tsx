@@ -125,6 +125,31 @@ export function TaskView(props: TaskViewProps) {
   )
 }
 
+function renderTaskItemMedia(
+  item: Item,
+  artifactHost: ReturnType<typeof useTaskViewController>["artifacts"]["host"],
+  theme: TaskViewProps["theme"],
+  loadArtifact: ReturnType<typeof useTaskViewController>["loadArtifact"],
+  loadEvidence: ReturnType<typeof useTaskViewController>["loadEvidence"],
+) {
+  if (item.media === undefined || (item.step === "verify" && item.state === "settled")) {
+    return undefined
+  }
+  return (
+    <ItemMedia
+      artifactHost={artifactHost}
+      media={item.media}
+      theme={theme}
+      loadArtifact={loadArtifact}
+      loadEvidence={loadEvidence}
+    />
+  )
+}
+
+function taskFrameColumns(railOpen: boolean, compact: boolean, effectiveRailWidth: number): string {
+  return railOpen && !compact ? `minmax(0,1fr) ${effectiveRailWidth}px` : "minmax(0,1fr) 0px"
+}
+
 function TaskViewContent(props: TaskViewProps) {
   const {
     at,
@@ -176,15 +201,7 @@ function TaskViewContent(props: TaskViewProps) {
     ...(agentTabVisible ? {} : { onOpenAgent: c.sidebarState.showConversation }),
   })
   const renderMedia = (item: Item) =>
-    item.media !== undefined && !(item.step === "verify" && item.state === "settled") ? (
-      <ItemMedia
-        artifactHost={c.artifacts.host}
-        media={item.media}
-        theme={theme}
-        loadArtifact={c.loadArtifact}
-        loadEvidence={c.loadEvidence}
-      />
-    ) : undefined
+    renderTaskItemMedia(item, c.artifacts.host, theme, c.loadArtifact, c.loadEvidence)
   const surfaceProps = buildSurfaceProps({
     task: c.task,
     visibleTask: c.visibleTask,
@@ -219,6 +236,13 @@ function TaskViewContent(props: TaskViewProps) {
     onFullScreen,
     renderMedia,
   })
+  const toggleSidebar = () =>
+    railOpen ? c.sidebarState.closeSidebar() : c.sidebarState.reopenSidebar()
+  const onMarkCode =
+    c.markTarget !== null && !c.derived.closed
+      ? (mark: CodeMark) =>
+          openQuickAsk(codeMark(c.task, c.markTarget as NonNullable<typeof c.markTarget>, mark))
+      : undefined
   const sidebar = (
     <RightSidebar
       surface={surfaceProps}
@@ -264,16 +288,13 @@ function TaskViewContent(props: TaskViewProps) {
       sidebar={sidebar}
     />
   )
-  const markTarget = c.markTarget
   const reviewWorkspace = (
     <ReviewWorkspaceHost
       task={c.task}
       api={api}
       live={stepLive}
       reload={reload}
-      {...(markTarget !== null && !c.derived.closed
-        ? { onMark: (mark: CodeMark) => openQuickAsk(codeMark(c.task, markTarget, mark)) }
-        : {})}
+      {...(onMarkCode ? { onMark: onMarkCode } : {})}
     />
   )
   const taskDialogs = (
@@ -372,12 +393,7 @@ function TaskViewContent(props: TaskViewProps) {
           "ir-task-frame grid min-h-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)]",
           !resizing && "transition-[grid-template-columns] duration-200 ease-ql",
         )}
-        style={{
-          gridTemplateColumns:
-            railOpen && !c.compact
-              ? `minmax(0,1fr) ${c.effectiveRailWidth}px`
-              : "minmax(0,1fr) 0px",
-        }}
+        style={{ gridTemplateColumns: taskFrameColumns(railOpen, c.compact, c.effectiveRailWidth) }}
         data-testid="task-view"
         data-rail={railOpen ? "open" : "closed"}
       >
@@ -404,14 +420,7 @@ function TaskViewContent(props: TaskViewProps) {
               onOpen={c.open}
             />
           }
-          sidebarToggle={
-            <SidebarButton
-              shown={railOpen}
-              onOpen={() =>
-                railOpen ? c.sidebarState.closeSidebar() : c.sidebarState.reopenSidebar()
-              }
-            />
-          }
+          sidebarToggle={<SidebarButton shown={railOpen} onOpen={toggleSidebar} />}
           onOpen={c.open}
         />
         <main className="@container flex min-h-0 min-w-0 flex-col">

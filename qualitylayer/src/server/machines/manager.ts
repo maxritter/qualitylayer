@@ -13,14 +13,18 @@ import {
   type Machines,
   type MachineView,
   machineViewOf,
-  portInUse,
   queryMachineSessions,
   signIn,
   stillSignedIn,
   type Wait,
 } from "./manager-link.ts"
-import { type PassThrough, startPassThrough } from "./pass-through.ts"
-import { moveMachine, readMachines, type StoredMachine } from "./store.ts"
+import {
+  dropMachine,
+  realWait,
+  shouldStartAttempt,
+  startMachineListener,
+} from "./manager-listen.ts"
+import { readMachines, type StoredMachine } from "./store.ts"
 
 export {
   ConnectFailure,
@@ -32,13 +36,6 @@ export {
   type Wait,
 } from "./manager-link.ts"
 
-const realWait: Wait = (seconds, then) => {
-  const timer = setTimeout(then, seconds * 1000)
-  // A machine that is retried never keeps the server's process alive by itself.
-  timer.unref?.()
-  return () => clearTimeout(timer)
-}
-
 export function createMachines(
   ctx: Ctx,
   guard: GuardConfig,
@@ -47,12 +44,6 @@ export function createMachines(
   wait: Wait = realWait,
 ): Machines {
   return new MachineSet(ctx, guard, changed, connector, wait)
-}
-
-async function drop(machine: LiveMachine): Promise<void> {
-  machine.cancelRetry?.()
-  machine.link?.close()
-  await machine.listener?.close()
 }
 
 class MachineSet implements Machines {
@@ -100,7 +91,7 @@ class MachineSet implements Machines {
     this.stopped = true
     const all = [...this.live.values()]
     this.live.clear()
-    await Promise.all(all.map(drop))
+    await Promise.all(all.map(dropMachine))
   }
 
   /** Machines that left the store lose their connection and their listener. */
@@ -108,7 +99,7 @@ class MachineSet implements Machines {
     const gone = [...this.live].filter(([id]) => !wanted.has(id))
     for (const [id, machine] of gone) {
       this.live.delete(id)
-      await drop(machine)
+      await dropMachine(machine)
     }
     if (gone.length > 0) this.changed()
   }
@@ -142,11 +133,7 @@ class MachineSet implements Machines {
       machine.since = this.ctx.clock.now()
       this.changed()
     }
-    const startAttempt =
-      (machine.connection.state === "reconnecting" &&
-        (event.type === "retry" || event.type === "try-again")) ||
-      (machine.connection.state === "connecting" && before.state !== "connecting")
-    if (startAttempt) {
+    if (shouldStartAttempt(before, machine.connection, event)) {
       machine.cancelRetry?.()
       machine.cancelRetry = undefined
       machine.retryAt = undefined
@@ -191,18 +178,22 @@ class MachineSet implements Machines {
       this.step(machine, { type: "up" })
       this.watch(machine, link)
     } catch (error) {
-      machine.link?.close()
-      machine.link = undefined
-      if (this.gone(machine)) return
-      machine.reason = error instanceof Error ? error.message.slice(0, 200) : undefined
-      machine.connecting = false
-      this.step(machine, {
-        type: "failed",
-        as: error instanceof ConnectFailure ? error.state : "offline",
-      })
+      this.handleConnectFailure(machine, error)
     } finally {
       machine.connecting = false
     }
+  }
+
+  private handleConnectFailure(machine: LiveMachine, error: unknown): void {
+    machine.link?.close()
+    machine.link = undefined
+    if (this.gone(machine)) return
+    machine.reason = error instanceof Error ? error.message.slice(0, 200) : undefined
+    machine.connecting = false
+    this.step(machine, {
+      type: "failed",
+      as: error instanceof ConnectFailure ? error.state : "offline",
+    })
   }
 
   /** A forward that ends by itself leaves the machine offline, to be tried again. */
@@ -240,34 +231,12 @@ class MachineSet implements Machines {
       return
     }
     await machine.listener?.close()
-    machine.listener = await this.listen(machine, link)
-  }
-
-  /**
-   * Start the machine's listener on its stored port. A port that is in use (this computer's own
-   * server, another program) moves the machine to the next free port of the range, stored, instead
-   * of failing the same way at every attempt.
-   */
-  private async listen(machine: LiveMachine, link: Link): Promise<PassThrough> {
-    const tried = new Set<number>()
-    for (;;) {
-      const port = link.listenPort ?? machine.stored.localPort
-      try {
-        return await startPassThrough({
-          port,
-          guard: this.guard,
-          end: link.end,
-          machineHost: link.machineHost,
-          access: () => machine.access ?? null,
-          unreachable: () => this.lost(machine, link),
-        })
-      } catch (error) {
-        if (link.listenPort !== undefined || !portInUse(error)) throw error
-        tried.add(port)
-        const moved = await moveMachine(this.ctx, machine.stored.id, tried, [this.guard.port])
-        if (moved === null) throw error
-        machine.stored = { ...machine.stored, localPort: moved }
-      }
-    }
+    machine.listener = await startMachineListener({
+      ctx: this.ctx,
+      guard: this.guard,
+      machine,
+      link,
+      onLost: () => this.lost(machine, link),
+    })
   }
 }

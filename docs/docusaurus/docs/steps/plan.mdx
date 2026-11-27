@@ -48,7 +48,7 @@ Your agent asks only about choices the code leaves open, each with a recommendat
   <Card title="Summary" icon="file-text">What users get and the estimated size. When the Plan identifies a specific risk or names the systems it connects, open the indicator to see the acceptance test or approach.</Card>
   <Card title="Done means" icon="badge-check">The numbered results you accept the change by. Verify shows each one as it ran.</Card>
   <Card title="Diagrams" icon="spline">Switch diagrams from compact top tabs to follow a request, decision or tool sequence at full reading width. Open any diagram full size for a closer look.</Card>
-  <Card title="Interface" icon="shapes">Choose a named preview to inspect a screen with its caption below, choose **Annotate** to pin elements or dragged areas with their DOM IDs, or open its [artifact](../artifacts.mdx) to try it.</Card>
+  <Card title="Interface" icon="shapes">Step through screens with the `< k / N >` preview pager, choose **Annotate** to pin areas or collect elements across screens (**Multi**) with their DOM IDs, or open its [artifact](../artifacts.mdx) to try it.</Card>
 </CardGroup>
 
 <Note>**Export** saves the Plan as PDF, Markdown with pictures or a web page. Build notes stay in `agents/01-plan.md`, under **For agents** in the Reader. The CLI also supports `qualitylayer plan export --out <folder>`.</Note>
@@ -63,7 +63,7 @@ Your agent asks only about choices the code leaves open, each with a recommendat
   <Step title="Approve">
     <Tabs groupId="where">
       <Tab value="app" label="In the App">**Approve and build here** builds in the planning session. Under the arrow, **Schedule build…** approves the Plan now and starts at a chosen time or next quota window reset, and **Choose where to build** picks another agent or workspace.</Tab>
-      <Tab value="agent" label="In my own agent">Choose **Build in &lt;agent&gt;**, compact your agent's session, then say "build here".</Tab>
+      <Tab value="agent" label="In my own agent">Choose **Build in &lt;agent&gt;**, compact your agent's session, then say "build here"—or choose **Start building here instead** in the App to hand the build to an in-App session.</Tab>
     </Tabs>
   </Step>
 </Steps>

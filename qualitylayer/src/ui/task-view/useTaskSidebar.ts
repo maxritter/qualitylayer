@@ -22,13 +22,9 @@ export function isOutsideTask(
   managedRun: boolean,
   buildsNext: string | null = null,
 ): boolean {
-  return (
-    !managedRun &&
-    (task.outside !== undefined ||
-      buildsNext !== null ||
-      task.start?.where === "here" ||
-      task.session !== null)
-  )
+  if (managedRun) return false
+  const hasExternalOwner = task.outside !== undefined || buildsNext !== null
+  return hasExternalOwner || task.start?.where === "here" || task.session !== null
 }
 
 const DIALOG_OR_POPUP_SELECTOR =
@@ -87,6 +83,34 @@ function useSidebarKeyEffect({
   }, [railOpen, closeSidebar, onRail, setSideTab, canReturnToStage, backToStage])
 }
 
+function useOutsideFilesDefault(opts: {
+  taskId: string
+  outsideTask: boolean
+  railOpen: boolean
+  onRail: (open: boolean) => void
+  setSideTab: (tab: SidebarTab) => void
+  terminalLayout: ReturnType<typeof useTerminalLayout>
+}) {
+  const { taskId, outsideTask, railOpen, onRail, setSideTab, terminalLayout } = opts
+  const defaultedFilesFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!outsideTask || defaultedFilesFor.current === taskId) return
+    defaultedFilesFor.current = taskId
+    setSideTab("files")
+    if (terminalLayout?.rightActive) terminalLayout.setPanel("files")
+    if (!railOpen) onRail(true)
+  }, [outsideTask, taskId, railOpen, onRail, setSideTab, terminalLayout])
+}
+
+function useSidebarReturnFocus(railOpen: boolean, returnFocus: { current: boolean }) {
+  useEffect(() => {
+    if (!railOpen && returnFocus.current) {
+      returnFocus.current = false
+      document.querySelector<HTMLElement>('[data-testid="sidebar-button"]')?.focus()
+    }
+  }, [railOpen, returnFocus])
+}
+
 /** Owns the right sidebar's focus and keyboard controls: Conversation and Terminal, or Files. */
 export function useTaskSidebar({
   task,
@@ -103,14 +127,14 @@ export function useTaskSidebar({
   // Open when the page opens (a remembered choice): it has the focus at once.
   const [focusKey, setFocusKey] = useState(railOpen ? 1 : 0)
   const returnFocus = useRef(false)
-  const defaultedFilesFor = useRef<string | null>(null)
-  useEffect(() => {
-    if (!outsideTask || defaultedFilesFor.current === task.id) return
-    defaultedFilesFor.current = task.id
-    setSideTab("files")
-    if (terminalLayout?.rightActive) terminalLayout.setPanel("files")
-    if (!railOpen) onRail(true)
-  }, [outsideTask, task.id, railOpen, onRail, terminalLayout])
+  useOutsideFilesDefault({
+    taskId: task.id,
+    outsideTask,
+    railOpen,
+    onRail,
+    setSideTab,
+    terminalLayout,
+  })
   /** The task's session: Conversation or Terminal, whichever it shows. */
   const showConversation = () => {
     setFocusKey((n) => n + 1)
@@ -140,12 +164,7 @@ export function useTaskSidebar({
   useCommandKeys({
     sidebar: fullScreen ? undefined : () => (railOpen ? closeSidebar() : reopenSidebar()),
   })
-  useEffect(() => {
-    if (!railOpen && returnFocus.current) {
-      returnFocus.current = false
-      document.querySelector<HTMLElement>('[data-testid="sidebar-button"]')?.focus()
-    }
-  }, [railOpen])
+  useSidebarReturnFocus(railOpen, returnFocus)
   useSidebarKeyEffect({
     railOpen,
     closeSidebar,

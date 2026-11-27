@@ -106,8 +106,12 @@ function probeHealthy(config: PassThroughConfig): Promise<boolean> {
         timeout: 2_000,
       },
       (res) => {
+        const done = () =>
+          finish(res.complete && typeof res.statusCode === "number" && res.statusCode > 0)
+        res.on("end", done)
+        res.on("close", done)
+        res.on("error", () => finish(false))
         res.resume()
-        finish(typeof res.statusCode === "number" && res.statusCode > 0)
       },
     )
     req.on("timeout", () => {
@@ -201,7 +205,7 @@ export function startPassThrough(initial: PassThroughConfig): Promise<PassThroug
   server.timeout = 0
   server.keepAliveTimeout = 60_000
   server.on("upgrade", (incoming, socket, head) =>
-    passSocket(config, track, incoming, socket, head, trackUpstream),
+    passSocket(config, { incoming, socket, head, track, trackUpstream }),
   )
   server.on("connection", track)
   const swap: PassThrough["swap"] = (next) => {

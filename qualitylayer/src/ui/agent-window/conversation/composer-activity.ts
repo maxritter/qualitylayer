@@ -64,20 +64,22 @@ function waitingActivity(input: ComposerActivityInput): ComposerActivity | undef
   return undefined
 }
 
+const TRANSPORT_CONNECTING: Record<"reconnecting" | "disconnected", ComposerActivity> = {
+  reconnecting: {
+    kind: "connecting",
+    text: "Reconnecting…",
+    label: "Reconnecting to the agent window",
+  },
+  disconnected: {
+    kind: "connecting",
+    text: "Disconnected",
+    label: "The agent window disconnected",
+  },
+}
+
 function connectingActivity(input: ComposerActivityInput): ComposerActivity | undefined {
-  if (input.transportStatus === "reconnecting") {
-    return {
-      kind: "connecting",
-      text: "Reconnecting…",
-      label: "Reconnecting to the agent window",
-    }
-  }
-  if (input.transportStatus === "disconnected") {
-    return {
-      kind: "connecting",
-      text: "Disconnected",
-      label: "The agent window disconnected",
-    }
+  if (input.transportStatus === "reconnecting" || input.transportStatus === "disconnected") {
+    return TRANSPORT_CONNECTING[input.transportStatus]
   }
   if (input.failing) {
     return { kind: "connecting", text: "Retrying", label: "Retrying to read the conversation" }
@@ -85,10 +87,9 @@ function connectingActivity(input: ComposerActivityInput): ComposerActivity | un
   if (!input.started || (!input.loaded && !input.unavailable)) {
     return { kind: "connecting", text: "Connecting", label: "Connecting to the agent" }
   }
-  if (input.loading) {
-    return { kind: "connecting", text: "Loading", label: "Loading the conversation" }
-  }
-  return undefined
+  return input.loading
+    ? { kind: "connecting", text: "Loading", label: "Loading the conversation" }
+    : undefined
 }
 
 function workingOrReadyActivity(input: ComposerActivityInput): ComposerActivity | undefined {

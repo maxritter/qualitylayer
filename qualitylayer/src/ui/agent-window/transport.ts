@@ -18,19 +18,14 @@ import {
   parseViewerStateMessage,
   publishedViewerState,
   revokedViewerState,
+  sendChunkedInput,
   type TerminalCallbacks,
+  terminalSocketProtocols,
 } from "./transport-helpers.ts"
+import { ReconnectScheduler, type ReconnectState } from "./transport-reconnect.ts"
 import type { FreshResult, TerminalControl, TerminalControlSender } from "./view.ts"
 
-export { TerminalReceiver }
-
-export type ReconnectState = {
-  status: "live" | "reconnecting" | "disconnected"
-  attempt: number
-  max: number
-}
-
-const DEFAULT_RECONNECT_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000]
+export { type ReconnectState, TerminalReceiver }
 
 export type TransportOptions = {
   watching: boolean
@@ -58,54 +53,13 @@ export class AgentTransport {
   private reportedError = false
   private pendingFresh?: PendingFresh
   private lastArgs?: { url: string; callbacks: TerminalCallbacks }
-  private reconnectAttempt = 0
-  private reconnectTimer?: ReturnType<typeof setTimeout>
-  private boundWake?: () => void
+  private reconnect: ReconnectScheduler
 
-  constructor(private options: TransportOptions) {}
-
-  private reconnectDelays(): readonly number[] {
-    return this.options.reconnectDelaysMs ?? DEFAULT_RECONNECT_DELAYS_MS
-  }
-
-  private clearReconnectSchedule() {
-    if (this.reconnectTimer !== undefined) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = undefined
-    }
-    if (this.boundWake && typeof window !== "undefined") {
-      window.removeEventListener("online", this.boundWake)
-      document.removeEventListener("visibilitychange", this.boundWake)
-      this.boundWake = undefined
-    }
-  }
-
-  private scheduleAutoReconnect(): boolean {
-    if (this.retired || this.ended || !this.lastArgs) return false
-    const delays = this.reconnectDelays()
-    if (this.reconnectAttempt >= delays.length) return false
-    const delay = delays[this.reconnectAttempt] ?? 8_000
-    this.reconnectAttempt += 1
-    this.options.onReconnectState?.({
-      status: "reconnecting",
-      attempt: this.reconnectAttempt,
-      max: delays.length,
-    })
-    const runRetry = () => {
-      this.clearReconnectSchedule()
-      if (this.retired || this.ended || !this.lastArgs) return
-      this.openSocket(this.lastArgs, true)
-    }
-    this.reconnectTimer = setTimeout(runRetry, delay)
-    if (typeof window !== "undefined" && typeof document !== "undefined") {
-      const wake = () => {
-        if (document.visibilityState !== "hidden") runRetry()
-      }
-      this.boundWake = wake
-      window.addEventListener("online", wake)
-      document.addEventListener("visibilitychange", wake)
-    }
-    return true
+  constructor(private options: TransportOptions) {
+    this.reconnect = new ReconnectScheduler(
+      () => this.options.reconnectDelaysMs,
+      (state) => this.options.onReconnectState?.(state),
+    )
   }
 
   private publishViewer() {
@@ -145,35 +99,40 @@ export class AgentTransport {
     pending.resolve(frame)
   }
 
-  private handleHostFrame(frame: HostFrame, callbacks: TerminalCallbacks) {
-    if (frame.type === "fresh-result") this.resolvePendingFresh(frame)
-    else if (frame.type === "replay-begin") {
-      this.replayComplete = false
-      if (this.viewer) delete this.viewer.pickerProof
-      this.publishViewer()
-    } else if (frame.type === "replay-end") {
-      this.replayComplete = true
-      this.reconnectAttempt = 0
-      this.clearReconnectSchedule()
-      this.options.onReconnectState?.({
-        status: "live",
-        attempt: 0,
-        max: this.reconnectDelays().length,
-      })
-      this.publishViewer()
-    } else if (frame.type === "exit") {
-      this.ended = true
-    } else if (
-      frame.type === "status" &&
-      (frame.status === "stopped" || frame.status === "failed")
-    ) {
-      this.ended = true
-      this.replayComplete = false
-      this.revokeViewer()
-    } else if (frame.type === "error") {
-      this.reportedError = true
-      if (FRESH_REJECT_CODES.has(frame.code)) this.rejectPendingFresh(frame.message)
+  private applyHostFrame(frame: HostFrame) {
+    switch (frame.type) {
+      case "fresh-result":
+        this.resolvePendingFresh(frame)
+        break
+      case "replay-begin":
+        this.replayComplete = false
+        if (this.viewer) delete this.viewer.pickerProof
+        this.publishViewer()
+        break
+      case "replay-end":
+        this.replayComplete = true
+        this.reconnect.notifyLive()
+        this.publishViewer()
+        break
+      case "exit":
+        this.ended = true
+        break
+      case "status":
+        if (frame.status === "stopped" || frame.status === "failed") {
+          this.ended = true
+          this.replayComplete = false
+          this.revokeViewer()
+        }
+        break
+      case "error":
+        this.reportedError = true
+        if (FRESH_REJECT_CODES.has(frame.code)) this.rejectPendingFresh(frame.message)
+        break
     }
+  }
+
+  private handleHostFrame(frame: HostFrame, callbacks: TerminalCallbacks) {
+    this.applyHostFrame(frame)
     this.options.onEvent?.(frame)
     if (frame.type === "replay-end") callbacks.onConnect?.()
     if (frame.type === "error") callbacks.onError?.(frame.message)
@@ -207,53 +166,56 @@ export class AgentTransport {
     callbacks: TerminalCallbacks,
   ) {
     if (this.socket !== socket) return
-    if (closeEvent) {
-      this.socket = undefined
-      this.rejectPendingFresh(
-        "The connection closed before fresh was confirmed. Your draft is kept; inspect the session before retrying.",
-      )
-    }
     this.replayComplete = false
     this.options.onControl?.(undefined)
     this.revokeViewer()
-    if (closeEvent) {
-      if (this.scheduleAutoReconnect()) return
-      this.options.onReconnectState?.({
-        status: "disconnected",
-        attempt: this.reconnectAttempt,
-        max: this.reconnectDelays().length,
-      })
-      this.reportError("disconnected", "The agent's window disconnected. Reconnect to continue.")
-      callbacks.onDisconnect?.()
+    if (!closeEvent) {
+      socket.close()
       return
     }
-    socket.close()
+    this.socket = undefined
+    this.rejectPendingFresh(
+      "The connection closed before fresh was confirmed. Your draft is kept; inspect the session before retrying.",
+    )
+    const canRetry = () => !this.retired && !this.ended && this.lastArgs !== undefined
+    if (
+      this.reconnect.schedule(canRetry, () => {
+        if (this.lastArgs) this.openSocket(this.lastArgs, true)
+      })
+    ) {
+      return
+    }
+    this.reconnect.notifyDisconnected()
+    this.reportError("disconnected", "The agent's window disconnected. Reconnect to continue.")
+    callbacks.onDisconnect?.()
   }
 
   connect(args: { url: string; callbacks: TerminalCallbacks }) {
-    this.reconnectAttempt = 0
+    this.reconnect.reset()
     this.openSocket(args, false)
   }
 
-  private openSocket(
-    { url, callbacks }: { url: string; callbacks: TerminalCallbacks },
-    retry: boolean,
-  ) {
-    this.clearReconnectSchedule()
+  private resetSocketState(args: { url: string; callbacks: TerminalCallbacks }, retry: boolean) {
+    this.reconnect.clear()
     if (!retry) this.disconnect()
     else {
       const prev = this.socket
       this.socket = undefined
       prev?.close()
     }
-    this.lastArgs = { url, callbacks }
+    this.lastArgs = args
     this.retired = false
-    this.callbacks = callbacks
+    this.callbacks = args.callbacks
     this.decoder = new FrameDecoder("host")
     this.viewer = undefined
     this.replayComplete = false
     this.ended = false
     this.reportedError = false
+  }
+
+  private openSocket(args: { url: string; callbacks: TerminalCallbacks }, retry: boolean) {
+    const { url, callbacks } = args
+    this.resetSocketState(args, retry)
     this.receiver = new TerminalReceiver(
       {
         write: (text) => callbacks.onData?.(text),
@@ -268,10 +230,8 @@ export class AgentTransport {
       },
       (frame) => this.handleHostFrame(frame, callbacks),
     )
-    const target = buildTerminalSocketUrl(url)
-    const protocols = [this.options.watching ? "qualitylayer-watch-v1" : "qualitylayer-control-v1"]
-    if (this.options.phone) protocols.push("qualitylayer-phone-v1")
-    const socket = new WebSocket(target, protocols)
+    const protocols = terminalSocketProtocols(this.options.watching, this.options.phone)
+    const socket = new WebSocket(buildTerminalSocketUrl(url), protocols)
     this.socket = socket
     socket.binaryType = "arraybuffer"
     socket.onopen = () => {
@@ -317,14 +277,11 @@ export class AgentTransport {
 
   sendInput(text: string) {
     if (!this.viewer?.canType || !this.replayComplete || !this.isConnected()) return false
-    const bytes = new TextEncoder().encode(text)
-    if (!bytes.length) return true
-    if (bytes.length * 1.5 + (this.socket?.bufferedAmount ?? 0) > LIMITS.inboundBytes) return false
-    for (let offset = 0; offset < bytes.length; offset += LIMITS.inputBytes)
-      if (!this.send({ type: "input", data: bytes.slice(offset, offset + LIMITS.inputBytes) }))
-        return false
-    this.options.onInput?.(text)
-    return true
+    const ok = sendChunkedInput(text, this.socket?.bufferedAmount ?? 0, (data) =>
+      this.send({ type: "input", data }),
+    )
+    if (ok && text.length > 0) this.options.onInput?.(text)
+    return ok
   }
 
   private canResizeNow(): boolean {
@@ -353,7 +310,7 @@ export class AgentTransport {
 
   disconnect() {
     this.retired = true
-    this.clearReconnectSchedule()
+    this.reconnect.clear()
     this.rejectPendingFresh(
       "The session disconnected before fresh was confirmed. No automatic retry was started.",
     )

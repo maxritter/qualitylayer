@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, join } from "node:path"
 import {
   type ArtifactAgentBinding,
   readArtifactAgentContext,
@@ -8,10 +8,14 @@ import { artifactMeta, folderArtifactOf, lastingDocOf } from "../core/artifact/f
 import { readLasting } from "../core/artifact/lasting.ts"
 import { artifactFiles, commentsHolder } from "../core/artifact/store.ts"
 import { artifactAnchor } from "../core/artifact/workspace.ts"
+import { safeReadText } from "../core/product/safe-fs.ts"
 import { isArchived } from "../core/task/archive.ts"
 import { type Ctx, err, ok, type Result } from "../ctx.ts"
 import { locate } from "./api.ts"
 import { artifactWorkspaceRead, locateArtifact } from "./artifacts.ts"
+import { findProject, projectHomes } from "./artifacts-list.ts"
+
+const PRODUCT_AGENT_DOC = ".qualitylayer/product/product.json"
 
 export type ArtifactAgentInput = {
   scope: "task" | "project"
@@ -67,6 +71,9 @@ async function resolvePagesAndTitle(
   file: string,
   root: string,
 ): Promise<Result<{ pages: string[]; ownTitle: string; kind: "folder" | "file" }>> {
+  if (file === PRODUCT_AGENT_DOC) {
+    return ok({ pages: [PRODUCT_AGENT_DOC], ownTitle: "Product", kind: "folder" })
+  }
   const folder = folderArtifactOf(file)
   const lasting = lastingDocOf(file)
   if (lasting) {
@@ -98,6 +105,29 @@ async function loadArtifactSource(ctx: Ctx, input: ArtifactAgentInput) {
   if (input.scope === "task") {
     const closed = await ensureTaskOpen(ctx, input.id)
     if (closed) return closed
+  }
+  if (input.scope === "project" && input.file === PRODUCT_AGENT_DOC) {
+    const project = await findProject(ctx, input.id)
+    if (!project.ok) return project
+    for (const home of await projectHomes(ctx, project.data)) {
+      const root = (home as { root: string }).root
+      const path = join(root, PRODUCT_AGENT_DOC)
+      const textRes = await safeReadText(root, path)
+      if (!textRes.ok) return textRes
+      if (textRes.data !== null) {
+        const realPath = await realpath(path)
+        return ok({
+          found: {
+            home,
+            path: realPath,
+            repoId: project.data.id,
+            folder: dirname(realPath),
+          },
+          html: `<!-- product-workspace -->\n${textRes.data}`,
+        })
+      }
+    }
+    return err({ code: "no_task", message: `${PRODUCT_AGENT_DOC} does not exist` })
   }
   const located = await locateArtifact(ctx, input.scope, input.id, input.file)
   if (!located.ok) return located

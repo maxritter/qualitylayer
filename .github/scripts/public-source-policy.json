@@ -1166,7 +1166,7 @@
     "qualitylayer/src/server/agent-setup-command.ts": "a0d014711335717226a7eabddc278f941f8b2ead6cd90c18ce602154c005b1e5",
     "qualitylayer/src/server/agent-setup.ts": "3b37f6f2ada741fbd59a2089efd8f77e912e772ba35c0c4edc5bac5e5b9d442e",
     "qualitylayer/src/server/api.ts": "abc21ca87dc5d061119072dfc9544c511e9335b7c7b03f0a830d0a0b865dc711",
-    "qualitylayer/src/server/artifact-agent.ts": "9e0159dca8886d2f66b0222da822a28ffe3ef2ef56363ec78681d185110a9a9b",
+    "qualitylayer/src/server/artifact-agent.ts": "308ef3aa043d33eb729983aedf2f1e3e1f1a3ac2fb28bdbb9a3b701a8cf5a342",
     "qualitylayer/src/server/artifact-bridge.ts": "f868b5330241f693e4b22b1c8fdf9b3369ee3d015b5e1b674940f7c7ffdc7bc3",
     "qualitylayer/src/server/artifact-feedback.ts": "5c8e28126609f8831bf5fb6b04469fc57131b64bd7ba6bc8890e1280340e68ae",
     "qualitylayer/src/server/artifact-library.ts": "7286af45888055422fd75931ad0f825af766ebad39a297ce5199d4fe82e7b871",

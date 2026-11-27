@@ -101,6 +101,13 @@ async function loadArtifactSource(ctx: Ctx, input: ArtifactAgentInput) {
   }
   const located = await locateArtifact(ctx, input.scope, input.id, input.file)
   if (!located.ok) return located
+  if (input.file.endsWith("/design.json")) {
+    const manifest = await ctx.fs.readFile(located.data.path).catch(() => "{}")
+    return ok({
+      found: located.data,
+      html: `<!-- design-artifact -->\n${manifest}`,
+    })
+  }
   const source = await artifactWorkspaceRead(ctx, input.scope, input.id, input.file, "source")
   if (!source.ok) return source
   return ok({ found: located.data, html: (source.data as { html: string }).html })

@@ -28,6 +28,9 @@ export const SHOW_ME_PAGES = TASK_ARTIFACTS
 
 /** A page of a folder artifact: a plain file name at the top of the folder, ending in `.html`. */
 export const ARTIFACT_PAGE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*\.html$/
+/** Canonical entry file for a structured `kind: "design"` artifact folder. */
+export const DESIGN_ENTRY = "design.json"
+export type ArtifactKind = "html" | "design"
 
 /**
  * The most files one folder artifact may hold (an artifact is pages, scripts, styles, fonts, pictures).
@@ -96,11 +99,13 @@ export function folderArtifactOf(
   const match = doc.match(
     /^(artifacts|docs\/artifacts|\.qualitylayer\/artifacts|design|docs\/designs|\.qualitylayer\/designs)\/([a-z0-9][a-z0-9-]*)\/([^/\\]+)$/,
   )
-  if (match === null || !ARTIFACT_PAGE_NAME.test(match[3] as string)) return null
+  if (match === null) return null
+  const page = match[3] as string
+  if (!ARTIFACT_PAGE_NAME.test(page) && page !== DESIGN_ENTRY) return null
   return {
     root: match[1] as FolderArtifactRoot,
     name: match[2] as string,
-    page: match[3] as string,
+    page,
   }
 }
 
@@ -302,6 +307,7 @@ export type TokenSummary = {
 
 export type LastingArtifact = {
   name: string
+  kind?: ArtifactKind
   title: string
   purpose: string
   entry: string

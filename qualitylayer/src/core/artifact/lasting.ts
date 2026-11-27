@@ -17,6 +17,7 @@ import { type Ctx, err, ok, type Result } from "../../ctx.ts"
 import {
   ARTIFACT_NAME,
   ARTIFACT_PAGE_NAME,
+  DESIGN_ENTRY,
   LASTING_ARTIFACTS,
   LASTING_CONFIG,
   LASTING_CONFIG_MAX_BYTES,
@@ -164,7 +165,13 @@ async function readLastingIn(
     `${registry}/${name}`,
   )
   if (!resolved.ok) return resolved
-  const pages = await pagesOf(resolved.data.dir, loaded.data.config.entry)
+  const pages =
+    loaded.data.config.kind === "design"
+      ? (await lstat(join(resolved.data.dir, DESIGN_ENTRY)).catch(() => null))?.isFile() === true ||
+        (await lstat(join(resolved.data.dir, "tokens.json")).catch(() => null))?.isFile() === true
+        ? ok([DESIGN_ENTRY])
+        : bad("design artifact folder is missing design.json / tokens.json")
+      : await pagesOf(resolved.data.dir, loaded.data.config.entry)
   return pages.ok
     ? ok({
         name,

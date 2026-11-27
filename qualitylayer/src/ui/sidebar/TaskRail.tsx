@@ -5,6 +5,7 @@
 
 import { cn } from "cn"
 import {
+  CompassIcon,
   HouseIcon,
   LaptopIcon,
   PanelLeftIcon,
@@ -261,6 +262,7 @@ export function TaskRail({
   projectOf,
   homeWaiting,
   onHome,
+  onProduct,
   onArtifacts,
   onExpand,
   machines = null,
@@ -277,6 +279,7 @@ export function TaskRail({
   projectOf: (task: TaskSummary) => Pick<ProjectFacts, "letters" | "color" | "label">
   homeWaiting: number
   onHome: () => void
+  onProduct?: () => void
   onArtifacts: () => void
   onExpand: () => void
   /** The switcher's list; null while no machine is added, and then the rail has no tile for it. */
@@ -323,6 +326,20 @@ export function TaskRail({
             testId="rail-home"
             chord={CHORD.home}
           />
+          {onProduct ? (
+            <Tip label="Product">
+              <button
+                type="button"
+                className="q-rail-ib"
+                aria-label="Product"
+                aria-current={route.view === "product" ? "page" : undefined}
+                onClick={onProduct}
+                data-testid="rail-product"
+              >
+                <CompassIcon className="size-4" aria-hidden="true" />
+              </button>
+            </Tip>
+          ) : null}
           <Place
             label="Artifacts"
             icon={<ShapesIcon className="size-4" aria-hidden="true" />}

@@ -335,6 +335,7 @@ export function Sidebar(props: Props) {
         projectOf={factsOf}
         homeWaiting={homeWaiting}
         onHome={home}
+        onProduct={() => go({ view: "product" })}
         onArtifacts={() => go({ view: "artifacts" })}
         onExpand={props.rail.onExpand}
         machines={machines}

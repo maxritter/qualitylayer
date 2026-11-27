@@ -196,7 +196,8 @@ function deriveAppShellState(
   const draftTarget =
     route.view === "task" && q.open.data?.id === route.id
       ? taskContextTarget(window.location.href, q.open.data)
-      : route.view === "artifact" && artifactAddress?.scope === "project"
+      : (route.view === "artifact" || route.view === "product") &&
+          artifactAddress?.scope === "project"
         ? artifactContextTarget(window.location.href, artifactAddress.id, artifactAddress.file)
         : undefined
   const gridTemplateColumns =
@@ -241,7 +242,8 @@ function AppPage({
     layout.routeScope,
     layout.artifactDetail,
   )
-  const standaloneArtifactAddress = route.view === "artifact" ? artifactAddress : null
+  const standaloneArtifactAddress =
+    route.view === "artifact" || route.view === "product" ? artifactAddress : null
   const artifactRun = artifactRunFor(runs?.runs ?? [], standaloneArtifactAddress)
   const ws = useAppWorkspaceModes({
     route,

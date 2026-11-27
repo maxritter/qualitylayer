@@ -1,8 +1,13 @@
 import { InfoIcon } from "lucide-react"
-import { useCallback, useState } from "react"
+import { lazy, Suspense, useCallback, useState } from "react"
 import { toast } from "sonner"
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { type LastingArtifact, lastingDoc, lastingDocOf } from "../../core/artifact/format.ts"
+
+const LazyDesignArtifactView = lazy(() =>
+  import("../design/DesignArtifactView.tsx").then((m) => ({ default: m.DesignArtifactView })),
+)
+
 import { useTerminalLayout } from "../agent-window/layout.tsx"
 import { ArtifactAgentChip } from "../artifact/ArtifactAgentChip.tsx"
 import type { ArtifactManager } from "../artifact/ArtifactManage.tsx"
@@ -182,88 +187,104 @@ export function LastingArtifactView(props: LastingViewerProps) {
       toolbar={setToolbar}
       sidebar={sidebar}
     >
-      <ArtifactPage
-        title={entry.title}
-        artifact={artifact}
-        toolbarHost={toolbar}
-        html={page.data}
-        error={page.data === null ? (page.error?.message ?? null) : null}
-        onMark={(mark) =>
-          askArtifactAgentAt({
-            api,
-            target: artifactContextTarget(window.location.href, route.project, shownFile),
-            title: entry.title,
-            mark,
-            open: openAgent,
-          })
-        }
-        agent={
-          props.artifactAgent ? (
-            <ArtifactAgentChip
-              agent={props.artifactAgentId}
-              name={props.artifactAgentName ?? "The agent"}
-              running={props.artifactAgentRunning === true}
-              title={entry.title}
-              onOpen={openAgent}
-            />
-          ) : undefined
-        }
-        notice={
-          <>
-            <FavoriteFeedback />
-            <ArchivedArtifactNotice entry={entry} state={restore} />
-          </>
-        }
-        back={{ label: from?.title ?? "Artifacts", onClick: from ? backToTask : back }}
-        loadPage={data.loadPage}
-        onRetry={page.reload}
-        onPageChange={setSelectedPage}
-        initialPage={lastingDocOf(route.file)?.page !== entry.entry ? route.file : undefined}
-        section={route.at}
-        pageMarks={data.marks}
-        manager={manager}
-        onOpenBrowser={(location) =>
-          void api
-            .artifactOpen(where, location.file ?? shownFile, "browser", {
-              viewer: true,
-              section: location.section,
+      {entry.kind === "design" ? (
+        <Suspense
+          fallback={
+            <div className="p-5 text-sm text-muted-foreground">Loading design artifact…</div>
+          }
+        >
+          <LazyDesignArtifactView
+            projectId={route.project}
+            artifactName={entry.name}
+            title={entry.title}
+            onBack={from ? backToTask : back}
+            onAskAgent={() => openAgent()}
+          />
+        </Suspense>
+      ) : (
+        <ArtifactPage
+          title={entry.title}
+          artifact={artifact}
+          toolbarHost={toolbar}
+          html={page.data}
+          error={page.data === null ? (page.error?.message ?? null) : null}
+          onMark={(mark) =>
+            askArtifactAgentAt({
+              api,
+              target: artifactContextTarget(window.location.href, route.project, shownFile),
+              title: entry.title,
+              mark,
+              open: openAgent,
             })
-            .catch((cause: Error) => toast.error(cause.message))
-        }
-        rail={{
-          open: side.open,
-          onToggle: () => side.show(!side.open),
-          what: "artifact sidebar",
-        }}
-        fullScreen={props.fullScreen}
-        onFullScreen={props.onFullScreen}
-        menu={props.menu}
-        compact={props.compact}
-        moreItems={
-          <>
-            <FavoriteMenuItem id={favoriteKey(route.project, entry.name)} title={entry.title} />
-            <DropdownMenuItem onClick={openFiles}>
-              <InfoIcon aria-hidden="true" />
-              Artifact information and history
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        }
-        actions={(tools) => (
-          <LibraryActions
-            api={api}
-            artifact={entry}
-            owner={route.project}
-            projects={data.choices}
-            reload={overview.reload}
-            go={go}
-            inViewer
-          >
-            {tools}
-          </LibraryActions>
-        )}
-        header={<ArtifactLibraryIdentity title={entry.title} facts={facts} back={back} />}
-      />
+          }
+          agent={
+            props.artifactAgent ? (
+              <ArtifactAgentChip
+                agent={props.artifactAgentId}
+                name={props.artifactAgentName ?? "The agent"}
+                running={props.artifactAgentRunning === true}
+                title={entry.title}
+                onOpen={openAgent}
+              />
+            ) : undefined
+          }
+          notice={
+            <>
+              <FavoriteFeedback />
+              <ArchivedArtifactNotice entry={entry} state={restore} />
+            </>
+          }
+          back={{ label: from?.title ?? "Artifacts", onClick: from ? backToTask : back }}
+          loadPage={data.loadPage}
+          onRetry={page.reload}
+          onPageChange={setSelectedPage}
+          initialPage={lastingDocOf(route.file)?.page !== entry.entry ? route.file : undefined}
+          section={route.at}
+          pageMarks={data.marks}
+          manager={manager}
+          onOpenBrowser={(location) =>
+            void api
+              .artifactOpen(where, location.file ?? shownFile, "browser", {
+                viewer: true,
+                section: location.section,
+              })
+              .catch((cause: Error) => toast.error(cause.message))
+          }
+          rail={{
+            open: side.open,
+            onToggle: () => side.show(!side.open),
+            what: "artifact sidebar",
+          }}
+          fullScreen={props.fullScreen}
+          onFullScreen={props.onFullScreen}
+          menu={props.menu}
+          compact={props.compact}
+          moreItems={
+            <>
+              <FavoriteMenuItem id={favoriteKey(route.project, entry.name)} title={entry.title} />
+              <DropdownMenuItem onClick={openFiles}>
+                <InfoIcon aria-hidden="true" />
+                Artifact information and history
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          }
+          actions={(tools) => (
+            <LibraryActions
+              api={api}
+              artifact={entry}
+              owner={route.project}
+              projects={data.choices}
+              reload={overview.reload}
+              go={go}
+              inViewer
+            >
+              {tools}
+            </LibraryActions>
+          )}
+          header={<ArtifactLibraryIdentity title={entry.title} facts={facts} back={back} />}
+        />
+      )}
     </ArtifactViewerShell>
   )
 }

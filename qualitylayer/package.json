@@ -125,6 +125,7 @@
     "cn": "0.4.0",
     "css-tree": "3.2.1",
     "dompurify": "3.4.17",
+    "elkjs": "^0.12.2",
     "geist": "1.7.2",
     "grok-mermaid": "0.2.3",
     "lucide-react": "1.48.0",

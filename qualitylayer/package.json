@@ -62,6 +62,7 @@
     "eval:activation": "bun run tests/release/activation.ts",
     "proof:docker": "bun run tests/proof/docker/run.ts",
     "proof:machines": "bun run tests/proof/machines/run.ts",
+    "dev:remote-machine": "bun run scripts/dev-remote-machine.ts",
     "proof:done-means": "bun run tests/release/done-means.ts",
     "proof:team-agents": "bun run tests/release/team-agents.ts"
   },

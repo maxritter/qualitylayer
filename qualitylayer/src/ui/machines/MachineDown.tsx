@@ -35,11 +35,12 @@ export const clockOf = (at: number): string => {
 /** An offline machine whose ssh port refuses: Remote Login (the ssh server) is off there. */
 export const refusesSsh = (machine: Machine): boolean =>
   machine.state === "offline" &&
-  // A port that refuses, or one that closes before ssh's greeting (Docker's published port with no
-  // ssh server behind it).
-  /connection refused|port \d+ is closed|connection closed by|kex_exchange_identification/i.test(
-    machine.reason ?? "",
-  )
+  // A port that refuses, or one that closes before ssh's greeting on a machine never reached yet
+  // (Docker's published port with no ssh server behind it). Once a machine has already connected,
+  // an abrupt close during reconnect indicates a cut network/tunnel rather than Remote Login off.
+  (/connection refused|port \d+ is closed/i.test(machine.reason ?? "") ||
+    (machine.version === undefined &&
+      /connection closed by|kex_exchange_identification/i.test(machine.reason ?? "")))
 
 /** "0:24": how long until the next try by itself. */
 function countdown(until: number, now: number): string {

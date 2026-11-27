@@ -36,10 +36,15 @@ export function leadBulletText({ lead = "", text }: Pick<LeadBullet, "lead" | "t
 function splitVerboseBullet(markdown: string): { head: string; rest: string } | null {
   const words = markdown.replace(/[*_`]/g, "").trim().split(/\s+/).filter(Boolean).length
   if (words <= VERBOSE_BULLET_WORDS) return null
-  const match = /^(\*\*[^*]+\*\*:?)\s+(.+)$/s.exec(markdown.trim())
-  if (match === null) return null
-  const head = (match[1] ?? "").trim()
-  const rest = (match[2] ?? "").trim()
+  const trimmed = markdown.trim()
+  if (!trimmed.startsWith("**")) return null
+  const close = trimmed.indexOf("**", 2)
+  if (close <= 2) return null
+  const afterBold = trimmed[close + 2] === ":" ? close + 3 : close + 2
+  const sep = trimmed[afterBold]
+  if (sep === undefined || !/\s/.test(sep)) return null
+  const head = trimmed.slice(0, afterBold).trim()
+  const rest = trimmed.slice(afterBold + 1).trim()
   return rest === "" ? null : { head, rest }
 }
 

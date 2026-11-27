@@ -1206,7 +1206,7 @@
       ],
       "demo": "/app-demo/?open=text:Beta#/settings/about",
       "note": "Beta is an update preference and does not replace the installed model version. The13.1.0 fixture shows the actual no-cache or unavailable release-notes branch and keeps the public GitHub link; no old Team/Slack feature is presented as current. Local tour, Report, server/SSH and update controls remain proposed until whole-view comparison.",
-      "gap": "Local Settings shell, local instructions and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
+      "gap": "Local Settings shell, local instructions, Default artifact fidelity row (Low/Medium/High) and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
     },
     "settings-about.html": {
       "status": "planned",
@@ -1218,7 +1218,7 @@
       ],
       "demo": "/app-demo/#/settings/about",
       "note": "Max requested hourly automatic update checks on 26 October 2026. The running desktop App checks when no successful check exists or its last successful check is at least one hour old; Check now remains immediate, downloads stay in the background and restart requires the person's action. CLI notices read cached App state without adding a network poll. Help includes existing-route Replay tour or Continue tour. Report disclosure describes deliberate public GitHub preview, basic App/OS details and reviewed user text/screenshots; no automatic recent-errors claim. Sync 31 October 2026: What's new reads What's new in 12.7.0 with New and Fixed lists; Earlier releases lists 11.9.2 and 11.9.1.",
-      "gap": "Local Settings shell, local instructions and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
+      "gap": "Local Settings shell, local instructions, Default artifact fidelity row (Low/Medium/High) and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
     },
     "settings-agent-models.html": {
       "status": "planned",
@@ -1653,7 +1653,7 @@
       ],
       "demo": "/app-demo/#/settings/workflow",
       "note": "Local-only Your instructions retains Write, required Steps, Preview, explicit Save, length cap, cancel/discard and conflict/failure recovery. No hosted Team instructions or locked Team precedence. Canonical workflow assets are readable bundled source; no additional Settings reader row is proposed. One way of working (approved by Max, 11 November 2026, ui-13-1 › one-way): no Level row and no New tasks group; Your instructions leads the Your agent group (Answer questions in, Approve in, Offer QualityLayer). This model does not establish production parity. Reviews (approved by Max, 11 November 2026, draft review-models): three compact rows, Independent review (Verify, Each recheck), Design review (Plan, Each design) and Second opinion (Plan, Verify), each with step pills, one line, the per-agent models as chips (agent marks, model) that open Settings › Models on that agent's row, Change in Models, and its switch. The Plan reviewers row, its panel seats and secondOpinion.planReviewers/panel are removed; extra planners stay a per-task engine (task start --planners). Your agent: Offer QualityLayer first; the places read In the App and In my own agent (hint: Your terminal, IDE or agent app: Claude Code, Codex, T3 Code, Orca…), wire values app/terminal unchanged. The second-opinion setting starts a review of the captured Plan. The task page identifies an earlier Plan when the author edits it after that capture. Settings reads and saves instructions through its dedicated routes. Task Changes history is a separate read projection in the shared API module.",
-      "gap": "Local Settings shell, local instructions and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
+      "gap": "Local Settings shell, local instructions, Default artifact fidelity row (Low/Medium/High) and source/licence disclosure are proposed; exact rendered states and current production comparison remain required. No hosted Team instruction authority is retained."
     },
     "setup.html": {
       "status": "planned",
@@ -2619,6 +2619,33 @@
       ],
       "demo": null,
       "note": "Approved 26 November 2026 (#268) & updated 27 November 2026 (#269 Option A + screen pager & multi-element composer): Direct Annotate button on Plan artifact previews, `< k / N >` screen paging with keyboard arrows outside inputs, armed multi-place element click & rectangle drag with screen-scoped numbered overlays, cross-screen Multi-select context composer (up to 12 refs in one shared instruction), DOM #id/data-testid context capture, independent scroll panes with non-scrolling top composer slot, click-pin-to-scroll, inline editing on staged pins, Planner context preview, and one-batch send."
+    },
+    "product-workspace.html": {
+      "status": "planned",
+      "files": [
+        "qualitylayer/src/ui/product/ProductPage.tsx",
+        "qualitylayer/src/ui/product/ProductPrdTab.tsx",
+        "qualitylayer/src/ui/product/ProductBriefTab.tsx",
+        "qualitylayer/src/ui/product/ProductPersonasTab.tsx",
+        "qualitylayer/src/ui/product/product.css"
+      ],
+      "demo": null,
+      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Peer Product navigation item between Home and Artifacts with #/product/:projectId/:tab route, project selector, uninitialized empty state, Goal KPIs, Brief & Principles with Human/Agent dual docs, Personas, Initiatives & PRD with live task badges and idempotent Start task bridge.",
+      "gap": "Product workspace UI components land in Slice 7."
+    },
+    "design-artifact.html": {
+      "status": "planned",
+      "files": [
+        "qualitylayer/src/ui/design/DesignArtifactView.tsx",
+        "qualitylayer/src/ui/design/DesignRenderer.tsx",
+        "qualitylayer/src/ui/design/FlowGraph.tsx",
+        "qualitylayer/src/ui/design/ComponentInspector.tsx",
+        "qualitylayer/src/ui/design/DesignChecks.tsx",
+        "qualitylayer/src/ui/design/design.css"
+      ],
+      "demo": null,
+      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Structured kind='design' lasting artifact viewer inside Artifacts with Screen/Flow(elkjs)/Components(22 core stays parts + custom SVG)/Checks views, Low/Medium/High fidelity switcher initialized from Settings > Workflow > Artifact fidelity, clickable Play hotspots, Breakdown sheet state, inert static HTML export, and Conversation/Terminal/Files right sidebar.",
+      "gap": "Design Artifact viewer UI components land in Slice 6."
     }
   }
 }

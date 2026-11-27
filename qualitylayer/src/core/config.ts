@@ -21,6 +21,7 @@ import { settleConfig } from "./config-settle.ts"
 import { type Config, DEFAULT_CONFIG } from "./config-values.ts"
 
 export {
+  type ArtifactFidelity,
   type Config,
   type CrossReviewPoint,
   SESSION_MODEL,

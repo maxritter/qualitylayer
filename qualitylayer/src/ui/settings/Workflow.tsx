@@ -6,11 +6,19 @@ import {
   MessageCircleQuestionMarkIcon,
   MessageSquarePlusIcon,
   ScrollTextIcon,
+  ShapesIcon,
+  SignalHighIcon,
+  SignalLowIcon,
+  SignalMediumIcon,
   SquareTerminalIcon,
 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { Switch } from "@/components/ui/switch"
-import type { Answers } from "../../core/config-values.ts"
+import {
+  type Answers,
+  type ArtifactFidelity,
+  artifactFidelityOf,
+} from "../../core/config-values.ts"
 import { requiredLines } from "../../core/required-parse.ts"
 import type { Api, Config, InstructionsText, SubagentModels } from "../api.ts"
 import { whenWords } from "./About.tsx"
@@ -182,6 +190,54 @@ function YourAgentGroup({
   )
 }
 
+const FIDELITY_CHOICES: { id: ArtifactFidelity; name: string; icon: ReactNode; hint?: string }[] = [
+  {
+    id: "low",
+    name: "Low",
+    icon: <SignalLowIcon className="size-[13px]" />,
+    hint: "Structural wireframes: headings and actions read; secondary copy renders as grey bars.",
+  },
+  {
+    id: "medium",
+    name: "Medium",
+    icon: <SignalMediumIcon className="size-[13px]" />,
+    hint: "Structured labels, metrics and prices with simplified secondary descriptions.",
+  },
+  {
+    id: "high",
+    name: "High",
+    icon: <SignalHighIcon className="size-[13px]" />,
+    hint: "Product-fidelity components, real icons, states and realistic domain visuals.",
+  },
+]
+
+function ArtifactsGroup({
+  config,
+  onChange,
+}: {
+  config: Config
+  onChange: (patch: unknown) => void
+}) {
+  const fidelity = artifactFidelityOf(config.artifactFidelity)
+  return (
+    <SettingsGroup title="Artifacts" testId="settings-artifacts-group">
+      <SettingRow
+        icon={<ShapesIcon className="size-[15px]" />}
+        label="Default artifact fidelity"
+        hint="How granular new Plan mockups and Design Artifacts render by default. You can still switch per screen in the viewer."
+        testId="artifact-fidelity-row"
+      >
+        <Choice
+          label="Default artifact fidelity"
+          value={fidelity}
+          options={FIDELITY_CHOICES}
+          onChange={(artifactFidelity) => onChange({ artifactFidelity })}
+        />
+      </SettingRow>
+    </SettingsGroup>
+  )
+}
+
 export function WorkflowTab({
   config,
   subagents,
@@ -200,6 +256,7 @@ export function WorkflowTab({
   return (
     <div className="q-sgs">
       <YourAgentGroup config={config} onChange={onChange} api={api} />
+      <ArtifactsGroup config={config} onChange={onChange} />
       <ReviewsGroups config={config} available={available} onChange={onChange} />
     </div>
   )

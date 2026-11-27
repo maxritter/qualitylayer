@@ -43,19 +43,20 @@ const ENTRIES: readonly SettingsSection[] = [
     icon: ListChecksIcon,
     lead: "How new tasks are planned, reviewed and scanned.",
     words:
-      "instructions answer questions approve approval where terminal ide own agent app claude code codex t3 code orca chat offer independent review design review second opinion plan security scans secrets osv advisories vulnerable packages",
+      "instructions answer questions approve approval where terminal ide own agent app claude code codex t3 code orca chat offer independent review design review artifact fidelity wireframe granularity low medium high second opinion plan security scans secrets osv advisories vulnerable packages",
     rows: [
       "Offer QualityLayer",
       "Your instructions",
       "Answer questions in",
       "Approve in",
+      "Default artifact fidelity",
       "Independent review",
       "Second opinion",
       "Design review",
       "Scan each change",
       "Dependency advisories",
     ],
-    groups: ["Your agent"],
+    groups: ["Your agent", "Artifacts"],
   },
   {
     id: "agents",

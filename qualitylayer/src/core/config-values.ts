@@ -77,6 +77,20 @@ export function uiFontOf(value: unknown): UiFont {
   return UI_FONTS.includes(value as UiFont) ? (value as UiFont) : "geist"
 }
 
+/**
+ * Settings › Workflow › Default artifact fidelity: how granular new Plan mockups and Design
+ * Artifacts render by default. Agents read this via `artifact guide`; viewers still switch per screen.
+ */
+export type ArtifactFidelity = "low" | "medium" | "high"
+export const ARTIFACT_FIDELITIES: ArtifactFidelity[] = ["low", "medium", "high"]
+
+/** A value that is not a fidelity level defaults to high (product-fidelity). */
+export function artifactFidelityOf(value: unknown): ArtifactFidelity {
+  return ARTIFACT_FIDELITIES.includes(value as ArtifactFidelity)
+    ? (value as ArtifactFidelity)
+    : "high"
+}
+
 export type ReviewerAgent = NativeAgent
 
 /** When an enabled second opinion reads the Plan; Off leaves the change's choice alone. */
@@ -333,6 +347,8 @@ export type Config = {
   textSize: TextSize
   /** Settings › Appearance › Font. */
   uiFont: UiFont
+  /** Default granularity for new Plan mockups and Design Artifacts: low wireframe, medium structured, or high product-fidelity. */
+  artifactFidelity: ArtifactFidelity
   /**
    * The models an agent's helpers run on: `helpers` for research, Chat slices, fixes and
    * security, `judge` for the fresh judge (Settings › Models › Independent review), `design` for
@@ -495,6 +511,7 @@ export const DEFAULT_CONFIG: Config = {
   animations: "system",
   textSize: 100,
   uiFont: "geist",
+  artifactFidelity: "high",
   addedModels: {
     "claude-code": [],
     codex: [],

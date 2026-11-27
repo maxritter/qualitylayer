@@ -16,6 +16,7 @@ import { chatCmd } from "./cli/commands/chat.ts"
 import { checkCmd } from "./cli/commands/check.ts"
 import { serveCmd } from "./cli/commands/cockpit.ts"
 import { commitCmd } from "./cli/commands/commit.ts"
+import { designCmd } from "./cli/commands/design.ts"
 import { evidenceCmd } from "./cli/commands/evidence.ts"
 import { feedbackCmd } from "./cli/commands/feedback.ts"
 import { gateCmd } from "./cli/commands/gate.ts"
@@ -33,6 +34,7 @@ import { nextCmd } from "./cli/commands/next.ts"
 import { peersCmd } from "./cli/commands/peers.ts"
 import { planCmd } from "./cli/commands/plan.ts"
 import { prCmd } from "./cli/commands/pr.ts"
+import { productCmd } from "./cli/commands/product.ts"
 import { progressCmd } from "./cli/commands/progress.ts"
 import { qualityCmd, qualityScanUsage } from "./cli/commands/quality.ts"
 import { questionCmd } from "./cli/commands/question.ts"
@@ -221,6 +223,8 @@ export const commands: Record<string, Handler> = {
   comments: commentsCmd,
   task: taskCmd,
   artifact: artifactCmd,
+  product: productCmd,
+  design: designCmd,
   evidence: evidenceCmd,
   validate: validateCmd,
   // A topic's page at any stage; a development build also prints a phase by its name.

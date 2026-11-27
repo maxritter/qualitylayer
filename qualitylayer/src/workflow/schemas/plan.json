@@ -342,6 +342,7 @@
     "fence-style-safe",
     "markers-owned",
     "plan-artifact",
+    "plan-concise",
     "your-call-count",
     "done-means-proof",
     "mermaid-parses",

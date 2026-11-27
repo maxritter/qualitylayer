@@ -5,7 +5,7 @@
 // bullet may end in a quiet control or tag (`trailing`, as a Change button) or hold a block under its
 // words (`below`); the form stays one.
 
-import type { ReactNode } from "react"
+import { type ReactNode, useState } from "react"
 import { trimEndCharacters } from "../../../core/text-boundaries.ts"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 
@@ -24,6 +24,8 @@ export type LeadBullet = {
   editing?: ReactNode
 }
 
+const VERBOSE_BULLET_WORDS = 18
+
 /** A bullet's Markdown: the lead bold and ending in a full stop, then its text. */
 export function leadBulletText({ lead = "", text }: Pick<LeadBullet, "lead" | "text">): string {
   const head = trimEndCharacters(lead.trim(), ":.")
@@ -31,7 +33,49 @@ export function leadBulletText({ lead = "", text }: Pick<LeadBullet, "lead" | "t
   return `**${head}${/[!?]$/.test(head) ? "" : "."}**${text === "" ? "" : ` ${text}`}`
 }
 
-export function LeadBullets({ items, testId }: { items: readonly LeadBullet[]; testId?: string }) {
+function splitVerboseBullet(markdown: string): { head: string; rest: string } | null {
+  const words = markdown.replace(/[*_`]/g, "").trim().split(/\s+/).filter(Boolean).length
+  if (words <= VERBOSE_BULLET_WORDS) return null
+  const match = /^(\*\*[^*]+\*\*:?)\s+(.+)$/s.exec(markdown.trim())
+  if (match === null) return null
+  const head = (match[1] ?? "").trim()
+  const rest = (match[2] ?? "").trim()
+  return rest === "" ? null : { head, rest }
+}
+
+function CollapsibleBulletText({ markdown }: { markdown: string }) {
+  const [open, setOpen] = useState(false)
+  const parts = splitVerboseBullet(markdown)
+  if (parts === null) return <InlineMarkdown text={markdown} />
+  return (
+    <>
+      <InlineMarkdown text={parts.head} />{" "}
+      <button
+        type="button"
+        className="q-link text-[12px]"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+      >
+        {open ? "Hide" : "Details"}
+      </button>
+      {open ? (
+        <span className="mt-1 block text-muted-foreground">
+          <InlineMarkdown text={parts.rest} />
+        </span>
+      ) : null}
+    </>
+  )
+}
+
+export function LeadBullets({
+  items,
+  testId,
+  collapsible = false,
+}: {
+  items: readonly LeadBullet[]
+  testId?: string
+  collapsible?: boolean
+}) {
   return (
     <div className="bd-sumb" data-testid={testId}>
       <ul className="bd-bul">
@@ -45,7 +89,11 @@ export function LeadBullets({ items, testId }: { items: readonly LeadBullet[]; t
               item.editing
             ) : (
               <>
-                <InlineMarkdown text={leadBulletText(item)} />
+                {collapsible ? (
+                  <CollapsibleBulletText markdown={leadBulletText(item)} />
+                ) : (
+                  <InlineMarkdown text={leadBulletText(item)} />
+                )}
                 {item.trailing !== undefined ? <> {item.trailing}</> : null}
                 {item.below}
               </>

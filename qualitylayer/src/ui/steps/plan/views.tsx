@@ -338,6 +338,31 @@ function approachView(ctx: SectionCtx, input: ViewsInput): ReactNode {
   )
 }
 
+const VISUAL_FIRST_TITLES = ["Interface", "Diagrams"] as const
+
+/** Keep Summary (and optional Success measure) at the top, then surface Interface and Diagrams first. */
+export function prioritizePlanSections<T extends { title: string }>(sections: readonly T[]): T[] {
+  const visuals = VISUAL_FIRST_TITLES.flatMap((title) =>
+    sections.filter((section) => section.title === title),
+  )
+  if (visuals.length === 0) return [...sections]
+  const visualSet = new Set<string>(VISUAL_FIRST_TITLES)
+  const rest = sections.filter((section) => !visualSet.has(section.title))
+  const out: T[] = []
+  let inserted = false
+  for (const section of rest) {
+    out.push(section)
+    if (!inserted && (section.title === "Summary" || section.title === "Success measure")) {
+      const next = rest[rest.indexOf(section) + 1]
+      if (next?.title !== "Success measure") {
+        out.push(...visuals)
+        inserted = true
+      }
+    }
+  }
+  return inserted ? out : [...visuals, ...out]
+}
+
 /** The view of each section the Plan page draws itself; the others are the document's own drawing. */
 export function planViews(input: ViewsInput): Record<string, SectionRenderer> {
   return {

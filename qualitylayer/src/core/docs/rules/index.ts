@@ -28,6 +28,7 @@ import {
   wireframeFragment,
   wireframeHeader,
 } from "./page-rules.ts"
+import { planConcise } from "./plan-concise.ts"
 import type { Rule } from "./types.ts"
 import { validationTestsExist } from "./validation-tests.ts"
 import { verifyVerdicts } from "./verify-rules.ts"
@@ -47,6 +48,7 @@ export const rules: Record<string, Rule> = {
   "markers-owned": markersOwned,
   // A task's Plan.
   "plan-artifact": planArtifact,
+  "plan-concise": planConcise,
   "your-call-count": yourCallCount,
   "done-means-proof": doneMeansProof,
   "acceptance-before-fix": acceptanceBeforeFix,

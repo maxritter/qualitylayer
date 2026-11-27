@@ -18,10 +18,10 @@ Ask (*Asking the person*) in the order that changes what gets built: problem/Don
 
 Fill both templates in place and keep `{plan_doc}`'s front matter. Template hints own section formatting; write **Summary**, **Done means** and **Approach**, and optional sections only when non-empty. Keep `ql:` markers as two empty lines. Write each fact once.
 
-Four Plan layout rules (apply from the first draft):
-- *Summary*: one plain sentence on what the user gets, the outcome in 2 to 4 one-line bullets, then `**Size:**` and `**Trust boundary:**` (`**Risk:**` / `**Integrations:**` only when backed by the Plan).
-- **Scope**: always use `### In scope` and `### Out of scope` subheadings (under `### In scope`, add `` - **Repository:** `/absolute/path` `` when another checkout is needed).
-- **Diagrams**: give every Mermaid block its own concise `### <Title>` heading and a one-line caption below it (so the App never repeats the caption as a truncated title). For a new/changed router, agent or pipeline, diagram how requests move, branch and call tools.
+Four Plan layout rules (apply from the first draft — enforced by `plan draft`):
+- *Summary*: one plain sentence on what the user gets, the outcome in 2 to 4 one-line bullets (≤ 30 words each, no source paths or function names), then `**Size:**` and `**Trust boundary:**` (`**Risk:**` / `**Integrations:**` only when backed by the Plan).
+- **Scope**: always use `### In scope` and `### Out of scope` subheadings, at most 12 plain words and one line per bullet (no source paths or code identifiers; under `### In scope`, add `` - **Repository:** `/absolute/path` `` only when another checkout is needed).
+- **Visuals first (`Interface` & `Diagrams`)**: put changed screens (`Interface`) and Mermaid flows (`Diagrams`, each with a concise `### <Title>` heading and one-line caption below) prominently ahead of verbose text; for a new/changed router, agent or pipeline, diagram how requests move, branch and call tools.
 - **Done means (deterministic vs. stochastic)**: follow `Runs as:` and the `A1`/`A2` table with **3 to 6 consolidated observable steps** (group related cases and refusals into one step instead of one row per edge case; never test filters; name the *Interface* artifact for screens; mark person-only/remote steps under the step). Separate deterministic code/contract checks from stochastic or live-LLM/eval checks — give probabilistic checks an explicit pass threshold and a hard spend/retry cap instead of "in every run". For a rule, parser, policy, or state transition, state both when it holds and when it refuses (converses and boundaries) in Done means and Contracts — settle obvious defaults under *Decisions made for you* and ask only genuine product trade-offs.
 
 Additional file rules:

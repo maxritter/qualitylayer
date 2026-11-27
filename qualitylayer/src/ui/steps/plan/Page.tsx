@@ -20,7 +20,7 @@ import type { StepPageProps } from "../page-props.ts"
 import { IntakeRow } from "../small-change-parts.tsx"
 import { PlanRevisionPanel, PlanRevisionToggle, usePlanRevisions } from "./PlanRevisionDiff.tsx"
 import { interfaceOf, planMeta, reviewMeta, reviewOf } from "./plan-model.ts"
-import { PlanBelow, planGist, planViews } from "./views.tsx"
+import { PlanBelow, planGist, planViews, prioritizePlanSections } from "./views.tsx"
 
 /** The header's meta line: bug fix, where the Plan stands (or a handback), the review. */
 function planMetaLine(
@@ -68,7 +68,9 @@ export function PlanStepPage({
   reload,
 }: StepPageProps) {
   // The page's order is the file's: the schema writes the sections in the order the page draws them.
-  const all = sections?.sections ?? []
+  const orderedSections =
+    sections === null ? null : { ...sections, sections: prioritizePlanSections(sections.sections) }
+  const all = orderedSections?.sections ?? []
   const sectionOf = (title: string) => all.find((s) => s.title === title)
   const acts = mode === "live" ? live : undefined
   const approve = state.plan?.approve
@@ -142,7 +144,7 @@ export function PlanStepPage({
   return (
     <StepPage
       document={document}
-      cut={sections}
+      cut={orderedSections}
       taskId={task.id}
       state={state}
       mode={mode}

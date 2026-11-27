@@ -2313,7 +2313,7 @@
         "qualitylayer/src/workflow/schemas/plan.json"
       ],
       "demo": null,
-      "note": "Approved 18 November. The current App reads optional Risk and Integrations from the Plan. The two controls open an explanation and link to Done means or Approach. The model runs the production header against an order-status Plan."
+      "note": "Approved 18 November. The current App reads optional Risk and Integrations from the Plan. The two controls open an explanation and link to Done means or Approach. The model runs the production header against an order-status Plan. 27 November: `plan-concise` rule enforces concise lead bullets without code paths, and Plan surfaces Interface and Diagrams ahead of prose sections."
     },
     "plan-status.html": {
       "status": "planned",

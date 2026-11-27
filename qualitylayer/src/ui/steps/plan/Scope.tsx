@@ -27,7 +27,7 @@ export function ScopeColumns({
         {heading}
       </span>
       {items.length > 0 ? (
-        <LeadBullets items={items.map((item) => ({ key: item, text: item }))} />
+        <LeadBullets collapsible items={items.map((item) => ({ key: item, text: item }))} />
       ) : (
         <p className="bd-quiet">Nothing.</p>
       )}

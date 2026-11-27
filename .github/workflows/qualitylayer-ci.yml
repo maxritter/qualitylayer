@@ -86,11 +86,79 @@ jobs:
             echo "Public licensing checks failed."
             exit 1
           fi
+  reuse-check:
+    name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Reuse passing CI checks on main push
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    permissions:
+      contents: read
+      checks: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      reuse: ${{ steps.decide.outputs.reuse }}
+    steps:
+      - name: Check exact-SHA passing CI checks
+        id: decide
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            if (context.eventName !== 'push' || context.ref !== 'refs/heads/main') {
+              core.setOutput('reuse', 'false');
+              return;
+            }
+            const required = [
+              'Site API and pages',
+              'Release smoke (ubuntu-latest)',
+              'Release smoke (macos-26)',
+              'No text overflows a control (ubuntu-latest, shard 1/2)',
+              'No text overflows a control (ubuntu-latest, shard 2/2)',
+              'Native Windows runtime (windows-2025, shard 1/6)',
+              'Native Windows runtime (windows-2025, shard 2/6)',
+              'Native Windows runtime (windows-2025, shard 3/6)',
+              'Native Windows runtime (windows-2025, shard 4/6)',
+              'Native Windows runtime (windows-2025, shard 5/6)',
+              'Native Windows runtime (windows-2025, shard 6/6)',
+              'Native ConPTY (x64)',
+              'Typecheck, lint, test (ubuntu-latest, shard 1/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 2/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 2/8 companion)',
+              'Typecheck, lint, test (ubuntu-latest, shard 3/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 4/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 5/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 6/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 7/8)',
+              'Typecheck, lint, test (ubuntu-latest, shard 8/8)',
+            ];
+            const runs = await github.paginate(github.rest.checks.listForRef, {
+              ...context.repo,
+              ref: context.sha,
+              filter: 'all',
+              per_page: 100,
+            });
+            const latest = new Map();
+            for (const r of runs) {
+              if (r.head_sha !== context.sha || r.app?.slug !== 'github-actions' || r.conclusion === 'skipped') {
+                continue;
+              }
+              const prev = latest.get(r.name);
+              if (!prev || r.id > prev.id) latest.set(r.name, r);
+            }
+            const missing = required.filter((name) => {
+              const run = latest.get(name);
+              return !run || run.status !== 'completed' || run.conclusion !== 'success';
+            });
+            const passed = missing.length === 0;
+            core.setOutput('reuse', passed ? 'true' : 'false');
+            core.info(
+              passed
+                ? `Reusing ${required.length} passing CI checks for ${context.sha}.`
+                : `Running main push CI for ${context.sha}; missing or non-passing checks: ${missing.join(', ')}`,
+            );
   beta-smoke:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Release smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     strategy:
       fail-fast: false
       matrix:
@@ -142,13 +210,13 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/7b274efc5c72dba1574a585a6505ffcbfc65fcbefc99f251118be82084aded3a.sh"
         shell: bash
-    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.reuse-check.outputs.reuse != 'true' && !(inputs.full_regression && inputs.diagnostic)
   test:
-    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && ((github.event_name == 'workflow_dispatch' && inputs.full_regression) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    if: (github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) && needs.reuse-check.outputs.reuse != 'true' && ((github.event_name == 'workflow_dispatch' && inputs.full_regression) || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Typecheck, lint, test (${{ matrix.os }}, shard ${{ matrix.shard }}/${{ matrix.shards }}${{ matrix.companion && ' companion' || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     strategy:
       fail-fast: false
       matrix:
@@ -339,7 +407,7 @@ jobs:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}No text overflows a control (${{ matrix.os }}, shard ${{ matrix.shard }}/2)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     strategy:
       fail-fast: false
       matrix:
@@ -393,12 +461,12 @@ jobs:
           QL_CI_INPUT_1: ${{ matrix.shard }}
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/2d869828c37f66e254f5268b3058dfc174ff2dd1f32e42c5091498f11d8e660f.sh"
         shell: bash
-    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.reuse-check.outputs.reuse != 'true' && !(inputs.full_regression && inputs.diagnostic)
   site:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Site API and pages
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -468,12 +536,12 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
         run: python3 "${{ github.workspace }}/.github/scripts/release-private-command.py" bash "${{ github.workspace }}/.github/private-workflows/ci-commands/d1970621026f26e8128720ba4398c546260000acede7bbc9224f807a92fdf93f.sh"
         shell: bash
-    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.reuse-check.outputs.reuse != 'true' && !(inputs.full_regression && inputs.diagnostic)
   windows:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Native Windows runtime (${{ matrix.os }}, shard ${{ matrix.shard }}/6)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     strategy:
       fail-fast: false
       matrix:
@@ -563,11 +631,11 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
         run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/45b2b4050d5a50fe4b816e19ad688c12fc2835ec172a9fe20c6522b606366e52.ps1"
         shell: pwsh
-    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.reuse-check.outputs.reuse != 'true' && !(inputs.full_regression && inputs.diagnostic)
   windows-terminal:
     name: ${{ inputs.full_regression && inputs.diagnostic && 'Diagnostic · ' || '' }}Native ConPTY (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
-    needs: plaintext-guard
+    needs: [plaintext-guard, reuse-check]
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -643,4 +711,4 @@ jobs:
           QL_RELEASE_EXPORTS: "{}"
         run: python "${{ github.workspace }}/.github/scripts/release-private-command.py" pwsh "${{ github.workspace }}/.github/private-workflows/ci-commands/8ddbce549a39af350fd503051010d819cdbf4a2abf915afb3dfedb7288f0ebbf.ps1"
         shell: pwsh
-    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && !(inputs.full_regression && inputs.diagnostic)
+    if: github.repository == 'maxritter/qualitylayer' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && needs.reuse-check.outputs.reuse != 'true' && !(inputs.full_regression && inputs.diagnostic)

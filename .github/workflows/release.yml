@@ -277,7 +277,8 @@ jobs:
           fi
           if ! state=$(jq -r --arg sha "$RELEASE_SOURCE_SHA" --rawfile required "$required" '
             [.[].check_runs[] | select(.head_sha == $sha and .app.slug == "github-actions")]
-            | group_by(.name) | map(max_by(.id)) as $latest
+            | group_by(.name)
+            | map((map(select(.conclusion != "skipped")) | if length > 0 then max_by(.id) else null end) // max_by(.id)) as $latest
             | ($required | split("\n") | map(select(length > 0))) as $wanted
             | if any($latest[]; . as $run | ($wanted | index($run.name)) != null and $run.status == "completed" and $run.conclusion != "success") then "failed"
               elif all($wanted[]; . as $name | any($latest[]; .name == $name and .status == "completed" and .conclusion == "success")) then "success"

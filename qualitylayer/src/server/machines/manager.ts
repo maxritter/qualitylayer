@@ -134,7 +134,7 @@ class MachineSet implements Machines {
   private gone = (machine: LiveMachine): boolean =>
     this.stopped || this.live.get(machine.stored.id) !== machine
 
-  /** Move the machine's connection by one event; true when it is connecting afterwards. */
+  /** Move the machine's connection by one event; true when a connection attempt should start now. */
   private step(machine: LiveMachine, event: ConnectionEvent): boolean {
     const before = machine.connection
     machine.connection = next(before, event)
@@ -143,6 +143,12 @@ class MachineSet implements Machines {
       this.changed()
     }
     this.planRetry(machine)
+    if (
+      machine.connection.state === "reconnecting" &&
+      (event.type === "retry" || event.type === "try-again")
+    ) {
+      return true
+    }
     return machine.connection.state === "connecting" && before.state !== "connecting"
   }
 
@@ -211,6 +217,17 @@ class MachineSet implements Machines {
     machine.seen = { system: link.system, version: link.version }
     if (machine.access === undefined || !(await stillSignedIn(link, machine.access)))
       machine.access = await signIn(link)
+    const wantedPort = link.listenPort ?? machine.stored.localPort
+    const canSwap =
+      machine.listener !== undefined && (wantedPort === 0 || machine.listener.port === wantedPort)
+    if (canSwap) {
+      machine.listener?.swap({
+        end: link.end,
+        machineHost: link.machineHost,
+        unreachable: () => this.lost(machine, link),
+      })
+      return
+    }
     await machine.listener?.close()
     machine.listener = await this.listen(machine, link)
   }

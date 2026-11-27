@@ -43,6 +43,8 @@ type ComposerActivityInput = {
   failing: boolean
   working: boolean
   tool?: string | undefined
+  /** Terminal WebSocket health: prevents claiming Ready while reconnecting or disconnected. */
+  transportStatus?: "live" | "reconnecting" | "disconnected" | undefined
 }
 
 function waitingActivity(input: ComposerActivityInput): ComposerActivity | undefined {
@@ -63,6 +65,20 @@ function waitingActivity(input: ComposerActivityInput): ComposerActivity | undef
 }
 
 function connectingActivity(input: ComposerActivityInput): ComposerActivity | undefined {
+  if (input.transportStatus === "reconnecting") {
+    return {
+      kind: "connecting",
+      text: "Reconnecting…",
+      label: "Reconnecting to the agent window",
+    }
+  }
+  if (input.transportStatus === "disconnected") {
+    return {
+      kind: "connecting",
+      text: "Disconnected",
+      label: "The agent window disconnected",
+    }
+  }
   if (input.failing) {
     return { kind: "connecting", text: "Retrying", label: "Retrying to read the conversation" }
   }

@@ -7,6 +7,11 @@ export type TerminalControlSender = (action: TerminalControl) => boolean
 /** How the terminal draws: with WebGL, without it by choice, or without it because WebGL failed. */
 export type RendererState = "webgl" | "basic" | "failed"
 export type PresentationState = "loading" | "connecting" | "restoring" | "ready" | "failed"
+export type ReconnectInfo = {
+  status: "live" | "reconnecting" | "disconnected"
+  attempt: number
+  max: number
+}
 export type TerminalOptions = {
   url: string
   generation: number
@@ -21,6 +26,7 @@ export type TerminalOptions = {
   onRenderer?: (state: RendererState) => void
   /** Ready means the initial output has been parsed and the display can be painted. */
   onPresentation?: (state: PresentationState) => void
+  onReconnectState?: (state: ReconnectInfo) => void
 }
 export type FreshResult = Extract<HostFrame, { type: "fresh-result" }>
 export interface TerminalView {

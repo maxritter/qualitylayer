@@ -20,6 +20,7 @@ import {
   asRequest,
   FOREIGN_HOST,
   headersFor,
+  type LocalEnd,
   NOT_CONNECTED,
   type PassThroughConfig,
   proofOf,
@@ -28,7 +29,12 @@ import { passSocket } from "./pass-socket.ts"
 
 export type { LocalEnd, MachineAccess, PassThroughConfig } from "./pass-headers.ts"
 
-export type PassThrough = { port: number; close(): Promise<void> }
+export type PassThrough = {
+  port: number
+  /** Swap the upstream target behind this bound listener and tear down stale tunnel sockets. */
+  swap(next: { end: LocalEnd; machineHost: string; unreachable?: () => void }): void
+  close(): Promise<void>
+}
 
 const isApi = (path: string): boolean => path.startsWith("/api/") || path === "/stream"
 
@@ -130,17 +136,34 @@ function passRequest(
 }
 
 /** Start one machine's listener on 127.0.0.1. */
-export function startPassThrough(config: PassThroughConfig): Promise<PassThrough> {
+export function startPassThrough(initial: PassThroughConfig): Promise<PassThrough> {
+  const config: PassThroughConfig = { ...initial }
   const open = new Set<Duplex>()
+  const upstream = new Set<Duplex>()
   const track = (socket: Duplex) => {
     open.add(socket)
     socket.once("close", () => open.delete(socket))
   }
+  const trackUpstream = (socket: Duplex) => {
+    upstream.add(socket)
+    socket.once("close", () => upstream.delete(socket))
+  }
   const server = createServer((incoming, outgoing) => passRequest(config, incoming, outgoing))
+  // Long-lived `/stream` SSE and WebSocket bridges must not be cut by Node/Bun's default 5-min timeout.
+  server.requestTimeout = 0
+  server.timeout = 0
+  server.keepAliveTimeout = 60_000
   server.on("upgrade", (incoming, socket, head) =>
-    passSocket(config, track, incoming, socket, head),
+    passSocket(config, track, incoming, socket, head, trackUpstream),
   )
   server.on("connection", track)
+  const swap: PassThrough["swap"] = (next) => {
+    config.end = next.end
+    config.machineHost = next.machineHost
+    if (next.unreachable !== undefined) config.unreachable = next.unreachable
+    for (const socket of upstream) socket.destroy()
+    upstream.clear()
+  }
   const close = () =>
     new Promise<void>((closed) => {
       for (const socket of open) socket.destroy()
@@ -153,7 +176,7 @@ export function startPassThrough(config: PassThroughConfig): Promise<PassThrough
       server.off("error", reject)
       const address = server.address()
       const port = typeof address === "object" && address !== null ? address.port : config.port
-      resolve({ port, close })
+      resolve({ port, swap, close })
     })
   })
 }

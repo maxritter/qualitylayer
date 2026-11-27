@@ -6,7 +6,13 @@ import { useSyncExternalStore } from "react"
 
 import { sharedValue } from "../hooks.ts"
 
-export type MachineState = "connecting" | "connected" | "offline" | "needs-you" | "unknown-host"
+export type MachineState =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "offline"
+  | "needs-you"
+  | "unknown-host"
 
 /** One machine as `GET /api/machines` lists it. */
 export type Machine = {

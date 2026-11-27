@@ -154,7 +154,9 @@ function Frames({
 
   const listed = machines ?? []
   const connected = listed.filter(
-    (machine) => machine.state === "connected" && machine.port !== undefined,
+    (machine) =>
+      (machine.state === "connected" || machine.state === "reconnecting") &&
+      machine.port !== undefined,
   )
   const shown = connected.find((machine) => machine.id === chosen?.id)
   const down = shown === undefined ? listed.find((machine) => machine.id === chosen?.id) : undefined

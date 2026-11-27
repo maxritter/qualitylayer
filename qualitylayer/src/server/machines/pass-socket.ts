@@ -62,8 +62,11 @@ export function passSocket(
   incoming: IncomingMessage,
   socket: Duplex,
   head: Buffer,
+  trackUpstream?: (socket: Duplex) => void,
 ): void {
   track(socket)
+  const tcpBrowser = socket as Duplex & { setKeepAlive?: (on: boolean, ms?: number) => void }
+  tcpBrowser.setKeepAlive?.(true, 15_000)
   socket.on("error", () => socket.destroy())
   const admitted = admitSocket(config, incoming)
   if ("status" in admitted) {
@@ -76,12 +79,14 @@ export function passSocket(
   // `net` names a socket file `path`, where `http` names it `socketPath`.
   const machine = connect("socket" in end ? { path: end.socket } : end, () => {
     joined = true
+    machine.setKeepAlive(true, 15_000)
     machine.write(upgradeHead(incoming, headers))
     if (head.length > 0) machine.write(head)
     machine.pipe(socket)
     socket.pipe(machine)
   })
   track(machine)
+  trackUpstream?.(machine)
   machine.on("error", () => {
     if (joined) socket.destroy()
     else refuseSocket(socket, { status: 502, reason: "the machine cannot be reached" })

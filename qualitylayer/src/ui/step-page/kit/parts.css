@@ -419,7 +419,7 @@
   .gal-figure-name h3 {
     margin: 0;
     color: var(--ql-text);
-    font: 600 13.5px / 1.32 var(--font-sans);
+    font: 600 14px / 1.32 var(--font-sans);
     overflow-wrap: anywhere;
   }
   .gal-fig-below {

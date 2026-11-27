@@ -340,7 +340,7 @@ const STORIES: Record<string, DemoStory> = {
         "Payment capture stays on the legacy client until the last slice, because a duplicate capture cannot be undone.",
       ],
       notDoing: [
-        "Dead-letter handling is out of scope. It keeps using the existing dead-letter page.",
+        "Dead-letter handling stays on the existing page.",
         "The legacy client is not removed in this task.",
       ],
       acceptance:

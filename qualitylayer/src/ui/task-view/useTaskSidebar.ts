@@ -8,6 +8,7 @@ import type { SidebarTab } from "../sidebar/RightSidebar.tsx"
 type SidebarContext = {
   task: TaskDetail
   outsideTask: boolean
+  compact?: boolean
   railOpen: boolean
   onRail: (open: boolean) => void
   artifactFile: string | null
@@ -16,7 +17,7 @@ type SidebarContext = {
   backToStage: () => void
 }
 
-/** Shared predicate for whether a task is being driven outside the App (no managed in-App run). */
+/** Shared predicate for whether a task is explicitly driven outside the App (no managed in-App run). */
 export function isOutsideTask(
   task: Pick<TaskDetail, "outside" | "session" | "start">,
   managedRun: boolean,
@@ -24,7 +25,7 @@ export function isOutsideTask(
 ): boolean {
   if (managedRun) return false
   const hasExternalOwner = task.outside !== undefined || buildsNext !== null
-  return hasExternalOwner || task.start?.where === "here" || task.session !== null
+  return hasExternalOwner || (task.start?.where === "here" && task.start.route === true)
 }
 
 const DIALOG_OR_POPUP_SELECTOR =
@@ -86,20 +87,21 @@ function useSidebarKeyEffect({
 function useOutsideFilesDefault(opts: {
   taskId: string
   outsideTask: boolean
+  compact: boolean
   railOpen: boolean
   onRail: (open: boolean) => void
   setSideTab: (tab: SidebarTab) => void
   terminalLayout: ReturnType<typeof useTerminalLayout>
 }) {
-  const { taskId, outsideTask, railOpen, onRail, setSideTab, terminalLayout } = opts
+  const { taskId, outsideTask, compact, railOpen, onRail, setSideTab, terminalLayout } = opts
   const defaultedFilesFor = useRef<string | null>(null)
   useEffect(() => {
     if (!outsideTask || defaultedFilesFor.current === taskId) return
     defaultedFilesFor.current = taskId
     setSideTab("files")
     if (terminalLayout?.rightActive) terminalLayout.setPanel("files")
-    if (!railOpen) onRail(true)
-  }, [outsideTask, taskId, railOpen, onRail, setSideTab, terminalLayout])
+    if (!compact && !railOpen) onRail(true)
+  }, [outsideTask, taskId, compact, railOpen, onRail, setSideTab, terminalLayout])
 }
 
 function useSidebarReturnFocus(railOpen: boolean, returnFocus: { current: boolean }) {
@@ -115,6 +117,7 @@ function useSidebarReturnFocus(railOpen: boolean, returnFocus: { current: boolea
 export function useTaskSidebar({
   task,
   outsideTask,
+  compact = false,
   railOpen,
   onRail,
   artifactFile,
@@ -130,6 +133,7 @@ export function useTaskSidebar({
   useOutsideFilesDefault({
     taskId: task.id,
     outsideTask,
+    compact,
     railOpen,
     onRail,
     setSideTab,

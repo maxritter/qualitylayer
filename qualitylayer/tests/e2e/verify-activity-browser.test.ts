@@ -115,6 +115,11 @@ test.skipIf(chrome === null && process.env.QUALITYLAYER_REQUIRE_RENDER !== "1")(
             "1 of 1 project check failed",
           )
           if (width === 1440) {
+            const agentTab = page
+              .getByTestId("right-sidebar")
+              .getByRole("tab", { name: /^(Agent|Conversation)$/ })
+              .first()
+            if ((await agentTab.count()) > 0) await agentTab.click()
             const outside = page.getByTestId("outside-lead")
             await webExpect(outside).toContainText("Verifying in Claude Code outside the App")
             await webExpect(

@@ -1,4 +1,4 @@
-import { CopyIcon } from "lucide-react"
+import { CopyIcon, PlayIcon } from "lucide-react"
 import { agentName } from "../../../core/live/liveness.ts"
 import { stagePrompt } from "../../../core/run/launch-spec.ts"
 import type { TaskDetail } from "../../api.ts"
@@ -9,10 +9,12 @@ export function ApprovedOutside({
   task,
   onRead,
   onCopy,
+  onBuildHere,
 }: {
   task: TaskDetail
   onRead: () => void
   onCopy: ClipboardCopy
+  onBuildHere?: () => void
 }) {
   const agent = agentName(task.start?.agent ?? null)
   const approvedAt = task.gate?.decided
@@ -56,8 +58,29 @@ export function ApprovedOutside({
         <h2 className="m-0 text-[15px] font-semibold">
           {compact ? "Compact, then build" : `Building next in ${agent}`}
         </h2>
-        <p className="m-0">{compact ? compactLine : "The same conversation will build it."}</p>
+        <p className="m-0">
+          {compact
+            ? `${compactLine} You can also say “continue the plan” in ${agent} at any time.`
+            : "The same conversation will build it."}
+        </p>
       </div>
+      {onBuildHere !== undefined ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-sunken px-3.5 py-2.5"
+          data-testid="outside-build-escape"
+        >
+          <div className="grid gap-0.5">
+            <h2 className="m-0 text-[13.5px] font-semibold">Build in QualityLayer instead</h2>
+            <p className="m-0 text-[12.5px] text-muted-foreground">
+              Stop the outside session first if it already started building.
+            </p>
+          </div>
+          <button type="button" className="q-btn sm shrink-0" onClick={onBuildHere}>
+            <PlayIcon size={13} aria-hidden="true" />
+            Start building here instead
+          </button>
+        </div>
+      ) : null}
       <Disclosure
         head="Other ways to build"
         className="w-full border-t border-line pt-3"

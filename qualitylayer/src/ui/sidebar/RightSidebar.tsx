@@ -76,6 +76,7 @@ export function RightSidebar({
   artifacts,
   artifactCount,
   artifactsNew = false,
+  filesFirst = false,
   notice = null,
   onClose,
   focusKey,
@@ -95,6 +96,8 @@ export function RightSidebar({
   artifactCount: number
   /** An artifact changed since this viewer looked: a dot instead of the count. */
   artifactsNew?: boolean
+  /** Put Files first on the left (when working outside the QualityLayer App). */
+  filesFirst?: boolean
   /** A line under the tabs when it opened by itself; null otherwise. */
   notice?: string | null
   onClose: () => void
@@ -142,6 +145,7 @@ export function RightSidebar({
           label={label}
           shared={shared}
           taskAgent={taskAgent}
+          filesFirst={filesFirst}
           open={open}
           shown={shown}
           terminalLayout={terminalLayout ?? null}

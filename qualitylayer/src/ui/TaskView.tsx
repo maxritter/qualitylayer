@@ -147,6 +147,11 @@ function TaskViewContent(props: TaskViewProps) {
   } = props
   const c = useTaskViewController(props)
   const forAgent = forAgentOf(c.task)
+  const outsideTask =
+    !c.managedRun &&
+    (c.task.outside !== undefined || c.buildsNext !== null || c.task.session !== null)
+  const agentTabVisible =
+    railOpen && Boolean(c.terminalLayout?.rightActive && c.terminalLayout.panel === "terminal")
   const stepLive = buildStepLive({
     task: c.task,
     api,
@@ -170,6 +175,7 @@ function TaskViewContent(props: TaskViewProps) {
     loadArtifact: c.loadArtifact,
     loadEvidence: c.loadEvidence,
     handoff: c.handoff,
+    ...(agentTabVisible ? {} : { onOpenAgent: c.sidebarState.showConversation }),
   })
   const renderMedia = (item: Item) =>
     item.media !== undefined && !(item.step === "verify" && item.state === "settled") ? (
@@ -209,7 +215,9 @@ function TaskViewContent(props: TaskViewProps) {
     handoff: c.handoff,
     showSidebar: c.sidebarState.showSidebar,
     railOpen,
+    agentTabVisible,
     reopenSidebar: c.sidebarState.reopenSidebar,
+    showConversation: c.sidebarState.showConversation,
     onFullScreen,
     renderMedia,
   })
@@ -221,6 +229,7 @@ function TaskViewContent(props: TaskViewProps) {
       onTab={c.sidebarState.setSideTab}
       artifactCount={c.artifacts.count}
       artifactsNew={c.artifacts.fresh}
+      filesFirst={outsideTask}
       onClose={c.sidebarState.closeSidebar}
       focusKey={c.sidebarState.focusKey}
       sheet={c.compact}
@@ -482,6 +491,7 @@ function TaskViewContent(props: TaskViewProps) {
                         open={c.open}
                         openDoc={c.openDoc}
                         onCopy={onCopy}
+                        onBuildHere={() => c.approval.openBuildChoice()}
                         contentData={c.content.data}
                         contentError={c.content.error}
                         reloadContent={c.content.reload}

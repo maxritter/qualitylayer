@@ -60,6 +60,8 @@ export type StepLive = {
   loadRecord: (evidence: string) => Promise<string>
   /** Open an artifact full size; the artifact page takes it once it lands. */
   openArtifact?: (name: string) => void
+  /** Switch the right rail to the Agent tab (Conversation/Terminal) when stopped. */
+  onOpenAgent?: () => void
   theme: string
   /** A decision is on its way: the main buttons wait. */
   busy: boolean

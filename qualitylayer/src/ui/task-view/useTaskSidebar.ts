@@ -86,6 +86,15 @@ export function useTaskSidebar({
   // Open when the page opens (a remembered choice): it has the focus at once.
   const [focusKey, setFocusKey] = useState(railOpen ? 1 : 0)
   const returnFocus = useRef(false)
+  const defaultedFilesFor = useRef<string | null>(null)
+  const outsideTask = task.outside !== undefined || task.start?.where === "here"
+  useEffect(() => {
+    if (!outsideTask || defaultedFilesFor.current === task.id) return
+    defaultedFilesFor.current = task.id
+    setSideTab("files")
+    if (terminalLayout?.rightActive) terminalLayout.setPanel("files")
+    if (!railOpen) onRail(true)
+  }, [outsideTask, task.id, railOpen, onRail, terminalLayout])
   /** The task's session: Conversation or Terminal, whichever it shows. */
   const showConversation = () => {
     setFocusKey((n) => n + 1)

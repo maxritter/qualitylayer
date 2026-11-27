@@ -160,7 +160,12 @@ function implementYourMove(
   if (mode !== "live") return null
   const agentCard =
     !inNow && live !== undefined && agentCardShows(task) ? (
-      <AgentTurn task={task} onCopy={live.copy} view="implement" />
+      <AgentTurn
+        task={task}
+        onCopy={live.copy}
+        view="implement"
+        {...(live.onOpenAgent !== undefined ? { onOpenAgent: live.onOpenAgent } : {})}
+      />
     ) : null
   const commitReview = live?.commitReview
   if (!commitReview) return agentCard

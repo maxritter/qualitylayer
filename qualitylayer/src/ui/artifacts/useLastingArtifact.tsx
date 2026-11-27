@@ -74,9 +74,10 @@ export function useLastingArtifact(props: LastingViewerProps) {
     .map((value) => ({ id: value.id, label: factsOf(value.id).label }))
   const entryFile = entry?.pages[0]?.file ?? lastingDoc(name, "index.html")
   const unavailable = !entry || entry.deletedAt !== undefined
+  const isDesign = entry?.kind === "design"
   const page = useQuery(
-    () => (unavailable ? Promise.resolve(null) : api.artifactPage(where, entryFile)),
-    [api, where, entryFile, entry?.updated, entry?.revision, unavailable],
+    () => (unavailable || isDesign ? Promise.resolve(null) : api.artifactPage(where, entryFile)),
+    [api, where, entryFile, entry?.updated, entry?.revision, unavailable, isDesign],
   )
   const history = useQuery(
     () => (unavailable ? Promise.resolve(null) : api.lastingHistory(route.project, name)),

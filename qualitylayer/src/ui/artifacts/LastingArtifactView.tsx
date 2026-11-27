@@ -199,7 +199,16 @@ export function LastingArtifactView(props: LastingViewerProps) {
             title={entry.title}
             defaultFidelity={props.defaultFidelity}
             onBack={from ? backToTask : back}
-            onAskAgent={() => openAgent()}
+            rail={{ open: side.open, onToggle: () => side.show(!side.open) }}
+            onAskAgent={(prompt) =>
+              askArtifactAgentAt({
+                api,
+                target: artifactContextTarget(window.location.href, route.project, shownFile),
+                title: entry.title,
+                mark: { x: 0, y: 0, quote: prompt, file: shownFile, html: "" },
+                open: openAgent,
+              })
+            }
           />
         </Suspense>
       ) : (

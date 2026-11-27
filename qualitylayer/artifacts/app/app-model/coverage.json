@@ -2621,7 +2621,7 @@
       "note": "Approved 26 November 2026 (#268) & updated 27 November 2026 (#269 Option A + screen pager & multi-element composer): Direct Annotate button on Plan artifact previews, `< k / N >` screen paging with keyboard arrows outside inputs, armed multi-place element click & rectangle drag with screen-scoped numbered overlays, cross-screen Multi-select context composer (up to 12 refs in one shared instruction), DOM #id/data-testid context capture, independent scroll panes with non-scrolling top composer slot, click-pin-to-scroll, inline editing on staged pins, Planner context preview, and one-batch send."
     },
     "product-workspace.html": {
-      "status": "planned",
+      "status": "built",
       "files": [
         "qualitylayer/src/ui/product/ProductPage.tsx",
         "qualitylayer/src/ui/product/ProductPrdTab.tsx",
@@ -2630,11 +2630,10 @@
         "qualitylayer/src/ui/product/product.css"
       ],
       "demo": null,
-      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Peer Product navigation item between Home and Artifacts with #/product/:projectId/:tab route, project selector, uninitialized empty state, Goal KPIs, Brief & Principles with Human/Agent dual docs, Personas, Initiatives & PRD with live task badges and idempotent Start task bridge.",
-      "gap": "Product workspace UI components land in Slice 7."
+      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Peer Product navigation item between Home and Artifacts with #/product/:projectId/:tab route, project selector, uninitialized empty state, Goal KPIs, Brief & Principles with Human/Agent dual docs, Personas, Initiatives & PRD with live task badges and idempotent Start task bridge."
     },
     "design-artifact.html": {
-      "status": "planned",
+      "status": "built",
       "files": [
         "qualitylayer/src/ui/design/DesignArtifactView.tsx",
         "qualitylayer/src/ui/design/DesignRenderer.tsx",
@@ -2644,8 +2643,7 @@
         "qualitylayer/src/ui/design/design.css"
       ],
       "demo": null,
-      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Structured kind='design' lasting artifact viewer inside Artifacts with Screen/Flow(elkjs)/Components(22 core stays parts + custom SVG)/Checks views, Low/Medium/High fidelity switcher initialized from Settings > Workflow > Artifact fidelity, clickable Play hotspots, Breakdown sheet state, inert static HTML export, and Conversation/Terminal/Files right sidebar.",
-      "gap": "Design Artifact viewer UI components land in Slice 6."
+      "note": "Approved 27 November 2026 (2026-11-27-integrate-makekit-into-qualitylayer): Structured kind='design' lasting artifact viewer inside Artifacts with Screen/Flow(elkjs)/Components(22 core stays parts + custom SVG)/Checks views, Low/Medium/High fidelity switcher initialized from Settings > Workflow > Artifact fidelity, clickable Play hotspots, Breakdown sheet state, inert static HTML export, and Conversation/Terminal/Files right sidebar."
     }
   }
 }

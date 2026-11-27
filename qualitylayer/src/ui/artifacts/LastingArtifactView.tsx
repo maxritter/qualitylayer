@@ -197,6 +197,7 @@ export function LastingArtifactView(props: LastingViewerProps) {
             projectId={route.project}
             artifactName={entry.name}
             title={entry.title}
+            defaultFidelity={props.defaultFidelity}
             onBack={from ? backToTask : back}
             onAskAgent={() => openAgent()}
           />

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { lastingDocOf } from "../../core/artifact/format.ts"
+import type { ArtifactFidelity } from "../../core/config-values.ts"
 import type { ProjectLooks } from "../../core/project-look.ts"
 import type { Api, Project, TaskSummary } from "../api.ts"
 import { type Route, useQuery } from "../hooks.ts"
@@ -20,6 +21,7 @@ export type ArtifactRouteProps = {
   tasks: TaskSummary[]
   looks: ProjectLooks
   version: number
+  defaultFidelity?: ArtifactFidelity
   go: (route: Route) => void
   width: number
   compact: boolean

@@ -379,6 +379,10 @@ export function Sidebar(props: Props) {
         route={route}
         interaction={props.interaction}
         homeWaiting={homeWaiting}
+        onProduct={() => {
+          closeFind()
+          go({ view: "product" })
+        }}
         onArtifacts={() => {
           closeFind()
           go({ view: "artifacts" })

@@ -643,7 +643,7 @@
     "qualitylayer/src/core/integrations/links.ts": "0574ebc922e7af5ed73aaaab964b4d28ea656f02c10b65393dc4a0e46c395c51",
     "qualitylayer/src/core/integrations/review-destination.ts": "e25f6ce1136b2c584888c901d1c3bea6a5c6f7db6476f8184ee71c3a864820e6",
     "qualitylayer/src/core/integrations/route.ts": "fb0a8d0352928d33bb39c1f39c534448b8e1fb3ea6ceb04efbdfe7187acd2b78",
-    "qualitylayer/src/core/integrations/start.ts": "df2d548cd39debbba1d98c0832c1474611905883dbda1192fd3b9ca24b5ea746",
+    "qualitylayer/src/core/integrations/start.ts": "1c726ab8683eb6f4b9c3c001dc4caa09164e037d6fa08ccfc5543751a97f09b8",
     "qualitylayer/src/core/integrations/tickets.ts": "cd09fbaaf295efe6dfc68f7d2998be65e3d5a9f861da3db65220fb01896b147f",
     "qualitylayer/src/core/interaction-docs/attachment-rules.ts": "7e50c612ad16c53d2bb29e240b0dbc706a5d5a3d62ea77a99053c2e349a3514d",
     "qualitylayer/src/core/interaction-docs/attachments.ts": "5a962e07ec1ee55ad4e2c8cdb82a8e5cc93b27fa048084b33be670ea987af14c",

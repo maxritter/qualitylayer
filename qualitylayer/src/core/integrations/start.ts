@@ -6,6 +6,7 @@ import { type Ctx, ok, type Result } from "../../ctx.ts"
 import { missingOf, refused } from "../next/refusal.ts"
 import { taskStart } from "../next.ts"
 import { type RepoRef, resolveRepo } from "../paths.ts"
+import { isProductStoryScheme, resolveProductStoryRequest } from "../product/story-link.ts"
 import {
   isTerminal,
   listTasks,
@@ -41,6 +42,16 @@ export async function linkedRequest(
   words: string,
   options: { type?: TaskType; title?: string } = {},
 ): Promise<Result<LinkedRequest>> {
+  if (isProductStoryScheme(from)) {
+    const resolved = await resolveProductStoryRequest(ctx, from, words)
+    if (!resolved.ok) return resolved
+    return ok({
+      from: resolved.data.from,
+      request: resolved.data.request,
+      title: options.title ?? resolved.data.title,
+      ...(options.type !== undefined ? { type: options.type } : {}),
+    })
+  }
   const read = await readTicket(ctx, from)
   if (!read.ok) {
     const link = parseTicketLink(from)

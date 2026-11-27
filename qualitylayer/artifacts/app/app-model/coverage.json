@@ -2618,7 +2618,7 @@
         "qualitylayer/src/ui/artifact/ArtifactPageFrame.tsx"
       ],
       "demo": null,
-      "note": "Approved 26 November 2026 (#268): Direct Annotate button on Plan artifact previews, armed multi-place element click & rectangle drag with numbered overlays, DOM #id/data-testid context capture, Planner context preview, and one-batch send."
+      "note": "Approved 26 November 2026 (#268) & updated 27 November 2026 (#269 Option A): Direct Annotate button on Plan artifact previews, armed multi-place element click & rectangle drag with numbered overlays, DOM #id/data-testid context capture, independent scroll panes with non-scrolling top composer slot, click-pin-to-scroll, inline editing on staged pins, Planner context preview, and one-batch send."
     }
   }
 }

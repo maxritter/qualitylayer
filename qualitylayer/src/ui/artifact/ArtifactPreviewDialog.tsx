@@ -94,6 +94,45 @@ function useDialogViewportMetrics(
   }
 }
 
+function scrollViewportToPin(
+  viewport: HTMLDivElement | null,
+  items: readonly StagedAnnotation[],
+  num: number,
+  scale: number,
+) {
+  const pin = items.find((item) => item.num === num)
+  if (!pin || !viewport) return
+  const targetTop = Math.max(0, PAD + pin.y * scale - 60)
+  if (typeof viewport.scrollTo === "function") {
+    viewport.scrollTo({ top: targetTop, behavior: "smooth" })
+  } else {
+    viewport.scrollTop = targetTop
+  }
+}
+
+function focusedPartOf(measured: ArtifactLayout | null, section?: string) {
+  if (!section || !measured) return null
+  const matches = measured.parts.filter((part) => part.id === section)
+  return matches.length === 1 ? (matches[0] ?? null) : null
+}
+
+function OpenFullSizeButton({ onOpen, close }: { onOpen: (() => void) | null; close: () => void }) {
+  if (!onOpen) return undefined
+  return (
+    <button
+      className="q-btn sm"
+      type="button"
+      onClick={() => {
+        close()
+        onOpen()
+      }}
+    >
+      <Maximize2Icon size={14} aria-hidden="true" />
+      Open full size
+    </button>
+  )
+}
+
 export function ArtifactPreviewDialog({
   open,
   close,
@@ -125,14 +164,17 @@ export function ArtifactPreviewDialog({
   const [current, setCurrent] = useState<ArtifactLayout | null>(null)
   const ann = usePreviewAnnotations({ open, name, section, initialAnnotate, onAnnotate, close })
   const measured = current ?? layout
-  const matches = section ? (measured?.parts.filter((part) => part.id === section) ?? []) : []
-  const focused = matches.length === 1 ? matches[0] : null
+  const focused = focusedPartOf(measured, section)
   const [roomHint, setRoomHint] = useState(0)
   const scale = roomHint ? Math.min(1, (roomHint - 2 * PAD) / width) : 1
   const metrics = useDialogViewportMetrics(viewport, focused?.top, scale)
   if (metrics.room !== roomHint) setRoomHint(metrics.room)
   const height = measured?.contentHeight || measured?.height || 900
   const trayExtra = ann.showTray ? 320 : 0
+  const selectPin = (num: number) => {
+    ann.setActiveNum(num)
+    scrollViewportToPin(viewport, ann.items, num, scale)
+  }
 
   return (
     <FullscreenDialog
@@ -141,6 +183,7 @@ export function ArtifactPreviewDialog({
       title={`Preview: ${name}`}
       testId="artifact-preview-overlay"
       returnFocus={returnFocus}
+      overflowHidden
       style={{
         width: `min(${Math.min(width + 2 * PAD + 16 + trayExtra, MAX_WIDTH + trayExtra)}px, 95vw)`,
         height: "min(88vh, 920px)",
@@ -153,23 +196,9 @@ export function ArtifactPreviewDialog({
           onArmed={ann.toggleArmed}
         />
       }
-      actions={
-        onOpen ? (
-          <button
-            className="q-btn sm"
-            type="button"
-            onClick={() => {
-              close()
-              onOpen()
-            }}
-          >
-            <Maximize2Icon size={14} aria-hidden="true" />
-            Open full size
-          </button>
-        ) : undefined
-      }
+      actions={OpenFullSizeButton({ onOpen, close })}
     >
-      <div className={ann.showTray ? "dg-ann-split" : "flex min-h-0 flex-1 flex-col"}>
+      <div className={ann.showTray ? "dg-ann-split" : "flex h-full min-h-0 flex-1 flex-col"}>
         <div
           className="dg-preview-dialog-viewport"
           data-testid="artifact-preview-body"
@@ -208,9 +237,13 @@ export function ArtifactPreviewDialog({
             items={ann.items}
             pending={ann.pending}
             activeNum={ann.activeNum}
+            editingNum={ann.editingNum}
             sending={ann.sending}
             error={ann.sendError}
-            onSelect={ann.setActiveNum}
+            onSelect={selectPin}
+            onStartEdit={ann.startEdit}
+            onSaveEdit={ann.saveEdit}
+            onCancelEdit={ann.cancelEdit}
             onRemove={ann.remove}
             onSavePending={ann.savePending}
             onCancelPending={() => ann.setPending(null)}

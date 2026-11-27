@@ -2,6 +2,7 @@
 // --json prints the envelope verbatim; text mode renders the same data for
 // humans. The exit code mirrors `ok`.
 
+import { missingOf } from "../core/next/refusal.ts"
 import type { Result, ValidationError } from "../ctx.ts"
 
 function actionFirst(data: Record<string, unknown>): Record<string, unknown> {
@@ -38,6 +39,10 @@ function renderFailure(error: Extract<Result<unknown>, { ok: false }>["error"]):
     const { errors, warnings } = splitFindings(error.errors)
     if (errors.length) text += `\n${renderErrors(errors)}`
     if (warnings.length) text += `\nwarnings (they do not block):\n${renderErrors(warnings)}`
+  }
+  const missing = missingOf(error)
+  if (missing.length > 0) {
+    text += `\n${missing.map((item) => `  - ${item.what}\n    move: ${item.move}`).join("\n")}`
   }
   return text
 }

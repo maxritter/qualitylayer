@@ -58,6 +58,8 @@ type FullscreenProps = {
   testId?: string
   returnFocus?: RefObject<HTMLElement | null>
   style?: CSSProperties
+  /** Keep the dialog body bounded (`overflow-hidden`) when children manage their own scroll panes. */
+  overflowHidden?: boolean
   children: ReactNode
 }
 
@@ -98,6 +100,7 @@ export function FullscreenDialog({
   testId,
   returnFocus,
   style,
+  overflowHidden = false,
   children,
 }: FullscreenProps) {
   const popup = useRef<HTMLDivElement>(null)
@@ -131,7 +134,15 @@ export function FullscreenDialog({
             <XIcon />
           </VisualAction>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+        <div
+          className={
+            overflowHidden
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+              : "min-h-0 flex-1 overflow-auto"
+          }
+        >
+          {children}
+        </div>
       </DialogContent>
     </Dialog>
   )

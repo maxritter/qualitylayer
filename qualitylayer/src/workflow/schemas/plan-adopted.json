@@ -10,6 +10,7 @@
   "rules": [
     "fence-style-safe",
     "markers-owned",
+    "plan-artifact",
     "your-call-count",
     "done-means-proof",
     "mermaid-parses",
@@ -50,6 +51,14 @@
       "show": "lead",
       "writer": "agent",
       "hint": "the original's exclusions under `### Out of scope`, one line each, with its source lines"
+    },
+    {
+      "heading": "Interface",
+      "file": "people",
+      "required": false,
+      "show": "lead",
+      "writer": "agent",
+      "hint": "required when the original plan changes what a user sees: product-fidelity previews of the changed screens so the person can inspect and annotate them, each between `<!-- ql:artifact <reference> -->` and `<!-- /ql:artifact -->`. A reference is a task artifact name or explicit folder/registered project page with an optional #stable-section; use the artifact guide's focused-preview syntax."
     },
     {
       "heading": "Approach",

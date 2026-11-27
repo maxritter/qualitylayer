@@ -5,6 +5,7 @@
 import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { type CheckRecord, checksReadyForReview, latestRuns, readCheckRecords } from "../checks.ts"
+import { lastIteration, readBuildRecord } from "../docs/build-log.ts"
 import { buildOwnPaths } from "../gate/revision.ts"
 import { revisionPaths } from "../git/revision-paths.ts"
 import { releaseWaiting } from "../judge-environment.ts"
@@ -80,6 +81,15 @@ export async function readVerifyMode(ctx: Ctx, task: Task): Promise<VerifyMode |
       .some((e) => e.event === "fix_round_asked" || (e.event === "plan_amended" && e.by === "user"))
   const stands = exit !== null && !answered && !(await exitCauseGone(ctx, task, exit))
   const mode = verifyModeOf(events, stands)
+  // A recheck pass still awaiting `check all` + `verify judge` has counted `last.result === "pass"`
+  // without recording `verify_result { passed: true }` yet; report `checking` instead of stale `fixing`.
+  if (mode === "fixing") {
+    const last = lastIteration(await readBuildRecord(ctx, task))
+    const withdrawnLatest = events.some(
+      (e) => e.event === "verify_withdrawn" && e.iteration === task.iterations,
+    )
+    if (last?.result === "pass" && last.n === task.iterations && !withdrawnLatest) return "checking"
+  }
   // A change by the task's own sessions withdraws its passed review (Max): read only once HEAD
   // moved past the judged commit.
   return mode === "yours" && (await ownChangeSincePass(ctx, task, events.length))

@@ -156,6 +156,7 @@ local code health:
   ${qualityScanUsage}   (scan changed or named files for security findings)
   qualitylayer quality metrics | lint [paths...] [--all]   (function metrics or the project's enabled Qlty linters)
   qualitylayer quality acknowledge <finding-id> --reason "<specific review reason>"   (retain a source-bound reviewed disposition)
+  qualitylayer quality prune [--keep <n>]   (remove stored quality data for gone worktrees, or trim oldest inactive checkouts to n)
 
 lookup and repair:
   qualitylayer read <document | artifact <name>> [--page <page>] [--width <columns>] [--lead]   (documents and artifacts as terminal text; an agents' file as agents/NN-step.md)

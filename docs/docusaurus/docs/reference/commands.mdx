@@ -110,6 +110,7 @@ Advisory local checks ([Code health](code-health.mdx)).
 | `quality scan [paths... \| --since <rev>] [--secrets\|--dependencies\|--workflows\|--code] [--local]` | Scan changed or named files for secrets, vulnerable packages, unsafe workflows and risky code |
 | `quality metrics\|lint [paths...]` | Function metrics, or the project's linters |
 | `quality acknowledge <id> --reason "<evidence>"` | Keep a reviewed finding with its reason |
+| `quality prune [--keep <n>]` | Remove stored quality data for gone worktrees, or trim the oldest inactive checkouts to `n` |
 | `quality status\|setup\|on\|off` | Status reports the retained checkout folder in `reportDirectory` with `--json`. Setup reinstalls the quality tools. Use on and off to resume or pause automatic checks. On Windows, see [Setup under antivirus](antivirus.mdx). |
 
 ## Project memory {#memory}

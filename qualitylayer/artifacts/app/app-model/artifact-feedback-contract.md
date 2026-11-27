@@ -24,3 +24,10 @@ Max approved `artifact-design-annotations.html` on 26 November 2026: “All righ
 - **Multi-place batching:** Annotate stays armed across multiple clicks (snapping to element bounding boxes) and dragged rectangles (`>= 8 px`), rendering persistent numbered overlays (`1`, `2`, `3`…) inside the frame and accumulating notes in a side tray before sending all pinned notes together in one turn to the planner.
 - **Element identity context:** `artifact-bridge.ts` captures sanitized element metadata (`id`, `data-testid`, `tag`, `role`, short visible text, concise CSS selector, bounding `rect`) for element clicks and every identified element overlapping a dragged rectangle (`targets[]`). `ArtifactAnchor` carries these as backward-compatible optional fields (`kind`, `rect`, `target`, `targets`).
 - **Use screen preserved:** Switching to **Use screen** or pressing **Esc** restores normal artifact interaction unchanged.
+
+## Approved Option A scroll-safe composer & inline annotation editing (#269, 27 November 2026)
+
+Max approved Option A from the before/after artifact (`annotate-scroll-and-edit`) on 27 November 2026: “Yeah, I will go for option A, so please incorporate and fix everything.”
+
+- **Independent scroll panes & pinned composer slot:** `FullscreenDialog` (`overflowHidden`) + `.dg-ann-split` (`height: 100%`) lock the split view to the dialog height so the screen preview scrolls independently while the right `Annotations` tray stays pinned full-height at any `scrollY`. `DraftMarkEditor` renders in a dedicated non-scrolling top slot (`.dg-ann-composer-slot`) right below the tray tabs, so clicking an element at any scroll depth or with many staged pins keeps the textbox immediately visible and focused. Clicking a staged pin scrolls the preview smoothly to that pin.
+- **Inline edit on staged pins:** Each staged pin card in `ArtifactAnnotateTray` adds a Pencil **Edit** button beside Remove (`×`), and clicking the note text also switches the card into inline editing (`Enter` saves, `Shift+Enter` newline, `Esc` cancels) — updating both the card and **Planner context** while preserving the pin number, target `#id`, and bounding box.

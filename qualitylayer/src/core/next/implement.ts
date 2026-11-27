@@ -7,6 +7,8 @@ import { allTasks, type Outline, progress } from "../docs/outline.ts"
 import { validateDoc } from "../docs/validate.ts"
 import { recordCheckout } from "../git/branch.ts"
 import {
+  commitBlockedSlices,
+  committedSlices,
   readBuildStart,
   recordBuildStart,
   stagedBaseline,
@@ -238,6 +240,27 @@ export async function buildStart(ctx: Ctx, task: Task): Promise<Result<NextPaylo
   })
 }
 
+async function unregisteredTickedSlices(ctx: Ctx, task: Task, outline: Outline) {
+  if (task.commitTiming && task.commitTiming !== "slice") return []
+  const committed = new Set(await committedSlices(ctx, task))
+  const blocked = await commitBlockedSlices(ctx, task)
+  const missing = outline.slices.filter(
+    (slice) =>
+      slice.tasks.length > 0 &&
+      slice.tasks.every((card) => card.checked) &&
+      !committed.has(slice.n) &&
+      !Object.hasOwn(blocked, slice.n),
+  )
+  if (missing.length === 0) return []
+  if (committed.size > 0) return missing
+  const start = await readBuildStart(ctx, task)
+  if (!start?.head) return []
+  const count = await ctx.git
+    .run(task.repoRoot, ["rev-list", "--count", `${start.head}..HEAD`])
+    .catch(() => null)
+  return count?.code === 0 && Number(count.stdout.trim()) > 0 ? missing : []
+}
+
 async function checkBuildDoneReady(
   ctx: Ctx,
   task: Task,
@@ -288,6 +311,15 @@ async function checkBuildDoneReady(
           move: 'qualitylayer build done --defer "<why>"',
         },
       ],
+    )
+  const unregistered = await unregisteredTickedSlices(ctx, task, outline)
+  if (unregistered.length > 0)
+    return refused(
+      `The build has ${unregistered.length} ticked slice(s) with no commit receipt: ${unregistered.map((s) => `Slice ${s.n}`).join(", ")}.`,
+      unregistered.map((slice) => ({
+        what: `Slice ${slice.n} is ticked with no commit receipt`,
+        move: `qualitylayer commit slice ${slice.n} --commit <hash> (or qualitylayer commit slice ${slice.n})`,
+      })),
     )
   return ok({ outline, open, unproven })
 }

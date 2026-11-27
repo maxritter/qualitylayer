@@ -1,7 +1,10 @@
 import {
   acknowledgeQuality,
   checkProjectQuality,
+  pruneQualityProjects,
   type QualityMode,
+  QualityStoreFullError,
+  qualityProject,
   qualityStatus,
   setQualityEnabled,
 } from "../../core/code-quality/project.ts"
@@ -22,6 +25,7 @@ qualitylayer quality check [paths...] [--all] [--duplication] [--fail-on-new]
 ${qualityScanUsage}
 qualitylayer quality metrics | lint [paths...] [--all]
 qualitylayer quality acknowledge <finding-id> --reason "<specific review reason>"
+qualitylayer quality prune [--keep <n>]
 Checks use the working files. Existing project lint/test commands remain required.`
 
 export type QualityCommandDependencies = {
@@ -168,20 +172,38 @@ async function dispatchSimpleVerb(
   return null
 }
 
+async function pruneCommand(ctx: Ctx, rest: string[]): Promise<Result<unknown>> {
+  let keep: number | undefined
+  if (rest.length === 2 && rest[0] === "--keep") {
+    const parsed = Number(rest[1])
+    if (!Number.isSafeInteger(parsed) || parsed < 0)
+      return err({ code: "bad_args", message: "--keep must be a non-negative integer" })
+    keep = parsed
+  } else if (rest.length > 0) {
+    return err({ code: "bad_args", message: USAGE })
+  }
+  const current = await qualityProject(ctx, { inspect: true }).catch(() => null)
+  return ok(await pruneQualityProjects(ctx, { keep, excludeId: current?.id }))
+}
+
 async function dispatchQuality(
   ctx: Ctx,
   verb: string,
   rest: string[],
   dependencies: QualityCommandDependencies,
 ): Promise<Result<unknown>> {
-  if (rest.length === 0) {
-    const simple = await dispatchSimpleVerb(ctx, verb, dependencies)
-    if (simple !== null) return simple
+  const simple = rest.length === 0 ? await dispatchSimpleVerb(ctx, verb, dependencies) : null
+  if (simple !== null) return simple
+  const handlers: Record<string, () => Promise<Result<unknown>>> = {
+    prune: () => pruneCommand(ctx, rest),
+    acknowledge: () => acknowledgeCommand(ctx, rest),
+    scan: () => scanCommand(ctx, rest, USAGE, dependencies.scanChanges),
+    check: () => checkModeCommand(ctx, verb, rest, dependencies),
+    metrics: () => checkModeCommand(ctx, verb, rest, dependencies),
+    lint: () => checkModeCommand(ctx, verb, rest, dependencies),
   }
-  if (verb === "acknowledge") return acknowledgeCommand(ctx, rest)
-  if (verb === "scan") return scanCommand(ctx, rest, USAGE, dependencies.scanChanges)
-  if (!["check", "metrics", "lint"].includes(verb)) return err({ code: "bad_args", message: USAGE })
-  return checkModeCommand(ctx, verb, rest, dependencies)
+  const handler = handlers[verb]
+  return handler ? handler() : err({ code: "bad_args", message: USAGE })
 }
 
 export async function qualityCmd(
@@ -194,7 +216,7 @@ export async function qualityCmd(
     return await dispatchQuality(ctx, verb, rest, dependencies)
   } catch (error) {
     return err({
-      code: "bad_args",
+      code: error instanceof QualityStoreFullError ? "open_failed" : "bad_args",
       message: error instanceof Error ? error.message : String(error),
     })
   }

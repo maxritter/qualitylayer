@@ -63,7 +63,14 @@ const SUB_USAGE = {
   shot: "qualitylayer artifact shot <name> [--page <page>] [--query <state-parameters>] [--width <px>] [--theme light|dark] [--matrix] [--section <label>] [--out <file>] [--task <slug>]",
   guide: "qualitylayer artifact guide [authoring|review]",
   review: `qualitylayer ${REVIEW_USAGE}`,
-  new: 'qualitylayer artifact new <name> [--purpose "<line>"] [--project] [--wire] [--folder] [--on <artifact>[/<page>[,<page>…]]]',
+  new: [
+    'qualitylayer artifact new <name> [--purpose "<line>"] [--project] [--wire] [--folder] [--on <artifact>[/<page>[,<page>…]]]',
+    '  --purpose "<line>"  One-line purpose written into the page metadata',
+    "  --project           Save under docs/artifacts/ instead of the active task's artifacts/",
+    "  --wire              Start a wireframe for an unresolved layout (two options when <name> ends in -options)",
+    "  --folder            Create a multi-file folder artifact (index.html plus local styles, scripts and pages)",
+    "  --on <artifact>     Draft on a lasting Library artifact (optionally /<page>[,<page>…])",
+  ].join("\n"),
   keep: 'qualitylayer artifact keep <name> [--only-here] [--title "<title>"] [--purpose "<line>"]',
   list: "qualitylayer artifact list [--project] [--task <slug>] [--lasting] [--name <name or title>] [--compact]",
   comments:

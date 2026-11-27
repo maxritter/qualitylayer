@@ -1,8 +1,7 @@
 import { realpath } from "node:fs/promises"
-import { basename, dirname, join } from "node:path"
+import { join } from "node:path"
 import type { Ctx } from "../../ctx.ts"
 import { QUALITY_PROJECTS_MAX } from "../home-caps.ts"
-import { realLocation } from "../install/manifest.ts"
 import { WorkflowStateBusy } from "../lock-busy.ts"
 import { runQuality } from "./engine.ts"
 import { type CaptureScope, captureSources, projectInventory } from "./project-capture.ts"
@@ -16,6 +15,11 @@ import {
   type Stored,
   saveJson,
 } from "./project-config.ts"
+import {
+  pruneQualityProjects,
+  QualityStoreFullError,
+  qualityProjectsBase,
+} from "./project-prune.ts"
 import { applyReviews, buildReviewedFindings, SCAN_BUSY } from "./project-review.ts"
 import {
   createAnalysisSnapshot,
@@ -27,6 +31,7 @@ import { scannerStatus } from "./scanners/setup.ts"
 import { qualityToolPath } from "./setup.ts"
 
 export { acknowledgeQuality } from "./project-ack.ts"
+export { pruneQualityProjects, QualityStoreFullError } from "./project-prune.ts"
 export { qualitySummary } from "./project-review.ts"
 
 export type QualityMode = "structure" | "duplication" | "metrics" | "lint"
@@ -80,8 +85,7 @@ export async function qualityProject(
   if (!top) return null
   const root = await realpath(top)
   const id = digest(root).slice(0, 24)
-  const home = join(realLocation(dirname(ctx.home)), basename(ctx.home))
-  const base = join(home, "quality", "projects")
+  const base = qualityProjectsBase(ctx)
   const folder = join(base, id)
   if (options.existingHook !== undefined) {
     if (!/^[a-f0-9]{64}$/.test(options.existingHook)) return null
@@ -91,10 +95,12 @@ export async function qualityProject(
   await ctx.fs.assertSafeDirectory?.(folder)
   if (!options.inspect && !(await ctx.fs.exists(folder))) {
     const entries = (await ctx.fs.exists(base)) ? await ctx.fs.readdir(base) : []
-    if (entries.filter((name) => /^[a-f0-9]{24}$/.test(name)).length >= QUALITY_PROJECTS_MAX)
-      throw new Error(
-        `QualityLayer already stores quality data for ${QUALITY_PROJECTS_MAX} checkouts. Run qualitylayer quality status --json in an inactive checkout to find its reportDirectory. Move that whole folder outside ${JSON.stringify(base)}, then retry. If the checkout is gone, its saved structure.json identifies it in report.root.`,
-      )
+    if (entries.filter((name) => /^[a-f0-9]{24}$/.test(name)).length >= QUALITY_PROJECTS_MAX) {
+      const pruned = await pruneQualityProjects(ctx, { excludeId: id })
+      if (pruned.remaining >= QUALITY_PROJECTS_MAX) {
+        throw new QualityStoreFullError(QUALITY_PROJECTS_MAX)
+      }
+    }
   }
   return { root, id, folder }
 }

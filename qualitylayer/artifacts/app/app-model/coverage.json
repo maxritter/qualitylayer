@@ -1445,7 +1445,7 @@
         "qualitylayer/src/ui/machines/MachineFrames.tsx"
       ],
       "demo": null,
-      "note": "10 Nov 2026, Machines in the App: says the machine is offline or needs sign-in, retries by itself, Try now / Try again; ?machine=mac-mini is the ssh-needs-you state. ?machines=more&machine=orb is an unknown host key (the needs-you place with the key words) and ?machines=more&machine=staging a machine still connecting (spinner, no Try). 11 Nov 2026, pairing approved: why in one line and the one move that fixes it. Offline: No answer since HH:MM · asleep or off the network, Next try in m:ss (the server's retryAt) · agents there keep working, Try now; an offline machine whose ssh port refuses: <name> refuses ssh · Remote Login is off there. Key refused: Pair again opens the password sheet on a pairing of that machine. Host key changed: the fingerprint the machine shows now and Trust new key, which the server takes only if the key is still that one. The terminal fold is gone.",
+      "note": "10 Nov 2026, Machines in the App: says the machine is offline or needs sign-in, retries by itself, Try now / Try again; ?machine=mac-mini is the ssh-needs-you state. ?machines=more&machine=orb is an unknown host key (the needs-you place with the key words) and ?machines=more&machine=staging a machine still connecting (spinner, no Try). 11 Nov 2026, pairing approved: why in one line and the one move that fixes it. Offline: No answer since HH:MM · asleep or off the network, Next try in m:ss (the server's retryAt) · agents there keep working, Try now; an offline machine whose ssh port refuses: <name> refuses ssh · Remote Login is off there. Key refused: Pair again opens the password sheet on a pairing of that machine. Host key changed: the fingerprint the machine shows now and Trust new key, which the server takes only if the key is still that one. The terminal fold is gone. 27 Nov 2026: refusesSsh distinguishes abrupt reconnect closes on a previously connected machine (offline) from never-reached closed ports or explicit connection refused (refuses ssh).",
       "gap": "Local-first shared shell and native contextual drafts are proposed; current production parity and full-view comparisons remain required."
     },
     "settings-machines.html": {
@@ -2618,7 +2618,7 @@
         "qualitylayer/src/ui/artifact/ArtifactPageFrame.tsx"
       ],
       "demo": null,
-      "note": "Approved 26 November 2026 (#268) & updated 27 November 2026 (#269 Option A): Direct Annotate button on Plan artifact previews, armed multi-place element click & rectangle drag with numbered overlays, DOM #id/data-testid context capture, independent scroll panes with non-scrolling top composer slot, click-pin-to-scroll, inline editing on staged pins, Planner context preview, and one-batch send."
+      "note": "Approved 26 November 2026 (#268) & updated 27 November 2026 (#269 Option A + screen pager & multi-element composer): Direct Annotate button on Plan artifact previews, `< k / N >` screen paging with keyboard arrows outside inputs, armed multi-place element click & rectangle drag with screen-scoped numbered overlays, cross-screen Multi-select context composer (up to 12 refs in one shared instruction), DOM #id/data-testid context capture, independent scroll panes with non-scrolling top composer slot, click-pin-to-scroll, inline editing on staged pins, Planner context preview, and one-batch send."
     }
   }
 }

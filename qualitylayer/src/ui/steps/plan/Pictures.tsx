@@ -20,6 +20,7 @@ import { type ReactNode, useRef, useState } from "react"
 import { parseArtifactReference } from "../../../core/artifact/reference.ts"
 import { headingSlug } from "../../../core/docs/anchor.ts"
 import { useGalleryThumbnails } from "../../artifact/ArtifactPreview.tsx"
+import type { PreviewScreenEntry } from "../../artifact/ArtifactPreviewDialog.tsx"
 import { InlineMarkdown } from "../../reader/DocReader.tsx"
 import { MermaidBlock, usePageTheme } from "../../reader/MermaidBlock.tsx"
 import { ArtifactSlot } from "../../step-page/ArtifactSlot.tsx"
@@ -150,13 +151,19 @@ function CodeScreen({ item }: { item: InterfaceItem }) {
 }
 
 /** The artifact's preview card, or the output; a missing artifact says so in one line. */
-function Screen({ item, state, mode, live }: { item: InterfaceItem } & Where) {
+function Screen({
+  item,
+  screens,
+  state,
+  mode,
+  live,
+}: { item: InterfaceItem; screens?: readonly PreviewScreenEntry[] } & Where) {
   if (item.artifact === null) return <CodeScreen item={item} />
   const artifact = state.plan?.artifacts[item.artifact]
   return artifact === undefined ? (
     <p className="pl-cap">The artifact {item.artifact} is not in this task.</p>
   ) : (
-    <ArtifactSlot artifact={artifact} mode={mode} live={live} />
+    <ArtifactSlot artifact={artifact} mode={mode} live={live} screens={screens} />
   )
 }
 
@@ -175,6 +182,20 @@ export function InterfaceTabs({ items, ...where }: { items: readonly InterfaceIt
     where.mode === "live" && items.length > 1 && items.some((item) => item.artifact !== null),
   )
   if (items.length === 0) return null
+  const siblingScreens: PreviewScreenEntry[] = items.flatMap((item) => {
+    if (item.artifact === null) return []
+    const raw = where.state.plan?.artifacts[item.artifact]?.file
+    if (!raw) return []
+    const parsed = parseArtifactReference(raw)
+    return [
+      {
+        id: item.id,
+        title: item.title,
+        file: parsed?.file ?? raw,
+        ...(parsed?.section ? { section: parsed.section } : {}),
+      },
+    ]
+  })
   return (
     <div ref={ref}>
       <GalleryTabs
@@ -194,7 +215,7 @@ export function InterfaceTabs({ items, ...where }: { items: readonly InterfaceIt
             thumbnail: thumb ? (
               <ArtifactMiniature src={thumb} fallback={icon(screenIcon(item))} />
             ) : undefined,
-            panel: <Screen item={item} {...where} />,
+            panel: <Screen item={item} screens={siblingScreens} {...where} />,
           }
         })}
       />

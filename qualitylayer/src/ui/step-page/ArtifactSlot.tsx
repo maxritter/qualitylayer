@@ -7,6 +7,7 @@ import { ImageIcon } from "lucide-react"
 import { createPortal } from "react-dom"
 import { parseArtifactReference } from "../../core/artifact/reference.ts"
 import { ArtifactPreview } from "../artifact/ArtifactPreview.tsx"
+import type { PreviewScreenEntry } from "../artifact/ArtifactPreviewDialog.tsx"
 import { useActionSlot } from "../kit/action-slot.ts"
 import { WhoMark } from "../kit/WhoMark.tsx"
 import { Answers, markOf, Pin } from "./Answers.tsx"
@@ -17,10 +18,12 @@ export function ArtifactSlot({
   artifact,
   mode,
   live,
+  screens,
 }: {
   artifact: ArtifactView
   mode: Mode
   live: StepLive | undefined
+  screens?: readonly PreviewScreenEntry[]
 }) {
   const look = artifact.look
   const projectReference = parseArtifactReference(artifact.name)?.scope === "project"
@@ -44,6 +47,7 @@ export function ArtifactSlot({
           path={artifact.file}
           title={artifact.title}
           load={live.loadArtifact}
+          {...(screens !== undefined ? { screens } : {})}
           {...(live.openArtifact !== undefined
             ? { onOpen: () => live.openArtifact?.(artifact.name) }
             : {})}

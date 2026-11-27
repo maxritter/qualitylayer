@@ -227,6 +227,8 @@ export type ArtifactElementRef = {
   role?: string
   text?: string
   selector?: string
+  screen?: string
+  file?: string
 }
 
 /** Bounding box in page CSS pixels at 100 %. */

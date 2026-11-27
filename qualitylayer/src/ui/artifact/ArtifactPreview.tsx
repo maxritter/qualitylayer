@@ -24,7 +24,7 @@ import { useActionSlot } from "../kit/action-slot.ts"
 import type { StagedAnnotation } from "./ArtifactAnnotateTray.tsx"
 import type { ArtifactLayout } from "./ArtifactPageFrame.tsx"
 import { ArtifactPreviewBody } from "./ArtifactPreviewBody.tsx"
-import { ArtifactPreviewDialog } from "./ArtifactPreviewDialog.tsx"
+import { ArtifactPreviewDialog, type PreviewScreenEntry } from "./ArtifactPreviewDialog.tsx"
 import { useNearViewport, usePreviewPageLoad, useViewportRoom } from "./artifact-preview-hooks.ts"
 import { fitToInk, resolvePreviewMetrics } from "./artifact-preview-metrics.ts"
 import { PreviewActions, PreviewHeader, UpdatedAgo } from "./PreviewControls.tsx"
@@ -99,6 +99,8 @@ export type ArtifactPreviewProps = {
   title?: string
   /** The artifact's facts when the caller has them (its name, update, comments). */
   artifact?: Artifact | null
+  /** Optional sibling Plan Interface screens for `< k / N >` dialog paging. */
+  screens?: readonly PreviewScreenEntry[]
 }
 
 function previewLoaderOf(
@@ -364,13 +366,20 @@ export function ArtifactPreview(props: ArtifactPreviewProps) {
           open={expanded}
           close={dialog.close}
           name={name}
+          file={file}
           html={currentHtml.text}
           width={width}
           layout={layout}
           section={section}
+          screens={props.screens}
+          loadScreenHtml={previewLoaderOf(host, task, load)}
           theme={host?.theme}
           onOpen={open}
-          onAnnotate={hostAnnotate ? (markdown, pins) => hostAnnotate(file, markdown, pins) : null}
+          onAnnotate={
+            hostAnnotate
+              ? (markdown, pins, targetFile) => hostAnnotate(targetFile ?? file, markdown, pins)
+              : null
+          }
           initialAnnotate={openAnnotating}
           returnFocus={returnFocus}
         />

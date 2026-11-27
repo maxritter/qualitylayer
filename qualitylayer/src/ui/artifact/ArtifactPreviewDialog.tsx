@@ -2,24 +2,91 @@
 // referenced section. Supports multi-place element/area annotations with DOM ID context (#268)
 // alongside Open full size.
 
-import { Maximize2Icon, MessageSquarePlusIcon } from "lucide-react"
-import { type RefObject, useLayoutEffect, useRef, useState } from "react"
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Maximize2Icon,
+  MessageSquarePlusIcon,
+} from "lucide-react"
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { FullscreenDialog } from "../reader/VisualParts.tsx"
 import { ArtifactAnnotateTray, type StagedAnnotation } from "./ArtifactAnnotateTray.tsx"
 import { type ArtifactLayout, ArtifactPageFrame } from "./ArtifactPageFrame.tsx"
 import { usePreviewAnnotations } from "./use-preview-annotations.ts"
 
+export type PreviewScreenEntry = {
+  id: string
+  title: string
+  file: string
+  section?: string
+}
+
 const PAD = 16
 const LEAD = 12
 const MAX_WIDTH = 1100
 
+function isEditableFocused(): boolean {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) return false
+  return active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)
+}
+
+export function DialogPager({
+  index,
+  total,
+  label,
+  onPrev,
+  onNext,
+}: {
+  index: number
+  total: number
+  label: string
+  onPrev: () => void
+  onNext: () => void
+}) {
+  if (total <= 1) return null
+  return (
+    <fieldset className="dg-ann-pager" aria-label="Screen pager" data-testid="screen-pager">
+      <button
+        type="button"
+        aria-label="Previous screen"
+        data-testid="screen-pager-prev"
+        disabled={index <= 0}
+        onClick={onPrev}
+      >
+        <ChevronLeftIcon size={14} aria-hidden="true" />
+      </button>
+      <span className="dg-ann-pager-label" data-testid="screen-pager-label">
+        {index + 1} / {total} · {label}
+      </span>
+      <button
+        type="button"
+        aria-label="Next screen"
+        data-testid="screen-pager-next"
+        disabled={index >= total - 1}
+        onClick={onNext}
+      >
+        <ChevronRightIcon size={14} aria-hidden="true" />
+      </button>
+    </fieldset>
+  )
+}
+
 function DialogModeBar({
   name,
+  pager,
   canAnnotate,
   armed,
   onArmed,
 }: {
   name: string
+  pager: {
+    index: number
+    total: number
+    label: string
+    onPrev: () => void
+    onNext: () => void
+  } | null
   canAnnotate: boolean
   armed: boolean
   onArmed: (next: boolean) => void
@@ -27,6 +94,7 @@ function DialogModeBar({
   return (
     <span className="dg-ann-bar-group">
       <b>{name}</b>
+      {pager !== null ? <DialogPager {...pager} /> : null}
       {canAnnotate ? (
         <>
           <fieldset className="dg-ann-seg" aria-label="Interaction mode">
@@ -133,14 +201,54 @@ function OpenFullSizeButton({ onOpen, close }: { onOpen: (() => void) | null; cl
   )
 }
 
+export function resolvePagerScreens(opts: {
+  name: string
+  file?: string
+  section?: string
+  screens?: readonly PreviewScreenEntry[]
+  measured: ArtifactLayout | null
+}): { kind: "files" | "sections"; list: PreviewScreenEntry[] } {
+  if (opts.screens && opts.screens.length > 1) {
+    return { kind: "files", list: [...opts.screens] }
+  }
+  const parts = (opts.measured?.parts ?? []).filter(
+    (part) => part.id && part.id !== "what-this-shows",
+  )
+  if (parts.length > 1) {
+    return {
+      kind: "sections",
+      list: parts.map((part) => ({
+        id: part.id,
+        title: part.label || part.id,
+        file: opts.file ?? opts.name,
+        section: part.id,
+      })),
+    }
+  }
+  return {
+    kind: "sections",
+    list: [
+      {
+        id: opts.section ?? opts.file ?? opts.name,
+        title: opts.name,
+        file: opts.file ?? opts.name,
+        ...(opts.section ? { section: opts.section } : {}),
+      },
+    ],
+  }
+}
+
 export function ArtifactPreviewDialog({
   open,
   close,
   name,
+  file,
   html,
   width,
   layout,
   section,
+  screens,
+  loadScreenHtml,
   theme,
   onOpen,
   onAnnotate,
@@ -150,31 +258,135 @@ export function ArtifactPreviewDialog({
   open: boolean
   close: () => void
   name: string
+  file?: string
   html: string
   width: number
   layout: ArtifactLayout | null
   section?: string
+  screens?: readonly PreviewScreenEntry[]
+  loadScreenHtml?: ((file: string) => Promise<string>) | null
   theme?: "light" | "dark"
   onOpen: (() => void) | null
-  onAnnotate?: ((batchMarkdown: string, pins: StagedAnnotation[]) => Promise<void>) | null
+  onAnnotate?:
+    | ((batchMarkdown: string, pins: StagedAnnotation[], activeFile?: string) => Promise<void>)
+    | null
   initialAnnotate?: boolean
   returnFocus: RefObject<HTMLElement | null>
 }) {
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const [current, setCurrent] = useState<ArtifactLayout | null>(null)
-  const ann = usePreviewAnnotations({ open, name, section, initialAnnotate, onAnnotate, close })
   const measured = current ?? layout
-  const focused = focusedPartOf(measured, section)
+  const pagerModel = useMemo(
+    () => resolvePagerScreens({ name, file, section, screens, measured }),
+    [name, file, section, screens, measured],
+  )
+  const initialIdx = Math.max(
+    0,
+    pagerModel.list.findIndex(
+      (entry) =>
+        (file && entry.file === file && (!section || entry.section === section)) ||
+        (section && entry.section === section),
+    ),
+  )
+  const [screenIndex, setScreenIndex] = useState(initialIdx)
+  useEffect(() => {
+    if (open) setScreenIndex(initialIdx)
+  }, [open, initialIdx])
+  const safeIndex = Math.min(screenIndex, Math.max(0, pagerModel.list.length - 1))
+  const activeScreen = pagerModel.list[safeIndex]
+  const activeFile = activeScreen?.file ?? file
+  const activeSection = activeScreen?.section ?? section
+  const activeTitle = activeScreen?.title ?? name
+  const activeScreenKey = `${activeFile ?? name}#${activeSection ?? ""}`
+
+  const [loadedHtml, setLoadedHtml] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (
+      !open ||
+      pagerModel.kind !== "files" ||
+      !activeFile ||
+      activeFile === file ||
+      !loadScreenHtml
+    )
+      return
+    if (loadedHtml[activeFile] !== undefined) return
+    let cancelled = false
+    void loadScreenHtml(activeFile).then(
+      (text) => {
+        if (!cancelled) setLoadedHtml((prev) => ({ ...prev, [activeFile]: text }))
+      },
+      () => {},
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [open, pagerModel.kind, activeFile, file, loadScreenHtml, loadedHtml])
+
+  useEffect(() => {
+    if (!open || pagerModel.list.length <= 1) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableFocused()) return
+      if (event.key === "ArrowLeft") {
+        event.preventDefault()
+        setScreenIndex((prev) => Math.max(0, prev - 1))
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault()
+        setScreenIndex((prev) => Math.min(pagerModel.list.length - 1, prev + 1))
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [open, pagerModel.list.length])
+
+  const shownHtml = activeFile && activeFile !== file ? (loadedHtml[activeFile] ?? html) : html
+  const focused = focusedPartOf(measured, activeSection)
+  const ann = usePreviewAnnotations({
+    open,
+    name: activeTitle,
+    section: activeSection,
+    screenKey: activeScreenKey,
+    screenTitle: activeTitle,
+    screenFile: activeFile,
+    initialAnnotate,
+    onAnnotate: onAnnotate
+      ? (batchMarkdown, pins) => onAnnotate(batchMarkdown, pins, activeFile)
+      : null,
+    close,
+  })
   const [roomHint, setRoomHint] = useState(0)
   const scale = roomHint ? Math.min(1, (roomHint - 2 * PAD) / width) : 1
   const metrics = useDialogViewportMetrics(viewport, focused?.top, scale)
   if (metrics.room !== roomHint) setRoomHint(metrics.room)
+  const lastPagedIndex = useRef(safeIndex)
+  useEffect(() => {
+    if (lastPagedIndex.current === safeIndex) return
+    lastPagedIndex.current = safeIndex
+    if (!viewport || focused === null) return
+    viewport.scrollTop = Math.max(0, PAD + focused.top * scale - LEAD)
+  }, [safeIndex, viewport, focused, scale])
   const height = measured?.contentHeight || measured?.height || 900
   const trayExtra = ann.showTray ? 320 : 0
   const selectPin = (num: number) => {
     ann.setActiveNum(num)
-    scrollViewportToPin(viewport, ann.items, num, scale)
+    const target = ann.items.find((item) => item.num === num)
+    if (
+      target &&
+      target.kind !== "group" &&
+      (!target.screenKey || target.screenKey === activeScreenKey)
+    ) {
+      scrollViewportToPin(viewport, ann.items, num, scale)
+    }
   }
+  const pager =
+    pagerModel.list.length > 1
+      ? {
+          index: safeIndex,
+          total: pagerModel.list.length,
+          label: activeTitle,
+          onPrev: () => setScreenIndex((prev) => Math.max(0, prev - 1)),
+          onNext: () => setScreenIndex((prev) => Math.min(pagerModel.list.length - 1, prev + 1)),
+        }
+      : null
 
   return (
     <FullscreenDialog
@@ -191,6 +403,7 @@ export function ArtifactPreviewDialog({
       bar={
         <DialogModeBar
           name={name}
+          pager={pager}
           canAnnotate={ann.canAnnotate}
           armed={ann.armed}
           onArmed={ann.toggleArmed}
@@ -212,8 +425,8 @@ export function ArtifactPreviewDialog({
             style={{ width: width * scale, height: height * scale }}
           >
             <ArtifactPageFrame
-              html={html}
-              title={`${name}, enlarged preview`}
+              html={shownHtml}
+              title={`${activeTitle}, enlarged preview`}
               width={width}
               height={Math.max(900, measured?.height ?? 900)}
               scale={scale}
@@ -221,7 +434,7 @@ export function ArtifactPreviewDialog({
               armed={ann.armed}
               multi={ann.canAnnotate}
               pins={ann.canAnnotate ? ann.pins : undefined}
-              onMark={ann.canAnnotate ? (mark) => ann.setPending(mark) : undefined}
+              onMark={ann.canAnnotate ? ann.handleMark : undefined}
               onLayout={setCurrent}
               onKey={(key) => {
                 if (key === "Escape") ann.handleEscape()
@@ -232,15 +445,20 @@ export function ArtifactPreviewDialog({
         </div>
         {ann.showTray ? (
           <ArtifactAnnotateTray
-            name={name}
-            section={section}
+            name={activeTitle}
+            section={activeSection}
             items={ann.items}
             pending={ann.pending}
+            subMode={ann.subMode}
+            selectedRefs={ann.selectedRefs}
             activeNum={ann.activeNum}
             editingNum={ann.editingNum}
             sending={ann.sending}
             error={ann.sendError}
             onSelect={selectPin}
+            onSubMode={ann.setSubMode}
+            onRemoveRef={ann.removeSelectedRef}
+            onSaveGroup={ann.saveGroup}
             onStartEdit={ann.startEdit}
             onSaveEdit={ann.saveEdit}
             onCancelEdit={ann.cancelEdit}

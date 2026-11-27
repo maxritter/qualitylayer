@@ -7,12 +7,28 @@ import type { SidebarTab } from "../sidebar/RightSidebar.tsx"
 
 type SidebarContext = {
   task: TaskDetail
+  outsideTask: boolean
   railOpen: boolean
   onRail: (open: boolean) => void
   artifactFile: string | null
   fullScreen: boolean
   readingFrom: ReturnType<typeof useDocumentReturn>
   backToStage: () => void
+}
+
+/** Shared predicate for whether a task is being driven outside the App (no managed in-App run). */
+export function isOutsideTask(
+  task: Pick<TaskDetail, "outside" | "session" | "start">,
+  managedRun: boolean,
+  buildsNext: string | null = null,
+): boolean {
+  return (
+    !managedRun &&
+    (task.outside !== undefined ||
+      buildsNext !== null ||
+      task.start?.where === "here" ||
+      task.session !== null)
+  )
 }
 
 const DIALOG_OR_POPUP_SELECTOR =
@@ -74,6 +90,7 @@ function useSidebarKeyEffect({
 /** Owns the right sidebar's focus and keyboard controls: Conversation and Terminal, or Files. */
 export function useTaskSidebar({
   task,
+  outsideTask,
   railOpen,
   onRail,
   artifactFile,
@@ -87,7 +104,6 @@ export function useTaskSidebar({
   const [focusKey, setFocusKey] = useState(railOpen ? 1 : 0)
   const returnFocus = useRef(false)
   const defaultedFilesFor = useRef<string | null>(null)
-  const outsideTask = task.outside !== undefined || task.start?.where === "here"
   useEffect(() => {
     if (!outsideTask || defaultedFilesFor.current === task.id) return
     defaultedFilesFor.current = task.id

@@ -147,9 +147,7 @@ function TaskViewContent(props: TaskViewProps) {
   } = props
   const c = useTaskViewController(props)
   const forAgent = forAgentOf(c.task)
-  const outsideTask =
-    !c.managedRun &&
-    (c.task.outside !== undefined || c.buildsNext !== null || c.task.session !== null)
+  const outsideTask = c.outsideTask
   const agentTabVisible =
     railOpen && Boolean(c.terminalLayout?.rightActive && c.terminalLayout.panel === "terminal")
   const stepLive = buildStepLive({

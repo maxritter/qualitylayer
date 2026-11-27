@@ -88,10 +88,42 @@ function admit(config: PassThroughConfig, incoming: IncomingMessage): Admitted {
   return { access, proof: proofOf(request, config.guard) }
 }
 
+function probeHealthy(config: PassThroughConfig): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(ok)
+    }
+    const end = "socket" in config.end ? { socketPath: config.end.socket } : config.end
+    const req = httpRequest(
+      {
+        ...end,
+        path: "/api/config",
+        method: "GET",
+        headers: { host: config.machineHost },
+        timeout: 2_000,
+      },
+      (res) => {
+        res.resume()
+        finish(typeof res.statusCode === "number" && res.statusCode > 0)
+      },
+    )
+    req.on("timeout", () => {
+      req.destroy()
+      finish(false)
+    })
+    req.on("error", () => finish(false))
+    req.end()
+  })
+}
+
 function passRequest(
   config: PassThroughConfig,
   incoming: IncomingMessage,
   outgoing: ServerResponse,
+  reportUnreachable: () => void,
 ): void {
   const admitted = admit(config, incoming)
   if ("status" in admitted) {
@@ -110,13 +142,14 @@ function passRequest(
       answer.pipe(outgoing)
       // The machine went away in the middle of its answer: `pipe` ends the browser's side only on a
       // whole answer, so a cut-off one would leave the browser's request open for good, and a page
-      // that waits for it never finishes loading. End it as cut off, and say the machine is gone.
+      // that waits for it never finishes loading. End it as cut off, and probe tunnel health before
+      // declaring the machine unreachable.
       let cut = false
       const cutOff = () => {
         if (cut || left || answer.complete) return
         cut = true
         outgoing.destroy()
-        config.unreachable?.()
+        reportUnreachable()
       }
       answer.on("error", cutOff)
       answer.on("close", cutOff)
@@ -126,7 +159,7 @@ function passRequest(
     if (left) return
     if (outgoing.headersSent) return void outgoing.destroy()
     outgoing.writeHead(502).end("the machine cannot be reached")
-    config.unreachable?.()
+    reportUnreachable()
   })
   outgoing.on("close", () => {
     left = true
@@ -140,6 +173,18 @@ export function startPassThrough(initial: PassThroughConfig): Promise<PassThroug
   const config: PassThroughConfig = { ...initial }
   const open = new Set<Duplex>()
   const upstream = new Set<Duplex>()
+  let probing = false
+  let generation = 0
+  const reportUnreachable = () => {
+    if (probing || !config.unreachable) return
+    probing = true
+    const currentGen = generation
+    const callback = config.unreachable
+    void probeHealthy(config).then((healthy) => {
+      probing = false
+      if (!healthy && currentGen === generation) callback()
+    })
+  }
   const track = (socket: Duplex) => {
     open.add(socket)
     socket.once("close", () => open.delete(socket))
@@ -148,7 +193,9 @@ export function startPassThrough(initial: PassThroughConfig): Promise<PassThroug
     upstream.add(socket)
     socket.once("close", () => upstream.delete(socket))
   }
-  const server = createServer((incoming, outgoing) => passRequest(config, incoming, outgoing))
+  const server = createServer((incoming, outgoing) =>
+    passRequest(config, incoming, outgoing, reportUnreachable),
+  )
   // Long-lived `/stream` SSE and WebSocket bridges must not be cut by Node/Bun's default 5-min timeout.
   server.requestTimeout = 0
   server.timeout = 0
@@ -158,6 +205,7 @@ export function startPassThrough(initial: PassThroughConfig): Promise<PassThroug
   )
   server.on("connection", track)
   const swap: PassThrough["swap"] = (next) => {
+    generation++
     config.end = next.end
     config.machineHost = next.machineHost
     if (next.unreachable !== undefined) config.unreachable = next.unreachable

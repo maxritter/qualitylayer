@@ -142,14 +142,18 @@ class MachineSet implements Machines {
       machine.since = this.ctx.clock.now()
       this.changed()
     }
-    this.planRetry(machine)
-    if (
-      machine.connection.state === "reconnecting" &&
-      (event.type === "retry" || event.type === "try-again")
-    ) {
-      return true
+    const startAttempt =
+      (machine.connection.state === "reconnecting" &&
+        (event.type === "retry" || event.type === "try-again")) ||
+      (machine.connection.state === "connecting" && before.state !== "connecting")
+    if (startAttempt) {
+      machine.cancelRetry?.()
+      machine.cancelRetry = undefined
+      machine.retryAt = undefined
+      return !machine.connecting
     }
-    return machine.connection.state === "connecting" && before.state !== "connecting"
+    if (!machine.connecting) this.planRetry(machine)
+    return false
   }
 
   /** An offline machine is tried again by itself; every other state has no wait. */
@@ -166,13 +170,16 @@ class MachineSet implements Machines {
     })
   }
 
-  /** One attempt; the machine is `connecting` when this is called. */
+  /** One attempt; guarded against overlapping in-flight attempts on the same machine. */
   private async connect(machine: LiveMachine): Promise<void> {
-    if (this.connector === null) {
-      this.step(machine, { type: "failed", as: "offline" })
-      return
-    }
+    if (machine.connecting) return
+    machine.connecting = true
     try {
+      if (this.connector === null) {
+        machine.connecting = false
+        this.step(machine, { type: "failed", as: "offline" })
+        return
+      }
       const link = await this.connector(machine.stored)
       // Removed, or the server stopped, while ssh was still connecting.
       if (this.gone(machine)) {
@@ -180,6 +187,7 @@ class MachineSet implements Machines {
         return
       }
       await this.serve(machine, link)
+      machine.connecting = false
       this.step(machine, { type: "up" })
       this.watch(machine, link)
     } catch (error) {
@@ -187,10 +195,13 @@ class MachineSet implements Machines {
       machine.link = undefined
       if (this.gone(machine)) return
       machine.reason = error instanceof Error ? error.message.slice(0, 200) : undefined
+      machine.connecting = false
       this.step(machine, {
         type: "failed",
         as: error instanceof ConnectFailure ? error.state : "offline",
       })
+    } finally {
+      machine.connecting = false
     }
   }
 

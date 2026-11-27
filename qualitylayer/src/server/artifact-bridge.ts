@@ -300,6 +300,7 @@ export const BRIDGE = `(() => {
     heldKeys.add(event.key);
     if (event.type !== "keydown") return;
     if (event.key === "Escape") { arm(false); post({ kind: "key", key: "Escape" }); return; }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") { post({ kind: "key", key: event.key }); return; }
     if (event.key !== "Enter" && event.key !== " ") return;
     const el = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.documentElement;
     const r = el.getBoundingClientRect();
@@ -413,6 +414,7 @@ export const BRIDGE = `(() => {
     const offsets = { ArrowDown: [0, 40], ArrowUp: [0, -40], ArrowLeft: [-40, 0], ArrowRight: [40, 0], PageDown: [0, innerHeight], PageUp: [0, -innerHeight], Home: [0, -innerHeight], End: [0, innerHeight] };
     const offset = offsets[event.key];
     if (panning && offset && !canScroll(t, offset[0], offset[1])) { post({ kind: "key", key: event.key }); event.preventDefault(); return; }
+    if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && offset && !canScroll(t, offset[0], offset[1])) { post({ kind: "key", key: event.key }); event.preventDefault(); return; }
     if (["c", "C", "f", "F", "Escape", "+", "=", "-", "0"].includes(event.key)) { post({ kind: "key", key: event.key }); if (event.key === "Escape") event.preventDefault(); }
   }, true);
 })();`

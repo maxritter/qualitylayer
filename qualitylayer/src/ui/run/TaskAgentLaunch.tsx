@@ -5,6 +5,7 @@ import type { ContextDraftTarget } from "../agent-window/conversation/context-dr
 import type { SubagentModels, TaskDetail } from "../api.ts"
 import { approvesOutside } from "../outside.ts"
 import { useOptionalRuns } from "../run-context.tsx"
+import { useBuildSchedules } from "../schedules-api.ts"
 import {
   AgentLaunchFields,
   type AgentLaunchValue,
@@ -224,6 +225,8 @@ export function TaskAgentLaunch({
   contextTarget?: ContextDraftTarget
 }) {
   const runs = useOptionalRuns()
+  const schedules = useBuildSchedules()
+  const scheduled = schedules.some((s) => s.taskId === task.id)
   const saved = config ?? DEFAULT_CONFIG
   const agent = value?.agent ?? preferredLaunchAgent(installed)
   const planning = taskPlanningLaunch(task)
@@ -266,7 +269,7 @@ export function TaskAgentLaunch({
       <TaskBuildReadyCard
         task={task}
         contextRequest={contextRequest}
-        onBuildOptions={onBuildOptions}
+        onBuildOptions={scheduled ? undefined : onBuildOptions}
         onCopy={onCopy}
       />
     )

@@ -8,7 +8,15 @@ import {
   Maximize2Icon,
   MessageSquarePlusIcon,
 } from "lucide-react"
-import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { FullscreenDialog } from "../reader/VisualParts.tsx"
 import { ArtifactAnnotateTray, type StagedAnnotation } from "./ArtifactAnnotateTray.tsx"
 import { type ArtifactLayout, ArtifactPageFrame } from "./ArtifactPageFrame.tsx"
@@ -289,9 +297,23 @@ export function ArtifactPreviewDialog({
     ),
   )
   const [screenIndex, setScreenIndex] = useState(initialIdx)
+  const userPaged = useRef(false)
+  const openTargetKey = `${open ? "1" : "0"}:${file ?? ""}:${section ?? ""}`
+  const lastOpenTargetKey = useRef(openTargetKey)
+  if (lastOpenTargetKey.current !== openTargetKey) {
+    lastOpenTargetKey.current = openTargetKey
+    userPaged.current = false
+  }
   useEffect(() => {
-    if (open) setScreenIndex(initialIdx)
+    if (open && !userPaged.current) setScreenIndex(initialIdx)
   }, [open, initialIdx])
+  const pageBy = useCallback(
+    (delta: -1 | 1) => {
+      userPaged.current = true
+      setScreenIndex((prev) => Math.max(0, Math.min(pagerModel.list.length - 1, prev + delta)))
+    },
+    [pagerModel.list.length],
+  )
   const safeIndex = Math.min(screenIndex, Math.max(0, pagerModel.list.length - 1))
   const activeScreen = pagerModel.list[safeIndex]
   const activeFile = activeScreen?.file ?? file
@@ -328,18 +350,28 @@ export function ArtifactPreviewDialog({
       if (isEditableFocused()) return
       if (event.key === "ArrowLeft") {
         event.preventDefault()
-        setScreenIndex((prev) => Math.max(0, prev - 1))
+        pageBy(-1)
       } else if (event.key === "ArrowRight") {
         event.preventDefault()
-        setScreenIndex((prev) => Math.min(pagerModel.list.length - 1, prev + 1))
+        pageBy(1)
       }
     }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, pagerModel.list.length])
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => window.removeEventListener("keydown", onKeyDown, true)
+  }, [open, pagerModel.list.length, pageBy])
 
   const shownHtml = activeFile && activeFile !== file ? (loadedHtml[activeFile] ?? html) : html
   const focused = focusedPartOf(measured, activeSection)
+  const activeFileRef = useRef(activeFile)
+  activeFileRef.current = activeFile
+  const stableAnnotate = useMemo(
+    () =>
+      onAnnotate
+        ? (batchMarkdown: string, pins: StagedAnnotation[]) =>
+            onAnnotate(batchMarkdown, pins, activeFileRef.current)
+        : null,
+    [onAnnotate],
+  )
   const ann = usePreviewAnnotations({
     open,
     name: activeTitle,
@@ -348,9 +380,7 @@ export function ArtifactPreviewDialog({
     screenTitle: activeTitle,
     screenFile: activeFile,
     initialAnnotate,
-    onAnnotate: onAnnotate
-      ? (batchMarkdown, pins) => onAnnotate(batchMarkdown, pins, activeFile)
-      : null,
+    onAnnotate: stableAnnotate,
     close,
   })
   const [roomHint, setRoomHint] = useState(0)
@@ -383,8 +413,8 @@ export function ArtifactPreviewDialog({
           index: safeIndex,
           total: pagerModel.list.length,
           label: activeTitle,
-          onPrev: () => setScreenIndex((prev) => Math.max(0, prev - 1)),
-          onNext: () => setScreenIndex((prev) => Math.min(pagerModel.list.length - 1, prev + 1)),
+          onPrev: () => pageBy(-1),
+          onNext: () => pageBy(1),
         }
       : null
 
@@ -438,6 +468,8 @@ export function ArtifactPreviewDialog({
               onLayout={setCurrent}
               onKey={(key) => {
                 if (key === "Escape") ann.handleEscape()
+                else if (key === "ArrowLeft" && pagerModel.list.length > 1) pageBy(-1)
+                else if (key === "ArrowRight" && pagerModel.list.length > 1) pageBy(1)
               }}
               className="dg-preview-dialog-frame"
             />
